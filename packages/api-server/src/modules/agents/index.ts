@@ -22,6 +22,8 @@ export { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-s
 export {
   createAvatarImageRoutes,
   createAvatarImagesRepository,
+  MAX_AVATAR_BYTES,
+  storeAvatarImage,
   sweepAvatarImages,
 } from "./infrastructure/avatar-image-routes.js";
 export { createKeycloakUserDirectory } from "./infrastructure/keycloak-user-directory.js";

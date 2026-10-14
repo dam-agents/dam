@@ -1,11 +1,16 @@
 import * as path from "node:path";
 
-import { OVER_BUDGET, readFileWithin, readTextWithin } from "./bounded-read.js";
+import {
+  OVER_BUDGET,
+  readBytesWithin,
+  readFileWithin,
+} from "./bounded-read.js";
 import type { GitHosts } from "./git-hosts.js";
 
 export interface CatalogSource {
   readonly locator: string;
   readText(relPath: string): Promise<string | null>;
+  readBytes(relPath: string, maxBytes: number): Promise<Buffer | null>;
 }
 
 const MAX_FILE_BYTES = 256 * 1024;
@@ -16,16 +21,19 @@ export function relPathEscapes(relPath: string): boolean {
 
 export function createLocalCatalogSource(dir: string): CatalogSource {
   const root = path.resolve(dir);
+  async function readBytes(relPath: string, maxBytes: number) {
+    if (relPathEscapes(relPath)) return null;
+    const full = path.join(root, relPath);
+    const bytes = await readFileWithin(full, maxBytes);
+    if (bytes === OVER_BUDGET)
+      throw new Error(`${full} is larger than ${maxBytes} bytes`);
+    return bytes;
+  }
   return {
     locator: root,
-    async readText(relPath) {
-      if (relPathEscapes(relPath)) return null;
-      const full = path.join(root, relPath);
-      const text = await readFileWithin(full, MAX_FILE_BYTES);
-      if (text === OVER_BUDGET)
-        throw new Error(`${full} is larger than ${MAX_FILE_BYTES} bytes`);
-      return text;
-    },
+    readBytes,
+    readText: async (relPath) =>
+      (await readBytes(relPath, MAX_FILE_BYTES))?.toString("utf8") ?? null,
   };
 }
 
@@ -42,26 +50,29 @@ export function createGitCatalogSource(
       `not a repository URL this install may read: ${gitUrl} (readable hosts: ${hosts.readableHosts.join(", ")})`,
     );
   const prefix = (dir ?? "").split("/").filter((seg) => seg && seg !== ".");
+  const readBytes = async (relPath: string, maxBytes: number) => {
+    if (relPathEscapes(relPath)) return null;
+    const clean = [
+      ...prefix,
+      ...relPath.split("/").filter((seg) => seg && seg !== "."),
+    ];
+    const request = repo.file(ref, clean);
+    const res = await fetchImpl(request.url, { headers: request.headers });
+    if (res.status === 404) return null;
+    if (!res.ok)
+      throw new Error(`${repo.host} returned ${res.status} for ${gitUrl}`);
+    const bytes = await readBytesWithin(res, maxBytes);
+    if (bytes === null)
+      throw new Error(
+        `${relPath} is larger than ${maxBytes} bytes at ${gitUrl}`,
+      );
+    return bytes;
+  };
   return {
     locator: `${repo.gitUrl}#${ref}${prefix.length ? `:${prefix.join("/")}` : ""}`,
-    async readText(relPath) {
-      if (relPathEscapes(relPath)) return null;
-      const clean = [
-        ...prefix,
-        ...relPath.split("/").filter((seg) => seg && seg !== "."),
-      ];
-      const request = repo.file(ref, clean);
-      const res = await fetchImpl(request.url, { headers: request.headers });
-      if (res.status === 404) return null;
-      if (!res.ok)
-        throw new Error(`${repo.host} returned ${res.status} for ${gitUrl}`);
-      const text = await readTextWithin(res, MAX_FILE_BYTES);
-      if (text === null)
-        throw new Error(
-          `${relPath} is larger than ${MAX_FILE_BYTES} bytes at ${gitUrl}`,
-        );
-      return text;
-    },
+    readBytes,
+    readText: async (relPath) =>
+      (await readBytes(relPath, MAX_FILE_BYTES))?.toString("utf8") ?? null,
   };
 }
 

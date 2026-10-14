@@ -3,6 +3,7 @@ import * as path from "node:path";
 import type {
   ResolvedSkill,
   ResolvedStarterKit,
+  StarterKit,
   StarterKitCatalogEntry,
 } from "api-server-api";
 import { starterKitCatalogSchema, starterKitSchema } from "api-server-api";
@@ -37,6 +38,13 @@ export interface CatalogRefreshDeps {
     subPath: string,
   ) => Promise<ResolvedSkill[]>;
   sourceForEntry: (gitUrl: string, ref: string) => CatalogSource;
+  avatar: {
+    maxBytes: number;
+    store: (
+      bytes: Buffer,
+      ownerSub: string,
+    ) => Promise<{ avatar: `image:${string}` } | { error: string }>;
+  };
 }
 
 export interface CatalogRefresh {
@@ -46,6 +54,38 @@ export interface CatalogRefresh {
 type EntryFailure = "rejected" | "unreadable";
 
 export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
+  async function resolveAvatar(
+    named: NamedCatalog,
+    entry: StarterKitCatalogEntry,
+    source: CatalogSource,
+    kit: StarterKit,
+  ): Promise<ResolvedStarterKit["avatar"]> {
+    if (typeof kit.avatar !== "object") return kit.avatar;
+    const avatarPath = kit.avatar.path;
+    const fail = (reason: string) => {
+      getLogger().warn(
+        { catalog: named.name, id: kit.id, path: avatarPath, reason },
+        "starter kits: the kit's avatar image is not usable; the kit keeps the default avatar",
+      );
+      return undefined;
+    };
+    if (relPathEscapes(avatarPath)) return fail("path escapes the kit");
+    try {
+      const bytes = await source.readBytes(
+        path.posix.join(entry.path, avatarPath),
+        deps.avatar.maxBytes,
+      );
+      if (bytes === null) return fail("file not found");
+      const stored = await deps.avatar.store(
+        bytes,
+        `kit:${named.name}/${kit.id}`,
+      );
+      return "error" in stored ? fail(stored.error) : stored.avatar;
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function resolveEntry(
     named: NamedCatalog,
     entry: StarterKitCatalogEntry,
@@ -174,7 +214,9 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
       );
       return "rejected";
     }
-    const { seed, ...withoutSeed } = kit;
+    const { seed, avatar: _declared, ...rest } = kit;
+    const avatar = await resolveAvatar(named, entry, source, kit);
+    const withoutSeed = { ...rest, ...(avatar ? { avatar } : {}) };
     const pinnedKit: ResolvedStarterKit =
       seed && seedUrl
         ? {

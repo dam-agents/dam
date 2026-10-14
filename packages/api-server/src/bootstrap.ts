@@ -50,6 +50,8 @@ import {
   createImageUpdate,
   podIsIdle,
   createAvatarImagesRepository,
+  MAX_AVATAR_BYTES,
+  storeAvatarImage,
   sweepAvatarImages,
 } from "./modules/agents/index.js";
 import {
@@ -441,6 +443,11 @@ export async function bootstrap() {
         name: skill.name,
         description: skill.description,
       })),
+    avatar: {
+      maxBytes: MAX_AVATAR_BYTES,
+      store: (bytes, ownerSub) =>
+        storeAvatarImage(createAvatarImagesRepository(db), bytes, ownerSub),
+    },
   });
   const reposService = createReposRepository(config.gitReposPath);
   const userDirectory = createKeycloakUserDirectory({
@@ -522,10 +529,11 @@ export async function bootstrap() {
   });
   await periodicJobs.register("avatar-images-sweep", 3_600_000, async () => {
     const agents = await agentsRepo.list();
-    const removed = await sweepAvatarImages(
-      createAvatarImagesRepository(db),
-      agents.map((a) => a.spec.avatar),
-    );
+    const kits = await resolvedCatalog.list();
+    const removed = await sweepAvatarImages(createAvatarImagesRepository(db), [
+      ...agents.map((a) => a.spec.avatar),
+      ...kits.map((k) => k.kit.avatar),
+    ]);
     if (removed > 0) getLogger().info({ removed }, "avatar_images.swept");
   });
   const sessionPresence = createSessionPresence(liveAgentsRepo, sharedRedis);
