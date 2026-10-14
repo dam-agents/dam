@@ -11,6 +11,82 @@ index ed555c2..f429733 100644
  # Wraps a response body so serve counts a request until it has been sent.
  http-body = "1"
  rustls = { version = "0.23.45", default-features = false, features = ["ring"] }
+diff --git i/crates/smolvm-agent/src/main.rs w/crates/smolvm-agent/src/main.rs
+index b8dc6ea..3bfbede 100644
+--- i/crates/smolvm-agent/src/main.rs
++++ w/crates/smolvm-agent/src/main.rs
+@@ -1801,7 +1801,8 @@ fn mount_storage_disk() -> bool {
+         .status()
+     {
+         Ok(status) => {
+-            let code = status.code().unwrap_or(-1);
++            // A signal-killed fsck has no exit code and repaired nothing.
++            let code = status.code().unwrap_or(i32::MAX);
+             if code <= 1 {
+                 info!(exit_code = code, "fsck completed");
+                 true
+@@ -1827,6 +1828,17 @@ fn mount_storage_disk() -> bool {
+     }
+ 
+     // --- Attempt 3: mkfs (last resort, destroys data) ---
++    // The host formats every disk before its first boot, so a disk that still
++    // holds a filesystem here failed to mount for a reason that may pass (an I/O
++    // error, a killed fsck, a feature this kernel lacks). Formatting it would
++    // erase the agent's data for good, so the boot fails and the disk is kept.
++    if !may_format_storage(STORAGE_DEVICE) {
++        boot_log(
++            "ERROR",
++            "storage disk could not be mounted and holds a filesystem (or could not be read); refusing to format it, so its data is kept for the next boot",
++        );
++        return false;
++    }
+     info!("formatting storage disk (first boot or unrecoverable)");
+     match Command::new("mkfs.ext4")
+         .args(["-F", "-q", "-O", "^has_journal", STORAGE_DEVICE])
+@@ -1853,6 +1865,18 @@ fn mount_storage_disk() -> bool {
+     false
+ }
+ 
++/// Whether the storage disk may be formatted: only when it can be read and
++/// carries no ext2/3/4 superblock magic, i.e. it never held a filesystem.
++#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
++fn may_format_storage(device: &str) -> bool {
++    use std::os::unix::fs::FileExt;
++    let mut magic = [0u8; 2];
++    match std::fs::File::open(device).and_then(|f| f.read_exact_at(&mut magic, 1024 + 56)) {
++        Ok(()) => magic != [0x53, 0xEF],
++        Err(_) => false,
++    }
++}
++
+ /// Stub for non-Linux platforms.
+ #[cfg(not(target_os = "linux"))]
+ fn mount_storage_disk() -> bool {
+@@ -8047,6 +8071,24 @@ mod bg_reap_tests {
+ 
+ #[cfg(test)]
+ mod tests {
++    // A disk that holds a filesystem, or cannot be read, is never formatted;
++    // only a disk that never held one is.
++    #[test]
++    fn platform_patch_storage_with_a_filesystem_is_never_formatted() {
++        use std::os::unix::fs::FileExt;
++        let dir = tempfile::tempdir().unwrap();
++        let disk = dir.path().join("disk");
++        let file = std::fs::File::create(&disk).unwrap();
++        file.set_len(1 << 20).unwrap();
++        let path = disk.to_str().unwrap();
++        assert!(super::may_format_storage(path));
++        file.write_all_at(&[0x53, 0xEF], 1024 + 56).unwrap();
++        assert!(!super::may_format_storage(path));
++        assert!(!super::may_format_storage(dir.path().join("missing").to_str().unwrap()));
++        file.set_len(100).unwrap();
++        assert!(!super::may_format_storage(path));
++    }
++
+     /// A listing is what a caller uses to decide where to recurse and what to
+     /// download, so the shape matters: names only, sorted, with sizes only
+     /// where they mean something.
 diff --git i/crates/smolvm-network/src/stack.rs w/crates/smolvm-network/src/stack.rs
 index 29ad5bc..15d51e2 100644
 --- i/crates/smolvm-network/src/stack.rs

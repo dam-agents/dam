@@ -164,6 +164,14 @@ krun_symbols() { nm -D --defined-only "$1" | awk '$3 ~ /^krun_/ {print $3}' | so
   { echo "patched libkrun exports other krun_* symbols than the release's" >&2; diff <(krun_symbols "$lk_so") <(krun_symbols "$b/opt/smolvm/lib/libkrun.so") >&2; exit 1; }
 install -m 755 "$lk_so" "$b/opt/smolvm/lib/libkrun.so"
 
+# The guest agent is rebuilt from the pinned source with smolvm.patch applied,
+# as the release builds it (static musl, release-small), in place of the
+# release's: smolvm-agent formats a storage disk it cannot mount, which erases
+# a home a passing I/O error kept from mounting, and the patch refuses that.
+# Drop this once a smolvm release ships the fix.
+cargo build --locked --manifest-path .smolvm/Cargo.toml --target-dir "$target" --profile release-small -p smolvm-agent --target "$(uname -m)-unknown-linux-musl"
+install -m 755 "$target/$(uname -m)-unknown-linux-musl/release-small/smolvm-agent" "$b/opt/smolvm/agent-rootfs/usr/local/bin/smolvm-agent"
+
 # smolvm's guest rootfs ships a crane built with Go 1.21.6 and go-containerregistry
 # v0.19-era deps (docker/docker v24, x/sys v0.8.0) — 3 critical + 54 lesser CVEs, all
 # from this one file. Upstream has not rebuilt it as of 1.27.0, so replace it here.
@@ -192,11 +200,11 @@ from="$(mise config get -f "$repo/.mise/config.toml" vars.base_image_debian)"
 # What a runner release is built against and a running pod cannot change: the
 # smolvm release with its guest agent, the guest kernel, the patched libkrun
 # and crane, and the base image's libc the runner links. All but the base and
-# crane are named in smolvm.pin. A loader hands its machines only to a
+# crane are named in smolvm.pin, and the guest agent's patch in smolvm.patch. A loader hands its machines only to a
 # release whose id matches. It hashes those inputs, not the built bytes: a
 # libkrun rebuilt from the same sources need not be byte-identical, and an id
 # that moved on every build would roll every pod.
-{ echo "$from" "$crane_version" "$crane_sha"; cat smolvm.pin libkrun.patch; } | sha256sum | cut -d' ' -f1 > "$rel/runtime-id"
+{ echo "$from" "$crane_version" "$crane_sha"; cat smolvm.pin smolvm.patch libkrun.patch; } | sha256sum | cut -d' ' -f1 > "$rel/runtime-id"
 project="$work/project"
 mkdir -p "$project" "$work"/{data,cache,state,config}
 cp image.toml "$project/mise.toml"
