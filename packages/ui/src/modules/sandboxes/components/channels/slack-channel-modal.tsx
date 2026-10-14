@@ -19,7 +19,7 @@ import type { AgentView } from "../../../../types.js";
 import { AgentAvatar } from "../../../agents/components/avatar/agent-avatar.js";
 import type { SlackChannel } from "../../hooks/use-slack-channel-form.js";
 import { useSlackChannelForm } from "../../hooks/use-slack-channel-form.js";
-import { AmbientModeCard } from "./ambient-mode-card.js";
+import { ChannelSwitchCard } from "./channel-switch-card.js";
 
 export function SlackChannelModal({
   agent,
@@ -75,12 +75,16 @@ export function SlackChannelModal({
             control={control}
             name="ambient"
             render={({ field }) => (
-              <AmbientModeCard checked={field.value} onChange={field.onChange}>
+              <ChannelSwitchCard
+                label="Ambient mode"
+                checked={field.value}
+                onChange={field.onChange}
+              >
                 The agent reads along in the channel and may chime in without
                 being mentioned when it can clearly help. It is set per agent,
                 so other agents in the channel are unaffected, and it can be
                 turned off anytime — here or with the in-chat ambient command.
-              </AmbientModeCard>
+              </ChannelSwitchCard>
             )}
           />
 

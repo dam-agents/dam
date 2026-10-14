@@ -120,6 +120,7 @@ export const agentUpdateInputSchema = z.object({
   hibernationTimeoutMin: z.number().int().min(0).nullable().optional(),
   size: agentSizeSchema.optional(),
   requireConnectionAddress: z.boolean().optional(),
+  whisper: z.boolean().optional(),
 });
 
 export const agentConnectSlackInputSchema = z.object({

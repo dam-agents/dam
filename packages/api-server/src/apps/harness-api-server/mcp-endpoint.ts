@@ -151,6 +151,7 @@ export interface McpSessionDeps {
   invocations: InvocationsService;
   driverOps: DriverOps;
   subAgentAwaits: SubAgentAwaitMarks;
+  requestSignal?: AbortSignal;
   kbShares: KbShareAgentOps | null;
   agentHome: string;
   caseStudySubmissions: CaseStudySubmissionsService;
@@ -1263,6 +1264,7 @@ export function createMcpSession(
   registerSubAgentTools(server, {
     ops: deps.driverOps,
     awaits: deps.subAgentAwaits,
+    requestSignal: deps.requestSignal,
   });
 
   if (deps.satellites)
@@ -1380,6 +1382,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       invocations,
       driverOps: deps.driverOpsFor({ id: agentId, owner: verified.owner }),
       subAgentAwaits: deps.subAgentAwaitsFor(agentId),
+      requestSignal: c.req.raw.signal,
       kbShares: verified.kbShareRoots
         ? deps.kbShareOpsFor(verified.owner)
         : null,
