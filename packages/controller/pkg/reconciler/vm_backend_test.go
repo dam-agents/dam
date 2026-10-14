@@ -121,7 +121,11 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 				}
 				n.mu.Lock()
 			}
-			require.NoError(t, json.NewEncoder(w).Encode(n.statuses[id]))
+			st, ok := n.statuses[id]
+			if !ok {
+				st.State = vmrunner.StateAbsent
+			}
+			require.NoError(t, json.NewEncoder(w).Encode(st))
 		case http.MethodDelete:
 			n.deleted = append(n.deleted, id)
 			delete(n.specs, id)
@@ -139,6 +143,11 @@ func (n *fakeNode) set(id string, st vmrunner.MachineStatus) {
 	n.version++
 	st.Version = n.version
 	n.statuses[id] = st
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: makes the node an older runner that already holds the machine and reports no disk size, so the disk is sized from the Agent's spec.
+func (n *fakeNode) holdsOnAnOlderRelease(id string) {
+	n.set(id, vmrunner.MachineStatus{State: vmrunner.StateStopped})
 }
 
 func (n *fakeNode) current(id string) uint64 {
@@ -406,7 +415,7 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	assert.Equal(t, "quay.io/example/claude-code-vm:1", spec.Image)
 	assert.Equal(t, 4, spec.CPUs)
 	assert.Equal(t, 3072, spec.MemoryMiB)
-	assert.Equal(t, 10, spec.StorageGiB)
+	assert.Equal(t, 100, spec.StorageGiB, "a new machine is created at the owner's pool")
 	assert.Equal(t, "MITM-CA", spec.CACert)
 	assert.Equal(t, []string{"10.96.42.42/32"}, spec.AllowCIDRs)
 	assert.Equal(t, "10.96.42.42", spec.GuestResolver, "guest DNS is relayed to the paired gateway's resolver")
@@ -971,18 +980,28 @@ func TestVMBackendSizesOneDiskRatherThanSummingMounts(t *testing.T) {
 		{Path: "/home/agent/work", Persist: true, Size: "4Gi"},
 	}
 	r, node, _ := setupVMReconciler(t, agent)
+	node.holdsOnAnOlderRelease("my-agent")
 	require.NoError(t, r.Reconcile(context.Background(), agent))
 
 	assert.Equal(t, 10, node.spec("my-agent").StorageGiB, "the Agent's storage size, not 4+4")
 }
 
-// TEST_SCENARIO: a vm agent has no disk size of its own: once its runner reports the machine's disk, which only a runner that grows a disk at the next start does, the machine is asked for the owner's whole storage pool. Before that the runner may be an older release that would reboot a running machine to grow it, so the Agent's own size is kept.
-func TestTheMachineDiskIsTheOwnersPoolOnceTheRunnerReportsDisks(t *testing.T) {
+// TEST_SCENARIO: a vm agent has no disk size of its own. A machine its runner does not hold yet is created at the owner's whole storage pool, whatever release the runner is, since every release creates a disk at the size it is asked for; booting at the chart's legacy size would leave it there until its next start.
+func TestANewMachineIsCreatedAtTheOwnersPool(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	assert.Equal(t, 100, node.spec("my-agent").StorageGiB, "the owner's pool, runner.storage")
+}
+
+// TEST_SCENARIO: an existing machine whose runner reports no disk size may be on an older release, which would reboot a running machine to grow it, so it keeps the Agent's own size. Once the runner reports the machine's disk, which only a runner that grows a disk at the next start does, the machine is asked for the owner's pool.
+func TestAnExistingMachineTakesThePoolOnceTheRunnerReportsDisks(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	node.holdsOnAnOlderRelease("my-agent")
 	ctx := context.Background()
 	require.NoError(t, r.Reconcile(ctx, agent))
-	assert.Equal(t, 10, node.spec("my-agent").StorageGiB, "no disk reported yet: the Agent's own size")
+	assert.Equal(t, 10, node.spec("my-agent").StorageGiB, "no disk reported: the Agent's own size")
 
 	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true, Port: 31000, DiskGiB: 10})
 	require.NoError(t, r.Reconcile(ctx, agent))
@@ -1020,6 +1039,7 @@ func TestVMBackendAcceptsTheDefaultMounts(t *testing.T) {
 		{Path: "/tmp", Persist: false},
 	}
 	r, node, _ := setupVMReconciler(t, agent)
+	node.holdsOnAnOlderRelease("my-agent")
 	require.NoError(t, r.Reconcile(context.Background(), agent))
 
 	assert.Equal(t, 10, node.spec("my-agent").StorageGiB)
@@ -1046,6 +1066,7 @@ func TestTheMachineDiskIsNoSmallerThanAnyMountAsksFor(t *testing.T) {
 		agent := vmAgentCR()
 		configure(&agent.Spec)
 		r, node, _ := setupVMReconciler(t, agent)
+		node.holdsOnAnOlderRelease("my-agent")
 		require.NoError(t, r.Reconcile(context.Background(), agent))
 		return node.spec("my-agent").StorageGiB
 	}

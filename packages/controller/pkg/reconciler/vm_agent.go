@@ -143,10 +143,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	if err != nil {
 		return vmrunner.MachineStatus{}, false, err
 	}
-	storageGiB, err := r.machineDiskGiB(ctx, owner, agent.Name, legacyGiB)
-	if err != nil {
-		return vmrunner.MachineStatus{}, false, err
-	}
+	storageGiB := r.machineDiskGiB(ctx, runner, owner, agent.Name, legacyGiB)
 
 	if k8serrors.IsNotFound(leafErr) {
 		return vmrunner.MachineStatus{}, false, errLeafSecretPending
@@ -179,6 +176,9 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		machine.Migration = &vmrunner.MachineMigration{}
 	}
 	st, err := runner.Ensure(ctx, name, machine)
+	if err == nil && st.DiskGiB > 0 {
+		r.vmDiskGrows.Store(name, true)
+	}
 	if r.config.VM.Runner.HostAddress == "" {
 		r.resizeRunnerPod(ctx, owner, demand)
 	}
@@ -705,16 +705,25 @@ func anyVMAgent(items []unstructured.Unstructured) bool {
 	return false
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a vm agent has no disk size of its own: every disk is sparse and may grow to the owner's whole storage pool, so the claim's use is the owner's real use, which the runner's storage guard watches. A runner that has not reported a disk size for the machine may be an older release, which would restart a running machine to grow its disk, so until one is reported the machine keeps the size the Agent's spec gives it: a new pool reboots no agent, and a new machine boots once at that size and grows at its next start.
-func (r *AgentReconciler) machineDiskGiB(ctx context.Context, owner, name string, legacyGiB int) (int, error) {
-	if r.liveMachine(name).DiskGiB == 0 {
-		return legacyGiB, nil
+// UNIT_BOUNDARY_DESCRIPTION: a vm agent has no disk size of its own: every disk is sparse and may grow to the owner's whole storage pool, so the claim's use is the owner's real use, which the runner's storage guard watches. A machine the runner does not hold yet is created at the pool, since every runner release creates a disk at the size it is asked for. An existing machine whose runner reports no disk size may be on an older release, which would restart a running machine to grow its disk, so it keeps the size the Agent's spec gives it: a new pool reboots no agent. So does a machine whose pool cannot be read, which the claim reports. The answer is remembered, and an ensure that reports a disk size marks the runner as one that grows disks, so the status is read once per machine.
+func (r *AgentReconciler) machineDiskGiB(ctx context.Context, runner *vmrunner.Client, owner, name string, legacyGiB int) int {
+	grows, known := r.vmDiskGrows.Load(name)
+	if !known {
+		st, err := runner.Status(ctx, name)
+		if err != nil {
+			return legacyGiB
+		}
+		grows = st.State == vmrunner.StateAbsent || st.DiskGiB > 0
+		r.vmDiskGrows.Store(name, grows)
+	}
+	if grows != true {
+		return legacyGiB
 	}
 	pool, err := r.runnerStorageCeiling(ctx, owner)
 	if err != nil {
-		return 0, err
+		return legacyGiB
 	}
-	return max(int(pool.Value()>>30), 1), nil
+	return max(int(pool.Value()>>30), 1)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a machine's storage is one disk holding one path, and that is the whole model. On a runner that grows a disk at the next start, the size worked out here only names the disk an older runner keeps (machineDiskGiB); the path rule holds on every runner. A pod attaches a volume per path, so on the container backend a mount is a size and a placement at once and the sizes were summed here — two 10Gi mounts bought 20Gi that either path could eat, each rounded up to a GiB of its own. A machine has a single disk, so the size is one quantity, rounded once, and the path is not configurable: HOME is fixed on both backends, every template in the chart persists it and nothing else, and a machine's root lasts only until an image of another root generation boots. A mount that asks for anything else outside HOME is refused rather than dropped, because an agent whose work is silently discarded looks healthy until it stops. A size a persisted mount does declare raises the disk rather than being dropped — the container backend lets it win over the Agent's own storageSize, and a spec that asks for 50Gi there must not quietly get the chart's 10Gi here. Several of them take the largest and not the sum, because they are all nested inside the one path this backend keeps and a sum would size the disk for capacity no single mount could have claimed.
