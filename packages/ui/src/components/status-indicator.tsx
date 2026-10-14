@@ -1,18 +1,8 @@
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Tooltip } from "@/components/ui/tooltip";
 
+import { badgeLabel } from "../modules/agents/lib/state-label.js";
 import type { AgentDisplayState } from "../modules/agents/utils/agent-resolver.js";
-
-const stateLabel: Record<AgentDisplayState, string> = {
-  running: "Running",
-  starting: "Starting",
-  preparing_workspace: "Preparing workspace",
-  hibernating: "Pausing",
-  hibernated: "Paused",
-  error: "Error",
-  over_budget: "Over budget",
-  migrating: "Migrating",
-};
 
 const stateVariant: Record<
   AgentDisplayState,
@@ -39,13 +29,6 @@ export const stateDotClass: Record<AgentDisplayState, string> = {
   migrating: "bg-info",
 };
 
-// UNIT_BOUNDARY_DESCRIPTION: the state badge's word. A refused vm agent waits for its owner's memory, which is no budget of theirs.
-export function badgeLabel(state: AgentDisplayState, vm?: boolean): string {
-  return vm && state === "over_budget"
-    ? "Waiting for memory"
-    : stateLabel[state];
-}
-
 export function StatusBadge({
   state,
   working,
@@ -55,7 +38,7 @@ export function StatusBadge({
 }: {
   state: AgentDisplayState;
   working?: boolean;
-  vm?: boolean;
+  vm: boolean;
   keptWork?: number;
   className?: string;
 }) {

@@ -1,8 +1,8 @@
 // TEST_OVERVIEW: what a user reads about a VM agent refused for memory or put to sleep: the badge says "Waiting for memory" rather than "Over budget" for a VM agent and keeps "Over budget" for a container agent, a sleeping agent reads "Pausing" then "Paused", and the overlay falls back to the VM memory sentence when the refusal carries no message of its own.
 import { describe, expect, it } from "vitest";
 
-import { badgeLabel } from "../../components/status-indicator.js";
 import { overlayDescription } from "../../modules/agents/lib/overlay-copy.js";
+import { badgeLabel } from "../../modules/agents/lib/state-label.js";
 import type { AgentView } from "../../types.js";
 
 const agent = (over: Partial<AgentView>) =>
@@ -17,8 +17,8 @@ describe("memory and paused copy", () => {
 
   // TEST_SCENARIO: an agent going to sleep and one asleep use the same word.
   it("calls a sleeping agent pausing, then paused", () => {
-    expect(badgeLabel("hibernating")).toBe("Pausing");
-    expect(badgeLabel("hibernated")).toBe("Paused");
+    expect(badgeLabel("hibernating", true)).toBe("Pausing");
+    expect(badgeLabel("hibernated", true)).toBe("Paused");
   });
 
   // TEST_SCENARIO: a VM refusal with no message still says memory is full and how to free it; a message of its own wins.
