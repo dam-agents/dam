@@ -37,7 +37,7 @@ flowchart LR
 ### controller
 
 A stateless Go reconciler built on client-go.
-It is change-driven — it watches the `Agent` custom resource (`agent-platform.ai/v1`) plus agent-labelled pods, backed by periodic re-checks; each of its eight workers reconciles the agents of the owners hashed to it, one at a time, and takes what a person waits on first, so one owner's hung VM runner delays only the owners on its worker ([budgets](budgets.md#enforcement)).
+It is change-driven — it watches the `Agent` custom resource (`agent-platform.ai/v1`) plus agent-labelled pods, backed by periodic re-checks; each of its eight workers reconciles the agents of the owners hashed to it, one at a time, and takes what a person waits on first, so one owner's hung VM runner delays only the owners on its worker, except while a runner roll holds its install-wide lock ([budgets](budgets.md#enforcement), [#4939](https://github.com/dam-agents/dam/issues/4939)).
 It reconciles the StatefulSet, Service, NetworkPolicy, and per-agent Secret for each agent, computes agent readiness from the pod pair onto the Agent status, hibernates idle agents by scaling the pair to zero, and deletes agent and gateway pods stranded NotReady on a configuration it has already superseded (the one case where it evicts a pod outside hibernation — see [security-and-credentials](security-and-credentials.md) and [agent-lifecycle](agent-lifecycle.md)).
 The schedule loop lives in the api-server, not here (see [schedules](schedules.md)).
 The controller writes only the `status` subresource on the resources it owns; it never writes `spec`.
