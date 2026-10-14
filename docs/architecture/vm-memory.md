@@ -25,7 +25,8 @@ So the runner boots each machine with the boot estimate below (`virtualization.r
 The guest kernel leaves added RAM offline unless told otherwise, and its virtio-mem driver adds no more once 1 GiB of it waits offline, so the runner first has the guest kernel online each block as it adds it; the VMM then maps the added RAM, and the start ends once the guest has plugged it all and the guest agent confirms it is online.
 Every boot does this again, since each boots from the estimate.
 Readiness does not wait for the grow, which runs while the workload starts, because waiting would put the same page work back on the path; a guest that allocates past the estimate before the grow ends meets its own OOM killer.
-A machine that cannot grow is stopped and booted again whole within the same start, so no running machine stays small.
+A machine that cannot grow is stopped and booted again whole within the same start, unless its guest has already answered: the agent reads ready by then, and a reboot would drop a prompt sent to it, so that guest runs at the estimate until its next start.
+Either way the runner records beside the machine that it cannot grow, under its own VM runtime, and boots it whole from then on; a runner release with another runtime tries the grow again.
 smolvm's own resize is not used: it refuses a VMM without a cgroup of its own, which no VMM in a runner pod has, and admits growth against the host's free memory rather than by use.
 Free-page reporting returns the added RAM's freed pages as it does the boot RAM's.
 

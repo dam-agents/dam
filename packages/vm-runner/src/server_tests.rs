@@ -501,7 +501,7 @@ async fn a_machine_within_the_boot_estimate_boots_whole() {
     }
 }
 
-// TEST_SCENARIO: a guest that cannot grow would run with a fraction of the memory its spec and its agent count on. So the machine is stopped and booted again whole, in the same start, and reads running with no failure: the grow is an optimisation, never a reason for the agent not to run.
+// TEST_SCENARIO: a guest that cannot grow would run with a fraction of the memory its spec and its agent count on. So a machine whose guest has not answered yet is stopped and booted again whole, in the same start, and reads running with no failure: the grow is an optimisation, never a reason for the agent not to run. The runner remembers that the machine cannot grow, so its next start boots it whole and does not pay for a small boot and a failed grow again.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_machine_that_cannot_grow_is_booted_again_whole() {
     let h = Harness::with("grow-failed", |c| c.boot_mib = 1024);
@@ -510,6 +510,10 @@ async fn a_machine_that_cannot_grow_is_booted_again_whole() {
     let status = h.settle("m1").await;
     assert_eq!(status.state, STATE_RUNNING);
     assert!(status.reason.is_empty(), "{status:?}");
+    h.server.put("m1", spec(false)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_STOPPED);
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
     assert_eq!(
         h.fake.calls(),
         vec![
@@ -517,9 +521,31 @@ async fn a_machine_that_cannot_grow_is_booted_again_whole() {
             "start m1",
             "grow m1 2048",
             "stop m1",
+            "start m1",
+            "stop m1",
+            "update m1",
             "start m1"
         ]
     );
+    assert_eq!(*locked(&h.fake.booted_mib), vec![1024, 2048, 2048]);
+}
+
+// TEST_SCENARIO: readiness does not wait for the grow, so a guest can answer, and the agent read ready, before its grow fails. A reboot then would make the agent flap and lose a prompt sent to it. So the guest is left running at its boot size, and its next start boots it whole.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_guest_that_answered_is_not_rebooted_when_it_cannot_grow() {
+    let h = Harness::with("grow-failed-answered", |c| c.boot_mib = 1024);
+    *locked(&h.fake.fail_grow_once) = Some("the VMM did not add the RAM".into());
+    let _guest = guest(h.base);
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    assert_eq!(
+        h.fake.calls(),
+        vec!["create m1", "start m1", "grow m1 2048"]
+    );
+    h.server.put("m1", spec(false)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_STOPPED);
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
     assert_eq!(*locked(&h.fake.booted_mib), vec![1024, 2048]);
 }
 
