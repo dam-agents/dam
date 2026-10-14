@@ -3,10 +3,10 @@ import { useGrantProvider } from "../../sessions/api/session-pair.js";
 import { ProviderSection } from "./provider-section.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The first-run prompt for an agent's owner who has
- * no provider yet. The agent was created before the provider existed, so no
- * default was attached to it; the provider connected here is attached to that
- * agent, or its first message would run with no model key.
+ * UNIT_BOUNDARY_DESCRIPTION: The prompt for an agent that holds no provider.
+ * Its first message would run with no model key, so the provider the user
+ * connects here — or picks among those already connected — is attached to
+ * that agent, and the prompt closes.
  */
 export function ProviderSettingsModal({
   agentId,
@@ -25,7 +25,14 @@ export function ProviderSettingsModal({
       />
       <DialogBody>
         <ProviderSection
-          onConnected={agentId ? (id) => void grant(id) : undefined}
+          onConnected={
+            agentId
+              ? (id) => {
+                  void grant(id);
+                  onClose();
+                }
+              : undefined
+          }
         />
       </DialogBody>
     </Modal>

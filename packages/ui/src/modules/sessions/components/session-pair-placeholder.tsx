@@ -54,7 +54,7 @@ export function SessionPairPlaceholder({
     ? pairLabel(pair, catalog?.harnesses, providers.granted)
     : undefined;
 
-  if (providers.loaded && providers.owned.length === 0)
+  if (providers.loaded && providers.granted.length === 0)
     return <ConnectProvidersPrompt onClick={onConnectProviders} />;
 
   return (

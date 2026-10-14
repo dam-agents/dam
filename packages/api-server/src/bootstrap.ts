@@ -29,6 +29,7 @@ import {
 import {
   composeAgentsModule,
   composePublicAgentPage,
+  attachProviderToBareAgents,
   connectionGrantProvisioner,
   createAgentsRepository,
   createAgentEnvRepository,
@@ -256,6 +257,7 @@ import {
   createConnectionGrantsCleanupHook,
   listConnectionGrantAgentIds,
 } from "./modules/connections/compose.js";
+import { startAttachFirstProviderSaga } from "./modules/connections/sagas/attach-first-provider.js";
 import { createConnectionRulesSyncAdapter } from "./modules/egress-rules/compose.js";
 import {
   createAgentArtifactsSweeper,
@@ -774,6 +776,15 @@ export async function bootstrap() {
     log: (m) => getLogger().warn(`[public-agent-profile] ${m}`),
   });
   const publicAgentProfileSub = publicAgentPage.startSaga();
+  const attachFirstProviderSub = startAttachFirstProviderSaga(
+    async (owner, connectionId) =>
+      attachProviderToBareAgents(
+        connectionsServiceFor(owner),
+        harnessCatalog,
+        await agentsRepo.list(owner),
+        connectionId,
+      ),
+  );
   const publicAgentPageService = publicAgentPage.service;
   await periodicJobs.register(
     "public-agent-profile-reconcile",
@@ -1756,6 +1767,7 @@ export async function bootstrap() {
 
   const cleanup = async (): Promise<void> => {
     publicAgentProfileSub.unsubscribe();
+    attachFirstProviderSub.unsubscribe();
     usageMetrics.stop();
     kbShareAutoRefresh.unsubscribe();
     approvalsWakeSaga.unsubscribe();

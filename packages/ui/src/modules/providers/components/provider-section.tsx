@@ -67,7 +67,12 @@ export function ProviderSection({
                       <ProviderBalance connectionId={item.id} />
                     )
                   }
-                  onOpen={() => setDialog({ provider: row.type, item })}
+                  connectedAction={onConnected && "Use"}
+                  onOpen={() =>
+                    item && onConnected
+                      ? onConnected(item.id)
+                      : setDialog({ provider: row.type, item })
+                  }
                 />
               );
             })}
@@ -79,7 +84,7 @@ export function ProviderSection({
           item={dialog.item}
           onConnected={({ id }) => {
             setDialog(null);
-            if (!dialog.item) onConnected?.(id);
+            onConnected?.(id);
           }}
           onDisconnect={
             connectedItem && (() => void disconnectProvider(connectedItem))

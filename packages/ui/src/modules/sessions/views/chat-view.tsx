@@ -357,6 +357,10 @@ export function ChatView() {
     !!newSessionAgent &&
     providerConnections.loaded &&
     providerConnections.owned.length === 0;
+  const noGrantedProvider =
+    !!newSessionAgent &&
+    providerConnections.loaded &&
+    providerConnections.granted.length === 0;
   const [providersModal, setProvidersModal] = useState<boolean | null>(null);
 
   const view = useStore((s) => s.view);
@@ -1071,7 +1075,9 @@ export function ChatView() {
                   onSend={sendAndFollow}
                   onStop={stopAgent}
                   blockedReason={
-                    noProviders ? "No LLM providers connected." : null
+                    noGrantedProvider
+                      ? "No LLM provider connected to this agent."
+                      : null
                   }
                 />
                 {!hasPendingPermission && pickable && (
