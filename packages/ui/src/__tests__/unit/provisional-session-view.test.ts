@@ -20,6 +20,7 @@ it("maps a captured session to a session row", () => {
       type: SessionType.ScheduleCron,
       title: "Nightly report",
       scheduleId: "sch-1",
+      threadTs: null,
       createdAt: "2026-10-01T10:00:00.000Z",
       activityAt: "2026-10-02T10:00:00.000Z",
       seenAt: "2026-10-02T09:00:00.000Z",
@@ -33,8 +34,26 @@ it("maps a captured session to a session row", () => {
     createdAt: "2026-10-01T10:00:00.000Z",
     scheduleId: "sch-1",
     title: "Nightly report",
+    threadTs: null,
     updatedAt: "2026-10-02T10:00:00.000Z",
     running: false,
     seenAt: "2026-10-02T09:00:00.000Z",
   });
+});
+
+it("keeps the thread key so the row can name its Slack channel", () => {
+  const row = provisionalSessionView({
+    agentId: "agent-a",
+    sessionId: "s2",
+    mode: SessionMode.Chat,
+    type: SessionType.ChannelSlack,
+    title: "Deploy question",
+    scheduleId: null,
+    threadTs: "C123:1760000000.000100",
+    createdAt: "2026-10-01T10:00:00.000Z",
+    activityAt: null,
+    seenAt: null,
+    working: false,
+  });
+  expect(row.threadTs).toBe("C123:1760000000.000100");
 });
