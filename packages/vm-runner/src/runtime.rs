@@ -34,6 +34,14 @@ pub trait Runtime: Send + Sync {
     fn resident_mib(&self, _id: &str) -> Option<i32> {
         None
     }
+    // UNIT_BOUNDARY_DESCRIPTION: the CPU time the machine's VMM has used since it started, in microseconds, or nothing when no VMM runs or the runtime cannot tell. Two readings a probe apart give the machine's share of the runner's CPU.
+    fn cpu_usec(&self, _id: &str) -> Option<u64> {
+        None
+    }
+    // UNIT_BOUNDARY_DESCRIPTION: the bytes the machine's files take on the runner's claim, by the blocks allocated rather than their length: every disk is sparse and as large as the owner's whole pool, so only what was written is the machine's share of it. Nothing when the runtime cannot tell.
+    fn disk_used_bytes(&self, _id: &str) -> Option<u64> {
+        None
+    }
     // UNIT_BOUNDARY_DESCRIPTION: whether this runner gives the machines that ask for it the node's virtualization extensions: its install lets it, and the node's KVM allows it. A runtime that cannot nest says no, and a machine that asks boots without them.
     fn nests(&self) -> bool {
         false
