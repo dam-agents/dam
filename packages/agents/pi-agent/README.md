@@ -61,13 +61,8 @@ The flow is the same for every provider — only the host pattern and (occasiona
 Three steps to enable any pi built-in provider:
 
 1. **Set the provider's env var to a non-empty placeholder** so pi's [credential resolution](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/providers.md#resolution-order) recognizes the provider.
-   Add to the harness config (`[oci.env]` in [`image.toml`](image.toml)), the agent template, or per-instance via the Configure Agent UI:
-
-   ```toml
-   [oci.env]
-   OPENAI_API_KEY = "dummy-placeholder"
-   ```
-
+   Set it as the connection's env mapping (for example `OPENAI_API_KEY` with the placeholder `dummy-placeholder`), not in the image env or the agent's env.
+   The platform rewrites the connection's placeholder to name the connection, which an agent that requires named connections needs, and an env var set elsewhere overrides it.
    The literal value pi sends on the wire is rewritten by the Envoy sidecar before the request leaves the pod.
 
 2. **Create a generic secret on the platform** scoped to the provider's host.

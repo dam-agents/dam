@@ -1,4 +1,7 @@
 #!/bin/sh
+# the CLI refuses to start without a key; a provider's own placeholder, which names its connection, wins
+: "${OPENAI_API_KEY:=dummy-placeholder}"
+export OPENAI_API_KEY
 set -- --dangerously-bypass-approvals-and-sandbox -c 'model_provider="openai-platform"'
 if [ -n "$OPENAI_BASE_URL" ]; then
   set -- "$@" -c "model_providers.openai-platform.base_url=\"$OPENAI_BASE_URL\""

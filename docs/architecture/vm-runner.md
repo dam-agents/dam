@@ -6,6 +6,10 @@ The pods behind the `vm` Backend: **one runner per owner**, each a single-replic
 A local cluster on a Mac runs one [host runner](vm-host-runner.md) outside the cluster instead.
 The controller creates a runner the first time one of that owner's vm Agents reconciles, mints its token, asks cert-manager for its serving certificate, and removes it once the owner has no machines left.
 A runner belongs to an owner rather than to any one Agent, so no Agent can own it; the chart's runner ServiceAccount does, from the same namespace — an owner reference may not cross one — so uninstall, rollback and turning virtualization off collect the runners with it.
+The runner's claim is the one object left without an owner, like a StatefulSet's volume claims: it holds every machine disk of the owner, and one deletion of the account would otherwise take every user's disks at once.
+The controller strips the account's reference from a claim that still carries one, and nothing but the [orphan sweep](#runner-lifecycle) deletes a claim.
+A rollback to a controller older than this rule stamps the reference back on every claim, so the risk returns until the next upgrade strips it again.
+After an uninstall, or after turning virtualization off, an operator removes the disks that are left by label: `kubectl delete pvc -n <agent namespace> -l app.kubernetes.io/component=vm-runner,app.kubernetes.io/instance=<release>`.
 The boundary is per owner, not per agent: one owner's machines share their runner, its disk and its credentials, so a guest that escapes its hypervisor reaches that owner's other sandboxes ([security-and-credentials](security-and-credentials.md)).
 Every VMM runs as the runner's uid, but smolvm confines each with Landlock to its machine's files, audits its syscalls, and serves the agent rootfs and image tree read-only, so no guest changes what its siblings boot.
 The runner is the one long-lived workload in the agent namespace that asks for capabilities at all.
@@ -34,6 +38,7 @@ An ensure plans from that same record while it is no older than the prober's cad
 An ensure that reaches a runner already closing is refused, not stored.
 A live VMM reads as running, not stopped, whatever its guest is doing, and a probe never pings the guest agent, so only the prober's silence restarts it: the prober itself, within a minute after an answer, ten for slow boots and repeat stalls.
 Its memory stays counted meanwhile.
+That a guest has answered is also read from its machine's share, where its first answer leaves a record, so a runner restarted or [handed off](vm-runner-upgrades.md) restarts a guest that answered before it and then went quiet, as its predecessor would have.
 A failure stays on the status until an action succeeds or a spec arrives that needs none.
 Each status carries a version that moves whenever the status does, and a status read may name the version it last saw and wait, up to half a minute, for it to move.
 The controller holds one such long poll per vm Agent whose machine is on its way up, and a change only requeues the Agent, so the ordinary reconcile is the one place readiness is written; beyond that, every vm Agent is reconciled once a minute, which is also what notices a ready guest going quiet.
@@ -50,7 +55,7 @@ A deleted runner pod is replaced at once, while the old one still runs that stop
 **The runtime is one Rust workspace; the controller is its only Go peer.** The runner, the image cache service and platform-init are built together into the runner image, from that workspace alone, against one smolvm release: a single pin names it, and the crate is built from that release's source while the image installs its guest agent and disk templates, so the two are always one version.
 platform-init is linked statically because it runs against the agent image's libc rather than the runner's.
 The runner and platform-init take the guest contract — where the share is mounted, where the disk goes, where the agent's home and the platform's own state live on it — from one shared source, so the side that writes a machine's share and the side that reads it cannot disagree.
-What outlives a runner release is versioned where it is kept: every disk is marked with the layout it is in, so a later layout change upgrades it in place at boot, and a disk in a layout newer than its platform-init knows fails the boot; a stored machine spec carries its shape's version, and one of another version reads as no spec, so the machine is reshaped from the controller's next ensure.
+What outlives a runner release is versioned where it is kept: every disk is marked with the layout it is in, so a later layout change upgrades it in place at boot, a disk in a layout newer than its platform-init knows fails the boot, and a mark an unclean stop emptied counts as no mark; a stored machine spec carries its shape's version, and one of another version reads as no spec, so the machine is reshaped from the controller's next ensure.
 The controller meets the runtime across boundaries no compiler checks: the machine API's messages and vocabulary of states and reasons, the runner's command line, and the two guest paths it also names in the agent's environment, the home and the CA file.
 Each is held in golden JSON documents beside the runner ([`packages/vm-runner/contract/`](../../packages/vm-runner/contract/)) that both sides' tests round-trip, so a rename on either side fails that side's own tests and neither reads the other's source.
 The command line has no defaults anyone relies on: the image sets the paths that are its own layout, and the controller sets everything it chose — the port range it also opens in the runner's NetworkPolicy, where it mounts the runner's state and credentials, and the budgets.
@@ -110,7 +115,8 @@ A pod is force-rolled only after a live read, and the gateway that decides wheth
 What an agent waits for is on its status: a certificate cert-manager has not issued, with cert-manager's own account; a runner pod the scheduler cannot place, under a reason of its own that the api-server reads as a failed start ([agent-lifecycle](agent-lifecycle.md#wake)), except a new pod whose state claim is still being bound, which reads as still starting for its first three minutes; a runner the kernel OOM-killed, on each agent it took down until that agent is ready again, read as still starting with the reason shown ([vm-memory](vm-memory.md)); a runner that cannot be reached, described without its in-cluster address.
 A reconcile that could not ensure the machine takes the Agent's readiness down with it.
 Hibernation does not wait for an unreachable runner: the gateway goes down anyway, readiness goes down, and the machine is stopped by the Agent's next reconcile.
-The Agent is published hibernated only after the runner confirmed the stop, on the idle checker's next sweep, because a wake from hibernation trusts the first health check answer ([agent-lifecycle](agent-lifecycle.md#wake)).
+The Agent is published hibernated only once the runner reports the machine stopped, because a wake from hibernation trusts the first health check answer ([agent-lifecycle](agent-lifecycle.md#wake)).
+The runner answers a stop before the guest is signalled, quiesced and powered off, so until the machine reads stopped the Agent is not ready and reads as pausing, and its reconcile watches the machine and publishes hibernation once it stops.
 
 ## Runtime migration
 
