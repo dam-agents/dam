@@ -2187,6 +2187,7 @@ starterKits:
       adaevolve: { enabled: true }
       evox: { enabled: false }
       k-search: { enabled: true }
+      spotlights: { enabled: true }
       software-developer: { enabled: false }
       micro-manager: { enabled: true }
       quality-assurance: { enabled: true }

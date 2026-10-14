@@ -58,16 +58,20 @@ const INTERRUPT_MARKER_RE = /^\[Request interrupted by user[^\]]*\]$/;
 function mapToolContent(
   content: ToolCallContent[] | undefined | null,
 ): ToolContent[] | undefined {
-  return content
-    ?.map<ToolContent>((c) => {
-      if (c.type === "content")
-        return {
-          type: c.type,
-          text: c.content.type === "text" ? c.content.text : "",
-        };
-      return { type: c.type, text: "" };
-    })
-    .filter((c) => c.text);
+  return content?.flatMap((c): ToolContent[] => {
+    if (c.type === "diff")
+      return [
+        {
+          type: "diff",
+          path: c.path,
+          oldText: c.oldText ?? null,
+          newText: c.newText,
+        },
+      ];
+    if (c.type === "content" && c.content.type === "text" && c.content.text)
+      return [{ type: "content", text: c.content.text }];
+    return [];
+  });
 }
 
 const TERMINAL_TEXT_LIMIT = 50 * 1024;

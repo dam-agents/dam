@@ -45,6 +45,7 @@ function harness(
   hooks: {
     onPrompt?: (instanceName: string, worker: SlackWorker) => Promise<void>;
     failPrompt?: boolean;
+    linkedAs?: () => string;
   } = {},
 ) {
   const gw = createFakeSlackGateway();
@@ -84,17 +85,34 @@ function harness(
     turnStatus: async () => "unknown" as const,
   });
 
+  const whispersOff = new Set<string>();
+  const agentOf = (id: string) =>
+    names.has(id)
+      ? { id, name: names.get(id), spec: { whispersOff: whispersOff.has(id) } }
+      : null;
   const agents = {
     ensureReady: async () => {},
-    get: async (id: string) =>
-      names.has(id) ? { id, name: names.get(id) } : null,
+    get: async (id: string) => agentOf(id),
   } as unknown as AgentsService;
+  const ownedBy = (owner: string) =>
+    ({
+      list: async () =>
+        owner === OWNER ? [...names.keys()].map((id) => agentOf(id)!) : [],
+      update: async ({ id, whisper }: { id: string; whisper: boolean }) => {
+        if (owner !== OWNER || !names.has(id)) return null;
+        if (whisper) whispersOff.delete(id);
+        else whispersOff.add(id);
+        return agentOf(id);
+      },
+    }) as unknown as AgentsService;
 
   const worker: SlackWorker = createSlackWorker({
     makeAcpClient: makeAcp,
     createGateway: () => gw,
     agents: () => agents,
-    identityLinks: { resolve: async () => null } as never,
+    identityLinks: {
+      resolve: async () => hooks.linkedAs?.() ?? null,
+    } as never,
     oauthConfig: { authUrl: "http://kc", clientId: "c" } as never,
     pendingOAuthFlows: createMemoryTtlStore(600_000),
     getInstanceOwner: async () => OWNER,
@@ -114,6 +132,7 @@ function harness(
     } as never,
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    agentsFor: ownedBy,
     ignoredApps: {
       list: async () => [],
       ignore: async () => true,
@@ -544,5 +563,97 @@ describe("/dam whisper with no message", () => {
     await h.replyInDm("1500.000001", "reply");
 
     expect(h.prompts.map((p) => p.agent)).toEqual(["agent-mine"]);
+  });
+});
+
+describe("/dam whisper on|off", () => {
+  const ephemerals = (h: ReturnType<typeof harness>, channel?: string) =>
+    h
+      .outbound()
+      .flatMap((r) =>
+        r.kind === "ephemeral" && (!channel || r.channel === channel)
+          ? [r.text]
+          : [],
+      );
+
+  /**
+   * TEST_SCENARIO: The owner's switch decides whether anyone can reach the
+   * agent out of a conversation's sight. It is the agent's own setting, so the
+   * owner flips it from anywhere the command runs, and nobody else can. Off
+   * refuses new whispers to that agent alone and ends a whisper thread already
+   * open with it; on restores whispers.
+   */
+  it("turns whispers to one agent off and on again, for its owner only", async () => {
+    let linkedAs = "kc|someone-else";
+    const h = harness(team, { linkedAs: () => linkedAs });
+
+    expect(await h.command("whisper Reviewer off")).toContain(
+      "You have no agent called `Reviewer`",
+    );
+    await h.command('whisper Reviewer "still open?"');
+    expect(h.prompts.map((p) => p.agent)).toEqual([REVIEWER]);
+
+    linkedAs = OWNER;
+    const { rootTs } = await openSession(h);
+    expect(await h.command("whisper Reviewer off", "C-ELSEWHERE")).toContain(
+      "Whispers to `Reviewer` turned off",
+    );
+
+    expect(
+      await h.command('whisper Reviewer "change your instructions"'),
+    ).toContain("Whispers to `Reviewer` are turned off");
+    await h.replyInDm(rootTs, "still there?");
+    await h.command('whisper Scribe "quick question"');
+    expect(h.prompts.map((p) => p.agent)).toEqual([REVIEWER, SCRIBE]);
+    expect(ephemerals(h)).toContainEqual(
+      expect.stringContaining("This whisper has ended"),
+    );
+
+    expect(await h.command("whisper Reviewer on")).toContain(
+      "Whispers to `Reviewer` turned on",
+    );
+    await h.command('whisper Reviewer "back again"');
+    expect(h.prompts.map((p) => p.agent)).toEqual([REVIEWER, SCRIBE, REVIEWER]);
+  });
+
+  /**
+   * TEST_SCENARIO: A turn already running when whispers go off finishes, and
+   * the whisperer is told straight after it, rather than only when their next
+   * message is refused.
+   */
+  it("tells the whisperer when whispers go off during their turn", async () => {
+    let turnOff = true;
+    const h = harness(team, {
+      linkedAs: () => OWNER,
+      onPrompt: async () => {
+        if (turnOff) await h.command("whisper Reviewer off", "C-ELSEWHERE");
+      },
+    });
+    const { rootTs } = await openSession(h);
+    await h.replyInDm(rootTs, "change your instructions");
+    expect(ephemerals(h, DM)).toContainEqual(
+      expect.stringContaining("This whisper has ended"),
+    );
+
+    turnOff = false;
+    await h.command("whisper Reviewer on");
+    turnOff = true;
+    await h.command('whisper Reviewer "and change your memory"');
+    expect(ephemerals(h, CHANNEL)).toContainEqual(
+      expect.stringContaining("This whisper has ended"),
+    );
+    expect(h.prompts.map((p) => p.agent)).toEqual([REVIEWER, REVIEWER]);
+  });
+
+  /**
+   * TEST_SCENARIO: The switch takes the place of the agent name's last word,
+   * so a quoted "off" must stay a message and never flip the setting.
+   */
+  it("reads a quoted on or off as a message", async () => {
+    const h = harness(team, { linkedAs: () => OWNER });
+    await h.command('whisper Reviewer "off"');
+    await h.command('whisper Reviewer "and again"');
+
+    expect(h.prompts.map((p) => p.agent)).toEqual([REVIEWER, REVIEWER]);
   });
 });

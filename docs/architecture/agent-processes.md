@@ -1,6 +1,6 @@
 # Agent processes
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -85,6 +85,7 @@ Running rows are grouped by their effect on the agent: active turns, the work ke
 Each row's menu has a Stop that asks first; for a Harness Task or Detached Process it also has the keep choice, which names who decided and is disabled on an Always on agent, and changing it moves the row to the other group.
 A change [waiting for kept tasks](#reported-background-work) shows above the rows with its Apply now.
 A header indicator counts the running Harness Tasks and Detached Processes and those keeping the agent awake, and opens the section — so a user who wonders why the agent stays awake finds the answer one click away.
+The section and the indicator show the same list: while the agent runs but the UI has lost its connection to it, both keep the last list and the section says the agent can't be reached; while the agent does not run, neither shows it.
 
 ## Keeping work
 

@@ -19,8 +19,9 @@ export function isSpawnSubAgentChip(chip: ToolChip): boolean {
 
 function parseResult(chip: ToolChip): AwaitResult | null {
   for (const block of chip.content ?? []) {
+    if (block.type !== "content") continue;
     try {
-      const parsed: unknown = JSON.parse(block.text ?? "");
+      const parsed: unknown = JSON.parse(block.text);
       if (parsed && typeof parsed === "object" && "running" in parsed)
         return parsed as AwaitResult;
     } catch {

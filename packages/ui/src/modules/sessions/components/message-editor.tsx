@@ -6,6 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 export function MessageEditor({
   initial,
   pending,
+  canSave = true,
   saveLabel = "Save",
   saveVariant = "default",
   onSave,
@@ -13,6 +14,7 @@ export function MessageEditor({
 }: {
   initial: string;
   pending: boolean;
+  canSave?: boolean;
   saveLabel?: string;
   saveVariant?: "default" | "destructive";
   onSave: (text: string) => void;
@@ -20,7 +22,7 @@ export function MessageEditor({
 }) {
   const [draft, setDraft] = useState(initial);
   const save = () => {
-    if (draft.trim()) onSave(draft.trim());
+    if (canSave && draft.trim()) onSave(draft.trim());
   };
   return (
     <div className="flex w-full flex-col items-end gap-2">
@@ -45,7 +47,7 @@ export function MessageEditor({
         </Button>
         <Button
           variant={saveVariant}
-          disabled={pending || !draft.trim()}
+          disabled={pending || !canSave || !draft.trim()}
           onClick={save}
         >
           {saveLabel}

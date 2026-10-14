@@ -1,6 +1,6 @@
 # Skills
 
-Last verified: 2026-10-10
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -277,6 +277,19 @@ sequenceDiagram
 ```
 
 Public-source installs work identically except Envoy's filter chain has no credential to inject (no token swap, anonymous archive download).
+
+### Fetch mode
+
+An agent may be denied the repository a skill comes from but allowed one directory of it — a black-box QA agent that must not read the source of the product it tests, yet installs that product's test profile.
+The api-server decides how the pod fetches each GitHub skill-ref from the agent's [egress rules](security-and-credentials.md#hitl-ext_authz), with the same matcher the egress gate uses:
+
+- No rule denies the archive (`GET api.github.com /repos/{owner}/{repo}/tarball/{version}` or `GET codeload.github.com /{owner}/{repo}/…`): the pod fetches the tarball, as it always has.
+  A request that matches no rule counts as not denied, since the gate may still let it through.
+- The archive is denied, the source has a path, and `GET api.github.com /repos/{owner}/{repo}/contents/{path}?ref={version}` is not denied: the skill-ref carries `fetch: "directory"`, and the pod fetches only that directory ([agent-skills.md](agent-skills.md#the-service)).
+- Otherwise install and batch apply refuse the skill up front with `PRECONDITION_FAILED` and a message that names the repository and tells the user to set a path the agent may read; nothing is recorded.
+
+The pod scan of a private source asks the same question at `HEAD`.
+The mark is part of the delivered state's hash, so changing the agent's egress rules redelivers its skills in the new mode.
 
 ### Publish
 

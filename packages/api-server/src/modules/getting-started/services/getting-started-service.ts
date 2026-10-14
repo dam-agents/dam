@@ -1,5 +1,6 @@
 import type { GettingStartedService } from "api-server-api";
 
+import { emit, EventType } from "../../../events.js";
 import { toProgress } from "../domain/unlocks.js";
 import type { GettingStartedRepository } from "../infrastructure/getting-started-repository.js";
 import type { Enrollment } from "./enrollment.js";
@@ -28,6 +29,12 @@ export function createGettingStartedService(deps: {
     async setDismissed(dismissed) {
       await deps.enrollment.ensure(deps.owner);
       await deps.repo.setDismissed(deps.owner, dismissed);
+      return progress();
+    },
+    async reset() {
+      await deps.enrollment.ensure(deps.owner);
+      await deps.repo.reset(deps.owner);
+      emit({ type: EventType.GettingStartedReset, ownerSub: deps.owner });
       return progress();
     },
   };

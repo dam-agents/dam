@@ -1,6 +1,6 @@
 # Agent Skills
 
-Last verified: 2026-09-30
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -84,12 +84,17 @@ Exposes a Bearer-authenticated tRPC surface (`install`, `uninstall`, `publish`, 
 Six responsibilities:
 
 - **Install** — fetches the source at the requested `version`.
-  For GitHub URLs, uses the REST tarball endpoint (anonymous first, retry authenticated on 404 to distinguish "not found" from "private"); for everything else, shallow-clones via `git`.
+  For GitHub URLs, uses the REST tarball endpoint.
+  When the api-server marks the skill-ref `fetch: "directory"` (the agent's egress denies the archive but allows the source's [path](skills.md#skill-source), see [Fetch mode](skills.md#fetch-mode)), it fetches only that directory instead, through the Contents API (`GET /repos/{owner}/{repo}/contents/{path}/<name>?ref={version}`, recursively), and writes the files into the temp dir at the same repo-relative path, so resolution and `contentHash` are the same as for a tarball.
+  It fetches the whole `path` only when `path` itself is the skill directory.
+  The Contents API does not traverse symlinks, so the directory fetch resolves a symlinked path or skill directory to its target inside the repository and writes the files at the link's place, as the tarball's realpath resolution does.
+  It skips file symlinks and submodules, and fails with `SourceFetchFailed` when a file is over the pinned read's cap or the fetch needs too many requests; it never falls back to the tarball the egress denies.
+  Both GitHub fetches go anonymous first and retry authenticated on 404, to distinguish "not found" from "private"; for everything else, shallow-clones via `git`.
   The paired gateway pod injects the owner's GitHub token on the wire when the request hits `api.github.com`.
   Resolves the named skill's directory from the source's `path/<name>/` when a [path](skills.md#skill-source) is set — or, when that path is itself a skill directory, from the path itself, and then only for the skill it actually holds — else by walking the [Source Roots](skills.md#source-roots) in order (then top-level).
   Resolution follows a symlink-aliased root to the **real directory** — the copy must materialize files, never a link into the throwaway clone — skipping a candidate that resolves outside the clone and refusing a skill directory that is still a symlink.
   Copies the directory into every configured Skill Path, and returns the deterministic `contentHash`.
-- **Scan** — same fetch path; enumerates skills from the source's `path` exclusively when set — the directory itself when it holds a manifest, together with the skills one level below it, failing by name when neither answers — else across the [Source Roots](skills.md#source-roots) (union, deduped by name, top-level fallback); parses frontmatter, and returns a scanned skill for each.
+- **Scan** — same fetch path at the source's HEAD commit, including the directory fetch when the scan request carries `fetch: "directory"`; enumerates skills from the source's `path` exclusively when set — the directory itself when it holds a manifest, together with the skills one level below it, failing by name when neither answers — else across the [Source Roots](skills.md#source-roots) (union, deduped by name, top-level fallback); parses frontmatter, and returns a scanned skill for each.
   Reporting `dir` is what lets a private source's preview read one pinned file instead of re-resolving the name against the repo on every open.
 - **Read Skill File** — one skill's `SKILL.md` at a pinned commit, via the GitHub Contents API against the `dir` the scan reported.
   **Authenticated by default**, which is the whole point: the gateway's injection is on the hot path, so a repo the api-server can only 404 on resolves here.

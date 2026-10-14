@@ -103,6 +103,15 @@ export {
   normalizeGitUrl,
   parseGithubRepo,
 } from "./modules/skills/git-url.js";
+export {
+  SOURCE_FETCH_MODES,
+  planSourceFetch,
+} from "./modules/skills/source-fetch.js";
+export type {
+  EgressDenies,
+  SourceFetchMode,
+  SourceFetchPlan,
+} from "./modules/skills/source-fetch.js";
 export { AGENT_HOME_DIR, AGENT_WORK_DIR } from "./modules/workspace/paths.js";
 
 export type {

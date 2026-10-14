@@ -213,6 +213,15 @@ export const ChatMessage = memo(function ChatMessage({
             ),
           )}
           {isAssistant && isLast && !readOnly && <PermissionStatusLine />}
+          {isAssistant && stopped && !streaming && (
+            <p
+              data-testid="reply-stopped-marker"
+              className="flex items-center gap-1.5 text-xs text-muted-foreground"
+            >
+              <StopFilledAlt size={12} className="shrink-0" />
+              Stopped
+            </p>
+          )}
           {isAssistant && (streaming || isLast) && (
             <span
               role={working ? "status" : undefined}
@@ -227,15 +236,6 @@ export const ChatMessage = memo(function ChatMessage({
             </span>
           )}
           {isAssistant && streaming && parts.length === 0 && pendingNotice}
-          {isAssistant && stopped && !streaming && (
-            <p
-              data-testid="reply-stopped-marker"
-              className="flex items-center gap-1.5 text-xs text-muted-foreground"
-            >
-              <StopFilledAlt size={12} className="shrink-0" />
-              Stopped
-            </p>
-          )}
           {undelivered && (
             <UndeliveredNotice
               message={message}

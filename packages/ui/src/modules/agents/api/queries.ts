@@ -74,23 +74,38 @@ export function useAgentDisplayName(agentId: string | null): string | null {
   return agents.find((a) => a.id === agentId)?.name ?? agentId;
 }
 
+export type AgentReach = "operable" | "unreachable" | "inoperable";
+
+function reachIn(
+  s: PlatformStore,
+  agentId: string | null,
+  runState: AgentState | undefined,
+): AgentReach {
+  if (
+    agentId === null ||
+    runState !== "running" ||
+    s.restartingAgents.has(agentId) ||
+    s.pausingAgents.has(agentId)
+  )
+    return "inoperable";
+  return s.unreachableAgents.has(agentId) ? "unreachable" : "operable";
+}
+
 function operableIn(
   s: PlatformStore,
   agentId: string | null,
   runState: AgentState | undefined,
 ): boolean {
-  return (
-    agentId !== null &&
-    runState === "running" &&
-    !s.restartingAgents.has(agentId) &&
-    !s.pausingAgents.has(agentId) &&
-    !s.unreachableAgents.has(agentId)
-  );
+  return reachIn(s, agentId, runState) === "operable";
+}
+
+export function useAgentReach(agentId: string | null): AgentReach {
+  const runState = useAgentRunState(agentId);
+  return useStore((s) => reachIn(s, agentId, runState));
 }
 
 export function useIsAgentOperable(agentId: string | null): boolean {
-  const runState = useAgentRunState(agentId);
-  return useStore((s) => operableIn(s, agentId, runState));
+  return useAgentReach(agentId) === "operable";
 }
 
 export function useIsAgentAnswerableSoon(agentId: string | null): boolean {

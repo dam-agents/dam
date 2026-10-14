@@ -1,7 +1,7 @@
 import type { ProcessList as ProcessListData } from "agent-runtime-api";
 import type { CSSProperties, Ref } from "react";
 
-import { useIsAgentOperable } from "../../agents/api/queries.js";
+import { type AgentReach, useAgentReach } from "../../agents/api/queries.js";
 import { SidebarSection } from "../../sessions/components/sidebar-section.js";
 import { useProcesses } from "../api/queries.js";
 import { PROCESSES_SECTION_ID } from "../hooks/use-open-processes-section.js";
@@ -26,7 +26,7 @@ export function ProcessesPanel({
   style,
   ref,
 }: Props) {
-  const operable = useIsAgentOperable(agentId);
+  const reach = useAgentReach(agentId);
   const { data, isPending, isError } = useProcesses(agentId, {
     enabled: true,
     poll: open,
@@ -46,7 +46,7 @@ export function ProcessesPanel({
       {open && (
         <ProcessesSectionBody
           agentId={agentId}
-          operable={operable}
+          reach={reach}
           data={data}
           isPending={isPending}
           isError={isError}
@@ -59,23 +59,32 @@ export function ProcessesPanel({
 
 function ProcessesSectionBody({
   agentId,
-  operable,
+  reach,
   data,
   isPending,
   isError,
   alwaysOn,
 }: {
   agentId: string | null;
-  operable: boolean;
+  reach: AgentReach;
   data: ProcessListData | undefined;
   isPending: boolean;
   isError: boolean;
   alwaysOn: boolean;
 }) {
-  if (!operable)
+  if (reach === "inoperable")
     return <PanelNotice text="Processes show once the agent is running." />;
   if (data && agentId)
-    return <ProcessList agentId={agentId} list={data} alwaysOn={alwaysOn} />;
+    return (
+      <>
+        {reach === "unreachable" && (
+          <PanelNotice text="Can't reach the agent right now. This list may be out of date." />
+        )}
+        <ProcessList agentId={agentId} list={data} alwaysOn={alwaysOn} />
+      </>
+    );
+  if (reach === "unreachable")
+    return <PanelNotice text="Can't reach the agent right now." />;
   if (isError)
     return <PanelNotice text="Couldn't load the agent's processes." />;
   if (isPending) return <PanelNotice text="Loading…" />;
