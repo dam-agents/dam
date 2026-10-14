@@ -358,7 +358,11 @@ func (r *AgentReconciler) runnerRollSettled(ctx context.Context, dep *appsv1.Dep
 // UNIT_BOUNDARY_DESCRIPTION: whether a rolled pod that is not ready failed for its owner alone rather than for the release. A pod the scheduler cannot place, a pod still in ContainerCreating with no container ever started (its claim stuck on Multi-Attach), or an old pod that never finishes terminating (its node is gone) says nothing about the release, and holding the roll for it would keep every security fix from every other owner. A started container that is not ready, an image that does not pull, or no pod at all may be the release, so those still halt the roll.
 func (r *AgentReconciler) runnerPodStuckOnItsOwner(ctx context.Context, owner string) bool {
 	pods, err := r.runnerPods(ctx, owner, true)
-	if err != nil || len(pods) == 0 {
+	if err != nil {
+		slog.Warn("vm runner: listing the rolled pod to tell an owner's fault from a broken release", "owner", owner, "error", err)
+		return false
+	}
+	if len(pods) == 0 {
 		return false
 	}
 	for _, pod := range pods {
