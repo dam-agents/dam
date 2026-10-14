@@ -124,23 +124,23 @@ export function describeWakeFailure(c: WakeFailureCause): string {
     case "migration-failed":
       return "the agent's move to the new runtime failed, and it stays stopped until its owner retries or aborts the move";
     case "hibernated-not-scaled":
-      return "scale-up was never started";
+      return "the platform didn't start it";
     case "agent-pod-failed":
       switch (c.terminationReason) {
         case "OutOfMemory":
           return "the agent ran out of memory";
         case "HomeVolumeFull":
-          return "the agent's home volume is full";
+          return "the agent's storage is full";
         case "ImagePullFailure":
           return "the agent image cannot be pulled";
         case "InvalidImageName":
           return "the agent image reference is invalid";
         case "MachineImageUnavailable":
-          return "the agent image is not available to the VM runner";
+          return "the agent image is not available";
         case "MachineBootFailed":
-          return "the agent's microVM did not boot";
+          return "its VM didn't boot";
         case "MachineRunnerUnschedulable":
-          return "the VM runner for this agent's owner cannot be placed on any node";
+          return "no server can run it right now — tell an admin";
         case "RunnerOutOfMemory":
           return "its owner's VM agents ran out of memory together and all restarted — stop agents that are not in use to free memory";
         case "MachineStorageFull":

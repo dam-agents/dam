@@ -1402,7 +1402,7 @@ impl Server {
         home_full(tail).then(|| {
             (
                 REASON_HOME_FULL,
-                "the agent's disk is full, so the agent exits as it starts; the disk needs files removed or more space".to_string(),
+                "This agent's storage is full, so it stops as it starts. Free space by deleting files from another running agent or deleting an agent you no longer need, or request more storage.".to_string(),
             )
         })
     }

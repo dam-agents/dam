@@ -170,6 +170,7 @@ export interface AgentView {
   reclaimed?: { at: string; for: "memory" | "compute" };
   size: { cpu?: string; memory?: string };
   podTerminationReason?: string;
+  podTerminationCode?: string;
   notReadyMessage?: string;
   podRestarts: number;
   podRestartReason?: string;

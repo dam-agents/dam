@@ -110,6 +110,7 @@ export interface Agent {
   overBudgetMessage?: string;
   reclaimed?: AgentReclaim;
   podTerminationReason?: string;
+  podTerminationCode?: string;
   notReadyMessage?: string;
   podRestarts: number;
   podRestartReason?: string;

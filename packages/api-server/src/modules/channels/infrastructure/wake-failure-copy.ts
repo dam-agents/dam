@@ -34,17 +34,17 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
           );
         case "HomeVolumeFull":
           return (
-            "This agent failed to start: its home volume is full. " +
-            "Contact its owner — the volume needs more space or files removed."
+            "This agent failed to start: its storage is full. " +
+            "Contact its owner — it needs files deleted or more storage."
           );
         case "MachineImageUnavailable":
           return (
-            "This agent failed to start: its image isn't available to the " +
-            "VM runner. Check the agent's page or contact its owner."
+            "This agent failed to start: its image isn't available. " +
+            "Check the agent's page or contact its owner."
           );
         case "MachineBootFailed":
           return (
-            "This agent failed to start: its sandbox VM didn't boot. " +
+            "This agent failed to start: its VM didn't boot. " +
             "Check the agent's page or contact its owner."
           );
         case "MachineStorageFull":
@@ -56,8 +56,8 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
           );
         case "MachineRunnerUnschedulable":
           return (
-            "This agent failed to start: the cluster has no node that can " +
-            "run its sandbox VMs right now. Tell an admin."
+            "This agent failed to start: no server can run it right now. " +
+            "Tell an admin."
           );
         case "RunnerOutOfMemory":
           return (

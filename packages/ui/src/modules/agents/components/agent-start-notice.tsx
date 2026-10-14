@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import type { AgentView } from "../../../types.js";
 import { useRestartAgent } from "../hooks/use-restart-agent.js";
 import type { AgentDisplay } from "../utils/agent-resolver.js";
+import { TerminationReason } from "./termination-reason.js";
 
 export function hasStartNotice(
   agent: Pick<AgentView, "podTerminationReason">,
@@ -21,7 +22,14 @@ export function AgentStartNotice({
   agent,
   display,
 }: {
-  agent: Pick<AgentView, "id" | "podTerminationReason" | "notReadyMessage">;
+  agent: Pick<
+    AgentView,
+    | "id"
+    | "podTerminationReason"
+    | "podTerminationCode"
+    | "vm"
+    | "notReadyMessage"
+  >;
   display: AgentDisplay;
 }) {
   const { restart, isPending: restarting } = useRestartAgent();
@@ -43,12 +51,7 @@ export function AgentStartNotice({
           {agent.notReadyMessage}
         </pre>
       )}
-      {agent.podTerminationReason && (
-        <p className="flex items-center gap-1.5 font-mono text-danger">
-          <Warning size={12} className="shrink-0" />
-          {agent.podTerminationReason}
-        </p>
-      )}
+      <TerminationReason agent={agent} size="xs" />
       {display.powerAction === "restart" && (
         <Button
           variant="outline"

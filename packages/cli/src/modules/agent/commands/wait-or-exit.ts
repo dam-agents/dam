@@ -43,7 +43,7 @@ export async function waitForRunningOrExit(
       } else {
         const id = opts.showIdOnError ? ` (${waitResult.agent.id})` : "";
         process.stderr.write(
-          `error: agent "${opts.name}"${id} entered error state: ${failureReason(waitResult.agent)}\n`,
+          `error: agent "${opts.name}"${id} ${waitResult.agent.podTerminationCode?.startsWith("Machine") ? "could not start" : "entered error state"}: ${failureReason(waitResult.agent)}\n`,
         );
       }
       return process.exit(EXIT_RUNTIME_FAILURE);
@@ -68,6 +68,8 @@ export async function waitForRunningOrExit(
         );
         if (waitResult.agent.state === "over_budget")
           process.stderr.write(`${refusalReason(waitResult.agent)}\n`);
+        else if (waitResult.agent.podTerminationReason)
+          process.stderr.write(`${waitResult.agent.podTerminationReason}\n`);
       }
       return process.exit(EXIT_RUNTIME_FAILURE);
     case "transport":
@@ -82,7 +84,7 @@ export const REFUSAL_HINT =
   "hint: stop an agent you are not using to free room, then start this one again; it may also start by itself once room frees";
 
 export function refusalReason(agent: AgentView): string {
-  return agent.overBudgetMessage ?? "its owner's pool is full";
+  return agent.overBudgetMessage ?? "your agents' resources are in use";
 }
 
 export function failureReason(agent: AgentView): string {

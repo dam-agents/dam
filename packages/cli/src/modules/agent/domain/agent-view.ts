@@ -11,5 +11,6 @@ export interface AgentView {
   error?: string;
   overBudgetMessage?: string;
   podTerminationReason?: string;
+  podTerminationCode?: string;
   channels: ChannelConfig[];
 }
