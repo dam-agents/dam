@@ -1,6 +1,8 @@
 import type {
+  ContainerEngine,
   FinishedRow,
   PendingRestart,
+  ProcessContainer,
   ProcessKind,
   ProcessRow,
 } from "agent-runtime-api";
@@ -15,6 +17,33 @@ export const BACKGROUND_KIND_LABEL: Record<
   "harness-task": "Background task",
   detached: "Detached",
 };
+
+const CONTAINER_ENGINE_LABEL: Record<ContainerEngine, string> = {
+  docker: "Docker",
+  k3s: "k3s",
+  containerd: "containerd",
+};
+
+export function containerLabel(container: ProcessContainer): string {
+  const engine = CONTAINER_ENGINE_LABEL[container.engine];
+  return match(container.role)
+    .with("container", () => `${engine} container`)
+    .with("runtime", () => `${engine} runtime`)
+    .exhaustive();
+}
+
+export function processKindLabel(
+  row: Pick<ProcessRow, "kind" | "container">,
+): string | null {
+  if (row.container) return containerLabel(row.container);
+  return row.kind === "turn" ? null : BACKGROUND_KIND_LABEL[row.kind];
+}
+
+export function processTitle(
+  row: Pick<ProcessRow, "command" | "container">,
+): string {
+  return row.container?.role === "container" ? row.container.id : row.command;
+}
 
 export const PROCESS_GROUP_LABEL: Record<ProcessGroupId, string> = {
   turn: "In active turns",
