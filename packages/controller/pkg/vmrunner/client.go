@@ -23,6 +23,9 @@ var ErrUnauthorized = errors.New("the VM runner refused the controller's token")
 // UNIT_BOUNDARY_DESCRIPTION: a 404: the machine is not on the runner, or the runner's release does not serve the route at all, as a runner from before the pressure read does not.
 var ErrNotServed = errors.New("404 Not Found")
 
+// UNIT_BOUNDARY_DESCRIPTION: a 503: the runner is closing, as it does for a stop or a hand-off, and did not store the spec.
+var ErrUnavailable = errors.New("503 Service Unavailable")
+
 type Client struct {
 	URL  string
 	HTTP *http.Client
@@ -174,6 +177,8 @@ func (c *Client) call(ctx context.Context, hc *http.Client, method, path string,
 			}
 		case resp.StatusCode == http.StatusNotFound:
 			return nil, fmt.Errorf("%w: %s", ErrNotServed, bytes.TrimSpace(raw))
+		case resp.StatusCode == http.StatusServiceUnavailable:
+			return nil, fmt.Errorf("%w: %s", ErrUnavailable, bytes.TrimSpace(raw))
 		case resp.StatusCode >= 300:
 			return nil, fmt.Errorf("%s: %s", resp.Status, bytes.TrimSpace(raw))
 		default:

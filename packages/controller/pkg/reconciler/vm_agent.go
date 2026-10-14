@@ -179,6 +179,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		machine.Migration = &vmrunner.MachineMigration{}
 	}
 	st, err := runner.Ensure(ctx, name, machine)
+	r.stallRunnerHandoffOnEnsure(ctx, owner, err)
 	if err == nil && st.DiskGiB > 0 {
 		r.vmDiskGrows.Store(name, true)
 	}
@@ -554,6 +555,7 @@ func (r *AgentReconciler) HaltMachine(ctx context.Context, owner, name string) e
 		halt.Migration = &vmrunner.MachineMigration{}
 	}
 	st, err := client.Ensure(ctx, name, halt)
+	r.stallRunnerHandoffOnEnsure(ctx, owner, err)
 	if err != nil {
 		return fmt.Errorf("stopping machine for %s: %w", name, err)
 	}
