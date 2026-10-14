@@ -19,6 +19,7 @@ Every new Codex or Pi agent, and every Codex or Pi sub-agent, fails this way; Cl
 1. Remove `OPENAI_API_KEY` from Codex's `[oci.env]`; Codex's launch scripts set the placeholder only when no provider sets it.
 2. Pi's extension reads the connection's `OPENAI_API_KEY` before the literal, and its model discovery sends that key.
 3. Codex's README states where the placeholder now comes from.
+4. The k-search workload image had the same `OPENAI_API_KEY` in its image env; its run script now sets the placeholder only when no provider sets it.
 
 ## Acceptance criteria
 
