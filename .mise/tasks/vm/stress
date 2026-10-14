@@ -6,6 +6,8 @@
 #USAGE flag "--namespace <ns>" help="The agent namespace; platform-agents when omitted"
 #USAGE flag "--timeout <seconds>" help="How long to wait for every agent to be ready; 600 when omitted"
 #USAGE flag "--keep-running" help="Do not stop agents that are running first; wake only the ones already stopped"
+#USAGE flag "--grow <MiB>" help="After the wake, have every guest allocate and touch this much memory over dam ssh, so the harnesses' growth after a boot is played out at once"
+#USAGE flag "--hold <seconds>" help="How long each guest holds the grown memory while the owner's pool is sampled; 120 when omitted"
 # The repro for a user's agents waking together (#4858): stops the chosen
 # agents as the api-server's stop does, waits until every one reads
 # Hibernated, then removes every stop in one burst so the controller boots
@@ -13,6 +15,13 @@
 # conditions, so it measures what a user sees, not what the runner says.
 # KUBECONFIG set means that cluster (e.g. dev, with KUBECTL_CONTEXT); unset
 # means the local lima cluster, like every cluster:* task.
+# --grow plays the second half of #4858: every guest grows at once after the
+# boot, as harnesses starting work do, which is what takes a pool past its
+# limit. It runs python inside each guest over the dam CLI's ssh, so the CLI
+# must be logged in as the owner (DAM_SERVER and XDG_CONFIG_HOME pick the
+# login), and nothing else on the guest is touched. The pool is read off
+# kubectl top where a metrics server answers, and off the runner's memory
+# request, which the controller resizes to what the machines use, elsewhere.
 set -eo pipefail
 [ -n "${KUBECONFIG:-}" ] || . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 
@@ -87,5 +96,48 @@ echo "ready: ${#ready_at[@]}/${#agents[@]}"
 [ "${#ready_at[@]}" -eq 0 ] || echo "slowest: $(printf '%s\n' "${ready_at[@]}" | sort -n | tail -1)s"
 echo "runner restarts before: ${before:-none}"
 echo "runner restarts after:  $(runner_restarts)"
+
+if [ -n "${usage_grow:-}" ]; then
+  hold="${usage_hold:-120}"
+  dam="$MISE_CONFIG_ROOT/packages/cli/dist/js/bin.js"
+  [ -f "$dam" ] || mise run //packages/cli:build >/dev/null
+  runner_pod() { kubectl get pods -n "$ns" -l "agent-platform.ai/owner=$usage_owner,app.kubernetes.io/component=vm-runner" -o jsonpath='{.items[0].metadata.name}'; }
+  pool_sample() {
+    local pod; pod="$(runner_pod)"
+    local used; used="$(kubectl top pod -n "$ns" "$pod" --no-headers 2>/dev/null | awk '{print $3}')"
+    local req; req="$(kubectl get pod -n "$ns" "$pod" -o jsonpath='{.spec.containers[?(@.name=="vm-runner")].resources.requests.memory}')"
+    local lim; lim="$(kubectl get pod -n "$ns" "$pod" -o jsonpath='{.spec.containers[?(@.name=="vm-runner")].resources.limits.memory}')"
+    local json; json="$(agent_json)"
+    local ready=0 paused=0
+    for a in "${agents[@]}"; do
+      case "$(ready_reason "$a" <<<"$json")" in True/*) ready=$((ready + 1)) ;; False/Hibernated) paused=$((paused + 1)) ;; esac
+    done
+    printf 't=%4ss  used=%-8s request=%-8s limit=%-6s ready=%s/%s paused=%s\n' "$1" "${used:--}" "$req" "$lim" "$ready" "${#agents[@]}" "$paused"
+  }
+  echo
+  echo "growing every guest by ${usage_grow} MiB for ${hold}s"
+  grow='import sys,time
+b=bytearray(int(sys.argv[1])<<20)
+for i in range(0,len(b),4096): b[i]=1
+time.sleep(int(sys.argv[2]))'
+  pids=()
+  for a in "${agents[@]}"; do
+    node "$dam" ssh connect "$a" -- "python3 -c '$grow' $usage_grow $hold" >/dev/null 2>&1 &
+    pids+=($!)
+  done
+  t1=$SECONDS
+  while [ $((SECONDS - t1)) -le "$hold" ]; do
+    pool_sample $((SECONDS - t1))
+    sleep 10
+  done
+  kill "${pids[@]}" 2>/dev/null || true
+  wait 2>/dev/null || true
+  echo "runner restarts after the hold: $(runner_restarts)"
+  json="$(agent_json)"
+  for a in "${agents[@]}"; do
+    r="$(ready_reason "$a" <<<"$json")"
+    [ "$r" = "True/AllPodsReady" ] || echo "after the hold: $a is $r"
+  done
+fi
 kubectl get events -n "$ns" --field-selector type=Warning -o json | jq -r --arg since "$stamp" '.items[] | select(.lastTimestamp >= $since) | select(.reason|test("VMPool|OOM|Unhealthy|BackOff|Failed")) | "event: \(.reason) \(.involvedObject.name): \(.message)"' | sort -u | head -20
 [ "${#ready_at[@]}" -eq "${#agents[@]}" ]
