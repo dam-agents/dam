@@ -83,7 +83,7 @@ function withTerminalPart(
   const blocks = previous ?? [];
   const last = blocks[blocks.length - 1];
   const kept = last?.type === "terminal" ? blocks.slice(0, -1) : blocks;
-  const text = `${last?.type === "terminal" ? (last.text ?? "") : ""}${part}`;
+  const text = `${last?.type === "terminal" ? last.text : ""}${part}`;
   return [
     ...kept,
     { type: "terminal", text: text.slice(-TERMINAL_TEXT_LIMIT) },
