@@ -134,7 +134,8 @@ LC_ALL=C grep -aq 'Linux version 6\.12\.' "$b/opt/smolvm/lib/libkrunfw.so.5.5.0"
 # maps guest RAM 2 MiB-congruent upstream, so the RAM-mapping hunks go then;
 # keep the MADV_HUGEPAGE call, which #186 omits but nested hosts need (a busy
 # dam-cl node filled 4 GiB in 4.1 s with it and 8.3 s without).
-lk_deps="clang libclang-dev patchelf pkg-config libvirglrenderer-dev libepoxy-dev libdrm-dev libgbm-dev"
+# musl-tools: musl-gcc, for the C in the guest agent's ring (see below).
+lk_deps="clang libclang-dev patchelf pkg-config libvirglrenderer-dev libepoxy-dev libdrm-dev libgbm-dev musl-tools"
 lk_missing=$(for p in $lk_deps; do dpkg -s "$p" >/dev/null 2>&1 || echo "$p"; done)
 # Unattended and bounded: CI runs this in the background beside a starting k3s,
 # where a debconf or needrestart prompt waits on stdin for good, a needrestart
@@ -169,7 +170,7 @@ install -m 755 "$lk_so" "$b/opt/smolvm/lib/libkrun.so"
 # release's: smolvm-agent formats a storage disk it cannot mount, which erases
 # a home a passing I/O error kept from mounting, and the patch refuses that.
 # Drop this once a smolvm release ships the fix.
-cargo build --locked --manifest-path .smolvm/Cargo.toml --target-dir "$target" --profile release-small -p smolvm-agent --target "$(uname -m)-unknown-linux-musl"
+env "CC_$(uname -m)_unknown_linux_musl=musl-gcc" cargo build --locked --manifest-path .smolvm/Cargo.toml --target-dir "$target" --profile release-small -p smolvm-agent --target "$(uname -m)-unknown-linux-musl"
 install -m 755 "$target/$(uname -m)-unknown-linux-musl/release-small/smolvm-agent" "$b/opt/smolvm/agent-rootfs/usr/local/bin/smolvm-agent"
 
 # smolvm's guest rootfs ships a crane built with Go 1.21.6 and go-containerregistry
