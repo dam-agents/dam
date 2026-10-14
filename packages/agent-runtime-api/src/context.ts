@@ -1,5 +1,6 @@
 import type { ArtifactApiService } from "./modules/artifact-api/types.js";
 import type { BrowserService } from "./modules/browser/types.js";
+import type { ChangesService } from "./modules/changes/types.js";
 import type { FilesService } from "./modules/files/types.js";
 import type { KbPublishService } from "./modules/kb-publish/types.js";
 import type { SessionsService } from "./modules/sessions/types.js";
@@ -12,6 +13,7 @@ import type { ProcessesService } from "./modules/processes/types.js";
 export interface AgentRuntimeContext {
   artifactApi: ArtifactApiService;
   browser: BrowserService;
+  changes: ChangesService;
   files: FilesService;
   kbPublish: KbPublishService;
   sessions: SessionsService;
