@@ -158,6 +158,7 @@ export function AgentRow({
               state={display.state}
               working={working}
               keptWork={keptWork}
+              vm={agent.vm}
               className={cn(
                 SECOND_LINE_ITEM,
                 display.state === "error" && "text-danger dark:text-danger",

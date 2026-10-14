@@ -84,5 +84,6 @@ export interface ApiContext {
   user: UserIdentity;
   e2eEnabled: boolean;
   virtualizationEnabled: boolean;
+  vmForced: boolean;
   featureModes: FeatureModes;
 }

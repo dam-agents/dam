@@ -51,7 +51,7 @@ export function classifyWakeFailure(
       kind: "over-budget",
       message:
         s.overBudgetMessage ||
-        "starting this agent would exceed your compute budget — stop a running agent to free room",
+        "starting this agent would exceed your compute budget — pause agents you aren't using to free room",
     };
   if (s.hibernated) return { kind: "hibernated-not-scaled" };
   if (s.error !== undefined) {
@@ -142,7 +142,7 @@ export function describeWakeFailure(c: WakeFailureCause): string {
         case "MachineRunnerUnschedulable":
           return "the VM runner for this agent's owner cannot be placed on any node";
         case "RunnerOutOfMemory":
-          return "its owner's VM agents ran out of memory together and all restarted — stop agents that are not in use to free memory";
+          return "its owner's VM agents ran out of memory together and all restarted — pausing agents that aren't in use frees memory";
         case "MachineStorageFull":
           return "the storage its owner's agents share is full";
         default:

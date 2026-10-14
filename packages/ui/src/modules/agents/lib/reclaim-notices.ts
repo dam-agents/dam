@@ -10,7 +10,7 @@ const FREED: Record<NonNullable<AgentView["reclaimed"]>["for"], string> = {
 
 export function reclaimSentence(agent: ReclaimedAgent): string | undefined {
   return agent.reclaimed
-    ? `Put to sleep early ${FREED[agent.reclaimed.for]}. Start it again whenever you need it.`
+    ? `Paused automatically ${FREED[agent.reclaimed.for]}. Start it again whenever you need it.`
     : undefined;
 }
 
@@ -29,7 +29,7 @@ export function nextReclaimNotices(
     ) {
       toasts.push({
         kind: "info",
-        message: `${agent.name} was put to sleep early ${FREED[reclaimed.for]}`,
+        message: `${agent.name} was paused automatically ${FREED[reclaimed.for]}`,
       });
     }
     marks.set(agent.id, reclaimed?.at ?? null);

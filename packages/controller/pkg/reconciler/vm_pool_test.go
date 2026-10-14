@@ -187,3 +187,17 @@ func TestACPUOnlyUserBudgetChangeResizesWithinOneMemoryPass(t *testing.T) {
 	cpu := runnerPodResources(t, r).Limits[corev1.ResourceCPU]
 	assert.Equal(t, "6", cpu.String())
 }
+
+// TEST_SCENARIO: an owner whose pool was read while they had no override, and whose UserBudget then sets `storage` while they have no runner, gets their first claim at the override: the memory pass never reads an owner with nothing running, and a claim built at the install's ceiling would keep that size for good.
+func TestANewRunnerReadsTheOwnersPoolAgain(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	ceiling, err := r.runnerStorageCeiling(ctx, testOwner)
+	require.NoError(t, err)
+	assert.Equal(t, "100Gi", ceiling.String())
+
+	applyUserBudget(t, r, testOwner, apiv1.UserBudgetSpec{Storage: new(resource.MustParse("12Gi"))})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, "12Gi", runnerClaim(t, r))
+}

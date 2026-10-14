@@ -105,7 +105,7 @@ func TestBudgetOverCeilingParksWithFigures(t *testing.T) {
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
 	assert.Equal(t, apiv1.ReasonOverBudget, cond.Reason)
 	assert.Contains(t, cond.Message, "CPU")
-	assert.Contains(t, cond.Message, "stop a running agent")
+	assert.Contains(t, cond.Message, "pause agents you aren't using")
 }
 
 func TestBudgetDeniesOnMemoryDimensionAlone(t *testing.T) {

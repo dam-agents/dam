@@ -37,6 +37,7 @@ import {
 } from "../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
+import { useVmForced } from "../../features/hooks/use-vm-forced.js";
 import { useUnlockedAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
@@ -51,6 +52,7 @@ import {
   EGRESS_PRESET_DETAIL,
   EGRESS_PRESET_LABEL,
   kitEgressPreset,
+  kitRunsOnVm,
   VM_BACKEND_LABEL,
 } from "../lib/catalog-cards.js";
 import {
@@ -299,6 +301,8 @@ function KitDetail({
   const selectAgent = useStore((s) => s.selectAgent);
   const templates = useConnectionTemplates();
   const budget = useBudgetReserved();
+  const vmForced = useVmForced();
+  const vm = kitRunsOnVm(kit, vmForced);
   const connections = useAppConnections();
   const agents = useAgents().data?.list;
   const apply = useApplyStarterKit();
@@ -390,12 +394,12 @@ function KitDetail({
   };
 
   const size = useMemo(() => {
-    if (!kit.resources || !budget.data || kit.backend === "vm") return null;
+    if (!kit.resources || !budget.data || vm !== false) return null;
     const unit = slotUnitOf(budget.data);
     const mi = sizeInMi(kit.resources);
     if (mi.cpuMilli === 0 && mi.memoryMi === 0) return null;
     return { label: formatSizeLabel(mi, unit) };
-  }, [kit.resources, kit.backend, budget.data]);
+  }, [kit.resources, vm, budget.data]);
 
   const skillCount = kit.skillsInKit.length + kit.skills.length;
   const kbSeed = kit.knowledgeBase ? kit.seed : undefined;
@@ -431,7 +435,7 @@ function KitDetail({
                 {skillCount} {skillCount === 1 ? "skill" : "skills"}
               </Badge>
             )}
-            {kit.backend === "vm" && (
+            {vm === true && (
               <Badge variant="muted" size="sm">
                 {VM_BACKEND_LABEL}
               </Badge>
