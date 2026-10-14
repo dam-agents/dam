@@ -1,5 +1,4 @@
 import type { WakeFailureCause } from "../../agents/index.js";
-import { storageFullMessage } from "../../budgets/domain/vm-usage.js";
 
 export function wakeFailureUserCopy(c: WakeFailureCause): string {
   switch (c.kind) {
@@ -49,7 +48,10 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
             "Check the agent's page or contact its owner."
           );
         case "MachineStorageFull":
-          return `This agent failed to start. ${storageFullMessage()}`;
+          return (
+            "This agent can't start right now: its owner's agents have run " +
+            "out of storage. Contact its owner."
+          );
         case "MachineRunnerUnschedulable":
           return (
             "This agent failed to start: the cluster has no node that can " +
