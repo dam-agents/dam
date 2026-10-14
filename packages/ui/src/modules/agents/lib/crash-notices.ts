@@ -1,3 +1,5 @@
+import { isStartRefusal } from "api-server-api";
+
 import type { Toast } from "../../../lib/toast.js";
 import type { AgentView } from "../../../types.js";
 
@@ -48,14 +50,6 @@ export function splitConsole(reason: string): {
       };
 }
 
-const REFUSALS = new Set([
-  "MachineImageUnavailable",
-  "MachineBootFailed",
-  "MachineRunnerUnschedulable",
-  "ImagePullFailure",
-  "InvalidImageName",
-]);
-
 export function terminationNotice(
   subject: string,
   code: string | undefined,
@@ -72,7 +66,7 @@ export function terminationNotice(
     return vm
       ? `${subject} can't start: its storage is full. Free space by deleting files from another running agent or deleting an agent you no longer need, or request more storage.`
       : `${subject} can't start: its storage is full. Request more storage.`;
-  if (code && REFUSALS.has(code)) return `${subject} can't start — ${text}`;
+  if (isStartRefusal(code)) return `${subject} can't start — ${text}`;
   return `${subject} crashed — ${text}`;
 }
 

@@ -13,6 +13,7 @@ import {
 import { Command } from "commander";
 import {
   agentCreateInputSchema,
+  isStartRefusal,
   type ConnectionTemplateView,
   type ConnectionView,
   PROVIDER_PRESET_TYPES,
@@ -283,7 +284,7 @@ async function runCreate(
     }
     case "error":
       spin.stop(
-        `Agent entered error state: ${failureReason(waitResult.agent)}`,
+        `Agent ${isStartRefusal(waitResult.agent.podTerminationCode) ? "could not start" : "entered error state"}: ${failureReason(waitResult.agent)}`,
       );
       note(`dam agent get ${name}`, "Inspect");
       process.exit(EXIT_RUNTIME_FAILURE);

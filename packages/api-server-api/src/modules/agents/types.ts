@@ -21,6 +21,20 @@ export function isProtectedAgentEnvName(name: string): boolean {
   return PROTECTED_AGENT_ENV_NAMES.includes(name);
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: termination codes that mean the agent was refused a start rather than crashed, so every client says it "can't start" for the same codes.
+const START_REFUSAL_CODES: ReadonlySet<string> = new Set([
+  "MachineStorageFull",
+  "MachineImageUnavailable",
+  "MachineBootFailed",
+  "MachineRunnerUnschedulable",
+  "ImagePullFailure",
+  "InvalidImageName",
+]);
+
+export function isStartRefusal(code: string | undefined): boolean {
+  return code !== undefined && START_REFUSAL_CODES.has(code);
+}
+
 export interface Channel {
   type: ChannelType;
 }
