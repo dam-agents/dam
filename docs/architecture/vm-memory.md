@@ -67,6 +67,7 @@ Because a running machine's use reaches the controller only when its agent recon
 That pass reconciles one of the owner's agents only when the request their counts call for differs from the runner pod's, so a count held within its step wakes nothing.
 The runner's own pressure signal runs the same pass for that owner at once, without waiting for the counted threshold, since the kernel's view is the one that kills the runner.
 Its need is the larger of the counted and the measured overshoot of the 80% target, and it may hibernate fewer agents than cover it: near an OOM kill, freeing some memory beats freeing none.
+When no candidate says it is idle, this pass alone hibernates the candidates that did not answer, as a last resort, because the kill would stop them too; one that answered busy is never hibernated.
 The controller holds one watch on each owner's pressure, and a pass on it hibernates nothing more for fifteen seconds after one that did, because the machines it hibernated still count until they have stopped.
 The two passes never run together for one owner.
 
