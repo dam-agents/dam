@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -71,6 +71,8 @@ The caller picks the Backend, except on an install that pins the new sandbox run
 A plain create names neither a harness nor a provider, since each session picks both ([below](#session-inside-the-pod)): it boots the default Template on the install's default harness and grants the caller's IBM LiteLLM provider Connection, else their earliest-created one, that the harness runs on.
 A custom-image Template names the harness it wraps, if any, and may list its providers.
 Only a template create gets a default provider; a bare image and a [sub-agent](invocations.md) hold only what they name.
+A first agent is often created before its owner has any provider, so connecting a provider gives it to each of the owner's agents that holds none and whose default it would be.
+An agent that holds none while an older provider would be its default was detached on purpose, and stays so.
 A create may also name a repository to seed into the work directory before the first session; it rides the runtime channel rather than the pod spec ([runtime delivery](runtime-delivery.md#event)).
 See [knowledge-bases](knowledge-bases.md) for what a knowledge base adds on top of what follows.
 

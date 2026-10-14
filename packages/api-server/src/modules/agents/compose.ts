@@ -256,7 +256,8 @@ export function connectionGrantProvisioner(
  * UNIT_BOUNDARY_DESCRIPTION: Gives a just-connected provider to each of the
  * owner's agents that holds none, when that agent's default would pick it —
  * the same choice a new agent's default makes. An agent whose default is an
- * older provider was detached on purpose and is left without one.
+ * older provider was detached on purpose and is left without one. One agent
+ * failing does not keep the provider from the rest.
  */
 export async function attachProviderToBareAgents(
   connections: Parameters<typeof connectionGrantProvisioner>[0] &
@@ -266,18 +267,25 @@ export async function attachProviderToBareAgents(
   connectionId: string,
 ): Promise<void> {
   const provisioner = connectionGrantProvisioner(connections, catalog);
+  const failed: unknown[] = [];
   for (const agent of agents) {
-    const { connections: grants } = await connections.getAgentConnections(
-      agent.id,
-    );
-    const chosen = await provisioner.defaultProvider(
-      grants.map((g) => g.connectionId),
-      agent.spec.harness ? { harness: agent.spec.harness } : {},
-    );
-    if (chosen === connectionId)
-      await connections.updateAgentConnections(agent.id, {
-        grant: [connectionId],
-        revoke: [],
-      });
+    try {
+      const { connections: grants } = await connections.getAgentConnections(
+        agent.id,
+      );
+      const chosen = await provisioner.defaultProvider(
+        grants.map((g) => g.connectionId),
+        agent.spec.harness ? { harness: agent.spec.harness } : {},
+      );
+      if (chosen === connectionId)
+        await connections.updateAgentConnections(agent.id, {
+          grant: [connectionId],
+          revoke: [],
+        });
+    } catch (err) {
+      failed.push(err);
+    }
   }
+  if (failed.length > 0)
+    throw new AggregateError(failed, `${failed.length} agent(s) not attached`);
 }
