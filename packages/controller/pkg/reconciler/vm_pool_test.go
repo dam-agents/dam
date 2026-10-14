@@ -53,7 +53,7 @@ func TestAUserBudgetStorageIsTheOwnersClaimCeiling(t *testing.T) {
 	assert.Equal(t, "100Gi", ceiling.String(), "the pool read before the budget stays until it is read again")
 
 	r.refreshVMPool(ctx, testOwner)
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, nil))
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner))
 	assert.Equal(t, "300Gi", runnerClaim(t, r))
 
 	ceiling, err = r.runnerStorageCeiling(ctx, "owner-2")

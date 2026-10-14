@@ -6,6 +6,10 @@ The pods behind the `vm` Backend: **one runner per owner**, each a single-replic
 A local cluster on a Mac runs one [host runner](vm-host-runner.md) outside the cluster instead.
 The controller creates a runner the first time one of that owner's vm Agents reconciles, mints its token, asks cert-manager for its serving certificate, and removes it once the owner has no machines left.
 A runner belongs to an owner rather than to any one Agent, so no Agent can own it; the chart's runner ServiceAccount does, from the same namespace — an owner reference may not cross one — so uninstall, rollback and turning virtualization off collect the runners with it.
+The runner's claim is the one object left without an owner, like a StatefulSet's volume claims: it holds every machine disk of the owner, and one deletion of the account would otherwise take every user's disks at once.
+The controller strips the account's reference from a claim that still carries one, and nothing but the [orphan sweep](#runner-lifecycle) deletes a claim.
+A rollback to a controller older than this rule stamps the reference back on every claim, so the risk returns until the next upgrade strips it again.
+After an uninstall, or after turning virtualization off, an operator removes the disks that are left by label: `kubectl delete pvc -n <agent namespace> -l app.kubernetes.io/component=vm-runner,app.kubernetes.io/instance=<release>`.
 The boundary is per owner, not per agent: one owner's machines share their runner, its disk and its credentials, so a guest that escapes its hypervisor reaches that owner's other sandboxes ([security-and-credentials](security-and-credentials.md)).
 Every VMM runs as the runner's uid, but smolvm confines each with Landlock to its machine's files, audits its syscalls, and serves the agent rootfs and image tree read-only, so no guest changes what its siblings boot.
 The runner is the one long-lived workload in the agent namespace that asks for capabilities at all.
