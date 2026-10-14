@@ -163,6 +163,7 @@ fn trim_freed_blocks() {
             return;
         }
     };
+    let mut failing = false;
     loop {
         std::thread::sleep(TRIM_INTERVAL);
         let mut range = FstrimRange {
@@ -172,13 +173,22 @@ fn trim_freed_blocks() {
         };
         // SAFETY: `home` is an open file on the disk, and `range` is a live fstrim_range the kernel reads and writes back.
         let rc = unsafe { libc::ioctl(home.as_raw_fd(), FITRIM as _, &mut range) };
-        if rc != 0 {
-            logf!(
-                "WARNING: trimming the disk ({}); blocks the agent frees are no longer trimmed",
-                io::Error::last_os_error()
-            );
+        if rc == 0 {
+            failing = false;
+            continue;
+        }
+        let error = io::Error::last_os_error();
+        if matches!(error.raw_os_error(), Some(libc::EOPNOTSUPP | libc::ENOTTY)) {
+            logf!("WARNING: the disk cannot be trimmed ({error}); blocks the agent frees stay counted until smolvm trims");
             return;
         }
+        if !failing {
+            logf!(
+                "WARNING: trimming the disk ({error}); retrying every {} s",
+                TRIM_INTERVAL.as_secs()
+            );
+        }
+        failing = true;
     }
 }
 // UNIT_BOUNDARY_DESCRIPTION: the kernel refuses to move a mount out of a shared parent, and refuses pivot_root when either root's parent is shared. So the tree is made a slave before the disk is moved: mounts made elsewhere in the guest still arrive, and nothing this boot does leaves it. A private tree is left as it is.
