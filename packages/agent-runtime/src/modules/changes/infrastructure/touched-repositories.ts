@@ -36,7 +36,7 @@ export interface TouchedRepositoryStore {
     pullRequest: PullRequestLink,
   ): void;
   editedAtOf(sessionId: string): Map<string, string>;
-  isTouched(path: string): boolean;
+  paths(): string[];
   repositoriesOf(sessionId: string): SessionRepository[];
 }
 
@@ -116,10 +116,14 @@ export function createTouchedRepositoryStore(
       );
     },
 
-    isTouched(path) {
-      return Object.values(store.read().sessions).some(
-        (entries) => entries[path] !== undefined,
-      );
+    paths() {
+      return [
+        ...new Set(
+          Object.values(store.read().sessions).flatMap((entries) =>
+            Object.keys(entries),
+          ),
+        ),
+      ];
     },
 
     repositoriesOf(sessionId) {

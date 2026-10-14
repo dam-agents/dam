@@ -252,14 +252,18 @@ describe("changes service", () => {
 
   /**
    * TEST_SCENARIO: After a restart, a repository a session edited outside the
-   * roots is still listed from the persisted record, and its diff is served
-   * from the same record rather than refused as unknown.
+   * roots is still listed from the persisted record, with its linked
+   * worktrees, and the diff of each is served from the same record rather
+   * than refused as unknown.
    */
   it("should diff a session's repository outside the roots after a restart", async () => {
     await fs.mkdir(home, { recursive: true });
     const clone = path.join(elsewhere, "tmp.abc");
+    const linked = path.join(elsewhere, "tmp.abc-feat");
     await repository(clone, { "x.md": "x\n" });
+    await git(clone, "worktree", "add", "--quiet", "-b", "feat/one", linked);
     await write(path.join(clone, "x.md"), "y\n");
+    await write(path.join(linked, "x.md"), "z\n");
     service.onToolActivity({
       sessionId: "s1",
       editedPaths: [path.join(clone, "x.md")],
@@ -271,8 +275,15 @@ describe("changes service", () => {
 
     const restarted = serviceFor([path.join(home, "work"), home]);
     const diff = await restarted.diff(clone, "uncommitted");
+    const linkedDiff = await serviceFor([path.join(home, "work"), home]).diff(
+      linked,
+      "uncommitted",
+    );
 
     expect(diff.ok && diff.value.files.map((f) => f.path)).toEqual(["x.md"]);
+    expect(linkedDiff.ok && linkedDiff.value.files.map((f) => f.path)).toEqual([
+      "x.md",
+    ]);
   });
 
   /**

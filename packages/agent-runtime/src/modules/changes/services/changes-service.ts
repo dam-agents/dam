@@ -265,12 +265,10 @@ export function createChangesService(deps: {
     },
 
     async diff(path, compare) {
-      const { entries } = await current(
-        deps.touched.isTouched(path) ? [path] : [],
-      );
-      const entry = entries.find(
-        (candidate) => candidate.changeSet.path === path,
-      );
+      const find = ({ entries }: Snapshot) =>
+        entries.find((candidate) => candidate.changeSet.path === path);
+      const entry =
+        find(await current()) ?? find(await refresh(deps.touched.paths()));
       if (!entry) return err({ kind: "NotFound", path });
       try {
         const diff = await readDiff(deps.git, entry.state, compare);
