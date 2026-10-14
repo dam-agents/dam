@@ -82,6 +82,7 @@ export function DelegationCard({
         <DelegationStatePill state={state} />
       </button>
 
+      <ModelLine model={model} />
       {turn && (
         <TurnTelemetry
           agentId={driverAgentId}
@@ -91,7 +92,6 @@ export function DelegationCard({
           triggerClassName="ml-[58px]"
         />
       )}
-      <ModelLine model={model} />
 
       {open && (
         <div className="-mx-3 flex flex-col gap-2.5 border-t border-border/40 px-3 py-2.5">
@@ -198,29 +198,32 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+const SUBSTITUTED =
+  "The sub-agent ran another model than the one its driver asked for.";
+
 function ModelLine({ model }: { model: DelegationModel }) {
   if (model.ran === null && model.requested === null) return null;
+  const asked =
+    model.requested === null
+      ? null
+      : `${model.ran === null ? "Asked" : " · asked"} for ${model.requested}`;
   return (
     <p
       data-testid="delegation-model"
       className="-mt-1 mb-1.5 ml-[58px] truncate text-xs text-muted-foreground"
     >
-      {model.ran === null ? (
-        <>Asked for {model.requested}</>
-      ) : (
-        <>
-          Model {model.ran}
-          {model.substituted && (
-            <span
-              className="text-warning"
-              title="The sub-agent ran another model than the one its driver asked for."
-            >
-              {" "}
-              · asked for {model.requested}
+      {model.ran !== null && <>Model {model.ran}</>}
+      {asked !== null &&
+        (model.substituted ? (
+          <Tooltip content={SUBSTITUTED} side="top">
+            <span tabIndex={0} className="text-warning">
+              {asked}
+              <span className="sr-only">. {SUBSTITUTED}</span>
             </span>
-          )}
-        </>
-      )}
+          </Tooltip>
+        ) : (
+          asked
+        ))}
     </p>
   );
 }
