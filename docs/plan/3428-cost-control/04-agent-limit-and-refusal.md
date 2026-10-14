@@ -39,7 +39,7 @@ Apply `/typescript-engineering` for server, contract and CLI code, and `/react-u
 4. **Refusal shape** (spend domain, pure), as the README's table says:
    - Anthropic Messages and Bedrock paths: 429 with `x-should-retry: false`, `retry-after` = the seconds to the next UTC midnight, at least 61, and `content-type: text/plain`.
      Bedrock was not tested: Claude Code's Bedrock client is built on the Anthropic SDK, which reads `x-should-retry`.
-   - OpenAI Chat and Responses paths, Bob included: 400 with `content-type: text/plain`.
+   - OpenAI Chat and Responses paths, Bob included: 400 with `content-type: text/plain` (slice 05 changed Bob's body to a JSON error, see the README).
    - The soft-limit text with `config.brand.name`, no digits.
 5. **The gate.**
    - Extend the spend port of slice 03: for a billable call it now returns either "allow" or "refuse" with the response and the reached limits.

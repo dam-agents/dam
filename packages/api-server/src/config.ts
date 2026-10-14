@@ -8,6 +8,7 @@ import {
   linksSchema,
   PROVIDER_TEMPLATE_IDS,
   signUpsSchema,
+  spendCeilingUsdTextSchema,
 } from "api-server-api";
 import { DEFAULT_DB_POOL_MAX } from "db";
 import { z } from "zod";
@@ -266,6 +267,9 @@ const configSchema = z.object({
   agentTemplatesPath: z.string().default(""),
   harnesses: harnessesSchema,
   spendPriceOverrides: spendPriceOverridesSchema,
+  spendDefaultUserCeilingMicros: spendCeilingUsdTextSchema
+    .nullable()
+    .default(null),
   starterKitsCatalogs: z.string().default(""),
   githubEnterpriseHost: z.string().default(""),
   githubEnterpriseToken: z.string().default(""),
@@ -459,6 +463,7 @@ export function loadConfig(): Config {
     agentTemplatesPath: process.env.AGENT_TEMPLATES_PATH,
     harnesses: process.env.HARNESSES,
     spendPriceOverrides: process.env.SPEND_PRICE_OVERRIDES,
+    spendDefaultUserCeilingMicros: process.env.SPEND_DEFAULT_USER_CEILING_USD,
     starterKitsCatalogs: process.env.STARTER_KITS_CATALOGS,
     githubEnterpriseHost: process.env.GITHUB_ENTERPRISE_HOST,
     githubEnterpriseToken: process.env.GITHUB_ENTERPRISE_TOKEN,

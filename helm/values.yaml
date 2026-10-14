@@ -1235,8 +1235,16 @@ apiServer:
     # -- Most one-time schedules an agent may create in a sliding hour.
     agentMaxPerHour: 30
 
-  # -- Prices of the model calls that the gateway meters.
+  # -- Prices of the model calls that the gateway meters, and the default
+  # Spend Ceiling.
   spend:
+    # -- Default Spend Ceiling per user: the most dollars of Metered Spend on
+    # paid providers that one user's Agents may spend in a UTC day. At the
+    # ceiling the gateway refuses the next model call and asks nothing. A
+    # quoted decimal string with at most two decimals, e.g. "50" or "12.50";
+    # null turns the default ceiling off. A UserSpendLimit object overrides it
+    # for one user.
+    defaultUserCeilingUsd: null
     # -- Operator prices: dollars per million tokens, and dollars per web
     # search (`webSearch`). They win over every other price. A row can add a
     # prompt-size `threshold` with the prices above it, `flex` and `priority`

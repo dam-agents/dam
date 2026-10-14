@@ -1,3 +1,4 @@
+import { match } from "ts-pattern";
 import { formatError } from "../../../core/format-error.js";
 import { getLogger } from "../../../core/logger.js";
 import type { ApiDialect } from "../domain/call.js";
@@ -8,17 +9,31 @@ import {
   type DayCounter,
 } from "../domain/ledger.js";
 import {
+  blockOf,
+  ceilingCounter,
+  countsInCeiling,
   limitCounter,
   limitsOnCall,
+  readCeiling,
   readLimit,
+  type CeilingReading,
+  type LimitedCall,
+  type LimitReading,
   type LimitScope,
+  type SpendBlock,
 } from "../domain/limits.js";
-import { refusalFor, softLimitText, type Refusal } from "../domain/refusal.js";
+import {
+  CEILING_TEXT,
+  refusalFor,
+  softLimitText,
+  type Refusal,
+} from "../domain/refusal.js";
 import { payingProvider, unitOf, type SpendUnit } from "../domain/units.js";
 import type { DayCounters } from "../infrastructure/day-counters.js";
 import type { SpendLimits } from "../infrastructure/spend-limits.js";
 import type { SpendLedger } from "../infrastructure/spend-ledger.js";
-import type { SpendIngest, StartedCall } from "./spend-ingest.js";
+import type { SpendCeilings } from "../infrastructure/user-spend-ceilings.js";
+import type { AgentOwners, SpendIngest, StartedCall } from "./spend-ingest.js";
 
 export type CheckedCall = StartedCall & { readonly dialect: ApiDialect };
 
@@ -35,16 +50,25 @@ export type SpendVerdict =
   | { readonly verdict: "allow" }
   | {
       readonly verdict: "refuse";
+      readonly reason: SpendBlock;
       readonly response: Refusal;
       readonly questions: readonly SpendLimitQuestion[];
     };
 
 export interface SpendCheck {
   checkCall(call: CheckedCall): Promise<SpendVerdict>;
+  blockedFor(input: {
+    payer: string;
+    connectionId?: string;
+  }): Promise<SpendBlock | null>;
 }
 
 export interface DayTotals {
   spentToday(counter: DayCounter): Promise<number>;
+}
+
+export interface GrantedConnections {
+  templateOf(agentId: string, connectionId: string): Promise<string | null>;
 }
 
 export function createDayTotals(deps: {
@@ -72,30 +96,64 @@ export function createDayTotals(deps: {
 
 export function createSpendCheck(deps: {
   limits: SpendLimits;
+  ceilings: SpendCeilings;
   totals: DayTotals;
   ledger: SpendLedger;
   ingest: SpendIngest;
+  owners: AgentOwners;
+  connections: GrantedConnections;
   brandName: string;
 }): SpendCheck {
-  return {
-    async checkCall(call) {
-      const day = utcDay(call.startedAt);
-      const { provider } = payingProvider(call.providers);
-      const unit = unitOf(provider);
-      const limits = limitsOnCall(await deps.limits.forAgent(call.payer, day), {
-        payer: call.payer,
-        unit,
-      });
-      const readings = await Promise.all(
-        limits.map(async (limit) =>
+  const read = async (
+    call: LimitedCall,
+    day: string,
+  ): Promise<{
+    limits: readonly LimitReading[];
+    ceiling: CeilingReading | null;
+  }> => {
+    const [limits, ceiling] = await Promise.all([
+      deps.limits.applying(
+        { agentId: call.payer, ownerSub: call.ownerSub },
+        day,
+      ),
+      countsInCeiling(call.unit)
+        ? deps.ceilings.forOwner(call.ownerSub)
+        : Promise.resolve(null),
+    ]);
+    const [readings, ceilingReading] = await Promise.all([
+      Promise.all(
+        limitsOnCall(limits, call).map(async (limit) =>
           readLimit(
             limit,
             await deps.totals.spentToday(limitCounter(limit, day)),
           ),
         ),
+      ),
+      ceiling
+        ? deps.totals
+            .spentToday(ceilingCounter(call.ownerSub, day))
+            .then((spent) => readCeiling(ceiling, spent))
+        : Promise.resolve(null),
+    ]);
+    return { limits: readings, ceiling: ceilingReading };
+  };
+
+  return {
+    async checkCall(call) {
+      const day = utcDay(call.startedAt);
+      const { provider } = payingProvider(call.providers);
+      const unit = unitOf(provider);
+      const readings = await read(
+        {
+          payer: call.payer,
+          ownerSub: call.ownerSub,
+          connectionId: call.connectionId,
+          unit,
+        },
+        day,
       );
-      const reached = readings.filter((reading) => reading.state === "reached");
-      if (reached.length === 0) {
+      const block = blockOf(readings.ceiling, readings.limits);
+      if (block === null) {
         await deps.ingest.callStarted(call);
         return { verdict: "allow" };
       }
@@ -116,22 +174,55 @@ export function createSpendCheck(deps: {
             "spend.refusal_not_counted",
           ),
         );
-      return {
-        verdict: "refuse",
-        response: refusalFor(
-          call.dialect,
-          softLimitText(deps.brandName),
-          call.startedAt,
-        ),
-        questions: reached.map(({ limit }) => ({
-          limitId: limit.id,
-          scope: limit.scope,
-          unit: limit.unit,
-          day,
-          amountMicros: limit.amountMicros,
-          extensions: limit.extensions,
-        })),
-      };
+      return match(block)
+        .with("ceiling", (): SpendVerdict => ({
+          verdict: "refuse",
+          reason: "ceiling",
+          response: refusalFor(
+            { dialect: call.dialect, provider },
+            CEILING_TEXT,
+            call.startedAt,
+          ),
+          questions: [],
+        }))
+        .with("limit", (): SpendVerdict => ({
+          verdict: "refuse",
+          reason: "limit",
+          response: refusalFor(
+            { dialect: call.dialect, provider },
+            softLimitText(deps.brandName),
+            call.startedAt,
+          ),
+          questions: readings.limits
+            .filter((reading) => reading.state === "reached")
+            .map(({ limit }) => ({
+              limitId: limit.id,
+              scope: limit.scope,
+              unit: limit.unit,
+              day,
+              amountMicros: limit.amountMicros,
+              extensions: limit.extensions,
+            })),
+        }))
+        .exhaustive();
+    },
+
+    async blockedFor({ payer, connectionId }) {
+      const ownerSub = await deps.owners.ownerOf(payer);
+      if (!ownerSub) return null;
+      const template = connectionId
+        ? await deps.connections.templateOf(payer, connectionId)
+        : null;
+      const readings = await read(
+        {
+          payer,
+          ownerSub,
+          connectionId: template ? (connectionId ?? null) : null,
+          unit: template ? unitOf(template) : "usd",
+        },
+        utcDay(new Date()),
+      );
+      return blockOf(readings.ceiling, readings.limits);
     },
   };
 }

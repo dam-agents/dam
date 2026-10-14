@@ -8,6 +8,7 @@ A **Budget** is a per-user ceiling on the CPU and memory that user's *running* a
 The cluster has a fixed compute pool and all agents share one namespace, so without a ceiling the first users to spin up agents can starve everyone else.
 Within their Ceiling a user is free: deploy whatever they want, for as long as they want — the Budget constrains **starting** an agent, never running one, with one exception: a blocked start may **reclaim** room by hibernating that same owner's unattended idle agents early (see [Reclaiming room](#reclaiming-room-for-a-blocked-start)).
 Admission pressure from one owner is the only thing that ever takes a running agent down for budget reasons — nothing is evicted because a ceiling changed, and no owner's demand touches another owner's agents.
+A Budget limits compute only; model spend has its own per-user Spend Ceiling ([spend-limits](spend-limits.md#spend-ceiling)).
 
 Enforcement lives in the **controller, at the 0→1 scale transition**.
 The reconciler is the single actuator that brings an agent's pod pair up, so every wake path — UI, ACP/terminal/SSH relays, channels, the scheduler, or a bare annotation stamp — converges on one check that no api-server code path can bypass.

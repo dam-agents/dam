@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { match } from "ts-pattern";
 import type { ApprovalsRepository } from "../infrastructure/approvals-repository.js";
 import type { RedisBus } from "../../../core/redis-bus.js";
 import {
@@ -74,7 +75,7 @@ interface CreateExtAuthzGateDeps {
   identityResolver: AgentIdentityResolver;
   ruleMatcher: EgressRuleMatcher;
   attendance: EgressAttendance;
-  spend: SpendCheck;
+  spend: Pick<SpendCheck, "checkCall">;
   holdSeconds: number;
   platformAllowedAuthorities: readonly string[];
 }
@@ -131,7 +132,10 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
             agentId: identity.agentId,
             target: host,
             decision: "deny",
-            reason: "spend-limit",
+            reason: match(spend.reason)
+              .with("ceiling", () => "spend-ceiling")
+              .with("limit", () => "spend-limit")
+              .exhaustive(),
             detail: {
               method,
               path: path.split("?")[0],

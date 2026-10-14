@@ -1,16 +1,36 @@
 import { TRPCError } from "@trpc/server";
-import type { SpendLimitView, SpendService, SpendTotal } from "api-server-api";
+import {
+  connectionLimitRefusal,
+  connectionLimitRule,
+  type SpendCeilingView,
+  type SpendLimitScope,
+  type SpendLimitView,
+  type SpendService,
+  type SpendTotal,
+} from "api-server-api";
+import { match } from "ts-pattern";
 import { utcDay } from "../domain/ledger.js";
-import { limitCounter, readLimit, type SpendLimit } from "../domain/limits.js";
+import {
+  ceilingCounter,
+  limitCounter,
+  readCeiling,
+  readLimit,
+  type SpendCeiling,
+  type SpendLimit,
+} from "../domain/limits.js";
 import { nextUtcMidnight } from "../domain/refusal.js";
+import type { SpendUnit } from "../domain/units.js";
 import type { SpendLedger } from "../infrastructure/spend-ledger.js";
 import type { SpendLimits } from "../infrastructure/spend-limits.js";
-import type { DayTotals } from "./spend-check.js";
+import type { SpendCeilings } from "../infrastructure/user-spend-ceilings.js";
+import type { DayTotals, GrantedConnections } from "./spend-check.js";
 
 export function createSpendService(deps: {
   ledger: SpendLedger;
   limits: SpendLimits;
+  ceilings: SpendCeilings;
   totals: DayTotals;
+  connections: GrantedConnections;
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   ownerSub: string;
   agentBinding: readonly string[] | "*";
@@ -42,6 +62,49 @@ export function createSpendService(deps: {
     };
   };
 
+  const ceilingView = async (
+    ceiling: SpendCeiling,
+    day: string,
+  ): Promise<SpendCeilingView> => {
+    const reading = readCeiling(
+      ceiling,
+      await deps.totals.spentToday(ceilingCounter(deps.ownerSub, day)),
+    );
+    return {
+      amountMicros: ceiling.amountMicros,
+      spentMicros: reading.spentMicros,
+      state: reading.state,
+      source: ceiling.source,
+    };
+  };
+
+  const limitUnit = (scope: SpendLimitScope): Promise<SpendUnit> =>
+    match(scope)
+      .with({ kind: "agent" }, { kind: "owner" }, () =>
+        Promise.resolve<SpendUnit>("usd"),
+      )
+      .with({ kind: "connection" }, async ({ agentId, connectionId }) => {
+        const template = await deps.connections.templateOf(
+          agentId,
+          connectionId,
+        );
+        if (template === null) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "the Connection is not granted to this agent",
+          });
+        }
+        const rule = connectionLimitRule(template);
+        if (!rule.limitable) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: connectionLimitRefusal(rule),
+          });
+        }
+        return rule.unit;
+      })
+      .exhaustive();
+
   const scopedAgents = (agentId: string | undefined) =>
     agentId ? [agentId] : deps.agentBinding === "*" ? null : deps.agentBinding;
 
@@ -60,17 +123,19 @@ export function createSpendService(deps: {
       const day = utcDay(now);
       const agentId = input?.agentId;
       if (agentId) await requireOwned(agentId);
-      const limits = agentId
-        ? (await deps.limits.forAgent(agentId, day)).filter(
-            (limit) => limit.ownerSub === deps.ownerSub,
-          )
-        : [];
-      const rows = await deps.ledger.daily({
-        ownerSub: deps.ownerSub,
-        agentIds: scopedAgents(agentId),
-        from: day,
-        to: day,
-      });
+      const [limits, ceiling, rows] = await Promise.all([
+        deps.limits.applying(
+          { agentId: agentId ?? null, ownerSub: deps.ownerSub },
+          day,
+        ),
+        deps.ceilings.forOwner(deps.ownerSub),
+        deps.ledger.daily({
+          ownerSub: deps.ownerSub,
+          agentIds: scopedAgents(agentId),
+          from: day,
+          to: day,
+        }),
+      ]);
       const spent = new Map<string, SpendTotal>();
       for (const row of rows) {
         const total = spent.get(row.unit) ?? {
@@ -86,12 +151,13 @@ export function createSpendService(deps: {
         day,
         resetsAt: nextUtcMidnight(now).toISOString(),
         limits: await Promise.all(limits.map((limit) => limitView(limit, day))),
+        ceiling: ceiling ? await ceilingView(ceiling, day) : null,
         spent: [...spent.values()],
       };
     },
 
     async setLimit({ scope, amountMicros }) {
-      await requireOwned(scope.agentId);
+      if (scope.kind !== "owner") await requireOwned(scope.agentId);
       if (amountMicros === null) {
         await deps.limits.clear(deps.ownerSub, scope);
         return;
@@ -99,7 +165,7 @@ export function createSpendService(deps: {
       await deps.limits.set({
         ownerSub: deps.ownerSub,
         scope,
-        unit: "usd",
+        unit: await limitUnit(scope),
         amountMicros,
       });
     },

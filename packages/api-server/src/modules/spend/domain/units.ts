@@ -1,19 +1,11 @@
-export type SpendUnit = "usd" | "usd_list" | "bobcoin" | "free";
+import { spendUnitOfProvider, type SpendUnit } from "api-server-api";
 
-const PROVIDER_UNITS: Readonly<Record<string, SpendUnit>> = {
-  anthropic: "usd",
-  "ibm-litellm": "usd",
-  openai: "usd",
-  bedrock: "usd",
-  "anthropic-oauth": "usd_list",
-  bob: "bobcoin",
-  "curve-bender": "free",
-};
+export type { SpendUnit };
 
 const UNIT_RANK: readonly SpendUnit[] = ["usd", "usd_list", "bobcoin", "free"];
 
 export function unitOf(provider: string): SpendUnit {
-  return PROVIDER_UNITS[provider] ?? "usd";
+  return spendUnitOfProvider(provider) ?? "usd";
 }
 
 export function payingProvider(providers: readonly string[]): {

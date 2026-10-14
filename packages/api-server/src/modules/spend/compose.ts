@@ -13,12 +13,17 @@ import {
 import { createSpendLedger } from "./infrastructure/spend-ledger.js";
 import { createSpendLimits } from "./infrastructure/spend-limits.js";
 import {
+  createUserSpendCeilings,
+  type CustomObjectReader,
+} from "./infrastructure/user-spend-ceilings.js";
+import {
   startExtendOnContinueSaga,
   type SpendQuestions,
 } from "./sagas/extend-on-continue.js";
 import {
   createDayTotals,
   createSpendCheck,
+  type GrantedConnections,
   type SpendCheck,
 } from "./services/spend-check.js";
 import {
@@ -54,11 +59,18 @@ export function composeSpendSystem(deps: {
   priceOverrides: readonly OperatorPriceInput[];
   owners: AgentOwners;
   questions: SpendQuestions;
+  connections: GrantedConnections;
+  k8s: CustomObjectReader;
+  defaultCeilingMicros: number | null;
   brandName: string;
 }): SpendSystem {
   const ledger = createSpendLedger(deps.db);
   const counters = createRedisDayCounters(deps.redis);
   const limits = createSpendLimits(deps.db);
+  const ceilings = createUserSpendCeilings({
+    k8s: deps.k8s,
+    defaultMicros: deps.defaultCeilingMicros,
+  });
   const totals = createDayTotals({ counters, ledger });
   const ingest = createSpendIngest({
     priceBook: composePriceBook(deps.priceOverrides),
@@ -71,9 +83,12 @@ export function composeSpendSystem(deps: {
     ingest,
     check: createSpendCheck({
       limits,
+      ceilings,
       totals,
       ledger,
       ingest,
+      owners: deps.owners,
+      connections: deps.connections,
       brandName: deps.brandName,
     }),
     extendSaga: startExtendOnContinueSaga({
@@ -81,7 +96,14 @@ export function composeSpendSystem(deps: {
       limits,
     }),
     forOwner: (owner) =>
-      createSpendService({ ledger, limits, totals, ...owner }),
+      createSpendService({
+        ledger,
+        limits,
+        ceilings,
+        totals,
+        connections: deps.connections,
+        ...owner,
+      }),
   };
 }
 

@@ -201,13 +201,14 @@ DAM counts high and marks the cost "estimated":
 ### Refusal (by API path, never by harness)
 
 One agent can run several harnesses, so the refusal shape follows the API path of each call.
-The body is plain text.
+The body is plain text, except on a Bob Connection.
 It contains "Spend quota exceeded" and no digits, because Pi retries when the text contains "500" or "429".
+Bob's client reads only `error.message` from a JSON error body and otherwise shows the status text "Bad Request", so a call on a Bob Connection gets `{"error":{"message":"<text>"}}` with `content-type: application/json` (found in the slice 05 smoke test, 2026-10-14).
 
 | API path                                                                                                                  | Status | Headers                                                                                                    |
 | ------------------------------------------------------------------------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------- |
 | Anthropic Messages (`…/v1/messages`), and Bedrock paths (not tested; Claude Code's Bedrock client reads `x-should-retry`) | 429    | `x-should-retry: false`, `retry-after: <seconds to UTC midnight, at least 61>`, `content-type: text/plain` |
-| OpenAI Chat (`…/chat/completions`) and Responses (`…/responses`), Bob included                                            | 400    | `content-type: text/plain`                                                                                 |
+| OpenAI Chat (`…/chat/completions`) and Responses (`…/responses`), Bob included                                            | 400    | `content-type: text/plain`; on a Bob Connection `content-type: application/json`                           |
 
 The texts (`<brand>` is `config.brand.name`; never hardcode the brand):
 
@@ -310,7 +311,7 @@ Amounts are integers in micro-units of the unit, like the existing `cost_usd_mic
 | 02  | [Price table](./02-price-table.md)                                         | Pure price lookup with LiteLLM's cost rules, Anthropic table from a pinned LiteLLM commit, IBM's own prices in Helm, meter reads speed and geo.     | —          | ✅   |
 | 03  | [Receive, price and store usage](./03-receive-and-store.md)                | AccessLogService, identity, Connection, periodic-to-final deltas, pricing at ingest, `spend_daily` and Redis counters, estimates, clean shutdown.   | 01, 02     | ✅   |
 | 04  | [Agent limit, refusal and "continue?"](./04-agent-limit-and-refusal.md)    | Limit tables, `spend` router, gate refusal per API path, `spend_limit` approval, continue, chat error rule, CLI `dam spend`, harness refusal tests. | 03         | ✅   |
-| 05  | [Ceiling, own limit, provider limits](./05-ceiling-and-provider-limits.md) | `UserSpendLimit` CRD and Helm default, own daily limit, Connection limits in their units, ceiling refusal, CLI flags.                               | 04         |      |
+| 05  | [Ceiling, own limit, provider limits](./05-ceiling-and-provider-limits.md) | `UserSpendLimit` CRD and Helm default, own daily limit, Connection limits in their units, ceiling refusal, CLI flags.                               | 04         | ✅   |
 | 06  | [Stop unattended work, agent read](./06-unattended-work.md)                | Schedule holds, sub-agent spawn refusal, read-only MCP tool.                                                                                        | 04         |      |
 | 07  | [Screens](./07-screens.md)                                                 | Limit fields and meters in the agent page, Providers section, Settings and Home; approval card text.                                                | 04, 05     |      |
 

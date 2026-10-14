@@ -150,6 +150,8 @@ export {
   PLATFORM_REFUSAL_HEADER,
   SPEND_DAILY_MAX_DAYS,
   SPEND_LIMIT_MAX_MICROS,
+  spendCeilingSourceSchema,
+  spendCeilingUsdTextSchema,
   spendDailyInputSchema,
   spendLimitAmountSchema,
   spendLimitAmountTextSchema,
@@ -160,7 +162,15 @@ export {
   spendUnitSchema,
 } from "./modules/spend/schemas.js";
 export { formatSpendAmount } from "./modules/spend/format.js";
+export {
+  connectionLimitRefusal,
+  connectionLimitRule,
+  spendUnitOfProvider,
+  type ConnectionLimitRule,
+} from "./modules/spend/units.js";
 export type {
+  SpendCeilingSource,
+  SpendCeilingView,
   SpendDailyInput,
   SpendDailyRow,
   SpendLimitScope,

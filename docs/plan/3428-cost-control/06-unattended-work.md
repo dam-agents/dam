@@ -14,6 +14,8 @@ This slice also lets the agent read its limits, its spend and what is left, with
 
 Apply `/typescript-engineering`.
 Both gates use the blocked check of the spend service from slice 05, wired as a port in `bootstrap.ts`.
+Slice 05 shipped it as `SpendCheck.blockedFor({ payer, connectionId? })`: it returns `"limit"`, `"ceiling"` or `null`.
+Without a Connection it checks the dollar limits and the ceiling.
 
 1. **Schedules** in `packages/api-server/src/modules/schedules/services/scheduler-runner.ts`.
    - Add a spend hold gate next to `onboardingPending` and `runtimeMigrating`, wired at `bootstrap.ts` where those gates are.

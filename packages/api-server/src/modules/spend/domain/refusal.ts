@@ -15,6 +15,9 @@ export function nextUtcMidnight(now: Date): Date {
   return new Date(Math.floor(now.getTime() / DAY_MS) * DAY_MS + DAY_MS);
 }
 
+export const CEILING_TEXT =
+  "Spend quota exceeded for today. Ask the platform operator for a higher ceiling.";
+
 export function softLimitText(brandName: string): string {
   const brand = brandName.trim();
   return brand && !/\d/.test(brand)
@@ -22,16 +25,31 @@ export function softLimitText(brandName: string): string {
     : "Spend quota exceeded for today. The owner can approve more.";
 }
 
+const JSON_ERROR_PROVIDERS: ReadonlySet<string> = new Set(["bob"]);
+
+function refusalBody(
+  provider: string,
+  text: string,
+): { contentType: string; body: string } {
+  return JSON_ERROR_PROVIDERS.has(provider)
+    ? {
+        contentType: "application/json",
+        body: JSON.stringify({ error: { message: text } }),
+      }
+    : { contentType: "text/plain", body: text };
+}
+
 export function refusalFor(
-  dialect: ApiDialect,
+  call: { readonly dialect: ApiDialect; readonly provider: string },
   text: string,
   now: Date,
 ): Refusal {
-  const plain = {
-    "content-type": "text/plain",
+  const { contentType, body } = refusalBody(call.provider, text);
+  const content = {
+    "content-type": contentType,
     [PLATFORM_REFUSAL_HEADER]: "spend",
   };
-  return match(dialect)
+  return match(call.dialect)
     .with(
       "anthropic-messages",
       "bedrock-invoke",
@@ -39,7 +57,7 @@ export function refusalFor(
       (): Refusal => ({
         status: 429,
         headers: {
-          ...plain,
+          ...content,
           "x-should-retry": "false",
           "retry-after": String(
             Math.max(
@@ -50,14 +68,14 @@ export function refusalFor(
             ),
           ),
         },
-        body: text,
+        body,
       }),
     )
     .with(
       "openai-chat",
       "openai-responses",
       "openai-embeddings",
-      (): Refusal => ({ status: 400, headers: plain, body: text }),
+      (): Refusal => ({ status: 400, headers: content, body }),
     )
     .exhaustive();
 }

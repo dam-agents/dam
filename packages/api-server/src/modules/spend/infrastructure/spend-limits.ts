@@ -1,10 +1,23 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, sql, spendLimitExtensions, spendLimits, type Db } from "db";
+import {
+  and,
+  eq,
+  isNull,
+  or,
+  sql,
+  spendLimitExtensions,
+  spendLimits,
+  type Db,
+} from "db";
+import { match } from "ts-pattern";
 import type { LimitScope, SpendLimit } from "../domain/limits.js";
 import type { SpendUnit } from "../domain/units.js";
 
 export interface SpendLimits {
-  forAgent(agentId: string, day: string): Promise<SpendLimit[]>;
+  applying(
+    who: { agentId: string | null; ownerSub: string },
+    day: string,
+  ): Promise<SpendLimit[]>;
   set(input: {
     ownerSub: string;
     scope: LimitScope;
@@ -17,21 +30,52 @@ export interface SpendLimits {
   listAgentIds(): Promise<string[]>;
 }
 
-export function createSpendLimits(db: Db): SpendLimits {
-  const scopeIs = (ownerSub: string, scope: LimitScope) =>
-    and(
-      eq(spendLimits.ownerSub, ownerSub),
-      eq(spendLimits.scope, scope.kind),
-      eq(spendLimits.agentId, scope.agentId),
-    );
+function scopeColumns(scope: LimitScope): {
+  agentId: string | null;
+  connectionId: string | null;
+} {
+  return match(scope)
+    .with({ kind: "agent" }, (s) => ({
+      agentId: s.agentId,
+      connectionId: null,
+    }))
+    .with({ kind: "owner" }, () => ({ agentId: null, connectionId: null }))
+    .with({ kind: "connection" }, (s) => ({
+      agentId: s.agentId,
+      connectionId: s.connectionId,
+    }))
+    .exhaustive();
+}
 
+function scopeOf(row: {
+  scope: string;
+  agentId: string | null;
+  connectionId: string | null;
+}): LimitScope | null {
+  if (row.scope === "owner") return { kind: "owner" };
+  if (row.scope === "agent" && row.agentId) {
+    return { kind: "agent", agentId: row.agentId };
+  }
+  if (row.scope === "connection" && row.agentId && row.connectionId) {
+    return {
+      kind: "connection",
+      agentId: row.agentId,
+      connectionId: row.connectionId,
+    };
+  }
+  return null;
+}
+
+export function createSpendLimits(db: Db): SpendLimits {
   return {
-    async forAgent(agentId, day) {
+    async applying({ agentId, ownerSub }, day) {
       const rows = await db
         .select({
           id: spendLimits.id,
           ownerSub: spendLimits.ownerSub,
+          scope: spendLimits.scope,
           agentId: spendLimits.agentId,
+          connectionId: spendLimits.connectionId,
           unit: spendLimits.unit,
           amountMicros: spendLimits.amountMicros,
           extensions: sql<number>`coalesce(${spendLimitExtensions.extensions}, 0)`,
@@ -45,16 +89,31 @@ export function createSpendLimits(db: Db): SpendLimits {
           ),
         )
         .where(
-          and(eq(spendLimits.scope, "agent"), eq(spendLimits.agentId, agentId)),
+          and(
+            eq(spendLimits.ownerSub, ownerSub),
+            agentId === null
+              ? eq(spendLimits.scope, "owner")
+              : or(
+                  eq(spendLimits.scope, "owner"),
+                  eq(spendLimits.agentId, agentId),
+                ),
+          ),
         );
-      return rows.map((row) => ({
-        id: row.id,
-        ownerSub: row.ownerSub,
-        scope: { kind: "agent", agentId: row.agentId ?? agentId },
-        unit: row.unit as SpendUnit,
-        amountMicros: row.amountMicros,
-        extensions: Number(row.extensions),
-      }));
+      return rows.flatMap((row) => {
+        const scope = scopeOf(row);
+        return scope
+          ? [
+              {
+                id: row.id,
+                ownerSub: row.ownerSub,
+                scope,
+                unit: row.unit as SpendUnit,
+                amountMicros: row.amountMicros,
+                extensions: Number(row.extensions),
+              },
+            ]
+          : [];
+      });
     },
 
     async set({ ownerSub, scope, unit, amountMicros }) {
@@ -64,8 +123,7 @@ export function createSpendLimits(db: Db): SpendLimits {
           id: randomUUID(),
           ownerSub,
           scope: scope.kind,
-          agentId: scope.agentId,
-          connectionId: null,
+          ...scopeColumns(scope),
           unit,
           amountMicros,
         })
@@ -81,7 +139,21 @@ export function createSpendLimits(db: Db): SpendLimits {
     },
 
     async clear(ownerSub, scope) {
-      await db.delete(spendLimits).where(scopeIs(ownerSub, scope));
+      const { agentId, connectionId } = scopeColumns(scope);
+      await db
+        .delete(spendLimits)
+        .where(
+          and(
+            eq(spendLimits.ownerSub, ownerSub),
+            eq(spendLimits.scope, scope.kind),
+            agentId === null
+              ? isNull(spendLimits.agentId)
+              : eq(spendLimits.agentId, agentId),
+            connectionId === null
+              ? isNull(spendLimits.connectionId)
+              : eq(spendLimits.connectionId, connectionId),
+          ),
+        );
     },
 
     async extend(limitId, day, extensions) {

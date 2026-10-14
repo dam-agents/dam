@@ -461,6 +461,11 @@ spec:
               value: {{ .Values.apiServer.oneTimeSchedules.agentMaxPerHour | quote }}
             - name: SPEND_PRICE_OVERRIDES
               value: {{ (.Values.apiServer.spend | default dict).priceOverrides | default list | toJson | quote }}
+            {{- $defaultUserCeilingUsd := (.Values.apiServer.spend | default dict).defaultUserCeilingUsd }}
+            {{- if not (kindIs "invalid" $defaultUserCeilingUsd) }}
+            - name: SPEND_DEFAULT_USER_CEILING_USD
+              value: {{ $defaultUserCeilingUsd | quote }}
+            {{- end }}
             {{- if .Values.apiServer.maxImportBundleBytes }}
             - name: MAX_IMPORT_BUNDLE_BYTES
               value: {{ .Values.apiServer.maxImportBundleBytes | quote }}

@@ -45,6 +45,7 @@ A limit field is a one-field inline edit, so controlled `useState` is enough (no
 3. **Providers section** (`modules/sandboxes/components/sandbox-providers-section.tsx`).
    In each granted Connection card, add a Connection limit with `SpendLimitField` in the Connection's unit, and today's spend on that Connection.
    Hide it for `free` Connections, for `openai` and `bedrock` Connections (not priced in this feature), and for Connections that are not metered.
+   The contract's `connectionLimitRule(templateId)` (slice 05) gives this rule and the Connection's unit, and the server uses the same rule.
 4. **Settings.**
    In the Usage tab (`modules/metrics/views/usage-view.tsx`, shown by `modules/settings/views/settings-view.tsx`), add a card at the top:
    - the own daily limit with `SpendLimitField` and `SpendLimitMeter`;

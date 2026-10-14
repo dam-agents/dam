@@ -1,6 +1,6 @@
 # Spend limits
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -14,7 +14,7 @@ The parts:
 - **The api-server** receives the records on the same per-agent port that answers the gateway's ext_authz checks, so a record is tied to its agent the same way a check is ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)).
 
 The api-server prices each record when it arrives ([Prices](#prices)) and keeps the daily ledger ([Ledger](#ledger)).
-Before a metered call goes out, the ext_authz check refuses it when a spend limit is reached ([Limits](#limits), [Refusal](#refusal)), and the owner can continue ([Continue](#continue)).
+Before a metered call goes out, the ext_authz check refuses it when a spend limit or the user's Spend Ceiling is reached ([Limits](#limits), [Spend ceiling](#spend-ceiling), [Refusal](#refusal)), and at a limit the owner can continue ([Continue](#continue)).
 
 ```mermaid
 flowchart LR
@@ -141,19 +141,66 @@ DAM counts high and marks a call estimated when its usage is missing or unsure:
 
 ## Limits
 
-**Agent limit.** The owner sets a daily dollar limit for one agent.
-It counts the agent's metered dollar spend on paid providers in the current UTC day, sub-agents included, because their calls count for their root driver.
-The Claude subscription, Bob and free providers do not count in it, and it never refuses their calls.
-A limit of zero refuses every paid call.
-Only the owner sets or removes a limit, from an unrestricted login: an agent, and an API key bound to an agent, cannot change it.
+The owner sets three kinds of daily limit.
+Each one counts the spend of the current UTC day.
+Only the owner sets or removes a limit, from an unrestricted login: an agent, and an API key bound to an agent, cannot change or continue it.
+A limit of zero refuses every call that it counts.
 
-**Soft.** At the limit, the gate refuses the call and asks the owner whether to continue; it never holds the call.
+**Agent limit.** A dollar limit for one agent.
+It counts the agent's metered dollar spend on paid providers, sub-agents included, because their calls count for their root driver.
+
+**Own limit.** One dollar limit for all agents of the owner together.
+It counts the same spend as the agent limit, summed over every agent of the owner.
+
+**Connection limits.** A limit for the calls of one agent on one of its Connections, in that Connection's unit:
+
+| Connection                         | Unit               | Counts in the agent limit, own limit and ceiling |
+| ---------------------------------- | ------------------ | ------------------------------------------------ |
+| An Anthropic key, IBM LiteLLM      | dollars            | yes                                              |
+| The Claude subscription            | list-price dollars | no                                               |
+| Bob                                | Bobcoins           | no                                               |
+| Curve Bender                       | free               | no limit applies                                 |
+| OpenAI, Bedrock                    | dollars, unpriced  | only with an operator price; no Connection limit |
+| Any Connection that is not metered | —                  | no limit applies                                 |
+
+So the Claude subscription and Bob are limited only by their Connection limits.
+A Connection limit needs a Connection that is granted to the agent.
+OpenAI and Bedrock calls take no Connection limit yet, because DAM does not price them.
+
+**Soft.** At a limit, the gate refuses the call and asks the owner whether to continue; it never holds the call.
 At 80% of a limit, its state changes to a warning, and nothing else happens.
-A limit is deleted with its agent.
+An agent's limits are deleted with the agent.
 
-**The check.** On each metered call, the gate reads the payer's limits and today's extensions from the database, and today's spend from the day counters, never from the rollup.
-A missing counter is rebuilt from the rollup first.
+**The check.** On each metered call, the gate reads the limits that count the call and today's extensions from the database, and today's spend from the day counters.
+A missing counter is rebuilt from the rollup first, and when the day counters cannot be read, the gate reads today's spend from the rollup.
+The gate checks every limit that counts the call, and any reached one refuses it, so the first limit reached stops the work.
 A call that already streams continues to its end, so the spend can pass a limit by the calls that were running.
+
+## Spend ceiling
+
+The operator sets the Spend Ceiling: a hard daily dollar maximum for each user.
+It counts the same spend as the own limit: the user's metered dollar spend on paid providers, on all agents.
+At the ceiling, the gate refuses the call and asks nothing, because "continue" cannot lift it.
+When the ceiling and a soft limit are both reached, the ceiling's refusal applies.
+
+A user's ceiling comes from their UserSpendLimit object, else from the chart's default ceiling, which is off at first.
+A UserSpendLimit works like a UserBudget ([budgets](budgets.md)):
+
+```yaml
+apiVersion: agent-platform.ai/v1
+kind: UserSpendLimit
+metadata:
+  name: spend-limit-<keycloak-sub>   # pinned to spec.owner at admission (CEL)
+  namespace: <agents-namespace>      # the chart's agent namespace (default platform-agents)
+spec:
+  owner: "<keycloak-sub>"            # exact plaintext sub, as on the agent owner label
+  dailyUsd: "50"                     # dollars per UTC day, at most two decimals
+```
+
+Operators manage these objects; a user cannot change one.
+A user can still set an own limit below the ceiling, and the lower of the two stops the work first.
+The gate reads the user's object by its name and keeps the value for one minute, so a change applies within a minute.
+When a read fails, the gate keeps the last value it read; with no value read yet, the check fails and the gate refuses the call.
 
 ## Refusal
 
@@ -164,8 +211,9 @@ The shape follows the API path of each call, never the agent's harness, because 
 - **OpenAI Chat, Responses and embeddings paths, Bob included:** a "bad request" status.
   Codex and Pi stop at once and show the text; to a "too many requests" answer, Codex shows its own text instead.
 
-The body is plain text: "Spend quota exceeded for today.", then what to do next, with the product name.
+The body is plain text: "Spend quota exceeded for today.", then what to do next: at a limit, that the owner can approve more in the product, with its name; at the ceiling, to ask the platform operator for a higher ceiling.
 It has no digits, because Pi retries when the text names a retryable status code and stops when it says "quota exceeded"; a product name with digits is left out.
+A call on a Bob Connection gets the same text inside a JSON error object, because Bob reads only the message of a JSON error and otherwise shows just "Bad Request"; Pi shows a JSON error raw, so every other provider keeps plain text.
 Paths that are not metered, such as model lists and token counting, are never refused.
 Every refusal carries the `x-platform-refusal` header, so the [Model Router](harness-config.md#the-model-router) passes it to the harness unchanged and does not explain it as a provider error.
 
@@ -174,7 +222,8 @@ So the gate counts each refusal in the day's rollup, under an unknown model, bec
 
 ## Continue
 
-At a refusal, the gate asks the owner on Home with a spend-limit approval.
+At a refusal by a limit, the gate asks the owner on Home with a spend-limit approval, one for each reached limit, on the agent whose call was refused.
+A refusal by the ceiling asks nothing.
 There is one question per limit, day and extension count, so further refusals at the same level add no question.
 "Continue" is any allow verdict on it: it adds one extension for that day, so the effective limit is the amount times one plus the extensions, and the gate asks again at the new level.
 A deny stops the agent for the day: the limit stays reached, and the gate does not ask again that day.

@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import type { AgentService } from "../agent/index.js";
 import type { CompatService, ConfigService } from "../cli/index.js";
+import type { ConnectionService } from "../connection/index.js";
 import type { TrpcClient } from "../shared/trpc/trpc-client.js";
 import { buildDailyCommand } from "./commands/daily.js";
 import { buildLimitCommand } from "./commands/limit.js";
@@ -12,6 +13,7 @@ export interface SpendModuleOptions {
   configService: ConfigService;
   compatService: CompatService;
   createAgentService: (host: string) => AgentService;
+  createConnectionService: (host: string) => ConnectionService;
 }
 
 export interface SpendModule {
@@ -23,6 +25,7 @@ export function composeSpendModule(opts: SpendModuleOptions): SpendModule {
     compatService: opts.compatService,
     configService: opts.configService,
     createAgentService: opts.createAgentService,
+    createConnectionService: opts.createConnectionService,
     createSpendService: (host: string) =>
       createSpendService({ trpc: opts.buildTrpc(host) }),
   };

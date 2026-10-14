@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type {
+  spendCeilingSourceSchema,
   spendDailyInputSchema,
   spendLimitScopeSchema,
   spendLimitStateSchema,
@@ -12,6 +13,7 @@ export type SpendUnit = z.infer<typeof spendUnitSchema>;
 export type SpendDailyInput = z.infer<typeof spendDailyInputSchema>;
 export type SpendLimitScope = z.infer<typeof spendLimitScopeSchema>;
 export type SpendLimitState = z.infer<typeof spendLimitStateSchema>;
+export type SpendCeilingSource = z.infer<typeof spendCeilingSourceSchema>;
 export type SpendStatusInput = z.infer<typeof spendStatusInputSchema>;
 export type SpendSetLimitInput = z.infer<typeof spendSetLimitInputSchema>;
 
@@ -43,6 +45,13 @@ export interface SpendLimitView {
   state: SpendLimitState;
 }
 
+export interface SpendCeilingView {
+  amountMicros: number;
+  spentMicros: number;
+  state: SpendLimitState;
+  source: SpendCeilingSource;
+}
+
 export interface SpendTotal {
   unit: SpendUnit;
   costMicros: number;
@@ -53,6 +62,7 @@ export interface SpendStatus {
   day: string;
   resetsAt: string;
   limits: SpendLimitView[];
+  ceiling: SpendCeilingView | null;
   spent: SpendTotal[];
 }
 

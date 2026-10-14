@@ -1,23 +1,49 @@
 import { Command } from "commander";
 import {
   formatSpendAmount,
+  type SpendCeilingSource,
+  type SpendCeilingView,
   type SpendLimitView,
   type SpendStatus,
 } from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
 import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
-import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
+import type { ConnectionService } from "../../connection/index.js";
+import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderTable } from "../../shared/render-table.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
 import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { SpendService } from "../services/spend-service.js";
 
-function limitRow(limit: SpendLimitView): string[] {
+const CEILING_SOURCES: Readonly<Record<SpendCeilingSource, string>> = {
+  default: "the platform default",
+  UserSpendLimit: "your UserSpendLimit",
+};
+
+function limitName(
+  limit: SpendLimitView,
+  connectionNames: ReadonlyMap<string, string>,
+): string {
+  const scope = limit.scope;
+  switch (scope.kind) {
+    case "agent":
+      return "agent";
+    case "owner":
+      return "own (all Agents)";
+    case "connection":
+      return `connection ${connectionNames.get(scope.connectionId) ?? scope.connectionId}`;
+  }
+}
+
+function limitRow(
+  limit: SpendLimitView,
+  connectionNames: ReadonlyMap<string, string>,
+): string[] {
   const money = (micros: number) => formatSpendAmount(micros, limit.unit);
   return [
-    `${limit.scope.kind} limit`,
+    limitName(limit, connectionNames),
     money(limit.amountMicros),
     String(limit.extensions),
     money(limit.effectiveMicros),
@@ -27,7 +53,19 @@ function limitRow(limit: SpendLimitView): string[] {
   ];
 }
 
-function renderStatus(status: SpendStatus, subject: string): string {
+function ceilingLine(ceiling: SpendCeilingView | null): string {
+  if (ceiling === null) return "Spend Ceiling: off.";
+  return (
+    `Spend Ceiling: ${formatSpendAmount(ceiling.amountMicros, "usd")} per UTC day, from ${CEILING_SOURCES[ceiling.source]}. ` +
+    `Spent ${formatSpendAmount(ceiling.spentMicros, "usd")}, ${ceiling.state}.`
+  );
+}
+
+function renderStatus(
+  status: SpendStatus,
+  subject: string,
+  connectionNames: ReadonlyMap<string, string>,
+): string {
   const lines = [
     `${subject} on ${status.day} (UTC). The day resets at ${status.resetsAt}.`,
     "",
@@ -44,6 +82,7 @@ function renderStatus(status: SpendStatus, subject: string): string {
                 : ""),
           )
           .join(", ")}.`,
+    ceilingLine(status.ceiling),
     "",
   );
   if (status.limits.length === 0) {
@@ -55,22 +94,37 @@ function renderStatus(status: SpendStatus, subject: string): string {
     "\n" +
     renderTable([
       ["LIMIT", "AMOUNT", "EXTENSIONS", "EFFECTIVE", "SPENT", "LEFT", "STATE"],
-      ...status.limits.map(limitRow),
+      ...status.limits.map((limit) => limitRow(limit, connectionNames)),
     ])
   );
+}
+
+async function connectionNamesOf(
+  status: SpendStatus,
+  connections: ConnectionService,
+): Promise<ReadonlyMap<string, string>> {
+  if (!status.limits.some((limit) => limit.scope.kind === "connection")) {
+    return new Map();
+  }
+  const listed = await connections.list();
+  return listed.ok
+    ? new Map(listed.value.map((c) => [c.id, c.name]))
+    : new Map();
 }
 
 export function buildStatusCommand(deps: {
   compatService: CompatService;
   configService: ConfigService;
   createAgentService: (host: string) => AgentService;
+  createConnectionService: (host: string) => ConnectionService;
   createSpendService: (host: string) => SpendService;
 }): Command {
   return new Command("status")
     .description(
-      "Show today's Metered Spend and the Spend Limits, for one Agent or for you",
+      "Show today's Metered Spend, the Spend Limits and the Spend Ceiling, for one Agent or for you",
     )
     .argument("[agent]", "Agent Ref — name or 'agent-…' ID (optional)")
+    .option("--me", "show your own limit and your ceiling (the default)")
     .option(
       "--server <url>",
       "override the configured server URL for this call",
@@ -79,15 +133,19 @@ export function buildStatusCommand(deps: {
     .addHelpText(
       "after",
       "\nExamples:\n" +
-        "  dam spend status\n" +
+        "  dam spend status --me\n" +
         "  dam spend status my-agent\n" +
         "  dam spend status my-agent --json\n",
     )
     .action(
       async (
         ref: string | undefined,
-        opts: { server?: string; json?: boolean },
+        opts: { me?: boolean; server?: string; json?: boolean },
       ) => {
+        if (opts.me && ref !== undefined) {
+          process.stderr.write("error: --me takes no agent\n");
+          process.exit(EXIT_INVALID_INPUT);
+        }
         const host = await resolveActiveHost(deps, opts.server);
         const agent =
           ref === undefined
@@ -101,13 +159,21 @@ export function buildStatusCommand(deps: {
           .createSpendService(host)
           .status(agent ? { agentId: agent.id } : undefined);
         exitOnServiceError(result, host);
+        if (opts.json) {
+          return writeStdoutAndExit(
+            `${JSON.stringify(result.value)}\n`,
+            EXIT_SUCCESS,
+          );
+        }
         return writeStdoutAndExit(
-          opts.json
-            ? `${JSON.stringify(result.value)}\n`
-            : renderStatus(
-                result.value,
-                agent ? agent.name : "All your Agents",
-              ),
+          renderStatus(
+            result.value,
+            agent ? agent.name : "All your Agents",
+            await connectionNamesOf(
+              result.value,
+              deps.createConnectionService(host),
+            ),
+          ),
           EXIT_SUCCESS,
         );
       },

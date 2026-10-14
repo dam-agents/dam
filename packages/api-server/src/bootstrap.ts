@@ -266,6 +266,7 @@ import {
   composeConnectionsAtBoot,
   composeConnectionsForOwner,
   createConnectionGrantsCleanupHook,
+  createGrantedConnectionTemplates,
   listConnectionGrantAgentIds,
 } from "./modules/connections/compose.js";
 import { startAttachFirstProviderSaga } from "./modules/connections/sagas/attach-first-provider.js";
@@ -1239,6 +1240,9 @@ export async function bootstrap() {
         (await agentsRepo.resolveIdentity(agentId))?.owner ?? null,
     },
     questions: createSpendQuestionReader(db),
+    connections: createGrantedConnectionTemplates(db),
+    k8s: k8sClient,
+    defaultCeilingMicros: config.spendDefaultUserCeilingMicros,
     brandName: config.brand.name,
   });
   await periodicJobs.register("spend-unrecorded-calls", 5 * 60_000, () =>

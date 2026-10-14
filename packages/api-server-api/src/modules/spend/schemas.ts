@@ -52,6 +52,12 @@ export const spendDailyInputSchema = z
 
 export const spendLimitScopeSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("agent"), agentId: z.string().min(1) }),
+  z.object({ kind: z.literal("owner") }),
+  z.object({
+    kind: z.literal("connection"),
+    agentId: z.string().min(1),
+    connectionId: z.string().min(1),
+  }),
 ]);
 
 export const spendLimitAmountSchema = z
@@ -60,6 +66,11 @@ export const spendLimitAmountSchema = z
   .nonnegative()
   .max(SPEND_LIMIT_MAX_MICROS);
 
+function decimalToMicros(text: string): number {
+  const [whole = "0", fraction = ""] = text.split(".");
+  return Number(whole) * MICROS_PER_UNIT + Number(fraction.padEnd(6, "0"));
+}
+
 export const spendLimitAmountTextSchema = z
   .string()
   .trim()
@@ -67,11 +78,17 @@ export const spendLimitAmountTextSchema = z
     /^\d+(\.\d{1,6})?$/,
     "an amount looks like 10 or 0.25, with at most 6 decimals",
   )
-  .transform((text) => {
-    const [whole = "0", fraction = ""] = text.split(".");
-    return Number(whole) * MICROS_PER_UNIT + Number(fraction.padEnd(6, "0"));
-  })
+  .transform(decimalToMicros)
   .pipe(spendLimitAmountSchema);
+
+export const spendCeilingUsdTextSchema = z
+  .string()
+  .trim()
+  .regex(
+    /^\d{1,7}(\.\d{1,2})?$/,
+    "a ceiling looks like 50 or 12.50: dollars with at most 7 digits and 2 decimals",
+  )
+  .transform(decimalToMicros);
 
 export const spendStatusInputSchema = z
   .object({ agentId: z.string().min(1).optional() })
@@ -83,3 +100,5 @@ export const spendSetLimitInputSchema = z.object({
 });
 
 export const spendLimitStateSchema = z.enum(["ok", "warn", "reached"]);
+
+export const spendCeilingSourceSchema = z.enum(["default", "UserSpendLimit"]);

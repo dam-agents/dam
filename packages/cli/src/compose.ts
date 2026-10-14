@@ -47,6 +47,10 @@ export function compose(): Command {
     createAgentService: agent.exports.createService,
   };
   const egress = composeEgressModule(base);
+  const connection = composeConnectionModule({
+    ...base,
+    browserOpener: createBrowserOpener(),
+  });
 
   const program = new Command();
   program
@@ -64,7 +68,7 @@ export function compose(): Command {
     composeFileModule(base),
     egress,
     composeApprovalModule(base),
-    composeConnectionModule({ ...base, browserOpener: createBrowserOpener() }),
+    connection,
     composeScheduleModule(base),
     composeSkillModule(base),
     composeSatelliteModule(base),
@@ -74,7 +78,10 @@ export function compose(): Command {
     }),
     composeChannelModule(base),
     composeMetricsModule(base),
-    composeSpendModule(base),
+    composeSpendModule({
+      ...base,
+      createConnectionService: connection.exports.createService,
+    }),
     composeTelemetryModule(base),
     composeTermsModule(base),
   ]) {
