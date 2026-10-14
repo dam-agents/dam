@@ -25,6 +25,7 @@ export interface ChatService {
     serverFlag?: string;
     strategy: TerminalStrategy;
     reset?: boolean;
+    onAttach?: (sessionId: string) => void;
   }): Promise<Result<{ bridge: BridgeResult; sessionId: string }, ChatError>>;
   listSessions(input: {
     agentRef: string;
@@ -103,6 +104,7 @@ export function createChatService(deps: {
         });
       if (r.kind !== "ready") return err(r);
 
+      input.onAttach?.(r.sessionId);
       const bridge = await connectTerminalBridge({
         host,
         token,
