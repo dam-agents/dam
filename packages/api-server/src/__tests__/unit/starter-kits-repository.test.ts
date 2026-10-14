@@ -755,10 +755,13 @@ describe("the shipped proof-of-concept catalog", () => {
       "nous",
       "openevolve",
       "shinkaevolve",
+      "spotlights",
     ]);
     expect(new Set(kits.map((k) => k.catalog))).toEqual(new Set(["platform"]));
-    // TEST_SCENARIO: every kit the chart still ships brings its own image. The wiki toolkits are the ones that did not, and they now live in their own repositories, offered through the curated catalog.
-    expect(kits.every((k) => k.kit.image !== undefined)).toBe(true);
+    // TEST_SCENARIO: every kit the chart ships brings its own image, except Spotlights, which installs its engine on the default image.
+    expect(
+      kits.filter((k) => k.kit.image === undefined).map((k) => k.kit.id),
+    ).toEqual(["spotlights"]);
     expect(kits.some((k) => k.kit.knowledgeBase !== undefined)).toBe(false);
     expect(kits.find((k) => k.kit.id === "nous")!.kit.image?.ref).toMatch(
       /^quay\.io\/dam-agents\/nous(:|$)/,
@@ -773,6 +776,6 @@ describe("the shipped proof-of-concept catalog", () => {
     ).toMatchObject({ storage: "5Gi" });
     expect(
       kits.filter((k) => k.kit.onboarding !== false).map((k) => k.kit.id),
-    ).toEqual([]);
+    ).toEqual(["spotlights"]);
   });
 });

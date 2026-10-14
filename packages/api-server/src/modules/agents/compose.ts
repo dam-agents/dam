@@ -1,4 +1,5 @@
 import { PROVIDER_TEMPLATE_IDS, type HarnessCatalog } from "api-server-api";
+import type { InfraAgent } from "./infrastructure/agent-mappers.js";
 import type * as k8s from "@kubernetes/client-node";
 import type { Subscription } from "rxjs";
 import type { Db } from "db";
@@ -249,4 +250,42 @@ export function connectionGrantProvisioner(
         await connections.setAgentConnections(agentId, sel.connectionIds);
     },
   };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Gives a just-connected provider to each of the
+ * owner's agents that holds none, when that agent's default would pick it —
+ * the same choice a new agent's default makes. An agent whose default is an
+ * older provider was detached on purpose and is left without one. One agent
+ * failing does not keep the provider from the rest.
+ */
+export async function attachProviderToBareAgents(
+  connections: Parameters<typeof connectionGrantProvisioner>[0] &
+    Pick<ConnectionsService, "getAgentConnections" | "updateAgentConnections">,
+  catalog: Pick<HarnessCatalog, "harnesses">,
+  agents: readonly { id: string; spec: Pick<InfraAgent["spec"], "harness"> }[],
+  connectionId: string,
+): Promise<void> {
+  const provisioner = connectionGrantProvisioner(connections, catalog);
+  const failed: unknown[] = [];
+  for (const agent of agents) {
+    try {
+      const { connections: grants } = await connections.getAgentConnections(
+        agent.id,
+      );
+      const chosen = await provisioner.defaultProvider(
+        grants.map((g) => g.connectionId),
+        agent.spec.harness ? { harness: agent.spec.harness } : {},
+      );
+      if (chosen === connectionId)
+        await connections.updateAgentConnections(agent.id, {
+          grant: [connectionId],
+          revoke: [],
+        });
+    } catch (err) {
+      failed.push(err);
+    }
+  }
+  if (failed.length > 0)
+    throw new AggregateError(failed, `${failed.length} agent(s) not attached`);
 }

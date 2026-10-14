@@ -2,7 +2,13 @@ import { Tooltip } from "@/components/ui/tooltip";
 
 import { TruncateStart } from "../../../components/truncate-start.js";
 
-export function ProcessCommand({ command }: { command: string }) {
+export function ProcessCommand({
+  command,
+  title = command,
+}: {
+  command: string;
+  title?: string;
+}) {
   return (
     <Tooltip
       content={<span className="font-mono break-all">{command}</span>}
@@ -10,7 +16,7 @@ export function ProcessCommand({ command }: { command: string }) {
     >
       <span className="flex min-w-0 flex-1">
         <TruncateStart className="min-w-0 font-mono text-xs text-foreground">
-          {command}
+          {title}
         </TruncateStart>
       </span>
     </Tooltip>

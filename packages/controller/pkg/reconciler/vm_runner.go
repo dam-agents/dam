@@ -969,7 +969,7 @@ func (r *AgentReconciler) runnerNotReady(ctx context.Context, owner string) (str
 	for i := range pods {
 		pod := &pods[i]
 		for _, c := range pod.Status.Conditions {
-			if c.Type == corev1.PodScheduled && c.Status == corev1.ConditionFalse && c.Message != "" {
+			if c.Type == corev1.PodScheduled && c.Status == corev1.ConditionFalse && c.Message != "" && !awaitingVolume(pod, c.Message) {
 				return apiv1.ReasonMachineRunnerUnschedulable, "the owner's VM runner cannot be scheduled: " + c.Message
 			}
 		}
@@ -981,6 +981,13 @@ func (r *AgentReconciler) runnerNotReady(ctx context.Context, owner string) (str
 	}
 	return vmrunner.ReasonNotReady, starting
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: a new owner's runner pod is created with its state claim, so the scheduler first sees the claim unbound while the volume is still provisioned — every first VM agent hit this and read as one that cannot start. Only a claim still unbound past the grace is a storage fault.
+func awaitingVolume(pod *corev1.Pod, msg string) bool {
+	return strings.Contains(msg, "unbound immediate PersistentVolumeClaims") && time.Since(pod.CreationTimestamp.Time) < runnerVolumeBindGrace
+}
+
+const runnerVolumeBindGrace = 3 * time.Minute
 
 // UNIT_BOUNDARY_DESCRIPTION: when the kernel last OOM-killed the owner's runner, from its pods' container statuses; zero when it never did or the pods cannot be read. A pod keeps only its container's last termination, so a kill older than the restart after it is forgotten, which the rule that reads this allows for.
 func (r *AgentReconciler) runnerOOMKilledAt(ctx context.Context, owner string) time.Time {

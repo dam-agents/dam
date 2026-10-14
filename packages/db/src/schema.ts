@@ -101,6 +101,14 @@ export const slackIgnoredApps = pgTable(
   (table) => [primaryKey({ columns: [table.channelId, table.botId] })],
 );
 
+export const publicImageUrls = pgTable("public_image_urls", {
+  sha256: text("sha256").primaryKey(),
+  url: text("url").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 export const telegramConversations = pgTable(
   "telegram_conversations",
   {

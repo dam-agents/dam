@@ -1,4 +1,5 @@
 import { Asleep, Migrate, Play, Renew, Warning } from "@carbon/icons-react";
+import { isStartRefusal } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -101,7 +102,13 @@ export function AgentUnavailableOverlay({
         </h2>
         <div className="flex items-center gap-2 empty:hidden">
           <VmRuntimeBadge agent={agent} />
-          {state !== "starting" && <StatusBadge state={state} vm={agent.vm} />}
+          {state !== "starting" && (
+            <StatusBadge
+              state={state}
+              vm={agent.vm}
+              refused={isStartRefusal(agent.podTerminationCode)}
+            />
+          )}
         </div>
       </div>
       {description && (

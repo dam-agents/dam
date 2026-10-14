@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 
 import { useAgentsList } from "../../agents/api/queries.js";
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
+import { NEUTRAL_FILL } from "../../budgets/lib/pool-colors.js";
 import { useSpendBreakdown } from "../../metrics/api/queries.js";
 import { totalCostUsd } from "../../metrics/lib/totals.js";
 import { cachedSpend } from "../api/queries.js";
@@ -130,7 +131,7 @@ export function SpendWidget() {
                       </span>
                     </div>
                     <motion.div
-                      className="h-3 rounded-full bg-accent"
+                      className={cn("h-3 rounded-full", NEUTRAL_FILL)}
                       initial={{ width: "0%" }}
                       animate={{
                         width:

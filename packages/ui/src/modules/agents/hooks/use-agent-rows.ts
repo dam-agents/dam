@@ -7,7 +7,7 @@ import { slotUnitOf } from "../../budgets/lib/slots.js";
 import { useDeleteAgent } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
 import { resolveAgentDisplay } from "../utils/agent-resolver.js";
-import { sandboxSubtitle } from "../utils/sandbox-subtitle.js";
+import { agentUsage, sandboxSubtitle } from "../utils/sandbox-subtitle.js";
 import { useMigrateRuntime } from "./use-migrate-runtime.js";
 import {
   useRestartAgent,
@@ -55,7 +55,8 @@ export function useAgentRows() {
       pausingIds,
       slowStartIds,
     ),
-    subtitle: sandboxSubtitle(agent, slotUnit, budget?.vm),
+    subtitle: sandboxSubtitle(agent, slotUnit),
+    usage: agentUsage(agent, budget?.vm),
     deletePending:
       deleteAgent.isPending && deleteAgent.variables?.id === agent.id,
     updatePending: update.updatingId === agent.id,

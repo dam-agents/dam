@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -18,7 +18,9 @@ It shows loading, unavailable and empty listings explicitly, with a retry for fa
 The catalog remains usable where discovery is not configured.
 Before a session starts, the picker lists every provider the harness accepts in one stable order: an attached provider shows its models and a disconnect action, and one not attached offers to attach it, so a provider never carries another provider's model.
 It grays out a harness that no provider the owner holds accepts.
-With no provider at all, the chat opens the provider list in a modal, and the picker's place holds a link that reopens it.
+With no provider at all, the chat opens the provider list in a modal.
+While the agent holds no provider, the chat blocks sending, and the picker's place holds a link to that modal; a provider connected or picked there is attached to the agent.
+With no pair picked or remembered, the picker preselects the default harness on the first granted provider it accepts, else the first carried harness a granted provider fits, with its default model.
 Until the agent has reported the harnesses it carries, as a new agent has not before it first answers, the picker shows the pair a new session is expected to run on, from the Agent's own harness, its granted providers and the harness catalog: the pair picked for the next session, else the remembered pair when it names that harness, otherwise the harness on the first granted provider it accepts, with its default model.
 Opened then, it shows a loader until the list arrives, and a session started meanwhile names its pair only after the harnesses and the remembered pair are read again.
 Until the harness catalog arrives, the picker label is a loader, never a raw harness name.
@@ -117,7 +119,9 @@ Claude Code reads its tier models only at start, from the gateway, so the gatewa
 A name it gave Claude Code for a tier that the provider has since retired goes to that tier's current model, so a kept list that is out of date costs nothing.
 With no kept list, on the agent's first start or a new provider, the gateway does not wait for the listing: it listens at once and gives Claude Code its own tier names, `claude/opus` and the like, which each request maps to that tier's model once the listing is in, the request waiting for it.
 Claude Code knows those names no better than a provider's own, so it sizes the request as for any model it does not know; the next start gets the listed names.
-A provider that never lists then receives the bare tier name and refuses the turn.
+When the listing failed, the request goes upstream on the bare tier name, and a provider refuses it.
+On that refusal the gateway lists once more and, when the list is in, resends the turn on the tier's model: a provider attached moments ago can fail the first listings while its egress opens, and still answer by the time it refuses.
+A provider that never lists keeps refusing the turn.
 
 CurveBender pins Claude Code's Sonnet slot to its non-reasoning Nemotron model for the auto-permission classifier, and every work slot and the default conversation to GLM.
 It also turns off the server-side auto-mode check: GLM cannot answer the classifier's non-thinking request within its deadline, so the model pin and that flag are needed together.

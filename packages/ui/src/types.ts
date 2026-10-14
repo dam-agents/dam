@@ -8,10 +8,9 @@ import type {
 
 export type Role = "user" | "assistant";
 
-export interface ToolContent {
-  type: "content" | "diff" | "terminal";
-  text?: string;
-}
+export type ToolContent =
+  | { type: "content"; text: string }
+  | { type: "diff"; path: string; oldText: string | null; newText: string };
 
 export interface ToolChip {
   kind: "tool";
@@ -19,6 +18,8 @@ export interface ToolChip {
   title: string;
   status: string;
   content?: ToolContent[];
+  toolKind?: string;
+  description?: string;
 }
 
 interface TextPart {

@@ -1,6 +1,6 @@
 # Getting started
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -12,7 +12,7 @@ The checklist is per user, not per Agent, so a user with five Agents sees it onc
 
 A task is done when the api-server sees the domain event that the feature already emits, not when the user clicks through the UI.
 So a task counts the same whether the user did it in the browser, with the CLI, through a starter kit, or by asking an Agent to do it with its own tools.
-The api-server records each unlock in Postgres and keeps it after the thing that earned it is deleted, so an avatar never locks again.
+The api-server records each unlock in Postgres and keeps it after the thing that earned it is deleted, so an avatar never locks again unless the user resets their onboarding progress.
 Each replica remembers the tasks it already recorded, so the message sent on every prompt costs nothing after the first.
 
 The character a task unlocks is random among the ones still locked, with one exception: the first Agent unlocks the character it was created with while that character is still locked, so the avatar the user sees on it is the one they just unlocked.
@@ -34,7 +34,10 @@ Each row opens the place where the task is done; tasks on an Agent open the newe
 Every unlock is pushed to the owner's open tabs as a [live hint](platform-topology.md), and the dock plays a short celebration for each unlock the user has not seen, one at a time, then records it as seen.
 
 Dismissing the checklist hides it until the next unlock, which opens it again, or until the user asks for it from the avatar picker.
-Once every character is unlocked and seen, the checklist is gone for good.
+Once every character is unlocked and seen, the checklist is gone until the user resets their onboarding progress from the Experimental features tab.
+That reset deletes every unlock and reopens the checklist; characters already on Agents stay on them.
+The replica that serves the reset forgets the tasks it recorded for that user, so redoing one unlocks again; another replica skips a task it already recorded until it restarts.
 The avatar picker offers only unlocked characters, plus the one the Agent already shows; the rest appear as eggs.
-A newly unlocked character carries a dot in the picker, and on the picker's button, until the user first picks it; the first Agent's own character, already in use, never does.
+A newly unlocked character carries a dot in the picker, and on the picker's button, until the user first opens the picker; the dots stay while that picker is open, so the user sees which characters are new.
+The first Agent's own character, already in use, never carries one.
 The lock is a UI affordance: the api-server accepts any character on an Agent.

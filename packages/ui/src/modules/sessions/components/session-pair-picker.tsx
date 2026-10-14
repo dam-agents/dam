@@ -80,6 +80,7 @@ export function SessionPairPicker({
     remembered ?? null,
     names,
     fittingProviders(views, providers.granted),
+    defaultHarness,
   );
   const harness =
     (chosen && names.includes(chosen.harness) ? chosen.harness : null) ??
@@ -119,7 +120,7 @@ export function SessionPairPicker({
       ? pairLabel(pair, catalog.harnesses, providers.granted)
       : "Choose a harness and model");
 
-  if (providers.loaded && providers.owned.length === 0)
+  if (providers.loaded && providers.granted.length === 0)
     return <ConnectProvidersPrompt onClick={onConnectProviders} />;
 
   return (

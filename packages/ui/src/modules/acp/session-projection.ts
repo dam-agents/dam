@@ -57,16 +57,20 @@ const INTERRUPT_MARKER_RE = /^\[Request interrupted by user[^\]]*\]$/;
 function mapToolContent(
   content: ToolCallContent[] | undefined | null,
 ): ToolContent[] | undefined {
-  return content
-    ?.map<ToolContent>((c) => {
-      if (c.type === "content")
-        return {
-          type: c.type,
-          text: c.content.type === "text" ? c.content.text : "",
-        };
-      return { type: c.type, text: "" };
-    })
-    .filter((c) => c.text);
+  return content?.flatMap((c): ToolContent[] => {
+    if (c.type === "diff")
+      return [
+        {
+          type: "diff",
+          path: c.path,
+          oldText: c.oldText ?? null,
+          newText: c.newText,
+        },
+      ];
+    if (c.type === "content" && c.content.type === "text" && c.content.text)
+      return [{ type: "content", text: c.content.text }];
+    return [];
+  });
 }
 
 const EMBEDDED_RE =
@@ -688,6 +692,8 @@ function handleToolCall(
     title: u.title,
     status: u.status ?? "pending",
     content: mapToolContent(u.content),
+    toolKind: u.kind,
+    description: toolDescription(u.rawInput),
   };
   return appendAgentParts(messages, [chip], at, turnId);
 }
@@ -718,6 +724,14 @@ function findToolIdx(
   return null;
 }
 
+function toolDescription(rawInput: unknown): string | undefined {
+  if (typeof rawInput !== "object" || rawInput === null) return undefined;
+  const description = (rawInput as { description?: unknown }).description;
+  return typeof description === "string" && description.trim()
+    ? description.trim()
+    : undefined;
+}
+
 function patchToolChip(
   messages: Message[],
   idx: number,
@@ -738,6 +752,8 @@ function patchToolChip(
                   status: u.status ?? p.status,
                   title: u.title ?? p.title,
                   content: content?.length ? content : p.content,
+                  toolKind: u.kind ?? p.toolKind,
+                  description: toolDescription(u.rawInput) ?? p.description,
                 }
               : p,
           ),

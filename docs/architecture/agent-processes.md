@@ -1,6 +1,6 @@
 # Agent processes
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -63,6 +63,13 @@ The runtime reads only a file a scan recorded, never a path a caller names.
 Claude Code writes every tool call's output, foreground or `run_in_background`, to a file of its own, so its Turn Processes and Harness Tasks always have output; a process writing to a pipe or a terminal has none.
 The scan reads each process's environment for one variable, the keep mark, and drops the rest unread, because agents hold credentials there.
 
+A row also says when it is a **container** or a **container runtime**, read from its command line alone, without asking the runtime.
+Docker and k3s run each container under a containerd shim that is re-parented to the reaper, so it lists as a Detached Process; its command names the containerd namespace (`moby` for Docker) and the container id, and a k3s shim runs from k3s's own paths.
+The row carries the engine and the id cut to twelve characters, which `docker` and `crictl` accept.
+`dockerd`, `containerd` and `k3s server` or `agent` are marked as the runtime of their engine.
+The panel shows both with a container icon named by their engine, a container titled by its short id in place of the shim command, and lists them after the other rows of the same kind in their group, so the user's own detached work comes first.
+The mark stays on the row in the finished history, which shows the same icon and title; the engine is the icon's name there, since a finished row has no caption.
+
 **Finished work.** A Harness Task or Detached Process that a scan finds gone moves to a finished history — a Harness Task as soon as its process is gone, without waiting for the harness's next report.
 Turn Processes keep no history.
 The history and the rows last seen running live in the **processes runtime document** on the agent's home volume ([persistence](persistence.md)), stamped with the kernel's boot id: on a boot with a new id, the rows the last scan saw running are recorded as ended by hibernation, since nothing outlives one.
@@ -78,6 +85,7 @@ Running rows are grouped by their effect on the agent: active turns, the work ke
 Each row's menu has a Stop that asks first; for a Harness Task or Detached Process it also has the keep choice, which names who decided and is disabled on an Always on agent, and changing it moves the row to the other group.
 A change [waiting for kept tasks](#reported-background-work) shows above the rows with its Apply now.
 A header indicator counts the running Harness Tasks and Detached Processes and those keeping the agent awake, and opens the section — so a user who wonders why the agent stays awake finds the answer one click away.
+The section and the indicator show the same list: while the agent runs but the UI has lost its connection to it, both keep the last list and the section says the agent can't be reached; while the agent does not run, neither shows it.
 
 ## Keeping work
 

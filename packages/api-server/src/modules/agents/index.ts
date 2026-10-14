@@ -1,6 +1,7 @@
 export {
   composeAgentsModule,
   composePublicAgentPage,
+  attachProviderToBareAgents,
   connectionGrantProvisioner,
 } from "./compose.js";
 export type {

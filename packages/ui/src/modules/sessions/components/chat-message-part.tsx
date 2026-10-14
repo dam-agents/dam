@@ -20,7 +20,7 @@ import { PermissionVerdictLine } from "./permission-prompt.js";
 import { ThoughtBlock } from "./thought-block.js";
 import { ToolChip } from "./tool-chip.js";
 
-function ToolPart({ chip }: { chip: ToolChipPart }) {
+export function ToolPart({ chip }: { chip: ToolChipPart }) {
   const spawns = useOwnedSpawns(chip);
   if (spawns) return <DelegationBlock chip={chip} spawns={spawns} />;
   if (isAwaitSubAgentsChip(chip))

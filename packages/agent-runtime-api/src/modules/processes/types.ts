@@ -1,10 +1,12 @@
 import type { z } from "zod";
 import type { Result } from "../../result.js";
 import type {
+  containerEngineSchema,
   finishedRowSchema,
   keepMarkRequestSchema,
   keepSourceSchema,
   pendingRestartSchema,
+  processContainerSchema,
   processKindSchema,
   processListSchema,
   processNoticeSchema,
@@ -14,6 +16,8 @@ import type {
 
 export type ProcessKind = z.infer<typeof processKindSchema>;
 export type KeepSource = z.infer<typeof keepSourceSchema>;
+export type ContainerEngine = z.infer<typeof containerEngineSchema>;
+export type ProcessContainer = z.infer<typeof processContainerSchema>;
 export type ProcessRow = z.infer<typeof processRowSchema>;
 export type FinishedRow = z.infer<typeof finishedRowSchema>;
 export type PendingRestart = z.infer<typeof pendingRestartSchema>;

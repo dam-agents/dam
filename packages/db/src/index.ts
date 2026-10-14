@@ -5,6 +5,7 @@ export {
   identityLinks,
   slackInstalls,
   slackIgnoredApps,
+  publicImageUrls,
   telegramConversations,
   skillSources,
   skillSets,

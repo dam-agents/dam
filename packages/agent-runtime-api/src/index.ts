@@ -97,6 +97,15 @@ export {
   normalizeGitUrl,
   parseGithubRepo,
 } from "./modules/skills/git-url.js";
+export {
+  SOURCE_FETCH_MODES,
+  planSourceFetch,
+} from "./modules/skills/source-fetch.js";
+export type {
+  EgressDenies,
+  SourceFetchMode,
+  SourceFetchPlan,
+} from "./modules/skills/source-fetch.js";
 export { AGENT_HOME_DIR, AGENT_WORK_DIR } from "./modules/workspace/paths.js";
 
 export type {
@@ -110,11 +119,13 @@ export type {
 } from "./modules/harness-config/types.js";
 export { harnessConfigNoticeSchema } from "./modules/harness-config/schemas.js";
 export type {
+  ContainerEngine,
   FinishedRow,
   KeepMarkRequest,
   KeepSource,
   NothingPending,
   PendingRestart,
+  ProcessContainer,
   ProcessesDomainError,
   ProcessesService,
   ProcessKind,
@@ -127,6 +138,7 @@ export {
   finishedRowSchema,
   keepMarkRequestSchema,
   PROCESS_OUTPUT_MAX_BYTES,
+  processContainerSchema,
   processListSchema,
   processNoticeSchema,
   processOutputSchema,

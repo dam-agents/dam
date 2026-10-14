@@ -30,6 +30,12 @@ Opening the PR is the `pr-open` skill's; each fix round is the `review-remediati
   Babysit is its caller: skip its offer of the re-review command and run `gh pr edit <n> --add-label code-guardian-review` yourself.
   Wait.
   Repeat.
+- Wait by blocking on checks, never `sleep`: `dam:review` is a check that completes when the review round ends, so `gh pr checks <n> --watch --interval 60` returns when both the round and CI are done.
+  Right after a push or label the new checks may not exist yet, and `--watch` returns on the old ones; first poll until `gh pr checks <n> --json name,state --jq '.[]|select(.name=="dam:review").state'` prints `QUEUED`, `PENDING` or `IN_PROGRESS`.
+  The check also completes when no review posts: its title then starts with `no review posted`.
+  After `--watch` returns, confirm a `dam-application[bot]` review on HEAD (`gh api --paginate repos/<repo>/pulls/<n>/reviews --jq '.[]|select(.user.login=="dam-application[bot]").commit_id' | tail -1` equals the head SHA); if none exists, go back to the guard.
+  The wait can last an hour, longer than a foreground tool call: run `--watch` in the background, or give it a tool timeout above an hour where the harness allows one.
+  `gh pr view --json` names the author `dam-application`; `gh api` names it `dam-application[bot]`.
 - A bot account cannot be requested as a reviewer, so `--add-reviewer` does not start a review; the `code-guardian-review` label is the only way to ask for another review.
 - `gh run rerun` only when the run's `headSha` == HEAD: a push already re-ran everything, and rerunning a superseded run cancels the fresh one.
 - Merge conflict → merge the base branch as its own commit (never rebase), wait for green.

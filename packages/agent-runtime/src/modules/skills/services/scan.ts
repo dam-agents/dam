@@ -13,7 +13,11 @@ import {
   type GitHubRestClient,
 } from "../infrastructure/github-rest-client.js";
 import type { GitProtocolClient } from "../../git/protocol-client.js";
-import type { LocalSkillRepository } from "../infrastructure/local-skill-repository.js";
+import {
+  subPathEscapes,
+  type LocalSkillRepository,
+} from "../infrastructure/local-skill-repository.js";
+import { fetchGithubPath, isGithubNotFound } from "./fetch-github-path.js";
 
 export interface ScanDeps {
   github: GitHubRestClient;
@@ -42,7 +46,13 @@ export async function runScan(
 ): Promise<Result<ScannedSkill[], SkillsDomainError>> {
   const host = detectGithubOwnerRepo(input.source);
   const res = host
-    ? await scanGithub(deps, input.source, host, input.path)
+    ? await scanGithub(
+        deps,
+        input.source,
+        host,
+        input.path,
+        input.fetch === "directory",
+      )
     : await scanGitClone(deps, input.source, input.path);
   if (!res.ok) return res;
   const { kept, dropped } = dedupeByName(res.value);
@@ -58,7 +68,8 @@ async function scanGithub(
   deps: ScanDeps,
   source: string,
   host: DetectedOwnerRepo,
-  subPath?: string,
+  subPath: string | undefined,
+  byDirectory: boolean,
 ): Promise<Result<ScannedSkill[], SkillsDomainError>> {
   let head = await deps.github.getCommitHead(host, { withAuth: false });
   if (
@@ -70,6 +81,17 @@ async function scanGithub(
   }
   if (!head.ok) return head;
   const version = head.value.sha;
+
+  if (byDirectory && subPath && !subPathEscapes(subPath)) {
+    return deps.repo.withTempDir("platform-skills-scan-", async (tmp) => {
+      const fetched = await fetchGithubPath(deps, host, version, subPath, tmp);
+      if (isGithubNotFound(fetched)) {
+        return sourcePathError("path-missing", source, subPath, version);
+      }
+      if (!fetched.ok) return fetched;
+      return collectSkills(deps, source, tmp, version, subPath);
+    });
+  }
 
   const tarball = await deps.github.fetchTarball(host, version, {
     withAuth: false,

@@ -91,20 +91,13 @@ function DefaultPairPicker({ agentId }: { agentId: string }) {
     carried.map((h) => h.name),
     views,
   ).filter((h) => fitting(h.name).length > 0);
-  const fallback =
-    harnesses.find((h) => h.name === status?.defaultHarness) ?? harnesses[0];
-  const pair =
-    nextPair(
-      null,
-      remembered ?? null,
-      harnesses.map((h) => h.name),
-      fitting,
-    ) ??
-    (fallback && {
-      harness: fallback.name,
-      provider: fitting(fallback.name)[0]!,
-      model: null,
-    });
+  const pair = nextPair(
+    null,
+    remembered ?? null,
+    harnesses.map((h) => h.name),
+    fitting,
+    status?.defaultHarness,
+  );
   const { data: models } = useProviderModels(
     agentId,
     pair?.harness ?? null,

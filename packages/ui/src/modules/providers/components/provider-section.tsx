@@ -12,7 +12,11 @@ import { ProviderConnectDialog } from "./provider-connect-dialog.js";
 import type { ProviderItem } from "./provider-item.js";
 import { ProviderRow } from "./provider-row.js";
 
-export function ProviderSection() {
+export function ProviderSection({
+  onConnected,
+}: {
+  onConnected?: (connectionId: string) => void;
+} = {}) {
   const { itemByType, isPending } = useProviderItems();
   const { data: catalog, isPending: catalogPending } = useHarnessCatalog();
   const showConfirm = useStore((s) => s.showConfirm);
@@ -63,7 +67,12 @@ export function ProviderSection() {
                       <ProviderBalance connectionId={item.id} />
                     )
                   }
-                  onOpen={() => setDialog({ provider: row.type, item })}
+                  connectedAction={onConnected && "Use"}
+                  onOpen={() =>
+                    item && onConnected
+                      ? onConnected(item.id)
+                      : setDialog({ provider: row.type, item })
+                  }
                 />
               );
             })}
@@ -73,7 +82,10 @@ export function ProviderSection() {
         <ProviderConnectDialog
           provider={dialog.provider}
           item={dialog.item}
-          onConnected={() => setDialog(null)}
+          onConnected={({ id }) => {
+            setDialog(null);
+            onConnected?.(id);
+          }}
           onDisconnect={
             connectedItem && (() => void disconnectProvider(connectedItem))
           }

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { sessionSettingsSchema } from "../harness-config/session-settings.js";
+import { SOURCE_FETCH_MODES } from "../skills/source-fetch.js";
 
 export const contributionKind = z.enum([
   "env",
@@ -127,6 +128,7 @@ export const skillRefContribution = z.object({
   name: z.string().min(1),
   version: z.string().min(1),
   path: z.string().optional(),
+  fetch: z.enum(SOURCE_FETCH_MODES).optional(),
 });
 
 export const contribution = z.discriminatedUnion("kind", [

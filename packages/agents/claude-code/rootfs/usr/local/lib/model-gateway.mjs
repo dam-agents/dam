@@ -272,6 +272,14 @@ async function proxy(upstream, path, req, res) {
   let r;
   try {
     r = await send(body);
+    // UNIT_BOUNDARY_DESCRIPTION: with no model list, a tier alias goes upstream bare and is refused. A provider attached moments ago can fail the first listing while its egress opens, yet answer by the time a request is refused, so the list is fetched again and the request resent once on the model it maps to.
+    if (r.status >= 400 && r.status < 500 && model !== undefined && !upstream.knownModels.size) {
+      await refreshCatalog(upstream);
+      if (upstream.knownModels.size) {
+        await r.body?.cancel();
+        r = await send(rewriteModel(raw, contentType, (name) => (model = resolveModel(upstream, name))));
+      }
+    }
     const models = [...upstream.knownModels.values()];
     if ([400, 404].includes(r.status) && models.length && model !== undefined && !models.includes(model)) {
       const refusal = await r.text();

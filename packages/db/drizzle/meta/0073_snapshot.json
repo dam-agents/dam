@@ -1,5 +1,5 @@
 {
-  "id": "f6203a06-e987-48d2-8fbf-d18776f1136c",
+  "id": "3dda9f49-fe90-4cc8-b12a-13e8b3ca138a",
   "prevId": "fab3e65d-ff60-4b1b-b0be-6893de1c9298",
   "version": "7",
   "dialect": "postgresql",
@@ -1166,12 +1166,6 @@
         },
         "schedule_id": {
           "name": "schedule_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "thread_ts": {
-          "name": "thread_ts",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -2967,6 +2961,38 @@
           "with": {}
         }
       },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.public_image_urls": {
+      "name": "public_image_urls",
+      "schema": "",
+      "columns": {
+        "sha256": {
+          "name": "sha256",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "url": {
+          "name": "url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
