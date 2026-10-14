@@ -1,5 +1,5 @@
 const SERVER_PREFIXES = [
-  /^mcp__[\w-]+?__(?<tool>.+)$/,
+  /^mcp__(?:[A-Za-z0-9-]|_(?!_))+__(?<tool>.+)$/,
   /^mcp\.[\w-]+\.(?<tool>.+)$/,
   /^Tool: [\w-]+\/(?<tool>.+)$/,
 ];
