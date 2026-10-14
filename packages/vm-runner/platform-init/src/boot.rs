@@ -331,14 +331,11 @@ fn fresh_root(disk: &Path) {
     let booting = image_record(Path::new(guest::IMAGE_PATH));
     let recorded = image_record(&layers.image);
     let fresh = fresh_reason(booting.as_deref(), recorded.as_deref());
-    let mut cleared = vec![&layers.legacy_upper, &layers.work];
-    if fresh.is_some() {
-        cleared.extend([&layers.image, &layers.upper]);
-    }
-    for dir in cleared {
-        if let Err(e) = remove_all(dir) {
-            fatal!("clearing {}: {e}", dir.display());
-        }
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs());
+    if let Err(e) = layers.clear(fresh.is_some(), stamp) {
+        fatal!("{e}");
     }
     for dir in [&layers.upper, &layers.work, &layers.merged] {
         if let Err(e) = mkdir_all(dir) {
@@ -403,6 +400,7 @@ fn fresh_root(disk: &Path) {
     for point in &plan.left_behind {
         let _ = fs::remove_dir(point);
     }
+    layers.purge_discarded();
     logf!(
         "what the image writes outside {} stays until the machine boots another image",
         guest::AGENT_HOME
@@ -444,8 +442,15 @@ const OLD_ROOT: &str = ".platform-old-root";
 // UNIT_BOUNDARY_DESCRIPTION: the overlay features off, so a kept upper layer may sit over a lower that changed while it was not mounted, which is every new image of the root's generation. With them on, overlayfs records each copied-up directory's origin in the lower and verifies it at the next mount: the smolvm guest's kernel then refuses a fresh mount with a stale file handle, or, over platform-init's root, hides a new image's files under every directory the agent ever wrote into — a later image's baked tools vanished under a `mise use` this way. The kernel documents changing the lower between mounts as safe only with these off.
 const LOWER_MAY_CHANGE: &str = ",index=off,redirect_dir=off,metacopy=off,xino=off,uuid=off";
 
+const KEPT: &str = "kept";
+const LEGACY_UPPER: &str = "upper";
+const WORK: &str = "work";
+const DISCARDED_LAYERS: [&str; 3] = [KEPT, LEGACY_UPPER, WORK];
+
 // UNIT_BOUNDARY_DESCRIPTION: the platform root's layers. The lower layer is "/", the image as smolvm mounted it: overlayfs reads a lower directory without the mounts on top of it, so /proc, /storage and the rest are not part of it. The upper and work layers are on the disk and not in memory, so an agent that writes a lot outside HOME fills its disk and not its RAM. The kept upper layer and the record of the image that wrote it share a directory of their own, `kept`. A platform-init from before roots were kept empties `upper` and `work` on every boot and never looks in `kept`, so a runner rolled back and forward again finds the kept upper still beside the record of the image that wrote it. The old `upper` is cleared on every boot, so a disk from that layout gets its space back.
 struct FreshRoot {
+    store: PathBuf,
+    kept: PathBuf,
     upper: PathBuf,
     image: PathBuf,
     legacy_upper: PathBuf,
@@ -457,11 +462,43 @@ impl FreshRoot {
     fn on(disk: &Path) -> Self {
         let store = guest::system_store(disk, guest::ROOTFS_DIR);
         FreshRoot {
-            upper: store.join("kept").join("upper"),
-            image: store.join("kept").join("image"),
-            legacy_upper: store.join("upper"),
-            work: store.join("work"),
+            kept: store.join(KEPT),
+            upper: store.join(KEPT).join("upper"),
+            image: store.join(KEPT).join("image"),
+            legacy_upper: store.join(LEGACY_UPPER),
+            work: store.join(WORK),
             merged: store.join("merged"),
+            store,
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: empties the work layer and the legacy upper, and with `fresh` the kept upper and its image record together, so a boot cut short leaves no record and the next boot is fresh too. Each is renamed aside, which is one step however many files it holds; only a rename that fails deletes in place.
+    fn clear(&self, fresh: bool, stamp: u64) -> io::Result<()> {
+        let mut cleared = vec![&self.legacy_upper, &self.work];
+        if fresh {
+            cleared.push(&self.kept);
+        }
+        for dir in cleared {
+            discard(dir, stamp)
+                .map(drop)
+                .or_else(|_| remove_all(dir))
+                .map_err(|e| io::Error::other(format!("clearing {}: {e}", dir.display())))?;
+        }
+        Ok(())
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: deletes the layers fresh_root moved aside, in the background. A kept upper can hold millions of files, which would hold up the boot for minutes. leave_disk detaches the disk's root before the delete is done, so the store is reached through a descriptor opened now.
+    fn purge_discarded(&self) {
+        match File::open(&self.store) {
+            Err(e) => logf!("WARNING: opening the root's store ({e}); the old root's layers stay on the disk until a later boot"),
+            Ok(store) => {
+                std::thread::spawn(move || {
+                    purge_discarded(
+                        Path::new(&format!("/proc/self/fd/{}", store.as_raw_fd())),
+                        &DISCARDED_LAYERS,
+                    );
+                });
+            }
         }
     }
 
@@ -2785,6 +2822,36 @@ mod tests {
         );
         assert!(store.path().join("tmp.notes").is_file());
         assert!(store.path().join("tmp").is_dir());
+    }
+
+    // TEST_SCENARIO: a new image boots on an empty upper, and the old one can hold millions of files, which deleted in place hold up the boot for minutes. Clearing renames the kept upper aside with its image record, so nothing under the old names is left to mount, and a later delete takes it away. A root kept for the same image is left as it is, while the work layer is emptied on every boot.
+    #[test]
+    fn a_new_image_moves_the_old_root_aside_without_deleting_it() {
+        let disk = TempDir::new("fresh-root");
+        let layers = FreshRoot::on(disk.path());
+        fs::create_dir_all(layers.upper.join("usr/local")).unwrap();
+        fs::write(layers.upper.join("usr/local/tool"), b"x").unwrap();
+        fs::write(&layers.image, b"image-a\n").unwrap();
+        fs::create_dir_all(layers.work.join("work")).unwrap();
+
+        layers.clear(false, 1).unwrap();
+        assert!(
+            layers.upper.join("usr/local/tool").is_file(),
+            "a kept root was cleared"
+        );
+        assert!(!layers.work.exists());
+
+        layers.clear(true, 2).unwrap();
+        assert!(!layers.kept.exists());
+        let aside = with_suffix(&layers.kept, ".discarded.2");
+        assert!(
+            aside.join("upper/usr/local/tool").is_file(),
+            "the old root was deleted on the boot path"
+        );
+        assert!(image_record(&aside.join("image")).is_some());
+
+        purge_discarded(&layers.store, &DISCARDED_LAYERS);
+        assert!(!aside.exists());
     }
 
     // TEST_SCENARIO: under pressure a scratch folder is evicted by whole entries. A leftover of a failed eviction goes first, then a cache its tool tagged as rebuildable, then the rest, so an agent's own file in /tmp is the last to go. A forged tag does not count, and an entry holding a socket a process may still listen on, an entry used within the last pass, and an entry on another device are not offered at all. A change time cannot be set back, so a clock moved forward stands for entries long unused.
