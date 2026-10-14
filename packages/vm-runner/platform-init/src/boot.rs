@@ -1007,11 +1007,12 @@ fn purge_discarded(dir: &Path, names: &[impl AsRef<str>]) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: scratch on the disk shares it with the agent's home, so a tool that fills /tmp or its home cache could leave the agent no room for its work. Every EVICT_INTERVAL, while the disk has less than EVICT_BELOW_PERCENT of it free or the runner marks the owner's claim short of room, the scratch folders lose whole entries, until EVICT_UNTIL_PERCENT is free and the mark is gone, or only entries used within the last EVICT_AGES pass are left. An entry is one name directly in a scratch folder, such as ~/.cache/go-build or /tmp/pr-body.md, and it goes whole or not at all: a tool that loses some of its cache's files and keeps the rest sees a half cache that looks complete, and fails on it with an error that says nothing about the disk. An entry counts as used at the newest modification or change time anywhere in it. Access times are not counted: the disk is mounted relatime, so a read often does not move them. The disk is a sparse file on that claim, and the guest agent's trim hands what this frees back to it. Each eviction goes to the console, so the host sees why a cache vanished. A deleted file that is still open frees its space only when it is closed.
+// UNIT_BOUNDARY_DESCRIPTION: scratch on the disk shares it with the agent's home, so a tool that fills /tmp or its home cache could leave the agent no room for its work. Every EVICT_INTERVAL, while the disk has less than EVICT_BELOW_PERCENT of it free, the scratch folders lose whole entries, until EVICT_UNTIL_PERCENT is free or only entries used within the last EVICT_AGES pass are left. A request from the runner that the owner's claim is short (ClaimRequest) is served once, with one pass that stops at the bytes the runner asked this machine for and evicts nothing used within CLAIM_EVICT_AGE: the claim is mostly the agents' homes, which no eviction touches, so a claim that stays short would otherwise give every agent's /tmp a ten-minute life with nothing gained. The runner sends a new request only when the claim fills further. An entry is one name directly in a scratch folder, such as ~/.cache/go-build or /tmp/pr-body.md, and it goes whole or not at all: a tool that loses some of its cache's files and keeps the rest sees a half cache that looks complete, and fails on it with an error that says nothing about the disk. An entry counts as used at the newest modification or change time anywhere in it. Access times are not counted: the disk is mounted relatime, so a read often does not move them. The disk is a sparse file on that claim, and the guest agent's trim hands what this frees back to it. Each eviction goes to the console, so the host sees why a cache vanished. A deleted file that is still open frees its space only when it is closed.
 const EVICT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 const EVICT_BELOW_PERCENT: u64 = 10;
 const EVICT_UNTIL_PERCENT: u64 = 20;
 const EVICT_AGES: [u64; 4] = [7 * 86_400, 86_400, 3_600, 600];
+const CLAIM_EVICT_AGE: u64 = 3_600;
 
 // UNIT_BOUNDARY_DESCRIPTION: the Cache Directory Tagging Specification's mark (bford.info/cachedir) that a directory holds only a cache its tool can rebuild. Go, cargo and ccache write it. In each pass a tagged entry goes before an untagged one, which may be an agent's work in progress.
 const CACHEDIR_TAG: &str = "CACHEDIR.TAG";
@@ -1041,19 +1042,24 @@ fn evict_scratch() {
         .map(|(dir, ..)| PathBuf::from(dir))
         .chain(HOME_CACHES.iter().map(|name| home.join(name)))
         .collect();
-    let mut stuck = false;
+    let (mut stuck, mut served) = (false, None::<String>);
     loop {
         std::thread::sleep(EVICT_INTERVAL);
-        if !evicting(free_percent(home), claim_short(), EVICT_BELOW_PERCENT) {
+        let request = claim_request();
+        if request.is_none() {
+            served = None;
+        }
+        let Some(pass) = eviction_pass(free_percent(home), request.as_ref(), served.as_deref())
+        else {
             stuck = false;
             continue;
-        }
+        };
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |since| since.as_secs());
         let (mut freed, mut deleted) = (0, Vec::new());
-        for entry in scratch_entries(&dirs, disk, now) {
-            if !evicting(free_percent(home), claim_short(), EVICT_UNTIL_PERCENT) {
+        for entry in scratch_entries(&dirs, disk, now, pass.youngest) {
+            if !pass.continues(free_percent(home), freed) {
                 break;
             }
             match evict(&entry.path, now) {
@@ -1065,13 +1071,21 @@ fn evict_scratch() {
                 Err(e) => logf!("WARNING: evicting {} ({e})", entry.path.display()),
             }
         }
+        if let Some(request) = request {
+            served = Some(request.id);
+        }
         if !deleted.is_empty() {
             announce(&format!(
-                "the disk is short of room: deleted {freed} bytes of unused scratch: {}",
+                "the {} is short of room: deleted {freed} bytes of unused scratch: {}",
+                if pass.claim_only {
+                    "owner's storage"
+                } else {
+                    "disk"
+                },
                 deleted.join(" ")
             ));
         }
-        let short = evicting(free_percent(home), false, EVICT_BELOW_PERCENT);
+        let short = disk_short(free_percent(home), EVICT_BELOW_PERCENT);
         if short && !stuck {
             announce(&format!(
                 "the disk is still short of room: no scratch is left that was unused for {} s, so writes to the agent's home may fail",
@@ -1082,8 +1096,8 @@ fn evict_scratch() {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: every entry of the scratch folders that may be evicted at `now`, in the order to evict them: by the first EVICT_AGES pass it is old enough for, then rebuildable before not, then oldest first. An entry is left out when it is younger than the last pass, when it holds the image's trust cache, a socket or fifo a process may still listen on, or a mount, or when it cannot be read.
-fn scratch_entries(dirs: &[PathBuf], disk: u64, now: u64) -> Vec<ScratchEntry> {
+// UNIT_BOUNDARY_DESCRIPTION: every entry of the scratch folders that may be evicted at `now`, in the order to evict them: by the first EVICT_AGES pass it is old enough for, then rebuildable before not, then oldest first. An entry is left out when it was used within `youngest` seconds, when it holds the image's trust cache, a socket or fifo a process may still listen on, or a mount, or when it cannot be read.
+fn scratch_entries(dirs: &[PathBuf], disk: u64, now: u64, youngest: u64) -> Vec<ScratchEntry> {
     let trust = Path::new(TRUST_CACHE_PATH);
     let mut entries: Vec<(usize, ScratchEntry)> = dirs
         .iter()
@@ -1098,6 +1112,7 @@ fn scratch_entries(dirs: &[PathBuf], disk: u64, now: u64) -> Vec<ScratchEntry> {
             let used = if leftover { 0 } else { used };
             let pass = EVICT_AGES
                 .iter()
+                .take_while(|age| **age >= youngest)
                 .position(|age| used < now.saturating_sub(*age))?;
             let rebuildable = leftover || cache_tagged(&path);
             Some((
@@ -1179,13 +1194,71 @@ fn evict(path: &Path, stamp: u64) -> io::Result<bool> {
     Ok(true)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether scratch is still to be freed: the disk has less than `percent` free, or the owner's claim under it is short. A disk whose room cannot be read is left alone unless the claim is short.
-fn evicting(free: Option<u64>, claim_short: bool, percent: u64) -> bool {
-    claim_short || free.is_some_and(|free| free < percent)
+fn disk_short(free: Option<u64>, percent: u64) -> bool {
+    free.is_some_and(|free| free < percent)
 }
 
-fn claim_short() -> bool {
-    Path::new(guest::STORAGE_SHORT_PATH).exists()
+// UNIT_BOUNDARY_DESCRIPTION: the runner's request that this machine give back scratch because the owner's claim is short, read from guest::STORAGE_SHORT_PATH: an id that changes with every new request, and the bytes asked of this machine. A mark from an older runner is empty, and is one request with no byte bound.
+#[derive(Debug, PartialEq)]
+struct ClaimRequest {
+    id: String,
+    bytes: Option<u64>,
+}
+
+fn claim_request() -> Option<ClaimRequest> {
+    fs::read_to_string(guest::STORAGE_SHORT_PATH)
+        .ok()
+        .map(|text| parse_claim_request(&text))
+}
+
+fn parse_claim_request(text: &str) -> ClaimRequest {
+    let text = text.trim();
+    ClaimRequest {
+        id: text.to_string(),
+        bytes: text
+            .split_whitespace()
+            .nth(1)
+            .and_then(|bytes| bytes.parse().ok()),
+    }
+}
+
+#[derive(Debug, PartialEq)]
+struct EvictionPass {
+    youngest: u64,
+    claim_only: bool,
+    bytes: Option<u64>,
+}
+
+impl EvictionPass {
+    // UNIT_BOUNDARY_DESCRIPTION: whether the pass goes on to the next entry: while the disk is short, until EVICT_UNTIL_PERCENT is free; for a claim request alone, until the bytes asked for are freed.
+    fn continues(&self, free: Option<u64>, freed: u64) -> bool {
+        if self.claim_only {
+            self.bytes.is_none_or(|bytes| freed < bytes)
+        } else {
+            disk_short(free, EVICT_UNTIL_PERCENT)
+        }
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether this look evicts, and how: a disk with less than EVICT_BELOW_PERCENT free gets the whole EVICT_AGES ladder, and a claim request not yet served gets one pass of entries unused for CLAIM_EVICT_AGE. A disk whose room cannot be read is left alone unless a request is pending.
+fn eviction_pass(
+    free: Option<u64>,
+    request: Option<&ClaimRequest>,
+    served: Option<&str>,
+) -> Option<EvictionPass> {
+    if disk_short(free, EVICT_BELOW_PERCENT) {
+        return Some(EvictionPass {
+            youngest: EVICT_AGES[EVICT_AGES.len() - 1],
+            claim_only: false,
+            bytes: None,
+        });
+    }
+    let request = request.filter(|request| served != Some(request.id.as_str()))?;
+    Some(EvictionPass {
+        youngest: CLAIM_EVICT_AGE,
+        claim_only: true,
+        bytes: request.bytes,
+    })
 }
 
 fn statvfs(path: &Path) -> Option<libc::statvfs> {
@@ -2220,14 +2293,40 @@ mod tests {
         assert!(!scratch.join(format!("var-tmp{DISCARDED_INFIX}1")).exists());
     }
 
-    // TEST_SCENARIO: a guest's own disk can read as nearly empty while the owner's claim under it fills, so the runner's mark alone starts and continues eviction; without it, the disk's own free share decides, and a disk whose room cannot be read is left alone.
+    // TEST_SCENARIO: a guest's own disk that is short is evicted on every look down to the last EVICT_AGES step, until it has room; a disk whose room cannot be read is left alone.
     #[test]
-    fn scratch_is_freed_while_the_disk_or_the_claim_is_short() {
-        assert!(evicting(Some(5), false, EVICT_BELOW_PERCENT));
-        assert!(!evicting(Some(50), false, EVICT_BELOW_PERCENT));
-        assert!(evicting(Some(50), true, EVICT_BELOW_PERCENT));
-        assert!(evicting(None, true, EVICT_UNTIL_PERCENT));
-        assert!(!evicting(None, false, EVICT_BELOW_PERCENT));
+    fn a_short_disk_is_evicted_until_it_has_room() {
+        let pass = eviction_pass(Some(5), None, None).unwrap();
+        assert_eq!(pass.youngest, 600);
+        assert!(pass.continues(Some(15), 1 << 40) && !pass.continues(Some(20), 0));
+        assert_eq!(eviction_pass(Some(50), None, None), None);
+        assert_eq!(eviction_pass(None, None, None), None);
+    }
+
+    // TEST_SCENARIO: the owner's claim is mostly the agents' homes, which eviction never touches, so a claim that stays short must not give every agent's /tmp a ten-minute life. A request from the runner is served once, by a pass that keeps whatever was used in the last hour and stops at the bytes asked; only a new request, which the runner sends when the claim fills further, brings another pass. An older runner's empty mark is one unbounded request.
+    #[test]
+    fn a_short_claim_is_served_once_per_request_and_spares_recent_work() {
+        let request = parse_claim_request("17 1000\n");
+        assert_eq!(request.bytes, Some(1000));
+        let pass = eviction_pass(Some(50), Some(&request), None).unwrap();
+        assert_eq!((pass.youngest, pass.claim_only), (CLAIM_EVICT_AGE, true));
+        assert!(pass.continues(Some(50), 999) && !pass.continues(Some(50), 1000));
+        assert_eq!(
+            eviction_pass(Some(50), Some(&request), Some("17 1000")),
+            None
+        );
+        assert!(eviction_pass(
+            Some(50),
+            Some(&parse_claim_request("18 1000")),
+            Some("17 1000")
+        )
+        .is_some());
+        let legacy = parse_claim_request("");
+        assert_eq!(legacy.bytes, None);
+        assert!(eviction_pass(Some(50), Some(&legacy), None)
+            .unwrap()
+            .continues(Some(50), u64::MAX));
+        assert_eq!(eviction_pass(Some(50), Some(&legacy), Some("")), None);
     }
 
     struct TempDir(PathBuf);
@@ -3107,7 +3206,7 @@ mod tests {
         assert!(!aside.exists());
     }
 
-    // TEST_SCENARIO: under pressure a scratch folder is evicted by whole entries. A leftover of a failed eviction goes first, then a cache its tool tagged as rebuildable, then the rest, so an agent's own file in /tmp is the last to go. A forged tag does not count, and an entry holding a socket a process may still listen on, an entry used within the last pass, and an entry on another device are not offered at all. A change time cannot be set back, so a clock moved forward stands for entries long unused.
+    // TEST_SCENARIO: under pressure a scratch folder is evicted by whole entries. A leftover of a failed eviction goes first, then a cache its tool tagged as rebuildable, then the rest, so an agent's own file in /tmp is the last to go. A forged tag does not count, and an entry holding a socket a process may still listen on, an entry used within the last pass, and an entry on another device are not offered at all, and a pass for the claim offers only what was unused for an hour. A change time cannot be set back, so a clock moved forward stands for entries long unused.
     #[test]
     fn scratch_is_offered_whole_and_rebuildable_caches_first() {
         let scratch = TempDir::new("evict");
@@ -3135,7 +3234,7 @@ mod tests {
             .as_secs();
         let dirs = [s.to_path_buf()];
         let names = |now, disk| -> Vec<String> {
-            scratch_entries(&dirs, disk, now)
+            scratch_entries(&dirs, disk, now, EVICT_AGES[3])
                 .iter()
                 .map(|entry| {
                     entry
@@ -3158,9 +3257,16 @@ mod tests {
         let mut rest = order[2..].to_vec();
         rest.sort();
         assert_eq!(rest, ["forged", "link", "pr-body.md"]);
-        assert!(scratch_entries(&dirs, disk, now + 2 * EVICT_AGES[3])
-            .iter()
-            .any(|entry| entry.path.ends_with("go-build") && entry.bytes >= 8192));
+        assert_eq!(
+            scratch_entries(&dirs, disk, now + 2 * EVICT_AGES[3], CLAIM_EVICT_AGE).len(),
+            1,
+            "a claim pass keeps what was used within the hour"
+        );
+        assert!(
+            scratch_entries(&dirs, disk, now + 2 * EVICT_AGES[3], EVICT_AGES[3])
+                .iter()
+                .any(|entry| entry.path.ends_with("go-build") && entry.bytes >= 8192)
+        );
         assert!(
             names(now + 2 * EVICT_AGES[3], disk + 1).is_empty(),
             "another device is not walked"

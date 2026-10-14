@@ -2649,6 +2649,43 @@ async fn a_short_claim_marks_every_share_until_it_has_room_again() {
     }
 }
 
+// TEST_SCENARIO: a guest serves each request to give back scratch once, so the runner keeps the same request while the claim stays short at about the same use, and sends a new one, with a new id and its part of the new shortage, only once the claim has filled RESHED_STEP_PERCENT further; a claim that has room again clears it, and the next shortage is a new request.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_short_claim_asks_again_only_when_it_fills_further() {
+    let (h, claim) = with_claim("storage-reshed");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let mark = h
+        .dir
+        .join("machines/m1")
+        .join(SHARE_DIR)
+        .join(share::STORAGE_SHORT_FILE);
+    let request = |percent| {
+        *locked(&claim) = filled(percent);
+        h.server.check_storage();
+        std::fs::read_to_string(&mark).ok()
+    };
+    let first = request(80).expect("a short claim asks");
+    let bytes = |text: &str| {
+        text.split_whitespace()
+            .nth(1)
+            .unwrap()
+            .parse::<u64>()
+            .unwrap()
+    };
+    assert!(bytes(&first) > 0, "{first}");
+    assert_eq!(
+        request(82).as_deref(),
+        Some(first.as_str()),
+        "a small rise asks nothing new"
+    );
+    let second = request(85).expect("still short");
+    assert_ne!(second, first, "a claim that filled further asks again");
+    assert!(bytes(&second) > bytes(&first), "{second} {first}");
+    assert_eq!(request(65), None);
+    assert_ne!(request(80).as_deref(), Some(first.as_str()));
+}
+
 // TEST_SCENARIO: a guest whose own disk filled has an agent that exits as it starts, which on its own reads as a boot that failed. platform-init marks that exit on the console, and the runner reports it as a full home, which the controller shows as the full home volume a container agent reports.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_boot_whose_console_shows_a_full_home_reports_it() {
