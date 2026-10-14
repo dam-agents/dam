@@ -199,6 +199,9 @@ pub fn orphan_pids(proc_root: &Path, vm_dir: &Path) -> Vec<i32> {
     }
     let needle = format!("{dir}/");
     let Ok(entries) = fs::read_dir(proc_root) else {
+        #[cfg(target_os = "macos")]
+        return darwin::pids_with_arg(&needle);
+        #[cfg(not(target_os = "macos"))]
         return Vec::new();
     };
     let mut pids: Vec<i32> = entries
@@ -232,6 +235,10 @@ pub fn vmms_left(proc_root: &Path, vm_dir: &Path, mut seen: Vec<i32>, limit: Dur
 
 // UNIT_BOUNDARY_DESCRIPTION: a process has let go of everything once it is gone, or is a zombie with no thread left beside it. A zombie main thread alone is not enough: the threads it leaves share its open files and close them only when the last one exits.
 fn exited(proc_root: &Path, pid: i32) -> bool {
+    #[cfg(target_os = "macos")]
+    if !proc_root.is_dir() {
+        return darwin::exited(pid);
+    }
     let dir = proc_root.join(pid.to_string());
     let zombie = fs::read_to_string(dir.join("stat")).is_ok_and(|stat| {
         matches!(
@@ -242,6 +249,104 @@ fn exited(proc_root: &Path, pid: i32) -> bool {
     });
     !dir.exists()
         || (zombie && fs::read_dir(dir.join("task")).is_ok_and(|tasks| tasks.count() <= 1))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the host runner's process table. A Mac has no /proc, so the VMMs holding a machine's directory are found through the kernel's process list and each process's arguments, as `/proc/<pid>/cmdline` finds them on Linux.
+#[cfg(target_os = "macos")]
+mod darwin {
+    use std::ffi::c_void;
+    use std::mem;
+
+    pub fn pids_with_arg(needle: &str) -> Vec<i32> {
+        // SAFETY: a null buffer asks only for the number of pids.
+        let count = unsafe { libc::proc_listallpids(std::ptr::null_mut(), 0) };
+        let Ok(count) = usize::try_from(count) else {
+            return Vec::new();
+        };
+        let mut pids = vec![0i32; count + 64];
+        let bytes = i32::try_from(pids.len() * mem::size_of::<i32>()).unwrap_or(i32::MAX);
+        // SAFETY: the buffer holds `bytes` bytes of pids.
+        let listed = unsafe { libc::proc_listallpids(pids.as_mut_ptr().cast::<c_void>(), bytes) };
+        pids.truncate(usize::try_from(listed).unwrap_or(0));
+        let mut found: Vec<i32> = pids
+            .into_iter()
+            .filter(|&pid| pid > 0 && args(pid).iter().any(|arg| arg.contains(needle)))
+            .collect();
+        found.sort_unstable();
+        found
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: a process's arguments, without its environment. KERN_PROCARGS2 answers argc, the executable path, padding, then the arguments and the environment, all NUL-separated.
+    fn args(pid: i32) -> Vec<String> {
+        let mut mib = [libc::CTL_KERN, libc::KERN_PROCARGS2, pid];
+        let mut size: libc::size_t = 0;
+        // SAFETY: a null buffer asks only for the size; `mib` names three levels.
+        if unsafe {
+            libc::sysctl(
+                mib.as_mut_ptr(),
+                3,
+                std::ptr::null_mut(),
+                &raw mut size,
+                std::ptr::null_mut(),
+                0,
+            )
+        } != 0
+        {
+            return Vec::new();
+        }
+        let mut buf = vec![0u8; size];
+        // SAFETY: the buffer holds `size` bytes, and the kernel writes at most that many.
+        if unsafe {
+            libc::sysctl(
+                mib.as_mut_ptr(),
+                3,
+                buf.as_mut_ptr().cast::<c_void>(),
+                &raw mut size,
+                std::ptr::null_mut(),
+                0,
+            )
+        } != 0
+        {
+            return Vec::new();
+        }
+        buf.truncate(size);
+        let Some((argc, rest)) = buf.split_first_chunk::<4>() else {
+            return Vec::new();
+        };
+        let argc = usize::try_from(i32::from_ne_bytes(*argc)).unwrap_or(0);
+        rest.split(|&b| b == 0)
+            .skip(1)
+            .filter(|field| !field.is_empty())
+            .take(argc)
+            .map(|field| String::from_utf8_lossy(field).into_owned())
+            .collect()
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: a process is gone, or a zombie, which on a Mac has already released its threads and with them every file and port. A process that is the runner's own child and has exited is reaped here first: smolvm on a Mac reads any pid that still answers a signal as a live VMM, so an unreaped one would fail the stop that follows its kill. The kernel answers no process info for a zombie, so a reap is also how a child zombie is told apart from a live child.
+    pub fn exited(pid: i32) -> bool {
+        // SAFETY: WNOHANG never blocks; a live child returns 0, and a pid that is not our child returns ECHILD.
+        if unsafe { libc::waitpid(pid, std::ptr::null_mut(), libc::WNOHANG) } == pid {
+            return true;
+        }
+        // SAFETY: kill(2) with signal 0 only checks for the process.
+        if unsafe { libc::kill(pid, 0) } != 0 {
+            return std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH);
+        }
+        // SAFETY: proc_bsdinfo is plain data, and the call writes at most its size.
+        let mut info: libc::proc_bsdinfo = unsafe { mem::zeroed() };
+        let size = i32::try_from(mem::size_of::<libc::proc_bsdinfo>()).unwrap_or(i32::MAX);
+        // SAFETY: `info` is a valid proc_bsdinfo of `size` bytes.
+        let read = unsafe {
+            libc::proc_pidinfo(
+                pid,
+                libc::PROC_PIDTBSDINFO,
+                0,
+                (&raw mut info).cast::<c_void>(),
+                size,
+            )
+        };
+        read == size && info.pbi_status == libc::SZOMB
+    }
 }
 
 pub fn kill_orphans(proc_root: &Path, vm_dir: &Path) {
@@ -374,6 +479,26 @@ mod tests {
     use super::*;
     use crate::testdir::TempDir;
     use std::path::PathBuf;
+
+    // TEST_SCENARIO: a VMM is found by the machine directory on its command line, and taken down, on the host's own process table: /proc on Linux, the kernel's process list on a Mac, which has no /proc. A machine whose directory only prefixes the VMM's is not matched.
+    #[test]
+    fn a_vmm_holding_the_machine_directory_is_found_and_ended_on_this_host() {
+        let dir = TempDir::new("vmm-scan");
+        let vm_dir = dir.path().join("m1");
+        let mut vmm = std::process::Command::new("sh")
+            .args(["-c", "sleep 60; true", "_boot-vm"])
+            .arg(format!("{}/", vm_dir.display()))
+            .spawn()
+            .unwrap();
+        let pid = i32::try_from(vmm.id()).unwrap();
+        let proc_root = Path::new("/proc");
+        assert_eq!(orphan_pids(proc_root, &vm_dir), vec![pid]);
+        assert!(orphan_pids(proc_root, &dir.path().join("m")).is_empty());
+
+        kill_orphans(proc_root, &vm_dir);
+        vmm.wait().unwrap();
+        assert!(vmms_left(proc_root, &vm_dir, vec![pid], Duration::from_secs(5)).is_empty());
+    }
 
     fn spec_with_env(env: &[(&str, &str)]) -> MachineSpec {
         MachineSpec {

@@ -1622,6 +1622,11 @@ mod tests {
         assert_eq!(smolvm.state("m1").unwrap(), State::Absent);
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: a test's stand-in VMM has exited. On a Mac the runner reaps an exited child itself, so the test's own wait finds no child, which means it is gone too.
+    fn vmm_gone(vmm: &mut std::process::Child) -> bool {
+        vmm.try_wait().map_or(true, |status| status.is_some())
+    }
+
     // TEST_SCENARIO: a live VMM whose guest agent does not answer its ping is what a busy guest looks like, so it reads as running: the health prober decides whether it is restarted, after the unhealthy grace, and it keeps being counted against the runner's memory. Read as stopped, the next reconcile would start it, and the start would kill a guest that was only busy. An update that still finds such a VMM under a record that says running — a stop that did not finish — takes it down and applies, rather than leaving the machine stuck.
     #[test]
     fn a_vmm_whose_agent_does_not_answer_reads_running_and_an_update_takes_it_down() {
@@ -1673,7 +1678,7 @@ mod tests {
             .unwrap();
         assert_eq!(smolvm.record("m1").unwrap().unwrap().cpus, 1);
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
-        while vmm.try_wait().unwrap().is_none() {
+        while !vmm_gone(&mut vmm) {
             assert!(
                 std::time::Instant::now() < deadline,
                 "the dead agent's VMM was left running"
@@ -1731,7 +1736,7 @@ mod tests {
 
         smolvm.stop("m1").unwrap();
         assert!(
-            vmm.try_wait().unwrap().is_some(),
+            vmm_gone(&mut vmm),
             "the unconfirmed guest's VMM was left running"
         );
         assert_eq!(
