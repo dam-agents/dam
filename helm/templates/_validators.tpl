@@ -46,6 +46,21 @@ The api-server refuses to start on a feature mode it cannot read.
 {{- fail (printf "features.%s must be off, experimental or on, got %v." $id $mode) -}}
 {{- end -}}
 {{- end -}}
+{{- if not (has (include "platform.featureDefault" .) (list "off" "experimental" "on")) -}}
+{{- fail (printf "featureDefault must be off, experimental or on, got %v." .Values.featureDefault) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+`featureDefault`, read the way `platform.featureModes` reads each mode.
+*/}}
+{{- define "platform.featureDefault" -}}
+{{- $mode := .Values.featureDefault -}}
+{{- if kindIs "bool" $mode -}}
+{{- ternary "on" "off" $mode -}}
+{{- else -}}
+{{- $mode | default "experimental" -}}
+{{- end -}}
 {{- end -}}
 
 {{/*
