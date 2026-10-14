@@ -1571,18 +1571,18 @@ impl Server {
             .collect()
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: holds the digest of every machine that runs or is asked to, so the cache's eviction spares their trees. A stopped machine holds nothing: a hibernated agent would otherwise keep each image a deploy retires on the cache, and its start fetches the tree again when it is gone. A machine counts while either its stored spec or the one the controller last sent runs it, so a stop in flight still holds the tree its guest reads and a wake holds it before the start checks it is there. It runs at start, after a machine records a new digest, before a start, and every HOLD_REFRESH. A hold that fails is reported and not returned: the machines keep running, and the next refresh tries again inside the lease.
+    // UNIT_BOUNDARY_DESCRIPTION: holds the digest of every machine that runs or is asked to, so the cache's eviction spares their trees. A stopped machine holds nothing: a hibernated agent would otherwise keep each image a deploy retires on the cache, and its start fetches the tree again when it is gone. A machine counts while the controller last asked for it running, so a wake holds it before the start checks it is there, or while it runs as last recorded or as the runtime says, so a stop in flight still holds the tree its guest reads, and so does every machine a runner adopts after a hand-off or a restart from its first hold, before the controller has sent it anything. It runs at start, after a machine records a new digest, before a start, and every HOLD_REFRESH. A hold that fails is reported and not returned: the machines keep running, and the next refresh tries again inside the lease.
     pub fn hold_images(&self) {
         let held: BTreeSet<String> = state::machine_ids(&self.config.state_dir)
             .unwrap_or_default()
             .iter()
             .filter(|id| {
-                locked(&self.machines)
+                let asked = locked(&self.machines)
                     .entries
                     .get(*id)
                     .and_then(|e| e.desired.as_ref())
-                    .is_some_and(|d| d.running)
-                    || read_spec(&self.config.state_dir, id).is_some_and(|s| s.running)
+                    .is_some_and(|d| d.running);
+                asked || self.known_running(id)
             })
             .filter_map(|id| self.recorded_digest(id))
             .collect();

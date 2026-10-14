@@ -238,6 +238,35 @@ impl Harness {
         }
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: hands this runner's machines off and starts the next runner on the same directories, fake runtime and ports, as the loader starts a new release. `tune` sets what the next runner is given beyond that.
+    async fn hand_off(&self, tune: impl FnOnce(&mut Config)) -> Harness {
+        self.server.hand_off().await;
+        let mut config = Config {
+            state_dir: self.dir.join("machines"),
+            image_dir: self.dir.join("images"),
+            image_cache_socket: None,
+            image_budget: 1 << 40,
+            crane: self.dir.join("crane").to_string_lossy().into_owned(),
+            init: Some(self.dir.join("platform-init")),
+            runc: None,
+            ports: self.base..=self.base + 1,
+            memory_mib: 1 << 20,
+            reserve_mib: 0,
+            headroom_mib: 0,
+            boot_mib: 0,
+            listen: Some(retrying_listen()),
+            runtime: None,
+            cgroup_dir: None,
+            measure_storage: Arc::new(|| None),
+        };
+        tune(&mut config);
+        Harness {
+            dir: self.dir.clone(),
+            fake: self.fake.clone(),
+            server: Server::start(config, self.fake.clone()).unwrap(),
+            base: self.base,
+        }
+    }
     // UNIT_BOUNDARY_DESCRIPTION: the cache entry a machine boots from, by the digest it recorded.
     fn entry(&self, id: &str) -> PathBuf {
         let digest = fs::read_to_string(self.dir.join("machines").join(id).join(IMAGE_DIGEST_FILE))
@@ -2786,4 +2815,35 @@ async fn a_booted_machine_reports_its_warm_up() {
         !h.settle("m1").await.warming,
         "a stopped machine reported a warm-up"
     );
+}
+
+// TEST_SCENARIO: a runner handed running machines by another release holds the image tree each one boots from as it starts, before the controller sends it a spec. A short claim's first storage check on the new runner then sheds no tree a running guest reads, whether or not the controller has sent the machine's unchanged spec yet; a stopped machine's tree is still given up.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_hand_off_keeps_the_trees_of_running_machines_through_a_short_claim() {
+    let (h, claim) = with_claim("hand-off-holds");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let mut other = spec(false);
+    other.image = "quay.io/x/vm:2".into();
+    h.server.put("m2", other).unwrap();
+    h.settle("m2").await;
+    let (running, stopped) = (h.entry("m1"), h.entry("m2"));
+    assert!(running.exists() && stopped.exists());
+
+    let measured = claim.clone();
+    let next = h
+        .hand_off(move |c| c.measure_storage = Arc::new(move || *locked(&measured)))
+        .await;
+    *locked(&claim) = filled(85);
+    next.server.check_storage();
+    assert!(
+        running.exists(),
+        "the hand-off shed a running machine's tree"
+    );
+    assert!(!stopped.exists(), "a stopped machine's tree was kept");
+
+    next.server.put("m1", spec(true)).unwrap();
+    next.server.check_storage();
+    assert!(running.exists(), "an unchanged spec let the tree go");
+    next.server.close().await;
 }
