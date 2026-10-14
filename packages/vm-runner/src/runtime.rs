@@ -523,6 +523,11 @@ mod tests {
             .unwrap();
         let pid = i32::try_from(vmm.id()).unwrap();
         let proc_root = Path::new("/proc");
+        // UNIT_BOUNDARY_DESCRIPTION: spawn returns once the exec has begun, and Linux shows the new command line only a moment later, so the first scan can miss a process that has just started.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while orphan_pids(proc_root, &vm_dir).is_empty() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
         assert_eq!(orphan_pids(proc_root, &vm_dir), vec![pid]);
         assert!(orphan_pids(proc_root, &dir.path().join("m")).is_empty());
 
