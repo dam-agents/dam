@@ -70,6 +70,18 @@ function wrapFetchWithServerGates(
   const inner = baseFetch ?? fetch;
   return (async (input, init) => {
     const response = await inner(input, init);
+    if (response.status === 502) {
+      const body = (await response
+        .clone()
+        .json()
+        .catch(() => ({}))) as { error?: string; message?: string };
+      if (body.error === "agent unreachable")
+        throw new Error(
+          typeof body.message === "string"
+            ? `the agent can't start: ${body.message}`
+            : "the agent is unreachable",
+        );
+    }
     if ([401, 403, 412].includes(response.status)) {
       const clone = response.clone();
       let body: { error?: string; message?: string };

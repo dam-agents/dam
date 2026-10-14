@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   AuthRequiredAtTransportError,
+  createAgentTrpcClient,
   createTrpcClient,
 } from "../modules/shared/trpc/trpc-client.js";
 import { ok, err } from "../result.js";
@@ -116,5 +117,34 @@ describe("shared trpc-client adapter", () => {
       `not logged in to ${HOST}`,
     );
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  /**
+   * TEST_SCENARIO: an agent the api-server could not start answers a call
+   * through it with its own error body, not a tRPC one. The client reports
+   * why the agent can't start — the server's sentence — rather than failing
+   * to parse the body, which read "Unable to transform response from
+   * server" for an agent waiting for memory.
+   */
+  it("reports why an agent can't start", async () => {
+    const refused = (async () =>
+      new Response(
+        JSON.stringify({
+          error: "agent unreachable",
+          reason: "over-budget",
+          message: "your VM agents' memory is full",
+        }),
+        { status: 502, headers: { "content-type": "application/json" } },
+      )) as unknown as typeof fetch;
+    const trpc = createAgentTrpcClient({
+      host: HOST,
+      agentId: "agent-0123456789abcdef",
+      tokenProvider: fakeTokenProvider(async () => ok("AT-1")),
+      fetch: refused,
+    });
+
+    await expect(
+      trpc.ssh.authorizeKey.mutate({ publicKey: "ssh-ed25519 AAAA" }),
+    ).rejects.toThrow("the agent can't start: your VM agents' memory is full");
   });
 });

@@ -7,6 +7,7 @@ import {
 } from "../../../core/retry-unreachable.js";
 import { securityLog } from "../../../core/security-log.js";
 import {
+  describeWakeFailure,
   isAgentStoppedError,
   isAgentWakeTimeoutError,
 } from "../../../modules/agents/index.js";
@@ -101,8 +102,15 @@ export function createAgentTrpcProxy(deps: AgentTrpcProxyDeps) {
       return c.json(
         {
           error: "agent unreachable",
-          ...(isAgentWakeTimeoutError(err) ? { reason: err.failure.kind } : {}),
-          ...(isAgentStoppedError(err) ? { reason: "stopped" } : {}),
+          ...(isAgentWakeTimeoutError(err)
+            ? {
+                reason: err.failure.kind,
+                message: describeWakeFailure(err.failure),
+              }
+            : {}),
+          ...(isAgentStoppedError(err)
+            ? { reason: "stopped", message: "the agent is stopped" }
+            : {}),
         },
         502,
       );
