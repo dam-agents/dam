@@ -579,3 +579,8 @@
     animation: none !important;
   }
 }
+
+.agent-avatar[data-mood="asleep"]:not([data-character]) {
+  filter: grayscale(1);
+  opacity: 0.6;
+}

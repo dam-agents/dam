@@ -65,6 +65,12 @@ const FEATURE_ROWS: FeatureRow[] = [
     description:
       "See what runs in your agent, what keeps it awake, and what finished while you were away.",
   },
+  {
+    id: "custom-avatars",
+    label: "Custom avatars",
+    description:
+      "Give an agent an emoji or an uploaded JPG or PNG as its avatar, in the UI and in Slack.",
+  },
 ];
 
 function FeatureRowCard({

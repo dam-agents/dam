@@ -92,6 +92,7 @@ Postgres carries application state the api-server owns end-to-end — anything t
   Each binding carries its own ambient and default flags (absent = off).
   `slack_ignored_apps` holds each conversation's ignored apps, keyed by bot id.
   `public_image_urls` holds the public URL of each image uploaded to the image host for Slack agent icons, keyed by the SHA-256 of the image bytes.
+  `avatar_images` holds each uploaded [agent avatar](agent-avatars.md#custom-avatars) as a PNG, keyed by its SHA-256.
   `telegram_conversations` records the conversation→Agent binding for Telegram, plus the binding owner's sub: different shapes by design, since Slack has a workspace and Telegram does not.
   `identity_links` maps a messenger user to a Keycloak sub, keyed by provider, so it serves any future workspace channel; a second workspace leaves it untouched, since inside one enterprise organization a user id already identifies one person and re-keying it would make anyone who linked in one workspace link again in the next.
   `slack_installs` is one row per workspace that completed the install handshake or whose Helm bot token was imported, holding the workspace's name, who connected it, and whether its credential still works — the bot token itself lives in a Kubernetes Secret the row points at, so no credential is stored here ([channels](channels.md)).

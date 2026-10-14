@@ -13,7 +13,10 @@ import {
   bigint,
   integer,
   doublePrecision,
+  customType,
 } from "drizzle-orm/pg-core";
+
+const bytea = customType<{ data: Buffer }>({ dataType: () => "bytea" });
 
 export const activityOutcomeEnum = pgEnum("activity_outcome", [
   "success",
@@ -1012,3 +1015,12 @@ export const resourceAlerts = pgTable(
   },
   (table) => [primaryKey({ columns: [table.ownerSub, table.kind] })],
 );
+
+export const avatarImages = pgTable("avatar_images", {
+  id: text("id").primaryKey(),
+  png: bytea("png").notNull(),
+  ownerSub: text("owner_sub").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});

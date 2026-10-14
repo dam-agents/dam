@@ -1,6 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
 import type { AgentConnections } from "api-server-api";
-import type { AvatarCharacter } from "api-server-api/avatar/svg";
 
 import { getErrorMessage } from "@/lib/errors";
 
@@ -37,7 +36,7 @@ export interface CreateAgentInput {
   templateId?: string;
   image?: string;
   description?: string;
-  avatar?: AvatarCharacter;
+  avatar?: string;
   env?: EnvVar[];
   appConnectionIds?: string[];
   egressPreset?: EgressPreset;
