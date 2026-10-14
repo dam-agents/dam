@@ -63,6 +63,8 @@ describe("avatar image routes", () => {
       .toBuffer();
     expect((await upload(new Uint8Array(gif))).status).toBe(400);
     expect((await upload(new TextEncoder().encode("<svg/>"))).status).toBe(400);
+    const truncated = (await jpeg(64, 64)).slice(0, 200);
+    expect((await upload(truncated)).status).toBe(400);
     expect((await upload(new Uint8Array(2 * 1024 * 1024 + 1))).status).toBe(
       413,
     );

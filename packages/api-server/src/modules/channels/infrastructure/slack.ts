@@ -2099,9 +2099,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       };
     }
     const iconUrl = agentIcon && parsed ? await agentIcon(parsed) : null;
-    if (!iconUrl)
+    if (agentIcon && !iconUrl)
       getLogger().warn(
-        { instanceName, avatar: parsed?.kind, imageHost: agentIcon !== null },
+        { instanceName, avatar: parsed?.kind },
         "slack.agent_icon.missing: posting with the app's icon",
       );
     return {

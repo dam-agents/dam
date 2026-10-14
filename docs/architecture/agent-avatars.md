@@ -4,7 +4,7 @@ Last verified: 2026-10-14
 
 ## Overview
 
-Every Agent shows one of eight fixed characters built from the Eye-Bee-M rebus, beside its name wherever the UI shows the Agent, and its chat messages carry its name.
+Every Agent shows one of eight fixed characters built from the Eye-Bee-M rebus, or a [custom avatar](#custom-avatars), beside its name wherever the UI shows the Agent, and its chat messages carry its name.
 The characters tell a user's Agents apart at a glance and show each one's state without a label.
 
 ## Choosing a character

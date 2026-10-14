@@ -300,7 +300,7 @@ Which of two strategies an optional scope gets follows from what its absence mea
   The URL is stored in Postgres under the hash of the PNG, so each image is uploaded once per install, not once per process; the characters are uploaded in the background at startup, so a post rarely waits.
   A post waits for an upload that is still running, bounded by its timeout; a failed upload is retried a minute later.
   An emoji avatar is not uploaded: the icon is the public Twemoji PNG for it.
-  A post that goes out without an icon logs `slack.agent_icon.missing`.
+  With ImgBB configured, a post that goes out without an icon logs `slack.agent_icon.missing`.
   With no ImgBB key configured the post always keeps the name and the app's icon.
   Where the scope is not known to be granted, the post goes out as the app and its text opens with an emoji and the Agent's name in bold, so the Agents are still told apart.
   The emoji is the Agent's emoji avatar if it has one, else the robot face, unless the conversation's binding names custom emoji: whoever connects or edits the conversation can switch them on and name the workspace's emoji for each of the eight characters, prefilled `<brand.short>-agent-1` to `-8` in the order the set was drawn.

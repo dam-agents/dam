@@ -112,7 +112,9 @@ export function createAvatarImageRoutes(images: AvatarImages) {
         .rotate()
         .resize(AVATAR_PX, AVATAR_PX, { fit: "cover" })
         .png()
-        .toBuffer();
+        .toBuffer()
+        .catch(() => null);
+      if (!png) return c.json({ error: "image could not be read" }, 400);
       const id = createHash("sha256").update(png).digest("hex");
       await images.save(id, png, c.get("user").sub);
       return c.json({ avatar: `image:${id}` });

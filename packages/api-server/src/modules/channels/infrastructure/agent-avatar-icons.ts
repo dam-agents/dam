@@ -96,7 +96,14 @@ export function createImgbbAgentIcons(
     const url = body?.data?.url;
     if (!res.ok || typeof url !== "string" || !url.startsWith("https://"))
       throw new Error(`ImgBB upload answered HTTP ${res.status}`);
-    await store.saveUrl(hash, url);
+    await store
+      .saveUrl(hash, url)
+      .catch((err: unknown) =>
+        getLogger().warn(
+          { hash, error: formatError(err) },
+          "slack.agent_icon.save_failed",
+        ),
+      );
     return url;
   };
 
