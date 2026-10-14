@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -76,7 +76,7 @@ What a single occurrence changes follows from it having **no next occurrence to 
   One whose window passed before it could be fired at all is recorded *missed* by the reconcile.
 - **Nothing may skip it.** It takes no Precheck, since a decline would mean *never* rather than *not this time*, and no quiet hours, since its moment was chosen deliberately.
   Neither the onboarding hold nor the runtime-migration hold applies — a hold guards a cadence, and skipping a single occurrence would lose the task outright; during a migration its event simply waits out the move inside its delivery window.
-  A hard stop is overridden exactly as a recurring fire overrides it.
+  A sleep's stop stamp is overridden exactly as a recurring fire overrides it.
 - **It opens a fresh Session** unless tied to the one that scheduled it (below), typed as a one-time schedule's so the surfaces group it with scheduled work.
   That session can run on a **model of its own** rather than the default — a routine check-back on a cheap model, a hard one-off on a strong one — where the harness can switch a session's model ([harness-config](harness-config.md)); the choice is refused at creation where it cannot, and a harness that still refuses the switch when the task fires fails the task with its reason rather than running it on a model nobody chose.
   A task that continues its scheduling session keeps that session's model.
@@ -134,8 +134,8 @@ Every report also announces the schedule as changed, so an open UI re-reads rath
 
 The declined report also undoes the fire's own cost.
 The poke in step 2 stamps `last-activity`, which is what keeps a woken Agent from hibernating; a Precheck firing more often than the idle timeout would therefore hold its Agent awake permanently and spend more compute than the turns it saved.
-So the api-server stashes the stamp it wrote — keyed by occurrence, on a short expiry of its own, and consumed by the first report that claims it — and on a declined report restores the value that preceded it, compare-and-restore against its own stamp, the same shape the [pause flow](agent-lifecycle.md#hibernate) uses, so activity that arrived during the check keeps the Agent warm.
-What it does not undo is the cleared hard stop: a fire overrides a stop by design, and a declined one leaves the Agent started rather than racing a user who may have started it by hand meanwhile.
+So the api-server stashes the stamp it wrote — keyed by occurrence, on a short expiry of its own, and consumed by the first report that claims it — and on a declined report restores the value that preceded it, compare-and-restore against its own stamp, the same shape the [sleep flow](agent-lifecycle.md#hibernate) uses, so activity that arrived during the check keeps the Agent warm.
+What it does not undo is the cleared stop stamp: a fire overrides a sleep by design, and a declined one leaves the Agent started rather than racing a user who may have started it by hand meanwhile.
 
 The honest limit: this keeps the prompt, the context and the cache out of a declined path, but the Agent still wakes to run the check.
 Deciding without waking it at all would mean running user code with credentials outside today's boundary, and is not attempted here.

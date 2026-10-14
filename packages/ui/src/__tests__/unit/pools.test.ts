@@ -112,8 +112,8 @@ describe("pool bars", () => {
 });
 
 describe("a pool's warning text", () => {
-  const advice = "Pause agents to free up memory.";
-  const fact = "Idle agents are paused automatically to make room.";
+  const advice = "Put agents to sleep to free up memory.";
+  const fact = "Idle agents are put to sleep automatically to make room.";
 
   it("adds what the platform does, and the Slack login for an unlinked user, only at critical", () => {
     // TEST_SCENARIO: warning shows the advice alone, even for an unlinked user; critical adds the fact, and the invite only with a login command.

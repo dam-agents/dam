@@ -148,10 +148,10 @@ test("takes a scheduled fire", async () => {
   }
 });
 
-// TEST_SCENARIO: stop hibernates the agent, and wake brings it back. On the vm Backend that is a stop and a boot of the same machine, and HOME is its disk, so the marker must read back and the chat must answer after the boot.
+// TEST_SCENARIO: sleep hibernates the agent, and wake brings it back. On the vm Backend that is a stop and a boot of the same machine, and HOME is its disk, so the marker must read back and the chat must answer after the boot.
 test("hibernates and wakes with HOME intact", async ({ page }) => {
   test.setTimeout(900_000);
-  await api.agents.stop.mutate({ id: agentId });
+  await api.agents.sleep.mutate({ id: agentId });
   await waitAgentState(api, agentId, "hibernated");
   await api.agents.wake.mutate({ id: agentId });
   await waitAgentState(api, agentId, "running");

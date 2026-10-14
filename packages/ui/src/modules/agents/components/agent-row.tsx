@@ -37,7 +37,7 @@ import {
 } from "./contribution-failures-badge.js";
 import { GatewayFailureBadge } from "./gateway-failure-badge.js";
 import { MigrateRuntimeAction } from "./migrate-runtime-action.js";
-import { FreeUpComputeItems } from "./power-menu-items.js";
+import { SleepMenuItem } from "./power-menu-items.js";
 import { UnsupportedContributionsBadge } from "./unsupported-contributions-badge.js";
 import { UpdateAvailableAction } from "./update-available-action.js";
 import { UsagePairs } from "./usage-pairs.js";
@@ -67,8 +67,7 @@ interface Props {
   configureLabel: string;
   onWake: () => void;
   onRestart: () => void;
-  onPause: () => void;
-  onStop: () => void;
+  onSleep: () => void;
   onDelete: () => void;
   onAddToChannel?: (messenger: "slack" | "telegram") => void;
   messengers?: { slack?: boolean; telegram?: boolean };
@@ -95,8 +94,7 @@ export function AgentRow({
   configureLabel,
   onWake,
   onRestart,
-  onPause,
-  onStop,
+  onSleep,
   onDelete,
   onAddToChannel,
   messengers = {},
@@ -117,7 +115,7 @@ export function AgentRow({
         name={agent.name}
         avatar={agent.avatar}
         size={64}
-        mood={avatarMood(display.state, agent.stopRequested, working ?? false)}
+        mood={avatarMood(display.state, agent.stopRequested)}
         className="mr-1 self-start"
       />
       <div className="min-w-0 flex-1">
@@ -232,11 +230,7 @@ export function AgentRow({
             )}
             <DropdownMenuSeparator />
             {display.state === "running" && (
-              <FreeUpComputeItems
-                agent={agent}
-                onPause={onPause}
-                onStop={onStop}
-              />
+              <SleepMenuItem agent={agent} onSleep={onSleep} />
             )}
             {display.powerAction === "start" ? (
               <DropdownMenuItem onSelect={onWake}>

@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: what a user reads about a VM agent refused for memory or storage, or put to sleep: the badge says "Waiting for memory" rather than "Over budget" for a VM agent and keeps "Over budget" for a container agent, an agent refused a start reads "Can't start" rather than "Error" on its badge and overlay, the row's state word takes its colour from what the agent is doing, a sleeping agent reads "Pausing" then "Paused", and the overlay falls back to the VM memory sentence when the refusal carries no message of its own.
+// TEST_OVERVIEW: what a user reads about a VM agent refused for memory or storage, or put to sleep: the badge says "Waiting for memory" rather than "Over budget" for a VM agent and keeps "Over budget" for a container agent, an agent refused a start reads "Can't start" rather than "Error" on its badge and overlay, the row's state word takes its colour from what the agent is doing, a sleeping agent reads "Falling asleep" then "Sleeping", and the overlay falls back to the VM memory sentence when the refusal carries no message of its own.
 import { describe, expect, it } from "vitest";
 
 import { overlayDescription } from "../../modules/agents/lib/overlay-copy.js";
@@ -12,7 +12,7 @@ import type { AgentView } from "../../types.js";
 const agent = (over: Partial<AgentView>) =>
   ({ workspaceFailures: [], ...over }) as AgentView;
 
-describe("memory and paused copy", () => {
+describe("memory and sleep copy", () => {
   // TEST_SCENARIO: a refused VM agent waits for memory; a container agent is over its budget.
   it("labels a refused agent by its backend", () => {
     expect(badgeLabel("over_budget", true, false)).toBe("Waiting for memory");
@@ -27,7 +27,7 @@ describe("memory and paused copy", () => {
     expect(badgeLabel("running", true, true)).toBe("Running");
   });
 
-  // TEST_SCENARIO: the row's state word is green at work or holding background work, blue when idle, red when failed or refused, and the line's own colour when paused or starting.
+  // TEST_SCENARIO: the row's state word is green at work or holding background work, blue when idle, red when failed or refused, and the line's own colour when sleeping or starting.
   it("colours the row's state word by what the agent is doing", () => {
     expect(statusTone("running", true, 0)).toBe(STATUS_TONE.working);
     expect(statusTone("running", undefined, 0)).toBe(STATUS_TONE.working);
@@ -40,15 +40,15 @@ describe("memory and paused copy", () => {
   });
 
   // TEST_SCENARIO: an agent going to sleep and one asleep use the same word.
-  it("calls a sleeping agent pausing, then paused", () => {
-    expect(badgeLabel("hibernating", true, false)).toBe("Pausing");
-    expect(badgeLabel("hibernated", true, false)).toBe("Paused");
+  it("calls a sleeping agent falling asleep, then sleeping", () => {
+    expect(badgeLabel("hibernating", true, false)).toBe("Falling asleep");
+    expect(badgeLabel("hibernated", true, false)).toBe("Sleeping");
   });
 
   // TEST_SCENARIO: a VM refusal with no message still says memory is full and how to free it; a message of its own wins.
   it("falls back to the VM memory sentence", () => {
     expect(overlayDescription("over_budget", agent({ vm: true }))).toBe(
-      "Your VM agents' memory is full. It starts once room frees up — or pause an agent you aren't using.",
+      "Your VM agents' memory is full. It starts once room frees up — or put an agent you aren't using to sleep.",
     );
     expect(
       overlayDescription(

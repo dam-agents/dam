@@ -568,12 +568,12 @@ describe("ensureReady waitOnly", () => {
     expect(activity(store)).toBeUndefined();
   });
 });
-describe("requestPause settle", () => {
+describe("requestSleep settle", () => {
   const STOP_KEY = "agent-platform.ai/stop-requested";
 
   it("clears its own stop once the controller reports Hibernated", async () => {
     const { repo, store } = harness([agentObj("a1", READY)]);
-    const infra = await repo.requestPause("a1");
+    const infra = await repo.requestSleep("a1");
     expect(infra).not.toBeNull();
     const ann = () => store.get("a1")?.metadata?.annotations ?? {};
     expect(ann()[STOP_KEY]).toBeTruthy();
@@ -584,17 +584,17 @@ describe("requestPause settle", () => {
     expect(ann()[STOP_KEY]).toBe("");
   });
 
-  // TEST_SCENARIO: a pause must win over running sub-agents; it clears the Invocation Pin along with the session pin, so nothing restarts the Driver once the pause settles.
+  // TEST_SCENARIO: a sleep must win over running sub-agents; it clears the Invocation Pin along with the session pin, so nothing restarts the Driver once the sleep settles.
   it("clears the Invocation Pin", async () => {
     const { repo, store } = harness([agentObj("a1", READY)]);
     store.get("a1")!.metadata!.annotations![PIN_KEY] = "true";
-    await repo.requestPause("a1");
+    await repo.requestSleep("a1");
     expect(store.get("a1")?.metadata?.annotations?.[PIN_KEY]).toBe("");
   });
 
   it("leaves a stop stamped during the settle window in place", async () => {
     const { repo, store } = harness([agentObj("a1", READY)]);
-    await repo.requestPause("a1");
+    await repo.requestSleep("a1");
     const obj = store.get("a1");
     obj!.metadata!.annotations![STOP_KEY] = "9999-01-01T00:00:00Z";
     (obj as { status?: unknown }).status = { conditions: HIBERNATED };

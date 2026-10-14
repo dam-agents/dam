@@ -455,7 +455,7 @@ function KitDetail({
                 onRename={(name) => update({ name })}
                 onAvatarChange={(next) => update({ avatar: next })}
                 avatarSize={36}
-                mood="idle"
+                mood="awake"
                 nameClassName="text-base font-semibold text-foreground"
                 nameTag="h2"
               />

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
-  transitionPausingAgents,
+  transitionFallingAsleepAgents,
   transitionRestartingAgents,
   transitionStartingSince,
 } from "../../modules/agents/store.js";
@@ -62,7 +62,7 @@ describe("resolveAgentDisplay", () => {
     expect(out.powerAction).toBe(null);
   });
 
-  test("pause override: running agent shows hibernating and actions are suppressed", () => {
+  test("sleep override: running agent shows hibernating and actions are suppressed", () => {
     const out = resolveAgentDisplay(
       agent("a", "running"),
       new Set(),
@@ -73,7 +73,7 @@ describe("resolveAgentDisplay", () => {
     expect(out.powerAction).toBe(null);
   });
 
-  test("pause override only applies while running — a hibernated agent keeps Start", () => {
+  test("sleep override only applies while running — a hibernated agent keeps Start", () => {
     const out = resolveAgentDisplay(
       agent("a", "hibernated"),
       new Set(),
@@ -96,7 +96,7 @@ describe("resolveAgentDisplay", () => {
     expect(out.powerAction).toBe("restart");
   });
 
-  test("restart wins over pause when an id is in both sets", () => {
+  test("restart wins over sleep when an id is in both sets", () => {
     const out = resolveAgentDisplay(
       agent("a", "running"),
       new Set(["a"]),
@@ -179,19 +179,23 @@ describe("transitionRestartingAgents", () => {
   });
 });
 
-describe("transitionPausingAgents", () => {
+describe("transitionFallingAsleepAgents", () => {
   const NOW = 1_000_000_000_000;
   const entry = (ageMs = 0) => ({ clickedAt: NOW - ageMs });
 
   test("keeps entry while the poll still reads running", () => {
     const current = new Map([["a", entry()]]);
-    const next = transitionPausingAgents(current, [agent("a", "running")], NOW);
+    const next = transitionFallingAsleepAgents(
+      current,
+      [agent("a", "running")],
+      NOW,
+    );
     expect(next.get("a")).toEqual(entry());
   });
 
   test("drops entry once the pod reports down — the real hibernated state carries the pill", () => {
     const current = new Map([["a", entry()]]);
-    const next = transitionPausingAgents(
+    const next = transitionFallingAsleepAgents(
       current,
       [agent("a", "hibernating")],
       NOW,
@@ -201,25 +205,37 @@ describe("transitionPausingAgents", () => {
 
   test("drops entry on error so the real failure surfaces", () => {
     const current = new Map([["a", entry()]]);
-    const next = transitionPausingAgents(current, [agent("a", "error")], NOW);
+    const next = transitionFallingAsleepAgents(
+      current,
+      [agent("a", "error")],
+      NOW,
+    );
     expect(next.has("a")).toBe(false);
   });
 
   test("drops entry once it exceeds the TTL, even if state still looks running", () => {
     const current = new Map([["a", entry(31_000)]]);
-    const next = transitionPausingAgents(current, [agent("a", "running")], NOW);
+    const next = transitionFallingAsleepAgents(
+      current,
+      [agent("a", "running")],
+      NOW,
+    );
     expect(next.has("a")).toBe(false);
   });
 
   test("drops entry when the agent disappears", () => {
     const current = new Map([["a", entry()]]);
-    const next = transitionPausingAgents(current, [], NOW);
+    const next = transitionFallingAsleepAgents(current, [], NOW);
     expect(next.has("a")).toBe(false);
   });
 
   test("returns the same reference when membership is unchanged (skips a re-render)", () => {
     const current = new Map([["a", entry()]]);
-    const next = transitionPausingAgents(current, [agent("a", "running")], NOW);
+    const next = transitionFallingAsleepAgents(
+      current,
+      [agent("a", "running")],
+      NOW,
+    );
     expect(next).toBe(current);
   });
 
@@ -228,7 +244,7 @@ describe("transitionPausingAgents", () => {
       ["a", entry()],
       ["b", entry()],
     ]);
-    const next = transitionPausingAgents(
+    const next = transitionFallingAsleepAgents(
       current,
       [agent("a", "running"), agent("b", "hibernated")],
       NOW,

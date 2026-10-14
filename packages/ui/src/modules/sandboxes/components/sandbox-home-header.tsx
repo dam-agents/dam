@@ -1,11 +1,4 @@
-import {
-  Chat,
-  Pause,
-  Play,
-  Restart,
-  Stop,
-  TrashCan,
-} from "@carbon/icons-react";
+import { Chat, LetterZz, Play, Restart, TrashCan } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
@@ -17,15 +10,14 @@ import { useDeleteAgent } from "../../agents/api/mutations.js";
 import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
 import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
 import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
+import { SLEEP_UNAVAILABLE_REASON } from "../../agents/components/power-menu-items.js";
 import { UpdateAvailableAction } from "../../agents/components/update-available-action.js";
 import { useConfirmDeleteAgent } from "../../agents/hooks/use-confirm-delete-agent.js";
-import { useConfirmStopAgent } from "../../agents/hooks/use-confirm-stop-agent.js";
 import { useRestartAgent } from "../../agents/hooks/use-restart-agent.js";
-import { useSuspendAgent } from "../../agents/hooks/use-suspend-agent.js";
+import { useSleepAgent } from "../../agents/hooks/use-sleep-agent.js";
 import { useUpdateSandbox } from "../../agents/hooks/use-update-sandbox.js";
 import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
-import { useFeed } from "../../home/api/queries.js";
 
 interface Props {
   agent: AgentView;
@@ -33,18 +25,13 @@ interface Props {
 }
 
 export function SandboxIdentity({ agent, display }: Props) {
-  const working = useFeed().workingByAgent.get(agent.id);
   return (
     <div className="mb-4 flex flex-col gap-2 px-3">
       <div className="flex min-w-0 items-center gap-3">
         <EditableAgentIdentity
           agent={agent}
           avatarSize={36}
-          mood={avatarMood(
-            display.state,
-            agent.stopRequested,
-            working ?? false,
-          )}
+          mood={avatarMood(display.state, agent.stopRequested)}
           nameClassName="text-lg font-semibold text-foreground"
           nameTag="h2"
         />
@@ -69,16 +56,10 @@ export function SandboxHomeHeader({
   const wakeAgent = useWakeAgent();
   const { restart } = useRestartAgent();
   const deleteAgent = useDeleteAgent();
-  const suspend = useSuspendAgent();
-  const confirmStop = useConfirmStopAgent();
+  const sleep = useSleepAgent();
   const { updateOne, updatingId } = useUpdateSandbox();
 
   const openChat = () => selectAgent(agent.id);
-
-  const onStop = async () => {
-    if (!(await confirmStop(agent))) return;
-    suspend.stop(agent.id);
-  };
 
   const onDelete = async () => {
     if (!(await confirmDelete(agent))) return;
@@ -87,7 +68,7 @@ export function SandboxHomeHeader({
   };
 
   const running = display.state === "running";
-  const neverHibernates = agent.hibernationTimeoutMin === 0;
+  const neverSleeps = agent.hibernationTimeoutMin === 0;
   const separator = <span aria-hidden className="mx-1 h-6 w-px bg-border" />;
 
   return (
@@ -110,28 +91,17 @@ export function SandboxHomeHeader({
           <Button
             variant="outline"
             size="icon"
-            aria-label="Pause"
-            disabled={!running || neverHibernates}
+            aria-label="Sleep"
+            disabled={!running || neverSleeps}
             tooltip={
-              neverHibernates
-                ? "This agent never sleeps, so pausing it would wake itself. Change its idle timeout in Sandbox."
-                : "Pause: wakes on any action (a schedule firing, a message arriving, or you opening a chat)"
+              neverSleeps
+                ? SLEEP_UNAVAILABLE_REASON
+                : "Sleep: wakes on any action (a schedule firing, a message arriving, or you opening a chat)"
             }
-            onClick={() => suspend.pause(agent.id)}
-            data-testid="agent-pause"
+            onClick={() => sleep(agent.id)}
+            data-testid="agent-sleep"
           >
-            <Pause />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            aria-label="Stop"
-            tooltip="Stop: wakes only when a schedule fires or you start it"
-            disabled={!running}
-            onClick={() => void onStop()}
-            data-testid="agent-stop"
-          >
-            <Stop />
+            <LetterZz />
           </Button>
           {display.powerAction === "start" ? (
             <Button
