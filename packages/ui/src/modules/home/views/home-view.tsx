@@ -3,8 +3,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { EntryPointButtons } from "../../agents/components/entry-point-buttons.js";
 import { OutdatedTemplatesBanner } from "../../agents/components/outdated-templates-banner.js";
+import { QuickSetupFlow } from "../../agents/components/quick-setup-flow.js";
 import { SandboxList } from "../../agents/components/sandbox-list.js";
-import { WelcomeEntryPoints } from "../../agents/components/welcome-entry-points.js";
 import { useAgentRows } from "../../agents/hooks/use-agent-rows.js";
 import { useSandboxRowActions } from "../../agents/hooks/use-sandbox-row-actions.js";
 import { splitTemporarySandboxes } from "../../agents/utils/temporary-sandboxes.js";
@@ -41,12 +41,7 @@ export function HomeView() {
   }
 
   if (visible.length === 0) {
-    return (
-      <div>
-        <PageHeader title="Home" />
-        <WelcomeEntryPoints />
-      </div>
-    );
+    return <QuickSetupFlow />;
   }
 
   return (

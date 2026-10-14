@@ -534,10 +534,12 @@ export function AgentAvatar({
   state: AgentDisplayState;
   className?: string;
 }) {
-  const idle = state === "hibernated" || state === "idle_always_on";
+  const idle =
+    state === "hibernated" ||
+    state === ("idle_always_on" as AgentDisplayState);
   const awake =
     state === "running" ||
-    state === "running_always_on" ||
+    state === ("running_always_on" as AgentDisplayState) ||
     state === "starting" ||
     state === "preparing_workspace";
   return (

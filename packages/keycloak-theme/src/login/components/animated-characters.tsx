@@ -1009,6 +1009,141 @@ function DraggableChar({
   );
 }
 
+/* ── Slack window companion characters ─────────────────────────────── */
+
+const COMPANION_KEYFRAMES = `
+@keyframes companion-hop-x {
+  0%   { left: -40px; }
+  100% { left: calc(100% + 40px); }
+}
+@keyframes companion-bounce {
+  0%, 100% { transform: translateY(0) scaleX(1); }
+  40%  { transform: translateY(-18px) scaleX(1); }
+}
+@keyframes companion-walk-x {
+  0%   { left: calc(100% + 40px); }
+  100% { left: -40px; }
+}
+@keyframes companion-bob {
+  0%, 100% { transform: translateY(0); }
+  50%  { transform: translateY(-3px); }
+}
+@keyframes companion-tumble {
+  0%     { transform: rotate(0deg); }
+  10%    { transform: rotate(0deg); }
+  13%    { transform: rotate(4deg); }
+  14%    { transform: rotate(2deg); }
+  16%    { transform: rotate(8deg); }
+  21%    { transform: rotate(94deg); }
+  23%    { transform: rotate(88deg); }
+  25%    { transform: rotate(90deg); }
+
+  35%    { transform: rotate(90deg); }
+  38%    { transform: rotate(94deg); }
+  39%    { transform: rotate(92deg); }
+  41%    { transform: rotate(98deg); }
+  46%    { transform: rotate(184deg); }
+  48%    { transform: rotate(178deg); }
+  50%    { transform: rotate(180deg); }
+
+  60%    { transform: rotate(180deg); }
+  63%    { transform: rotate(184deg); }
+  64%    { transform: rotate(182deg); }
+  66%    { transform: rotate(188deg); }
+  71%    { transform: rotate(274deg); }
+  73%    { transform: rotate(268deg); }
+  75%    { transform: rotate(270deg); }
+
+  85%    { transform: rotate(270deg); }
+  88%    { transform: rotate(274deg); }
+  89%    { transform: rotate(272deg); }
+  91%    { transform: rotate(278deg); }
+  96%    { transform: rotate(364deg); }
+  98%    { transform: rotate(358deg); }
+  100%   { transform: rotate(360deg); }
+}
+`;
+
+let companionStylesInjected = false;
+function injectCompanionStyles() {
+  if (companionStylesInjected) return;
+  companionStylesInjected = true;
+  const el = document.createElement("style");
+  el.textContent = COMPANION_KEYFRAMES;
+  document.head.appendChild(el);
+}
+
+export function SlackWindowCompanions({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  injectCompanionStyles();
+  const b1 = useBlinkCycle(2200, 4800);
+  const b2 = useBlinkCycle(3000, 5500);
+  const b3 = useBlinkCycle(2800, 5000);
+
+  const topChars: { name: CharacterName; size: number; delay: number; duration: number; roll?: boolean }[] = [
+    { name: "compass", size: 44, delay: 0, duration: 8, roll: true },
+    { name: "spark", size: 48, delay: 2.5, duration: 9 },
+    { name: "roller", size: 40, delay: 5, duration: 7.5 },
+  ];
+  const bottomChars: { name: CharacterName; size: number; delay: number; duration: number }[] = [
+    { name: "wave", size: 38, delay: 1, duration: 10 },
+    { name: "shield", size: 42, delay: 4, duration: 8.5 },
+    { name: "stack", size: 36, delay: 7, duration: 9.5 },
+  ];
+  const blinks = [b1, b2, b3];
+
+  return (
+    <div className="relative" aria-hidden="true">
+      <div className="pointer-events-none absolute -top-6 left-0 right-0 h-12" style={{ zIndex: 10 }}>
+        {topChars.map((c, i) => (
+          <div
+            key={c.name}
+            className="absolute"
+            style={{
+              width: c.size,
+              height: c.size,
+              top: 0,
+              animation: `companion-hop-x ${c.duration}s linear ${c.delay}s infinite`,
+              filter: "drop-shadow(0 2px 6px rgba(0,0,0,0.15))",
+            }}
+          >
+            <div style={{
+              animation: c.roll
+                ? `companion-tumble 5s ease-in-out infinite`
+                : "companion-bounce 0.55s ease-in-out infinite",
+            }}>
+              <CharacterSvg name={c.name} blink={blinks[i]} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {children}
+
+      <div className="pointer-events-none absolute -bottom-5 left-0 right-0 h-10" style={{ zIndex: 10 }}>
+        {bottomChars.map((c, i) => (
+          <div
+            key={c.name}
+            className="absolute"
+            style={{
+              width: c.size,
+              height: c.size,
+              top: 0,
+              animation: `companion-walk-x ${c.duration}s linear ${c.delay}s infinite, companion-bob 0.7s ease-in-out infinite`,
+              filter: "drop-shadow(0 2px 6px rgba(0,0,0,0.15))",
+            }}
+          >
+            <CharacterSvg name={c.name} blink={blinks[i]} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function StackedCharacters() {
   injectStackStyles();
   const b1 = useBlinkCycle(2200, 4800);

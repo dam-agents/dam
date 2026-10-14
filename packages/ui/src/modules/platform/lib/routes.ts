@@ -38,7 +38,8 @@ export type Route =
   | { view: "starter-kits"; category?: StarterKitCategory }
   | { view: "starter-kit"; catalog: string; kit: string }
   | { view: "starter-kit-new"; catalog: string; kit: string }
-  | { view: "artifacts" };
+  | { view: "artifacts" }
+  | { view: "getting-started-sheet" };
 
 export type View = Route["view"];
 
@@ -99,6 +100,8 @@ export function parseRoute(path: string): Route {
   if (path === "/slack/bind") return { view: "slack-bind" };
   if (RETIRED_PATHS.has(path)) return { view: "home" };
   if (path === "/artifacts") return { view: "artifacts" };
+  if (path === "/getting-started-sheet")
+    return { view: "getting-started-sheet" };
   const sandboxHomeMatch = path.match(sandboxHomeRe);
   if (sandboxHomeMatch) {
     const section = sandboxSectionSchema.safeParse(sandboxHomeMatch[2]);
@@ -176,6 +179,8 @@ export function routeToPath(route: Route): string {
       return `/starter-kits/${encodeURIComponent(route.catalog)}/${encodeURIComponent(route.kit)}/new`;
     case "artifacts":
       return "/artifacts";
+    case "getting-started-sheet":
+      return "/getting-started-sheet";
     default: {
       const unhandled: never = route;
       return unhandled;

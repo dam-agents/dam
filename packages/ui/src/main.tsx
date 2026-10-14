@@ -34,6 +34,44 @@ async function preflightTermsGate(): Promise<boolean> {
 }
 
 async function main() {
+  if (import.meta.env.VITE_MOCK) {
+    try {
+      const { worker } = await import("./mock/browser.js");
+      await worker.start({ onUnhandledRequest: "warn" });
+    } catch (err) {
+      console.error("[mock] MSW failed to start:", err);
+    }
+
+    const { mockSessions } = await import("./mock/data/sessions.js");
+    const sessionsByAgent: Record<string, unknown[]> = { ...mockSessions };
+    (window as any).__mockListAgentSessions = (agentId: string) =>
+      Promise.resolve(sessionsByAgent[agentId] ?? []);
+
+    for (const [agentId, sessions] of Object.entries(sessionsByAgent)) {
+      queryClient.setQueryData(["acp-sessions", agentId, "home"], sessions);
+    }
+
+    await loadBrand().then(applyBrand);
+    const { default: App } = await import("./app.js");
+    const { MockStateBar } = await import("./mock/state-bar.js");
+    createRoot(document.getElementById("root")!).render(
+      <StrictMode>
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider delayDuration={200}>
+            <div className="flex h-dvh flex-col overflow-hidden">
+              <MockStateBar />
+              <div className="flex-1 min-h-0">
+                <App />
+              </div>
+            </div>
+            <Toaster />
+          </TooltipProvider>
+        </QueryClientProvider>
+      </StrictMode>,
+    );
+    return;
+  }
+
   const publicAgentId = parsePublicAgentPath(window.location.pathname);
   if (publicAgentId !== null) {
     await loadBrand().then(applyBrand);

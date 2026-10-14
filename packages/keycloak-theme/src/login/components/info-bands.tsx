@@ -1,4 +1,5 @@
 import { FaqAccordion } from "./faq-accordion.js";
+import { SlackTeamIllustration } from "./slack-team-illustration.js";
 
 const LOGIN_DOCS_URL = "https://ibm.biz/dam-docs";
 
@@ -119,368 +120,7 @@ function InfoBlock({
   );
 }
 
-/* ═══════ Band 1: What is DAM? ═══════════════════════════════════════ */
-
-export function BandWhatIsDam() {
-  return (
-    <section className="flex min-h-[100dvh] items-center py-20 lg:py-28">
-      <div className="mx-auto w-full max-w-[1120px] px-6">
-        <SectionHeading>What is DAM?</SectionHeading>
-        <SectionTitle>The platform for long-lived AI agents</SectionTitle>
-        <p className="mt-4 max-w-[520px] text-[16px] leading-relaxed text-muted-foreground">
-          Each agent gets its own isolated pod, persistent workspace, injected
-          credentials, and network boundary.
-        </p>
-
-        <div className="mt-16 grid gap-14 sm:grid-cols-3">
-          <InfoBlock scene={<AlwaysOnScene />} title="Always-on operation">
-            Agents persist after you close your laptop. Workspaces survive
-            restarts.
-          </InfoBlock>
-          <InfoBlock scene={<SecureByDefaultScene />} title="Secure by default">
-            Zero direct credential access. A paired gateway injects secrets
-            and enforces network policy.
-          </InfoBlock>
-          <InfoBlock
-            scene={<HarnessAgnosticScene />}
-            title="Harness & model agnostic"
-          >
-            Claude Code, Codex, or any ACP runtime. Bring the harness your
-            team prefers.
-          </InfoBlock>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ── Pillar scenes ───────────────────────────────────────────────────── */
-
-function AlwaysOnScene() {
-  return (
-    <SceneCanvas w={300} h={200}>
-      {/* Card: agent run status */}
-      <div
-        className={`${SCENE_CARD} left-[16px] top-[14px] w-[188px] px-3 py-2.5`}
-      >
-        <div className="flex items-center gap-2">
-          <div className="size-2 shrink-0 rounded-full bg-emerald-500" />
-          <span className="text-[14px] font-semibold leading-tight text-foreground">
-            Nightly audit
-          </span>
-        </div>
-        <p className="mt-1.5 flex items-center gap-1.5 text-[14px] leading-tight text-muted-foreground">
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 16 16"
-            fill="none"
-            aria-hidden="true"
-          >
-            <circle
-              cx="8"
-              cy="8"
-              r="6"
-              stroke="currentColor"
-              strokeWidth="1.2"
-            />
-            <path
-              d="M8 5v3l2.5 2.5"
-              stroke="currentColor"
-              strokeWidth="1.2"
-              strokeLinecap="round"
-            />
-          </svg>
-          Ran 2:04 AM
-        </p>
-      </div>
-
-      {/* Badge: completed */}
-      <div
-        className={`${SCENE_CARD} left-[56px] top-[106px] flex items-center gap-1.5 px-2.5 py-1.5`}
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 16 16"
-          fill="none"
-          aria-hidden="true"
-        >
-          <circle cx="8" cy="8" r="7" fill="#24A148" />
-          <path
-            d="M5 8l2 2 4-4"
-            stroke="#fff"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-        <span className="text-[14px] font-medium text-foreground">
-          Completed · 4 min
-        </span>
-      </div>
-
-      {/* Tile: clock */}
-      <SceneTile x={250} y={22} color={ACCENT.cyan}>
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 16 16"
-          fill="none"
-          aria-hidden="true"
-        >
-          <circle
-            cx="8"
-            cy="8"
-            r="6"
-            stroke="currentColor"
-            strokeWidth="1.2"
-          />
-          <path
-            d="M8 5v3l2.5 2.5"
-            stroke="currentColor"
-            strokeWidth="1.2"
-            strokeLinecap="round"
-          />
-        </svg>
-      </SceneTile>
-    </SceneCanvas>
-  );
-}
-
-function SecureByDefaultScene() {
-  return (
-    <SceneCanvas w={300} h={200}>
-      {/* Card: secrets list */}
-      <div
-        className={`${SCENE_CARD} left-[16px] top-[14px] w-[188px] px-3 py-2.5`}
-      >
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 16 16"
-            fill="none"
-            aria-hidden="true"
-          >
-            <rect
-              x="3"
-              y="7"
-              width="10"
-              height="7"
-              rx="1.5"
-              stroke="currentColor"
-              strokeWidth="1.2"
-            />
-            <path
-              d="M5.5 7V5a2.5 2.5 0 015 0v2"
-              stroke="currentColor"
-              strokeWidth="1.2"
-              strokeLinecap="round"
-            />
-          </svg>
-          <span className="text-[14px] font-semibold text-foreground">
-            Secrets
-          </span>
-        </div>
-        <div className="mt-2 space-y-1">
-          <div className="flex items-center justify-between">
-            <span className="font-mono text-[14px] text-muted-foreground">
-              DB_PASS
-            </span>
-            <span className="text-[14px] text-muted-foreground/50">••••</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="font-mono text-[14px] text-muted-foreground">
-              API_KEY
-            </span>
-            <span className="text-[14px] text-muted-foreground/50">••••</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Badge: isolated */}
-      <div
-        className={`${SCENE_CARD} left-[56px] top-[118px] flex items-center gap-1.5 px-2.5 py-1.5`}
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 16 16"
-          fill="none"
-          aria-hidden="true"
-        >
-          <path
-            d="M8 1.5l6 2.5v4c0 4-2.5 7-6 8.5-3.5-1.5-6-4.5-6-8.5V4l6-2.5z"
-            fill={`${ACCENT.green}20`}
-            stroke={ACCENT.green}
-            strokeWidth="1.2"
-          />
-          <path
-            d="M5.5 8l2 2 3-3"
-            stroke={ACCENT.green}
-            strokeWidth="1.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-        <span className="text-[14px] font-medium text-foreground">
-          Isolated
-        </span>
-      </div>
-
-      {/* Tile: shield */}
-      <SceneTile x={250} y={22} color={ACCENT.green}>
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 16 16"
-          fill="none"
-          aria-hidden="true"
-        >
-          <path
-            d="M8 2l5.5 2v3.5c0 3.5-2.2 6.2-5.5 7.5-3.3-1.3-5.5-4-5.5-7.5V4L8 2z"
-            stroke="currentColor"
-            strokeWidth="1.2"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </SceneTile>
-    </SceneCanvas>
-  );
-}
-
-function ClaudeCodeLogo() {
-  return (
-    <svg
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-    >
-      <rect width="24" height="24" rx="5" fill="#d97757" />
-      <g transform="translate(4,4) scale(0.667)">
-        <path
-          d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z"
-          fill="#fff"
-        />
-      </g>
-    </svg>
-  );
-}
-
-function OpenAILogo() {
-  return (
-    <svg
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-    >
-      <rect width="24" height="24" rx="5" fill="#000" />
-      <g transform="translate(4,4) scale(0.667)">
-        <path
-          d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"
-          fill="#fff"
-        />
-      </g>
-    </svg>
-  );
-}
-
-function GeminiLogo() {
-  return (
-    <svg
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-    >
-      <rect width="24" height="24" rx="5" fill="#1A73E8" />
-      <g transform="translate(4,4) scale(0.667)">
-        <path
-          d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81"
-          fill="#fff"
-        />
-      </g>
-    </svg>
-  );
-}
-
-function HarnessAgnosticScene() {
-  return (
-    <SceneCanvas w={300} h={200}>
-      {/* Card: harness list */}
-      <div
-        className={`${SCENE_CARD} left-[16px] top-[10px] w-[188px] divide-y divide-input px-3`}
-      >
-        <div className="flex items-center gap-2.5 py-2">
-          <ClaudeCodeLogo />
-          <span className="text-[14px] font-medium leading-tight text-foreground">
-            Claude Code
-          </span>
-        </div>
-        <div className="flex items-center gap-2.5 py-2">
-          <OpenAILogo />
-          <span className="text-[14px] font-medium leading-tight text-foreground">
-            Codex
-          </span>
-        </div>
-        <div className="flex items-center gap-2.5 py-2">
-          <GeminiLogo />
-          <span className="text-[14px] font-medium leading-tight text-foreground">
-            Gemini CLI
-          </span>
-        </div>
-      </div>
-
-      {/* Badge: ACP */}
-      <div
-        className={`${SCENE_CARD} left-[56px] top-[130px] flex items-center gap-1.5 px-2.5 py-1.5`}
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 16 16"
-          fill="none"
-          aria-hidden="true"
-        >
-          <path
-            d="M6 4h4M3 8h10M6 12h4"
-            stroke={ACCENT.indigo}
-            strokeWidth="1.5"
-            strokeLinecap="round"
-          />
-        </svg>
-        <span className="text-[14px] font-medium text-foreground">ACP</span>
-      </div>
-
-      {/* Tile: terminal */}
-      <SceneTile x={250} y={18} color={ACCENT.indigo}>
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 16 16"
-          fill="none"
-          aria-hidden="true"
-        >
-          <path
-            d="M4 12l-3 3M4 12l-3-3M6 3h7v12"
-            stroke="currentColor"
-            strokeWidth="1.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </SceneTile>
-    </SceneCanvas>
-  );
-}
-
-/* ═══════ Band 2: What can my agent do? ══════════════════════════════ */
+/* ═══════ Band 1: What can my agent do? ══════════════════════════════ */
 
 export function BandCapabilities() {
   return (
@@ -489,32 +129,29 @@ export function BandCapabilities() {
         <SectionHeading>What can my agent do?</SectionHeading>
         <SectionTitle>Everything it needs to work like a teammate</SectionTitle>
         <p className="mt-4 max-w-[520px] text-[16px] leading-relaxed text-muted-foreground">
-          Every agent is assembled from reusable building blocks. Compose them
-          however your team needs.
+          Every agent is built from the same building blocks.
         </p>
 
         <div className="mt-16 grid gap-x-14 gap-y-16 sm:grid-cols-2 lg:grid-cols-3">
           <InfoBlock scene={<SchedulesScene />} title="Schedules">
-            Recurring tasks — daily reviews, nightly audits, no human in the
-            loop.
+            Runs a job on its own, every day or every week.
           </InfoBlock>
           <InfoBlock scene={<FilesScene />} title="Files & memory">
-            A persistent workspace that survives restarts. Files and context
-            carry across sessions.
+            Its files survive restarts and carry across every chat.
           </InfoBlock>
           <InfoBlock scene={<SkillsScene />} title="Skills">
-            Packaged instructions that teach a capability. Install once, reuse
-            everywhere.
+            Instructions that teach your agent a new job. Share them across
+            agents.
           </InfoBlock>
           <InfoBlock scene={<ConnectionsScene />} title="Connections">
-            GitHub, APIs, and credentials — without the agent ever seeing your
-            tokens.
+            GitHub and other tools, without the agent ever seeing your tokens.
           </InfoBlock>
-          <InfoBlock scene={<KnowledgeScene />} title="Knowledge bases">
-            Feed sources, ask questions, get answers with citations.
+          <InfoBlock scene={<KnowledgeScene />} title="Knowledge">
+            Point it at your sources. It keeps what it learns and answers from
+            it.
           </InfoBlock>
           <InfoBlock scene={<ArtifactsScene />} title="Artifacts">
-            Reports, dashboards, and data files that outlive any single run.
+            Reports and dashboards you can share with a link.
           </InfoBlock>
         </div>
       </div>
@@ -522,21 +159,35 @@ export function BandCapabilities() {
   );
 }
 
-/* ── Capability scenes ───────────────────────────────────────────────── */
+/* ── Capability scenes (matching real DAM UI components) ─────────── */
+
+function MiniSwitch({ on }: { on: boolean }) {
+  return (
+    <div
+      className="relative h-5 w-9 shrink-0 rounded-full"
+      style={{ backgroundColor: on ? "#121619" : "#dde1e6" }}
+    >
+      <div
+        className="absolute top-0.5 size-4 rounded-full bg-white shadow-sm"
+        style={{ left: on ? 18 : 2 }}
+      />
+    </div>
+  );
+}
 
 function SchedulesScene() {
   return (
     <SceneCanvas w={260} h={170}>
-      {/* Card: schedule list */}
-      <div
-        className={`${SCENE_CARD} left-[12px] top-[10px] w-[172px] px-3 py-2.5`}
-      >
-        <ScheduleRow label="Daily review" time="9:00 AM" on />
-        <ScheduleRow label="Nightly audit" time="2:00 AM" on />
-        <ScheduleRow label="Weekly sync" time="Mon 8 AM" on={false} />
+      <div className={`${SCENE_CARD} left-[12px] top-[10px] w-[196px]`}>
+        <ScheduleRow label="Daily review" cadence="Every day · 9:00 AM" on />
+        <ScheduleRow label="Nightly audit" cadence="Every day · 2:00 AM" on />
+        <ScheduleRow
+          label="Weekly sync"
+          cadence="Every Mon · 8:00 AM"
+          on={false}
+        />
       </div>
 
-      {/* Tile: clock */}
       <SceneTile x={218} y={16} color={ACCENT.cyan}>
         <svg
           width="14"
@@ -566,32 +217,46 @@ function SchedulesScene() {
 
 function ScheduleRow({
   label,
-  time,
+  cadence,
   on,
 }: {
   label: string;
-  time: string;
+  cadence: string;
   on: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between py-1.5">
-      <div>
-        <p className="text-[14px] font-medium leading-tight text-foreground">
+    <div className="flex items-center justify-between gap-2 border-b border-input px-3 py-2 last:border-b-0">
+      <div className="min-w-0">
+        <p className="truncate text-[14px] font-semibold leading-tight text-foreground">
           {label}
         </p>
-        <p className="text-[14px] leading-tight text-muted-foreground">
-          {time}
-        </p>
+        <div className="mt-0.5 flex items-center gap-1 text-muted-foreground">
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 16 16"
+            fill="none"
+            aria-hidden="true"
+            className="shrink-0"
+          >
+            <circle
+              cx="8"
+              cy="8"
+              r="6"
+              stroke="currentColor"
+              strokeWidth="1.2"
+            />
+            <path
+              d="M8 5v3l2.5 2.5"
+              stroke="currentColor"
+              strokeWidth="1.2"
+              strokeLinecap="round"
+            />
+          </svg>
+          <span className="truncate text-[14px] leading-tight">{cadence}</span>
+        </div>
       </div>
-      <div
-        className="flex h-4 w-7 items-center rounded-full px-0.5"
-        style={{ backgroundColor: on ? ACCENT.cyan : "#dde1e6" }}
-      >
-        <div
-          className="size-3 rounded-full bg-white transition-transform"
-          style={{ transform: on ? "translateX(12px)" : "translateX(0)" }}
-        />
-      </div>
+      <MiniSwitch on={on} />
     </div>
   );
 }
@@ -715,52 +380,17 @@ function FileRow({ name, folder }: { name: string; folder?: boolean }) {
 function SkillsScene() {
   return (
     <SceneCanvas w={260} h={170}>
-      {/* Card: skill detail */}
-      <div
-        className={`${SCENE_CARD} left-[12px] top-[10px] w-[172px] px-3 py-2.5`}
-      >
-        <div className="flex items-center gap-2">
-          <div
-            className="flex size-6 items-center justify-center rounded-md"
-            style={{ backgroundColor: `${ACCENT.pink}15`, color: ACCENT.pink }}
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 16 16"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path
-                d="M8 1.5l1.8 3.6 4 .6-2.9 2.8.7 4L8 10.7l-3.6 1.8.7-4-2.9-2.8 4-.6L8 1.5z"
-                stroke="currentColor"
-                strokeWidth="1.2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </div>
-          <span className="text-[14px] font-semibold text-foreground">
-            Plan feature
+      <div className={`${SCENE_CARD} left-[12px] top-[10px] w-[196px]`}>
+        <div className="border-b border-input px-3 py-1.5">
+          <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+            Skills
           </span>
         </div>
-        <p className="mt-1.5 text-[14px] leading-snug text-muted-foreground">
-          Break a feature brief into tasks and draft a PRD.
-        </p>
-        <div className="mt-2 flex items-center gap-1">
-          <span
-            className="rounded-full px-2 py-0.5 text-[14px] font-medium"
-            style={{
-              backgroundColor: `${ACCENT.green}15`,
-              color: ACCENT.green,
-            }}
-          >
-            Installed
-          </span>
-        </div>
+        <SkillRow name="Code review" on />
+        <SkillRow name="Plan feature" on />
+        <SkillRow name="Write tests" on={false} />
       </div>
 
-      {/* Tile: star */}
       <SceneTile x={218} y={16} color={ACCENT.pink}>
         <svg
           width="14"
@@ -770,15 +400,23 @@ function SkillsScene() {
           aria-hidden="true"
         >
           <path
-            d="M8 1.5l1.8 3.6 4 .6-2.9 2.8.7 4L8 10.7l-3.6 1.8.7-4-2.9-2.8 4-.6L8 1.5z"
+            d="M4 2h5l4 4v8a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"
             stroke="currentColor"
             strokeWidth="1.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
           />
+          <path d="M9 2v4h4" stroke="currentColor" strokeWidth="1.2" />
         </svg>
       </SceneTile>
     </SceneCanvas>
+  );
+}
+
+function SkillRow({ name, on }: { name: string; on: boolean }) {
+  return (
+    <div className="flex items-center justify-between border-b border-input px-3 py-2 last:border-b-0">
+      <span className="text-[14px] font-medium text-foreground">{name}</span>
+      <MiniSwitch on={on} />
+    </div>
   );
 }
 
@@ -865,60 +503,26 @@ function ConnectionsScene() {
 function KnowledgeScene() {
   return (
     <SceneCanvas w={260} h={170}>
-      {/* Card: knowledge base */}
-      <div
-        className={`${SCENE_CARD} left-[12px] top-[10px] w-[172px] px-3 py-2.5`}
-      >
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 16 16"
-            fill="none"
-            aria-hidden="true"
-          >
-            <path
-              d="M2 4a1 1 0 011-1h3.5l1.5 1.5H13a1 1 0 011 1V12a1 1 0 01-1 1H3a1 1 0 01-1-1V4z"
-              stroke="currentColor"
-              strokeWidth="1.2"
-            />
-          </svg>
-          <span className="text-[14px] font-semibold text-foreground">
-            Product docs
-          </span>
-        </div>
-        <div className="mt-2 space-y-1.5">
-          <div className="flex items-center gap-2">
-            <div className="h-1 w-full rounded-full bg-input" />
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="h-1 w-4/5 rounded-full bg-input" />
-          </div>
-        </div>
-        <p className="mt-2 text-[14px] text-muted-foreground">
-          12 sources · 3.2k chunks
+      <div className={`${SCENE_CARD} left-[12px] top-[10px] w-[196px] px-3 py-2.5`}>
+        <p className="text-[14px] font-medium text-muted-foreground">
+          Connected knowledge bases
         </p>
+        <div className="mt-2 space-y-1.5">
+          <div className="flex items-center justify-between rounded-md border border-input px-2.5 py-1.5">
+            <span className="text-[14px] font-medium text-foreground">
+              Product docs
+            </span>
+            <span className="text-[14px] text-muted-foreground">12 sources</span>
+          </div>
+          <div className="flex items-center justify-between rounded-md border border-input px-2.5 py-1.5">
+            <span className="text-[14px] font-medium text-foreground">
+              API reference
+            </span>
+            <span className="text-[14px] text-muted-foreground">8 sources</span>
+          </div>
+        </div>
       </div>
 
-      {/* Badge: citation */}
-      <div
-        className={`${SCENE_CARD} left-[44px] top-[118px] flex items-center gap-1.5 px-2.5 py-1.5`}
-      >
-        <span
-          className="flex size-4 items-center justify-center rounded text-[14px] font-semibold"
-          style={{
-            backgroundColor: `${ACCENT.orange}15`,
-            color: ACCENT.orange,
-          }}
-        >
-          1
-        </span>
-        <span className="text-[14px] font-medium text-foreground">
-          api-guide.md
-        </span>
-      </div>
-
-      {/* Tile: folder */}
       <SceneTile x={218} y={16} color={ACCENT.orange}>
         <svg
           width="14"
@@ -941,89 +545,12 @@ function KnowledgeScene() {
 function ArtifactsScene() {
   return (
     <SceneCanvas w={260} h={170}>
-      {/* Card: artifact preview */}
-      <div
-        className={`${SCENE_CARD} left-[12px] top-[10px] w-[172px] px-3 py-2.5`}
-      >
-        <div className="flex items-center gap-2">
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 16 16"
-            fill="none"
-            aria-hidden="true"
-          >
-            <rect
-              x="2"
-              y="2"
-              width="12"
-              height="12"
-              rx="2"
-              stroke={ACCENT.purple}
-              strokeWidth="1.2"
-            />
-            <path
-              d="M5 6h6M5 9h4"
-              stroke={ACCENT.purple}
-              strokeWidth="1.2"
-              strokeLinecap="round"
-            />
-          </svg>
-          <span className="text-[14px] font-semibold text-foreground">
-            Sprint report
-          </span>
-        </div>
-        {/* Mini bar chart */}
-        <div className="mt-2 flex items-end gap-1">
-          {[0.4, 0.7, 0.5, 0.9, 0.6, 0.8, 0.3].map((h, i) => (
-            <div
-              key={i}
-              className="flex-1 rounded-sm"
-              style={{
-                height: h * 24,
-                backgroundColor: `${ACCENT.purple}${i === 3 ? "50" : "25"}`,
-              }}
-            />
-          ))}
-        </div>
+      <div className={`${SCENE_CARD} left-[12px] top-[10px] w-[196px]`}>
+        <ArtifactRow kind="HTML" kindColor={ACCENT.blue} title="Sprint report" meta="3 views · 2h ago" />
+        <ArtifactRow kind="MD" kindColor="#0199f0" title="Meeting notes" meta="1 view · 5h ago" />
+        <ArtifactRow kind="CODE" kindColor={ACCENT.green} title="migration.sql" meta="12 views · 1d ago" />
       </div>
 
-      {/* Badge: shared */}
-      <div
-        className={`${SCENE_CARD} left-[44px] top-[118px] flex items-center gap-1.5 px-2.5 py-1.5`}
-      >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 16 16"
-          fill="none"
-          aria-hidden="true"
-        >
-          <circle cx="4" cy="8" r="2" stroke={ACCENT.purple} strokeWidth="1.2" />
-          <circle
-            cx="12"
-            cy="4"
-            r="2"
-            stroke={ACCENT.purple}
-            strokeWidth="1.2"
-          />
-          <circle
-            cx="12"
-            cy="12"
-            r="2"
-            stroke={ACCENT.purple}
-            strokeWidth="1.2"
-          />
-          <path
-            d="M5.8 7l4.4-2M5.8 9l4.4 2"
-            stroke={ACCENT.purple}
-            strokeWidth="1.2"
-          />
-        </svg>
-        <span className="text-[14px] font-medium text-foreground">Shared</span>
-      </div>
-
-      {/* Tile: document */}
       <SceneTile x={218} y={16} color={ACCENT.purple}>
         <svg
           width="14"
@@ -1053,13 +580,44 @@ function ArtifactsScene() {
   );
 }
 
-/* ═══════ Band 3: Where does my agent live? ══════════════════════════ */
+function ArtifactRow({
+  kind,
+  kindColor,
+  title,
+  meta,
+}: {
+  kind: string;
+  kindColor: string;
+  title: string;
+  meta: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 border-b border-input px-3 py-2 last:border-b-0">
+      <span
+        className="shrink-0 rounded-full px-1.5 py-px text-[10px] font-semibold uppercase tracking-wider text-white"
+        style={{ backgroundColor: kindColor }}
+      >
+        {kind}
+      </span>
+      <div className="min-w-0">
+        <p className="truncate text-[14px] font-medium text-foreground">{title}</p>
+        <p className="truncate text-[14px] leading-tight text-muted-foreground">{meta}</p>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════ Band 2: Where does my agent live? ══════════════════════════ */
 
 export function BandChannels() {
   return (
-    <section className="relative min-h-[100dvh]">
-      {/* Visual placeholder — right half, full bleed */}
-      <div className="absolute inset-y-0 right-0 hidden w-1/2 bg-gray-200 lg:block dark:bg-gray-800" />
+    <section className="relative min-h-[100dvh] overflow-hidden">
+      {/* Right half — gold background with team illustration */}
+      <div className="absolute inset-y-0 right-0 z-10 hidden w-1/2 items-center lg:flex" style={{ backgroundColor: "#DE9950" }}>
+        <div className="w-[140%] max-w-[860px] -ml-[8%] pr-10">
+          <SlackTeamIllustration />
+        </div>
+      </div>
       {/* Left half gets the muted background */}
       <div className="absolute inset-y-0 left-0 hidden w-1/2 bg-muted/50 lg:block" />
 
@@ -1069,31 +627,28 @@ export function BandChannels() {
           <SectionTitle>Everywhere your team already works</SectionTitle>
 
           <p className="mt-4 text-[16px] leading-relaxed text-muted-foreground">
-            Talk to your agent in the platform, or connect it to the tools
-            your team uses every day.
+            Talk to it in DAM, in Slack, or from your editor.
           </p>
-          <div className="mt-10 grid gap-8 sm:grid-cols-2">
+          <div className="mt-10 grid gap-6">
             <Channel
               logo={<DamUiLogo />}
-              title="DAM UI"
-              body="Chat, configure, and manage agents in the DAM web UI."
+              title="Web app"
+              body="Chat with your agents and set them up."
             />
             <Channel
               logo={<SlackLogo />}
               title="Slack"
-              body="Talk to your agent privately in your DMs, or bind it to a channel where your team can use it."
-            />
-            <Channel
-              logo={<TelegramLogo />}
-              title="Telegram"
-              body="Add the bot to a DM or group. Agents respond and post on schedule."
+              body="DM your agent, or add it to a channel your team shares. In a channel, tag @dam to reach it."
             />
             <Channel
               logo={<IdeLogo />}
               title="Your IDE"
-              body="VS Code, Zed, or IntelliJ pointed at the agent's live workspace."
+              body="Open the agent's files in VS Code or Zed."
             />
           </div>
+          <p className="mt-6 text-[14px] leading-relaxed text-muted-foreground">
+            Also works in Telegram.
+          </p>
         </div>
       </div>
     </section>
@@ -1110,16 +665,18 @@ function Channel({
   body: string;
 }) {
   return (
-    <div>
-      <div className="flex size-12 items-center justify-center rounded-xl border border-input bg-background shadow-[0_2px_8px_rgba(56,56,56,0.06)]">
+    <div className="flex items-start gap-4">
+      <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-input bg-background shadow-[0_2px_8px_rgba(56,56,56,0.06)]">
         {logo}
       </div>
-      <p className="mt-3 text-[16px] font-semibold leading-snug text-foreground">
-        {title}
-      </p>
-      <p className="mt-1 text-[14px] leading-relaxed text-muted-foreground">
-        {body}
-      </p>
+      <div>
+        <p className="text-[15px] font-semibold leading-snug text-foreground">
+          {title}
+        </p>
+        <p className="mt-0.5 text-[14px] leading-relaxed text-muted-foreground">
+          {body}
+        </p>
+      </div>
     </div>
   );
 }
@@ -1201,19 +758,6 @@ function SlackLogo() {
   );
 }
 
-function TelegramLogo() {
-  return (
-    <svg
-      width="28"
-      height="28"
-      viewBox="0 0 24 24"
-      fill="#26A5E4"
-      aria-hidden="true"
-    >
-      <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
-    </svg>
-  );
-}
 
 function IdeLogo() {
   return (
@@ -1282,10 +826,10 @@ export function BandAccess({
         <div className="flex items-start gap-12">
           <div className="flex-1">
             <SectionHeading>Get started</SectionHeading>
-            <SectionTitle>Available to IBM Research teams</SectionTitle>
+            <SectionTitle>Open to IBM teams</SectionTitle>
             <p className="mt-4 max-w-[420px] text-[16px] leading-relaxed text-muted-foreground">
-              Sign in if you have access. Otherwise, request it and your team
-              admin will be notified.
+              Sign in if you have access. If not, join the waitlist and the
+              DAM team will reach out.
             </p>
 
             {formEl && (
@@ -1300,7 +844,7 @@ export function BandAccess({
                   href={requestAccessUrl}
                   className="inline-flex h-11 items-center justify-center rounded-md border border-input bg-background px-6 text-[15px] font-medium text-foreground hover:bg-muted"
                 >
-                  Request access
+                  Join the waitlist
                 </a>
               )}
               <a

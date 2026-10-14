@@ -51,15 +51,11 @@ function crew(caught: CharName[]): CrewSlotData[] {
 
 export function AppFrame({
   id,
-  agents,
-  showActivity,
   height = 720,
   overlay,
   children,
 }: {
   id?: string;
-  agents?: AgentView[];
-  showActivity?: boolean;
   height?: number;
   overlay?: ReactNode;
   children: ReactNode;
@@ -70,12 +66,7 @@ export function AppFrame({
       className="relative left-1/2 w-[min(1440px,calc(100vw-80px))] -translate-x-1/2 scroll-mt-6 overflow-hidden rounded-xl border-2 border-border"
     >
       <div className="flex bg-background" style={{ height }}>
-        <IconRail
-          expanded
-          hideMobileBar
-          agentsOverride={agents}
-          showActivity={showActivity}
-        />
+        <IconRail hideMobileBar />
         <main className="relative flex-1 overflow-y-auto">{children}</main>
       </div>
       {overlay && (
@@ -240,8 +231,6 @@ export function FirstAgentScreens() {
         note="A brand-new user lands on Home with no agents. The getting-started checklist is already in the corner, collapsed to a pill showing 0 of 8; expanding it shows the first task is creating an agent."
       >
         <AppFrame
-          agents={[]}
-          showActivity={false}
           overlay={<ChecklistPill done={0} total={TOTAL} />}
         >
           <HomeEmptyScreen />
@@ -255,12 +244,10 @@ export function FirstAgentScreens() {
       >
         <AppFrame
           id="first-visit-screen"
-          agents={[]}
-          showActivity={false}
           overlay={<ChecklistPill done={0} total={TOTAL} />}
         >
           <SetupColumn clearDock>
-            <AgentSetupView embedded firstTime />
+            <AgentSetupView />
           </SetupColumn>
         </AppFrame>
       </Step>
@@ -280,8 +267,6 @@ export function FirstAgentScreens() {
         }
       >
         <AppFrame
-          agents={[FIRST_AGENT]}
-          showActivity={false}
           overlay={
             <>
               <CatchMomentOverlay replayKey={catchReplay} />
@@ -314,8 +299,6 @@ export function FirstAgentScreens() {
         }
       >
         <AppFrame
-          agents={[FIRST_AGENT]}
-          showActivity={false}
           overlay={
             <ChecklistPanel
               key={revealReplay}

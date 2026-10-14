@@ -14,7 +14,6 @@ export default defineConfig({
       manifest: false,
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
-        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         navigateFallback: "index.html",
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
@@ -37,13 +36,12 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
-  build: {
-    outDir: "dist/js",
-  },
   server: {
-    port: 5173,
-    proxy: {
-      "/api": { target: "http://localhost:4444", ws: true, changeOrigin: true },
-    },
+    port: 5174,
+    ...(!process.env.VITE_MOCK && {
+      proxy: {
+        "/api": { target: "http://localhost:4444", ws: true, changeOrigin: true },
+      },
+    }),
   },
 });

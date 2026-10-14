@@ -1,0 +1,11 @@
+# Local-only Helm overrides. This file is gitignored and never committed.
+# Populating these values makes the GitHub connection template emit its
+# three "Customize defaults" inputs (clientId / clientSecret / appSlug)
+# instead of asking the user to supply each one — mirroring how a real
+# production deployment configures admin-registered OAuth credentials.
+apiServer:
+  oauthAppDefaults:
+    github:
+      clientId: "Iv1.placeholder-design-preview"
+      clientSecret: "placeholder-design-preview-secret"
+      appSlug: "platform-design-preview"

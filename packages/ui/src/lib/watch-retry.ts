@@ -12,6 +12,7 @@ interface Unsubscribable {
 export function watchWithRetry(
   subscribe: (onError: (error: unknown) => void) => Unsubscribable,
 ): () => void {
+  if (import.meta.env.VITE_MOCK) return () => {};
   let disposed = false;
   let subscription: Unsubscribable | undefined;
   let retry: ReturnType<typeof setTimeout> | undefined;

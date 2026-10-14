@@ -4,7 +4,7 @@ import { CHAR_NAMES, type CharName } from "../components/char-avatar.js";
 
 export interface QuestAction {
   label: string;
-  view?: "home" | "agent-new" | "packs" | "artifacts";
+  view?: "home" | "agent-new" | "starter-kits" | "artifacts";
   settingsTab?:
     | "connections"
     | "providers"
@@ -58,7 +58,7 @@ export const CHARACTER_QUESTS: readonly CharacterQuest[] = [
     id: "starter-kit",
     title: "Try a starter kit",
     help: "Go to Starter Kits in the sidebar and pick one. It sets up a new agent with skills and connections already in place.",
-    action: { label: "Browse packs", view: "packs" },
+    action: { label: "Browse starter kits", view: "starter-kits" },
   },
   {
     id: "add-schedule",

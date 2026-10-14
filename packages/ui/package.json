@@ -61,10 +61,16 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5.2.0",
     "dev-config": "workspace:*",
+    "msw": "^2.15.0",
     "playwright": "^1.63.0",
     "sharp": "^0.35.4",
     "typescript": "^6.0.3",
     "vite": "^7.3.6",
     "vitest": "^5.0.1"
+  },
+  "msw": {
+    "workerDirectory": [
+      "public"
+    ]
   }
 }

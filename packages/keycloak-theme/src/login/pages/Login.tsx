@@ -1,19 +1,20 @@
 import { kcSanitize } from "keycloakify/lib/kcSanitize";
 import type { PageProps } from "keycloakify/login/pages/PageProps";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 
 import { Button } from "../../components/button.js";
 import { Input } from "../../components/input.js";
 import { Label } from "../../components/label.js";
 import { cn } from "../../lib/cn.js";
 import { StackedCharacters } from "../components/animated-characters.js";
+import { HeroBgShapes } from "../components/hero-bg-shapes.js";
 import {
   BandAccess,
   BandCapabilities,
   BandChannels,
   BandFaq,
-  BandWhatIsDam,
 } from "../components/info-bands.js";
+import { SlackDmIllustration } from "../components/slack-dm-illustration.js";
 import { SocialProviderButton } from "../components/social-provider-button.js";
 import { useApplyThemeScript } from "../hooks/use-apply-theme-script.js";
 import type { I18n } from "../i18n.js";
@@ -131,6 +132,7 @@ function ScrollPage({
   requestAccessUrl: string;
 }) {
   useApplyThemeScript();
+  const [layout, setLayout] = useState(0);
 
   const showMessage =
     kcContext.message !== undefined &&
@@ -138,63 +140,44 @@ function ScrollPage({
 
   return (
     <div className="min-h-screen bg-background">
+      <LayoutPicker current={layout} onChange={setLayout} />
+
       {/* Hero — sign-in form + marketing column */}
-      <section className="relative min-h-screen">
-        {/* Visual placeholder — right half, full bleed */}
-        <div className="absolute inset-y-0 right-0 hidden w-1/2 bg-gray-200 md:block dark:bg-gray-800" />
+      <section className="relative min-h-screen overflow-hidden">
+        <HeroBgShapes />
 
-        <div className="relative flex min-h-screen items-center">
-          <div className="flex w-full justify-center px-6 md:w-1/2">
-            <div className="max-w-sm space-y-6">
-              <h1 className="text-2xl font-semibold leading-none tracking-tight">
-                {`Sign in to ${brand}`}
-              </h1>
+        {/* Slack illustration — right half, floats above shapes */}
+        <div className="absolute inset-y-0 right-0 z-10 hidden w-1/2 items-center md:flex">
+          <div className="w-[140%] max-w-[860px] -ml-[8%] pr-10">
+            <SlackDmIllustration />
+          </div>
+        </div>
 
-              {showMessage && kcContext.message && (
+        <div className="relative z-10 flex min-h-screen items-center">
+          <HeroLeft
+            layout={layout}
+            message={
+              showMessage && kcContext.message ? (
                 <div
                   role="alert"
                   className={cn(
                     "rounded-md border px-3 py-2 text-[14px]",
                     kcContext.message.type === "error"
-                      ? "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
-                      : "border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300",
+                      ? "border-red-200 bg-red-50 text-red-800"
+                      : "border-blue-200 bg-blue-50 text-blue-800",
                   )}
                   dangerouslySetInnerHTML={{
                     __html: kcSanitize(kcContext.message.summary),
                   }}
                 />
-              )}
-
-              <p className="text-[15px] leading-relaxed text-pretty text-muted-foreground">
-                AI agents that keep working after you close the tab. Connect
-                the tools you already use, and hand off the work.{" "}
-                <a
-                  href={LOGIN_DOCS_URL}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="text-accent hover:underline"
-                >
-                  Read the docs.
-                </a>
-              </p>
-
-              {heroFormEl}
-
-              {requestAccessUrl && (
-                <p className="mt-16">
-                  <a
-                    href={requestAccessUrl}
-                    className="text-[15px] text-accent hover:underline"
-                  >
-                    Request access
-                  </a>
-                </p>
-              )}
-            </div>
-          </div>
+              ) : null
+            }
+            formEl={heroFormEl}
+            requestAccessUrl={requestAccessUrl}
+          />
         </div>
 
-        <div className="absolute bottom-8 left-0 right-0 text-center">
+        <div className="absolute bottom-8 left-0 right-0 z-20 text-center">
           <button
             type="button"
             className="mx-auto inline-flex h-[35px] items-center gap-1.5 rounded-full border border-input bg-background px-3 text-[14px] font-normal text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.08)] transition-colors hover:bg-muted"
@@ -204,7 +187,7 @@ function ScrollPage({
                 ?.scrollIntoView({ behavior: "smooth" });
             }}
           >
-            <span>What is this?</span>
+            <span>What is DAM?</span>
             <svg
               width="16"
               height="16"
@@ -222,7 +205,6 @@ function ScrollPage({
       </section>
 
       <div id="info-bands">
-        <BandWhatIsDam />
         <BandCapabilities />
         <BandChannels />
         <BandFaq />
@@ -232,6 +214,180 @@ function ScrollPage({
           characters={<StackedCharacters />}
         />
       </div>
+    </div>
+  );
+}
+
+const LOGIN_DOCS_LINK = (
+  <a
+    href={LOGIN_DOCS_URL}
+    target="_blank"
+    rel="noreferrer noopener"
+    className="text-accent hover:underline"
+  >
+    Read the docs.
+  </a>
+);
+
+const LAYOUTS = [
+  "Stacked narrow",
+  "Wide headline",
+  "Side-by-side",
+  "Compact centered",
+  "Headline + columns",
+] as const;
+
+function HeroLeft({
+  layout,
+  message,
+  formEl,
+  requestAccessUrl,
+}: {
+  layout: number;
+  message: ReactNode;
+  formEl: ReactNode;
+  requestAccessUrl: string;
+}) {
+  const accessLink = requestAccessUrl && (
+    <p>
+      <a
+        href={requestAccessUrl}
+        className="text-[15px] text-accent hover:underline"
+      >
+        Request access
+      </a>
+    </p>
+  );
+
+  const headline = (
+    <p className="text-7xl font-light leading-[0.95] -tracking-[0.04em] text-foreground">
+      Deploy Agents Massively
+    </p>
+  );
+
+  const sub = (
+    <p className="text-[15px] leading-relaxed text-pretty text-muted-foreground">
+      Each agent runs in its own sandbox, keeps its files, and keeps working
+      after you log off. Connect the tools you already use, and hand off the
+      work. {LOGIN_DOCS_LINK}
+    </p>
+  );
+
+  if (layout === 1) {
+    return (
+      <div className="flex w-full items-center justify-center px-6 md:w-1/2">
+        <div className="max-w-md space-y-6">
+          {headline}
+          {message}
+          {sub}
+          {formEl}
+          {accessLink}
+        </div>
+      </div>
+    );
+  }
+
+  if (layout === 2) {
+    return (
+      <div className="flex w-full justify-start px-10 md:w-[55%]">
+        <div className="w-full max-w-lg space-y-6">
+          {headline}
+          {message}
+          <div className="flex gap-8">
+            <div className="flex-1 space-y-1">{sub}</div>
+            <div className="w-[260px] shrink-0 space-y-4">
+              {formEl}
+              {accessLink}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (layout === 3) {
+    return (
+      <div className="flex w-full justify-center px-6 md:w-1/2">
+        <div className="max-w-xs space-y-5 text-center">
+          <p className="text-6xl font-light leading-[0.95] -tracking-[0.04em] text-foreground">
+            Deploy Agents Massively
+          </p>
+          {message}
+          <p className="text-[14px] leading-relaxed text-pretty text-muted-foreground">
+            Each agent runs in its own sandbox, keeps its files, and keeps
+            working after you log off. Connect the tools you already use, and
+            hand off the work. {LOGIN_DOCS_LINK}
+          </p>
+          {formEl}
+          {accessLink}
+        </div>
+      </div>
+    );
+  }
+
+  if (layout === 4) {
+    return (
+      <div className="flex w-full justify-start px-10 md:w-[55%]">
+        <div className="w-full max-w-lg space-y-5">
+          {headline}
+          {message}
+          <div className="grid grid-cols-2 gap-6">
+            <div className="space-y-3">
+              {sub}
+              {accessLink}
+            </div>
+            <div className="space-y-4">{formEl}</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex w-full justify-center px-6 md:w-1/2">
+      <div className="max-w-sm space-y-6">
+        {headline}
+        {message}
+        {sub}
+        {formEl}
+        {accessLink}
+      </div>
+    </div>
+  );
+}
+
+function LayoutPicker({
+  current,
+  onChange,
+}: {
+  current: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div className="fixed right-4 top-4 z-50 flex flex-col gap-1 rounded-lg border border-input bg-background/90 p-2 shadow-lg backdrop-blur-sm">
+      <span className="px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        Layout
+      </span>
+      <div className="flex gap-1">
+        {LAYOUTS.map((label, i) => (
+          <button
+            key={i}
+            type="button"
+            onClick={() => onChange(i)}
+            className={`flex size-7 items-center justify-center rounded text-[13px] font-medium transition-colors ${
+              i === current
+                ? "bg-foreground text-background"
+                : "bg-muted text-foreground hover:bg-muted-foreground/20"
+            }`}
+            title={label}
+          >
+            {i + 1}
+          </button>
+        ))}
+      </div>
+      <span className="px-1 text-[11px] text-muted-foreground">
+        {LAYOUTS[current]}
+      </span>
     </div>
   );
 }
@@ -318,7 +474,7 @@ function LoginForm({
             <span
               role="alert"
               aria-live="polite"
-              className="block text-[14px] text-red-600 dark:text-red-400"
+              className="block text-[14px] text-red-600"
               dangerouslySetInnerHTML={{
                 __html: kcSanitize(
                   messagesPerField.getFirstError("username", "password"),

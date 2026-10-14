@@ -71,20 +71,6 @@
 
 }
 
-.dark {
-  --background: #0c0a09;
-  --foreground: #fafaf9;
-  --primary: #fafaf9;
-  --primary-foreground: #0c0a09;
-  --muted: #1c1917;
-  --muted-foreground: #a8a29e;
-  --placeholder: #6a6562;
-  --accent: #78a9ff;
-  --accent-foreground: #ffffff;
-  --input: #292524;
-  --ring: #fafaf9;
-
-}
 
 body {
   font-family: var(--font-sans);

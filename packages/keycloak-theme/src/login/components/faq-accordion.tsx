@@ -13,29 +13,39 @@ const FAQ_ITEMS: FaqItem[] = [
   {
     question: "What is an agent?",
     answer:
-      "An agent is an AI assistant that runs in its own secure environment with the tools and credentials it needs. You give it a task, and it works on it — writing code, reviewing changes, or monitoring systems.",
+      "An AI assistant with its own sandbox, files and tools. Give it a job, and it works on it, even while you’re away.",
     linkUrl: "https://ibm.biz/dam-docs",
     linkLabel: "Read the docs",
   },
   {
+    question: "Can I use Claude Code?",
+    answer:
+      "Yes. Pick Claude Code, Codex or IBM Bob when you create an agent. DAM adds what your laptop can’t: it keeps running, on a schedule, and in Slack.",
+  },
+  {
     question: "Where does it run?",
     answer:
-      "Every agent runs in an isolated container on IBM Research infrastructure. Your code and credentials stay inside that container and are not shared with other agents or users.",
+      "On IBM Research infrastructure, in its own isolated sandbox. Its files and keys stay inside it.",
   },
   {
     question: "Does it keep running when I close the tab?",
     answer:
-      "Yes. Scheduled agents run whether you are online or not. Results come back to you in Slack, Telegram, or the next time you open the platform.",
+      "Yes. Schedules and long jobs keep going when you’re offline. Results come back in Slack, or in DAM next time you open it.",
   },
   {
     question: "Can my team share an agent?",
     answer:
-      "Yes. Agents can be shared with your team through a Slack channel. Everyone in the channel can talk to the agent and see its work.",
+      "Yes. Add it to a Slack channel and anyone in the channel can use it. It works with your agent’s access, not theirs, so only share it where you’d share that access.",
+  },
+  {
+    question: "Does the model see my data?",
+    answer:
+      "It sees what your agent reads, through the model provider you connect. It never sees your keys.",
   },
   {
     question: "What does it cost?",
     answer:
-      "The platform is available to IBM Research at no per-user charge. You bring your own model API key or use a shared one provided by your team.",
+      "DAM itself is free to use. Model use is billed to the model key you connect.",
     linkUrl: "https://ibm.biz/dam-docs",
     linkLabel: "See the docs for details",
   },
@@ -79,7 +89,7 @@ export function FaqAccordion() {
             className={cn(
               "overflow-hidden transition-[max-height,opacity] duration-200",
               openIndex === i
-                ? "max-h-40 opacity-100"
+                ? "max-h-60 opacity-100"
                 : "max-h-0 opacity-0",
             )}
           >

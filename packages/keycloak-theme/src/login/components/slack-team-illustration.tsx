@@ -153,17 +153,17 @@ const THREAD_BLUE = "#1264A3";
 const SEND_GREEN = "#007A5A";
 
 const CAST = {
-  sarah: { initials: "SM", color: "#4589ff", name: "Sarah Miller" },
-  samantha: { initials: "SD", color: "#a56eff", name: "Samantha Dempsey" },
-  jamie: { initials: "JJ", color: "#42be65", name: "Jamie Jabbour" },
-  jenna: { initials: "JW", color: "#ee5396", name: "Jenna Winkler" },
+  sarah: { initials: "SM", color: "#4589ff", name: "Sofia Martinez" },
+  samantha: { initials: "SD", color: "#a56eff", name: "Sasha Dubois" },
+  jamie: { initials: "JJ", color: "#42be65", name: "Jordan Jacobs" },
+  jenna: { initials: "JW", color: "#ee5396", name: "Jules Watson" },
 } as const;
 
 /* ── IBM logo (official 8-bar from public/ibm-logo.svg, fill swapped to white) */
 
 function IbmLogo() {
   return (
-    <svg viewBox="0 0 113 45" fill="white" className="h-[14px]">
+    <svg viewBox="0 0 113 45" fill="white" className="h-[10px]">
       <path d="M0 41.8671H21.9304V45H0V41.8671ZM0 39.019H21.9304V35.8861H0V39.019ZM6.26582 33.038H15.6646V29.9051H6.26582V33.038ZM6.26582 27.057H15.6646V23.9241H6.26582V27.057ZM6.26582 21.076H15.6646V17.943H6.26582V21.076ZM15.6646 11.962H6.26582V15.0949H15.6646V11.962ZM0 9.11392H21.9304V5.98101H0V9.11392ZM0 3.13291H21.9304V0H0V3.13291ZM25.0633 39.019H58.4915C59.0525 38.0506 59.4797 36.9997 59.7532 35.8861H25.0661V39.019H25.0633ZM55.874 23.9241H31.3291V27.057H58.4886C57.7994 25.8693 56.9165 24.8098 55.874 23.9241ZM31.3291 17.943V21.076H55.874C56.9136 20.1902 57.7994 19.1307 58.4886 17.943H31.3291ZM58.4915 5.98101H25.0633V9.11392H59.7503C59.4769 8.00032 59.0497 6.94937 58.4886 5.98101H58.4915ZM48.1329 0H25.0633V3.13291H56.2016C54.0741 1.18766 51.243 0 48.1329 0ZM31.3291 15.0949H40.7278V11.962H31.3291V15.0949ZM49.557 15.0949H59.6763C59.9468 14.0953 60.0949 13.0472 60.0949 11.962H49.557V15.0949ZM31.3291 33.038H40.7278V29.9051H31.3291V33.038ZM49.557 29.9051V33.038H60.0949C60.0949 31.9529 59.9468 30.9047 59.6763 29.9051H49.557ZM25.0633 45H48.1329C51.2658 45 54.0741 43.8123 56.2016 41.8671H25.0633V45ZM87.7215 45L88.8095 41.8671H86.6307L87.7187 45H87.7215ZM85.6339 39.019H89.812L90.9114 35.8861H84.5345L85.6339 39.019ZM91.9082 33.038L93.0076 29.9051H82.4298L83.5291 33.038H91.9082ZM81.4329 27.057H94.0101L95.1095 23.9241H80.3335L81.4329 27.057ZM85.8503 15.0949L84.7595 11.962H68.9212V15.0949H85.8503ZM91.6718 9.11392H112.785V5.98101H92.7627L91.6718 9.11392ZM94.8418 0L93.7538 3.13291H112.785V0H94.8418ZM62.6582 45H78.3228V41.8671H62.6582V45ZM62.6582 39.019H78.3228V35.8861H62.6582V39.019ZM68.9241 33.038H78.3228V29.9051H68.9241V33.038ZM68.9241 27.057H78.3228V23.9241H68.9241V27.057ZM106.519 11.962H90.6807L89.5899 15.0949H106.516V11.962H106.519ZM97.1203 21.076H106.519V17.943H88.6016L87.7215 20.475L86.8415 17.943H68.9241V21.076H78.3228V18.1965L79.3339 21.076H96.1092L97.1203 18.1965V21.076ZM106.519 23.9241H97.1203V27.057H106.519V23.9241ZM97.1203 33.038H106.519V29.9051H97.1203V33.038ZM97.1203 39.019H112.785V35.8861H97.1203V39.019ZM97.1203 45H112.785V41.8671H97.1203V45ZM83.7712 9.11392L82.6804 5.98101H62.6582V9.11392H83.7712ZM81.6921 3.13291L80.6013 0H62.6582V3.13291H81.6921Z" />
     </svg>
   );
@@ -199,7 +199,7 @@ function SmallAvatar({ color }: { color: string }) {
 
 function AgentAvatar() {
   return (
-    <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#e8f5e9] dark:bg-[#1b3a1e]">
+    <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#e8f5e9]">
       <div className="size-6">
         <AgentCharSvg />
       </div>
@@ -217,7 +217,7 @@ function Sidebar() {
     >
       <div className="flex items-center gap-2 border-b border-white/10 px-4 py-3">
         <div
-          className="flex size-[26px] items-center justify-center rounded-md"
+          className="flex size-[28px] items-center justify-center rounded-md"
           style={{ background: "#0f62fe" }}
         >
           <IbmLogo />
@@ -315,8 +315,8 @@ function ChannelPane({ step }: { step: number }) {
                   </span>
                 </div>
                 <p className="mt-0.5 text-[14px] leading-snug text-foreground">
-                  New users say setup takes too long before they get a working
-                  agent.
+                  CI is red on main — auth service timing out after the last
+                  deploy.
                 </p>
 
                 {step >= 1 && (
@@ -394,7 +394,7 @@ function ThreadPanel({ step }: { step: number }) {
           time="10:12 AM"
           visible={step >= 0}
         >
-          New users say setup takes too long before they get a working agent.
+          CI is red on main — auth service timing out after the last deploy.
         </ThreadMsg>
 
         <ReplySeparator
@@ -410,8 +410,8 @@ function ThreadPanel({ step }: { step: number }) {
           time="10:14 AM"
           visible={step >= 1}
         >
-          Same thing came up in our interviews. Notes attached.
-          <FileChip name="onboarding-interviews.pdf" icon="doc" />
+          Grabbed the deploy log. Timeout started right after the rollout.
+          <FileChip name="deploy-log-oct7.txt" icon="doc" />
         </ThreadMsg>
 
         {/* Beat 2 — Jamie + image chip */}
@@ -422,8 +422,8 @@ function ThreadPanel({ step }: { step: number }) {
           time="10:18 AM"
           visible={step >= 2}
         >
-          Here's a lighter flow to start from.
-          <FileChip name="quick-setup-flow.png" icon="img" />
+          Auth service error on the health check — screenshot from Grafana.
+          <FileChip name="grafana-auth-timeout.png" icon="img" />
         </ThreadMsg>
 
         {/* Beat 3 — Jenna asks the agent */}
@@ -443,7 +443,7 @@ function ThreadPanel({ step }: { step: number }) {
           >
             @DAM
           </span>{" "}
-          draft a ticket from this thread
+          summarize this thread into an issue
           <div className="mt-1">
             <ReactionPill emoji="👀" count={1} visible={step >= 4} />
           </div>
@@ -465,7 +465,7 @@ function ThreadPanel({ step }: { step: number }) {
           time="10:24 AM"
           visible={step >= 6}
         >
-          Looks good. File it and assign Jamie.
+          Looks good. File it and assign Jordan.
         </ThreadMsg>
 
         {/* Beat 7 — Damitha filed card + reactions */}
@@ -547,7 +547,7 @@ function AgentMsg({
           </div>
           <div className="mt-0.5">{children}</div>
           <p className="mt-1 text-[11px] text-muted-foreground/50">
-            Damitha · Powered by DAM
+            Damitha - Powered by DAM
           </p>
         </div>
       </div>
@@ -564,14 +564,14 @@ function DraftCard({ visible }: { visible: boolean }) {
       style={{ opacity: visible ? 1 : 0.4 }}
     >
       <div className="border-l-[3px] border-l-amber-400 bg-muted/30 p-2.5">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-amber-600">
           Draft
         </span>
         <p className="mt-1 text-[13px] font-semibold leading-snug text-foreground">
-          New users do too much setup before their first agent
+          CI red on main: auth service timeout after deploy
         </p>
         <p className="mt-0.5 text-[12px] text-muted-foreground">
-          From Sarah, Samantha and Jamie · 2 files
+          From Sofia, Sasha and Jordan · 2 files
         </p>
         <div className="mt-2 flex items-center gap-2">
           <span
@@ -594,7 +594,7 @@ function FiledCard() {
     <div className="mt-1 overflow-hidden rounded-lg border border-input">
       <div className="border-l-[3px] border-l-green-500 bg-muted/30 p-2.5">
         <div className="flex items-center gap-1.5">
-          <span className="text-[12px] text-green-600 dark:text-green-400">
+          <span className="text-[12px] text-green-600">
             ✓
           </span>
           <span className="text-[12px] font-semibold text-muted-foreground">
@@ -602,10 +602,10 @@ function FiledCard() {
           </span>
         </div>
         <p className="mt-1 text-[13px] font-semibold leading-snug text-foreground">
-          New users do too much setup before their first agent
+          CI red on main: auth service timeout after deploy
         </p>
         <p className="mt-0.5 text-[12px] text-muted-foreground">
-          Assigned to Jamie Jabbour
+          Assigned to Jordan Jacobs
         </p>
         <div className="mt-1.5 border-t border-input pt-1.5">
           <span
@@ -922,7 +922,7 @@ export function SlackTeamIllustration() {
     >
       <div
         aria-hidden="true"
-        className="overflow-hidden rounded-xl border border-input shadow-[0_4px_24px_rgba(56,56,56,0.08)]"
+        className="overflow-hidden rounded-xl shadow-[0_8px_40px_rgba(0,0,0,0.12),0_2px_8px_rgba(0,0,0,0.06)]"
         style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}
       >
         <div className="flex h-[520px]">

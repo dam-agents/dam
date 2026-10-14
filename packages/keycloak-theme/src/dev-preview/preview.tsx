@@ -60,14 +60,7 @@ function IllustrationsStorage() {
 }
 
 function Preview() {
-  const [theme, setTheme] = useState<"light" | "dark">("light");
   const [page, setPage] = useState<Page>("login");
-
-  const toggleTheme = () => {
-    const next = theme === "light" ? "dark" : "light";
-    setTheme(next);
-    document.documentElement.classList.toggle("dark", next === "dark");
-  };
 
   return (
     <>
@@ -84,6 +77,7 @@ function Preview() {
           fontFamily: "monospace",
           display: "flex",
           gap: 6,
+          alignItems: "center",
         }}
       >
         <button
@@ -99,20 +93,6 @@ function Preview() {
           }}
         >
           {page === "login" ? "illustrations" : "← login"}
-        </button>
-        <button
-          onClick={toggleTheme}
-          style={{
-            padding: "3px 8px",
-            borderRadius: 4,
-            border: "none",
-            background: "#333",
-            color: "#fff",
-            cursor: "pointer",
-            fontSize: 12,
-          }}
-        >
-          {theme}
         </button>
       </div>
       <ErrorBoundary>

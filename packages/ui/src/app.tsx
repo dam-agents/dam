@@ -11,6 +11,7 @@ import {
   StarterKitSetupView,
 } from "./modules/agents/views/agent-create-view.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
+import { GettingStartedSheetView } from "./modules/avatar-sheet/getting-started-sheet-view.js";
 import {
   ActivityButton,
   NotificationsPanel,
@@ -127,6 +128,8 @@ function MainApp() {
             <div className="min-h-0 flex-1">
               <SandboxHomeView />
             </div>
+          ) : view === "getting-started-sheet" ? (
+            <GettingStartedSheetView />
           ) : (
             <div
               className={cn(
