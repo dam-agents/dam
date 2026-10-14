@@ -467,6 +467,52 @@ describe("ext-authz gate", () => {
     expect(verdict).toBe("deny");
   });
 
+  // TEST_SCENARIO: an agent allowed `contents/qa/*` must not read the rest of the repository through a dot segment GitHub resolves, so such a path is denied before the rules are read and never held; dots elsewhere still reach the rules.
+  it("denies a path with a dot segment without reading rules or holding", async () => {
+    const repo = makeFakeRepo();
+    const bus = makeFakeBus();
+    const ruleMatch = vi.fn(async () => ({ verdict: "allow" as const }));
+    const gate = createExtAuthzGate({
+      repo: repo.repo,
+      bus: bus.bus,
+      attendance: attended,
+      identityResolver,
+      ruleMatcher: { match: ruleMatch },
+      holdSeconds: 30,
+      platformAllowedAuthorities: [],
+    });
+    const gateContents = (rest: string) =>
+      gate.gateRequest({
+        agentId: "inst-1",
+        host: "api.github.com",
+        port: 443,
+        tls: true,
+        method: "GET",
+        path: `/repos/dam-agents/dam/contents/qa${rest}`,
+      });
+
+    for (const rest of [
+      "/../packages/x",
+      "/%2e%2e/x",
+      "/%2E%2E/x",
+      "/..;x/packages",
+      "/./x",
+      "/..",
+    ]) {
+      expect(await gateContents(rest), rest).toBe("deny");
+    }
+    expect(ruleMatch).not.toHaveBeenCalled();
+    expect(repo.inserts).toBe(0);
+
+    for (const rest of [
+      "/qi-profile-dam/SKILL.md?ref=0123abc",
+      "/.github/..x",
+      "?ref=../main",
+    ]) {
+      expect(await gateContents(rest), rest).toBe("allow");
+    }
+  });
+
   // TEST_SCENARIO: the object store is allowed on its own port only; the same host on another port must reach the rules like any other request.
   it("allows the platform host only on its own port, and asks the rules with port and scheme", async () => {
     const repo = makeFakeRepo();

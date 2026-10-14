@@ -9,6 +9,7 @@ import { securityLog } from "../../../core/security-log.js";
 import { getLogger } from "../../../core/logger.js";
 import { formatError } from "../../../core/format-error.js";
 import { emit, EventType } from "../../../events.js";
+import { hasDotSegment } from "../domain/dot-segment.js";
 
 export type ExtAuthzVerdict = "allow" | "deny";
 
@@ -92,6 +93,21 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
           detail: { method, path: path.split("?")[0], basis: "platform", via },
         });
         return "allow";
+      }
+
+      if (hasDotSegment(path)) {
+        securityLog("warn", "egress.decision", {
+          category: "egress",
+          actor: identity.ownerSub,
+          actorKind: "agent",
+          surface: "ext-authz",
+          agentId: identity.agentId,
+          target: host,
+          decision: "deny",
+          reason: "dot-segment",
+          detail: { method, path, via },
+        });
+        return "deny";
       }
 
       const matched = await deps.ruleMatcher.match(

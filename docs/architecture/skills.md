@@ -288,6 +288,9 @@ The api-server decides how the pod fetches each GitHub skill-ref from the agent'
 - The archive is denied, the source has a path, and `GET api.github.com /repos/{owner}/{repo}/contents/{path}?ref={version}` is not denied: the skill-ref carries `fetch: "directory"`, and the pod fetches only that directory ([agent-skills.md](agent-skills.md#the-service)).
 - Otherwise install and batch apply refuse the skill up front with `PRECONDITION_FAILED` and a message that names the repository and tells the user to set a path the agent may read; nothing is recorded.
 
+The rules that open one directory are `GET /repos/{owner}/{repo}/contents/{path}/*` and `GET /repos/{owner}/{repo}/contents/{path}?*`: every request of a directory fetch carries the ref as a query, and the prefix form `contents/{path}*` would also open siblings such as `{path}-tools/` or `{path}.md`.
+The allowed directory must hold no symlink, because the Contents API answers a symlink to a file with that file's content, wherever it lives.
+
 The pod scan of a private source asks the same question at `HEAD`.
 The mark is part of the delivered state's hash, so changing the agent's egress rules redelivers its skills in the new mode.
 

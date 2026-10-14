@@ -201,7 +201,7 @@ describe("install and scan of a GitHub source with a path", () => {
     );
   };
 
-  // TEST_SCENARIO: the QA agent's egress allows only GET contents/qa*, so every request of a path install must stay under that prefix and the nested files must land on disk.
+  // TEST_SCENARIO: the QA agent's egress allows only GET contents/qa/* and contents/qa?*, so every request of a path install must fall under one of them and the nested files must land on disk.
   it("installs a skill below the path through contents requests only", async () => {
     const calls = serveGithub({
       files: {
