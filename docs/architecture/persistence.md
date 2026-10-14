@@ -244,6 +244,10 @@ Use is the newest modification or change time anywhere in the entry, since the d
 An entry used in the last ten minutes stays, and so does one a process holds a BSD lock on, the way `systemd-tmpfiles` leaves it.
 A cache tagged with `CACHEDIR.TAG` goes before an untagged entry of the same age, since its tool can rebuild it and an untagged one may be the agent's work in progress.
 Each eviction, and a disk still short once nothing is left to evict, is a line on the machine's console, which the runner reads.
+Short counts inodes as well as space: a disk gets one inode per 16 KiB, so a home of many small files runs out of them with most of its space free, and a write then fails as on a full disk.
+An agent that exits with its home nearly out of either is reported as a full home.
+A boot that finds the disk with no space or inode left first deletes what earlier boots set aside and the last boot's temporary folders, which it would empty anyway, and tries again.
+A boot that still has no room stops, and its console line says the home is full, so the runner reports a full home and its fix: more storage, since a grown disk has more of both.
 Every minute platform-init trims the disk, so whatever the agent frees, by deleting or by rewriting a file in place, goes back to the runner's volume and stops counting against the owner's storage.
 Once the image runs, the disk is reachable only through what platform-init mounted from it.
 

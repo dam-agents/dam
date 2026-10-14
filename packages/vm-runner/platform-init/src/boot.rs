@@ -29,12 +29,23 @@ macro_rules! logf {
     ($($arg:tt)*) => { log(format_args!($($arg)*)) };
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: every caller is a condition under which the guest would come up without its persisted paths. An agent that runs and quietly discards its work looks healthy until the machine stops, so a machine that cannot persist does not boot at all.
+// UNIT_BOUNDARY_DESCRIPTION: every caller is a condition under which the guest would come up without its persisted paths. An agent that runs and quietly discards its work looks healthy until the machine stops, so a machine that cannot persist does not boot at all. A step that failed because the disk has no space or no inode left says the home is full (guest::HOME_FULL), so the runner reports a full home and its fix, more storage, rather than a boot that failed for no reason it names.
 macro_rules! fatal {
     ($($arg:tt)*) => {{
-        announce(&format!("FATAL: {}", format_args!($($arg)*)));
+        announce(&fatal_line(&format!("{}", format_args!($($arg)*))));
         exit(1)
     }};
+}
+
+fn fatal_line(message: &str) -> String {
+    let full = [libc::ENOSPC, libc::EDQUOT]
+        .iter()
+        .any(|code| message.contains(&io::Error::from_raw_os_error(*code).to_string()));
+    if full {
+        format!("FATAL: {message}; {}", guest::HOME_FULL)
+    } else {
+        format!("FATAL: {message}")
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a line the runner must be able to read as well as the boot log. The boot log is on the guest's disk, which the host never reads, and before it is open stderr is /dev/null. The kernel log reaches the machine's console, whose end the runner puts in the Agent's status when a boot fails or goes quiet, so these lines go there too.
@@ -337,10 +348,24 @@ fn fresh_root(disk: &Path) {
     if let Err(e) = layers.clear(fresh.is_some(), stamp) {
         fatal!("{e}");
     }
-    for dir in [&layers.upper, &layers.work, &layers.merged] {
-        if let Err(e) = mkdir_all(dir) {
-            fatal!("creating {}: {e}", dir.display());
+    let make = || {
+        [&layers.upper, &layers.work, &layers.merged]
+            .into_iter()
+            .try_for_each(|dir| {
+                mkdir_all(dir).map_err(|e| {
+                    io::Error::new(e.kind(), format!("creating {}: {e}", dir.display()))
+                })
+            })
+    };
+    if let Err(e) = make().or_else(|e| {
+        if !out_of_room(&e) {
+            return Err(e);
         }
+        logf!("{e}; deleting what earlier boots left to delete, and trying again");
+        free_room_for_boot(disk);
+        make()
+    }) {
+        fatal!("{e}");
     }
     match (fresh, booting.as_deref()) {
         (None, _) => logf!(
@@ -922,6 +947,28 @@ fn mount_scratch(root: &Path) {
     });
 }
 
+fn out_of_room(e: &io::Error) -> bool {
+    matches!(e.raw_os_error(), Some(libc::ENOSPC | libc::EDQUOT))
+        || e.kind() == io::ErrorKind::StorageFull
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what a boot that found the disk full deletes at once, before the step that failed is tried again: the root layers and scratch folders earlier boots moved aside, which are otherwise deleted in the background only after a boot that succeeded, and the last boot's /tmp and /var/tmp, which this boot would empty anyway. A disk with no inode left cannot even create the empty work layer the boot needs, so without this the agent never boots again although its home is intact. Nothing of the home or the kept root is touched.
+fn free_room_for_boot(disk: &Path) {
+    let layers = FreshRoot::on(disk);
+    purge_discarded(&layers.store, &DISCARDED_LAYERS);
+    let scratch = guest::system_store(disk, SCRATCH_STORE);
+    let names: Vec<String> = SCRATCH_DIRS
+        .map(|(dir, _)| dir)
+        .into_iter()
+        .chain(RETIRED_SCRATCH)
+        .map(scratch_name)
+        .collect();
+    for name in &names {
+        let _ = remove_all(&scratch.join(name));
+    }
+    purge_discarded(&scratch, &names);
+}
+
 fn scratch_name(dir: &str) -> String {
     dir.trim_start_matches('/').replace('/', "-")
 }
@@ -1150,16 +1197,32 @@ fn statvfs(path: &Path) -> Option<libc::statvfs> {
     (rc == 0).then_some(stat)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the smaller of the disk's free share of blocks and of inodes. A disk gets one inode per 16 KiB, so a home of many small files (dependency trees, checkouts) runs out of inodes with most of its space free, and a write then fails with "no space left on device" all the same.
 fn free_percent(path: &Path) -> Option<u64> {
-    let stat = statvfs(path)?;
-    #[allow(clippy::unnecessary_cast)]
-    (stat.f_blocks > 0).then(|| stat.f_bavail as u64 * 100 / stat.f_blocks as u64)
+    free_share(&statvfs(path)?)
 }
 
-fn free_bytes(path: &Path) -> Option<u64> {
-    let stat = statvfs(path)?;
-    #[allow(clippy::unnecessary_cast)]
-    Some((stat.f_bavail as u64).saturating_mul(stat.f_frsize as u64))
+#[allow(clippy::unnecessary_cast)]
+fn free_share(stat: &libc::statvfs) -> Option<u64> {
+    let share = |free: u64, total: u64| (total > 0).then(|| free * 100 / total);
+    let blocks = share(stat.f_bavail as u64, stat.f_blocks as u64)?;
+    Some(
+        share(stat.f_favail as u64, stat.f_files as u64)
+            .map_or(blocks, |inodes| blocks.min(inodes)),
+    )
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the home has less than guest::HOME_FULL_BYTES or guest::HOME_FULL_INODES left, so an agent that crashed for want of inodes is reported full as one that ran out of space is. A filesystem that reports no inode count at all is judged by its space alone.
+fn home_full(path: &Path) -> bool {
+    statvfs(path).is_some_and(|stat| {
+        #[allow(clippy::unnecessary_cast)]
+        let (bytes, inodes, files) = (
+            (stat.f_bavail as u64).saturating_mul(stat.f_frsize as u64),
+            stat.f_favail as u64,
+            stat.f_files as u64,
+        );
+        bytes < guest::HOME_FULL_BYTES || (files > 0 && inodes < guest::HOME_FULL_INODES)
+    })
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the image's own boot may keep its extracted CA trust store here rather than rebuilding it every time. The variable is set only on this backend, so an image that honors it caches on a machine and silently does without in a container, where there is no disk to cache on. The store is bound to a path of its own because the disk itself is detached before the image runs.
@@ -1871,9 +1934,7 @@ fn supervise(binary: &Path, command: &[OsString], trust: Option<&Path>) -> ! {
                 NOT_STARTED
             }
         };
-        let full = status != 0
-            && free_bytes(Path::new(guest::AGENT_HOME))
-                .is_some_and(|free| free < guest::HOME_FULL_BYTES);
+        let full = status != 0 && home_full(Path::new(guest::AGENT_HOME));
         announce(&format!(
             "the image entrypoint {} after {}s{}",
             exit_description(status),
@@ -2099,6 +2160,65 @@ mod tests {
     // TEST_OVERVIEW: platform-init is what makes a machine's persistence the platform's promise rather than the image's behaviour. The mounting itself needs a guest, but everything that decides what ends up on the disk — seeding the home from the image exactly once, never leaving a half-copy behind, keeping the boot log readable, which mounts follow the image onto its root and when that root is kept, which cache folders are cleared from the home, resolving the entrypoint it hands off to — is ordinary file or table work and is covered here.
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    // TEST_SCENARIO: a disk of many small files runs out of inodes with most of its space free, and a write then fails as on a full disk, so the free share is the smaller of blocks and inodes; a filesystem that counts no inodes is judged by its blocks.
+    #[test]
+    fn a_disk_out_of_inodes_reads_as_full() {
+        // SAFETY: statvfs is plain old data, and all-zero bytes are a valid value of it.
+        let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+        (stat.f_blocks, stat.f_bavail) = (100, 97);
+        assert_eq!(free_share(&stat), Some(97));
+        (stat.f_files, stat.f_favail) = (100, 0);
+        assert_eq!(free_share(&stat), Some(0));
+        stat.f_blocks = 0;
+        assert_eq!(free_share(&stat), None);
+    }
+
+    // TEST_SCENARIO: a boot step that failed for want of space or inodes says the home is full, which the runner reads to report a full home and its fix; any other failure does not.
+    #[test]
+    fn a_boot_refused_for_a_full_disk_says_the_home_is_full() {
+        let full = fatal_line(&format!(
+            "creating /x: {}",
+            io::Error::from_raw_os_error(libc::ENOSPC)
+        ));
+        assert!(
+            full.starts_with("FATAL: creating /x") && full.ends_with(guest::HOME_FULL),
+            "{full}"
+        );
+        let other = fatal_line(&format!(
+            "creating /x: {}",
+            io::Error::from_raw_os_error(libc::EACCES)
+        ));
+        assert!(!other.contains(guest::HOME_FULL), "{other}");
+    }
+
+    // TEST_SCENARIO: a full disk cannot create even the empty work layer a boot needs, so the boot first deletes what earlier boots set aside and the last boot's temporary folders, then tries again; the kept root and the home stay.
+    #[test]
+    fn a_full_disk_gives_back_only_what_a_boot_discards() {
+        let disk = TempDir::new("free-room");
+        let layers = FreshRoot::on(disk.path());
+        let scratch = guest::system_store(disk.path(), SCRATCH_STORE);
+        let home = disk.path().join("home");
+        for dir in [
+            layers.upper.clone(),
+            layers.store.join(format!("work{DISCARDED_INFIX}1")),
+            scratch.join("tmp/repo"),
+            scratch.join(format!("var-tmp{DISCARDED_INFIX}1")),
+            home.clone(),
+        ] {
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("f"), b"x").unwrap();
+        }
+        free_room_for_boot(disk.path());
+        assert!(layers.upper.join("f").exists());
+        assert!(home.join("f").exists());
+        assert!(!layers
+            .store
+            .join(format!("work{DISCARDED_INFIX}1"))
+            .exists());
+        assert!(!scratch.join("tmp").exists());
+        assert!(!scratch.join(format!("var-tmp{DISCARDED_INFIX}1")).exists());
+    }
 
     // TEST_SCENARIO: a guest's own disk can read as nearly empty while the owner's claim under it fills, so the runner's mark alone starts and continues eviction; without it, the disk's own free share decides, and a disk whose room cannot be read is left alone.
     #[test]
