@@ -3,6 +3,7 @@ package reconciler
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -200,4 +201,20 @@ func TestANewRunnerReadsTheOwnersPoolAgain(t *testing.T) {
 	applyUserBudget(t, r, testOwner, apiv1.UserBudgetSpec{Storage: new(resource.MustParse("12Gi"))})
 	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.Equal(t, "12Gi", runnerClaim(t, r))
+}
+
+// TEST_SCENARIO: a pool lowered while every machine of the owner slept sizes the next start from the new pool: the memory pass never reads an owner with nothing running, and a machine sized from the old pool keeps that size until its next start, past the whole pool it now shares.
+func TestAMachineWokenAfterAPoolChangeIsSizedFromTheNewPool(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("24Gi")}}
+	agent.Annotations[annLastActivity] = time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, (24576-512)/2, r.machineMemoryMiB(ctx, testOwner, &agent.Spec), "the pool was read while the agent slept")
+
+	applyUserBudget(t, r, testOwner, apiv1.UserBudgetSpec{Memory: new(resource.MustParse("8Gi"))})
+	agent.Annotations[annLastActivity] = time.Now().UTC().Format(time.RFC3339)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, (8192-512)/2, node.spec("my-agent").MemoryMiB)
 }
