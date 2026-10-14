@@ -258,6 +258,9 @@ func (r *AgentReconciler) vmMemoryFullMessage(ctx context.Context, agent *apiv1.
 	const next = "It starts on its own once room frees up, since the platform pauses idle agents to make room when it can, or you can pause one yourself."
 	limit := r.runnerLimitMiB(ctx, owner) - r.config.VM.Runner.ReserveMiB
 	demand, err := r.ownerRunnerDemand(ctx, owner, agent, false)
+	if err != nil {
+		slog.Warn("reading the owner's VM memory for a refused start's message failed; the message goes without figures", "agent", agent.Name, "error", err)
+	}
 	if limit <= 0 || err != nil {
 		return "Your VM agents' memory is full, so this agent can't start yet. " + next
 	}
