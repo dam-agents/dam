@@ -1,7 +1,6 @@
-import type { ToolChip } from "../../../types.js";
+import { toolNameOf } from "agent-runtime-api";
 
-const AWAIT_TOOL = /^(?:mcp__[\w-]+__|Tool: [\w-]+\/)?await_subagents$/;
-const SPAWN_TOOL = /^(?:mcp__[\w-]+__|Tool: [\w-]+\/)?spawn_subagent$/;
+import type { ToolChip } from "../../../types.js";
 
 interface AwaitResult {
   done?: unknown[];
@@ -11,17 +10,18 @@ interface AwaitResult {
 }
 
 export function isAwaitSubAgentsChip(chip: ToolChip): boolean {
-  return AWAIT_TOOL.test(chip.title.trim());
+  return toolNameOf(chip.title) === "await_subagents";
 }
 
 export function isSpawnSubAgentChip(chip: ToolChip): boolean {
-  return SPAWN_TOOL.test(chip.title.trim());
+  return toolNameOf(chip.title) === "spawn_subagent";
 }
 
 function parseResult(chip: ToolChip): AwaitResult | null {
   for (const block of chip.content ?? []) {
+    if (block.type !== "content") continue;
     try {
-      const parsed: unknown = JSON.parse(block.text ?? "");
+      const parsed: unknown = JSON.parse(block.text);
       if (parsed && typeof parsed === "object" && "running" in parsed)
         return parsed as AwaitResult;
     } catch {

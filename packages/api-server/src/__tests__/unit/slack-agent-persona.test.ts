@@ -1,6 +1,11 @@
-// TEST_OVERVIEW: With the chat:write.customize scope, an agent's Slack posts carry the agent's name as username and its avatar as icon_url, so a channel with several agents shows who said what. Without the scope, or when the granted set is unknown, posts go out under the app's own identity and open with an emoji and the agent's name in bold instead. The emoji is the agent's emoji avatar, else the custom emoji the connection names for the agent's character, and the robot face when the connection names none. The icon is the agent's chosen avatar, or the character picked from its owner and name when none is chosen. Each PNG is uploaded to ImgBB once per install: its URL is stored under the PNG's hash, so a restart reuses it. A failed upload is retried after a pause. An emoji avatar links the public Twemoji PNG and is never uploaded.
+// TEST_OVERVIEW: With the chat:write.customize scope, an agent's Slack posts carry the agent's name as username and its avatar as icon_url, so a channel with several agents shows who said what. Without the scope, or when the granted set is unknown, posts go out under the app's own identity and open with an emoji and the agent's name in bold instead. The emoji is the agent's emoji avatar, else the custom emoji the connection names for the agent's character, and the robot face when the connection names none. The icon is the agent's chosen avatar, or the character picked from its owner and name when none is chosen. An emoji avatar links the public Twemoji PNG and is never uploaded; an uploaded image is read from the store and uploaded like a character. Each character is uploaded to ImgBB once per install, as a PNG named by a hash: its URL is stored under the SHA-256 of the PNG, so a restart or another replica reuses it. All characters are uploaded at startup, a failed upload is retried after a minute, and a post that goes out without the icon is logged.
+import { createHash } from "node:crypto";
 import { describe, it, expect, vi } from "vitest";
-import { type Avatar, avatarCharacter } from "api-server-api/avatar/svg";
+import {
+  AVATAR_CHARACTERS,
+  type Avatar,
+  avatarCharacter,
+} from "api-server-api/avatar/svg";
 import type { AgentsService } from "api-server-api";
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { configureLogger } from "../../core/logger.js";
@@ -8,11 +13,11 @@ import type { AcpClient } from "../../core/acp-client.js";
 import { createSlackWorker } from "../../modules/channels/infrastructure/slack.js";
 import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import {
-  type AgentIconStore,
   type AgentIconUrl,
   createImgbbAgentIcons,
   twemojiUrl,
 } from "../../modules/channels/infrastructure/agent-avatar-icons.js";
+import type { PublicImageUrls } from "../../modules/channels/infrastructure/public-image-urls-repository.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
 import { stubWorkspaceFiles } from "../helpers/workspace-files.js";
 
@@ -49,6 +54,7 @@ function harness(
     },
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    agentsFor: () => ({}) as never,
     ignoredApps: {
       list: async () => [],
       ignore: async () => true,
@@ -198,20 +204,25 @@ describe("slack agent persona", () => {
       expect(message).not.toHaveProperty("iconUrl");
     }
   });
+
+  // TEST_SCENARIO: The image host is configured but gives no URL in time, so the post goes out with the app's icon, and a warning names the agent and character so the gap can be counted.
+  it("logs a post that goes out without the agent's icon", async () => {
+    const lines: string[] = [];
+    configureLogger({ level: "warn", write: (line) => lines.push(line) });
+    try {
+      await harness(["chat:write.customize"], async () => null, "spark").post();
+      await harness(["chat:write.customize"], async () => ICON).post();
+    } finally {
+      configureLogger({ level: "error", write: () => {} });
+    }
+    const missing = lines
+      .map((l) => JSON.parse(l))
+      .filter((r) => r.msg === "slack.agent_icon.missing");
+    expect(missing).toEqual([
+      expect.objectContaining({ agentId: "agent-1", avatar: "character" }),
+    ]);
+  });
 });
-
-function memoryStore(images: Record<string, Buffer> = {}) {
-  const urls = new Map<string, string>();
-  const store: AgentIconStore = {
-    url: async (hash) => urls.get(hash) ?? null,
-    saveUrl: async (hash, url) => void urls.set(hash, url),
-    image: async (id) => images[id] ?? null,
-  };
-  return { urls, store };
-}
-
-const lens: Avatar = { kind: "character", character: "lens" };
-const wave: Avatar = { kind: "character", character: "wave" };
 
 describe("imgbb agent icons", () => {
   function fakeImgbb(responses: Array<() => Response>) {
@@ -222,78 +233,140 @@ describe("imgbb agent icons", () => {
     }) as unknown as typeof fetch;
     return { uploads, fetchImpl };
   }
+  function memoryStore(): PublicImageUrls & { rows: Map<string, string> } {
+    const rows = new Map<string, string>();
+    return {
+      rows,
+      get: async (sha256) => rows.get(sha256) ?? null,
+      put: async (sha256, url) => {
+        if (!rows.has(sha256)) rows.set(sha256, url);
+      },
+    };
+  }
   const ok = () => Response.json({ data: { url: ICON } });
 
-  // TEST_SCENARIO: The first post with a character uploads its PNG under a hashed filename, later posts with that character reuse the URL, and another character gets its own upload.
-  it("uploads a hashed PNG once per character", async () => {
+  // TEST_SCENARIO: The first post with a character uploads its PNG under a hashed filename and stores the URL under the PNG's SHA-256; later posts with that character reuse the URL, and another character gets its own upload.
+  it("uploads a hashed PNG once per character and stores its URL", async () => {
     const imgbb = fakeImgbb([ok, ok]);
-    const icons = createImgbbAgentIcons(
-      "secret",
-      memoryStore().store,
-      imgbb.fetchImpl,
-    );
+    const store = memoryStore();
+    const { iconUrl } = createImgbbAgentIcons({
+      apiKey: "secret",
+      store,
+      loadImage: async () => null,
+      fetchImpl: imgbb.fetchImpl,
+    });
 
-    expect(await icons(lens)).toBe(ICON);
-    expect(await icons(lens)).toBe(ICON);
+    expect(await iconUrl({ kind: "character", character: "lens" })).toBe(ICON);
+    expect(await iconUrl({ kind: "character", character: "lens" })).toBe(ICON);
     expect(imgbb.uploads).toHaveLength(1);
-    expect(await icons(wave)).toBe(ICON);
+    expect(await iconUrl({ kind: "character", character: "wave" })).toBe(ICON);
 
     expect(imgbb.uploads).toHaveLength(2);
     const form = imgbb.uploads[0]!;
     expect(form.get("key")).toBe("secret");
     const image = form.get("image") as File;
     expect(image.type).toBe("image/png");
-    expect(image.name).toMatch(/^[0-9a-f]{16}\.png$/);
     const bytes = new Uint8Array(await image.arrayBuffer());
     expect([...bytes.slice(1, 4)]).toEqual([0x50, 0x4e, 0x47]);
-  });
-
-  // TEST_SCENARIO: The URL is stored under the PNG's hash, so after a restart (a new process with the same store) the post uses the stored URL and uploads nothing.
-  it("reuses a stored URL across restarts", async () => {
-    const { urls, store } = memoryStore();
-    const first = fakeImgbb([ok]);
-    expect(
-      await createImgbbAgentIcons("secret", store, first.fetchImpl)(lens),
-    ).toBe(ICON);
-    expect([...urls.keys()]).toEqual([expect.stringMatching(/^[0-9a-f]{64}$/)]);
-
-    const second = fakeImgbb([]);
-    expect(
-      await createImgbbAgentIcons("secret", store, second.fetchImpl)(lens),
-    ).toBe(ICON);
-    expect(second.uploads).toHaveLength(0);
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    expect(image.name).toBe(`${sha256.slice(0, 16)}.png`);
+    expect(store.rows.get(sha256)).toBe(ICON);
+    expect(store.rows.size).toBe(2);
   });
 
   // TEST_SCENARIO: An uploaded image is read from the store and uploaded as it is; an image the store does not hold gives no icon.
   it("uploads an uploaded image from the store", async () => {
-    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
     const imgbb = fakeImgbb([ok]);
-    const icons = createImgbbAgentIcons(
-      "secret",
-      memoryStore({ img1: png }).store,
-      imgbb.fetchImpl,
-    );
-    expect(await icons({ kind: "image", id: "img1" })).toBe(ICON);
+    const { iconUrl } = createImgbbAgentIcons({
+      apiKey: "secret",
+      store: memoryStore(),
+      loadImage: async (id) => (id === "img1" ? png : null),
+      fetchImpl: imgbb.fetchImpl,
+    });
+    expect(await iconUrl({ kind: "image", id: "img1" })).toBe(ICON);
     const sent = imgbb.uploads[0]!.get("image") as File;
-    expect(Buffer.from(await sent.arrayBuffer())).toEqual(png);
-    expect(await icons({ kind: "image", id: "missing" })).toBeNull();
+    expect(new Uint8Array(await sent.arrayBuffer())).toEqual(png);
+    expect(await iconUrl({ kind: "image", id: "missing" })).toBeNull();
     expect(imgbb.uploads).toHaveLength(1);
   });
 
   // TEST_SCENARIO: An emoji avatar links the Twemoji PNG named by its code points and uploads nothing. U+FE0F is dropped unless the emoji is a ZWJ sequence, the way Twemoji names its files.
   it("links Twemoji for an emoji without uploading", async () => {
     const imgbb = fakeImgbb([]);
-    const icons = createImgbbAgentIcons(
-      "secret",
-      memoryStore().store,
-      imgbb.fetchImpl,
-    );
-    expect(await icons({ kind: "emoji", emoji: "🦊" })).toMatch(
+    const { iconUrl } = createImgbbAgentIcons({
+      apiKey: "secret",
+      store: memoryStore(),
+      loadImage: async () => null,
+      fetchImpl: imgbb.fetchImpl,
+    });
+    expect(await iconUrl({ kind: "emoji", emoji: "🦊" })).toMatch(
       /\/1f98a\.png$/,
     );
     expect(twemojiUrl("❤️")).toMatch(/\/2764\.png$/);
     expect(twemojiUrl("👩‍💻")).toMatch(/\/1f469-200d-1f4bb\.png$/);
     expect(imgbb.uploads).toHaveLength(0);
+  });
+
+  // TEST_SCENARIO: After a restart, or on another replica, the stored URL answers the post and ImgBB is not called again.
+  it("reuses a stored URL across processes without uploading", async () => {
+    const store = memoryStore();
+    const first = fakeImgbb([ok]);
+    await createImgbbAgentIcons({
+      apiKey: "secret",
+      store,
+      loadImage: async () => null,
+      fetchImpl: first.fetchImpl,
+    }).iconUrl({ kind: "character", character: "lens" });
+
+    const second = fakeImgbb([]);
+    const { iconUrl } = createImgbbAgentIcons({
+      apiKey: "secret",
+      store,
+      loadImage: async () => null,
+      fetchImpl: second.fetchImpl,
+    });
+    expect(await iconUrl({ kind: "character", character: "lens" })).toBe(ICON);
+    expect(second.uploads).toHaveLength(0);
+  });
+
+  // TEST_SCENARIO: Postgres failing to read or write the URL must not cost the post its icon: the upload still serves it.
+  it("still uploads when the URL store fails", async () => {
+    const imgbb = fakeImgbb([ok]);
+    const broken: PublicImageUrls = {
+      get: async () => {
+        throw new Error("db down");
+      },
+      put: async () => {
+        throw new Error("db down");
+      },
+    };
+    const { iconUrl } = createImgbbAgentIcons({
+      apiKey: "secret",
+      store: broken,
+      loadImage: async () => null,
+      fetchImpl: imgbb.fetchImpl,
+    });
+    expect(await iconUrl({ kind: "character", character: "lens" })).toBe(ICON);
+    expect(imgbb.uploads).toHaveLength(1);
+  });
+
+  // TEST_SCENARIO: warm() at startup resolves every character, so the first post of each finds its URL ready and nothing is uploaded at post time.
+  it("warms every character before the first post", async () => {
+    const imgbb = fakeImgbb(AVATAR_CHARACTERS.map(() => ok));
+    const icons = createImgbbAgentIcons({
+      apiKey: "secret",
+      store: memoryStore(),
+      loadImage: async () => null,
+      fetchImpl: imgbb.fetchImpl,
+      waitMs: 0,
+    });
+    await icons.warm();
+    expect(imgbb.uploads).toHaveLength(AVATAR_CHARACTERS.length);
+
+    for (const character of AVATAR_CHARACTERS)
+      expect(await icons.iconUrl({ kind: "character", character })).toBe(ICON);
+    expect(imgbb.uploads).toHaveLength(AVATAR_CHARACTERS.length);
   });
 
   // TEST_SCENARIO: A failed upload answers null and is remembered, so the next posts don't pay for another attempt; after RETRY_AFTER_MS (one minute) the upload is tried again.
@@ -305,23 +378,55 @@ describe("imgbb agent icons", () => {
         () => Response.json({ data: { url: "http://not-https" } }),
         ok,
       ]);
-      const icons = createImgbbAgentIcons(
-        "secret",
-        memoryStore().store,
-        imgbb.fetchImpl,
-      );
+      const { iconUrl } = createImgbbAgentIcons({
+        apiKey: "secret",
+        store: memoryStore(),
+        loadImage: async () => null,
+        fetchImpl: imgbb.fetchImpl,
+      });
 
-      expect(await icons(lens)).toBeNull();
-      expect(await icons(lens)).toBeNull();
+      expect(
+        await iconUrl({ kind: "character", character: "lens" }),
+      ).toBeNull();
+      expect(
+        await iconUrl({ kind: "character", character: "lens" }),
+      ).toBeNull();
       expect(imgbb.uploads).toHaveLength(1);
 
       vi.advanceTimersByTime(60_000);
-      expect(await icons(lens)).toBeNull();
+      expect(
+        await iconUrl({ kind: "character", character: "lens" }),
+      ).toBeNull();
       vi.advanceTimersByTime(60_000);
-      expect(await icons(lens)).toBe(ICON);
+      expect(await iconUrl({ kind: "character", character: "lens" })).toBe(
+        ICON,
+      );
       expect(imgbb.uploads).toHaveLength(3);
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // TEST_SCENARIO: A slow image host must not hold up the Slack post: past the wait the post goes out without an icon, and the upload that finishes later serves the next post without a second upload.
+  it("posts without an icon while a slow upload finishes", async () => {
+    let answer: (res: Response) => void = () => {};
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls++;
+      return new Promise<Response>((resolve) => (answer = resolve));
+    }) as unknown as typeof fetch;
+    const { iconUrl } = createImgbbAgentIcons({
+      apiKey: "secret",
+      store: memoryStore(),
+      loadImage: async () => null,
+      fetchImpl,
+      waitMs: 5,
+    });
+
+    expect(await iconUrl({ kind: "character", character: "lens" })).toBeNull();
+    answer(ok());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(await iconUrl({ kind: "character", character: "lens" })).toBe(ICON);
+    expect(calls).toBe(1);
   });
 });

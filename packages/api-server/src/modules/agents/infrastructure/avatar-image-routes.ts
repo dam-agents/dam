@@ -11,7 +11,7 @@ import {
   inArray,
   lt,
   notInArray,
-  slackIconUrls,
+  publicImageUrls,
 } from "db";
 import type { ApiVariables } from "../../../core/http-context.js";
 
@@ -56,8 +56,8 @@ export function createAvatarImagesRepository(db: Db): AvatarImages {
         const ids = removed.map((r) => r.id);
         if (ids.length > 0)
           await tx
-            .delete(slackIconUrls)
-            .where(inArray(slackIconUrls.hash, ids));
+            .delete(publicImageUrls)
+            .where(inArray(publicImageUrls.sha256, ids));
         return ids.length;
       });
     },

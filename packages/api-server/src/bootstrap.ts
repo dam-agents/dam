@@ -1,6 +1,5 @@
 import { readFileSync } from "node:fs";
 import { createDb, runMigrations } from "db";
-import { AVATAR_CHARACTERS } from "api-server-api/avatar/svg";
 import {
   type TriggerEventPayload,
   workspaceMutationEventKinds,
@@ -76,13 +75,11 @@ import {
   type SlackOAuthPending,
   type ChannelRegistry,
 } from "./modules/channels/infrastructure/slack.js";
-import {
-  createDbAgentIconStore,
-  createImgbbAgentIcons,
-} from "./modules/channels/infrastructure/agent-avatar-icons.js";
+import { createImgbbAgentIcons } from "./modules/channels/infrastructure/agent-avatar-icons.js";
 import { createAgentWorkspaceFiles } from "./modules/channels/infrastructure/agent-workspace-files.js";
 import { DEFAULT_SETTLE_MS } from "./modules/channels/domain/turn-coalescing.js";
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
+import { createPublicImageUrlsRepository } from "./modules/channels/infrastructure/public-image-urls-repository.js";
 import { createSlackIgnoredAppsRepository } from "./modules/channels/infrastructure/slack-ignored-apps-repository.js";
 import {
   createFakeSlackGateway,
@@ -1060,16 +1057,16 @@ export async function bootstrap() {
       firePair: (agentId) => firePair(agentId, {}),
     });
 
-  const agentIcon =
+  const agentIcons =
     slackGatewayFactory && config.imgbbApiKey
-      ? createImgbbAgentIcons(
-          config.imgbbApiKey,
-          createDbAgentIconStore(db, createAvatarImagesRepository(db).load),
-        )
+      ? createImgbbAgentIcons({
+          apiKey: config.imgbbApiKey,
+          store: createPublicImageUrlsRepository(db),
+          loadImage: createAvatarImagesRepository(db).load,
+        })
       : null;
-  if (agentIcon)
-    for (const character of AVATAR_CHARACTERS)
-      void agentIcon({ kind: "character", character });
+  void agentIcons?.warm();
+
   const slackWorker = slackGatewayFactory
     ? createSlackWorker({
         makeAcpClient,
@@ -1088,6 +1085,7 @@ export async function bootstrap() {
         channelRegistry,
         unbindSlackChannel: deleteSlackChannelBinding(db),
         setSlackChannelAmbient: setSlackChannelAmbient(db),
+        agentsFor: (owner) => harnessAgentsServiceFor(owner),
         ignoredApps: createSlackIgnoredAppsRepository(db),
         setSlackDefault: setSlackChannelDefault(db),
         brand: { name: config.brand.name, short: config.brand.short },
@@ -1100,7 +1098,7 @@ export async function bootstrap() {
           ),
         listWorkspaces: listActiveSlackWorkspaces,
         settleMs: DEFAULT_SETTLE_MS,
-        agentIcon,
+        agentIcon: agentIcons?.iconUrl ?? null,
         readPodRestarts: async (agentId) => {
           const agent = await agentsRepo.get(agentId);
           return agent

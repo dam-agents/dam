@@ -48,6 +48,7 @@ type AgentReconciler struct {
 	deniedWakes     map[string]string
 	parkedRetry     map[string]struct{}
 	busyProbe       func(ctx context.Context, agentName string) bool
+	podStatus       func(ctx context.Context, agentName string) (idle, answered bool)
 	runnerMu        sync.Mutex
 	runners         map[string]runnerConn
 	runnerEndpoint  func(owner string) string
@@ -88,7 +89,11 @@ type AgentReconciler struct {
 func NewAgentReconciler(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *AgentReconciler {
 	r := &AgentReconciler{client: client, dynamic: dyn, config: cfg, rollViewTTL: runnerRollViewTTL}
 	r.busyProbe = func(ctx context.Context, name string) bool {
-		return agentPodIsBusy(ctx, r.config.Namespace, name)
+		idle, answered := agentPodStatus(ctx, r.config.Namespace, name)
+		return answered && !idle
+	}
+	r.podStatus = func(ctx context.Context, name string) (bool, bool) {
+		return agentPodStatus(ctx, r.config.Namespace, name)
 	}
 	return r
 }
@@ -377,10 +382,12 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			secretRefused = refusal
 		}
 		machineRuns := running
+		pairAtRest := false
 		if !running && !hardStop && !parked && !migration.holdsDown() {
 			if machineRuns, err = r.pairAwake(ctx, name); err != nil {
 				return r.setError(ctx, name, fmt.Sprintf("reading gateway statefulset: %v", err))
 			}
+			pairAtRest = !machineRuns && !migration.active()
 		}
 		machine, runnerReached, err = r.reconcileVMAgent(ctx, agent, ownerRef, gatewayIP, machineRuns && migration.machineMayRun(), true)
 		if stderrors.Is(err, errLeafSecretPending) || stderrors.Is(err, errRunnerTLSPending) {
@@ -392,6 +399,12 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		}
 		r.noteMachineUse(name, machine)
 		timer.mark("vmMachine")
+		// UNIT_BOUNDARY_DESCRIPTION: the hibernation the idle checker or reclaim began, finished once the runner reports the machine stopped; until then the agent reads as not ready, so a wake waits for readiness instead of trusting the first health check answer.
+		if pairAtRest && runnerReached && machineStopped(machine) && (lastReady == nil || lastReady.Reason != apiv1.ReasonHibernated) {
+			if err := publishHibernated(ctx, r.dynamic, r.config.Namespace, name); err != nil {
+				return fmt.Errorf("agent %s: publishing hibernation: %w", name, err)
+			}
+		}
 		if migration.active() {
 			migration.held = runtimeMigrationBootHeld(migration, hardStop, overBudget)
 			if err := r.continueRuntimeMigration(ctx, agent, migration, machine, runnerReached, nil); err != nil {
@@ -962,7 +975,7 @@ func stampRollRev(ss *appsv1.StatefulSet, rollRev string) {
 	ss.Spec.Template.Annotations[annRollRev] = rollRev
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: writes an agent's or gateway's StatefulSet only when it would change. Every reconcile renders both, and the agent reconciles run on one worker for the whole install, so an update that waits holds up every other agent's start. An update waits for every admission webhook that matches StatefulSets, even when it changes nothing, and a webhook whose service has no ready endpoint can hold it until the webhook's timeout (10-12 s measured). The stored template carries the API server's defaults and never equals the rendered one, so the rendered template and update strategy are hashed onto the StatefulSet, and an unchanged hash with the right replica count sends nothing. The cost: a hand edit to the template stays until the rendered template next changes.
+// UNIT_BOUNDARY_DESCRIPTION: writes an agent's or gateway's StatefulSet only when it would change. Every reconcile renders both, and one agent worker serves many owners, so an update that waits holds up the start of every agent behind it on that worker. An update waits for every admission webhook that matches StatefulSets, even when it changes nothing, and a webhook whose service has no ready endpoint can hold it until the webhook's timeout (10-12 s measured). The stored template carries the API server's defaults and never equals the rendered one, so the rendered template and update strategy are hashed onto the StatefulSet, and an unchanged hash with the right replica count sends nothing. The cost: a hand edit to the template stays until the rendered template next changes.
 func (r *AgentReconciler) applyStatefulSet(ctx context.Context, desired *appsv1.StatefulSet, running bool) error {
 	raw, err := json.Marshal([]any{desired.Spec.Template, desired.Spec.UpdateStrategy})
 	if err != nil {

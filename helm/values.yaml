@@ -287,16 +287,18 @@ virtualization:
     # Memory each running machine is counted at beyond what it was last
     # measured using, for its guest to grow into before the controller acts.
     headroomMiB: 256
-    # Memory a machine is counted at until the runner first measures it,
-    # usually about 100 ms after its start returns and before the agent's
-    # harness has started, when that is less than its size.
+    # The warm-up floor: what a machine is counted at, at least, until the
+    # runner has measured it and for two minutes after its boot began,
+    # never above its size. The agent's harness starts only once the guest
+    # answers and grows to 2 to 3 GiB within the next minute, so a machine
+    # measured right after its boot holds little of what it will hold.
     # Counting a boot at its full size, half the pool, would let only two
-    # machines boot at once, so a runner roll or a few wakes together would
-    # refuse the rest. A harness that is still starting at the first
-    # measurement is under-counted until later probes see it grow. Each machine also boots with
-    # this much RAM, or its size when that is less, and is grown to its size
-    # once the guest is up: a boot costs time for every GiB it starts with.
-    bootMiB: 2048
+    # machines boot at once; at the floor, pool / floor machines warm up
+    # together, and a start refused for that is retried every 30 s. Each
+    # machine also boots with this much RAM, or its size when that is less,
+    # and is grown to its size once the guest is up: a boot costs time for
+    # every GiB it starts with.
+    bootMiB: 3072
     # vCPUs every machine gets. They are threads of the runner, so an idle
     # machine costs nothing; the runner's CPU limit covers these vCPUs for
     # every machine that should run (see `resources`).
@@ -329,6 +331,11 @@ virtualization:
     # a free place in the roll: it is offered again on the next pass, and
     # other owners roll meanwhile. `idleWait` bounds that wait; past it, the
     # runner rolls even with an agent busy.
+    # With `releaseHostPath` set, a new runner image is handed to each pod in
+    # place instead, and each hand-off takes a place in the same width until
+    # the runner runs the release and its machines answer again; a hand-off
+    # that fails, sees an ensure refused, or outlasts `settleTimeout` halts
+    # the release.
     rollout:
       maxConcurrent: 1
       settleTimeout: 10m

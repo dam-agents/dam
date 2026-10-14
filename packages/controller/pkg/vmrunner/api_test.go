@@ -82,6 +82,7 @@ func TestTheWireTypesWriteAndReadWhatTheContractSays(t *testing.T) {
 		CPUs:      2,
 		MemoryMiB: 2048,
 		UsedMiB:   640,
+		Warming:   true,
 		DiskGiB:   20,
 		Message:   "up",
 		Version:   1,

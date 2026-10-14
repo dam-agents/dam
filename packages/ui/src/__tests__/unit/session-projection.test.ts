@@ -437,6 +437,48 @@ describe("applyUpdate — tool calls", () => {
     expect(out[2].parts).toHaveLength(0);
   });
 
+  test("tool_call keeps a diff's path and old and new text on the chip", () => {
+    const out = applyUpdate([assistantMsg("a1", "", true)], {
+      sessionUpdate: "tool_call",
+      toolCallId: "t1",
+      title: "Edit src/a.ts",
+      kind: "edit",
+      status: "pending",
+      content: [
+        { type: "diff", path: "/w/src/a.ts", oldText: "a", newText: "b" },
+        { type: "diff", path: "/w/new.ts", newText: "x" },
+      ],
+    });
+    expect((out[0].parts[0] as ToolChip).content).toEqual([
+      { type: "diff", path: "/w/src/a.ts", oldText: "a", newText: "b" },
+      { type: "diff", path: "/w/new.ts", oldText: null, newText: "x" },
+    ]);
+  });
+
+  test("tool_call_update with a diff replaces the chip's content", () => {
+    const start: Message[] = [
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          { kind: "tool", toolCallId: "t1", title: "Write", status: "pending" },
+        ],
+        streaming: true,
+      },
+    ];
+    const out = applyUpdate(start, {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "t1",
+      status: "completed",
+      content: [
+        { type: "diff", path: "/w/f.md", oldText: null, newText: "hi" },
+      ],
+    });
+    expect((out[0].parts[0] as ToolChip).content).toEqual([
+      { type: "diff", path: "/w/f.md", oldText: null, newText: "hi" },
+    ]);
+  });
+
   test("tool_call_update for unknown chip is a no-op", () => {
     const start: Message[] = [
       userMsg("u1", "hi"),

@@ -210,4 +210,8 @@ export interface AgentSpecCR {
    * does not drive; it is service-only input, like the pre-minted id.
    */
   telemetryAttributionId?: string;
+  /**
+   * WhispersOff stops people in the conversations the agent is connected to from whispering to it privately; unset means whispers are on.
+   */
+  whispersOff?: boolean;
 }

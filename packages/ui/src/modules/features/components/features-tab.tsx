@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
+import { ResetOnboardingCard } from "../../getting-started/components/reset-onboarding-card.js";
 import {
   useFeatures,
   useInstallCapabilities,
@@ -126,6 +127,7 @@ export function FeaturesTab() {
             />
           ),
         )}
+        <ResetOnboardingCard />
       </div>
     </div>
   );

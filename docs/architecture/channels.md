@@ -151,7 +151,7 @@ flowchart LR
 
 The App-Level Token comes from Helm values and lives in api-server env; a Bot Token is per workspace, comes from the install handshake and lives in a K8s Secret — neither is per-Agent.
 Resolving the channel's binding yields the Agent and the binding owner; the relay is single-track to the main pod.
-The workspace-wide identity-link table backs the `/platform login` flow, which authorizes the in-chat bind, unbind, ambient and default commands — never who may drive a turn.
+The workspace-wide identity-link table backs the `/platform login` flow, which authorizes the in-chat bind, unbind, ambient, whisper on/off and default commands — never who may drive a turn.
 
 ### Telegram — platform channel
 
@@ -237,7 +237,7 @@ The differences are transport, identity model, and where the bot token comes fro
   A credential Slack rejects is **marked**, never cleaned up, and re-authorizing clears the mark.
   Nothing is deleted.
 - **Identity linking.** A `/platform login` slash command starts a Keycloak OAuth flow; on callback the api-server stores `slack_user_id ↔ keycloak_sub` and the workspace the command ran in.
-  The link table is the source of truth for "who is this Slack user in Platform terms" — consulted to authorize the in-chat `bind`, `unbind`, `ambient`, `ignore`, `unignore`, `default` and `delete` commands, never to admit a turn, and to reach a person directly.
+  The link table is the source of truth for "who is this Slack user in Platform terms" — consulted to authorize the in-chat `bind`, `unbind`, `ambient`, `whisper on|off`, `ignore`, `unignore`, `default` and `delete` commands, never to admit a turn, and to reach a person directly.
 - **The platform can message a linked person.** A notice the platform raises itself, such as a resource alert, goes as a direct message from the app — no Agent persona — to each Slack identity linked to that user, in the workspace the link recorded.
   A link made before links recorded their workspace reaches the one active install, and nothing when several are active, until the user logs in again.
   A workspace whose credential is rejected or that did not grant `im:write` is skipped, and a user with no link gets nothing in Slack.
@@ -267,6 +267,15 @@ The differences are transport, identity model, and where the bot token comes fro
   Every turn re-checks the consent it borrows: the Agent must still be connected where the whisper started, and where that is a channel the person must still be a member, asked of that workspace — in an enterprise organization a DM reply arrives tagged with the person's home workspace, which may not see the channel; otherwise the whisper ends.
   A whisper is private from the conversation, never from the Agent's owner: each runs as an ordinary session the owner can open, naming who whispered and what they wrote, and the copy says so.
   Being private is also what makes a whisper an easy place to hide a prompt injection, so it carries **no more trust** than the same message sent openly by someone who is not the owner — the same gates, the same permission mode — and the prompt tells the Agent as much, and never to hide a whisper from its owner.
+  Whispers are a **per-Agent switch**, on by default, because putting an Agent in a shared conversation already opens it to everyone there.
+  It belongs to the Agent, not to a binding, because what a whisper puts at risk is the Agent itself: someone can ask it to change its instructions, memory or settings, nobody else in the conversation sees the request, and the change then holds everywhere the Agent is connected.
+  It is stored in the Agent's spec, and the controller does not act on it.
+  Only the Agent's owner flips it: with `/platform whisper <agent> on|off` from any conversation (the command looks the name up among the invoker's own Agents), in the Agent's channel settings in the UI, or on the page an in-chat bind ends on.
+  While whispers are on, the bind warning says so, before the bind.
+  A connect that leaves it unset keeps the binding's current value.
+  With whispers off, a whisper to that Agent is refused before anything is relayed, and an open whisper thread ends at its next message, the same re-check that ends one whose Agent was disconnected.
+  Both checks read the Agent's current setting, never a cached one.
+  A whisper turn already running when whispers go off finishes, and the whisperer is told right after it that the whisper has ended.
 - **Access control.** Channel membership is the only per-person gate, and Slack owns it — the platform never resolves who is typing; binding the channel is the consent that lends the Agent to the channel.
 - **Agent resolution.** A mention (channel, group DM) or a plain 1:1-DM message resolves to exactly one Agent: the one whose name opens the message, else the conversation's default.
   Name matching is over the Agents connected to that conversation only, whole-name and case-insensitive, longest name first — Agent names are not unique, so a name matching two of them resolves to the default rather than a guess.
@@ -296,11 +305,12 @@ Which of two strategies an optional scope gets follows from what its absence mea
 - **Agent persona on posts** is the one optional scope read proactively.
   With `chat:write.customize`, an agent's own posts (`send_channel_message`, `reply`) carry its name as the username and its avatar as the icon, so a conversation with several Agents shows who said what.
   Slack does not say whether it refuses or ignores those fields without the scope, so the override is sent only where the granted set is **known** to include it; an unknown set posts under the app's identity, the same message as before.
-  Slack fetches the icon from the public internet and an install has no public URL of its own, so the api-server draws the [avatar](agent-avatars.md) — the one the owner sees in the UI: the one stored on the Agent, or else the character picked from the owner and the Agent name — to a PNG, or reads the uploaded one, and uploads it to ImgBB.
-  The URL is stored in Postgres under the hash of the PNG, so each image is uploaded once per install, not once per process; the characters are uploaded in the background at startup, so a post rarely waits.
-  A post waits for an upload that is still running, bounded by its timeout; a failed upload is retried a minute later.
+  Slack fetches the icon from the public internet and an install has no public URL of its own, so the api-server draws the [avatar](agent-avatars.md) — the one the owner sees in the UI: the one stored on the Agent, or else the character picked from the owner and the Agent name — to a PNG, or reads the uploaded one, and uploads it to ImgBB, named by a hash.
   An emoji avatar is not uploaded: the icon is the public Twemoji PNG for it.
-  With ImgBB configured, a post that goes out without an icon logs `slack.agent_icon.missing`.
+  The URL is kept in Postgres under the SHA-256 of the PNG ([persistence](persistence.md)), so each image is uploaded once per install, and a restart or another replica reuses it.
+  The api-server resolves every character at startup, so a post rarely waits on the image host.
+  A post never waits long on that host: past a short wait it goes out with the name and the app's icon while the upload finishes for later posts, and a warning (`slack.agent_icon.missing`) records it.
+  A failed upload is not retried for a minute.
   With no ImgBB key configured the post always keeps the name and the app's icon.
   Where the scope is not known to be granted, the post goes out as the app and its text opens with an emoji and the Agent's name in bold, so the Agents are still told apart.
   The emoji is the Agent's emoji avatar if it has one, else the robot face, unless the conversation's binding names custom emoji: whoever connects or edits the conversation can switch them on and name the workspace's emoji for each of the eight characters, prefilled `<brand.short>-agent-1` to `-8` in the order the set was drawn.

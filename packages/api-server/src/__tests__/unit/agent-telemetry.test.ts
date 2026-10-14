@@ -5,7 +5,7 @@ import {
   agentMetricsInputSchema,
   agentTelemetryInputSchema,
 } from "api-server-api";
-import type { TokenSpendByModel } from "api-server-api";
+import type { SubAgentSpend, TokenSpendByModel } from "api-server-api";
 import {
   createAgentTelemetry,
   createUnavailableAgentTelemetry,
@@ -15,7 +15,7 @@ import type {
   MetricsWindow,
 } from "../../modules/metrics/index.js";
 
-// TEST_OVERVIEW: The agent-facing telemetry reads are how an agent sees its own runs — cost, calls, emitted records and span shape. Each must pin the query to exactly the calling agent (the isolation boundary: an agent may never reach another's telemetry), bound the window and the row count at the schemas the tools parse with, carry a session narrowing through to the reader, and degrade to an explicit available=false rather than throwing when no telemetry backend is installed.
+// TEST_OVERVIEW: The agent-facing telemetry reads are how an agent sees its own runs — cost, calls, emitted records and span shape, and what each of its sub-agents cost. Each must pin the query to exactly the calling agent (the isolation boundary: an agent may never reach another's telemetry, and a Driver may never see a sub-agent outside its own delegation tree), bound the window and the row count at the schemas the tools parse with, carry a session narrowing through to the reader, and degrade to an explicit available=false rather than throwing when no telemetry backend is installed.
 
 function spend(model: string, costUsd: number, durationMs: number) {
   return {
@@ -41,6 +41,22 @@ function session(sessionId: string, totalDurationMs: number) {
     cacheReadTokens: 0,
     cacheCreationTokens: 0,
     costUsd: 0,
+    firstAt: "2026-09-01T00:00:00Z",
+    lastAt: "2026-09-01T00:05:00Z",
+  };
+}
+
+function subAgent(subAgentId: string, costUsd: number): SubAgentSpend {
+  return {
+    subAgentId,
+    models: ["m1"],
+    calls: 1,
+    totalDurationMs: 100,
+    inputTokens: 10,
+    outputTokens: 5,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+    costUsd,
     firstAt: "2026-09-01T00:00:00Z",
     lastAt: "2026-09-01T00:05:00Z",
   };
@@ -93,6 +109,10 @@ function reader(
       note(ids, window, limit);
       return [];
     },
+    spendBySubAgent: async (ids, window, limit) => {
+      note(ids, window, limit);
+      return [];
+    },
     spendByAgent: async () => [],
     spendByDay: async () => [],
     spendBySession: async () => [],
@@ -112,6 +132,7 @@ describe("agent telemetry", () => {
     const query = { days: 7, limit: 10 };
     await svc.metrics("agent-a", { ...query, granularity: "summary" });
     await svc.metrics("agent-a", { ...query, granularity: "call" });
+    await svc.metrics("agent-a", { ...query, granularity: "subagent" });
     await svc.logs("agent-a", query);
     await svc.spans("agent-a", query);
     expect(seen.length).toBeGreaterThan(4);
@@ -183,11 +204,16 @@ describe("agent telemetry", () => {
     const { r, seen } = reader();
     const svc = createAgentTelemetry({ reader: r });
     await svc.metrics("agent-a", { days: 7, limit: 3, granularity: "call" });
+    await svc.metrics("agent-a", {
+      days: 7,
+      limit: 3,
+      granularity: "subagent",
+    });
     await svc.logs("agent-a", { days: 7, limit: 3 });
     await svc.spans("agent-a", { days: 7, limit: 3 });
     expect(
       seen.filter((s) => s.limit !== undefined).map((s) => s.limit),
-    ).toEqual([4, 4, 4]);
+    ).toEqual([4, 4, 4, 4]);
   });
 
   /**
@@ -290,6 +316,7 @@ describe("agent telemetry", () => {
         contextPerCall: async (_i, _w, limit) => rowsFor(limit - 1) as never,
         telemetryEvents: async (_i, _w, limit) => rowsFor(limit - 1) as never,
         traceSpans: async (_i, _w, limit) => rowsFor(limit - 1) as never,
+        spendBySubAgent: async (_i, _w, limit) => rowsFor(limit - 1) as never,
         sessionResolves: async () => true,
         spendByAgent: async () => [],
         spendByDay: async () => [],
@@ -302,6 +329,9 @@ describe("agent telemetry", () => {
     ).toMatchObject({ truncated: false });
     expect(
       await svc.metrics("agent-a", { ...q, granularity: "session" }),
+    ).toMatchObject({ truncated: false });
+    expect(
+      await svc.metrics("agent-a", { ...q, granularity: "subagent" }),
     ).toMatchObject({ truncated: false });
     expect(await svc.logs("agent-a", q)).toMatchObject({ truncated: false });
     expect(await svc.spans("agent-a", q)).toMatchObject({ truncated: false });
@@ -320,6 +350,7 @@ describe("agent telemetry", () => {
         contextPerCall: async (_i, _w, limit) => rowsFor(limit) as never,
         telemetryEvents: async (_i, _w, limit) => rowsFor(limit) as never,
         traceSpans: async (_i, _w, limit) => rowsFor(limit) as never,
+        spendBySubAgent: async (_i, _w, limit) => rowsFor(limit) as never,
         sessionResolves: async () => true,
         spendByAgent: async () => [],
         spendByDay: async () => [],
@@ -336,12 +367,109 @@ describe("agent telemetry", () => {
     });
     expect(bySession).toMatchObject({ truncated: true });
     expect(bySession.available && bySession.sessions).toHaveLength(2);
+    const bySubAgent = await svc.metrics("agent-a", {
+      ...q,
+      granularity: "subagent",
+    });
+    expect(bySubAgent).toMatchObject({ truncated: true });
+    expect(bySubAgent.available && bySubAgent.subAgents).toHaveLength(2);
     const logs = await svc.logs("agent-a", q);
     expect(logs).toMatchObject({ truncated: true });
     expect(logs.available && logs.logs).toHaveLength(2);
     const spans = await svc.spans("agent-a", q);
     expect(spans).toMatchObject({ truncated: true });
     expect(spans.available && spans.spans).toHaveLength(2);
+  });
+
+  /**
+   * TEST_SCENARIO: A Driver reads what each sub-agent cost so it can compare
+   * models and harnesses. The rows must come back beside the whole-window
+   * totals, and the result must say that the totals also hold the Driver's own
+   * calls, so the Driver does not read the gap as missing spend.
+   */
+  it("reports a row per sub-agent alongside the totals", async () => {
+    const { r } = reader([spend("m1", 3, 300)]);
+    r.spendBySubAgent = async () => [
+      subAgent("inv-1", 2),
+      subAgent("inv-2", 0.5),
+    ];
+    const svc = createAgentTelemetry({ reader: r });
+    const result = await svc.metrics("agent-a", {
+      days: 7,
+      limit: 50,
+      granularity: "subagent",
+    });
+    expect(result).toMatchObject({
+      available: true,
+      granularity: "subagent",
+      totalCostUsd: 3,
+      truncated: false,
+    });
+    expect(
+      result.available &&
+        result.subAgents?.map((s) => [s.subAgentId, s.costUsd]),
+    ).toEqual([
+      ["inv-1", 2],
+      ["inv-2", 0.5],
+    ]);
+    expect(result.available && result.totalsCover).toContain(
+      "Your own calls have no row",
+    );
+    expect(result.available && result.sessions).toBeUndefined();
+  });
+
+  /**
+   * TEST_SCENARIO: The isolation boundary for sub-agent cost. A sub-agent's
+   * spend is stamped with its root Driver's id, so the store holds every
+   * Driver's sub-agents side by side. A Driver must get back only the
+   * sub-agents stamped with its own id, never another Driver's, even when
+   * both run at once.
+   */
+  it("returns only the sub-agents of the calling Driver's own tree", async () => {
+    const store: Record<string, SubAgentSpend[]> = {
+      "driver-a": [subAgent("inv-a1", 1), subAgent("inv-a2", 2)],
+      "driver-b": [subAgent("inv-b1", 9)],
+    };
+    const { r, seen } = reader();
+    r.spendBySubAgent = async (ids, window, limit) => {
+      seen.push({ ids: [...ids], window, limit });
+      return ids.flatMap((id) => store[id] ?? []);
+    };
+    const svc = createAgentTelemetry({ reader: r });
+    const result = await svc.metrics("driver-a", {
+      days: 7,
+      limit: 50,
+      granularity: "subagent",
+    });
+    expect(
+      result.available && result.subAgents?.map((s) => s.subAgentId),
+    ).toEqual(["inv-a1", "inv-a2"]);
+    expect(
+      seen.every((s) => s.ids.length === 1 && s.ids[0] === "driver-a"),
+    ).toBe(true);
+  });
+
+  // TEST_SCENARIO: A sub-agent runs in its own session, so a session narrowing on a sub-agent read usually leaves it out. The result must say so, or the Driver reads an empty list as sub-agents that cost nothing.
+  it("warns that a session narrowing can leave sub-agents out", async () => {
+    const { r } = reader();
+    const svc = createAgentTelemetry({ reader: r });
+    const narrowed = await svc.metrics("agent-a", {
+      days: 7,
+      limit: 50,
+      granularity: "subagent",
+      sessionId: "s-1",
+    });
+    expect(narrowed.available && narrowed.totalsCover).toContain(
+      "omit sessionId",
+    );
+    const whole = await svc.metrics("agent-a", {
+      days: 7,
+      limit: 50,
+      granularity: "subagent",
+    });
+    expect(whole.available && whole.totalsCover).not.toContain(
+      "omit sessionId",
+    );
   });
 
   // TEST_SCENARIO: An untruncated rollup must not claim truncation, or the flag stops carrying information.

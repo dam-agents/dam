@@ -47,6 +47,7 @@ export const starterKitChannelSchema = z.object({
 const scheduleCommon = {
   name: z.string().min(1),
   task: z.string().min(1),
+  description: z.string().min(1).optional(),
   enabled: z.boolean().default(true),
   sessionMode: z.enum(["continuous", "fresh"]).optional(),
   precheck: precheckSchema.optional(),

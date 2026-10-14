@@ -104,6 +104,14 @@ export const slackIgnoredApps = pgTable(
   (table) => [primaryKey({ columns: [table.channelId, table.botId] })],
 );
 
+export const publicImageUrls = pgTable("public_image_urls", {
+  sha256: text("sha256").primaryKey(),
+  url: text("url").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 export const telegramConversations = pgTable(
   "telegram_conversations",
   {
@@ -956,6 +964,7 @@ export const attentionRecords = pgTable(
     type: text("type").notNull(),
     title: text("title"),
     scheduleId: text("schedule_id"),
+    threadTs: text("thread_ts"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
     activityAt: timestamp("activity_at", { withTimezone: true }),
     seenAt: timestamp("seen_at", { withTimezone: true }),
@@ -1011,14 +1020,6 @@ export const avatarImages = pgTable("avatar_images", {
   id: text("id").primaryKey(),
   png: bytea("png").notNull(),
   ownerSub: text("owner_sub").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
-
-export const slackIconUrls = pgTable("slack_icon_urls", {
-  hash: text("hash").primaryKey(),
-  url: text("url").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
