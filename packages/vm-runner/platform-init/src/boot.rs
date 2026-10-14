@@ -1070,13 +1070,25 @@ fn persist_home(root: &Path, seeded_before: bool, expected: Option<&SeedDigest>)
     ) {
         fatal!("seeding {} onto the disk: {e}", path.display());
     }
-    if let Err(e) = mkdir_all(path) {
+    if let Err(e) = mountpoint(path) {
         fatal!("creating the guest mountpoint {}: {e}", path.display());
     }
     if let Err(e) = mount(&store, path, libc::MS_BIND) {
         fatal!("mounting {} from the disk: {e}", path.display());
     }
     logf!("persisting {}", path.display());
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the home's mountpoint as a directory of the root. An image may ship the home as a link, to /root for example, and a bind onto a link lands wherever the link points. The link is replaced, so the disk is mounted at the home and nowhere else.
+fn mountpoint(path: &Path) -> io::Result<()> {
+    if fs::symlink_metadata(path).is_ok_and(|info| info.is_symlink()) {
+        logf!(
+            "{} is a link in the image; replacing it with a directory so the home is on the disk",
+            path.display()
+        );
+        fs::remove_file(path)?;
+    }
+    mkdir_all(path)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: seeds the store once, on the boot that finds none. A seed in the share wins over the image's home, because it is the agent's own home from before the move; a store that exists is never touched, even with a seed still in the share, since it already holds everything the agent did since. When the runner expects a seed, the image's home is never the fallback: a store is restored from exactly that seed or the boot fails, and a store that exists boots only if it was restored from that seed. A migration whose seed went missing then fails where it is seen, instead of booting the image's home and being taken for done.
@@ -1088,7 +1100,16 @@ fn prepare_home(
     expected: Option<&SeedDigest>,
 ) -> io::Result<()> {
     let record = seeded_from_path(store);
-    if !must_seed(store, seeded_before)? {
+    let linked = fs::symlink_metadata(store).is_ok_and(|info| info.is_symlink());
+    if linked {
+        logf!(
+            "WARNING: the home store on the disk is a link, made by an older platform-init from an image whose {} is a link, so the home was never on the disk. Seeding it again from what {} holds now",
+            home.display(),
+            home.display()
+        );
+        fs::remove_file(store)?;
+    }
+    if !must_seed(store, seeded_before && !linked)? {
         return match expected {
             Some(expected) => restored_from(&record, expected),
             None => Ok(()),
@@ -1184,12 +1205,16 @@ fn needs_seed(store: &Path) -> io::Result<bool> {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the copy lands beside its destination and is renamed into place, so a boot interrupted halfway leaves no half-seeded store to be mistaken for a complete one: the next boot finds nothing and seeds again.
+// UNIT_BOUNDARY_DESCRIPTION: the copy lands beside its destination and is renamed into place, so a boot interrupted halfway leaves no half-seeded store to be mistaken for a complete one: the next boot finds nothing and seeds again. A home the image ships as a link is followed, and only there: the store is always a directory of the disk, holding what the link points at, because a store that is itself a link would put the bind, and so the agent's work, back on the root an image update discards.
 fn seed(from: &Path, store: &Path) -> io::Result<()> {
-    stage(store, |staged| match fs::symlink_metadata(from) {
+    stage(store, |staged| match fs::metadata(from) {
         Err(e) if e.kind() == io::ErrorKind::NotFound => mkdir_all(staged),
         Err(e) => Err(e),
-        Ok(source) => copy_tree(from, staged, &source),
+        Ok(source) if source.is_dir() => copy_tree(from, staged, &source),
+        Ok(_) => Err(io::Error::other(format!(
+            "{} is not a directory in the image",
+            from.display()
+        ))),
     })
 }
 
@@ -1985,6 +2010,56 @@ mod tests {
             Path::new("nested/file"),
             "a symlink is reproduced, not followed and copied"
         );
+    }
+
+    // TEST_SCENARIO: an image may ship its home as a link, to the root user's home for example. The store must still be a directory on the disk holding what the link points at, because a store that is a link puts the agent's work on the root an image update discards. The mountpoint is then made a directory in place of the link, and what the link pointed at is left alone.
+    #[test]
+    fn a_home_the_image_links_elsewhere_is_seeded_and_mounted_as_a_directory() {
+        let image = TempDir::new("image");
+        let target = image.path().join("root");
+        fs::create_dir(&target).unwrap();
+        fs::write(target.join("file"), b"baked").unwrap();
+        std::os::unix::fs::symlink("inner", target.join("link")).unwrap();
+        let home = image.path().join("home");
+        std::os::unix::fs::symlink(&target, &home).unwrap();
+
+        let disk = TempDir::new("disk");
+        let store = disk.path().join("agent");
+        seed(&home, &store).unwrap();
+
+        assert!(fs::symlink_metadata(&store).unwrap().is_dir());
+        assert_eq!(fs::read(store.join("file")).unwrap(), b"baked");
+        assert_eq!(
+            fs::read_link(store.join("link")).unwrap(),
+            Path::new("inner"),
+            "only the home itself is followed"
+        );
+
+        mountpoint(&home).unwrap();
+        assert!(fs::symlink_metadata(&home).unwrap().is_dir());
+        assert_eq!(fs::read(target.join("file")).unwrap(), b"baked");
+    }
+
+    // TEST_SCENARIO: an older platform-init made the store a link on a disk whose image linked its home elsewhere, and the runner then recorded the disk as holding a home it never held. That disk is seeded again from what the image's home holds now, which while the root is kept is the agent's work since the last image update, instead of being refused as a lost home or mounted as the link.
+    #[test]
+    fn a_store_an_older_boot_made_a_link_is_seeded_again() {
+        let image = TempDir::new("image");
+        fs::write(image.path().join("file"), b"the agent's work").unwrap();
+        let disk = TempDir::new("disk");
+        let store = disk.path().join("agent");
+        std::os::unix::fs::symlink(image.path(), &store).unwrap();
+
+        prepare_home(
+            image.path(),
+            &disk.path().join("no-seed.tar"),
+            &store,
+            true,
+            None,
+        )
+        .unwrap();
+
+        assert!(fs::symlink_metadata(&store).unwrap().is_dir());
+        assert_eq!(fs::read(store.join("file")).unwrap(), b"the agent's work");
     }
 
     // TEST_SCENARIO: an image may ship nothing at the agent's home. That is an empty directory on the disk, not a failed boot.
