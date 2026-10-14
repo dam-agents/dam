@@ -48,6 +48,7 @@ type AgentReconciler struct {
 	deniedWakes     map[string]string
 	parkedRetry     map[string]struct{}
 	busyProbe       func(ctx context.Context, agentName string) bool
+	podStatus       func(ctx context.Context, agentName string) (idle, answered bool)
 	runnerMu        sync.Mutex
 	runners         map[string]runnerConn
 	runnerEndpoint  func(owner string) string
@@ -88,7 +89,11 @@ type AgentReconciler struct {
 func NewAgentReconciler(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *AgentReconciler {
 	r := &AgentReconciler{client: client, dynamic: dyn, config: cfg, rollViewTTL: runnerRollViewTTL}
 	r.busyProbe = func(ctx context.Context, name string) bool {
-		return agentPodIsBusy(ctx, r.config.Namespace, name)
+		idle, answered := agentPodStatus(ctx, r.config.Namespace, name)
+		return answered && !idle
+	}
+	r.podStatus = func(ctx context.Context, name string) (bool, bool) {
+		return agentPodStatus(ctx, r.config.Namespace, name)
 	}
 	return r
 }
