@@ -1,25 +1,24 @@
 import {
   Add,
   ArrowLeft,
-  ChevronRight,
-  Close,
-  ConnectionSignal,
-  DataStructured,
-  Document,
+  Diagram,
   Folder,
-  OverflowMenuVertical,
-  Pause,
-  Renew,
-  Search,
-  SendAltFilled,
-  Stop,
-  Time,
+  Notification,
 } from "@carbon/icons-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
+import { AgentAvatar } from "../modules/agents/components/char-avatar.js";
 import { useStore } from "../store.js";
+import {
+  type AgentChrome,
+  LeftDockedPanel,
+  type LeftPanelKind,
+  WorkspaceChatHeader,
+} from "./chat-workspace-variants.js";
+import { MockBrowserPanel } from "./mock-browser-panel.js";
 
 /* ─── Layout primitives ─── */
 
@@ -39,541 +38,392 @@ function SectionNote({ children }: { children: ReactNode }) {
   );
 }
 
-function BoardRow({ children }: { children: ReactNode }) {
+function SpecBlock({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
   return (
-    <div className="mt-6 flex flex-wrap items-start gap-8">{children}</div>
+    <div className="mt-6 max-w-[960px]">
+      <p className="mb-2 text-sm font-semibold text-foreground">{title}</p>
+      <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm leading-relaxed text-foreground">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function BulletList({ items }: { items: string[] }) {
+  return (
+    <ul className="mt-1 flex flex-col gap-1">
+      {items.map((item) => (
+        <li key={item} className="flex gap-2">
+          <span className="shrink-0 text-muted-foreground">&middot;</span>
+          <span>{item}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function StepList({ steps }: { steps: string[] }) {
+  return (
+    <ol className="mt-1 flex flex-col gap-1">
+      {steps.map((step, i) => (
+        <li key={step} className="flex gap-2">
+          <span className="shrink-0 tabular-nums text-muted-foreground">
+            {i + 1}.
+          </span>
+          <span>{step}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function ProtoRef({ children }: { children: ReactNode }) {
+  return (
+    <p className="mt-2 text-sm italic text-muted-foreground">{children}</p>
   );
 }
 
 function Board({
-  title,
-  notes,
-  width = 360,
-  height,
+  label,
   children,
+  className,
+  height,
 }: {
-  title: string;
-  notes?: string[];
-  width?: number;
-  height?: number;
+  label: string;
   children: ReactNode;
+  className?: string;
+  height?: string;
 }) {
   return (
-    <div style={{ width }}>
-      <p className="mb-2 text-sm font-semibold text-foreground">{title}</p>
+    <div className="mt-6">
+      <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        {label}
+      </p>
       <div
-        className="overflow-hidden rounded-lg border border-border bg-background"
-        style={{ height }}
+        className={cn(
+          "overflow-hidden rounded-xl border border-border bg-background shadow-sm",
+          className,
+        )}
+        style={height ? { height } : undefined}
       >
         {children}
       </div>
-      {notes && (
-        <ul className="mt-2 flex flex-col gap-0.5 text-sm text-muted-foreground">
-          {notes.map((n) => (
-            <li key={n} className="flex gap-1.5">
-              <span className="shrink-0 text-muted-foreground/60">·</span>
-              {n}
-            </li>
-          ))}
-        </ul>
-      )}
     </div>
   );
 }
 
-function Annotation({ children }: { children: ReactNode }) {
+/* ─── Mock chrome for embedded real components ─── */
+
+function makeMockChrome(overrides?: Partial<AgentChrome>): AgentChrome {
+  return {
+    agentId: "mock-agent-1",
+    name: "ci-pipeline",
+    statusDot: (
+      <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-success" />
+    ),
+    menu: null,
+    status: null,
+    backButton: null,
+    onOpenFile: () => {},
+    onConfigure: () => {},
+    ...overrides,
+  };
+}
+
+/* ─── Interactive board showing header states ─── */
+
+function HeaderBoard() {
+  const [openPanels, setOpenPanels] = useState<Set<LeftPanelKind>>(new Set());
+  const [browserActive, setBrowserActive] = useState(false);
+
+  const chrome = makeMockChrome();
+
   return (
-    <div className="mt-4 max-w-[560px] rounded-md bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
-      {children}
-    </div>
+    <Board label="Chat header — click toggles to see active states">
+      <WorkspaceChatHeader
+        chrome={chrome}
+        openPanels={openPanels}
+        onTogglePanel={(panel) =>
+          setOpenPanels((prev) => {
+            const next = new Set(prev);
+            if (next.has(panel)) next.delete(panel);
+            else next.add(panel);
+            return next;
+          })
+        }
+        onNewChat={() => {}}
+        browserActive={browserActive}
+        onToggleBrowser={() => setBrowserActive((b) => !b)}
+      />
+    </Board>
   );
 }
 
-/* ─── Frozen: Plus Menu Root ─── */
+/* ─── Interactive board showing left dock states ─── */
 
-function FrozenMenuRoot({ active }: { active?: string }) {
-  const rows = [
-    { label: "Attach file", badge: null },
-    { label: "Skills", badge: "3 on" },
-    { label: "Schedules", badge: "2 active" },
-    { label: "Connections", badge: "4" },
-  ];
-  return (
-    <div className="py-1">
-      {rows.map((r) => (
-        <button
-          key={r.label}
-          type="button"
-          className={`flex w-full items-center gap-3 px-3 py-2.5 text-sm ${active === r.label ? "bg-muted" : ""}`}
-        >
-          <span className="flex-1 text-left text-foreground">{r.label}</span>
-          {r.badge && (
-            <span className="rounded-md bg-muted px-2 py-0.5 text-sm text-muted-foreground">
-              {r.badge}
-            </span>
-          )}
-          {r.label !== "Attach file" && (
-            <ChevronRight size={16} className="text-muted-foreground" />
-          )}
-        </button>
-      ))}
-    </div>
+function LeftDockBoard() {
+  const [openPanels, setOpenPanels] = useState<Set<LeftPanelKind>>(
+    new Set(["files"]),
   );
-}
 
-/* ─── Frozen: Panel Header ─── */
+  const chrome = makeMockChrome();
 
-function FrozenPanelHeader({ title }: { title: string }) {
+  const togglePanel = (panel: LeftPanelKind) => {
+    setOpenPanels((prev) => {
+      const next = new Set(prev);
+      if (next.has(panel)) next.delete(panel);
+      else next.add(panel);
+      return next;
+    });
+  };
+
   return (
-    <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-border bg-background px-3 py-2.5">
-      <div className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground">
-        <ArrowLeft size={16} />
-      </div>
-      <span className="flex-1 text-sm font-semibold text-foreground">
-        {title}
-      </span>
-      <span className="text-sm text-blue-500">Manage</span>
-    </div>
-  );
-}
-
-/* ─── Frozen: Panel Footer ─── */
-
-function FrozenPanelFooter({
-  addLabel,
-  showDescribe,
-}: {
-  addLabel: string;
-  showDescribe?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between border-t border-border bg-background px-3 py-2.5">
-      <div className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm text-foreground">
-        <Add size={16} />
-        {addLabel}
-      </div>
-      {showDescribe && (
-        <span className="text-sm text-muted-foreground">
-          Or, describe to create
-        </span>
-      )}
-    </div>
-  );
-}
-
-/* ─── Frozen: Skill Rows ─── */
-
-function FrozenSkillRow({
-  name,
-  on,
-  source,
-  update,
-}: {
-  name: string;
-  on: boolean;
-  source?: boolean;
-  update?: boolean;
-}) {
-  return (
-    <div className="flex items-center gap-3 border-t border-border px-4 py-2.5 first:border-t-0">
-      <span className="flex-1 truncate text-[15px] font-medium text-foreground">
-        {name}
-      </span>
-      {update && <span className="text-sm text-blue-500">Update</span>}
-      {source && (
-        <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
-          source
-        </span>
-      )}
-      <div
-        className={`h-5 w-9 rounded-full ${on ? "bg-primary" : "bg-muted-foreground/30"}`}
-      >
-        <div
-          className={`mt-0.5 h-4 w-4 rounded-full bg-white transition-transform ${on ? "translate-x-4" : "translate-x-0.5"}`}
+    <Board label="Left dock — click buttons to toggle panels" height="420px">
+      <div className="flex h-full">
+        <LeftDockedPanel
+          openPanels={openPanels}
+          chrome={chrome}
+          onClosePanel={(panel) =>
+            setOpenPanels((prev) => {
+              const next = new Set(prev);
+              next.delete(panel);
+              return next;
+            })
+          }
         />
-      </div>
-    </div>
-  );
-}
-
-/* ─── Frozen: Schedule Row ─── */
-
-function FrozenScheduleRow({
-  name,
-  cadence,
-  enabled,
-}: {
-  name: string;
-  cadence: string;
-  enabled: boolean;
-}) {
-  return (
-    <div className="flex items-center gap-3 rounded-xl px-3 py-2.5">
-      <div
-        className={`flex h-8 w-8 items-center justify-center rounded-lg ${enabled ? "bg-blue-100/50 text-blue-600 dark:bg-blue-950/50" : "bg-muted text-muted-foreground"}`}
-      >
-        {enabled ? <Time size={16} /> : <Pause size={16} />}
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold text-foreground">{name}</p>
-        <p className="truncate text-sm text-muted-foreground">{cadence}</p>
-      </div>
-      <div
-        className={`h-5 w-9 rounded-full ${enabled ? "bg-primary" : "bg-muted-foreground/30"}`}
-      >
-        <div
-          className={`mt-0.5 h-4 w-4 rounded-full bg-white ${enabled ? "translate-x-4" : "translate-x-0.5"}`}
-        />
-      </div>
-      <OverflowMenuVertical size={16} className="text-muted-foreground" />
-    </div>
-  );
-}
-
-/* ─── Frozen: Connection Group ─── */
-
-function FrozenConnectionGroup({
-  provider,
-  connections,
-}: {
-  provider: string;
-  connections: { name: string; granted: boolean }[];
-}) {
-  return (
-    <div className="rounded-lg border border-border bg-card">
-      <div className="flex h-[52px] items-center gap-2.5 border-b border-border px-4">
-        <ConnectionSignal size={16} className="text-foreground" />
-        <span className="flex-1 text-[15px] font-semibold text-foreground">
-          {provider}
-        </span>
-        <span className="text-sm text-muted-foreground">
-          {connections.length} connections
-        </span>
-      </div>
-      <div className="divide-y divide-border">
-        {connections.map((c) => (
-          <div key={c.name} className="flex items-center gap-2 px-4 py-3">
-            <span className="flex-1 text-[15px] text-foreground">{c.name}</span>
-            <div
-              className={`h-5 w-9 rounded-full ${c.granted ? "bg-primary" : "bg-muted-foreground/30"}`}
+        <div className="flex flex-1 flex-col items-center justify-center gap-3">
+          <p className="text-sm text-muted-foreground">Toggle panels:</p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant={openPanels.has("files") ? "default" : "outline"}
+              size="sm"
+              onClick={() => togglePanel("files")}
             >
-              <div
-                className={`mt-0.5 h-4 w-4 rounded-full bg-white ${c.granted ? "translate-x-4" : "translate-x-0.5"}`}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* ─── Frozen: Input Bar ─── */
-
-function FrozenInputBar({
-  placeholder,
-  value,
-  computing,
-  attachments,
-  focused,
-}: {
-  placeholder?: string;
-  value?: string;
-  computing?: boolean;
-  attachments?: { name: string; type: "image" | "file" }[];
-  focused?: boolean;
-}) {
-  return (
-    <div className="px-4 pt-3 pb-1">
-      <div
-        className={`flex flex-col rounded-xl border bg-background ${focused ? "border-primary" : "border-border"}`}
-      >
-        {attachments && attachments.length > 0 && (
-          <div className="flex flex-wrap gap-2 px-3 pt-3">
-            {attachments.map((a) =>
-              a.type === "image" ? (
-                <div
-                  key={a.name}
-                  className="relative h-14 w-14 rounded-md border border-border bg-muted"
-                >
-                  <div className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground">
-                    <Close size={16} />
-                  </div>
-                </div>
-              ) : (
-                <div
-                  key={a.name}
-                  className="relative flex h-14 items-center gap-2 rounded-md border border-border bg-muted px-3"
-                >
-                  <Document size={16} className="text-foreground/80" />
-                  <span className="max-w-[120px] truncate text-[11px] text-foreground/80">
-                    {a.name}
-                  </span>
-                  <div className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground">
-                    <Close size={16} />
-                  </div>
-                </div>
-              ),
-            )}
-          </div>
-        )}
-        <div className="flex min-h-[56px] items-end gap-1 px-2">
-          <div className="mb-[9px] flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-muted-foreground">
-            <Add size={16} />
-          </div>
-          <div className="relative min-h-[56px] flex-1 py-[17px] text-sm leading-[22px]">
-            {value ? (
-              <span className="text-foreground">{value}</span>
-            ) : (
-              <span className="text-muted-foreground">
-                {placeholder ?? "Message..."}
-              </span>
-            )}
-          </div>
-          {computing ? (
-            <div className="mb-[9px] flex h-10 w-10 items-center justify-center rounded-md text-destructive">
-              <Stop size={16} />
-            </div>
-          ) : (
-            <div
-              className={`mb-[9px] flex h-10 w-10 items-center justify-center rounded-md ${value ? "text-foreground" : "text-muted-foreground"}`}
+              <Folder size={16} />
+              Files
+            </Button>
+            <Button
+              variant={openPanels.has("artifacts") ? "default" : "outline"}
+              size="sm"
+              onClick={() => togglePanel("artifacts")}
             >
-              <SendAltFilled size={16} />
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ─── Frozen: Chat Header ─── */
-
-function FrozenChatHeader({
-  filesOpen,
-  artifactsOpen,
-}: {
-  filesOpen?: boolean;
-  artifactsOpen?: boolean;
-}) {
-  return (
-    <div className="flex h-14 items-center gap-3 border-b border-border px-4">
-      <div className="h-8 w-8 rounded-full bg-muted" />
-      <span className="text-sm font-semibold text-foreground">ci-pipeline</span>
-      <span className="h-2 w-2 rounded-full bg-emerald-500" />
-      <div className="flex items-center gap-1 ml-2">
-        <div
-          className={`flex h-8 w-8 items-center justify-center rounded-lg ${filesOpen ? "bg-muted text-foreground" : "text-muted-foreground"}`}
-        >
-          <Folder size={16} />
-        </div>
-        <div
-          className={`flex h-8 w-8 items-center justify-center rounded-lg ${artifactsOpen ? "bg-muted text-foreground" : "text-muted-foreground"}`}
-        >
-          <DataStructured size={16} />
-        </div>
-      </div>
-      <div className="flex-1" />
-      <div className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm text-foreground">
-        <Add size={16} />
-        New chat
-      </div>
-    </div>
-  );
-}
-
-/* ─── Frozen: Left Docked Panel ─── */
-
-function FrozenDockedPanel({
-  type,
-  items,
-}: {
-  type: "files" | "artifacts";
-  items: string[];
-}) {
-  return (
-    <div
-      className="flex flex-col border-r border-border"
-      style={{ width: 280 }}
-    >
-      <div className="flex items-center justify-between border-b border-border px-3 py-2">
-        <span className="text-sm font-medium text-foreground">
-          {type === "files" ? "Files" : "Artifacts"}
-        </span>
-        <Close size={16} className="text-muted-foreground" />
-      </div>
-      <div className="flex-1 overflow-y-auto">
-        {items.length === 0 ? (
-          <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-            No {type} yet
+              <Diagram size={16} />
+              Artifacts
+            </Button>
+          </div>
+          <p className="max-w-[320px] text-center text-xs text-muted-foreground">
+            280px fixed width &middot; 200ms ease transition &middot; both can
+            be open simultaneously (stacked vertically with divider)
           </p>
-        ) : (
-          <div className="py-1">
-            {items.map((item) => (
-              <div
-                key={item}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm text-foreground hover:bg-muted"
-              >
-                {type === "files" ? (
-                  <Document
-                    size={16}
-                    className="shrink-0 text-muted-foreground"
-                  />
-                ) : (
-                  <DataStructured
-                    size={16}
-                    className="shrink-0 text-muted-foreground"
-                  />
-                )}
-                <span className="truncate">{item}</span>
-              </div>
-            ))}
-          </div>
-        )}
+        </div>
       </div>
-    </div>
+    </Board>
   );
 }
 
-/* ─── Frozen: Configure Modal Shell ─── */
+/* ─── Browser panel board ─── */
 
-function FrozenConfigureModal({
-  activeSection,
-  showRestart,
-}: {
-  activeSection: string;
-  showRestart?: boolean;
-}) {
-  const sections = [
-    { label: "Agent Setup", summary: "2 CPU · 2 Gi" },
-    { label: "Connections", summary: "4 granted" },
-    { label: "Channels", summary: "—" },
-    { label: "Skills", summary: "3 on" },
-    { label: "Schedules", summary: "2 active" },
-    { label: "Artifacts", summary: "—" },
-    { label: "Usage", summary: "$12.40 this month" },
-  ];
+function BrowserBoard() {
   return (
-    <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-background">
-      <div className="flex items-center justify-between border-b border-border px-5 py-3">
-        <span className="text-sm font-semibold text-foreground">
-          ci-pipeline
-        </span>
-        <Close size={16} className="text-muted-foreground" />
+    <Board label="Browser panel (right dock)" height="400px">
+      <MockBrowserPanel agentId="mock-agent-1" agentName="ci-pipeline" />
+    </Board>
+  );
+}
+
+/* ─── Full layout board ─── */
+
+function FullLayoutBoard() {
+  const [openPanels, setOpenPanels] = useState<Set<LeftPanelKind>>(
+    new Set(["files"]),
+  );
+  const [browserActive, setBrowserActive] = useState(true);
+
+  const chrome = makeMockChrome();
+
+  return (
+    <Board label="Full layout — header + left dock + right dock" height="520px">
+      <div className="flex h-full flex-col">
+        <div
+          className={cn(
+            "flex shrink-0 items-center justify-end border-b px-6 h-10 transition-colors duration-200",
+            openPanels.size > 0 || browserActive
+              ? "border-border"
+              : "border-transparent",
+          )}
+        >
+          <button
+            type="button"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            aria-label="Activity"
+          >
+            <Notification size={16} />
+          </button>
+        </div>
+        <WorkspaceChatHeader
+          chrome={chrome}
+          openPanels={openPanels}
+          onTogglePanel={(panel) =>
+            setOpenPanels((prev) => {
+              const next = new Set(prev);
+              if (next.has(panel)) next.delete(panel);
+              else next.add(panel);
+              return next;
+            })
+          }
+          onNewChat={() => {}}
+          browserActive={browserActive}
+          onToggleBrowser={() => setBrowserActive((b) => !b)}
+        />
+        <div className="flex flex-1 min-h-0">
+          <LeftDockedPanel
+            openPanels={openPanels}
+            chrome={chrome}
+            onClosePanel={(panel) =>
+              setOpenPanels((prev) => {
+                const next = new Set(prev);
+                next.delete(panel);
+                return next;
+              })
+            }
+          />
+          <div className="flex flex-1 flex-col items-center justify-center min-w-0">
+            <div className="flex flex-col items-center gap-2 text-center">
+              <p className="text-sm font-medium text-foreground">
+                Chat messages area
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Messages render here with scroll-aware gradients
+              </p>
+            </div>
+          </div>
+          {browserActive && (
+            <>
+              <div className="w-px bg-border" />
+              <div className="flex w-[380px] shrink-0 flex-col">
+                <MockBrowserPanel
+                  agentId="mock-agent-1"
+                  agentName="ci-pipeline"
+                />
+              </div>
+            </>
+          )}
+        </div>
       </div>
-      <div className="flex" style={{ height: 400 }}>
-        <div className="flex w-[180px] shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border p-2">
-          {sections.map((s) => (
+    </Board>
+  );
+}
+
+/* ─── Bell strip board ─── */
+
+function BellStripBoard() {
+  return (
+    <div className="mt-6 flex gap-4">
+      <div className="flex-1">
+        <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          Bell strip — panels closed (border transparent)
+        </p>
+        <div className="overflow-hidden rounded-xl border border-border bg-background shadow-sm">
+          <div className="flex h-10 shrink-0 items-center justify-end border-b border-transparent px-6">
             <button
-              key={s.label}
               type="button"
-              className={`flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-2 text-left ${activeSection === s.label ? "bg-muted" : ""}`}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground"
+              aria-label="Activity"
             >
-              <span className="text-sm font-medium text-foreground">
-                {s.label}
-              </span>
-              <span className="truncate text-[13px] text-muted-foreground">
-                {s.summary}
-              </span>
+              <Notification size={16} />
             </button>
-          ))}
-        </div>
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex-1 overflow-y-auto px-6 py-4">
-            {activeSection === "Agent Setup" && (
-              <div className="flex flex-col gap-4">
-                <div>
-                  <p className="text-sm font-medium text-foreground">CPU</p>
-                  <div className="mt-2 h-2 rounded-full bg-muted">
-                    <div className="h-2 w-1/3 rounded-full bg-primary" />
-                  </div>
-                  <p className="mt-1 text-sm text-muted-foreground">2 CPU</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-foreground">Memory</p>
-                  <div className="mt-2 h-2 rounded-full bg-muted">
-                    <div className="h-2 w-1/3 rounded-full bg-primary" />
-                  </div>
-                  <p className="mt-1 text-sm text-muted-foreground">2 Gi</p>
-                </div>
-                {showRestart && (
-                  <p className="text-sm text-muted-foreground">
-                    Changing the size restarts the agent on save.
-                  </p>
-                )}
-              </div>
-            )}
-            {activeSection === "Skills" && (
-              <div className="flex flex-col gap-2">
-                <p className="text-sm font-medium text-muted-foreground">
-                  Created in this agent
-                </p>
-                <div className="rounded-lg border border-border">
-                  <FrozenSkillRow name="code-review" on />
-                  <FrozenSkillRow name="pr-summary" on />
-                </div>
-                <p className="mt-4 text-sm font-medium text-muted-foreground">
-                  Included with sandbox image
-                </p>
-                <div className="rounded-lg border border-border">
-                  <FrozenSkillRow name="file-search" on />
-                </div>
-              </div>
-            )}
           </div>
-          {showRestart && (
-            <div className="flex items-center gap-3 border-t border-border px-5 py-3">
-              <div className="mr-auto flex items-center gap-2 text-sm text-warning">
-                <Renew size={16} />
-                Saving will restart the agent to apply its new size.
-              </div>
-              <div className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
-                Save &amp; restart
-              </div>
-            </div>
-          )}
-          {!showRestart && (
-            <div className="flex items-center justify-end border-t border-border px-5 py-3">
-              <div className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
-                Submit changes
-              </div>
-            </div>
-          )}
+        </div>
+      </div>
+      <div className="flex-1">
+        <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          Bell strip — panels open (border visible)
+        </p>
+        <div className="overflow-hidden rounded-xl border border-border bg-background shadow-sm">
+          <div className="flex h-10 shrink-0 items-center justify-end border-b border-border px-6">
+            <button
+              type="button"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground"
+              aria-label="Activity"
+            >
+              <Notification size={16} />
+            </button>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-/* ─── Frozen: Empty State ─── */
+/* ─── Input bar visual reference ─── */
 
-function FrozenEmptyDashed({ text }: { text: string }) {
+function InputBarBoard() {
   return (
-    <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border px-4 py-6 text-center">
-      <Document size={16} className="text-muted-foreground" />
-      <p className="text-sm text-muted-foreground">{text}</p>
-    </div>
+    <Board label="Input bar layout" className="p-4">
+      <div className="mx-auto max-w-[813px]">
+        <div className="flex items-end gap-0 rounded-xl border border-border bg-background px-1 py-1 shadow-sm transition-colors focus-within:border-primary">
+          <button
+            type="button"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <Add size={16} />
+          </button>
+          <div className="flex flex-1 items-center px-2 py-2">
+            <span className="text-sm text-muted-foreground">
+              Every Friday, file GitHub issues for usability problems raised in
+              #team-help
+            </span>
+          </div>
+          <Button size="sm" className="shrink-0 rounded-lg">
+            Send
+          </Button>
+        </div>
+        <div className="mt-2 flex items-center gap-3 px-1">
+          <span className="text-xs text-muted-foreground">
+            + button opens the plus menu &middot; Tab fills the placeholder
+            &middot; Enter sends &middot; Shift+Enter for newline
+          </span>
+        </div>
+      </div>
+    </Board>
   );
 }
 
-/* ─── Frozen: Placeholder Text Rotation ─── */
+/* ─── Agent header trigger visual ─── */
 
-function FrozenPlaceholderExample({ text }: { text: string }) {
+function AgentTriggerBoard() {
   return (
-    <div className="flex items-end gap-1 px-2 min-h-[56px]">
-      <div className="mb-[9px] flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-muted-foreground">
-        <Add size={16} />
-      </div>
-      <div className="relative min-h-[56px] flex-1 py-[17px]">
-        <span className="text-sm text-muted-foreground">{text}</span>
-        <span className="ml-2 inline-flex items-center rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground">
-          Tab
+    <Board label="Agent name trigger — opens configure modal" className="p-4">
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          className="group flex items-center gap-2 rounded-lg py-1 pl-1 pr-3 transition-colors hover:bg-muted"
+        >
+          <AgentAvatar
+            agentId="mock-agent-1"
+            state="running"
+            className="!size-6"
+          />
+          <span className="text-sm font-semibold text-foreground">
+            ci-pipeline
+          </span>
+          <span
+            aria-hidden
+            className="h-2 w-2 shrink-0 rounded-full bg-success"
+          />
+        </button>
+        <span className="text-xs text-muted-foreground">
+          &larr; Click this trigger to open the configure modal to &ldquo;Agent
+          Setup&rdquo;
         </span>
       </div>
-      <div className="mb-[9px] flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground">
-        <SendAltFilled size={16} />
-      </div>
-    </div>
+    </Board>
   );
 }
 
@@ -598,584 +448,422 @@ export function HandoffSheet() {
 
       <div className="flex-1 overflow-y-auto px-8 py-8 pb-24">
         <div className="max-w-[1400px]">
-          {/* ─── 1. Plus Menu ─── */}
-          <SectionTitle>Plus Menu</SectionTitle>
           <SectionNote>
-            Opened from the + button in the input bar. Root menu slides left to
-            reveal sub-panels (150ms ease-in-out translateX).
+            Developer reference for the chat UI. Each section shows the real
+            prototype component alongside behavioral specs. Interactive boards
+            use the actual components &mdash; click toggles, buttons, and panels
+            to see real states. For the full integrated experience, return to
+            the prototype (back arrow above).
           </SectionNote>
 
-          <BoardRow>
-            <Board
-              title="Root menu"
-              width={360}
-              notes={[
-                "Popover: side=top, align=start",
-                "360px wide, max 60vh tall",
-                "Badge shows count per section",
-              ]}
-            >
-              <FrozenMenuRoot />
-            </Board>
-
-            <Board
-              title="Root → hover Skills"
-              width={360}
-              notes={["Row highlights on hover", "Chevron indicates sub-panel"]}
-            >
-              <FrozenMenuRoot active="Skills" />
-            </Board>
-          </BoardRow>
-
-          {/* ─── 2. Skills ─── */}
-          <SectionTitle>Skills Panel</SectionTitle>
+          {/* ─── 1. Full Layout ─── */}
+          <SectionTitle>1 &middot; Full Layout</SectionTitle>
           <SectionNote>
-            Slides in from the plus menu. Shows skills grouped by source with
-            on/off toggles.
+            The complete chat workspace: bell strip, header with toggles, left
+            dock, chat messages area, and right dock. Toggle the panels and
+            browser to see the layout respond.
           </SectionNote>
 
-          <BoardRow>
-            <Board
-              title="Skills — populated"
-              width={360}
-              notes={[
-                "Header: back arrow + title + Manage link",
-                "Skills grouped by source with toggles",
-                "Footer: Add source + Or, describe to create",
-              ]}
-            >
-              <FrozenPanelHeader title="Skills" />
-              <div className="px-2 py-2">
-                <p className="px-2 pb-1 text-[13px] text-muted-foreground">
-                  Created in this agent
-                </p>
-                <div className="rounded-lg border border-border">
-                  <FrozenSkillRow name="code-review" on />
-                  <FrozenSkillRow name="pr-summary" on />
-                  <FrozenSkillRow name="deploy-check" on={false} />
-                </div>
-                <p className="mt-3 px-2 pb-1 text-[13px] text-muted-foreground">
-                  acme/platform-skills
-                </p>
-                <div className="rounded-lg border border-border">
-                  <FrozenSkillRow name="lint-fix" on source />
-                  <FrozenSkillRow name="test-gen" on={false} source update />
-                </div>
-              </div>
-              <FrozenPanelFooter addLabel="Add source" showDescribe />
-            </Board>
+          <FullLayoutBoard />
 
-            <Board
-              title="Skills — empty"
-              width={360}
-              notes={[
-                "Dashed border drop zone",
-                "Accepts .md file drag-and-drop",
+          <SpecBlock title="Layout structure">
+            <BulletList
+              items={[
+                "Bell strip (h-10): notification bell, right-aligned. Border appears only when any panel is open (left dock or right dock).",
+                "Chat header (h-14): agent trigger (left), file/artifact/browser toggles, quick-find search, status + new-chat button (right).",
+                "Left dock: 280px fixed width, slides open with 200ms ease transition.",
+                "Chat area: flex-1 min-w-0, messages with scroll-aware gradients, input bar at bottom.",
+                "Right dock: drag-resizable (min 240px, max 2/3 container), opens for artifact viewer or browser.",
               ]}
-            >
-              <FrozenPanelHeader title="Skills" />
-              <div className="px-3 py-4">
-                <FrozenEmptyDashed text="Drop a .md file here, add a source, or describe what you need below" />
-              </div>
-              <FrozenPanelFooter addLabel="Add source" showDescribe />
-            </Board>
+            />
+          </SpecBlock>
 
-            <Board
-              title="Skill with drift"
-              width={360}
-              notes={[
-                '"Update" link when upstream changed',
-                "Click name opens preview modal",
-              ]}
-            >
-              <FrozenPanelHeader title="Skills" />
-              <div className="px-2 py-2">
-                <div className="rounded-lg border border-border">
-                  <FrozenSkillRow name="code-review" on />
-                  <FrozenSkillRow name="lint-fix" on source update />
-                  <FrozenSkillRow name="test-gen" on source />
-                </div>
-              </div>
-            </Board>
-          </BoardRow>
+          <BellStripBoard />
 
-          {/* ─── 3. Schedules ─── */}
-          <SectionTitle>Schedules Panel</SectionTitle>
+          {/* ─── 2. Chat Header ─── */}
+          <SectionTitle>2 &middot; Chat Header</SectionTitle>
           <SectionNote>
-            Shows agent schedules with enable/disable toggles and cadence info.
+            The real header component with interactive toggles. Click the
+            Folder, Diagram, and Wikis (browser) buttons to see their active
+            states.
           </SectionNote>
 
-          <BoardRow>
-            <Board
-              title="Schedules — populated"
-              width={360}
-              notes={[
-                "Blue icon = enabled, gray = disabled",
-                "Search appears when > 6 schedules",
-                "Toggle emits toast confirmation",
+          <HeaderBoard />
+
+          <SpecBlock title="Header elements (left to right)">
+            <BulletList
+              items={[
+                "Agent trigger: avatar + name + status dot — click opens configure modal.",
+                "Files toggle (Folder icon): 8×8 rounded-lg button, highlights bg-muted when active.",
+                "Artifacts toggle (Diagram icon): same style, opens artifacts panel in left dock.",
+                "Browser toggle (Wikis icon): same style, opens browser in right dock.",
+                "Quick-find search bar (centered): 280px, rounded-full bg-muted/70, ⌘K shortcut.",
+                "Status area (right): background work indicator, badges, contribution failures.",
+                "New chat button (mock mode only): outline variant with + icon.",
               ]}
-            >
-              <FrozenPanelHeader title="Schedules" />
-              <div className="flex flex-col gap-1.5 px-2 py-2">
-                <div className="rounded-lg border border-border">
-                  <FrozenScheduleRow
-                    name="Daily standup digest"
-                    cadence="Weekdays at 9am · Next in 14h"
-                    enabled
-                  />
-                </div>
-                <div className="rounded-lg border border-border">
-                  <FrozenScheduleRow
-                    name="Weekly bug triage"
-                    cadence="Fridays at 2pm · Next in 3d"
-                    enabled
-                  />
-                </div>
-                <div className="rounded-lg border border-border">
-                  <FrozenScheduleRow
-                    name="Nightly test run"
-                    cadence="Every day at 11pm · Paused"
-                    enabled={false}
-                  />
-                </div>
-              </div>
-              <FrozenPanelFooter addLabel="Add schedule" showDescribe />
-            </Board>
+            />
+          </SpecBlock>
 
-            <Board
-              title="Schedules — empty"
-              width={360}
-              notes={['"Describe it" prefills input bar']}
-            >
-              <FrozenPanelHeader title="Schedules" />
-              <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
-                <p className="text-sm font-medium text-foreground">
-                  No schedules yet
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Describe what you need and the agent will set one up
-                </p>
-                <div className="mt-2 rounded-md border border-border px-3 py-1.5 text-sm text-foreground">
-                  Describe it
-                </div>
-              </div>
-              <FrozenPanelFooter addLabel="Add schedule" showDescribe />
-            </Board>
+          <AgentTriggerBoard />
 
-            <Board
-              title="Schedules — with search"
-              width={360}
-              notes={[
-                "Search input appears when > 6 items",
-                'No match: "No schedules match {query}"',
-              ]}
-            >
-              <FrozenPanelHeader title="Schedules" />
-              <div className="px-3 py-2">
-                <div className="relative">
-                  <Search
-                    size={16}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-                  />
-                  <div className="h-9 rounded-md border border-border bg-background pl-9 pr-3 text-sm leading-9 text-muted-foreground">
-                    Search schedules...
-                  </div>
-                </div>
-              </div>
-              <div className="flex flex-col gap-1.5 px-2 py-1">
-                <div className="rounded-lg border border-border">
-                  <FrozenScheduleRow
-                    name="Daily standup digest"
-                    cadence="Weekdays at 9am"
-                    enabled
-                  />
-                </div>
-              </div>
-            </Board>
-          </BoardRow>
-
-          {/* ─── 4. Connections ─── */}
-          <SectionTitle>Connections Panel</SectionTitle>
+          {/* ─── 3. Left Dock (Files + Artifacts) ─── */}
+          <SectionTitle>3 &middot; Left Dock (Files + Artifacts)</SectionTitle>
           <SectionNote>
-            Grouped by provider. Badge turns red if any connection is expired or
-            disconnected.
+            Left-docked panels toggled from the chat header. The real
+            LeftDockedPanel component renders below &mdash; toggle the buttons
+            to see single-panel and dual-panel states.
           </SectionNote>
 
-          <BoardRow>
-            <Board
-              title="Connections — populated"
-              width={360}
-              notes={[
-                "Grouped by provider with grant/revoke toggles",
-                "Search appears when > 6 connections",
+          <LeftDockBoard />
+
+          <SpecBlock title="Panel behavior">
+            <BulletList
+              items={[
+                "280px fixed width with w-0 → w-[280px] transition (200ms ease cubic-bezier(0.32,0.72,0,1)).",
+                "Border-r transitions from transparent (closed) to border-border (open).",
+                "Both panels can be open simultaneously — they stack vertically with flex-1 min-h-0 and a border-t divider.",
+                "Each panel has a header (title + close X) and scrollable content area.",
+                "Close via X button in panel header, or re-click the toggle button in the chat header.",
               ]}
-            >
-              <FrozenPanelHeader title="Connections" />
-              <div className="flex flex-col gap-3 px-2 py-2">
-                <FrozenConnectionGroup
-                  provider="GitHub"
-                  connections={[
-                    { name: "acme/platform", granted: true },
-                    { name: "acme/docs", granted: true },
-                  ]}
-                />
-                <FrozenConnectionGroup
-                  provider="Slack"
-                  connections={[
-                    { name: "#team-dev", granted: true },
-                    { name: "#alerts", granted: false },
-                  ]}
-                />
-              </div>
-              <FrozenPanelFooter addLabel="Add connection" />
-            </Board>
+            />
+          </SpecBlock>
 
-            <Board
-              title="Connections — empty"
-              width={360}
-              notes={['"Add connection" opens catalog modal']}
-            >
-              <FrozenPanelHeader title="Connections" />
-              <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
-                <p className="text-sm text-muted-foreground">
-                  No connections configured
-                </p>
-                <div className="mt-1 rounded-md border border-border px-3 py-1.5 text-sm text-foreground">
-                  Add connection
-                </div>
-              </div>
-            </Board>
+          <SpecBlock title="Files panel">
+            <BulletList
+              items={[
+                "Body: DirContents tree (real file tree from agent workspace).",
+                "Drag-and-drop upload: drop zone overlay appears on drag-enter.",
+                '"Add file" dropdown: Upload file, Upload folder, New file, New folder.',
+                'Empty state: "No files yet" centered message.',
+              ]}
+            />
+          </SpecBlock>
 
-            <Board
-              title="Connections — loading"
-              width={360}
-              notes={["3 skeleton rows with pulse animation"]}
-            >
-              <FrozenPanelHeader title="Connections" />
-              <div className="flex flex-col gap-3 px-2 py-2">
-                {[1, 2, 3].map((i) => (
-                  <div
-                    key={i}
-                    className="h-16 animate-pulse rounded-lg bg-muted"
-                  />
-                ))}
-              </div>
-            </Board>
-          </BoardRow>
+          <SpecBlock title="Artifacts panel">
+            <BulletList
+              items={[
+                "Body: artifact rows with ArtifactKindBadge icons.",
+                "Click a row to toggle the docked artifact viewer (right dock).",
+                'Empty states: "No artifacts yet" / "No matching artifacts" / "Loading…".',
+              ]}
+            />
+          </SpecBlock>
 
-          {/* ─── 5. File + Artifact Panels ─── */}
-          <SectionTitle>Artifact + File Panels</SectionTitle>
+          <SpecBlock title="QuickFind (⌘K)">
+            <BulletList
+              items={[
+                "560px centered dialog with search input.",
+                "Searches both files and artifacts simultaneously.",
+                "Click a result to open it; Escape or backdrop click to dismiss.",
+              ]}
+            />
+          </SpecBlock>
+
+          {/* ─── 4. Right Dock (Browser) ─── */}
+          <SectionTitle>
+            4 &middot; Right Dock (Artifact Viewer + Browser)
+          </SectionTitle>
           <SectionNote>
-            Left-docked panels (280px). Both can be open simultaneously, stacked
-            vertically.
+            The real MockBrowserPanel component renders below. The right dock is
+            shared between the artifact viewer and browser &mdash; only one
+            occupies the slot at a time.
           </SectionNote>
 
-          <BoardRow>
-            <Board
-              title="Files panel open"
-              width={600}
-              height={400}
-              notes={[
-                "Toggle via Folder icon in chat header",
-                "280px panel slides open (200ms ease)",
-                "Panel has close X + scrollable content",
+          <BrowserBoard />
+
+          <SpecBlock title="Opening and sizing">
+            <BulletList
+              items={[
+                "Opens when an artifact is clicked or browser toggle (Wikis icon) is clicked.",
+                "Animates with flex-grow transition (200ms ease cubic-bezier(0.32,0.72,0,1)).",
+                "Drag resize: ResizeHandle fires onResize on every mousemove, onDragEnd on mouseup.",
+                "CSS transition disabled during active drag (draggingRight state) — panel tracks cursor instantly.",
+                "Transition re-enables on drag end for smooth open/close animation.",
+                "Max width: 2/3 of available horizontal space. Min width: 240px.",
+                "Persisted width stored in localStorage as 'platform-file-w'.",
               ]}
-            >
-              <FrozenChatHeader filesOpen artifactsOpen={false} />
-              <div className="flex" style={{ height: 346 }}>
-                <FrozenDockedPanel
-                  type="files"
-                  items={[
-                    "src/",
-                    "  index.ts",
-                    "  auth.ts",
-                    "  config.ts",
-                    "README.md",
-                    "package.json",
-                  ]}
-                />
-                <div className="flex-1 bg-background" />
-              </div>
-            </Board>
+            />
+          </SpecBlock>
 
-            <Board
-              title="Both panels open"
-              width={600}
-              height={400}
-              notes={[
-                "Both stack vertically in same 280px column",
-                "Each independently scrollable",
-                "Divider border between panels",
+          <SpecBlock title="Browser panel elements">
+            <BulletList
+              items={[
+                "Toolbar (h-12): Wikis accent badge (22×22, rounded-md, bg-accent-light), back/forward (disabled in mock), address bar (mono font), reload, overflow menu (Restart browser, Clear browser data), maximize/restore, close.",
+                'Info bar: "Runs in {agentName}\'s sandbox — not a page from this site".',
+                "Content: browser preview placeholder in mock mode (Wikis icon + url if navigated).",
+                "Maximize: fills the entire workspace area (chat and left dock hidden).",
               ]}
-            >
-              <FrozenChatHeader filesOpen artifactsOpen />
-              <div className="flex" style={{ height: 346 }}>
-                <div
-                  className="flex flex-col border-r border-border"
-                  style={{ width: 280 }}
-                >
-                  <div className="flex items-center justify-between border-b border-border px-3 py-2">
-                    <span className="text-sm font-medium text-foreground">
-                      Files
-                    </span>
-                    <Close size={16} className="text-muted-foreground" />
-                  </div>
-                  <div className="flex-1 overflow-y-auto border-b border-border">
-                    {["src/", "  index.ts", "  auth.ts"].map((f) => (
-                      <div
-                        key={f}
-                        className="flex items-center gap-2 px-3 py-1.5 text-sm text-foreground"
-                      >
-                        <Document
-                          size={16}
-                          className="shrink-0 text-muted-foreground"
-                        />
-                        {f}
-                      </div>
-                    ))}
-                  </div>
-                  <div className="flex items-center justify-between border-b border-border px-3 py-2">
-                    <span className="text-sm font-medium text-foreground">
-                      Artifacts
-                    </span>
-                    <Close size={16} className="text-muted-foreground" />
-                  </div>
-                  <div className="flex-1 overflow-y-auto">
-                    {["Analysis report", "Architecture diagram"].map((a) => (
-                      <div
-                        key={a}
-                        className="flex items-center gap-2 px-3 py-1.5 text-sm text-foreground"
-                      >
-                        <DataStructured
-                          size={16}
-                          className="shrink-0 text-muted-foreground"
-                        />
-                        {a}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="flex-1 bg-background" />
-              </div>
-            </Board>
-          </BoardRow>
+            />
+          </SpecBlock>
 
-          <BoardRow>
-            <Board
-              title="Files — empty"
-              width={600}
-              height={300}
-              notes={['Shows "No files yet" centered message']}
-            >
-              <FrozenChatHeader filesOpen artifactsOpen={false} />
-              <div className="flex" style={{ height: 246 }}>
-                <FrozenDockedPanel type="files" items={[]} />
-                <div className="flex-1 bg-background" />
-              </div>
-            </Board>
-
-            <Board
-              title="Panels closed"
-              width={600}
-              height={300}
-              notes={[
-                "Both toggle buttons inactive (text-muted-foreground)",
-                "Panel width animates to 0",
-              ]}
-            >
-              <FrozenChatHeader filesOpen={false} artifactsOpen={false} />
-              <div className="flex-1 bg-background" style={{ height: 246 }} />
-            </Board>
-          </BoardRow>
-
-          {/* ─── 6. Input Bar ─── */}
-          <SectionTitle>Input Bar</SectionTitle>
+          {/* ─── 5. Plus Menu ─── */}
+          <SectionTitle>5 &middot; Plus Menu</SectionTitle>
           <SectionNote>
-            Primary interaction surface. Supports text input, file attachments,
-            rotating placeholder hints, and prefill from panels.
+            Opened from the + button at the left edge of the input bar. Root
+            menu slides left to reveal sub-panels (150ms ease-in-out
+            translateX). Open the prototype to interact with the full popover.
           </SectionNote>
 
-          <BoardRow>
-            <Board
-              title="Idle — with placeholder"
-              width={500}
-              notes={[
-                "Placeholder text rotates every 6s (400ms fade)",
-                "Tab key fills current suggestion",
-                "Tab badge shown next to text",
+          <SpecBlock title="How to open">
+            <StepList
+              steps={[
+                "Click the + button in the input bar.",
+                "A popover appears (side=top, align=start, 360px wide, max 60vh).",
+                "Root menu shows: Attach file, Skills (badge: count on), Schedules (badge: active count), Connections (badge: total count).",
               ]}
-            >
-              <div className="rounded-xl border border-border">
-                <FrozenPlaceholderExample text="Every Friday, file GitHub issues for usability problems raised in #team-help" />
-              </div>
-            </Board>
+            />
+          </SpecBlock>
 
-            <Board
-              title="Focused — with text"
-              width={500}
-              notes={[
-                "Border changes to border-primary on focus",
-                "Send button activates (text-foreground)",
-                "Enter sends, Shift+Enter newline",
+          <SpecBlock title="Navigation">
+            <BulletList
+              items={[
+                "Skills, Schedules, Connections rows each have a right chevron.",
+                "Clicking a row slides the root menu left, revealing that sub-panel (150ms ease).",
+                "Back arrow in the sub-panel header slides back to root.",
+                '"Manage" link in each sub-panel header opens the configure modal to that section.',
               ]}
-            >
-              <FrozenInputBar
-                value="Review the latest PR and check for security issues"
-                focused
-              />
-            </Board>
-          </BoardRow>
+            />
+          </SpecBlock>
 
-          <BoardRow>
-            <Board
-              title="Computing — stop button"
-              width={500}
-              notes={[
-                'Placeholder: "Queue a message..."',
-                "Stop button (danger) replaces send",
-                "Sent messages queue until agent is free",
+          <SpecBlock title="Skills sub-panel">
+            <BulletList
+              items={[
+                'Header: back arrow + "Skills" title + "Manage" link.',
+                'Skills grouped by source ("Created in this agent", source repo name, "Included with sandbox image").',
+                "Each skill row: name, optional source badge, optional Update link (when upstream changed), on/off toggle.",
+                'Footer: "Add source" button + "Or, describe to create" text link.',
+                'Empty state: dashed border drop zone: "Drop a .md file here, add a source, or describe what you need below".',
+                "Accepts .md file drag-and-drop (opens add-source modal).",
               ]}
-            >
-              <FrozenInputBar placeholder="Queue a message..." computing />
-            </Board>
+            />
+          </SpecBlock>
 
-            <Board
-              title="With attachments"
-              width={500}
-              notes={[
-                "Images: 56px thumbnail with red X remove",
-                "Files: filename pill with Document icon",
-                "Via paste, drag-drop, or Attach file menu",
+          <SpecBlock title="Schedules sub-panel">
+            <BulletList
+              items={[
+                'Header: back arrow + "Schedules" title + "Manage" link.',
+                "Schedule rows: icon badge (blue when enabled, gray when paused), name, cadence text, on/off toggle, overflow menu.",
+                "Search input appears when > 6 schedules.",
+                'Footer: "Add schedule" button + "Or, describe to create" text link.',
+                'Empty state: "No schedules yet" + "Describe what you need and the agent will set one up" + "Describe it" button.',
+                "Toggle: enables/disables schedule, shows toast confirmation.",
+                'Overflow menu: "Edit schedule" (opens ScheduleFormModal).',
               ]}
-            >
-              <FrozenInputBar
-                placeholder="Message..."
-                attachments={[
-                  { name: "screenshot.png", type: "image" },
-                  { name: "requirements.pdf", type: "file" },
-                ]}
-              />
-            </Board>
-          </BoardRow>
+            />
+          </SpecBlock>
 
-          <Annotation>
-            All 7 placeholder texts rotate: Schedules, Skills, Slack, Artifacts,
-            Code, Connections, Memory. &ldquo;Describe to create&rdquo; in
-            skills/schedules panels prefills the input and focuses it.
-          </Annotation>
+          <SpecBlock title="Connections sub-panel">
+            <BulletList
+              items={[
+                'Header: back arrow + "Connections" title + "Manage" link.',
+                "Connections grouped by provider (GitHub, Slack, etc.), each in a card with provider name and connection count.",
+                "Each connection row: name + grant/revoke toggle.",
+                "Search input appears when > 6 connections. Badge turns danger if any connection is expired/disconnected.",
+                'Footer: "Add connection" button → opens ConnectionCatalogModal.',
+                'Empty state: "No connections configured" + "Add connection" button.',
+                "Loading state: 3 skeleton rows with pulse animation.",
+              ]}
+            />
+          </SpecBlock>
 
-          {/* ─── 7. Configure Modal ─── */}
-          <SectionTitle>Configure Modal</SectionTitle>
+          <ProtoRef>
+            Open the prototype &rarr; click the + button in the input bar to see
+            all plus menu states and sub-panels.
+          </ProtoRef>
+
+          {/* ─── 6. Chat Scroll Behavior ─── */}
+          <SectionTitle>6 &middot; Chat Scroll Behavior</SectionTitle>
           <SectionNote>
-            960px modal with 220px left nav. Opened from chat header (agent
-            name) or &ldquo;Manage&rdquo; links in sub-panels.
+            Fade gradients at the top and bottom edges of the chat message area
+            provide visual continuity when scrolling.
           </SectionNote>
 
-          <BoardRow>
-            <Board
-              title="Agent Setup — at rest"
-              width={700}
-              notes={[
-                "7 nav sections with summary text",
-                "Active section highlighted bg-muted",
-                "Right content scrollable (max 70vh)",
+          <SpecBlock title="Top gradient">
+            <BulletList
+              items={[
+                "Appears only when user has scrolled down (scrollTop > 8px).",
+                "If content fits or user is at the very top — no gradient, text reaches the header.",
+                "32px tall, pointer-events-none, bg-gradient-to-b from background to transparent.",
               ]}
-            >
-              <FrozenConfigureModal activeSection="Agent Setup" />
-            </Board>
+            />
+          </SpecBlock>
 
-            <Board
-              title="Agent Setup — restart warning"
-              width={700}
-              notes={[
-                "Shown when CPU/memory changed on running agent",
-                'Footer: Renew icon + warning + "Save & restart"',
-                "Confirmation dialog before applying",
+          <SpecBlock title="Bottom gradient">
+            <BulletList
+              items={[
+                "Appears when there is more content below (user is not near bottom).",
+                "Meets the input bar flush with no gap.",
+                "32px tall, pointer-events-none, bg-gradient-to-t from background to transparent.",
               ]}
-            >
-              <FrozenConfigureModal activeSection="Agent Setup" showRestart />
-            </Board>
-          </BoardRow>
+            />
+          </SpecBlock>
 
-          <BoardRow>
-            <Board
-              title="Skills section"
-              width={700}
-              notes={[
-                "Same modal, Skills nav selected",
-                'Groups: "Created in this agent" + sources + built-in',
-                "Opened via Manage link in skills popover",
+          <SpecBlock title="Jump to latest button">
+            <BulletList
+              items={[
+                "Appears when scrolled up from bottom (showJump state).",
+                'Centered pill: "Jump to latest" with ArrowDown icon.',
+                "Rounded-full border border-border bg-background shadow, hover:bg-muted.",
+                "Clicking scrolls to bottom and hides the button.",
               ]}
-            >
-              <FrozenConfigureModal activeSection="Skills" />
-            </Board>
-          </BoardRow>
+            />
+          </SpecBlock>
 
-          {/* ─── 8. New Chat ─── */}
-          <SectionTitle>New Chat</SectionTitle>
+          <ProtoRef>
+            Open the prototype &rarr; scroll the chat messages to see gradients
+            and the jump button.
+          </ProtoRef>
+
+          {/* ─── 7. Input Bar ─── */}
+          <SectionTitle>7 &middot; Input Bar</SectionTitle>
           <SectionNote>
-            Session is not created until first message is sent. Textarea
-            auto-focuses on next animation frame.
+            Primary interaction surface at the bottom of the chat. The real
+            input bar component is tightly integrated with the chat store
+            &mdash; see the reference layout below and interact with it in the
+            prototype.
           </SectionNote>
 
-          <BoardRow>
-            <Board
-              title="Empty state (mock)"
-              width={600}
-              height={350}
-              notes={[
-                "No visible prompt — rotating placeholders guide the user",
-                '"New chat" button in header (mock mode only)',
-                "resetSession() clears state, defers session creation",
-              ]}
-            >
-              <FrozenChatHeader filesOpen={false} artifactsOpen={false} />
-              <div
-                className="flex flex-1 items-center justify-center"
-                style={{ height: 240 }}
-              >
-                <div className="text-sm text-muted-foreground/50" />
-              </div>
-              <FrozenInputBar placeholder="Every Friday, file GitHub issues for usability problems raised in #team-help" />
-            </Board>
+          <InputBarBoard />
 
-            <Board
-              title="Empty state (production)"
-              width={600}
-              height={350}
-              notes={[
-                "Heading + launcher tile grid (2 columns)",
-                "Tiles: Browser Terminal, Local Terminal, VS Code/Zed, Slack",
-                "Each tile: icon + title + description",
+          <SpecBlock title="Placeholder rotation">
+            <BulletList
+              items={[
+                "7 placeholder texts rotate every 6 seconds with a 400ms fade transition.",
+                "Tab key fills the current suggestion into the input.",
+                "Tab badge shown inline next to placeholder text.",
+                "Covers: Schedules, Skills, Slack, Artifacts, Code, Connections, Memory.",
+                'When computing: placeholder changes to "Queue a message...", send button label becomes "Queue".',
               ]}
-            >
-              <FrozenChatHeader filesOpen={false} artifactsOpen={false} />
-              <div className="flex flex-col items-center gap-3 px-6 py-8">
-                <p className="text-base font-semibold text-foreground">
-                  Start a new session
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Send a message to begin or open a new session in:
-                </p>
-                <div className="mt-2 grid grid-cols-2 gap-3">
-                  {[
-                    "Browser Terminal",
-                    "Local Terminal",
-                    "VS Code",
-                    "Slack Channel",
-                  ].map((t) => (
-                    <div
-                      key={t}
-                      className="flex items-center gap-2 rounded-lg border border-border px-4 py-3 text-sm text-foreground"
-                    >
-                      <div className="h-5 w-5 rounded bg-muted" />
-                      {t}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </Board>
-          </BoardRow>
+            />
+          </SpecBlock>
+
+          <SpecBlock title="Attachments">
+            <BulletList
+              items={[
+                "Added via Attach file menu, paste (Ctrl+V), or drag-and-drop.",
+                "Images: 56px thumbnail with red X remove button.",
+                "Documents: filename pill with Document icon and X remove.",
+                "Shown above the textarea inside the input container.",
+              ]}
+            />
+          </SpecBlock>
+
+          <SpecBlock title="Keyboard">
+            <BulletList
+              items={[
+                "Enter sends the message.",
+                "Shift+Enter inserts a newline.",
+                "Mobile: Enter does not send (platform detection).",
+                "Input auto-focuses on new chat, or when user clicks back to the main area.",
+              ]}
+            />
+          </SpecBlock>
+
+          <SpecBlock title="Prefill from panels">
+            <BulletList
+              items={[
+                '"Or, describe to create" in Skills panel prefills: "Create a skill that..." and focuses input.',
+                '"Describe it" in Schedules panel prefills: "Every morning at 9am..." and focuses input.',
+                "Drafts persist per session via zustand with ~new sentinel for blank chats.",
+              ]}
+            />
+          </SpecBlock>
+
+          <ProtoRef>
+            Open the prototype &rarr; interact with the input bar. Click +, type
+            text, wait for placeholder rotation, press Tab to fill.
+          </ProtoRef>
+
+          {/* ─── 8. Configure Modal ─── */}
+          <SectionTitle>8 &middot; Configure Modal</SectionTitle>
+          <SectionNote>
+            960px modal with 220px left nav. Lazy-loaded with React.lazy() and
+            Suspense. Open it in the prototype by clicking the agent name in the
+            header.
+          </SectionNote>
+
+          <AgentTriggerBoard />
+
+          <SpecBlock title="Layout">
+            <BulletList
+              items={[
+                "960px wide modal, centered, with 220px left nav sidebar.",
+                "7 nav sections: Agent Setup, Connections, Channels, Skills, Schedules, Artifacts, Usage.",
+                "Each nav item shows a summary line (e.g. '2 CPU · 2 Gi') and optional warning dot.",
+                "Right content area is scrollable (max 70vh).",
+              ]}
+            />
+          </SpecBlock>
+
+          <SpecBlock title="How to open">
+            <BulletList
+              items={[
+                "Click agent avatar/name in chat header → opens to Agent Setup section.",
+                '"Manage" link in any plus menu sub-panel → opens to that section.',
+              ]}
+            />
+          </SpecBlock>
+
+          <SpecBlock title="Restart UX (Agent Setup only)">
+            <StepList
+              steps={[
+                "User changes CPU or memory sliders on a running agent.",
+                "Footer shows warning: Renew icon + 'Saving will restart the agent to apply its new size.'",
+                'Save button label changes from "Submit changes" to "Save & restart".',
+                'On save: confirmation dialog — "Saving will restart the agent to apply its new size — in-flight work is interrupted." with "Restart agent?" title.',
+                "If agent is hibernated or over budget: no restart warning, new size applies on next start.",
+              ]}
+            />
+          </SpecBlock>
+
+          <ProtoRef>
+            Open the prototype &rarr; click the agent name in the chat header to
+            open the configure modal. Navigate between sections using the left
+            nav.
+          </ProtoRef>
+
+          {/* ─── 9. New Chat ─── */}
+          <SectionTitle>9 &middot; New Chat</SectionTitle>
+          <SectionNote>
+            Session is not created until the first message is sent. Textarea
+            auto-focuses on the next animation frame after reset.
+          </SectionNote>
+
+          <SpecBlock title="Flow">
+            <StepList
+              steps={[
+                'Click "New chat" button in the header bar.',
+                "resetSession() clears current session state.",
+                "Textarea focuses on next animation frame.",
+                "No session ID exists yet — created on first message send.",
+              ]}
+            />
+          </SpecBlock>
+
+          <SpecBlock title="Empty state (mock)">
+            <BulletList
+              items={[
+                "Empty centered flex container.",
+                "Rotating placeholder text in the input bar guides the user.",
+              ]}
+            />
+          </SpecBlock>
+
+          <SpecBlock title="Empty state (production)">
+            <BulletList
+              items={[
+                '"Start a new session" heading.',
+                '"Send a message to begin or open a new session in:" subtext.',
+                "Launcher tile grid (2 columns): Browser Terminal, Local Terminal, VS Code/Zed, Slack Channel.",
+                "Each tile: icon + title + description.",
+              ]}
+            />
+          </SpecBlock>
+
+          <ProtoRef>
+            Open the prototype &rarr; click &ldquo;New chat&rdquo; in the header
+            to see the empty state.
+          </ProtoRef>
         </div>
       </div>
     </div>

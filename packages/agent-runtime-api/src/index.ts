@@ -174,3 +174,41 @@ export {
   type PluginModule,
   type PluginProtocolVersion,
 } from "./modules/plugin/index.js";
+export {
+  browserSnapshotSchema,
+  browserStateSchema,
+  pageStateSchema,
+  browserNavigateInputSchema,
+} from "./modules/browser/schemas.js";
+export type {
+  BrowserSnapshot,
+  BrowserState,
+  PageState,
+  BrowserDomainError,
+  BrowserAction,
+  BrowserService,
+} from "./modules/browser/types.js";
+export type {
+  FinishedRow,
+  KeepMarkRequest,
+  KeepSource,
+  NothingPending,
+  PendingRestart,
+  ProcessesDomainError,
+  ProcessesService,
+  ProcessKind,
+  ProcessList,
+  ProcessNotice,
+  ProcessOutput,
+  ProcessRow,
+} from "./modules/processes/types.js";
+export {
+  finishedRowSchema,
+  keepMarkRequestSchema,
+  PROCESS_OUTPUT_MAX_BYTES,
+  processListSchema,
+  processNoticeSchema,
+  processOutputSchema,
+  processRowSchema,
+  setKeepInputSchema,
+} from "./modules/processes/schemas.js";

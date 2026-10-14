@@ -21,6 +21,11 @@ import {
 import { driverSummaries, experiments } from "./data/experiments.js";
 import { featureFlags } from "./data/features.js";
 import { knowledgeBases } from "./data/knowledge-bases.js";
+import {
+  processList,
+  processListEmpty,
+  processOutput,
+} from "./data/processes.js";
 import { schedules } from "./data/schedules.js";
 import { templates } from "./data/templates.js";
 import { termsCurrent, termsLatestAcceptance } from "./data/terms.js";
@@ -211,6 +216,7 @@ function getFixtures(): Record<string, unknown> {
       configOptions: {},
       availableModels: null,
     },
+    "processes.list": empty ? processListEmpty : processList,
   };
 }
 
@@ -247,6 +253,12 @@ export const handlers = [
 
     const results = procedures.map((proc, idx) => {
       const inputObj = getAgentInput(idx);
+
+      if (proc === "processes.output") {
+        const key = (inputObj?.key as string | undefined) ?? "";
+        const output = processOutput[key] ?? { text: "", truncated: false };
+        return { result: { data: output } };
+      }
 
       if (proc === "files.listDirs") {
         const paths = (inputObj?.paths as string[] | undefined) ?? [""];
@@ -500,6 +512,13 @@ export const handlers = [
           return { result: { data: null } };
         }
         if (proc === "skills.sources.refresh") {
+          return { result: { data: null } };
+        }
+        if (
+          proc === "processes.stop" ||
+          proc === "processes.setKeep" ||
+          proc === "processes.applyPendingRestart"
+        ) {
           return { result: { data: null } };
         }
         return { result: { data: null } };

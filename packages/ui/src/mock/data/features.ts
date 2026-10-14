@@ -1,1 +1,1 @@
-export const featureFlags = {};
+export const featureFlags = { processes: true };

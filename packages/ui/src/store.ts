@@ -6,6 +6,10 @@ import {
   createArtifactsSlice,
 } from "./modules/artifacts/store.js";
 import {
+  type BrowserSlice,
+  createBrowserSlice,
+} from "./modules/browser/store.js";
+import {
   createExperimentsSlice,
   type ExperimentsSlice,
 } from "./modules/experiments/store.js";
@@ -35,6 +39,10 @@ import {
   createThemeSlice,
   type ThemeSlice,
 } from "./modules/platform/store/theme.js";
+import {
+  createProcessesSlice,
+  type ProcessesSlice,
+} from "./modules/processes/store.js";
 import {
   claimDraftsFor,
   flushDraftsOnHide,
@@ -67,9 +75,13 @@ export type PlatformStore = DialogSlice &
   ExperimentsSlice &
   FilesSlice &
   ArtifactsSlice &
+  BrowserSlice &
   PermissionsSlice &
+  ProcessesSlice &
   PacksSlice &
-  DismissalsSlice;
+  DismissalsSlice & {
+    openDelegation: unknown | null;
+  };
 
 export const useStore = create<PlatformStore>()((...a) => ({
   ...createDialogSlice(...a),
@@ -82,9 +94,12 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createExperimentsSlice(...a),
   ...createFilesSlice(...a),
   ...createArtifactsSlice(...a),
+  ...createBrowserSlice(...a),
   ...createPermissionsSlice(...a),
+  ...createProcessesSlice(...a),
   ...createPacksSlice(...a),
   ...createDismissalsSlice(...a),
+  openDelegation: null,
 }));
 
 let draftSyncStarted = false;

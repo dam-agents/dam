@@ -1,9 +1,10 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, ReactNode, Ref } from "react";
 
 import { DisclosureToggle } from "@/components/ui/disclosure";
 import { cn } from "@/lib/utils";
 
 export function SidebarSection({
+  id,
   title,
   open,
   onToggle,
@@ -13,7 +14,9 @@ export function SidebarSection({
   headerClassName,
   style,
   children,
+  ref,
 }: {
+  id?: string;
   title: string;
   open: boolean;
   onToggle: () => void;
@@ -23,9 +26,12 @@ export function SidebarSection({
   headerClassName?: string;
   style?: CSSProperties;
   children: ReactNode;
+  ref?: Ref<HTMLDivElement>;
 }) {
   return (
     <div
+      id={id}
+      ref={ref}
       className={cn("flex flex-col min-h-0 overflow-hidden", className)}
       style={style}
     >

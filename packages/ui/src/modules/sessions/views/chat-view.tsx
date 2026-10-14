@@ -41,6 +41,7 @@ import {
   type LeftPanelKind,
   WorkspaceChatHeader,
 } from "../../../mock/chat-workspace-variants.js";
+import { MockBrowserPanel } from "../../../mock/mock-browser-panel.js";
 import { queryClient } from "../../../query-client.js";
 import type { SessionError } from "../../../store.js";
 import { useStore } from "../../../store.js";
@@ -67,6 +68,11 @@ import {
 import { isExperimentSandbox } from "../../agents/utils/agent-kind.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
+import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
+import {
+  useBrowserAvailable,
+  useOpenBrowser,
+} from "../../browser/hooks/use-auto-open-browser.js";
 import { useAgentExperimentsLive } from "../../experiments/api/queries.js";
 import { ExperimentDockPanel } from "../../experiments/components/experiment-dock-panel.js";
 import { ExperimentPromptChips } from "../../experiments/components/experiment-prompt-chips.js";
@@ -92,6 +98,9 @@ import {
   walkAway,
 } from "../../packs/lib/demo-exit-actions.js";
 import type { SandboxSection } from "../../platform/lib/routes.js";
+import { DockedProcessOutputPanel } from "../../processes/components/docked-process-output-panel.js";
+import { ProcessesIndicator } from "../../processes/components/processes-indicator.js";
+import { useProcessesEnabled } from "../../processes/hooks/use-processes-enabled.js";
 import {
   getDefaultExamples,
   useRotatingPlaceholder,
@@ -171,6 +180,12 @@ export function ChatView() {
   const openFilePath = useStore((s) => s.openFilePath);
   const openArtifactId = useStore((s) => s.openArtifactId);
   const setOpenArtifactId = useStore((s) => s.setOpenArtifactId);
+  const openProcessOutputKey = useStore((s) => s.openProcessOutputKey);
+  const openBrowserAgentId = useStore((s) =>
+    s.openBrowserAgentId === s.selectedAgent ? s.openBrowserAgentId : null,
+  );
+  const openBrowser = useOpenBrowser();
+  const browserMaximized = useStore((s) => s.browserMaximized);
   const pendingLaunch = useStore((s) => s.pendingLaunch);
   const {
     experiment: dockedExperiment,
@@ -209,6 +224,7 @@ export function ChatView() {
   const [rightW, setRightW] = useState<number | null>(
     () => Number(localStorage.getItem("platform-file-w")) || null,
   );
+  const [draggingRight, setDraggingRight] = useState(false);
   const filePanelRef = useRef<HTMLDivElement>(null);
   const terminalFreshRef = useRef(false);
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -265,6 +281,7 @@ export function ChatView() {
 
   const stickRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
+  const [scrolledFromTop, setScrolledFromTop] = useState(false);
 
   const scrollToBottom = useCallback(() => {
     const el = messagesRef.current;
@@ -323,6 +340,7 @@ export function ChatView() {
       const near = nearBottom();
       stickRef.current = near;
       setShowJump(!near);
+      setScrolledFromTop(el.scrollTop > 8);
     };
 
     const ro = new ResizeObserver(() => {
@@ -508,6 +526,14 @@ export function ChatView() {
         busy={busy}
         connectionState={connectionState}
         sessionId={sessionId}
+        onOpenProcesses={() =>
+          setOpenPanels((prev) => {
+            const next = new Set(prev);
+            if (next.has("processes")) next.delete("processes");
+            else next.add("processes");
+            return next;
+          })
+        }
       />
     );
 
@@ -517,6 +543,20 @@ export function ChatView() {
       className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
     />
   );
+
+  const { available: browserAvailable } = useBrowserAvailable();
+  const canOpenBrowser = isMock || browserAvailable;
+
+  const rightDockOpen =
+    !!(
+      openFilePath ||
+      openArtifactId ||
+      dockedExperiment ||
+      openProcessOutputKey
+    ) || !!(openBrowserAgentId && canOpenBrowser);
+
+  const browserFullscreen =
+    browserMaximized && openBrowserAgentId !== null && canOpenBrowser;
 
   const chrome: AgentChrome = {
     agentId: selectedAgent,
@@ -535,7 +575,7 @@ export function ChatView() {
         <div
           className={cn(
             "flex shrink-0 items-center justify-end border-b px-6 h-10 transition-colors duration-200",
-            openPanels.size > 0 || openArtifactId
+            openPanels.size > 0 || rightDockOpen
               ? "border-border"
               : "border-transparent",
           )}
@@ -552,7 +592,7 @@ export function ChatView() {
         </div>
       )}
       <div className="flex flex-1 min-h-0">
-        {isMock && (
+        {isMock && !browserFullscreen && (
           <LeftDockedPanel
             openPanels={openPanels}
             chrome={chrome}
@@ -569,6 +609,7 @@ export function ChatView() {
           className={cn(
             "relative flex flex-1 flex-col min-w-0",
             mobileScreen === "sessions" ? "hidden md:flex" : "flex",
+            browserFullscreen && "hidden",
           )}
           onClick={(e) => {
             const tag = (e.target as HTMLElement).closest(
@@ -596,6 +637,18 @@ export function ChatView() {
                 ? () => {
                     resetSession();
                     requestAnimationFrame(() => textareaRef.current?.focus());
+                  }
+                : undefined
+            }
+            browserActive={openBrowserAgentId !== null}
+            onToggleBrowser={
+              canOpenBrowser
+                ? () => {
+                    if (openBrowserAgentId) {
+                      useStore.getState().setOpenBrowser(null);
+                    } else if (selectedAgent) {
+                      void openBrowser(selectedAgent);
+                    }
                   }
                 : undefined
             }
@@ -630,6 +683,12 @@ export function ChatView() {
           ) : (
             <>
               <div className="relative flex flex-1 flex-col min-h-0">
+                {scrolledFromTop && (
+                  <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-8 bg-gradient-to-b from-background to-transparent" />
+                )}
+                {showJump && (
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-8 bg-gradient-to-t from-background to-transparent" />
+                )}
                 <div ref={messagesRef} className="flex-1 overflow-y-auto">
                   <ChatColumn className="px-4 md:px-8 py-8 flex flex-col gap-8 min-h-full">
                     {loadingSession && (
@@ -756,42 +815,73 @@ export function ChatView() {
           )}
         </div>
 
-        {/* Docked file/artifact viewer (opens on click) */}
-        {(openFilePath || openArtifactId || dockedExperiment) && (
-          <>
-            <div className="hidden md:flex">
-              <ResizeHandle
-                side="right"
-                onResize={(d) =>
-                  setRightW((w) => {
-                    const base = w ?? filePanelRef.current?.offsetWidth ?? 0;
-                    const container =
-                      filePanelRef.current?.parentElement?.offsetWidth ??
-                      window.innerWidth;
-                    const max = Math.floor(container * (2 / 3));
-                    const v = Math.max(240, Math.min(max, base + d));
-                    localStorage.setItem("platform-file-w", String(v));
-                    return v;
-                  })
-                }
-              />
-            </div>
-            <div
-              ref={filePanelRef}
-              style={
-                rightW !== null
-                  ? ({ "--file-w": `${rightW}px` } as CSSProperties)
-                  : undefined
-              }
-              className={cn(
-                "flex flex-col overflow-hidden bg-background relative z-content max-md:fixed max-md:inset-0 max-md:z-overlay",
-                rightW !== null
-                  ? "md:shrink-0 md:w-[var(--file-w)]"
-                  : "md:flex-1 md:basis-0 md:min-w-0",
-                "md:border-l md:border-border",
-              )}
-            >
-              {openFilePath ? (
+        {/* Docked file/artifact/browser viewer — always rendered for animation */}
+        {rightDockOpen && (
+          <div className="hidden md:flex">
+            <ResizeHandle
+              side="right"
+              onResize={(d) => {
+                setDraggingRight(true);
+                setRightW((w) => {
+                  const base = w ?? filePanelRef.current?.offsetWidth ?? 0;
+                  const container =
+                    filePanelRef.current?.parentElement?.offsetWidth ??
+                    window.innerWidth;
+                  const max = Math.floor(container * (2 / 3));
+                  const v = Math.max(240, Math.min(max, base + d));
+                  localStorage.setItem("platform-file-w", String(v));
+                  return v;
+                });
+              }}
+              onDragEnd={() => setDraggingRight(false)}
+            />
+          </div>
+        )}
+        <div
+          ref={filePanelRef}
+          style={
+            rightW !== null && rightDockOpen
+              ? ({ "--file-w": `${rightW}px` } as CSSProperties)
+              : undefined
+          }
+          className={cn(
+            "flex flex-col overflow-hidden bg-background relative z-content",
+            !draggingRight &&
+              "transition-[flex-grow,width,border-color] duration-200 ease-[cubic-bezier(0.32,0.72,0,1)]",
+            rightDockOpen
+              ? cn(
+                  "max-md:fixed max-md:inset-0 max-md:z-overlay",
+                  rightW !== null
+                    ? "md:shrink-0 md:w-[var(--file-w)]"
+                    : "md:grow md:shrink md:basis-0 md:min-w-0",
+                  "md:border-l md:border-border",
+                )
+              : "md:grow-0 md:shrink-0 md:basis-0 md:w-0 md:border-l md:border-transparent",
+          )}
+        >
+          {rightDockOpen && (
+            <div className="anim-in flex h-full min-h-0 flex-col">
+              {openBrowserAgentId && canOpenBrowser ? (
+                isMock ? (
+                  <MockBrowserPanel
+                    key={openBrowserAgentId}
+                    agentId={openBrowserAgentId}
+                    agentName={selectedAgentName ?? openBrowserAgentId}
+                  />
+                ) : (
+                  <DockedBrowserPanel
+                    key={openBrowserAgentId}
+                    agentId={openBrowserAgentId}
+                    agentName={selectedAgentName ?? openBrowserAgentId}
+                  />
+                )
+              ) : openProcessOutputKey && selectedAgent ? (
+                <DockedProcessOutputPanel
+                  key={openProcessOutputKey}
+                  agentId={selectedAgent}
+                  outputKey={openProcessOutputKey}
+                />
+              ) : openFilePath ? (
                 <DockedFilePanel onOpenFile={openFileHandler} />
               ) : dashboardExperiment ? (
                 <ExperimentDockPanel
@@ -808,8 +898,8 @@ export function ChatView() {
                 />
               ) : null}
             </div>
-          </>
-        )}
+          )}
+        </div>
       </div>
 
       {leavingForPublicPage ? (
@@ -842,20 +932,27 @@ function ChatHeaderStatus({
   busy,
   connectionState,
   sessionId,
+  onOpenProcesses,
 }: {
   selectedAgent: string | null;
   agents: AgentView[];
   busy: boolean;
   connectionState: ConnectionState;
   sessionId: string | null;
+  onOpenProcesses: () => void;
 }) {
   const agent = agents.find((a) => a.id === selectedAgent);
   const backgroundWork = useSessionBackgroundWork(selectedAgent, sessionId);
   const reconnecting =
     connectionState === "reconnecting" || connectionState === "reloading";
+  const processesEnabled = useProcessesEnabled();
   return (
     <>
-      <BackgroundWorkIndicator items={backgroundWork} />
+      {processesEnabled ? (
+        <ProcessesIndicator agentId={selectedAgent} onClick={onOpenProcesses} />
+      ) : (
+        <BackgroundWorkIndicator items={backgroundWork} />
+      )}
       {reconnecting && <Badge variant="warning">Reconnecting</Badge>}
       <ImportInProgressBadge agentId={selectedAgent} />
       {!busy && agent && (
