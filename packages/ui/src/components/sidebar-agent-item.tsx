@@ -3,6 +3,7 @@ import {
   ChevronRight,
   OverflowMenuVertical,
 } from "@carbon/icons-react";
+import type { ProcessRow } from "agent-runtime-api";
 import { useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -13,12 +14,22 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
 import { Spinner } from "@/components/ui/spinner";
+import { useNow } from "@/hooks/use-now";
 import { cn } from "@/lib/utils";
 
 import type { AgentDisplay } from "../modules/agents/utils/agent-resolver.js";
+import { useProcesses } from "../modules/processes/api/queries.js";
+import { formatRunTime } from "../modules/processes/lib/format-process.js";
+import { summarizeProcesses } from "../modules/processes/lib/process-summary.js";
 import type { SessionListInclude } from "../modules/sessions/api/queries.js";
 import { useAcpSessions } from "../modules/sessions/api/queries.js";
+import { WorkingDots } from "../modules/sessions/components/working-dots.js";
 import { useStore } from "../store.js";
 import type { AgentView } from "../types.js";
 import { SidebarSessionItem } from "./sidebar-session-item.js";
@@ -104,6 +115,7 @@ export function SidebarAgentItem({
             {agent.name}
           </p>
         </button>
+        <AgentJobsBadge agentId={agent.id} />
         <div className="shrink-0 opacity-0 transition-opacity group-hover/agent:opacity-100">
           <OverflowMenu
             display={display}
@@ -164,6 +176,86 @@ export function SidebarAgentItem({
         </div>
       )}
     </div>
+  );
+}
+
+function AgentJobsBadge({ agentId }: { agentId: string }) {
+  const { data } = useProcesses(agentId, { enabled: true, poll: false });
+  const now = useNow(5_000);
+  const selectAgent = useStore((s) => s.selectAgent);
+
+  const background = useMemo(
+    () => (data ? data.running.filter((r) => r.kind !== "turn") : []),
+    [data],
+  );
+
+  const { running } = data ? summarizeProcesses(data) : { running: 0 };
+
+  if (running === 0) return null;
+
+  return (
+    <HoverCard openDelay={150} closeDelay={300}>
+      <HoverCardTrigger asChild>
+        <span className="inline-flex shrink-0 items-center gap-1 cursor-default">
+          <WorkingDots size="sm" className="text-success" />
+          <span className="text-xs text-muted-foreground">{running}</span>
+        </span>
+      </HoverCardTrigger>
+      <HoverCardContent side="right" align="start" className="w-80 p-3">
+        <div className="flex flex-col gap-2">
+          {background.map((row) => (
+            <JobPopoverRow
+              key={row.key}
+              row={row}
+              now={now}
+              onClick={() => selectAgent(agentId)}
+            />
+          ))}
+        </div>
+      </HoverCardContent>
+    </HoverCard>
+  );
+}
+
+function JobPopoverRow({
+  row,
+  now,
+  onClick,
+}: {
+  row: ProcessRow;
+  now: Date;
+  onClick: () => void;
+}) {
+  const sessionId = (row as ProcessRow & { sessionId?: string }).sessionId;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex flex-col gap-0.5 rounded-md p-1.5 text-left transition-colors hover:bg-muted"
+    >
+      <code className="font-mono text-sm text-foreground truncate max-w-full">
+        {row.command}
+      </code>
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span>{formatRunTime(row.startedAt, now)}</span>
+        {sessionId && (
+          <>
+            <span aria-hidden>·</span>
+            <span className="truncate">{sessionId}</span>
+          </>
+        )}
+      </div>
+      {row.keepsAwake ? (
+        <span className="flex items-center gap-1 text-xs text-success">
+          <span className="h-1.5 w-1.5 rounded-full bg-success shrink-0" />
+          Keeps agent awake
+        </span>
+      ) : (
+        <span className="text-xs text-warning">
+          May stop when the agent sleeps
+        </span>
+      )}
+    </button>
   );
 }
 

@@ -98,9 +98,8 @@ import {
   walkAway,
 } from "../../packs/lib/demo-exit-actions.js";
 import type { SandboxSection } from "../../platform/lib/routes.js";
+import { ChatLiveJobBlocks } from "../../processes/components/chat-live-job-block.js";
 import { DockedProcessOutputPanel } from "../../processes/components/docked-process-output-panel.js";
-import { ProcessesIndicator } from "../../processes/components/processes-indicator.js";
-import { useProcessesEnabled } from "../../processes/hooks/use-processes-enabled.js";
 import {
   getDefaultExamples,
   useRotatingPlaceholder,
@@ -526,14 +525,6 @@ export function ChatView() {
         busy={busy}
         connectionState={connectionState}
         sessionId={sessionId}
-        onOpenProcesses={() =>
-          setOpenPanels((prev) => {
-            const next = new Set(prev);
-            if (next.has("processes")) next.delete("processes");
-            else next.add("processes");
-            return next;
-          })
-        }
       />
     );
 
@@ -755,6 +746,7 @@ export function ChatView() {
                       />
                     ))}
                     {!statusLineInThread && <PermissionStatusLine />}
+                    <ChatLiveJobBlocks agentId={selectedAgent} />
                   </ChatColumn>
                 </div>
 
@@ -932,27 +924,20 @@ function ChatHeaderStatus({
   busy,
   connectionState,
   sessionId,
-  onOpenProcesses,
 }: {
   selectedAgent: string | null;
   agents: AgentView[];
   busy: boolean;
   connectionState: ConnectionState;
   sessionId: string | null;
-  onOpenProcesses: () => void;
 }) {
   const agent = agents.find((a) => a.id === selectedAgent);
   const backgroundWork = useSessionBackgroundWork(selectedAgent, sessionId);
   const reconnecting =
     connectionState === "reconnecting" || connectionState === "reloading";
-  const processesEnabled = useProcessesEnabled();
   return (
     <>
-      {processesEnabled ? (
-        <ProcessesIndicator agentId={selectedAgent} onClick={onOpenProcesses} />
-      ) : (
-        <BackgroundWorkIndicator items={backgroundWork} />
-      )}
+      <BackgroundWorkIndicator items={backgroundWork} />
       {reconnecting && <Badge variant="warning">Reconnecting</Badge>}
       <ImportInProgressBadge agentId={selectedAgent} />
       {!busy && agent && (

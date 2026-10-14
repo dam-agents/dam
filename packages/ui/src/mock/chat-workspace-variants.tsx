@@ -24,7 +24,6 @@ import {} from "@/components/ui/popover";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-import { useIsAgentOperable } from "../modules/agents/api/queries.js";
 import { AgentAvatar } from "../modules/agents/components/char-avatar.js";
 import { useArtifacts } from "../modules/artifacts/api/queries.js";
 import { ArtifactKindBadge } from "../modules/artifacts/components/artifact-badges.js";
@@ -35,8 +34,6 @@ import {
   useFilesPanelController,
 } from "../modules/files/components/files-panel-controller.js";
 import { InlineNameRow } from "../modules/files/components/inline-name-row.js";
-import { useProcesses } from "../modules/processes/api/queries.js";
-import { ProcessList } from "../modules/processes/components/process-list.js";
 import { useStore } from "../store.js";
 
 export interface AgentChrome {
@@ -333,7 +330,7 @@ function QuickFindDialog({
   );
 }
 
-export type LeftPanelKind = "files" | "artifacts" | "processes";
+export type LeftPanelKind = "files" | "artifacts";
 
 function PanelToggleButton({
   icon,
@@ -373,7 +370,7 @@ export function LeftDockedPanel({
   chrome: AgentChrome;
   onClosePanel: (panel: LeftPanelKind) => void;
 }) {
-  const panels = (["files", "artifacts", "processes"] as const).filter((k) =>
+  const panels = (["files", "artifacts"] as const).filter((k) =>
     openPanels.has(k),
   );
   const isOpen = panels.length > 0;
@@ -398,11 +395,7 @@ export function LeftDockedPanel({
           >
             <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-3">
               <span className="text-sm font-semibold text-foreground">
-                {kind === "files"
-                  ? "Files"
-                  : kind === "artifacts"
-                    ? "Artifacts"
-                    : "Processes"}
+                {kind === "files" ? "Files" : "Artifacts"}
               </span>
               <button
                 type="button"
@@ -415,10 +408,8 @@ export function LeftDockedPanel({
             <div className="flex-1 overflow-y-auto py-1">
               {kind === "files" ? (
                 <WorkspaceFileTree onOpenFile={chrome.onOpenFile} />
-              ) : kind === "artifacts" ? (
-                <WorkspaceArtifactList agentId={chrome.agentId} />
               ) : (
-                <ProcessesPanelBody agentId={chrome.agentId} alwaysOn={false} />
+                <WorkspaceArtifactList agentId={chrome.agentId} />
               )}
             </div>
           </div>
@@ -426,37 +417,6 @@ export function LeftDockedPanel({
       </div>
     </div>
   );
-}
-
-function ProcessesPanelBody({
-  agentId,
-  alwaysOn,
-}: {
-  agentId: string | null;
-  alwaysOn: boolean;
-}) {
-  const operable = useIsAgentOperable(agentId);
-  const { data, isPending, isError } = useProcesses(agentId, {
-    enabled: true,
-    poll: true,
-  });
-  if (!operable)
-    return (
-      <p className="px-4 py-5 text-xs text-muted-foreground">
-        Processes show once the agent is running.
-      </p>
-    );
-  if (data && agentId)
-    return <ProcessList agentId={agentId} list={data} alwaysOn={alwaysOn} />;
-  if (isError)
-    return (
-      <p className="px-4 py-5 text-xs text-muted-foreground">
-        Couldn't load the agent's processes.
-      </p>
-    );
-  if (isPending)
-    return <p className="px-4 py-5 text-xs text-muted-foreground">Loading…</p>;
-  return null;
 }
 
 export function WorkspaceChatHeader({

@@ -22,7 +22,7 @@ import { driverSummaries, experiments } from "./data/experiments.js";
 import { featureFlags } from "./data/features.js";
 import { knowledgeBases } from "./data/knowledge-bases.js";
 import {
-  processList,
+  processListByAgent,
   processListEmpty,
   processOutput,
 } from "./data/processes.js";
@@ -216,7 +216,7 @@ function getFixtures(): Record<string, unknown> {
       configOptions: {},
       availableModels: null,
     },
-    "processes.list": empty ? processListEmpty : processList,
+    "processes.list": processListEmpty,
   };
 }
 
@@ -251,8 +251,18 @@ export const handlers = [
       return undefined;
     };
 
+    const agentId = url.pathname.match(/\/api\/agents\/([^/]+)\//)?.[1] ?? "";
+
     const results = procedures.map((proc, idx) => {
       const inputObj = getAgentInput(idx);
+
+      if (proc === "processes.list") {
+        return {
+          result: {
+            data: processListByAgent[agentId] ?? processListEmpty,
+          },
+        };
+      }
 
       if (proc === "processes.output") {
         const key = (inputObj?.key as string | undefined) ?? "";

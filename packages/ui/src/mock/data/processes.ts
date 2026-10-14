@@ -1,81 +1,60 @@
 import type { FinishedRow, ProcessList, ProcessRow } from "agent-runtime-api";
 
+import { AGENT_IDS } from "./agents.js";
+
+// TODO(dev): processes API needs the starting session
+type MockProcessRow = ProcessRow & { sessionId?: string };
+type MockFinishedRow = FinishedRow & { sessionId?: string };
+
 const now = new Date();
 const minutesAgo = (m: number) =>
   new Date(now.getTime() - m * 60_000).toISOString();
 
-const pytestRun: ProcessRow = {
-  key: "proc-pytest-1",
-  kind: "turn",
+const npmBuild: MockProcessRow = {
+  key: "proc-npm-build-1",
+  kind: "harness-task",
   pid: 48201,
-  command: "pytest tests/ -x --tb=short",
-  startedAt: minutesAgo(2),
-  cpuPercent: 34,
-  rssBytes: 180 * 1024 * 1024,
-  outputPath: "/tmp/agent-output/pytest-1.log",
+  command: "npm run build",
+  startedAt: minutesAgo(12),
+  cpuPercent: 22,
+  rssBytes: 140 * 1024 * 1024,
+  outputPath: "/tmp/agent-output/npm-build.log",
   keepsAwake: false,
   keepSource: "default",
+  sessionId: "Fix login redirect",
 };
 
-const harnessKeepAwake: ProcessRow = {
-  key: "proc-harness-keep-1",
-  kind: "harness-task",
+const pythonTrain: MockProcessRow = {
+  key: "proc-python-train-1",
+  kind: "detached",
   pid: 48300,
-  command: "node dist/scheduled-check.js --interval 300",
-  startedAt: minutesAgo(12),
-  cpuPercent: 1.2,
-  rssBytes: 64 * 1024 * 1024,
-  outputPath: "/tmp/agent-output/scheduled-check.log",
+  command: "python train.py --epochs 40",
+  startedAt: minutesAgo(42),
+  cpuPercent: 95,
+  rssBytes: 3200 * 1024 * 1024,
+  outputPath: "/tmp/agent-output/train.log",
   keepsAwake: true,
   keepSource: "agent",
+  sessionId: "Nightly eval",
 };
 
-const detachedHibernation: ProcessRow = {
-  key: "proc-detached-hib-1",
-  kind: "detached",
-  pid: 48450,
-  command: "tail -f /var/log/app/events.log",
-  startedAt: minutesAgo(25),
-  cpuPercent: 0,
-  rssBytes: 8 * 1024 * 1024,
-  outputPath: "/tmp/agent-output/tail-events.log",
-  keepsAwake: false,
-  keepSource: "default",
-};
-
-const finishedSuccess: FinishedRow = {
-  key: "proc-finished-ok-1",
-  kind: "harness-task",
-  command: "npm run build",
-  startedAt: minutesAgo(45),
-  finishedAt: minutesAgo(38),
-  endedBy: "exit",
-  outputPath: "/tmp/agent-output/build.log",
-  keptAwake: false,
-  keepSource: "default",
-};
-
-const finishedFailed: FinishedRow = {
-  key: "proc-finished-fail-1",
+const hibernatedJob: MockFinishedRow = {
+  key: "proc-cargo-hib-1",
   kind: "detached",
   command: "cargo test --release",
-  startedAt: minutesAgo(60),
-  finishedAt: minutesAgo(52),
+  startedAt: minutesAgo(30),
+  finishedAt: minutesAgo(5),
   endedBy: "hibernation",
   outputPath: "/tmp/agent-output/cargo-test.log",
-  keptAwake: true,
-  keepSource: "user",
+  keptAwake: false,
+  keepSource: "default",
+  sessionId: "Fix login redirect",
 };
 
 export const processList: ProcessList = {
-  running: [pytestRun, harnessKeepAwake, detachedHibernation],
-  finished: [finishedSuccess, finishedFailed],
-  pendingRestart: {
-    reason: "config-recycle",
-    since: minutesAgo(1),
-    blockingTasks: 1,
-    stops: { tasks: 1, turns: 0 },
-  },
+  running: [npmBuild, pythonTrain],
+  finished: [hibernatedJob],
+  pendingRestart: null,
 };
 
 export const processListEmpty: ProcessList = {
@@ -84,61 +63,55 @@ export const processListEmpty: ProcessList = {
   pendingRestart: null,
 };
 
+export const processListByAgent: Record<string, ProcessList> = {
+  [AGENT_IDS.codexResearch]: processList,
+};
+
 export const processOutput: Record<
   string,
   { text: string; truncated: boolean }
 > = {
-  "proc-pytest-1": {
-    text: `============================= test session starts ==============================
-platform linux -- Python 3.12.4, pytest-8.3.2
-rootdir: /workspace
-collected 47 items
-
-tests/test_auth.py::test_login PASSED                                    [  2%]
-tests/test_auth.py::test_refresh_token PASSED                            [  4%]
-tests/test_auth.py::test_logout PASSED                                   [  6%]
-tests/test_middleware.py::test_rate_limit PASSED                          [  8%]
-tests/test_middleware.py::test_cors_headers PASSED                        [ 10%]
-tests/test_routes.py::test_health_endpoint PASSED                        [ 12%]
-tests/test_routes.py::test_user_create PASSED                            [ 14%]
-tests/test_routes.py::test_user_get PASSED                               [ 17%]
-tests/test_routes.py::test_user_update PASSED                            [ 19%]
-tests/test_routes.py::test_user_delete PASSED                            [ 21%]
-
- 21/47 passed, running...`,
-    truncated: false,
-  },
-  "proc-harness-keep-1": {
-    text: `[2026-10-13T08:01:00Z] Scheduled check started
-[2026-10-13T08:01:01Z] Fetching upstream events...
-[2026-10-13T08:01:02Z] 3 new events found
-[2026-10-13T08:06:00Z] Scheduled check started
-[2026-10-13T08:06:01Z] Fetching upstream events...
-[2026-10-13T08:06:02Z] 0 new events found
-[2026-10-13T08:11:00Z] Scheduled check started
-[2026-10-13T08:11:01Z] Fetching upstream events...
-[2026-10-13T08:11:03Z] 1 new event found`,
-    truncated: false,
-  },
-  "proc-detached-hib-1": {
-    text: `Oct 13 07:48:12 app[web.1]: Request processed in 42ms
-Oct 13 07:48:15 app[web.1]: Request processed in 38ms
-Oct 13 07:49:01 app[worker.1]: Job completed: email_digest
-Oct 13 07:50:22 app[web.1]: Request processed in 55ms`,
-    truncated: false,
-  },
-  "proc-finished-ok-1": {
-    text: `> myapp@1.0.0 build
+  "proc-npm-build-1": {
+    text: `> myapp@2.1.0 build
 > tsc && vite build
 
 vite v5.4.2 building for production...
-✓ 342 modules transformed.
-dist/index.html          0.46 kB │ gzip: 0.30 kB
-dist/assets/index.js   284.12 kB │ gzip: 89.34 kB
-✓ built in 3.21s`,
+transforming...
+✓ 214 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html          0.46 kB │ gzip:  0.30 kB
+dist/assets/vendor.js  142.08 kB │ gzip: 46.12 kB
+dist/assets/index.js   186.34 kB │ gzip: 58.91 kB
+dist/assets/index.css   24.18 kB │ gzip:  5.44 kB
+✓ built in 4.82s`,
     truncated: false,
   },
-  "proc-finished-fail-1": {
+  "proc-python-train-1": {
+    text: `[2026-10-14 06:18:02] Starting training run
+[2026-10-14 06:18:03] Model: gpt2-medium, Dataset: openwebtext
+[2026-10-14 06:18:04] Epochs: 40, Batch size: 32, LR: 3e-4
+[2026-10-14 06:18:10] Epoch  1/40 ▏ loss=4.821 lr=3.0e-04 ▏ 42s
+[2026-10-14 06:18:52] Epoch  2/40 ▏ loss=4.317 lr=3.0e-04 ▏ 42s
+[2026-10-14 06:19:34] Epoch  3/40 ▏ loss=3.982 lr=2.9e-04 ▏ 42s
+[2026-10-14 06:20:16] Epoch  4/40 ▏ loss=3.714 lr=2.8e-04 ▏ 42s
+[2026-10-14 06:20:58] Epoch  5/40 ▏ loss=3.501 lr=2.7e-04 ▏ 42s
+[2026-10-14 06:21:40] Epoch  6/40 ▏ loss=3.328 lr=2.5e-04 ▏ 42s
+[2026-10-14 06:22:22] Epoch  7/40 ▏ loss=3.184 lr=2.4e-04 ▏ 42s
+[2026-10-14 06:23:04] Epoch  8/40 ▏ loss=3.062 lr=2.2e-04 ▏ 42s
+[2026-10-14 06:23:46] Epoch  9/40 ▏ loss=2.958 lr=2.1e-04 ▏ 42s
+[2026-10-14 06:24:28] Epoch 10/40 ▏ loss=2.871 lr=1.9e-04 ▏ 42s
+[2026-10-14 06:25:10] Epoch 11/40 ▏ loss=2.795 lr=1.8e-04 ▏ 42s
+[2026-10-14 06:25:52] Epoch 12/40 ▏ loss=2.731 lr=1.6e-04 ▏ 42s
+[2026-10-14 06:26:34] Epoch 13/40 ▏ loss=2.674 lr=1.5e-04 ▏ 42s
+[2026-10-14 06:27:16] Epoch 14/40 ▏ loss=2.625 lr=1.3e-04 ▏ 42s
+[2026-10-14 06:27:58] Epoch 15/40 ▏ loss=2.582 lr=1.2e-04 ▏ 42s
+[2026-10-14 06:28:40] Epoch 16/40 ▏ loss=2.544 lr=1.1e-04 ▏ 42s
+[2026-10-14 06:29:22] Epoch 17/40 ▏ loss=2.510 lr=9.0e-05 ▏ 42s
+[2026-10-14 06:30:02] Epoch 18/40 ▏ loss=2.480 lr=7.5e-05 ▏ running...`,
+    truncated: false,
+  },
+  "proc-cargo-hib-1": {
     text: `   Compiling myapp v0.1.0 (/workspace)
     Finished \`release\` profile target(s) in 12.34s
      Running unittests src/main.rs
@@ -147,14 +120,8 @@ running 24 tests
 test auth::test_verify_token ... ok
 test auth::test_expired_token ... ok
 test routes::test_health ... ok
-test routes::test_not_found ... FAILED
-test db::test_connection_pool ... FAILED
 
-failures:
----- routes::test_not_found stdout ----
-thread 'routes::test_not_found' panicked at 'assertion failed: expected 404, got 500'
-
-test result: FAILED. 22 passed; 2 failed; 0 ignored`,
+[agent hibernated — output stopped]`,
     truncated: false,
   },
 };
