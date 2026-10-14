@@ -1,6 +1,6 @@
 # VM memory
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 An owner's machines share the memory of their [runner](vm-runner.md), and it is counted by what they use rather than by their sizes.
 That memory is the owner's whole pool for vm agents, which have no size of their own and stand outside the [budget](budgets.md)'s Ceiling.
@@ -73,6 +73,7 @@ The two passes never run together for one owner.
 **Guests give back cold page cache.** A guest keeps the files it read cached until something needs the memory, and the host counts that cache as the machine's.
 Every minute platform-init hands the cache on the kernel's inactive list to cgroup v2 proactive reclaim, and the freed pages return to the host within seconds.
 Guests have no swap, so only file pages go.
+Free-page reporting returns only whole 2 MiB blocks, so memory a program frees between pages the guest still uses stays counted; when the free memory in smaller blocks rises by 128 MiB, the same pass reclaims that much cold cache and slab and compacts the guest's memory, so the freed pages merge into blocks the host takes back.
 
 **What can still go wrong.** Guests that grow faster than a second's sample and the seconds a hibernation takes can still take the runner over its limit, and the kernel then kills the runner with every machine of its owner.
 The pressure signal makes that rarer; it cannot rule it out.
