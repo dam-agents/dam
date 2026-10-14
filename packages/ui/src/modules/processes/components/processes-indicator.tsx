@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 
+import { useAgentReach } from "../../agents/api/queries.js";
 import { WorkingDots } from "../../sessions/components/working-dots.js";
 import { useProcesses } from "../api/queries.js";
 import { useOpenProcessesSection } from "../hooks/use-open-processes-section.js";
@@ -9,8 +10,9 @@ const RESTART_PENDING_HINT = "A settings change is waiting";
 
 export function ProcessesIndicator({ agentId }: { agentId: string | null }) {
   const { data } = useProcesses(agentId, { enabled: true, poll: false });
+  const reach = useAgentReach(agentId);
   const openSection = useOpenProcessesSection();
-  if (!data) return null;
+  if (!data || reach === "inoperable") return null;
   const { running, keepingAwake, restartPending } = summarizeProcesses(data);
   if (running === 0) return null;
 
