@@ -7,12 +7,15 @@ import {
 import type { PlatformStore } from "../../../store.js";
 
 const SIDEBAR_EXPANDED_STORAGE_KEY = "platform-sidebar-expanded";
+const SIDEBAR_HIBERNATING_STORAGE_KEY = "platform-sidebar-show-hibernating";
 
 export type ActivityView = "feed" | "approvals";
 
 export interface SidebarSlice {
   sidebarExpanded: boolean;
   setSidebarExpanded: (expanded: boolean) => void;
+  sidebarShowHibernating: boolean;
+  setSidebarShowHibernating: (show: boolean) => void;
   activityView: ActivityView | null;
   setActivityView: (view: ActivityView | null) => void;
 }
@@ -31,6 +34,14 @@ export const createSidebarSlice: StateCreator<
   setSidebarExpanded: (expanded) => {
     writePersistedFlag(SIDEBAR_EXPANDED_STORAGE_KEY, expanded);
     set({ sidebarExpanded: expanded });
+  },
+  sidebarShowHibernating: readPersistedFlag(
+    SIDEBAR_HIBERNATING_STORAGE_KEY,
+    false,
+  ),
+  setSidebarShowHibernating: (show) => {
+    writePersistedFlag(SIDEBAR_HIBERNATING_STORAGE_KEY, show);
+    set({ sidebarShowHibernating: show });
   },
   activityView: null,
   setActivityView: (view) => set({ activityView: view }),

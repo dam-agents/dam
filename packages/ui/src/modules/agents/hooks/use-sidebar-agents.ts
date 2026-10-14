@@ -1,0 +1,39 @@
+import { useMemo } from "react";
+
+import { useStore } from "../../../store.js";
+import type { AgentState, AgentView } from "../../../types.js";
+import { useFeed } from "../../home/api/queries.js";
+import { isUnreadItem } from "../../home/lib/unread.js";
+import { useAgents } from "../api/queries.js";
+import { splitTemporarySandboxes } from "../utils/temporary-sandboxes.js";
+
+const FOLDED_STATES: ReadonlySet<AgentState> = new Set([
+  "hibernating",
+  "hibernated",
+]);
+
+const NO_AGENTS: AgentView[] = [];
+
+export function useSidebarAgents() {
+  const list = useAgents().data?.list ?? NO_AGENTS;
+  const { items, workingByAgent } = useFeed();
+  const openAgentId = useStore((s) =>
+    s.view === "chat" ? s.selectedAgent : null,
+  );
+
+  const { active, folded } = useMemo(() => {
+    const { visible } = splitTemporarySandboxes(list);
+    const isFolded = (agent: AgentView) =>
+      agent.id !== openAgentId && FOLDED_STATES.has(agent.state);
+    return {
+      active: visible.filter((agent) => !isFolded(agent)),
+      folded: visible.filter(isFolded),
+    };
+  }, [list, openAgentId]);
+
+  const unreadAgentIds = new Set(
+    items.filter(isUnreadItem).map((item) => item.agentId),
+  );
+
+  return { active, folded, openAgentId, unreadAgentIds, workingByAgent };
+}

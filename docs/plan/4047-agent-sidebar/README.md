@@ -32,13 +32,13 @@ UI only (`packages/ui`); every server procedure already exists.
 
 ## Sub-issues
 
-| #   | Title                         | Scope                                                                                                  | Depends on |
-| --- | ----------------------------- | ------------------------------------------------------------------------------------------------------ | ---------- |
-| 01  | Sidebar with agents           | Expanded sidebar with nav, Agents (active, hibernating folded), Docs, Settings; collapsed rail flyout     | —          |
-| 02  | Agent sessions in the sidebar | The open agent expands to its sessions with new-session, filter and ⋮; chat view loses its Sessions list | 01         |
-| 03  | Activity in the sidebar       | Cross-agent sessions, newest first, 20 + 20, existing filter; collapsed rail flyout                       | 01         |
-| 04  | Approvals bell                | Top-right button becomes a bell listing approvals only                                                   | 03         |
-| 05  | Mobile navigation             | If time allows: design with `/frontend-design`, then build                                               | 01, 02, 03 |
+| #   | Title                         | Scope                                                                                                    | Depends on | Done |
+| --- | ----------------------------- | -------------------------------------------------------------------------------------------------------- | ---------- | ---- |
+| 01  | Sidebar with agents           | Expanded sidebar with nav, Agents (active, hibernating folded), Docs, Settings; collapsed rail flyout    | —          | ✅   |
+| 02  | Agent sessions in the sidebar | The open agent expands to its sessions with new-session, filter and ⋮; chat view loses its Sessions list | 01         |      |
+| 03  | Activity in the sidebar       | Cross-agent sessions, newest first, 20 + 20, existing filter; collapsed rail flyout                      | 01         |      |
+| 04  | Approvals bell                | Top-right button becomes a bell listing approvals only                                                   | 03         |      |
+| 05  | Mobile navigation             | If time allows: design with `/frontend-design`, then build                                               | 01, 02, 03 |      |
 
 ## Conventions & glossary
 
@@ -53,7 +53,9 @@ UI only (`packages/ui`); every server procedure already exists.
 - The agent row's ⋮ menu is the Home agent row's menu.
 - Activity lists sessions only, newest first, 20 at a time; its filter is the existing channel and state filter without the "Approvals" state.
 - Per-agent sessions: 5 at a time, newest first, with the existing session filter as an icon beside the new-session icon.
-- "See all (N hibernating)" unfolds the hibernating agents inline.
+- "See all (N hibernating)" unfolds the hibernating agents inline; the choice is remembered in local storage.
+- The agent whose chat is open always shows among the active agents, whatever its state, so its sessions (02) have a row to drop under.
+- The sidebar keeps its persisted expanded state and default.
 - Mobile keeps today's bottom bar until slice 05.
 
 ## Action items
