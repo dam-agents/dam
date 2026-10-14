@@ -12,7 +12,7 @@ The checklist is per user, not per Agent, so a user with five Agents sees it onc
 
 A task is done when the api-server sees the domain event that the feature already emits, not when the user clicks through the UI.
 So a task counts the same whether the user did it in the browser, with the CLI, through a starter kit, or by asking an Agent to do it with its own tools.
-The api-server records each unlock in Postgres and keeps it after the thing that earned it is deleted, so an avatar never locks again.
+The api-server records each unlock in Postgres and keeps it after the thing that earned it is deleted, so an avatar never locks again unless the user resets their onboarding progress.
 Each replica remembers the tasks it already recorded, so the message sent on every prompt costs nothing after the first.
 
 The character a task unlocks is random among the ones still locked, with one exception: the first Agent unlocks the character it was created with while that character is still locked, so the avatar the user sees on it is the one they just unlocked.
