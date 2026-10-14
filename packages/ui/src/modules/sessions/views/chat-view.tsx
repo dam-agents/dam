@@ -1153,10 +1153,7 @@ export function ChatView() {
               <ResizeHandle
                 side="right"
                 onResize={(d) => {
-                  const max = Math.min(
-                    960,
-                    sidePanelMaxW ?? window.innerWidth - 500,
-                  );
+                  const max = sidePanelMaxW ?? window.innerWidth - 500;
                   const base = Math.min(
                     rightWRef.current ?? filePanelRef.current?.offsetWidth ?? 0,
                     max,
