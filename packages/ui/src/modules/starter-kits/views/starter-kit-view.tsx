@@ -394,7 +394,7 @@ function KitDetail({
   };
 
   const size = useMemo(() => {
-    if (!kit.resources || !budget.data || vm) return null;
+    if (!kit.resources || !budget.data || vm !== false) return null;
     const unit = slotUnitOf(budget.data);
     const mi = sizeInMi(kit.resources);
     if (mi.cpuMilli === 0 && mi.memoryMi === 0) return null;
@@ -435,7 +435,7 @@ function KitDetail({
                 {skillCount} {skillCount === 1 ? "skill" : "skills"}
               </Badge>
             )}
-            {vm && (
+            {vm === true && (
               <Badge variant="muted" size="sm">
                 {VM_BACKEND_LABEL}
               </Badge>

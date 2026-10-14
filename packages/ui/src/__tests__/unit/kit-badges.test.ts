@@ -20,7 +20,7 @@ const kit = (backend?: "vm") =>
     ...(backend ? { backend } : {}),
   }) as unknown as StarterKitView;
 
-const labels = (k: StarterKitView, vmForced: boolean) =>
+const labels = (k: StarterKitView, vmForced: boolean | undefined) =>
   kitBadges(k, [], new Map(), vmForced).map((b) => b.label);
 
 describe("kitBadges", () => {
@@ -38,5 +38,12 @@ describe("kitRunsOnVm", () => {
     expect(kitRunsOnVm(kit("vm"), false)).toBe(true);
     expect(kitRunsOnVm(kit(), true)).toBe(true);
     expect(kitRunsOnVm(kit(), false)).toBe(false);
+  });
+
+  // TEST_SCENARIO: before the install answers, only a kit that asks for a machine is known to run on one; any other kit is unknown, so neither the VM badge nor a size shows yet and nothing flips once the answer arrives.
+  test("is unknown until the install answers, unless the kit settles it", () => {
+    expect(kitRunsOnVm(kit("vm"), undefined)).toBe(true);
+    expect(kitRunsOnVm(kit(), undefined)).toBeUndefined();
+    expect(labels(kit(), undefined)).not.toContain(VM_BACKEND_LABEL);
   });
 });
