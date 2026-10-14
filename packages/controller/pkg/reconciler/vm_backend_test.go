@@ -898,6 +898,65 @@ func TestADeleteWithNoOwnerReachesEveryRunner(t *testing.T) {
 	assert.Equal(t, []string{"my-agent"}, other.deleted)
 }
 
+// TEST_SCENARIO: the controller reconciles different owners' agents on different workers at once. A runner that hangs but keeps its listener holds its owner's reconcile for the runner client's timeout, and nothing the reconciler shares across owners may be held across that call, or another owner's wake waits on it anyway.
+func TestAHungRunnerHoldsUpNoOtherOwnersReconcile(t *testing.T) {
+	ctx := context.Background()
+	stuck := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, stuck)
+	addRunner(t, r, "owner-b")
+	woken := vmAgentCR()
+	woken.Name = "woken-agent"
+	woken.Labels = map[string]string{envoyOwnerLabel: "owner-b"}
+	u, err := agentToUnstructured(woken)
+	require.NoError(t, err)
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Create(ctx, u, metav1.CreateOptions{})
+	require.NoError(t, err)
+	leaf := leafSecret()
+	leaf.Name = EnvoyLeafSecretName(woken.Name)
+	_, err = r.client.CoreV1().Secrets("test-agents").Create(ctx, leaf, metav1.CreateOptions{})
+	require.NoError(t, err)
+	pod := readyRunnerPod()
+	pod.Name, pod.Labels = r.runnerName("owner-b")+"-pinned", vmRunnerSelector("owner-b")
+	_, err = r.client.CoreV1().Pods("test-agents").Create(ctx, pod, metav1.CreateOptions{})
+	require.NoError(t, err)
+	require.NoError(t, r.Reconcile(ctx, woken))
+
+	entered, release := make(chan struct{}, 1), make(chan struct{})
+	hung := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		<-release
+	}))
+	t.Cleanup(hung.Close)
+	reachable := r.runnerEndpoint
+	r.runnerEndpoint = func(owner string) string {
+		if owner == testOwner {
+			return hung.URL
+		}
+		return reachable(owner)
+	}
+	done := make(chan struct{})
+	go func() {
+		_ = r.Reconcile(ctx, stuck)
+		close(done)
+	}()
+	t.Cleanup(func() {
+		close(release)
+		<-done
+	})
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the stuck owner's reconcile never called its runner")
+	}
+
+	start := time.Now()
+	require.NoError(t, r.Reconcile(ctx, woken))
+	assert.Less(t, time.Since(start), 2*time.Second, "another owner's reconcile waited on the hung runner")
+}
+
 // TEST_SCENARIO: the sweep needs every runner's token and CA, and runs every ten minutes over every owner. Both of a runner's Secrets carry the component label — the token by the controller, the TLS Secret by cert-manager from the Certificate's template — so one List serves them all and no Secret is read by name.
 func TestTheSweepReadsRunnerSecretsInOneList(t *testing.T) {
 	ctx := context.Background()
