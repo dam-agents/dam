@@ -1726,6 +1726,17 @@ impl Server {
 
     // UNIT_BOUNDARY_DESCRIPTION: stores what was seen, and moves the status version only when the status it reports changes. A machine the runner has no entry for is remembered only once it exists, so asking about names that are not machines here leaves nothing behind, and a probe answering after its machine was deleted puts no entry back. The first answer from the guest ends the boot the runner was waiting on and is timed under the action that started it, before the status moves, so a reader that sees the machine ready also sees how long it took.
     fn record(&self, id: &str, seen: Seen, guard: Option<u64>) {
+        // UNIT_BOUNDARY_DESCRIPTION: written before the lock is taken, so a stalled disk holds up only this machine, and before the answer marks it ready, so a status that reads ready reads the record.
+        if seen.ready {
+            let ending = locked(&self.machines)
+                .entries
+                .get(id)
+                .filter(|e| guard.is_none_or(|looked| looked == e.looked))
+                .and_then(|e| e.boot.as_ref().map(|boot| boot.seed.clone()));
+            if let Some(seed) = ending {
+                self.record_seeded(id, seed.as_deref());
+            }
+        }
         let mut machines = locked(&self.machines);
         let known = machines.entries.get(id).map(|e| e.looked);
         if guard.is_some_and(|looked| looked != known.unwrap_or(0)) {
@@ -1738,7 +1749,6 @@ impl Server {
         let answered = if seen.ready { entry.boot.take() } else { None };
         if let Some(boot) = &answered {
             self.metrics.became_ready(boot.action, boot.at.elapsed());
-            self.record_seeded(id, boot.seed.as_deref());
         }
         let mut seen = seen;
         let now = SystemTime::now();
@@ -1864,21 +1874,13 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the machine's state as last recorded, looked at now only when nothing has been recorded yet.
-    fn known_state(&self, id: &str) -> anyhow::Result<State> {
+    // UNIT_BOUNDARY_DESCRIPTION: whether the machine runs, as last recorded, or as the runtime says when nothing has been recorded yet. The guest is never asked: admission asks this of every machine under its lock, and a silent guest would hold every start for its health timeout.
+    fn known_running(&self, id: &str) -> bool {
         let recorded = locked(&self.machines)
             .entries
             .get(id)
-            .and_then(|e| e.seen.clone());
-        let seen = recorded.unwrap_or_else(|| self.observe(id, true));
-        match seen.error {
-            Some(error) => Err(anyhow::anyhow!(error)),
-            None => Ok(seen.state),
-        }
-    }
-
-    fn known_running(&self, id: &str) -> bool {
-        matches!(self.known_state(id), Ok(State::Running))
+            .and_then(|e| e.seen.as_ref().map(|seen| seen.state));
+        recorded.or_else(|| self.runtime.state(id).ok()) == Some(State::Running)
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: what the controller is told about a machine, built from what the runner has recorded: no runtime call and no probe, except for a machine nothing has been recorded about yet. An action in flight is reported as the machine's state. A guest that answers its health endpoint is ready even before the start call that booted it returns — but only on the way up.
@@ -1895,10 +1897,6 @@ impl Server {
         let port = state::port(&self.config.state_dir, id);
         let applied = read_spec(&self.config.state_dir, id);
         let machines = locked(&self.machines);
-        // UNIT_BOUNDARY_DESCRIPTION: read under the lock that records a guest's first answer, which writes the seeded record before it marks the machine ready, so a status that reads ready never reads the record from before that answer.
-        let seeded_from = machine_dir(&self.config.state_dir, id)
-            .map(|dir| share::seeded_from(&dir.join(SHARE_DIR)))
-            .unwrap_or_default();
         let entry = machines.entries.get(id);
         let action = entry.and_then(|e| e.action);
         let seen = entry.and_then(|e| e.seen.clone()).or(looked);
@@ -1923,7 +1921,6 @@ impl Server {
             version: entry.map_or(0, |e| e.version),
             ..MachineStatus::default()
         };
-        status.home_seeded_from = seeded_from;
         if let Some(spec) = applied {
             status.cpus = spec.cpus;
             status.memory_mib = spec.memory_mib;
@@ -1952,6 +1949,11 @@ impl Server {
                 format!("{}; {note}", status.message)
             };
         }
+        drop(machines);
+        // UNIT_BOUNDARY_DESCRIPTION: read after the lock is let go, so a stalled disk holds up only this read. A guest's first answer writes the seeded record before it marks the machine ready, so a status that read ready above reads the record from that answer.
+        status.home_seeded_from = machine_dir(&self.config.state_dir, id)
+            .map(|dir| share::seeded_from(&dir.join(SHARE_DIR)))
+            .unwrap_or_default();
         (state, status)
     }
 }

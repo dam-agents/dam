@@ -44,6 +44,16 @@ pub const RESOLVE_DEADLINE: Duration = Duration::from_secs(PULL_TIMEOUT.as_secs(
 // UNIT_BOUNDARY_DESCRIPTION: the most digests one hold may name. A runner names only what its own machines boot, which is a few dozen at most; the cap bounds what one caller can make the service remember.
 pub const HOLDS_PER_CALL: usize = 1024;
 
+// UNIT_BOUNDARY_DESCRIPTION: how long the preload waits before it fetches a digest again after the fetch failed: PRELOAD_RETRY after the first failure, doubled after each next one, up to PRELOAD_RETRY_MAX. A fetch streams the whole image and keeps nothing when it fails, so an image that cannot unpack would otherwise be downloaded again on every pass.
+pub const PRELOAD_RETRY: Duration = Duration::from_secs(5 * 60);
+pub const PRELOAD_RETRY_MAX: Duration = Duration::from_secs(6 * 60 * 60);
+
+fn preload_retry(failures: u32) -> Duration {
+    PRELOAD_RETRY
+        .saturating_mul(1 << failures.saturating_sub(1).min(16))
+        .min(PRELOAD_RETRY_MAX)
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: how far past its budget a node cache may grow before it refuses to fetch: its budget and half again. Holds keep a tree from eviction, and every runner on the node may hold or resolve any digest over the one socket, so without a ceiling one compromised runner could fill the node's disk with trees nobody may evict. A runner's own cache has no ceiling: it serves one owner, on that owner's claim.
 pub fn node_fetch_ceiling(budget: i64) -> Option<u64> {
     let budget = u64::try_from(budget).ok().filter(|b| *b > 0)?;
@@ -78,6 +88,7 @@ struct Memory {
     entries: HashMap<PathBuf, Entry>,
     in_flight: u64,
     measured: bool,
+    preload_failures: HashMap<String, (u32, Instant)>,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what a machine of a reference boots: the digest its tree is stored under, and what the image says to run.
@@ -756,17 +767,56 @@ impl ImageCache {
         true
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: one preload pass over the pins. Each tag is resolved again on every pass, so a tag that moved is fetched under its new digest and the pin moves with it; the old digest's tree is then held only by the machines still running it. The directory is trimmed every pass, not only after a fetch, because the cache outlives every runner that fetched into it.
+    // UNIT_BOUNDARY_DESCRIPTION: one preload pass over the pins. Each tag is resolved again on every pass, so a tag that moved is fetched under its new digest and the pin moves with it; the old digest's tree is then held only by the machines still running it. A digest whose fetch failed is not fetched again until its retry wait is over; a fetch refused before it started, for lack of room, waits for nothing, since it downloaded nothing; the wait belongs to the digest, so a tag that moves to a fixed image is fetched on the next pass. The directory is trimmed every pass, not only after a fetch, because the cache outlives every runner that fetched into it.
     pub fn preload(&self, auths: &[String]) {
+        let mut pinned = HashSet::new();
         for reference in &self.config.pins {
             if self.config.lifetime.is_cancelled() {
                 return;
             }
-            let lookup = self.resolve_with(reference, auths, Duration::ZERO);
-            if let Err(e) = lookup.resolved {
-                tracing::warn!(image = %logged(reference), error = %format!("{e:#}"), "image cache: preloading an image this install ships");
+            let deadline = Instant::now() + RESOLVE_DEADLINE;
+            let digest = if is_image_ref(reference) && !reference.contains("..") {
+                self.digest_for(reference, Duration::ZERO, auths, deadline)
+            } else {
+                Err(unusable("not an image reference".to_string()))
+            };
+            let digest = match digest {
+                Ok(digest) => digest,
+                Err(e) => {
+                    tracing::warn!(image = %logged(reference), error = %format!("{e:#}"), "image cache: preloading an image this install ships");
+                    continue;
+                }
+            };
+            pinned.insert(digest.clone());
+            if let Some((failures, at)) = locked(&self.memory).preload_failures.get(&digest) {
+                if at.elapsed() < preload_retry(*failures) {
+                    continue;
+                }
+            }
+            let lookup = self.resolve_with(reference, auths, Duration::MAX);
+            let mut memory = locked(&self.memory);
+            match lookup.resolved {
+                Ok(_) => {
+                    memory.preload_failures.remove(&digest);
+                }
+                Err(e) if lookup.fetched.is_none() => {
+                    tracing::warn!(image = %logged(reference), error = %format!("{e:#}"), "image cache: preloading an image this install ships");
+                }
+                Err(e) => {
+                    let failures = memory
+                        .preload_failures
+                        .get(&digest)
+                        .map_or(1, |(n, _)| n + 1);
+                    memory
+                        .preload_failures
+                        .insert(digest, (failures, Instant::now()));
+                    tracing::warn!(image = %logged(reference), error = %format!("{e:#}"), failures, retry_s = preload_retry(failures).as_secs(), "image cache: preloading an image this install ships");
+                }
             }
         }
+        locked(&self.memory)
+            .preload_failures
+            .retain(|digest, _| pinned.contains(digest));
         self.evict(None);
     }
 }
