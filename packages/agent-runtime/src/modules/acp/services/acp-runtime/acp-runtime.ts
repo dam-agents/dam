@@ -320,7 +320,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       checkPendingRestart();
     },
     onTurnInterrupted: (sessionId, turn) => {
-      const unstoredPrompt = deps.activeTurns.promptOf(sessionId);
+      const unstoredPrompt = shuttingDown
+        ? undefined
+        : deps.activeTurns.promptOf(sessionId);
       if (unstoredPrompt)
         deps.undeliveredPrompts.remember(sessionId, [unstoredPrompt]);
       if (!turn.runPrompt && !isRunSession(sessionId)) return;
