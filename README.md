@@ -79,15 +79,15 @@ The hosted deployment includes IBM internal model endpoints and integrations not
 
 ## Capabilities
 
-| Building block | What it provides |
-| --- | --- |
-| Harnesses and models | Pluggable agent runtimes and inference endpoints |
-| Security | Isolation, credential injection, network controls, optional approvals |
-| Workspaces and memory | Persistent files and context |
-| Orchestration | Schedules, subagents, and multi-agent workflows |
-| Channels | Slack, Telegram, web UI, and CLI |
-| Skills and artifacts | Reusable workflows and shareable results |
-| Cost visibility | Usage, budgets, and activity history |
+| Building block        | What it provides                                                      |
+| --------------------- | --------------------------------------------------------------------- |
+| Harnesses and models  | Pluggable agent runtimes and inference endpoints                      |
+| Security              | Isolation, credential injection, network controls, optional approvals |
+| Workspaces and memory | Persistent files and context                                          |
+| Orchestration         | Schedules, subagents, and multi-agent workflows                       |
+| Channels              | Slack, Telegram, web UI, and CLI                                      |
+| Skills and artifacts  | Reusable workflows and shareable results                              |
+| Cost visibility       | Usage, budgets, and activity history                                  |
 
 ---
 
@@ -99,15 +99,17 @@ DAM is Apache 2.0 licensed and deploys to Kubernetes using Helm.
 helm install platform oci://quay.io/dam-agents/charts/platform --version 0.2.17
 ```
 
-The chart includes Keycloak, Postgres, Redis, and optional telemetry. DAM requires an Istio ambient mesh.
+The chart includes Keycloak, Postgres, Redis, and optional telemetry.
+DAM requires an Istio ambient mesh.
 
-- [Deployment configuration](deploy/helm/platform/values.yaml)
+- [Deployment configuration](helm/values.yaml)
 - [Architecture](docs/architecture.md)
 - [Security and credentials](docs/architecture/security-and-credentials.md)
 
 ## Contribute
 
-DAM is developed in the open. Follow development, report issues, and help shape the project.
+DAM is developed in the open.
+Follow development, report issues, and help shape the project.
 
 - [Open issues](https://github.com/dam-agents/dam/issues)
 - [Contribution guidelines](CONTRIBUTING.md)
@@ -119,6 +121,8 @@ DAM is developed in the open. Follow development, report issues, and help shape 
 
 - [mise](https://mise.jdx.dev)
 - macOS or Linux
+
+On Linux, install QEMU to run k3s in a VM, or set `IS_SANDBOX=1` when running directly in an existing VM.
 
 ### Setup
 
