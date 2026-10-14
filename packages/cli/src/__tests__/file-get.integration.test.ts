@@ -97,8 +97,8 @@ describe("dam file get --stdout (integration)", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  it("writes a file larger than the pipe buffer to a pipe in full", async () => {
-    const child = spawn(
+  function getToStdout() {
+    return spawn(
       process.execPath,
       [
         BIN_PATH,
@@ -120,6 +120,10 @@ describe("dam file get --stdout (integration)", () => {
         stdio: ["ignore", "pipe", "pipe"],
       },
     );
+  }
+
+  it("writes a file larger than the pipe buffer to a pipe in full", async () => {
+    const child = getToStdout();
     const chunks: Buffer[] = [];
     let stderr = "";
     child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -132,5 +136,19 @@ describe("dam file get --stdout (integration)", () => {
     const received = Buffer.concat(chunks);
     expect(received.length).toBe(file.length);
     expect(received.equals(file)).toBe(true);
+  });
+
+  // TEST_SCENARIO: A reader that closes the pipe early, like `| head -c 10`, ends the CLI with exit 0 and no stack trace.
+  it("exits cleanly when the reader closes the pipe early", async () => {
+    const child = getToStdout();
+    let stderr = "";
+    child.stdout.once("data", () => child.stdout.destroy());
+    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+    const exitCode = await new Promise<number | null>((done) =>
+      child.on("close", done),
+    );
+
+    expect(exitCode, stderr).toBe(0);
+    expect(stderr).toBe("");
   });
 });
