@@ -1,6 +1,6 @@
 # VM runner
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 The pods behind the `vm` Backend: **one runner per owner**, each a single-replica Deployment in the agent namespace running smolvm and the platform's **vm-runner** agent.
 A local cluster on a Mac runs one [host runner](vm-host-runner.md) outside the cluster instead.

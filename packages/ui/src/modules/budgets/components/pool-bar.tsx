@@ -9,14 +9,16 @@ import type { PoolBarView, PoolSegment } from "../lib/pools.js";
 
 export const LEVEL_FILL: Record<PoolLevel, string> = {
   ok: "bg-slate-500 dark:bg-slate-400",
-  warning: "bg-amber-600 dark:bg-amber-500",
-  critical: "bg-rose-600 dark:bg-rose-400",
+  warning:
+    "bg-[color-mix(in_srgb,var(--color-amber-600)_40%,var(--color-stone-500))] dark:bg-[color-mix(in_srgb,var(--color-amber-500)_40%,var(--color-stone-500))]",
+  critical: "bg-rose-600 dark:bg-red-400/60",
 };
 
 const LEVEL_ICON: Record<PoolLevel, string> = {
   ok: "",
-  warning: "text-amber-600 dark:text-amber-500",
-  critical: "text-rose-600 dark:text-rose-400",
+  warning:
+    "text-[color-mix(in_srgb,var(--color-amber-600)_40%,var(--color-stone-500))] dark:text-[color-mix(in_srgb,var(--color-amber-500)_40%,var(--color-stone-500))]",
+  critical: "text-rose-600 dark:text-red-400",
 };
 
 const REST_FILL = "bg-slate-300 dark:bg-slate-600";

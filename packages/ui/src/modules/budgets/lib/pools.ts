@@ -101,7 +101,7 @@ export function cpuBar(cpu: NonNullable<BudgetVmUsage["cpu"]>): PoolBarView {
     segments: [
       {
         agentId: null,
-        label: cpu.congestion,
+        label: `${cpu.congestion[0].toUpperCase()}${cpu.congestion.slice(1)} congestion`,
         fraction: Math.min(1, Math.max(0, cpu.fill)),
         filled: true,
       },

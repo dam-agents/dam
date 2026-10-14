@@ -94,7 +94,14 @@ describe("pool bars", () => {
     });
     expect(bar).toEqual({
       level: "critical",
-      segments: [{ agentId: null, label: "high", fraction: 0.5, filled: true }],
+      segments: [
+        {
+          agentId: null,
+          label: "High congestion",
+          fraction: 0.5,
+          filled: true,
+        },
+      ],
     });
   });
 
