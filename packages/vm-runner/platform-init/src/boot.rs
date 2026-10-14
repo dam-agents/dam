@@ -2989,9 +2989,17 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the entrypoint is started with argv exactly as the image names it, argv[0] included although the binary was found on PATH, and with the trust cache named in its environment. platform-init blocks the signals it forwards, and Rust ignores SIGPIPE; the entrypoint must inherit neither, or a shell pipeline in the image is never ended by a closed pipe and the entrypoint never sees SIGTERM.
+    // TEST_SCENARIO: the entrypoint is started with argv exactly as the image names it, argv[0] included although the binary was found on PATH, and with the trust cache named in its environment. platform-init blocks the signals it forwards, and Rust ignores SIGPIPE; the entrypoint must inherit neither, or a shell pipeline in the image is never ended by a closed pipe and the entrypoint never sees SIGTERM. A test run under a seccomp filter, such as docker's default profile, is skipped: the filter alone makes the spawned process ignore glibc's own signals 32 and 33, which says nothing about what platform-init passes on.
     #[test]
     fn the_entrypoint_starts_with_the_images_argv_and_a_clean_signal_state() {
+        if fs::read_to_string("/proc/self/status")
+            .is_ok_and(|status| status.lines().any(|line| line == "Seccomp:\t2"))
+        {
+            eprintln!(
+                "skipped: a seccomp filter makes every spawned process ignore signals 32 and 33"
+            );
+            return;
+        }
         let binary = look_path(OsStr::new("sh"), None).unwrap();
         let command = [
             OsString::from("image-sh"),
