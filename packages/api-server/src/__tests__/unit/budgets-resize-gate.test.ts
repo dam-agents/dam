@@ -143,9 +143,24 @@ describe("budgets meter (#1900)", () => {
     });
     const { vm } = await svc.reserved();
     expect(vm).toEqual({
-      memory: { usedBytes: 3072 * 1024 ** 2, limitBytes: 12288 * 1024 ** 2 },
-      storage: { usedBytes: 30 * 1024 ** 3, usableBytes: 100 * 1024 ** 3 },
-      agents: [{ id: "vm", memoryUsedBytes: 640 * 1024 ** 2 }],
+      memory: {
+        usedBytes: 3072 * 1024 ** 2,
+        limitBytes: 12288 * 1024 ** 2,
+        level: "ok",
+      },
+      storage: {
+        usedBytes: 30 * 1024 ** 3,
+        usableBytes: 100 * 1024 ** 3,
+        level: "ok",
+      },
+      agents: [
+        {
+          id: "vm",
+          memoryUsedBytes: 640 * 1024 ** 2,
+          storageUsedBytes: 0,
+          cpuMilli: 0,
+        },
+      ],
       observedAt: "2026-10-13T12:00:00.000Z",
     });
   });
@@ -185,8 +200,22 @@ function usage(usedGi: number, usableGi: number) {
     },
     memory: { limitMiB: 12288, committedMiB: 3072 },
     machines: [
-      { id: "vm", state: "running", usedMiB: 640, diskGiB: 100 },
-      { id: "someone-elses", state: "running", usedMiB: 900, diskGiB: 100 },
+      {
+        id: "vm",
+        state: "running",
+        usedMiB: 640,
+        diskGiB: 100,
+        diskUsedBytes: 0,
+        cpuMilli: 0,
+      },
+      {
+        id: "someone-elses",
+        state: "running",
+        usedMiB: 900,
+        diskGiB: 100,
+        diskUsedBytes: 0,
+        cpuMilli: 0,
+      },
     ],
     observedAt: "2026-10-13T12:00:00.000Z",
   };

@@ -7,8 +7,8 @@ import { transitionRestartingAgents } from "../store.js";
 import { useRestartingAction } from "./use-restarting-action.js";
 
 export function useRestartAgent() {
-  const { mutate, isPending } = useRestartAgentMutation();
-  const restart = useRestartingAction(mutate);
+  const { mutateAsync, isPending } = useRestartAgentMutation();
+  const restart = useRestartingAction(mutateAsync);
 
   return { restart, isPending };
 }

@@ -1,5 +1,7 @@
+use std::collections::VecDeque;
 use std::fs;
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
 
@@ -40,6 +42,62 @@ pub fn limit_milli(cgroup: &Path) -> anyhow::Result<Option<u64>> {
     Ok(Some(quota.parse::<u64>()? * 1000 / period))
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: how far back the runner's CPU figures look. A guest's burst of a few seconds is not what the user should act on; a minute of being held back is.
+pub const WINDOW: Duration = Duration::from_secs(60);
+
+// UNIT_BOUNDARY_DESCRIPTION: the share of the last minute in which some of the runner's processes waited for a CPU, rounded to a whole percent, from the `some avg60` of the cgroup's cpu.pressure. Whether time a task spends held back by its cgroup's CPU limit counts as waiting here was not verified on the kernels the runner runs on, so the usage read reports the higher of this and the throttling, and a pool at its limit shows either way. No cpu.pressure, as on a kernel built without pressure stall information, gives None.
+pub fn pressure_percent(cgroup: &Path) -> Option<u32> {
+    let text = fs::read_to_string(cgroup.join("cpu.pressure")).ok()?;
+    let avg60: f64 = text
+        .lines()
+        .find_map(|line| line.strip_prefix("some "))?
+        .split_whitespace()
+        .find_map(|field| field.strip_prefix("avg60="))?
+        .parse()
+        .ok()?;
+    Some(avg60.round().clamp(0.0, 100.0) as u32)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the readings of the last WINDOW, from which the runner's CPU use and how often its limit held it back are taken. A runner with fewer than two readings, or whose counters went backwards (a new cgroup), reports nothing yet.
+#[derive(Default)]
+pub struct Window {
+    samples: VecDeque<(Instant, CpuStat)>,
+}
+
+impl Window {
+    pub fn push(&mut self, at: Instant, stat: CpuStat) {
+        if self
+            .samples
+            .back()
+            .is_some_and(|(_, last)| stat.usage_usec < last.usage_usec)
+        {
+            self.samples.clear();
+        }
+        self.samples.push_back((at, stat));
+        while self
+            .samples
+            .front()
+            .is_some_and(|(first, _)| at.duration_since(*first) > WINDOW)
+        {
+            self.samples.pop_front();
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the average milli-CPUs used over the window, and the percentage of active periods in which the limit held the runner back.
+    pub fn figures(&self) -> Option<(u64, u32)> {
+        let ((from, first), (to, last)) = (self.samples.front()?, self.samples.back()?);
+        let elapsed = to.duration_since(*from).as_micros() as u64;
+        if elapsed == 0 {
+            return None;
+        }
+        let used_milli = (last.usage_usec - first.usage_usec) * 1000 / elapsed;
+        let periods = last.nr_periods.saturating_sub(first.nr_periods);
+        let throttled = last.nr_throttled.saturating_sub(first.nr_throttled);
+        let percent = (throttled * 100).checked_div(periods).unwrap_or(0) as u32;
+        Some((used_milli, percent))
+    }
+}
+
 fn read(cgroup: &Path, file: &str) -> anyhow::Result<String> {
     let path = cgroup.join(file);
     fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))
@@ -78,5 +136,40 @@ mod tests {
         assert_eq!(limit_milli(dir.path()).unwrap(), Some(2500));
         fs::write(dir.path().join("cpu.max"), "max 100000\n").unwrap();
         assert_eq!(limit_milli(dir.path()).unwrap(), None);
+    }
+
+    // TEST_SCENARIO: no cpu.pressure, as on a kernel without pressure stall information, is no pressure at all rather than zero.
+    #[test]
+    fn the_pressure_is_some_avg60_rounded() {
+        let dir = TempDir::new("cpu-pressure");
+        fs::write(
+            dir.path().join("cpu.pressure"),
+            "some avg10=80.00 avg60=37.62 avg300=5.00 total=123\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n",
+        )
+        .unwrap();
+        assert_eq!(pressure_percent(dir.path()), Some(38));
+        assert_eq!(pressure_percent(&dir.path().join("absent")), None);
+    }
+
+    // TEST_SCENARIO: the figures are deltas over the window: a runner that used two CPUs for ten seconds and was held back in a quarter of its periods says so, a reading older than the window drops out, and counters that start over begin a new window instead of reading as a negative use.
+    #[test]
+    fn the_window_gives_use_and_throttling_over_its_span() {
+        let start = Instant::now();
+        let at = |s: u64| start + Duration::from_secs(s);
+        let stat = |usage_usec, nr_periods, nr_throttled| CpuStat {
+            usage_usec,
+            nr_periods,
+            nr_throttled,
+        };
+        let mut window = Window::default();
+        assert_eq!(window.figures(), None);
+        window.push(at(0), stat(0, 0, 0));
+        window.push(at(10), stat(20_000_000, 100, 25));
+        assert_eq!(window.figures(), Some((2000, 25)));
+        window.push(at(70), stat(20_000_000, 100, 25));
+        window.push(at(75), stat(20_000_000, 100, 25));
+        assert_eq!(window.figures(), Some((0, 0)));
+        window.push(at(76), stat(10, 1, 0));
+        assert_eq!(window.figures(), None);
     }
 }

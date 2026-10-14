@@ -360,6 +360,18 @@ impl Runtime for Smolvm {
         }
         resident_mib(&self.proc_root, record.pid?)
     }
+
+    fn cpu_usec(&self, id: &str) -> Option<u64> {
+        let record = self.record(id).ok()??;
+        if !record.is_process_alive() {
+            return None;
+        }
+        cpu_usec(&self.proc_root, record.pid?)
+    }
+
+    fn disk_used_bytes(&self, id: &str) -> Option<u64> {
+        allocated_bytes(&vm_data_dir(id))
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a grow waits for the guest to plug its added RAM and put it online, as smolvm's own resize waits.
@@ -411,6 +423,33 @@ fn resident_mib(proc_root: &Path, pid: i32) -> Option<i32> {
         .parse()
         .ok()?;
     i32::try_from(kib >> 10).ok()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: utime plus stime from /proc/<pid>/stat, in microseconds. The fields after the command name are counted from its closing parenthesis, since the name itself may hold spaces.
+fn cpu_usec(proc_root: &Path, pid: i32) -> Option<u64> {
+    let stat = std::fs::read_to_string(proc_root.join(pid.to_string()).join("stat")).ok()?;
+    let mut fields = stat
+        .get(stat.rfind(')')? + 1..)?
+        .split_whitespace()
+        .skip(11);
+    let ticks = fields.next()?.parse::<u64>().ok()? + fields.next()?.parse::<u64>().ok()?;
+    // SAFETY: sysconf only reads a configuration value.
+    let per_second = u64::try_from(unsafe { libc::sysconf(libc::_SC_CLK_TCK) }).ok()?;
+    (per_second > 0).then(|| ticks * 1_000_000 / per_second)
+}
+
+fn allocated_bytes(dir: &Path) -> Option<u64> {
+    use std::os::unix::fs::MetadataExt;
+    let mut total = 0;
+    for entry in std::fs::read_dir(dir).ok()?.flatten() {
+        let Ok(meta) = entry.metadata() else { continue };
+        total += if meta.is_dir() {
+            allocated_bytes(&entry.path()).unwrap_or(0)
+        } else {
+            meta.blocks() * 512
+        };
+    }
+    Some(total)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a stop gives the guest's workload to exit on SIGTERM before the guest is frozen and powered off. smolvm's own stop only quiesces the disks and kills the VMM, so without this the agent never hears it is being stopped, and what it has not yet written is lost with it.
@@ -1737,5 +1776,29 @@ mod tests {
         assert_eq!(ram_to_add(&geometry, 1024), 0);
         assert_eq!(ram_to_add(&geometry, 200 << 10), 64 << 30);
         assert!(ram_geometry("ERR EIO RAM hot-add topology is unavailable\n").is_err());
+    }
+
+    // TEST_SCENARIO: a VMM's command name may hold spaces and parentheses, so its CPU time is read from the fields after the name's last parenthesis; and a sparse disk as large as the pool counts only what was written to it.
+    #[test]
+    fn a_machines_cpu_time_and_disk_share_read_as_used_not_as_sized() {
+        let proc_root = crate::testdir::TempDir::new("cpu-stat");
+        fs::create_dir_all(proc_root.path().join("42")).unwrap();
+        fs::write(
+            proc_root.path().join("42/stat"),
+            "42 (vm (runner) x) S 1 2 3 4 5 6 7 8 9 10 300 200 0 0 20 0 1 0\n",
+        )
+        .unwrap();
+        // SAFETY: sysconf only reads a configuration value.
+        let hz = unsafe { libc::sysconf(libc::_SC_CLK_TCK) } as u64;
+        assert_eq!(cpu_usec(proc_root.path(), 42), Some(500 * 1_000_000 / hz));
+        assert_eq!(cpu_usec(proc_root.path(), 7), None);
+
+        let dir = crate::testdir::TempDir::new("allocated");
+        fs::create_dir_all(dir.path().join("sub")).unwrap();
+        let disk = fs::File::create(dir.path().join("storage.raw")).unwrap();
+        disk.set_len(100 << 30).unwrap();
+        fs::write(dir.path().join("sub/log"), vec![1u8; 1 << 20]).unwrap();
+        let used = allocated_bytes(dir.path()).unwrap();
+        assert!((1 << 20..8 << 20).contains(&used), "{used}");
     }
 }
