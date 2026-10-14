@@ -8,6 +8,8 @@ import { formatRendererMessage } from "../lib/prompts.js";
 import { A2UI_VERSION } from "../lib/schema.js";
 import { A2uiSendButton } from "./a2ui-send-button.js";
 
+const TEXT_INSTEAD = "The form didn't work. Ask me in plain text instead.";
+
 function errorPrompt(error: RendererError): string {
   return formatRendererMessage({
     version: A2UI_VERSION,
@@ -38,10 +40,17 @@ export function A2uiInvalid({ errors, source }: Props) {
           </li>
         ))}
       </ul>
-      <A2uiSendButton
-        prompt={errors.map(errorPrompt).join("\n")}
-        label="Send the error to the agent"
-      />
+      <div className="flex flex-wrap gap-2">
+        <A2uiSendButton
+          prompt={errors.map(errorPrompt).join("\n")}
+          label="Send the error to the agent"
+        />
+        <A2uiSendButton
+          prompt={TEXT_INSTEAD}
+          label="Ask me in text instead"
+          withCapabilities={false}
+        />
+      </div>
       <DisclosureToggle
         open={showSource}
         onToggle={() => setShowSource((open) => !open)}

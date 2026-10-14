@@ -70,7 +70,9 @@ The components form a tree: a component with two parents, or one that is its own
 A surface that would render more than 2,000 elements, list templates included, is reported and not shown.
 
 Errors are listed under the block, each with a machine-readable code and the location in the block, and a button that forwards them to the agent as renderer error messages.
-The agent fixes the block and sends it again.
+The agent fixes the block and sends it again; the forwarded errors carry the renderer capabilities, like any other renderer message.
+A second button asks the agent for plain text instead and carries no capabilities.
+After a second failed block for the same question, the skill tells the agent to ask in plain text.
 
 ## Functions and checks
 

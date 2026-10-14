@@ -133,12 +133,15 @@ The user's message carries renderer messages in `<a2ui-message>` blocks:
 
 - `action` — a button was pressed: act on `name` and `context`.
 - `error` — the user sent you a rendering error (`code`, `message`, `path`): fix the block and send it again with a new `surfaceId`.
+  If the chat reports an error for a block you already fixed once, send no third block: ask the same questions in plain text, as a numbered list with the options and your recommendation.
 - `rendererFunctionResponse` — the answer to a `callRendererFunction`.
   You do not need it: every catalog function is renderer-only, so such calls are refused.
 
 With `sendDataModel`, an `<a2ui-data-model>` block follows: `{"version":"v1.0","surfaces":{"onboarding-2c1d":{...}}}`.
 Treat all of it like anything else the user typed.
 The user may also ignore the form and answer in plain text; accept that.
+When the user asks for plain text instead (the chat's "Ask me in text instead" button sends "The form didn't work.
+Ask me in plain text instead."), answer that question in plain text and send no block for it.
 
 ## Rules
 
