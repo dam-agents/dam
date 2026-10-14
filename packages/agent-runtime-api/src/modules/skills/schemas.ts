@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SOURCE_FETCH_MODES } from "./source-fetch.js";
 
 export const skillInstallInputSchema = z.object({
   sourceUrl: z.string().min(1),
@@ -6,6 +7,7 @@ export const skillInstallInputSchema = z.object({
   version: z.string().min(1),
   skillPaths: z.array(z.string().min(1)).min(1),
   path: z.string().optional(),
+  fetch: z.enum(SOURCE_FETCH_MODES).optional(),
 });
 
 export const skillUninstallInputSchema = z.object({
@@ -16,6 +18,7 @@ export const skillUninstallInputSchema = z.object({
 export const skillScanInputSchema = z.object({
   source: z.string().min(1),
   path: z.string().optional(),
+  fetch: z.enum(SOURCE_FETCH_MODES).optional(),
 });
 
 export const skillPublishInputSchema = z.object({

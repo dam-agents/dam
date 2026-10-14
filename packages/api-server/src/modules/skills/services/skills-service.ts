@@ -22,8 +22,16 @@ import type {
   SkillSetEntry,
   SkillSetSkipReason,
 } from "api-server-api";
-import { canonicalSourceLocation, parseGithubRepo } from "agent-runtime-api";
-import type { SourceLocation } from "agent-runtime-api";
+import {
+  canonicalSourceLocation,
+  parseGithubRepo,
+  planSourceFetch,
+} from "agent-runtime-api";
+import type {
+  EgressDenies,
+  SourceFetchPlan,
+  SourceLocation,
+} from "agent-runtime-api";
 import { MAX_SKILL_BATCH_ENTRIES, skillKey } from "api-server-api";
 import type {
   ContributionsProgress,
@@ -109,6 +117,7 @@ export interface SkillsServiceDeps {
     dir: string,
   ) => Promise<string>;
   brandName: string;
+  egressDenies: (agentId: string) => EgressDenies;
 }
 
 function enrichSource(s: SkillSource): SkillSource {
@@ -401,7 +410,19 @@ async function runScanForSource(
       { kind: "agent", owner: deps.owner, agentId },
       src.gitUrl,
       src.path,
-      (gitUrl) => deps.runtimeClient.scan(agentId, gitUrl, src.path),
+      async (gitUrl) => {
+        const plan = await planFetchOrThrow(deps, agentId, {
+          url: gitUrl,
+          path: src.path,
+          version: "HEAD",
+        });
+        return deps.runtimeClient.scan(
+          agentId,
+          gitUrl,
+          src.path,
+          plan.kind === "directory" ? "directory" : undefined,
+        );
+      },
     );
     return {
       skills,
@@ -414,6 +435,24 @@ async function runScanForSource(
     if (!verdict) throw err;
     throw verdict;
   }
+}
+
+async function planFetchOrThrow(
+  deps: SkillsServiceDeps,
+  agentId: string,
+  source: { url: string; path?: string; version: string },
+): Promise<SourceFetchPlan> {
+  const plan = await planSourceFetch(source, deps.egressDenies(agentId));
+  if (plan.kind !== "blocked") return plan;
+  const repo = parseGithubRepo(source.url);
+  const name = repo ? `${repo.owner}/${repo.repo}` : source.url;
+  throw new TRPCError({
+    code: "PRECONDITION_FAILED",
+    message:
+      plan.reason === "no-path"
+        ? `This agent's egress rules block downloading ${name}. Set a path on the skill source that the agent may read.`
+        : `This agent's egress rules block downloading ${name} and reading its path ${source.path}. Allow GET api.github.com /repos/${name}/contents/${source.path}* for the agent, or set another path.`,
+  });
 }
 
 export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
@@ -448,6 +487,13 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
 
     await ensureAgentReachable(deps.agentsRepo, agentId, deps.owner);
     const paths = sourcePaths ?? (await sourcePathsByGitUrl(deps, agentId));
+    for (const entry of install) {
+      await planFetchOrThrow(deps, agentId, {
+        url: entry.source,
+        path: paths.get(entry.source),
+        version: entry.version,
+      });
+    }
 
     await deps.unitOfWork(async (tx) => {
       for (const entry of install) {
@@ -779,6 +825,11 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       const path = (await sourcePathsByGitUrl(deps, input.agentId)).get(
         input.source,
       );
+      await planFetchOrThrow(deps, input.agentId, {
+        url: input.source,
+        path,
+        version: input.version,
+      });
       const ref: SkillRef = {
         source: input.source,
         name: input.name,

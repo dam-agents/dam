@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import * as path from "node:path";
 import type {
   GitHubErrorBody,
   Result,
@@ -8,6 +10,10 @@ import { err, ok, parseGithubRepo } from "agent-runtime-api";
 const GITHUB_API = "https://api.github.com";
 
 const MAX_SKILL_FILE_BYTES = 1024 * 1024;
+
+export const MAX_SUBTREE_REQUESTS = 200;
+
+const MAX_LINK_HOPS = 16;
 
 export interface DetectedOwnerRepo {
   owner: string;
@@ -49,6 +55,30 @@ export interface PullRequestState {
   mergedAt: string | null;
 }
 
+export interface SubtreeFile {
+  path: string;
+  bytes: Uint8Array;
+}
+
+interface ContentsEntry {
+  type: string;
+  path: string;
+  sha: string;
+  size: number;
+  download_url: string | null;
+}
+
+interface ContentsFile {
+  type: string;
+  content?: string;
+  encoding?: string;
+}
+
+export interface ResolvedDir {
+  path: string;
+  hasManifest: boolean;
+}
+
 export interface GithubFetchOpts {
   withAuth?: boolean;
 }
@@ -87,6 +117,19 @@ export interface GitHubRestClient {
     sha: string,
     opts?: GithubFetchOpts,
   ) => Promise<Result<Uint8Array, SkillsDomainError>>;
+  resolveDir: (
+    host: DetectedOwnerRepo,
+    ref: string,
+    dirPath: string,
+    opts?: GithubFetchOpts,
+  ) => Promise<Result<ResolvedDir, SkillsDomainError>>;
+  fetchSubtree: (
+    host: DetectedOwnerRepo,
+    ref: string,
+    dirPath: string,
+    opts?: GithubFetchOpts,
+    placeAt?: string,
+  ) => Promise<Result<SubtreeFile[], SkillsDomainError>>;
   createBlob: (
     host: DetectedOwnerRepo,
     body: { content: string; encoding: "utf-8" | "base64" },
@@ -197,6 +240,133 @@ export function createGitHubRestClient(clientOpts: {
         opts,
       );
     },
+    async resolveDir(host, ref, dirPath, opts) {
+      const fail = sourceFetchFailed(host);
+      let hops = 0;
+      const visit = async (
+        p: string,
+      ): Promise<Result<ResolvedDir, SkillsDomainError>> => {
+        if (++hops > MAX_LINK_HOPS) {
+          return fail(`${dirPath}@${ref} has too many symlinks to resolve`);
+        }
+        const r = await json<unknown>(
+          "GET",
+          contentsPath(host, ref, p),
+          undefined,
+          opts,
+        );
+        if (r.ok) {
+          if (Array.isArray(r.value)) {
+            const entries = r.value as ContentsEntry[];
+            const hasManifest = entries.some(
+              (e) => e.type === "file" && e.path === `${p}/SKILL.md`,
+            );
+            return ok({ path: p, hasManifest });
+          }
+          const target = symlinkTarget(p, r.value);
+          return target === null
+            ? fail(`${p}@${ref} is not a directory`)
+            : visit(target);
+        }
+        const parentPath = path.posix.dirname(p);
+        if (!isNotFound(r) || parentPath === ".") return r;
+        const parent = await visit(parentPath);
+        if (!parent.ok || parent.value.path === parentPath) return r;
+        return visit(
+          path.posix.join(parent.value.path, path.posix.basename(p)),
+        );
+      };
+      return visit(dirPath);
+    },
+    async fetchSubtree(host, ref, dirPath, opts, placeAt = dirPath) {
+      const fail = sourceFetchFailed(host);
+      const contents = (p: string) => contentsPath(host, ref, p);
+      let requests = 0;
+      const spend = (n: number) => {
+        requests += n;
+        return requests <= MAX_SUBTREE_REQUESTS;
+      };
+      const overBudget = () =>
+        fail(
+          `${dirPath}@${ref} needs more than ${MAX_SUBTREE_REQUESTS} requests to fetch`,
+        );
+
+      const files: SubtreeFile[] = [];
+      const pending = [{ src: dirPath, dst: placeAt, viaLink: false }];
+      while (pending.length > 0) {
+        const { src, dst, viaLink } = pending.pop()!;
+        if (!spend(1)) return overBudget();
+        const listing = await json<unknown>(
+          "GET",
+          contents(src),
+          undefined,
+          opts,
+        );
+        if (!listing.ok) {
+          if (viaLink && isNotFound(listing)) continue;
+          return listing;
+        }
+        if (!Array.isArray(listing.value)) {
+          const target = symlinkTarget(src, listing.value);
+          if (target !== null)
+            pending.push({ src: target, dst, viaLink: true });
+          else if (!viaLink) return fail(`${src}@${ref} is not a directory`);
+          continue;
+        }
+        const blobs: { entry: ContentsEntry; dst: string }[] = [];
+        for (const entry of listing.value as ContentsEntry[]) {
+          const at = `${dst}/${path.posix.basename(entry.path)}`;
+          if (entry.type === "dir" || entry.type === "symlink") {
+            pending.push({
+              src: entry.path,
+              dst: at,
+              viaLink: entry.type === "symlink",
+            });
+          } else if (entry.type === "file" && entry.download_url !== null) {
+            blobs.push({ entry, dst: at });
+          }
+        }
+        const oversize = blobs.find((b) => b.entry.size > MAX_SKILL_FILE_BYTES);
+        if (oversize) {
+          return fail(
+            `${oversize.entry.path} too large: ${oversize.entry.size} bytes`,
+          );
+        }
+        if (!spend(blobs.length)) return overBudget();
+        const fetched = await Promise.all(
+          blobs.map(async ({ entry, dst: at }) => {
+            const r = await json<ContentsFile>(
+              "GET",
+              contents(entry.path),
+              undefined,
+              opts,
+            );
+            if (!r.ok) return r;
+            if (
+              r.value.type !== "file" ||
+              typeof r.value.content !== "string" ||
+              r.value.encoding !== "base64"
+            ) {
+              return ok(null);
+            }
+            const bytes = Buffer.from(r.value.content, "base64");
+            if (bytes.byteLength > MAX_SKILL_FILE_BYTES) {
+              return fail(`${entry.path} too large: ${bytes.byteLength} bytes`);
+            }
+            return ok(
+              gitBlobSha(bytes) === entry.sha
+                ? { path: at, bytes: new Uint8Array(bytes) }
+                : null,
+            );
+          }),
+        );
+        for (const r of fetched) {
+          if (!r.ok) return r;
+          if (r.value) files.push(r.value);
+        }
+      }
+      return ok(files);
+    },
     async createBlob(host, body) {
       const r = await json<{ sha: string }>(
         "POST",
@@ -237,6 +407,48 @@ export function createGitHubRestClient(clientOpts: {
       return ok({ htmlUrl: r.value.html_url });
     },
   };
+}
+
+function contentsPath(
+  host: DetectedOwnerRepo,
+  ref: string,
+  filePath: string,
+): string {
+  return `${repoPath(host)}/contents/${encodePath(filePath)}?ref=${encodeURIComponent(ref)}`;
+}
+
+function sourceFetchFailed(host: DetectedOwnerRepo) {
+  return (detail: string) =>
+    err<SkillsDomainError>({
+      kind: "SourceFetchFailed",
+      source: `${host.owner}/${host.repo}`,
+      detail,
+    });
+}
+
+function isNotFound(res: Result<unknown, SkillsDomainError>): boolean {
+  return (
+    !res.ok &&
+    res.error.kind === "UpstreamGitHubError" &&
+    res.error.status === 404
+  );
+}
+
+function symlinkTarget(linkPath: string, body: unknown): string | null {
+  const link = body as { type?: string; target?: unknown };
+  if (link?.type !== "symlink" || typeof link.target !== "string") return null;
+  if (link.target.startsWith("/")) return null;
+  const resolved = path.posix.normalize(
+    path.posix.join(path.posix.dirname(linkPath), link.target),
+  );
+  return resolved === ".." || resolved.startsWith("../") ? null : resolved;
+}
+
+function gitBlobSha(bytes: Buffer): string {
+  return createHash("sha1")
+    .update(`blob ${bytes.byteLength}\0`)
+    .update(bytes)
+    .digest("hex");
 }
 
 function ghHeaders(

@@ -45,6 +45,7 @@ function serviceWithScanSpy(scanPublic: SkillsServiceDeps["scanPublic"]) {
     owner: OWNER,
     scanSource,
     scanPublic,
+    egressDenies: () => async () => false,
   } as unknown as SkillsServiceDeps;
   return { service: createSkillsService(deps), scanSource };
 }

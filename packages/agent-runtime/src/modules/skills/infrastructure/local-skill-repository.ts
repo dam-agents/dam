@@ -69,6 +69,10 @@ export interface LocalSkillRepository {
     dest: string,
     opts: { stripComponents?: number },
   ) => Promise<void>;
+  writeFiles: (
+    dest: string,
+    files: { path: string; bytes: Uint8Array }[],
+  ) => Promise<void>;
   findSkillDirsInClone: (
     repoDir: string,
     subPath?: string,
@@ -109,6 +113,7 @@ export function createLocalSkillRepository(): LocalSkillRepository {
     remove,
     withTempDir,
     extractTarball,
+    writeFiles,
     findSkillDirsInClone,
     resolveSkillDirInClone,
     readSkillManifest,
@@ -446,6 +451,20 @@ async function extractTarball(
   args.push("-C", dest);
   await runProc("tar", args);
   await fs.rm(tgz);
+}
+
+async function writeFiles(
+  dest: string,
+  files: { path: string; bytes: Uint8Array }[],
+): Promise<void> {
+  for (const file of files) {
+    if (subPathEscapes(file.path)) {
+      throw new Error(`source file rejected: unsafe path ${file.path}`);
+    }
+    const target = path.join(dest, file.path);
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, file.bytes);
+  }
 }
 
 function assertSafeTarEntry(entry: string): void {
