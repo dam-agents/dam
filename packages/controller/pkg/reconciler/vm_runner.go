@@ -440,7 +440,8 @@ func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string, refs
 	} else if !k8serrors.IsNotFound(err) {
 		return err
 	}
-	if sizeErr != nil {
+	r.refreshVMPool(ctx, owner)
+	if size, sizeErr = r.runnerStorageCeiling(ctx, owner); sizeErr != nil {
 		return sizeErr
 	}
 	pvc := &corev1.PersistentVolumeClaim{
