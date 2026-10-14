@@ -669,3 +669,38 @@ fn a_resolve_that_fails_holds_nothing() {
     assert!(locked(&cache.memory).holds.is_empty());
     assert_eq!(scratch_trees(&cache), 0);
 }
+
+// TEST_SCENARIO: a tree is no longer flushed as it is unpacked, because a flush of the whole filesystem stalls every machine disk on it. What keeps a host crash from serving a tree cut short is the boot its origin records: a tree recorded as unflushed in another boot is fetched again, never booted. On a host with a boot ID a fetch records its own boot, and the flush at close clears the record, so a clean reboot keeps the tree.
+#[test]
+fn a_tree_never_flushed_before_a_host_crash_is_fetched_again() {
+    let f = Fixture::new("unflushed", PUBLIC_CRANE);
+    let cache = f.cache(|_| {});
+    let digest = digest_of(&cache, IMAGE);
+    let entry = cache.digest_entry(&digest);
+    if let Some(boot) = boot_id() {
+        assert_eq!(read_origin(&entry).unwrap().unflushed, Some(boot));
+        cache.flush();
+        assert_eq!(
+            read_origin(&entry).unwrap().unflushed,
+            None,
+            "the flush left the tree unflushed"
+        );
+    }
+    let mut origin = read_origin(&entry).unwrap();
+    origin.unflushed = Some("a boot before the host crashed".into());
+    fs::write(
+        entry.join(ORIGIN_FILE),
+        serde_json::to_vec(&origin).unwrap(),
+    )
+    .unwrap();
+    let pinned = format!("quay.io/x/vm@{digest}");
+    let again = cache.resolve(&pinned, &[]);
+    assert!(
+        again.fetched.is_some_and(|f| f.ok),
+        "a tree a crash may have cut short was booted"
+    );
+    assert_ne!(
+        read_origin(&entry).unwrap().unflushed.as_deref(),
+        Some("a boot before the host crashed")
+    );
+}
