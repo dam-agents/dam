@@ -110,7 +110,8 @@ A pod is force-rolled only after a live read, and the gateway that decides wheth
 What an agent waits for is on its status: a certificate cert-manager has not issued, with cert-manager's own account; a runner pod the scheduler cannot place, under a reason of its own that the api-server reads as a failed start ([agent-lifecycle](agent-lifecycle.md#wake)), except a new pod whose state claim is still being bound, which reads as still starting for its first three minutes; a runner the kernel OOM-killed, on each agent it took down until that agent is ready again, read as still starting with the reason shown ([vm-memory](vm-memory.md)); a runner that cannot be reached, described without its in-cluster address.
 A reconcile that could not ensure the machine takes the Agent's readiness down with it.
 Hibernation does not wait for an unreachable runner: the gateway goes down anyway, readiness goes down, and the machine is stopped by the Agent's next reconcile.
-The Agent is published hibernated only after the runner confirmed the stop, on the idle checker's next sweep, because a wake from hibernation trusts the first health check answer ([agent-lifecycle](agent-lifecycle.md#wake)).
+The Agent is published hibernated only once the runner reports the machine stopped, because a wake from hibernation trusts the first health check answer ([agent-lifecycle](agent-lifecycle.md#wake)).
+The runner answers a stop before the guest is signalled, quiesced and powered off, so until the machine reads stopped the Agent is not ready and reads as pausing, and its reconcile watches the machine and publishes hibernation once it stops.
 
 ## Runtime migration
 

@@ -54,3 +54,4 @@ export const ANN_IMAGE_UPDATE_REFUSED =
 
 export const READY_REASON_HIBERNATED = "Hibernated";
 export const READY_REASON_OVER_BUDGET = "OverBudget";
+export const AGENT_POD_REASON_MACHINE_STOPPING = "MachineStopping";
