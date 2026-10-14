@@ -52,7 +52,7 @@ export function storagePercent(usage: RunnerUsage): number | null {
   return usableBytes > 0 ? Math.floor((usedBytes * 100) / usableBytes) : null;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the one storage-full message, said the same way by the create refusal, the Slack alert and a refused wake, and matching the runner's own refusal: what is refused at the current level, that a stopped VM agent can still be opened to clean up until storage is nearly full, and the ways to free space. Without figures it speaks of storage that is full.
+// UNIT_BOUNDARY_DESCRIPTION: the one storage-full message, said the same way by the create refusal, the Slack alert and a refused wake, and matching the runner's own refusal: what is refused at the current level, that a stopped VM agent can still be opened to clean up until storage is nearly full, and the ways to free space. Without figures it speaks of storage too full to start an agent, since only then is a start refused.
 export function storageFullMessage(figures?: {
   usedBytes: number;
   usableBytes: number;
@@ -69,7 +69,7 @@ export function storageFullMessage(figures?: {
       ? "Your running VM agents may be failing to write files now."
       : null,
     `${used}, so new VM agents can't be created and their disks can't grow.`,
-    percent !== null && percent >= STORAGE_START_LIMIT_PERCENT
+    percent === null || percent >= STORAGE_START_LIMIT_PERCENT
       ? "Stopped VM agents can't be started until space is freed."
       : "Stopped VM agents can still be started until storage is nearly full, so you can open one and ask it to clear its caches.",
     "To free space, delete a VM agent you no longer need, open an agent and ask it to clear its caches, or request more storage.",
