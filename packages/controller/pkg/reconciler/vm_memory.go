@@ -45,21 +45,27 @@ func (r *AgentReconciler) liveMachine(name string) vmrunner.MachineStatus {
 
 // UNIT_BOUNDARY_DESCRIPTION: what a machine that should run is counted at,
 // UNIT_BOUNDARY_DESCRIPTION: the same way the runner admits it: its measured
-// UNIT_BOUNDARY_DESCRIPTION: use plus headroom, never above its size, and the
-// UNIT_BOUNDARY_DESCRIPTION: boot estimate, or its size when that is smaller
-// UNIT_BOUNDARY_DESCRIPTION: or no estimate is set, until the runner has measured it.
+// UNIT_BOUNDARY_DESCRIPTION: use plus headroom, never above its size, and at
+// UNIT_BOUNDARY_DESCRIPTION: least the warm-up floor, or its size when that is
+// UNIT_BOUNDARY_DESCRIPTION: smaller or no floor is set, until the runner has
+// UNIT_BOUNDARY_DESCRIPTION: measured it and while it reports it warming up.
 // UNIT_BOUNDARY_DESCRIPTION: A running machine's size is the larger of the one
 // UNIT_BOUNDARY_DESCRIPTION: it booted with and the one its next start takes.
 func (r *AgentReconciler) accountedMemoryMiB(ctx context.Context, owner, name string, spec *apiv1.AgentSpec) int {
 	live := r.liveMachine(name)
 	size := max(r.machineMemoryMiB(ctx, owner, spec), live.MemoryMiB)
-	if live.UsedMiB == 0 {
-		if boot := r.config.VM.Runner.BootMiB; boot > 0 {
-			return min(size, boot)
-		}
-		return size
+	floor := size
+	if boot := r.config.VM.Runner.BootMiB; boot > 0 {
+		floor = min(size, boot)
 	}
-	return min(size, live.UsedMiB+r.config.VM.Runner.HeadroomMiB)
+	if live.UsedMiB == 0 {
+		return floor
+	}
+	counted := min(size, live.UsedMiB+r.config.VM.Runner.HeadroomMiB)
+	if live.Warming {
+		return max(counted, floor)
+	}
+	return counted
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how much more memory the owner's machines are

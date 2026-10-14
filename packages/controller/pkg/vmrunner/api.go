@@ -83,6 +83,11 @@ type MachineStatus struct {
 	// UNIT_BOUNDARY_DESCRIPTION: holds, as the runner last measured it. Zero
 	// UNIT_BOUNDARY_DESCRIPTION: until measured, which counts as MemoryMiB.
 	UsedMiB int `json:"usedMiB,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: whether the running machine is still within
+	// UNIT_BOUNDARY_DESCRIPTION: its warm-up after its boot, when it counts at
+	// UNIT_BOUNDARY_DESCRIPTION: least at the warm-up floor however little it
+	// UNIT_BOUNDARY_DESCRIPTION: was measured at: its harness is still growing.
+	Warming bool `json:"warming,omitempty"`
 	// UNIT_BOUNDARY_DESCRIPTION: the disk the machine's last start asked for,
 	// UNIT_BOUNDARY_DESCRIPTION: in GiB. Only a runner that grows a disk at
 	// UNIT_BOUNDARY_DESCRIPTION: the next start rather than restarting for it

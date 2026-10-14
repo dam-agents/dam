@@ -112,7 +112,7 @@ struct Seen {
     error: Option<String>,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `seeding` is set while a seed is uploaded into the machine's share, and no worker starts while it is. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change. `cancel` is the machine's own child of the runner's lifetime, cancelled by a delete so the action in flight stops waiting on its fetch. `acting_mib` is the memory of the spec the action in flight runs with, which a newer spec stored behind it does not change. `resident_mib` is what the prober last measured the running machine's VMM holding, kept beside `seen` rather than in it, so a figure that moves at every probe does not move the status version and wake every waiting read. `deletes` counts the delete calls in progress, and `deleting` stays set after one gave up waiting, so the worker still takes no further action. `gave_up` is when the runner last restarted the machine for going quiet, which holds its next such restart back.
+// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `seeding` is set while a seed is uploaded into the machine's share, and no worker starts while it is. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change. `cancel` is the machine's own child of the runner's lifetime, cancelled by a delete so the action in flight stops waiting on its fetch. `acting_mib` is the memory of the spec the action in flight runs with, which a newer spec stored behind it does not change. `resident_mib` is what the prober last measured the running machine's VMM holding, kept beside `seen` rather than in it, so a figure that moves at every probe does not move the status version and wake every waiting read. `warming_since` is when the machine's last boot began, which admission counts it at the warm-up floor for WARMUP after. `deletes` counts the delete calls in progress, and `deleting` stays set after one gave up waiting, so the worker still takes no further action. `gave_up` is when the runner last restarted the machine for going quiet, which holds its next such restart back.
 #[derive(Default)]
 struct MachineEntry {
     desired: Option<MachineSpec>,
@@ -134,10 +134,18 @@ struct MachineEntry {
     version: u64,
     acting_mib: i32,
     resident_mib: Option<i32>,
+    warming_since: Option<Instant>,
     cpu: Option<(Instant, u64)>,
     cpu_milli: u64,
     cancel: Option<CancellationToken>,
     deletes: u32,
+}
+
+impl MachineEntry {
+    fn warming(&self) -> bool {
+        self.warming_since
+            .is_some_and(|at| at.elapsed() < crate::capacity::WARMUP)
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how often the prober asks about this machine, or None when nothing but an action can change what it would hear.
@@ -1207,6 +1215,7 @@ impl Server {
 
     fn start_machine(&self, id: &str, action: Action, spec: &MachineSpec) -> anyhow::Result<()> {
         if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
+            entry.warming_since = Some(Instant::now());
             entry.boot = Some(Boot {
                 at: Instant::now(),
                 action,
@@ -1345,6 +1354,7 @@ impl Server {
                 &self.committing(),
                 &|other| self.known_running(other),
                 &|other| self.resident(other),
+                &|other| self.warming(other),
             )
             .ok();
         let cgroup = self.config.cgroup_dir.as_deref();
@@ -1378,6 +1388,7 @@ impl Server {
             &self.committing(),
             &|other| self.known_running(other),
             &|other| self.resident(other),
+            &|other| self.warming(other),
         )?;
         let storage = (self.config.measure_storage)().unwrap_or(StorageUse { used: 0, usable: 0 });
         let machines = self
@@ -1593,6 +1604,13 @@ impl Server {
         }
     }
 
+    fn warming(&self, id: &str) -> bool {
+        locked(&self.machines)
+            .entries
+            .get(id)
+            .is_some_and(MachineEntry::warming)
+    }
+
     fn resident(&self, id: &str) -> Option<i32> {
         locked(&self.machines)
             .entries
@@ -1640,6 +1658,7 @@ impl Server {
             &self.committing(),
             &|other| self.known_running(other),
             &|other| self.resident(other),
+            &|other| self.warming(other),
         )
     }
 
@@ -1913,6 +1932,7 @@ impl Server {
                 .and_then(|e| e.resident_mib)
                 .filter(|_| state == State::Running)
                 .unwrap_or(0);
+            status.warming = state == State::Running && entry.is_some_and(MachineEntry::warming);
             status.nested = spec.nested_virtualization && self.runtime.nests();
         }
         if state == State::Unknown && status.message.is_empty() {

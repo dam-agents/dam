@@ -21,10 +21,10 @@ A new size reaches a running machine at its next start, not by rebooting it ([vm
 A machine's size is the most its guest can see; the host commits only the pages the guest touches, and the guest hands freed pages back through free-page reporting, so an idle agent on a 2 GiB machine holds a few hundred MiB.
 
 **A machine boots small and grows.** A guest's kernel writes a page descriptor for every page of its RAM before it runs anything, and under nested virtualization that costs 65 to 85 ms per GiB: most of a second for a 12 GiB machine.
-So the runner boots each machine with the boot estimate below (`virtualization.runner.bootMiB`), or its size when that is smaller, and grows it to its size as soon as the start returns, through the virtio-mem area smolvm gives every guest.
+So the runner boots each machine with the warm-up floor below (`virtualization.runner.bootMiB`), or its size when that is smaller, and grows it to its size as soon as the start returns, through the virtio-mem area smolvm gives every guest.
 The guest kernel leaves added RAM offline unless told otherwise, and its virtio-mem driver adds no more once 1 GiB of it waits offline, so the runner first has the guest kernel online each block as it adds it; the VMM then maps the added RAM, and the start ends once the guest has plugged it all and the guest agent confirms it is online.
-Every boot does this again, since each boots from the estimate.
-Readiness does not wait for the grow, which runs while the workload starts, because waiting would put the same page work back on the path; a guest that allocates past the estimate before the grow ends meets its own OOM killer.
+Every boot does this again, since each boots from the floor.
+Readiness does not wait for the grow, which runs while the workload starts, because waiting would put the same page work back on the path; a guest that allocates past the floor before the grow ends meets its own OOM killer.
 A machine that cannot grow is stopped and booted again whole within the same start, so no running machine stays small.
 smolvm's own resize is not used: it refuses a VMM without a cgroup of its own, which no VMM in a runner pod has, and admits growth against the host's free memory rather than by use.
 Free-page reporting returns the added RAM's freed pages as it does the boot RAM's.
@@ -46,10 +46,10 @@ A pressure read waits on a version of its own, which moves when pressure starts 
 A runner with no cgroup v2 to read — the host runner, a cgroup v1 node — never reports pressure.
 
 **A running machine is counted at its use plus headroom.** That is its measured use plus a per-machine headroom (`virtualization.runner.headroomMiB`), never more than its size.
-A machine not yet measured, and every machine an action is bringing up, counts at a boot estimate (`virtualization.runner.bootMiB`), or its size when that is smaller, until the runner first measures it.
-That is about 100 ms after its start returns, before the agent's harness has started; only a guest whose harness answered during the start waits for the steady probe, about ten seconds on.
-So from then on a machine counts at little more than its booted guest until later probes see the harness grow.
-Counting a boot at half the pool would let only two machines boot at once, so a runner roll or a few wakes together would refuse the rest; the cost is that machines whose harnesses start together are under-counted until the probes catch up.
+**A machine warming up counts at least at the warm-up floor** (`virtualization.runner.bootMiB`), or its size when that is smaller: a machine not yet measured, every machine an action is bringing up, and a running machine for two minutes after its boot began, whatever it was measured at.
+The harness starts only once the guest answers, about a second after the boot, and grows to 2 to 3 GiB within the next minute, so a machine measured right after its boot holds little of what it will hold; the warm-up is a fixed time rather than one that ends at the guest's answer, since the answer is when the growth begins.
+The runner reports a machine warming up in its status, and the controller counts it the same way.
+Counting a boot at half the pool would let only two machines boot at once; at the floor, as many machines warm up together as the pool holds floors, and a runner roll or many wakes at once start the rest in waves as the first ones warm up, each refused start retried within 30 seconds ([budgets](budgets.md)).
 Admission, the committed-memory metric and the runner's memory request all count the same way; only the request rounds, as below.
 
 **Admission is against use, so an owner may run more machines than their sizes add up to.** A machine starts while every machine's count, the start's own count and the runner's reserve fit under the runner's limit; otherwise the runner refuses it with the shortfall named, and the Agent is parked as [budgets](budgets.md) describes.
@@ -76,7 +76,7 @@ Every minute platform-init hands the cache on the kernel's inactive list to cgro
 Guests have no swap, so only file pages go.
 Free-page reporting returns only whole 2 MiB blocks, so memory a program frees between pages the guest still uses stays counted; when the free memory in smaller blocks rises by 128 MiB, the same pass reclaims that much cold cache and slab and compacts the guest's memory, so the freed pages merge into blocks the host takes back.
 
-**What can still go wrong.** Guests that grow faster than a second's sample and the seconds a hibernation takes can still take the runner over its limit, and the kernel then kills the runner with every machine of its owner.
+**What can still go wrong.** A harness that grows past the warm-up floor while it warms up, or past its headroom between two probes after, and the seconds a hibernation takes can still take the runner over its limit, and the kernel then kills the runner with every machine of its owner.
 The pressure signal makes that rarer; it cannot rule it out.
 When it happens, each agent that was ready before the kill says that its owner's memory ran out, read off the runner pod's last termination, through the runner's restart and its machine's boot, until it is ready again or a more specific reason, such as a failed boot, replaces it; the owner sees one notice naming every agent that restarted, which asks them to pause agents they are not using.
 An agent woken after the kill carries nothing, and nothing on the agents records the kill once they are ready.

@@ -120,6 +120,26 @@ func TestAMachineIsSizedToHalfThePoolAndCountedAtTheBootEstimateUntilMeasured(t 
 	assert.Equal(t, 2048+6000+256, d.memoryMiB, "a measured machine counts at its use, past the boot estimate")
 }
 
+// TEST_SCENARIO: a harness starts only once its guest answers and grows to 2 to 3 GiB within the next minute, so a machine measured small right after its boot must not free room its harness is about to take. While the runner reports it warming up it counts at the warm-up floor, as the runner admits it, and at its use plus headroom once it has warmed up.
+func TestAWarmingMachineMeasuredSmallCountsAtTheWarmUpFloor(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")}}
+	r.config.VM.Runner.BootMiB = 3072
+	peerVMAgent(t, r, "peer-up", "512Mi", "20Gi", true)
+	ctx := context.Background()
+
+	r.noteMachineUse("peer-up", vmrunner.MachineStatus{State: vmrunner.StateRunning, UsedMiB: 300, Warming: true})
+	d, err := r.ownerRunnerDemand(ctx, testOwner, agent, true)
+	require.NoError(t, err)
+	assert.Equal(t, 2*3072, d.memoryMiB, "a warming machine measured at 300 MiB counts at the floor")
+
+	r.noteMachineUse("peer-up", measured(300))
+	d, err = r.ownerRunnerDemand(ctx, testOwner, agent, true)
+	require.NoError(t, err)
+	assert.Equal(t, 3072+300+256, d.memoryMiB, "a warmed-up machine counts at its use plus headroom")
+}
+
 // TEST_SCENARIO: the host runner admits against a share of the Mac's memory, not the chart's pod limit the install still has to set, so half of that limit would be a machine it refuses. There the agent's spec still sets the machine's memory.
 func TestAHostRunnerMachineTakesItsMemoryFromTheSpec(t *testing.T) {
 	agent := vmAgentCR()
