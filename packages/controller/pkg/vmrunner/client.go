@@ -35,7 +35,7 @@ type Client struct {
 	reload func(context.Context) (string, error)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a runner that is merely busy may take seconds to answer — a put may probe the guest's agent, and a delete waits out the operation in flight — but one that is unreachable must fail fast, because a single reconcile worker serves every agent in the install and would otherwise spend the whole request timeout on each attempt.
+// UNIT_BOUNDARY_DESCRIPTION: a runner that is merely busy may take seconds to answer — a put may probe the guest's agent, and a delete waits out the operation in flight — but one that is unreachable must fail fast, because the reconcile worker that calls it serves many owners' agents and would otherwise spend the whole request timeout on each attempt.
 func NewClient(url, token, caPEM string) (*Client, error) {
 	c := &Client{URL: url, token: token, HTTP: &http.Client{Timeout: 20 * time.Second}}
 	transport := http.DefaultTransport.(*http.Transport).Clone()

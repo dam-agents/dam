@@ -64,8 +64,12 @@ Role-based budgets and approval flows are out of scope — when they arrive, ric
 ## Enforcement
 
 On each reconcile that wants to scale an agent up (`shouldRun` true) where the pair is currently at zero, the controller sums the owner's Reserved, adds the candidate's footprint, and compares against the Ceiling (UserBudget, else default, both read live; no informer lag on the enforcement path).
-The read-decide-scale sequence cannot interleave for two same-owner agents because agent reconciles are drained by a **single worker goroutine** on the leader-elected instance — an invariant pinned in code at the worker spawn and in the check itself; a per-owner mutex backs it up.
-The worker orders its queue instead of adding workers: a change a person is waiting on — a wake bumping last-activity, a new Agent, a spec or annotation edit, a pod or machine moving — goes ahead of background re-checks (the startup list after a controller restart, the drift sweep, the retry and memory ticks, the controller's own status writes echoing back), so a wake waits behind at most the reconcile already running, never behind the whole fleet.
+The read-decide-scale sequence cannot interleave for two same-owner agents because every agent of one owner is reconciled by the **same worker**, one at a time: the leader-elected instance runs a fixed eight workers, each with its own queue, and an agent's owner label picks its worker; a per-owner mutex backs it up.
+Different owners' agents reconcile in parallel, so a VM runner that hangs holds up only the owners that share its worker, not the whole install.
+A name the agent cache does not hold yet is not queued at all, so no agent is ever on two workers at once; the cache's own add for it queues it once it lands.
+The owner label is set at create and never changes, which keeps an agent on one worker for its whole life.
+Each worker orders its queue: a change a person is waiting on — a wake bumping last-activity, a new Agent, a spec or annotation edit, a pod or machine moving — goes ahead of background re-checks (the startup list after a controller restart, the drift sweep, the retry and memory ticks, the controller's own status writes echoing back), so a wake waits behind at most the reconcile its worker is already running, never behind the whole fleet.
+What the workers share across owners is serialized where it is decided: the runner roll's place count and the runtime migration copy slots each take one install-wide lock, and every worker draws on the one Kubernetes client rate limiter, so more workers add no API throughput.
 Outcomes:
 
 - **Fits** — the pair scales up exactly as before.
