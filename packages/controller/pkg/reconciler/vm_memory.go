@@ -254,8 +254,12 @@ func (r *AgentReconciler) reclaimForRefusedStart(ctx context.Context, agent *api
 	return err
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a runner outside the cluster admits against a share of its host's memory the controller never learns, so its refusal goes without figures rather than quote the chart's limit.
 func (r *AgentReconciler) vmMemoryFullMessage(ctx context.Context, agent *apiv1.Agent, owner string) string {
 	const next = "It starts on its own once room frees up, since the platform pauses idle agents to make room when it can, or you can pause one yourself."
+	if r.config.VM.Runner.HostAddress != "" {
+		return "Your VM agents' memory is full, so this agent can't start yet. " + next
+	}
 	limit := r.runnerLimitMiB(ctx, owner) - r.config.VM.Runner.ReserveMiB
 	demand, err := r.ownerRunnerDemand(ctx, owner, agent, false)
 	if err != nil {
