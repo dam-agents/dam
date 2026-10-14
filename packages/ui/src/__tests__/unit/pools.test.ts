@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   cpuBar,
   memoryBar,
+  poolWarning,
   storageBar,
   topCpuAgents,
 } from "../../modules/budgets/lib/pools.js";
@@ -107,5 +108,21 @@ describe("pool bars", () => {
 
   it("names the agents using the most CPU", () => {
     expect(topCpuAgents(usage, agents).map((a) => a.id)).toEqual(["b", "a"]);
+  });
+});
+
+describe("a pool's warning text", () => {
+  const advice = "Pause agents to free up memory.";
+  const fact = "Idle agents are paused automatically to make room.";
+
+  it("adds what the platform does, and the Slack login for an unlinked user, only at critical", () => {
+    // TEST_SCENARIO: warning shows the advice alone, even for an unlinked user; critical adds the fact, and the invite only with a login command.
+    expect(poolWarning("warning", advice, fact, "/platform login")).toBe(
+      advice,
+    );
+    expect(poolWarning("critical", advice, fact)).toBe(`${advice} ${fact}`);
+    expect(poolWarning("critical", advice, fact, "/platform login")).toBe(
+      `${advice} ${fact} Run /platform login in Slack to get alerts like this there.`,
+    );
   });
 });

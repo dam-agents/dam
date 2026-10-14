@@ -11,6 +11,7 @@ import type { ResourceAlertsRepository } from "../infrastructure/resource-alerts
 
 export const RUNNER_OOM_REASON = "RunnerOutOfMemory";
 const OOM_COLLECT_MS = 15_000;
+const STORAGE_READ_LANES = 10;
 
 export interface OwnerStorage {
   usedBytes: number;
@@ -92,18 +93,26 @@ export function createResourceAlertsService(deps: {
 
   return {
     async evaluateStorage() {
-      for (const ownerSub of await deps.listStorageOwners()) {
-        const usage = await deps.readStorage(ownerSub);
-        if (!usage || usage.usableBytes <= 0) continue;
-        const percent = (usage.usedBytes / usage.usableBytes) * 100;
-        const at = now();
-        await advance(
-          ownerSub,
-          "storage",
-          (prev) => nextStorage(prev, percent, at),
-          () => storageMessage(usage, deps.homeUrl),
-        );
-      }
+      const owners = (await deps.listStorageOwners()).values();
+      const lane = async () => {
+        for (const ownerSub of owners) {
+          try {
+            const usage = await deps.readStorage(ownerSub);
+            if (!usage || usage.usableBytes <= 0) continue;
+            const percent = (usage.usedBytes / usage.usableBytes) * 100;
+            const at = now();
+            await advance(
+              ownerSub,
+              "storage",
+              (prev) => nextStorage(prev, percent, at),
+              () => storageMessage(usage, deps.homeUrl),
+            );
+          } catch (err) {
+            deps.log(`storage alert for ${ownerSub} failed: ${String(err)}`);
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: STORAGE_READ_LANES }, lane));
       for (const ownerSub of await deps.repo.listOwners("runner_oom", "open"))
         await evaluateOom(ownerSub);
     },
@@ -140,7 +149,7 @@ export function oomMessage(agents: readonly string[], homeUrl: string): string {
   const names = agents.length > 0 ? `: ${agents.join(", ")}` : "";
   return [
     `Your VM agents ran out of memory together, so every one that was running restarted${names}.`,
-    "Stop agents you are not using to free memory, or ask an admin for a larger memory pool.",
+    "Pause agents you aren't using to free memory, or ask an admin for a larger memory pool.",
     homeUrl,
   ].join(" ");
 }

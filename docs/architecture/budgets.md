@@ -72,7 +72,7 @@ Outcomes:
 - **Overflows** — the pair is scaled to zero (healing a gateway a prior admitted-then-failed reconcile may have left up) and the Agent is **parked**: `Ready=False, reason=OverBudget`, with the reserved/ceiling figures in the condition message.
   `Reconciled` stays true — the render succeeded; the start was refused.
 
-`OverBudget` has a second producer that is not a budget at all: a vm Agent whose machine the VM runner refuses for its own memory is parked the same way, carrying the runner's message instead of the ceiling figures, and the owner's idle vm agents are hibernated to free the room under the same rules ([vm-memory](vm-memory.md)).
+`OverBudget` has a second producer that is not a budget at all: a vm Agent whose machine the VM runner refuses for its own memory is parked the same way, carrying the controller's own sentence that the owner's VM agents' memory is full instead of the ceiling figures, and the owner's idle vm agents are hibernated to free the room under the same rules ([vm-memory](vm-memory.md)).
 It is published on this condition because the effect on the user is identical — the agent did not start until room is freed — and because the retry that admits it is the same one.
 Consumers must therefore treat the condition message as the explanation, not derive one from the figures.
 
@@ -99,7 +99,7 @@ A start the controller parks raises a dialog that names the cause and sends the 
 First-time users with no agents see none of it.
 The card shows a vm user their pools in its place, and a user with both kinds switches between the two views, which the browser remembers: memory and storage as bars showing how much is used of how much, each agent's share a segment largest first, with what the pool counts beyond the agents' own shares — headroom for memory, caches and system for storage — as the last.
 CPU's bar is its congestion, with its word beside it, not a use against a limit, because the limit moves with the machines running and reaching it fails nothing.
-The bar's colour and the meter's spoken value carry the level; at warning or critical a warning sign beside the pool's name says what to do — pause agents, delete old ones or have them clean their disks, or, for CPU, which agents use the most — and at critical what the platform does: idle agents are paused for memory, and new VM agents are refused for storage.
+The bar's colour and the meter's spoken value carry the level; at warning or critical a warning sign beside the pool's name says what to do — pause agents, delete old ones or have them clean their disks, or, for CPU, which agents use the most — and at critical what the platform does: idle agents are paused for memory, and new VM agents are refused for storage, plus, for a user who has not linked Slack where the install has it, how to link it to get these alerts there.
 Each vm agent's row carries its own memory and storage, and the dashboard reads the figures again every 15 s while it is open.
 
 **Resizing** changes an Agent's Size in the agent settings and always restarts the pod (the CR patch re-renders the pair — a "live" resize does not exist in Kubernetes terms).
@@ -139,13 +139,14 @@ Four rules bound it:
 
 Reclaiming is **announced, not asked**.
 The eligibility rules confine it to agents with no attached viewer, and the outcome — hibernated somewhat sooner than its own timer said — is one the agent's settings already sanction, so nobody is asked first.
-The victim lands in ordinary `Hibernated` state, but while its reclaim mark stands the api-server reads it off the Agent and the agent says it was put to sleep early — to make room for an agent its owner started, or, on the vm backend, to free memory for the owner's other agents ([vm-memory](vm-memory.md)) — in its unavailable view and its row, with a one-time notice in an open web app.
+The victim lands in ordinary `Hibernated` state, but while its reclaim mark stands the api-server reads it off the Agent and the agent says it was paused automatically — to make room for an agent its owner started, or, on the vm backend, to free memory for the owner's other agents ([vm-memory](vm-memory.md)) — in its unavailable view and its row, with a one-time notice in an open web app.
 A deliberate touch outdates the mark, and the message with it.
 The exposure this adds is hibernation's existing blind spot (unreported work, which no signal sees) arriving earlier than advertised; the floor bounds it and the escape is unchanged: disable hibernation on agents whose real work runs off-session.
 
 ## Failure semantics upstream
 
-The api-server classifies the `OverBudget` condition reason into a typed wake-failure (non-transient, fail-fast — a denied wake errors in about a reconcile round-trip, not a wake-timeout), so the UI, relays, channels, and scheduler all inherit the same message — the figures plus "stop a running agent to free room" for a ceiling, the runner's own shortfall text for a refused machine.
+The api-server classifies the `OverBudget` condition reason into a typed wake-failure (non-transient, fail-fast — a denied wake errors in about a reconcile round-trip, not a wake-timeout), so the UI, relays and scheduler all inherit the same message — the figures plus "pause agents you aren't using to free room" for a ceiling, and for a refused machine the controller's own sentence that the owner's VM agents' memory is full, with the figures in GiB, when the controller can read them, rather than the runner's accounting.
+A channel reply goes to whoever wrote in, who need not be the owner, so it says only that the owner's agents are using all their room, never the owner's figures or what the owner should do.
 A scheduled fire on an over-budget agent records a failed fire; the trigger event is already durably committed to the outbox, so it redelivers once room frees, or expires when the schedule's next occurrence supersedes it.
 
 The fail-fast is a **heuristic**, not a raw condition read: a parked agent keeps its `OverBudget` condition standing, and the condition doesn't say which wake attempt it applies to — so a fresh wake's first poll would otherwise see the *previous* attempt's denial and fail a start that room now permits.
@@ -165,7 +166,7 @@ Each message gives the figures or the agents affected, and what to do.
 Lower levels show only in the web app.
 
 The api-server evaluates them unattended, on one replica at a time.
-Storage is read every five minutes from each owner's runner, through the same read-only usage read the create refusal uses; a runner it cannot read changes nothing.
+Storage is read every five minutes from each owner's runner, through the same read-only usage read the create refusal uses, ten runners at a time so a pass over many unreachable runners still ends well inside its interval; a runner it cannot read changes nothing, and one owner's failed evaluation is logged without stopping the others.
 An out-of-memory kill is seen on the agents the controller marks with it, collected over a short window so one message names every affected agent.
 
 Messages are limited so an owner near a threshold is not messaged at every reading:

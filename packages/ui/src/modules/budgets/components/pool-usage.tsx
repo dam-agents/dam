@@ -1,8 +1,14 @@
 import type { PoolLevel } from "api-server-api";
 
+import { getBrand } from "../../../brand.js";
 import type { AgentView } from "../../../types.js";
 import { usePoolUsage } from "../api/queries.js";
-import { formatBytes, memoryBar, storageBar } from "../lib/pools.js";
+import {
+  formatBytes,
+  memoryBar,
+  poolWarning,
+  storageBar,
+} from "../lib/pools.js";
 import { CpuRow } from "./cpu-row.js";
 import { PoolBar } from "./pool-bar.js";
 
@@ -14,9 +20,6 @@ const LEVEL_WORD: Record<PoolLevel, string> = {
 
 const percentOf = (used: number, limit: number) =>
   limit > 0 ? Math.min(100, Math.floor((used * 100) / limit)) : 0;
-
-const atCritical = (level: PoolLevel, advice: string, fact: string) =>
-  level === "critical" ? `${advice} ${fact}` : advice;
 
 export function PoolUsage({ agents }: { agents: readonly AgentView[] }) {
   const { data: usage, isPending } = usePoolUsage();
@@ -32,6 +35,9 @@ export function PoolUsage({ agents }: { agents: readonly AgentView[] }) {
     );
   }
   const { memory, storage } = usage;
+  const slackLogin = usage.slackUnlinked
+    ? `/${getBrand().short} login`
+    : undefined;
   const memoryValue = `${formatBytes(memory.usedBytes)} of ${formatBytes(memory.limitBytes)}`;
   const storageValue = `${formatBytes(storage.usedBytes)} of ${formatBytes(storage.usableBytes)}`;
   return (
@@ -42,10 +48,11 @@ export function PoolUsage({ agents }: { agents: readonly AgentView[] }) {
         valueText={`${memoryValue}${LEVEL_WORD[memory.level]}`}
         bar={memoryBar(usage, vmAgents)}
         percent={percentOf(memory.usedBytes, memory.limitBytes)}
-        warning={atCritical(
+        warning={poolWarning(
           memory.level,
           "Pause agents to free up memory.",
           "Idle agents are paused automatically to make room.",
+          slackLogin,
         )}
       />
       <PoolBar
@@ -54,10 +61,11 @@ export function PoolUsage({ agents }: { agents: readonly AgentView[] }) {
         valueText={`${storageValue}${LEVEL_WORD[storage.level]}`}
         bar={storageBar(usage, vmAgents)}
         percent={percentOf(storage.usedBytes, storage.usableBytes)}
-        warning={atCritical(
+        warning={poolWarning(
           storage.level,
           "Delete old agents, or ask them to clean up their disks.",
           "New VM agents can't be created until space is freed.",
+          slackLogin,
         )}
       />
       {usage.cpu && <CpuRow cpu={usage.cpu} usage={usage} agents={vmAgents} />}

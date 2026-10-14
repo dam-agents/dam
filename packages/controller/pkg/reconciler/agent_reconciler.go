@@ -398,7 +398,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			}
 		}
 		if machine.Reason == vmrunner.ReasonOutOfCapacity {
-			running, parked, overBudget = false, true, machine.Message
+			running, parked, overBudget = false, true, r.vmMemoryFullMessage(ctx, agent, owner)
 			r.recordParkedRetry(name)
 			if err := r.reclaimForRefusedStart(ctx, agent, owner); err != nil {
 				return fmt.Errorf("agent %s: reclaiming runner memory: %w", name, err)

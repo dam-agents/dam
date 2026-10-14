@@ -67,9 +67,7 @@ async function fetchUsage(
   k8s: K8sClient,
   owner: string,
 ): Promise<RunnerUsage | null> {
-  const [secret] = await k8s.listSecrets(
-    `${USAGE_SECRET_LABEL}=true,${LABEL_OWNER}=${owner}`,
-  );
+  const [secret] = await usageSecretOf(k8s, owner);
   const field = (key: string) => {
     const value = secret?.data?.[key];
     return value ? Buffer.from(value, "base64").toString("utf8") : "";
@@ -80,6 +78,16 @@ async function fetchUsage(
   if (!url || !ca || !capability) return null;
   const body = await getText(`${url}/usage`, capability, ca);
   return parseRunnerUsage(JSON.parse(body), new Date());
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an owner's runner pod has a Secret of its own. A runner outside the cluster, on a laptop, serves every owner, so its one Secret names nobody and stands in for any owner without one; its use is then the whole laptop's, every owner's machines together.
+async function usageSecretOf(k8s: K8sClient, owner: string) {
+  const own = await k8s.listSecrets(
+    `${USAGE_SECRET_LABEL}=true,${LABEL_OWNER}=${owner}`,
+  );
+  return own.length
+    ? own
+    : k8s.listSecrets(`${USAGE_SECRET_LABEL}=true,!${LABEL_OWNER}`);
 }
 
 export function parseRunnerUsage(
