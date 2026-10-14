@@ -15,6 +15,7 @@ import (
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
+	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
 func idleCheckerCfg(timeout time.Duration) *config.Config {
@@ -363,4 +364,49 @@ func TestEffectiveIdleTimeout_VMIgnoresOverride(t *testing.T) {
 	assert.Equal(t, 5*time.Minute, effectiveIdleTimeout(nil, true, base))
 	assert.Equal(t, time.Duration(0), effectiveIdleTimeout(never, false, base))
 	assert.Equal(t, time.Hour, effectiveIdleTimeout(nil, false, base))
+}
+
+// TEST_SCENARIO: A vm agent woken five minutes ago is idle by its activity stamp, but its idle clock runs from the moment it turned ready, and a boot in progress is not idle; a decided start failure, a refused start, a boot past the cap, a hibernation the runner has not confirmed, and a ready that aged out are hibernated as before.
+func TestIdleChecker_VMBootInProgressIsNotIdle(t *testing.T) {
+	now := time.Now().UTC()
+	at := func(ago time.Duration) string { return now.Add(-ago).Format(time.RFC3339) }
+	cond := func(typ string, ok bool, reason string, ago time.Duration) metav1.Condition {
+		status := metav1.ConditionFalse
+		if ok {
+			status = metav1.ConditionTrue
+		}
+		return metav1.Condition{Type: typ, Status: status, Reason: reason, LastTransitionTime: metav1.NewTime(now.Add(-ago))}
+	}
+	booting := cond(apiv1.ConditionAgentPodReady, false, vmrunner.ReasonNotReady, time.Hour)
+	notReady := cond(apiv1.ConditionReady, false, "PodsNotReady", time.Hour)
+	tests := []struct {
+		name         string
+		lastActivity time.Duration
+		conds        []metav1.Condition
+		replicas     int32
+		hibernated   bool
+	}{
+		{"booting", 6 * time.Minute, []metav1.Condition{booting, notReady}, 1, false},
+		{"ready since a minute", 6 * time.Minute, []metav1.Condition{cond(apiv1.ConditionAgentPodReady, true, "PodReady", time.Minute), cond(apiv1.ConditionReady, true, "AllPodsReady", time.Minute)}, 1, false},
+		{"ready since long", 6 * time.Minute, []metav1.Condition{cond(apiv1.ConditionAgentPodReady, true, "PodReady", 6*time.Minute), cond(apiv1.ConditionReady, true, "AllPodsReady", 6*time.Minute)}, 1, true},
+		{"start failed", 6 * time.Minute, []metav1.Condition{booting, notReady, cond(apiv1.ConditionStartFailed, true, apiv1.ReasonNeverReady, time.Minute)}, 1, true},
+		{"boot failed", 6 * time.Minute, []metav1.Condition{cond(apiv1.ConditionAgentPodReady, false, vmrunner.ReasonBootFailed, time.Hour), notReady}, 1, true},
+		{"boot past the cap", 21 * time.Minute, []metav1.Condition{booting, notReady}, 1, true},
+		{"halt unconfirmed", 6 * time.Minute, []metav1.Condition{booting, notReady}, 0, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			agent := idleAgentCR("vm-agent", at(tt.lastActivity), nil)
+			agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
+			agent.Status.Conditions = tt.conds
+			checker, _ := newIdleChecker(t, time.Hour, []*apiv1.Agent{agent}, agentStatefulSet("vm-agent", tt.replicas))
+			checker.config.AgentBase.VMIdleTimeout = config.Duration(5 * time.Minute)
+			probed := false
+			checker.busyProbe = func(context.Context, string) bool { probed = true; return false }
+
+			checker.check(context.Background())
+
+			assert.Equal(t, tt.hibernated, probed)
+		})
+	}
 }

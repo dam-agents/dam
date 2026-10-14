@@ -26,6 +26,7 @@ const (
 	idleSweepsPerTimeout = 6
 	minIdleCheckInterval = 15 * time.Second
 	maxIdleCheckInterval = 5 * time.Minute
+	vmStartHold          = 15 * time.Minute
 )
 
 type IdleChecker struct {
@@ -122,6 +123,10 @@ func (c *IdleChecker) check(ctx context.Context) {
 			continue
 		}
 
+		if !atZero[name] && vmStartHolds(agent, effective, now) {
+			continue
+		}
+
 		if c.busyProbe(ctx, name) {
 			slog.Info("idle checker: skipping busy agent", "agent", name)
 			continue
@@ -156,6 +161,35 @@ func hibernationPublished(agent *unstructured.Unstructured) bool {
 	return false
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a cold first boot of a vm agent can outlast the idle timeout the wake started: an image no runner has cached, a fresh runner expanding its disk templates, a large nested guest. The idle clock therefore runs from the moment the agent turned ready, and a boot still in progress is never idle, so a scheduled fire is not lost to a hibernation mid-boot. A boot in progress is a machine not ready for no reason of its own and with no start failure decided; the start failure report ends the hold for a machine that runs without answering. The hold is capped at vmStartHold past the idle timeout, since a machine can read not ready for causes no start failure covers, such as an unreachable runner. It needs the pair awake, which the caller checks: a hibernation the runner has not confirmed reads not ready too.
+func vmStartHolds(agent *unstructured.Unstructured, idleTimeout time.Duration, now time.Time) bool {
+	if !isVMObject(agent) || idleTimeout <= 0 {
+		return false
+	}
+	conds, _, _ := unstructured.NestedSlice(agent.Object, "status", "conditions")
+	var ready, podReady map[string]any
+	for _, raw := range conds {
+		cond, _ := raw.(map[string]any)
+		switch cond["type"] {
+		case apiv1.ConditionReady:
+			ready = cond
+		case apiv1.ConditionAgentPodReady:
+			podReady = cond
+		case apiv1.ConditionStartFailed:
+			return false
+		}
+	}
+	if ready != nil && ready["status"] == string(metav1.ConditionTrue) {
+		since, _ := ready["lastTransitionTime"].(string)
+		t, err := time.Parse(time.RFC3339, since)
+		return err == nil && now.Sub(t) <= idleTimeout
+	}
+	if podReady == nil || podReady["reason"] != vmrunner.ReasonNotReady {
+		return false
+	}
+	last, err := time.Parse(time.RFC3339, agent.GetAnnotations()[annLastActivity])
+	return err == nil && now.Sub(last) <= idleTimeout+vmStartHold
+}
 func (c *IdleChecker) agentsAtZero(ctx context.Context) map[string]bool {
 	sss, err := c.client.AppsV1().
 		StatefulSets(c.config.Namespace).
