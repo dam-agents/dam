@@ -141,7 +141,7 @@ func (r *AgentReconciler) settleRunnerHandoff(ctx context.Context, cm *corev1.Co
 			slog.Warn("vm runner: clearing a settled hand-off", "configmap", cm.Name, "error", err)
 			return
 		}
-		r.leaveRunnerRoll(r.runnerName(cm.Labels[envoyOwnerLabel]))
+		r.resetRunnerRollView()
 		return
 	}
 	if _, timeout := runnerRolloutLimits(r.config.VM.Runner); trouble == "" && time.Since(started) > timeout {
