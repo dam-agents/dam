@@ -1520,6 +1520,7 @@ export function createAgentsService(deps: {
         runtimeMigrationPlan(infra, {
           ...runtimeMigrationContext,
           retentionMs: deps.runtimeMigrationRetentionMs ?? null,
+          idleTimeoutMinutes: deps.agentIdleTimeoutMinutes,
         }),
       );
     },

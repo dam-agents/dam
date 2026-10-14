@@ -1,10 +1,12 @@
 // TEST_OVERVIEW: a kit card shows the new runtime's badge when the kit itself asks for a
 // TEST_OVERVIEW: machine, and for every kit on an install that pins the new runtime on; the
-// TEST_OVERVIEW: kit page reads the same rule, so the two never disagree.
+// TEST_OVERVIEW: kit page reads the same rule, so the two never disagree. A kit that ships
+// TEST_OVERVIEW: Always on says, on the new runtime, that its agent will sleep when idle.
 import type { StarterKitView } from "api-server-api";
 import { describe, expect, test } from "vitest";
 
 import {
+  kitAlwaysOnEndsOnVm,
   kitBadges,
   kitRunsOnVm,
   VM_BACKEND_LABEL,
@@ -45,5 +47,17 @@ describe("kitRunsOnVm", () => {
     expect(kitRunsOnVm(kit("vm"), undefined)).toBe(true);
     expect(kitRunsOnVm(kit(), undefined)).toBeUndefined();
     expect(labels(kit(), undefined)).not.toContain(VM_BACKEND_LABEL);
+  });
+});
+
+describe("kitAlwaysOnEndsOnVm", () => {
+  // TEST_SCENARIO: a kit that ships Always on, created on the new runtime, says it will sleep after the vm idle timeout; on a container, without Always on, or before the install answers, it says nothing.
+  test("tells only an Always on kit on the new runtime", () => {
+    const alwaysOn = { hibernationTimeoutMin: 0 };
+    expect(kitAlwaysOnEndsOnVm(alwaysOn, true, 5)).toContain("5 minutes idle");
+    expect(kitAlwaysOnEndsOnVm(alwaysOn, false, 5)).toBeNull();
+    expect(kitAlwaysOnEndsOnVm(alwaysOn, undefined, 5)).toBeNull();
+    expect(kitAlwaysOnEndsOnVm(alwaysOn, true, undefined)).toBeNull();
+    expect(kitAlwaysOnEndsOnVm({}, true, 5)).toBeNull();
   });
 });

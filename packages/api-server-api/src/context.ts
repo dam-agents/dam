@@ -85,5 +85,6 @@ export interface ApiContext {
   e2eEnabled: boolean;
   virtualizationEnabled: boolean;
   vmForced: boolean;
+  vmIdleTimeoutMin: number;
   featureModes: FeatureModes;
 }

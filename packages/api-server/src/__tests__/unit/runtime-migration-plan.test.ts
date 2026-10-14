@@ -33,6 +33,7 @@ const INPUTS = {
   virtualizationEnabled: true,
   defaultMounts: [{ path: "/home/agent", persist: true }],
   retentionMs: WEEK_MS,
+  idleTimeoutMinutes: { container: 30, vm: 5 },
 };
 
 function agent(
@@ -66,9 +67,28 @@ describe("the runtime migration plan", () => {
     expect(plan).toEqual({
       unmovable: [],
       bootsSleepingAgent: false,
+      endsAlwaysOnAfterMin: null,
       retentionMs: WEEK_MS,
       refusal: null,
     });
+  });
+
+  // TEST_SCENARIO: a vm agent sleeps after the install-wide vm idle timeout whatever its own setting, so an Always on agent — its own override 0, or no override on an install whose default never sleeps — is told the timeout it will sleep after; any other agent is told nothing.
+  it("says an Always on agent starts sleeping when idle", () => {
+    expect(
+      runtimeMigrationPlan(agent({ hibernationTimeout: "0s" }), INPUTS)
+        .endsAlwaysOnAfterMin,
+    ).toBe(5);
+    expect(
+      runtimeMigrationPlan(agent({}), {
+        ...INPUTS,
+        idleTimeoutMinutes: { container: 0, vm: 5 },
+      }).endsAlwaysOnAfterMin,
+    ).toBe(5);
+    expect(
+      runtimeMigrationPlan(agent({ hibernationTimeout: "2h" }), INPUTS)
+        .endsAlwaysOnAfterMin,
+    ).toBeNull();
   });
 
   // TEST_SCENARIO: the controller boots the machine once even for an agent that was asleep, because only a guest that answered proves the copy; the user has to know that the move spends budget.

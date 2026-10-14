@@ -11,6 +11,7 @@ export const featuresRouter = t.router({
   install: readAgentProcedure.query(({ ctx }) => ({
     virtualization: ctx.virtualizationEnabled,
     vmForced: ctx.vmForced,
+    vmIdleTimeoutMin: ctx.vmIdleTimeoutMin,
     features: ctx.featureModes,
   })),
 

@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 ## Overview
 
@@ -186,6 +186,7 @@ Apply — the `create` procedure of the starter-kits router, since tRPC reserves
    Use the kit's own image when it brings one, otherwise the Template the caller names, else the plain create's default Template.
 2. Check every required Connection Requirement against the templates of the connections the user granted; refuse before anything is created.
 3. Create the Agent through the plain create — from the kit's image, else the Template the input names or the default one — with the grants, the kit's fixed env, size, backend, egress preset and hibernation override, the Kit Version stamped as a create-time annotation, the declared share roots when the kit declares a knowledge base, and the kit's `seed` as the workspace seed ([agent-lifecycle](agent-lifecycle.md#create)).
+   A vm Agent ignores the hibernation override, so the kit page says, for a kit that ships *never-hibernate* and creates a vm Agent, that it will sleep after the vm idle timeout.
    The seed is a fixed part of the kit: the kit modal shows it but offers no way to drop it, and apply takes no input that would, because the definition's instructions, scripts and `ONBOARDING.md` are what the kit exists to provide — an Agent created without them cannot run the kit's setup.
    The kit's egress rules are written next, then a kit with an `install` command queues it as a `workspace-command` event, ahead of everything below.
 4. Create the declared schedules, toggling suggested ones off; bind the Slack conversation if one was given.

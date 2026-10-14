@@ -388,6 +388,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       e2eEnabled: config.e2eEnabled,
       virtualizationEnabled: config.virtualizationEnabled,
       vmForced: agentsInstallSettings(config).vmForced,
+      vmIdleTimeoutMin: config.agentIdleTimeoutMinutes.vm,
       featureModes: config.featureModes,
     };
   };

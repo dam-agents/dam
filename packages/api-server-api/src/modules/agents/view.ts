@@ -92,6 +92,7 @@ export function toRuntimeMigrationPlanView(plan: RuntimeMigrationPlan) {
   return {
     unmovable: plan.unmovable,
     bootsSleepingAgent: plan.bootsSleepingAgent,
+    endsAlwaysOnAfterMin: plan.endsAlwaysOnAfterMin,
     retentionMs: plan.retentionMs,
     allowed: plan.refusal === null,
     refusal: plan.refusal

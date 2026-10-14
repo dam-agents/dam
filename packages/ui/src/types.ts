@@ -220,6 +220,7 @@ export interface RuntimeMigrationView {
 export interface RuntimeMigrationPlanView {
   unmovable: { path: string; reason: string }[];
   bootsSleepingAgent: boolean;
+  endsAlwaysOnAfterMin: number | null;
   retentionMs: number | null;
   allowed: boolean;
   refusal: { type: string; reasons: string[] } | null;

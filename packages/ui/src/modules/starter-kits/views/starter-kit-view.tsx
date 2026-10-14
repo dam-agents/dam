@@ -37,6 +37,7 @@ import {
 } from "../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
+import { useInstallCapabilities } from "../../features/api/queries.js";
 import { useVmForced } from "../../features/hooks/use-vm-forced.js";
 import { useUnlockedAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
 import { routeToPath } from "../../platform/lib/routes.js";
@@ -51,6 +52,7 @@ import { KitScheduleCard } from "../components/kit-schedule-card.js";
 import {
   EGRESS_PRESET_DETAIL,
   EGRESS_PRESET_LABEL,
+  kitAlwaysOnEndsOnVm,
   kitEgressPreset,
   kitRunsOnVm,
   VM_BACKEND_LABEL,
@@ -303,6 +305,12 @@ function KitDetail({
   const budget = useBudgetReserved();
   const vmForced = useVmForced();
   const vm = kitRunsOnVm(kit, vmForced);
+  const install = useInstallCapabilities();
+  const alwaysOnEnds = kitAlwaysOnEndsOnVm(
+    kit,
+    vm,
+    install.data?.vmIdleTimeoutMin,
+  );
   const connections = useAppConnections();
   const agents = useAgents().data?.list;
   const apply = useApplyStarterKit();
@@ -460,6 +468,15 @@ function KitDetail({
                 nameTag="h2"
               />
             </div>
+          )}
+          {alwaysOnEnds && (
+            <Callout
+              tone="warning"
+              className="mb-8 text-sm text-foreground"
+              data-testid="kit-always-on-ends"
+            >
+              {alwaysOnEnds}
+            </Callout>
           )}
           {kbSeed && (
             <Section label="Knowledge base">

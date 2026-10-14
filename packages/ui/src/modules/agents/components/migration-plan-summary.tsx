@@ -32,6 +32,13 @@ export function MigrationPlanSummary({
             interrupted.
           </li>
         )}
+        {plan.endsAlwaysOnAfterMin !== null && (
+          <li data-testid="migration-ends-always-on">
+            It is no longer Always on: on the new runtime it sleeps after{" "}
+            {plan.endsAlwaysOnAfterMin} minutes idle, and background work stops
+            then unless it is kept.
+          </li>
+        )}
       </ul>
       <p>
         Until the agent has started on the new runtime, you can abort the move,

@@ -226,6 +226,7 @@ export type RuntimeMigrationRefusal = Exclude<
 export interface RuntimeMigrationPlan {
   unmovable: UnmovablePath[];
   bootsSleepingAgent: boolean;
+  endsAlwaysOnAfterMin: number | null;
   retentionMs: number | null;
   refusal: RuntimeMigrationRefusal | null;
 }
