@@ -79,7 +79,9 @@ done
 echo
 printf '%-28s %s\n' AGENT READY_AFTER
 json="$(agent_json)"
-for a in "${agents[@]}"; do printf '%-28s %s\n' "$a" "${ready_at[$a]:+${ready_at[$a]}s}${ready_at[$a]:-not ready: $(ready_reason "$a" <<<"$json")}"; done
+for a in "${agents[@]}"; do
+  if [ -n "${ready_at[$a]:-}" ]; then printf '%-28s %ss\n' "$a" "${ready_at[$a]}"; else printf '%-28s not ready: %s\n' "$a" "$(ready_reason "$a" <<<"$json")"; fi
+done
 echo
 echo "ready: ${#ready_at[@]}/${#agents[@]}"
 [ "${#ready_at[@]}" -eq 0 ] || echo "slowest: $(printf '%s\n' "${ready_at[@]}" | sort -n | tail -1)s"
