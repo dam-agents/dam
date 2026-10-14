@@ -1,10 +1,7 @@
+import { findRendererBlocks, separateRendererBlocks } from "api-server-api";
 import { z } from "zod";
 
 import { A2UI_VERSION } from "./schema.js";
-
-const MESSAGE_BLOCK = /<a2ui-message>([\s\S]*?)<\/a2ui-message>/g;
-const CAPABILITIES_BLOCK = /<a2ui-capabilities>[\s\S]*?<\/a2ui-capabilities>/g;
-const DATA_MODEL_BLOCK = /<a2ui-data-model>([\s\S]*?)<\/a2ui-data-model>/g;
 
 const ActionPayload = z.object({
   name: z.string(),
@@ -83,22 +80,19 @@ export function hasRendererBlocks(text: string): boolean {
 }
 
 export function parseUserText(text: string): ParsedUserText {
-  const messages = [...text.matchAll(MESSAGE_BLOCK)].flatMap(([, body]) => {
+  const blocks = findRendererBlocks(text);
+  const messages = blocks.flatMap(({ tag, body }) => {
+    if (tag !== "message") return [];
     const parsed = RendererMessage.safeParse(parseJson(body));
     return parsed.success ? [parsed.data] : [];
   });
-  const dataModelSurfaces = [...text.matchAll(DATA_MODEL_BLOCK)].flatMap(
-    ([, body]) => {
-      const parsed = DataModels.safeParse(parseJson(body));
-      return parsed.success ? Object.keys(parsed.data.surfaces) : [];
-    },
-  );
+  const dataModelSurfaces = blocks.flatMap(({ tag, body }) => {
+    if (tag !== "data-model") return [];
+    const parsed = DataModels.safeParse(parseJson(body));
+    return parsed.success ? Object.keys(parsed.data.surfaces) : [];
+  });
   return {
-    text: text
-      .replace(MESSAGE_BLOCK, "")
-      .replace(DATA_MODEL_BLOCK, "")
-      .replace(CAPABILITIES_BLOCK, "")
-      .trim(),
+    text: separateRendererBlocks(text).text,
     messages,
     dataModelSurfaces,
   };

@@ -765,6 +765,9 @@ export {
   chatFormCapabilities,
 } from "./modules/chat-forms/capabilities.js";
 export {
+  findRendererBlocks,
   joinRendererBlocks,
+  type RendererBlock,
+  type RendererTag,
   separateRendererBlocks,
 } from "./modules/chat-forms/renderer-blocks.js";
