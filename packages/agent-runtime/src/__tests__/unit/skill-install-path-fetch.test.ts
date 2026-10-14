@@ -66,6 +66,12 @@ function serveGithub(fake: FakeRepo): Call[] {
       if (u.pathname === "/repos/acme/mono/commits/HEAD") {
         return json({ sha: SHA });
       }
+      if (u.pathname === "/repos/acme/mono") {
+        return json({ default_branch: "main" });
+      }
+      if (u.pathname === "/repos/acme/mono/git/refs/heads/main") {
+        return json({ object: { sha: SHA } });
+      }
       if (u.pathname.startsWith("/repos/acme/mono/tarball/")) {
         return new Response(Buffer.from(fake.tarball ?? new Uint8Array()));
       }
@@ -338,16 +344,23 @@ describe("install and scan of a GitHub source with a path", () => {
     expect(byDirectory.value.contentHash).toBe(byTarball.value.contentHash);
   });
 
-  // TEST_SCENARIO: the pod scan of a path source lists the skills under the path without downloading the repository.
-  it("scans a path source without the tarball", async () => {
+  // TEST_SCENARIO: the pod scan of a path source lists the skills under the path without downloading the repository, and reads the head from the default branch's ref, since the head commit would show its diff of files outside the path.
+  it("scans a path source without the tarball or the head commit", async () => {
     const calls = serveGithub({
       files: { "qa/qi-profile-dam/SKILL.md": skillMd("qi-profile-dam") },
+      private: true,
     });
     const res = await runScan(
       { github, git: noGit, repo, log: () => {} },
       { source: SOURCE, path: "qa", fetch: "directory" },
     );
     expect(res.ok && res.value.map((s) => s.name)).toEqual(["qi-profile-dam"]);
-    expect(calls.some((c) => c.path.includes("/tarball/"))).toBe(false);
+    expect(
+      calls.filter((c) => !c.path.startsWith("/repos/acme/mono/contents/qa")),
+    ).toEqual([
+      { path: "/repos/acme/mono", auth: false },
+      { path: "/repos/acme/mono", auth: true },
+      { path: "/repos/acme/mono/git/refs/heads/main", auth: true },
+    ]);
   });
 });
