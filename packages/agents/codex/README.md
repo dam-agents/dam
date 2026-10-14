@@ -21,7 +21,8 @@ Create a **generic secret** on the platform with:
 - `hostPattern`: `api.openai.com`
 - env-mapping: `OPENAI_API_KEY`
 
-The harness config sets `OPENAI_API_KEY=dummy-placeholder` (`[oci.env]` in `image.toml`) so the CLI's startup check passes before a real credential is attached.
+The launch scripts set `OPENAI_API_KEY=dummy-placeholder` only when no provider sets it, so the CLI's startup check passes before a real credential is attached.
+A provider's own placeholder, which names its connection, always reaches Codex.
 
 ### Custom OpenAI-compatible endpoints
 

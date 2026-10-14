@@ -86,7 +86,7 @@ flowchart LR
   A family expands to every template in it, so `accepts: [github]` is satisfied by an OAuth, PAT or App connection and its Connect button opens the GitHub page with all methods; a kit that must insist on one method names the template instead.
   Families are declared on the Connection Templates themselves ([connections](connections.md#connection-template)) and carried on the template view, so the server-side check and the catalog UI read the same data.
 - **Kit Schedule** — declared with the author's defaults and created by the platform at apply; a suggested one is created **disabled**.
-  The apply form lists them with their cadence and lets the user **skip** any before create; onboarding never asks for cadence, and the user edits the rest on the instance.
+  The apply form lists them with their cadence and the author's optional one-line `description`, keeps the task text behind a closed **Instructions** disclosure, and lets the user **skip** any before create; onboarding never asks for cadence, and the user edits the rest on the instance.
   A kit may also declare the schedule's [Precheck](schedules.md#precheck) — the shell check that decides its own fires — so a periodic check a kit ships is as cheap as one written by hand; a kit that seeds its definition declares the check its repository carries, and the apply form shows it with the rest of the schedule, to keep, replace or drop.
   Dropping travels as an explicit removal rather than an omission, because an omitted one means the kit's own command.
 - **Kit Channel** — suggested only.

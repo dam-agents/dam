@@ -94,10 +94,12 @@ function encodePath(filePath: string): string {
 export interface GitHubRestClient {
   getRepo: (
     host: DetectedOwnerRepo,
+    opts?: GithubFetchOpts,
   ) => Promise<Result<RepoInfo, SkillsDomainError>>;
   getRef: (
     host: DetectedOwnerRepo,
     ref: string,
+    opts?: GithubFetchOpts,
   ) => Promise<Result<CommitObject, SkillsDomainError>>;
   getCommitHead: (
     host: DetectedOwnerRepo,
@@ -170,15 +172,22 @@ export function createGitHubRestClient(clientOpts: {
   const bytes = (method: "GET", endpoint: string, opts: GithubFetchOpts = {}) =>
     ghBytes(method, endpoint, token, opts);
   return {
-    async getRepo(host) {
-      const r = await json<{ default_branch: string }>("GET", repoPath(host));
+    async getRepo(host, opts) {
+      const r = await json<{ default_branch: string }>(
+        "GET",
+        repoPath(host),
+        undefined,
+        opts,
+      );
       if (!r.ok) return r;
       return ok({ defaultBranch: r.value.default_branch });
     },
-    async getRef(host, ref) {
+    async getRef(host, ref, opts) {
       const r = await json<{ object: { sha: string } }>(
         "GET",
         `${repoPath(host)}/git/refs/heads/${encodeURIComponent(ref)}`,
+        undefined,
+        opts,
       );
       if (!r.ok) return r;
       return ok({ sha: r.value.object.sha });

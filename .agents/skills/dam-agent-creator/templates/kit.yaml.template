@@ -61,7 +61,8 @@ channels:
 # TODO(creator): one entry per scheduled run type from the design, INCLUDING the
 # weekly audit and the monitor. `name` carries the agent prefix — ONBOARDING reconciles
 # exactly these names. `task` is the run's entry text, verbatim the blockquote of its
-# ONBOARDING step (the validator compares the two). `enabled: false` makes it
+# ONBOARDING step (the validator compares the two). `description` is one plain
+# sentence the operator reads on the schedule's card. `enabled: false` makes it
 # suggested: created switched off for the operator to turn on. `precheck` declines an
 # idle occurrence before any model is woken; every run gets one except the audit
 # (references/preflight.md → The Precheck). The cron is the default cadence — around
@@ -75,6 +76,7 @@ channels:
 schedules:
   - name: {{AGENT_NAME}}-<runtype>-<cadence>
     cron: "TODO(creator) — five-field cron"
+    description: TODO(creator) — one sentence on what this run does, for the operator.
     sessionMode: fresh
     precheck: 'bash "$HOME/scripts/precheck.sh" <mode>'
     task: >-

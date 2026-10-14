@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -236,9 +236,14 @@ The web chat does not read it: a held request belongs to the agent, not to a ses
 The list is the api-server's own state, refreshed by the approvals live hint, so a conversation opened after the hold — or a retry that joined it — still shows the prompt, and a verdict given in one place clears it from every conversation, from Home and from its toast.
 
 At most three rules speak for a host — itself, its `*.parent` wildcard, and the bare `*` — most specific first; a wildcard covers the one label its SNI chain and SAN do.
+Host names compare in any letter case, as DNS does: the agent writes the Host header and SNI, and a deny for `api.github.com` must also stop `API.GitHub.com`, which the gateway would resolve and forward all the same.
 `failure_mode_allow: false` — a blocked Check fails closed: agent gets 403, no approval prompt.
 
 The HTTP filter on TLS-terminated chains sees method/path; the network filter on the catch-all chain sees SNI only.
+
+**Paths.** A rule's path pattern matches the path as the agent sent it, query included, and the gateway forwards that path unchanged.
+An upstream may resolve `.` and `..` segments before it serves the path — the GitHub Contents API does, also for `%2e` and for `..;` — so an allowed prefix would reach any file through them; the gate denies a path with such a segment before any rule and without a hold.
+GitHub's hosts resolve owner and repository in any letter case, so there a deny rule matches the path in any case; an allow keeps exact case, because file paths are case-sensitive and a case-blind allow for one directory would open its namesakes in other cases.
 
 **Ports.** The gateway dials whatever port a request names, so the Check carries the requested port and whether the request is TLS (a CONNECT or SNI) or plain HTTP.
 The port comes from the Host or CONNECT authority, or is the scheme's default when absent; the SNI-only catch-all always dials 443.

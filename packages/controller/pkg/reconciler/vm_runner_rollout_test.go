@@ -290,6 +290,68 @@ func TestARollWhosePodNeverStartsHaltsTheRoll(t *testing.T) {
 	assert.Empty(t, dep.Annotations[annRunnerStalled])
 }
 
+// TEST_SCENARIO: the rolled pod of one owner is stuck in a state no release can cause — its claim is refused as Multi-Attach while its containers are still being created, or its node is gone or not ready and the old pod never finishes terminating. Past the settle timeout the runner gives up its place and the next owner rolls. A pod the scheduler cannot place, one still creating without a Multi-Attach refusal, an old pod terminating on a ready node, a container that started and is not ready, and an image that does not pull keep the roll halted, since a release can cause each of them.
+func TestARollStuckOnTheOwnersOwnPodIsSkipped(t *testing.T) {
+	scheduled := corev1.PodCondition{Type: corev1.PodScheduled, Status: corev1.ConditionTrue}
+	waiting := func(reason string) []corev1.ContainerStatus {
+		return []corev1.ContainerStatus{{Name: "runner", State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: reason}}}}
+	}
+	creating := corev1.Pod{Spec: corev1.PodSpec{NodeName: "node-a"}, Status: corev1.PodStatus{Phase: corev1.PodPending, Conditions: []corev1.PodCondition{scheduled}, ContainerStatuses: waiting("ContainerCreating")}}
+	terminating := corev1.Pod{ObjectMeta: metav1.ObjectMeta{DeletionTimestamp: &metav1.Time{Time: time.Now()}, Finalizers: []string{"test"}}, Spec: corev1.PodSpec{NodeName: "node-a"}, Status: corev1.PodStatus{Phase: corev1.PodRunning}}
+	nodeReady := func(status corev1.ConditionStatus) *corev1.Node {
+		return &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}, Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: status}}}}
+	}
+	for name, tc := range map[string]struct {
+		pod         corev1.Pod
+		node        *corev1.Node
+		multiAttach bool
+		skipped     bool
+	}{
+		"multi-attach":                    {pod: creating, multiAttach: true, skipped: true},
+		"terminating on a deleted node":   {pod: terminating, skipped: true},
+		"terminating on a node not ready": {pod: terminating, node: nodeReady(corev1.ConditionUnknown), skipped: true},
+		"terminating on a ready node":     {pod: terminating, node: nodeReady(corev1.ConditionTrue)},
+		"creating without a multi-attach": {pod: creating},
+		"unschedulable":                   {pod: corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodPending, Conditions: []corev1.PodCondition{{Type: corev1.PodScheduled, Status: corev1.ConditionFalse, Reason: corev1.PodReasonUnschedulable}}}}},
+		"image pull":                      {pod: corev1.Pod{Spec: corev1.PodSpec{NodeName: "node-a"}, Status: corev1.PodStatus{Phase: corev1.PodPending, Conditions: []corev1.PodCondition{scheduled}, ContainerStatuses: waiting("ImagePullBackOff")}}, multiAttach: true},
+		"crash loop":                      {pod: corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodRunning, Conditions: []corev1.PodCondition{scheduled}, ContainerStatuses: []corev1.ContainerStatus{{Name: "runner", RestartCount: 3, State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}}}}}}},
+		"never ready":                     {pod: corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodRunning, Conditions: []corev1.PodCondition{scheduled}, ContainerStatuses: []corev1.ContainerStatus{{Name: "runner", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}}}}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			r, _ := setupRolloutReconciler(t, "owner-a", "owner-b")
+			r.config.VM.Runner.Image = runnerV2
+			require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+			setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerSettleTimeout-time.Minute))
+			pod := tc.pod
+			pod.Name, pod.Namespace, pod.UID, pod.Labels = r.runnerName("owner-a")+"-x", "test-agents", "pod-uid", vmRunnerSelector("owner-a")
+			_, err := r.client.CoreV1().Pods("test-agents").Create(ctx, &pod, metav1.CreateOptions{})
+			require.NoError(t, err)
+			if tc.node != nil {
+				_, err = r.client.CoreV1().Nodes().Create(ctx, tc.node, metav1.CreateOptions{})
+				require.NoError(t, err)
+			}
+			if tc.multiAttach {
+				_, err = r.client.CoreV1().Events("test-agents").Create(ctx, &corev1.Event{
+					ObjectMeta:     metav1.ObjectMeta{Name: pod.Name + ".attach", Namespace: "test-agents"},
+					InvolvedObject: corev1.ObjectReference{Kind: "Pod", Name: pod.Name, UID: pod.UID},
+					Type:           corev1.EventTypeWarning,
+					Reason:         "FailedAttachVolume",
+					Message:        `Multi-Attach error for volume "pvc-1" Volume is already exclusively attached to one node and can't be attached to another`,
+				}, metav1.CreateOptions{})
+				require.NoError(t, err)
+			}
+
+			require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+			want := runnerV1
+			if tc.skipped {
+				want = runnerV2
+			}
+			assert.Equal(t, want, runnerImageOf(t, r, "owner-b"))
+		})
+	}
+}
+
 // TEST_SCENARIO: the rollout sweep offers every runner its turn, and each turn asks which runners are mid-roll. That answer is kept for a few seconds, so a pass over many owners lists the runner Deployments a bounded number of times rather than once per owner.
 func TestTheRolloutSweepListsRunnersOncePerPass(t *testing.T) {
 	ctx := context.Background()
@@ -323,7 +385,7 @@ func TestTheRunnerTemplateHashIsPinned(t *testing.T) {
 	assert.Equal(t, "07055f57c0ff3bb8", dep.Annotations[annRunnerTemplate])
 }
 
-// TEST_SCENARIO: a runner's pod is unchanged, but its labels were edited by hand and its owner reference points at nothing — the runner ServiceAccount was recreated. Both are restored without touching the pod, so no machine restarts and no roll starts.
+// TEST_SCENARIO: a runner's pod is unchanged, but its labels were edited by hand and its owner reference points at nothing — the runner ServiceAccount was recreated. Both are restored without touching the pod, so no machine restarts and no roll starts. The claim, written by an older controller with the account as its owner, loses that reference, so a later deletion of the account cannot collect the owner's disks.
 func TestAnUnchangedRunnerGetsItsLabelsAndOwnerBack(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -344,7 +406,7 @@ func TestAnUnchangedRunnerGetsItsLabelsAndOwnerBack(t *testing.T) {
 	pvcs := r.client.CoreV1().PersistentVolumeClaims("test-agents")
 	pvc, err := pvcs.Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
 	require.NoError(t, err)
-	pvc.OwnerReferences = nil
+	pvc.OwnerReferences = []metav1.OwnerReference{{APIVersion: "v1", Kind: "ServiceAccount", Name: "platform-vm-runner", UID: "sa-now"}}
 	_, err = pvcs.Update(ctx, pvc, metav1.UpdateOptions{})
 	require.NoError(t, err)
 
@@ -358,30 +420,133 @@ func TestAnUnchangedRunnerGetsItsLabelsAndOwnerBack(t *testing.T) {
 	assert.Empty(t, dep.Annotations[annRunnerRolledAt], "restoring metadata does not start a roll")
 	pvc, err = pvcs.Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
 	require.NoError(t, err)
-	require.Len(t, pvc.OwnerReferences, 1)
-	assert.Equal(t, types.UID("sa-now"), pvc.OwnerReferences[0].UID)
+	assert.Empty(t, pvc.OwnerReferences, "the account's reference on an existing claim is stripped")
 }
 
-// TEST_SCENARIO: with releases staged on the node, a new runner image is not a changed pod. Every owner's pod keeps its image and every machine on it, and each owner's release ConfigMap names the new image, which the pod's loader takes in place.
+// TEST_SCENARIO: with releases staged on the node, a new runner image is not a changed pod. Every owner's pod keeps its image and every machine on it, and each owner's release ConfigMap names the new image, which the pod's loader takes in place — one owner at a time, as a pod roll goes: the second owner is named the release only once the first runner reports it running and its machine that was ready is ready again.
 func TestANewRunnerImageReachesEveryOwnerWithoutAPodRoll(t *testing.T) {
 	ctx := context.Background()
-	r, _ := setupRolloutReconciler(t)
+	r, nodes := setupRolloutReconciler(t)
 	r.config.VM.Runner.ReleaseHostPath = "/var/lib/platform-runner-releases"
 	for _, owner := range []string{"owner-a", "owner-b"} {
 		createRolloutRunner(t, r, owner)
 		require.NoError(t, r.applyRunnerDeployment(ctx, owner, r.runnerOwnerRef(ctx), true))
 	}
+	nodes["owner-a"].specs["my-agent"] = vmrunner.MachineSpec{Running: true}
+	nodes["owner-a"].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
 	r.config.VM.Runner.Image = runnerV2
 
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV2, namedRelease(t, r, "owner-a"))
+	assert.Equal(t, runnerV1, namedRelease(t, r, "owner-b"), "only one runner hands off at a time")
+
+	nodes["owner-a"].release = vmrunner.RunnerRelease{Running: runnerV2, Target: runnerV2}
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, namedRelease(t, r, "owner-b"), "the first runner runs the release, but its agent has not had an ensure against it yet")
+
+	backdateHandoff(t, r, "owner-a", runnerHandoffObserve+time.Second)
+	nodes["owner-a"].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateCreating})
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, namedRelease(t, r, "owner-b"), "the first runner runs the release but its machine is not back")
+
+	nodes["owner-a"].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
 	for _, owner := range []string{"owner-a", "owner-b"} {
-		require.NoError(t, r.applyRunnerDeployment(ctx, owner, r.runnerOwnerRef(ctx), true))
 		assert.Equal(t, runnerV1, runnerImageOf(t, r, owner), "the pod keeps the image it started with")
+		assert.Equal(t, runnerV2, namedRelease(t, r, owner))
 		cm, err := r.client.CoreV1().ConfigMaps("test-agents").Get(ctx, r.runnerReleaseName(owner), metav1.GetOptions{})
 		require.NoError(t, err)
-		assert.Equal(t, runnerV2, cm.Data[runnerReleaseKey])
 		require.Len(t, cm.OwnerReferences, 1)
 		assert.Equal(t, r.runnerName(owner), cm.OwnerReferences[0].Name)
 	}
+}
+
+// TEST_SCENARIO: a runner release that runs but refuses every ensure must not reach every owner. The first owner's runner reports the release running and its machine still ready, an agent's ensure is refused, and the hand-off stalls: the second owner's ConfigMap keeps the old release while the stall stands. An operator removing the stall annotation lets the release go on.
+func TestARunnerReleaseThatRefusesEnsuresGoesNoFurther(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t)
+	r.config.VM.Runner.ReleaseHostPath = "/var/lib/platform-runner-releases"
+	for _, owner := range []string{testOwner, "owner-b"} {
+		createRolloutRunner(t, r, owner)
+		require.NoError(t, r.applyRunnerDeployment(ctx, owner, r.runnerOwnerRef(ctx), true))
+	}
+	nodes[testOwner].specs["my-agent"] = vmrunner.MachineSpec{Running: true}
+	nodes[testOwner].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	r.config.VM.Runner.Image = runnerV2
+	require.NoError(t, r.applyRunnerDeployment(ctx, testOwner, r.runnerOwnerRef(ctx), true))
+	require.Equal(t, runnerV2, namedRelease(t, r, testOwner))
+
+	nodes[testOwner].release = vmrunner.RunnerRelease{Running: runnerV2, Target: runnerV2}
+	nodes[testOwner].refusesEnsures = true
+	agent := vmAgentCR()
+	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
+	assert.Error(t, r.Reconcile(ctx, agent))
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, namedRelease(t, r, "owner-b"), "a stalled hand-off halts the release")
+
+	cms := r.client.CoreV1().ConfigMaps("test-agents")
+	cm, err := cms.Get(ctx, r.runnerReleaseName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Contains(t, cm.Annotations, annRunnerHandoffStalled)
+	delete(cm.Annotations, annRunnerHandoffStalled)
+	_, err = cms.Update(ctx, cm, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV2, namedRelease(t, r, "owner-b"), "clearing the stall resumes the release")
+}
+
+// TEST_SCENARIO: a runner that holds the new release as failed, or that does not settle on it within the settle timeout, stalls the release just as a refused ensure does. A newer configured release resumes it, starting with the runner that stalled.
+func TestARunnerHandOffInTroubleHaltsTheRelease(t *testing.T) {
+	for name, trouble := range map[string]func(*testing.T, *AgentReconciler, *fakeNode){
+		"held failed": func(_ *testing.T, _ *AgentReconciler, n *fakeNode) {
+			n.release = vmrunner.RunnerRelease{Running: runnerV1, Target: runnerV2, Held: vmrunner.HeldFailed}
+		},
+		"never settles": func(t *testing.T, r *AgentReconciler, n *fakeNode) {
+			n.release = vmrunner.RunnerRelease{Running: runnerV1, Target: runnerV2, Held: vmrunner.HeldUnstaged}
+			backdateHandoff(t, r, "owner-a", defaultRunnerSettleTimeout+time.Minute)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			r, nodes := setupRolloutReconciler(t)
+			r.config.VM.Runner.ReleaseHostPath = "/var/lib/platform-runner-releases"
+			for _, owner := range []string{"owner-a", "owner-b"} {
+				createRolloutRunner(t, r, owner)
+				require.NoError(t, r.applyRunnerDeployment(ctx, owner, r.runnerOwnerRef(ctx), true))
+			}
+			r.config.VM.Runner.Image = runnerV2
+			require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+			trouble(t, r, nodes["owner-a"])
+
+			require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+			require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+			assert.Equal(t, runnerV1, namedRelease(t, r, "owner-b"), "a stalled hand-off halts the release")
+
+			const runnerV3 = "quay.io/dam-agents/vm-runner:3"
+			r.config.VM.Runner.Image = runnerV3
+			require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+			assert.Equal(t, runnerV3, namedRelease(t, r, "owner-a"), "a newer release resumes the roll at the runner that stalled")
+		})
+	}
+}
+
+func backdateHandoff(t *testing.T, r *AgentReconciler, owner string, by time.Duration) {
+	t.Helper()
+	cms := r.client.CoreV1().ConfigMaps("test-agents")
+	cm, err := cms.Get(context.Background(), r.runnerReleaseName(owner), metav1.GetOptions{})
+	require.NoError(t, err)
+	cm.Annotations[annRunnerHandoffAt] = time.Now().Add(-by).UTC().Format(time.RFC3339)
+	_, err = cms.Update(context.Background(), cm, metav1.UpdateOptions{})
+	require.NoError(t, err)
+}
+
+func namedRelease(t *testing.T, r *AgentReconciler, owner string) string {
+	t.Helper()
+	cm, err := r.client.CoreV1().ConfigMaps("test-agents").Get(context.Background(), r.runnerReleaseName(owner), metav1.GetOptions{})
+	require.NoError(t, err)
+	return cm.Data[runnerReleaseKey]
 }
 
 // TEST_SCENARIO: a runner release built against another VM runtime cannot adopt the machines, so the pod's loader holds on to the release it runs. The controller reads that hold from the runner and rolls the pod onto the new image, through the same roll as any changed pod. A release that is only not staged yet is waited for instead.
