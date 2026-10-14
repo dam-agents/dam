@@ -288,7 +288,7 @@ An Agent can hold either proxy or both.
 CurveBender uses the same routing and credential scheme, including Bob's prefix rewrite, aimed at its own host; its model defaults differ.
 
 Work runs on GLM.
-Claude Code reserves a separate model slot for its non-reasoning permission classifier; the Connection pins both roles ([harness configuration](harness-config.md#model-discovery-and-the-seeded-model)).
+Claude Code reserves a separate model slot for its non-reasoning permission classifier; the Connection pins both roles ([harness configuration](harness-config.md#model-discovery-and-the-agents-default-model)).
 The endpoint's model list names models but does not describe them, so the Connection supplies the supported deployment window to both Claude Code and Pi.
 Pi also needs the reasoning capability and OpenAI-style reasoning effort: the endpoint ignores the switch GLM's own vendor API uses, so Pi's built-in description would be wrong here.
 Pi applies these hints to every listed model.
@@ -304,9 +304,8 @@ An optional model input becomes the provider's model pin.
 The Connection also asks the harness's Bedrock client for HTTP/1.1, which every credential chain speaks by default.
 IAM access keys and assumed roles are not accepted: Bedrock requires those to sign each request with SigV4, and the gateway's request signing serves S3-compatible storage only (below).
 
-Two harnesses run on it.
-**Pi**'s harness-config driver lists the profiles itself, so a session is offered their IDs ([harness configuration](harness-config.md#model-discovery-and-the-seeded-model)).
-**Claude Code** has Bedrock built in; its image switches it on whenever the key placeholder is present, and leaves model choice to Claude Code itself.
+**Claude Code** runs on it, outside the Model Router, since the gateway cannot sign for it; a routed Pi does not reach it ([harness configuration](harness-config.md#model-discovery-and-the-agents-default-model)).
+Claude Code has Bedrock built in; its image switches it on whenever the key placeholder is present, and leaves model choice to Claude Code itself.
 At start it resolves each of its model tiers to the region's profile, falling back to an earlier version, or from Opus to Sonnet, when the account cannot invoke the default; the platform pins no tier, which would lose that fallback.
 The pin is a new session's default only, and Claude Code ignores it when the account cannot invoke it.
 

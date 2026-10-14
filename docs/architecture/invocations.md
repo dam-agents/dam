@@ -38,11 +38,13 @@ The spawn's prompt plays the role a kit's onboarding plays: it is the target's f
 A harness the install does not carry is refused, naming the ones it does; the image catalogue the Driver reads lists each with its effective Size.
 A spawn may bring its own image instead, the way a kit with its own image does: the target is then created from that image with the install's defaults, and the harness, when named, only says what runs inside it.
 Either way the harness catalog, or the custom Template, states the providers the harness can run on, which is what Provider Inheritance checks.
-The trigger that opens the target's first session names its harness, the inherited provider and the model; a model a spawn names is a qualified name (`ibm/gpt-5.5`); a bare one, or one the driver's catalog does not list for the target harness, is refused before anything is created, and the driver session's subagent model, when set, replaces whatever the spawn names.
+The trigger that opens the target's first session names its harness, the inherited provider and the model; a model a spawn names is a qualified name (`ibm/gpt-5.5`), and a bare one is refused before anything is created.
 
 **A spawn may choose the model.** It can name the target's model, mode and harness settings — the choices the target's harness configuration offers — so one harness serves every model it runs, and a Driver can put one task to two models or a cheap model on a mechanical step.
 The choice is written into the target's own harness configuration in a delivery of its own, ahead of the task, so the one session already runs on it ([harness configuration](harness-config.md)).
-A model the driver's catalog does not list for the target harness is refused at spawn; mode and settings are checked when the target applies them.
+The `spawn_subagent` tool also refuses a model the driver's catalog does not list for the named harness, and runs the driver session's subagent model, when set, whatever the spawn names.
+A Driver REST spawn checks only that the name is qualified, so a Driver comparing models reads which model the target ran.
+Mode and settings are checked when the target applies them.
 The delegation view shows its user the same: each target's card names the model its recorded calls ran and, when the spawn named one, the requested model beside it, marked when the two differ, so a silent substitution is visible without opening the conversation.
 
 **A spawn carries a label.** It names the target, so the Driver's own vocabulary for the work — not an opaque identifier — is what shows up wherever agents are listed.

@@ -36,6 +36,7 @@ import {
   addableProviders,
   modelGroups,
   modelIndicatorLabel,
+  sameModel,
 } from "../lib/catalog-groups.js";
 import {
   fittingProviders,
@@ -388,7 +389,8 @@ export function SetAsDefault({
     !!remembered &&
     remembered.harness === pair.harness &&
     remembered.provider === pair.provider &&
-    remembered.model === pair.model &&
+    (remembered.model === pair.model ||
+      sameModel(remembered.model, pair.model)) &&
     Object.entries(pair.settings ?? {}).every(
       ([id, value]) => (remembered.settings?.[id] ?? defaults[id]) === value,
     );
