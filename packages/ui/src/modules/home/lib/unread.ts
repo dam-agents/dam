@@ -29,6 +29,10 @@ export function isFeedableAttention(
   return now - Date.parse(at) <= FEED_WINDOW_MS;
 }
 
+export function isUnreadAttention(session: AttentionItem): boolean {
+  return laterThanSeen(session.activityAt, session.seenAt);
+}
+
 export function isUnreadItem(item: {
   kind: string;
   session?: AttentionItem;
@@ -36,6 +40,6 @@ export function isUnreadItem(item: {
   return (
     item.kind === "unread" &&
     item.session !== undefined &&
-    laterThanSeen(item.session.activityAt, item.session.seenAt)
+    isUnreadAttention(item.session)
   );
 }

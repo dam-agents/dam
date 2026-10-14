@@ -36,7 +36,7 @@ UI only (`packages/ui`); every server procedure already exists.
 | --- | ----------------------------- | -------------------------------------------------------------------------------------------------------- | ---------- | ---- |
 | 01  | Sidebar with agents           | Expanded sidebar with nav, Agents (active, hibernating folded), Docs, Settings; collapsed rail flyout    | —          | ✅   |
 | 02  | Agent sessions in the sidebar | The open agent expands to its sessions with new-session, filter and ⋮; chat view loses its Sessions list | 01         | ✅   |
-| 03  | Activity in the sidebar       | Cross-agent sessions, newest first, 20 + 20, existing filter; collapsed rail flyout                      | 01         |      |
+| 03  | Activity in the sidebar       | Cross-agent sessions, newest first, 20 + 20, existing filter; collapsed rail flyout                      | 01         | ✅   |
 | 04  | Approvals bell                | Top-right button becomes a bell listing approvals only                                                   | 03         |      |
 | 05  | Mobile navigation             | Design with `/frontend-design`, then build; required, as 02 removes the phone's session list             | 01, 02, 03 |      |
 

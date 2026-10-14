@@ -5,6 +5,10 @@ import {
   writePersistedFlag,
 } from "../../../lib/persisted-prefs.js";
 import type { PlatformStore } from "../../../store.js";
+import {
+  type ActivityFilters,
+  defaultActivityFilters,
+} from "../../home/lib/activity-filter.js";
 
 const SIDEBAR_EXPANDED_STORAGE_KEY = "platform-sidebar-expanded";
 const SIDEBAR_HIBERNATING_STORAGE_KEY = "platform-sidebar-show-hibernating";
@@ -16,6 +20,8 @@ export interface SidebarSlice {
   setSidebarExpanded: (expanded: boolean) => void;
   sidebarShowHibernating: boolean;
   setSidebarShowHibernating: (show: boolean) => void;
+  sidebarActivityFilters: ActivityFilters;
+  setSidebarActivityFilters: (filters: ActivityFilters) => void;
   activityView: ActivityView | null;
   setActivityView: (view: ActivityView | null) => void;
 }
@@ -43,6 +49,9 @@ export const createSidebarSlice: StateCreator<
     writePersistedFlag(SIDEBAR_HIBERNATING_STORAGE_KEY, show);
     set({ sidebarShowHibernating: show });
   },
+  sidebarActivityFilters: defaultActivityFilters(),
+  setSidebarActivityFilters: (filters) =>
+    set({ sidebarActivityFilters: filters }),
   activityView: null,
   setActivityView: (view) => set({ activityView: view }),
 });

@@ -1,4 +1,4 @@
-import { SessionMode, SessionType } from "api-server-api";
+import { type AttentionItem, SessionMode, SessionType } from "api-server-api";
 
 import type { FeedItem } from "./feed-item.js";
 
@@ -54,7 +54,10 @@ export function isFiltered(filters: ActivityFilters): boolean {
 
 export function channelTypeFor(item: FeedItem): ChannelType {
   if (item.kind === "approval") return "chat";
-  const { session } = item;
+  return channelTypeOfSession(item.session);
+}
+
+export function channelTypeOfSession(session: AttentionItem): ChannelType {
   if (
     session.scheduleId ||
     session.type === SessionType.ScheduleCron ||

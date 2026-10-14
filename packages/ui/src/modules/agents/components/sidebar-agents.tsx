@@ -1,6 +1,7 @@
 import { Add, NewTab } from "@carbon/icons-react";
 import { type ReactNode, useState } from "react";
 
+import { Collapse } from "@/components/ui/collapse";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Tooltip } from "@/components/ui/tooltip";
 
@@ -20,12 +21,7 @@ import { useSidebarAgents } from "../hooks/use-sidebar-agents.js";
 import { AgentActionsMenu } from "./agent-actions-menu.js";
 import { SidebarAgentRow } from "./sidebar-agent-row.js";
 
-interface Props {
-  showSessions?: boolean;
-  onNavigate?: () => void;
-}
-
-export function SidebarAgents({ showSessions = true, onNavigate }: Props) {
+export function SidebarAgents({ onNavigate }: { onNavigate?: () => void }) {
   const { active, folded, openAgentId, unreadAgentIds, workingByAgent } =
     useSidebarAgents();
   const { agentsData, rowProps, deleteAgent, suspend } = useAgentRows();
@@ -57,7 +53,7 @@ export function SidebarAgents({ showSessions = true, onNavigate }: Props) {
         selected={open}
         unread={unreadAgentIds.has(agent.id)}
         working={workingByAgent.get(agent.id) ?? false}
-        onSelect={navigate(() => selectAgent(agent.id))}
+        onSelect={() => selectAgent(agent.id)}
         actions={
           <>
             <RowIconButton
@@ -66,7 +62,7 @@ export function SidebarAgents({ showSessions = true, onNavigate }: Props) {
             >
               <NewTab size={14} />
             </RowIconButton>
-            {open && showSessions && <SessionFilterMenu />}
+            {open && <SessionFilterMenu />}
             <AgentActionsMenu
               {...rowProps(agent)}
               dense
@@ -81,7 +77,9 @@ export function SidebarAgents({ showSessions = true, onNavigate }: Props) {
           </>
         }
       >
-        {open && showSessions && <SidebarAgentSessions agentId={agent.id} />}
+        <Collapse open={open}>
+          <SidebarAgentSessions agentId={agent.id} onNavigate={onNavigate} />
+        </Collapse>
       </SidebarAgentRow>
     );
   };

@@ -17,7 +17,13 @@ import { SessionRow } from "./session-row.js";
 const FIRST_PAGE = 5;
 const MORE_PAGE = 10;
 
-export function SidebarAgentSessions({ agentId }: { agentId: string }) {
+export function SidebarAgentSessions({
+  agentId,
+  onNavigate,
+}: {
+  agentId: string;
+  onNavigate?: () => void;
+}) {
   const list = useAgentSessionList(agentId);
   const openSession = useOpenSession();
   const deleteSession = useStore((s) => s.deleteSession);
@@ -68,7 +74,10 @@ export function SidebarAgentSessions({ agentId }: { agentId: string }) {
           session={s}
           {...list.rowState(s)}
           className="rounded-lg border-b-0 py-1.5 pr-2 pl-9"
-          onResume={() => openSession(agentId, s.sessionId, s.mode)}
+          onResume={() => {
+            openSession(agentId, s.sessionId, s.mode);
+            onNavigate?.();
+          }}
           {...(list.operable &&
             s.mode !== SessionMode.Terminal && {
               onPrefetch: () => prefetchSessionHistory(agentId, s.sessionId),
