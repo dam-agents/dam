@@ -31,14 +31,7 @@ export async function runInstall(
   input: SkillInstallInput,
 ): Promise<Result<SkillInstallResult, SkillsDomainError>> {
   return deps.repo.withTempDir("platform-skill-", async (tmp) => {
-    const fetched = await fetchSourceAtVersion(
-      deps,
-      input.sourceUrl,
-      input.version,
-      input.path,
-      name,
-      tmp,
-    );
+    const fetched = await fetchSourceAtVersion(deps, input, name, tmp);
     if (!fetched.ok) return fetched;
 
     const srcDirRes = await deps.repo.resolveSkillDirInClone(
@@ -65,14 +58,14 @@ export async function runInstall(
 
 async function fetchSourceAtVersion(
   deps: InstallDeps,
-  source: string,
-  version: string,
-  subPath: string | undefined,
+  input: SkillInstallInput,
   name: SkillName,
   dest: string,
 ): Promise<Result<void, SkillsDomainError>> {
+  const { sourceUrl: source, version, path: subPath } = input;
   const host = detectGithubOwnerRepo(source);
-  if (host && subPath && !subPathEscapes(subPath)) {
+  if (input.fetch === "directory" && host && subPath) {
+    if (subPathEscapes(subPath)) return ok(undefined);
     const byDirectory = await fetchGithubPath(
       deps,
       host,
@@ -81,13 +74,17 @@ async function fetchSourceAtVersion(
       dest,
       name,
     );
-    if (byDirectory.ok) return byDirectory;
+    return isGithubNotFound(byDirectory) ? ok(undefined) : byDirectory;
   }
   if (host) {
     let bytes = await deps.github.fetchTarball(host, version, {
       withAuth: false,
     });
-    if (isGithubNotFound(bytes)) {
+    if (
+      !bytes.ok &&
+      bytes.error.kind === "UpstreamGitHubError" &&
+      bytes.error.status === 404
+    ) {
       bytes = await deps.github.fetchTarball(host, version, { withAuth: true });
     }
     if (!bytes.ok) return bytes;

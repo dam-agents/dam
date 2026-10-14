@@ -1,5 +1,9 @@
 import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
-import type { AppRouter, SourcePathReason } from "agent-runtime-api";
+import type {
+  AppRouter,
+  SourceFetchMode,
+  SourcePathReason,
+} from "agent-runtime-api";
 import { SOURCE_PATH_REASONS } from "agent-runtime-api";
 import type { LocalSkill, Skill, SkillLocalFiles } from "api-server-api";
 import { podBaseUrl } from "../../agents/infrastructure/k8s.js";
@@ -33,7 +37,12 @@ export interface UpstreamGatewayError {
 export interface AgentRuntimeSkillsClient {
   listLocal(agentId: string, hashNames?: string[]): Promise<LocalSkill[]>;
   publish(agentId: string, body: PublishSkillCall): Promise<PublishSkillResult>;
-  scan(agentId: string, source: string, path?: string): Promise<Skill[]>;
+  scan(
+    agentId: string,
+    source: string,
+    path?: string,
+    fetch?: SourceFetchMode,
+  ): Promise<Skill[]>;
   writeLocal(
     agentId: string,
     skills: { name: string; content: string }[],
@@ -202,13 +211,14 @@ export function createAgentRuntimeSkillsClient(
       runWithUpstreamMapping(`agent-runtime publish ${agentId}`, () =>
         makeClient(agentId, namespace).skills.publish.mutate(body),
       ),
-    scan: async (agentId, source, path) => {
+    scan: async (agentId, source, path, fetch) => {
       const { skills } = await runWithUpstreamMapping(
         `agent-runtime scan ${agentId}`,
         () =>
           makeClient(agentId, namespace).skills.scan.mutate({
             source,
             ...(path !== undefined ? { path } : {}),
+            ...(fetch !== undefined ? { fetch } : {}),
           }),
       );
       return skills as Skill[];

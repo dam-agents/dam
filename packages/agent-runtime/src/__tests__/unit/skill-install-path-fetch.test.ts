@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: A GitHub skill source with a path is fetched by directory through the contents API, so an agent whose egress allows only that directory can install and scan it; the content hash matches the tarball fetch, and a failed directory fetch falls back to the tarball.
+// TEST_OVERVIEW: When the api-server marks a GitHub skill source with fetch "directory" (the agent's egress denies the archive), the pod fetches only the source path's directory through the contents API and never asks for the tarball; the content hash matches the tarball fetch, and without the mark a path source still uses the tarball.
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs/promises";
@@ -178,7 +178,11 @@ describe("install and scan of a GitHub source with a path", () => {
     return new Uint8Array(await fs.readFile(tgz));
   };
 
-  const install = (name: string, sourcePath?: string) => {
+  const install = (
+    name: string,
+    sourcePath?: string,
+    fetch: "directory" | "archive" = "directory",
+  ) => {
     const skill = makeSkillName(name);
     if (!skill.ok) throw new Error("invalid name");
     const input: SkillInstallInput = {
@@ -187,6 +191,7 @@ describe("install and scan of a GitHub source with a path", () => {
       version: SHA,
       skillPaths: [target],
       ...(sourcePath !== undefined ? { path: sourcePath } : {}),
+      ...(fetch === "directory" ? { fetch } : {}),
     };
     return runInstall(
       { github, git: noGit, repo },
@@ -244,7 +249,7 @@ describe("install and scan of a GitHub source with a path", () => {
     ]);
   });
 
-  // TEST_SCENARIO: a file over the per-file limit or a path over the request cap stops the directory fetch early, and the install falls back to the tarball, as before this change.
+  // TEST_SCENARIO: a file over the per-file limit or a path over the request cap fails the directory fetch with a named error, and the pod never asks for the tarball the agent's egress denies.
   it.each([
     ["an oversize file", { "qa/p/big.bin": "x".repeat(1024 * 1024 + 1) }],
     [
@@ -256,13 +261,16 @@ describe("install and scan of a GitHub source with a path", () => {
         ]),
       ),
     ],
-  ])("falls back to the tarball on %s", async (_, extra) => {
-    const files = { "qa/p/SKILL.md": skillMd("p"), ...extra };
-    const calls = serveGithub({ files, tarball: await tarballOf(files) });
+  ])("fails on %s without the tarball", async (_, extra) => {
+    const calls = serveGithub({
+      files: { "qa/p/SKILL.md": skillMd("p"), ...extra },
+    });
     const res = await install("p", "qa");
-    expect(res.ok).toBe(true);
-    expect(calls.at(-1)?.path).toBe(`/repos/acme/mono/tarball/${SHA}`);
-    expect(calls.length).toBeLessThanOrEqual(MAX_SUBTREE_REQUESTS + 3);
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error).toMatchObject({ kind: "SourceFetchFailed" });
+    expect(calls.some((c) => c.path.includes("/tarball/"))).toBe(false);
+    expect(calls.length).toBeLessThanOrEqual(MAX_SUBTREE_REQUESTS + 2);
   });
 
   // TEST_SCENARIO: a repository may publish a skill root as a symlink to another directory (this repository links .claude/skills to .agents/skills); the contents API does not follow it, so the fetch resolves the link and fetches only the named skill below its target.
@@ -287,7 +295,7 @@ describe("install and scan of a GitHub source with a path", () => {
     serveGithub(fake);
     const scan = await runScan(
       { github, git: noGit, repo, log: () => {} },
-      { source: SOURCE, path: ".claude/skills" },
+      { source: SOURCE, path: ".claude/skills", fetch: "directory" },
     );
     expect(scan.ok && scan.value.map((s) => s.dir)).toEqual([
       ".claude/skills/other",
@@ -307,8 +315,8 @@ describe("install and scan of a GitHub source with a path", () => {
     expect(calls.slice(1).every((c) => c.auth)).toBe(true);
   });
 
-  // TEST_SCENARIO: drift detection compares content hashes, so a directory fetch must hash the same as a tarball fetch of the same skill, and a source without a path still uses the tarball.
-  it("hashes the same as the tarball install, which a path-less source still uses", async () => {
+  // TEST_SCENARIO: drift detection compares content hashes, so a directory fetch must hash the same as a tarball fetch of the same skill; a path source without the directory mark still uses the tarball, exactly as before.
+  it("hashes the same as the tarball install, which an unmarked path source still uses", async () => {
     const files = {
       "skills/p/SKILL.md": skillMd("p"),
       "skills/p/scripts/run.sh": "#!/bin/sh\necho hi\n",
@@ -317,7 +325,7 @@ describe("install and scan of a GitHub source with a path", () => {
     const tarball = await tarballOf(files);
 
     const tarCalls = serveGithub({ files, tarball });
-    const byTarball = await install("p");
+    const byTarball = await install("p", "skills", "archive");
     expect(tarCalls.map((c) => c.path)).toEqual([
       `/repos/acme/mono/tarball/${SHA}`,
     ]);
@@ -337,7 +345,7 @@ describe("install and scan of a GitHub source with a path", () => {
     });
     const res = await runScan(
       { github, git: noGit, repo, log: () => {} },
-      { source: SOURCE, path: "qa" },
+      { source: SOURCE, path: "qa", fetch: "directory" },
     );
     expect(res.ok && res.value.map((s) => s.name)).toEqual(["qi-profile-dam"]);
     expect(calls.some((c) => c.path.includes("/tarball/"))).toBe(false);

@@ -116,6 +116,7 @@ export function createSkillInstallPlugin(deps: {
             version: c.version,
             skillPaths,
             ...(c.path !== undefined ? { path: c.path } : {}),
+            ...(c.fetch !== undefined ? { fetch: c.fetch } : {}),
           };
           ctx.log(
             `install ${c.name}@${c.version} from ${c.sourceUrl} into ${skillPaths.length} path(s)`,

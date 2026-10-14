@@ -46,7 +46,13 @@ export async function runScan(
 ): Promise<Result<ScannedSkill[], SkillsDomainError>> {
   const host = detectGithubOwnerRepo(input.source);
   const res = host
-    ? await scanGithub(deps, input.source, host, input.path)
+    ? await scanGithub(
+        deps,
+        input.source,
+        host,
+        input.path,
+        input.fetch === "directory",
+      )
     : await scanGitClone(deps, input.source, input.path);
   if (!res.ok) return res;
   const { kept, dropped } = dedupeByName(res.value);
@@ -62,31 +68,29 @@ async function scanGithub(
   deps: ScanDeps,
   source: string,
   host: DetectedOwnerRepo,
-  subPath?: string,
+  subPath: string | undefined,
+  byDirectory: boolean,
 ): Promise<Result<ScannedSkill[], SkillsDomainError>> {
   let head = await deps.github.getCommitHead(host, { withAuth: false });
-  if (isGithubNotFound(head)) {
+  if (
+    !head.ok &&
+    head.error.kind === "UpstreamGitHubError" &&
+    head.error.status === 404
+  ) {
     head = await deps.github.getCommitHead(host, { withAuth: true });
   }
   if (!head.ok) return head;
   const version = head.value.sha;
 
-  if (subPath && !subPathEscapes(subPath)) {
-    const byDirectory = await deps.repo.withTempDir(
-      "platform-skills-scan-",
-      async (tmp) => {
-        const fetched = await fetchGithubPath(
-          deps,
-          host,
-          version,
-          subPath,
-          tmp,
-        );
-        if (!fetched.ok) return null;
-        return collectSkills(deps, source, tmp, version, subPath);
-      },
-    );
-    if (byDirectory) return byDirectory;
+  if (byDirectory && subPath && !subPathEscapes(subPath)) {
+    return deps.repo.withTempDir("platform-skills-scan-", async (tmp) => {
+      const fetched = await fetchGithubPath(deps, host, version, subPath, tmp);
+      if (isGithubNotFound(fetched)) {
+        return sourcePathError("path-missing", source, subPath, version);
+      }
+      if (!fetched.ok) return fetched;
+      return collectSkills(deps, source, tmp, version, subPath);
+    });
   }
 
   const tarball = await deps.github.fetchTarball(host, version, {
