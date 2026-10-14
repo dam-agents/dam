@@ -15,6 +15,8 @@ const gateway = fileURLToPath(new URL("../../../claude-code/rootfs/usr/local/lib
 let listing = null;
 let listingHeld = Promise.resolve();
 let listingsAsked = 0;
+let listingFailures = 0;
+let refuseUnlisted = false;
 const forwarded = [];
 const upstream = createServer((req, res) => {
   let body = "";
@@ -23,10 +25,18 @@ const upstream = createServer((req, res) => {
     res.setHeader("content-type", "application/json");
     if (req.url.startsWith("/v1/models")) {
       listingsAsked++;
+      if (listingFailures > 0) {
+        listingFailures--;
+        res.statusCode = 503;
+        res.end("{}");
+        return;
+      }
       void listingHeld.then(() => { if (listing) res.end(JSON.stringify({ data: listing.map((id) => ({ id })) })); });
       return;
     }
-    forwarded.push(JSON.parse(body).model);
+    const { model } = JSON.parse(body);
+    forwarded.push(model);
+    if (refuseUnlisted && !listing?.includes(model)) res.statusCode = 403;
     res.end("{}");
   });
 });
@@ -111,6 +121,20 @@ try {
     assert.equal(listingsAsked, 1);
   }, { ANTHROPIC_BASE_URL: base, ANTHROPIC_AUTH_TOKEN: "t" });
   console.log("upstreams on one endpoint and credential share one listing");
+
+  // TEST_SCENARIO: A provider attached to a running agent moments ago fails the gateway's listings while its egress opens, so the first message goes upstream on the bare tier name and the provider refuses it. By then the provider answers, so the gateway lists again and resends the message on that tier's model, instead of the user's first message failing.
+  listing = ["aws/claude-opus-5-5"];
+  listingHeld = Promise.resolve();
+  listingFailures = 2;
+  refuseUnlisted = true;
+  forwarded.length = 0;
+  await withGateway(null, async ({ port }) => {
+    const r = await call(port, "/v1/messages", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model: "claude/opus" }) });
+    assert.equal(r.status, 200);
+    assert.deepEqual(forwarded, ["opus", "aws/claude-opus-5-5"]);
+  });
+  refuseUnlisted = false;
+  console.log("a refusal while the gateway has no list lists again and resends on the tier's model");
 } finally {
   upstream.closeAllConnections();
   upstream.close();
