@@ -385,7 +385,7 @@ func TestTheRunnerTemplateHashIsPinned(t *testing.T) {
 	assert.Equal(t, "07055f57c0ff3bb8", dep.Annotations[annRunnerTemplate])
 }
 
-// TEST_SCENARIO: a runner's pod is unchanged, but its labels were edited by hand and its owner reference points at nothing — the runner ServiceAccount was recreated. Both are restored without touching the pod, so no machine restarts and no roll starts.
+// TEST_SCENARIO: a runner's pod is unchanged, but its labels were edited by hand and its owner reference points at nothing — the runner ServiceAccount was recreated. Both are restored without touching the pod, so no machine restarts and no roll starts. The claim, written by an older controller with the account as its owner, loses that reference, so a later deletion of the account cannot collect the owner's disks.
 func TestAnUnchangedRunnerGetsItsLabelsAndOwnerBack(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -406,7 +406,7 @@ func TestAnUnchangedRunnerGetsItsLabelsAndOwnerBack(t *testing.T) {
 	pvcs := r.client.CoreV1().PersistentVolumeClaims("test-agents")
 	pvc, err := pvcs.Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
 	require.NoError(t, err)
-	pvc.OwnerReferences = nil
+	pvc.OwnerReferences = []metav1.OwnerReference{{APIVersion: "v1", Kind: "ServiceAccount", Name: "platform-vm-runner", UID: "sa-now"}}
 	_, err = pvcs.Update(ctx, pvc, metav1.UpdateOptions{})
 	require.NoError(t, err)
 
@@ -420,8 +420,7 @@ func TestAnUnchangedRunnerGetsItsLabelsAndOwnerBack(t *testing.T) {
 	assert.Empty(t, dep.Annotations[annRunnerRolledAt], "restoring metadata does not start a roll")
 	pvc, err = pvcs.Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
 	require.NoError(t, err)
-	require.Len(t, pvc.OwnerReferences, 1)
-	assert.Equal(t, types.UID("sa-now"), pvc.OwnerReferences[0].UID)
+	assert.Empty(t, pvc.OwnerReferences, "the account's reference on an existing claim is stripped")
 }
 
 // TEST_SCENARIO: with releases staged on the node, a new runner image is not a changed pod. Every owner's pod keeps its image and every machine on it, and each owner's release ConfigMap names the new image, which the pod's loader takes in place.

@@ -306,15 +306,15 @@ func TestTheRunnerClaimIsThePoolAndGrowsWithIt(t *testing.T) {
 	ctx := context.Background()
 	r, _, _ := setupVMReconciler(t, vmAgentCR())
 
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, nil))
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner))
 	assert.Equal(t, "100Gi", runnerClaim(t, r))
 
 	r.config.VM.Runner.Storage = "200Gi"
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, nil))
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner))
 	assert.Equal(t, "200Gi", runnerClaim(t, r), "a larger pool grows the claim")
 
 	r.config.VM.Runner.Storage = "50Gi"
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, nil))
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner))
 	assert.Equal(t, "200Gi", runnerClaim(t, r), "a claim is never shrunk")
 }
 
@@ -323,7 +323,7 @@ func TestAClaimThatCannotGrowKeepsTheRunnerReconciling(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, nil))
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner))
 	require.Equal(t, "100Gi", runnerClaim(t, r))
 	r.config.VM.Runner.Storage = "200Gi"
 	r.client.(*fake.Clientset).PrependReactor("update", "persistentvolumeclaims", func(k8stesting.Action) (bool, runtime.Object, error) {
@@ -339,7 +339,7 @@ func TestAMistypedCeilingLeavesExistingClaimsAlone(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, nil))
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner))
 
 	r.config.VM.Runner.Storage = "a lot"
 	require.NoError(t, r.Reconcile(ctx, agent))

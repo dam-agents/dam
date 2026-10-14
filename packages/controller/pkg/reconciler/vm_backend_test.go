@@ -1360,7 +1360,7 @@ func TestRunnerOwnershipFollowsARecreatedServiceAccount(t *testing.T) {
 		"a stale UID here is collected by the garbage collector the moment a runner object is written")
 }
 
-// TEST_SCENARIO: Helm never sees a runner — the controller creates it — so nothing would remove one on uninstall, on rollback, or when virtualization is switched off. Every object it creates is owned by the ServiceAccount the chart does render, which sits in the same namespace because an owner reference may not cross one; a single object missing the reference strands a running VM and its disk.
+// TEST_SCENARIO: Helm never sees a runner — the controller creates it — so nothing would remove one on uninstall, on rollback, or when virtualization is switched off. Every object it creates is owned by the ServiceAccount the chart does render, which sits in the same namespace because an owner reference may not cross one; a single object missing the reference strands a running VM. The claim is the exception: it holds every machine disk of the owner, so one deletion of the account must not collect it.
 func TestRunnerObjectsAreOwnedByTheRunnerServiceAccount(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -1386,7 +1386,7 @@ func TestRunnerObjectsAreOwnedByTheRunnerServiceAccount(t *testing.T) {
 	owners["certificate"] = cert.GetOwnerReferences()
 	pvc, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, name, metav1.GetOptions{})
 	require.NoError(t, err)
-	owners["pvc"] = pvc.OwnerReferences
+	assert.Empty(t, pvc.OwnerReferences, "a claim owned by the account loses every disk on it when the account is recreated")
 	svc, err := r.client.CoreV1().Services("test-agents").Get(ctx, name, metav1.GetOptions{})
 	require.NoError(t, err)
 	owners["service"] = svc.OwnerReferences
