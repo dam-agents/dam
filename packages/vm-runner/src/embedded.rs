@@ -712,10 +712,60 @@ fn resolved_image(image: &str) -> anyhow::Result<String> {
     })
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: creates the machine's storage disk as a raw sparse file before its first boot. Left to smolvm, a disk of smolvm's default size is made instead as a qcow2 overlay over the template shipped with the runner image, named by its absolute path in that image — so an upgrade that ships a different template would change the bytes under every such agent's home. A raw disk depends on nothing, and smolvm formats it on first boot as it does any other size.
+// UNIT_BOUNDARY_DESCRIPTION: creates the machine's storage disk as a raw sparse file before its first boot. Left to smolvm, a disk of smolvm's default size is made instead as a qcow2 overlay over the template shipped with the runner image, named by its absolute path in that image — so an upgrade that ships a different template would change the bytes under every such agent's home. A raw disk depends on nothing. A new one is formatted here, with a journal, at its full size: both of smolvm's own fallbacks — formatting on the host when it finds no template, and formatting in the guest when the disk will not mount — leave a disk with no journal, and an unclean stop of such a disk can lose what the agent last wrote. Only a file no guest has written is formatted, so the host never parses a filesystem a guest had root on.
 fn raw_storage_disk(id: &str, gib: u64) -> anyhow::Result<()> {
-    StorageDisk::open_or_create_at(&storage_disk_path(id), gib)?;
+    let disk = storage_disk_path(id);
+    let fresh = !disk.exists();
+    StorageDisk::open_or_create_at(&disk, gib)?;
+    if fresh {
+        format_journaled(&disk);
+    }
     Ok(())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: where mkfs.ext4 is: on the runner image's PATH, or Homebrew's e2fsprogs on a Mac host runner, which installs it outside PATH.
+const MKFS_EXT4: [&str; 3] = [
+    "mkfs.ext4",
+    "/opt/homebrew/opt/e2fsprogs/sbin/mkfs.ext4",
+    "/usr/local/opt/e2fsprogs/sbin/mkfs.ext4",
+];
+
+// UNIT_BOUNDARY_DESCRIPTION: formats a fresh sparse disk as ext4 with a journal. Lazy init leaves the inode tables and the journal unzeroed, which on a file never written reads as zeros anyway, so the format writes little and takes well under a second at any size; the guest kernel zeroes the inode tables later, as it does on any disk formatted this way. A format that succeeds also writes smolvm's format marker, so smolvm never copies its template over the disk and the next start does not report an unmarked filesystem. A host with no mkfs.ext4, or a format that fails, leaves the disk empty for smolvm to format as before.
+fn format_journaled(disk: &Path) {
+    let args = [
+        "-F",
+        "-q",
+        "-m",
+        "0",
+        "-L",
+        "smolvm",
+        "-E",
+        "lazy_itable_init=1,lazy_journal_init=1,nodiscard",
+    ];
+    for mkfs in MKFS_EXT4 {
+        match std::process::Command::new(mkfs)
+            .args(args)
+            .arg(disk)
+            .output()
+        {
+            Ok(out) if out.status.success() => {
+                if let Err(e) = std::fs::write(disk.with_extension("formatted"), "1") {
+                    tracing::warn!(disk = %disk.display(), error = %e, "could not mark the formatted storage disk");
+                }
+                return;
+            }
+            Ok(out) => {
+                tracing::warn!(disk = %disk.display(), stderr = %String::from_utf8_lossy(&out.stderr).trim(), "formatting the storage disk failed; smolvm formats it instead, without a journal");
+                return;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                tracing::warn!(disk = %disk.display(), error = %e, "formatting the storage disk failed; smolvm formats it instead, without a journal");
+                return;
+            }
+        }
+    }
+    tracing::warn!(disk = %disk.display(), "no mkfs.ext4; smolvm formats the storage disk instead, without a journal");
 }
 
 fn storage_disk_path(id: &str) -> PathBuf {
@@ -1310,7 +1360,7 @@ mod tests {
         assert!(!vm_data_dir("m1").join("storage.qcow2").exists());
     }
 
-    // TEST_SCENARIO: smolvm formats a storage disk at every start that lacks its format marker, by copying its template over it, and a first boot whose resize failed leaves the marker unwritten, as a Mac without resize2fs does for every disk below the template's size. So a machine whose disk already holds a filesystem, and no marker, is started here: after the runner has prepared it, the format smolvm's start runs must leave the agent's home on it, while a fresh machine's empty disk is still formatted from the template.
+    // TEST_SCENARIO: smolvm formats a storage disk at every start that lacks its format marker, by copying its template over it, and a first boot whose resize failed leaves the marker unwritten, as a Mac without resize2fs does for every disk below the template's size. So a machine whose disk already holds a filesystem, and no marker, is started here: after the runner has prepared it, the format smolvm's start runs must leave the agent's home on it, while a fresh machine's disk, which the create formats itself where mkfs.ext4 is installed, is otherwise still formatted from the template.
     #[test]
     fn a_start_never_copies_the_template_over_a_disk_that_holds_a_filesystem() {
         use std::os::unix::fs::FileExt;
@@ -1370,7 +1420,72 @@ mod tests {
         }
 
         assert_eq!(&payload(&storage_disk_path("used")), b"HOMEDATA");
-        assert_eq!(&payload(&storage_disk_path("fresh")), b"TEMPLATE");
+        if !mkfs_available() {
+            assert_eq!(&payload(&storage_disk_path("fresh")), b"TEMPLATE");
+        }
+    }
+
+    fn mkfs_available() -> bool {
+        MKFS_EXT4
+            .iter()
+            .any(|m| std::process::Command::new(m).arg("-V").output().is_ok())
+    }
+
+    fn has_journal(disk: &std::path::Path) -> bool {
+        use std::os::unix::fs::FileExt;
+        let mut compat = [0; 4];
+        fs::File::open(disk)
+            .unwrap()
+            .read_exact_at(&mut compat, 1024 + 0x5C)
+            .unwrap();
+        u32::from_le_bytes(compat) & 0x4 != 0
+    }
+
+    // TEST_SCENARIO: a new machine's disk must come with a journal, or an unclean stop can lose what its agent last wrote: smolvm's own formats leave none. The create formats it at its full size, sparse, so the guest neither formats nor grows it; a disk a guest has already written is never formatted again.
+    #[test]
+    fn a_new_disk_holds_a_journaled_filesystem_at_its_full_size() {
+        if !mkfs_available() {
+            eprintln!("skipping: no mkfs.ext4 on this host");
+            return;
+        }
+        let home = Home::new("journal");
+        let share = home.path.join("share");
+        fs::create_dir_all(&share).unwrap();
+        let smolvm = Smolvm::open(false, None).unwrap();
+        let spec = spec();
+        let launch = launch();
+        let machine = Machine {
+            spec: &spec,
+            image: "quay.io/x/vm:1",
+            host_port: 32000,
+            share: &share,
+            launch: &launch,
+        };
+        smolvm.create("m1", &machine).unwrap();
+
+        let disk = storage_disk_path("m1");
+        assert!(has_journal(&disk), "the new disk has no journal");
+        assert!(
+            disk.with_extension("formatted").exists(),
+            "the formatted disk is not marked"
+        );
+        assert_eq!(fs::metadata(&disk).unwrap().len(), 20 << 30);
+        use std::os::unix::fs::MetadataExt;
+        assert!(
+            fs::metadata(&disk).unwrap().blocks() * 512 < 1 << 30,
+            "formatting filled the sparse disk"
+        );
+
+        use std::os::unix::fs::FileExt;
+        let file = fs::OpenOptions::new().write(true).open(&disk).unwrap();
+        file.write_all_at(b"HOMEDATA", 10 << 30).unwrap();
+        raw_storage_disk("m1", 20).unwrap();
+        let mut read = [0; 8];
+        fs::File::open(&disk)
+            .unwrap()
+            .read_exact_at(&mut read, 10 << 30)
+            .unwrap();
+        assert_eq!(&read, b"HOMEDATA");
     }
 
     // TEST_SCENARIO: an update reshapes a stopped machine in place — size, env, and a disk that grows — so the agent keeps its disk across a resize.

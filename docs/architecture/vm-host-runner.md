@@ -41,7 +41,7 @@ The harness tools the default image boots with are installed on the k3s node, wh
 The Mac's default filesystem folds names that differ only in case into one file, and agent images carry such names.
 Trees are unpacked without privilege, so a guest sees every image file owned by the runner's user rather than by the image's owners.
 smolvm needs ext4 tools the Mac lacks, so the disk templates are expanded inside the cluster's VM and carried back sparse.
-A disk asked for below the template's 20 GiB is shrunk with resize2fs, which a Mac has only from Homebrew's e2fsprogs; without it the disk keeps the template's size, and `cluster:host-runner` says so.
+The runner formats a new disk at its full size with `mkfs.ext4`, which a Mac has only from Homebrew's e2fsprogs; without it smolvm copies the template instead, so the disk has no journal and one asked for below the template's 20 GiB keeps the template's size, and `cluster:host-runner` says so.
 
 **Lifecycle.** The runner is a process on the Mac, not a supervised service.
 Stopping it stops its machines, as a pod's termination does; the controller's sweep starts them again once the runner is back.
