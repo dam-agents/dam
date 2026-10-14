@@ -6,12 +6,16 @@ export const LARGE_FILE_CHANGED_LINES = 800;
 
 export type FileDiffBody = "shown" | "collapsed" | "binary" | "too-large";
 
-export function initialBody(file: FileDiff): FileDiffBody {
+export function fileDiffBody(
+  file: FileDiff,
+  expandedByUser: boolean | null,
+): FileDiffBody {
   if (file.binary) return "binary";
   if (file.patch === null) return "too-large";
-  return file.additions + file.deletions > LARGE_FILE_CHANGED_LINES
-    ? "collapsed"
-    : "shown";
+  const expanded =
+    expandedByUser ??
+    file.additions + file.deletions <= LARGE_FILE_CHANGED_LINES;
+  return expanded ? "shown" : "collapsed";
 }
 
 export function fileDiffAnchor(prefix: string, index: number): string {

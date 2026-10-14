@@ -86,7 +86,8 @@ function OptionGroup({
   seen: SeenEdits;
   onSelect: (path: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(!collapsible);
+  const [expandedByUser, setExpandedByUser] = useState(false);
+  const expanded = !collapsible || expandedByUser;
   const Chevron = expanded ? ChevronDown : ChevronRight;
 
   return (
@@ -96,7 +97,7 @@ function OptionGroup({
           type="button"
           className="flex w-full items-center gap-1 px-3 pt-2 pb-1 text-2xs font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground"
           aria-expanded={expanded}
-          onClick={() => setExpanded(!expanded)}
+          onClick={() => setExpandedByUser(!expandedByUser)}
         >
           <Chevron size={12} />
           {group.label} ({group.changeSets.length})

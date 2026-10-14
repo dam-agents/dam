@@ -6,7 +6,7 @@ import {
   groupChangeSets,
   hasNewChanges,
 } from "../../modules/changes/lib/change-set-groups.js";
-import { initialBody } from "../../modules/changes/lib/diff-layout.js";
+import { fileDiffBody } from "../../modules/changes/lib/diff-layout.js";
 import {
   choose,
   initialSelection,
@@ -127,22 +127,29 @@ describe("change set selection", () => {
 });
 
 describe("file diff body", () => {
+  const file = {
+    path: "a.ts",
+    oldPath: null,
+    status: "modified" as const,
+    additions: 1,
+    deletions: 1,
+    binary: false,
+    uncommitted: false,
+    patch: "diff --git a/a.ts b/a.ts\n",
+  };
+
   // TEST_SCENARIO: large diffs start collapsed, and binary or oversized files say so instead of rendering.
   it("collapses big files and names what it cannot show", () => {
-    const file = {
-      path: "a.ts",
-      oldPath: null,
-      status: "modified" as const,
-      additions: 1,
-      deletions: 1,
-      binary: false,
-      uncommitted: false,
-      patch: "diff --git a/a.ts b/a.ts\n",
-    };
+    expect(fileDiffBody(file, null)).toBe("shown");
+    expect(fileDiffBody({ ...file, additions: 5000 }, null)).toBe("collapsed");
+    expect(fileDiffBody({ ...file, binary: true }, null)).toBe("binary");
+    expect(fileDiffBody({ ...file, patch: null }, null)).toBe("too-large");
+  });
 
-    expect(initialBody(file)).toBe("shown");
-    expect(initialBody({ ...file, additions: 5000 })).toBe("collapsed");
-    expect(initialBody({ ...file, binary: true })).toBe("binary");
-    expect(initialBody({ ...file, patch: null })).toBe("too-large");
+  // TEST_SCENARIO: a watch refetch can grow a file past the patch cap or shrink it back under it; the body follows the current file, and only the user's expand or collapse choice carries over.
+  it("follows the current file and keeps only the user's choice", () => {
+    expect(fileDiffBody({ ...file, patch: null }, true)).toBe("too-large");
+    expect(fileDiffBody(file, false)).toBe("collapsed");
+    expect(fileDiffBody({ ...file, additions: 5000 }, true)).toBe("shown");
   });
 });

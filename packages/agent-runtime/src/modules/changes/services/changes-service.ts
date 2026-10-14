@@ -10,6 +10,7 @@ import {
 import { noticeStream } from "../../../core/notice-stream.js";
 import { createFilesWatcher, type WatchHandle } from "../../files-watch.js";
 import { repositoryNameOf } from "../domain/git-output.js";
+import { GIT_CONCURRENCY, mapLimit } from "../domain/map-limit.js";
 import type { ToolActivity } from "../domain/tool-activity.js";
 import {
   findRepositoryDirs,
@@ -31,7 +32,6 @@ import {
 
 const SNAPSHOT_REUSE_MS = 1_000;
 const NOTICE_INTERVAL_MS = 2_000;
-const GIT_CONCURRENCY = 4;
 const SESSION_PULL_REQUEST_CHECK_MS = 30_000;
 
 interface ChangeSetEntry {
@@ -41,26 +41,6 @@ interface ChangeSetEntry {
 
 interface Snapshot {
   entries: ChangeSetEntry[];
-}
-
-async function mapLimit<T, R>(
-  items: readonly T[],
-  limit: number,
-  fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  const workers = Array.from(
-    { length: Math.min(limit, items.length) },
-    async () => {
-      while (next < items.length) {
-        const index = next++;
-        results[index] = await fn(items[index]!);
-      }
-    },
-  );
-  await Promise.all(workers);
-  return results;
 }
 
 function byRepositoryThenPath(a: ChangeSetEntry, b: ChangeSetEntry): number {
@@ -254,8 +234,10 @@ export function createChangesService(deps: {
 
   async function recordEdits(activity: ToolActivity): Promise<void> {
     const editedAt = now().toISOString();
-    const locations = await Promise.all(
-      activity.editedPaths.map((path) => locateFile(deps.git, path)),
+    const locations = await mapLimit(
+      activity.editedPaths,
+      GIT_CONCURRENCY,
+      (path) => locateFile(deps.git, path),
     );
     const toplevels = new Map<string, RepositoryLocation>();
     for (const location of locations)

@@ -7,7 +7,7 @@ import { useState } from "react";
 
 import { useStore } from "../../../store.js";
 import { isDarkTheme } from "../../platform/store/theme.js";
-import { type DiffLayout, initialBody } from "../lib/diff-layout.js";
+import { type DiffLayout, fileDiffBody } from "../lib/diff-layout.js";
 import { DiffStatText } from "./diff-stat-text.js";
 import { FileStatusMark } from "./file-status-mark.js";
 
@@ -19,7 +19,8 @@ interface Props {
 
 export function FileDiffCard({ file, layout, anchor }: Props) {
   const theme = useStore((s) => s.theme);
-  const [body, setBody] = useState(() => initialBody(file));
+  const [expandedByUser, setExpandedByUser] = useState<boolean | null>(null);
+  const body = fileDiffBody(file, expandedByUser);
   const expandable = body === "shown" || body === "collapsed";
   const Chevron = body === "shown" ? ChevronDown : ChevronRight;
 
@@ -34,7 +35,7 @@ export function FileDiffCard({ file, layout, anchor }: Props) {
           disabled={!expandable}
           aria-expanded={body === "shown"}
           aria-label={body === "shown" ? "Collapse file" : "Expand file"}
-          onClick={() => setBody(body === "shown" ? "collapsed" : "shown")}
+          onClick={() => setExpandedByUser(body !== "shown")}
           className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-default"
         >
           {expandable && (

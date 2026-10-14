@@ -6,6 +6,7 @@ import {
   parseWorktreeList,
   type WorktreeRecord,
 } from "../domain/git-output.js";
+import { GIT_CONCURRENCY, mapLimit } from "../domain/map-limit.js";
 import type { Git } from "./git.js";
 
 export const SCAN_MAX_DEPTH = 4;
@@ -95,12 +96,14 @@ export async function groupWorktrees(
   for (const location of locations)
     if (!byCommonDir.has(location.commonDir))
       byCommonDir.set(location.commonDir, location.toplevel);
-  const repositories = await Promise.all(
-    [...byCommonDir].map(async ([commonDir, toplevel]) => {
+  const repositories = await mapLimit(
+    [...byCommonDir],
+    GIT_CONCURRENCY,
+    async ([commonDir, toplevel]) => {
       const listed = await git(toplevel, ["worktree", "list", "--porcelain"]);
       const worktrees = listed.ok ? parseWorktreeList(listed.value) : [];
       return { commonDir, worktrees };
-    }),
+    },
   );
   return repositories.filter((repository) => repository.worktrees.length > 0);
 }

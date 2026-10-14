@@ -19,6 +19,7 @@ import {
   type StatusEntry,
   type WorktreeRecord,
 } from "../domain/git-output.js";
+import { GIT_CONCURRENCY, mapLimit } from "../domain/map-limit.js";
 import { EMPTY_TREE, type Git, type GitFailure } from "./git.js";
 
 export const MAX_UNTRACKED_FILES = 200;
@@ -96,7 +97,8 @@ async function lineCount(path: string): Promise<number> {
   const handle = await open(path, "r").catch(() => null);
   if (!handle) return 0;
   try {
-    const buffer = Buffer.alloc(MAX_COUNTED_FILE_BYTES);
+    const { size } = await handle.stat();
+    const buffer = Buffer.alloc(Math.min(size, MAX_COUNTED_FILE_BYTES));
     const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
     const bytes = buffer.subarray(0, bytesRead);
     if (bytes.includes(0)) return 0;
@@ -137,8 +139,8 @@ export async function readWorktree(
       ? failureText(numstat.error)
       : null;
   const untracked = untrackedOf(status).slice(0, MAX_UNTRACKED_FILES);
-  const untrackedLines = await Promise.all(
-    untracked.map((entry) => lineCount(join(path, entry.path))),
+  const untrackedLines = await mapLimit(untracked, GIT_CONCURRENCY, (entry) =>
+    lineCount(join(path, entry.path)),
   );
   return {
     path,
@@ -247,8 +249,8 @@ export async function readDiff(
   }));
   const untracked = untrackedOf(state.status);
   const shown = untracked.slice(0, MAX_UNTRACKED_FILES);
-  const added = await Promise.all(
-    shown.map((entry) => untrackedDiff(git, path, entry.path)),
+  const added = await mapLimit(shown, GIT_CONCURRENCY, (entry) =>
+    untrackedDiff(git, path, entry.path),
   );
   const files = [...tracked, ...added].sort((a, b) =>
     a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
