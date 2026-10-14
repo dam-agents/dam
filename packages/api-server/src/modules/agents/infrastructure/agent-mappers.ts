@@ -42,6 +42,7 @@ import {
   INVOCATIONS_ACTIVE_KEY,
   LAST_ACTIVITY_KEY,
   RECLAIMED_AT_KEY,
+  AGENT_POD_REASON_MACHINE_STOPPING,
   READY_REASON_HIBERNATED,
   READY_REASON_OVER_BUDGET,
   RUNTIME_MIGRATING_CONDITION,
@@ -179,6 +180,8 @@ export function computeAgentState(
     return preparingWorkspace ? "preparing_workspace" : "running";
   if (infra.hibernated) return "hibernated";
   if (infra.overBudget) return "over_budget";
+  if (infra.agentPodNotReadyReason === AGENT_POD_REASON_MACHINE_STOPPING)
+    return "hibernating";
   if (infra.agentPodReady === true && infra.gatewayPodReady === false)
     return preparingWorkspace ? "preparing_workspace" : "running";
   if (

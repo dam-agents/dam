@@ -267,7 +267,7 @@ func (c *IdleChecker) hibernate(ctx context.Context, owner, name string) error {
 	return hibernateAgentPair(ctx, c.client, c.dynamic, c.halt, owner, c.config.Namespace, name)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: hibernation is published only once the agent's machine is stopped. The api-server trusts a health check answer on a wake from a published hibernation, because nothing should answer then, so a machine still running would pass for a woken one. When the runner cannot stop the machine, the gateway is scaled down anyway and readiness goes down, but the agent is not reported hibernated: the error makes the idle checker try again on its next sweep, and the agent's next reconcile stops the machine once the runner answers. A machine the runner is still stopping is no error: the agent's reconcile watches it and publishes hibernation once it reads stopped.
+// UNIT_BOUNDARY_DESCRIPTION: hibernation is published only once the agent's machine is stopped. The api-server trusts a health check answer on a wake from a published hibernation, because nothing should answer then, so a machine still running would pass for a woken one. When the runner cannot stop the machine, the gateway is scaled down anyway and readiness goes down, but the agent is not reported hibernated: the error makes the idle checker try again on its next sweep, and the agent's next reconcile stops the machine once the runner answers. A machine the runner is still stopping is no error: the agent reads as stopping, and its reconcile watches the machine and publishes hibernation once it reads stopped.
 func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, halt MachineHalt, owner, namespace, name string) error {
 	var haltErr error
 	if halt != nil {
@@ -277,14 +277,18 @@ func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dyna
 		return err
 	}
 	if haltErr != nil {
-		msg := fmt.Sprintf("hibernating: the machine has not stopped yet: %v", haltErr)
+		stopping := errors.Is(haltErr, errMachineStopping)
+		reason, msg := vmrunner.ReasonNotReady, fmt.Sprintf("hibernating: the machine has not stopped yet: %v", haltErr)
+		if stopping {
+			reason, msg = apiv1.ReasonMachineStopping, "hibernating: the machine is stopping"
+		}
 		if err := updateAgentStatus(ctx, dyn, namespace, name, func(s *apiv1.AgentStatus) {
-			setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", vmrunner.ReasonNotReady, msg, 0)
+			setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", reason, msg, 0)
 			setStatusCondition(s, apiv1.ConditionReady, false, "AllPodsReady", "PodsNotReady", "", 0)
 		}); err != nil {
 			return err
 		}
-		if errors.Is(haltErr, errMachineStopping) {
+		if stopping {
 			return nil
 		}
 		return fmt.Errorf("stopping the machine of %s: %w", name, haltErr)

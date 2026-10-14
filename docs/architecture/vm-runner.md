@@ -111,7 +111,7 @@ What an agent waits for is on its status: a certificate cert-manager has not iss
 A reconcile that could not ensure the machine takes the Agent's readiness down with it.
 Hibernation does not wait for an unreachable runner: the gateway goes down anyway, readiness goes down, and the machine is stopped by the Agent's next reconcile.
 The Agent is published hibernated only once the runner reports the machine stopped, because a wake from hibernation trusts the first health check answer ([agent-lifecycle](agent-lifecycle.md#wake)).
-The runner answers a stop before the guest is signalled, quiesced and powered off, so until the machine reads stopped the Agent reads as not ready, and its reconcile watches the machine and publishes hibernation once it stops.
+The runner answers a stop before the guest is signalled, quiesced and powered off, so until the machine reads stopped the Agent is not ready and reads as pausing, and its reconcile watches the machine and publishes hibernation once it stops.
 
 ## Runtime migration
 

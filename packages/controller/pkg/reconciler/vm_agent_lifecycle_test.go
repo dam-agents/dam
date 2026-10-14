@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -156,7 +157,7 @@ func TestTheIdleCheckerRetriesAHibernationWhoseMachineDidNotStop(t *testing.T) {
 	assert.False(t, node.spec("my-agent").Running)
 }
 
-// TEST_SCENARIO: the runner answers a stop at once, while the guest is still being signalled, quiesced and powered off. A wake in those seconds would trust the first health check answer if the agent read hibernated, and the guest about to power off would give it. So the agent reads hibernated only once the runner reports the machine stopped, and its reconcile watches the machine until then.
+// TEST_SCENARIO: the runner answers a stop at once, while the guest is still being signalled, quiesced and powered off. A wake in those seconds would trust the first health check answer if the agent read hibernated, and the guest about to power off would give it. So the agent reads hibernated only once the runner reports the machine stopped, reads as stopping until then, and its reconcile watches the machine.
 func TestAnAgentReadsHibernatedOnlyOnceItsMachineHasStopped(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -178,6 +179,11 @@ func TestAnAgentReadsHibernatedOnlyOnceItsMachineHasStopped(t *testing.T) {
 	require.False(t, node.spec("my-agent").Running)
 	assert.Equal(t, int32(0), agentSSReplicas(t, r, GatewayName("my-agent")))
 	assert.NotEqual(t, apiv1.ReasonHibernated, readyCondition(t, r, "my-agent").Reason)
+	stored, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	stopping, err := FromCacheObject[apiv1.Agent](stored)
+	require.NoError(t, err)
+	assert.Equal(t, apiv1.ReasonMachineStopping, apimeta.FindStatusCondition(stopping.Status.Conditions, apiv1.ConditionAgentPodReady).Reason, "the agent reads as stopping, not as starting")
 	assert.True(t, r.watchingMachine("my-agent"), "the stopping machine is watched")
 
 	require.NoError(t, r.Reconcile(ctx, agent))
