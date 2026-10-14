@@ -149,6 +149,9 @@ func (c *Client) machine(ctx context.Context, hc *http.Client, method, id, query
 	return st, nil
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: an error body only ever becomes a message, and a proxy in front of the runner can answer with a page of any size, so no more of it is read.
+const errorBodyMax = 4096
+
 // UNIT_BOUNDARY_DESCRIPTION: one call, retried once with a re-read token if the runner refuses the one held. The body is kept as bytes so the retry sends it again.
 func (c *Client) call(ctx context.Context, hc *http.Client, method, path string, body []byte) ([]byte, error) {
 	for retried := false; ; retried = true {
@@ -165,7 +168,11 @@ func (c *Client) call(ctx context.Context, hc *http.Client, method, path string,
 		if err != nil {
 			return nil, &UnreachableError{cause: err}
 		}
-		raw, _ := io.ReadAll(resp.Body)
+		var body io.Reader = resp.Body
+		if resp.StatusCode >= 300 {
+			body = io.LimitReader(resp.Body, errorBodyMax)
+		}
+		raw, _ := io.ReadAll(body)
 		_ = resp.Body.Close()
 		switch {
 		case resp.StatusCode == http.StatusUnauthorized:
