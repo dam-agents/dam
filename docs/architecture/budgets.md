@@ -156,8 +156,8 @@ Deliberately local to the api-server: the alternative — echoing the denied act
 
 ## Freeing room
 
-Users free capacity by stopping a running agent (see [agent-lifecycle](agent-lifecycle.md) for the hard-stop mechanics) or letting it hibernate — and, for a start they are blocked on, the gate frees it for them where it can ([above](#reclaiming-room-for-a-blocked-start)).
-Reserved is computed from live state and never persisted, so a hibernate, stop, or delete credits the budget back with nothing to reconcile.
+Users free capacity by putting a running agent to sleep (see [agent-lifecycle](agent-lifecycle.md#hibernate) for the mechanics) or letting it hibernate — and, for a start they are blocked on, the gate frees it for them where it can ([above](#reclaiming-room-for-a-blocked-start)).
+Reserved is computed from live state and never persisted, so a hibernate or delete credits the budget back with nothing to reconcile.
 
 ## Resource alerts
 

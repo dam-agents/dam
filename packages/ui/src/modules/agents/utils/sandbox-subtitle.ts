@@ -21,7 +21,7 @@ export function sandboxSubtitle(
   return formatSizeLabel(sizeInMi(agent.size), slotUnit);
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a vm agent's own measured share of its owner's pools. A figure the runner has not measured, and the memory of a paused agent, is null, so the row shows nothing rather than a zero.
+// UNIT_BOUNDARY_DESCRIPTION: a vm agent's own measured share of its owner's pools. A figure the runner has not measured, and the memory of a sleeping agent, is null, so the row shows nothing rather than a zero.
 export function agentUsage(
   agent: AgentView,
   vmUsage?: BudgetVmUsage | null,

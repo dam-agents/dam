@@ -398,7 +398,7 @@ describe("releaseInvocationPin", () => {
     expect(await repo.readInvocationPin("a1")).toBe("7");
   });
 
-  // TEST_SCENARIO: a pause cleared the pin after the reconcile listed this Driver from the cache; the read reports it unpinned so its stale clock is left alone.
+  // TEST_SCENARIO: a sleep cleared the pin after the reconcile listed this Driver from the cache; the read reports it unpinned so its stale clock is left alone.
   it("reads no version once the pin is gone", async () => {
     const { repo, patches } = pinnedHarness("");
 
@@ -446,7 +446,7 @@ describe("setInvocationPin", () => {
     return { repo, store, patches };
   }
 
-  // TEST_SCENARIO: a spawn pins its Driver with a write conditional on the object it read, so a pause landing in between makes the write fail rather than pin a paused Driver.
+  // TEST_SCENARIO: a spawn pins its Driver with a write conditional on the object it read, so a sleep landing in between makes the write fail rather than pin a paused Driver.
   it("pins a running Driver in one conditional write", async () => {
     const { repo, store, patches } = recordingHarness("");
 
@@ -460,8 +460,8 @@ describe("setInvocationPin", () => {
     ]);
   });
 
-  // TEST_SCENARIO: a Driver spawns inside the settle window of a pause; the pin would revive it once the pause settles, so the spawn leaves it unpinned.
-  it("writes nothing while a stop or pause stands", async () => {
+  // TEST_SCENARIO: a Driver spawns inside the settle window of a sleep; the pin would revive it once the sleep settles, so the spawn leaves it unpinned.
+  it("writes nothing while a sleep stands", async () => {
     const { repo, store, patches } = recordingHarness(
       "2026-09-28T09:00:00.000Z",
     );

@@ -56,7 +56,7 @@ describe("agent card subtitle", () => {
     expect(sandboxSubtitle(sized, slotUnit)).toBeTruthy();
   });
 
-  // TEST_SCENARIO: a vm agent shows its own measured memory and storage as figures, never a size label, and a figure not measured, zero, or a paused agent's memory is left out.
+  // TEST_SCENARIO: a vm agent shows its own measured memory and storage as figures, never a size label, and a figure not measured, zero, or a sleeping agent's memory is left out.
   it("shows a vm agent's own share of its pools, and nothing it has not measured", () => {
     const vmAgent = { ...sized, vm: true, state: "running" as const };
     const usage = (memoryUsedBytes: number, storageUsedBytes: number) => ({
