@@ -691,7 +691,7 @@ const MKFS_EXT4: [&str; 3] = [
     "/usr/local/opt/e2fsprogs/sbin/mkfs.ext4",
 ];
 
-// UNIT_BOUNDARY_DESCRIPTION: formats a fresh sparse disk as ext4 with a journal. Lazy init leaves the inode tables and the journal unzeroed, which on a file never written reads as zeros anyway, so the format writes little and takes well under a second at any size; the guest kernel zeroes the inode tables later, as it does on any disk formatted this way. A host with no mkfs.ext4, or a format that fails, leaves the disk empty for smolvm to format as before.
+// UNIT_BOUNDARY_DESCRIPTION: formats a fresh sparse disk as ext4 with a journal. Lazy init leaves the inode tables and the journal unzeroed, which on a file never written reads as zeros anyway, so the format writes little and takes well under a second at any size; the guest kernel zeroes the inode tables later, as it does on any disk formatted this way. A format that succeeds also writes smolvm's format marker, so smolvm never copies its template over the disk and the next start does not report an unmarked filesystem. A host with no mkfs.ext4, or a format that fails, leaves the disk empty for smolvm to format as before.
 fn format_journaled(disk: &Path) {
     let args = [
         "-F",
@@ -709,7 +709,12 @@ fn format_journaled(disk: &Path) {
             .arg(disk)
             .output()
         {
-            Ok(out) if out.status.success() => return,
+            Ok(out) if out.status.success() => {
+                if let Err(e) = std::fs::write(disk.with_extension("formatted"), "1") {
+                    tracing::warn!(disk = %disk.display(), error = %e, "could not mark the formatted storage disk");
+                }
+                return;
+            }
             Ok(out) => {
                 tracing::warn!(disk = %disk.display(), stderr = %String::from_utf8_lossy(&out.stderr).trim(), "formatting the storage disk failed; smolvm formats it instead, without a journal");
                 return;
@@ -1421,6 +1426,10 @@ mod tests {
 
         let disk = storage_disk_path("m1");
         assert!(has_journal(&disk), "the new disk has no journal");
+        assert!(
+            disk.with_extension("formatted").exists(),
+            "the formatted disk is not marked"
+        );
         assert_eq!(fs::metadata(&disk).unwrap().len(), 20 << 30);
         use std::os::unix::fs::MetadataExt;
         assert!(
