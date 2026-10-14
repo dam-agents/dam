@@ -291,7 +291,7 @@ impl Metrics {
         gauge(
             &mut out,
             "storage_usable_bytes",
-            "Bytes the runner may use on the owner's claim, in use or free; past 90% of it no machine is created, started or grown.",
+            "Bytes the runner may use on the owner's claim, in use or free; past 90% of it no machine is created or grown, and past 97% none is started.",
             gauges.storage.map_or(f64::NAN, |s| s.usable as f64),
         );
         gauge(
