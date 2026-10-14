@@ -251,8 +251,9 @@ describe("changes service", () => {
   });
 
   /**
-   * TEST_SCENARIO: A branch with an open pull request carries its link, and
-   * the session that edited it keeps the link for the sessions list.
+   * TEST_SCENARIO: A branch with an open pull request carries its link. The
+   * session that edited it gets the link once its tool call settles, before
+   * anyone opens the panel, so the sessions list can show it.
    */
   it("should link the pull request of a branch", async () => {
     const repo = path.join(home, "work", "app");
@@ -278,7 +279,9 @@ describe("changes service", () => {
       editedPaths: [path.join(repo, "a.txt")],
       settled: true,
     });
-    await expect.poll(() => service.repositoriesOf("s1").length).toBe(1);
+    await expect
+      .poll(() => service.repositoriesOf("s1")[0]?.pullRequest)
+      .toEqual(link);
 
     const { changeSets } = await service.list("s1");
 

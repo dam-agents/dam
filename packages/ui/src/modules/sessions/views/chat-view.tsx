@@ -1,6 +1,7 @@
 import {
   ArrowDown,
   ArrowLeft,
+  Branch,
   Globe,
   Renew,
   Tools,
@@ -81,6 +82,7 @@ import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-pa
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
 import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
 import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
+import { DockedChangesPanel } from "../../changes/components/docked-changes-panel.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
@@ -248,6 +250,10 @@ export function ChatView() {
     s.openBrowserAgentId === s.selectedAgent ? s.openBrowserAgentId : null,
   );
   const openBrowser = useOpenBrowser();
+  const openChangesAgentId = useStore((s) =>
+    s.openChangesAgentId === s.selectedAgent ? s.openChangesAgentId : null,
+  );
+  const setOpenChanges = useStore((s) => s.setOpenChanges);
   const browserMaximized = useStore((s) => s.browserMaximized);
   const openDelegation = useStore((s) =>
     s.openDelegation?.driverAgentId === s.selectedAgent
@@ -639,6 +645,7 @@ export function ChatView() {
     openFilePath !== null ||
     openArtifactId !== null ||
     openProcessOutputKey !== null ||
+    openChangesAgentId !== null ||
     (openBrowserAgentId !== null && canOpenBrowser);
   const columnsDoNotFit =
     columnsW !== null && columnsW < leftW + CHAT_MIN_W + SIDE_PANEL_MIN_W;
@@ -738,6 +745,20 @@ export function ChatView() {
                   onClick={() => void openBrowser(selectedAgent)}
                 >
                   <Globe size={16} />
+                </Button>
+              )}
+              {selectedAgent && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Show changes"
+                  tooltip="Show changes"
+                  aria-pressed={openChangesAgentId !== null}
+                  onClick={() =>
+                    setOpenChanges(openChangesAgentId ? null : selectedAgent)
+                  }
+                >
+                  <Branch size={16} />
                 </Button>
               )}
               <Button
@@ -1197,6 +1218,12 @@ export function ChatView() {
                   key={openArtifactId}
                   agentId={selectedAgent}
                   onSendPrompt={sendArtifactPrompt}
+                />
+              ) : openChangesAgentId ? (
+                <DockedChangesPanel
+                  key={`${openChangesAgentId}:${sessionId ?? ""}`}
+                  agentId={openChangesAgentId}
+                  sessionId={sessionId}
                 />
               ) : openProcessOutputKey && selectedAgent ? (
                 <DockedProcessOutputPanel

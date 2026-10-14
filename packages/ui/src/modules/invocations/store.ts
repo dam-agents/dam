@@ -30,6 +30,7 @@ export const createInvocationsSlice: StateCreator<
             openArtifactDirty: false,
             openBrowserAgentId: null,
             openProcessOutputKey: null,
+            openChangesAgentId: null,
           }
         : { openDelegation: null },
     ),

@@ -32,6 +32,7 @@ import {
 const SNAPSHOT_REUSE_MS = 1_000;
 const NOTICE_INTERVAL_MS = 2_000;
 const GIT_CONCURRENCY = 4;
+const SESSION_PULL_REQUEST_CHECK_MS = 30_000;
 
 interface ChangeSetEntry {
   changeSet: Omit<ChangeSet, "sessionEditedAt">;
@@ -92,17 +93,36 @@ export function createChangesService(deps: {
   let snapshot: Promise<Snapshot> | undefined;
   let snapshotAt = 0;
 
-  async function describe(
-    location: RepositoryLocation,
-  ): Promise<{ name: string; branch: string | null }> {
+  async function describe(toplevel: string): Promise<{
+    name: string;
+    branch: string | null;
+    remote: string | null;
+  }> {
     const [remote, head] = await Promise.all([
-      originUrl(deps.git, location.toplevel),
-      deps.git(location.toplevel, ["symbolic-ref", "-q", "--short", "HEAD"]),
+      originUrl(deps.git, toplevel),
+      deps.git(toplevel, ["symbolic-ref", "-q", "--short", "HEAD"]),
     ]);
     return {
-      name: repositoryNameOf(remote, location.toplevel),
+      name: repositoryNameOf(remote, toplevel),
       branch: head.ok && head.value.trim() ? head.value.trim() : null,
+      remote,
     };
+  }
+
+  const pullRequestsCheckedAt = new Map<string, number>();
+
+  async function linkSessionPullRequests(sessionId: string): Promise<void> {
+    const checkedAt = pullRequestsCheckedAt.get(sessionId) ?? 0;
+    if (Date.now() - checkedAt < SESSION_PULL_REQUEST_CHECK_MS) return;
+    pullRequestsCheckedAt.set(sessionId, Date.now());
+    for (const touched of deps.touched.repositoriesOf(sessionId)) {
+      if (touched.branch === null) continue;
+      const { branch, remote } = await describe(touched.path);
+      if (branch !== touched.branch) continue;
+      const pullRequest = await deps.pullRequests.find(remote, branch);
+      if (pullRequest)
+        deps.touched.linkPullRequest(touched.path, branch, pullRequest);
+    }
   }
 
   async function discover(extraPaths: readonly string[]): Promise<Snapshot> {
@@ -248,7 +268,7 @@ export function createChangesService(deps: {
     for (const location of locations)
       if (location) toplevels.set(location.toplevel, location);
     for (const location of toplevels.values()) {
-      const { name, branch } = await describe(location);
+      const { name, branch } = await describe(location.toplevel);
       deps.touched.record(activity.sessionId, location.toplevel, {
         name,
         branch,
@@ -317,6 +337,14 @@ export function createChangesService(deps: {
           : Promise.resolve();
       if (activity.settled || activity.editedPaths.length > 0)
         void recorded.then(changed);
+      if (activity.settled)
+        void recorded
+          .then(() => linkSessionPullRequests(activity.sessionId))
+          .catch((error: unknown) =>
+            deps.log(
+              `linking the session's pull requests failed: ${error instanceof Error ? error.message : String(error)}`,
+            ),
+          );
     },
 
     repositoriesOf(sessionId) {

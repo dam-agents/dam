@@ -78,6 +78,7 @@ export const createFilesSlice: StateCreator<
             openDelegation: null,
             openBrowserAgentId: null,
             openProcessOutputKey: null,
+            openChangesAgentId: null,
           }
         : {}),
     }),
