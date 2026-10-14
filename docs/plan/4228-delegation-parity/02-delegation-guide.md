@@ -43,7 +43,7 @@ Apply `/typescript-engineering` to step 4.
 4. **Reword the other two places that state the rule.**
    - In the base [`AGENTS.md`](../../../packages/agents/base/rootfs/etc/AGENTS.md), the "Delegation:" paragraph (two sentences): the harness's own subagent, if it has one, works in this sandbox; the `spawn_subagent` tool starts a separate agent, for the listed needs.
      Keep it at two or three sentences.
-   - In [`sub-agent-tools.ts`](../../../packages/api-server/src/apps/harness-api-server/sub-agent-tools.ts), `SPAWN_DESCRIPTION` ("This is not your harness's own subagent … prefer that whenever it can do the job") and the `needs` description: say "if your harness has one."
+   - In [`sub-agent-tools.ts`](../../../packages/api-server/src/apps/harness-api-server/sub-agent-tools.ts), `SPAWN_DESCRIPTION` ("This is not your harness's own subagent … prefer that whenever it can do the job"), the `needs` description and the refusal text: say "if your harness has one."
      Change no behavior.
 
 5. **Docs.**
@@ -68,7 +68,8 @@ Apply `/typescript-engineering` to step 4.
 ## Smoke test
 
 1. `mise run check:skill-manifest` and `mise run //packages/api-server:test` pass.
-2. `rg -n -i "background task|nohup|setsid|run_in_background" packages/agents/base/rootfs/app/working-dir/.agents/skills/spawn-subagent packages/agents/base/rootfs/etc/AGENTS.md` prints nothing.
+2. `rg -n -i "background task|nohup|setsid|run_in_background" packages/agents/base/rootfs/app/working-dir/.agents/skills/spawn-subagent` prints nothing, and neither does the same search over the "Delegation:" paragraph of the base `AGENTS.md`.
+   Its "Long jobs" paragraph keeps `nohup` and `setsid`: that advice is for `platform-keep`, not delegation, and holds on every harness.
 3. Live, on a dev deployment built from the branch (`mise run cluster:build -- api-server agents`):
    - On an agent created **before** the rebuild, open its terminal: `~/.agents/skills/spawn-subagent/SKILL.md` has the new text.
    - On Codex, Pi and Bob, ask: "Fan three tasks out to platform sub-agents — count the words in three short texts — and give me the totals."

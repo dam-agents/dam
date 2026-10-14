@@ -24,7 +24,7 @@ const LEASE_POLLS = 4;
 
 const MAX_AWAIT_IDS = 50;
 
-const SPAWN_DESCRIPTION = `Spawn a platform sub-agent: a separate agent in its own new sandbox. This is not your harness's own subagent, which runs here, starts in seconds and costs no extra compute: prefer that whenever it can do the job. A platform sub-agent takes tens of seconds to minutes to start and its compute counts against the budget, so spawn one only when the task needs something only a separate sandbox gives, and name it in needs:
+const SPAWN_DESCRIPTION = `Spawn a platform sub-agent: a separate agent in its own new sandbox. This is not your harness's own subagent: if your harness has one, it runs here, starts in seconds and costs no extra compute, so prefer it whenever it can do the job. A platform sub-agent takes tens of seconds to minutes to start and its compute counts against the budget, so spawn one only when the task needs something only a separate sandbox gives, and name it in needs:
 - different-harness: it must run on another harness (see list_harnesses);
 - own-setup: it needs its own repository (seed), install command, env or skills;
 - more-resources: more CPU, memory or disk than this sandbox, or a microVM (backend "vm") for a container runtime or a cluster;
@@ -52,7 +52,7 @@ export type SpawnNeed = (typeof SPAWN_NEEDS)[number];
 const needsInput = z
   .array(z.enum(SPAWN_NEEDS))
   .min(1)
-  .describe("Why your harness's own subagent cannot do this.");
+  .describe("Why this needs a separate sandbox instead of this one.");
 
 const spawnInput = {
   needs: needsInput,
@@ -249,7 +249,7 @@ export function registerSubAgentTools(
       const unmet = unmetNeed(needs, body, await ops.harness());
       if (unmet) {
         return errorResult(
-          `spawn_subagent refused: ${unmet}. Use your harness's own subagent, or state a need the request bears out.`,
+          `spawn_subagent refused: ${unmet}. Do the work in this sandbox, with your harness's own subagent if it has one, or state a need the request bears out.`,
         );
       }
       const outcome = await ops.spawn(body, "tool");
