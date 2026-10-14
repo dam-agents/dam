@@ -13,8 +13,6 @@ import {
 const SIDEBAR_EXPANDED_STORAGE_KEY = "platform-sidebar-expanded";
 const SIDEBAR_HIBERNATING_STORAGE_KEY = "platform-sidebar-show-hibernating";
 
-export type ActivityView = "feed" | "approvals";
-
 export interface SidebarSlice {
   sidebarExpanded: boolean;
   setSidebarExpanded: (expanded: boolean) => void;
@@ -22,8 +20,8 @@ export interface SidebarSlice {
   setSidebarShowHibernating: (show: boolean) => void;
   sidebarActivityFilters: ActivityFilters;
   setSidebarActivityFilters: (filters: ActivityFilters) => void;
-  activityView: ActivityView | null;
-  setActivityView: (view: ActivityView | null) => void;
+  approvalsOpen: boolean;
+  setApprovalsOpen: (open: boolean) => void;
 }
 
 function readStoredSidebarExpanded(): boolean {
@@ -52,6 +50,6 @@ export const createSidebarSlice: StateCreator<
   sidebarActivityFilters: defaultActivityFilters(),
   setSidebarActivityFilters: (filters) =>
     set({ sidebarActivityFilters: filters }),
-  activityView: null,
-  setActivityView: (view) => set({ activityView: view }),
+  approvalsOpen: false,
+  setApprovalsOpen: (open) => set({ approvalsOpen: open }),
 });

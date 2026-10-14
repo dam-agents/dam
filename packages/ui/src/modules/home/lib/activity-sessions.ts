@@ -44,8 +44,6 @@ export function filterActivitySessions<T extends ActivitySession>(
         return item.working;
       case "unread":
         return item.unread;
-      case "attention":
-        return false;
       case "any":
         return true;
     }

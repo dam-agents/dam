@@ -7,10 +7,8 @@ import { cn } from "./lib/utils.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { GettingStartedDock } from "./modules/getting-started/components/getting-started-dock.js";
-import {
-  ActivityButton,
-  NotificationsPanel,
-} from "./modules/home/components/notifications-panel.js";
+import { ApprovalsButton } from "./modules/home/components/approvals-button.js";
+import { ApprovalsPanel } from "./modules/home/components/approvals-panel.js";
 import { useApprovalToasts } from "./modules/home/hooks/use-approval-toasts.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
@@ -70,8 +68,8 @@ export default function App() {
 
 function MainApp() {
   const view = useStore((s) => s.view);
-  const activityOpen = useStore((s) => s.activityView !== null);
-  const setActivityView = useStore((s) => s.setActivityView);
+  const approvalsOpen = useStore((s) => s.approvalsOpen);
+  const setApprovalsOpen = useStore((s) => s.setApprovalsOpen);
   const kitBrowserOpen = useStore((s) => s.kitBrowserOpen);
 
   useLiveEvents();
@@ -108,14 +106,14 @@ function MainApp() {
           <div className="relative z-content flex-1 min-w-0">
             <div className="pointer-events-none absolute top-0 right-0 z-raised px-4 pt-3 md:px-6">
               <div className="pointer-events-auto">
-                <ActivityButton onOpen={() => setActivityView("feed")} />
+                <ApprovalsButton onOpen={() => setApprovalsOpen(true)} />
               </div>
             </div>
             <ChatView />
           </div>
         </div>
-        {activityOpen && (
-          <NotificationsPanel onClose={() => setActivityView(null)} />
+        {approvalsOpen && (
+          <ApprovalsPanel onClose={() => setApprovalsOpen(false)} />
         )}
         {kitBrowserOpen && <BrowseKitsModal />}
         <DialogOverlay />
@@ -130,7 +128,7 @@ function MainApp() {
         <main className="relative z-content flex flex-1 flex-col overflow-y-auto">
           <div className="pointer-events-none sticky top-0 z-raised flex justify-end px-4 pt-3 md:px-6">
             <div className="pointer-events-auto">
-              <ActivityButton onOpen={() => setActivityView("feed")} />
+              <ApprovalsButton onOpen={() => setApprovalsOpen(true)} />
             </div>
           </div>
           <div
@@ -160,8 +158,8 @@ function MainApp() {
           </div>
         </main>
       </div>
-      {activityOpen && (
-        <NotificationsPanel onClose={() => setActivityView(null)} />
+      {approvalsOpen && (
+        <ApprovalsPanel onClose={() => setApprovalsOpen(false)} />
       )}
       {kitBrowserOpen && <BrowseKitsModal />}
       <DialogOverlay />

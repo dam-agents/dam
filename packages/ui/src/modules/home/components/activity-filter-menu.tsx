@@ -16,10 +16,8 @@ import {
   CHANNEL_TYPES,
   isFiltered,
   STATE_FILTER_LABELS,
-  type StateFilter,
+  STATE_FILTERS,
 } from "../lib/activity-filter.js";
-
-const SESSION_STATES: readonly StateFilter[] = ["any", "in-progress", "unread"];
 
 export function ActivityFilterMenu({
   filters,
@@ -59,7 +57,7 @@ export function ActivityFilterMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuLabel>Show</DropdownMenuLabel>
-        {SESSION_STATES.map((state) => (
+        {STATE_FILTERS.map((state) => (
           <DropdownMenuCheckboxItem
             key={state}
             checked={filters.state === state}

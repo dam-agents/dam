@@ -1,249 +1,102 @@
-import { Activity, ArrowLeft, Close, Warning } from "@carbon/icons-react";
+import { Close } from "@carbon/icons-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useNow } from "@/hooks/use-now";
 import { cn } from "@/lib/utils";
 
-import {
-  DialogHeader,
-  Modal,
-  useBodyScrollLock,
-  useFocusTrap,
-} from "../../../components/modal.js";
-import { useStore } from "../../../store.js";
+import { useBodyScrollLock, useFocusTrap } from "../../../components/modal.js";
+import { timeAgo } from "../../../lib/format-time.js";
 import { useDenyApprovals } from "../../approvals/hooks/use-deny-approvals.js";
-import { useArtifact } from "../../artifacts/api/queries.js";
-import { ArtifactPreviewDialog } from "../../artifacts/components/artifact-preview-dialog.js";
-import {
-  type ArtifactTouched,
-  useFeed,
-  useFeedArtifacts,
-} from "../api/queries.js";
+import { useFeed } from "../api/queries.js";
 import { useDismissals } from "../hooks/use-dismissals.js";
 import { useStickyResolved } from "../hooks/use-sticky-resolved.js";
-import { useWaitingApprovals } from "../hooks/use-waiting-approvals.js";
-import {
-  type ActivityFilters,
-  applyActivityFilters,
-  type ChannelType,
-  defaultActivityFilters,
-  isFiltered as filtersDiffer,
-  type StateFilter,
-} from "../lib/activity-filter.js";
-import type { FeedItem } from "../lib/feed-item.js";
-import { ActivityFilterBar } from "./activity-filter-bar.js";
+import { FeedApprovalCard } from "./feed-approval-card.js";
 import { FeedCardSkeleton } from "./feed-card-skeleton.js";
-import { FeedList } from "./feed-list.js";
 
-const EMPTY_ARTIFACTS: readonly ArtifactTouched[] = [];
+const MINUTE_MS = 60_000;
 
-export function NotificationsPanel({ onClose }: { onClose: () => void }) {
+export function ApprovalsPanel({ onClose }: { onClose: () => void }) {
   const [closing, setClosing] = useState(false);
   const requestClose = () => setClosing(true);
   const { items, agents, loadingFeed } = useFeed();
-  const openAgentSession = useStore((s) => s.openAgentSession);
-  const { isDismissed, dismiss, dismissedAt } = useDismissals();
+  const { isDismissed, dismiss } = useDismissals();
   const sticky = useStickyResolved();
-  const artifacts = useFeedArtifacts(items);
-  const [previewArtifactId, setPreviewArtifactId] = useState<string | null>(
-    null,
-  );
-  const { data: previewArtifact, isError: previewFailed } =
-    useArtifact(previewArtifactId);
-  const [filters, setFilters] = useState<ActivityFilters>(
-    defaultActivityFilters,
-  );
-  const needsYou = useStore((s) => s.activityView === "approvals");
-  const setActivityView = useStore((s) => s.setActivityView);
-  const setNeedsYou = (on: boolean) =>
-    setActivityView(on ? "approvals" : "feed");
-
-  const artifactsFor = (item: FeedItem): readonly ArtifactTouched[] => {
-    if (item.kind !== "unread") return EMPTY_ARTIFACTS;
-    const touched = artifacts.bySession.get(item.session.sessionId);
-    if (!touched || touched.length === 0) return EMPTY_ARTIFACTS;
-    const cleared = dismissedAt(item.agentId, item.session.sessionId);
-    if (cleared === null) return touched;
-    return touched.filter((t) => Date.parse(t.touchedAt) > cleared);
-  };
-
-  const live = sticky.merge(items).filter((item) => !isDismissed(item));
-  const visible = applyActivityFilters(
-    live.filter((item) => item.kind !== "approval"),
-    filters,
-  );
-  const dismissible = visible.filter((item) => item.kind !== "in-progress");
-  const filtered = filtersDiffer(filters);
-  const approvals = applyActivityFilters(useWaitingApprovals(), filters);
-  const shown = needsYou
-    ? applyActivityFilters(
-        live.filter((item) => item.kind === "approval"),
-        filters,
-      )
-    : visible;
   const { denyAll, denying } = useDenyApprovals();
-  const shownApprovals = shown.flatMap((item) =>
-    item.kind === "approval" && sticky.labelFor(item.id) === null
-      ? [item.approval]
-      : [],
-  );
+  const now = useNow(MINUTE_MS);
 
-  const toggleChannelType = (type: ChannelType) =>
-    setFilters((prev) => {
-      const next = new Set(prev.channelTypes);
-      if (next.has(type)) next.delete(type);
-      else next.add(type);
-      return { ...prev, channelTypes: next };
-    });
-  const resetFilters = () => {
-    setNeedsYou(false);
-    setFilters(defaultActivityFilters());
-  };
-  const changeState = (state: StateFilter) => {
-    setNeedsYou(state === "attention");
-    setFilters((prev) => ({
-      ...prev,
-      state: state === "attention" ? "any" : state,
-    }));
-  };
+  const approvals = sticky
+    .merge(items)
+    .flatMap((item) =>
+      item.kind === "approval" && !isDismissed(item) ? [item] : [],
+    );
+  const pending = approvals.flatMap((item) =>
+    sticky.labelFor(item.id) === null ? [item.approval] : [],
+  );
+  const agentOf = (agentId: string) => agents.find((a) => a.id === agentId);
 
   return (
-    <>
-      <Drawer closing={closing} onClose={requestClose} onClosed={onClose}>
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          {needsYou ? (
-            <button
-              type="button"
-              onClick={() => setNeedsYou(false)}
-              className="flex items-center gap-2 text-base font-semibold text-foreground transition-colors hover:text-foreground/80"
+    <Drawer closing={closing} onClose={requestClose} onClosed={onClose}>
+      <div className="flex items-center justify-between border-b border-border px-5 py-4">
+        <h2 className="text-base font-semibold text-foreground">Approvals</h2>
+        <div className="flex items-center gap-3">
+          {pending.length > 0 && (
+            <Button
+              variant="link"
+              size="inline"
+              disabled={denying}
+              onClick={() => void denyAll(pending)}
+              title="Denies every approval shown here, once each. Nothing is remembered, so an agent asks again if it tries again."
+              data-testid="deny-all-approvals"
+              className="text-sm"
             >
-              <ArrowLeft size={16} />
-              Approvals
-            </button>
-          ) : (
-            <h2 className="text-base font-semibold text-foreground">
-              Activity
-            </h2>
+              Deny all
+            </Button>
           )}
           <button
             type="button"
             onClick={requestClose}
-            aria-label="Close activity"
+            aria-label="Close approvals"
             className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <Close size={16} />
           </button>
         </div>
+      </div>
 
-        <div className="flex items-center gap-1.5 border-b border-border px-5 py-3">
-          <ActivityFilterBar
-            filters={needsYou ? { ...filters, state: "attention" } : filters}
-            onToggleChannelType={toggleChannelType}
-            onChangeState={changeState}
-            onReset={resetFilters}
-            filtered={filtered || needsYou}
-          />
-          {!needsYou && dismissible.length > 0 && (
-            <Button
-              variant="link"
-              size="inline"
-              onClick={() => {
-                for (const item of dismissible) sticky.drop(item.id);
-                dismiss(dismissible);
-              }}
-              title="Hides these from Activity. Nothing is resolved or marked read; running work stays."
-              className="ml-auto shrink-0 text-sm"
-            >
-              Clear all
-            </Button>
-          )}
-          {needsYou && shownApprovals.length > 0 && (
-            <Button
-              variant="link"
-              size="inline"
-              disabled={denying}
-              onClick={() => void denyAll(shownApprovals)}
-              title="Denies every approval shown here, once each. Nothing is remembered, so an agent asks again if it tries again."
-              data-testid="deny-all-approvals"
-              className="ml-auto shrink-0 text-sm"
-            >
-              Deny all
-            </Button>
-          )}
-        </div>
-
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-4">
-          {!needsYou && approvals.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setNeedsYou(true)}
-              data-testid="needs-you-summary"
-              className="mx-1 flex w-[calc(100%-0.5rem)] items-center gap-3 rounded-xl border border-warning/30 bg-warning/5 px-4 py-3 text-left transition-colors hover:bg-warning/10 dark:border-warning/20 dark:bg-warning/10 dark:hover:bg-warning/15"
-            >
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-warning/15 dark:bg-warning/20">
-                <Warning size={16} className="text-warning" />
-              </div>
-              <p className="min-w-0 flex-1 text-sm font-semibold text-foreground">
-                {approvals.length}{" "}
-                {approvals.length === 1 ? "approval" : "approvals"} waiting
-              </p>
-            </button>
-          )}
-          {loadingFeed && shown.length === 0 ? (
-            <FeedCardSkeleton rows={3} />
-          ) : shown.length === 0 ? (
-            needsYou ? (
-              <ActivityEmpty
-                filtered={filtered}
-                onReset={() => setNeedsYou(false)}
-                offerWayBack
-                emptyMessage="No approvals waiting."
-                resetLabel="Back to Activity"
-              />
-            ) : (
-              <ActivityEmpty filtered={filtered} onReset={resetFilters} />
-            )
-          ) : (
-            <>
-              {loadingFeed && <FeedCardSkeleton />}
-              <FeedList
-                items={shown}
-                agents={agents}
-                onOpenSession={(agentId, sessionId, mode) => {
-                  requestClose();
-                  openAgentSession(agentId, sessionId, mode);
-                }}
-                onDismiss={(item) => {
-                  sticky.drop(item.id);
-                  dismiss([item]);
-                }}
-                onResolved={(item, label) => sticky.keep(item, label)}
-                resolvedLabelFor={sticky.labelFor}
-                artifactsFor={artifactsFor}
-                onOpenArtifact={setPreviewArtifactId}
-              />
-            </>
-          )}
-        </div>
-      </Drawer>
-
-      {previewArtifactId &&
-        (previewArtifact ? (
-          <ArtifactPreviewDialog
-            artifact={previewArtifact}
-            onClose={() => setPreviewArtifactId(null)}
-          />
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
+        {loadingFeed && approvals.length === 0 ? (
+          <FeedCardSkeleton rows={3} />
+        ) : approvals.length === 0 ? (
+          <p className="py-16 text-center text-sm text-muted-foreground">
+            No approvals waiting.
+          </p>
         ) : (
-          <Modal size="lg" onClose={() => setPreviewArtifactId(null)}>
-            <DialogHeader
-              title={previewFailed ? "Couldn't load the artifact" : "Loading…"}
-              onClose={() => setPreviewArtifactId(null)}
-            />
-          </Modal>
-        ))}
-    </>
+          <div className="flex flex-col gap-1">
+            {approvals.map((item) => {
+              const agent = agentOf(item.agentId);
+              return (
+                <FeedApprovalCard
+                  key={item.id}
+                  approval={item.approval}
+                  agentName={agent?.name ?? item.agentId}
+                  avatarName={agent?.name}
+                  avatar={agent?.avatar}
+                  meta={item.at ? timeAgo(item.at, now) : "—"}
+                  onDismiss={() => {
+                    sticky.drop(item.id);
+                    dismiss([item]);
+                  }}
+                  resolvedLabel={sticky.labelFor(item.id)}
+                  onResolved={(label) => sticky.keep(item, label)}
+                />
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </Drawer>
   );
 }
 
@@ -280,7 +133,7 @@ function Drawer({
     <div className="fixed inset-0 z-overlay flex justify-end">
       <button
         type="button"
-        aria-label="Close activity"
+        aria-label="Close approvals"
         onClick={onClose}
         className={cn(
           "absolute inset-0 bg-black/30 transition-opacity duration-150",
@@ -290,7 +143,7 @@ function Drawer({
       <div
         ref={panelRef}
         role="dialog"
-        aria-label="Activity"
+        aria-label="Approvals"
         className={cn(
           "relative flex h-full w-full max-w-[520px] flex-col border-l border-border bg-background shadow-xl transition-transform duration-150",
           open ? "translate-x-0" : "translate-x-full",
@@ -300,65 +153,5 @@ function Drawer({
       </div>
     </div>,
     document.body,
-  );
-}
-
-export function ActivityButton({ onOpen }: { onOpen: () => void }) {
-  const waiting = useWaitingApprovals().length;
-
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      data-testid="open-activity"
-      aria-label={
-        waiting > 0
-          ? `Activity, ${String(waiting)} ${waiting === 1 ? "approval" : "approvals"} waiting`
-          : "Activity"
-      }
-      className="relative flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-    >
-      <Activity size={16} />
-      {waiting > 0 && (
-        <Badge
-          data-testid="activity-badge"
-          className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border-0 bg-warning px-1 text-[10px] font-bold text-white hover:bg-warning"
-        >
-          {waiting > 9 ? "9+" : waiting}
-        </Badge>
-      )}
-    </button>
-  );
-}
-
-function ActivityEmpty({
-  filtered,
-  onReset,
-  offerWayBack = false,
-  emptyMessage = "You're all caught up.",
-  resetLabel = "Reset to default",
-}: {
-  filtered: boolean;
-  onReset: () => void;
-  offerWayBack?: boolean;
-  emptyMessage?: string;
-  resetLabel?: string;
-}) {
-  return (
-    <div className="flex flex-col items-center gap-2 py-16 text-center">
-      <p className="text-sm text-muted-foreground">
-        {filtered ? "Nothing matches your filters." : emptyMessage}
-      </p>
-      {(filtered || offerWayBack) && (
-        <Button
-          variant="link"
-          size="inline"
-          onClick={onReset}
-          className="mt-1 text-sm"
-        >
-          {resetLabel}
-        </Button>
-      )}
-    </div>
   );
 }
