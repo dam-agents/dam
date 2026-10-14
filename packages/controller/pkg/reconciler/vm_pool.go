@@ -13,7 +13,7 @@ import (
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: the fields of an owner's UserBudget that override their VM pool. A field left nil is the install's value. The pool is read on every reconcile of every vm agent and on every memory pass, and a starting machine reconciles every half second, so the overrides are kept in memory: the memory pass reads them again every 30 seconds, and a reconcile reads them only for an owner not yet seen.
+// UNIT_BOUNDARY_DESCRIPTION: the fields of an owner's UserBudget that override their VM pool. A field left nil is the install's value. The pool is read on every reconcile of every vm agent and on every memory pass, and a starting machine reconciles every half second, so the overrides are kept in memory: the memory pass reads them again every 30 seconds, and a reconcile reads them only for an owner not yet seen or when it starts a machine, since the memory pass skips an owner with nothing running.
 type vmPool struct {
 	memory  *resource.Quantity
 	cpu     *resource.Quantity

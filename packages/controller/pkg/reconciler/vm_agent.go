@@ -61,7 +61,10 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	lock := r.ownerLock(owner)
 	lock.Lock()
 	defer lock.Unlock()
-	r.vmRunning.Store(name, running)
+	// UNIT_BOUNDARY_DESCRIPTION: the pool is cached and the memory pass reads it again only for owners with something running, so a pool changed while every machine slept would size this start from the old one, and a size reaches a machine only at its next start: the reconcile that starts a machine reads the UserBudget again.
+	if was, _ := r.vmRunning.Swap(name, running); running && was != true {
+		r.refreshVMPool(ctx, owner)
+	}
 	demand, err := r.ownerRunnerDemand(ctx, owner, agent, running)
 	if err != nil {
 		return vmrunner.MachineStatus{}, false, fmt.Errorf("sizing the owner's VM runner: %w", err)
