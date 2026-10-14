@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-10-12
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -96,6 +96,8 @@ A cascade that deletes the root itself skips capture, since the root's volume go
 The copy is read-only history, opened beside the Driver's chat and never loaded back as a live session.
 
 **The Driver's chat is the anchor.** The progress lines both SDKs print to stderr, naming each spawned target, are what the chat recognises in the Driver's tool output to draw the delegation in place, so their shape is a contract the SDKs and the chat share.
+Each harness's adapter shapes tool output its own way — in the standard content, as the raw tool result, or as a result object — so the chat and the Driver's runtime read it through one shared reader in the runtime contract, and a line means the same on every harness.
+Some adapters stream a shell command's output only in parts beside the tool call; the chat adds them up through the same reader, while the runtime, which needs only tool spawns, leaves them aside.
 While children run and no line names them yet, the chat shows the Driver's running Invocations from the record.
 
 ## The Invocation Pin
@@ -125,7 +127,7 @@ The Driver keeps the ids; the platform tracks nothing per call, a finished id as
 
 **An outcome nobody waited for is delivered as a turn.** An agent that spawned through the tool and ended its turn, or stopped calling await_subagents, is told when each Invocation ends: a short cluster-wide sweep leases such outcomes for one tick, writes one sub-agent-outcome turn per Driver, carrying what await_subagents would have returned, marks them delivered only once the turn is written, and wakes the Driver if it hibernated ([runtime-delivery](runtime-delivery.md)).
 A lease the server died holding expires and the next tick claims the outcome again, so none is lost.
-The turn continues the Session whose tool call started the Invocation: the Driver's runtime notes each spawn line as it passes and keeps the note on its own disk, so the result lands where it was asked for, and a Session it no longer knows gets a new one.
+The turn continues the Session whose tool call started the Invocation: the Driver's runtime notes each spawn line as it passes, through the same shared reader as the chat, and keeps the note on its own disk, so the result lands where it was asked for on every harness, and a Session it no longer knows gets a new one.
 A running await_subagents holds a short lease on its ids, renewed on every poll, so what it is about to return is not also pushed, and what it returns counts as delivered; a call whose client aborted collects nothing, and the sweep tells the agent instead.
 One outcome owes one turn: a turn that could not be written is released for the next sweep, and an hourly retry only re-wakes a Driver whose turn is written but that did not wake.
 **A stop wins over the wake**: a Driver the user stopped is not woken for an outcome; its turn waits in the outbox for the Driver's next deliberate wake.

@@ -37,6 +37,23 @@ These decisions replace it where the two differ.
   The skill and the tool descriptions reach Codex without them.
 - Nothing is posted on #3427 or #4403.
 
+## Decisions made while implementing
+
+- **Codex and Pi shell output is in scope of 01.**
+  Both adapters send a shell command's output only in `_meta` (`terminal_output_delta` for Codex, `terminal_output` for Pi), one new part per update.
+  Nothing read it, so every Codex and Pi shell chip showed no output, and a script spawn never drew its delegation chip.
+  The shared reader returns each part, and the chat adds it to the chip's text.
+- **The frame shapes come from the installed adapter code**, not from a capture before coding.
+  The live smoke test confirms them.
+- **The UI fallback reads only what Claude Code never sends to our client**: a result object in `rawOutput`, and `_meta` terminal parts.
+  Claude Code puts its raw tool result in `rawOutput` and also renders it into `content`, so its chips stay as they were.
+- **A chip keeps the last 50 KB of a streamed shell output.**
+  Past Pi's own 50 KB window, pi-acp sends the whole new window as a "part", so a longer Pi output may show some lines twice near the cut.
+- **Codex may stop `await_subagents` at its MCP tool timeout** (believed to be 60 s, against the 240 s long poll).
+  Check it in smoke check 1 on Codex; if it holds, raising Codex's tool timeout for the platform server is a decision for the owner.
+- **The live smoke tests run later, on the shared dev cluster**, after the owner says another job on it is done.
+  No image is built from this branch before then.
+
 ## Approach
 
 Read [invocations](../../architecture/invocations.md) first: the sections "Sub-agent tools" and "The delegation record" own this feature.
@@ -62,8 +79,8 @@ Both readers on our side know only Claude Code's shape.
 | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
 | Claude Code                                    | `rawOutput` is text, or a list of text blocks                                                                        | `mcp__platform-outbound__spawn_subagent`                      |
 | Codex (`@agentclientprotocol/codex-acp` 2.1.1) | `rawOutput = {result, error}`, where `result` is the MCP result with `content: [{type: "text", text}]`; no `content` | `mcp.platform-outbound.spawn_subagent`                        |
-| Pi (`pi-acp` 0.0.34)                           | standard `content: [{type: "content", content: {type: "text", text}}]`; `rawOutput` is Pi's result object            | Pi's tool name — confirm in a live frame                      |
-| Bob (2.0.6)                                    | standard `content` with the text; `rawOutput = {result}`                                                             | the tool's display name or raw name — confirm in a live frame |
+| Pi (`pi-acp` 0.0.34)                           | standard `content: [{type: "content", content: {type: "text", text}}]`; `rawOutput` is Pi's result object            | `mcp__platform_outbound__spawn_subagent` (already matched)    |
+| Bob (2.0.6)                                    | standard `content` with the text; `rawOutput = {result}`                                                             | `Running Spawn Subagent (platform-outbound)`, a display label |
 
 Sources: codex-acp `src/tool-calls/reporters/McpToolReporter.ts` at `v2.1.1`; pi-acp `src/acp/session.ts` at `v0.0.34` (`tool_execution_end`); Bob's bundle `dist/bob` (`onToolResult`, `TQe`).
 
@@ -85,10 +102,10 @@ Sources: codex-acp `src/tool-calls/reporters/McpToolReporter.ts` at `v2.1.1`; pi
 
 ## Sub-issues
 
-| #   | Title                                                                                                 | Scope                                                                                                                                                                                  | Depends on                                                     |
-| --- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| 01  | [Delegation shows and returns in the asking chat on every harness](./01-tool-output-every-harness.md) | Shared tool-output reader in `agent-runtime-api`; runtime spawn tracking and artifact touches use it; UI chip content falls back to `rawOutput`; chip matching uses the bare tool name | —                                                              |
-| 02  | [One delegation guide for every harness](./02-delegation-guide.md)                                    | Skill moves to the base image and is rewritten harness-neutral; base `AGENTS.md` and the `spawn_subagent` description reworded; skill manifest; architecture docs                      | — (do it after 01, so the smoke test runs on the full feature) |
+| #     | Title                                                                                                 | Scope                                                                                                                                                                                  | Depends on                                                     |
+| ----- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| ✅ 01 | [Delegation shows and returns in the asking chat on every harness](./01-tool-output-every-harness.md) | Shared tool-output reader in `agent-runtime-api`; runtime spawn tracking and artifact touches use it; UI chip content falls back to `rawOutput`; chip matching uses the bare tool name | —                                                              |
+| 02    | [One delegation guide for every harness](./02-delegation-guide.md)                                    | Skill moves to the base image and is rewritten harness-neutral; base `AGENTS.md` and the `spawn_subagent` description reworded; skill manifest; architecture docs                      | — (do it after 01, so the smoke test runs on the full feature) |
 
 ## Conventions & glossary
 

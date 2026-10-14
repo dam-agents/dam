@@ -38,8 +38,8 @@ Apply `/typescript-engineering` to steps 2–3 and `/react-ui-engineering` to st
      Do this in `handleToolCall` and `patchToolChip`.
      A harness that sends `content` (Claude Code, Pi, Bob) must look exactly as before.
    - In [`sub-agent-chips.ts`](../../../packages/ui/src/modules/invocations/lib/sub-agent-chips.ts), match on `toolNameOf(chip.title) === "spawn_subagent"` and `=== "await_subagents"`, and remove the two regexes.
-   - If step 1 showed that an adapter streams command output in parts and a script's spawn line gets lost from its chip, keep the earlier text in `patchToolChip` for that case.
-     Change nothing there if no captured frame needs it.
+   - Codex and Pi stream a shell command's output only in `_meta` parts (see the README's "Decisions made while implementing").
+     The shared reader returns the part an update carries (`terminalOutputPart`), and `patchToolChip` adds it to the chip's text.
 5. **Docs.**
    In [`invocations.md`](../../architecture/invocations.md), "The Driver's chat is the anchor" and the outcome-turn paragraph in "Sub-agent tools": say that the runtime and the chat read spawn lines from every harness's tool-output shape through one shared reader.
    Update `Last verified:`.
@@ -49,6 +49,7 @@ Apply `/typescript-engineering` to steps 2–3 and `/react-ui-engineering` to st
 
 - [ ] On Codex, Pi and Bob, a `spawn_subagent` call shows as the delegation chip in the chat, with its sub-agent; an `await_subagents` call shows its summary title ("Waited on N sub-agents — …").
 - [ ] On Codex, an MCP tool call's chip shows its output text.
+- [ ] On Codex and Pi, a shell command's chip shows its output, and a script spawn draws its delegation chip.
 - [ ] On all four harnesses, a result turn for a sub-agent the agent stopped waiting for continues the session that spawned it.
 - [ ] Claude Code chips and result turns behave exactly as before.
 - [ ] `artifact-touch.ts` and `sub-agent-spawn.ts` contain no copy of the shape logic; it exists only in `agent-runtime-api`.
@@ -63,6 +64,8 @@ Apply `/typescript-engineering` to steps 2–3 and `/react-ui-engineering` to st
    - In a new chat, ask for a sub-agent that sleeps 2 minutes and then reports 42; tell the agent to end its turn without waiting.
      Close the chat.
      After 3 minutes, reopen the agent: the result turn is in the **same** chat, and no new session appeared.
+   - On Codex and Pi only, ask: "Run a driver-SDK script in the foreground that spawns one sub-agent on your own harness to compute 6 × 7, and print the result."
+     The shell chip shows the script's output, and the chat draws the delegation chip at it.
 3. Take screenshots of the chip on Codex, Pi and Bob for the PR.
 
 Print a short manual guide with these steps for the user when the slice is done.

@@ -48,6 +48,12 @@ export {
   sessionCategoryOf,
   sessionMatchesQuery,
 } from "./modules/sessions/session-query.js";
+export {
+  resultObjectTexts,
+  terminalOutputPart,
+  toolNameOf,
+  toolOutputTexts,
+} from "./modules/sessions/tool-output.js";
 
 export { ok, err } from "./result.js";
 export type {
