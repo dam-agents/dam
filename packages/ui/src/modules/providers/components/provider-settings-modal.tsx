@@ -1,7 +1,14 @@
 import { DialogBody, DialogHeader, Modal } from "../../../components/modal.js";
+import type { ProviderRef } from "./provider-item.js";
 import { ProviderSection } from "./provider-section.js";
 
-export function ProviderSettingsModal({ onClose }: { onClose: () => void }) {
+export function ProviderSettingsModal({
+  onClose,
+  onAdded,
+}: {
+  onClose: () => void;
+  onAdded?: (ref: ProviderRef) => void;
+}) {
   return (
     <Modal onClose={onClose}>
       <DialogHeader
@@ -10,7 +17,7 @@ export function ProviderSettingsModal({ onClose }: { onClose: () => void }) {
         onClose={onClose}
       />
       <DialogBody>
-        <ProviderSection />
+        <ProviderSection onAdded={onAdded} />
       </DialogBody>
     </Modal>
   );

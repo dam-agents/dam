@@ -112,7 +112,10 @@ import {
   setSessionRunning,
   useAgentSession,
 } from "../api/queries.js";
-import { useProviderConnections } from "../api/session-pair.js";
+import {
+  useGrantProvider,
+  useProviderConnections,
+} from "../api/session-pair.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
@@ -353,6 +356,7 @@ export function ChatView() {
         }
       : null;
   const providerConnections = useProviderConnections(newSessionAgent);
+  const { grant: grantProvider } = useGrantProvider(newSessionAgent);
   const noProviders =
     !!newSessionAgent &&
     providerConnections.loaded &&
@@ -675,7 +679,10 @@ export function ChatView() {
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       {}
       {(providersModal ?? noProviders) && (
-        <ProviderSettingsModal onClose={() => setProvidersModal(false)} />
+        <ProviderSettingsModal
+          onClose={() => setProvidersModal(false)}
+          onAdded={(ref) => void grantProvider(ref.id)}
+        />
       )}
       <header
         className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-stretch h-[70px] max-md:border-b border-border shrink-0 relative z-content`}
