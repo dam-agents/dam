@@ -10,7 +10,6 @@ describe("denyIgnoresPathCase", () => {
       "api.github.com",
       "codeload.github.com",
       "raw.githubusercontent.com",
-      "API.GitHub.com",
       "api.acme.ghe.com",
     ]) {
       expect(denyIgnoresPathCase(host), host).toBe(true);

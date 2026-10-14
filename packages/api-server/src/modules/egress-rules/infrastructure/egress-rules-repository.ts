@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray, sql, type Db } from "db";
 import { egressRules } from "db";
+import { canonicalEgressHost } from "api-server-api";
 import type {
   EgressPreset,
   EgressRuleSource,
@@ -136,7 +137,7 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
     },
 
     async findMatch(agentId, requestHost, port, tls, method, path) {
-      const host = requestHost.toLowerCase();
+      const host = canonicalEgressHost(requestHost);
       const candidates = sql.join(
         hostMatchCandidates(host).map((h) => sql`${h}`),
         sql`, `,

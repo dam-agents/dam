@@ -7,6 +7,5 @@ const GITHUB_HOSTS = new Set([
 
 // UNIT_BOUNDARY_DESCRIPTION: GitHub resolves owner and repository in any letter case, so a deny for `/repos/o/r/*` must also stop `/repos/O/R/…`; an allow keeps exact case, because file paths are case-sensitive and a case-blind allow for `qa/` would open `QA/` too.
 export function denyIgnoresPathCase(host: string): boolean {
-  const name = host.toLowerCase();
-  return GITHUB_HOSTS.has(name) || name.endsWith(".ghe.com");
+  return GITHUB_HOSTS.has(host) || host.endsWith(".ghe.com");
 }

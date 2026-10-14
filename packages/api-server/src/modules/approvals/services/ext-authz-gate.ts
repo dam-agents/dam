@@ -10,6 +10,7 @@ import { getLogger } from "../../../core/logger.js";
 import { formatError } from "../../../core/format-error.js";
 import { emit, EventType } from "../../../events.js";
 import { hasDotSegment } from "../domain/dot-segment.js";
+import { canonicalEgressHost } from "api-server-api";
 
 export type ExtAuthzVerdict = "allow" | "deny";
 
@@ -63,7 +64,7 @@ interface CreateExtAuthzGateDeps {
 export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
   return {
     async gateRequest({ agentId, host: requestHost, port, tls, method, path }) {
-      const host = requestHost.toLowerCase();
+      const host = canonicalEgressHost(requestHost);
       const identity = await deps.identityResolver.resolve(agentId);
       if (!identity) {
         securityLog("warn", "egress.decision", {
