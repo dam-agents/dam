@@ -1,7 +1,14 @@
 import { open } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { CompareTo, DiffStat, FileDiff } from "agent-runtime-api";
+import {
+  err,
+  ok,
+  type CompareTo,
+  type DiffStat,
+  type FileDiff,
+  type Result,
+} from "agent-runtime-api";
 
 import {
   countPatchLines,
@@ -12,7 +19,7 @@ import {
   type StatusEntry,
   type WorktreeRecord,
 } from "../domain/git-output.js";
-import { EMPTY_TREE, type Git } from "./git.js";
+import { EMPTY_TREE, type Git, type GitFailure } from "./git.js";
 
 export const MAX_UNTRACKED_FILES = 200;
 export const MAX_PATCH_BYTES = 8 * 1024 * 1024;
@@ -63,16 +70,26 @@ export interface WorktreeState {
   commitsAhead: number;
   stat: DiffStat;
   status: StatusEntry[];
+  readError: string | null;
 }
 
-async function readStatus(git: Git, path: string): Promise<StatusEntry[]> {
+function failureText(failure: GitFailure): string {
+  return failure.kind === "capped" ? "git output too large" : failure.message;
+}
+
+async function readStatus(
+  git: Git,
+  path: string,
+): Promise<Result<StatusEntry[], string>> {
   const result = await git(path, [
     "status",
     "--porcelain=v1",
     "-z",
     "--untracked-files=all",
   ]);
-  return result.ok ? parseStatus(result.value) : [];
+  return result.ok
+    ? ok(parseStatus(result.value))
+    : err(failureText(result.error));
 }
 
 async function lineCount(path: string): Promise<number> {
@@ -109,10 +126,16 @@ export async function readWorktree(
   const ahead = baseSha
     ? await git(path, ["rev-list", "--count", `${baseSha}..HEAD`])
     : null;
-  const status = await readStatus(git, path);
+  const statusRead = await readStatus(git, path);
+  const status = statusRead.ok ? statusRead.value : [];
   const ref = baseSha ?? head ?? EMPTY_TREE;
   const numstat = await git(path, ["diff", "--numstat", "-z", "-M", ref, "--"]);
   const tracked = numstat.ok ? parseNumstat(numstat.value) : [];
+  const readError = !statusRead.ok
+    ? statusRead.error
+    : !numstat.ok
+      ? failureText(numstat.error)
+      : null;
   const untracked = untrackedOf(status).slice(0, MAX_UNTRACKED_FILES);
   const untrackedLines = await Promise.all(
     untracked.map((entry) => lineCount(join(path, entry.path))),
@@ -132,6 +155,7 @@ export async function readWorktree(
       deletions: tracked.reduce((sum, entry) => sum + entry.deletions, 0),
     },
     status,
+    readError,
   };
 }
 
@@ -196,6 +220,10 @@ export async function readDiff(
       maxOutputBytes: MAX_PATCH_BYTES,
     }),
   ]);
+  for (const result of [numstat, nameStatus])
+    if (!result.ok) throw new Error(failureText(result.error));
+  if (!patch.ok && patch.error.kind === "failed")
+    throw new Error(patch.error.message);
   const statuses = nameStatus.ok
     ? parseNameStatus(nameStatus.value)
     : new Map();

@@ -31,6 +31,7 @@ export const changeSetSchema = z.object({
   uncommitted: z.boolean(),
   pullRequest: pullRequestLinkSchema.nullable(),
   sessionEditedAt: z.string().nullable(),
+  readError: z.string().nullable(),
 });
 
 export const changeSetListInputSchema = z.object({

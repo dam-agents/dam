@@ -12,6 +12,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
+import { useIsAgentOperable } from "../../agents/api/queries.js";
 import { useChangeSetDiff, useChangeSets } from "../api/queries.js";
 import { useChangeSetSelection } from "../hooks/use-change-set-selection.js";
 import { useChangesWatch } from "../hooks/use-changes-watch.js";
@@ -29,6 +30,7 @@ interface Props {
 
 export function DockedChangesPanel({ agentId, sessionId }: Props) {
   const close = useStore((s) => s.setOpenChanges);
+  const operable = useIsAgentOperable(agentId);
   const { data, error, isPending } = useChangeSets(agentId, sessionId);
   useChangesWatch(agentId, true);
   const changeSets = data?.changeSets;
@@ -82,9 +84,9 @@ export function DockedChangesPanel({ agentId, sessionId }: Props) {
         </Button>
       </div>
       {error ? (
-        <Notice
-          text={`Couldn't read the agent's repositories: ${error.message}`}
-        />
+        <Notice text={listErrorText(error.message)} />
+      ) : !operable && !data ? (
+        <Notice text="Changes show while the agent is running." />
       ) : isPending || !changeSets || !selection ? (
         <CenteredSpinner />
       ) : selected ? (
@@ -198,6 +200,12 @@ function LayoutToggle({
       ))}
     </div>
   );
+}
+
+function listErrorText(message: string): string {
+  return /procedure (found )?on path/i.test(message)
+    ? "This agent's runtime cannot show changes yet. It can once the agent runs a newer image."
+    : `Couldn't read the agent's repositories: ${message}`;
 }
 
 function CenteredSpinner() {

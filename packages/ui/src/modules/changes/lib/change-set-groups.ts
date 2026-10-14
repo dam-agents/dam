@@ -16,6 +16,7 @@ const GROUP_LABELS: Record<ChangeSetGroupId, string> = {
 
 export function hasChanges(changeSet: ChangeSet): boolean {
   return (
+    changeSet.readError !== null ||
     changeSet.uncommitted ||
     changeSet.commitsAhead > 0 ||
     changeSet.stat.files > 0

@@ -292,6 +292,41 @@ describe("changes service", () => {
   });
 
   /**
+   * TEST_SCENARIO: When git cannot read a worktree's status, the change set
+   * says so instead of looking clean, and its diff fails instead of coming
+   * back empty.
+   */
+  it("should report a worktree git cannot read rather than call it clean", async () => {
+    const repo = path.join(home, "work", "app");
+    await repository(repo, { "a.txt": "a\n" });
+    const failingStatus: typeof runGit = (cwd, args, opts) =>
+      args[0] === "status" || args.includes("--name-status")
+        ? Promise.resolve({
+            ok: false,
+            error: { kind: "failed", message: "index file corrupt" },
+          })
+        : runGit(cwd, args, opts);
+    service = createChangesService({
+      roots: [home],
+      git: failingStatus,
+      touched: createTouchedRepositoryStore(
+        createFileDocumentStoreBackend(path.join(tmp, "state")),
+      ),
+      pullRequests: noPullRequests,
+      log: () => undefined,
+    });
+
+    const { changeSets } = await service.list();
+    const diff = await service.diff(repo, "uncommitted");
+
+    expect(changeSets[0]?.readError).toBe("index file corrupt");
+    expect(!diff.ok && diff.error).toEqual({
+      kind: "GitFailed",
+      message: "index file corrupt",
+    });
+  });
+
+  /**
    * TEST_SCENARIO: A diff is only served for a change set the service found,
    * so the endpoint cannot be pointed at an arbitrary directory.
    */

@@ -28,6 +28,7 @@ function changeSet(
     uncommitted: false,
     pullRequest: null,
     sessionEditedAt: null,
+    readError: null,
     ...overrides,
   };
 }

@@ -40,7 +40,6 @@ interface ChangeSetEntry {
 }
 
 interface Snapshot {
-  at: number;
   entries: ChangeSetEntry[];
 }
 
@@ -62,10 +61,6 @@ async function mapLimit<T, R>(
   );
   await Promise.all(workers);
   return results;
-}
-
-function contains(parent: string, child: string): boolean {
-  return child !== parent && child.startsWith(`${parent}/`);
 }
 
 function byRepositoryThenPath(a: ChangeSetEntry, b: ChangeSetEntry): number {
@@ -169,15 +164,13 @@ export function createChangesService(deps: {
               commitsAhead: state.commitsAhead,
               uncommitted: state.status.length > 0,
               pullRequest,
+              readError: state.readError,
             },
           };
         });
       },
     );
-    return {
-      at: Date.now(),
-      entries: perRepository.flat().sort(byRepositoryThenPath),
-    };
+    return { entries: perRepository.flat().sort(byRepositoryThenPath) };
   }
 
   function current(sessionId?: string): Promise<Snapshot> {
@@ -213,17 +206,17 @@ export function createChangesService(deps: {
 
   function watchPaths({ entries }: Snapshot): void {
     if (!watches) return;
-    const paths = entries.map((entry) => entry.changeSet.path);
-    for (const path of paths) {
-      if (watches.has(path)) continue;
-      const watcher = createFilesWatcher(path);
-      const nested = paths.some((other) => contains(path, other));
-      watches.set(
-        path,
-        nested
-          ? watcher.watchTree(".git", changed)
-          : watcher.watchTree("", changed),
-      );
+    for (const { changeSet } of entries) {
+      if (watches.has(changeSet.path)) continue;
+      const watcher = createFilesWatcher(changeSet.path);
+      const gitDir = watcher.watchTree(".git", changed);
+      const topLevel = watcher.watchDirs([""], changed);
+      watches.set(changeSet.path, {
+        close() {
+          gitDir.close();
+          topLevel.close();
+        },
+      });
     }
   }
 

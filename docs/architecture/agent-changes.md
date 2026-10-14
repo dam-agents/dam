@@ -34,9 +34,9 @@ The runtime serves diffs only for Change Sets it found, so the call cannot read 
 ## Freshness
 
 The list stays fresh without polling.
-While a viewer watches, the runtime watches the roots for new repositories and each Change Set's tree with the same file watcher the file tree uses.
-A worktree that contains other repositories (typically the home) is watched only through its git directory, so a watch never walks every nested repository.
-Every tool call that finishes is a second signal, since a shell command can change files the watcher has not reported yet.
+While a viewer watches, the runtime watches the roots for new repositories, and each Change Set's git directory and top-level entries, with the same file watcher the file tree uses.
+It never watches a whole working tree: a dependency tree in it would cost one kernel watch per directory, shared with the agent's own tools.
+Every tool call that finishes is the second signal, and it covers edits inside the tree, by an edit tool or a shell command alike.
 Notices are throttled; each one only tells the viewer to read the list again.
 
 ## Sessions and their repositories

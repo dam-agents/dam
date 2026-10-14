@@ -28,6 +28,11 @@ export function ChangeSetSummary({
           : "no base branch"}
       </span>
       {changeSet.uncommitted && <span>uncommitted changes</span>}
+      {changeSet.readError && (
+        <span className="text-danger">
+          Couldn't read the repository: {changeSet.readError}
+        </span>
+      )}
       {changeSet.pullRequest && (
         <a
           href={changeSet.pullRequest.url}

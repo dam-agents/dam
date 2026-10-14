@@ -161,6 +161,14 @@ function ChangeSetOption({
       >
         {changeSet.path}
       </TruncateStart>
+      {changeSet.readError && (
+        <span
+          className="truncate text-2xs text-danger"
+          title={changeSet.readError}
+        >
+          Couldn't read: {changeSet.readError}
+        </span>
+      )}
     </button>
   );
 }
