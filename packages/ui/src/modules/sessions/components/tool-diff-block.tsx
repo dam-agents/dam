@@ -31,11 +31,10 @@ export function ToolDiffBlock({
       lang,
       lang,
     );
-    file.initTheme(theme);
     file.init();
     file.buildUnifiedDiffLines();
     return file;
-  }, [path, oldText, newText, theme]);
+  }, [path, oldText, newText]);
 
   return (
     <div className="group/content relative my-1 rounded bg-muted/40 border border-border/40 overflow-hidden">

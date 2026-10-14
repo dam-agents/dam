@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState } from "react";
 
+import { ErrorBoundary } from "@/components/error-boundary";
 import { CopyButton } from "@/components/ui/copy-button";
 import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { Spinner } from "@/components/ui/spinner";
@@ -61,9 +62,15 @@ export function ToolContentList({
 }) {
   return content?.map((c, i) =>
     c.type === "diff" ? (
-      <Suspense key={i} fallback={<ToolContentBlock text={c.newText} />}>
-        <ToolDiffBlock path={c.path} oldText={c.oldText} newText={c.newText} />
-      </Suspense>
+      <ErrorBoundary key={i} fallback={<ToolContentBlock text={c.newText} />}>
+        <Suspense fallback={<ToolContentBlock text={c.newText} />}>
+          <ToolDiffBlock
+            path={c.path}
+            oldText={c.oldText}
+            newText={c.newText}
+          />
+        </Suspense>
+      </ErrorBoundary>
     ) : (
       <ToolContentBlock key={i} text={c.text} />
     ),
