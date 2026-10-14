@@ -77,7 +77,8 @@ func (r *AgentReconciler) runnerOvershootMiB(ctx context.Context, owner string, 
 // UNIT_BOUNDARY_DESCRIPTION: frees `needMiB` on the owner's runner by
 // UNIT_BOUNDARY_DESCRIPTION: hibernating their vm agents under the rules a
 // UNIT_BOUNDARY_DESCRIPTION: blocked start reclaims by: unattended, idle past
-// UNIT_BOUNDARY_DESCRIPTION: the floor, longest-idle first, and only when the
+// UNIT_BOUNDARY_DESCRIPTION: the floor, saying it is idle when asked,
+// UNIT_BOUNDARY_DESCRIPTION: longest-idle first, and only when the
 // UNIT_BOUNDARY_DESCRIPTION: agents chosen cover the whole need — no agent is
 // UNIT_BOUNDARY_DESCRIPTION: hibernated for room that would still not suffice.
 // UNIT_BOUNDARY_DESCRIPTION: A `partial` reclaim, on the runner's own pressure
@@ -104,7 +105,7 @@ func (r *AgentReconciler) reclaimRunnerMemory(ctx context.Context, owner, self s
 		if left <= 0 {
 			break
 		}
-		if c.vmMiB == 0 || r.busyProbe(ctx, c.name) {
+		if c.vmMiB == 0 || !r.saidIdle(ctx, c.name) {
 			continue
 		}
 		left -= c.vmMiB
