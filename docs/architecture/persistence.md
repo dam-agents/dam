@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -233,7 +233,8 @@ An Agent whose mounts ask to persist a path outside `HOME` is refused rather tha
 The runner names it in the share at every start, and a new generation, or none named, boots onto an empty upper: what must outlast that belongs under `HOME`.
 smolvm keeps a root of its own and binds the whole disk into it; platform-init leaves both behind, and fails the boot rather than run on them.
 Temporary folders are kept off that root instead: `/tmp`, `/var/tmp` and `/var/cache` are directories of the disk bound in place, empty on every boot, and `HOME`'s `.cache` and `.npm` are ordinary directories of the home.
-They share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their least recently used files — never one in use, never anything outside them — and smolvm's trim returns the freed space to the runner's volume.
+They share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their least recently used files — never one in use, never anything outside them.
+Every minute platform-init trims the disk, so whatever the agent frees, by deleting or by rewriting a file in place, goes back to the runner's volume and stops counting against the owner's storage.
 Once the image runs, the disk is reachable only through what platform-init mounted from it.
 
 Mounting the disk is the platform's job rather than the image's.
