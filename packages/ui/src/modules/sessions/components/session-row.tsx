@@ -57,6 +57,7 @@ interface Props {
   onRename: () => void;
   onDelete: () => void;
   onExportTimeline?: () => void;
+  className?: string;
 }
 
 export function SessionRow({
@@ -75,6 +76,7 @@ export function SessionRow({
   onRename,
   onDelete,
   onExportTimeline,
+  className,
 }: Props) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didLongPress = useRef(false);
@@ -170,6 +172,7 @@ export function SessionRow({
       className={cn(
         "group relative flex items-center gap-1 px-4 py-3 cursor-pointer border-b border-border transition-colors select-none",
         active ? "bg-muted" : "hover:bg-muted/60",
+        className,
       )}
       {...clickableProps(handleClick)}
       onPointerEnter={startDwell}

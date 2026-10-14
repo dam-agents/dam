@@ -12,7 +12,7 @@ Files and Artifacts stay, as their own column under the agent's name.
 
 Apply `/react-ui-engineering`.
 
-1. Under the selected agent's row, render its sessions from `useSessionPages(agentId, sessionFilter)` (`modules/sessions/api/queries.ts`), newest first: 5, then "View more" adds 5.
+1. Under the selected agent's row, render its sessions from `useSessionPages(agentId, sessionFilter)` (`modules/sessions/api/queries.ts`), newest first: 5, then "View more" adds 10.
    Reuse `SessionRow` (`modules/sessions/components/session-row.tsx`) or its parts: title, relative time, Slack icon, working dots, unread dot, approval badge.
    Keep `useProvisionalSessions` so rows show before the list loads.
 2. Only the agent whose chat is open is expanded; opening another agent collapses the first.
@@ -23,7 +23,7 @@ Apply `/react-ui-engineering`.
 
 ## Acceptance criteria
 
-- [ ] The open agent shows its sessions, 5 at a time, newest first, with unread, working, Slack and approval markers.
+- [ ] The open agent shows its sessions, 5 first and then 10 more per "View more", newest first, with unread, working, Slack and approval markers.
 - [ ] New session, the session filter and the ⋮ menu work from the agent row.
 - [ ] Opening another agent collapses the previous one.
 - [ ] The chat view has no Sessions section; Files and Artifacts work as before.

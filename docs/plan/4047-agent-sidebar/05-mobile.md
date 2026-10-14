@@ -5,8 +5,8 @@
 
 ## Context
 
-Optional: done if time allows, else split into its own issue.
-On mobile the rail is a bottom bar today, with no agents or activity.
+Required: slice 02 removes the chat view's Sessions list, which was the only way to switch sessions on a phone.
+On mobile the rail is a bottom bar today, with no agents or activity, so until this slice lands a phone cannot reach an agent's sessions.
 
 ## Implementation plan
 

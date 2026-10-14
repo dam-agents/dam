@@ -50,7 +50,9 @@ export function Sidebar({
           <>
             <div className="mt-4 flex flex-col gap-px">
               <SidebarFlyout label="Agents" icon={Bot}>
-                {(close) => <SidebarAgents onNavigate={close} />}
+                {(close) => (
+                  <SidebarAgents showSessions={false} onNavigate={close} />
+                )}
               </SidebarFlyout>
             </div>
             <div className="flex-1" />

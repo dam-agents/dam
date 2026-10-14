@@ -33,7 +33,6 @@ type DragOrigin = {
 };
 
 const WEIGHT_KEYS: Record<SidebarPanelId, string> = {
-  sessions: "platform-panel-weight-sessions",
   files: "platform-panel-weight-files",
   artifacts: "platform-panel-weight-artifacts",
   processes: "platform-panel-weight-processes",
@@ -47,7 +46,6 @@ function readWeight(id: SidebarPanelId): number {
 
 function readWeights(): PanelWeights {
   return {
-    sessions: readWeight("sessions"),
     files: readWeight("files"),
     artifacts: readWeight("artifacts"),
     processes: readWeight("processes"),

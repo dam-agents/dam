@@ -128,7 +128,6 @@ import {
 import { SessionPairOutdatedNotice } from "../components/session-pair-outdated-notice.js";
 import { SessionPairPicker } from "../components/session-pair-picker.js";
 import { SessionPairPlaceholder } from "../components/session-pair-placeholder.js";
-import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
@@ -264,8 +263,6 @@ export function ChatView() {
   useProcessesLiveUpdates(selectedAgent, processesEnabled);
   const goBack = useStore((s) => s.goBack);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const sessionsSectionOpen = useStore((s) => s.sessionsSectionOpen);
-  const setSessionsSectionOpen = useStore((s) => s.setSessionsSectionOpen);
   const filesSectionOpen = useStore((s) => s.filesSectionOpen);
   const setFilesSectionOpen = useStore((s) => s.setFilesSectionOpen);
   const hasPendingPermission = useHasPendingPermission();
@@ -294,7 +291,6 @@ export function ChatView() {
   }, [columnsEl]);
   const filePanelRef = useRef<HTMLDivElement>(null);
   const panelStack = useSidebarPanels([
-    { id: "sessions", open: sessionsSectionOpen },
     { id: "files", open: filesSectionOpen },
     { id: "artifacts", open: artifactsSectionOpen },
     ...(processesEnabled
@@ -564,7 +560,7 @@ export function ChatView() {
     [view, selectedAgent],
   );
 
-  const mobileResumeSession = useCallback(
+  const openSession = useCallback(
     (sid: string, mode?: SessionMode) => {
       pushSessionUrl(sid, mode ?? SessionMode.Chat);
       setMobileScreen("chat");
@@ -623,6 +619,15 @@ export function ChatView() {
       pushSessionUrl,
     ],
   );
+
+  const chatRequest = useStore((s) => s.chatRequest);
+  const requestChat = useStore((s) => s.requestChat);
+  useEffect(() => {
+    if (!chatRequest) return;
+    requestChat(null);
+    if (chatRequest.kind === "new") handleNewSession();
+    else openSession(chatRequest.sessionId, chatRequest.mode ?? undefined);
+  }, [chatRequest, requestChat, handleNewSession, openSession]);
 
   const handleNewTerminal = useCallback(() => {
     resetSession();
@@ -784,14 +789,6 @@ export function ChatView() {
           {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
           <ContributionGapNotice agentId={selectedAgent} />
           <WorkspaceFailureNotice agentId={selectedAgent} />
-          <SessionsSidebar
-            open={sessionsSectionOpen}
-            onToggle={() => setSessionsSectionOpen(!sessionsSectionOpen)}
-            {...panelStack.panelProps("sessions")}
-            onResumeSession={mobileResumeSession}
-            onNewSession={handleNewSession}
-          />
-          <PanelDivider stack={panelStack} below="files" />
           <FilesPanel
             open={filesSectionOpen}
             onToggle={() => setFilesSectionOpen(!filesSectionOpen)}
