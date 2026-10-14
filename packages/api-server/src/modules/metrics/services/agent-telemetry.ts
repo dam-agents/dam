@@ -1,6 +1,7 @@
 import type {
   CallContext,
   SessionRuntime,
+  SubAgentSpend,
   TokenSpendByModel,
 } from "api-server-api";
 import type {
@@ -10,7 +11,8 @@ import type {
   TraceSpan,
 } from "./metrics-service.js";
 
-export type AgentMetricsGranularity = "summary" | "session" | "call";
+export type AgentMetricsGranularity =
+  "summary" | "session" | "call" | "subagent";
 
 export interface AgentTelemetryQuery {
   days: number;
@@ -43,6 +45,7 @@ export type AgentMetricsResult =
       totalsCover: string;
       sessions?: SessionRuntime[];
       calls?: CallContext[];
+      subAgents?: SubAgentSpend[];
       truncated?: boolean;
     })
   | Unavailable;
@@ -69,12 +72,24 @@ const SESSION_SCOPE =
 
 const WINDOW_SCOPE = "every session in the window";
 
+const SUB_AGENT_ROWS =
+  "Each sub-agent row is that sub-agent's own spend, not its children's: a sub-agent that spawned its own has them as rows of their own. Your own calls have no row, so the totals are your spend plus every sub-agent's.";
+
+const SUB_AGENT_SESSION =
+  "A sub-agent runs in its own session, so the session narrowing reaches it only when its calls share that session's trace; omit sessionId to see every sub-agent in the window.";
+
 function totalsCoverFor(query: AgentMetricsQuery): string {
   const scope = query.sessionId === undefined ? WINDOW_SCOPE : SESSION_SCOPE;
   const head = `Totals and sessionCount cover ${scope}.`;
-  return query.granularity === "summary"
-    ? `${head} This granularity returns no rows.`
-    : `${head} They are counted separately from the rows below, which are only the most recent up to limit — truncated says whether more exist, so do not expect the rows to sum to the totals.`;
+  if (query.granularity === "summary")
+    return `${head} This granularity returns no rows.`;
+  const rows = `${head} They are counted separately from the rows below, which are only the most recent up to limit — truncated says whether more exist, so do not expect the rows to sum to the totals.`;
+  if (query.granularity !== "subagent") return rows;
+  return [
+    rows,
+    SUB_AGENT_ROWS,
+    ...(query.sessionId === undefined ? [] : [SUB_AGENT_SESSION]),
+  ].join(" ");
 }
 
 const UNRESOLVED_SESSION =
@@ -128,6 +143,13 @@ export function createAgentTelemetry(deps: {
           query.limit,
         );
         return { ...base, calls: rows, truncated };
+      }
+      if (query.granularity === "subagent") {
+        const { rows, truncated } = page(
+          await deps.reader.spendBySubAgent([agentId], window, query.limit + 1),
+          query.limit,
+        );
+        return { ...base, subAgents: rows, truncated };
       }
       return base;
     },
