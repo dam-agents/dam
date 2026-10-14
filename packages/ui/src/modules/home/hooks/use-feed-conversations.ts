@@ -2,20 +2,17 @@ import { useQueries } from "@tanstack/react-query";
 import { ChannelType, SessionType } from "api-server-api";
 import { useCallback, useMemo } from "react";
 
-import { trpc } from "../../../trpc.js";
 import type { AgentView } from "../../../types.js";
 import { useAgents } from "../../agents/api/queries.js";
 import { slackChannelLabel } from "../../sandboxes/lib/slack-channels.js";
 import { conversationLabel } from "../../sessions/lib/conversation-label.js";
+import {
+  type TelegramChatsPage,
+  telegramChatsQueryOptions,
+} from "../../telegram/api/queries.js";
 import type { FeedItem } from "../lib/feed-item.js";
 
-const TELEGRAM_CHATS_STALE_MS = 60_000;
-
 type FeedConversationLabel = (item: FeedItem) => string | undefined;
-
-interface TelegramChatsPage {
-  chats: readonly { conversationId: string; title: string }[];
-}
 
 function combineTelegramChats(
   results: readonly { data?: TelegramChatsPage }[],
@@ -63,8 +60,7 @@ export function useFeedConversations(
 
   const telegramByConversationId = useQueries({
     queries: (telegramReady ? telegramAgentIds : []).map((agentId) => ({
-      ...trpc.agents.listTelegramChats.queryOptions({ agentId }),
-      staleTime: TELEGRAM_CHATS_STALE_MS,
+      ...telegramChatsQueryOptions(agentId),
       retry: false,
     })),
     combine: combineTelegramChats,

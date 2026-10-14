@@ -194,7 +194,8 @@ export function NotificationRow({
           {conversation && (
             <span
               data-testid="notification-row-conversation"
-              className="shrink-0 whitespace-nowrap text-muted-foreground"
+              title={conversation}
+              className="max-w-[60%] shrink-0 truncate text-muted-foreground"
             >
               · {conversation}
             </span>
