@@ -61,7 +61,7 @@ func TestRunnerMemoryIsReclaimedOnlyWhenIdlePeersCoverTheNeed(t *testing.T) {
 	} {
 		agent := vmAgentCR()
 		r, _, _ := setupVMReconciler(t, agent)
-		r.busyProbe = func(context.Context, string) bool { return false }
+		r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
 		peerVMAgent(t, r, "idle-peer", "4Gi", "20Gi", true)
 		_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, "idle-peer", "application/merge-patch+json",
 			[]byte(`{"metadata":{"annotations":{"`+annLastActivity+`":"`+time.Now().UTC().Add(-10*time.Minute).Format(time.RFC3339)+`"}}}`),
@@ -190,7 +190,7 @@ func TestTheMemoryPassReconcilesOnlyWhenThePodRequestWouldMove(t *testing.T) {
 func TestAPressureSignalReclaimsBelowTheCountedThresholdOnceAWhile(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
-	r.busyProbe = func(context.Context, string) bool { return false }
+	r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
 	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("8Gi")}}
 	ctx := context.Background()
 	idle := func(name string) {
@@ -226,11 +226,37 @@ func TestAPressureSignalReclaimsBelowTheCountedThresholdOnceAWhile(t *testing.T)
 	assert.True(t, reclaimed("idle-a") && reclaimed("idle-b"), "the signal did not reclaim what it could")
 }
 
+// TEST_SCENARIO: an agent whose status does not answer may be deep in a long turn with its guest saturated, so a reclaim hibernates it only on the runner's pressure signal, when no agent said it is idle, because the OOM kill it heads off would stop it anyway; an agent that answered busy is never hibernated.
+func TestASilentPeerIsReclaimedForMemoryOnlyAsAPressureLastResort(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		partial, answered, hibernated bool
+	}{
+		{partial: false, answered: false, hibernated: false},
+		{partial: true, answered: false, hibernated: true},
+		{partial: true, answered: true, hibernated: false},
+	} {
+		agent := vmAgentCR()
+		r, _, _ := setupVMReconciler(t, agent)
+		r.podStatus = func(context.Context, string) (bool, bool) { return false, tc.answered }
+		peerVMAgent(t, r, "silent-peer", "4Gi", "20Gi", true)
+		_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, "silent-peer", "application/merge-patch+json",
+			[]byte(`{"metadata":{"annotations":{"`+annLastActivity+`":"`+time.Now().UTC().Add(-10*time.Minute).Format(time.RFC3339)+`"}}}`),
+			metav1.PatchOptions{})
+		require.NoError(t, err)
+		r.noteMachineUse("silent-peer", measured(700))
+
+		freed, err := r.reclaimRunnerMemory(ctx, testOwner, agent.Name, 800, tc.partial)
+		require.NoError(t, err)
+		assert.Equal(t, tc.hibernated, freed, "partial=%v answered=%v", tc.partial, tc.answered)
+	}
+}
+
 // TEST_SCENARIO: the machines a reclaim hibernated take seconds to stop, and the runner's working set counts them until they have, so the signal that repeats meanwhile must not hibernate more agents for room already freed.
 func TestAPressureSignalRightAfterAReclaimHibernatesNothingMore(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
-	r.busyProbe = func(context.Context, string) bool { return false }
+	r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
 	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("8Gi")}}
 	ctx := context.Background()
 	peerVMAgent(t, r, "idle-peer", "4Gi", "20Gi", true)
