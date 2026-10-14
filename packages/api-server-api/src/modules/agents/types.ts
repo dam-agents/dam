@@ -21,14 +21,29 @@ export function isProtectedAgentEnvName(name: string): boolean {
   return PROTECTED_AGENT_ENV_NAMES.includes(name);
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the termination codes clients word for themselves. A view's code stays a string, since the controller can add one, but a client compares against these names, so a typo or a removed code fails to compile.
+export const TerminationCode = {
+  OutOfMemory: "OutOfMemory",
+  RunnerOutOfMemory: "RunnerOutOfMemory",
+  HomeVolumeFull: "HomeVolumeFull",
+  MachineStorageFull: "MachineStorageFull",
+  MachineImageUnavailable: "MachineImageUnavailable",
+  MachineBootFailed: "MachineBootFailed",
+  MachineRunnerUnschedulable: "MachineRunnerUnschedulable",
+  ImagePullFailure: "ImagePullFailure",
+  InvalidImageName: "InvalidImageName",
+  ContainerTerminated: "ContainerTerminated",
+} as const;
+
 // UNIT_BOUNDARY_DESCRIPTION: termination codes that mean the agent was refused a start rather than crashed, so every client says it "can't start" for the same codes.
 const START_REFUSAL_CODES: ReadonlySet<string> = new Set([
-  "MachineStorageFull",
-  "MachineImageUnavailable",
-  "MachineBootFailed",
-  "MachineRunnerUnschedulable",
-  "ImagePullFailure",
-  "InvalidImageName",
+  TerminationCode.MachineStorageFull,
+  TerminationCode.HomeVolumeFull,
+  TerminationCode.MachineImageUnavailable,
+  TerminationCode.MachineBootFailed,
+  TerminationCode.MachineRunnerUnschedulable,
+  TerminationCode.ImagePullFailure,
+  TerminationCode.InvalidImageName,
 ]);
 
 export function isStartRefusal(code: string | undefined): boolean {

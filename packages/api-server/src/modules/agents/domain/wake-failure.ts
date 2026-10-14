@@ -1,3 +1,4 @@
+import { TerminationCode } from "api-server-api";
 export type WakeFailureCause =
   | { kind: "not-found" }
   | { kind: "over-budget"; message: string }
@@ -24,17 +25,17 @@ export interface WakeConditionsSnapshot {
   gatewayPodNotReadyReason?: string;
 }
 
-export const POD_FAILURE_REASONS = new Set([
-  "OutOfMemory",
-  "HomeVolumeFull",
-  "ImagePullFailure",
-  "InvalidImageName",
-  "ContainerTerminated",
-  "MachineBootFailed",
-  "MachineImageUnavailable",
-  "MachineRunnerUnschedulable",
-  "RunnerOutOfMemory",
-  "MachineStorageFull",
+export const POD_FAILURE_REASONS: ReadonlySet<string> = new Set([
+  TerminationCode.OutOfMemory,
+  TerminationCode.HomeVolumeFull,
+  TerminationCode.ImagePullFailure,
+  TerminationCode.InvalidImageName,
+  TerminationCode.ContainerTerminated,
+  TerminationCode.MachineBootFailed,
+  TerminationCode.MachineImageUnavailable,
+  TerminationCode.MachineRunnerUnschedulable,
+  TerminationCode.RunnerOutOfMemory,
+  TerminationCode.MachineStorageFull,
 ]);
 
 export const GATEWAY_FAILURE_REASONS = new Set([

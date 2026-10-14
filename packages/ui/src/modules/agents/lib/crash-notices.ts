@@ -1,4 +1,4 @@
-import { isStartRefusal } from "api-server-api";
+import { isStartRefusal, TerminationCode } from "api-server-api";
 
 import type { Toast } from "../../../lib/toast.js";
 import type { AgentView } from "../../../types.js";
@@ -58,11 +58,11 @@ export function terminationNotice(
 ): string {
   const { text } = splitConsole(reason);
   const sentence = text.charAt(0).toUpperCase() + text.slice(1);
-  if (code === "RunnerOutOfMemory")
+  if (code === TerminationCode.RunnerOutOfMemory)
     return "Your VM agents ran out of memory together, so this agent restarted. Pause agents you aren't using to free memory.";
-  if (code === "MachineStorageFull")
+  if (code === TerminationCode.MachineStorageFull)
     return `${subject} can't start: your VM agents' storage is full. ${sentence}`;
-  if (code === "HomeVolumeFull")
+  if (code === TerminationCode.HomeVolumeFull)
     return vm
       ? `${subject} can't start: its storage is full. Free space by deleting files from another running agent or deleting an agent you no longer need, or request more storage.`
       : `${subject} can't start: its storage is full. Request more storage.`;
@@ -87,7 +87,7 @@ export function nextCrashNotices(
     const reason = agent.podTerminationReason;
     let announced = before?.announced;
     if (reason && reason !== announced?.reason) {
-      if (agent.podTerminationCode === "RunnerOutOfMemory")
+      if (agent.podTerminationCode === TerminationCode.RunnerOutOfMemory)
         outOfMemory.push(agent.name);
       else
         toasts.push({

@@ -109,6 +109,7 @@ export type {
 export {
   isProtectedAgentEnvName,
   isStartRefusal,
+  TerminationCode,
 } from "./modules/agents/types.js";
 export {
   runtimeMigrationRefusalReasons,
