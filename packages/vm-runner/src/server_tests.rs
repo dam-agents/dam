@@ -2295,6 +2295,57 @@ async fn a_hand_off_leaves_every_machine_running_for_the_next_runner() {
     next.close().await;
 }
 
+// TEST_SCENARIO: whether a guest has answered is held in the runner's memory, which a hand-off, a runner restart or a crash empties. A guest that answered before the hand-off and then stopped answering must still be restarted by the next runner once it is quiet past its limit, from the seeded record its first answer left in the share; without that it read as running and not ready forever.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_guest_quiet_across_a_hand_off_is_restarted_by_the_next_runner() {
+    let h = Harness::new("hand-off-quiet");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let up = guest(h.base);
+    h.until("m1", "ready", |s| s.ready).await;
+    up.store(false, Ordering::SeqCst);
+    h.server.hand_off().await;
+
+    let next = Harness {
+        dir: h.dir.clone(),
+        fake: h.fake.clone(),
+        server: Server::start(
+            Config {
+                state_dir: h.dir.join("machines"),
+                image_dir: h.dir.join("images"),
+                image_cache_socket: None,
+                image_budget: 1 << 40,
+                crane: h.dir.join("crane").to_string_lossy().into_owned(),
+                init: Some(h.dir.join("platform-init")),
+                runc: None,
+                ports: h.base..=h.base + 1,
+                memory_mib: 1 << 20,
+                reserve_mib: 0,
+                headroom_mib: 0,
+                boot_mib: 0,
+                listen: Some(retrying_listen()),
+                runtime: None,
+                cgroup_dir: None,
+                measure_storage: Arc::new(|| None),
+            },
+            h.fake.clone(),
+        )
+        .unwrap(),
+        base: h.base,
+    };
+    next.server.put("m1", spec(true)).unwrap();
+    next.settle("m1").await;
+    next.server.probe("m1");
+    stall(&next, "m1");
+    next.server.put("m1", spec(true)).unwrap();
+    let status = next.settle("m1").await;
+    assert_eq!(status.restarts, 1, "{status:?}");
+    assert_eq!(
+        h.fake.calls(),
+        vec!["create m1", "start m1", "stop m1", "update m1", "start m1"]
+    );
+}
+
 // TEST_SCENARIO: a runner release may bring another VM runtime than the one that booted a machine it adopts, and manages that machine assuming the two are compatible. A runtime error on such a machine is taken as the sign they are not: the machine is rebooted at once onto the runner's own runtime, and its record then names that runtime. A machine this runner's own runtime booted is left as it is through the same error, as before.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_machine_another_runtime_booted_is_rebooted_at_its_first_runtime_error() {

@@ -34,6 +34,7 @@ An ensure plans from that same record while it is no older than the prober's cad
 An ensure that reaches a runner already closing is refused, not stored.
 A live VMM reads as running, not stopped, whatever its guest is doing, and a probe never pings the guest agent, so only the prober's silence restarts it: the prober itself, within a minute after an answer, ten for slow boots and repeat stalls.
 Its memory stays counted meanwhile.
+That a guest has answered is also read from its machine's share, where its first answer leaves a record, so a runner restarted or [handed off](vm-runner-upgrades.md) restarts a guest that answered before it and then went quiet, as its predecessor would have.
 A failure stays on the status until an action succeeds or a spec arrives that needs none.
 Each status carries a version that moves whenever the status does, and a status read may name the version it last saw and wait, up to half a minute, for it to move.
 The controller holds one such long poll per vm Agent whose machine is on its way up, and a change only requeues the Agent, so the ordinary reconcile is the one place readiness is written; beyond that, every vm Agent is reconciled once a minute, which is also what notices a ready guest going quiet.
