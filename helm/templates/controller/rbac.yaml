@@ -112,6 +112,12 @@ rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
     verbs: ["get", "list", "watch", "create", "update", "delete"]
+  # A runner's release ConfigMap is owned by its Deployment with
+  # blockOwnerDeletion, which admission permits only to a creator that can
+  # update the Deployment's finalizers.
+  - apiGroups: ["apps"]
+    resources: ["deployments/finalizers"]
+    verbs: ["update"]
 {{- end }}
   - apiGroups: ["batch"]
     resources: ["jobs"]
