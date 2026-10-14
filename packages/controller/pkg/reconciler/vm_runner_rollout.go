@@ -383,14 +383,15 @@ func (r *AgentReconciler) settleRunnerRoll(ctx context.Context, owner string, de
 	if r.runnerDeploys != nil {
 		r.runnerDeploys.Mutation(updated)
 	}
-	r.leaveRunnerRoll(dep.Name)
+	r.resetRunnerRollView()
 	return updated
 }
 
-func (r *AgentReconciler) leaveRunnerRoll(name string) {
+// UNIT_BOUNDARY_DESCRIPTION: a runner can hold its place by two records at once, a pod roll on its Deployment and a hand-off on its release ConfigMap, and one settling says nothing of the other. So a settle drops the kept view, and the next decision reads both records again.
+func (r *AgentReconciler) resetRunnerRollView() {
 	r.runnerRollMu.Lock()
 	defer r.runnerRollMu.Unlock()
-	r.runnerRoll.rolling = slices.DeleteFunc(slices.Clone(r.runnerRoll.rolling), func(n string) bool { return n == name })
+	r.runnerRoll = runnerRollView{}
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: whether the roll has a place for this runner: fewer than `rollout.maxConcurrent` others are mid-roll or mid-hand-off. The caller holds runnerRollMu. A runner that finds one asks its own runner which machines are ready with the lock released, then asks again with it held before it takes the place, so no runner call is made under the lock.

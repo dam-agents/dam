@@ -745,3 +745,33 @@ func TestOneSweepTakesAReleaseToEveryOwnerWithNothingRunning(t *testing.T) {
 		assert.Equal(t, want, namedRelease(t, r, owner), "runner %d in name order", i)
 	}
 }
+
+// TEST_SCENARIO: a release that changes the pod and the image puts one runner mid-roll and mid-hand-off at once. Its hand-off settles while the rolled pod's machine is not back yet. The runner still holds its place by the roll, so another owner's turn, reading the kept view, does not take a second place.
+func TestASettledHandOffKeepsARunnerThatIsStillMidRoll(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t)
+	r.config.VM.Runner.ReleaseHostPath = "/var/lib/platform-runner-releases"
+	for _, owner := range []string{"owner-a", "owner-b"} {
+		createRolloutRunner(t, r, owner)
+		require.NoError(t, r.applyRunnerDeployment(ctx, owner, r.runnerOwnerRef(ctx), true))
+	}
+	r.config.VM.Runner.Image = runnerV2
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	require.Equal(t, runnerV2, namedRelease(t, r, "owner-a"))
+	setRolledAt(t, r, "owner-a", time.Now())
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, r.runnerName("owner-a"), metav1.GetOptions{})
+	require.NoError(t, err)
+	dep.Annotations[annRunnerAwaiting] = vmAgentCR().Name
+	_, err = r.client.AppsV1().Deployments("test-agents").Update(ctx, dep, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	nodes["owner-a"].release = vmrunner.RunnerRelease{Running: runnerV2, Target: runnerV2}
+	r.rollViewTTL = runnerRollViewTTL
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	cm, err := r.client.CoreV1().ConfigMaps("test-agents").Get(ctx, r.runnerReleaseName("owner-a"), metav1.GetOptions{})
+	require.NoError(t, err)
+	require.NotContains(t, cm.Annotations, annRunnerHandoffAt, "the hand-off settled")
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, namedRelease(t, r, "owner-b"), "the first runner is still mid-roll")
+}
