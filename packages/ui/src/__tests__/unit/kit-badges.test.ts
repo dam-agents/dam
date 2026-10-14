@@ -1,10 +1,12 @@
 // TEST_OVERVIEW: a kit card shows the new runtime's badge when the kit itself asks for a
-// TEST_OVERVIEW: machine, and for every kit on an install that pins the new runtime on.
+// TEST_OVERVIEW: machine, and for every kit on an install that pins the new runtime on; the
+// TEST_OVERVIEW: kit page reads the same rule, so the two never disagree.
 import type { StarterKitView } from "api-server-api";
 import { describe, expect, test } from "vitest";
 
 import {
   kitBadges,
+  kitRunsOnVm,
   VM_BACKEND_LABEL,
 } from "../../modules/starter-kits/lib/catalog-cards.js";
 
@@ -27,5 +29,14 @@ describe("kitBadges", () => {
     expect(labels(kit("vm"), false)).toContain(VM_BACKEND_LABEL);
     expect(labels(kit(), false)).not.toContain(VM_BACKEND_LABEL);
     expect(labels(kit(), true)).toContain(VM_BACKEND_LABEL);
+  });
+});
+
+describe("kitRunsOnVm", () => {
+  // TEST_SCENARIO: a kit runs on the new runtime when it asks for a machine or the install pins it, and only then.
+  test("follows the kit's backend, or a pinned install", () => {
+    expect(kitRunsOnVm(kit("vm"), false)).toBe(true);
+    expect(kitRunsOnVm(kit(), true)).toBe(true);
+    expect(kitRunsOnVm(kit(), false)).toBe(false);
   });
 });

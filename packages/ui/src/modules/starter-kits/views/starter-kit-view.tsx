@@ -52,6 +52,7 @@ import {
   EGRESS_PRESET_DETAIL,
   EGRESS_PRESET_LABEL,
   kitEgressPreset,
+  kitRunsOnVm,
   VM_BACKEND_LABEL,
 } from "../lib/catalog-cards.js";
 import {
@@ -301,7 +302,7 @@ function KitDetail({
   const templates = useConnectionTemplates();
   const budget = useBudgetReserved();
   const vmForced = useVmForced();
-  const vm = kit.backend === "vm" || vmForced;
+  const vm = kitRunsOnVm(kit, vmForced);
   const connections = useAppConnections();
   const agents = useAgents().data?.list;
   const apply = useApplyStarterKit();
