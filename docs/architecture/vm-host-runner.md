@@ -48,5 +48,5 @@ Stopping it stops its machines, as a pod's termination does; the controller's sw
 `cluster:stop` of the cluster that last started it stops it; `cluster:delete` also removes its machines.
 Nothing restarts it after the Mac reboots: `cluster:host-runner` (re)starts it.
 There is one host runner per Mac, serving the cluster that started it last.
-The runner finds a VMM that outlived its stop through `/proc`, which a Mac lacks, so such a VMM is left running rather than killed.
+A Mac has no `/proc`, so the runner finds a VMM that outlived its stop through the kernel's process list and each process's arguments, and powers it off as it would in a pod.
 Runner pods an install ran before it switched to the host runner are left as they are, neither restarted nor removed: nothing schedules them, and their claims hold those owners' old machine disks, so an operator deletes them once nothing on those disks is wanted.
