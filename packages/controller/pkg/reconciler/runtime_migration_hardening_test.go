@@ -479,7 +479,7 @@ func TestABootingMigrationOverBudgetWaitsWithoutReclaiming(t *testing.T) {
 	agent := bootingAgentCR(t)
 	agent.Spec.Resources.Limits = map[string]string{"cpu": "1500m", "memory": "3Gi"}
 	r, node, _ := setupMigrationReconciler(t, agent)
-	r.busyProbe = func(context.Context, string) bool { return false }
+	r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
 	_, err := r.client.AppsV1().StatefulSets("test-agents").Create(ctx, peerSS, metav1.CreateOptions{})
 	require.NoError(t, err)
 	peerU, err := agentToUnstructured(peer)
