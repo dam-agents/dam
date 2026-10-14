@@ -24,6 +24,7 @@ writeFileSync(
     .replaceAll("sed -i 's/^agent:x:65532:0:/agent:x:0:0:/' /etc/passwd", ":")
     .replaceAll("/etc/passwd", join(dir, "passwd"))
     .replaceAll("/run/sshd", join(dir, "sshd"))
+    .replaceAll("/root", join(dir, "root"))
     .replaceAll("/etc/platform/ca", join(dir, "ca"))
     .replaceAll("/etc/rancher/k3s/config.yaml", join(dir, "k3s-config.yaml"))
     .replaceAll("/var/lib/rancher/k3s", k3s)
