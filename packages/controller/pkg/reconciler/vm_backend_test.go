@@ -57,6 +57,8 @@ type fakeNode struct {
 	release  vmrunner.RunnerRelease
 	usage    vmrunner.RunnerUsage
 	onPut    func(vmrunner.MachineSpec)
+	// UNIT_BOUNDARY_DESCRIPTION: every ensure is refused with a 500, as a runner release that runs but cannot manage machines refuses them.
+	refusesEnsures bool
 	// UNIT_BOUNDARY_DESCRIPTION: a stop answers stopping, as the real runner's does, and the machine stays so until a test sets it stopped. Without it a stop takes effect at once.
 	stopsSlowly bool
 }
@@ -97,6 +99,10 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 		}
 		switch r.Method {
 		case http.MethodPut:
+			if n.refusesEnsures {
+				http.Error(w, "the release cannot manage this machine", http.StatusInternalServerError)
+				return
+			}
 			var spec vmrunner.MachineSpec
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&spec))
 			n.specs[id] = spec
