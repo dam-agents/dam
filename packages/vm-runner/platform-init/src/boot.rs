@@ -1107,9 +1107,8 @@ fn prepare_home(
             home.display(),
             home.display()
         );
-        fs::remove_file(store)?;
     }
-    if !must_seed(store, seeded_before && !linked)? {
+    if !linked && !must_seed(store, seeded_before)? {
         return match expected {
             Some(expected) => restored_from(&record, expected),
             None => Ok(()),
@@ -1276,7 +1275,7 @@ impl<R: io::Read> io::Read for Hashing<R> {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the staged tree is flushed to the disk before the rename, and the directory that holds the store after it, so the store is whole on the disk once it has its name. A store that exists is never seeded again, so a stop before the data reached the disk — on a disk with no journal most of all — would otherwise leave the name over files that were lost, and the next boot would take it as the agent's home.
+// UNIT_BOUNDARY_DESCRIPTION: the staged tree is flushed to the disk before the rename, and the directory that holds the store after it, so the store is whole on the disk once it has its name. A store that exists is never seeded again, so a stop before the data reached the disk — on a disk with no journal most of all — would otherwise leave the name over files that were lost, and the next boot would take it as the agent's home. A store an older boot made a link is swapped with the staged tree in one rename and removed after: a boot cut short before the swap finds the link and seeds again, where one that found no store would refuse the disk as a lost home.
 fn stage(store: &Path, fill: impl FnOnce(&Path) -> io::Result<()>) -> io::Result<()> {
     let parent = store
         .parent()
@@ -1289,8 +1288,29 @@ fn stage(store: &Path, fill: impl FnOnce(&Path) -> io::Result<()>) -> io::Result
         let _ = remove_all(&staged);
         return Err(e);
     }
-    fs::rename(&staged, store)?;
+    if fs::symlink_metadata(store).is_ok_and(|info| info.is_symlink()) {
+        exchange(&staged, store)?;
+        fs::remove_file(&staged)?;
+    } else {
+        fs::rename(&staged, store)?;
+    }
     File::open(parent)?.sync_all()
+}
+
+fn exchange(a: &Path, b: &Path) -> io::Result<()> {
+    let a = cstring(a.as_os_str())?;
+    let b = cstring(b.as_os_str())?;
+    // SAFETY: both paths are NUL-terminated strings that outlive the call, and AT_FDCWD resolves them as relative to the working directory, as rename(2) would.
+    let rc = unsafe {
+        libc::renameat2(
+            libc::AT_FDCWD,
+            a.as_ptr(),
+            libc::AT_FDCWD,
+            b.as_ptr(),
+            libc::RENAME_EXCHANGE,
+        )
+    };
+    succeeded(rc == 0)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: flushes everything written to the filesystem that holds `path`. One syncfs covers a whole seeded tree, where an fsync per file would cost a call for each of them.
@@ -2060,6 +2080,22 @@ mod tests {
 
         assert!(fs::symlink_metadata(&store).unwrap().is_dir());
         assert_eq!(fs::read(store.join("file")).unwrap(), b"the agent's work");
+        assert!(!with_suffix(&store, ".seeding").exists());
+    }
+
+    // TEST_SCENARIO: the reseed of a linked store can fail or be cut short. The link must then still be there, so the next boot seeds again instead of finding no store and refusing the disk as a lost home.
+    #[test]
+    fn a_failed_reseed_of_a_linked_store_keeps_the_link() {
+        let image = TempDir::new("image");
+        let home = image.path().join("home");
+        fs::write(&home, b"not a directory").unwrap();
+        let disk = TempDir::new("disk");
+        let store = disk.path().join("agent");
+        std::os::unix::fs::symlink(&home, &store).unwrap();
+
+        prepare_home(&home, &disk.path().join("no-seed.tar"), &store, true, None).unwrap_err();
+
+        assert!(fs::symlink_metadata(&store).unwrap().is_symlink());
     }
 
     // TEST_SCENARIO: an image may ship nothing at the agent's home. That is an empty directory on the disk, not a failed boot.
