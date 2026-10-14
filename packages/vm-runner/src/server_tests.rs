@@ -45,6 +45,7 @@ struct Fake {
     nests: AtomicBool,
     state_fails_until_start: Mutex<HashSet<String>>,
     resident: Mutex<Option<i32>>,
+    cpu: Mutex<Option<u64>>,
     state_reads: AtomicUsize,
 }
 
@@ -65,6 +66,10 @@ impl Fake {
 impl Runtime for Fake {
     fn resident_mib(&self, _id: &str) -> Option<i32> {
         *locked(&self.resident)
+    }
+
+    fn cpu_usec(&self, _id: &str) -> Option<u64> {
+        *locked(&self.cpu)
     }
 
     fn nests(&self) -> bool {
@@ -2549,4 +2554,35 @@ async fn a_boot_whose_console_shows_a_full_home_reports_it() {
         failed.message.contains("This agent's storage is full"),
         "{failed:?}"
     );
+}
+
+// TEST_SCENARIO: a machine's CPU share is what it used over its last two looks while running. Once it stops, the usage read reports no CPU for it, so the bars never name a paused agent among the heaviest CPU users.
+#[tokio::test]
+async fn a_stopped_machine_reports_no_cpu() {
+    let h = Harness::new("cpu-stopped");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    *locked(&h.fake.resident) = Some(500);
+    *locked(&h.fake.cpu) = Some(0);
+    h.server.probe("m1");
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    *locked(&h.fake.cpu) = Some(1_000_000);
+    h.server.probe("m1");
+    let cpu = |h: &Harness| {
+        h.server
+            .usage()
+            .unwrap()
+            .machines
+            .into_iter()
+            .find(|m| m.id == "m1")
+            .map(|m| m.cpu_milli)
+    };
+    assert!(
+        cpu(&h).unwrap() > 0,
+        "a busy running machine reports its CPU"
+    );
+
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+    assert_eq!(cpu(&h), Some(0), "a stopped machine reports none");
 }
