@@ -51,6 +51,8 @@ The repository a caller names is never what is asked, because anyone can name an
 A read with no credential is anonymous even where the service's own environment holds one.
 An anonymous read of an origin that succeeds marks the entry public, and only an entry not known to be public needs the registry to boot.
 The service keeps that knowledge in memory, so after a restart it asks again.
+A grant is remembered per digest and credential, and a failed anonymous read per digest, for as long as a tag's resolution is trusted, so a fleet of creates on one private image asks the registry once; a revoked pull secret still boots a tree it was granted for that long.
+A remembered failed read only moves the anonymous read after the caller's credentials, and never refuses a boot by itself, since a read that timed out looks the same as one refused.
 The check gates a boot, not a read.
 A runner's own cache serves one owner and checks nothing.
 
