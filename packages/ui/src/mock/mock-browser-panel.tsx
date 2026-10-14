@@ -53,12 +53,7 @@ export function MockBrowserPanel({ agentId: _agentId, agentName }: Props) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
-        <span
-          aria-hidden
-          className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-accent-light text-accent"
-        >
-          <Wikis size={13} />
-        </span>
+        <Wikis size={16} aria-hidden className="shrink-0 text-muted-foreground" />
         <Button variant="ghost" size="icon-sm" aria-label="Back" disabled>
           <ArrowLeft size={16} />
         </Button>
