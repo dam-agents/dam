@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The one storage-full message says what is refused at the owner's storage level: from 90% a stopped VM agent can still be opened to clean up, from 97% it cannot, from 98% running agents may be failing writes, and a refused start without figures never says a stopped agent can start.
+// TEST_OVERVIEW: The one storage-full message says what is refused at the owner's storage level: from 90% a stopped VM agent can still be opened to clean up, from 97% it cannot, from 98% running agents may be failing writes, and without figures it neither promises a start nor says starts are refused.
 import { describe, expect, it } from "vitest";
 
 import { storageFullMessage } from "../../modules/budgets/domain/vm-usage.js";
@@ -32,10 +32,10 @@ describe("storageFullMessage", () => {
     );
   });
 
-  // TEST_SCENARIO: A refused start carries no figures; a start is refused only at the start limit, so it must not say a stopped agent can start.
-  it("never offers a start without figures", () => {
+  // TEST_SCENARIO: A refused wake carries no figures and may come from a boot that failed below the start limit, so it neither promises a start nor says starts are refused now.
+  it("hedges on starts without figures", () => {
     const msg = storageFullMessage();
-    expect(msg).toContain("can't be started");
+    expect(msg).toContain("Once storage is nearly full");
     expect(msg).not.toContain("can still be started");
   });
 });

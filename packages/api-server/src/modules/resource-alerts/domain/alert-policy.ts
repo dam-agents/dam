@@ -3,8 +3,6 @@ import {
   STORAGE_WRITES_FAILING_PERCENT,
 } from "../../budgets/domain/vm-usage.js";
 
-export { STORAGE_WRITES_FAILING_PERCENT };
-
 export type AlertKind = "storage" | "runner_oom";
 
 export interface AlertMark {

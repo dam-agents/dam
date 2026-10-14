@@ -47,7 +47,7 @@ spec:
           annotations:
             summary: A user's VM storage pool is nearly full.
             description: >-
-              The runner at {{ "{{ $labels.instance }}" }} has used {{ "{{ $value | humanizePercentage }}" }} of its claim; no machine of that user is created, started or grown. {{ printf $events "VMPoolCritical" }}
+              The runner at {{ "{{ $labels.instance }}" }} has used {{ "{{ $value | humanizePercentage }}" }} of its claim; no machine of that user is created or grown, and from 97% none is started. {{ printf $events "VMPoolCritical" }}
         - alert: VMPoolStorageWarning
           expr: platform_vm_runner_storage_used_bytes / platform_vm_runner_storage_usable_bytes >= {{ $t.warning }}
           for: 30m
