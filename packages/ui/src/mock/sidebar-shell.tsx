@@ -15,8 +15,11 @@ import {
 import type { ReactNode } from "react";
 import { useState } from "react";
 
+import { AgentJobsBadge } from "@/components/sidebar-agent-item";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
+
+import { AGENT_IDS } from "./data/agents.js";
 
 interface ShellProps {
   children: ReactNode;
@@ -152,6 +155,11 @@ const mockActivity = [
     schedule: true,
   },
 ];
+
+const mockIdToAgentId: Record<string, string> = {
+  a1: AGENT_IDS.codexResearch,
+  a2: AGENT_IDS.claudeCodeMain,
+};
 
 const stateDotClass: Record<AgentState, string> = {
   running: "bg-green-700 dark:bg-success",
@@ -292,6 +300,9 @@ function AgentRow({
         <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-foreground leading-snug hover:text-primary transition-colors cursor-pointer">
           {agent.name}
         </span>
+        {mockIdToAgentId[agent.id] && (
+          <AgentJobsBadge agentId={mockIdToAgentId[agent.id]} />
+        )}
         <div className="shrink-0 opacity-0 transition-opacity group-hover/agent:opacity-100">
           <button
             type="button"

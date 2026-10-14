@@ -179,7 +179,7 @@ export function SidebarAgentItem({
   );
 }
 
-function AgentJobsBadge({ agentId }: { agentId: string }) {
+export function AgentJobsBadge({ agentId }: { agentId: string }) {
   const { data } = useProcesses(agentId, { enabled: true, poll: false });
   const now = useNow(5_000);
   const selectAgent = useStore((s) => s.selectAgent);
