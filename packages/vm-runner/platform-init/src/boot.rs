@@ -84,6 +84,11 @@ pub fn run(command: Vec<OsString>) -> ! {
     logf!("storage disk claimed at {}", root.display());
     claim_layout(&root);
     fresh_root(&root);
+    let layers = FreshRoot::on(&root);
+    purge_later(&[
+        (layers.legacy_upper, "the old root layout"),
+        (layers.upper, "the last image's root"),
+    ]);
     bind_ca();
     let expected = match expected_seed(Path::new(guest::SEED_EXPECTED_PATH)) {
         Ok(expected) => expected,
@@ -346,10 +351,7 @@ fn fresh_root(disk: &Path) {
             fatal!("clearing {}: {e}", dir.display());
         }
     }
-    purge_later(&[
-        (layers.legacy_upper.clone(), "the old root layout"),
-        (layers.upper.clone(), "the last image's root"),
-    ]);
+
     for dir in [&layers.upper, &layers.work, &layers.merged] {
         if let Err(e) = mkdir_all(dir) {
             fatal!("creating {}: {e}", dir.display());
@@ -894,7 +896,7 @@ fn epoch_secs() -> u64 {
         .map_or(0, |since| since.as_secs())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: deletes, on a thread of its own, what discard moved aside from each of `paths`, so a root of a few million files does not hold up the boot. leave_disk detaches the disk before the delete is done, so each parent is reached through a descriptor opened now. One a stop cuts short is found by name and deleted on the next boot.
+// UNIT_BOUNDARY_DESCRIPTION: deletes, on a thread of its own, what discard moved aside from each of `paths`, so a root of a few million files does not hold up the boot. leave_disk detaches the disk before the delete is done, so each parent is reached through a descriptor opened now, by a /proc path: it is called only once the platform's root carries /proc. One a stop cuts short is found by name and deleted on the next boot.
 fn purge_later(paths: &[(PathBuf, &'static str)]) {
     let opened: Vec<_> = paths
         .iter()
