@@ -20,9 +20,6 @@ The session list draws on the metadata store too, so a harness not running still
 A lease spawns with the agent-wide env, its harness's layer ([connections](connections.md#contribution-fan-out)) and the router's env; a routed provider's env stays with the Model Router, which reads it per call, a native Connection's (Bedrock) still reaches the process, and a provider env change recycles the leases.
 A prompt to a session whose model names a removed provider fails with a structured *provider removed* error naming it; another provider's model, or the grant restored, resumes it.
 
-A lease spawns with the agent-wide env, its own provider's layer and its harness's layer ([connections](connections.md#contribution-fan-out)), then the pod's process env, then its harness, provider and model.
-Revoking a provider recycles only the leases on it; a prompt or setting sent to a session on a removed provider fails with a structured *provider removed* error naming it, and granting it again resumes the session.
-
 Each session is an append-only in-memory log (≤2 MB soft cap; inline image and audio bytes give way to a placeholder before any entry is evicted).
 Every channel keeps a per-session cursor; new events append to the log and fan out to engaged channels that have not yet seen them.
 Every entry the runtime appends live carries the wall-clock time it was written, as platform metadata on the frame; an entry filled in from a replay carries only what its source supplied, never a time the runtime invented.
@@ -140,7 +137,7 @@ The runtime starts it once the runtime-channel env exists, restarts it when it c
 When the env changes, the service is asked to reload in place, and one that cannot is restarted with the fresh env.
 Its output joins the pod log stream.
 The pod's init reaps processes orphaned by a dying harness or service, so none linger as zombies.
-claude-code uses the hook to front custom Anthropic-compatible upstreams with a local model gateway, each provider apart; images without a pod service are unaffected.
+No shipped image carries a pod service; the hook stays for a custom image.
 
 Switching a session's mode (e.g. chat → terminal) is metadata-only: the switching client persists the new mode over ACP, which the runtime merges into its session-metadata store.
 The running harness is unaffected — mode is a UI hint about which surface (chat vs. terminal PTY) to render.

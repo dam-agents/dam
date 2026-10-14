@@ -42,7 +42,7 @@ The trigger that opens the target's first session names its harness, the inherit
 
 **A spawn may choose the model.** It can name the target's model, mode and harness settings — the choices the target's harness configuration offers — so one harness serves every model it runs, and a Driver can put one task to two models or a cheap model on a mechanical step.
 The choice is written into the target's own harness configuration in a delivery of its own, ahead of the task, so the one session already runs on it ([harness configuration](harness-config.md)).
-The platform does not check the values, and a wrong one need not fail: depending on the harness and the provider, a name the provider does not serve fails the target's first turn or runs a nearby model instead, so a Driver comparing models reads which model the target ran.
+A model the driver's catalog does not list for the target harness is refused at spawn; mode and settings are checked when the target applies them.
 The delegation view shows its user the same: each target's card names the model its recorded calls ran and, when the spawn named one, the requested model beside it, marked when the two differ, so a silent substitution is visible without opening the conversation.
 
 **A spawn carries a label.** It names the target, so the Driver's own vocabulary for the work — not an opaque identifier — is what shows up wherever agents are listed.

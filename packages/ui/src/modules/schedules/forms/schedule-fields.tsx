@@ -35,6 +35,7 @@ import {
   settingDefaults,
 } from "../../sessions/components/session-settings-controls.js";
 import {
+  findModel,
   modelGroups,
   modelIndicatorLabel,
 } from "../../sessions/lib/catalog-groups.js";
@@ -525,7 +526,7 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
     control: typed,
     name: "settings",
   });
-  const modelValue = modelField.value;
+  const storedModel = modelField.value;
   const settingsValue = settingsField.value;
   const { data: catalog } = useHarnessCatalog();
   const carried = status?.harnesses ?? [];
@@ -553,6 +554,9 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
       />
     );
   const groups = modelGroups(catalogModels);
+  const modelValue = storedModel
+    ? (findModel(groups, storedModel)?.model.name ?? storedModel)
+    : storedModel;
   const harnessChoices: Choice[] = carried.map((h) => ({
     id: h.name,
     name:
@@ -611,7 +615,7 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
         <OptionPicker
           title="Model"
           choices={modelChoices}
-          value={modelField.value || null}
+          value={modelValue || null}
           clearable
           clearedLabel="Agent default"
           clearedDescription={

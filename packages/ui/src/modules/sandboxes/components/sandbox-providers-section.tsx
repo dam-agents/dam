@@ -20,7 +20,11 @@ import {
 } from "../../sessions/api/session-pair.js";
 import { OptionPicker } from "../../sessions/components/model-settings-panel.js";
 import { OptionField } from "../../sessions/components/option-field.js";
-import { modelGroups, sameModel } from "../../sessions/lib/catalog-groups.js";
+import {
+  findModel,
+  modelGroups,
+  sameModel,
+} from "../../sessions/lib/catalog-groups.js";
 import {
   fittingProviders,
   harnessOptions,
@@ -169,7 +173,11 @@ function DefaultPairPicker({ agentId }: { agentId: string }) {
         <OptionPicker
           title="Model"
           choices={modelChoices.map((m) => ({ id: m.value, name: m.name }))}
-          value={pair.model}
+          value={
+            routed
+              ? (findModel(groups, pair.model)?.model.name ?? pair.model)
+              : pair.model
+          }
           clearable
           onSelect={(model) =>
             save({ ...pair, provider: providerOfModel(model), model })
