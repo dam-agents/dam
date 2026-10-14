@@ -11,8 +11,13 @@ const STATE_LABEL: Record<AgentDisplayState, string> = {
   migrating: "Migrating",
 };
 
-// UNIT_BOUNDARY_DESCRIPTION: the state badge's word. A refused vm agent waits for its owner's memory, which is no budget of theirs, so every caller must say which backend the agent runs on.
-export function badgeLabel(state: AgentDisplayState, vm: boolean): string {
+// UNIT_BOUNDARY_DESCRIPTION: the state badge's word. A refused vm agent waits for its owner's memory, which is no budget of theirs, so every caller must say which backend the agent runs on. An agent whose start was refused, by full storage or a boot that never came up, did not fail while running, so it reads "Can't start" rather than "Error".
+export function badgeLabel(
+  state: AgentDisplayState,
+  vm: boolean,
+  refused: boolean,
+): string {
+  if (state === "error" && refused) return "Can't start";
   return vm && state === "over_budget"
     ? "Waiting for memory"
     : STATE_LABEL[state];
