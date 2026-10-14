@@ -675,7 +675,10 @@ export function ChatView() {
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       {}
       {(providersModal ?? noProviders) && (
-        <ProviderSettingsModal onClose={() => setProvidersModal(false)} />
+        <ProviderSettingsModal
+          agentId={newSessionAgent}
+          onClose={() => setProvidersModal(false)}
+        />
       )}
       <header
         className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-stretch h-[70px] max-md:border-b border-border shrink-0 relative z-content`}
