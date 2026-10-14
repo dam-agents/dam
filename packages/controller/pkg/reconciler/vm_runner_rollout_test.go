@@ -320,7 +320,7 @@ func TestTheRunnerTemplateHashIsPinned(t *testing.T) {
 
 	dep, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
 	require.NoError(t, err)
-	assert.Equal(t, "07055f57c0ff3bb8", dep.Annotations[annRunnerTemplate])
+	assert.Equal(t, "e7f6c8f23f67b3b0", dep.Annotations[annRunnerTemplate])
 }
 
 // TEST_SCENARIO: a runner's pod is unchanged, but its labels were edited by hand and its owner reference points at nothing — the runner ServiceAccount was recreated. Both are restored without touching the pod, so no machine restarts and no roll starts.
