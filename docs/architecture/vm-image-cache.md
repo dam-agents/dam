@@ -1,6 +1,6 @@
 # VM image cache
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 A machine may reach only its gateway, so its image is fetched for it and unpacked into a tree every machine of that image mounts read-only.
 Where that tree lives is the one part of the runner's storage an install may move off its claim.
@@ -23,17 +23,20 @@ The writer remembers what a tag resolved to for a few minutes; a pinned digest i
 A machine records the digest it booted, which is how its runner knows, even after a restart, which tree it holds once the tag moves on.
 Every registry read names the host's platform, so a tag resolves to that platform's own image rather than to a multi-arch index, and each tree records the platform it was unpacked for: a claim that moves to a node of another architecture fetches a pinned index digest again rather than booting a tree it cannot run.
 
-**A tree is either whole under its name or not there.** A fetch unpacks into a scratch tree, flushes it to disk and only then renames it into place; an eviction renames the tree away before it deletes it.
+**A tree is either whole under its name or not there.** A fetch unpacks into a scratch tree and only then renames it into place; an eviction renames the tree away and deletes it in the background, so the resolve that made room does not wait on the delete.
 A writer that dies mid-fetch or mid-eviction leaves only a scratch tree, which the next open reclaims, never a partial tree a lookup would take as complete.
+The fetch does not flush the filesystem before the rename, because that would stall every guest disk on it: within the node's boot the page cache serves the tree whole, and a few minutes later the writer flushes the tree's own files and records it settled.
+After a reboot, a tree that was never settled is fetched again.
 A fetch that finds an incomplete tree, or another platform's, under its name moves it aside and puts its own in place.
 A resolve has one deadline for everything it does, fetch included, and a runner waits a little past it, so a service that is slow is told apart from one that is gone — only one that is gone lets a runner boot a tree it already holds.
-A fetch that fails for its image — a registry refusing the export, a stream tar cannot unpack — is reported as an unavailable image, and a disk that fills, or has less room than the image's manifest names before the download starts, as a lack of capacity, never as a boot to retry at once into the same state.
+A fetch that fails for its image — a registry refusing the export, a stream tar cannot unpack — is reported as an unavailable image, and a disk that fills, or has less room before the download starts than the image is estimated to unpack to, as a lack of capacity, never as a boot to retry at once into the same state.
+That estimate is a fixed multiple of the compressed size its manifest names.
 On a runner's own volume that disk is the owner's claim, so there it is reported as the owner's storage being full ([persistence](persistence.md#per-agent-pvcs)).
 
 **Eviction never frees a tree a machine is running from.** It takes the oldest write first, down to a byte count the install states, sparing what is held.
 A runner holds the digests its machines boot by naming them again every minute, and a hold lapses only once nobody names it — a runner that stopped has no machines left.
 A hold only extends, so no runner can release what another holds, and only a tree on disk is held, so a resolve that fails holds nothing; past half again its budget, the service fetches nothing.
-Each fetch under way counts toward that ceiling at the compressed size its manifest names, so fetches that start together cannot each find the cache under it.
+Before a fetch starts, the writer evicts until the cache plus the image's estimated size fits the budget, and each fetch under way counts toward the ceiling at that estimate, so fetches that start together cannot each find the cache under it.
 A service that restarts has forgotten every hold, so it evicts nothing until the runners have had time to name theirs again.
 A runner whose own claim runs short sheds every tree no machine holds, however far inside its budget the cache is, because a tree can be fetched again and a machine disk on the same claim cannot.
 
@@ -41,11 +44,13 @@ A runner whose own claim runs short sheds every tree no machine holds, however f
 The service therefore preloads the harness images the install ships, resolving their tags on every pass, and pins them against eviction.
 That set is fixed at deploy, so a custom agent image is never among them.
 It preloads with the install's default pull secrets, mounted into it, so an image only a per-template secret reads is fetched when a machine first needs it.
+An image that fails to preload is tried again after a backoff that doubles up to a few hours, so one that never unpacks is not downloaded on every pass; a machine that needs it still fetches it at once.
 
 **A private entry is checked per machine.** A shared cache would hand one owner's fetch to every owner naming the image, so an entry an anonymous read could not reach is served only to a machine whose own pull secrets read its manifest in a repository the entry was fetched from.
 The repository a caller names is never what is asked, because anyone can name any digest under a registry of their own that answers every read; a caller naming the digest in a repository it was never fetched from proves its access by fetching it from there, and that repository then joins the entry's origins.
 A read with no credential is anonymous even where the service's own environment holds one.
 An anonymous read of an origin that succeeds marks the entry public, and only an entry not known to be public needs the registry to boot.
+A credential that read an origin is trusted for that digest for the few minutes a tag's resolution is, so later boots with it do not ask the registry, and a credential the registry revokes still boots a cached tree for that long.
 The service keeps that knowledge in memory, so after a restart it asks again.
 The check gates a boot, not a read.
 A runner's own cache serves one owner and checks nothing.

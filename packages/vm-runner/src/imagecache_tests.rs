@@ -669,3 +669,104 @@ fn a_resolve_that_fails_holds_nothing() {
     assert!(locked(&cache.memory).holds.is_empty());
     assert_eq!(scratch_trees(&cache), 0);
 }
+
+// TEST_SCENARIO: a harness image that cannot be unpacked would be downloaded whole on every preload pass, forever. After a failure the pin waits out its backoff, so the next pass fetches nothing, and a machine that needs the image still fetches it at once.
+#[test]
+fn a_preload_that_failed_waits_before_it_fetches_again() {
+    let f = Fixture::new("preload-backoff", PUBLIC_CRANE);
+    fs::write(f.dir.path().join("export-fails"), "").unwrap();
+    let cache = f.cache(|c| c.pins = vec![IMAGE.into()]);
+    cache.preload(&[]);
+    assert_eq!(f.calls("export"), 1);
+    cache.preload(&[]);
+    assert_eq!(
+        f.calls("export"),
+        1,
+        "a failing pin was fetched on the next pass"
+    );
+    assert!(cache.resolve(IMAGE, &[]).fetched.is_some());
+    assert_eq!(f.calls("export"), 2);
+}
+
+// TEST_SCENARIO: a fetch must find room inside the budget for what the image will unpack to, not only for its compressed bytes. Trees nobody holds are evicted before the download starts, so the cache never holds the old tree and the new one together past its budget.
+#[test]
+fn a_fetch_evicts_room_for_what_it_will_unpack_before_it_starts() {
+    let f = Fixture::new("evict-first", PUBLIC_CRANE);
+    let cache = f.cache(|c| {
+        c.budget = 1000;
+        c.hold_lease = Duration::ZERO;
+    });
+    let old = digest_of(&cache, "quay.io/x/a:1");
+    fs::write(f.dir.path().join("size"), "400").unwrap();
+    let lookup = cache.resolve("quay.io/x/b:1", &[]);
+    assert!(lookup.fetched.is_some_and(|f| f.ok && f.freed.len() == 1));
+    assert!(!cache.digest_entry(&old).exists());
+}
+
+// TEST_SCENARIO: an evicted tree of a few million files takes minutes to delete, and the resolve that made room for its own fetch must not wait for that. The entry leaves its name before the pass returns, and the tree is deleted after it.
+#[test]
+fn an_evicted_tree_is_deleted_after_the_pass_returns() {
+    let f = Fixture::new("evict-background", PUBLIC_CRANE);
+    let cache = f.cache(|c| {
+        c.budget = 1;
+        c.hold_lease = Duration::ZERO;
+    });
+    let digest = digest_of(&cache, IMAGE);
+    assert_eq!(cache.evict(None).freed.len(), 1);
+    assert!(!cache.digest_entry(&digest).exists());
+    let started = Instant::now();
+    while scratch_trees(&cache) > 0 || locked(&cache.memory).deleting.load(Ordering::Relaxed) > 0 {
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "the evicted tree was never deleted"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+// TEST_SCENARIO: every boot of a private image on a node cache asked the registry twice before it could reuse the tree. Once a credential has read the image where it came from, later boots with that credential reuse it without asking, while a caller with any other credential is still checked.
+#[test]
+fn a_credential_that_read_a_private_entry_is_not_asked_again() {
+    let f = Fixture::new("access-memo", PRIVATE_CRANE);
+    let cache = f.cache(|_| {});
+    let credential = [CREDENTIAL.to_string()];
+    assert!(cache.resolve(IMAGE, &credential).resolved.is_ok());
+    assert!(cache.resolve(IMAGE, &credential).resolved.is_ok());
+    let probes = f.calls("digest");
+    assert!(cache.resolve(IMAGE, &credential).resolved.is_ok());
+    assert_eq!(
+        f.calls("digest"),
+        probes,
+        "a granted credential was asked again"
+    );
+    assert!(cache.resolve(IMAGE, &[OTHER.to_string()]).resolved.is_err());
+}
+
+// TEST_SCENARIO: a tree is renamed into place without a flush of the whole filesystem, so a crash can leave its files short on the disk. Within the boot that unpacked it the page cache serves it whole. After a reboot it is trusted only once a settle pass flushed it for the very fetch its origin names; a tree an older writer flushed whole names no fetch and is trusted as it was.
+#[test]
+fn an_unflushed_tree_is_trusted_only_in_its_boot_or_once_settled() {
+    let dir = crate::testdir::TempDir::new("imagecache-settle");
+    let entry = dir.path();
+    let origin = Origin {
+        unsettled: "boot-a/.unpack-1".into(),
+        ..Origin::default()
+    };
+    fs::write(
+        entry.join(ORIGIN_FILE),
+        serde_json::to_vec(&origin).unwrap(),
+    )
+    .unwrap();
+    fs::write(entry.join("file"), "x").unwrap();
+    assert!(settled(&Origin::default(), Some("boot-b"), entry));
+    assert!(settled(&origin, Some("boot-a"), entry));
+    assert!(!settled(&origin, Some("boot-b"), entry));
+    assert!(!settled(&origin, None, entry));
+
+    settle(entry, "boot-a/.unpack-2");
+    assert!(
+        !settled(&origin, Some("boot-b"), entry),
+        "another fetch's settle vouched for this tree"
+    );
+    settle(entry, "boot-a/.unpack-1");
+    assert!(settled(&origin, Some("boot-b"), entry));
+}
