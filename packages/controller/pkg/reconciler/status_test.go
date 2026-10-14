@@ -3,7 +3,9 @@ package reconciler
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -116,6 +118,44 @@ func TestSetError_DoesNotDowngradeBackoffExceeded(t *testing.T) {
 	require.Len(t, conds, 1)
 	c := conds[0].(map[string]interface{})
 	assert.Equal(t, "BackoffLimitExceeded", c["reason"], "setError must not downgrade BackoffLimitExceeded")
+}
+
+func TestUpdateAgentStatus_TruncatesOversizedMessage(t *testing.T) {
+	u, err := agentToUnstructured(&apiv1.Agent{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-agent", Namespace: "test-agents"},
+	})
+	require.NoError(t, err)
+	dyn := newFakeDynamic(u)
+
+	// A message larger than the Kubernetes 32768-byte condition limit would
+	// otherwise make UpdateStatus reject the object as invalid.
+	huge := "HEAD" + strings.Repeat("x", 40000) + "TAIL"
+	require.NoError(t, updateAgentStatus(context.Background(), dyn, "test-agents", "my-agent", func(s *apiv1.AgentStatus) {
+		setStatusCondition(s, apiv1.ConditionReconciled, false, "Reconciled", "ReconcileError", huge, 0)
+	}))
+
+	got, err := dyn.Resource(AgentsGVR).Namespace("test-agents").Get(context.Background(), "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	conds, _, _ := unstructured.NestedSlice(got.Object, "status", "conditions")
+	require.Len(t, conds, 1)
+	msg := conds[0].(map[string]interface{})["message"].(string)
+	assert.LessOrEqual(t, len(msg), maxConditionMessageBytes, "message must fit the Kubernetes limit")
+	assert.True(t, utf8.ValidString(msg), "truncated message must stay valid UTF-8")
+	assert.True(t, strings.HasPrefix(msg, "HEAD"), "head of the message is preserved")
+	assert.True(t, strings.HasSuffix(msg, "TAIL"), "actionable tail of the message is preserved")
+}
+
+func TestTruncateConditionMessage_ShortMessageUnchanged(t *testing.T) {
+	assert.Equal(t, "boom", truncateConditionMessage("boom"))
+	assert.Equal(t, "", truncateConditionMessage(""))
+}
+
+func TestTruncateConditionMessage_CutsOnRuneBoundary(t *testing.T) {
+	// Multi-byte runes must not be split into invalid UTF-8 by truncation.
+	msg := strings.Repeat("界", 20000) // 3 bytes each => 60000 bytes
+	out := truncateConditionMessage(msg)
+	assert.LessOrEqual(t, len(out), maxConditionMessageBytes)
+	assert.True(t, utf8.ValidString(out), "truncated multi-byte message must stay valid UTF-8")
 }
 
 func TestUpdateAgentStatus_NotFound(t *testing.T) {
