@@ -41,7 +41,6 @@ install -d "$b/usr/local/bin" "$rel" "$b/opt/smolvm"
 # architecture on a runner of that architecture. The runner links the host's
 # glibc dynamically; the check at the end runs it against the image's.
 ./.mise/fetch-smolvm
-./.mise/prune-target
 target="${CARGO_TARGET_DIR:-target}"
 cargo build --release --locked -p vm-runner
 # vm-seed is run from this image by the controller's migration Job, which
