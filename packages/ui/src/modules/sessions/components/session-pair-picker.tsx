@@ -45,8 +45,8 @@ import {
   type ProviderConnectionRef,
   providerOptions,
 } from "../lib/session-pair-options.js";
-import { SessionPairTrigger } from "./session-pair-trigger.js";
 import { SessionModelList } from "./session-model-list.js";
+import { SessionPairTrigger } from "./session-pair-trigger.js";
 import {
   SessionSettingsControls,
   settingDefaults,

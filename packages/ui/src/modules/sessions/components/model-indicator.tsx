@@ -20,8 +20,8 @@ import {
   useProviderModels,
   useRememberedPair,
 } from "../api/session-pair.js";
-import { harnessDisplayName } from "../lib/session-pair-options.js";
 import { modelGroups, modelIndicatorLabel } from "../lib/catalog-groups.js";
+import { harnessDisplayName } from "../lib/session-pair-options.js";
 import { SessionModelList } from "./session-model-list.js";
 import { SetAsDefault } from "./session-pair-picker.js";
 import { SessionPairTrigger } from "./session-pair-trigger.js";
