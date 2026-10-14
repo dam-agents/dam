@@ -71,7 +71,7 @@ Outcomes:
 - **Overflows** — the pair is scaled to zero (healing a gateway a prior admitted-then-failed reconcile may have left up) and the Agent is **parked**: `Ready=False, reason=OverBudget`, with the reserved/ceiling figures in the condition message.
   `Reconciled` stays true — the render succeeded; the start was refused.
 
-`OverBudget` has a second producer that is not a budget at all: a vm Agent whose machine the VM runner refuses for its own memory is parked the same way, carrying the runner's message instead of the ceiling figures, and the owner's idle vm agents are hibernated to free the room under the same rules ([vm-memory](vm-memory.md)).
+`OverBudget` has a second producer that is not a budget at all: a vm Agent whose machine the VM runner refuses for its own memory is parked the same way, carrying the controller's own sentence that the owner's VM agents' memory is full instead of the ceiling figures, and the owner's idle vm agents are hibernated to free the room under the same rules ([vm-memory](vm-memory.md)).
 It is published on this condition because the effect on the user is identical — the agent did not start until room is freed — and because the retry that admits it is the same one.
 Consumers must therefore treat the condition message as the explanation, not derive one from the figures.
 
