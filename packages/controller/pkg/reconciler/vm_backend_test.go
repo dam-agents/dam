@@ -57,6 +57,8 @@ type fakeNode struct {
 	release  vmrunner.RunnerRelease
 	usage    vmrunner.RunnerUsage
 	onPut    func(vmrunner.MachineSpec)
+	// UNIT_BOUNDARY_DESCRIPTION: a stop answers stopping, as the real runner's does, and the machine stays so until a test sets it stopped. Without it a stop takes effect at once.
+	stopsSlowly bool
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long the fake holds a waiting status read before answering with no change. It is far below the real runner's wait, so a test's server closes promptly under a watch that is still reading.
@@ -106,6 +108,14 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 			if !ok {
 				n.version++
 				st = vmrunner.MachineStatus{State: vmrunner.StateCreating, Port: 31000, Version: n.version}
+				n.statuses[id] = st
+			}
+			if ok && !spec.Running && !machineStopped(st) && st.State != vmrunner.StateStopping {
+				n.version++
+				st.State, st.Ready, st.Version = vmrunner.StateStopped, false, n.version
+				if n.stopsSlowly {
+					st.State = vmrunner.StateStopping
+				}
 				n.statuses[id] = st
 			}
 			require.NoError(t, json.NewEncoder(w).Encode(st))

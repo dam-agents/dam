@@ -3,6 +3,7 @@ package reconciler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -230,7 +231,7 @@ func (c *IdleChecker) hibernate(ctx context.Context, owner, name string) error {
 	return hibernateAgentPair(ctx, c.client, c.dynamic, c.halt, owner, c.config.Namespace, name)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: hibernation is published only once the agent's machine is stopped. The api-server trusts a health check answer on a wake from a published hibernation, because nothing should answer then, so a machine still running would pass for a woken one. When the runner cannot stop the machine, the gateway is scaled down anyway and readiness goes down, but the agent is not reported hibernated: the error makes the idle checker try again on its next sweep, and the agent's next reconcile stops the machine once the runner answers.
+// UNIT_BOUNDARY_DESCRIPTION: hibernation is published only once the agent's machine is stopped. The api-server trusts a health check answer on a wake from a published hibernation, because nothing should answer then, so a machine still running would pass for a woken one. When the runner cannot stop the machine, the gateway is scaled down anyway and readiness goes down, but the agent is not reported hibernated: the error makes the idle checker try again on its next sweep, and the agent's next reconcile stops the machine once the runner answers. A machine the runner is still stopping is no error: the agent's reconcile watches it and publishes hibernation once it reads stopped.
 func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, halt MachineHalt, owner, namespace, name string) error {
 	var haltErr error
 	if halt != nil {
@@ -247,8 +248,15 @@ func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dyna
 		}); err != nil {
 			return err
 		}
+		if errors.Is(haltErr, errMachineStopping) {
+			return nil
+		}
 		return fmt.Errorf("stopping the machine of %s: %w", name, haltErr)
 	}
+	return publishHibernated(ctx, dyn, namespace, name)
+}
+
+func publishHibernated(ctx context.Context, dyn dynamic.Interface, namespace, name string) error {
 	return updateAgentStatus(ctx, dyn, namespace, name, func(s *apiv1.AgentStatus) {
 		setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", apiv1.ReasonHibernated, "", 0)
 		setStatusCondition(s, apiv1.ConditionGatewayPodReady, false, "PodReady", apiv1.ReasonHibernated, "", 0)
@@ -261,7 +269,7 @@ func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dyna
 // UNIT_BOUNDARY_DESCRIPTION: a machine that cannot be stopped now — its runner is restarting or unreachable — does not keep the rest of the pair up. The gateway is scaled down anyway, and the agent's own next reconcile, which asks for the machine stopped because the agent should not run, stops it once the runner answers.
 func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, halt MachineHalt, owner, namespace, name string) error {
 	if halt != nil {
-		if err := halt(ctx, owner, name); err != nil {
+		if err := halt(ctx, owner, name); err != nil && !errors.Is(err, errMachineStopping) {
 			slog.WarnContext(ctx, "stopping the agent's machine failed; scaling the rest down, the next reconcile stops the machine", "agent", name, "owner", owner, "error", err)
 		}
 	}
