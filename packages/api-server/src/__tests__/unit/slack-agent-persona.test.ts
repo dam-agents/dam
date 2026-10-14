@@ -1,10 +1,7 @@
 // TEST_OVERVIEW: With the chat:write.customize scope, an agent's Slack posts carry the agent's name as username and its avatar as icon_url, so a channel with several agents shows who said what. Without the scope, or when the granted set is unknown, posts go out under the app's own identity and open with an emoji and the agent's name in bold instead. The emoji is the custom emoji the connection names for the agent's character, and the robot face when the connection names none. The icon is the agent's chosen character, or the one picked from its owner and name when none is chosen. Each character is uploaded to ImgBB once per install, as a PNG named by a hash: its URL is stored under the SHA-256 of the PNG, so a restart or another replica reuses it. All characters are uploaded at startup, a failed upload is retried after a minute, and a post that goes out without the icon is logged.
 import { createHash } from "node:crypto";
 import { describe, it, expect, vi } from "vitest";
-import {
-  AVATAR_CHARACTERS,
-  avatarCharacter,
-} from "api-server-api/avatar/svg";
+import { AVATAR_CHARACTERS, avatarCharacter } from "api-server-api/avatar/svg";
 import type { AgentsService } from "api-server-api";
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { configureLogger } from "../../core/logger.js";
