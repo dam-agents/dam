@@ -1074,6 +1074,7 @@ export async function bootstrap() {
         channelRegistry,
         unbindSlackChannel: deleteSlackChannelBinding(db),
         setSlackChannelAmbient: setSlackChannelAmbient(db),
+        agentsFor: (owner) => harnessAgentsServiceFor(owner),
         ignoredApps: createSlackIgnoredAppsRepository(db),
         setSlackDefault: setSlackChannelDefault(db),
         brand: { name: config.brand.name, short: config.brand.short },

@@ -161,6 +161,7 @@ export interface AgentView {
   env?: EnvVar[];
   hibernationTimeoutMin: number;
   requireConnectionAddress: boolean;
+  whisper: boolean;
   grantedSecretIds: string[];
   grantedConnectionIds: string[];
   state: AgentState;

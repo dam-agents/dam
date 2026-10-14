@@ -64,7 +64,8 @@ export function useSlackChannelForm(
       editing || isSlackDirectMessageId(values.channelId)
         ? null
         : { kind: "slack-channel" as const, name: null };
-    if (!(await bindConfirm.confirm(audience, "Connect"))) return;
+    if (!(await bindConfirm.confirm(audience, "Connect", agent.whisper)))
+      return;
     const connect = planSlackChannelSave({
       agentId: agent.id,
       channel,

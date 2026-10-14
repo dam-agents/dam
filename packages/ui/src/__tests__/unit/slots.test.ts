@@ -38,6 +38,7 @@ const agent = (
   image: "x:latest",
   hibernationTimeoutMin: 60,
   requireConnectionAddress: false,
+  whisper: true,
   grantedSecretIds: [],
   grantedConnectionIds: [],
   stopRequested: false,
