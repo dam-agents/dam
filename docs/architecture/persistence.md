@@ -233,7 +233,8 @@ An Agent whose mounts ask to persist a path outside `HOME` is refused rather tha
 **The whole machine persists, per root generation.** Everything outside `HOME` is the image's root: an overlay platform-init lays over the image, its upper layer on the disk, kept across stops, restarts and new images of one generation — an integer an image declares in its env and bumps only on a change that breaks an older root; an image declaring none is its own generation.
 The runner names it in the share at every start, and a new generation, or none named, boots onto an empty upper: what must outlast that belongs under `HOME`.
 smolvm keeps a root of its own and binds the whole disk into it; platform-init leaves both behind, and fails the boot rather than run on them.
-Temporary folders are kept off that root instead: `/tmp`, `/var/tmp` and `/var/cache` are directories of the disk bound in place, empty on every boot, and `HOME`'s `.cache` and `.npm` are ordinary directories of the home.
+Temporary folders are kept off that root instead: `/tmp` and `/var/tmp` are directories of the disk bound in place, empty on every boot, and `HOME`'s `.cache` and `.npm` are ordinary directories of the home.
+`/var/cache` stays part of the root, because an image ships its font, package and linker caches there, and an empty folder over them had every boot rebuild them.
 They share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their least recently used files — never one in use, never anything outside them.
 Every minute platform-init trims the disk, so whatever the agent frees, by deleting or by rewriting a file in place, goes back to the runner's volume and stops counting against the owner's storage.
 Once the image runs, the disk is reachable only through what platform-init mounted from it.
