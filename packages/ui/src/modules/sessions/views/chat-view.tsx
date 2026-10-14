@@ -357,6 +357,10 @@ export function ChatView() {
     !!newSessionAgent &&
     providerConnections.loaded &&
     providerConnections.owned.length === 0;
+  const noGrantedProvider =
+    !!newSessionAgent &&
+    providerConnections.loaded &&
+    providerConnections.granted.length === 0;
   const [providersModal, setProvidersModal] = useState<boolean | null>(null);
 
   const view = useStore((s) => s.view);
@@ -675,7 +679,10 @@ export function ChatView() {
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       {}
       {(providersModal ?? noProviders) && (
-        <ProviderSettingsModal onClose={() => setProvidersModal(false)} />
+        <ProviderSettingsModal
+          agentId={newSessionAgent}
+          onClose={() => setProvidersModal(false)}
+        />
       )}
       <header
         className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-stretch h-[70px] max-md:border-b border-border shrink-0 relative z-content`}
@@ -1068,7 +1075,9 @@ export function ChatView() {
                   onSend={sendAndFollow}
                   onStop={stopAgent}
                   blockedReason={
-                    noProviders ? "No LLM providers connected." : null
+                    noGrantedProvider
+                      ? "No LLM provider connected to this agent."
+                      : null
                   }
                 />
                 {!hasPendingPermission && pickable && (

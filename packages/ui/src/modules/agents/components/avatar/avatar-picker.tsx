@@ -3,7 +3,7 @@ import {
   AVATAR_CHARACTERS,
   type AvatarCharacter,
 } from "api-server-api/avatar/svg";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   Popover,
@@ -71,8 +71,9 @@ export function AvatarPicker({
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The grid of avatar characters. A user picks from
  * the characters they unlocked on the Get started checklist, plus the one the
- * agent already shows; the rest are eggs. A character stays marked with a dot
- * until the user picks it once. While any are locked, a link opens the
+ * agent already shows; the rest are eggs. Opening the grid clears the new
+ * marks for good, but they stay on while it is open so the user sees which
+ * characters are new. While any are locked, a link opens the
  * checklist so the user can see how to unlock them.
  */
 export function AvatarGrid({
@@ -85,8 +86,12 @@ export function AvatarGrid({
   onLeave: () => void;
 }) {
   const unlocked = useUnlockedAvatars();
-  const fresh = useFreshAvatars();
-  const markPicked = useMarkAvatarPicked();
+  const freshOnOpen = useFreshAvatars();
+  const [fresh] = useState(freshOnOpen);
+  const { mutate: markPicked } = useMarkAvatarPicked();
+  useEffect(() => {
+    for (const character of fresh) markPicked({ character });
+  }, [fresh, markPicked]);
   const openChecklist = useOpenChecklist();
   const usable = AVATAR_CHARACTERS.filter(
     (c) => unlocked === null || c === value || unlocked.includes(c),
@@ -101,10 +106,7 @@ export function AvatarGrid({
             type="button"
             aria-pressed={character === value}
             aria-label={character}
-            onClick={() => {
-              if (fresh.includes(character)) markPicked.mutate({ character });
-              onPick(character);
-            }}
+            onClick={() => onPick(character)}
             className={cn(
               "group relative flex size-14 items-center justify-center rounded-lg border transition-colors",
               character === value
