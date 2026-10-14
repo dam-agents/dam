@@ -60,6 +60,7 @@ export function kitBadges(
   >,
   templates: readonly ConnectionTemplateView[],
   templateById: ReadonlyMap<string, ConnectionTemplateView>,
+  vmForced: boolean,
 ): KitBadge[] {
   const badges: KitBadge[] = [];
 
@@ -93,7 +94,7 @@ export function kitBadges(
 
   if (kit.knowledgeBase) badges.push({ key: "kb", label: "Knowledge base" });
 
-  if (kit.backend === "vm")
+  if (kit.backend === "vm" || vmForced)
     badges.push({ key: "backend", label: VM_BACKEND_LABEL });
 
   if (kit.egressPreset && kit.egressPreset !== "trusted")

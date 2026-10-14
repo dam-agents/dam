@@ -37,7 +37,7 @@ import {
 } from "../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
-import { useInstallCapabilities } from "../../features/api/queries.js";
+import { useVmForced } from "../../features/hooks/use-vm-forced.js";
 import { useUnlockedAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
@@ -300,11 +300,8 @@ function KitDetail({
   const selectAgent = useStore((s) => s.selectAgent);
   const templates = useConnectionTemplates();
   const budget = useBudgetReserved();
-  const install = useInstallCapabilities().data;
-  const vm =
-    kit.backend === "vm" ||
-    (install?.virtualization === true &&
-      install.features["vm-sandboxes"] === "on");
+  const vmForced = useVmForced();
+  const vm = kit.backend === "vm" || vmForced;
   const connections = useAppConnections();
   const agents = useAgents().data?.list;
   const apply = useApplyStarterKit();

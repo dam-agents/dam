@@ -145,6 +145,18 @@ func TestARestartDoesNotRepeatACriticalPoolsEvent(t *testing.T) {
 	assert.Equal(t, 2, eventsWithReason(t, r, "VMPoolCritical"), "the memory pool's first crossing was not announced")
 }
 
+// TEST_SCENARIO: the earlier announcement counts wherever it landed among the user's agents, not only on the first one the cache lists; another user's Event, or one for another resource, does not count.
+func TestAnEarlierCriticalEventCountsOnAnyOfTheUsersAgents(t *testing.T) {
+	r, _, first := poolPassReconciler(t)
+	second := first.DeepCopy()
+	second.Name = "second-agent"
+	r.agentEvent(context.Background(), second, corev1.EventTypeWarning, "VMPoolCritical", "this user's VM storage pool is 95% full")
+
+	assert.True(t, r.poolCriticalAnnounced(context.Background(), []*apiv1.Agent{first, second}, "storage"))
+	assert.False(t, r.poolCriticalAnnounced(context.Background(), []*apiv1.Agent{first}, "storage"), "another agent's event counted for a user who does not own it")
+	assert.False(t, r.poolCriticalAnnounced(context.Background(), []*apiv1.Agent{first, second}, "memory"), "the storage event counted for memory")
+}
+
 // TEST_SCENARIO: a resize the node refuses puts a RunnerCapacity condition and one Warning Event on each of the user's vm Agents, and hands them back to be reconciled; readiness is not the condition's to change. It stays quiet while the state holds, and once the node applies the resize the condition goes and the agents are handed back again.
 func TestARefusedResizeIsAConditionAndAnEventOnTheUsersAgents(t *testing.T) {
 	r, _, agent := poolPassReconciler(t)
