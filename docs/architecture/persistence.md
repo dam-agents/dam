@@ -234,7 +234,12 @@ An Agent whose mounts ask to persist a path outside `HOME` is refused rather tha
 The runner names it in the share at every start, and a new generation, or none named, boots onto an empty upper: what must outlast that belongs under `HOME`.
 smolvm keeps a root of its own and binds the whole disk into it; platform-init leaves both behind, and fails the boot rather than run on them.
 Temporary folders are kept off that root instead: `/tmp`, `/var/tmp` and `/var/cache` are directories of the disk bound in place, empty on every boot, and `HOME`'s `.cache` and `.npm` are ordinary directories of the home.
-They share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their least recently used files — never one in use, never anything outside them.
+They share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their least recently used entries, never anything outside them.
+An entry is one name directly in such a folder, such as `~/.cache/go-build` or `/tmp/pr-body.md`, and it goes whole or not at all, because a tool that keeps part of its cache takes it for complete and fails on it.
+Use is the newest modification or change time anywhere in the entry, since the disk is mounted `relatime` and a read often leaves access times alone.
+An entry used in the last ten minutes stays, and so does one a process holds a BSD lock on, the way `systemd-tmpfiles` leaves it.
+A cache tagged with `CACHEDIR.TAG` goes before an untagged entry of the same age, since its tool can rebuild it and an untagged one may be the agent's work in progress.
+Each eviction, and a disk still short once nothing is left to evict, is a line on the machine's console, which the runner reads.
 Every minute platform-init trims the disk, so whatever the agent frees, by deleting or by rewriting a file in place, goes back to the runner's volume and stops counting against the owner's storage.
 Once the image runs, the disk is reachable only through what platform-init mounted from it.
 

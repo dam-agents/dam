@@ -913,11 +913,25 @@ fn purge_discarded(dir: &Path, names: &[impl AsRef<str>]) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: scratch on the disk shares it with the agent's home, so a tool that fills /tmp or its cache could leave the agent no room for its work. Every EVICT_INTERVAL, while the disk has less than EVICT_BELOW_PERCENT of it free or the runner marks the owner's claim short of room, the scratch folders lose their files least recently used first, in passes of decreasing age, until EVICT_UNTIL_PERCENT is free and the mark is gone, or only files used within the last pass's age are left — so a file a running tool is writing is never taken. The disk is a sparse file on that claim, and the guest agent's trim hands what this frees back to it. Only files on the disk are deleted: the walk stays on the disk's device, follows no symlink and leaves the image's trust cache alone. A deleted file that is still open frees its space only when it is closed.
+// UNIT_BOUNDARY_DESCRIPTION: scratch on the disk shares it with the agent's home, so a tool that fills /tmp or its cache could leave the agent no room for its work. Every EVICT_INTERVAL, while the disk has less than EVICT_BELOW_PERCENT of it free or the runner marks the owner's claim short of room, the scratch folders lose whole entries, until EVICT_UNTIL_PERCENT is free and the mark is gone, or only entries used within the last EVICT_AGES pass are left. An entry is one name directly in a scratch folder, such as ~/.cache/go-build or /tmp/pr-body.md, and it goes whole or not at all: a tool that loses some of its cache's files and keeps the rest sees a half cache that looks complete, and fails on it with an error that says nothing about the disk. An entry counts as used at the newest modification or change time anywhere in it. Access times are not counted: the disk is mounted relatime, so a read often does not move them. The disk is a sparse file on that claim, and the guest agent's trim hands what this frees back to it. Each eviction goes to the console, so the host sees why a cache vanished. A deleted file that is still open frees its space only when it is closed.
 const EVICT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 const EVICT_BELOW_PERCENT: u64 = 10;
 const EVICT_UNTIL_PERCENT: u64 = 20;
 const EVICT_AGES: [u64; 4] = [7 * 86_400, 86_400, 3_600, 600];
+
+// UNIT_BOUNDARY_DESCRIPTION: the Cache Directory Tagging Specification's mark (bford.info/cachedir) that a directory holds only a cache its tool can rebuild. Go, cargo and ccache write it. In each pass a tagged entry goes before an untagged one, which may be an agent's work in progress.
+const CACHEDIR_TAG: &str = "CACHEDIR.TAG";
+const CACHEDIR_TAG_SIGNATURE: &[u8] = b"Signature: 8a477f597d28d172789f06886806bc55";
+
+// UNIT_BOUNDARY_DESCRIPTION: the name an entry is renamed to before it is deleted, so a tool never sees it half deleted. An entry with this name was left by a delete that failed, and goes first. A file of the agent's own that happens to have this name is lost the same way, and only while the disk is short.
+const EVICTED_INFIX: &str = ".evicted.";
+
+struct ScratchEntry {
+    path: PathBuf,
+    used: u64,
+    bytes: u64,
+    rebuildable: bool,
+}
 
 fn evict_scratch() {
     let home = Path::new(guest::AGENT_HOME);
@@ -933,27 +947,142 @@ fn evict_scratch() {
         .map(|(dir, ..)| PathBuf::from(dir))
         .chain(HOME_CACHES.iter().map(|name| home.join(name)))
         .collect();
+    let mut stuck = false;
     loop {
         std::thread::sleep(EVICT_INTERVAL);
         if !evicting(free_percent(home), claim_short(), EVICT_BELOW_PERCENT) {
+            stuck = false;
             continue;
         }
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |since| since.as_secs());
-        for age in EVICT_AGES {
-            let freed: u64 = dirs
-                .iter()
-                .map(|dir| evict_older(dir, now.saturating_sub(age), disk))
-                .sum();
-            if freed > 0 {
-                logf!("the disk is short of room: deleted {freed} bytes of scratch unused for {age} s");
-            }
+        let (mut freed, mut deleted) = (0, Vec::new());
+        for entry in scratch_entries(&dirs, disk, now) {
             if !evicting(free_percent(home), claim_short(), EVICT_UNTIL_PERCENT) {
                 break;
             }
+            match evict(&entry.path, now) {
+                Ok(true) => {
+                    freed += entry.bytes;
+                    deleted.push(entry.path.display().to_string());
+                }
+                Ok(false) => {}
+                Err(e) => logf!("WARNING: evicting {} ({e})", entry.path.display()),
+            }
+        }
+        if !deleted.is_empty() {
+            announce(&format!(
+                "the disk is short of room: deleted {freed} bytes of unused scratch: {}",
+                deleted.join(" ")
+            ));
+        }
+        let short = evicting(free_percent(home), false, EVICT_BELOW_PERCENT);
+        if short && !stuck {
+            announce(&format!(
+                "the disk is still short of room: no scratch is left that was unused for {} s, so writes to the agent's home may fail",
+                EVICT_AGES[EVICT_AGES.len() - 1]
+            ));
+        }
+        stuck = short;
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: every entry of the scratch folders that may be evicted at `now`, in the order to evict them: by the first EVICT_AGES pass it is old enough for, then rebuildable before not, then oldest first. An entry is left out when it is younger than the last pass, when it holds the image's trust cache, a socket or fifo a process may still listen on, or a mount, or when it cannot be read.
+fn scratch_entries(dirs: &[PathBuf], disk: u64, now: u64) -> Vec<ScratchEntry> {
+    let trust = Path::new(TRUST_CACHE_PATH);
+    let mut entries: Vec<(usize, ScratchEntry)> = dirs
+        .iter()
+        .filter_map(|dir| fs::read_dir(dir).ok())
+        .flat_map(|names| names.flatten().map(|name| name.path()))
+        .filter(|path| !trust.starts_with(path))
+        .filter_map(|path| {
+            let (used, bytes) = tree_use(&path, disk)?;
+            let leftover = path
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().contains(EVICTED_INFIX));
+            let used = if leftover { 0 } else { used };
+            let pass = EVICT_AGES
+                .iter()
+                .position(|age| used < now.saturating_sub(*age))?;
+            let rebuildable = leftover || cache_tagged(&path);
+            Some((
+                pass,
+                ScratchEntry {
+                    path,
+                    used,
+                    bytes,
+                    rebuildable,
+                },
+            ))
+        })
+        .collect();
+    entries.sort_by_key(|(pass, entry)| (*pass, !entry.rebuildable, entry.used));
+    entries.into_iter().map(|(_, entry)| entry).collect()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the newest modification or change time anywhere under `path`, and the bytes it holds, without following a symlink. None when the tree cannot be evicted whole: it leaves the disk's device, holds a socket or fifo, or a directory in it cannot be read.
+fn tree_use(path: &Path, disk: u64) -> Option<(u64, u64)> {
+    let info = fs::symlink_metadata(path).ok()?;
+    let kind = info.file_type();
+    if info.dev() != disk || !(kind.is_dir() || kind.is_file() || kind.is_symlink()) {
+        return None;
+    }
+    let mut used = u64::try_from(info.mtime().max(info.ctime())).unwrap_or(0);
+    let mut bytes = info.blocks() * 512;
+    if kind.is_dir() {
+        for child in fs::read_dir(path).ok()? {
+            let (child_used, child_bytes) = tree_use(&child.ok()?.path(), disk)?;
+            used = used.max(child_used);
+            bytes += child_bytes;
         }
     }
+    Some((used, bytes))
+}
+
+fn cache_tagged(dir: &Path) -> bool {
+    let tag = dir.join(CACHEDIR_TAG);
+    let mut head = [0; CACHEDIR_TAG_SIGNATURE.len()];
+    fs::symlink_metadata(&tag).is_ok_and(|info| info.is_file())
+        && File::open(&tag)
+            .and_then(|mut file| io::Read::read_exact(&mut file, &mut head))
+            .is_ok()
+        && head == CACHEDIR_TAG_SIGNATURE
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: deletes one scratch entry whole: it is renamed aside first, so no tool sees it half deleted, then deleted. An entry a process holds a BSD lock on is left, and false returned: that is how systemd-tmpfiles lets a tool keep its files from aging, and a tool written for it is kept here too. The lock is held through the delete, so the tool cannot take it in between.
+fn evict(path: &Path, stamp: u64) -> io::Result<bool> {
+    let _lock = if fs::symlink_metadata(path)?.file_type().is_symlink() {
+        None
+    } else {
+        let file = OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+            .open(path)?;
+        // SAFETY: the descriptor is open for the call and flock takes no pointer.
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+            let e = io::Error::last_os_error();
+            return if e.kind() == io::ErrorKind::WouldBlock {
+                Ok(false)
+            } else {
+                Err(e)
+            };
+        }
+        Some(file)
+    };
+    let name = path
+        .file_name()
+        .map(OsStr::to_string_lossy)
+        .unwrap_or_default();
+    let aside = if name.contains(EVICTED_INFIX) {
+        path.to_path_buf()
+    } else {
+        let aside = with_suffix(path, &format!("{EVICTED_INFIX}{stamp}"));
+        fs::rename(path, &aside)?;
+        aside
+    };
+    remove_all(&aside)?;
+    Ok(true)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: whether scratch is still to be freed: the disk has less than `percent` free, or the owner's claim under it is short. A disk whose room cannot be read is left alone unless the claim is short.
@@ -984,39 +1113,6 @@ fn free_bytes(path: &Path) -> Option<u64> {
     let stat = statvfs(path)?;
     #[allow(clippy::unnecessary_cast)]
     Some((stat.f_bavail as u64).saturating_mul(stat.f_frsize as u64))
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: deletes the files under `dir` last used before `cutoff`, in seconds since the epoch, and returns the bytes they held. Only regular files and symlinks are deleted, never a socket or fifo a running process may still be listening on. A file counts as used at the latest of its access, modification and change times. A directory left empty is removed only if it too was unused before the cutoff, so one a tool just made stays. The walk holds one directory open per level of the tree.
-fn evict_older(dir: &Path, cutoff: u64, disk: u64) -> u64 {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return 0;
-    };
-    let mut freed = 0;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let Ok(info) = fs::symlink_metadata(&path) else {
-            continue;
-        };
-        if info.dev() != disk || path == Path::new(TRUST_CACHE_PATH) {
-            continue;
-        }
-        let used = [info.atime(), info.mtime(), info.ctime()]
-            .into_iter()
-            .max()
-            .map_or(0, |time| u64::try_from(time).unwrap_or(0));
-        if info.is_dir() {
-            freed += evict_older(&path, cutoff, disk);
-            if used < cutoff {
-                let _ = fs::remove_dir(&path);
-            }
-        } else if (info.is_file() || info.is_symlink())
-            && used < cutoff
-            && fs::remove_file(&path).is_ok()
-        {
-            freed += info.blocks() * 512;
-        }
-    }
-    freed
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the image's own boot may keep its extracted CA trust store here rather than rebuilding it every time. The variable is set only on this backend, so an image that honors it caches on a machine and silently does without in a container, where there is no disk to cache on. The store is bound to a path of its own because the disk itself is detached before the image runs.
@@ -2686,37 +2782,97 @@ mod tests {
         assert!(store.path().join("tmp").is_dir());
     }
 
-    // TEST_SCENARIO: under pressure everything unused before the cutoff goes — files and links, and directories emptied — while a link's target, a socket a process may still listen on, and a directory that keeps a file stay. A cutoff in the future stands for files long unused, since a change time cannot be set back.
+    // TEST_SCENARIO: under pressure a scratch folder is evicted by whole entries. A leftover of a failed eviction goes first, then a cache its tool tagged as rebuildable, then the rest, so an agent's own file in /tmp is the last to go. A forged tag does not count, and an entry holding a socket a process may still listen on, an entry used within the last pass, and an entry on another device are not offered at all. A change time cannot be set back, so a clock moved forward stands for entries long unused.
     #[test]
-    fn eviction_deletes_only_unused_files_and_links() {
+    fn scratch_is_offered_whole_and_rebuildable_caches_first() {
         let scratch = TempDir::new("evict");
         let target = TempDir::new("evict-target");
         fs::write(target.path().join("kept"), b"x").unwrap();
-        fs::create_dir_all(scratch.path().join("npm/_cacache")).unwrap();
-        fs::write(scratch.path().join("npm/_cacache/blob"), vec![1u8; 8192]).unwrap();
-        std::os::unix::fs::symlink(target.path(), scratch.path().join("link")).unwrap();
-        fs::create_dir(scratch.path().join("live")).unwrap();
-        let socket =
-            std::os::unix::net::UnixListener::bind(scratch.path().join("live/sock")).unwrap();
-        let disk = fs::metadata(scratch.path()).unwrap().dev();
+        let s = scratch.path();
+        fs::write(s.join("pr-body.md"), b"x").unwrap();
+        fs::create_dir_all(s.join("go-build/00")).unwrap();
+        fs::write(s.join("go-build/00/blob"), vec![1u8; 8192]).unwrap();
+        fs::write(
+            s.join("go-build").join(CACHEDIR_TAG),
+            [CACHEDIR_TAG_SIGNATURE, b"\n"].concat(),
+        )
+        .unwrap();
+        fs::create_dir(s.join("forged")).unwrap();
+        fs::write(s.join("forged").join(CACHEDIR_TAG), b"Signature: nope").unwrap();
+        fs::create_dir(s.join("x.evicted.5")).unwrap();
+        std::os::unix::fs::symlink(target.path(), s.join("link")).unwrap();
+        fs::create_dir(s.join("live")).unwrap();
+        let socket = std::os::unix::net::UnixListener::bind(s.join("live/sock")).unwrap();
+        let disk = fs::metadata(s).unwrap().dev();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let dirs = [s.to_path_buf()];
+        let names = |now, disk| -> Vec<String> {
+            scratch_entries(&dirs, disk, now)
+                .iter()
+                .map(|entry| {
+                    entry
+                        .path
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .into_owned()
+                })
+                .collect()
+        };
 
         assert_eq!(
-            evict_older(scratch.path(), 0, disk),
-            0,
-            "nothing is older than the epoch"
+            names(now, disk),
+            ["x.evicted.5"],
+            "what was just used stays"
         );
-        let freed = evict_older(scratch.path(), u64::MAX, disk);
-        assert!(freed >= 8192);
-        assert!(!scratch.path().join("npm").exists());
-        assert!(fs::symlink_metadata(scratch.path().join("link")).is_err());
-        assert!(target.path().join("kept").is_file());
-        assert!(scratch.path().join("live/sock").exists());
-        assert_eq!(
-            evict_older(scratch.path(), u64::MAX, disk + 1),
-            0,
+        let order = names(now + 2 * EVICT_AGES[3], disk);
+        assert_eq!(order[..2], ["x.evicted.5", "go-build"]);
+        let mut rest = order[2..].to_vec();
+        rest.sort();
+        assert_eq!(rest, ["forged", "link", "pr-body.md"]);
+        assert!(scratch_entries(&dirs, disk, now + 2 * EVICT_AGES[3])
+            .iter()
+            .any(|entry| entry.path.ends_with("go-build") && entry.bytes >= 8192));
+        assert!(
+            names(now + 2 * EVICT_AGES[3], disk + 1).is_empty(),
             "another device is not walked"
         );
         drop(socket);
+    }
+
+    // TEST_SCENARIO: an evicted entry goes whole, and a link goes without its target. An entry a process holds a BSD lock on stays, the way systemd-tmpfiles leaves it, and goes once the lock is released. A leftover of a failed eviction is deleted where it is.
+    #[test]
+    fn an_entry_is_evicted_whole_unless_it_is_locked() {
+        let scratch = TempDir::new("evict-one");
+        let target = TempDir::new("evict-one-target");
+        fs::write(target.path().join("kept"), b"x").unwrap();
+        let s = scratch.path();
+        fs::create_dir_all(s.join("mise/installs/acp")).unwrap();
+        fs::write(s.join("mise/installs/acp/package.json"), b"{}").unwrap();
+        std::os::unix::fs::symlink(target.path(), s.join("link")).unwrap();
+        fs::create_dir(s.join("held")).unwrap();
+        fs::create_dir(s.join("x.evicted.5")).unwrap();
+
+        assert!(evict(&s.join("mise"), 9).unwrap());
+        assert!(evict(&s.join("link"), 9).unwrap());
+        assert!(evict(&s.join("x.evicted.5"), 9).unwrap());
+        let lock = File::open(s.join("held")).unwrap();
+        // SAFETY: the descriptor is open for the call and flock takes no pointer.
+        assert_eq!(unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) }, 0);
+        assert!(!evict(&s.join("held"), 9).unwrap());
+        assert!(s.join("held").is_dir());
+        drop(lock);
+        assert!(evict(&s.join("held"), 9).unwrap());
+
+        assert_eq!(
+            fs::read_dir(s).unwrap().count(),
+            0,
+            "nothing is left, renamed aside or not"
+        );
+        assert!(target.path().join("kept").is_file());
     }
 
     // TEST_SCENARIO: when the kernel refused to move the disk, it stays at the path the VMM gave it. That path is then the one name the platform's root keeps, and /storage still goes.
