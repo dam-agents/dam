@@ -12,7 +12,7 @@ use tokio_util::task::TaskTracker;
 use crate::api::{
     CpuUsage, MachineSpec, MachineStatus, MachineUsage, MemoryUsage, RunnerPressure, RunnerUsage,
     SeedResult, State, StorageUsage, REASON_BOOT_FAILED, REASON_HOME_FULL, REASON_OUT_OF_CAPACITY,
-    REASON_STORAGE_FULL,
+    REASON_STORAGE_FULL, STATE_RUNNING,
 };
 use crate::cache::{self, pinned_digest};
 use crate::cacheapi::CacheClient;
@@ -1385,7 +1385,7 @@ impl Server {
                 let cpu_milli = locked(&self.machines)
                     .entries
                     .get(&id)
-                    .filter(|e| e.resident_mib.is_some())
+                    .filter(|e| e.resident_mib.is_some() && status.state == STATE_RUNNING)
                     .map_or(0, |e| e.cpu_milli);
                 MachineUsage {
                     disk_used_bytes: self.runtime.disk_used_bytes(&id).unwrap_or(0),
