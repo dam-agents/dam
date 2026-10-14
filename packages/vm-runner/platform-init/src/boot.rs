@@ -282,7 +282,7 @@ fn claim_disk() -> PathBuf {
     disk_path.to_path_buf()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: holds the boot to a disk whose layout this platform-init knows, before anything else is read from the disk or written to it. A disk marked with a newer layout was written by a newer platform-init — a runner rolled back past it — and this one would misread it, so the boot stops rather than seed or mount by the wrong names. A disk with no mark is in the one layout there has been, and gets the mark now.
+// UNIT_BOUNDARY_DESCRIPTION: holds the boot to a disk whose layout this platform-init knows, before anything else is read from the disk or written to it. A disk marked with a newer layout was written by a newer platform-init — a runner rolled back past it — and this one would misread it, so the boot stops rather than seed or mount by the wrong names. A disk with no mark is in the one layout there has been, and gets the mark now. A mark that is empty or only zeros counts as no mark: a disk with no journal can lose a file's data to an unclean stop and keep its name, and the home under it is still intact.
 fn claim_layout(root: &Path) {
     match mark_layout(root) {
         Ok(Some(version)) => logf!("marked the disk as layout {version}"),
@@ -295,13 +295,15 @@ fn mark_layout(root: &Path) -> io::Result<Option<u32>> {
     let path = guest::system_store(root, guest::LAYOUT_FILE);
     let text = match fs::read_to_string(&path) {
         Ok(text) => text,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            write_record(&path, format!("{}\n", guest::LAYOUT_VERSION).as_bytes())?;
-            return Ok(Some(guest::LAYOUT_VERSION));
-        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => String::new(),
         Err(e) => return Err(e),
     };
-    match text.trim().parse::<u32>() {
+    let text = text.trim_matches(|c: char| c == '\0' || c.is_whitespace());
+    if text.is_empty() {
+        write_record(&path, format!("{}\n", guest::LAYOUT_VERSION).as_bytes())?;
+        return Ok(Some(guest::LAYOUT_VERSION));
+    }
+    match text.parse::<u32>() {
         Ok(version) if version == guest::LAYOUT_VERSION => Ok(None),
         Ok(version) if version > guest::LAYOUT_VERSION => Err(io::Error::other(format!(
             "the disk is in layout {version}, and this platform-init knows layouts up to {}. Refusing to boot a disk a newer platform-init wrote",
@@ -310,7 +312,7 @@ fn mark_layout(root: &Path) -> io::Result<Option<u32>> {
         _ => Err(io::Error::other(format!(
             "{} holds {:?}, which is not a layout this platform-init knows",
             path.display(),
-            text.trim()
+            text
         ))),
     }
 }
@@ -1217,11 +1219,13 @@ fn seed_from_archive(
     Ok(used)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a small file replaced whole: written beside itself, flushed and renamed over, so a boot cut short leaves the old record or the new one.
+// UNIT_BOUNDARY_DESCRIPTION: a small file replaced whole: written beside itself, flushed and renamed over, and the directory flushed after the rename, so a boot cut short leaves the old record or the new one, also on a disk with no journal.
 fn write_record(path: &Path, body: &[u8]) -> io::Result<()> {
-    if let Some(parent) = path.parent() {
-        mkdir_all(parent)?;
-    }
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    mkdir_all(parent)?;
     let staged = with_suffix(path, ".new");
     let mut file = OpenOptions::new()
         .write(true)
@@ -1232,7 +1236,8 @@ fn write_record(path: &Path, body: &[u8]) -> io::Result<()> {
     file.write_all(body)?;
     file.sync_all()?;
     close(file)?;
-    fs::rename(&staged, path)
+    fs::rename(&staged, path)?;
+    File::open(parent)?.sync_all()
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the seed's reader, counting and hashing every byte the tar reader takes from it.
@@ -2832,6 +2837,27 @@ mod tests {
         assert_eq!(mark_layout(disk.path()).unwrap(), None);
     }
 
+    // TEST_SCENARIO: on a disk with no journal an unclean stop can leave the mark with its name and none of its data, as an empty file or one of zeros. The home under it is intact, so the boot takes it for no mark and marks the disk again, instead of refusing every boot until the agent is deleted.
+    #[test]
+    fn a_mark_a_crash_emptied_is_taken_for_no_mark() {
+        let disk = TempDir::new("disk");
+        let mark = guest::system_store(disk.path(), guest::LAYOUT_FILE);
+        fs::create_dir_all(mark.parent().unwrap()).unwrap();
+
+        for emptied in ["", "\0\0"] {
+            fs::write(&mark, emptied).unwrap();
+            assert_eq!(
+                mark_layout(disk.path()).unwrap(),
+                Some(guest::LAYOUT_VERSION),
+                "{emptied:?}"
+            );
+            assert_eq!(
+                fs::read_to_string(&mark).unwrap(),
+                format!("{}\n", guest::LAYOUT_VERSION)
+            );
+        }
+    }
+
     // TEST_SCENARIO: a runner rolled back past a layout change boots disks that a newer platform-init already moved on, and this one would seed or mount them by names they no longer use. A newer layout fails the boot and says why; so does a mark this platform-init cannot read, rather than being taken for any layout and overwritten.
     #[test]
     fn a_layout_this_platform_init_does_not_know_fails_the_boot() {
@@ -2843,7 +2869,7 @@ mod tests {
         let newer = mark_layout(disk.path()).unwrap_err().to_string();
         assert!(newer.contains("a newer platform-init wrote"), "{newer}");
 
-        for unreadable in ["", "0", "one", "-1"] {
+        for unreadable in ["0", "one", "-1"] {
             fs::write(&mark, unreadable).unwrap();
             assert!(
                 mark_layout(disk.path()).is_err(),
