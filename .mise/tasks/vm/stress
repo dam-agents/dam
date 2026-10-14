@@ -45,6 +45,13 @@ if [ "${usage_keep_running:-}" != true ]; then
     [ "$SECONDS" -lt "$deadline" ] || { echo "$left agents did not stop within ${timeout}s" >&2; exit 1; }
     sleep 2
   done
+else
+  json="$(agent_json)"
+  stopped=()
+  for a in "${agents[@]}"; do [ "$(ready_reason "$a" <<<"$json")" != "False/Hibernated" ] || stopped+=("$a"); done
+  [ "${#stopped[@]}" -gt 0 ] || { echo "none of the ${#agents[@]} agents is stopped; nothing to wake" >&2; exit 2; }
+  echo "${#stopped[@]} of them are stopped; the running ones are left alone"
+  agents=("${stopped[@]}")
 fi
 
 before="$(runner_restarts)"
