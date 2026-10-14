@@ -524,7 +524,7 @@
 }
 
 .agent-avatar[data-mood="asleep"] {
-  & > svg {
+  & > :is(svg, img) {
     transform-origin: center bottom;
   }
   &[data-character="stack"] svg > rect:nth-of-type(2) {
@@ -564,7 +564,7 @@
   }
 
   &:is(:hover, .group:hover *) {
-    & > svg {
+    & > :is(svg, img) {
       animation: avatar-breathe 2.5s ease-in-out infinite;
     }
     & svg * {
@@ -578,9 +578,4 @@
   .agent-avatar * {
     animation: none !important;
   }
-}
-
-.agent-avatar[data-mood="asleep"]:not([data-character]) {
-  filter: grayscale(1);
-  opacity: 0.6;
 }
