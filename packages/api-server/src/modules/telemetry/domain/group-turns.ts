@@ -3,10 +3,13 @@ import type { TelemetrySpan, TurnGrouping } from "api-server-api";
 import type { UnattachedLog } from "./attach-logs.js";
 
 export const PROMPT_ID_ATTRIBUTE = "prompt.id";
-export const TURN_BOUNDARY_EVENT = "claude_code.user_prompt";
 export const LEADING_GAP_MS = 60_000;
 export const BOUNDARY_DEBOUNCE_MS = 2_000;
-const CALL_EVENT = "claude_code.api_request";
+const TURN_BOUNDARY_EVENTS = new Set([
+  "claude_code.user_prompt",
+  "pi.user_prompt",
+]);
+const CALL_EVENTS = new Set(["claude_code.api_request", "pi.api_request"]);
 const ERROR_EVENT = "claude_code.api_error";
 
 export interface TurnGroup {
@@ -74,7 +77,7 @@ interface Identity {
 function summarise(items: readonly Item[], identity: Identity): TurnGroup {
   const spans = items.flatMap((i) => (i.span ? [i.span] : []));
   const logs = items.flatMap((i) => (i.log ? [i.log] : []));
-  const calls = logs.filter((l) => l.event === CALL_EVENT);
+  const calls = logs.filter((l) => CALL_EVENTS.has(l.event));
 
   const startedMs = Math.min(...items.map((i) => i.ms));
   const endedMs = Math.max(...items.map((i) => i.endMs));
@@ -94,7 +97,7 @@ function summarise(items: readonly Item[], identity: Identity): TurnGroup {
     startedAt,
     endedAt: new Date(endedMs).toISOString(),
     durationMs: Math.max(0, endedMs - startedMs),
-    prompted: logs.some((l) => l.event === TURN_BOUNDARY_EVENT),
+    prompted: logs.some((l) => TURN_BOUNDARY_EVENTS.has(l.event)),
     spanCount: spans.length,
     recordCount: logs.length,
     errorCount:
@@ -224,7 +227,7 @@ function attachSpans(
  * present, so a debounce keeps one exchange from reading as two.
  */
 function marksTurnStart(item: Item): boolean {
-  if (item.log?.event === TURN_BOUNDARY_EVENT) return true;
+  if (item.log && TURN_BOUNDARY_EVENTS.has(item.log.event)) return true;
   return item.span !== undefined && item.span.parentSpanId === "";
 }
 

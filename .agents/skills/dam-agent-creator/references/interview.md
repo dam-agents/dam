@@ -18,7 +18,9 @@ The most load-bearing answer: what the agent processes (a PR, ticket, document, 
 
 - How is one item identified (number, ID, URL)?
   Is the ID stable?
-- How do new items appear, and how does the agent notice (polling a list API, a channel message, or both)?
+- How do new items appear, and how does the agent notice (poll a list API?
+  a channel message?
+  both)?
 - What does "already handled" mean, and where can that fact live **in the external system** (posted marker, label, status field)?
   If nowhere, only local state holds it: state loss means reprocessing, so a backup repo becomes near-mandatory.
   Say so.
@@ -60,15 +62,20 @@ Determines: hard invariants, state-row lifecycle, audit checks, config keys that
 Don't assume a heartbeat; offer the models:
 
 - **Scheduled**: cron runs, one or more run types with their own cadence, each a pre-flight mode (`references/preflight.md`).
-  Ask cadence and whether to respect working hours.
+  Ask the cadence; offer 24/7 as the default, because an idle tick behind a Precheck is free, and a working-hours window only as the exception (`references/preflight.md` → Cadence).
+- **Fan-out**: can one tick find several independent items, and may they run in parallel?
+  Then dispatch is the default (`references/architecture.md` → Fan-out): one one-time session per item after the first, a config key to keep them sequential, and a write lock on every state file those sessions share.
+  Ask what they share.
 - **Reactive (channel-driven)**: acts on messages in a connected channel.
   No pre-flight; CLAUDE.md's request-handling contract plays that role.
 - **On-demand**: the operator triggers work in the direct session.
 - **Hybrid**: most real agents are scheduled + a small reactive surface.
 
 Always recommend the scheduled **weekly audit** (`references/audit.md`); for a purely reactive agent it is usually the only schedule.
+With any scheduled run, also recommend the **monitor** (`references/architecture.md` → Monitor): a frequent gated tick over local files that alerts on outages, a silent heartbeat, classifier refusals and a failing backup, with no model on an idle tick and no question at onboarding.
+Ask only whether its alerts may also go as a direct message to the escalation owner without a model (opt-in).
 
-Determines: run-types table in CLAUDE.md, the `schedules:` block in `kit.yaml` (and which of them ship suggested-off), ONBOARDING's check-then-create fallback, whether `scripts/preflight.sh` and its Precheck adapter exist, cost envelope.
+Determines: run-types table in CLAUDE.md, the `schedules:` block in `kit.yaml` (and which of them ship suggested-off), ONBOARDING's reconcile step, whether `scripts/preflight.sh`, `scripts/monitor.sh` and the Precheck adapter exist, cost envelope.
 
 ## 6. People & channels
 
@@ -95,6 +102,9 @@ Determines: `work/` inventory, seed templates embedded in ONBOARDING, the state 
 - What differs between two deployments (target repo/project/board, names, markers, labels, feature toggles)?
   Each becomes a `work/CONFIG.md` key with default, missing-key behavior, and whether it is **immutable once used** (anything woven into dedup markers is).
 - Which env vars override which keys (env var always wins)?
+- Three keys every scheduled design gets, confirm rather than ask: **`run_model`** (the model every scheduled session is pinned to; missing = the harness default, `references/platform-dam.md` → Scheduling), **`definition_issues`** (may the agent file anonymous tracking issues on its own definition repo?
+  default off; the question states the repo's visibility, `references/architecture.md` → Writes to the definition repo), and the monitor thresholds with their working defaults (never asked).
+- Publishing a page (a dashboard, a report) is public by link: each such surface is an opt-in key, and whether findings or names appear on it is a second opt-in.
 
 Determines: Runtime configuration section of CLAUDE.md, the ONBOARDING config dialog (ask → validate → default, keep existing values on re-onboarding).
 
@@ -106,8 +116,12 @@ Determines: Runtime configuration section of CLAUDE.md, the ONBOARDING config di
   That fraction should cost ~zero (Precheck / `nothing_to_do` short-circuit).
 - Agree what is script vs agent judgment.
   For an expensive ask, propose the cheaper equivalent and let them choose.
+- Is one item expensive enough that a runaway item should alert on its own (a loop, a huge input)?
+  Then it gets the per-item measurement and the anomaly factor (`references/architecture.md` → Per-item cost and anomalies).
+- Which harness?
+  On Claude Code the tool deny list and the lean subagent type are part of the design, not an afterthought (`references/platform-dam.md` → Harness facts).
 
-Determines: cadences, pre-flight scope, how much batching the design needs.
+Determines: cadences, pre-flight scope, how much batching the design needs, the harness adapter's parts.
 
 ## 10. Kit & catalog
 
@@ -129,4 +143,4 @@ Determines: `kit.yaml` in full, the Phase 6 handoff, and how much of ONBOARDING 
 
 ## Wrap-up — the design brief
 
-Summarize into a short brief and get a "yes": mission, name, unit of work + lifecycle, integrations (read/write) with idempotency markers, run model + cadences, channels + proactive opt-ins + trust exceptions, state files + backup choice, config keys, the kit surface, cost notes.
+Summarize into a short brief and get a "yes": mission, name, unit of work + lifecycle, integrations (read/write) with idempotency markers, run model + cadences (fan-out or sequential, the monitor), channels + proactive opt-ins + trust exceptions, state files + backup choice, config keys (`run_model`, `definition_issues` included), the kit surface, the harness adapter's parts, cost notes.

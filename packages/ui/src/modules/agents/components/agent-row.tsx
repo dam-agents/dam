@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { clickableProps } from "@/lib/clickable";
+import { cn } from "@/lib/utils";
 
 import {
   AlwaysOnTag,
@@ -19,6 +20,7 @@ import { AgentChannelChips } from "../../sandboxes/components/channels/agent-cha
 import { useKeptWorkCount } from "../../sessions/api/background-work.js";
 import { KitUpdateTag } from "../../starter-kits/components/kit-update-tag.js";
 import { OnboardingTag } from "../../starter-kits/components/onboarding-tag.js";
+import { reclaimSentence } from "../lib/reclaim-notices.js";
 import { agentKindBadge, starterKitBadge } from "../utils/agent-kind.js";
 import type { AgentDisplay } from "../utils/agent-resolver.js";
 import {
@@ -37,11 +39,14 @@ import { UnsupportedContributionsBadge } from "./unsupported-contributions-badge
 import { UpdateAvailableAction } from "./update-available-action.js";
 import { VmRuntimeBadge } from "./vm-runtime-badge.js";
 
+const SECOND_LINE_ITEM =
+  "rounded-none border-0 bg-transparent p-0 text-sm tracking-normal text-muted-foreground dark:text-muted-foreground";
+
 interface Props {
   agent: AgentView;
   display: AgentDisplay;
   working?: boolean;
-  subtitle: string;
+  subtitle: string | null;
   temporaryDraw?: TemporaryDraw;
   deletePending: boolean;
   updatePending: boolean;
@@ -93,6 +98,9 @@ export function AgentRow({
   const kindBadge = agentKindBadge(agent);
   const kitBadge = starterKitBadge(agent);
   const keptWork = useKeptWorkCount(agent.id);
+  const statusNote =
+    agent.overBudgetMessage ??
+    (display.state === "hibernated" ? reclaimSentence(agent) : undefined);
   return (
     <Card
       data-testid="agent-row"
@@ -118,28 +126,48 @@ export function AgentRow({
             </Badge>
           )}
           <VmRuntimeBadge agent={agent} />
-          {kitBadge && (
-            <Badge
-              variant={kitBadge.variant}
-              className="shrink-0"
-              title={kitBadge.title}
-              aria-label={`From the ${kitBadge.label} starter kit`}
-            >
-              <span className="flex items-center gap-1.5">
-                <Box size={12} aria-hidden />
-                {kitBadge.label}
-              </span>
-            </Badge>
-          )}
-          <OnboardingTag agent={agent} />
           <KitUpdateTag agentId={agent.id} />
           <ContributionFailuresBadge failures={agentFailures(agent)} />
           <GatewayFailureBadge agent={agent} />
           <UnsupportedContributionsBadge agent={agent} />
         </div>
-        <p className="mt-1 truncate text-sm text-muted-foreground">
-          {subtitle}
-        </p>
+        <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 text-sm text-muted-foreground [&>*+*]:before:mr-1.5 [&>*+*]:before:content-['·'_/_'']">
+          <OnboardingTag agent={agent} className={SECOND_LINE_ITEM} />
+          {kitBadge && (
+            <span
+              className="flex min-w-0 items-center gap-1"
+              title={kitBadge.title}
+              aria-label={`From the ${kitBadge.label} starter kit`}
+            >
+              <Box size={14} className="shrink-0" aria-hidden />
+              <span className="truncate">{kitBadge.label}</span>
+            </span>
+          )}
+          {subtitle && <span className="truncate">{subtitle}</span>}
+          <span
+            title={statusNote}
+            {...(statusNote
+              ? {
+                  tabIndex: 0,
+                  role: "note",
+                  "aria-label": statusNote,
+                }
+              : {})}
+          >
+            <StatusBadge
+              state={display.state}
+              working={working}
+              keptWork={keptWork}
+              vm={agent.vm}
+              className={cn(
+                SECOND_LINE_ITEM,
+                display.state === "error" && "text-danger dark:text-danger",
+                display.state === "over_budget" &&
+                  "text-warning-fg dark:text-warning-fg",
+              )}
+            />
+          </span>
+        </div>
         <AgentChannelChips agent={agent} className="mt-2" />
         {temporaryDraw && temporaryDraw.count > 0 && (
           <p className="mt-2 flex items-center gap-1.5 border-t border-border pt-2 text-xs text-muted-foreground">
@@ -173,22 +201,6 @@ export function AgentRow({
           onRetry={onRetryMigration}
         />
         {agent.hibernationTimeoutMin === 0 && <AlwaysOnTag />}
-        <span
-          title={agent.overBudgetMessage ?? undefined}
-          {...(agent.overBudgetMessage
-            ? {
-                tabIndex: 0,
-                role: "note",
-                "aria-label": agent.overBudgetMessage,
-              }
-            : {})}
-        >
-          <StatusBadge
-            state={display.state}
-            working={working}
-            keptWork={keptWork}
-          />
-        </span>
         {}
         <span onClick={(e) => e.stopPropagation()}>
           <RowActionsMenu label="Agent actions">

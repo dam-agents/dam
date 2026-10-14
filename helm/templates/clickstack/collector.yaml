@@ -93,6 +93,22 @@ data:
             from_context: "metadata.x-platform-invocation-id"
             action: upsert
       batch: {}
+      {{- if .Values.monitoring.enabled }}
+      # Only the VM pool series reach the Prometheus export: the controller's
+      # pool gauges and the runners' own. Neither names a user, and no
+      # resource attribute becomes a label, so nothing scraped here does.
+      # The name alone is not enough, since an agent may name a metric
+      # anything: anything an agent sent carries platform.agent.id (set above
+      # from the gateway's header, never from the agent), and only the
+      # runners' scrape job and the controller are let through.
+      filter/vm-pool:
+        error_mode: ignore
+        metrics:
+          metric:
+            - 'not IsMatch(name, "^platform[._]vm_")'
+            - 'resource.attributes["platform.agent.id"] != nil'
+            - 'resource.attributes["service.name"] != "vm-runner" and resource.attributes["service.name"] != "platform-controller"'
+      {{- end }}
     exporters:
       clickhouse:
         endpoint: ${env:CLICKHOUSE_ENDPOINT}
@@ -102,6 +118,12 @@ data:
         create_schema: true
         # Lands in the CREATE TABLE DDL only; existing tables keep their TTL.
         ttl: {{ .Values.clickstack.collector.ttl }}
+      {{- if .Values.monitoring.enabled }}
+      prometheus:
+        endpoint: 0.0.0.0:9464
+        resource_to_telemetry_conversion:
+          enabled: false
+      {{- end }}
     extensions:
       health_check:
         endpoint: 0.0.0.0:13133
@@ -120,6 +142,12 @@ data:
           receivers: [otlp{{ if .Values.virtualization.enabled }}, prometheus/vm-runners{{ end }}]
           processors: [memory_limiter, resource/agent-identity, batch]
           exporters: [clickhouse]
+        {{- if .Values.monitoring.enabled }}
+        metrics/vm-pool:
+          receivers: [otlp{{ if .Values.virtualization.enabled }}, prometheus/vm-runners{{ end }}]
+          processors: [memory_limiter, resource/agent-identity, filter/vm-pool, batch]
+          exporters: [prometheus]
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -141,6 +169,12 @@ spec:
       targetPort: otlp-http
       protocol: TCP
       name: otlp-http
+    {{- if .Values.monitoring.enabled }}
+    - port: 9464
+      targetPort: prometheus
+      protocol: TCP
+      name: prometheus
+    {{- end }}
   selector:
     app.kubernetes.io/component: clickstack-collector
     app.kubernetes.io/instance: {{ .Release.Name }}
@@ -208,6 +242,10 @@ spec:
               name: otlp-http
             - containerPort: 13133
               name: health
+            {{- if .Values.monitoring.enabled }}
+            - containerPort: 9464
+              name: prometheus
+            {{- end }}
           {{- if .Values.probes.enabled }}
           readinessProbe:
             httpGet:

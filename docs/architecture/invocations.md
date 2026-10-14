@@ -38,7 +38,7 @@ The spawn's prompt plays the role a kit's onboarding plays: it is the target's f
 A harness the install does not carry is refused, naming the ones it does; the image catalogue the Driver reads lists each with its effective Size.
 A spawn may bring its own image instead, the way a kit with its own image does: the target is then created from that image with the install's defaults, and the harness, when named, only says what runs inside it.
 Either way the harness catalog, or the custom Template, states the providers the harness can run on, which is what Provider Inheritance checks.
-The trigger that opens the target's first session names its harness, the inherited provider and the model, so that session opens on the [lease](agent-lifecycle.md#session-inside-the-pod) for them.
+The trigger that opens the target's first session names its harness, the inherited provider and the model, so that session opens on the [lease](sessions.md#session-inside-the-pod) for them.
 
 **A spawn may choose the model.** It can name the target's model, mode and harness settings — the choices the target's harness configuration offers — so one harness serves every model it runs, and a Driver can put one task to two models or a cheap model on a mechanical step.
 The choice is written into the target's own harness configuration in a delivery of its own, ahead of the task, so the one session already runs on it ([harness configuration](harness-config.md)).

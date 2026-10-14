@@ -920,7 +920,7 @@ export function createMcpSession(
 
   server.tool(
     "list_schedules",
-    'List all platform schedules registered for this agent. These are persistent schedules visible in the host UI (not in-session or in-process cron tools). A one-time schedule (`spec.type` "once") also carries its `state`: pending, delivering, completed, missed or failed.',
+    'List all platform schedules registered for this agent. These are persistent schedules visible in the host UI (not in-session or in-process cron tools). A one-time schedule (`spec.type` "once") also carries its `state`: pending, delivering, completed, missed or failed. Find the id of a schedule the user names here.',
     {},
     async () =>
       json(
@@ -1182,7 +1182,7 @@ export function createMcpSession(
 
   server.tool(
     "toggle_schedule",
-    "Enable or disable a platform schedule by id. Pass `enabled` to set the state, so a retried call cannot undo itself; without it the state flips. Only affects schedules belonging to this agent.",
+    "Enable or disable a platform schedule by id. Pass `enabled` to set the state, so a retried call cannot undo itself; without it the state flips. Only affects schedules belonging to this agent. When you tell the user about a schedule, call it by its name, which is what the host UI shows; to act on a schedule the user names, find its id with `list_schedules`.",
     { id: z.string().min(1), enabled: z.boolean().optional() },
     async ({ id, enabled }) => {
       const existing = await schedules.get(id);
@@ -1191,13 +1191,17 @@ export function createMcpSession(
       }
       const updated = await schedules.toggle(id, enabled);
       if (!updated) return errorResult(`schedule ${id} not found`);
-      return json({ id: updated.id, enabled: updated.spec.enabled });
+      return json({
+        id: updated.id,
+        name: updated.name,
+        enabled: updated.spec.enabled,
+      });
     },
   );
 
   server.tool(
     "delete_schedule",
-    "Delete a platform schedule by id. Only affects schedules belonging to this agent.",
+    "Delete a platform schedule by id. Only affects schedules belonging to this agent. When you tell the user about a schedule, call it by its name, which is what the host UI shows; to act on a schedule the user names, find its id with `list_schedules`.",
     { id: z.string().min(1) },
     async ({ id }) => {
       const existing = await schedules.get(id);
@@ -1205,7 +1209,7 @@ export function createMcpSession(
         return errorResult(`schedule ${id} not found on this agent`);
       }
       await schedules.delete(id);
-      return textResult(`deleted ${id}`);
+      return json({ id, name: existing.name, deleted: true });
     },
   );
 

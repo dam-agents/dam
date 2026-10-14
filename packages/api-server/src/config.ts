@@ -269,6 +269,9 @@ const validatedConfigSchema = configSchema
 export function agentsInstallSettings(config: Config) {
   return {
     virtualizationEnabled: config.virtualizationEnabled,
+    vmForced:
+      config.virtualizationEnabled &&
+      config.featureModes["vm-sandboxes"] === "on",
     defaultHarness: config.harnesses.default,
     telemetry: Object.values(config.harnesses.catalog).some(
       (h) => h.telemetryEnv.length > 0,

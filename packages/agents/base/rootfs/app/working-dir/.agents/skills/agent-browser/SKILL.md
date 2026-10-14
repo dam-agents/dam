@@ -1,7 +1,8 @@
 ---
 name: agent-browser
 description: >
-  Use for any browser task, and whenever you start or change a web app, dev server or page the user should see or try — a local server on a port, a nested platform, a page you built — or the user asks to see, open or check something in the browser. Covers `agent-browser`, which drives the one browser in this sandbox — the browser the user watches in the panel beside the chat — and the `platform://browser` button that opens the panel on a page.
+  Use for any browser task, and whenever you start or change a web app, dev server or page the user should see or try — a local server on a port, a nested platform, a page you built — or the user asks to see, open or check something in the browser.
+  Covers `agent-browser`, which drives the one browser in this sandbox — the browser the user watches in the panel beside the chat — and the `platform://browser` button that opens the panel on a page.
 ---
 
 The user's chat has a browser panel.

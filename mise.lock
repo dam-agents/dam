@@ -305,20 +305,28 @@ url = "https://github.com/Boshen/cargo-shear/releases/download/v1.14.0/cargo-she
 url_api = "https://api.github.com/repos/Boshen/cargo-shear/releases/assets/580851820"
 provenance = "github-attestations"
 
-[[tools."github:razziel89/mdslw"]]
-version = "0.18.0"
-backend = "github:razziel89/mdslw"
-specifiers = ["0.18.0"]
+[[tools."github:jolars/panache"]]
+version = "3.14.0"
+backend = "github:jolars/panache"
+specifiers = ["3.14.0"]
 
-[tools."github:razziel89/mdslw"."platforms.linux-x64"]
-checksum = "sha256:ecd2cbbb78264fc12cb843e304f07a700be1e35a12a2201130a3c1ef71b8290a"
-url = "https://github.com/razziel89/mdslw/releases/download/0.18.0/mdslw_x86_64-unknown-linux-musl"
-url_api = "https://api.github.com/repos/razziel89/mdslw/releases/assets/622530097"
+[tools."github:jolars/panache"."platforms.linux-arm64"]
+checksum = "sha256:f8d3147f5046b951cc588985335dd7ae8f937770e85e0515b2f9376e06cdc205"
+url = "https://github.com/jolars/panache/releases/download/v3.14.0/panache-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jolars/panache/releases/assets/605282829"
+provenance = "github-attestations"
 
-[tools."github:razziel89/mdslw"."platforms.macos-arm64"]
-checksum = "sha256:2a51c043c7b6fbbd5b1672a1d48eb1e272e33137e4987ac40a150d997829ea90"
-url = "https://github.com/razziel89/mdslw/releases/download/0.18.0/mdslw_aarch64-apple-darwin"
-url_api = "https://api.github.com/repos/razziel89/mdslw/releases/assets/622530100"
+[tools."github:jolars/panache"."platforms.linux-x64"]
+checksum = "sha256:c11d878a641bab85834fffdcfa04ba30066a302a3e29f1c980bb22608438567e"
+url = "https://github.com/jolars/panache/releases/download/v3.14.0/panache-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jolars/panache/releases/assets/605283683"
+provenance = "github-attestations"
+
+[tools."github:jolars/panache"."platforms.macos-arm64"]
+checksum = "sha256:e76d367532b76dc8755e2c3fdddd4fe97a3aa43a920ac6deb33d18f47b7c371b"
+url = "https://github.com/jolars/panache/releases/download/v3.14.0/panache-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/jolars/panache/releases/assets/605292078"
+provenance = "github-attestations"
 
 [[tools.go]]
 version = "1.27.2"

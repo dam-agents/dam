@@ -469,10 +469,12 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
 
   /** TEST_SCENARIO: A connection that never opened a session, such as one
    * that only makes control calls, keeps its connection when an env change
-   * restarts the default process. A request it had in flight is answered with
-   * the restart reason, so the caller does not wait forever. Its next request
-   * reaches a new process. */
+   * restarts the default process. The restart waits a bounded time for a
+   * request in flight; a request the harness never answers is then answered
+   * with the restart reason, so the caller does not wait forever. Its next
+   * request reaches a new process. */
   it("answers a sessionless request cut off by a restart, and serves the next one", () => {
+    vi.useFakeTimers();
     const world = createLeaseWorld({ providers: ["conn-a"] });
     const client = world.connect();
     client.send(frames.initialize(1));
@@ -486,6 +488,8 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
     client.send(control(2));
 
     world.router.refreshEnv({ force: false });
+    expect(client.reply(2)).toBeUndefined();
+    vi.advanceTimersByTime(10_000);
 
     expect(client.reply(2)).toMatchObject({
       error: { message: "agent recycled for env change" },

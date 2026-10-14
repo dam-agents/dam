@@ -64,7 +64,10 @@ export function buildCreateCommand(deps: {
       (val: string, prev: string[]) => [...prev, val],
       [] as string[],
     )
-    .option("--wait", "poll until state == `running` (or terminal error)")
+    .option(
+      "--wait",
+      "poll until state == `running`; stops early on error or a refused start (pool full)",
+    )
     .option(
       "--timeout <seconds>",
       `--wait timeout in seconds (default ${DEFAULT_TIMEOUT_SECONDS})`,

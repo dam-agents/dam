@@ -197,11 +197,11 @@ subjects:
     namespace: {{ .Release.Namespace }}
 {{- if and .Values.virtualization.enabled (not $clusterScoped) }}
 ---
-# A runner's claim is sized from its owner's demand only on a class that can
-# grow it later; elsewhere it is created at runner.storage. StorageClasses are
-# cluster-scoped, so a namespace-scoped install needs this read-only grant to
-# tell the two apart. Without it every runner claim is created at the ceiling.
-# A runtime migration clones a home volume only when a CSI driver serves it,
+# StorageClasses are cluster-scoped, so a namespace-scoped install needs this
+# read-only grant for the warm pool's and the storage migration's class
+# checks; a runner's claim is always created at its owner's storage pool and
+# reads no class. A runtime migration clones a home volume only when a CSI
+# driver serves it,
 # which only its cluster-scoped PersistentVolume says; without that grant the
 # copy reads the volume in place.
 apiVersion: rbac.authorization.k8s.io/v1
@@ -239,8 +239,11 @@ subjects:
 ---
 # Nodes are cluster-scoped, so the vm preflight needs a ClusterRole even under
 # otherwise namespace-scoped RBAC. Read-only, and only to check that some node
-# advertises the device resources a VM runner asks for; without it the
-# controller logs that it cannot tell, rather than refusing the install.
+# advertises the device resources a VM runner asks for, and to sum what those
+# nodes hold for the operators' pool metrics; without it the controller logs
+# that it cannot tell, rather than refusing the install. Storage capacities
+# live in the storage driver's namespace, so their list is cluster-wide too;
+# without it the pool metrics leave storage capacity out.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -251,6 +254,9 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["nodes"]
+    verbs: ["list"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["csistoragecapacities"]
     verbs: ["list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

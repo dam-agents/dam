@@ -5,9 +5,11 @@
 # also refuses inbound messages.
 export CLAUDE_CODE_HARBOR_KITE=0
 # The settings sync runs inside the adapter's node, before the adapter's code,
-# and the adapter starts from its entry rather than its bin shim: each node and
-# sh start costs about 100 ms on a machine. NODE_PATH is the one the shim sets.
+# and the adapter starts from the image's bundle of it rather than its bin shim:
+# each node and sh start costs about 100 ms on a machine. NODE_PATH is the one
+# the shim sets; the bundle finds the native CLI only where it is named.
 modules=$(dirname "$(dirname "$(command -v claude-agent-acp)")")
 export NODE_PATH="$modules:$modules/.mise/node_modules"
+export CLAUDE_CODE_EXECUTABLE="$modules/.bin/claude"
 exec node --import /usr/local/lib/sync-claude-settings.mjs \
-	"$modules/@agentclientprotocol/claude-agent-acp/dist/index.js" "$@"
+	/usr/local/lib/harness/claude-code/adapter/index.js "$@"

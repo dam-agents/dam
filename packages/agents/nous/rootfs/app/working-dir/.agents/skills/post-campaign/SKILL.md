@@ -15,6 +15,7 @@ Index a completed Nous campaign into the shared wiki and generate a visualizatio
    The left side is the campaign path (used for indexing steps 2-10).
    The right side is the style intent — it is ignored during indexing and only forwarded to `/visualize-campaign` in step 11.
    The campaign **name** (derived from the path's directory name) is what gets passed to `/visualize-campaign`, not the full path.
+
 2. **Read campaign artifacts**: Read `ledger.json`, `principles.json`, and `campaign.yaml` from the campaign directory.
    Extract:
    - Campaign name (directory name)
@@ -117,28 +118,28 @@ Index a completed Nous campaign into the shared wiki and generate a visualizatio
 7. **Write campaign summary**: Write `~/.nous/wiki/campaigns/<campaign-name>/summary.md` (create directory if needed).
    Skip if the file already exists.
 
-    Read the campaign's `report.md` if it exists for additional context.
-    Generate:
+   Read the campaign's `report.md` if it exists for additional context.
+   Generate:
 
-    ```
-    # <campaign-name>
+   ```
+   # <campaign-name>
 
-    **Date:** <date>
-    **Iterations:** <count of non-baseline iterations>
-    **Key question:** <from report.md opening or inferred from iteration families>
+   **Date:** <date>
+   **Iterations:** <count of non-baseline iterations>
+   **Key question:** <from report.md opening or inferred from iteration families>
 
-    ## Outcome
-    <2-3 sentence answer based on the pattern of confirmations/refutations>
+   ## Outcome
+   <2-3 sentence answer based on the pattern of confirmations/refutations>
 
-    ## Iteration arc
-    <Brief narrative: what families were explored, which confirmed/refuted, key pivots>
+   ## Iteration arc
+   <Brief narrative: what families were explored, which confirmed/refuted, key pivots>
 
-    ## Key principles
-    <Bulleted list of 5-10 most important high-confidence principles with IDs>
+   ## Key principles
+   <Bulleted list of 5-10 most important high-confidence principles with IDs>
 
-    ## Open questions
-    <Bulleted list of frontiers and untested territory>
-    ```
+   ## Open questions
+   <Bulleted list of frontiers and untested territory>
+   ```
 
 8. **Copy principles.json**: Copy the source campaign's `principles.json` to `~/.nous/wiki/campaigns/<campaign-name>/principles.json`.
 
@@ -174,7 +175,8 @@ Index a completed Nous campaign into the shared wiki and generate a visualizatio
     - **Entity**: A component that ALREADY EXISTED in the project's source code BEFORE this campaign ran.
       Entities are the pre-existing infrastructure that concepts operate ON — e.g., a scheduler, dispatcher, router, queue, or gateway that was already in the codebase.
       If the campaign INTRODUCED or CREATED a component (like a new detector, a new algorithm, a new module), that is a **Concept**, NOT an entity.
-      The test: "Did this exist in the codebase before the campaign started?" If yes → Entity.
+      The test: "Did this exist in the codebase before the campaign started?"
+      If yes → Entity.
       If no → Concept.
       NOT model profiles, workload configurations, benchmark inputs, hardware specs, or experiment design choices.
       Entities do NOT own parameters — only concepts do.
@@ -346,6 +348,7 @@ Index a completed Nous campaign into the shared wiki and generate a visualizatio
     - With style: invoke `/visualize-campaign <campaign-name> :: <style intent>`
 
     The visualization skill handles running the script, applying any style, and opening the browser.
+
 12. **Invoke /index-wiki**: After visualization is generated, invoke `/index-wiki <campaign-name>` to merge this campaign's data into the cross-campaign registry.
 
 13. **Report**: Print all output paths and confirm the visualization opened:

@@ -1,18 +1,8 @@
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Tooltip } from "@/components/ui/tooltip";
 
+import { badgeLabel } from "../modules/agents/lib/state-label.js";
 import type { AgentDisplayState } from "../modules/agents/utils/agent-resolver.js";
-
-const stateLabel: Record<AgentDisplayState, string> = {
-  running: "Running",
-  starting: "Starting",
-  preparing_workspace: "Preparing workspace",
-  hibernating: "Hibernating",
-  hibernated: "Hibernating",
-  error: "Error",
-  over_budget: "Over budget",
-  migrating: "Migrating",
-};
 
 const stateVariant: Record<
   AgentDisplayState,
@@ -43,25 +33,39 @@ export function StatusBadge({
   state,
   working,
   keptWork = 0,
+  vm,
+  className,
 }: {
   state: AgentDisplayState;
   working?: boolean;
+  vm: boolean;
   keptWork?: number;
+  className?: string;
 }) {
   const splitRunning = state === "running" && working !== undefined;
   if (splitRunning && !working && keptWork > 0) {
-    return <BackgroundWorkBadge count={keptWork} />;
+    return <BackgroundWorkBadge count={keptWork} className={className} />;
   }
   const label = splitRunning
     ? working
       ? "Working"
       : "Idle"
-    : stateLabel[state];
+    : badgeLabel(state, vm);
   const variant = splitRunning && !working ? "accent" : stateVariant[state];
-  return <Badge variant={variant}>{label}</Badge>;
+  return (
+    <Badge variant={variant} className={className}>
+      {label}
+    </Badge>
+  );
 }
 
-function BackgroundWorkBadge({ count }: { count: number }) {
+function BackgroundWorkBadge({
+  count,
+  className,
+}: {
+  count: number;
+  className?: string;
+}) {
   const hint =
     count === 1
       ? "1 background process keeps this agent awake."
@@ -69,7 +73,11 @@ function BackgroundWorkBadge({ count }: { count: number }) {
   return (
     <Tooltip side="top" content={hint}>
       <span className="inline-flex" tabIndex={0} aria-label={hint}>
-        <Badge variant="success" data-testid="background-work-badge">
+        <Badge
+          variant="success"
+          className={className}
+          data-testid="background-work-badge"
+        >
           Background work
         </Badge>
       </span>
@@ -81,7 +89,7 @@ export function AlwaysOnTag() {
   return (
     <Tooltip
       side="top"
-      content="This agent never hibernates on its own and keeps its compute reserved."
+      content="This agent never pauses on its own, so it keeps using its share of resources."
     >
       <span className="inline-flex" tabIndex={0}>
         <Badge variant="muted" data-testid="always-on-tag">

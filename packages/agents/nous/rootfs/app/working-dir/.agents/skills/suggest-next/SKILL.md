@@ -11,6 +11,7 @@ Given a user's research intent, retrieve prior knowledge from the cross-campaign
 `/suggest-next <repo_path_or_project_name> <intent>`
 
 Examples:
+
 - `/suggest-next /path/to/inference-sim "improve admission control fairness across priority bands"`
 - `/suggest-next inference-sim "reduce tail latency under burst workloads"`
 - `/suggest-next` (no arguments — list available projects and ask)
@@ -34,6 +35,7 @@ The LLM selects what to retrieve; the script does the mechanical graph traversal
 
 Read `~/.nous/wiki/registry.json`.
 Find the project entry matching the user's repo path or project name:
+
 - Try exact path match against `projects` keys
 - Try substring match (user might give just the repo name, match against the end of each key)
 - Try fuzzy match against project `name` fields
@@ -62,6 +64,7 @@ python scripts/retrieve_wiki_context.py \
 ```
 
 The script:
+
 1. Builds a knowledge graph from each campaign's `concepts.json` (nodes = entities/concepts/parameters, edges = shared principles)
 2. Extracts the subgraph reachable from the specified entities (1-hop via principle overlap)
 3. Loads principles from `principles.json` — only those referenced by the subgraph
@@ -241,6 +244,7 @@ Use AskUserQuestion to present choices:
 **Question:** "Which recommendations would you like to generate campaign.yaml files for?"
 
 **Options:**
+
 - "1" — Generate for recommendation 1 only
 - "2" — Generate for recommendation 2 only
 - "3" — Generate for recommendation 3 only
@@ -255,23 +259,24 @@ If the user selects "None", print `No campaigns generated.` and **STOP**.
 
 For each selected recommendation, produce a YAML document with these field mappings:
 
-| campaign.yaml field | Source |
-|---|---|
-| `research_question` | Recommendation's suggested research question (verbatim from the `> <question>` block) |
-| `run_id` | Slugified recommendation title (lowercase, hyphens, ≤50 chars) |
-| `max_iterations` | Upper bound from the "Iterations" row in the Predicted cost table (e.g., "6-8" → 8) |
-| `target_system.name` | From registry `projects[key].name` |
-| `target_system.description` | Synthesized from registry project description + recommendation context |
-| `target_system.repo_path` | The project key (path) from the registry |
+| campaign.yaml field                | Source                                                                                             |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `research_question`                | Recommendation's suggested research question (verbatim from the `> <question>` block)              |
+| `run_id`                           | Slugified recommendation title (lowercase, hyphens, ≤50 chars)                                     |
+| `max_iterations`                   | Upper bound from the "Iterations" row in the Predicted cost table (e.g., "6-8" → 8)                |
+| `target_system.name`               | From registry `projects[key].name`                                                                 |
+| `target_system.description`        | Synthesized from registry project description + recommendation context                             |
+| `target_system.repo_path`          | The project key (path) from the registry                                                           |
 | `target_system.observable_metrics` | Inferred from recommendation's Impact rationale (omit field entirely if not confidently inferable) |
-| `target_system.controllable_knobs` | Parameter names from "Builds on" section (omit field entirely if not confidently inferable) |
-| `prompts.methodology_layer` | `"prompts/methodology"` (standard default) |
-| `prompts.domain_adapter_layer` | `null` |
-| `models.design` | From recommendation's "Model configuration → Design phase" model name |
-| `models.execute_analyze` | From recommendation's "Model configuration → Execute phase" model name |
-| `metadata` | Traceability block (see E3) |
+| `target_system.controllable_knobs` | Parameter names from "Builds on" section (omit field entirely if not confidently inferable)        |
+| `prompts.methodology_layer`        | `"prompts/methodology"` (standard default)                                                         |
+| `prompts.domain_adapter_layer`     | `null`                                                                                             |
+| `models.design`                    | From recommendation's "Model configuration → Design phase" model name                              |
+| `models.execute_analyze`           | From recommendation's "Model configuration → Execute phase" model name                             |
+| `metadata`                         | Traceability block (see E3)                                                                        |
 
 **Schema compliance rules:**
+
 - Do NOT include any fields not in `orchestrator/schemas/campaign.schema.yaml`
 - Root object: only `research_question`, `run_id`, `max_iterations`, `target_system`, `prompts`, `models`, `metadata`
 - `target_system`: only `name`, `description`, `repo_path`, `observable_metrics`, `controllable_knobs`, `live_target`
@@ -327,6 +332,7 @@ Generated campaign files:
 ```
 
 Example:
+
 ```
 Generated campaign files:
   1. ~/.nous/wiki/suggestions/campaigns/2026-06-03-improve-fairness-1.yaml
@@ -349,6 +355,7 @@ When suggesting models for a recommendation, use the **Cost Context** section fr
   Historical cost: ~$10-11/iter estimate.
 
 Iteration count heuristics:
+
 - **Refinement** (builds on 3+ confirmed principles, narrow scope): 4-6 iterations
 - **Exploratory** (new territory, tests interactions, <2 confirmed principles to build on): 8-12 iterations
 - **Standard** (mix of known and new): 6-8 iterations

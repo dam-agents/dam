@@ -20,8 +20,9 @@ export function ConnectionAddressingSetupSection({
           </span>
           <span className="mt-0.5 block text-sm text-muted-foreground">
             Credentials go only into requests that name a connection; others are
-            sent as-is. For agents whose tools (Docker containers, nested
-            agents) call the same services with their own credentials or none.
+            sent as-is. The browser panel needs it. Turn it off for an agent
+            whose tools need credentials added to requests that name no
+            connection.
           </span>
         </span>
         <Switch

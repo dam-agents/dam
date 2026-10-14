@@ -1,6 +1,6 @@
 # VM image cache
 
-Last verified: 2026-09-27
+Last verified: 2026-10-13
 
 A machine may reach only its gateway, so its image is fetched for it and unpacked into a tree every machine of that image mounts read-only.
 Where that tree lives is the one part of the runner's storage an install may move off its claim.
@@ -9,6 +9,7 @@ By default each owner's runner caches on its own volume, so the same few harness
 An install that would rather pay once per node points `imageCache.hostPath` at a host directory every runner scheduled there shares — not a `ReadWriteMany` claim, the costliest class, which buys only cross-node dedup.
 On OpenShift the runners then need an SCC that admits a host directory, which the chart's own does not — and one that leaves the SELinux type to the pod: SELinux confines every container to a type that may neither write nor read a directory the kubelet creates on the host, so the image cache service runs there as the unconfined container type at the plain level and labels the directory for containers as it opens the cache.
 Every tree it unpacks inherits that label, which is what lets the runners, still confined, boot from it; the label is set from the chart's OpenShift signal, and a service that cannot set it says so and exits rather than serve trees no runner could read.
+The node configuration in [`etc/openshift-node-config/`](../../etc/openshift-node-config/) has the nodes create and label the directory themselves.
 
 **Every cache has exactly one writer.** On a runner's own volume that is the runner.
 On a node directory it is a per-node **image cache service**: runners mount the directory read-only and ask the service, over a socket inside it, for each image a machine boots.
@@ -27,12 +28,14 @@ A writer that dies mid-fetch or mid-eviction leaves only a scratch tree, which t
 A fetch that finds an incomplete tree, or another platform's, under its name moves it aside and puts its own in place.
 A resolve has one deadline for everything it does, fetch included, and a runner waits a little past it, so a service that is slow is told apart from one that is gone — only one that is gone lets a runner boot a tree it already holds.
 A fetch that fails for its image — a registry refusing the export, a stream tar cannot unpack — is reported as an unavailable image, and a disk that fills, or has less room than the image's manifest names before the download starts, as a lack of capacity, never as a boot to retry at once into the same state.
+On a runner's own volume that disk is the owner's claim, so there it is reported as the owner's storage being full ([persistence](persistence.md#per-agent-pvcs)).
 
 **Eviction never frees a tree a machine is running from.** It takes the oldest write first, down to a byte count the install states, sparing what is held.
 A runner holds the digests its machines boot by naming them again every minute, and a hold lapses only once nobody names it — a runner that stopped has no machines left.
 A hold only extends, so no runner can release what another holds, and only a tree on disk is held, so a resolve that fails holds nothing; past half again its budget, the service fetches nothing.
 Each fetch under way counts toward that ceiling at the compressed size its manifest names, so fetches that start together cannot each find the cache under it.
 A service that restarts has forgotten every hold, so it evicts nothing until the runners have had time to name theirs again.
+A runner whose own claim runs short sheds every tree no machine holds, however far inside its budget the cache is, because a tree can be fetched again and a machine disk on the same claim cannot.
 
 **Nothing could fill that cache before an agent needed it.** A runner exists only once its owner's agents need one, so the first machine on an image, on every node after every deploy, would wait out the fetch with a user watching.
 The service therefore preloads the harness images the install ships, resolving their tags on every pass, and pins them against eviction.

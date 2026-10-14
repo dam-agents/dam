@@ -33,6 +33,8 @@ interface BaseProps {
   userLabel?: string;
   readOnly?: boolean;
   showModel?: boolean;
+  continued?: boolean;
+  arriving?: boolean;
   isLast: boolean;
   hasPendingPermission: boolean;
   pendingNotice?: ReactNode;
@@ -100,6 +102,8 @@ export const ChatMessage = memo(function ChatMessage({
   userLabel = "You",
   readOnly = false,
   showModel = false,
+  continued = false,
+  arriving = false,
   isLast,
   timeLabel,
   timeTitle,
@@ -131,6 +135,8 @@ export const ChatMessage = memo(function ChatMessage({
   const { role, parts, streaming, queued, error, stopped } = message;
   const isAssistant = role === "assistant";
   const undelivered = !isAssistant && error !== undefined;
+  if (isAssistant && streaming && queued && parts.length === 0) return null;
+  const working = isAssistant && streaming && !queued && !hasPendingPermission;
 
   return (
     <div
@@ -138,7 +144,7 @@ export const ChatMessage = memo(function ChatMessage({
       data-role={role}
       className={cn(
         "flex flex-col gap-1",
-        isLast && streaming && "anim-in",
+        ((isLast && streaming) || arriving) && "anim-in",
         isAssistant ? "items-start" : "items-end",
       )}
     >
@@ -146,6 +152,7 @@ export const ChatMessage = memo(function ChatMessage({
         className={cn(
           "flex gap-1.5 mb-0.5",
           avatarAgent === undefined ? "items-baseline" : "items-center",
+          continued && "hidden",
         )}
       >
         {isAssistant && avatarAgent !== undefined && (
@@ -185,19 +192,18 @@ export const ChatMessage = memo(function ChatMessage({
               onFileClick={readOnly ? undefined : onFileClick}
             />
           ))}
-          {streaming && queued && parts.length === 0 && (
-            <span
-              data-testid="prompt-queued-indicator"
-              className="text-xs text-muted-foreground italic"
-            >
-              Waiting for previous prompt…
-            </span>
-          )}
           {isAssistant && isLast && !readOnly && <PermissionStatusLine />}
-          {isAssistant && streaming && !queued && !hasPendingPermission && (
-            <span role="status" className="inline-flex items-center py-1">
+          {isAssistant && (streaming || isLast) && (
+            <span
+              role={working ? "status" : undefined}
+              aria-hidden={!working}
+              className={cn(
+                "inline-flex items-center py-1",
+                !working && "invisible",
+              )}
+            >
               <WorkingDots size="md" className="text-accent" />
-              <span className="sr-only">Working</span>
+              {working && <span className="sr-only">Working</span>}
             </span>
           )}
           {isAssistant && streaming && parts.length === 0 && pendingNotice}

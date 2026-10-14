@@ -1,12 +1,12 @@
 # Technology Stack
 
-| Layer | Technology |
-|-------|-----------|
-| API | [tRPC](https://trpc.io/) |
-| Validation | [Zod](https://zod.dev/) |
-| Language | TypeScript (strict) |
-| Packages | pnpm (default) |
-| Events | [RxJS](https://rxjs.dev/) (recommended) |
+| Layer      | Technology                              |
+| ---------- | --------------------------------------- |
+| API        | [tRPC](https://trpc.io/)                |
+| Validation | [Zod](https://zod.dev/)                 |
+| Language   | TypeScript (strict)                     |
+| Packages   | pnpm (default)                          |
+| Events     | [RxJS](https://rxjs.dev/) (recommended) |
 
 ## Why
 
@@ -20,10 +20,10 @@
 Pluggable; the router mounts at `/trpc` by default.
 Another mount path or several root routers are fine as long as the modularization below holds.
 
-| Runtime | Adapter | Default |
-|---------|---------|---------|
-| [Hono](https://hono.dev/) | `@hono/trpc-server` | Yes |
-| [Express](https://expressjs.com/) | `@trpc/server/adapters/express` | No |
+| Runtime                           | Adapter                         | Default |
+| --------------------------------- | ------------------------------- | ------- |
+| [Hono](https://hono.dev/)         | `@hono/trpc-server`             | Yes     |
+| [Express](https://expressjs.com/) | `@trpc/server/adapters/express` | No      |
 
 ```ts
 import { Hono } from "hono";

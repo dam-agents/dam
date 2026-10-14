@@ -37,6 +37,7 @@ function fakeSlackWorker(): SlackWorker {
       size: 1,
       conversationId: "C1",
     })),
+    notifyPerson: vi.fn(async () => ({ sent: 1 })),
   };
 }
 

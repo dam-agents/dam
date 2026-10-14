@@ -5,6 +5,7 @@ status: proposed
 subsystem: persistence
 summary: Give each cron schedule its own persistent ACP session resumed on every fire, tracked by scheduleId in the DB sessions table.
 ---
+
 # ADR-DRAFT: Scheduled session identity and lifecycle
 
 **Date:** 2026-04-14 **Status:** Proposed **Owner:** @janjeliga **Amends:** ADR-008 **Builds on:** ADR-017

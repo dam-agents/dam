@@ -277,6 +277,46 @@ fn same_release(a: &Path, b: &Path) -> bool {
         })
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: sets the SELinux context of one file, or of a link itself rather than what it points at, as `chcon -h` would. Only Linux has one, and the binaries that call it run only from the runner image.
+pub fn relabel(path: &Path, context: &str) -> std::io::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let path = std::ffi::CString::new(path.as_os_str().as_bytes())?;
+        // SAFETY: both names are NUL-terminated and live for the call, and the value pointer and length describe one live byte slice.
+        let rc = unsafe {
+            libc::lsetxattr(
+                path.as_ptr(),
+                c"security.selinux".as_ptr(),
+                context.as_ptr().cast(),
+                context.len(),
+                0,
+            )
+        };
+        if rc == 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error())
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (path, context);
+        Err(std::io::ErrorKind::Unsupported.into())
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: sets the SELinux context of `dir` and of everything below it, as `chcon -hR` would. A file the stager creates inherits the label of the directory it is created in, but `cp -a` keeps the label a runtime's files had in the stager's own image, which a runner confined to its own categories may not read.
+pub fn relabel_tree(dir: &Path, context: &str) -> anyhow::Result<()> {
+    relabel(dir, context).with_context(|| format!("labelling {} {context}", dir.display()))?;
+    if std::fs::symlink_metadata(dir)?.is_dir() {
+        for entry in std::fs::read_dir(dir)? {
+            relabel_tree(&entry?.path(), context)?;
+        }
+    }
+    Ok(())
+}
+
 fn remove_if_present(dir: &Path) -> anyhow::Result<()> {
     match std::fs::remove_dir_all(dir) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => {

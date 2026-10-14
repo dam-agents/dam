@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -117,7 +117,7 @@ Postgres carries application state the api-server owns end-to-end — anything t
   Owned by [starter-kits](starter-kits.md).
 - **public agent profiles** — a projection of each channel-bound Agent's name and owner (`agent_public_profiles`), serving the one unauthenticated read surface.
   It satisfies the rule above on every count: the controller does not reconcile it, only the api-server reads and writes it, and it must answer with no agent pod running.
-  What is unusual is _why_ it duplicates state the Agent custom resource already holds — that copy is authoritative but unreachable here, because serving an anonymous request from the K8s API would let unauthenticated traffic drive control-plane reads.
+  What is unusual is *why* it duplicates state the Agent custom resource already holds — that copy is authoritative but unreachable here, because serving an anonymous request from the K8s API would let unauthenticated traffic drive control-plane reads.
   Owned by [public-agent-page](public-agent-page.md).
 - **attention record** — the per-owner account of which sessions have asked for a user's attention, plus that user's own dismissal watermarks.
   A snapshot of agent-owned state, written by a lease-elected watcher so Home, and a sleeping Agent's session list, can answer for it; it never decides which sessions exist, and unlike the session directory it may be discarded — a fresh capture refills it.
@@ -153,9 +153,9 @@ An install with no object store fails closed: bulk-blob features are unavailable
 
 Resources the controller reconciles are Kubernetes CRDs under the `agent-platform.ai/v1` API group, each with a status subresource:
 
-| Kind | What it declares | `spec` writer | `status` writer |
-|---|---|---|---|
-| `Agent` | Agent definition and runtime state: image, mount declarations, env, secret refs, image-pull secret ref, granted secret and connection IDs. The sole resource per Agent — the former template/instance pair was collapsed into it | api-server | controller |
+| Kind    | What it declares                                                                                                                                                                                                                 | `spec` writer | `status` writer |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | --------------- |
+| `Agent` | Agent definition and runtime state: image, mount declarations, env, secret refs, image-pull secret ref, granted secret and connection IDs. The sole resource per Agent — the former template/instance pair was collapsed into it | api-server    | controller      |
 
 Each CR carries strict single-writer ownership, made structural by the status subresource rather than held by convention:
 
@@ -184,7 +184,8 @@ A mount marked `persist: true` becomes a PVC; a non-persisted mount becomes an `
 PVCs are `ReadWriteOnce` on ordinary single-writer storage, which no install needs a shared filesystem class for.
 `ReadWriteOnce` binds a volume to one *node*, not one pod — any number of pods on that node could mount it — so what keeps a workspace single-writer is that the platform runs exactly one writer for it, not the access mode.
 A second writer on another node would not be refused at admission; its pod would schedule and then hang on attach.
-(Workspaces created before the RWO cutover sit on `ReadWriteMany` volumes until the storage migration below drains them.) An Agent may **pin its storage class** in its spec: a pinned Agent's workspace volumes provision on that class, while unpinned Agents use the install-wide class.
+(Workspaces created before the RWO cutover sit on `ReadWriteMany` volumes until the storage migration below drains them.)
+An Agent may **pin its storage class** in its spec: a pinned Agent's workspace volumes provision on that class, while unpinned Agents use the install-wide class.
 The pin is also honored by the warm pool and the storage migration below.
 
 A home volume mounts empty and shadows whatever the image bakes at that path, so the image's boot seeds it on the volume's first boot from the staged workspace: a no-clobber copy behind a sentinel file, run once per volume, so image content lands exactly once and files the user later edits are never overwritten by a restarted or upgraded image.
@@ -196,7 +197,7 @@ Together these hold:
 
 - the **workspace** itself — git checkouts, tool caches (`node_modules`, `.venv`, mise), and any artifacts the agent has produced.
 - **`$HOME`** — agent memory, skills, MCP server caches, and the harness's on-disk session store.
-  The session store is what a cold re-attach reads after a pod restart, whichever verb the harness advertises for it ([agent-lifecycle](agent-lifecycle.md#session-inside-the-pod)).
+  The session store is what a cold re-attach reads after a pod restart, whichever verb the harness advertises for it ([sessions](sessions.md#session-inside-the-pod)).
   The agent-runtime's `.platform/` directory lives here too, holding the **session-metadata state file** — the platform's source of truth for per-session mode, type, `scheduleId`, `threadTs`, a title the platform set, the session's own reference and the session a one-time run reports to, `createdAt`, the time of the session's last genuine message, and run accounting for scheduled fires (how many the session has served, their summed duration — timed only for machine-driven turns so a human reply never counts — and the start time of each fire, kept as a bounded newest-wins list so a reader can see where each run in view began), surfaced over ACP `_meta.platform` and (for mode and type alone) mirrored into the session directory above — those stamps and the totals are durable, but the marker for the fire currently in flight is not: it cannot outlive the process that set it, so the totals under-count a fire the pod restart interrupted — alongside the trigger-binding, runtime-channel and [processes](agent-processes.md) state files.
   The same directory holds the **undelivered-prompts document**: the whole content of user prompts that never reached the harness (inline images capped, file attachments by name), written only when a prompt is recorded, sent again, or deleted — never on a routine turn — and deliberately separate from session metadata so a corrupt metadata write cannot take user text with it.
   A record outlives session teardown and pod restarts; it goes when the user resends or deletes it, with its Session, or — the document is byte-capped — when another session's write needs the room, evicting whole sessions oldest-first ([agent-lifecycle](agent-lifecycle.md) owns the delivery contract).
@@ -220,9 +221,11 @@ The entrypoint discards at boot the caches no shipped tool reads — Go's module
 Toolchains the agent installed for itself are never touched; on the vm Backend only the discards apply.
 
 **The `vm` Backend has no PVCs, and one disk.** A pod attaches a volume per path, so a mount there is a size and a placement at once.
-A machine has a single disk, so its size is the Agent's own `storageSize`, stated once and rounded once, and the path it holds apart from the root is `HOME`.
+A machine has a single disk, and it has no size of its own: it is sparse and may grow to the owner's whole storage pool — their [UserBudget](budgets.md#the-ceiling)'s `storage`, else the install's value — so what the owner's disks take is what they write, and an Agent's `storageSize`, a mount's size and a starter kit's storage size only containers.
+Only a runner that has reported the machine's disk is sent the pool, since an older runner would restart a running machine to grow it; until then the machine keeps the size the Agent's spec gives, and a new machine boots once at that size.
+The path the disk holds apart from the root is `HOME`.
 That is not a field an Agent sets: `HOME` is fixed on both backends, and it is already the only path every template and starter kit in the chart persists.
-The disk sits on the owner's [VM runner](vm-runner.md) volume, grows with its size and never shrinks, survives hibernation, restarts and a new image, and goes with the Agent on delete.
+The disk sits on the owner's [VM runner](vm-runner.md) volume, grows with its size at the machine's next start and never shrinks, survives hibernation, restarts and a new image, and goes with the Agent on delete.
 It is per owner rather than per Agent, so the storage-class pin and the warm pool do not apply and the storage migration never sees it.
 An Agent whose mounts ask to persist a path outside `HOME` is refused rather than reconciled, because a machine cannot keep it and silently dropping it is how an agent comes to look healthy while discarding its work.
 
@@ -230,7 +233,8 @@ An Agent whose mounts ask to persist a path outside `HOME` is refused rather tha
 The runner names it in the share at every start, and a new generation, or none named, boots onto an empty upper: what must outlast that belongs under `HOME`.
 smolvm keeps a root of its own and binds the whole disk into it; platform-init leaves both behind, and fails the boot rather than run on them.
 Temporary folders are kept off that root instead: `/tmp`, `/var/tmp` and `/var/cache` are directories of the disk bound in place, empty on every boot, and `HOME`'s `.cache` and `.npm` are ordinary directories of the home.
-They share the disk with the agent's work, so when it runs short platform-init deletes their least recently used files — never one in use, never anything outside them — and smolvm's trim returns the freed space to the runner's volume.
+They share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their least recently used files — never one in use, never anything outside them.
+Every minute platform-init trims the disk, so whatever the agent frees, by deleting or by rewriting a file in place, goes back to the runner's volume and stops counting against the owner's storage.
 Once the image runs, the disk is reachable only through what platform-init mounted from it.
 
 Mounting the disk is the platform's job rather than the image's.
@@ -246,15 +250,24 @@ So the runner records in the machine's share, the first time its guest answers �
 A boot that finds the record but no home stops, with the reason on the machine's console, rather than seeding a fresh home that would look healthy.
 A migrated machine is held to its copy the same way: while a seed is expected, its home comes from exactly that seed or the boot fails, never from the image, and the record names the seed ([vm-runtime-migration](vm-runtime-migration.md)).
 The record is learned from the answer rather than read off the disk, because the host does not parse a filesystem a guest has had root on.
-The storage template every new disk is copied from carries a journal; a disk smolvm formats itself has none, so an unclean stop — a killed runner — is what brings that repair on there.
+The runner formats every new disk itself, with a journal and at its full size, before any guest has touched it.
+A runner without `mkfs.ext4`, or whose format fails, leaves that format to smolvm, which can write no journal, and so did every disk made before the runner formatted its own; on those an unclean stop — a killed runner — is what brings that repair on.
 The loss is refused, not prevented.
 
-
-**The claim those disks sit on is sized from demand.** One claim per owner holds every machine disk they have, so it is sized from those disks, some headroom beside each, the image cache budget when the cache lives there, and, while a [runtime migration](vm-runtime-migration.md) is in flight, the capacity of the home volume its seed was copied from, since the seed waits there beside the disk it is restored into; the install's value is the ceiling, not the size.
+**The claim those disks sit on is the owner's pool.** One claim per owner holds every machine disk they have, their bookkeeping, a [runtime migration](vm-runtime-migration.md)'s seed while it waits, and the image cache when the cache lives there, and every disk may grow to the pool, so the claim is created at the pool; the controller refuses an install whose image cache budget would take the whole of it.
 The runtime's disk templates live there too, sparse enough to need no share of it.
-It grows in place as agents are added, up to that ceiling, and is never shrunk.
-On a storage class that cannot expand, or one the controller cannot read, it is created at the ceiling, since it could not grow later.
+It grows in place when the pool rises and is never shrunk, so a lowered pool only stops its growth.
 A refused growth is reported and reconciliation continues: the runner still serves every agent at the size it has.
+
+**The runner guards the claim by its use.** The disks are sparse, so they can add up to more than the claim holds, and a guest sees its own disk as free while the claim under it fills; once the claim has no block left, a guest's write into its disk fails and its filesystem reports the loss.
+So the runner measures the claim itself: past 75% used it sheds what it can fetch again — every image tree no machine holds, when the cache is on the claim — and marks every machine's share, so each guest gives back its scratch, until use is back under 70%.
+Past 90% it creates no machine, fetches no image onto the claim and takes no seed, and a machine it starts boots at the disk size it has; past 97% it starts and restarts no machine either, so between the two an owner whose agents are all asleep can still get into one to clean it up.
+It reports each refusal as `MachineStorageFull` with how full the storage is and how to free it, and never stops a running machine, which would free nothing and lose what the guest holds in memory.
+An out-of-space error the runner meets anywhere on the claim is reported the same way, and so is a boot that fails while the claim is that full, since a guest whose writes fail fails its boot with nothing typed in the error.
+A storage refusal does not park the Agent the way a memory refusal does: parking would halt a machine, and nothing an idle agent holds in memory frees disk.
+The api-server says the same before an Agent is written: it reads the owner's runner through its read-only usage capability, and refuses a new vm agent — a create, a kit applied, a spawn, a move onto the vm backend — once the claim is 90% used, with the figures and the same three ways out.
+Usage it cannot read refuses nothing, since the runner refuses the machine anyway.
+Past 90%, and again past 98% when writes start failing, the owner also gets a Slack direct message with the same figures and ways out ([resource alerts](budgets.md#resource-alerts)).
 
 ### The machine image cache
 
@@ -286,16 +299,16 @@ Operators keep the old shared filesystem available until the last RWX volume dra
 
 ## Lifetime
 
-| Event | Postgres | Object store | Agent CR (spec/status) | PVC |
-|---|---|---|---|---|
-| Pod restart | survives | survives | survives | survives |
-| Hibernate (replicas → 0) | survives | survives | survives | survives |
-| Wake (replicas → 1) | survives | survives | survives | survives |
-| api-server restart | survives | survives | survives | survives |
-| Controller restart | survives | survives | survives | survives |
-| Agent delete | Agent-scoped rows removed or closed out (below) | artifacts survive (owned by the library, not the Agent); the Agent's knowledge-base share snapshots are purged | CR removed | PVCs removed by controller |
-| Schedule delete | schedule row removed | n/a | n/a | n/a |
-| Satellite delete | satellite row, grants and jobs removed | n/a | n/a | n/a |
+| Event                    | Postgres                                        | Object store                                                                                                   | Agent CR (spec/status) | PVC                        |
+| ------------------------ | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------- | -------------------------- |
+| Pod restart              | survives                                        | survives                                                                                                       | survives               | survives                   |
+| Hibernate (replicas → 0) | survives                                        | survives                                                                                                       | survives               | survives                   |
+| Wake (replicas → 1)      | survives                                        | survives                                                                                                       | survives               | survives                   |
+| api-server restart       | survives                                        | survives                                                                                                       | survives               | survives                   |
+| Controller restart       | survives                                        | survives                                                                                                       | survives               | survives                   |
+| Agent delete             | Agent-scoped rows removed or closed out (below) | artifacts survive (owned by the library, not the Agent); the Agent's knowledge-base share snapshots are purged | CR removed             | PVCs removed by controller |
+| Schedule delete          | schedule row removed                            | n/a                                                                                                            | n/a                    | n/a                        |
+| Satellite delete         | satellite row, grants and jobs removed          | n/a                                                                                                            | n/a                    | n/a                        |
 
 **Agent-scoped rows follow the Agent.** No Postgres table references an Agent by foreign key — the custom resource is the authoritative record, so the database cannot cascade on its own and the api-server owns the cleanup.
 An API delete runs one cleanup per record kind from a single declared list: schedules (their queued fires cancelled), runtime-delivery outbox and events, egress rules, pending approvals, connection grants, environment variables, API-key scopes, satellite grants and jobs, the image-pull Secret, channel bindings, skills, knowledge-base shares (revoked, snapshots purged), the attention record, the usage mirror (marked deleted) and the public profile (retired); running Invocations the Agent drove are failed and its delegation records deleted.

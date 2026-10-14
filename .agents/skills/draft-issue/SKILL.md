@@ -1,7 +1,9 @@
 ---
 name: draft-issue
 description: >
-  Template and writing guidelines for a GitHub issue. Every issue is one of epic, feature, task, bug, or research task — the user decides the type, and each type has its own template. Non-epic types can suggest a parent epic from the project board.
+  Template and writing guidelines for a GitHub issue.
+  Every issue is one of epic, feature, task, bug, or research task — the user decides the type, and each type has its own template.
+  Non-epic types can suggest a parent epic from the project board.
 ---
 
 # Draft an Issue

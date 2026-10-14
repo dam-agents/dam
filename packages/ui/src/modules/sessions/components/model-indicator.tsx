@@ -18,7 +18,9 @@ import {
   useProviderModels,
   useRememberedPair,
 } from "../api/session-pair.js";
+import { harnessDisplayName } from "../lib/session-pair-options.js";
 import { SetAsDefault } from "./session-pair-picker.js";
+import { SessionPairTrigger } from "./session-pair-trigger.js";
 import {
   SessionSettingsControls,
   settingDefaults,
@@ -63,8 +65,7 @@ export function ModelIndicator({
     harness,
     provider,
   );
-  const harnessName =
-    catalog?.harnesses.find((h) => h.name === harness)?.displayName ?? harness;
+  const harnessName = harnessDisplayName(harness, catalog?.harnesses);
   const models = removed
     ? []
     : data?.availableModels === null
@@ -74,24 +75,29 @@ export function ModelIndicator({
           ?.choices ?? [])
       : (data?.availableModels ?? []);
   const modelName = models.find((m) => m.value === model)?.name ?? model;
+  const unlisted =
+    model !== null &&
+    !!data?.availableModels?.length &&
+    !data.availableModels.some((m) => m.value === model);
 
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button
-          type="button"
-          data-testid="session-model-picker"
-          className="flex items-center gap-1 pl-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          {[
-            modelName,
-            harnessName,
-            activeProvider?.name,
-            removed ? "Provider removed" : null,
-          ]
-            .filter(Boolean)
-            .join(" · ")}
-        </button>
+        <SessionPairTrigger
+          testId="session-model-picker"
+          label={
+            harnessName &&
+            [
+              modelName,
+              harnessName,
+              activeProvider?.name,
+              removed ? "Provider removed" : null,
+              unlisted ? "Model not offered" : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")
+          }
+        />
       </PopoverTrigger>
       <PopoverContent
         side="top"
@@ -106,7 +112,7 @@ export function ModelIndicator({
               <span className="text-muted-foreground">
                 <HarnessIcons harnesses={[harness]} size="xs" />
               </span>
-              <span className="truncate">{harnessName}</span>
+              <span className="truncate">{harnessName ?? harness}</span>
             </div>
             {activeProvider && (
               <h3 className={labelVariants()}>{activeProvider.name}</h3>

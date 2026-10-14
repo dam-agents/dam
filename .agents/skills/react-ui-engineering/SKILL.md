@@ -26,12 +26,12 @@ Review in that order.
 
 Classify first, then pick the home.
 
-| Lineage | Examples | Home |
-|---|---|---|
-| **Server owns it** (fetched or persisted there) | agents, secrets, sessions, user profile, connector config | **TanStack Query** cache (via `@trpc/tanstack-react-query` for tRPC, typed fetchers otherwise) |
-| **UI, shared** (app-wide, not yet persisted) | theme, open dialog, selected agent id, toast queue, nav collapsed | **Zustand** or **React Context** |
-| **UI, local** (ephemeral) | focus, hover, accordion expanded, unsubmitted field value | `useState` / `useRef` |
-| **URL** (bookmarkable, back button restores) | route, filters, selected tab, pagination, search query | URL params / path |
+| Lineage                                         | Examples                                                          | Home                                                                                           |
+| ----------------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| **Server owns it** (fetched or persisted there) | agents, secrets, sessions, user profile, connector config         | **TanStack Query** cache (via `@trpc/tanstack-react-query` for tRPC, typed fetchers otherwise) |
+| **UI, shared** (app-wide, not yet persisted)    | theme, open dialog, selected agent id, toast queue, nav collapsed | **Zustand** or **React Context**                                                               |
+| **UI, local** (ephemeral)                       | focus, hover, accordion expanded, unsubmitted field value         | `useState` / `useRef`                                                                          |
+| **URL** (bookmarkable, back button restores)    | route, filters, selected tab, pagination, search query            | URL params / path                                                                              |
 
 **Never duplicate across lineages**: a server-owned list isn't also in Zustand; a URL-owned selection isn't also in `useState`.
 Duplication is the root of stale-state bugs.
@@ -40,17 +40,17 @@ Duplication is the root of stale-state bugs.
 
 Read only what the task needs.
 
-| Situation | Read |
-|---|---|
-| Where a new file goes | `references/project-structure.md` |
-| Writing or editing a large component | `references/components.md` |
-| Extracting a hook, or a hook feels bloated | `references/hooks.md` |
-| Where a piece of state lives | `references/state-management.md` |
-| Anything talking to the server | `references/async-data.md` |
-| Building a form | `references/forms.md` |
-| Styling, inline styles, class composition, reusing a component | `references/styling.md` |
-| API / fetch / tRPC setup and error handling | `references/api-layer.md` |
-| Typing props, responses, errors; constants and union literals | `references/types.md` |
+| Situation                                                      | Read                              |
+| -------------------------------------------------------------- | --------------------------------- |
+| Where a new file goes                                          | `references/project-structure.md` |
+| Writing or editing a large component                           | `references/components.md`        |
+| Extracting a hook, or a hook feels bloated                     | `references/hooks.md`             |
+| Where a piece of state lives                                   | `references/state-management.md`  |
+| Anything talking to the server                                 | `references/async-data.md`        |
+| Building a form                                                | `references/forms.md`             |
+| Styling, inline styles, class composition, reusing a component | `references/styling.md`           |
+| API / fetch / tRPC setup and error handling                    | `references/api-layer.md`         |
+| Typing props, responses, errors; constants and union literals  | `references/types.md`             |
 
 ## Legacy code
 

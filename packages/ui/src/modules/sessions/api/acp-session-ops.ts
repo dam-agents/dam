@@ -7,6 +7,7 @@ import {
 } from "agent-runtime-api";
 import {
   type PlatformUndeliveredPrompt,
+  type PromptBlock,
   SessionMode,
   SessionType,
   type SessionView,
@@ -205,6 +206,41 @@ export async function deleteAgentSession(
 ): Promise<void> {
   await withConnection(agentId, (conn) =>
     conn.agent.request("platform/deleteSession", { sessionId }),
+  );
+}
+
+export async function updateQueuedPrompt(
+  agentId: string,
+  sessionId: string,
+  promptId: string,
+  prompt: PromptBlock[],
+): Promise<void> {
+  await withConnection(agentId, (conn) =>
+    conn.agent.request("platform/updateQueued", {
+      sessionId,
+      promptId,
+      prompt,
+    }),
+  );
+}
+
+export async function steerQueuedPrompt(
+  agentId: string,
+  sessionId: string,
+  promptId: string,
+): Promise<void> {
+  await withConnection(agentId, (conn) =>
+    conn.agent.request("platform/steerQueued", { sessionId, promptId }),
+  );
+}
+
+export async function removeQueuedPrompt(
+  agentId: string,
+  sessionId: string,
+  promptId: string,
+): Promise<void> {
+  await withConnection(agentId, (conn) =>
+    conn.agent.request("platform/removeQueued", { sessionId, promptId }),
   );
 }
 

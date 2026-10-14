@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-10-09
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -145,6 +145,10 @@ The CLI presents Agents as single, atomic entities — one resource carrying bot
   An id goes directly to creation with agent-management permission; name lookup additionally needs credential-read permission and rejects ambiguous matches.
   Before creating the Agent, the server checks that a named Connection belongs to the caller and is an active model provider, then includes it in the initial grants; an invalid one fails with guidance to choose or reconnect a provider.
 - **`--wait`** on create and restart polls until the agent settles on running (success) or error (terminal), with a bounded timeout after which the agent is left as-is and the command exits non-zero.
+  A refused start — the agent parked because its owner's pool is full ([budgets](budgets.md)) — also ends the wait: it names the refusal, says how to free room, and exits non-zero, leaving the agent parked.
+  A refusal already standing before a restart counts only once the wait saw another state or a short grace passed, because the first poll can still read the previous attempt's denial.
+  An error with no reconcile message prints the pod's termination reason, which is where a refused machine's text lands; a termination code the UI also treats as a refused start reads "could not start" rather than "entered error state", in both scripted and interactive create.
+  A timeout prints the termination reason too, when the agent has one.
   Under `--json` every exit path still emits a valid Agent payload, so scripted callers never see empty stdout.
 - **`dam agent create-interactive`** is the TTY-bound complement to scripted create: it walks name → template → model-provider connection → optional GitHub PAT and ends with the same agent and grants the UI's "Add agent" dialog produces, creating the Agent before applying its connection grants.
   Anything it creates during the run is tracked in a ledger and torn down in one cleanup pass on failure; what cleanup can't remove is reported as an orphan summary.

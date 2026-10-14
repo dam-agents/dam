@@ -2,15 +2,12 @@ import { Help } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
-import { externalLinkProps } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
 
-import { COMPUTE_REQUEST_URL } from "../../../constants.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
-import { useLinks } from "../../links/api/queries.js";
 import { useBudgetReserved } from "../api/queries.js";
 import { formatCores, formatGi } from "../lib/format.js";
 import {
@@ -56,7 +53,7 @@ function HeldSegmentCard({ segment }: { segment: ComputeSegment }) {
         )}
         <span className="font-semibold">{segment.agentName}</span> (
         {formatCores(segment.cpuMilli)} CPU ·{" "}
-        {formatGi(segment.memoryMi * BYTES_PER_MI)} Gi)
+        {formatGi(segment.memoryMi * BYTES_PER_MI)} GiB)
       </p>
       {segment.alwaysOn && (
         <>
@@ -86,7 +83,6 @@ interface Props {
 
 export function ComputeUsage({ agents, workingAgentIds }: Props) {
   const { data: budget } = useBudgetReserved();
-  const { data: links } = useLinks();
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   if (!budget) return null;
 
@@ -105,13 +101,6 @@ export function ComputeUsage({ agents, workingAgentIds }: Props) {
             <Help size={14} className="cursor-help text-muted-foreground/60" />
           </Tooltip>
         </span>
-        <a
-          href={links?.computeRequest ?? COMPUTE_REQUEST_URL}
-          {...externalLinkProps}
-          className="shrink-0 text-muted-foreground/60 hover:underline"
-        >
-          Request more
-        </a>
       </div>
       <div className="mb-3">
         <p className="text-2xl font-semibold tabular-nums text-foreground">

@@ -5,6 +5,7 @@ status: proposed
 subsystem: channels
 summary: Agent-bound state changes commit to a Postgres outbox and a per-replica BullMQ worker dispatches them over the runtime channel.
 ---
+
 # ADR-053: Transactional outbox + BullMQ worker for runtime-channel delivery
 
 **Date:** 2026-05-21 **Status:** Proposed **Owner:** @jezekra1
@@ -128,7 +129,8 @@ Agent-bound state changes (Contribution edits, event insertions) are committed t
   Queue depth, stalled jobs, retry exhaustion, and Bull Board (or equivalent) become things the team has to learn to read.
 
 - **Harder:** The schedule firing path now belongs to a BullMQ consumer or an api-server cron task that inserts event rows, not the controller's cron.
-  Reliability of "did this schedule fire?" depends on the producer running, which depends on at least one api-server replica being up — a coverage profile equivalent to the existing controller but with a different failure mode.
+  Reliability of "did this schedule fire?"
+  depends on the producer running, which depends on at least one api-server replica being up — a coverage profile equivalent to the existing controller but with a different failure mode.
 
 - **Harder:** Each event kind's harness handler needs an idempotency key (a unique constraint joining its side-effect table back to `runtime_events.id`).
   The pattern is small and uniform but must be applied consistently or a kind's redelivery becomes lossy or double-firing.

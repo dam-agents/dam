@@ -19,6 +19,7 @@ import (
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
 	"github.com/dam-agents/dam/packages/controller/pkg/telemetry"
+	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
 const (
@@ -229,9 +230,24 @@ func (c *IdleChecker) hibernate(ctx context.Context, owner, name string) error {
 	return hibernateAgentPair(ctx, c.client, c.dynamic, c.halt, owner, c.config.Namespace, name)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: hibernation is published only once the agent's machine is stopped. The api-server trusts a health check answer on a wake from a published hibernation, because nothing should answer then, so a machine still running would pass for a woken one. When the runner cannot stop the machine, the gateway is scaled down anyway and readiness goes down, but the agent is not reported hibernated: the error makes the idle checker try again on its next sweep, and the agent's next reconcile stops the machine once the runner answers.
 func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, halt MachineHalt, owner, namespace, name string) error {
-	if err := scaleAgentPairToZero(ctx, kube, halt, owner, namespace, name); err != nil {
+	var haltErr error
+	if halt != nil {
+		haltErr = halt(ctx, owner, name)
+	}
+	if err := scaleAgentPairToZero(ctx, kube, nil, owner, namespace, name); err != nil {
 		return err
+	}
+	if haltErr != nil {
+		msg := fmt.Sprintf("hibernating: the machine has not stopped yet: %v", haltErr)
+		if err := updateAgentStatus(ctx, dyn, namespace, name, func(s *apiv1.AgentStatus) {
+			setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", vmrunner.ReasonNotReady, msg, 0)
+			setStatusCondition(s, apiv1.ConditionReady, false, "AllPodsReady", "PodsNotReady", "", 0)
+		}); err != nil {
+			return err
+		}
+		return fmt.Errorf("stopping the machine of %s: %w", name, haltErr)
 	}
 	return updateAgentStatus(ctx, dyn, namespace, name, func(s *apiv1.AgentStatus) {
 		setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", apiv1.ReasonHibernated, "", 0)

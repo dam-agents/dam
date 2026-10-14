@@ -19,7 +19,9 @@ id: {{AGENT_NAME}}
 name: {{AGENT_DISPLAY_NAME}}
 description: >-
   TODO(creator): one paragraph — what the agent does, on which unit of work, where
-  its output lands. This is the catalog's body text.
+  its output lands, and every run and outward surface this kit creates (the monitor,
+  a dashboard, a channel). This is the catalog's promise; a new run or surface
+  updates it in the same commit.
 # TODO(creator): pick the category that fits: knowledge | software | productivity | research
 category: software
 
@@ -57,12 +59,18 @@ channels:
     note: TODO(creator) — what arrives here and what the agent does with it.
 
 # TODO(creator): one entry per scheduled run type from the design, INCLUDING the
-# weekly audit. `name` carries the agent prefix — ONBOARDING checks for exactly these
-# names. `task` is the run's entry command, verbatim from CLAUDE.md's run-types table.
-# `description` is one plain sentence the operator reads on the schedule's card.
-# `enabled: false` makes it suggested: created switched off for the operator to turn on.
-# `precheck` declines an idle occurrence before any model is woken; drop the line for a
-# run type with no pre-flight mode (references/preflight.md → The Precheck).
+# weekly audit and the monitor. `name` carries the agent prefix — ONBOARDING reconciles
+# exactly these names. `task` is the run's entry text, verbatim the blockquote of its
+# ONBOARDING step (the validator compares the two). `description` is one plain
+# sentence the operator reads on the schedule's card. `enabled: false` makes it
+# suggested: created switched off for the operator to turn on. `precheck` declines an
+# idle occurrence before any model is woken; every run gets one except the audit
+# (references/preflight.md → The Precheck). The cron is the default cadence — around
+# the clock at the active interval, because an idle tick behind a precheck is free;
+# an instance's window is its own (work/CONFIG.md), registered by ONBOARDING.
+# The kit schema has no `model` or `sessionTitle` field yet, so these schedules start
+# on the platform's default model and untitled; ONBOARDING re-registers each with
+# `run_model` and its title. Declare them here once the schema carries them.
 # Delete the whole key for a design with no scheduled runs (rare — the audit is
 # recommended for every agent).
 schedules:
@@ -72,7 +80,33 @@ schedules:
     sessionMode: fresh
     precheck: 'bash "$HOME/scripts/precheck.sh" <mode>'
     task: >-
-      TODO(creator) — the task text from CLAUDE.md's run-types table, verbatim.
+      TODO(creator) — <Run name>. The precheck already ran the pre-flight and found
+      work: read the worklist JSON at the path its output names, and never run
+      preflight.sh again this run. If the prompt carries no worklist path, run
+      `bash "$HOME/scripts/preflight.sh" <mode>` yourself. Then follow CLAUDE.md →
+      "<Run section>": …, and back up work/ at the end
+      (`scripts/work-backup.sh persist`).
+  - name: {{AGENT_NAME}}-audit-weekly
+    cron: "0 6 * * 5"
+    sessionMode: fresh
+    task: >-
+      TODO(creator) — Weekly audit. Run `bash "$HOME/scripts/preflight.sh" audit`
+      first — this run is ungated. Follow CLAUDE.md → "Audit run": …
+  # The monitor: every instance, no question at onboarding; an idle tick costs no
+  # model call (docs/monitor.md).
+  - name: {{AGENT_NAME}}-monitor-15m
+    cron: "*/15 * * * *"
+    sessionMode: fresh
+    precheck: 'bash "$HOME/scripts/precheck.sh" monitor'
+    task: >-
+      TODO(creator) — Agent monitor. The precheck already ran scripts/monitor.sh and
+      found alerts due: read the worklist JSON at the path its output names, and never
+      run monitor.sh again this run. If the prompt carries no worklist path, run
+      `bash "$HOME/scripts/monitor.sh"` yourself. Then follow CLAUDE.md → "Monitor
+      run": read docs/monitor.md, report every alert of the worklist in one message,
+      acknowledge them with `scripts/monitor.sh ack <ids>` only after the send, never
+      repair or re-run anything in response, and back up work/
+      (`scripts/work-backup.sh persist`).
 
 # TODO(creator): keep only when the workload needs more than the install default.
 # Limits only — the controller derives requests. `storage` is fixed at create.

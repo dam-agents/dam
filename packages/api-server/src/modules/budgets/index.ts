@@ -1,5 +1,19 @@
-export { composeBudgetsModule, composeSpawnSizeGate } from "./compose.js";
+export {
+  composeBudgetsModule,
+  composeSpawnSizeGate,
+  composeStorageGate,
+} from "./compose.js";
 export {
   SizeNeverFitsError,
   type SpawnSizeGate,
 } from "./services/budgets-service.js";
+export {
+  readRunnerUsage,
+  listRunnerUsageOwners,
+} from "./infrastructure/runner-usage.js";
+export {
+  storagePercent,
+  poolLevel,
+  storageFullMessage,
+  STORAGE_WRITES_FAILING_PERCENT,
+} from "./domain/vm-usage.js";

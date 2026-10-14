@@ -46,6 +46,13 @@ jobs:
     # its key has moved, every PR pays the full cold cost until the next main
     # push rewrites it. That run is the one this budget has to fit.
     timeout-minutes: 30
+    # Without these the Rust cache is over 2 GB, a fifth of the repo's 10 GB.
+    # A fresh checkout recompiles the workspace's own crates anyway, so their
+    # incremental state is dead weight, and line tables keep a failing test's
+    # backtrace readable without the rest of the debug info.
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -64,7 +71,8 @@ jobs:
             mise-task-artifacts-${{ runner.os }}-
       # The Rust target is only compiled into when a vm-runner task misses the
       # task cache, which takes a change to its crate or its tools since the
-      # commit that cache was saved at.
+      # commit that cache was saved at. Cargo's downloads only, as in
+      # rust-release: it unpacks the sources and checks out the git ones again.
       - id: rust-needed
         env:
           MATCHED: ${{ steps.task-cache.outputs.cache-matched-key }}
@@ -81,8 +89,9 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: &rust-paths |
-            ~/.cargo/registry
-            ~/.cargo/git
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
             packages/vm-runner/target
           key: &rust-key rust-${{ runner.os }}-check-test-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin', 'packages/vm-runner/smolvm.patch') }}
           restore-keys: |
@@ -664,11 +673,14 @@ jobs:
           v="$(sed -n 's/^  playwright-core@\([0-9][^:]*\):.*/\1/p' pnpm-lock.yaml | head -n1)"
           [ -n "$v" ] || { echo "::error::pnpm-lock.yaml resolves no playwright-core"; exit 1; }
           echo "version=$v" >> "$GITHUB_OUTPUT"
+      # Only main writes it, after the suite: a PR's entry would count against
+      # the repo's 10 GB.
       - &e2e-playwright-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: playwright-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+          path: &playwright-path ~/.cache/ms-playwright
+          key: &playwright-key playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
       # Under the job's timeout, so a hung image build fails the step and the
       # log steps below still run; the job's own timeout cancels them too.
       - run: &e2e-run |
@@ -688,6 +700,12 @@ jobs:
           # The vm lane's harness tools installer: anonymous GitHub API calls
           # from the runner's shared address hit the 60-an-hour limit.
           HARNESS_TOOLS_GITHUB_TOKEN: ${{ github.token }}
+      - &e2e-playwright-save
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.playwright-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *playwright-path
+          key: *playwright-key
       - &e2e-image-log
         name: Image fetch log
         if: ${{ !cancelled() }}
@@ -817,6 +835,14 @@ jobs:
       - run: *e2e-run
         timeout-minutes: 70
         env: *e2e-run-env
+      - *e2e-playwright-save
+      # On a cache hit the installer finds every version installed, so its log
+      # shows no download.
+      - name: Harness tools install log
+        if: ${{ !cancelled() }}
+        env:
+          KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        run: kubectl -n platform-agents logs ds/platform-harness-tools -c install --timestamps || true
       # Only main writes it, and only once the suite passed, which waits for the
       # installer: an entry is a whole install of one lockfile. It is about the
       # size of the agent-tools entry, and a PR reads main's.

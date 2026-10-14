@@ -1,7 +1,10 @@
 import { useCallback } from "react";
 
 import { useStore } from "../../../store.js";
-import { applyUpdate } from "../../acp/session-projection.js";
+import {
+  applyUpdate,
+  withoutQueuedSends,
+} from "../../acp/session-projection.js";
 import type { AcpUpdate, FrameMeta, UpdateHandler } from "../../acp/types.js";
 
 export function useAcpUpdateHandler(): () => UpdateHandler {
@@ -35,6 +38,12 @@ export function useAcpUpdateHandler(): () => UpdateHandler {
 
       if (kind === "platform_run_started" && viewing === sessionId) {
         useStore.getState().addRunStart(update.at);
+      }
+
+      if (kind === "platform_queue_changed") {
+        useStore.getState().setQueuedPrompts(update.items);
+        setMessages((prev) => withoutQueuedSends(prev, update.items));
+        return;
       }
 
       if (kind === "config_option_update") return;

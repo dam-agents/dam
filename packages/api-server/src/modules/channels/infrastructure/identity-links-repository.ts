@@ -46,18 +46,38 @@ export function findExternalUsersByIdentity(db: Db) {
   };
 }
 
+export function findExternalLinksByIdentity(db: Db) {
+  return async (
+    provider: string,
+    keycloakSub: string,
+  ): Promise<{ externalUserId: string; teamId: string | null }[]> =>
+    db
+      .select({
+        externalUserId: identityLinks.externalUserId,
+        teamId: identityLinks.teamId,
+      })
+      .from(identityLinks)
+      .where(
+        and(
+          eq(identityLinks.provider, provider),
+          eq(identityLinks.keycloakSub, keycloakSub),
+        ),
+      );
+}
+
 export function upsertIdentityLink(db: Db) {
   return async (
     provider: string,
     externalUserId: string,
     keycloakSub: string,
+    teamId?: string,
   ): Promise<void> => {
     await db
       .insert(identityLinks)
-      .values({ provider, externalUserId, keycloakSub })
+      .values({ provider, externalUserId, keycloakSub, teamId })
       .onConflictDoUpdate({
         target: [identityLinks.provider, identityLinks.externalUserId],
-        set: { keycloakSub },
+        set: teamId === undefined ? { keycloakSub } : { keycloakSub, teamId },
       });
   };
 }

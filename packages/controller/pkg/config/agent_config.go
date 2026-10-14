@@ -133,6 +133,7 @@ type GatewayEgress struct {
 type VMRunnerRollout struct {
 	MaxConcurrent int      `json:"maxConcurrent,omitempty"`
 	SettleTimeout Duration `json:"settleTimeout,omitempty"`
+	IdleWait      Duration `json:"idleWait,omitempty"`
 }
 
 type AgentProbes struct {

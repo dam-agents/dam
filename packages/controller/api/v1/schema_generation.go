@@ -54,5 +54,7 @@ const (
 	// Ceilings must be positive quantities; owner must be name-constructible
 	// (DNS-1123, ≤246 chars) so `budget-<owner>` is a legal object name.
 	// (Folded into gen 1 pre-release — this CRD ships first with this PR.)
-	UserBudgetSchemaGeneration = 1
+	// UserBudget gen 2: cpu and memory are optional and also set the user's
+	// VM pool; storage added — the ceiling of their VM runner's claim.
+	UserBudgetSchemaGeneration = 2
 )

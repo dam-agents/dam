@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -25,13 +26,19 @@ import (
 	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
+	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
+	corelisters "k8s.io/client-go/listers/core/v1"
 	k8stesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/cache"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
@@ -48,6 +55,8 @@ type fakeNode struct {
 	version  uint64
 	waits    int
 	release  vmrunner.RunnerRelease
+	usage    vmrunner.RunnerUsage
+	onPut    func(vmrunner.MachineSpec)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long the fake holds a waiting status read before answering with no change. It is far below the real runner's wait, so a test's server closes promptly under a watch that is still reading.
@@ -64,6 +73,10 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 		defer n.mu.Unlock()
 		if r.URL.Path == "/release" {
 			require.NoError(t, json.NewEncoder(w).Encode(n.release))
+			return
+		}
+		if r.URL.Path == "/usage" {
+			require.NoError(t, json.NewEncoder(w).Encode(n.usage))
 			return
 		}
 		if r.URL.Path == "/machines" {
@@ -86,6 +99,9 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&spec))
 			n.specs[id] = spec
 			n.puts = append(n.puts, spec)
+			if n.onPut != nil {
+				n.onPut(spec)
+			}
 			st, ok := n.statuses[id]
 			if !ok {
 				n.version++
@@ -511,6 +527,39 @@ func TestAHostRunnerReachesTheGatewayOnItsOwnLoopback(t *testing.T) {
 	assert.Equal(t, []string{"my-agent"}, node.deleted)
 }
 
+// TEST_SCENARIO: the host runner serves every owner, so the api-server can show a laptop's pools only if the controller writes a usage Secret for it too. There is one runner, so there is one Secret, holding the host address, the runners' CA and a usage capability, and it names no owner: each owner's reconcile writes the same Secret, and an owner label would flip between them.
+func TestTheHostRunnerGetsOneUsageSecretNamingNoOwner(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.HostAddress = "192.168.5.2"
+	ctx := context.Background()
+	for _, sec := range []*corev1.Secret{runnerSecret(), runnerTLSSecret()} {
+		sec.Name = strings.Replace(sec.Name, runnerSuffix(testOwner), "host", 1)
+		_, err := r.client.CoreV1().Secrets("test-agents").Create(ctx, sec, metav1.CreateOptions{})
+		require.NoError(t, err)
+	}
+	r.client.(*fake.Clientset).PrependReactor("update", "services", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		svc := action.(k8stesting.UpdateAction).GetObject().(*corev1.Service)
+		if svc.Spec.Type == corev1.ServiceTypeNodePort && svc.Spec.Ports[0].NodePort == 0 {
+			svc.Spec.Ports[0].NodePort = 30123
+		}
+		return false, svc, nil
+	})
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	secrets := r.client.CoreV1().Secrets("test-agents")
+	usage, err := secrets.Get(ctx, r.runnerUsageName(""), metav1.GetOptions{})
+	require.NoError(t, err)
+	token, err := secrets.Get(ctx, r.runnerName(""), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "true", usage.Labels[vmRunnerUsageLabel])
+	_, owned := usage.Labels[envoyOwnerLabel]
+	assert.False(t, owned, "one Secret serves every owner, so it names none")
+	assert.Equal(t, fmt.Sprintf("https://192.168.5.2:%d", vmRunnerPort), string(usage.Data["url"]))
+	assert.Equal(t, vmrunner.MintUsageCapability(string(token.Data["token"])), string(usage.Data["capability"]))
+}
+
 // TEST_SCENARIO: an install switched from runner pods to the host runner still holds the runner Deployment it made for an owner before, whose pod can never schedule without a KVM device. The host-mode sweep removes that Deployment and keeps its claim, which holds the disks of the machines it ran, and leaves the host runner's own Secret, whose name a per-owner lookup would resolve to in host mode, alone.
 func TestTheHostRunnerSweepDropsRunnerPodsLeftFromBefore(t *testing.T) {
 	ctx := context.Background()
@@ -614,11 +663,98 @@ func markGatewayReady(t *testing.T, r *AgentReconciler) {
 	require.NoError(t, err)
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: GatewayName("my-agent") + "-0", Namespace: "test-agents",
-			Labels: map[string]string{"controller-revision-hash": "rev-1"}},
+			Labels: map[string]string{"controller-revision-hash": "rev-1", LabelAgent: "my-agent"}},
 		Status: corev1.PodStatus{Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}},
 	}
 	_, err = r.client.CoreV1().Pods("test-agents").Create(ctx, pod, metav1.CreateOptions{})
 	require.NoError(t, err)
+}
+
+// TEST_SCENARIO: a waking gateway pod takes longer to start than the machine beside it, so a wake scales the gateway up before the runner is asked to start the machine, not after the runner answers.
+func TestAWakeScalesTheGatewayUpBeforeItStartsTheMachine(t *testing.T) {
+	agent := vmAgentCR()
+	agent.Annotations[annLastActivity] = time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339)
+	r, node, _ := setupVMReconciler(t, agent)
+	ctx := context.Background()
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.Equal(t, int32(0), agentSSReplicas(t, r, GatewayName("my-agent")), "the Agent starts out hibernated")
+
+	gatewayAtStart := int32(-1)
+	node.onPut = func(spec vmrunner.MachineSpec) {
+		if spec.Running && gatewayAtStart < 0 {
+			gatewayAtStart = agentSSReplicas(t, r, GatewayName("my-agent"))
+		}
+	}
+	agent.Annotations[annLastActivity] = time.Now().UTC().Format(time.RFC3339)
+	agent.Status.Conditions = []metav1.Condition{{Type: apiv1.ConditionReady, Status: metav1.ConditionFalse, Reason: apiv1.ReasonHibernated}}
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, int32(1), gatewayAtStart, "the gateway is already scaled up when the machine is asked to run")
+}
+
+// TEST_SCENARIO: the retry of an agent the runner refused must not scale its gateway up ahead of the runner call either, or each 30 s retry would start and stop a gateway pod.
+func TestARetryAfterARefusedStartKeepsTheGatewayDown(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateCreating, Reason: vmrunner.ReasonOutOfCapacity, Message: "does not fit"}
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.Equal(t, apiv1.ReasonOverBudget, readyCondition(t, r, "my-agent").Reason)
+
+	gatewayAtRetry := int32(-1)
+	node.onPut = func(vmrunner.MachineSpec) { gatewayAtRetry = agentSSReplicas(t, r, GatewayName("my-agent")) }
+	u, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	cached, err := FromCacheObject[apiv1.Agent](u)
+	require.NoError(t, err)
+	require.NoError(t, r.Reconcile(ctx, cached))
+	assert.Equal(t, int32(0), gatewayAtRetry, "the gateway stays down while the runner is asked again")
+}
+
+// TEST_SCENARIO: on a wake the machine often answers before its gateway pod is ready, and the gateway pod turning ready starts a reconcile. That reconcile publishes Ready once the gateway is applied, before it calls the runner, because the status already holds the machine ready for this generation.
+func TestAGatewayTurningReadyIsPublishedBeforeTheRunnerCall(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	ctx := context.Background()
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agentSide, _ := agentCondition(t, r, "my-agent", apiv1.ConditionAgentPodReady)
+	require.Equal(t, "True", agentSide, "the machine is ready")
+	require.Equal(t, metav1.ConditionFalse, readyCondition(t, r, "my-agent").Status, "and the gateway pod is not there yet")
+
+	markGatewayReady(t, r)
+	readyAtRunnerCall := ""
+	node.onPut = func(vmrunner.MachineSpec) {
+		readyAtRunnerCall, _ = agentCondition(t, r, "my-agent", apiv1.ConditionReady)
+	}
+	u, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	cached, err := FromCacheObject[apiv1.Agent](u)
+	require.NoError(t, err)
+	require.NoError(t, r.Reconcile(ctx, cached))
+	assert.Equal(t, "True", readyAtRunnerCall, "Ready is published before the runner call")
+	assert.Equal(t, metav1.ConditionTrue, readyCondition(t, r, "my-agent").Status, "and the full publish keeps it")
+}
+
+// TEST_SCENARIO: the early publish trusts the agent side only for the generation it was published for. After a spec change the reconcile must ask the runner first, so Ready waits for the full publish.
+func TestAGatewayTurningReadyAfterASpecChangeWaitsForTheRunner(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	ctx := context.Background()
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	markGatewayReady(t, r)
+
+	readyAtRunnerCall := ""
+	node.onPut = func(vmrunner.MachineSpec) {
+		readyAtRunnerCall, _ = agentCondition(t, r, "my-agent", apiv1.ConditionReady)
+	}
+	u, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	cached, err := FromCacheObject[apiv1.Agent](u)
+	require.NoError(t, err)
+	cached.Generation++
+	require.NoError(t, r.Reconcile(ctx, cached))
+	assert.Equal(t, "False", readyAtRunnerCall, "a status from another generation is not trusted")
 }
 
 // TEST_SCENARIO: a hard stop must reach the machine: the node is told the machine should not run, and the gateway pair scales down as for any agent.
@@ -763,9 +899,9 @@ func TestEachOwnerGetsTheirOwnRunner(t *testing.T) {
 	r, _, _ := setupVMReconciler(t, agent)
 	ctx := context.Background()
 
-	_, _, err := r.ensureRunner(ctx, "owner-a", runnerDemand{})
+	_, _, err := r.ensureRunner(ctx, "owner-a")
 	require.ErrorIs(t, err, errRunnerTLSPending, "a runner is not dialled before cert-manager issues its certificate")
-	_, _, err = r.ensureRunner(ctx, "owner-b", runnerDemand{})
+	_, _, err = r.ensureRunner(ctx, "owner-b")
 	require.ErrorIs(t, err, errRunnerTLSPending)
 
 	a, b := r.runnerName("owner-a"), r.runnerName("owner-b")
@@ -838,6 +974,42 @@ func TestVMBackendSizesOneDiskRatherThanSummingMounts(t *testing.T) {
 	require.NoError(t, r.Reconcile(context.Background(), agent))
 
 	assert.Equal(t, 10, node.spec("my-agent").StorageGiB, "the Agent's storage size, not 4+4")
+}
+
+// TEST_SCENARIO: a vm agent has no disk size of its own: once its runner reports the machine's disk, which only a runner that grows a disk at the next start does, the machine is asked for the owner's whole storage pool. Before that the runner may be an older release that would reboot a running machine to grow it, so the Agent's own size is kept.
+func TestTheMachineDiskIsTheOwnersPoolOnceTheRunnerReportsDisks(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	ctx := context.Background()
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, 10, node.spec("my-agent").StorageGiB, "no disk reported yet: the Agent's own size")
+
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true, Port: 31000, DiskGiB: 10})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, 100, node.spec("my-agent").StorageGiB, "the owner's pool, runner.storage")
+}
+
+// TEST_SCENARIO: the api-server reads an owner's runner with what the usage Secret holds: the runner's URL, the CA its certificate chains to, and a usage capability. It must never hold the token, which drives every route of the machine API, nor the runner's TLS key.
+func TestTheUsageSecretHoldsACapabilityAndNeverTheToken(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	ctx := context.Background()
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	secrets := r.client.CoreV1().Secrets(r.config.Namespace)
+	usage, err := secrets.Get(ctx, r.runnerUsageName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	token, err := secrets.Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "true", usage.Labels[vmRunnerUsageLabel])
+	assert.Equal(t, testOwner, usage.Labels[envoyOwnerLabel])
+	assert.Equal(t, vmrunner.MintUsageCapability(string(token.Data["token"])), string(usage.Data["capability"]))
+	assert.Equal(t, fmt.Sprintf("https://%s:%d", r.runnerHost(testOwner), vmRunnerPort), string(usage.Data["url"]))
+	assert.ElementsMatch(t, []string{"url", "ca.crt", "capability"}, slices.Collect(maps.Keys(usage.Data)))
+	for _, v := range usage.Data {
+		assert.NotContains(t, string(v), string(token.Data["token"]))
+	}
 }
 
 // TEST_SCENARIO: the default template's mounts — HOME persisted, /tmp not — are what every shipped template and starter kit declares, and they are exactly what a machine already does: HOME on the disk, everything else discarded with the root at the next stop. So the common case reconciles with nothing to decide.
@@ -1183,11 +1355,14 @@ func TestOrphanSweepKeepsARunnerThatStillHoldsAMachine(t *testing.T) {
 	require.NoError(t, err, "the runner's disk survives a sweep that raced a machine")
 }
 
-// TEST_SCENARIO: the runner refuses a machine for want of memory; the agent parks instead of spinning — the gateway scales to zero so the owner stops being charged for an agent that does not exist, and the status carries the runner's own explanation of what to free.
+// TEST_SCENARIO: the runner refuses a machine for want of memory; the agent parks instead of spinning — the gateway scales to zero so the owner stops being charged for an agent that does not exist, and the status says in the owner's terms that their VM agents' memory is full and what frees it, not the runner's own accounting.
 func TestARefusedMachineParksAndReleasesTheOwnersBudget(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+		Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("8Gi")},
+	}
 	node.statuses["my-agent"] = vmrunner.MachineStatus{
 		State:   vmrunner.StateCreating,
 		Reason:  vmrunner.ReasonOutOfCapacity,
@@ -1201,7 +1376,82 @@ func TestARefusedMachineParksAndReleasesTheOwnersBudget(t *testing.T) {
 	cond := readyCondition(t, r, "my-agent")
 	require.NotNil(t, cond)
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
-	assert.Contains(t, cond.Message, "does not fit", "the runner's own explanation reaches the user")
+	assert.Regexp(t, `^Your VM agents are using [0-9.]+ of 8\.0 GiB of memory, and starting this agent needs about [1-9][0-9.]* GiB more`, cond.Message, "the user reads the pool out of the total Home shows, and the room the start itself needs")
+	assert.Contains(t, cond.Message, "pause one yourself", "the user reads what frees it")
+	assert.NotContains(t, cond.Message, "MiB", "the runner's accounting stays out of the user's copy")
+}
+
+// TEST_SCENARIO: a runner outside the cluster refuses a machine for memory; its limit is a share of its host's memory the controller never learns, so the refusal names no figures rather than quote the chart's limit.
+func TestAHostRunnerMemoryRefusalNamesNoFigures(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.HostAddress = "192.168.5.2"
+	for _, sec := range []*corev1.Secret{runnerSecret(), runnerTLSSecret()} {
+		sec.Name = strings.Replace(sec.Name, runnerSuffix(testOwner), "host", 1)
+		_, err := r.client.CoreV1().Secrets("test-agents").Create(ctx, sec, metav1.CreateOptions{})
+		require.NoError(t, err)
+	}
+	node.statuses["my-agent"] = vmrunner.MachineStatus{
+		State:   vmrunner.StateCreating,
+		Reason:  vmrunner.ReasonOutOfCapacity,
+		Message: "this machine's 1024 MiB does not fit",
+	}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	cond := readyCondition(t, r, "my-agent")
+	require.NotNil(t, cond)
+	assert.Contains(t, cond.Message, "Your VM agents' memory is full, so this agent can't start yet.")
+	assert.NotContains(t, cond.Message, "GiB", "the host runner's share is unknown here")
+}
+
+// TEST_SCENARIO: a runner whose claim is full refuses a machine under MachineStorageFull, which is not the memory refusal. The Agent is not parked, since parking halts a machine, and the runner's explanation reaches the AgentPodReady condition the api-server classifies a wake by.
+func TestAStorageRefusalIsPublishedWithoutParking(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	node.statuses["my-agent"] = vmrunner.MachineStatus{
+		State:   vmrunner.StateAbsent,
+		Reason:  vmrunner.ReasonStorageFull,
+		Message: "your agents' shared storage is 93% full",
+	}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	assert.Equal(t, int32(1), agentSSReplicas(t, r, GatewayName("my-agent")), "a storage refusal does not park the agent")
+	obj, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	got, err := FromCacheObject[apiv1.Agent](obj)
+	require.NoError(t, err)
+	cond := apimeta.FindStatusCondition(got.Status.Conditions, apiv1.ConditionAgentPodReady)
+	require.NotNil(t, cond)
+	assert.Equal(t, metav1.ConditionFalse, cond.Status)
+	assert.Equal(t, vmrunner.ReasonStorageFull, cond.Reason)
+	assert.Contains(t, cond.Message, "93% full")
+}
+
+// TEST_SCENARIO: a full home inside a guest is the same failure a container agent reports from its termination message, so the runner's reason for it is published as HomeVolumeFull, and the api-server's and UI's existing copy for a full home applies to a vm agent too.
+func TestAFullHomeInsideAGuestIsPublishedAsAFullHomeVolume(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	node.statuses["my-agent"] = vmrunner.MachineStatus{
+		State:   vmrunner.StateRunning,
+		Reason:  vmrunner.ReasonHomeFull,
+		Message: "the agent's disk is full",
+	}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	obj, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	got, err := FromCacheObject[apiv1.Agent](obj)
+	require.NoError(t, err)
+	cond := apimeta.FindStatusCondition(got.Status.Conditions, apiv1.ConditionAgentPodReady)
+	require.NotNil(t, cond)
+	assert.Equal(t, apiv1.ReasonHomeVolumeFull, cond.Reason)
+	assert.Contains(t, cond.Message, "disk is full")
 }
 
 // TEST_SCENARIO: a machine no Agent of this owner claims holds guest memory forever, so the sweep deletes it — and ownership is part of the match, because an Agent of the same name belonging to someone else says nothing about this runner's machine.
@@ -1254,7 +1504,7 @@ func TestALapsedIdleTimeoutLeavesTheMachineToTheIdleChecker(t *testing.T) {
 	assert.True(t, node.spec("my-agent").Running, "the busy probe has not been asked yet")
 
 	unreachable := func(context.Context, string, string) error { return errors.New("the VM runner could not be reached") }
-	require.NoError(t, hibernateAgentPair(ctx, r.client, r.dynamic, unreachable, testOwner, "test-agents", "my-agent"))
+	require.Error(t, hibernateAgentPair(ctx, r.client, r.dynamic, unreachable, testOwner, "test-agents", "my-agent"))
 	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.False(t, node.spec("my-agent").Running)
 }
@@ -1712,4 +1962,281 @@ func TestMachineTrustedCAsAppendsTheExtraCAs(t *testing.T) {
 	cfg.ExtraTrustedCAs = "-----BEGIN CERTIFICATE-----\nextra\n-----END CERTIFICATE-----\n"
 	assert.Equal(t, "-----BEGIN CERTIFICATE-----\nmitm\n-----END CERTIFICATE-----\n"+cfg.ExtraTrustedCAs,
 		machineTrustedCAs("-----BEGIN CERTIFICATE-----\nmitm\n-----END CERTIFICATE-----", &cfg))
+}
+
+// TEST_SCENARIO: an agent the runner's OOM kill took down carries that reason through the runner's restart and the machine's boot, but only while nothing more specific explains the wait. A boot that then fails is a reason the owner has to act on, which the api-server reads as an error; hidden behind the kill, the agent would read as still starting with its boot console lost.
+func TestAFreshTerminalReasonWinsOverACarriedRunnerOOM(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	ctx := context.Background()
+	r.vmRunning.Store(agent.Name, true)
+	agent.Status.Conditions = []metav1.Condition{{
+		Type: apiv1.ConditionAgentPodReady, Status: metav1.ConditionFalse,
+		Reason: apiv1.ReasonRunnerOutOfMemory, LastTransitionTime: metav1.Now(),
+	}}
+	reason := func() string {
+		got, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, agent.Name, metav1.GetOptions{})
+		require.NoError(t, err)
+		conds, _, _ := unstructured.NestedSlice(got.Object, "status", "conditions")
+		for _, c := range conds {
+			if m, ok := c.(map[string]any); ok && m["type"] == apiv1.ConditionAgentPodReady {
+				return m["reason"].(string)
+			}
+		}
+		return ""
+	}
+
+	require.NoError(t, r.publishVMReadiness(ctx, agent, vmrunner.MachineStatus{State: vmrunner.StateStarting}, true))
+	assert.Equal(t, apiv1.ReasonRunnerOutOfMemory, reason(), "the reason did not last through the boot")
+
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonBootFailed, Message: "the guest console ends: panic"}, true))
+	assert.Equal(t, vmrunner.ReasonBootFailed, reason())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a clientset whose Secret reads each take `delay`, outside the fake's own lock, which serialises every call it answers. The time a reconcile takes then counts the Secret reads it makes one after another.
+type slowSecretsClient struct {
+	*fake.Clientset
+	delay time.Duration
+}
+
+func (c slowSecretsClient) CoreV1() corev1client.CoreV1Interface {
+	return slowSecretsCore{c.Clientset.CoreV1(), c.delay}
+}
+
+type slowSecretsCore struct {
+	corev1client.CoreV1Interface
+	delay time.Duration
+}
+
+func (c slowSecretsCore) Secrets(namespace string) corev1client.SecretInterface {
+	return slowSecrets{c.CoreV1Interface.Secrets(namespace), c.delay}
+}
+
+type slowSecrets struct {
+	corev1client.SecretInterface
+	delay time.Duration
+}
+
+func (s slowSecrets) Get(ctx context.Context, name string, opts metav1.GetOptions) (*corev1.Secret, error) {
+	time.Sleep(s.delay)
+	return s.SecretInterface.Get(ctx, name, opts)
+}
+
+// TEST_SCENARIO: every reconcile of a waking vm agent prepares its owner's runner before it sends the machine spec, and both read Secrets: the runner's token and certificate, and the agent's leaf. Read one after another they were four serial reads; the token and certificate are read side by side, and the leaf beside the runner, so the API server's latency is paid twice.
+func TestAMachinesSecretsAreReadInTwoRounds(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	ctx := context.Background()
+	require.NoError(t, r.Reconcile(ctx, agent))
+	const delay = 200 * time.Millisecond
+	r.client = slowSecretsClient{r.client.(*fake.Clientset), delay}
+
+	started := time.Now()
+	_, reached, err := r.reconcileVMAgent(ctx, agent, agentOwnerRef(agent), "10.96.42.42", true, true)
+	elapsed := time.Since(started)
+
+	require.NoError(t, err)
+	assert.True(t, reached)
+	assert.Equal(t, "MITM-CA", node.spec("my-agent").CACert)
+	assert.Less(t, elapsed, 3*delay, "the Secrets were read in more than two rounds")
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the fake clientset neither sets resourceVersions nor checks them, so a write sent from a stale cache would pass. This stamps a new version on every write of the cached kinds, bumps a StatefulSet's generation on a spec update, and refuses an update whose version is not the stored one, as the API server does.
+func versionWrites(client *fake.Clientset) {
+	version := int64(100)
+	for _, kind := range []string{"statefulsets", "deployments", "pods"} {
+		client.PrependReactor("*", kind, func(action k8stesting.Action) (bool, runtime.Object, error) {
+			write, ok := action.(interface{ GetObject() runtime.Object })
+			if !ok || action.GetVerb() != "create" && action.GetVerb() != "update" {
+				return false, nil, nil
+			}
+			obj, err := apimeta.Accessor(write.GetObject())
+			if err != nil {
+				return true, nil, err
+			}
+			if action.GetVerb() == "update" {
+				stored, err := client.Tracker().Get(action.GetResource(), action.GetNamespace(), obj.GetName())
+				if err != nil {
+					return true, nil, err
+				}
+				current, _ := apimeta.Accessor(stored)
+				if obj.GetResourceVersion() != current.GetResourceVersion() {
+					return true, nil, k8serrors.NewConflict(action.GetResource().GroupResource(), obj.GetName(), errors.New("the object has been modified"))
+				}
+				if kind == "statefulsets" && action.GetSubresource() == "" {
+					obj.SetGeneration(current.GetGeneration() + 1)
+				}
+			}
+			version++
+			obj.SetResourceVersion(strconv.FormatInt(version, 10))
+			return false, nil, nil
+		})
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the informers the controller runs, with the selectors main.go gives them, started over the fake clientset and wired into the reconciler.
+func startCaches(t *testing.T, r *AgentReconciler) {
+	t.Helper()
+	client := r.client.(*fake.Clientset)
+	selected := func(selector string) informers.SharedInformerFactory {
+		return informers.NewSharedInformerFactoryWithOptions(client, 0, informers.WithNamespace("test-agents"),
+			informers.WithTweakListOptions(func(opts *metav1.ListOptions) { opts.LabelSelector = selector }))
+	}
+	agents, runners := selected(LabelAgent), selected("app.kubernetes.io/component="+vmRunnerComponent)
+	pods, statefulSets := agents.Core().V1().Pods(), agents.Apps().V1().StatefulSets().Informer()
+	deployments, runnerPods := runners.Apps().V1().Deployments().Informer(), runners.Core().V1().Pods()
+	r.WithPodCache(pods.Lister()).WithStatefulSetCache(statefulSets).WithRunnerCaches(deployments, runnerPods.Lister())
+	agents.Start(t.Context().Done())
+	runners.Start(t.Context().Done())
+	require.True(t, cache.WaitForCacheSync(t.Context().Done(), pods.Informer().HasSynced, statefulSets.HasSynced, deployments.HasSynced, runnerPods.Informer().HasSynced))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an informer that is never started, so a test puts in it exactly the stale view it needs.
+func staleInformer(objType runtime.Object, objs ...runtime.Object) cache.SharedIndexInformer {
+	informer := cache.NewSharedIndexInformer(&cache.ListWatch{}, objType, 0, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	for _, obj := range objs {
+		_ = informer.GetStore().Add(obj)
+	}
+	return informer
+}
+
+// TEST_SCENARIO: a vm agent that is up is reconciled again and again while it runs — a machine poll, a pod event, a drift sweep. Each of those reconciles read its gateway StatefulSet three to four times, its runner Deployment twice and its runner's pods once, all live, and the runner's token and certificate twice each. The StatefulSet, the Deployment and the runner's pods are served from the informers the controller runs, and each runner Secret is read once, so a steady reconcile reads none of the cached kinds from the API server.
+func TestASteadyVMReconcileReadsItsObjectsFromTheCaches(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	client := r.client.(*fake.Clientset)
+	versionWrites(client)
+	_, err := client.CoreV1().ServiceAccounts("test-agents").Create(ctx, &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{Name: "platform-vm-runner", Namespace: "test-agents", UID: "runner-sa"},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+		Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")},
+	}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "16Gi")
+	require.NoError(t, r.Reconcile(ctx, agent))
+	markGatewayReady(t, r)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
+	startCaches(t, r)
+
+	reads := map[string]int{}
+	require.Eventually(t, func() bool {
+		client.ClearActions()
+		require.NoError(t, r.Reconcile(ctx, agent))
+		clear(reads)
+		writes := 0
+		for _, a := range client.Actions() {
+			switch a.GetVerb() {
+			case "get":
+				reads["get "+a.GetResource().Resource+" "+a.(k8stesting.GetAction).GetName()]++
+			case "list":
+				reads["list "+a.GetResource().Resource]++
+			default:
+				writes++
+			}
+		}
+		return writes == 0
+	}, 5*time.Second, 20*time.Millisecond, "the reconciles settle into one that writes nothing")
+
+	assert.Equal(t, metav1.ConditionTrue, readyCondition(t, r, "my-agent").Status)
+	assert.Zero(t, reads["get statefulsets "+GatewayName("my-agent")], "the gateway StatefulSet comes from the cache")
+	assert.Zero(t, reads["get deployments "+r.runnerName(testOwner)], "the runner Deployment comes from the cache")
+	assert.Zero(t, reads["list pods"], "the runner's pods come from the cache")
+	assert.Equal(t, 1, reads["get secrets "+r.runnerName(testOwner)], "the runner's token is read once")
+	assert.Equal(t, 1, reads["get secrets "+r.runnerTLSName(testOwner)], "the runner's certificate is read once")
+}
+
+// TEST_SCENARIO: the runner pod cache can hold a pod from before its last change. A resize sent from it carries that old resourceVersion, so the API server refuses it rather than applying it over the change, and the resize is decided again from a live read of the pod.
+func TestAResizeFromAStalePodIsRefusedAndRedoneLive(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	client := r.client.(*fake.Clientset)
+	versionWrites(client)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+		Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")},
+	}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "16Gi")
+	pods := client.CoreV1().Pods("test-agents")
+	stale, err := pods.Get(ctx, r.runnerName(testOwner)+"-abc", metav1.GetOptions{})
+	require.NoError(t, err)
+	changed := stale.DeepCopy()
+	changed.Labels["changed"] = "after the cache read"
+	_, err = pods.Update(ctx, changed, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	require.NoError(t, indexer.Add(stale))
+	r.WithRunnerCaches(staleInformer(&appsv1.Deployment{}), corelisters.NewPodLister(indexer))
+	client.ClearActions()
+
+	r.resizeRunnerPod(ctx, testOwner, runnerDemand{memoryMiB: 4096, vCPUs: 4})
+
+	assert.Equal(t, 2, resizeCalls(r), "the resize from the stale pod was refused and sent again")
+	pod, err := pods.Get(ctx, r.runnerName(testOwner)+"-abc", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "after the cache read", pod.Labels["changed"], "the change the cache had not seen is kept")
+	assert.NotEqual(t, "1Gi", runnerPodRequest(t, r), "and the resize landed on the current pod")
+}
+
+// TEST_SCENARIO: right after the reconcile updates the gateway's template, the informer still holds the StatefulSet as it was, whose pod is ready on the current revision. A readiness check on that copy would call the gateway ready while it is about to roll, so the reconcile reads its own update, whose generation the StatefulSet controller has not observed yet.
+func TestAReconcileReadsItsOwnStatefulSetUpdate(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	client := r.client.(*fake.Clientset)
+	versionWrites(client)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	markGatewayReady(t, r)
+	ss, err := client.AppsV1().StatefulSets("test-agents").Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	pod, err := client.CoreV1().Pods("test-agents").Get(ctx, GatewayName("my-agent")+"-0", metav1.GetOptions{})
+	require.NoError(t, err)
+	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	require.NoError(t, indexer.Add(pod))
+	r.WithPodCache(corelisters.NewPodLister(indexer)).WithStatefulSetCache(staleInformer(&appsv1.StatefulSet{}, ss))
+	require.True(t, r.podCurrentAndReady(ctx, GatewayName("my-agent")))
+
+	desired := ss.DeepCopy()
+	desired.Spec.Template.Annotations = map[string]string{"changed": "yes"}
+	require.NoError(t, r.applyStatefulSet(ctx, desired, true))
+
+	assert.False(t, r.podCurrentAndReady(ctx, GatewayName("my-agent")), "the gateway is rolling to the new template")
+}
+
+// TEST_SCENARIO: the StatefulSet and its pods come from two caches, so the pod can be the newer of the two: a pod the StatefulSet controller just created on a new revision, not ready yet, looks stuck on a superseded revision against a cached StatefulSet that has not seen the new one. It is deleted only when a live read still finds it stuck.
+func TestAPodNewerThanTheCachedStatefulSetIsNotForceRolled(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	client := r.client.(*fake.Clientset)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	sets := client.AppsV1().StatefulSets("test-agents")
+	ss, err := sets.Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	ss.Status.ObservedGeneration, ss.Status.UpdateRevision = ss.Generation, "rev-1"
+	cached := ss.DeepCopy()
+	ss.Status.UpdateRevision = "rev-2"
+	_, err = sets.UpdateStatus(ctx, ss, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: GatewayName("my-agent") + "-0", Namespace: "test-agents",
+			Labels: maps.Clone(ss.Spec.Selector.MatchLabels)},
+	}
+	pod.Labels["controller-revision-hash"] = "rev-2"
+	_, err = client.CoreV1().Pods("test-agents").Create(ctx, pod, metav1.CreateOptions{})
+	require.NoError(t, err)
+	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	require.NoError(t, indexer.Add(pod))
+	r.WithPodCache(corelisters.NewPodLister(indexer)).WithStatefulSetCache(staleInformer(&appsv1.StatefulSet{}, cached))
+
+	require.NoError(t, r.forceRollStuckPod(ctx, "test-agents", GatewayName("my-agent")))
+
+	_, err = client.CoreV1().Pods("test-agents").Get(ctx, pod.Name, metav1.GetOptions{})
+	assert.NoError(t, err, "the pod on the current revision is left to start")
 }

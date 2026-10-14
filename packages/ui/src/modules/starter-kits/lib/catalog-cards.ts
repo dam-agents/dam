@@ -46,6 +46,13 @@ interface KitBadge {
   iconSlug?: string;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: whether a kit's agent is created on the new sandbox runtime: the kit asks for a machine, or the install pins every create on it. Undefined while the install has not answered and the kit alone does not settle it. The card and the kit page read it from here so they never disagree.
+export function kitRunsOnVm(
+  kit: Pick<StarterKitView, "backend">,
+  vmForced: boolean | undefined,
+): boolean | undefined {
+  return kit.backend === "vm" || vmForced;
+}
 export function kitBadges(
   kit: Pick<
     StarterKitView,
@@ -60,6 +67,7 @@ export function kitBadges(
   >,
   templates: readonly ConnectionTemplateView[],
   templateById: ReadonlyMap<string, ConnectionTemplateView>,
+  vmForced: boolean | undefined,
 ): KitBadge[] {
   const badges: KitBadge[] = [];
 
@@ -93,7 +101,7 @@ export function kitBadges(
 
   if (kit.knowledgeBase) badges.push({ key: "kb", label: "Knowledge base" });
 
-  if (kit.backend === "vm")
+  if (kitRunsOnVm(kit, vmForced) === true)
     badges.push({ key: "backend", label: VM_BACKEND_LABEL });
 
   if (kit.egressPreset && kit.egressPreset !== "trusted")

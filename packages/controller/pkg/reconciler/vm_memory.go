@@ -2,11 +2,11 @@ package reconciler
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sort"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
@@ -50,9 +50,9 @@ func (r *AgentReconciler) liveMachine(name string) vmrunner.MachineStatus {
 // UNIT_BOUNDARY_DESCRIPTION: or no estimate is set, until the runner has measured it.
 // UNIT_BOUNDARY_DESCRIPTION: A running machine's size is the larger of the one
 // UNIT_BOUNDARY_DESCRIPTION: it booted with and the one its next start takes.
-func (r *AgentReconciler) accountedMemoryMiB(name string, spec *apiv1.AgentSpec) int {
+func (r *AgentReconciler) accountedMemoryMiB(ctx context.Context, owner, name string, spec *apiv1.AgentSpec) int {
 	live := r.liveMachine(name)
-	size := max(r.machineMemoryMiB(spec), live.MemoryMiB)
+	size := max(r.machineMemoryMiB(ctx, owner, spec), live.MemoryMiB)
 	if live.UsedMiB == 0 {
 		if boot := r.config.VM.Runner.BootMiB; boot > 0 {
 			return min(size, boot)
@@ -62,21 +62,12 @@ func (r *AgentReconciler) accountedMemoryMiB(name string, spec *apiv1.AgentSpec)
 	return min(size, live.UsedMiB+r.config.VM.Runner.HeadroomMiB)
 }
 
-func (r *AgentReconciler) runnerLimitMiB() int {
-	if res := r.config.VM.Runner.Resources; res != nil {
-		if q, ok := res.Limits[corev1.ResourceMemory]; ok {
-			return int(q.Value() >> 20)
-		}
-	}
-	return 0
-}
-
 // UNIT_BOUNDARY_DESCRIPTION: how much more memory the owner's machines are
 // UNIT_BOUNDARY_DESCRIPTION: counted at, with the reserve, than `percent` of
 // UNIT_BOUNDARY_DESCRIPTION: the runner's limit; zero or less when they fit,
 // UNIT_BOUNDARY_DESCRIPTION: and always zero for an install with no limit.
-func (r *AgentReconciler) runnerOvershootMiB(demandMiB, percent int) int {
-	limit := r.runnerLimitMiB()
+func (r *AgentReconciler) runnerOvershootMiB(ctx context.Context, owner string, demandMiB, percent int) int {
+	limit := r.runnerLimitMiB(ctx, owner)
 	if limit == 0 {
 		return 0
 	}
@@ -89,9 +80,13 @@ func (r *AgentReconciler) runnerOvershootMiB(demandMiB, percent int) int {
 // UNIT_BOUNDARY_DESCRIPTION: the floor, longest-idle first, and only when the
 // UNIT_BOUNDARY_DESCRIPTION: agents chosen cover the whole need — no agent is
 // UNIT_BOUNDARY_DESCRIPTION: hibernated for room that would still not suffice.
+// UNIT_BOUNDARY_DESCRIPTION: A `partial` reclaim, on the runner's own pressure
+// UNIT_BOUNDARY_DESCRIPTION: signal, hibernates what it can instead: near an
+// UNIT_BOUNDARY_DESCRIPTION: OOM kill, which takes every machine of the owner,
+// UNIT_BOUNDARY_DESCRIPTION: freeing some memory beats freeing none.
 // UNIT_BOUNDARY_DESCRIPTION: Each frees what it is counted at, so a guest
 // UNIT_BOUNDARY_DESCRIPTION: holding little frees little.
-func (r *AgentReconciler) reclaimRunnerMemory(ctx context.Context, owner, self string, needMiB int) (bool, error) {
+func (r *AgentReconciler) reclaimRunnerMemory(ctx context.Context, owner, self string, needMiB int, partial bool) (bool, error) {
 	if owner == "" || needMiB <= 0 {
 		return false, nil
 	}
@@ -116,7 +111,7 @@ func (r *AgentReconciler) reclaimRunnerMemory(ctx context.Context, owner, self s
 		chosen = append(chosen, c)
 	}
 	lock.Unlock()
-	if left > 0 {
+	if len(chosen) == 0 || left > 0 && !partial {
 		return false, nil
 	}
 	return true, r.hibernateReclaimed(ctx, chosen, owner, self, "reclaimed idle agent to free memory on its owner's VM runner")
@@ -128,8 +123,9 @@ func (r *AgentReconciler) reclaimRunnerMemory(ctx context.Context, owner, self s
 // UNIT_BOUNDARY_DESCRIPTION: every pass asks each owner's runner about their
 // UNIT_BOUNDARY_DESCRIPTION: running machines, hibernates idle agents of an
 // UNIT_BOUNDARY_DESCRIPTION: owner under pressure, and returns one agent of each
-// UNIT_BOUNDARY_DESCRIPTION: owner whose counted memory moved, for the caller to
-// UNIT_BOUNDARY_DESCRIPTION: reconcile so the runner's request follows it.
+// UNIT_BOUNDARY_DESCRIPTION: owner whose runner pod's request differs from what
+// UNIT_BOUNDARY_DESCRIPTION: their counts call for, for the caller to reconcile
+// UNIT_BOUNDARY_DESCRIPTION: so the request follows them.
 func (r *AgentReconciler) MemoryPass(ctx context.Context) []string {
 	if r.agentCache == nil || !r.config.VM.Enabled {
 		return nil
@@ -149,18 +145,31 @@ func (r *AgentReconciler) MemoryPass(ctx context.Context) []string {
 	}
 	var moved []string
 	for owner, agents := range byOwner {
-		if name, ok := r.ownerMemoryPass(ctx, owner, agents); ok {
+		if name, ok := r.ownerMemoryPass(ctx, owner, agents, nil); ok {
 			moved = append(moved, name)
 		}
 	}
 	return moved
 }
 
-func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, agents []*apiv1.Agent) (string, bool) {
+// UNIT_BOUNDARY_DESCRIPTION: one owner's pass, from the half-minute tick or,
+// UNIT_BOUNDARY_DESCRIPTION: with `pressure`, from their runner's signal. The
+// UNIT_BOUNDARY_DESCRIPTION: two never run together for one owner, since both
+// UNIT_BOUNDARY_DESCRIPTION: would pick the same idle agents for the same need.
+// UNIT_BOUNDARY_DESCRIPTION: Under the signal the counted threshold is not
+// UNIT_BOUNDARY_DESCRIPTION: waited for: the kernel's view is what kills the
+// UNIT_BOUNDARY_DESCRIPTION: runner, so the need is the larger of the counted
+// UNIT_BOUNDARY_DESCRIPTION: and the measured overshoot of the target.
+func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, agents []*apiv1.Agent, pressure *vmrunner.RunnerPressure) (string, bool) {
+	if !r.beginMemoryPass(owner) {
+		return "", false
+	}
+	defer r.endMemoryPass(owner)
 	runner, err := r.runnerFor(ctx, owner)
 	if err != nil {
 		return "", false
 	}
+	r.refreshVMPool(ctx, owner)
 	var first *apiv1.Agent
 	for _, a := range agents {
 		running, err := r.peerShouldRun(ctx, a.Name)
@@ -183,14 +192,27 @@ func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, age
 	if err != nil {
 		return "", false
 	}
-	if r.runnerOvershootMiB(demand.memoryMiB, memoryPressurePercent) > 0 {
-		need := r.runnerOvershootMiB(demand.memoryMiB, memoryTargetPercent)
-		if _, err := r.reclaimRunnerMemory(ctx, owner, "", need); err != nil {
+	need := 0
+	switch {
+	case pressure != nil && !r.freedUnderPressureSince(owner, time.Now().Add(-pressureReclaimCooldown)):
+		limit := pressure.LimitMiB
+		if pool := r.runnerLimitMiB(ctx, owner); pool > 0 {
+			limit = min(limit, pool)
+		}
+		need = max(r.runnerOvershootMiB(ctx, owner, demand.memoryMiB, memoryTargetPercent), pressure.WorkingSetMiB-limit*memoryTargetPercent/100)
+	case pressure == nil && r.runnerOvershootMiB(ctx, owner, demand.memoryMiB, memoryPressurePercent) > 0:
+		need = r.runnerOvershootMiB(ctx, owner, demand.memoryMiB, memoryTargetPercent)
+	}
+	if need > 0 {
+		freed, err := r.reclaimRunnerMemory(ctx, owner, "", need, pressure != nil)
+		if err != nil {
 			slog.WarnContext(ctx, "vm memory: reclaiming under pressure", "owner", owner, "error", err)
 		}
+		if freed && pressure != nil {
+			r.noteFreedUnderPressure(owner)
+		}
 	}
-	rounded := roundedMiB(demand.memoryMiB)
-	if last, ok := r.ownerDemandMiB.Swap(owner, rounded); ok && last.(int) == rounded {
+	if !r.runnerPodMoves(ctx, owner, demand) {
 		return "", false
 	}
 	return first.Name, true
@@ -228,6 +250,63 @@ func (r *AgentReconciler) reclaimForRefusedStart(ctx context.Context, agent *api
 	if err != nil {
 		return err
 	}
-	_, err = r.reclaimRunnerMemory(ctx, owner, agent.Name, r.runnerOvershootMiB(demand.memoryMiB, 100))
+	_, err = r.reclaimRunnerMemory(ctx, owner, agent.Name, r.runnerOvershootMiB(ctx, owner, demand.memoryMiB, 100), false)
 	return err
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the refusal quotes the pool out of the same total Home shows, the runner's whole limit, and the room the start itself needs, since a start is refused for that need while the pool can still look half empty. A runner outside the cluster admits against a share of its host's memory the controller never learns, so its refusal goes without figures rather than quote the chart's limit.
+func (r *AgentReconciler) vmMemoryFullMessage(ctx context.Context, agent *apiv1.Agent, owner string) string {
+	const next = "It starts on its own once room frees up, since the platform pauses idle agents to make room when it can, or you can pause one yourself."
+	if r.config.VM.Runner.HostAddress != "" {
+		return "Your VM agents' memory is full, so this agent can't start yet. " + next
+	}
+	pool := r.runnerLimitMiB(ctx, owner)
+	limit := pool - r.config.VM.Runner.ReserveMiB
+	demand, err := r.ownerRunnerDemand(ctx, owner, agent, false)
+	var with runnerDemand
+	if err == nil {
+		with, err = r.ownerRunnerDemand(ctx, owner, agent, true)
+	}
+	if err != nil {
+		slog.Warn("reading the owner's VM memory for a refused start's message failed; the message goes without figures", "agent", agent.Name, "error", err)
+	}
+	if limit <= 0 || err != nil {
+		return "Your VM agents' memory is full, so this agent can't start yet. " + next
+	}
+	return fmt.Sprintf("Your VM agents are using %.1f of %.1f GiB of memory, and starting this agent needs about %.1f GiB more, so it can't start yet. %s",
+		float64(min(demand.memoryMiB, limit))/1024, float64(pool)/1024, float64(max(with.memoryMiB-demand.memoryMiB, 0))/1024, next)
+}
+
+func (r *AgentReconciler) beginMemoryPass(owner string) bool {
+	r.memoryPassMu.Lock()
+	defer r.memoryPassMu.Unlock()
+	if r.memoryPassing[owner] {
+		return false
+	}
+	if r.memoryPassing == nil {
+		r.memoryPassing = map[string]bool{}
+	}
+	r.memoryPassing[owner] = true
+	return true
+}
+
+func (r *AgentReconciler) endMemoryPass(owner string) {
+	r.memoryPassMu.Lock()
+	defer r.memoryPassMu.Unlock()
+	delete(r.memoryPassing, owner)
+}
+
+func (r *AgentReconciler) noteFreedUnderPressure(owner string) {
+	r.memoryPassMu.Lock()
+	defer r.memoryPassMu.Unlock()
+	if r.pressureFreed == nil {
+		r.pressureFreed = map[string]time.Time{}
+	}
+	r.pressureFreed[owner] = time.Now()
+}
+
+func (r *AgentReconciler) freedUnderPressureSince(owner string, since time.Time) bool {
+	r.memoryPassMu.Lock()
+	defer r.memoryPassMu.Unlock()
+	return r.pressureFreed[owner].After(since)
 }

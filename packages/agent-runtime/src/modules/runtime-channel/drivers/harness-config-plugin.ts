@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import type {
   DriverBinding,
   EventHandler,
@@ -7,6 +8,9 @@ import type {
   HarnessConfigEventPayload,
   Plugin,
 } from "agent-runtime-api";
+import { harnessConfigChoice } from "agent-runtime-api";
+import { z } from "zod";
+import { openJsonFile } from "../../../core/document-store.js";
 import { parseFile } from "../infrastructure/file-codec.js";
 import {
   applyFiles,
@@ -60,9 +64,55 @@ export function createHarnessConfigPlugin(deps: {
   discoverModels: ModelDiscovery;
   seedListingRetry: SeedListingRetry;
   onApplied?: () => void;
+  onListingChanged?: () => void;
   log: (msg: string) => void;
 }): HarnessConfigPlugin {
-  const { binding, agentHome, envReader, discoverModels, log } = deps;
+  const { binding, agentHome, envReader, log } = deps;
+  const listings = openJsonFile(
+    join(agentHome, ".platform", "model-listings", `${deps.harness}.json`),
+    {
+      schema: z.record(
+        z.string(),
+        z.object({ via: z.string(), models: z.array(harnessConfigChoice) }),
+      ),
+      initial: () => ({}),
+    },
+  );
+  const listingKey = (env: Record<string, string>): string | undefined => {
+    const source = selectDiscoverySource(binding?.modelDiscovery, env);
+    return source ? `${source.via}=${source.base}` : undefined;
+  };
+  const discoverModels: ModelDiscovery = async (spec, env) => {
+    const outcome = await deps.discoverModels(spec, env);
+    const key = listingKey(env);
+    if (outcome.status !== "observed" || !key) return outcome;
+    const entry = { via: outcome.via, models: outcome.models };
+    const kept = listings.read()[key];
+    if (JSON.stringify(kept) === JSON.stringify(entry)) return outcome;
+    listings.write({ ...listings.read(), [key]: entry });
+    if (kept) deps.onListingChanged?.();
+    return outcome;
+  };
+  const refreshing = new Map<string, Promise<ModelDiscoveryOutcome>>();
+  const keptOrDiscovered = async (
+    env: Record<string, string>,
+  ): Promise<ModelDiscoveryOutcome> => {
+    const key = listingKey(env);
+    if (!key) return discoverModels(binding?.modelDiscovery, env);
+    let pending = refreshing.get(key);
+    if (!pending) {
+      pending = discoverModels(binding?.modelDiscovery, env).finally(() =>
+        refreshing.delete(key),
+      );
+      refreshing.set(key, pending);
+    }
+    const kept = listings.read()[key];
+    if (!kept) return pending;
+    pending.catch((err: unknown) => {
+      log(`[harness-config] model refresh failed: ${(err as Error).message}`);
+    });
+    return { status: "observed", ...kept };
+  };
   const envOf = (provider: string | null): Record<string, string> =>
     envReader.forLease({ harness: deps.harness, provider });
   const defaultEnv = (): Record<string, string> =>
@@ -162,7 +212,7 @@ export function createHarnessConfigPlugin(deps: {
       ? { status: "not-configured" }
       : binding.modelDiscovery && !envReader.ready()
         ? { status: "unavailable" }
-        : await discoverModels(binding.modelDiscovery, env);
+        : await keptOrDiscovered(env);
     switch (outcome.status) {
       case "observed": {
         const extendsCatalog = selectDiscoverySource(

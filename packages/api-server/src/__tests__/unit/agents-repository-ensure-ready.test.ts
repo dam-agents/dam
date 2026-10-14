@@ -525,6 +525,49 @@ describe("setInvocationPin", () => {
   });
 });
 
+describe("ensureReady waitOnly", () => {
+  const STARTING: Condition[] = [
+    { type: "Ready", status: "False", reason: "PodsNotReady" },
+  ];
+  const activity = (store: Map<string, KubeObject>) =>
+    store.get("a1")?.metadata?.annotations?.["agent-platform.ai/last-activity"];
+
+  // TEST_SCENARIO: the tRPC relay waits this way on a reconnect from an open tab, so a new activity stamp would read as a new wake and keep an idle agent up.
+  it("waits for a starting agent without stamping activity", async () => {
+    const { repo, store } = harness([agentObj("a1", STARTING)]);
+    const p = repo.ensureReady("a1", { waitOnly: true });
+    await vi.advanceTimersByTimeAsync(5_000);
+    store.set("a1", agentObj("a1", READY));
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(p).resolves.toBeUndefined();
+    expect(activity(store)).toBeUndefined();
+  });
+
+  it("stamps nothing on a ready agent", async () => {
+    const { repo, store } = harness([agentObj("a1", READY)]);
+    await repo.ensureReady("a1", { waitOnly: true });
+    expect(activity(store)).toBeUndefined();
+  });
+
+  it("gives up at once when the agent settles hibernated with no wake asked for", async () => {
+    const { repo, store } = harness([agentObj("a1", STARTING)]);
+    const p = repo.ensureReady("a1", { waitOnly: true });
+    p.catch(() => {});
+    await vi.advanceTimersByTimeAsync(0);
+    store.set("a1", agentObj("a1", HIBERNATED));
+    await vi.advanceTimersByTimeAsync(5_000);
+    const err = await p.then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(isAgentWakeTimeoutError(err)).toBe(true);
+    if (isAgentWakeTimeoutError(err)) {
+      expect(err.failure.kind).toBe("hibernated-not-scaled");
+      expect(err.durationMs).toBeLessThan(120_000);
+    }
+    expect(activity(store)).toBeUndefined();
+  });
+});
 describe("requestPause settle", () => {
   const STOP_KEY = "agent-platform.ai/stop-requested";
 

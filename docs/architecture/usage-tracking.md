@@ -16,7 +16,8 @@ Three design choices follow:
   Same input → same output, so cross-table joins and `GROUP BY sub` still work; reverse lookup requires the secret, which lives on the api-server pod.
   Pseudonymization, not anonymization — see [security-and-credentials](security-and-credentials.md) for the GDPR framing.
 - **Access is a separate role.** The `platform-inspector` realm role gates `/api/usage/*`.
-  It is independent of the platform-access role: "can read aggregates" doesn't imply "can use the platform." The Helm chart auto-creates the role and an `inspectors` group mapped to it; operators grant access by adding Keycloak users to the group.
+  It is independent of the platform-access role: "can read aggregates" doesn't imply "can use the platform."
+  The Helm chart auto-creates the role and an `inspectors` group mapped to it; operators grant access by adding Keycloak users to the group.
 
 The subsystem is the **api-server's** responsibility end-to-end.
 The controller does not participate; the agent-runtime does not participate.
@@ -140,15 +141,20 @@ Nine properties of that stream are load-bearing for anyone reading the numbers:
 
 - **Connect events cover every authentication kind, not just OAuth.** A connection reaches its connected state either at creation or — for OAuth alone — when its authorization callback lands, so the event fires at whichever of those two points completes it.
   Emitting at both would double-count OAuth; emitting only at the callback (as it once did) left every non-OAuth connection invisible and could make disconnects outnumber connects.
+
 - **A connection event names its provider, not just its grant.** A Connection's identifier is per-grant and its record is destroyed on disconnect, so the provider must ride the event or the answer to *which providers do people connect* dies with the Connection.
+
 - **Some interactions leave no state behind, and those are the ones the event is load-bearing for.** A skill installed from a source is recoverable from the agent's own record; a Local Skill deliberately writes none, so the event is the only trace a user ever authored one.
   A share-link view is recorded without a viewer — even a restricted link's signed-in viewer is not written — and the artifact carries only a lifetime counter, so the event is what places those views in time.
   Where an event is the *sole* record, losing it loses the fact — which is the argument for recording an interaction even when its state is uninteresting.
   The same reasoning records a Starter Kit Agent finishing its onboarding: the Agent carries only a completion stamp, which goes with it when it is deleted.
   Only the agent's own call to finish onboarding raises the event; a kit that skips onboarding gets its stamp at creation and records nothing, so it never reads as a completed checklist.
+
 - **An ambient turn is marked as one.** A message posted in a channel an Agent listens to without being addressed still reaches the Agent and is recorded as a channel turn, but it is not someone using the Agent.
   The row says so, and the analytics views leave it out of messages and active days, as they do the recovery nudge, the platform's own re-prompt after a silent reply, which the row names as its reason.
+
 - **A Slack binding names its owner.** Binding an Agent to a Slack channel — directly or through a Starter Kit — is recorded against the Agent's owner, because "when did this user first set Slack up" is the question it answers, and a binding row disappears on unbind.
+
 - **An out-of-memory restart is observed, not reported.** Nothing raises an event when an agent runs out of memory: the controller only rewrites the restart count and reason on the Agent's status, and resets the count on hibernation.
   The api-server watches that status and emits an event when the count changes with an out-of-memory reason, carrying the cpu and memory limits the Agent had at that moment, so the report groups the restart by the size the Agent ran out at, whatever it is resized to later.
   An Agent first seen when the watch starts sets a baseline and emits nothing, so a restarted api-server does not report old restarts again; a restart that happens while no replica is watching is missed.
@@ -161,6 +167,7 @@ Four sagas subscribe to the bus:
   The per-event enumeration lives in [activity events](../activity-events.md) — which event is stored under which row type, and where each fires.
   That page is generated from the source and gated against drift, so it is a projection rather than a second copy to maintain; this page stays conceptual.
   Runs only when activity tracking is enabled.
+
 - **persist-actor-roles** — upserts `actor_roles` with the user's core-role flag on `UserAuthenticated`.
   Deliberately a separate saga that runs **unconditionally**: the flag also gates the case-study inspector read paths ([case-studies](case-studies.md)), which must work on installs that disabled activity writes.
 
@@ -232,12 +239,12 @@ Rotating the key orphans every existing row; it is treated as permanent for the 
 
 Four Keycloak-gated endpoints, all behind the `platform-inspector` realm role:
 
-| Endpoint | Returns | Audience |
-|---|---|---|
-| `GET /api/usage/views` | list of queryable view names | scripts, CLI scaffolding |
-| `GET /api/usage?view=<name>` | one view's rows as JSON | programmatic consumers |
-| `GET /api/usage/analytics` | the usage analytics report as JSON | programmatic consumers, tests |
-| `GET /api/usage/report` | the usage analytics dashboard as one HTML page | human inspectors |
+| Endpoint                     | Returns                                        | Audience                      |
+| ---------------------------- | ---------------------------------------------- | ----------------------------- |
+| `GET /api/usage/views`       | list of queryable view names                   | scripts, CLI scaffolding      |
+| `GET /api/usage?view=<name>` | one view's rows as JSON                        | programmatic consumers        |
+| `GET /api/usage/analytics`   | the usage analytics report as JSON             | programmatic consumers, tests |
+| `GET /api/usage/report`      | the usage analytics dashboard as one HTML page | human inspectors              |
 
 The dashboard and its JSON are one report: the api-server computes every number, embeds the result in the page as escaped data, and a script in the page only draws it, so charts fit the window's width and carry hover detail without the browser doing any arithmetic.
 The page loads nothing but its fonts, follows the viewer's colour scheme, and takes the app's theme when the app embeds it.

@@ -216,3 +216,101 @@ describe("createReadHarnessConfig", () => {
     });
   });
 });
+
+describe("kept model listing", () => {
+  let home: string;
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "hcl-"));
+  });
+  afterEach(() => rmSync(home, { recursive: true, force: true }));
+
+  const listed = (...values: string[]) => ({
+    status: "observed" as const,
+    models: values.map((value) => ({ value, name: value })),
+    via: "U",
+  });
+  const hung = () => new Promise<never>(() => {});
+
+  const plugin = (
+    discoverModels: ModelDiscovery,
+    env: Record<string, string> = { U: "https://proxy" },
+    onListingChanged?: () => void,
+  ) =>
+    createHarnessConfigPlugin({
+      harness: "test",
+      binding: { ...BINDING, modelDiscovery: { urlEnv: ["U"] } },
+      agentHome: home,
+      envReader: asLease({ current: () => env, ready: () => true }),
+      seedListingRetry: { attempts: 1, delayMs: 0 },
+      discoverModels,
+      onListingChanged,
+      log: noop,
+    });
+
+  // TEST_SCENARIO: a provider listing can take seconds through the gateway; once one has answered, the picker and the defaults read answer from it at once and the list refreshes behind them.
+  it("answers from the last listing while the provider is slow, then serves the refreshed one", async () => {
+    let answer: (o: ReturnType<typeof listed>) => void = noop;
+    const calls: number[] = [];
+    const hc = plugin(async () => {
+      calls.push(calls.length);
+      return calls.length === 1
+        ? listed("a")
+        : new Promise((resolve) => (answer = resolve));
+    });
+    expect((await hc.readCurrent()).availableModels).toEqual(
+      listed("a").models,
+    );
+    expect(await hc.models(null)).toEqual(listed("a").models);
+    expect(calls).toHaveLength(2);
+    answer(listed("b"));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(await hc.models(null)).toEqual(listed("b").models);
+  });
+
+  // TEST_SCENARIO: a picker already showing the kept listing learns that the refresh behind it found a different one, and only then; a first listing or an unchanged one answered the read itself.
+  it("announces a refresh only when it changes a kept listing", async () => {
+    const answers = [listed("a"), listed("a"), listed("b")];
+    let changes = 0;
+    const hc = plugin(
+      async () => answers.shift() ?? listed("b"),
+      undefined,
+      () => changes++,
+    );
+    const settle = () => new Promise((resolve) => setImmediate(resolve));
+    await hc.models(null);
+    expect(changes).toBe(0);
+    expect(await hc.models(null)).toEqual(listed("a").models);
+    await settle();
+    expect(changes).toBe(0);
+    expect(await hc.models(null)).toEqual(listed("a").models);
+    await settle();
+    expect(changes).toBe(1);
+    expect(await hc.models(null)).toEqual(listed("b").models);
+  });
+
+  // TEST_SCENARIO: the kept listing survives a pod restart through the agent's home, so a woken agent's picker never waits on the provider either.
+  it("answers from the listing a previous process kept on disk", async () => {
+    await plugin(async () => listed("a")).models(null);
+    expect(await plugin(hung).models(null)).toEqual(listed("a").models);
+  });
+
+  // TEST_SCENARIO: a provider that cannot be reached leaves the kept listing in place rather than emptying the picker.
+  it("keeps the listing when a refresh is unavailable", async () => {
+    const hc = plugin(async () => listed("a"));
+    await hc.models(null);
+    const failing = plugin(async () => ({ status: "unavailable" }));
+    await failing.models(null);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(await failing.models(null)).toEqual(listed("a").models);
+  });
+
+  // TEST_SCENARIO: a listing belongs to the provider endpoint that gave it; another endpoint's first read waits for its own listing rather than offering models it may not serve.
+  it("never answers one endpoint from another endpoint's listing", async () => {
+    await plugin(async () => listed("a")).models(null);
+    expect(
+      await plugin(async () => listed("b"), { U: "https://other" }).models(
+        null,
+      ),
+    ).toEqual(listed("b").models);
+  });
+});

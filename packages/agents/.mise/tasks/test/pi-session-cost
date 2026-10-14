@@ -1,0 +1,115 @@
+#!/usr/bin/env node
+//MISE description="Test that Pi on a LiteLLM proxy prices a call at the model vendor's list price and exports it as a pi.api_request log record for the session"
+//MISE sources=["pi-agent/rootfs/usr/local/bin/pi-platform", "pi-agent/rootfs/usr/local/share/pi-platform/extensions/**", ".mise/tasks/test/pi-session-cost", "../../pnpm-lock.yaml"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = fileURLToPath(new URL("../../../pi-agent/", import.meta.url));
+const extensions = join(root, "rootfs/usr/local/share/pi-platform/extensions");
+const cli = join(extensions, "pi-dynamic-providers/node_modules/@earendil-works/pi-coding-agent/dist/cli.js");
+const home = mkdtempSync(join(tmpdir(), "pi-session-cost-"));
+const model = "aws/claude-opus-4-8";
+const records = [];
+let exported;
+const callExported = new Promise((resolve) => { exported = resolve; });
+const chunk = (body) => `data: ${JSON.stringify({ id: "chatcmpl-1", object: "chat.completion.chunk", model, ...body })}\n\n`;
+const server = createServer((req, res) => {
+  let body = "";
+  req.on("data", (data) => { body += data; });
+  req.on("end", () => {
+    if (req.url === "/v1/logs") {
+      for (const resourceLogs of JSON.parse(body).resourceLogs) {
+        const resource = Object.fromEntries(resourceLogs.resource.attributes.map((a) => [a.key, a.value.stringValue]));
+        for (const record of resourceLogs.scopeLogs.flatMap((s) => s.logRecords)) {
+          const attributes = Object.fromEntries(record.attributes.map((a) => [a.key, a.value.stringValue]));
+          records.push({ body: record.body.stringValue, resource, attributes });
+          if (record.body.stringValue === "pi.api_request") exported();
+        }
+      }
+      res.end("{}");
+      return;
+    }
+    if (req.method === "POST") {
+      res.setHeader("content-type", "text/event-stream");
+      res.end(
+        chunk({ choices: [{ index: 0, delta: { role: "assistant", content: "Hello" }, finish_reason: null }] }) +
+          chunk({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }] }) +
+          chunk({ choices: [], usage: { prompt_tokens: 1000, completion_tokens: 100, total_tokens: 1100 } }) +
+          "data: [DONE]\n\n",
+      );
+      return;
+    }
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ data: [{ id: model }] }));
+  });
+});
+server.listen(0, "127.0.0.1");
+await once(server, "listening");
+const address = server.address();
+assert.ok(address && typeof address !== "string");
+const url = `http://127.0.0.1:${address.port}`;
+mkdirSync(join(home, ".pi/agent"), { recursive: true });
+mkdirSync(join(home, "bin"));
+writeFileSync(join(home, "bin/pi"), `#!/bin/sh\nexec '${process.execPath}' '${cli}' "$@"\n`, { mode: 0o755 });
+writeFileSync(join(home, "bin/mise"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+const wrapper = readFileSync(join(root, "rootfs/usr/local/bin/pi-platform"), "utf8").replace("/usr/local/share/pi-platform/extensions", extensions);
+writeFileSync(join(home, "pi-platform"), wrapper);
+const child = spawn("/bin/sh", [join(home, "pi-platform"), "--mode", "rpc", "--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates"], {
+  cwd: home,
+  env: {
+    PATH: `${home}/bin:${process.env.PATH}`, HOME: home, PI_OFFLINE: "1",
+    PLATFORM_PROVIDER: "litellm-test", PLATFORM_MODEL: model, OPENAI_PROXY_URL: url,
+    OTEL_LOGS_EXPORTER: "otlp", OTEL_EXPORTER_OTLP_ENDPOINT: url, OTEL_SERVICE_NAME: "pi",
+    OTEL_RESOURCE_ATTRIBUTES: "platform.agent.name=quiet%20heron",
+  },
+  stdio: ["pipe", "pipe", "pipe"],
+});
+let errors = "";
+child.stderr.on("data", (data) => { errors += data; });
+let timeout;
+try {
+  const state = await new Promise((resolve, reject) => {
+    let output = "";
+    timeout = setTimeout(() => reject(new Error(`Pi startup timed out: ${errors}`)), 30_000);
+    child.once("exit", (code) => reject(new Error(`Pi exited ${code}: ${errors}`)));
+    child.stdout.on("data", (data) => {
+      output += data;
+      for (const line of output.split("\n")) {
+        let message;
+        try { message = JSON.parse(line); } catch { continue; }
+        if (message.type === "response" && message.command === "get_state") resolve(message.data);
+      }
+    });
+    child.stdin.write(`${JSON.stringify({ type: "get_state" })}\n`);
+  });
+  clearTimeout(timeout);
+  child.stdin.write(`${JSON.stringify({ type: "prompt", message: "Say hello." })}\n`);
+  await Promise.race([
+    callExported,
+    new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error(`Pi exported no pi.api_request: ${errors}`)), 30_000); }),
+  ]);
+  const prompt = records.find((r) => r.body === "pi.user_prompt");
+  const call = records.find((r) => r.body === "pi.api_request");
+  assert.ok(prompt, JSON.stringify(records));
+  assert.equal(call.resource["service.name"], "pi");
+  assert.equal(call.resource["platform.agent.name"], "quiet heron");
+  assert.equal(call.attributes["session.id"], state.sessionId);
+  assert.equal(call.attributes["prompt.id"], prompt.attributes["prompt.id"]);
+  assert.equal(call.attributes.model, model);
+  assert.equal(call.attributes.input_tokens, "1000");
+  assert.equal(call.attributes.output_tokens, "100");
+  assert.equal(call.attributes.cost_usd_micros, "7500", "1000 input at $5/M and 100 output at $25/M");
+  console.log("pi-session-cost: a LiteLLM call is priced at the vendor's list price and exported for its session and prompt");
+} finally {
+  clearTimeout(timeout);
+  if (child.exitCode === null) { child.kill(); await once(child, "exit"); }
+  server.close();
+  rmSync(home, { recursive: true, force: true });
+}

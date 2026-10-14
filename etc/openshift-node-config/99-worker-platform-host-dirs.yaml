@@ -1,0 +1,41 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  name: 99-worker-platform-host-dirs
+  labels:
+    # Every pool that selects role=worker MachineConfigs, custom pools that inherit them included.
+    machineconfiguration.openshift.io/role: worker
+spec:
+  config:
+    ignition:
+      version: 3.5.0
+    storage:
+      files:
+        - path: /etc/tmpfiles.d/platform-host-dirs.conf
+          mode: 0644
+          overwrite: true
+          contents:
+            # d /var/lib/platform-vm-runner-releases 0755 root root -
+            # d /var/lib/platform-images 0755 root root -
+            # d /var/lib/platform-harness-tools 0755 root root -
+            source: data:,d%20%2Fvar%2Flib%2Fplatform-vm-runner-releases%200755%20root%20root%20-%0Ad%20%2Fvar%2Flib%2Fplatform-images%200755%20root%20root%20-%0Ad%20%2Fvar%2Flib%2Fplatform-harness-tools%200755%20root%20root%20-%0A
+    systemd:
+      units:
+        - name: platform-host-dirs-label.service
+          enabled: true
+          contents: |
+            [Unit]
+            Description=Label the platform host directories for containers at s0
+            After=systemd-tmpfiles-setup.service
+            Before=crio.service kubelet.service
+
+            [Service]
+            Type=oneshot
+            RemainAfterExit=yes
+            # Top directories only: new files inherit the type, and container_file_t is a customizable type,
+            # so restorecon and autorelabel leave existing contents alone. Only a forced relabel (-F) resets
+            # them; then run chcon -R -h by hand.
+            ExecStart=/usr/bin/chcon system_u:object_r:container_file_t:s0 /var/lib/platform-vm-runner-releases /var/lib/platform-images /var/lib/platform-harness-tools
+
+            [Install]
+            WantedBy=multi-user.target

@@ -20,6 +20,9 @@ import (
 
 var ErrUnauthorized = errors.New("the VM runner refused the controller's token")
 
+// UNIT_BOUNDARY_DESCRIPTION: a 404: the machine is not on the runner, or the runner's release does not serve the route at all, as a runner from before the pressure read does not.
+var ErrNotServed = errors.New("404 Not Found")
+
 type Client struct {
 	URL  string
 	HTTP *http.Client
@@ -70,6 +73,29 @@ func (c *Client) WaitStatus(ctx context.Context, id string, since uint64, wait t
 	return c.machine(ctx, &hc, http.MethodGet, id, "?"+query.Encode(), nil)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the runner's memory pressure, as a long-poll on its pressure version as WaitStatus is on a machine's.
+func (c *Client) WaitPressure(ctx context.Context, since uint64, wait time.Duration) (RunnerPressure, error) {
+	hc := *c.HTTP
+	hc.Timeout += wait
+	query := url.Values{
+		"wait":  {strconv.FormatInt(max(int64(wait/time.Second), 1), 10)},
+		"since": {strconv.FormatUint(since, 10)},
+	}
+	var pressure RunnerPressure
+	raw, err := c.call(ctx, &hc, http.MethodGet, "/pressure?"+query.Encode(), nil)
+	if err != nil {
+		return pressure, fmt.Errorf("VM runner: pressure: %w", err)
+	}
+	return pressure, json.Unmarshal(raw, &pressure)
+}
+func (c *Client) Usage(ctx context.Context) (RunnerUsage, error) {
+	var usage RunnerUsage
+	raw, err := c.call(ctx, c.HTTP, http.MethodGet, "/usage", nil)
+	if err != nil {
+		return usage, fmt.Errorf("VM runner: usage: %w", err)
+	}
+	return usage, json.Unmarshal(raw, &usage)
+}
 func (c *Client) List(ctx context.Context) ([]string, error) {
 	raw, err := c.call(ctx, c.HTTP, http.MethodGet, "/machines", nil)
 	if err != nil {
@@ -146,6 +172,8 @@ func (c *Client) call(ctx context.Context, hc *http.Client, method, path string,
 			if retried || !c.refreshToken(ctx, token) {
 				return nil, ErrUnauthorized
 			}
+		case resp.StatusCode == http.StatusNotFound:
+			return nil, fmt.Errorf("%w: %s", ErrNotServed, bytes.TrimSpace(raw))
 		case resp.StatusCode >= 300:
 			return nil, fmt.Errorf("%s: %s", resp.Status, bytes.TrimSpace(raw))
 		default:

@@ -1,10 +1,12 @@
-// TEST_OVERVIEW: a prompt typed while the agent starts is held until the agent is operable. The hold covers the starting and preparing-workspace states, ends when the agent becomes operable, and fails when the agent leaves those states another way, so the message shows as undelivered instead of waiting forever. An agent that is not starting gives no hold, so the send goes out as before.
+// TEST_OVERVIEW: a prompt typed while the agent starts is held until the agent is operable. The hold covers the starting and preparing-workspace states, ends when the agent becomes operable, and fails when the agent leaves those states another way, so the message shows as undelivered instead of waiting forever. An agent that is not starting gives no hold, so the send goes out as before. A vm agent starts in its usable chat; a container agent starts behind the full-screen overlay.
 import { describe, expect, test } from "vitest";
 
 import {
   AGENT_DID_NOT_START,
   type AgentReadiness,
   agentReadiness,
+  askAgainWhenReady,
+  startsInChat,
   untilAgentReady,
 } from "../../modules/agents/lib/agent-start.js";
 
@@ -83,5 +85,56 @@ describe("untilAgentReady", () => {
     s.set("down");
     await expect(hold).rejects.toThrow(AGENT_DID_NOT_START);
     expect(s.listeners.size).toBe(0);
+  });
+});
+
+describe("askAgainWhenReady", () => {
+  // TEST_SCENARIO: the sidebar asks for the session list while the agent starts; when the relay refuses that ask or its hold fails, the list is asked for again once the agent is ready, so the sidebar does not stay empty.
+  test("asks again once the agent is ready after a failed early ask", async () => {
+    const s = source("starting");
+    let calls = 0;
+    const asked = askAgainWhenReady(
+      async () => {
+        if (++calls === 1) throw new Error("agent not ready");
+        return "list";
+      },
+      () => untilAgentReady(s.read, s.subscribe),
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(calls).toBe(1);
+    s.set("ready");
+    await expect(asked).resolves.toBe("list");
+    expect(calls).toBe(2);
+  });
+
+  // TEST_SCENARIO: an agent that is not starting gives nothing to wait for, so the failure stands and the query's own retry takes over.
+  test("keeps the failure when the agent is not starting", async () => {
+    const asked = askAgainWhenReady(
+      () => Promise.reject(new Error("boom")),
+      () => untilAgentReady(() => "down", source("down").subscribe),
+    );
+    await expect(asked).rejects.toThrow("boom");
+  });
+});
+
+describe("where the agent starts", () => {
+  const starting = ["starting", "preparing_workspace"] as const;
+
+  // TEST_SCENARIO: a vm agent boots in seconds, so its chat stays usable while it starts.
+  test("a vm agent starts in its chat", () => {
+    for (const state of starting)
+      expect(startsInChat({ vm: true }, state)).toBe(true);
+  });
+
+  // TEST_SCENARIO: a container agent takes too long to start for a usable chat to make sense, so it starts behind the overlay.
+  test("a container agent starts behind the overlay", () => {
+    for (const state of starting)
+      expect(startsInChat({ vm: false }, state)).toBe(false);
+  });
+
+  test("an agent that is not starting is not started in its chat", () => {
+    for (const state of ["hibernated", "error", "over_budget"] as const)
+      expect(startsInChat({ vm: true }, state)).toBe(false);
   });
 });

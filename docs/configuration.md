@@ -26,20 +26,20 @@ Gateways then trust it on top of the public roots, and agents trust it beside th
 A connection that carries its upstream's own CA still validates against that CA alone.
 `mise run cluster:install` sets the value by itself when it runs inside one of the platform's vm agents.
 
-### Agents that inject only addressed requests (experimental)
+### Agents that inject only addressed requests
 
-By default a gateway injects a Connection's credential into every request to its host, replacing whatever credential the request carries, unless two Connections compete for the same header.
-An agent created with **addressed injection** has a gateway that injects only when the request names the Connection: by its token placeholder or by its `/__platform_conn/<connection id>/` path prefix.
-Every other request keeps its own credential.
-Use it for an agent whose tools — Docker containers, nested agents — call the same services with their own credentials or none, so its gateway stops overwriting them.
+A new agent requires **named connections**: its gateway injects a Connection's credential only when the request names the Connection, by its token placeholder or by its `/__platform_conn/<connection id>/` path prefix.
+Every other request keeps its own credential, so tools that call the same services with their own credentials or none — Docker containers, nested agents, the browser panel — are left alone.
+Only such an agent offers the browser panel.
+
+With it off, a gateway injects a Connection's credential into every request to its host, replacing whatever credential the request carries, unless two Connections compete for the same header.
+Agents created before named connections became the default keep their setting.
 
 It is set per agent:
 
-- **Agent settings:** turn on *Addressed credential injection* under Settings → Experimental features to see the switch.
-  Settings show it without the flag on an agent that already has it, so it can be turned off.
+- **Agent settings:** *Inject only into addressed requests* under the agent's setup.
   Changing it there restarts the agent's gateway.
-- **Starter kit:** `requireConnectionAddress: true` in `kit.yaml`.
-  A kit sets it whether or not the creating user has the feature flag on.
+- **Starter kit:** `requireConnectionAddress: true` or `false` in `kit.yaml`; a kit that names neither gets the default, on.
 
 Values the platform hands an agent already carry an address.
 A Custom Header Connection that sets no environment variable must be reached through its path prefix on such an agent.
@@ -121,8 +121,11 @@ A Slack channel binds to at most one instance globally; the binding routes every
    `im:read` lets the UI label a connected 1:1 DM with the person it is with; without it the DM shows as its raw id.
    The `users:read` pair lets an agent resolve the user ids it sees in a conversation to names and profiles — the email field needs `users:read.email`.
    `reactions:read` lets an agent look up who reacted to a message and with what emoji.
-   All three are optional: an install without `users:read` never registers the lookup tool at all, rather than exposing one that would always fail, and `reactions:read` gates the reaction-lookup tool the same way; an install with `users:read` but not `users:read.email` still resolves people, just without their email.) [`etc/slack/app-manifest.yaml`](../etc/slack/app-manifest.yaml) carries the full scope and event-subscription set — create the app from it to get everything, including the scopes that ambient mode needs.
+   All three are optional: an install without `users:read` never registers the lookup tool at all, rather than exposing one that would always fail, and `reactions:read` gates the reaction-lookup tool the same way; an install with `users:read` but not `users:read.email` still resolves people, just without their email.)
+   [`etc/slack/app-manifest.yaml`](../etc/slack/app-manifest.yaml) carries the full scope and event-subscription set — create the app from it to get everything, including the scopes that ambient mode needs.
+
 2. Add slash command `/platform` pointing to your app.
+
 3. Generate an app-level token (`xapp-...`) with `connections:write` scope, register `<urls.ui>/api/slack/install/callback` as an OAuth redirect URL, and deploy with the app-level token and the app's client credentials (Basic Information → App Credentials).
    Slack never fetches the redirect URL — the installing admin's browser does — so an internal host behind a VPN works and nothing has to be exposed.
 
@@ -136,8 +139,10 @@ A Slack channel binds to at most one instance globally; the binding routes every
 
 4. Grant yourself the `keycloak.slackInstallerRole` realm role — the chart creates it along with a `slack-installers` group mapped to it, so adding yourself to that group in the Keycloak admin UI is enough.
    Connecting a workspace is install-wide, so only an operator may start one.
+
 5. Connect the app's own workspace the way every workspace is connected (below).
    No bot token is pasted anywhere: each workspace's token comes from the install handshake and is stored in a Kubernetes Secret.
+
 6. In the Platform UI, click the Slack icon on any instance and connect it to a channel (or `dam channel slack connect <agent> --channel-id <C0…> [--ambient]`).
 
 **Agent name and avatar on replies:** with the `chat:write.customize` scope, agent replies post under the agent's name instead of the app's.

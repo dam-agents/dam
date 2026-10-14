@@ -9,6 +9,7 @@ import {
   approvalApprovePermanentInputSchema,
   approvalDenyForeverInputSchema,
   approvalDismissInputSchema,
+  approvalDismissManyInputSchema,
   approvalListForInstanceInputSchema,
   approvalListForOwnerInputSchema,
 } from "./schemas.js";
@@ -47,4 +48,8 @@ export const approvalsRouter = t.router({
   dismiss: operateAgentsProcedure
     .input(approvalDismissInputSchema)
     .mutation(({ ctx, input }) => ctx.approvals.dismiss(input.id)),
+
+  dismissMany: operateAgentsProcedure
+    .input(approvalDismissManyInputSchema)
+    .mutation(({ ctx, input }) => ctx.approvals.dismissMany(input.ids)),
 });

@@ -2,7 +2,8 @@
 name: nous
 description: >-
   Drive Nous, the hypothesis-driven experimentation framework, to investigate
-  software systems with the scientific method via the `nous` CLI. Use when the
+  software systems with the scientific method via the `nous` CLI.
+  Use when the
   user wants to run a Nous campaign, author or scaffold a campaign.yaml, kick
   off / monitor / resume / stop / report on hypothesis-driven experiments, or
   systematically investigate why a system (LLM server, DB optimizer, scheduler,
@@ -185,7 +186,8 @@ Key authoring discipline (see [`reference/campaign-schema.md`](reference/campaig
   In this pod every campaign runs auto-approved, so this inventory is mandatory — a campaign with no `locked_parameters` will refuse to run.
   Front-load it; adding locks reactively after each review round turns a 2-week campaign into a 5-round dance.
 - **`iterations: [{mode: rehearsal}, {mode: real}]`** — schedule iter-1 as a cheap *rehearsal* (does the apparatus parse?
-  does the regime engage the mechanism?) and iter-2+ as full *real* runs.
+  does the regime engage the mechanism?)
+  and iter-2+ as full *real* runs.
 - **`live_target: true`** (under `target_system`) — for probing a *running* system (cluster, service, non-git dataset) with no code to evolve.
   No per-iteration worktree; bundles must contain no `code_changes` arms.
   The target must be reachable from this pod's egress rules.
@@ -225,13 +227,13 @@ A good flow:
 
 Every DESIGN bundle tests one mechanism from multiple angles:
 
-| Arm | Purpose |
-|---|---|
-| `H-main` | Validates the primary mechanism |
-| `H-ablation` | Isolates individual component contributions |
-| `H-super-additivity` | Detects interaction effects between components |
+| Arm                  | Purpose                                                 |
+| -------------------- | ------------------------------------------------------- |
+| `H-main`             | Validates the primary mechanism                         |
+| `H-ablation`         | Isolates individual component contributions             |
+| `H-super-additivity` | Detects interaction effects between components          |
 | `H-control-negative` | Confirms specificity (the effect shouldn't appear here) |
-| `H-robustness` | Tests generalization across conditions |
+| `H-robustness`       | Tests generalization across conditions                  |
 
 Fast-fail rules skip wasted compute on ablations/robustness when `H-main` is refuted.
 
@@ -262,6 +264,7 @@ nous report campaign.yaml
 ```
 
 Notes:
+
 - `--agent sdk` is the **default** backend (Claude Agent SDK, gateway-authenticated here).
   `--agent inline` emits prompts to stdout for an enclosing agent framework.
 - Default per-phase timeout is 1800s (30 min); `--max-cli-retries` default 10, `-1` = unbounded.
@@ -341,17 +344,20 @@ The wiki commands turn raw `ledger.json` / `principles.json` into structured kno
 Run `nous <cmd> --help` for exact flags.
 
 **Lifecycle — run & control**
+
 - `nous run <campaign>` — run end-to-end.
   Flags: `--max-iterations`, `--model`, `--run-id`, `--auto-approve`, `--timeout` (default 1800s), `--max-cli-retries` (default 10, `-1`=unbounded), `--agent {sdk,inline}` (default `sdk`), `--sandbox {bypass,default}`, `--bundle` (skip DESIGN), `--problem-md`, `--handoff-md`.
 - `nous resume <target>` — pick up an interrupted run at the last checkpoint (`--max-iterations`, `--model`, `--auto-approve`, `--timeout`, `--max-cli-retries`, `--agent`).
 - `nous stop <target>` — halt cleanly at the next phase boundary; `--reason`, `--immediate` (abort mid-turn within seconds).
 
 **Author & inspect**
+
 - `nous create-campaign --to <path>` — scaffold a commented `campaign.yaml` (`--target-name`, `--target-description`, `--research-question`, `--run-id`, `--target-repo-path`, `--force`).
 - `nous schema [campaign|bundle|findings]` — print the authoritative artifact schema (`--format {md,json,yaml}`).
 - `nous validate {design|execution} --dir <DIR>` — validate a work-dir against the schema (the same gate the orchestrator runs internally).
 
 **Monitor & report**
+
 - `nous status <target>` — phase/iteration/principles snapshot; `--watch`, `--line`, `--interval`.
 - `nous cost <target>` — token/cost totals; `--cache-stats` for cache hit-rate.
 - `nous report <target>` — (re)generate the **LLM** markdown findings report (`--model`, `--agent`, `--timeout`; costs tokens).
@@ -359,11 +365,13 @@ Run `nous <cmd> --help` for exact flags.
   (Note the trailing `s` — different command.)
 
 **Provenance & reproducibility**
+
 - `nous lineage <target>` — derivation chain + per-iteration `cumulative.patch` availability (what `derived_from` inherited); `--json`.
 - `nous replay <target> --iter <N>` — replay a specific recorded iteration from its artifacts.
 - `nous package <target>` — tarball work_dir + `reproduce.sh` + Dockerfile + README for paper artifact evaluation; `--output`.
 
 **Housekeeping**
+
 - `nous clean` — remove stale `nous-exp-*` worktrees/branches.
   `--orphaned` (default: prune worktrees whose owning run is dead), `--target-repo`, `--campaign`, `--dry-run`.
 

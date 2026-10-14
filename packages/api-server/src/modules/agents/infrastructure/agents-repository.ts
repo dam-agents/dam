@@ -85,7 +85,10 @@ export interface AgentsRepository {
     stamp: AgentActivityStamp,
   ): Promise<void>;
   isReady(id: string): Promise<boolean>;
-  ensureReady(id: string, opts?: { onWaking?: () => void }): Promise<void>;
+  ensureReady(
+    id: string,
+    opts?: { onWaking?: () => void; waitOnly?: boolean },
+  ): Promise<void>;
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: one write of a runtime migration's request, abort, retry or Backend switch. A null annotation removes it. The write names the version it was decided from, so a controller status write in between — the machine reported booted — makes it conflict rather than go through on stale state; a write with no version to name is refused as a conflict.
@@ -167,7 +170,10 @@ export function createAgentsRepository(
         AGENTS_PLURAL,
         buildAgentObject(spec, owner, name, templateId, annotations),
       );
-      return parseInfraAgent(created);
+      const infra = parseInfraAgent(created);
+      const written = created.metadata?.resourceVersion;
+      if (written) await cache.awaitObserved(infra.id, written);
+      return infra;
     },
 
     async updateSpec(id, owner, patch) {
@@ -460,6 +466,7 @@ export function createAgentsRepository(
         opts?.onWaking?.();
         return existing;
       }
+      const waitOnly = opts?.waitOnly ?? false;
 
       const work = (async () => {
         const current = await cache.get(id);
@@ -476,14 +483,14 @@ export function createAgentsRepository(
         }
         refuseWhileMigrating(id, parseInfraAgent(current), 0);
         if (await repo.isReady(id)) {
-          await bumpLastActivity(id);
+          if (!waitOnly) await bumpLastActivity(id);
           return;
         }
         opts?.onWaking?.();
         const startedAt = Date.now();
         getLogger().info({ agentId: id }, "agent.wake.begin");
         try {
-          await bumpLastActivity(id);
+          if (!waitOnly) await bumpLastActivity(id);
         } catch (e) {
           if (!(await k8s.getCustomObject(AGENTS_PLURAL, id))) {
             throw new AgentWakeTimeoutError({
@@ -505,6 +512,14 @@ export function createAgentsRepository(
             }
             const infra = parseInfraAgent(obj);
             refuseWhileMigrating(id, infra, Date.now() - startedAt);
+            if (waitOnly && infra.hibernated && !infra.wakeRequested) {
+              throw new AgentWakeTimeoutError({
+                agentId: id,
+                timeoutMs: WAKE_TIMEOUT_MS,
+                durationMs: Date.now() - startedAt,
+                failure: classifyWakeFailure(infra),
+              });
+            }
             if (infra.overBudget) {
               const graceOver =
                 Date.now() - startedAt >= OVER_BUDGET_FAIL_FAST_GRACE_MS;
@@ -541,7 +556,7 @@ export function createAgentsRepository(
               { agentId: id, durationMs, lateReady: true },
               "agent.wake.ready",
             );
-            await bumpLastActivity(id);
+            if (!waitOnly) await bumpLastActivity(id);
             return;
           }
           const failure = classifyWakeFailure(infra);
@@ -567,12 +582,12 @@ export function createAgentsRepository(
           });
         }
         getLogger().info({ agentId: id, durationMs }, "agent.wake.ready");
-        await bumpLastActivity(id);
-      })().finally(() => {
-        inflight.delete(id);
-      });
-      inflight.set(id, work);
-      return work;
+        if (!waitOnly) await bumpLastActivity(id);
+      })();
+      if (waitOnly) return work;
+      const tracked = work.finally(() => inflight.delete(id));
+      inflight.set(id, tracked);
+      return tracked;
     },
   };
 

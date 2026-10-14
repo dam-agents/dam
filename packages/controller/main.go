@@ -142,8 +142,37 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		}),
 	)
 	podInformer := podFactory.Core().V1().Pods()
+	stripManagedFields := informers.WithTransform(func(obj interface{}) (interface{}, error) {
+		if m, err := meta.Accessor(obj); err == nil {
+			m.SetManagedFields(nil)
+		}
+		return obj, nil
+	})
+	statefulSetInformer := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
+		informers.WithNamespace(cfg.Namespace),
+		informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
+			opts.LabelSelector = reconciler.LabelAgent
+		}),
+		stripManagedFields,
+	).Apps().V1().StatefulSets().Informer()
 
-	agentReconciler := reconciler.NewAgentReconciler(client, dynClient, cfg).WithAgentCache(agentInformer.Lister())
+	agentReconciler := reconciler.NewAgentReconciler(client, dynClient, cfg).WithAgentCache(agentInformer.Lister()).WithPodCache(podInformer.Lister()).WithStatefulSetCache(statefulSetInformer)
+
+	var runnerFactory informers.SharedInformerFactory
+	var runnerInformer, runnerPodInformer cache.SharedIndexInformer
+	if cfg.VM.Enabled {
+		runnerFactory = informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
+			informers.WithNamespace(cfg.Namespace),
+			informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
+				opts.LabelSelector = "app.kubernetes.io/component=vm-runner"
+			}),
+			stripManagedFields,
+		)
+		runnerInformer = runnerFactory.Apps().V1().Deployments().Informer()
+		runnerPods := runnerFactory.Core().V1().Pods()
+		runnerPodInformer = runnerPods.Informer()
+		agentReconciler.WithRunnerCaches(runnerInformer, runnerPods.Lister())
+	}
 
 	idleChecker := reconciler.NewIdleChecker(client, dynClient, cfg)
 	if cfg.VM.Enabled {
@@ -212,15 +241,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	})
 	go runDeleteWorker(ctx, agentReconciler, deleteQueue)
 
-	var runnerInformer cache.SharedIndexInformer
 	if cfg.VM.Enabled {
-		runnerFactory := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
-			informers.WithNamespace(cfg.Namespace),
-			informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
-				opts.LabelSelector = "app.kubernetes.io/component=vm-runner"
-			}),
-		)
-		runnerInformer = runnerFactory.Apps().V1().Deployments().Informer()
 		requeueOwner := func(obj interface{}, isInInitialList bool) {
 			if m, err := meta.Accessor(obj); err == nil {
 				for _, name := range agentReconciler.OwnerVMAgents(reconciler.AgentOwner(m.GetLabels())) {
@@ -292,9 +313,10 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	dynFactory.Start(ctx.Done())
 	podFactory.Start(ctx.Done())
 	secretFactory.Start(ctx.Done())
-	synced := []cache.InformerSynced{agentInformer.Informer().HasSynced, podInformer.Informer().HasSynced, secretInformer.Informer().HasSynced}
+	go statefulSetInformer.RunWithContext(ctx)
+	synced := []cache.InformerSynced{agentInformer.Informer().HasSynced, podInformer.Informer().HasSynced, secretInformer.Informer().HasSynced, statefulSetInformer.HasSynced}
 	if runnerInformer != nil {
-		synced = append(synced, runnerInformer.HasSynced)
+		synced = append(synced, runnerInformer.HasSynced, runnerPodInformer.HasSynced)
 	}
 	if !cache.WaitForCacheSync(ctx.Done(), synced...) {
 		slog.Error("failed to sync informer caches")
@@ -319,6 +341,9 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 
 	go every(ctx, 30*time.Second, func() {
 		for _, name := range agentReconciler.MemoryPass(ctx) {
+			agentQueue.Add(name)
+		}
+		for _, name := range agentReconciler.PoolPass(ctx) {
 			agentQueue.Add(name)
 		}
 	})

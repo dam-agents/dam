@@ -24,4 +24,12 @@ spec:
             namespaces:
               - {{ .Release.Namespace | quote }}
               - {{ .Values.agentNamespace | quote }}
+    {{- if .Values.monitoring.enabled }}
+    # The cluster's Prometheus is off the mesh, so it has no identity a
+    # namespace rule could match; the export port is admitted from anywhere.
+    # It serves only the VM pool series, none of which names a user.
+    - to:
+        - operation:
+            ports: ["9464"]
+    {{- end }}
 {{- end }}

@@ -7,12 +7,12 @@ The harness ships in the default image every harness Template boots, built by `/
 
 ## Stack
 
-| Component | Source | Purpose |
-|---|---|---|
-| Harness | `bobshell` 2.0.3 (the `bob-shell` COS bucket release tarball, as a mise `http:` tool) | `bob acp` is the ACP agent for chat sessions; `bob chat` is the TUI for terminal sessions |
-| Settings bootstrap | [`bob-settings.mjs`](rootfs/app/bob-settings.mjs) | Translates the platform's `BOB_*` env pins into `~/.bob/settings/settings.json`, and re-asserts the platform instructions rules link and the terminal-session pin hook; runs before either surface starts |
-| Session spend | [`bob-session-spend`](rootfs/usr/local/bin/bob-session-spend) | Prints each root task's cost in Bobcoins from `~/.bob/db/bob.db`; the runtime manifest's `sessionSpend` runs it so the sessions list and the Usage section show it |
-| Storage | `/home/agent` PVC | Bob's task history lives in SQLite under `~/.bob/db/bob.db`; settings under `~/.bob/settings/`; survives pod restarts |
+| Component          | Source                                                                                | Purpose                                                                                                                                                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Harness            | `bobshell` 2.0.6 (the `bob-shell` COS bucket release tarball, as a mise `http:` tool) | `bob acp` is the ACP agent for chat sessions; `bob chat` is the TUI for terminal sessions                                                                                                                 |
+| Settings bootstrap | [`bob-settings.mjs`](rootfs/app/bob-settings.mjs)                                     | Translates the platform's `BOB_*` env pins into `~/.bob/settings/settings.json`, and re-asserts the platform instructions rules link and the terminal-session pin hook; runs before either surface starts |
+| Session spend      | [`bob-session-spend`](rootfs/usr/local/bin/bob-session-spend)                         | Prints each root task's cost in Bobcoins from `~/.bob/db/bob.db`; the runtime manifest's `sessionSpend` runs it so the sessions list and the Usage section show it                                        |
+| Storage            | `/home/agent` PVC                                                                     | Bob's task history lives in SQLite under `~/.bob/db/bob.db`; settings under `~/.bob/settings/`; survives pod restarts                                                                                     |
 
 ## ACP
 
@@ -57,7 +57,7 @@ On the platform the agent only ever sees a **placeholder** — the real key is m
    The next pod restart picks up `BOBSHELL_API_KEY` and any pinned `BOB_*` envs along with the Envoy filter chain.
 
 The flow per request: Bob's `fetch()` sets `Authorization: Apikey dummy-placeholder` and tunnels through `HTTPS_PROXY` → Envoy terminates TLS using the platform CA → `credential_injector` rewrites the header to `Apikey bob_prod_…` from the K8s Secret → upstream sees the valid token.
-See [`docs/architecture/security-and-credentials.md`](../../../docs/architecture/security-and-credentials.md) and [ADR-033](../../../docs/adrs/033-envoy-credential-gateway.md).
+See [`docs/architecture/security-and-credentials.md`](../../../docs/architecture/security-and-credentials.md) and [`docs/architecture/credential-gateway.md`](../../../docs/architecture/credential-gateway.md).
 
 With the API key present Bob never asks to authenticate, so the `sso` auth method it advertises is dead weight here — an agent whose secret was never granted fails `session/new` with `auth_required` instead.
 
@@ -65,7 +65,7 @@ With the API key present Bob never asks to authenticate, so the `sso` auth metho
 
 Some Bob backends (`/key/info?key=<value>`) read the credential from a URL query parameter.
 The Bob Connection Template therefore carries a second `egress-inject` Contribution on the same host with `queryParamName: key`, so the gateway injects the same credential there too.
-See [ADR-033 §Credential injection](../../../docs/adrs/033-envoy-credential-gateway.md#credential-injection) for the Envoy URL-rewrite path.
+See [credential-gateway](../../../docs/architecture/credential-gateway.md#envoy-credential-injection) for the Envoy URL-rewrite path.
 
 ## Autonomy posture
 
@@ -147,15 +147,15 @@ If discovery cannot be reached there is nothing to write, so Bob falls back to i
 
 These ride on the secret's `envMappings`, so every agent granted the Bob secret inherits them automatically — no per-agent re-entry.
 
-| Env var | Translated to | Effect |
-|---|---|---|
-| `BOBSHELL_API_KEY` | n/a (env-only) | API key the Envoy sidecar swaps to the real value on the wire. Always emitted. |
-| `BOB_DEFAULT_GATEWAY_URL` | n/a (env-only) | Gateway the session picker's model list is read from when nothing redirects Bob. Always emitted, pinned to the host the secret is scoped to. |
-| `BOB_SHELL_MODEL` | `session.model` | Default model for new tasks, unless the session picks one. Examples: `premium-shell`, `codestral-2508`, `claude-sonnet-5`. Empty → Bob's built-in default. |
-| `BOB_CHAT_MODE` | `session.defaultMode` | One of `agent`, `plan`, `ask` (2.0 merged `code`/`advanced` into `agent`; legacy pinned values are mapped onto `agent`). Starting mode for new sessions, unless the agent's Config panel sets one. |
-| `BOB_MAX_COINS` | `session.maxCost` | Per-task cost cap — Bob stops the task when exceeded. |
-| `BOB_INSTANCE_ID` | `bob chat --instance-id` (terminal only) | IBM tenant scoping. Neither `bob acp` nor the settings file takes an instance, so this pin does not reach chat-mode sessions; headless instance selection goes through Bob profiles. |
-| `BOB_TEAM_ID` | `bob chat --team-id` (terminal only) | Team ID for `general`-type API keys. Terminal-only for the same reason. |
+| Env var                   | Translated to                            | Effect                                                                                                                                                                                             |
+| ------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BOBSHELL_API_KEY`        | n/a (env-only)                           | API key the Envoy sidecar swaps to the real value on the wire. Always emitted.                                                                                                                     |
+| `BOB_DEFAULT_GATEWAY_URL` | n/a (env-only)                           | Gateway the session picker's model list is read from when nothing redirects Bob. Always emitted, pinned to the host the secret is scoped to.                                                       |
+| `BOB_SHELL_MODEL`         | `session.model`                          | Default model for new tasks, unless the session picks one. Examples: `premium-shell`, `codestral-2508`, `claude-sonnet-5`. Empty → Bob's built-in default.                                         |
+| `BOB_CHAT_MODE`           | `session.defaultMode`                    | One of `agent`, `plan`, `ask` (2.0 merged `code`/`advanced` into `agent`; legacy pinned values are mapped onto `agent`). Starting mode for new sessions, unless the agent's Config panel sets one. |
+| `BOB_MAX_COINS`           | `session.maxCost`                        | Per-task cost cap — Bob stops the task when exceeded.                                                                                                                                              |
+| `BOB_INSTANCE_ID`         | `bob chat --instance-id` (terminal only) | IBM tenant scoping. Neither `bob acp` nor the settings file takes an instance, so this pin does not reach chat-mode sessions; headless instance selection goes through Bob profiles.               |
+| `BOB_TEAM_ID`             | `bob chat --team-id` (terminal only)     | Team ID for `general`-type API keys. Terminal-only for the same reason.                                                                                                                            |
 
 Per-agent overrides for any of these still work — set the same env name in **Configure Agent → Env** and it wins over the inherited pin.
 
@@ -180,11 +180,11 @@ Three things to know:
 
 Less common toggles, not surfaced on the provider card.
 
-| Env var | Effect |
-|---|---|
-| `BOB_AUTO_APPROVE` | Set to `0` to make sessions ask per tool call instead of auto-approving, for an agent whose Config panel leaves Approvals unset (see [Autonomy posture](#autonomy-posture)). |
-| `BOB_LOG_LEVEL` | Bob's log level: `debug`, `info`, `warn`, `error`, `silent`. Logs go to stderr; stdout belongs to the ACP stream. |
-| `BOB_TELEMETRY_*` | The platform's export rail, not free-form: `BOB_TELEMETRY_PROVIDER`, `_URL`, `_SERVICE_PATH` and `_AGENT_OPS_ENABLED` are set for the agent when the telemetry backend is enabled, pointing Bob's OTLP exporter at the platform collector through the ordinary gateway egress. Overriding them by hand redirects the agent's spend telemetry, so leave them to the rail. Bob 2.0.3 also reads the standard `OTEL_EXPORTER_OTLP_*` variables: a set endpoint among them overrides the provider, and only `http/json` is accepted, so those stay unset as well. The exporter ignores `HTTPS_PROXY`, so on the platform the export does not reach the collector today. |
+| Env var            | Effect                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BOB_AUTO_APPROVE` | Set to `0` to make sessions ask per tool call instead of auto-approving, for an agent whose Config panel leaves Approvals unset (see [Autonomy posture](#autonomy-posture)).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `BOB_LOG_LEVEL`    | Bob's log level: `debug`, `info`, `warn`, `error`, `silent`. Logs go to stderr; stdout belongs to the ACP stream.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `BOB_TELEMETRY_*`  | The platform's export rail, not free-form: `BOB_TELEMETRY_PROVIDER`, `_URL`, `_SERVICE_PATH` and `_AGENT_OPS_ENABLED` are set for the agent when the telemetry backend is enabled, pointing Bob's OTLP exporter at the platform collector through the ordinary gateway egress. Overriding them by hand redirects the agent's spend telemetry, so leave them to the rail. Bob also reads the standard `OTEL_EXPORTER_OTLP_*` variables: a set endpoint among them overrides the provider and also sends a copy of the export to IBM's own endpoint, so those stay unset as well. The exporter ignores `HTTPS_PROXY`, so on the platform the export does not reach the collector today. |
 
 Telemetry has no env switch.
 Bob reads `telemetry.enabled` from `~/.bob/settings/settings.json`, and the bootstrap keeps whatever that section already holds apart from asserting `excludePayload`, so setting it to `false` by hand (Files panel or SSH) survives every restart.
@@ -197,11 +197,11 @@ The settings bootstrap also pins `bobShell.autoUpdate: false`: the image pins th
 
 ## Harness scripts
 
-| Script | Behavior |
-|---|---|
-| [`harness-chat`](rootfs/usr/local/bin/harness-chat) | Runs `bob-settings.mjs`, turns the approval mode it printed into `--auto-approve` or nothing, then `exec`s `bob acp`. A failed bootstrap fails the harness — without the posture Bob refuses every tool that touches `$HOME`. |
+| Script                                                      | Behavior                                                                                                                                                                                                                      |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`harness-chat`](rootfs/usr/local/bin/harness-chat)         | Runs `bob-settings.mjs`, turns the approval mode it printed into `--auto-approve` or nothing, then `exec`s `bob acp`. A failed bootstrap fails the harness — without the posture Bob refuses every tool that touches `$HOME`. |
 | [`harness-terminal`](rootfs/usr/local/bin/harness-terminal) | Same bootstrap and approval translation, plus the tenant-scoping env as `bob chat` flags, then `exec`s the TUI — with `--resume <task>` when the session has a pinned Bob task (see [Terminal sessions](#terminal-sessions)). |
-| [`bob-pin-session`](rootfs/usr/local/bin/bob-pin-session) | The `SessionStart` hook that pins a terminal session's Bob task. A no-op outside a terminal session. |
+| [`bob-pin-session`](rootfs/usr/local/bin/bob-pin-session)   | The `SessionStart` hook that pins a terminal session's Bob task. A no-op outside a terminal session.                                                                                                                          |
 
 ## Session history
 
