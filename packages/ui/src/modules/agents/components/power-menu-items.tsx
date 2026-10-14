@@ -7,9 +7,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 import type { AgentView } from "../../../types.js";
-
-export const SLEEP_UNAVAILABLE_REASON =
-  "This agent is set to never sleep on its own, so it can't be put to sleep. Change its idle timeout in Sandbox settings.";
+import { SLEEP_HINT, SLEEP_UNAVAILABLE_REASON } from "../lib/sleep-copy.js";
 
 export function SleepMenuItem({
   agent,
@@ -39,7 +37,7 @@ export function SleepMenuItem({
             )}
           </span>
           <span className="whitespace-normal text-xs text-muted-foreground">
-            (wakes up on next message or schedule)
+            {SLEEP_HINT}
           </span>
         </span>
         {neverSleeps && (

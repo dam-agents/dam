@@ -1436,7 +1436,7 @@ func TestARefusedMachineParksAndReleasesTheOwnersBudget(t *testing.T) {
 	require.NotNil(t, cond)
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
 	assert.Regexp(t, `^Your VM agents are using [0-9.]+ of 8\.0 GiB of memory, and starting this agent needs about [1-9][0-9.]* GiB more`, cond.Message, "the user reads the pool out of the total Home shows, and the room the start itself needs")
-	assert.Contains(t, cond.Message, "pause one yourself", "the user reads what frees it")
+	assert.Contains(t, cond.Message, "put one to sleep yourself", "the user reads what frees it")
 	assert.NotContains(t, cond.Message, "MiB", "the runner's accounting stays out of the user's copy")
 }
 

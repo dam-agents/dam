@@ -10,13 +10,16 @@ import { useDeleteAgent } from "../../agents/api/mutations.js";
 import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
 import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
 import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
-import { SLEEP_UNAVAILABLE_REASON } from "../../agents/components/power-menu-items.js";
 import { UpdateAvailableAction } from "../../agents/components/update-available-action.js";
 import { useConfirmDeleteAgent } from "../../agents/hooks/use-confirm-delete-agent.js";
 import { useRestartAgent } from "../../agents/hooks/use-restart-agent.js";
 import { useSleepAgent } from "../../agents/hooks/use-sleep-agent.js";
 import { useUpdateSandbox } from "../../agents/hooks/use-update-sandbox.js";
 import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
+import {
+  SLEEP_HINT,
+  SLEEP_UNAVAILABLE_REASON,
+} from "../../agents/lib/sleep-copy.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 
 interface Props {
@@ -94,9 +97,7 @@ export function SandboxHomeHeader({
             aria-label="Sleep"
             disabled={!running || neverSleeps}
             tooltip={
-              neverSleeps
-                ? SLEEP_UNAVAILABLE_REASON
-                : "Sleep: wakes on any action (a schedule firing, a message arriving, or you opening a chat)"
+              neverSleeps ? SLEEP_UNAVAILABLE_REASON : `Sleep ${SLEEP_HINT}`
             }
             onClick={() => sleep(agent.id)}
             data-testid="agent-sleep"

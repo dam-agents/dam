@@ -108,7 +108,7 @@ export function storagePercent(usage: RunnerUsage): number | null {
   return usableBytes > 0 ? Math.floor((usedBytes * 100) / usableBytes) : null;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the one storage-full message, said the same way by the create refusal, the Slack alert and a refused wake, and matching the runner's own refusal: what is refused at the current level, that a stopped VM agent can still be opened to clean up until storage is nearly full, and the ways to free space. Without figures, as on a refused wake, it says only that starts stop once storage is nearly full, which holds whatever the level.
+// UNIT_BOUNDARY_DESCRIPTION: the one storage-full message, said the same way by the create refusal, the Slack alert and a refused wake, and matching the runner's own refusal: what is refused at the current level, that a sleeping VM agent can still be opened to clean up until storage is nearly full, and the ways to free space. Without figures, as on a refused wake, it says only that starts stop once storage is nearly full, which holds whatever the level.
 export function storageFullMessage(figures?: {
   usedBytes: number;
   usableBytes: number;
@@ -126,10 +126,10 @@ export function storageFullMessage(figures?: {
       : null,
     `${used}, so new VM agents can't be created and their disks can't grow.`,
     percent === null
-      ? "Once storage is nearly full, stopped VM agents can't be started until space is freed."
+      ? "Once storage is nearly full, sleeping VM agents can't be started until space is freed."
       : percent >= STORAGE_START_LIMIT_PERCENT
-        ? "Stopped VM agents can't be started until space is freed."
-        : "Stopped VM agents can still be started until storage is nearly full, so you can open one and ask it to clear its caches.",
+        ? "Sleeping VM agents can't be started until space is freed."
+        : "Sleeping VM agents can still be started until storage is nearly full, so you can open one and ask it to clear its caches.",
     "To free space, delete a VM agent you no longer need, open an agent and ask it to clear its caches, or request more storage.",
   ]
     .filter(Boolean)
