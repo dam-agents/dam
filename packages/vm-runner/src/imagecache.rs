@@ -2,10 +2,12 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 use crate::cache::{
@@ -26,6 +28,7 @@ pub struct ImageCache {
     memory: Mutex<Memory>,
     measuring: Mutex<()>,
     fetching: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    reclaiming: Arc<AtomicU64>,
 }
 
 pub const ROOTFS_DIR: &str = "rootfs";
@@ -42,11 +45,24 @@ pub const RESOLVE_DEADLINE: Duration = Duration::from_secs(PULL_TIMEOUT.as_secs(
 // UNIT_BOUNDARY_DESCRIPTION: the most digests one hold may name. A runner names only what its own machines boot, which is a few dozen at most; the cap bounds what one caller can make the service remember.
 pub const HOLDS_PER_CALL: usize = 1024;
 
+// UNIT_BOUNDARY_DESCRIPTION: how long the preload waits before it fetches a digest again after the fetch failed: PRELOAD_RETRY after the first failure, doubled after each next one, up to PRELOAD_RETRY_MAX. A fetch streams the whole image and keeps nothing when it fails, so an image that cannot unpack would otherwise be downloaded again on every pass.
+pub const PRELOAD_RETRY: Duration = Duration::from_secs(5 * 60);
+pub const PRELOAD_RETRY_MAX: Duration = Duration::from_secs(6 * 60 * 60);
+
+fn preload_retry(failures: u32) -> Duration {
+    PRELOAD_RETRY
+        .saturating_mul(1 << failures.saturating_sub(1).min(16))
+        .min(PRELOAD_RETRY_MAX)
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: how far past its budget a node cache may grow before it refuses to fetch: its budget and half again. Holds keep a tree from eviction, and every runner on the node may hold or resolve any digest over the one socket, so without a ceiling one compromised runner could fill the node's disk with trees nobody may evict. A runner's own cache has no ceiling: it serves one owner, on that owner's claim.
 pub fn node_fetch_ceiling(budget: i64) -> Option<u64> {
     let budget = u64::try_from(budget).ok().filter(|b| *b > 0)?;
     Some(budget.saturating_add(budget / 2))
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: how much larger an unpacked tree is taken to be than the compressed size its manifest names. OCI metadata gives no unpacked size, and agent images unpack to about two to three times their layers; this is a fixed guess. Reading each gzip layer's trailer would give a closer figure at one ranged read per layer.
+pub const UNPACKED_RATIO: u64 = 3;
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a hold keeps an entry from eviction after the holder last named it. A runner names every digest its machines boot at least once a minute, so a hold lapses only for a runner that has stopped, and its machines stopped with it.
 pub const HOLD_LEASE: Duration = Duration::from_secs(5 * 60);
@@ -69,11 +85,14 @@ pub struct CacheConfig {
 struct Memory {
     refs: HashMap<String, (String, Instant)>,
     public: HashSet<String>,
+    private: HashMap<String, Instant>,
+    granted: HashMap<(String, String), Instant>,
     holds: HashMap<String, Instant>,
     entries: HashMap<PathBuf, Entry>,
     in_flight: u64,
     measured: bool,
     unflushed: Vec<PathBuf>,
+    preload_failures: HashMap<String, (u32, Instant)>,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what a machine of a reference boots: the digest its tree is stored under, and what the image says to run.
@@ -178,6 +197,7 @@ impl ImageCache {
             memory: Mutex::new(Memory::default()),
             measuring: Mutex::new(()),
             fetching: Mutex::new(HashMap::new()),
+            reclaiming: Arc::default(),
         }
     }
 
@@ -309,7 +329,9 @@ impl ImageCache {
                 }
             }
         };
-        let reserved = match self.admit(prepared.floor) {
+        let need = prepared.floor.unwrap_or(0).saturating_mul(UNPACKED_RATIO);
+        let room = self.make_room(need);
+        let reserved = match self.admit(need) {
             Ok(reserved) => reserved,
             Err(e) => return Lookup::failed(e),
         };
@@ -318,12 +340,13 @@ impl ImageCache {
         let mut report = Fetched {
             ms: elapsed_ms(started),
             ok: fetched.is_ok(),
-            ..Fetched::default()
+            freed: room.freed,
+            used: room.used,
         };
         let resolved = fetched.map(|launch| {
             self.hold_one(&digest);
             let trim = self.evict(Some(&entry));
-            report.freed = trim.freed;
+            report.freed.extend(trim.freed);
             report.used = trim.used;
             Resolved { digest, launch }
         });
@@ -369,7 +392,7 @@ impl ImageCache {
         Ok(Some((launch, origin)))
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a cache hit is a boot the registry never saw, so on a shared cache an entry that is not known to be public is served only after a registry still gives it to the caller where it came from: an anonymous read of one of its origin repositories first, which marks it public, then each of the caller's credentials against each origin in turn. The repository the caller names is never what is asked, because anyone can name any digest under a registry of their own that answers every read. A caller whose repository is not an origin and whose credentials read none is unproven rather than refused, and fetches the digest itself. It fails closed: a registry that cannot be reached refuses the boot. What is known to be public is kept in memory only, so after a restart every entry is checked once again.
+    // UNIT_BOUNDARY_DESCRIPTION: a cache hit is a boot the registry never saw, so on a shared cache an entry that is not known to be public is served only after a registry still gives it to the caller where it came from: an anonymous read of one of its origin repositories first, which marks it public, then each of the caller's credentials against each origin in turn. The repository the caller names is never what is asked, because anyone can name any digest under a registry of their own that answers every read. A caller whose repository is not an origin and whose credentials read none is unproven rather than refused, and fetches the digest itself. It fails closed: a registry that cannot be reached refuses the boot. What is known to be public is kept in memory only, so after a restart every entry is checked once again. A boot the registry granted is remembered per digest and credential, and an anonymous read that failed per digest, each for `ref_fresh`: a fleet of creates on one private image then asks the registry once. A failed anonymous read only moves that read after the caller's credentials; it is never what refuses a boot, since a read that timed out reads the same as one refused, and a public image must still boot for a caller with no credential; and a revoked pull secret still boots a tree it was granted for that long, as a tag boots what it last resolved to.
     fn may_reuse(
         &self,
         caller_repo: &str,
@@ -381,6 +404,25 @@ impl ImageCache {
         if !self.config.check_access || locked(&self.memory).public.contains(digest) {
             return Ok(Reuse::Granted);
         }
+        let fresh = self.config.ref_fresh;
+        let keys: Vec<(String, String)> = auths
+            .iter()
+            .map(|auth| {
+                (
+                    digest.to_string(),
+                    hex::encode(Sha256::digest(auth.as_bytes())),
+                )
+            })
+            .collect();
+        let known_private = {
+            let mut memory = locked(&self.memory);
+            memory.granted.retain(|_, at| at.elapsed() < fresh);
+            memory.private.retain(|_, at| at.elapsed() < fresh);
+            if keys.iter().any(|key| memory.granted.contains_key(key)) {
+                return Ok(Reuse::Granted);
+            }
+            memory.private.contains_key(digest)
+        };
         let crane = &self.config.crane;
         let lifetime = &self.config.lifetime;
         let named = format!("{caller_repo}@{digest}");
@@ -394,18 +436,31 @@ impl ImageCache {
             .iter()
             .map(|repo| format!("{repo}@{digest}"))
             .collect();
-        if origins
-            .iter()
-            .any(|at| fetch::readable(crane, at, ANONYMOUS, deadline, lifetime))
-        {
-            locked(&self.memory).public.insert(digest.to_string());
+        let anonymous = || {
+            let public = origins
+                .iter()
+                .any(|at| fetch::readable(crane, at, ANONYMOUS, deadline, lifetime));
+            let mut memory = locked(&self.memory);
+            if public {
+                memory.public.insert(digest.to_string());
+            } else {
+                memory.private.insert(digest.to_string(), Instant::now());
+            }
+            public
+        };
+        if !known_private && anonymous() {
             return Ok(Reuse::Granted);
         }
-        if auths.iter().any(|auth| {
+        if let Some(key) = auths.iter().zip(keys).find_map(|(auth, key)| {
             origins
                 .iter()
                 .any(|at| fetch::readable(crane, at, auth, deadline, lifetime))
+                .then_some(key)
         }) {
+            locked(&self.memory).granted.insert(key, Instant::now());
+            return Ok(Reuse::Granted);
+        }
+        if known_private && anonymous() {
             return Ok(Reuse::Granted);
         }
         if origin.repositories.contains(caller_repo) {
@@ -443,13 +498,34 @@ impl ImageCache {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: admits one fetch. The filesystem must have room for at least the image's compressed size. A node cache must not be past its ceiling counting every fetch already under way at what it reserved, so fetches that start together cannot each find the cache under its ceiling and together fill the disk: once the fetches in flight take it past the ceiling, the next is refused. Only a cache whose every other tree is held gets there, so that refusal is logged as an error for the operator: some runner holds more than its machines can be running. What this reserves is released when the returned reservation is dropped, once the entry is weighed in or the fetch has failed.
-    fn admit(&self, floor: Option<u64>) -> anyhow::Result<Reservation<'_>> {
-        let floor = floor.unwrap_or(0);
-        if let Some(free) = fetch::free_bytes(&self.config.dir) {
-            if free < floor {
+    // UNIT_BOUNDARY_DESCRIPTION: what the filesystem has free for a fetch: what statvfs reports, and what evicted trees still being deleted will give back.
+    fn free(&self) -> Option<u64> {
+        fetch::free_bytes(&self.config.dir)
+            .map(|free| free.saturating_add(self.reclaiming.load(Ordering::Relaxed)))
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: evicts before a fetch, so the tree it unpacks fits both the budget and the filesystem: unheld entries go, oldest first, until the cache is `need` inside its budget, and then until the filesystem has `need` free. A fetch that still does not fit is refused by admit. A cache with no budget evicts nothing, here as everywhere. The entry being fetched is never taken, since the resolve holds its gate.
+    fn make_room(&self, need: u64) -> Trim {
+        if self.config.budget <= 0 {
+            return Trim::default();
+        }
+        let budget = self.config.budget.saturating_sub_unsigned(need).max(1);
+        let mut trim = self.evict_to(None, budget);
+        if let Some(short) = self.free().and_then(|free| need.checked_sub(free)) {
+            let used = self.used();
+            let more = self.evict_to(None, used.saturating_sub(short).max(1) as i64);
+            trim.freed.extend(more.freed);
+            trim.used = more.used;
+        }
+        trim
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: admits one fetch of a tree taken to unpack to `need` bytes. The filesystem must have that much free, counting what evicted trees still being deleted give back. A node cache must not be past its ceiling counting every fetch already under way at what it reserved, so fetches that start together cannot each find the cache under its ceiling and together fill the disk: once the fetches in flight take it past the ceiling, the next is refused. Only a cache whose every other tree is held gets there, so that refusal is logged as an error for the operator: some runner holds more than its machines can be running. What this reserves is released when the returned reservation is dropped, once the entry is weighed in or the fetch has failed.
+    fn admit(&self, need: u64) -> anyhow::Result<Reservation<'_>> {
+        if let Some(free) = self.free() {
+            if free < need {
                 return Err(out_of_capacity(format!(
-                    "the image needs at least {floor} bytes, and the filesystem holding the image cache has {free} free"
+                    "the image needs about {need} bytes unpacked, and the filesystem holding the image cache has {free} free"
                 )));
             }
         }
@@ -471,10 +547,10 @@ impl ImageCache {
                 )));
             }
         }
-        memory.in_flight = memory.in_flight.saturating_add(floor);
+        memory.in_flight = memory.in_flight.saturating_add(need);
         Ok(Reservation {
             cache: self,
-            bytes: floor,
+            bytes: need,
         })
     }
 
@@ -738,7 +814,7 @@ impl ImageCache {
         trim
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: takes one chosen entry out of the cache, with the entry's fetch gate taken so no resolve reads the tree while it goes. A resolve of the digest that comes after waits on the gate, then finds the entry gone and fetches it again. An entry a resolve is reading now, or one held since it was chosen, is passed over: a resolve holds its digest before it lets go of the gate, so a hold is either seen here or its resolve still has the gate. The tree is renamed away under the gate and deleted after it is let go. An entry that cannot be renamed away stays, whole, and is counted as it was.
+    // UNIT_BOUNDARY_DESCRIPTION: takes one chosen entry out of the cache, with the entry's fetch gate taken so no resolve reads the tree while it goes. A resolve of the digest that comes after waits on the gate, then finds the entry gone and fetches it again. An entry a resolve is reading now, or one held since it was chosen, is passed over: a resolve holds its digest before it lets go of the gate, so a hold is either seen here or its resolve still has the gate. The tree is renamed away under the gate and deleted after it is let go, on a thread of its own, so the resolve or pass that chose it does not wait out a delete of every file of an image; until it is gone its size counts as free for admit. An entry that cannot be renamed away stays, whole, and is counted as it was.
     fn remove(&self, victim: &Entry) -> bool {
         let Some(digest) = entry_digest(&victim.path) else {
             return false;
@@ -761,23 +837,72 @@ impl ImageCache {
             let mut memory = locked(&self.memory);
             memory.entries.remove(&victim.path);
             memory.public.remove(&digest);
+            memory.private.remove(&digest);
+            memory.granted.retain(|(granted, _), _| *granted != digest);
         }
         drop(resolving);
-        drop(aside);
+        if let Some(aside) = aside {
+            let reclaiming = self.reclaiming.clone();
+            reclaiming.fetch_add(victim.size, Ordering::Relaxed);
+            let size = victim.size;
+            std::thread::spawn(move || {
+                drop(aside);
+                reclaiming.fetch_sub(size, Ordering::Relaxed);
+            });
+        }
         true
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: one preload pass over the pins. Each tag is resolved again on every pass, so a tag that moved is fetched under its new digest and the pin moves with it; the old digest's tree is then held only by the machines still running it. The directory is trimmed every pass, not only after a fetch, because the cache outlives every runner that fetched into it.
+    // UNIT_BOUNDARY_DESCRIPTION: one preload pass over the pins. Each tag is resolved again on every pass, so a tag that moved is fetched under its new digest and the pin moves with it; the old digest's tree is then held only by the machines still running it. A digest whose fetch failed is not fetched again until its retry wait is over; a fetch refused before it started, for lack of room, waits for nothing, since it downloaded nothing; the wait belongs to the digest, so a tag that moves to a fixed image is fetched on the next pass. The directory is trimmed every pass, not only after a fetch, because the cache outlives every runner that fetched into it.
     pub fn preload(&self, auths: &[String]) {
+        let mut pinned = HashSet::new();
         for reference in &self.config.pins {
             if self.config.lifetime.is_cancelled() {
                 return;
             }
-            let lookup = self.resolve_with(reference, auths, Duration::ZERO);
-            if let Err(e) = lookup.resolved {
-                tracing::warn!(image = %logged(reference), error = %format!("{e:#}"), "image cache: preloading an image this install ships");
+            let deadline = Instant::now() + RESOLVE_DEADLINE;
+            let digest = if is_image_ref(reference) && !reference.contains("..") {
+                self.digest_for(reference, Duration::ZERO, auths, deadline)
+            } else {
+                Err(unusable("not an image reference".to_string()))
+            };
+            let digest = match digest {
+                Ok(digest) => digest,
+                Err(e) => {
+                    tracing::warn!(image = %logged(reference), error = %format!("{e:#}"), "image cache: preloading an image this install ships");
+                    continue;
+                }
+            };
+            pinned.insert(digest.clone());
+            if let Some((failures, at)) = locked(&self.memory).preload_failures.get(&digest) {
+                if at.elapsed() < preload_retry(*failures) {
+                    continue;
+                }
+            }
+            let lookup = self.resolve_with(reference, auths, Duration::MAX);
+            let mut memory = locked(&self.memory);
+            match lookup.resolved {
+                Ok(_) => {
+                    memory.preload_failures.remove(&digest);
+                }
+                Err(e) if lookup.fetched.is_none() => {
+                    tracing::warn!(image = %logged(reference), error = %format!("{e:#}"), "image cache: preloading an image this install ships");
+                }
+                Err(e) => {
+                    let failures = memory
+                        .preload_failures
+                        .get(&digest)
+                        .map_or(1, |(n, _)| n + 1);
+                    memory
+                        .preload_failures
+                        .insert(digest, (failures, Instant::now()));
+                    tracing::warn!(image = %logged(reference), error = %format!("{e:#}"), failures, retry_s = preload_retry(failures).as_secs(), "image cache: preloading an image this install ships");
+                }
             }
         }
+        locked(&self.memory)
+            .preload_failures
+            .retain(|digest, _| pinned.contains(digest));
         self.evict(None);
     }
 }

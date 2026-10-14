@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"maps"
 	"net/netip"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -82,7 +83,7 @@ func runnerSuffix(owner string) string {
 	return hex.EncodeToString(sum[:8])
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: runners are per owner, so no single Agent can own them — one agent's deletion would collect a runner still holding another's disk. They are owned instead by the ServiceAccount the chart renders for them, which sits in the same namespace (an owner reference may not cross one) and is removed by uninstall, by rollback and by turning virtualization off — so the runners, their disks and their credentials go with it.
+// UNIT_BOUNDARY_DESCRIPTION: runners are per owner, so no single Agent can own them — one agent's deletion would collect a runner still holding another's disk. They are owned instead by the ServiceAccount the chart renders for them, which sits in the same namespace (an owner reference may not cross one) and is removed by uninstall, by rollback and by turning virtualization off — so the runners and their credentials go with it. The claim holding their disks is the one exception, left unowned (see applyRunnerPVC).
 // UNIT_BOUNDARY_DESCRIPTION: the reference is resolved on every call rather than cached for the process: a ServiceAccount that is deleted and recreated — switching virtualization off and on does exactly that — comes back with a new UID, and objects stamped with the old one are collected the moment they are written, which reads as a runner that silently never appears.
 func (r *AgentReconciler) runnerOwnerRef(ctx context.Context) []metav1.OwnerReference {
 	name := r.config.VM.Runner.ServiceAccountName
@@ -164,7 +165,7 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string) (*vmru
 			}
 			return nil
 		},
-		func() error { return r.applyRunnerPVC(ctx, owner, refs) },
+		func() error { return r.applyRunnerPVC(ctx, owner) },
 		func() error { return r.applyService(ctx, r.buildRunnerService(owner, refs)) },
 		func() error { return applyNetworkPolicy(ctx, r.client, np) },
 	); err != nil {
@@ -417,17 +418,23 @@ func (r *AgentReconciler) growRunnerPVC(ctx context.Context, owner string, claim
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: every machine disk of the owner may grow to their whole storage pool, so the claim under them is sized at the pool from the start and grows when the pool does; the runner's storage guard watches its use.
-func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string, refs []metav1.OwnerReference) error {
+// UNIT_BOUNDARY_DESCRIPTION: unlike every other runner object, the claim has no owner: it holds every machine disk of the owner, and an owner reference to the runner ServiceAccount let one deletion of that account — a recreate, a rollback, a failed upgrade — collect every user's disks at once. Like a StatefulSet's volume claims, nothing deletes it but the orphan sweep, or an operator by label after an uninstall. A claim written by an older controller still carries the account's reference, so it is stripped here, which protects an existing install after one reconcile.
+func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string) error {
 	name, ns := r.runnerName(owner), r.config.Namespace
 	size, sizeErr := r.runnerStorageCeiling(ctx, owner)
 	if existing, err := r.client.CoreV1().PersistentVolumeClaims(ns).Get(ctx, name, metav1.GetOptions{}); err == nil {
 		if existing.DeletionTimestamp != nil {
 			return errRunnerTerminating
 		}
-		if repairRunnerMeta(&existing.ObjectMeta, vmRunnerLabels(owner, r.config.ReleaseName), refs) {
+		kept := slices.DeleteFunc(slices.Clone(existing.OwnerReferences), func(ref metav1.OwnerReference) bool {
+			return ref.APIVersion == "v1" && ref.Kind == "ServiceAccount"
+		})
+		disowned := len(kept) != len(existing.OwnerReferences)
+		existing.OwnerReferences = kept
+		if repairRunnerMeta(&existing.ObjectMeta, vmRunnerLabels(owner, r.config.ReleaseName), nil) || disowned {
 			updated, err := r.client.CoreV1().PersistentVolumeClaims(ns).Update(ctx, existing, metav1.UpdateOptions{})
 			if err != nil {
-				return fmt.Errorf("restoring the runner claim's labels and owner: %w", err)
+				return fmt.Errorf("restoring the runner claim's labels and removing its owner: %w", err)
 			}
 			existing = updated
 		}
@@ -445,7 +452,7 @@ func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string, refs
 		return sizeErr
 	}
 	pvc := &corev1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: vmRunnerLabels(owner, r.config.ReleaseName), OwnerReferences: refs},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: vmRunnerLabels(owner, r.config.ReleaseName)},
 		Spec: corev1.PersistentVolumeClaimSpec{
 			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 			Resources:   corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: size}},

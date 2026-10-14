@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The one storage-full message says what is refused at the owner's storage level: from 90% a stopped VM agent can still be opened to clean up, from 97% it cannot, from 98% running agents may be failing writes, and without figures it neither promises a start nor says starts are refused.
+// TEST_OVERVIEW: The one storage-full message says what is refused at the owner's storage level: from 90% a sleeping VM agent can still be opened to clean up, from 97% it cannot, from 98% running agents may be failing writes, and without figures it neither promises a start nor says starts are refused.
 import { describe, expect, it } from "vitest";
 
 import { storageFullMessage } from "../../modules/budgets/domain/vm-usage.js";

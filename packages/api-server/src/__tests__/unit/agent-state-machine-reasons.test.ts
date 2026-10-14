@@ -46,4 +46,8 @@ describe("computeAgentState with a machine reason", () => {
   it("leaves a machine rebooting after its runner's OOM kill as starting", () => {
     expect(computeAgentState(notReady("RunnerOutOfMemory"))).toBe("starting");
   });
+
+  it("reads a machine its hibernation is still stopping as hibernating, not as starting", () => {
+    expect(computeAgentState(notReady("MachineStopping"))).toBe("hibernating");
+  });
 });

@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray, sql, type Db } from "db";
 import { egressRules } from "db";
+import { canonicalEgressHost } from "api-server-api";
 import type {
   EgressPreset,
   EgressRuleSource,
@@ -8,6 +9,7 @@ import type {
 import type { EgressRuleRow } from "../domain/types.js";
 import { hostMatchCandidates } from "../domain/host-match.js";
 import { rulePortCovers } from "../domain/port-match.js";
+import { denyIgnoresPathCase } from "../domain/path-case.js";
 
 export interface EgressRulesRepository {
   findMatch(
@@ -134,22 +136,26 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
       return rows.length ? toRow(rows[0] as RawRule) : null;
     },
 
-    async findMatch(agentId, host, port, tls, method, path) {
+    async findMatch(agentId, requestHost, port, tls, method, path) {
+      const host = canonicalEgressHost(requestHost);
       const candidates = sql.join(
         hostMatchCandidates(host).map((h) => sql`${h}`),
         sql`, `,
       );
+      const pathMatches = denyIgnoresPathCase(host)
+        ? sql`(${path} LIKE replace(path_pattern, '*', '%') OR (verdict = 'deny' AND ${path} ILIKE replace(path_pattern, '*', '%')))`
+        : sql`${path} LIKE replace(path_pattern, '*', '%')`;
       const rows = await db.execute<RawRule>(sql`
         SELECT id, agent_id AS "agentId", host, port, method, path_pattern AS "pathPattern",
                verdict, decided_by AS "decidedBy", decided_at AS "decidedAt", status, source
         FROM ${egressRules}
         WHERE agent_id = ${agentId}
-          AND host IN (${candidates})
+          AND lower(host) IN (${candidates})
           AND status = 'active'
           AND (method = ${method} OR method = '*')
-          AND ${path} LIKE replace(path_pattern, '*', '%')
+          AND ${pathMatches}
         ORDER BY
-          CASE WHEN host = ${host} THEN 0 WHEN host = '*' THEN 2 ELSE 1 END,
+          CASE WHEN lower(host) = ${host} THEN 0 WHEN host = '*' THEN 2 ELSE 1 END,
           CASE WHEN method = '*' THEN 1 ELSE 0 END,
           CASE WHEN path_pattern = '*' THEN 1 ELSE 0 END,
           length(path_pattern) DESC

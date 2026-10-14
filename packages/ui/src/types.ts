@@ -8,10 +8,10 @@ import type {
 
 export type Role = "user" | "assistant";
 
-export interface ToolContent {
-  type: "content" | "diff" | "terminal";
-  text?: string;
-}
+export type ToolContent =
+  | { type: "content"; text: string }
+  | { type: "terminal"; text: string }
+  | { type: "diff"; path: string; oldText: string | null; newText: string };
 
 export interface ToolChip {
   kind: "tool";
@@ -162,6 +162,7 @@ export interface AgentView {
   env?: EnvVar[];
   hibernationTimeoutMin: number;
   requireConnectionAddress: boolean;
+  whisper: boolean;
   grantedSecretIds: string[];
   grantedConnectionIds: string[];
   state: AgentState;

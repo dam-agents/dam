@@ -392,15 +392,6 @@
   }
 }
 
-.agent-avatar[data-mood="idle"]:is(:hover, .group:hover *, [data-playing])
-  .avatar-eyes-closed {
-  display: none;
-}
-.agent-avatar[data-mood="idle"]:is(:hover, .group:hover *, [data-playing])
-  .avatar-eyes-open {
-  display: inline;
-}
-
 .agent-avatar:not([data-mood="asleep"]):is(
     :hover,
     .group:hover *,

@@ -64,3 +64,12 @@ export function useSetChecklistDismissed() {
     }),
   );
 }
+
+export function useResetGettingStarted() {
+  return useMutation(
+    trpc.gettingStarted.reset.mutationOptions({
+      onSuccess: storeProgress,
+      meta: { errorToast: "Couldn't reset your onboarding progress" },
+    }),
+  );
+}

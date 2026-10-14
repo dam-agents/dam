@@ -61,11 +61,13 @@ export function AgentBindPicker({
   const selectedId = pickedId ?? justCreatedId;
   const selected = displayedAgents.find((a) => a.id === selectedId) ?? null;
   const bindConfirm = useBindSharingConfirm(selected);
-  const sharing = bindConfirm.body(copy.audience);
+  const whisper = copy.messenger === "slack" && selected?.whisper === true;
+  const sharing = bindConfirm.body(copy.audience, whisper);
 
   const confirmPick = async () => {
     if (!selected) return;
-    if (!(await bindConfirm.confirm(copy.audience, copy.action))) return;
+    if (!(await bindConfirm.confirm(copy.audience, copy.action, whisper)))
+      return;
     onPick(selected);
   };
 

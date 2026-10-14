@@ -32,7 +32,7 @@ describe("wakeFailureUserCopy for a start failure", () => {
 describe("wakeFailureUserCopy for a refusal", () => {
   it.each([
     "Your VM agents' memory is full (6.0 of 8.0 GiB in use), so this agent can't start yet.",
-    "starting this agent would take your running agents to 2/2 CPU and 4Gi/4Gi memory — pause agents you aren't using to free room",
+    "starting this agent would take your running agents to 2/2 CPU and 4Gi/4Gi memory — put agents you aren't using to sleep to free room",
     undefined,
   ])(
     "tells a channel only that the owner's agents are out of room (%s)",

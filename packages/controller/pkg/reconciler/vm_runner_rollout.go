@@ -145,6 +145,7 @@ func (r *AgentReconciler) rollRunnerDeploymentFrom(ctx context.Context, owner st
 		r.runnerRoll.rolling = append(rolling, dep.Name)
 		sort.Strings(r.runnerRoll.rolling)
 	}
+	r.endRunnerHandoff(ctx, owner)
 	slog.Info("vm runner: rolling the pod", "owner", owner, "template", hash, "machines", dep.Annotations[annRunnerAwaiting])
 	return nil
 }
@@ -266,7 +267,7 @@ func (r *AgentReconciler) readyMachines(ctx context.Context, owner string) []str
 	return ready
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runners still mid-roll. A runner that has settled has its roll annotations removed here, so the next pass reads it as settled without calling it again. A roll whose new pod became ready but whose machines did not all come back within `rollout.settleTimeout` stops holding its place: a machine whose agent stopped during the roll never comes back, and it must not stall every other owner's upgrade. A roll whose new pod never became ready keeps its place instead — a pod that does not start is a broken runner release, and letting the next owner roll would break them too — and is marked stalled, reported at error level and counted, once.
+// UNIT_BOUNDARY_DESCRIPTION: the runners still mid-roll. A runner that has settled has its roll annotations removed here, so the next pass reads it as settled without calling it again. A roll whose new pod became ready but whose machines did not all come back within `rollout.settleTimeout` stops holding its place: a machine whose agent stopped during the roll never comes back, and it must not stall every other owner's upgrade. A roll whose new pod never became ready keeps its place instead — a pod that does not start is a broken runner release, and letting the next owner roll would break them too — and is marked stalled, reported at error level and counted, once — unless the pod never started for a fault of its owner alone (runnerPodStuckOnItsOwner), which is skipped.
 func (r *AgentReconciler) runnersMidRoll(ctx context.Context) ([]string, error) {
 	if !r.runnerRoll.at.IsZero() && time.Since(r.runnerRoll.at) < r.rollViewTTL {
 		return r.runnerRoll.rolling, nil
@@ -298,6 +299,18 @@ func (r *AgentReconciler) runnersMidRoll(ctx context.Context) ([]string, error) 
 			slog.Warn("vm runner: clearing a settled roll", "runner", dep.Name, "error", err)
 		}
 	}
+	if r.config.VM.Runner.ReleaseHostPath != "" {
+		cms, err := r.client.CoreV1().ConfigMaps(r.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "app.kubernetes.io/component=" + vmRunnerComponent})
+		if err != nil {
+			return nil, err
+		}
+		for i := range cms.Items {
+			name := r.runnerName(cms.Items[i].Labels[envoyOwnerLabel])
+			if r.runnerHandoffHolds(ctx, &cms.Items[i], timeout) && !slices.Contains(rolling, name) {
+				rolling = append(rolling, name)
+			}
+		}
+	}
 	sort.Strings(rolling)
 	r.runnerRoll = runnerRollView{at: time.Now(), rolling: rolling}
 	return rolling, nil
@@ -323,6 +336,11 @@ func (r *AgentReconciler) runnerRollSettled(ctx context.Context, dep *appsv1.Dep
 	podReady := runnerPodRolledOut(dep)
 	if time.Since(rolledAt) > timeout {
 		if !podReady {
+			if r.runnerPodStuckOnItsOwner(ctx, owner) {
+				slog.Error("vm runner: the rolled pod never started for a reason of its own owner, skipping it so the next runner may roll", "owner", owner, "runner", dep.Name, "timeout", timeout)
+				telemetry.RunnerRollSkipped(ctx)
+				return true, false
+			}
 			return false, true
 		}
 		slog.Warn("vm runner: the roll's machines did not all come back in time, the next runner may roll", "owner", owner, "timeout", timeout)
@@ -349,6 +367,62 @@ func (r *AgentReconciler) runnerRollSettled(ctx context.Context, dep *appsv1.Dep
 		return false, false
 	}
 	return true, false
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether a rolled pod that is not ready failed for its owner alone rather than for the release. Only states a release cannot plausibly cause count: a pod still creating its containers, none ever started, whose volume the attach controller refuses as Multi-Attach (the claim is still held on another node), or an old pod that never finishes terminating because its node is gone or not ready. A pod the scheduler cannot place halts the roll, because a release that adds a node selector or raises a request makes every runner unschedulable; so do a started container that is not ready, an image that does not pull, no pod at all, and a failed read.
+func (r *AgentReconciler) runnerPodStuckOnItsOwner(ctx context.Context, owner string) bool {
+	pods, err := r.runnerPods(ctx, owner, true)
+	if err != nil {
+		slog.Warn("vm runner: listing the rolled pod to tell an owner's fault from a broken release", "owner", owner, "error", err)
+		return false
+	}
+	if len(pods) == 0 {
+		return false
+	}
+	for _, pod := range pods {
+		if pod.DeletionTimestamp != nil {
+			if !r.nodeLost(ctx, pod.Spec.NodeName) {
+				return false
+			}
+			continue
+		}
+		for _, c := range slices.Concat(pod.Status.InitContainerStatuses, pod.Status.ContainerStatuses) {
+			if c.RestartCount > 0 || c.State.Waiting == nil || (c.State.Waiting.Reason != "ContainerCreating" && c.State.Waiting.Reason != "PodInitializing") {
+				return false
+			}
+		}
+		if pod.Spec.NodeName == "" || !r.multiAttachRefused(ctx, &pod) {
+			return false
+		}
+	}
+	return true
+}
+
+func (r *AgentReconciler) nodeLost(ctx context.Context, name string) bool {
+	if name == "" {
+		return false
+	}
+	nodes, err := r.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{FieldSelector: "metadata.name=" + name})
+	if err != nil {
+		slog.Warn("vm runner: reading the node of a runner pod stuck terminating", "node", name, "error", err)
+		return false
+	}
+	return !slices.ContainsFunc(nodes.Items, func(n corev1.Node) bool {
+		return n.Name == name && slices.ContainsFunc(n.Status.Conditions, func(c corev1.NodeCondition) bool {
+			return c.Type == corev1.NodeReady && c.Status == corev1.ConditionTrue
+		})
+	})
+}
+
+func (r *AgentReconciler) multiAttachRefused(ctx context.Context, pod *corev1.Pod) bool {
+	events, err := r.client.CoreV1().Events(pod.Namespace).List(ctx, metav1.ListOptions{FieldSelector: "involvedObject.name=" + pod.Name})
+	if err != nil {
+		slog.Warn("vm runner: reading the events of a runner pod stuck creating", "pod", pod.Name, "error", err)
+		return false
+	}
+	return slices.ContainsFunc(events.Items, func(e corev1.Event) bool {
+		return e.InvolvedObject.UID == pod.UID && e.Reason == "FailedAttachVolume" && strings.Contains(e.Message, "Multi-Attach")
+	})
 }
 
 func runnerPodRolledOut(dep *appsv1.Deployment) bool {

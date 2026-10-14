@@ -35,5 +35,3 @@ oci_link = "/opt/ksearch-acp"
 PLATFORM_HARNESS = ""
 KSEARCH_VENV = "/opt/ksearch-venv"
 KSEARCH_ROOT = "/opt/k-search"
-# Placeholder only; the real key is injected at the gateway, never in-pod.
-OPENAI_API_KEY = "dummy-placeholder"
