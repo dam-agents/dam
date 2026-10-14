@@ -43,8 +43,8 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { useNow } from "@/hooks/use-now";
 import { cn } from "@/lib/utils";
 
-import { AgentJobsBadge } from "../components/sidebar-agent-item.js";
 import { getBrand } from "../brand.js";
+import { AgentJobsBadge } from "../components/sidebar-agent-item.js";
 import { DOCS_URL } from "../constants.js";
 import { externalLinkProps } from "../lib/external-link.js";
 import { timeAgo } from "../lib/format-time.js";

@@ -140,6 +140,7 @@ function generateSessions(
 
 export const MOCK_SESSION_IDS = {
   artifact: "sess-artifact-example",
+  browser: "sess-browser-example",
   longChat: "sess-long-chat-example",
   diffs: "sess-diffs-showing",
 };
@@ -167,6 +168,17 @@ export const mockSessions: Record<string, unknown[]> = {
       title: "Artifact session example",
       running: false,
       seenAt: new Date(now - 30 * min).toISOString(),
+    },
+    {
+      sessionId: MOCK_SESSION_IDS.browser,
+      agentId: AGENT_IDS.codexResearch,
+      type: "regular" as const,
+      mode: "chat" as const,
+      createdAt: new Date(now - 3 * hr).toISOString(),
+      updatedAt: new Date(now - 1 * hr).toISOString(),
+      title: "Browser session",
+      running: false,
+      seenAt: new Date(now - 50 * min).toISOString(),
     },
     {
       sessionId: MOCK_SESSION_IDS.longChat,

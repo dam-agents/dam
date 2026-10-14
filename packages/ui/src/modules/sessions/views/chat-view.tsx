@@ -41,6 +41,7 @@ import {
   type LeftPanelKind,
   WorkspaceChatHeader,
 } from "../../../mock/chat-workspace-variants.js";
+import { MOCK_SESSION_IDS } from "../../../mock/data/sessions.js";
 import { MockBrowserPanel } from "../../../mock/mock-browser-panel.js";
 import { queryClient } from "../../../query-client.js";
 import type { SessionError } from "../../../store.js";
@@ -112,6 +113,7 @@ import {
 } from "../api/queries.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
+import { BackgroundTasksIndicator } from "../components/chat-input.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
 import { ChatMessage } from "../components/chat-message.js";
 import { ModelIndicator } from "../components/model-indicator.js";
@@ -217,6 +219,14 @@ export function ChatView() {
     useState<SandboxSection | null>(null);
 
   const isMock = import.meta.env.VITE_MOCK === "true";
+
+  useEffect(() => {
+    if (!isMock || !selectedAgent) return;
+    if (sessionId === MOCK_SESSION_IDS.browser) {
+      void openBrowser(selectedAgent);
+    }
+  }, [isMock, sessionId, selectedAgent, openBrowser]);
+
   const [openPanels, setOpenPanels] = useState<Set<LeftPanelKind>>(new Set());
   const toggleNotifications = useStore((s) => s.toggleNotifications);
 
@@ -631,18 +641,6 @@ export function ChatView() {
                   }
                 : undefined
             }
-            browserActive={openBrowserAgentId !== null}
-            onToggleBrowser={
-              canOpenBrowser
-                ? () => {
-                    if (openBrowserAgentId) {
-                      useStore.getState().setOpenBrowser(null);
-                    } else if (selectedAgent) {
-                      void openBrowser(selectedAgent);
-                    }
-                  }
-                : undefined
-            }
           />
           {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
           {sessionMode === SessionMode.Terminal &&
@@ -798,6 +796,7 @@ export function ChatView() {
                             }
                           />
                         )}
+                        <BackgroundTasksIndicator agentId={selectedAgent} />
                       </div>
                     </ChatColumn>
                   </div>

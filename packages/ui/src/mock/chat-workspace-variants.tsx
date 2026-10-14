@@ -9,7 +9,6 @@ import {
   Folders,
   Search,
   Upload,
-  Wikis,
 } from "@carbon/icons-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 
@@ -424,18 +423,12 @@ export function WorkspaceChatHeader({
   openPanels,
   onTogglePanel,
   onNewChat,
-  browserActive,
-  onToggleBrowser,
 }: {
   chrome: AgentChrome;
   openPanels?: ReadonlySet<LeftPanelKind>;
   onTogglePanel?: (panel: LeftPanelKind) => void;
   onNewChat?: () => void;
-  browserActive?: boolean;
-  onToggleBrowser?: () => void;
 }) {
-  const isMock = import.meta.env.VITE_MOCK === "true";
-  const showBrowser = isMock || onToggleBrowser;
   return (
     <div className="flex h-14 shrink-0 items-center gap-2 pr-6 pl-6">
       <AgentMenuTrigger chrome={chrome} />
@@ -451,14 +444,6 @@ export function WorkspaceChatHeader({
         active={openPanels?.has("artifacts") ?? false}
         onClick={() => onTogglePanel?.("artifacts")}
       />
-      {showBrowser && (
-        <PanelToggleButton
-          icon={<Wikis size={16} />}
-          label="Browser"
-          active={browserActive ?? false}
-          onClick={() => onToggleBrowser?.()}
-        />
-      )}
       <div className="flex flex-1 items-center justify-center min-w-0">
         <div className="flex w-full max-w-[813px] items-center justify-end px-4">
           {chrome.status}

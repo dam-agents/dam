@@ -202,6 +202,9 @@ export function AgentJobsBadge({ agentId }: { agentId: string }) {
         </span>
       </HoverCardTrigger>
       <HoverCardContent side="right" align="start" className="w-80 p-3">
+        <p className="mb-2 text-sm font-semibold text-foreground">
+          Background tasks
+        </p>
         <div className="flex flex-col gap-2">
           {background.map((row) => (
             <JobPopoverRow

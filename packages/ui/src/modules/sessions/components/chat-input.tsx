@@ -11,6 +11,7 @@ import {
   type RefObject,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -23,19 +24,29 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { formatBytes } from "@/lib/format-size";
 import { cn } from "@/lib/utils";
 
 import { useAutoResize } from "../../../hooks/use-auto-resize.js";
+import { useNow } from "../../../hooks/use-now.js";
 import { isMobile } from "../../../lib/breakpoints.js";
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import type { Attachment } from "../../../types.js";
 import { MAX_UPLOAD_BYTES } from "../../files/api/queries.js";
+import { useProcesses } from "../../processes/api/queries.js";
+import { formatRunTime } from "../../processes/lib/format-process.js";
+import { summarizeProcesses } from "../../processes/lib/process-summary.js";
 import { draftKey, EMPTY_DRAFT } from "../lib/draft-key.js";
 import { ChatColumn } from "./chat-column.js";
 import { PlusMenuPopover } from "./plus-menu-popover.js";
+import { WorkingDots } from "./working-dots.js";
 
 const IMAGE_MIME = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
@@ -437,6 +448,79 @@ export function ChatInput({
         </div>
       </ChatColumn>
     </div>
+  );
+}
+
+export function BackgroundTasksIndicator({
+  agentId,
+}: {
+  agentId: string | null;
+}) {
+  const { data } = useProcesses(agentId, { enabled: !!agentId, poll: false });
+  const now = useNow(5_000);
+
+  const background = useMemo(
+    () => (data ? data.running.filter((r) => r.kind !== "turn") : []),
+    [data],
+  );
+
+  const { running } = data ? summarizeProcesses(data) : { running: 0 };
+  if (running === 0) return null;
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="ml-auto flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <WorkingDots size="sm" className="text-success" />
+          <span>
+            {running} background {running === 1 ? "task" : "tasks"}
+          </span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="top" align="end" className="w-80 p-3">
+        <p className="mb-2 text-sm font-semibold text-foreground">
+          Background tasks
+        </p>
+        <div className="flex flex-col gap-2">
+          {background.map((row) => {
+            const sessionId = (row as typeof row & { sessionId?: string })
+              .sessionId;
+            return (
+              <div
+                key={row.key}
+                className="flex flex-col gap-0.5 rounded-md p-1.5"
+              >
+                <code className="font-mono text-sm text-foreground truncate max-w-full">
+                  {row.command}
+                </code>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span>{formatRunTime(row.startedAt, now)}</span>
+                  {sessionId && (
+                    <>
+                      <span aria-hidden>&middot;</span>
+                      <span className="truncate">{sessionId}</span>
+                    </>
+                  )}
+                </div>
+                {row.keepsAwake ? (
+                  <span className="flex items-center gap-1 text-xs text-success">
+                    <span className="h-1.5 w-1.5 rounded-full bg-success shrink-0" />
+                    Keeps agent awake
+                  </span>
+                ) : (
+                  <span className="text-xs text-warning">
+                    May stop when the agent sleeps
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
