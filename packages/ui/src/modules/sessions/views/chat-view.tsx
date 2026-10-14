@@ -403,10 +403,8 @@ export function ChatView() {
   const harnessForks = useStore((s) => s.harnessForks);
   const queueEmpty = useStore((s) => s.queuedPrompts.length === 0);
   const { data: sessionView } = useAgentSession(selectedAgent, sessionId);
-  const rewritable =
+  const canRewrite =
     harnessForks &&
-    queueEmpty &&
-    !busy &&
     sessionView?.mode === SessionMode.Chat &&
     sessionView.type === SessionType.Regular &&
     !sessionView.threadTs &&
@@ -976,25 +974,26 @@ export function ChatView() {
                           rewriting?.mode === "rewind" &&
                           rewriteIndex !== -1 &&
                           item.index > rewriteIndex;
-                        const content = rewritePoints.has(item.message.id) ? (
-                          <RewritableMessage
-                            message={runMessage}
-                            enabled={Boolean(rewritable)}
-                            onRewrite={(mode, text) =>
-                              rewriteFrom({
-                                messageId: item.message.id,
-                                upToMessageId: upTo,
-                                mode,
-                                text,
-                                title: sessionView?.title ?? null,
-                              })
-                            }
-                          >
-                            {chatMessage}
-                          </RewritableMessage>
-                        ) : (
-                          chatMessage
-                        );
+                        const content =
+                          canRewrite && rewritePoints.has(item.message.id) ? (
+                            <RewritableMessage
+                              message={runMessage}
+                              enabled={queueEmpty && !busy}
+                              onRewrite={(mode, text) =>
+                                rewriteFrom({
+                                  messageId: item.message.id,
+                                  upToMessageId: upTo,
+                                  mode,
+                                  text,
+                                  title: sessionView?.title ?? null,
+                                })
+                              }
+                            >
+                              {chatMessage}
+                            </RewritableMessage>
+                          ) : (
+                            chatMessage
+                          );
                         return (
                           <Fragment key={item.message.id}>
                             {doomed ? (

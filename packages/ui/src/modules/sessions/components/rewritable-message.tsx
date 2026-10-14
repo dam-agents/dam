@@ -58,6 +58,7 @@ export function RewritableMessage({
         <MessageEditor
           initial={textOf(message)}
           pending={pending}
+          canSave={enabled}
           saveLabel={EDITOR_COPY[mode].save}
           saveVariant={mode === "rewind" ? "destructive" : "default"}
           onSave={(text) => void save(text)}
