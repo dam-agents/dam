@@ -1,29 +1,11 @@
 import { WarningAltFilled } from "@carbon/icons-react";
-import type { PoolLevel } from "api-server-api";
 
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
+import { LEVEL_ICON, segmentFill } from "../lib/pool-colors.js";
 import type { PoolBarView, PoolSegment } from "../lib/pools.js";
-
-export const LEVEL_FILL: Record<PoolLevel, string> = {
-  ok: "bg-slate-500 dark:bg-slate-400",
-  warning:
-    "bg-[color-mix(in_srgb,var(--color-amber-600)_40%,var(--color-stone-500))] dark:bg-[color-mix(in_srgb,var(--color-amber-500)_40%,var(--color-stone-500))]",
-  critical:
-    "bg-[color-mix(in_srgb,var(--color-red-600)_35%,var(--color-stone-500))] dark:bg-red-400/60",
-};
-
-const LEVEL_ICON: Record<PoolLevel, string> = {
-  ok: "",
-  warning:
-    "text-[color-mix(in_srgb,var(--color-amber-600)_40%,var(--color-stone-500))] dark:text-[color-mix(in_srgb,var(--color-amber-500)_40%,var(--color-stone-500))]",
-  critical:
-    "text-[color-mix(in_srgb,var(--color-red-600)_35%,var(--color-stone-500))] dark:text-red-400",
-};
-
-const REST_FILL = "bg-slate-300 dark:bg-slate-600";
 
 interface Props {
   title: string;
@@ -83,7 +65,7 @@ export function PoolBar({
           <Segment
             key={segment.agentId ?? segment.label}
             segment={segment}
-            fill={segment.filled ? LEVEL_FILL[bar.level] : REST_FILL}
+            fill={segmentFill(bar.level, segment.filled)}
           />
         ))}
       </div>
