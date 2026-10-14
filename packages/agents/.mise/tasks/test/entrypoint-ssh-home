@@ -28,9 +28,13 @@ writeFileSync(
     .replaceAll("/platform/runc", join(dir, "platform-runc"))
     .replaceAll("/app/working-dir", join(dir, "working-dir")),
 );
+const bin = join(dir, "bin");
+const chowned = join(dir, "chowned");
+mkdirSync(bin);
+writeFileSync(join(bin, "chown"), `#!/bin/sh\necho "$@" >>${chowned}\n`, { mode: 0o755 });
 const boot = () =>
   execFileSync("/bin/sh", [join(dir, "agent-entrypoint"), "true"], {
-    env: { PATH: process.env.PATH, HOME: home },
+    env: { PATH: `${bin}:${process.env.PATH}`, HOME: home },
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -62,6 +66,12 @@ try {
   assert.equal(readFileSync(join(root, ".ssh/id_rsa"), "utf8"), "root rsa\n");
   assert.equal(readFileSync(join(home, ".ssh/known_hosts"), "utf8"), "gitlab.com ssh-ed25519 A\ngithub.com ssh-ed25519 B\n");
   assert.equal(existsSync(join(root, ".ssh/known_hosts")), false);
+  assert.equal(existsSync(chowned), false);
+
+  // TEST_SCENARIO: ssh refuses a config another uid owns, so a config a moved agent's home keeps with the container's uid is given to root, the uid ssh runs as on a machine.
+  writeFileSync(join(home, ".ssh/config"), "Host *\n");
+  boot();
+  assert.equal(readFileSync(chowned, "utf8"), `0:0 ${join(home, ".ssh/config")}\n`);
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

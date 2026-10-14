@@ -42,6 +42,11 @@ if [ "$uid" = 0 ]; then
 			rmdir /root/.ssh 2>/dev/null ||
 				echo "agent-entrypoint: WARNING: /root/.ssh keeps files it could not move to ~/.ssh; they are lost at the next root generation" >&2
 		fi
+		# ssh refuses a config another uid owns, and a moved agent's home keeps
+		# the container's uid.
+		if [ -f "$home/.ssh/config" ]; then
+			find "$home/.ssh/config" ! -user 0 -exec chown 0:0 {} + || :
+		fi
 	fi
 fi
 
