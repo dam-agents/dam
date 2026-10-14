@@ -144,6 +144,8 @@ fn inactive_file(stat: &str) -> Option<u64> {
 const TRIM_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 // UNIT_BOUNDARY_DESCRIPTION: _IOWR('X', 121, struct fstrim_range), the same on every architecture a guest runs; the libc crate does not export it.
 const FITRIM: libc::c_ulong = 0xC018_5879;
+// UNIT_BOUNDARY_DESCRIPTION: free extents smaller than this are skipped, so a minute's trim sends no stream of tiny discards to the claim's storage.
+const TRIM_MIN_BYTES: u64 = 1 << 20;
 
 #[repr(C)]
 struct FstrimRange {
@@ -169,7 +171,7 @@ fn trim_freed_blocks() {
         let mut range = FstrimRange {
             start: 0,
             len: u64::MAX,
-            minlen: 0,
+            minlen: TRIM_MIN_BYTES,
         };
         // SAFETY: `home` is an open file on the disk, and `range` is a live fstrim_range the kernel reads and writes back.
         let rc = unsafe { libc::ioctl(home.as_raw_fd(), FITRIM as _, &mut range) };
