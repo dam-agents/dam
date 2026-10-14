@@ -513,6 +513,40 @@ describe("ext-authz gate", () => {
     }
   });
 
+  // TEST_SCENARIO: the agent writes the Host header, and DNS and GitHub ignore its letter case, so `API.GitHub.com` must meet the rules for api.github.com rather than slip past them to a wildcard allow.
+  it("asks the rules with the host in lower case", async () => {
+    const repo = makeFakeRepo();
+    const ruleMatch = vi.fn(async () => ({ verdict: "deny" as const }));
+    const gate = createExtAuthzGate({
+      repo: repo.repo,
+      bus: makeFakeBus().bus,
+      attendance: attended,
+      identityResolver,
+      ruleMatcher: { match: ruleMatch },
+      holdSeconds: 30,
+      platformAllowedAuthorities: [],
+    });
+
+    const verdict = await gate.gateRequest({
+      agentId: "inst-1",
+      host: "API.GitHub.com",
+      port: 443,
+      tls: true,
+      method: "GET",
+      path: "/repos/dam-agents/dam/contents/",
+    });
+
+    expect(verdict).toBe("deny");
+    expect(ruleMatch).toHaveBeenCalledWith(
+      "agent-1",
+      "api.github.com",
+      443,
+      true,
+      "GET",
+      "/repos/dam-agents/dam/contents/",
+    );
+  });
+
   // TEST_SCENARIO: the object store is allowed on its own port only; the same host on another port must reach the rules like any other request.
   it("allows the platform host only on its own port, and asks the rules with port and scheme", async () => {
     const repo = makeFakeRepo();

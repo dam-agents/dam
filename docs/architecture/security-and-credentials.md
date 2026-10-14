@@ -236,6 +236,7 @@ The web chat does not read it: a held request belongs to the agent, not to a ses
 The list is the api-server's own state, refreshed by the approvals live hint, so a conversation opened after the hold — or a retry that joined it — still shows the prompt, and a verdict given in one place clears it from every conversation, from Home and from its toast.
 
 At most three rules speak for a host — itself, its `*.parent` wildcard, and the bare `*` — most specific first; a wildcard covers the one label its SNI chain and SAN do.
+Host names compare in any letter case, as DNS does: the agent writes the Host header and SNI, and a deny for `api.github.com` must also stop `API.GitHub.com`, which the gateway would resolve and forward all the same.
 `failure_mode_allow: false` — a blocked Check fails closed: agent gets 403, no approval prompt.
 
 The HTTP filter on TLS-terminated chains sees method/path; the network filter on the catch-all chain sees SNI only.

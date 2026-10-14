@@ -62,7 +62,8 @@ interface CreateExtAuthzGateDeps {
 
 export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
   return {
-    async gateRequest({ agentId, host, port, tls, method, path }) {
+    async gateRequest({ agentId, host: requestHost, port, tls, method, path }) {
+      const host = requestHost.toLowerCase();
       const identity = await deps.identityResolver.resolve(agentId);
       if (!identity) {
         securityLog("warn", "egress.decision", {

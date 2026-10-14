@@ -135,7 +135,8 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
       return rows.length ? toRow(rows[0] as RawRule) : null;
     },
 
-    async findMatch(agentId, host, port, tls, method, path) {
+    async findMatch(agentId, requestHost, port, tls, method, path) {
+      const host = requestHost.toLowerCase();
       const candidates = sql.join(
         hostMatchCandidates(host).map((h) => sql`${h}`),
         sql`, `,
@@ -148,12 +149,12 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
                verdict, decided_by AS "decidedBy", decided_at AS "decidedAt", status, source
         FROM ${egressRules}
         WHERE agent_id = ${agentId}
-          AND host IN (${candidates})
+          AND lower(host) IN (${candidates})
           AND status = 'active'
           AND (method = ${method} OR method = '*')
           AND ${pathMatches}
         ORDER BY
-          CASE WHEN host = ${host} THEN 0 WHEN host = '*' THEN 2 ELSE 1 END,
+          CASE WHEN lower(host) = ${host} THEN 0 WHEN host = '*' THEN 2 ELSE 1 END,
           CASE WHEN method = '*' THEN 1 ELSE 0 END,
           CASE WHEN path_pattern = '*' THEN 1 ELSE 0 END,
           length(path_pattern) DESC
