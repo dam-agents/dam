@@ -60,13 +60,14 @@ The request rises a step as soon as the counts need it, but falls only once they
 A cluster without in-place resize keeps the install's request.
 A node that defers or refuses the resize leaves the pod at the request it has; each of the owner's vm Agents then carries a `RunnerCapacity` condition saying which, with the kubelet's account, and a Warning Event, while readiness is left alone, since the machines run at what the pod has ([observability](observability.md#platform-service-export)).
 
-**Room is freed from the owner's own idle agents.** A start the runner refused, and an owner whose counted memory passes 90% of the runner's limit, hibernate that owner's vm agents under the rules a blocked start reclaims by in [budgets](budgets.md): unattended, hibernation enabled, idle past the floor, longest-idle first, and only when the agents chosen cover the whole shortfall; under pressure the target is 80%.
+**Room is freed from the owner's own idle agents.** A start the runner refused, and an owner whose counted memory passes 90% of the runner's limit, hibernate that owner's vm agents under the rules a blocked start reclaims by in [budgets](budgets.md): unattended, hibernation enabled, idle past the floor, saying it is idle when asked (one that does not answer may be mid-turn with its guest saturated, so it is spared), longest-idle first, and only when the agents chosen cover the whole shortfall; under pressure the target is 80%.
 A refused start is retried once their machines have stopped.
 No other owner's agent is touched, and an agent hibernated this way says it was paused automatically to free memory ([budgets](budgets.md)).
 Because a running machine's use reaches the controller only when its agent reconciles, the controller also asks each owner's runner about its running machines every 30 seconds, which is what pressure is judged from and what moves the request between reconciles.
 That pass reconciles one of the owner's agents only when the request their counts call for differs from the runner pod's, so a count held within its step wakes nothing.
 The runner's own pressure signal runs the same pass for that owner at once, without waiting for the counted threshold, since the kernel's view is the one that kills the runner.
 Its need is the larger of the counted and the measured overshoot of the 80% target, and it may hibernate fewer agents than cover it: near an OOM kill, freeing some memory beats freeing none.
+When no candidate says it is idle, this pass alone hibernates the candidates that did not answer, as a last resort, because the kill would stop them too; one that answered busy is never hibernated.
 The controller holds one watch on each owner's pressure, and a pass on it hibernates nothing more for fifteen seconds after one that did, because the machines it hibernated still count until they have stopped.
 The two passes never run together for one owner.
 

@@ -66,6 +66,7 @@ Role-based budgets and approval flows are out of scope — when they arrive, ric
 On each reconcile that wants to scale an agent up (`shouldRun` true) where the pair is currently at zero, the controller sums the owner's Reserved, adds the candidate's footprint, and compares against the Ceiling (UserBudget, else default, both read live; no informer lag on the enforcement path).
 The read-decide-scale sequence cannot interleave for two same-owner agents because every agent of one owner is reconciled by the **same worker**, one at a time: the leader-elected instance runs a fixed eight workers, each with its own queue, and an agent's owner label picks its worker; a per-owner mutex backs it up.
 Different owners' agents reconcile in parallel, so a VM runner that hangs holds up only the owners that share its worker, not the whole install.
+The exception is a runner roll: its install-wide lock is held across runner calls while it decides, so during a release that rolls runners a hung runner can hold every worker that reaches the roll ([#4939](https://github.com/dam-agents/dam/issues/4939) narrows it).
 A name the agent cache does not hold yet is not queued at all, so no agent is ever on two workers at once; the cache's own add for it queues it once it lands.
 The owner label is set at create and never changes, which keeps an agent on one worker for its whole life.
 Each worker orders its queue: a change a person is waiting on — a wake bumping last-activity, a new Agent, a spec or annotation edit, a pod or machine moving — goes ahead of background re-checks (the startup list after a controller restart, the drift sweep, the retry and memory ticks, the controller's own status writes echoing back), so a wake waits behind at most the reconcile its worker is already running, never behind the whole fleet.
@@ -134,7 +135,8 @@ Four rules bound it:
 
 - **Unattended only.** A session pin (`active-session`), an Invocation pin, or a sweepable Invocation target (whose driver is blocked on its result) is never a candidate, and neither is an Agent mid-way through a runtime migration, nor a **never-hibernate** agent — effective timeout `0` declares "always run", not a default to be overridden — nor a vm agent, which holds no budget room to free.
   The pins carry this weight because the runtime's own idle flag reads an attached-but-turnless chat as idle: probe alone would reclaim a pod somebody is watching.
-  Candidates are then probed exactly as an ordinary hibernation probes, so declared in-flight work is spared.
+  Candidates are then probed as an ordinary hibernation probes, so declared in-flight work is spared, but only a candidate whose status says it is idle is reclaimed.
+  Hibernation takes a silent agent as idle, so one that is down still sleeps; a reclaim does not, since an agent deep in a long turn with its guest saturated, or whose address just moved, is silent too.
 - **An idle floor** (3 minutes) beneath which nothing is reclaimed.
   Besides sparing an agent its user may be moments from returning to, the floor is what makes reclaim **non-recursive**: an agent admitted this way carries fresh activity and so cannot be the next start's victim, which is what stops A-evicting-B-evicting-A from cycling.
 - **Provably sufficient, or nothing.** The candidates' summed Sizes must cover the shortfall in both dimensions before any of them is touched, so no agent is ever hibernated for a start that was going to be refused regardless.
