@@ -69,7 +69,7 @@ describe("agent card subtitle", () => {
       observedAt: "",
     };
     expect(sandboxSubtitle(vmAgent, slotUnit, usage)).toBe(
-      "1.5 GiB memory · 8.0 GiB storage",
+      "using 1.5 GiB memory · 8.0 GiB storage",
     );
     expect(sandboxSubtitle(vmAgent, slotUnit)).toBeNull();
   });

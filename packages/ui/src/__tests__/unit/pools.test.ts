@@ -64,12 +64,7 @@ const names = (bar: { segments: { label: string }[] }) =>
 describe("pool bars", () => {
   it("lists memory by running agents largest first, then headroom, adding up to the use", () => {
     const bar = memoryBar(usage, agents);
-    expect(names(bar)).toEqual([
-      "b",
-      "a",
-      "1 more",
-      "Headroom for your agents",
-    ]);
+    expect(names(bar)).toEqual(["b", "a", "1 more", "Reserved for growth"]);
     expect(bar.segments.reduce((sum, s) => sum + s.fraction, 0)).toBeCloseTo(
       0.6,
     );

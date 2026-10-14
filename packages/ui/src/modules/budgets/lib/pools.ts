@@ -78,7 +78,7 @@ export function memoryBar(
     usage.memory.usedBytes,
     usage.memory.limitBytes,
     usage.memory.level,
-    "Headroom for your agents",
+    "Reserved for growth",
   );
 }
 

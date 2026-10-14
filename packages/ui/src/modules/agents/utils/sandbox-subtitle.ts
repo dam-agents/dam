@@ -23,7 +23,7 @@ export function sandboxSubtitle(
       share.storageUsedBytes > 0 &&
         `${formatBytes(share.storageUsedBytes)} storage`,
     ].filter((part): part is string => Boolean(part));
-    return parts.length > 0 ? parts.join(" · ") : null;
+    return parts.length > 0 ? `using ${parts.join(" · ")}` : null;
   }
   if (!slotUnit || !agent.size.cpu || !agent.size.memory) return null;
   return formatSizeLabel(sizeInMi(agent.size), slotUnit);

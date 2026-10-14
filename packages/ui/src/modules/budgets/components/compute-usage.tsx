@@ -19,7 +19,6 @@ import {
   type SlotUnit,
   slotUnitOf,
 } from "../lib/slots.js";
-import { RequestMoreLink } from "./request-more-link.js";
 import { SEGMENT_FILL, SlotBar } from "./slot-bar.js";
 
 type HeldState = Exclude<ComputeCellState, "available">;
@@ -54,7 +53,7 @@ function HeldSegmentCard({ segment }: { segment: ComputeSegment }) {
         )}
         <span className="font-semibold">{segment.agentName}</span> (
         {formatCores(segment.cpuMilli)} CPU ·{" "}
-        {formatGi(segment.memoryMi * BYTES_PER_MI)} Gi)
+        {formatGi(segment.memoryMi * BYTES_PER_MI)} GiB)
       </p>
       {segment.alwaysOn && (
         <>
@@ -94,7 +93,7 @@ export function ComputeUsage({ agents, workingAgentIds }: Props) {
     <>
       <div className="mb-3 flex items-center justify-between text-sm">
         <span className="flex items-center gap-1.5 text-foreground">
-          Container agents
+          Compute allocated
           <Tooltip
             content="What your running agents reserve, not what they are using. Stop or pause an agent to free up compute."
             side="bottom"
@@ -102,7 +101,6 @@ export function ComputeUsage({ agents, workingAgentIds }: Props) {
             <Help size={14} className="cursor-help text-muted-foreground/60" />
           </Tooltip>
         </span>
-        <RequestMoreLink />
       </div>
       <div className="mb-3">
         <p className="text-2xl font-semibold tabular-nums text-foreground">

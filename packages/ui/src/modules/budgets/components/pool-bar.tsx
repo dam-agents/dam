@@ -7,27 +7,37 @@ import { cn } from "@/lib/utils";
 import { useStore } from "../../../store.js";
 import type { PoolBarView, PoolSegment } from "../lib/pools.js";
 
-const FILL: Record<PoolLevel, string> = {
-  ok: "bg-accent",
-  warning: "bg-warning",
-  critical: "bg-destructive",
+export const LEVEL_FILL: Record<PoolLevel, string> = {
+  ok: "bg-slate-500 dark:bg-slate-400",
+  warning: "bg-amber-600 dark:bg-amber-500",
+  critical: "bg-rose-600 dark:bg-rose-400",
 };
 
-const ICON: Record<PoolLevel, string> = {
+const LEVEL_ICON: Record<PoolLevel, string> = {
   ok: "",
-  warning: "text-warning",
-  critical: "text-destructive",
+  warning: "text-amber-600 dark:text-amber-500",
+  critical: "text-rose-600 dark:text-rose-400",
 };
+
+const REST_FILL = "bg-slate-300 dark:bg-slate-600";
 
 interface Props {
   title: string;
   value: string;
   bar: PoolBarView;
-  percent: number;
+  valueText: string;
+  percent?: number;
   warning: string;
 }
 
-export function PoolBar({ title, value, bar, percent, warning }: Props) {
+export function PoolBar({
+  title,
+  value,
+  bar,
+  valueText,
+  percent,
+  warning,
+}: Props) {
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-baseline justify-between gap-3 text-sm">
@@ -41,7 +51,7 @@ export function PoolBar({ title, value, bar, percent, warning }: Props) {
                 aria-label={warning}
                 className={cn(
                   "inline-flex rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  ICON[bar.level],
+                  LEVEL_ICON[bar.level],
                 )}
               >
                 <WarningAltFilled size={14} />
@@ -57,7 +67,7 @@ export function PoolBar({ title, value, bar, percent, warning }: Props) {
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={percent}
-        aria-valuetext={value}
+        aria-valuetext={valueText}
         className="sr-only"
       />
       <div
@@ -69,7 +79,7 @@ export function PoolBar({ title, value, bar, percent, warning }: Props) {
           <Segment
             key={segment.agentId ?? segment.label}
             segment={segment}
-            fill={segment.filled ? FILL[bar.level] : "bg-muted-foreground/30"}
+            fill={segment.filled ? LEVEL_FILL[bar.level] : REST_FILL}
           />
         ))}
       </div>
@@ -77,25 +87,32 @@ export function PoolBar({ title, value, bar, percent, warning }: Props) {
   );
 }
 
+const SEGMENT_FOCUS =
+  "h-full shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
 function Segment({ segment, fill }: { segment: PoolSegment; fill: string }) {
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const { agentId, label } = segment;
   const style = { width: `${segment.fraction * 100}%` };
-  if (!agentId)
-    return (
-      <Tooltip content={label}>
-        <span className={cn("h-full shrink-0", fill)} style={style} />
-      </Tooltip>
-    );
   return (
     <Tooltip content={label}>
-      <button
-        type="button"
-        aria-label={label}
-        onClick={() => navigateToSandboxHome(agentId, "setup")}
-        className={cn("h-full shrink-0 cursor-pointer", fill)}
-        style={style}
-      />
+      {agentId ? (
+        <button
+          type="button"
+          aria-label={label}
+          onClick={() => navigateToSandboxHome(agentId, "setup")}
+          className={cn(SEGMENT_FOCUS, "cursor-pointer", fill)}
+          style={style}
+        />
+      ) : (
+        <span
+          role="img"
+          tabIndex={0}
+          aria-label={label}
+          className={cn(SEGMENT_FOCUS, fill)}
+          style={style}
+        />
+      )}
     </Tooltip>
   );
 }
