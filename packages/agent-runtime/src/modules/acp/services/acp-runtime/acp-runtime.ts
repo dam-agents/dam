@@ -17,6 +17,7 @@ import {
   PROMPT_NOT_QUEUED_MESSAGE,
   promptBlockSchema,
   REWRITE_REFUSED_CODE,
+  separateRendererBlocks,
   SessionType,
   STEER_METHOD,
   steerResponseSchema,
@@ -2105,15 +2106,14 @@ const TITLE_CHARS = 80;
 
 function promptTitle(prompt: unknown): string | null {
   if (!Array.isArray(prompt)) return null;
-  const text = prompt
+  const joined = prompt
     .map((b) =>
       isNonNullObject(b) && b.type === "text" && typeof b.text === "string"
         ? b.text
         : "",
     )
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim();
+    .join(" ");
+  const text = separateRendererBlocks(joined).text.replace(/\s+/g, " ");
   if (!text) return null;
   return text.length > TITLE_CHARS
     ? `${text.slice(0, TITLE_CHARS - 1)}…`

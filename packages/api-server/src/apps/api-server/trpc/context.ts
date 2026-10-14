@@ -254,6 +254,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       kitUpstream,
       kitUpdateMarks: createKitUpdateMarks(agentsRepo),
       virtualizationEnabled: config.virtualizationEnabled,
+      chatFormsEnabled: async () => (await features.flags())["chat-forms"],
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agentExists(agentId)) && ownerSub === user.sub;
