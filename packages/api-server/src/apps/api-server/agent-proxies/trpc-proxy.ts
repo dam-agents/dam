@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import { AGENT_UNREACHABLE, type AgentUnreachableBody } from "api-server-api";
 import { getLogger } from "../../../core/logger.js";
 import { formatError } from "../../../core/format-error.js";
 import {
@@ -99,21 +100,19 @@ export function createAgentTrpcProxy(deps: AgentTrpcProxyDeps) {
         { agentId, error: (err as Error).message },
         "trpc-proxy.ensure-ready.failed",
       );
-      return c.json(
-        {
-          error: "agent unreachable",
-          ...(isAgentWakeTimeoutError(err)
-            ? {
-                reason: err.failure.kind,
-                message: describeWakeFailure(err.failure),
-              }
-            : {}),
-          ...(isAgentStoppedError(err)
-            ? { reason: "stopped", message: "the agent is stopped" }
-            : {}),
-        },
-        502,
-      );
+      const body: AgentUnreachableBody = {
+        error: AGENT_UNREACHABLE,
+        ...(isAgentWakeTimeoutError(err)
+          ? {
+              reason: err.failure.kind,
+              message: describeWakeFailure(err.failure),
+            }
+          : {}),
+        ...(isAgentStoppedError(err)
+          ? { reason: "stopped", message: "the agent is stopped" }
+          : {}),
+      };
+      return c.json(body, 502);
     }
 
     const rest = c.req.path.replace(`/api/agents/${agentId}/trpc`, "");

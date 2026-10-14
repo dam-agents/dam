@@ -46,6 +46,14 @@ const START_REFUSAL_CODES: ReadonlySet<string> = new Set([
   TerminationCode.InvalidImageName,
 ]);
 
+// UNIT_BOUNDARY_DESCRIPTION: the body the api-server answers a call through an agent with when it could not wake the agent, in place of the agent's own answer. `message` is the sentence the web app shows for the same failure.
+export const AGENT_UNREACHABLE = "agent unreachable";
+export interface AgentUnreachableBody {
+  error: typeof AGENT_UNREACHABLE;
+  reason?: string;
+  message?: string;
+}
+
 export function isStartRefusal(code: string | undefined): boolean {
   return code !== undefined && START_REFUSAL_CODES.has(code);
 }

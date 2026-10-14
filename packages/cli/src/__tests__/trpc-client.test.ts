@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import { AGENT_UNREACHABLE } from "api-server-api";
 import {
   AuthRequiredAtTransportError,
   createAgentTrpcClient,
@@ -122,15 +123,15 @@ describe("shared trpc-client adapter", () => {
   /**
    * TEST_SCENARIO: an agent the api-server could not start answers a call
    * through it with its own error body, not a tRPC one. The client reports
-   * why the agent can't start — the server's sentence — rather than failing
+   * why the agent is unavailable — the server's sentence — rather than failing
    * to parse the body, which read "Unable to transform response from
    * server" for an agent waiting for memory.
    */
-  it("reports why an agent can't start", async () => {
+  it("reports why an agent is unavailable", async () => {
     const refused = (async () =>
       new Response(
         JSON.stringify({
-          error: "agent unreachable",
+          error: AGENT_UNREACHABLE,
           reason: "over-budget",
           message: "your VM agents' memory is full",
         }),
@@ -145,6 +146,8 @@ describe("shared trpc-client adapter", () => {
 
     await expect(
       trpc.ssh.authorizeKey.mutate({ publicKey: "ssh-ed25519 AAAA" }),
-    ).rejects.toThrow("the agent can't start: your VM agents' memory is full");
+    ).rejects.toThrow(
+      "the agent is unavailable: your VM agents' memory is full",
+    );
   });
 });

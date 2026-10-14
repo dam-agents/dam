@@ -5,7 +5,11 @@ import {
   splitLink,
   type TRPCClient,
 } from "@trpc/client";
-import type { AppRouter } from "api-server-api";
+import {
+  AGENT_UNREACHABLE,
+  type AgentUnreachableBody,
+  type AppRouter,
+} from "api-server-api";
 import type { AppRouter as AgentRuntimeAppRouter } from "agent-runtime-api";
 import type { TokenProvider } from "../../auth/index.js";
 
@@ -74,11 +78,11 @@ function wrapFetchWithServerGates(
       const body = (await response
         .clone()
         .json()
-        .catch(() => ({}))) as { error?: string; message?: string };
-      if (body.error === "agent unreachable")
+        .catch(() => ({}))) as Partial<AgentUnreachableBody>;
+      if (body.error === AGENT_UNREACHABLE)
         throw new Error(
           typeof body.message === "string"
-            ? `the agent can't start: ${body.message}`
+            ? `the agent is unavailable: ${body.message}`
             : "the agent is unreachable",
         );
     }
