@@ -3032,7 +3032,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       if (turnRefs.some((ref) => ref.posted || ref.declined || ref.handedOff))
         return;
       const text = isAgentStoppedError(err)
-        ? `This agent was stopped by its owner — it stays stopped until the owner wakes it (or its next schedule fires).${renderTurnFiles(ctx)}`
+        ? `This agent was put to sleep by its owner — try again in a moment, or ask its owner to wake it.${renderTurnFiles(ctx)}`
         : isAgentWakeTimeoutError(err)
           ? `${wakeFailureUserCopy(err.failure)}${renderTurnFiles(ctx)}`
           : err instanceof AcpTurnAbandonedError

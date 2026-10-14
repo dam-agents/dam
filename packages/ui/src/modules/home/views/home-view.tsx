@@ -14,13 +14,9 @@ import { WidgetSkeleton } from "../components/home-skeletons.js";
 import { SpendWidget } from "../components/spend-widget.js";
 
 export function HomeView() {
-  const { agentsData, initialLoaded, rowProps, deleteAgent, suspend } =
-    useAgentRows();
+  const { agentsData, initialLoaded, rowProps, deleteAgent } = useAgentRows();
   const { workingAgentIds, workingByAgent } = useFeed();
-  const { stopSandbox, deleteSandbox } = useSandboxRowActions({
-    deleteAgent,
-    suspend,
-  });
+  const { deleteSandbox } = useSandboxRowActions({ deleteAgent });
 
   const allAgents = agentsData?.list ?? [];
   const { visible, drawByDriver } = splitTemporarySandboxes(allAgents);
@@ -62,7 +58,6 @@ export function HomeView() {
         drawByDriver={drawByDriver}
         rowProps={rowProps}
         workingByAgent={workingByAgent}
-        onStop={(agent) => void stopSandbox(agent)}
         onDelete={(agent) => void deleteSandbox(agent)}
       />
     </div>

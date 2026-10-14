@@ -1882,7 +1882,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: a grow reads the VMM's RAM area from the control socket's one-line answer, and asks it for whole 128 MiB units: a size that is not one boot plus whole units is rounded down, never past what admission was told, and the area's capacity caps it. A reply in any other shape fails the grow, so the machine is booted again whole rather than left small.
+    // TEST_SCENARIO: a grow reads the VMM's RAM area from the control socket's one-line answer, and asks it for whole 128 MiB units: a size that is not one boot plus whole units is rounded down, never past what admission was told, and the area's capacity caps it. A reply in any other shape fails the grow, which the server then handles as a machine that cannot grow.
     #[test]
     fn a_grow_asks_for_whole_units_within_the_area() {
         let geometry = ram_geometry(

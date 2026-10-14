@@ -140,7 +140,7 @@ Three paths trigger a wake:
   See [skills](skills.md).
 
 Wake is bounded — the primitive polls pod readiness with backoff and gives up after two minutes, and a per-replica watch releases each wait the moment the condition flips and backs a read cache.
-A read bypasses that cache when its result decides a write — spec read-modify-write, the pause flow's compare-and-clear — and while the watch is unsynced, when the cache cannot tell an absent Agent from an unseen one.
+A read bypasses that cache when its result decides a write — spec read-modify-write, the sleep flow's compare-and-clear — and while the watch is unsynced, when the cache cannot tell an absent Agent from an unseen one.
 On giving up it reads the controller's readiness conditions one final time and classifies the failure into a typed wake-failure cause — hibernation never acted on, a pod start failure (with the controller's termination cause, a full home volume named), pods still progressing, a gateway still coming up, a gateway failure it cannot outgrow, or a reconcile error — which callers receive and surface in their own idiom (channel reply copy, WS close reason, HTTP body, skills call error).
 The classification distinguishes transient causes (progressing, worth waiting or retrying) from hard ones (needing intervention); the two gateway causes split along exactly that line.
 A gateway wedged on a superseded configuration counts as hard even though the platform replaces such pods by itself ([security-and-credentials](security-and-credentials.md)): classification runs only once the budget is spent, so a repair that was going to land already had its chance.
@@ -226,17 +226,16 @@ The pod terminates; the PVC, Secret, Service, and NetworkPolicy persist.
 Workspace state survives — the git checkout, `node_modules`, `.venv`, mise cache, and `$HOME` are all on the PVC and rejoin on the next wake.
 Anything written to the container's ephemeral filesystem (OS-level changes, tools installed outside `$HOME`) is lost; this is a deliberate constraint of the lifetime model.
 
-**The hard stop and pause.** The user-initiated scale-downs, built to free [Reserved compute](budgets.md) without waiting for the idle checker — including reclaiming an Agent pinned awake by an open session.
-The api-server stamps `agent-platform.ai/stop-requested` (and clears the session pin); `shouldRun` treats the stamp as an overriding *negative* signal, and the reconciler scales the pair to zero immediately, bypassing the busy probe — a hard stop may interrupt work by design.
-The stop is **sticky**: background activity (UI polling, relay reconnects, proxied calls) never clears it — `ensureReady` on a stopped Agent fails with a typed *stopped* error instead of bumping — so an open tab cannot resurrect it.
-Only deliberate paths clear the stamp and restart the Agent (back through the budget gate): an explicit wake, and a schedule fire — schedules override a stop by design, and the UI warns at stop time when the Agent has any.
-Once scaled down, a stopped Agent looks like any hibernated one.
-
-**Pause** is the non-sticky sibling: the same stop stamp — plus a *staled* `last-activity`, so the Agent stays down once un-stuck — which the api-server clears itself once the Agent settles Hibernated (a settle-watcher polls for up to a minute; on failure the stop stays — fail-safe strict, one wake recovers).
-The clear is a **compare-and-clear** of the exact stamp the pause wrote: a stop (or second pause) issued during the settle window carries a newer stamp and stays sticky rather than being erased by the watcher.
-The transient stickiness during the descent is load-bearing — it is what keeps background polls from resurrecting the pair before it lands; staling the clock in the *initial* patch (never at settle time) is what keeps the watcher from ever clobbering a concurrent wake.
-A paused Agent is afterwards a plain hibernated Agent: its next deliberate use wakes it.
-One nuance: a **never-hibernate** Agent (effective timeout `0`) runs regardless of activity, so its pause degrades to the sticky stop — the only stable "paused" it can have.
+**Sleep.** The one user-initiated scale-down, built to free [Reserved compute](budgets.md) without waiting for the idle checker — including reclaiming an Agent pinned awake by an open session.
+The UI calls the state *Sleeping* and the action *Sleep*, and never offers a stop that outlasts the descent.
+The api-server stamps `agent-platform.ai/stop-requested`, clears the session and Invocation pins, and stales `last-activity`, so the Agent stays down once the stamp is gone; `shouldRun` treats the stamp as an overriding *negative* signal, and the reconciler scales the pair to zero immediately, bypassing the busy probe — sleep may interrupt work by design.
+While the stamp stands, background activity (UI polling, relay reconnects, proxied calls) never clears it — `ensureReady` on such an Agent fails with a typed *stopped* error instead of bumping — so an open tab cannot resurrect the pair before it lands.
+An explicit wake and a schedule fire clear it at any time, back through the budget gate.
+The api-server clears the stamp itself once the Agent settles Hibernated (a settle-watcher polls for up to a minute; on failure the stamp stays — fail-safe strict, one wake recovers).
+The clear is a **compare-and-clear** of the exact stamp the sleep wrote: a second sleep issued during the settle window carries a newer stamp and is not erased by the first one's watcher.
+Staling the clock in the *initial* patch (never at settle time) is what keeps the watcher from ever clobbering a concurrent wake.
+A sleeping Agent is afterwards a plain hibernated Agent: its next deliberate use wakes it.
+A **never-hibernate** Agent (effective timeout `0`) runs regardless of activity, so the UI does not offer it Sleep; a direct call still stamps it without the settle clear, the only stable sleep it can have.
 
 **Early reclaim for a blocked start.** The one scale-down neither the user nor the idle timeout asks for: when the [budget gate](budgets.md#reclaiming-room-for-a-blocked-start) refuses a start, it may hibernate that same owner's *unattended idle* Agents ahead of their timeout to admit it, longest-idle first and only when the freed Sizes provably cover the shortfall.
 Eligibility is deliberately narrower than the idle checker's, since reclaim takes down a pod whose own timeout still permits it to run: session and Invocation pins, sweepable Invocation targets, and never-hibernate Agents are all excluded, and survivors are probed more strictly: only an Agent whose runtime answers `idle` is reclaimed, and an unreachable pod is spared.

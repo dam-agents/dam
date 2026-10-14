@@ -285,7 +285,7 @@ func (r *AgentReconciler) reclaimForRefusedStart(ctx context.Context, agent *api
 
 // UNIT_BOUNDARY_DESCRIPTION: the refusal quotes the pool out of the same total Home shows, the runner's whole limit, and the room the start itself needs, since a start is refused for that need while the pool can still look half empty. A runner outside the cluster admits against a share of its host's memory the controller never learns, so its refusal goes without figures rather than quote the chart's limit.
 func (r *AgentReconciler) vmMemoryFullMessage(ctx context.Context, agent *apiv1.Agent, owner string) string {
-	const next = "It starts on its own once room frees up, since the platform pauses idle agents to make room when it can, or you can pause one yourself."
+	const next = "It starts on its own once room frees up, since the platform puts idle agents to sleep to make room when it can, or you can put one to sleep yourself."
 	if r.config.VM.Runner.HostAddress != "" {
 		return "Your VM agents' memory is full, so this agent can't start yet. " + next
 	}

@@ -23,23 +23,26 @@ The writer remembers what a tag resolved to for a few minutes; a pinned digest i
 A machine records the digest it booted, which is how its runner knows, even after a restart, which tree it holds once the tag moves on.
 Every registry read names the host's platform, so a tag resolves to that platform's own image rather than to a multi-arch index, and each tree records the platform it was unpacked for: a claim that moves to a node of another architecture fetches a pinned index digest again rather than booting a tree it cannot run.
 
-**A tree is either whole under its name or not there.** A fetch unpacks into a scratch tree, flushes it to disk and only then renames it into place; an eviction renames the tree away before it deletes it.
+**A tree is either whole under its name or not there.** A fetch unpacks into a scratch tree, flushes it to disk and only then renames it into place; an eviction renames the tree away before it deletes it, and deletes it in the background, so no resolve waits on it.
 A writer that dies mid-fetch or mid-eviction leaves only a scratch tree, which the next open reclaims, never a partial tree a lookup would take as complete.
 A fetch that finds an incomplete tree, or another platform's, under its name moves it aside and puts its own in place.
 A resolve has one deadline for everything it does, fetch included, and a runner waits a little past it, so a service that is slow is told apart from one that is gone — only one that is gone lets a runner boot a tree it already holds.
-A fetch that fails for its image — a registry refusing the export, a stream tar cannot unpack — is reported as an unavailable image, and a disk that fills, or has less room than the image's manifest names before the download starts, as a lack of capacity, never as a boot to retry at once into the same state.
+A fetch that fails for its image — a registry refusing the export, a stream tar cannot unpack — is reported as an unavailable image, and a disk that fills, or has less room than the image takes unpacked before the download starts, as a lack of capacity, never as a boot to retry at once into the same state.
 On a runner's own volume that disk is the owner's claim, so there it is reported as the owner's storage being full ([persistence](persistence.md#per-agent-pvcs)).
 
 **Eviction never frees a tree a machine is running from.** It takes the oldest write first, down to a byte count the install states, sparing what is held.
+A fetch evicts before it downloads, until both the budget and the filesystem have room for the tree it unpacks.
+OCI metadata names only compressed sizes, so that tree is taken to be three times the compressed size the manifest names.
 A runner holds the digests its running machines boot by naming them again every minute, and a hold lapses only once nobody names it — a runner that stopped has no machines left.
 A stopped machine holds nothing, so a hibernated agent never keeps an image a deploy retired; its start fetches the tree again when it is gone, and holds it before it checks it is there.
 A hold only extends, so no runner can release what another holds, and only a tree on disk is held, so a resolve that fails holds nothing; past half again its budget, the service fetches nothing.
-Each fetch under way counts toward that ceiling at the compressed size its manifest names, so fetches that start together cannot each find the cache under it.
+Each fetch under way counts toward that ceiling at that unpacked estimate, so fetches that start together cannot each find the cache under it.
 A service that restarts has forgotten every hold, so it evicts nothing until the runners have had time to name theirs again.
 A runner whose own claim runs short sheds every tree no machine holds, however far inside its budget the cache is, because a tree can be fetched again and a machine disk on the same claim cannot.
 
 **Nothing could fill that cache before an agent needed it.** A runner exists only once its owner's agents need one, so the first machine on an image, on every node after every deploy, would wait out the fetch with a user watching.
 The service therefore preloads the harness images the install ships, resolving their tags on every pass, and pins them against eviction.
+A fetch keeps nothing when it fails, so a digest whose preload failed is fetched again only after a wait that doubles with each failure, from one interval up to six hours; a tag that moves to another digest is fetched on the next pass.
 That set is fixed at deploy, so a custom agent image is never among them.
 It preloads with the install's default pull secrets, mounted into it, so an image only a per-template secret reads is fetched when a machine first needs it.
 
@@ -48,6 +51,8 @@ The repository a caller names is never what is asked, because anyone can name an
 A read with no credential is anonymous even where the service's own environment holds one.
 An anonymous read of an origin that succeeds marks the entry public, and only an entry not known to be public needs the registry to boot.
 The service keeps that knowledge in memory, so after a restart it asks again.
+A grant is remembered per digest and credential, and a failed anonymous read per digest, for as long as a tag's resolution is trusted, so a fleet of creates on one private image asks the registry once; a revoked pull secret still boots a tree it was granted for that long.
+A remembered failed read only moves the anonymous read after the caller's credentials, and never refuses a boot by itself, since a read that timed out looks the same as one refused.
 The check gates a boot, not a read.
 A runner's own cache serves one owner and checks nothing.
 

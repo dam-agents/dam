@@ -1,6 +1,5 @@
-// TEST_OVERVIEW: Every agent shows one of a fixed set of characters: the one its owner chose, or else one picked from a hash of its owner and name, so the same agent looks the same everywhere. A new agent is offered the character its owner uses least. One SVG string serves the UI and the Slack PNG, so the mood must already be right without page CSS: a working character shows open eyes, an idle one closed eyes in colour, and an asleep one closed eyes in grey.
+// TEST_OVERVIEW: Every agent shows one of a fixed set of characters: the one its owner chose, or else one picked from a hash of its owner and name, so the same agent looks the same everywhere. A new agent is offered the character its owner uses least. One SVG string serves the UI and the Slack PNG, so the mood must already be right without page CSS: an awake character shows open eyes and an asleep one closed eyes, both in the character's own colours.
 import {
-  ASLEEP_FILL,
   AVATAR_CHARACTERS,
   avatarCharacter,
   avatarSvg,
@@ -27,7 +26,7 @@ describe("avatarSvg", () => {
   // TEST_SCENARIO: Each character is well formed in every mood, so the browser and the Slack renderer parse the whole figure.
   it("emits well-formed markup for every character and mood", () => {
     for (const character of AVATAR_CHARACTERS)
-      for (const mood of ["working", "idle", "asleep"] as const) {
+      for (const mood of ["awake", "asleep"] as const) {
         const svg = avatarSvg(character, mood);
         expect(svg, character).not.toMatch(/NaN|undefined|Infinity/);
         const opened = svg.match(/<[a-z][^>]*[^/]>/g)?.length ?? 0;
@@ -36,18 +35,16 @@ describe("avatarSvg", () => {
       }
   });
 
-  // TEST_SCENARIO: The mood alone decides which eyes a static render shows, and only an asleep character turns grey.
-  it("shows the eyes and colour of the mood", () => {
-    const working = avatarSvg("spark", "working");
-    const idle = avatarSvg("spark", "idle");
+  // TEST_SCENARIO: The mood alone decides which eyes a static render shows, and an asleep character keeps its colours.
+  it("shows the eyes of the mood in the character's colours", () => {
+    const awake = avatarSvg("spark", "awake");
     const asleep = avatarSvg("spark", "asleep");
-    expect(hidden(working, "avatar-eyes-closed")).toBe(true);
-    expect(hidden(working, "avatar-eyes-open")).toBe(false);
-    expect(hidden(idle, "avatar-eyes-open")).toBe(true);
-    expect(idle).not.toContain(ASLEEP_FILL);
+    expect(hidden(awake, "avatar-eyes-closed")).toBe(true);
+    expect(hidden(awake, "avatar-eyes-open")).toBe(false);
     expect(hidden(asleep, "avatar-eyes-open")).toBe(true);
-    expect(asleep).toContain(ASLEEP_FILL);
-    expect(asleep).not.toMatch(/#(?!a2a9b0)[0-9a-fA-F]{6}/);
+    expect(hidden(asleep, "avatar-eyes-closed")).toBe(false);
+    const colours = (svg: string) => new Set(svg.match(/#[0-9a-fA-F]{6}/g));
+    expect(colours(asleep)).toEqual(colours(awake));
   });
 });
 
