@@ -665,7 +665,7 @@ func TestAMachineComingUpIsWatchedAndAChangeRequeuesTheAgent(t *testing.T) {
 	assert.Eventually(t, func() bool { return !r.watchingMachine("my-agent") }, 5*time.Second, time.Millisecond)
 }
 
-// TEST_SCENARIO: a watch belongs to a machine on its way up and ends with it. Hibernating the Agent or deleting it ends the watch without a requeue, since whatever did that reconciles the Agent itself; a machine that failed is not watched, and waits for the health poll.
+// TEST_SCENARIO: a watch belongs to a machine on its way up and ends with it. Hibernating the Agent once its machine has stopped, or deleting it, ends the watch without a requeue, since whatever did that reconciles the Agent itself; a machine that failed is not watched, and waits for the health poll.
 func TestAMachineWatchEndsWhenTheAgentStopsOrGoes(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, requeued := setupVMReconciler(t, agent)
