@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -249,7 +249,7 @@ So the runner records in the machine's share, the first time its guest answers �
 A boot that finds the record but no home stops, with the reason on the machine's console, rather than seeding a fresh home that would look healthy.
 A migrated machine is held to its copy the same way: while a seed is expected, its home comes from exactly that seed or the boot fails, never from the image, and the record names the seed ([vm-runtime-migration](vm-runtime-migration.md)).
 The record is learned from the answer rather than read off the disk, because the host does not parse a filesystem a guest has had root on.
-The storage template every new disk is copied from carries a journal; a disk smolvm formats itself has none, so an unclean stop — a killed runner — is what brings that repair on there.
+The runner formats every new disk itself, with a journal and at its full size, before any guest has touched it; disks made before it did were formatted by smolvm without one, so on those an unclean stop — a killed runner — is what brings that repair on.
 The loss is refused, not prevented.
 
 **The claim those disks sit on is the owner's pool.** One claim per owner holds every machine disk they have, their bookkeeping, a [runtime migration](vm-runtime-migration.md)'s seed while it waits, and the image cache when the cache lives there, and every disk may grow to the pool, so the claim is created at the pool; the controller refuses an install whose image cache budget would take the whole of it.
