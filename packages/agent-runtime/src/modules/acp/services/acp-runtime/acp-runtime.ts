@@ -271,16 +271,23 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       channel,
       promptId,
       queuedAt,
+      frame,
     }) => {
       autonomousTurns.end(sessionId);
       generating.add(sessionId);
+      const echoId = promptId ?? randomUUID();
       appendUserPromptToLog(
         sessionId,
         typed,
         queuedAt === undefined ? channel : null,
-        promptId ?? randomUUID(),
+        echoId,
       );
-      deps.activeTurns.record(sessionId);
+      deps.activeTurns.record(
+        sessionId,
+        deps.sessionMetadata?.get(sessionId)?.unstored === true
+          ? undeliveredOf(echoId, frame, new Date().toISOString())
+          : undefined,
+      );
       if (unattended === true) {
         const at = deps.sessionMetadata?.startRun(sessionId);
         if (at) announceRunStart(sessionId, at);
@@ -309,6 +316,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     onTurnEnded: (sessionId) => {
       if (shuttingDown) return;
       deps.sessionMetadata?.finishRun(sessionId);
+      deps.sessionMetadata?.markStored(sessionId);
       deps.activeTurns.remove(sessionId);
       checkPendingRestart();
     },
@@ -391,6 +399,19 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     },
     undeliveredFor(sessionId) {
       return deps.undeliveredPrompts.readFor(sessionId);
+    },
+    settleUnstored(sessionId) {
+      if (deps.sessionMetadata?.get(sessionId)?.unstored !== true) return null;
+      if (promptScheduler.hasWork(sessionId)) return null;
+      const cut = deps.activeTurns
+        .leftovers()
+        .find((m) => m.sessionId === sessionId);
+      if (cut?.prompt)
+        deps.undeliveredPrompts.remember(sessionId, [cut.prompt]);
+      if (cut) deps.activeTurns.remove(sessionId);
+      const undelivered = deps.undeliveredPrompts.readFor(sessionId);
+      if (undelivered.length === 0) retireSession(sessionId);
+      return undelivered;
     },
     queueOf(sessionId) {
       return promptScheduler.snapshot(sessionId);
@@ -1396,6 +1417,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             deps.sessionMetadata
           ) {
             deps.sessionMetadata.set(sidFromResult, mapping.platformMeta ?? {});
+            deps.sessionMetadata.markUnstored(sidFromResult);
             syncSettings(sidFromResult);
           }
         }

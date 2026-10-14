@@ -1,10 +1,13 @@
 import {
   jsonRpcErrorDetails,
+  platformUndeliveredMetaSchema,
+  type PlatformUndeliveredPrompt,
   PROMPT_NOT_QUEUED_CODE,
   PROMPT_NOT_QUEUED_MESSAGE,
   PROMPT_QUEUE_FULL_CODE,
   PROMPT_QUEUE_FULL_MESSAGE,
 } from "api-server-api";
+import { z } from "zod";
 
 import { connectionWentAway } from "./close-race.js";
 
@@ -118,6 +121,21 @@ export function classifyResumeError(e: unknown): ResumeErrorKind {
   if (/not\s*found/i.test(msg)) return "not-found";
   if (/refused|ECONN|WebSocket|network/i.test(msg)) return "connection";
   return "other";
+}
+
+const unstoredDataSchema = z.object({
+  platform: z.object({
+    unstored: z.literal(true),
+    undelivered: platformUndeliveredMetaSchema,
+  }),
+});
+
+export function unstoredSessionPrompts(
+  e: unknown,
+): PlatformUndeliveredPrompt[] | null {
+  const data = (e as { data?: unknown } | null)?.data;
+  const parsed = unstoredDataSchema.safeParse(data);
+  return parsed.success ? parsed.data.platform.undelivered : null;
 }
 
 export type SessionFailureKind =
