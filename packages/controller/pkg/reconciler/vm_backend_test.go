@@ -221,6 +221,23 @@ func TestTheRunnerPodHasRoomToCloseBeforeItIsKilled(t *testing.T) {
 	assert.Greater(t, *grace, int64(30+40+5))
 }
 
+// TEST_SCENARIO: a runner's memory request is a fraction of what its machines may grow to, so the scheduler's own scoring stacks an install's runners on the node with the most free memory, where owners waking together can exhaust it. The pod asks for an even spread of runners per node, as a preference, so a full node still takes a runner rather than leaving its owner's agents unschedulable.
+func TestRunnerPodsPreferAnEvenSpreadAcrossNodes(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	spread := dep.Spec.Template.Spec.TopologySpreadConstraints
+	require.Len(t, spread, 1)
+	assert.Equal(t, "kubernetes.io/hostname", spread[0].TopologyKey)
+	assert.Equal(t, int32(1), spread[0].MaxSkew)
+	assert.Equal(t, corev1.ScheduleAnyway, spread[0].WhenUnsatisfiable, "a hard rule would leave an owner's agents unschedulable on a full node")
+	assert.Equal(t, map[string]string{"app.kubernetes.io/component": "vm-runner"}, spread[0].LabelSelector.MatchLabels, "every runner of the install counts, whatever its owner")
+}
+
 // TEST_SCENARIO: an install serving agent images from inside the cluster leaves that range reachable, and then the runner does need Service names — so the choice is the install's, and asking for cluster resolution has to actually produce it.
 func TestAnInstallCanAskForClusterResolution(t *testing.T) {
 	agent := vmAgentCR()

@@ -115,6 +115,16 @@ func (r *AgentReconciler) runnerHost(owner string) string {
 	return fmt.Sprintf("%s.%s.svc", r.runnerName(owner), r.config.Namespace)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the placement preference every runner pod carries. A runner requests a small fraction of the memory its machines may grow to, so left to the scheduler's scoring the install's runners gather on the node with the most free memory, and a few owners' agents waking together can take that node past its real memory and kill several owners' runners at once. The constraint asks for an even count of this install's runners per node, as a preference and not a rule, so a node that is full or cordoned never leaves a runner unschedulable.
+func runnerSpread() []corev1.TopologySpreadConstraint {
+	return []corev1.TopologySpreadConstraint{{
+		MaxSkew:           1,
+		TopologyKey:       "kubernetes.io/hostname",
+		WhenUnsatisfiable: corev1.ScheduleAnyway,
+		LabelSelector:     &metav1.LabelSelector{MatchLabels: map[string]string{"app.kubernetes.io/component": vmRunnerComponent}},
+	}}
+}
+
 func vmRunnerSelector(owner string) map[string]string {
 	return map[string]string{
 		"app.kubernetes.io/component": vmRunnerComponent,
@@ -822,6 +832,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 					EnableServiceLinks:            new(false),
 					NodeSelector:                  spec.NodeSelector,
 					Tolerations:                   spec.Tolerations,
+					TopologySpreadConstraints:     runnerSpread(),
 					ImagePullSecrets:              spec.ImagePullSecrets,
 					Containers: []corev1.Container{{
 						Name:            vmRunnerComponent,
