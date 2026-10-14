@@ -253,7 +253,7 @@ fn exited(proc_root: &Path, pid: i32) -> bool {
 
 // UNIT_BOUNDARY_DESCRIPTION: the host runner's process table. A Mac has no /proc, so the VMMs holding a machine's directory are found through the kernel's process list and each process's arguments, as `/proc/<pid>/cmdline` finds them on Linux.
 #[cfg(target_os = "macos")]
-mod darwin {
+pub(crate) mod darwin {
     use std::ffi::c_void;
     use std::mem;
 
@@ -320,6 +320,37 @@ mod darwin {
             .take(argc)
             .map(|field| String::from_utf8_lossy(field).into_owned())
             .collect()
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: a process's resident memory in bytes and its user plus system CPU time in microseconds, which Linux reads from /proc. The kernel counts CPU in Mach time units, nanoseconds on Intel and timebase ticks on Apple silicon, so it is scaled by the timebase.
+    pub fn task_usage(pid: i32) -> Option<(u64, u64)> {
+        // SAFETY: proc_taskinfo is plain data, and the call writes at most its size.
+        let mut info: libc::proc_taskinfo = unsafe { mem::zeroed() };
+        let size = i32::try_from(mem::size_of::<libc::proc_taskinfo>()).ok()?;
+        // SAFETY: `info` is a valid proc_taskinfo of `size` bytes.
+        let read = unsafe {
+            libc::proc_pidinfo(
+                pid,
+                libc::PROC_PIDTASKINFO,
+                0,
+                (&raw mut info).cast::<c_void>(),
+                size,
+            )
+        };
+        if read != size {
+            return None;
+        }
+        #[allow(deprecated)]
+        let (numer, denom) = {
+            let mut base = libc::mach_timebase_info { numer: 0, denom: 0 };
+            // SAFETY: `base` is a valid mach_timebase_info the call fills in.
+            if unsafe { libc::mach_timebase_info(&raw mut base) } != 0 || base.denom == 0 {
+                return None;
+            }
+            (u128::from(base.numer), u128::from(base.denom))
+        };
+        let nanos = u128::from(info.pti_total_user + info.pti_total_system) * numer / denom;
+        Some((info.pti_resident_size, u64::try_from(nanos / 1000).ok()?))
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: a process is gone, or a zombie, which on a Mac has already released its threads and with them every file and port. A process that is the runner's own child and has exited is reaped here first: smolvm on a Mac reads any pid that still answers a signal as a live VMM, so an unreaped one would fail the stop that follows its kill. The kernel answers no process info for a zombie, so a reap is also how a child zombie is told apart from a live child.
