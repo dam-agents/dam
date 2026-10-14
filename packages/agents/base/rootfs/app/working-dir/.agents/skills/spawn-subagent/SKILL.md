@@ -43,6 +43,7 @@ The tools are the way to delegate: for one hand-off, for a fan-out, and for any 
    It returns the sub-agent id at once.
 3. **Wait.** Call `await_subagents` with the ids.
    It returns as soon as one finishes, or after about four minutes, with what is done, failed and still running; call it again with the running ids.
+   A connection or transport error from the call does not stop the sub-agents: call it again with the same ids.
 
 For a fan-out, call `spawn_subagent` once per task, then wait on all the ids in one `await_subagents` call.
 

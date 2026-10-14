@@ -20,6 +20,10 @@ export const SUB_AGENT_WAIT_MS = 240_000;
 
 const POLL_MS = 2_000;
 
+const PROGRESS_INTERVAL_MS = 20_000;
+
+const AWAIT_AGAIN_GRACE_MS = 60_000;
+
 const LEASE_POLLS = 4;
 
 const MAX_AWAIT_IDS = 50;
@@ -35,7 +39,7 @@ A need the request does not bear out is refused: different-harness on your own h
 
 The sub-agent runs one prompt to completion unattended, reports one result matching the JSON Schema you give, and is then removed. It cannot ask you anything, so the prompt must let it finish on its own. It runs on your model provider; connections you pass must be your own grants (see list_connections). A setup step that fails fails the sub-agent at once with the reason. Returns the sub-agent id at once; call await_subagents with it to get the result. Do not retry this call blindly after an error: a duplicate call is a second sub-agent.`;
 
-const AWAIT_DESCRIPTION = `Wait for sub-agents you started with spawn_subagent. Returns as soon as any of them finishes, or after about four minutes, listing which are done (with their result), which failed (with the reason), and which are still running. Call it again with the still-running ids to keep waiting, or end your turn: a sub-agent that finishes while nothing waits on it is delivered to you as a new turn. An id that is not one of your sub-agents comes back under unknown.`;
+const AWAIT_DESCRIPTION = `Wait for sub-agents you started with spawn_subagent. Returns as soon as any of them finishes, or after about four minutes, listing which are done (with their result), which failed (with the reason), and which are still running. Call it again with the still-running ids to keep waiting, or end your turn: a sub-agent that finishes while nothing waits on it is delivered to you as a new turn. An id that is not one of your sub-agents comes back under unknown. If the call itself fails with a connection or transport error, the sub-agents keep running: call it again with the same ids.`;
 
 const spawnShape = spawnInvocationRequestSchema.shape;
 
@@ -114,6 +118,15 @@ const spawnInput = {
       "Harness config options as {name: value}: effort on claude-code (low to xhigh; haiku takes none) and codex (minimal to xhigh), approvals on bob. A setting the harness cannot apply fails the sub-agent as soon as it boots.",
     ),
 };
+
+function schemaFromText(schema: unknown): unknown {
+  if (typeof schema !== "string") return schema;
+  try {
+    return JSON.parse(schema) as unknown;
+  } catch {
+    return schema;
+  }
+}
 
 function withHarnessConfig<T extends object>(
   rest: T & {
@@ -226,11 +239,12 @@ export function registerSubAgentTools(
   deps: {
     ops: DriverOps;
     awaits: SubAgentAwaitMarks;
+    requestSignal?: AbortSignal;
     waitMs?: number;
     pollMs?: number;
   },
 ): void {
-  const { ops, awaits } = deps;
+  const { ops, awaits, requestSignal } = deps;
   const waitMs = deps.waitMs ?? SUB_AGENT_WAIT_MS;
   const pollMs = deps.pollMs ?? POLL_MS;
 
@@ -238,7 +252,7 @@ export function registerSubAgentTools(
     run(async () => {
       const { needs, ...rest } = args;
       const parsed = spawnInvocationRequestSchema.safeParse(
-        withHarnessConfig(rest),
+        withHarnessConfig({ ...rest, schema: schemaFromText(rest.schema) }),
       );
       if (!parsed.success) {
         return errorResult(
@@ -284,32 +298,65 @@ export function registerSubAgentTools(
       run(async () => {
         const unique = [...new Set(ids)];
         const deadline = Date.now() + waitMs;
+        const signal = requestSignal
+          ? AbortSignal.any([extra.signal, requestSignal])
+          : extra.signal;
         const lease = () =>
           awaits.markAwaited(
             unique,
             new Date(Date.now() + pollMs * LEASE_POLLS),
           );
+        const progressToken = extra._meta?.progressToken;
+        let beats = 0;
+        let lastBeat = Date.now();
+        const heartbeat = async (settled: Settled[]) => {
+          if (
+            progressToken === undefined ||
+            Date.now() - lastBeat < PROGRESS_INTERVAL_MS
+          )
+            return;
+          lastBeat = Date.now();
+          beats += 1;
+          const running = settled.filter((s) => s.status === "running").length;
+          await extra
+            .sendNotification({
+              method: "notifications/progress",
+              params: {
+                progressToken,
+                progress: beats,
+                message: `Still waiting: ${running} running`,
+              },
+            })
+            .catch(() => {});
+        };
         await lease();
         let settled = await readAll(ops, unique);
         while (
           !settled.some((s) => s.status === "done" || s.status === "failed") &&
           settled.some((s) => s.status === "running") &&
           Date.now() < deadline &&
-          !extra.signal.aborted
+          !signal.aborted
         ) {
           await sleep(
             Math.min(pollMs, Math.max(deadline - Date.now(), 0)),
-            extra.signal,
+            signal,
           );
           await lease();
           settled = await readAll(ops, unique);
+          await heartbeat(settled);
         }
         const summary = summarize(settled);
-        if (!extra.signal.aborted)
+        if (!signal.aborted) {
           await awaits.markCollected([
             ...summary.done.map((d) => d.id),
             ...summary.failed.map((f) => f.id),
           ]);
+          if (summary.running.length > 0)
+            await awaits.markAwaited(
+              summary.running,
+              new Date(Date.now() + AWAIT_AGAIN_GRACE_MS),
+            );
+        }
         return json(summary);
       }),
   );

@@ -52,6 +52,16 @@ These decisions replace it where the two differ.
 - **Codex may stop `await_subagents` at its MCP tool timeout** (believed to be 60 s, against the 240 s long poll).
   Check it in smoke check 1 on Codex; if it holds, raising Codex's tool timeout for the platform server is a decision for the owner.
 - **The live smoke tests run later, on the shared dev cluster**, after the owner says another job on it is done.
+- **The first live run (2026-10-14) added 03 and 04.**
+  Claude Code and Bob passed all four checks.
+  Codex could not spawn with the tool (text schema), every Pi wait hit Pi's 60-second MCP timeout, a wait's result could also be pushed as a turn, and every Codex and Pi sub-agent got 401 from its provider.
+  The owner chose to fix them all here and re-run the 4 × 4.
+- **Pi's wait is kept alive with MCP progress messages**, not by a shorter wait or a raised Pi timeout.
+  Pi restarts its 60-second timeout on each one; a Pi wait then ran 130 seconds and returned.
+- **Every agent created or removed on the cluster cuts open waits, and that stays out of scope.**
+  The api-server's waypoint reloads on each agent create or delete and closes old connections 45 seconds later; the agent's gateway reuses its old connection, so even a call sent after the reload is cut.
+  Shorter waits do not prevent this, so the wait stays at four minutes, and the tool description and the skill tell the agent to call again after a connection error; the sub-agents keep running.
+  The owner asked for a separate issue for the network cause, drafted but not filed yet.
   No image is built from this branch before then.
 
 ## Approach
@@ -106,6 +116,8 @@ Sources: codex-acp `src/tool-calls/reporters/McpToolReporter.ts` at `v2.1.1`; pi
 | ----- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | ✅ 01 | [Delegation shows and returns in the asking chat on every harness](./01-tool-output-every-harness.md) | Shared tool-output reader in `agent-runtime-api`; runtime spawn tracking and artifact touches use it; UI chip content falls back to `rawOutput`; chip matching uses the bare tool name | —                                                              |
 | ✅ 02 | [One delegation guide for every harness](./02-delegation-guide.md)                                    | Skill moves to the base image and is rewritten harness-neutral; base `AGENTS.md` and the `spawn_subagent` description reworded; skill manifest; architecture docs                      | — (do it after 01, so the smoke test runs on the full feature) |
+| ✅ 03 | [Tool spawns and waits work on every harness](./03-tool-calls-every-harness.md)                       | Codex text schema parsed; progress messages keep Pi's wait alive; lease grace after a wait; MCP calls labelled as tools                                                                | 01, 02                                                         |
+| 04    | [Codex and Pi reach their provider with addressed injection](./04-addressed-provider-key.md)          | Codex image env no longer shadows the provider placeholder; Pi reads it and sends it with discovery                                                                                    | —                                                              |
 
 ## Conventions & glossary
 
