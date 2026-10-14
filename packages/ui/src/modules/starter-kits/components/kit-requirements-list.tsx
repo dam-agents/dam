@@ -18,7 +18,7 @@ interface Props {
   onConnect: (accepts: readonly string[]) => void;
 }
 
-export function KitRequirementsCard({
+export function KitRequirementsList({
   kit,
   granted,
   templateById,
