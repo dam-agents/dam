@@ -19,6 +19,8 @@ export interface ToolChip {
   title: string;
   status: string;
   content?: ToolContent[];
+  toolKind?: string;
+  description?: string;
 }
 
 interface TextPart {
@@ -167,8 +169,10 @@ export interface AgentView {
   stopRequested: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
+  reclaimed?: { at: string; for: "memory" | "compute" };
   size: { cpu?: string; memory?: string };
   podTerminationReason?: string;
+  podTerminationCode?: string;
   notReadyMessage?: string;
   podRestarts: number;
   podRestartReason?: string;
@@ -214,8 +218,6 @@ export interface RuntimeMigrationView {
 
 export interface RuntimeMigrationPlanView {
   unmovable: { path: string; reason: string }[];
-  storageSize: string;
-  storageResized: boolean;
   bootsSleepingAgent: boolean;
   retentionMs: number | null;
   allowed: boolean;

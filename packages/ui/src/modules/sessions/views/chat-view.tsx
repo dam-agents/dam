@@ -357,6 +357,10 @@ export function ChatView() {
     !!newSessionAgent &&
     providerConnections.loaded &&
     providerConnections.owned.length === 0;
+  const noGrantedProvider =
+    !!newSessionAgent &&
+    providerConnections.loaded &&
+    providerConnections.granted.length === 0;
   const [providersModal, setProvidersModal] = useState<boolean | null>(null);
 
   const view = useStore((s) => s.view);
@@ -399,10 +403,8 @@ export function ChatView() {
   const harnessForks = useStore((s) => s.harnessForks);
   const queueEmpty = useStore((s) => s.queuedPrompts.length === 0);
   const { data: sessionView } = useAgentSession(selectedAgent, sessionId);
-  const rewritable =
+  const canRewrite =
     harnessForks &&
-    queueEmpty &&
-    !busy &&
     sessionView?.mode === SessionMode.Chat &&
     sessionView.type === SessionType.Regular &&
     !sessionView.threadTs &&
@@ -675,7 +677,10 @@ export function ChatView() {
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       {}
       {(providersModal ?? noProviders) && (
-        <ProviderSettingsModal onClose={() => setProvidersModal(false)} />
+        <ProviderSettingsModal
+          agentId={newSessionAgent}
+          onClose={() => setProvidersModal(false)}
+        />
       )}
       <header
         className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-stretch h-[70px] max-md:border-b border-border shrink-0 relative z-content`}
@@ -970,9 +975,10 @@ export function ChatView() {
                           rewriteIndex !== -1 &&
                           item.index > rewriteIndex;
                         const content =
-                          rewritable && rewritePoints.has(item.message.id) ? (
+                          canRewrite && rewritePoints.has(item.message.id) ? (
                             <RewritableMessage
                               message={runMessage}
+                              enabled={queueEmpty && !busy}
                               onRewrite={(mode, text) =>
                                 rewriteFrom({
                                   messageId: item.message.id,
@@ -1068,7 +1074,9 @@ export function ChatView() {
                   onSend={sendAndFollow}
                   onStop={stopAgent}
                   blockedReason={
-                    noProviders ? "No LLM providers connected." : null
+                    noGrantedProvider
+                      ? "No LLM provider connected to this agent."
+                      : null
                   }
                 />
                 {!hasPendingPermission && pickable && (

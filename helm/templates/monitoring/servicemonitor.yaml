@@ -1,0 +1,29 @@
+{{- if and .Values.monitoring.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/ServiceMonitor") }}
+{{- /*
+The cluster's Prometheus scrapes the VM pool series from the platform collector's
+Prometheus export. See docs/architecture/observability.md.
+*/ -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "platform.fullname" . }}-vm-pool
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clickstack-collector
+    {{- with .Values.monitoring.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: clickstack-collector
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  endpoints:
+    - port: prometheus
+      interval: 30s
+      # The export already labels each series with the runner or controller
+      # that produced it; without this the scrape would relabel every series
+      # with the collector's own address.
+      honorLabels: true
+{{- end }}

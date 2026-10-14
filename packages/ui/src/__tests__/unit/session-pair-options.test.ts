@@ -82,12 +82,39 @@ describe("session pair options", () => {
   });
 
   /** TEST_SCENARIO: A remembered pair on a harness the agent no longer
-   * carries preselects nothing. */
+   * carries is dropped for a harness it does carry. */
   it("drops a pair whose harness the agent does not carry", () => {
     const pair = { harness: "bob", provider: "lite", model: null };
     const fits = () => ["lite"];
-    expect(nextPair(null, pair, ["claude-code"], fits)).toBeNull();
+    expect(nextPair(null, pair, ["claude-code"], fits)).toEqual({
+      harness: "claude-code",
+      provider: "lite",
+      model: null,
+    });
     expect(nextPair(null, pair, ["bob"], fits)).toEqual(pair);
+  });
+
+  /** TEST_SCENARIO: A new agent has no pair picked or remembered. The first
+   * session still starts on a pair it can run — the default harness when a
+   * granted provider fits it, else the first harness one fits — rather than
+   * asking the user to choose. Only no fitting provider at all leaves none. */
+  it("preselects the first pair the agent can run", () => {
+    const fits = (h: string) => (h === "codex" ? ["oai"] : []);
+    expect(
+      nextPair(null, null, ["claude-code", "codex"], fits, "claude-code"),
+    ).toEqual({
+      harness: "codex",
+      provider: "oai",
+      model: null,
+    });
+    expect(
+      nextPair(null, null, ["claude-code", "codex"], () => ["lite"], "codex"),
+    ).toEqual({
+      harness: "codex",
+      provider: "lite",
+      model: null,
+    });
+    expect(nextPair(null, null, ["claude-code"], () => [])).toBeNull();
   });
 
   /** TEST_SCENARIO: The provider of the pair a person picked was removed

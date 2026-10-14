@@ -40,6 +40,7 @@ DAX is safe only on the pinned Linux 6.12 guest kernel ([vm-runner-upgrades](vm-
 A deploy with a new image rolls the DaemonSet on every node at once, which installs the new versions **in place**, beside the old ones: an agent still on an older image keeps the versions it names, and nothing is pruned.
 Playwright's browsers sit there too, each image naming its own.
 An install cut short (the installer killed, a node drained) is redone on the next run rather than taken as done: mise records a version as mid-install only in its cache, so the installer keeps that cache in the node directory too, and it removes any version directory left empty.
+On OpenShift, the node configuration in [`etc/openshift-node-config/`](../../etc/openshift-node-config/) has the nodes create the directory with the label confined pods can read.
 
 The directory is in the boot path: an agent that starts on a node before its installer has finished has no harness until its next start.
 A download host that stalls or trickles fails the install in bounded time, after mise's own retries, and the kubelet restarts the installer until it succeeds, each run keeping what the last one installed.
@@ -136,12 +137,15 @@ A move never strands an Agent.
 It records the image the Agent came from until the Agent has stayed ready on the new spec for five minutes, so a container that crashes seconds after it becomes ready does not prove the move.
 If the controller instead reports, for that spec, a failure the image can cause, the job writes the old image back and marks the new one refused for that Agent, which is not moved to it again; a later image is tried as usual.
 The failures are: the image cannot be pulled or unpacked, the machine cannot boot it, or the controller's `StartFailed` condition.
-The controller sets `StartFailed` only from the pod or machine that runs the current spec, never from the pod a roll replaces, which exits too.
+The controller sets `StartFailed` only from the pod or machine that runs the current spec, or from a refusal to admit that spec, never from the pod a roll replaces, which exits too.
 On the container backend that is a pod of the agent StatefulSet's update revision, once the StatefulSet has observed its generation.
 On the vm backend the runner's status names no spec, but a restart in flight reads not ready, so the controller counts from the first read at the current generation.
-The controller sets `StartFailed` for one of two reasons.
+The controller sets `StartFailed` for one of three reasons.
 Either the container, or a guest that answered and then went quiet, restarted three times on this spec and is not ready now.
 Or it ran on this spec and never became ready, not counting the time an image pull takes: for ten minutes in a container, or for two minutes in a vm machine.
+Or, on the container backend, admission refused the agent StatefulSet with this spec's image, as a cluster policy that blocks images older than a year does.
+The old pod then keeps running and no pod of the new spec ever starts, so the refusal is the only failure there is to report.
+It counts only when the refused write changes the agent container's image: a refusal of a StatefulSet already on that image is not the new image's fault, and a move back would not cure it.
 The vm bound is short because a moved vm Agent takes the new image when it wakes, and the vm idle timeout hibernates it again five minutes later.
 At ten minutes, the runner's own restart of the quiet guest would also stop the clock first.
 An exit from out of memory or a full home volume does not count, since any image meets it.

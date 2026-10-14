@@ -39,10 +39,10 @@ if [ ! -f "$release/storage-template.ext4" ]; then
   limactl shell "$LIMA_INSTANCE" sh -c 'cd /tmp && tar -cSf - storage-template.ext4 overlay-template.ext4 && rm storage-template.ext4 overlay-template.ext4' | tar -xf - -C "$release"
 fi
 
-# smolvm shrinks a disk asked for below the 20 GiB template with resize2fs, and
-# looks for Homebrew's keg-only e2fsprogs; without it the disk keeps 20 GiB.
-[ -x /opt/homebrew/opt/e2fsprogs/sbin/resize2fs ] || command -v resize2fs >/dev/null ||
-  echo "note: no resize2fs, so vm agent disks below 20 GiB are made at 20 GiB; brew install e2fsprogs honours their size" >&2
+# The runner formats a new disk with Homebrew's keg-only e2fsprogs; without it
+# smolvm copies its 20 GiB template, with no journal and at no smaller size.
+[ -x /opt/homebrew/opt/e2fsprogs/sbin/mkfs.ext4 ] || [ -x /usr/local/opt/e2fsprogs/sbin/mkfs.ext4 ] || command -v mkfs.ext4 >/dev/null ||
+  echo "note: no mkfs.ext4, so new vm agent disks get no journal and are made at least 20 GiB; brew install e2fsprogs" >&2
 
 # platform-init and platform-runc run inside the guest, so they are the static
 # Linux binaries from the runner image, not anything built for this Mac. The

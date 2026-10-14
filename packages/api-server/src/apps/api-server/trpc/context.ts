@@ -9,6 +9,7 @@ import { createKitUpdateMarks } from "../../../modules/agents/infrastructure/kit
 import { composeHarnessConfigModule } from "../../../modules/harness-config/index.js";
 import { agentsInstallSettings } from "../../../config.js";
 import { composeBudgetsModule } from "../../../modules/budgets/index.js";
+import { findExternalUsersByIdentity } from "../../../modules/channels/infrastructure/identity-links-repository.js";
 import {
   createDisabledMetricsService,
   createMetricsService,
@@ -116,7 +117,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
       brandName: config.brand.name,
     });
-    const { budgets, resizeGate } = composeBudgetsModule({
+    const { budgets, resizeGate, storageGate } = composeBudgetsModule({
       k8s: k8sClient,
       owner: user.sub,
       listAgents: () => agentsRepo.list(user.sub),
@@ -125,6 +126,10 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         memory: config.defaultUserMemoryBudget,
       },
       slotSize: defaultLimits,
+      isSlackUnlinked: async () =>
+        channelManager.availableChannels()[ChannelType.Slack] === true &&
+        (await findExternalUsersByIdentity(db)(ChannelType.Slack, user.sub))
+          .length === 0,
     });
     const { agents, isOwnedAgent } = composeAgentsModule({
       api,
@@ -135,6 +140,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       agentDefaultLimits: defaultLimits,
       install: agentsInstallSettings(config),
       resizeGate,
+      storageGate,
       owner: user.sub,
       db,
       telegramBinding: telegramBindFlows
@@ -381,6 +387,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       user,
       e2eEnabled: config.e2eEnabled,
       virtualizationEnabled: config.virtualizationEnabled,
+      vmForced: agentsInstallSettings(config).vmForced,
       featureModes: config.featureModes,
     };
   };

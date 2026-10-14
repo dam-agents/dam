@@ -1,6 +1,6 @@
 # VM host runner
 
-Last verified: 2026-10-05
+Last verified: 2026-10-14
 
 On a Mac, the local cluster's `vm` Backend runs on **one runner outside the cluster**, on the Mac's own hypervisor, instead of on the per-owner [runner pods](vm-runner.md) inside the cluster's VM, which would need a hypervisor nested in that VM.
 A nested guest boots several times slower, a busy laptop pushes it past smolvm's fixed ready window, and only recent Apple chips nest at all.
@@ -10,6 +10,8 @@ It is a local-development shape only: an install turns it on by naming the addre
 **One runner serves every owner.** There is no per-owner boundary.
 A guest that escapes its hypervisor reaches every owner's machines and the Mac itself, as the user who started the runner.
 The controller builds no runner objects: no Deployment, claim, Service, NetworkPolicy, roll or memory resize.
+It writes only the one usage Secret the api-server reads the runner's use with, naming no owner, so every owner's resource bars show the whole laptop's memory, storage and CPU, with each of their own agents as a segment, its VMM's memory and CPU read from the kernel's task info since a Mac has no `/proc`.
+The controller still counts memory against the chart's limit rather than the runner's own share, so the runner refuses a machine that does not fit, but nothing hibernates idle agents to make room.
 The chart renders the runner's token and asks cert-manager for its serving certificate, which names the host address.
 The install copies both to the Mac and starts the runner.
 The controller trusts it through the runners' CA as it trusts a pod, and counts it ready as soon as it answers.
@@ -39,12 +41,12 @@ The harness tools the default image boots with are installed on the k3s node, wh
 The Mac's default filesystem folds names that differ only in case into one file, and agent images carry such names.
 Trees are unpacked without privilege, so a guest sees every image file owned by the runner's user rather than by the image's owners.
 smolvm needs ext4 tools the Mac lacks, so the disk templates are expanded inside the cluster's VM and carried back sparse.
-A disk asked for below the template's 20 GiB is shrunk with resize2fs, which a Mac has only from Homebrew's e2fsprogs; without it the disk keeps the template's size, and `cluster:host-runner` says so.
+The runner formats a new disk at its full size with `mkfs.ext4`, which a Mac has only from Homebrew's e2fsprogs; without it smolvm copies the template instead, so the disk has no journal and one asked for below the template's 20 GiB keeps the template's size, and `cluster:host-runner` says so.
 
 **Lifecycle.** The runner is a process on the Mac, not a supervised service.
 Stopping it stops its machines, as a pod's termination does; the controller's sweep starts them again once the runner is back.
 `cluster:stop` of the cluster that last started it stops it; `cluster:delete` also removes its machines.
 Nothing restarts it after the Mac reboots: `cluster:host-runner` (re)starts it.
 There is one host runner per Mac, serving the cluster that started it last.
-The runner finds a VMM that outlived its stop through `/proc`, which a Mac lacks, so such a VMM is left running rather than killed.
+A Mac has no `/proc`, so the runner finds a VMM that outlived its stop through the kernel's process list and each process's arguments, and powers it off as it would in a pod.
 Runner pods an install ran before it switched to the host runner are left as they are, neither restarted nor removed: nothing schedules them, and their claims hold those owners' old machine disks, so an operator deletes them once nothing on those disks is wanted.

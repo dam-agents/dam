@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -221,9 +221,12 @@ The entrypoint discards at boot the caches no shipped tool reads — Go's module
 Toolchains the agent installed for itself are never touched; on the vm Backend only the discards apply.
 
 **The `vm` Backend has no PVCs, and one disk.** A pod attaches a volume per path, so a mount there is a size and a placement at once.
-A machine has a single disk, so its size is the Agent's own `storageSize`, stated once and rounded once, and the path it holds apart from the root is `HOME`.
+A machine has a single disk, and it has no size of its own: it is sparse and may grow to the owner's whole storage pool — their [UserBudget](budgets.md#the-ceiling)'s `storage`, else the install's value — so what the owner's disks take is what they write, and an Agent's `storageSize`, a mount's size and a starter kit's storage size only containers.
+A new machine is created at the pool, since every runner release creates a disk at the size it is asked for.
+An existing machine is sent the pool only once its runner has reported the machine's disk, since an older runner would restart a running machine to grow it; until then it keeps the size the Agent's spec gives.
+The path the disk holds apart from the root is `HOME`.
 That is not a field an Agent sets: `HOME` is fixed on both backends, and it is already the only path every template and starter kit in the chart persists.
-The disk sits on the owner's [VM runner](vm-runner.md) volume, grows with its size and never shrinks, survives hibernation, restarts and a new image, and goes with the Agent on delete.
+The disk sits on the owner's [VM runner](vm-runner.md) volume, grows with its size at the machine's next start and never shrinks, survives hibernation, restarts and a new image, and goes with the Agent on delete.
 It is per owner rather than per Agent, so the storage-class pin and the warm pool do not apply and the storage migration never sees it.
 An Agent whose mounts ask to persist a path outside `HOME` is refused rather than reconciled, because a machine cannot keep it and silently dropping it is how an agent comes to look healthy while discarding its work.
 
@@ -231,7 +234,8 @@ An Agent whose mounts ask to persist a path outside `HOME` is refused rather tha
 The runner names it in the share at every start, and a new generation, or none named, boots onto an empty upper: what must outlast that belongs under `HOME`.
 smolvm keeps a root of its own and binds the whole disk into it; platform-init leaves both behind, and fails the boot rather than run on them.
 Temporary folders are kept off that root instead: `/tmp`, `/var/tmp` and `/var/cache` are directories of the disk bound in place, empty on every boot, and `HOME`'s `.cache` and `.npm` are ordinary directories of the home.
-They share the disk with the agent's work, so when it runs short platform-init deletes their least recently used files — never one in use, never anything outside them — and smolvm's trim returns the freed space to the runner's volume.
+They share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their least recently used files — never one in use, never anything outside them.
+Every minute platform-init trims the disk, so whatever the agent frees, by deleting or by rewriting a file in place, goes back to the runner's volume and stops counting against the owner's storage.
 Once the image runs, the disk is reachable only through what platform-init mounted from it.
 
 Mounting the disk is the platform's job rather than the image's.
@@ -247,14 +251,24 @@ So the runner records in the machine's share, the first time its guest answers �
 A boot that finds the record but no home stops, with the reason on the machine's console, rather than seeding a fresh home that would look healthy.
 A migrated machine is held to its copy the same way: while a seed is expected, its home comes from exactly that seed or the boot fails, never from the image, and the record names the seed ([vm-runtime-migration](vm-runtime-migration.md)).
 The record is learned from the answer rather than read off the disk, because the host does not parse a filesystem a guest has had root on.
-The storage template every new disk is copied from carries a journal; a disk smolvm formats itself has none, so an unclean stop — a killed runner — is what brings that repair on there.
+The runner formats every new disk itself, with a journal and at its full size, before any guest has touched it.
+A runner without `mkfs.ext4`, or whose format fails, leaves that format to smolvm, which can write no journal, and so did every disk made before the runner formatted its own; on those an unclean stop — a killed runner — is what brings that repair on.
 The loss is refused, not prevented.
 
-**The claim those disks sit on is sized from demand.** One claim per owner holds every machine disk they have, so it is sized from those disks, some headroom beside each, the image cache budget when the cache lives there, and, while a [runtime migration](vm-runtime-migration.md) is in flight, the capacity of the home volume its seed was copied from, since the seed waits there beside the disk it is restored into; the install's value is the ceiling, not the size.
+**The claim those disks sit on is the owner's pool.** One claim per owner holds every machine disk they have, their bookkeeping, a [runtime migration](vm-runtime-migration.md)'s seed while it waits, and the image cache when the cache lives there, and every disk may grow to the pool, so the claim is created at the pool; the controller refuses an install whose image cache budget would take the whole of it.
 The runtime's disk templates live there too, sparse enough to need no share of it.
-It grows in place as agents are added, up to that ceiling, and is never shrunk.
-On a storage class that cannot expand, or one the controller cannot read, it is created at the ceiling, since it could not grow later.
+It grows in place when the pool rises and is never shrunk, so a lowered pool only stops its growth.
 A refused growth is reported and reconciliation continues: the runner still serves every agent at the size it has.
+
+**The runner guards the claim by its use.** The disks are sparse, so they can add up to more than the claim holds, and a guest sees its own disk as free while the claim under it fills; once the claim has no block left, a guest's write into its disk fails and its filesystem reports the loss.
+So the runner measures the claim itself: past 75% used it sheds what it can fetch again — every image tree no machine holds, when the cache is on the claim — and marks every machine's share, so each guest gives back its scratch, until use is back under 70%.
+Past 90% it creates no machine, fetches no image onto the claim and takes no seed, and a machine it starts boots at the disk size it has; past 97% it starts and restarts no machine either, so between the two an owner whose agents are all asleep can still get into one to clean it up.
+It reports each refusal as `MachineStorageFull` with how full the storage is and how to free it, and never stops a running machine, which would free nothing and lose what the guest holds in memory.
+An out-of-space error the runner meets anywhere on the claim is reported the same way, and so is a boot that fails while the claim is that full, since a guest whose writes fail fails its boot with nothing typed in the error.
+A storage refusal does not park the Agent the way a memory refusal does: parking would halt a machine, and nothing an idle agent holds in memory frees disk.
+The api-server says the same before an Agent is written: it reads the owner's runner through its read-only usage capability, and refuses a new vm agent — a create, a kit applied, a spawn, a move onto the vm backend — once the claim is 90% used, with the figures and the same three ways out.
+Usage it cannot read refuses nothing, since the runner refuses the machine anyway.
+Past 90%, and again past 98% when writes start failing, the owner also gets a Slack direct message with the same figures and ways out ([resource alerts](budgets.md#resource-alerts)).
 
 ### The machine image cache
 

@@ -170,6 +170,7 @@ export function readNextSessionPair(
     remembered,
     carried,
     fittingProviders(catalog, granted),
+    status?.defaultHarness,
   );
   return pair ? { pair } : null;
 }

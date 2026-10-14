@@ -18,11 +18,7 @@ export function MigrationPlanSummary({
           : "The agent stops, its home directory — the workspace and settings — is copied over, and it restarts on the new runtime."}
       </p>
       <ul className="list-disc pl-5">
-        <li>
-          {plan.storageResized
-            ? `Its disk is resized to ${plan.storageSize} to hold its home directory.`
-            : `Its disk is ${plan.storageSize}.`}
-        </li>
+        <li>It shares your agents' storage, and its disk grows as it needs.</li>
         <li>{retentionSentence(plan.retentionMs)}</li>
         {plan.bootsSleepingAgent && (
           <li>

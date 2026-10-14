@@ -40,6 +40,7 @@ Resume is the better fit: the log already holds the history, so a harness that s
 Otherwise, or on provider failure, the runtime's own `session/load` fills the log, reaching no client.
 Waiters are then served from the log; the UI also reads its newest tail as data and renders it while the load engages the session.
 On a waking Agent the UI asks for that tail at the click, as it asks for the session list: the agent's tRPC relay holds the ask until the Agent answers, and an ask it refuses is asked again once the Agent is operable.
+When the socket that carries the load goes away, as when an api-server replica shuts down, the UI asks the load again on a new socket instead of reporting that the Session would not load.
 
 **Rewinding and forking from a message.** A user can take an earlier message of an idle chat Session, edit it, and either **rewind** the conversation to it or **fork** a new one from it.
 A harness cannot cut a session short in place, so one that can **fork** copies the Session up to the entry right before that message — the agent's reply, or a tool result where a message sent mid-turn landed.

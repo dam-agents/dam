@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: A past Session opened on a waking agent asks for its log read as data at the click, so the preview renders as soon as the agent answers, before the chat protocol load answers. A refused read is asked again once the agent is operable. A load that answers first wins, and the preview never replaces it.
+// TEST_OVERVIEW: A past Session opened on a waking agent asks for its log read as data at the click, so the preview renders as soon as the agent answers, before the chat protocol load answers. A refused read is asked again once the agent is operable. A load that answers first wins, and the preview never replaces it. A load whose connection goes away, as when an api-server replica shuts down, is asked again instead of failing.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -27,7 +27,7 @@ const h = vi.hoisted(() => {
     setQueuedPrompts: () => {},
     setRewriting: () => {},
     setRunStarts: () => {},
-    setSessionError: () => {},
+    setSessionError: vi.fn(),
   };
   return {
     deferred,
@@ -35,6 +35,8 @@ const h = vi.hoisted(() => {
     operable: deferred<void>(),
     load: deferred<Message[]>(),
     fetchSessionHistory: vi.fn(),
+    loadSessionHistory: vi.fn(),
+    goneAway: new Error("connection went away"),
   };
 });
 
@@ -62,12 +64,16 @@ vi.mock("../../modules/sessions/api/acp-session-ops.js", () => ({
 }));
 vi.mock("../../modules/sessions/hooks/use-acp-connection.js", () => ({
   useAcpConnection: () => ({
-    loadSessionHistory: () => h.load.promise,
+    loadSessionHistory: h.loadSessionHistory,
     reset: () => {},
     runtimeIdle: () => false,
     clearRuntimeIdle: () => {},
     connectionRef: { current: null },
   }),
+}));
+vi.mock("../../modules/acp/close-race.js", () => ({
+  connectionWentAway: (e: unknown) => e === h.goneAway,
+  isConnectionClosed: (e: unknown) => e === h.goneAway,
 }));
 vi.mock("../../modules/sessions/hooks/use-acp-prompt.js", () => ({
   useAcpPrompt: () => ({}),
@@ -110,6 +116,8 @@ describe("opening a past session while the agent wakes", () => {
     h.state.setMessages.mockClear();
     h.operable = h.deferred();
     h.load = h.deferred();
+    h.loadSessionHistory.mockReset().mockImplementation(() => h.load.promise);
+    h.state.setSessionError.mockClear();
     h.fetchSessionHistory
       .mockReset()
       .mockResolvedValue([frame("user_message_chunk", "preview")]);
@@ -170,5 +178,24 @@ describe("opening a past session while the agent wakes", () => {
     read.resolve([frame("user_message_chunk", "preview")]);
     await new Promise((r) => setTimeout(r));
     expect(h.state.messages).toBe(loaded);
+  });
+
+  // TEST_SCENARIO: the api-server replica holding the chat protocol socket shuts down during the load and closes it as going away. The load is asked again on a new socket and the session opens, with no error shown.
+  it("asks the load again when its connection goes away", async () => {
+    vi.useFakeTimers();
+    try {
+      h.loadSessionHistory.mockRejectedValueOnce(h.goneAway);
+      const resumed = resumeSession();
+      await vi.advanceTimersByTimeAsync(500);
+      expect(h.loadSessionHistory).toHaveBeenCalledTimes(2);
+      h.load.resolve(loaded);
+      await resumed;
+      expect(h.state.messages).toBe(loaded);
+      expect(h.state.setSessionError).not.toHaveBeenCalledWith(
+        expect.objectContaining({ kind: expect.anything() }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

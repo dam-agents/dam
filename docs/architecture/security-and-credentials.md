@@ -285,6 +285,7 @@ The agent and the gateway are gated by different mechanisms — they live on opp
 - **`platform-migration` ServiceAccount** in the agent namespace — the identity of the controller's copy Jobs, run as **uid 0** like the VM runner.
   The storage-migration Job needs root only for the target side of the copy (owning a freshly provisioned volume root, restoring exact file ownership); every read of the agent's data drops to the agent's own uid, so a root-squashing source share never sees uid 0.
   The [runtime-migration](vm-runtime-migration.md) Job reads the home read-only, as root on block storage, sending it with a one-use seed capability.
+  The api-server reads each owner's runner the same way, never with its token: the controller writes a per-runner usage Secret holding the runner's URL, its CA and a usage capability derived from the token, which the runner accepts on its read-only usage route alone ([persistence](persistence.md)).
   The SA has no API roles and no mounted token, so it cannot act against the API; it exists only to scope OpenShift SCCs: `anyuid` and a chart SCC (uid 0, DAC_READ_SEARCH) for it.
   Neither pod joins the mesh.
 - **Image cache ServiceAccount** — no token, no Role: it mounts the default pull secrets it preloads with ([persistence](vm-image-cache.md)).

@@ -1,3 +1,5 @@
+import { isStartRefusal } from "api-server-api";
+
 import { Badge } from "@/components/ui/badge";
 import { CardButton } from "@/components/ui/card-button";
 
@@ -67,7 +69,11 @@ export function AgentPickerCard({
       </span>
       <span className="flex shrink-0 items-center gap-2">
         {hibernationTimeoutMin === 0 && <AlwaysOnTag />}
-        <StatusBadge state={display.state} />
+        <StatusBadge
+          state={display.state}
+          vm={agent.vm}
+          refused={isStartRefusal(agent.podTerminationCode)}
+        />
       </span>
     </CardButton>
   );

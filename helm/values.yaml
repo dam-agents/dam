@@ -236,20 +236,18 @@ virtualization:
     # The claim outlives a pod restart and a chart upgrade, but not its owner:
     # the sweep removes a runner once that owner has no vm agents left, and
     # takes the claim with it, so the next one re-fetches the image.
-    # `storage` is the CEILING of one owner's claim, not its size. The claim
-    # is sized from demand: the sum of that owner's machine disks, 1Gi of
-    # headroom per machine for its root overlay and bookkeeping, and
-    # `imageCache.budget` when the cache lives on this claim (no `hostPath`
-    # and no `imageArchiveHostPath`). The controller grows the claim in place
-    # as the owner adds agents, up to this value and no further, so an
-    # owner's disks past it do not fit. Growing needs a class that allows
-    # volume expansion; on a class that does not, or one the controller
-    # cannot read, the claim is created at this value instead, because it
-    # could not grow later. A refused resize costs a warning
-    # in the controller log and leaves that runner at the size it has, rather
-    # than failing its reconcile.
-    # Kubernetes never shrinks a claim: lowering this, or removing agents,
-    # changes no claim that exists.
+    # `storage` is each owner's storage pool, and the size of their claim; an
+    # owner's UserBudget `storage` replaces it for that owner. Every machine
+    # disk is sparse and may grow to the whole pool, so what counts is what
+    # the owner's agents write: the runner sheds cached images and guest
+    # scratch at 75% and refuses new disks, starts and growth at 90%, and the
+    # api-server refuses a new vm agent there. The claim also holds the
+    # bookkeeping and, when the cache lives on it (no `hostPath` and no
+    # `imageArchiveHostPath`), `imageCache.budget`, which must be smaller.
+    # Raising the pool grows existing claims in place, which needs a class
+    # that allows volume expansion; a refused resize costs a warning in the
+    # controller log and leaves that runner at the size it has. Kubernetes
+    # never shrinks a claim: lowering this changes no claim that exists.
     storage: 100Gi
     storageClass: ""
     # Placement: a node with KVM (e.g. KubeVirt's virt nodes and their
@@ -259,7 +257,9 @@ virtualization:
     # REQUIRED when virtualization.enabled — the install fails without
     # limits.memory. Machines are processes of this pod, so that limit is also
     # what the runner admits them against (it refuses one that does not fit,
-    # keeping `reserveMiB` for itself). It is the owner's whole memory pool:
+    # keeping `reserveMiB` for itself). It is the owner's whole memory pool,
+    # unless their UserBudget sets `memory` (and `cpu`, which caps the CPU
+    # limit below); the controller then resizes that owner's pod in place:
     # vm agents have no size of their own and do not count toward the user's
     # budget; every machine may grow to half of the limit less `reserveMiB`,
     # so one agent can use most of the pool while a runaway guest hits its
@@ -721,6 +721,28 @@ seaweedfs:
     limits:
       cpu: 500m
       memory: 1Gi
+
+# Alert rules for operators on the users' VM pools and on what the cluster
+# holds for them. Needs clickstack.enabled: the platform collector exports the
+# pool series in Prometheus form on port 9464, and a ServiceMonitor and a
+# PrometheusRule render when the cluster serves monitoring.coreos.com/v1
+# (prometheus-operator, OpenShift user-workload monitoring); without that API
+# nothing renders. No series names a user; the alerts point at the Warning
+# Events on the user's vm Agents for that.
+monitoring:
+  enabled: false
+  # Extra labels on the ServiceMonitor and PrometheusRule, for a Prometheus
+  # whose rule or monitor selector needs them.
+  labels: {}
+  thresholds:
+    # Share of a user's pool (memory committed, claim used).
+    warning: 0.75
+    critical: 0.9
+    # Share of scheduler periods the runner's CPU limit throttled.
+    throttled: 0.2
+    # The users' pools against what the nodes (memory) or the storage driver
+    # (storage) hold.
+    overcommit: 1.5
 
 # -- Agent-telemetry backend (ClickStack). Off by default. Requires the ClickHouse and MongoDB
 # operator charts installed out-of-band first (the cluster:install task). See docs/architecture/observability.md.
@@ -2009,7 +2031,7 @@ harnessTemplates:
 # session has no harness of its own yet, and seeds the harness of new agents.
 # `providers` lists the model-provider connection types the harness can run on;
 # the session picker offers only their models. `telemetry` names the export
-# rail the harness reads (claude-code or bob, see
+# rail the harness reads (claude-code, bob or pi, see
 # docs/architecture/observability.md); it applies only with clickstack.enabled.
 harnesses:
   default: claude-code
@@ -2034,6 +2056,9 @@ harnesses:
       displayName: "Pi"
       description: "Pi coding agent with multi-LLM support"
       providers: [ibm-litellm, curve-bender, anthropic, openai, bedrock]
+      # Pi has no exporter of its own; the image's extension writes the
+      # per-call log records on this rail.
+      telemetry: pi
       tags: ["Any provider"]
     bob:
       enabled: true
@@ -2162,8 +2187,10 @@ starterKits:
       adaevolve: { enabled: true }
       evox: { enabled: false }
       k-search: { enabled: true }
+      spotlights: { enabled: true }
       software-developer: { enabled: false }
       micro-manager: { enabled: true }
+      quality-assurance: { enabled: true }
   # External catalogs, read in order after the built-in one. Each names a
   # public repository holding catalog.yaml, with `ref` to pin a branch, tag or
   # commit and `dir` to read a subdirectory. A version is never written into

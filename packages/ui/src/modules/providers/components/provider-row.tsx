@@ -15,6 +15,7 @@ interface Props {
   connected: boolean;
   balance?: ReactNode;
   onOpen: () => void;
+  connectedAction?: string;
 }
 
 export function ProviderRow({
@@ -23,13 +24,14 @@ export function ProviderRow({
   connected,
   balance,
   onOpen,
+  connectedAction = "Edit",
 }: Props) {
   const name = PROVIDERS[type].displayName;
 
   return (
     <CardButton
       onClick={onOpen}
-      aria-label={connected ? `Edit ${name}` : `Connect ${name}`}
+      aria-label={connected ? `${connectedAction} ${name}` : `Connect ${name}`}
       className="flex w-full items-center gap-3 p-4"
     >
       <CardIcon provider={type} />

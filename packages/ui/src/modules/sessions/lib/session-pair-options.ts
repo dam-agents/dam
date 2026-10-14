@@ -69,6 +69,7 @@ export function nextPair(
   remembered: SessionPair | null,
   carried: readonly string[],
   fittingFor: (harness: string) => readonly string[],
+  defaultHarness?: string | null,
 ): SessionPair | null {
   for (const pair of [chosen, remembered]) {
     if (!pair || !carried.includes(pair.harness)) continue;
@@ -76,6 +77,11 @@ export function nextPair(
     if (pair.provider !== null && fitting.includes(pair.provider)) return pair;
     if (fitting[0] !== undefined)
       return { harness: pair.harness, provider: fitting[0], model: null };
+  }
+  for (const harness of [defaultHarness, ...carried]) {
+    const provider =
+      harness && carried.includes(harness) && fittingFor(harness)[0];
+    if (provider) return { harness, provider, model: null };
   }
   return null;
 }

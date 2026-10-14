@@ -1,6 +1,6 @@
 # Per-user resource budgets
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -30,6 +30,8 @@ The api-server's role is legibility: it translates the controller's refusal into
   An unfilled spec (a peer awaiting its own reconcile) counts at `legacyAgentSize` — fallback, never zero.
 - **Scaled-up means desired replicas ≥ 1** on the agent StatefulSet — an agent still starting already counts, so two near-simultaneous wakes cannot both slip under the ceiling.
 - **A `vm` Agent is not counted.** It has no Size of its own: its machine draws on its owner's [VM runner](vm-memory.md), whose memory limit is that owner's pool for every vm agent, so neither its start nor a resize meets the Ceiling, and the api-server refuses to set a Size on one.
+  The budget endpoint carries that pool beside the Ceiling instead: the memory the owner's runner admits against and has committed, its storage used and usable, its CPU limit, how often that limit held it back and its CPU pressure — the share of the last minute its agents waited for a CPU — over the last minute, and each of the owner's vm agents' measured memory, CPU and disk share, read from the runner on demand and never stored.
+  Each pool carries a level, warning from 75% and critical from 90%, defined once so the home dashboard, the create refusal and the resource alerts agree; CPU is never refused on, since a short CPU only slows agents down, so its pressure is named as congestion instead — low, moderate from 20% (the warning level), high from 50% and severe from 75% (both critical) — with a fill that grows with the log of the slowdown and is full at four times slower.
 - **Deliberate exclusions:** the paired gateway pod (uniform per-agent platform overhead — operators price it into default ceilings) and per-command Run pods (a known undercount, unchanged from the original design).
 
 ## The Ceiling
@@ -47,7 +49,13 @@ spec:
   owner: "<keycloak-sub>"        # exact plaintext sub, as on the agent owner label
   cpu: "16"
   memory: "32Gi"
+  storage: "500Gi"               # vm only: the user's storage pool, and their VM runner claim's size
 ```
+
+Every field but `owner` is optional, and each falls back on its own.
+For container agents `cpu` and `memory` are the Ceiling, else the chart defaults.
+For vm agents the same UserBudget sets the user's VM pool ([vm-memory](vm-memory.md)): `memory` is their VM runner's memory limit, `cpu` caps its CPU limit and `storage` is their storage pool, which every VM disk may grow into and which their claim is created at and grows to ([persistence](persistence.md)), else `virtualization.runner`.
+One number therefore raises both kinds of agent for a user who has both.
 
 The name↔owner pin makes one-budget-per-user structural (a second budget is a name collision), and the schema validates quantities at admission, so a malformed ceiling is rejected rather than silently parsed to zero.
 UserBudgets are operator-managed (`kubectl`/GitOps); there is no self-service path.
@@ -64,7 +72,7 @@ Outcomes:
 - **Overflows** — the pair is scaled to zero (healing a gateway a prior admitted-then-failed reconcile may have left up) and the Agent is **parked**: `Ready=False, reason=OverBudget`, with the reserved/ceiling figures in the condition message.
   `Reconciled` stays true — the render succeeded; the start was refused.
 
-`OverBudget` has a second producer that is not a budget at all: a vm Agent whose machine the VM runner refuses for its own memory is parked the same way, carrying the runner's message instead of the ceiling figures, and the owner's idle vm agents are hibernated to free the room under the same rules ([vm-memory](vm-memory.md)).
+`OverBudget` has a second producer that is not a budget at all: a vm Agent whose machine the VM runner refuses for its own memory is parked the same way, carrying the controller's own sentence — how much of the owner's VM memory is in use and how much more this start needs — instead of the ceiling figures, and the owner's idle vm agents are hibernated to free the room under the same rules ([vm-memory](vm-memory.md)).
 It is published on this condition because the effect on the user is identical — the agent did not start until room is freed — and because the retry that admits it is the same one.
 Consumers must therefore treat the condition message as the explanation, not derive one from the figures.
 
@@ -84,11 +92,15 @@ This also means the whole enforcement path is invisible on the happy path: under
 **Slots** are how the UI presents all of this.
 One slot is the chart default Size, and the budget endpoint publishes that unit next to Reserved and Ceiling.
 An agent occupies as many slots as its larger dimension needs, rounded up; the Ceiling holds as many slots as its tighter dimension allows, rounded down.
-Users never touch CPU or memory directly: the Size picker offers a small fixed set of slot multiples (a legacy Size outside the presets stays selectable as its own multiple), each agent row carries its multiple, and the home dashboard shows compute usage as a slot meter: one cell per slot, colored working / idle / free, carrying a marker on the slots of agents that never hibernate, with the operator's budget-request link in the meter's header.
+Users never touch CPU or memory directly: the Size picker offers a small fixed set of slot multiples (a legacy Size outside the presets stays selectable as its own multiple), each agent row carries its multiple, and the home dashboard shows a container agent's compute usage, under "Container agents" and only to a user who has one, as a slot meter: one cell per slot, colored working / idle / free, carrying a marker on the slots of agents that never hibernate, with the operator's budget-request link in the meter's header.
 Hovering a held slot names the agent behind it, its size and state, and offers a way into that agent's settings.
 The multiples and copy live in the UI budgets module.
 A start the controller parks raises a dialog that names the cause and sends the user to the agent list on the home dashboard to free room; the settings picker warns inline when the chosen Size needs more free slots than remain.
 First-time users with no agents see none of it.
+The card shows a vm user their pools in its place, and a user with both kinds switches between the two views, which the browser remembers: memory and storage as bars showing how much is used of how much, each agent's share a segment largest first, with what the pool counts beyond the agents' own shares — headroom for memory, caches and system for storage — as the last.
+CPU's bar is its congestion, with its word beside it, not a use against a limit, because the limit moves with the machines running and reaching it fails nothing.
+The bar's colour and the meter's spoken value carry the level; at warning or critical a warning sign beside the pool's name says what to do — pause agents, delete old ones or have them clean their disks, or, for CPU, which agents use the most — and at critical what the platform does: idle agents are paused for memory, and new VM agents are refused for storage, plus, for a user who has not linked Slack where the install has it, how to link it to get these alerts there.
+Each vm agent's row carries its own memory and storage, and the dashboard reads the figures again every 15 s while it is open.
 
 **Resizing** changes an Agent's Size in the agent settings and always restarts the pod (the CR patch re-renders the pair — a "live" resize does not exist in Kubernetes terms).
 A sleeping Agent's new Size simply rides its next start through the 0→1 gate.
@@ -120,17 +132,21 @@ Four rules bound it:
 - **An idle floor** (3 minutes) beneath which nothing is reclaimed.
   Besides sparing an agent its user may be moments from returning to, the floor is what makes reclaim **non-recursive**: an agent admitted this way carries fresh activity and so cannot be the next start's victim, which is what stops A-evicting-B-evicting-A from cycling.
 - **Provably sufficient, or nothing.** The candidates' summed Sizes must cover the shortfall in both dimensions before any of them is touched, so no agent is ever hibernated for a start that was going to be refused regardless.
+  The one exception is a vm runner's own memory pressure signal, which hibernates what it can rather than nothing, since an OOM kill would take every machine of the owner ([vm-memory](vm-memory.md)).
 - **A reclaimed agent stays down.** Its activity stamp is still inside its own timeout — that is the premise of reclaiming it early — so it is marked as having *spent* that stamp and only a **newer** activity bump revives it, back through the gate like any other start.
   Without that, the victim's own next reconcile would take the room straight back.
   The mark is self-clearing: a deliberate touch outdates it.
 
-Reclaiming is **silent**.
-The eligibility rules confine it to agents with no attached viewer, the victim lands in ordinary `Hibernated` state indistinguishable from a lapsed timeout, and the outcome — hibernated somewhat sooner than its own timer said — is one the agent's settings already sanction.
+Reclaiming is **announced, not asked**.
+The eligibility rules confine it to agents with no attached viewer, and the outcome — hibernated somewhat sooner than its own timer said — is one the agent's settings already sanction, so nobody is asked first.
+The victim lands in ordinary `Hibernated` state, but while its reclaim mark stands the api-server reads it off the Agent and the agent says it was paused automatically — to make room for an agent its owner started, or, on the vm backend, to free memory for the owner's other agents ([vm-memory](vm-memory.md)) — in its unavailable view and its row, with a one-time notice in an open web app.
+A deliberate touch outdates the mark, and the message with it.
 The exposure this adds is hibernation's existing blind spot (unreported work, which no signal sees) arriving earlier than advertised; the floor bounds it and the escape is unchanged: disable hibernation on agents whose real work runs off-session.
 
 ## Failure semantics upstream
 
-The api-server classifies the `OverBudget` condition reason into a typed wake-failure (non-transient, fail-fast — a denied wake errors in about a reconcile round-trip, not a wake-timeout), so the UI, relays, channels, and scheduler all inherit the same message — the figures plus "stop a running agent to free room" for a ceiling, the runner's own shortfall text for a refused machine.
+The api-server classifies the `OverBudget` condition reason into a typed wake-failure (non-transient, fail-fast — a denied wake errors in about a reconcile round-trip, not a wake-timeout), so the UI, relays and scheduler all inherit the same message — the figures plus "pause agents you aren't using to free room" for a ceiling, and for a refused machine the controller's own sentence, giving in GiB how much of the pool is in use out of the same total Home shows and how much more the start needs, when the controller can read them, rather than the runner's accounting.
+A channel reply goes to whoever wrote in, who need not be the owner, so it says only that the owner's agents are using all their room, never the owner's figures or what the owner should do.
 A scheduled fire on an over-budget agent records a failed fire; the trigger event is already durably committed to the outbox, so it redelivers once room frees, or expires when the schedule's next occurrence supersedes it.
 
 The fail-fast is a **heuristic**, not a raw condition read: a parked agent keeps its `OverBudget` condition standing, and the condition doesn't say which wake attempt it applies to — so a fresh wake's first poll would otherwise see the *previous* attempt's denial and fail a start that room now permits.
@@ -142,3 +158,22 @@ Deliberately local to the api-server: the alternative — echoing the denied act
 
 Users free capacity by stopping a running agent (see [agent-lifecycle](agent-lifecycle.md) for the hard-stop mechanics) or letting it hibernate — and, for a start they are blocked on, the gate frees it for them where it can ([above](#reclaiming-room-for-a-blocked-start)).
 Reserved is computed from live state and never persisted, so a hibernate, stop, or delete credits the budget back with nothing to reconcile.
+
+## Resource alerts
+
+A vm agent's owner hears about a severe resource problem even when nobody is looking at the web app: the platform sends them a Slack direct message ([channels](channels.md)) when their agents' shared storage passes 90% — no new agent can be created — or 98% — writes are failing ([persistence](persistence.md)), and when their runner was killed for running out of memory ([vm-memory](vm-memory.md)).
+Each message gives the figures or the agents affected, and what to do.
+Lower levels show only in the web app.
+
+The api-server evaluates them unattended, on one replica at a time.
+Storage is read every five minutes from each owner's runner, through the same read-only usage read the create refusal uses, ten runners at a time so a pass over many unreachable runners still ends well inside its interval; a runner it cannot read changes nothing, and one owner's failed evaluation is logged without stopping the others.
+An out-of-memory kill is seen on the agents the controller marks with it, collected over a short window so one message names every affected agent.
+
+Messages are limited so an owner near a threshold is not messaged at every reading:
+
+- **Storage** sends once per rise past the level last told, at most once a day, except one escalation from 90% to 98% inside the day; the level holds between 80% and 90%, and a reading under 80% re-arms it.
+- **Out of memory** sends once per episode, which ends when no agent carries the mark, and again only six hours after the last message, so a runner killed in a loop sends one.
+
+Each alert's state is a Postgres row per owner and kind.
+A message goes out only after a compare-and-set write of the next state wins, so two evaluations racing, or a lease handover, never send it twice; a send that then fails is lost rather than repeated.
+A user who never linked Slack (`/platform login`) gets no message; there is no opt-out, and a reply to one is not handled.

@@ -122,7 +122,7 @@ func (r *AgentReconciler) reclaimableAgents(ctx context.Context, self, owner str
 		cpu, mem := r.limitsOf(&peer.Spec)
 		c := reclaimCandidate{name: peer.Name, idleSince: idleSince, cpu: cpu, mem: mem}
 		if peer.Spec.IsVM() {
-			c.vmMiB = r.accountedMemoryMiB(peer.Name, &peer.Spec)
+			c.vmMiB = r.accountedMemoryMiB(ctx, owner, peer.Name, &peer.Spec)
 		}
 		out = append(out, c)
 	}

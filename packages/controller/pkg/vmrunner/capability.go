@@ -38,6 +38,12 @@ func SeedCapabilityFingerprint(capability string) string {
 	return hex.EncodeToString(sum[:])[:16]
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the usage capability the api-server reads an owner's runner with in place of the token: the runner accepts it on the usage read alone, which names machine ids and sizes and nothing an agent wrote, so it needs no machine, nonce or expiry. It is an HMAC-SHA256 over the usage scope under a key derived from the token with a label of its own, so it changes with the token and holds nothing the token can be worked back from. contract/usage-capability.json holds this side and the runner's to one derivation.
+func MintUsageCapability(token string) string {
+	key := hmacSHA256([]byte(token), []byte("vm-runner usage capability key v1"))
+	return "usagecap1." + hex.EncodeToString(hmacSHA256(key, []byte("usage")))
+}
+
 func hmacSHA256(key, message []byte) []byte {
 	mac := hmac.New(sha256.New, key)
 	mac.Write(message)

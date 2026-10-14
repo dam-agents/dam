@@ -26,9 +26,11 @@ describe("ownedApiRequests", () => {
     expect(gates).toHaveLength(3);
   });
 
-  it("scopes to Claude Code telemetry by Body, not template ServiceName", () => {
+  it("scopes to the harnesses' call records by Body, not template ServiceName", () => {
     const sql = ownedApiRequests({ hours: 24 });
-    expect(sql).toContain("Body = 'claude_code.api_request'");
+    expect(sql).toContain(
+      "Body IN ('claude_code.api_request', 'pi.api_request')",
+    );
     expect(sql).not.toContain("ServiceName");
   });
 
@@ -74,8 +76,8 @@ describe("agent-scoped record predicates", () => {
 
   // TEST_SCENARIO: The events read serves every record the agent emitted — errors and tool decisions included — so unlike the spend reads it must not narrow to the LLM-call body.
   it("reads every emitted record, not only LLM calls", () => {
-    expect(ownedAgentLogs({ hours: 24 })).not.toContain("Body =");
-    expect(ownedApiRequests({ hours: 24 })).toContain("Body =");
+    expect(ownedAgentLogs({ hours: 24 })).not.toContain("Body IN");
+    expect(ownedApiRequests({ hours: 24 })).toContain("Body IN");
   });
 
   /**

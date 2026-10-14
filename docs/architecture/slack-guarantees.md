@@ -1,6 +1,6 @@
 # Slack: what is guaranteed, what is the agent's call, what depends on setup
 
-Last verified: 2026-10-12
+Last verified: 2026-10-13
 
 Companion to [channels](channels.md) and [channel-turns](channel-turns.md).
 Those pages own the mechanics; this one states, for each thing an agent does in Slack, whether the outcome is guaranteed, the agent's judgement, or dependent on setup.
@@ -298,3 +298,14 @@ Everything else (DM people, attach files, look people up, react) is within the o
 - Optional scopes a workspace withheld degrade quietly: no channel list, no emails, raw ids for people and for connected 1:1 DMs.
   Without the persona scope an Agent's post goes out as the app and opens with an emoji and the Agent's name; the emoji is the robot face unless the connection names custom emoji for the Agents.
 - A revoked workspace credential is marked, never cleaned up: bindings stay, everything goes silent until re-install.
+- A platform notice to a person goes to the workspace their link recorded; a link older than that reaches the one active install, and none when several are active, until the person runs `/dam login` again.
+
+### Platform notices
+
+The platform DMs a linked person, as the app, when something needs them that no Agent would say: a resource alert ([budgets](budgets.md)).
+
+| What           | Decided by | Drawback                                                                                               |
+| -------------- | ---------- | ------------------------------------------------------------------------------------------------------ |
+| Who gets it    | Platform   | Only people who ran `/dam login` or an in-chat bind; everyone else sees it in the web app only.        |
+| Where it lands | Platform   | A DM with the app, never a channel; a workspace without `im:write` gets nothing.                       |
+| A reply to it  | Platform   | Not handled: it behaves like any message to the app in that DM — the DM's bound Agent, or a bind hint. |

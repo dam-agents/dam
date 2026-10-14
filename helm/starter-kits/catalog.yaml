@@ -12,7 +12,10 @@ kits:
   - path: kits/adaevolve
   - path: kits/evox
   - path: kits/k-search
+  - path: kits/spotlights
   - id: software-developer
     url: https://github.com/dam-agents/software-developer
   - id: micro-manager
     url: https://github.com/dam-agents/micro-manager
+  - id: quality-assurance
+    url: https://github.com/dam-agents/quality-assurance

@@ -58,6 +58,7 @@ export {
 
 export type {
   Agent,
+  AgentReclaim,
   WorkspaceFailure,
   WorkspaceMutationKind,
   AgentKind,
@@ -105,14 +106,25 @@ export type {
   AgentSetupResources,
   AgentSetupSeed,
 } from "./modules/agents/setup.js";
-export { isProtectedAgentEnvName } from "./modules/agents/types.js";
+export {
+  AGENT_UNREACHABLE,
+  type AgentUnreachableBody,
+  isProtectedAgentEnvName,
+  isStartRefusal,
+  TerminationCode,
+} from "./modules/agents/types.js";
 export {
   runtimeMigrationRefusalReasons,
   toAgentView,
   toRuntimeMigrationPlanView,
 } from "./modules/agents/view.js";
+export { storageFullSchema } from "./modules/budgets/schemas.js";
 export type {
   BudgetReserved,
+  BudgetStorageFull,
+  BudgetVmUsage,
+  PoolLevel,
+  CpuCongestion,
   BudgetsService,
 } from "./modules/budgets/types.js";
 export type { AgentSpecCR } from "./crd-types.gen.js";

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -60,13 +61,22 @@ func runnerRolloutLimits(spec config.VMRunnerSpec) (int, time.Duration) {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a runner's machines are its processes, so every change to its pod reboots every machine the owner has. Applied as it is rendered, one runner image bump or one controller release that renders the pod differently would reboot every vm machine in the install at the same moment. So a runner is created at once, and left alone while what it would be rendered as is what it was, but a changed pod waits for a free place in the roll: at most `rollout.maxConcurrent` runners are mid-roll at once, and a runner stays mid-roll until its new pod is ready and every machine that was ready before the roll is ready again. The rendered spec is hashed onto the Deployment, because the stored spec carries the API server's defaults and never equals the rendered one. Where releases are staged on the node, a new runner image alone is not a changed pod (runnerRollSpec): the pod's loader takes it in place, and the pod rolls only for a release its loader can never take.
+// UNIT_BOUNDARY_DESCRIPTION: a reconcile reads the Deployment from the cache first. A cache that is behind sends a create for a Deployment that exists or an update from an old resourceVersion, and the API server refuses both, so the roll is then decided again from a live read. The rollout sweep, the one caller that never creates, reads live: it first runs before the caches sync, and a runner it cannot see is skipped until the next sweep.
 func (r *AgentReconciler) rollRunnerDeployment(ctx context.Context, owner string, dep *appsv1.Deployment, create bool) error {
+	err := r.rollRunnerDeploymentFrom(ctx, owner, dep, create, create)
+	if r.runnerDeploys != nil && (k8serrors.IsConflict(err) || k8serrors.IsAlreadyExists(err)) {
+		err = r.rollRunnerDeploymentFrom(ctx, owner, dep, create, false)
+	}
+	return err
+}
+
+func (r *AgentReconciler) rollRunnerDeploymentFrom(ctx context.Context, owner string, dep *appsv1.Deployment, create, fromCache bool) error {
 	hash, err := runnerTemplateHash(runnerRollSpec(dep.Spec, r.config.VM.Runner.ReleaseHostPath != ""))
 	if err != nil {
 		return err
 	}
 	cli := r.client.AppsV1().Deployments(dep.Namespace)
-	existing, err := cli.Get(ctx, dep.Name, metav1.GetOptions{})
+	existing, err := r.runnerDeployment(ctx, dep.Name, fromCache)
 	if k8serrors.IsNotFound(err) {
 		if !create {
 			return nil
@@ -80,6 +90,17 @@ func (r *AgentReconciler) rollRunnerDeployment(ctx context.Context, owner string
 	}
 	if existing.DeletionTimestamp != nil {
 		return errRunnerTerminating
+	}
+	if stored := existing.Annotations[annRunnerTemplate]; stored != "" && stored != hash && stored == legacyRunnerTemplateHash(dep.Spec, existing.Spec, r.config.VM.Runner.ReleaseHostPath != "") {
+		existing.Annotations[annRunnerTemplate] = hash
+		updated, err := cli.Update(ctx, existing, metav1.UpdateOptions{})
+		if err != nil {
+			return err
+		}
+		if r.runnerDeploys != nil {
+			r.runnerDeploys.Mutation(updated)
+		}
+		existing = updated
 	}
 	if existing.Annotations[annRunnerTemplate] == hash && !r.runnerNeedsPodForRelease(ctx, owner, existing) {
 		return r.repairRunnerDeploymentMeta(ctx, owner, existing, dep)
@@ -113,8 +134,12 @@ func (r *AgentReconciler) rollRunnerDeployment(ctx context.Context, owner string
 		dep.Annotations[annRunnerAwaiting] = strings.Join(ready, ",")
 	}
 	dep.ResourceVersion, dep.Status = existing.ResourceVersion, existing.Status
-	if _, err := cli.Update(ctx, dep, metav1.UpdateOptions{}); err != nil {
+	updated, err := cli.Update(ctx, dep, metav1.UpdateOptions{})
+	if err != nil {
 		return err
+	}
+	if r.runnerDeploys != nil {
+		r.runnerDeploys.Mutation(updated)
 	}
 	if !slices.Contains(rolling, dep.Name) {
 		r.runnerRoll.rolling = append(rolling, dep.Name)
@@ -125,6 +150,36 @@ func (r *AgentReconciler) rollRunnerDeployment(ctx context.Context, owner string
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the pod is what the hash covers, so a runner whose pod is unchanged is not rolled — but its own labels and owner references can still drift, from a hand edit or from the runner ServiceAccount being recreated with a new UID, and a Deployment owned by nothing outlives the release. Those are put back with a metadata-only update, which does not change the pod and so restarts no machine. An owner reference the controller could not resolve this pass is not written, rather than stripping the one the runner has.
+// UNIT_BOUNDARY_DESCRIPTION: the hash a runner rendered before the roll left its memory out (runnerRollSpec). That hash covered the memory limit and request the runner was rendered with, which for an owner with a UserBudget was the install's rather than their pool, so they are taken from the runner's own template, not the one rendered now. A runner whose hash matches has the pod the controller renders now in all but its memory, which the resize sets in place, so it takes the new hash in a metadata-only update rather than rolling every machine of every owner once.
+func legacyRunnerTemplateHash(desired, existing appsv1.DeploymentSpec, releases bool) string {
+	legacy := runnerRollSpec(desired, releases)
+	for i := range legacy.Template.Spec.Containers {
+		c := &legacy.Template.Spec.Containers[i]
+		old := slices.IndexFunc(existing.Template.Spec.Containers, func(o corev1.Container) bool { return o.Name == c.Name })
+		if old < 0 {
+			continue
+		}
+		res := existing.Template.Spec.Containers[old].Resources
+		if mem, ok := res.Limits[corev1.ResourceMemory]; ok {
+			if c.Resources.Limits == nil {
+				c.Resources.Limits = corev1.ResourceList{}
+			}
+			c.Resources.Limits[corev1.ResourceMemory] = mem
+		}
+		if mem, ok := res.Requests[corev1.ResourceMemory]; ok {
+			if c.Resources.Requests == nil {
+				c.Resources.Requests = corev1.ResourceList{}
+			}
+			c.Resources.Requests[corev1.ResourceMemory] = mem
+		}
+	}
+	hash, err := runnerTemplateHash(legacy)
+	if err != nil {
+		return ""
+	}
+	return hash
+}
+
 func (r *AgentReconciler) repairRunnerDeploymentMeta(ctx context.Context, owner string, existing, desired *appsv1.Deployment) error {
 	_, waited := existing.Annotations[annRunnerBusy]
 	delete(existing.Annotations, annRunnerBusy)

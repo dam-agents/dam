@@ -10,14 +10,16 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
 use crate::api::{
-    MachineSpec, MachineStatus, SeedResult, State, REASON_BOOT_FAILED, REASON_OUT_OF_CAPACITY,
+    CpuUsage, MachineSpec, MachineStatus, MachineUsage, MemoryUsage, RunnerPressure, RunnerUsage,
+    SeedResult, State, StorageUsage, REASON_BOOT_FAILED, REASON_HOME_FULL, REASON_OUT_OF_CAPACITY,
+    REASON_STORAGE_FULL, STATE_RUNNING,
 };
 use crate::cache::{self, pinned_digest};
 use crate::cacheapi::CacheClient;
 use crate::capability::Verified;
 use crate::capacity::Capacity;
-use crate::console::{with_console, SLOW_BOOT, SLOW_BOOT_AFTER};
-use crate::fetch::{failure_reason, seed_missing, unusable};
+use crate::console::{home_full, with_console, SLOW_BOOT, SLOW_BOOT_AFTER};
+use crate::fetch::{failure_reason, on_own_claim, seed_missing, unusable};
 use crate::forward::{healthy, Forwarder, Listen, LOOPBACK_OFFSET};
 use crate::imagecache::{
     CacheConfig, ImageCache, Images, Resolved, HOLD_LEASE, REF_FRESH, ROOTFS_DIR,
@@ -33,6 +35,7 @@ use crate::share::{self, write_share, SeedFile, SHARE_DIR};
 use crate::state::{
     self, is_image_ref, is_machine_id, machine_dir, read_spec, write_spec, IMAGE_DIGEST_FILE,
 };
+use crate::storage::StorageUse;
 
 // UNIT_BOUNDARY_DESCRIPTION: the machine API behind the HTTP layer: one persistent microVM per vm Agent, converged on the latest spec the controller sent. A PUT stores that spec and makes sure one worker is converging the machine; the worker takes one whole action at a time, and GET reports the action in flight as the machine's state. What a machine is survives the runner on disk — its spec, its port, its share. What the runner is doing to it lives in one entry per machine here and is lost with the process.
 
@@ -61,6 +64,9 @@ pub const RUNTIME_CALL_LIMIT: Duration = Duration::from_secs(15 * 60);
 // UNIT_BOUNDARY_DESCRIPTION: how often the runner names the digests its machines boot to the image cache again. Well inside HOLD_LEASE, so one missed refresh never lets a hold lapse.
 pub const HOLD_REFRESH: Duration = Duration::from_secs(60);
 
+// UNIT_BOUNDARY_DESCRIPTION: how often the runner looks at how full its claim is, and sheds what it can fetch again while it is short. A machine is refused on a critical claim by a look at the time of the request, not at this cadence.
+pub const STORAGE_CHECK: Duration = Duration::from_secs(30);
+
 // UNIT_BOUNDARY_DESCRIPTION: what a runner is given at start, as the flags the controller sets on the runner's Deployment. With `image_cache_socket` the image directory is the node's cache, read-only here, and every image is resolved by the node's service; without it the runner is the one writer of its own cache.
 pub struct Config {
     pub state_dir: PathBuf,
@@ -78,6 +84,10 @@ pub struct Config {
     pub listen: Option<Arc<Listen>>,
     // UNIT_BOUNDARY_DESCRIPTION: the VM runtime this runner's release was built against, which every machine it starts boots. None where the runner's release names none, which makes no machine foreign.
     pub runtime: Option<String>,
+    // UNIT_BOUNDARY_DESCRIPTION: the runner's own cgroup v2 directory, read for memory pressure. None where there is none to read — a runner outside the cluster, or a cgroup v1 node — and then the runner never reports pressure.
+    pub cgroup_dir: Option<PathBuf>,
+    // UNIT_BOUNDARY_DESCRIPTION: how full the owner's claim is now (see storage::StorageUse), or nothing when it cannot be told, which guards nothing. A function rather than a path, so a test can stand a full claim in for a real one.
+    pub measure_storage: Arc<dyn Fn() -> Option<StorageUse> + Send + Sync>,
 }
 
 #[derive(Clone)]
@@ -91,7 +101,7 @@ struct Boot {
     at: Instant,
     action: Action,
     seed: Option<String>,
-    note: Option<(String, Instant)>,
+    note: Option<(String, Instant, Option<&'static str>)>,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what the runtime and the guest last said about a machine. `error` is set only with the unknown state, when the runtime could not be read.
@@ -124,6 +134,8 @@ struct MachineEntry {
     version: u64,
     acting_mib: i32,
     resident_mib: Option<i32>,
+    cpu: Option<(Instant, u64)>,
+    cpu_milli: u64,
     cancel: Option<CancellationToken>,
     deletes: u32,
 }
@@ -150,10 +162,21 @@ fn probe_every(entry: &MachineEntry) -> Option<Duration> {
     }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the runner's memory pressure as its sampler last read it. `signalled` is when its version last moved while pressure lasted.
+#[derive(Default)]
+struct Pressure {
+    version: u64,
+    pressured: bool,
+    working_set_mib: i32,
+    signalled: Option<Instant>,
+}
+
 #[derive(Default)]
 struct Machines {
     closed: bool,
     entries: HashMap<String, MachineEntry>,
+    pressure: Pressure,
+    cpu: crate::cpu::Window,
 }
 
 pub struct Server {
@@ -167,6 +190,7 @@ pub struct Server {
     versions: AtomicU64,
     admission: Mutex<()>,
     ports: Mutex<()>,
+    storage_short: std::sync::atomic::AtomicBool,
     lifetime: CancellationToken,
     work: TaskTracker,
     metrics: Metrics,
@@ -204,6 +228,13 @@ impl Rejected {
     fn conflict(message: impl Into<String>) -> Self {
         Self {
             status: 409,
+            message: message.into(),
+        }
+    }
+
+    fn insufficient_storage(message: impl Into<String>) -> Self {
+        Self {
+            status: 507,
             message: message.into(),
         }
     }
@@ -272,6 +303,7 @@ impl Server {
             ),
             admission: Mutex::new(()),
             ports: Mutex::new(()),
+            storage_short: std::sync::atomic::AtomicBool::new(false),
             lifetime,
             work: TaskTracker::new(),
             metrics: Metrics::default(),
@@ -299,6 +331,20 @@ impl Server {
                 let _ = tokio::task::spawn_blocking(move || server.hold_images()).await;
             }
         });
+        let checking = Arc::downgrade(&server);
+        let lifetime = server.lifetime.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = lifetime.cancelled() => return,
+                    _ = tokio::time::sleep(STORAGE_CHECK) => {}
+                }
+                let Some(server) = checking.upgrade() else {
+                    return;
+                };
+                let _ = tokio::task::spawn_blocking(move || server.check_storage()).await;
+            }
+        });
         // UNIT_BOUNDARY_DESCRIPTION: the health prober: one task per runner that starts a probe of each machine worth probing at its cadence, and each probe records what it hears, so a status read never waits on a probe. It holds the server weakly and ends with it, as well as when the runner closes.
         let prober = Arc::downgrade(&server);
         server.background(move |lifetime| {
@@ -311,7 +357,106 @@ impl Server {
                 std::thread::sleep(PROBE_TICK);
             }
         });
+        locked(&server.machines).pressure.version =
+            server.versions.fetch_add(1, Ordering::Relaxed) + 1;
+        if let Some(cgroup) = server.config.cgroup_dir.clone() {
+            let sampler = Arc::downgrade(&server);
+            server.background(move |lifetime| {
+                if let Err(e) = crate::pressure::working_set_mib(&cgroup) {
+                    tracing::warn!(error = %format!("{e:#}"), "vm runner: cannot read the runner's cgroup, so it reports no memory pressure");
+                    return;
+                }
+                while !lifetime.is_cancelled() {
+                    let Some(server) = sampler.upgrade() else {
+                        return;
+                    };
+                    if let Ok(stat) = crate::cpu::stat(&cgroup) {
+                        locked(&server.machines).cpu.push(Instant::now(), stat);
+                    }
+                    match crate::pressure::working_set_mib(&cgroup) {
+                        Ok(mib) => server.sample_pressure(i32::try_from(mib).unwrap_or(i32::MAX)),
+                        Err(e) => {
+                            tracing::warn!(error = %format!("{e:#}"), "vm runner: reading the runner's cgroup")
+                        }
+                    }
+                    drop(server);
+                    std::thread::sleep(crate::pressure::SAMPLE_EVERY);
+                }
+            });
+        }
         Ok(server)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: records one sample of the runner's working set. The version moves when pressure starts or ends, and every SIGNAL_EVERY while it lasts. Before it moves, every running machine is measured again, so the statuses the controller reads on the signal say what each machine holds now rather than at its last steady probe.
+    fn sample_pressure(&self, working_set_mib: i32) {
+        let (was, signalled) = {
+            let machines = locked(&self.machines);
+            (machines.pressure.pressured, machines.pressure.signalled)
+        };
+        let now = crate::pressure::pressured(
+            i64::from(working_set_mib),
+            i64::from(self.memory_limit_mib()),
+            was,
+        );
+        let signal = now != was
+            || (now && signalled.is_none_or(|at| at.elapsed() >= crate::pressure::SIGNAL_EVERY));
+        if signal && now {
+            self.measure_running();
+        }
+        let mut machines = locked(&self.machines);
+        let pressure = &mut machines.pressure;
+        pressure.working_set_mib = working_set_mib;
+        if signal {
+            pressure.pressured = now;
+            pressure.signalled = now.then(Instant::now);
+            pressure.version = self.versions.fetch_add(1, Ordering::Relaxed) + 1;
+            self.changed.notify_all();
+        }
+    }
+
+    fn measure_running(&self) {
+        let running: Vec<String> = locked(&self.machines)
+            .entries
+            .iter()
+            .filter(|(_, e)| e.seen.as_ref().is_some_and(|s| s.state == State::Running))
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in running {
+            let resident = self.runtime.resident_mib(&id);
+            if let Some(entry) = locked(&self.machines).entries.get_mut(&id) {
+                if resident.is_some() {
+                    entry.resident_mib = resident;
+                }
+            }
+        }
+    }
+
+    pub fn pressure(&self) -> RunnerPressure {
+        let machines = locked(&self.machines);
+        RunnerPressure {
+            version: machines.pressure.version,
+            pressured: machines.pressure.pressured,
+            limit_mib: self.memory_limit_mib(),
+            working_set_mib: machines.pressure.working_set_mib,
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the long-poll behind a pressure read, as `wait` is for a machine's status: it answers once the pressure version is no longer `since`, or once `timeout`, capped at STATUS_WAIT_CAP, passes.
+    pub fn wait_pressure(&self, since: u64, timeout: Duration) -> RunnerPressure {
+        let deadline = Instant::now() + timeout.min(STATUS_WAIT_CAP);
+        let mut machines = locked(&self.machines);
+        while !machines.closed && machines.pressure.version == since {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                break;
+            }
+            machines = match self.changed.wait_timeout(machines, left) {
+                Ok((guard, _)) => guard,
+                Err(e) => e.into_inner().0,
+            };
+        }
+        drop(machines);
+        self.pressure()
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: stops taking work, cancels what is running, waits up to CLOSE_GRACE for it, and then stops every machine still running within STOP_ON_CLOSE. Cancelling first is what makes the wait short: a fetch allowed twenty minutes ends now and removes its own scratch tree. The machines are stopped as the controller's stop does it, so a runner going away quiesces each guest's disk instead of leaving the pod's kill to cut its power. Ports are dropped last, so an action that finished inside the wait does not leave one bound.
@@ -414,7 +559,11 @@ impl Server {
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: takes the controller's desired spec for one machine and answers with its status. The spec replaces any spec not yet acted on. When the machine needs work and no worker is converging it, one is started and the answer reports its first action as the state. A spec that would boot a machine the runner's memory cannot hold is refused here and not stored, so nothing is created for it. While a seed is being uploaded the spec is stored and no worker is started, because a guest booted then would read half a seed; the controller's next ensure after the upload starts it.
-    pub fn put(self: &Arc<Self>, id: &str, spec: MachineSpec) -> Result<MachineStatus, Rejected> {
+    pub fn put(
+        self: &Arc<Self>,
+        id: &str,
+        mut spec: MachineSpec,
+    ) -> Result<MachineStatus, Rejected> {
         check_id(id)?;
         admissible(&spec).map_err(Rejected::bad_request)?;
         gateway_port_admissible(&spec, &self.config.ports).map_err(Rejected::bad_request)?;
@@ -428,17 +577,26 @@ impl Server {
             }
         }
         loop {
-            if !self.converging(id) {
+            if !self.converging(id) && !self.seen_lately(id) {
                 self.observe(id, true);
             }
             let (state, mut status) = self.report(id);
             let action = self.next_action(id, &spec, state, status.ready);
             let converging = self.converging(id);
             let boots = spec.running && (converging || action.is_some_and(|a| a != Action::Stop));
+            if boots || action == Some(Action::Create) {
+                if let Some(full) = self.storage_critical() {
+                    if full.refuses_starts() || self.writes_much(id, &spec, action) {
+                        return Ok(self.refuse(id, status, REASON_STORAGE_FULL, full.refusal()));
+                    }
+                    self.hold_growth(id, &mut spec);
+                }
+            }
             let _admitting = boots.then(|| locked(&self.admission));
             if boots {
                 if let Err(e) = self.room_for(id, &spec) {
-                    return Ok(self.refuse(id, status, e.to_string()));
+                    self.metrics.refused();
+                    return Ok(self.refuse(id, status, REASON_OUT_OF_CAPACITY, e.to_string()));
                 }
             }
             let mut machines = locked(&self.machines);
@@ -486,18 +644,23 @@ impl Server {
         }
     }
 
-    fn refuse(&self, id: &str, mut status: MachineStatus, message: String) -> MachineStatus {
-        self.metrics.refused();
+    fn refuse(
+        &self,
+        id: &str,
+        mut status: MachineStatus,
+        reason: &'static str,
+        message: String,
+    ) -> MachineStatus {
         let mut machines = locked(&self.machines);
         let entry = machines.entries.entry(id.to_string()).or_default();
         entry.failure = Some(Failed {
             message: message.clone(),
-            reason: REASON_OUT_OF_CAPACITY,
+            reason,
         });
         self.bump(entry);
         status.version = entry.version;
         status.message = message;
-        status.reason = REASON_OUT_OF_CAPACITY.to_string();
+        status.reason = reason.to_string();
         status.ready = false;
         status
     }
@@ -629,6 +792,9 @@ impl Server {
         check_id(id)?;
         let spec = read_spec(&self.config.state_dir, id)
             .ok_or_else(|| Rejected::not_found(format!("machine {id} does not exist")))?;
+        if let Some(full) = self.storage_critical() {
+            return Err(Rejected::insufficient_storage(full.refusal()));
+        }
         let desired = {
             let mut machines = locked(&self.machines);
             let closed = machines.closed;
@@ -806,11 +972,16 @@ impl Server {
         let failure = result.err().map(|e| {
             let mut message = format!("{e:#}");
             tracing::error!(machine = %id, op = action.label(), error = %message, "machine action failed");
-            let reason = failure_reason(&e);
-            self.metrics.failed(action, reason);
+            let mut reason = failure_reason(&e);
             if reason == REASON_BOOT_FAILED {
-                message = with_console(&message, &self.console_tail(id));
+                let tail = self.console_tail(id);
+                if let Some((why, explained)) = self.out_of_room(&tail) {
+                    reason = why;
+                    message = format!("{explained}; {message}");
+                }
+                message = with_console(&message, &tail);
             }
+            self.metrics.failed(action, reason);
             Failed { message, reason }
         });
         {
@@ -999,6 +1170,7 @@ impl Server {
                 tracing::warn!(error = %format!("{e:#}"), digest = %held.digest, "image cache: the service cannot be reached, so this machine boots the tree another of this runner's machines holds");
                 held
             }
+            Err(e) if self.config.image_cache_socket.is_none() => return Err(on_own_claim(e)),
             Err(e) => return Err(e),
         };
         self.metrics.lookup(lookup.fetched.is_none());
@@ -1133,13 +1305,17 @@ impl Server {
                 && boot
                     .note
                     .as_ref()
-                    .is_none_or(|(_, noted)| noted.elapsed() >= SLOW_BOOT_AFTER);
+                    .is_none_or(|(_, noted, _)| noted.elapsed() >= SLOW_BOOT_AFTER);
             if !waiting || !due {
                 return;
             }
             boot.at
         };
-        let message = with_console(SLOW_BOOT, &self.console_tail(id));
+        let tail = self.console_tail(id);
+        let (message, reason) = match self.out_of_room(&tail) {
+            Some((why, explained)) => (with_console(&explained, &tail), Some(why)),
+            None => (with_console(SLOW_BOOT, &tail), None),
+        };
         let mut machines = locked(&self.machines);
         let Some(entry) = machines.entries.get_mut(id) else {
             return;
@@ -1147,8 +1323,11 @@ impl Server {
         let Some(boot) = entry.boot.as_mut().filter(|boot| boot.at == at) else {
             return;
         };
-        let changed = boot.note.as_ref().is_none_or(|(old, _)| *old != message);
-        boot.note = Some((message, Instant::now()));
+        let changed = boot
+            .note
+            .as_ref()
+            .is_none_or(|(old, _, was)| *old != message || *was != reason);
+        boot.note = Some((message, Instant::now(), reason));
         if changed {
             self.bump(entry);
         }
@@ -1165,12 +1344,160 @@ impl Server {
                 &|other| self.resident(other),
             )
             .ok();
+        let cgroup = self.config.cgroup_dir.as_deref();
+        // UNIT_BOUNDARY_DESCRIPTION: the sampler's last reading, absent until its first sample and wherever there is no cgroup to sample.
+        let sampled = cgroup.and_then(|_| {
+            let machines = locked(&self.machines);
+            (machines.pressure.working_set_mib > 0).then(|| {
+                (
+                    machines.pressure.working_set_mib,
+                    machines.pressure.pressured,
+                )
+            })
+        });
         self.metrics.render(&Gauges {
             budget_bytes: self.config.image_budget,
-            limit_mib: self.config.memory_mib,
+            limit_mib: self.memory_limit_mib(),
             reserve_mib: self.config.reserve_mib,
             committed_mib: committed,
+            storage: (self.config.measure_storage)(),
+            cpu: cgroup.and_then(|c| crate::cpu::stat(c).ok()),
+            cpu_limit_milli: cgroup.and_then(|c| crate::cpu::limit_milli(c).ok().flatten()),
+            working_set_mib: sampled.map(|p| p.0),
+            pressured: sampled.map(|p| p.1),
         })
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the usage read: the claim's use, the memory admission counts against the limit, and each machine's state, measured memory and disk, built from what the runner has recorded like a status is.
+    pub fn usage(&self) -> anyhow::Result<RunnerUsage> {
+        let committed = self.capacity().committed(
+            None,
+            &self.committing(),
+            &|other| self.known_running(other),
+            &|other| self.resident(other),
+        )?;
+        let storage = (self.config.measure_storage)().unwrap_or(StorageUse { used: 0, usable: 0 });
+        let machines = self
+            .list()?
+            .into_iter()
+            .map(|id| {
+                let status = self.status(&id);
+                let cpu_milli = locked(&self.machines)
+                    .entries
+                    .get(&id)
+                    .filter(|e| e.resident_mib.is_some() && status.state == STATE_RUNNING)
+                    .map_or(0, |e| e.cpu_milli);
+                MachineUsage {
+                    disk_used_bytes: self.runtime.disk_used_bytes(&id).unwrap_or(0),
+                    cpu_milli,
+                    id,
+                    state: status.state,
+                    used_mib: status.used_mib,
+                    disk_gib: status.disk_gib,
+                }
+            })
+            .collect();
+        let cpu = self.config.cgroup_dir.as_deref().and_then(|cgroup| {
+            let limit_milli = crate::cpu::limit_milli(cgroup).ok().flatten();
+            let stall = crate::cpu::pressure_percent(cgroup);
+            if limit_milli.is_none() && stall.is_none() {
+                return None;
+            }
+            let (used_milli, throttled_percent) =
+                locked(&self.machines).cpu.figures().unwrap_or((0, 0));
+            Some(CpuUsage {
+                limit_milli: limit_milli.unwrap_or(0),
+                used_milli,
+                throttled_percent,
+                pressure_percent: stall.map(|stall| stall.max(throttled_percent)),
+            })
+        });
+        Ok(RunnerUsage {
+            storage: StorageUsage {
+                used_bytes: storage.used,
+                usable_bytes: storage.usable,
+            },
+            memory: MemoryUsage {
+                limit_mib: self.memory_limit_mib(),
+                committed_mib: committed,
+            },
+            cpu,
+            machines,
+        })
+    }
+
+    fn storage_critical(&self) -> Option<StorageUse> {
+        (self.config.measure_storage)().filter(StorageUse::critical)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: whether bringing a machine to `spec` writes much to the claim: a new machine's disk, or an image fetched into a cache on the claim itself. A start or restart of an existing machine writes only its logs and what its guest does, so a critical claim still lets it through.
+    fn writes_much(&self, id: &str, spec: &MachineSpec, action: Option<Action>) -> bool {
+        let Some(applied) = read_spec(&self.config.state_dir, id) else {
+            return true;
+        };
+        action == Some(Action::Create)
+            || (self.config.image_cache_socket.is_none() && applied.image != spec.image)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: on a critical claim a machine boots at the disk size it has, since a grow has ext4 fill in new block groups at boot; the larger size waits for a start that finds room, as any size change waits for the next start.
+    fn hold_growth(&self, id: &str, spec: &mut MachineSpec) {
+        if let Some(applied) = read_spec(&self.config.state_dir, id) {
+            spec.storage_gib = spec.storage_gib.min(applied.storage_gib);
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: why a guest that failed to come up has no room, when it has none: the owner's claim is critically full, or the guest's own disk is, as its console says. A guest whose writes fail fails its boot with nothing typed in the error, so the room is what explains it; the claim comes first, because a full claim also fails every guest's writes.
+    fn out_of_room(&self, tail: &str) -> Option<(&'static str, String)> {
+        if let Some(full) = self.storage_critical() {
+            return Some((REASON_STORAGE_FULL, full.refusal()));
+        }
+        home_full(tail).then(|| {
+            (
+                REASON_HOME_FULL,
+                "This agent's storage is full, so it stops as it starts. Free space by deleting files from another running agent or deleting an agent you no longer need, or request more storage.".to_string(),
+            )
+        })
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: one look at the claim, every STORAGE_CHECK. While it is short, the runner's own image cache gives up every tree no machine holds, since each can be fetched again, and every machine's share carries the mark that has its guest give back its scratch; what the guests keep beyond that is not the runner's to free.
+    fn check_storage(&self) {
+        let Some(storage) = (self.config.measure_storage)() else {
+            return;
+        };
+        let was = self.storage_short.load(Ordering::Relaxed);
+        let short = storage.short(was);
+        self.storage_short.store(short, Ordering::Relaxed);
+        for id in state::machine_ids(&self.config.state_dir).unwrap_or_default() {
+            let Some(dir) = machine_dir(&self.config.state_dir, &id) else {
+                continue;
+            };
+            let share = dir.join(SHARE_DIR);
+            if !share.is_dir() {
+                continue;
+            }
+            if let Err(e) = share::mark_storage_short(&share, short) {
+                tracing::warn!(machine = %id, error = %e, "vm runner: cannot mark the machine's share with the claim's room");
+            }
+        }
+        if short != was {
+            tracing::warn!(
+                percent = storage.percent(),
+                used = storage.used,
+                usable = storage.usable,
+                short,
+                "vm runner: the owner's storage claim changed between short of room and not"
+            );
+        }
+        if !short {
+            return;
+        }
+        let shed = self.images.shed();
+        for bytes in &shed.freed {
+            self.metrics.evicted(*bytes);
+        }
+        if let Some(used) = shed.used {
+            self.metrics.cache_size(used);
+        }
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: the `docker save` archive an install with no registry stages for this reference, with the launch read out of the archive's own config. The directory is mounted read-only in that mode, so nothing can be fetched there and this is what the machine boots.
@@ -1232,10 +1559,19 @@ impl Server {
         }
     }
 
+    fn memory_limit_mib(&self) -> i32 {
+        self.config
+            .cgroup_dir
+            .as_deref()
+            .and_then(crate::pressure::limit_mib)
+            .and_then(|mib| i32::try_from(mib).ok())
+            .unwrap_or(self.config.memory_mib)
+    }
+
     fn capacity(&self) -> Capacity<'_> {
         Capacity {
             state_dir: &self.config.state_dir,
-            limit_mib: self.config.memory_mib,
+            limit_mib: self.memory_limit_mib(),
             reserve_mib: self.config.reserve_mib,
             headroom_mib: self.config.headroom_mib,
             boot_mib: self.config.boot_mib,
@@ -1324,6 +1660,16 @@ impl Server {
         }
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: whether what was last recorded about the machine is as current as the prober keeps it: no older than its probe cadence, or about a stopped or absent machine, which only an action changes. A PUT then plans from that record rather than looking again: a look at a running machine pings its guest agent and asks the guest's health endpoint, which costs a wake's PUT about 100 ms right after the start that already looked, and a quiet guest three seconds. A record that holds a runtime error, or one about a machine being deleted, is looked at again.
+    fn seen_lately(&self, id: &str) -> bool {
+        locked(&self.machines).entries.get(id).is_some_and(|e| {
+            !e.deleting
+                && e.seen.as_ref().is_some_and(|seen| seen.error.is_none())
+                && probe_every(e)
+                    .is_none_or(|every| e.probed.is_some_and(|at| at.elapsed() < every))
+        })
+    }
+
     // UNIT_BOUNDARY_DESCRIPTION: looks at the machine now and records it. A machine's own worker records what it saw unconditionally; anyone else passes `guarded`, and what they saw is dropped if something newer was recorded while they looked.
     fn observe(&self, id: &str, guarded: bool) -> Seen {
         let guard = guarded.then(|| {
@@ -1403,12 +1749,25 @@ impl Server {
             },
             None => self.look(id),
         };
-        let resident = (seen.state == State::Running)
-            .then(|| self.runtime.resident_mib(id))
-            .flatten();
+        let running = seen.state == State::Running;
+        let resident = running.then(|| self.runtime.resident_mib(id)).flatten();
+        let cpu = running
+            .then(|| self.runtime.cpu_usec(id))
+            .flatten()
+            .map(|usec| (Instant::now(), usec));
         self.record(id, seen, Some(looked));
         if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
             entry.resident_mib = resident;
+            entry.cpu_milli = match (entry.cpu, cpu) {
+                (Some((from, before)), Some((to, now))) if now >= before => {
+                    let micros = to.duration_since(from).as_micros() as u64;
+                    ((now - before) * 1000)
+                        .checked_div(micros)
+                        .unwrap_or(entry.cpu_milli)
+                }
+                _ => 0,
+            };
+            entry.cpu = cpu;
         }
         self.note_slow_boot(id);
         if !self.dead_for_long(id) {
@@ -1527,6 +1886,7 @@ impl Server {
         if let Some(spec) = applied {
             status.cpus = spec.cpus;
             status.memory_mib = spec.memory_mib;
+            status.disk_gib = spec.storage_gib;
             status.used_mib = entry
                 .and_then(|e| e.resident_mib)
                 .filter(|_| state == State::Running)
@@ -1540,7 +1900,10 @@ impl Server {
             .and_then(|e| e.boot.as_ref())
             .and_then(|boot| boot.note.as_ref())
             .filter(|_| failed.is_none() && !status.ready && reads_ready(state));
-        if let Some((note, _)) = note {
+        if let Some((note, _, reason)) = note {
+            if let Some(reason) = reason {
+                status.reason = reason.to_string();
+            }
             status.message = if status.message.is_empty() {
                 note.clone()
             } else {

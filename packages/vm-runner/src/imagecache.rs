@@ -114,6 +114,10 @@ impl Lookup {
 pub trait Images: Send + Sync {
     fn resolve(&self, reference: &str, auths: &[String]) -> Lookup;
     fn hold(&self, digests: &BTreeSet<String>) -> anyhow::Result<()>;
+    // UNIT_BOUNDARY_DESCRIPTION: frees every tree no machine holds, whatever the budget, for a runner whose claim is running out of room. A node cache's disk is the node's and not the owner's, so a runner's client to it sheds nothing.
+    fn shed(&self) -> Trim {
+        Trim::default()
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what one eviction pass did: the size of each image it removed, and what the cache held after it, when it was weighed against a budget at all.
@@ -644,6 +648,10 @@ impl ImageCache {
 
     // UNIT_BOUNDARY_DESCRIPTION: trims the cache to its budget, oldest write first, sparing what is held. The victims are chosen under the memory lock from the weights kept there, and deleted outside it. Nothing is evicted during the grace after opening, while runners have not yet named what they hold again. Goes over budget rather than free an image something is running from.
     pub fn evict(&self, keep: Option<&Path>) -> Trim {
+        self.evict_to(keep, self.config.budget)
+    }
+
+    fn evict_to(&self, keep: Option<&Path>, budget: i64) -> Trim {
         self.measure();
         let mut trim = Trim::default();
         let chosen = {
@@ -653,7 +661,7 @@ impl ImageCache {
             } else {
                 let held = self.held(&mut memory);
                 let all = memory.entries.values().cloned().collect();
-                cache::choose(all, keep, self.config.budget, &held)
+                cache::choose(all, keep, budget, &held)
             }
         };
         for victim in chosen {
@@ -732,6 +740,10 @@ impl Images for ImageCache {
 
     fn hold(&self, digests: &BTreeSet<String>) -> anyhow::Result<()> {
         ImageCache::hold(self, digests)
+    }
+
+    fn shed(&self) -> Trim {
+        self.evict_to(None, 1)
     }
 }
 

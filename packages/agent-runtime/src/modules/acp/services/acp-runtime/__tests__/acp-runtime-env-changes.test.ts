@@ -125,6 +125,7 @@ describe("acp-runtime: env changes", () => {
     const world = createWorld();
     const client = world.connect();
     client.send(frames.initialize(1));
+    world.harness().replyTo("initialize", { agentCapabilities: {} });
     world
       .harness()
       .emit({ jsonrpc: "2.0", id: 900, method: "x/ask", params: {} });
@@ -135,6 +136,52 @@ describe("acp-runtime: env changes", () => {
     client.send({ jsonrpc: "2.0", id: 900, result: {} });
 
     expect(world.harness().killed()).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: An env change lands on an idle runtime while a client call
+   * that is not a prompt, such as ACP initialize or an e2e control call,
+   * waits for the harness's answer. The recycle would fail that call, so it
+   * waits for the answer, and recycles at once when it comes.
+   */
+  it("should recycle when the harness answers the last call in flight", () => {
+    const world = createWorld();
+    const client = world.connect();
+    client.send(frames.initialize(1));
+
+    world.runtime.refreshEnv({ force: false });
+    expect(world.harness().killed()).toBe(false);
+
+    world.harness().replyTo("initialize", { agentCapabilities: {} });
+
+    expect(client.reply(1)).toMatchObject({
+      result: { agentCapabilities: {} },
+    });
+    expect(world.harness().killed()).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: A call in flight that the harness never answers holds an
+   * env change back for a bounded time only, ten seconds, so a value-only
+   * change that is never forced still lands, and the call is then answered
+   * with the recycle's reason.
+   */
+  it("should recycle after the bound when a call in flight is never answered", () => {
+    vi.useFakeTimers();
+    const world = createWorld();
+    const client = world.connect();
+    client.send(frames.initialize(1));
+
+    world.runtime.refreshEnv({ force: false });
+    vi.advanceTimersByTime(9_999);
+    expect(world.harness().killed()).toBe(false);
+
+    vi.advanceTimersByTime(1);
+
+    expect(world.harness().killed()).toBe(true);
+    expect(client.reply(1)).toMatchObject({
+      error: { message: "agent recycled for env change" },
+    });
   });
 
   /**

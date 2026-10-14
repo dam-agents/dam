@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -49,6 +49,7 @@ flowchart LR
   An entry that was read and rejected — a `kit.yaml` the schema refuses, a path that escapes the catalog — is a withdrawal, not an outage: it leaves the resolved set like an entry the author removed, so one permanently broken kit never freezes the prune for the rest.
   The built-in catalog is refreshed by the same job: its file entries are stamped with the release rather than a sha, because chart files have no commit to resolve, while an entry naming a repository is resolved and stamped exactly like any other — so a built-in catalog carrying one does reach the network on refresh, and an air-gapped install may hold only file entries.
   What lives where follows from that: the built-in catalog holds the **workload kits**, whose images this repository builds and whose kit files are versioned with the release, and **definition kits** live in a repository of their own, listed either by a curated catalog the install points at — `curated` by default — or, when the kit must be switchable per install, by a built-in entry naming that repository.
+  A workload kit may also bring no image: it runs on the default Template and its `install` command puts the tool, at the version the kit file pins, into the agent's home.
   A definition kit is not copied into that catalog either: its `kit.yaml` sits at the root of the repository holding the code it installs, and the catalog lists it by `gitUrl`.
   That is what keeps the two in step — a change to a toolkit's bootstrap and the change to the kit describing it are one commit and one review, in the repository that owns both.
   Such a kit's seed says `self: true` rather than repeating the URL, and names no ref, so the workspace is seeded from the very commit the kit was resolved at and a kit can never describe code it was not read with.
@@ -106,7 +107,7 @@ flowchart LR
   **Whether the install can run one is a capability, not a preference, and it decides visibility**: a `vm` kit is left out of the listing and reads as absent on a read when `virtualization.enabled` is off, for the same reason a disabled built-in kit never reaches the UI — a catalog that offers what this install cannot run wastes the user's time and ends in a parked agent.
   The **per-user** flag is treated the opposite way.
   `vm-sandboxes` is progressive disclosure rather than authorization ([features](features.md)), so it hides nothing here and shows a **New sandbox runtime** badge instead: the kit's own declaration is what makes the agent a microVM, the user is told which runtime they are getting before they create it, and the same kit is on offer to everyone on the install rather than appearing and disappearing with a settings toggle.
-  A kit that names no backend is created as a container, even for an owner who opted into the new runtime, unless the install pins the new runtime on: that pin is the install's choice, not a preference, and makes every create a microVM ([features](features.md)).
+  A kit that names no backend is created as a container, even for an owner who opted into the new runtime, unless the install pins the new runtime on: that pin is the install's choice, not a preference, and makes every create a microVM ([features](features.md)), so every kit then carries the badge.
 - **Kit Egress** — optional `egressPreset` (`none`, `trusted` or `all`, the presets an agent's egress settings offer) and `egressRules`, a list of host rules in the shape a hand-written rule takes (`host`, optional `port`, `method`, `pathPattern`, `verdict`, which defaults to `allow`).
   Apply passes the preset to the create, which seeds from it exactly as when the user picks one; a kit that names none gets the create's default (`trusted`).
   The rules are then written with source `kit`, before anything else the apply queues, so the first session already runs under them.
@@ -122,7 +123,7 @@ flowchart LR
 - **Knowledge Base Kit** — optional `knowledgeBase.shareRoots`: a kit may declare that what it creates publishes a [knowledge base](knowledge-bases.md), naming the workspace paths its shares expose.
   The apply stamps those roots on the Agent and nothing else changes: the toolkit is the kit's `seed`, the bootstrap its `install` run from that checkout, the first session its `onboarding`, so a knowledge base is a regular kit that declares one capability.
   No Kind marker is stamped — an agent created this way is badged by its kit like any other, and the sharing surfaces read the roots off the agent instead of asking which template built it; an agent stamped before kits keeps the old kind and template annotations and the roots that template always had.
-  The two knowledge kits (LLM Wiki, Plain Wiki) live in the toolkit repositories they install and are reached through the curated catalog, and are the kits with no image of their own — they run on the default Template.
+  The two knowledge kits (LLM Wiki, Plain Wiki) live in the toolkit repositories they install and are reached through the curated catalog, and run on the default Template.
   A knowledge base is set up by asking its owner what it is for and what to read first, so such a kit ships an `ONBOARDING.md` and names no onboarding command: the briefing then opens on that file once `install` has run, and the intake is reported as a checklist.
   A bare command cannot do that job — it is stamped onboarded at create and has nothing to report with.
 - **Agent Setup** — the seed, install, env, size, backend and external skills are one definition shared with spawning a sub-agent, so a target is set up exactly like a kit-created Agent ([invocations](invocations.md)).
@@ -131,7 +132,7 @@ flowchart LR
   It is stated in the user-facing vocabulary and nothing else: limits are what an agent's power and its owner's Ceiling are measured in, so a kit never states requests — the controller derives those from the limits.
   Each dimension is independent and a stated one wins over the harness Template's own value, so a kit sizes its workload whether it brings an image or runs on a harness Template; an omitted dimension inherits the Template's, then the install default.
   CPU and memory stay editable on the Agent afterwards like any other Size; disk is fixed at create.
-  A kit on the `vm` backend gets only its disk: a machine has no CPU or memory size of its own and shares its owner's [pool](vm-memory.md).
+  A kit on the `vm` backend, or any kit on an install that pins the new runtime on, gets none of it and shows no size: a machine has no CPU, memory or disk size of its own and shares its owner's [memory](vm-memory.md) and [storage](persistence.md) pools.
   This is where the sizing the `preconfigured` Templates used to carry now lives.
 - **Seed** — optional `seed: { url, ref, into }`: the kit's definition repository.
   The catalog refresh resolves the ref to a commit and records it beside the declared ref (`seed.commit`), and apply hands both to the agent create as its workspace seed, so the `workspace-seed` event brings the repository in at that commit **on that branch**, tracking `origin/<ref>` — the same rail a plain create's `gitRepo` rides — ahead of `install` and the initialization session.

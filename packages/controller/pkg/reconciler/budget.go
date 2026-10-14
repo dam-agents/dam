@@ -49,7 +49,7 @@ func (r *AgentReconciler) budgetAllows(ctx context.Context, agent *apiv1.Agent, 
 	totalMem.Add(candMem)
 	if totalCPU.Cmp(ceilCPU) > 0 || totalMem.Cmp(ceilMem) > 0 {
 		return fmt.Sprintf(
-			"starting this agent would take your running agents to %s/%s CPU and %s/%s memory — stop a running agent to free room",
+			"starting this agent would take your running agents to %s/%s CPU and %s/%s memory — pause agents you aren't using to free room",
 			totalCPU.String(), ceilCPU.String(), totalMem.String(), ceilMem.String()), nil
 	}
 	return "", nil
@@ -228,7 +228,14 @@ func (r *AgentReconciler) ceilingFor(ctx context.Context, owner string) (resourc
 	if err != nil {
 		return resource.Quantity{}, resource.Quantity{}, fmt.Errorf("decoding userbudget %s: %w", obj.GetName(), err)
 	}
-	return b.Spec.CPU, b.Spec.Memory, nil
+	cpu, mem := r.config.DefaultUserCPUBudget, r.config.DefaultUserMemoryBudget
+	if b.Spec.CPU != nil {
+		cpu = *b.Spec.CPU
+	}
+	if b.Spec.Memory != nil {
+		mem = *b.Spec.Memory
+	}
+	return cpu, mem, nil
 }
 
 func (r *AgentReconciler) wakeAlreadyDenied(name, lastActivity string) bool {

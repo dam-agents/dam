@@ -360,6 +360,18 @@ impl Runtime for Smolvm {
         }
         resident_mib(&self.proc_root, record.pid?)
     }
+
+    fn cpu_usec(&self, id: &str) -> Option<u64> {
+        let record = self.record(id).ok()??;
+        if !record.is_process_alive() {
+            return None;
+        }
+        cpu_usec(&self.proc_root, record.pid?)
+    }
+
+    fn disk_used_bytes(&self, id: &str) -> Option<u64> {
+        allocated_bytes(&vm_data_dir(id))
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a grow waits for the guest to plug its added RAM and put it online, as smolvm's own resize waits.
@@ -402,6 +414,11 @@ fn ram_to_add(geometry: &RamGeometry, target_mib: u32) -> u64 {
 const RAM_GROW_UNIT: u64 = 128 << 20;
 
 fn resident_mib(proc_root: &Path, pid: i32) -> Option<i32> {
+    #[cfg(target_os = "macos")]
+    if !proc_root.is_dir() {
+        let (bytes, _) = crate::runtime::darwin::task_usage(pid)?;
+        return i32::try_from(bytes >> 20).ok();
+    }
     let status = std::fs::read_to_string(proc_root.join(pid.to_string()).join("status")).ok()?;
     let kib: i64 = status
         .lines()
@@ -411,6 +428,37 @@ fn resident_mib(proc_root: &Path, pid: i32) -> Option<i32> {
         .parse()
         .ok()?;
     i32::try_from(kib >> 10).ok()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: utime plus stime from /proc/<pid>/stat, in microseconds. The fields after the command name are counted from its closing parenthesis, since the name itself may hold spaces.
+fn cpu_usec(proc_root: &Path, pid: i32) -> Option<u64> {
+    #[cfg(target_os = "macos")]
+    if !proc_root.is_dir() {
+        return crate::runtime::darwin::task_usage(pid).map(|(_, usec)| usec);
+    }
+    let stat = std::fs::read_to_string(proc_root.join(pid.to_string()).join("stat")).ok()?;
+    let mut fields = stat
+        .get(stat.rfind(')')? + 1..)?
+        .split_whitespace()
+        .skip(11);
+    let ticks = fields.next()?.parse::<u64>().ok()? + fields.next()?.parse::<u64>().ok()?;
+    // SAFETY: sysconf only reads a configuration value.
+    let per_second = u64::try_from(unsafe { libc::sysconf(libc::_SC_CLK_TCK) }).ok()?;
+    (per_second > 0).then(|| ticks * 1_000_000 / per_second)
+}
+
+fn allocated_bytes(dir: &Path) -> Option<u64> {
+    use std::os::unix::fs::MetadataExt;
+    let mut total = 0;
+    for entry in std::fs::read_dir(dir).ok()?.flatten() {
+        let Ok(meta) = entry.metadata() else { continue };
+        total += if meta.is_dir() {
+            allocated_bytes(&entry.path()).unwrap_or(0)
+        } else {
+            meta.blocks() * 512
+        };
+    }
+    Some(total)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a stop gives the guest's workload to exit on SIGTERM before the guest is frozen and powered off. smolvm's own stop only quiesces the disks and kills the VMM, so without this the agent never hears it is being stopped, and what it has not yet written is lost with it.
@@ -673,10 +721,60 @@ fn resolved_image(image: &str) -> anyhow::Result<String> {
     })
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: creates the machine's storage disk as a raw sparse file before its first boot. Left to smolvm, a disk of smolvm's default size is made instead as a qcow2 overlay over the template shipped with the runner image, named by its absolute path in that image — so an upgrade that ships a different template would change the bytes under every such agent's home. A raw disk depends on nothing, and smolvm formats it on first boot as it does any other size.
+// UNIT_BOUNDARY_DESCRIPTION: creates the machine's storage disk as a raw sparse file before its first boot. Left to smolvm, a disk of smolvm's default size is made instead as a qcow2 overlay over the template shipped with the runner image, named by its absolute path in that image — so an upgrade that ships a different template would change the bytes under every such agent's home. A raw disk depends on nothing. A new one is formatted here, with a journal, at its full size: both of smolvm's own fallbacks — formatting on the host when it finds no template, and formatting in the guest when the disk will not mount — leave a disk with no journal, and an unclean stop of such a disk can lose what the agent last wrote. Only a file no guest has written is formatted, so the host never parses a filesystem a guest had root on.
 fn raw_storage_disk(id: &str, gib: u64) -> anyhow::Result<()> {
-    StorageDisk::open_or_create_at(&storage_disk_path(id), gib)?;
+    let disk = storage_disk_path(id);
+    let fresh = !disk.exists();
+    StorageDisk::open_or_create_at(&disk, gib)?;
+    if fresh {
+        format_journaled(&disk);
+    }
     Ok(())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: where mkfs.ext4 is: on the runner image's PATH, or Homebrew's e2fsprogs on a Mac host runner, which installs it outside PATH.
+const MKFS_EXT4: [&str; 3] = [
+    "mkfs.ext4",
+    "/opt/homebrew/opt/e2fsprogs/sbin/mkfs.ext4",
+    "/usr/local/opt/e2fsprogs/sbin/mkfs.ext4",
+];
+
+// UNIT_BOUNDARY_DESCRIPTION: formats a fresh sparse disk as ext4 with a journal. Lazy init leaves the inode tables and the journal unzeroed, which on a file never written reads as zeros anyway, so the format writes little and takes well under a second at any size; the guest kernel zeroes the inode tables later, as it does on any disk formatted this way. A format that succeeds also writes smolvm's format marker, so smolvm never copies its template over the disk and the next start does not report an unmarked filesystem. A host with no mkfs.ext4, or a format that fails, leaves the disk empty for smolvm to format as before.
+fn format_journaled(disk: &Path) {
+    let args = [
+        "-F",
+        "-q",
+        "-m",
+        "0",
+        "-L",
+        "smolvm",
+        "-E",
+        "lazy_itable_init=1,lazy_journal_init=1,nodiscard",
+    ];
+    for mkfs in MKFS_EXT4 {
+        match std::process::Command::new(mkfs)
+            .args(args)
+            .arg(disk)
+            .output()
+        {
+            Ok(out) if out.status.success() => {
+                if let Err(e) = std::fs::write(disk.with_extension("formatted"), "1") {
+                    tracing::warn!(disk = %disk.display(), error = %e, "could not mark the formatted storage disk");
+                }
+                return;
+            }
+            Ok(out) => {
+                tracing::warn!(disk = %disk.display(), stderr = %String::from_utf8_lossy(&out.stderr).trim(), "formatting the storage disk failed; smolvm formats it instead, without a journal");
+                return;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                tracing::warn!(disk = %disk.display(), error = %e, "formatting the storage disk failed; smolvm formats it instead, without a journal");
+                return;
+            }
+        }
+    }
+    tracing::warn!(disk = %disk.display(), "no mkfs.ext4; smolvm formats the storage disk instead, without a journal");
 }
 
 fn storage_disk_path(id: &str) -> PathBuf {
@@ -1271,7 +1369,7 @@ mod tests {
         assert!(!vm_data_dir("m1").join("storage.qcow2").exists());
     }
 
-    // TEST_SCENARIO: smolvm formats a storage disk at every start that lacks its format marker, by copying its template over it, and a first boot whose resize failed leaves the marker unwritten, as a Mac without resize2fs does for every disk below the template's size. So a machine whose disk already holds a filesystem, and no marker, is started here: after the runner has prepared it, the format smolvm's start runs must leave the agent's home on it, while a fresh machine's empty disk is still formatted from the template.
+    // TEST_SCENARIO: smolvm formats a storage disk at every start that lacks its format marker, by copying its template over it, and a first boot whose resize failed leaves the marker unwritten, as a Mac without resize2fs does for every disk below the template's size. So a machine whose disk already holds a filesystem, and no marker, is started here: after the runner has prepared it, the format smolvm's start runs must leave the agent's home on it, while a fresh machine's disk, which the create formats itself where mkfs.ext4 is installed, is otherwise still formatted from the template.
     #[test]
     fn a_start_never_copies_the_template_over_a_disk_that_holds_a_filesystem() {
         use std::os::unix::fs::FileExt;
@@ -1331,7 +1429,72 @@ mod tests {
         }
 
         assert_eq!(&payload(&storage_disk_path("used")), b"HOMEDATA");
-        assert_eq!(&payload(&storage_disk_path("fresh")), b"TEMPLATE");
+        if !mkfs_available() {
+            assert_eq!(&payload(&storage_disk_path("fresh")), b"TEMPLATE");
+        }
+    }
+
+    fn mkfs_available() -> bool {
+        MKFS_EXT4
+            .iter()
+            .any(|m| std::process::Command::new(m).arg("-V").output().is_ok())
+    }
+
+    fn has_journal(disk: &std::path::Path) -> bool {
+        use std::os::unix::fs::FileExt;
+        let mut compat = [0; 4];
+        fs::File::open(disk)
+            .unwrap()
+            .read_exact_at(&mut compat, 1024 + 0x5C)
+            .unwrap();
+        u32::from_le_bytes(compat) & 0x4 != 0
+    }
+
+    // TEST_SCENARIO: a new machine's disk must come with a journal, or an unclean stop can lose what its agent last wrote: smolvm's own formats leave none. The create formats it at its full size, sparse, so the guest neither formats nor grows it; a disk a guest has already written is never formatted again.
+    #[test]
+    fn a_new_disk_holds_a_journaled_filesystem_at_its_full_size() {
+        if !mkfs_available() {
+            eprintln!("skipping: no mkfs.ext4 on this host");
+            return;
+        }
+        let home = Home::new("journal");
+        let share = home.path.join("share");
+        fs::create_dir_all(&share).unwrap();
+        let smolvm = Smolvm::open(false, None).unwrap();
+        let spec = spec();
+        let launch = launch();
+        let machine = Machine {
+            spec: &spec,
+            image: "quay.io/x/vm:1",
+            host_port: 32000,
+            share: &share,
+            launch: &launch,
+        };
+        smolvm.create("m1", &machine).unwrap();
+
+        let disk = storage_disk_path("m1");
+        assert!(has_journal(&disk), "the new disk has no journal");
+        assert!(
+            disk.with_extension("formatted").exists(),
+            "the formatted disk is not marked"
+        );
+        assert_eq!(fs::metadata(&disk).unwrap().len(), 20 << 30);
+        use std::os::unix::fs::MetadataExt;
+        assert!(
+            fs::metadata(&disk).unwrap().blocks() * 512 < 1 << 30,
+            "formatting filled the sparse disk"
+        );
+
+        use std::os::unix::fs::FileExt;
+        let file = fs::OpenOptions::new().write(true).open(&disk).unwrap();
+        file.write_all_at(b"HOMEDATA", 10 << 30).unwrap();
+        raw_storage_disk("m1", 20).unwrap();
+        let mut read = [0; 8];
+        fs::File::open(&disk)
+            .unwrap()
+            .read_exact_at(&mut read, 10 << 30)
+            .unwrap();
+        assert_eq!(&read, b"HOMEDATA");
     }
 
     // TEST_SCENARIO: an update reshapes a stopped machine in place — size, env, and a disk that grows — so the agent keeps its disk across a resize.
@@ -1468,6 +1631,11 @@ mod tests {
         assert_eq!(smolvm.state("m1").unwrap(), State::Absent);
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: a test's stand-in VMM has exited. On a Mac the runner reaps an exited child itself, so the test's own wait finds no child, which means it is gone too.
+    fn vmm_gone(vmm: &mut std::process::Child) -> bool {
+        vmm.try_wait().map_or(true, |status| status.is_some())
+    }
+
     // TEST_SCENARIO: a live VMM whose guest agent does not answer its ping is what a busy guest looks like, so it reads as running: the health prober decides whether it is restarted, after the unhealthy grace, and it keeps being counted against the runner's memory. Read as stopped, the next reconcile would start it, and the start would kill a guest that was only busy. An update that still finds such a VMM under a record that says running — a stop that did not finish — takes it down and applies, rather than leaving the machine stuck.
     #[test]
     fn a_vmm_whose_agent_does_not_answer_reads_running_and_an_update_takes_it_down() {
@@ -1519,7 +1687,7 @@ mod tests {
             .unwrap();
         assert_eq!(smolvm.record("m1").unwrap().unwrap().cpus, 1);
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
-        while vmm.try_wait().unwrap().is_none() {
+        while !vmm_gone(&mut vmm) {
             assert!(
                 std::time::Instant::now() < deadline,
                 "the dead agent's VMM was left running"
@@ -1577,7 +1745,7 @@ mod tests {
 
         smolvm.stop("m1").unwrap();
         assert!(
-            vmm.try_wait().unwrap().is_some(),
+            vmm_gone(&mut vmm),
             "the unconfirmed guest's VMM was left running"
         );
         assert_eq!(
@@ -1737,5 +1905,50 @@ mod tests {
         assert_eq!(ram_to_add(&geometry, 1024), 0);
         assert_eq!(ram_to_add(&geometry, 200 << 10), 64 << 30);
         assert!(ram_geometry("ERR EIO RAM hot-add topology is unavailable\n").is_err());
+    }
+
+    // TEST_SCENARIO: a Mac has no /proc, so a VMM's memory and CPU time are read from the kernel's task info instead: this test process holds the buffer it just touched, and the CPU it burned shows up, scaled to microseconds whatever the machine's timebase.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_mac_reads_a_processs_memory_and_cpu_without_proc() {
+        let no_proc = Path::new("/proc");
+        let pid = i32::try_from(std::process::id()).unwrap();
+        let held = vec![1u8; 64 << 20];
+        let mib = resident_mib(no_proc, pid).unwrap();
+        assert!(mib >= 64, "resident {mib} MiB");
+        let before = cpu_usec(no_proc, pid).unwrap();
+        let started = std::time::Instant::now();
+        let mut spin = 0u64;
+        while started.elapsed() < Duration::from_millis(200) {
+            spin = std::hint::black_box(spin.wrapping_add(1));
+        }
+        let burned = cpu_usec(no_proc, pid).unwrap() - before;
+        assert!((100_000..2_000_000).contains(&burned), "burned {burned} us");
+        assert_eq!(resident_mib(no_proc, i32::MAX), None);
+        drop(held);
+    }
+
+    // TEST_SCENARIO: a VMM's command name may hold spaces and parentheses, so its CPU time is read from the fields after the name's last parenthesis; and a sparse disk as large as the pool counts only what was written to it.
+    #[test]
+    fn a_machines_cpu_time_and_disk_share_read_as_used_not_as_sized() {
+        let proc_root = crate::testdir::TempDir::new("cpu-stat");
+        fs::create_dir_all(proc_root.path().join("42")).unwrap();
+        fs::write(
+            proc_root.path().join("42/stat"),
+            "42 (vm (runner) x) S 1 2 3 4 5 6 7 8 9 10 300 200 0 0 20 0 1 0\n",
+        )
+        .unwrap();
+        // SAFETY: sysconf only reads a configuration value.
+        let hz = unsafe { libc::sysconf(libc::_SC_CLK_TCK) } as u64;
+        assert_eq!(cpu_usec(proc_root.path(), 42), Some(500 * 1_000_000 / hz));
+        assert_eq!(cpu_usec(proc_root.path(), 7), None);
+
+        let dir = crate::testdir::TempDir::new("allocated");
+        fs::create_dir_all(dir.path().join("sub")).unwrap();
+        let disk = fs::File::create(dir.path().join("storage.raw")).unwrap();
+        disk.set_len(100 << 30).unwrap();
+        fs::write(dir.path().join("sub/log"), vec![1u8; 1 << 20]).unwrap();
+        let used = allocated_bytes(dir.path()).unwrap();
+        assert!((1 << 20..8 << 20).contains(&used), "{used}");
     }
 }

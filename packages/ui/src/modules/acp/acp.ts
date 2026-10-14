@@ -25,10 +25,12 @@ function wsStream(url: string): Promise<{
   stream: Stream;
   ws: WebSocket;
   closeReason: () => string | null;
+  closeCode: () => number | null;
 }> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(url);
     let closeReason: string | null = null;
+    let closeCode: number | null = null;
     const timer = setTimeout(() => {
       ws.close();
       reject(new Error("WebSocket connect timeout"));
@@ -40,6 +42,7 @@ function wsStream(url: string): Promise<{
           ws.onmessage = (e) => controller.enqueue(JSON.parse(e.data));
           ws.onclose = (e) => {
             closeReason = e.reason || null;
+            closeCode = e.code;
             try {
               controller.close();
             } catch {}
@@ -63,6 +66,7 @@ function wsStream(url: string): Promise<{
         stream: { readable, writable },
         ws,
         closeReason: () => closeReason,
+        closeCode: () => closeCode,
       });
     };
     ws.onerror = reject;
@@ -149,7 +153,7 @@ export async function openConnection(
   onUpdate: UpdateHandler,
   opts?: { passive?: boolean },
 ): Promise<{ connection: ClientConnection; ws: WebSocket }> {
-  const { stream, ws, closeReason } = await wsStream(
+  const { stream, ws, closeReason, closeCode } = await wsStream(
     await wsUrl(agentId, opts?.passive ?? false),
   );
   const app = client()
@@ -167,5 +171,8 @@ export async function openConnection(
       if (routed) onUpdate(routed.update, routed.sessionId, routed.frame);
     });
   }
-  return { connection: withCloseRace(app.connect(stream), closeReason), ws };
+  return {
+    connection: withCloseRace(app.connect(stream), closeReason, closeCode),
+    ws,
+  };
 }

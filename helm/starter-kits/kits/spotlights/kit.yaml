@@ -1,0 +1,53 @@
+schemaVersion: v1
+id: spotlights
+name: Spotlights
+tagline: Find the few places in a codebase worth optimizing.
+description: >-
+  Points the Spotlights engine at a target repository and an optimization
+  objective, and returns a ranked map of the few code regions worth
+  optimizing, each with change proposals grounded in the code and the
+  research literature.
+category: research
+icon: search
+docsUrl: https://github.com/AI-native-Systems-Research/spotlights
+harnesses: [claude-code]
+# The engine runs both claude and codex, so the provider must serve Claude
+# and GPT models through one gateway.
+providers: [ibm-litellm]
+resources:
+  cpu: "2"
+  memory: 4Gi
+  storage: 10Gi
+  note: >-
+    A run clones the target repository and drives claude and codex as
+    subprocesses for 30-45 minutes per module.
+install:
+  # uv puts the CLIs in ~/.local/bin, which is not on the image's PATH;
+  # ~/.local/share/aube/bin is, and it is in the home, so the links last.
+  command: |
+    set -eu
+    uv tool install --force "git+https://github.com/AI-native-Systems-Research/spotlights.git@v0.1.1"
+    mkdir -p "$HOME/.local/share/aube/bin"
+    for bin in spotlights-engine signal-pipeline spotlights-objectives; do
+      if [ -x "$HOME/.local/bin/$bin" ]; then
+        ln -sf "$HOME/.local/bin/$bin" "$HOME/.local/share/aube/bin/$bin"
+      fi
+    done
+    spotlights-engine init
+onboarding:
+  prompt: >-
+    The Spotlights engine (`spotlights-engine`) is installed, and
+    `spotlights-engine init` has added its slash commands to the work
+    directory. Run `spotlights-engine doctor` and fix anything it reports
+    before you go on. Then ask the user for the target repository and the
+    optimization objective. If they are unsure about the objective, run
+    `/spotlights-objective-setting` with them. Clone the repository under the
+    work directory and confirm with the user which modules to include. Pin
+    the models with `--claude-model "$ANTHROPIC_DEFAULT_OPUS_MODEL"
+    --codex-model "$OPENAI_MODEL"`. Tell the user that one
+    module takes about 30-45 minutes and a few dollars in model cost before
+    you start a run, and start it with `platform-keep` so it finishes after
+    your turn ends.
+connections:
+  - accepts: [github, github-enterprise]
+    note: Needed to clone private target repositories.

@@ -1,6 +1,6 @@
 # Getting started
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -36,5 +36,6 @@ Every unlock is pushed to the owner's open tabs as a [live hint](platform-topolo
 Dismissing the checklist hides it until the next unlock, which opens it again, or until the user asks for it from the avatar picker.
 Once every character is unlocked and seen, the checklist is gone for good.
 The avatar picker offers only unlocked characters, plus the one the Agent already shows; the rest appear as eggs.
-A newly unlocked character carries a dot in the picker, and on the picker's button, until the user first picks it; the first Agent's own character, already in use, never does.
+A newly unlocked character carries a dot in the picker, and on the picker's button, until the user first opens the picker; the dots stay while that picker is open, so the user sees which characters are new.
+The first Agent's own character, already in use, never carries one.
 The lock is a UI affordance: the api-server accepts any character on an Agent.

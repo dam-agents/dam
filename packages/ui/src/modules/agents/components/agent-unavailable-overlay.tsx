@@ -1,4 +1,5 @@
 import { Asleep, Migrate, Play, Renew, Warning } from "@carbon/icons-react";
+import { isStartRefusal } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,7 +9,7 @@ import { StatusBadge } from "../../../components/status-indicator.js";
 import type { AgentView } from "../../../types.js";
 import { useRestartAgent } from "../hooks/use-restart-agent.js";
 import { useWakeAgent } from "../hooks/use-wake-agent.js";
-import { workspaceFailureSentence } from "../lib/workspace-failure.js";
+import { overlayDescription } from "../lib/overlay-copy.js";
 import type {
   AgentDisplay,
   AgentDisplayState,
@@ -16,41 +17,14 @@ import type {
 import { AgentAvatar } from "./avatar/agent-avatar.js";
 import { OverlayFrame } from "./overlay-frame.js";
 import { StartupTip } from "./startup-tip.js";
+import { TerminationReason } from "./termination-reason.js";
 import { VmRuntimeBadge } from "./vm-runtime-badge.js";
 
-interface OverlayCopy {
-  Icon?: typeof Asleep;
-  description: string;
-}
-
-const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
-  running: { description: "" },
-  starting: { description: "" },
-  preparing_workspace: {
-    description: "Setting up the workspace. This finishes shortly.",
-  },
-  hibernating: { description: "The agent is going to sleep." },
-  hibernated: {
-    Icon: Asleep,
-    description:
-      "The agent went to sleep after a period of inactivity. Start it to pick up where you left off.",
-  },
-  error: {
-    Icon: Warning,
-    description: "The agent hit an error and isn't running.",
-  },
-  over_budget: {
-    Icon: Warning,
-    description:
-      "Starting this agent would exceed your compute budget. Pause or stop " +
-      "a running agent to free room, then start this one again.",
-  },
-  migrating: {
-    Icon: Migrate,
-    description:
-      "The agent is moving to the new sandbox runtime. It is back once its " +
-      "data has been copied, which takes a few minutes.",
-  },
+const OVERLAY_ICON: Partial<Record<AgentDisplayState, typeof Asleep>> = {
+  hibernated: Asleep,
+  error: Warning,
+  over_budget: Warning,
+  migrating: Migrate,
 };
 
 export function AgentUnavailableOverlay({
@@ -104,7 +78,7 @@ export function AgentUnavailableOverlay({
   }
 
   const { state, powerAction } = display;
-  const { Icon } = OVERLAY_COPY[state];
+  const Icon = OVERLAY_ICON[state];
   const description = overlayDescription(state, agent);
   const waiting = state === "starting" || state === "preparing_workspace";
 
@@ -128,7 +102,13 @@ export function AgentUnavailableOverlay({
         </h2>
         <div className="flex items-center gap-2 empty:hidden">
           <VmRuntimeBadge agent={agent} />
-          {state !== "starting" && <StatusBadge state={state} />}
+          {state !== "starting" && (
+            <StatusBadge
+              state={state}
+              vm={agent.vm}
+              refused={isStartRefusal(agent.podTerminationCode)}
+            />
+          )}
         </div>
       </div>
       {description && (
@@ -156,12 +136,7 @@ export function AgentUnavailableOverlay({
           )}
         </div>
       )}
-      {agent.podTerminationReason && (
-        <p className="flex items-center gap-1.5 max-w-105 font-mono text-sm text-danger">
-          <Warning size={14} className="shrink-0" />
-          {agent.podTerminationReason}
-        </p>
-      )}
+      <TerminationReason agent={agent} size="sm" />
       {powerAction === "start" && (
         <Button onClick={() => wake(agent.id)}>
           <Play size={14} /> Start agent
@@ -174,19 +149,4 @@ export function AgentUnavailableOverlay({
       )}
     </OverlayFrame>
   );
-}
-
-function overlayDescription(
-  state: AgentDisplayState,
-  agent: AgentView,
-): string {
-  if (state === "error" && agent.error) return agent.error;
-  const budget = agent.overBudgetMessage;
-  if (state === "over_budget" && budget)
-    return `${budget[0].toUpperCase()}${budget.slice(1)}.`;
-  if (state === "preparing_workspace") {
-    const failing = agent.workspaceFailures.find((f) => !f.settled);
-    if (failing) return workspaceFailureSentence(failing);
-  }
-  return OVERLAY_COPY[state].description;
 }

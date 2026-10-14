@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: a runner is sized from what its owner's vm agents ask of it. Its pod's memory request follows the memory of the machines that should be running plus the runner's reserve, between the install's request and the limit; its CPU limit follows the vCPUs of those machines plus one machine's worth for the runner, so one owner's runaway VMM cannot take the node; both are changed in place on the running pod — never on the Deployment, which would restart every machine — or left alone, with one warning, on a cluster that cannot resize pods. Its claim is sized from the owner's machine disks, the headroom beside each, and the image cache when it lives on the claim; it grows as agents are added, never shrinks, and is created at `runner.storage` — the ceiling — wherever it could not grow later.
+// TEST_OVERVIEW: a runner is sized from what its owner's vm agents ask of it. Its pod's memory request follows the memory of the machines that should be running plus the runner's reserve, between the install's request and the limit; its CPU limit follows the vCPUs of those machines plus one machine's worth for the runner, so one owner's runaway VMM cannot take the node; both are changed in place on the running pod — never on the Deployment, which would restart every machine — or left alone, with one warning, on a cluster that cannot resize pods. Its claim is the owner's storage pool, which every machine disk may grow into: it is created at the pool, grows when the pool rises, and never shrinks.
 package reconciler
 
 import (
@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	storagev1 "k8s.io/api/storage/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -72,17 +71,6 @@ func resizeCalls(r *AgentReconciler) int {
 		}
 	}
 	return n
-}
-
-func expandableDefaultClass(t *testing.T, r *AgentReconciler, expands bool) {
-	t.Helper()
-	sc := &storagev1.StorageClass{
-		ObjectMeta:           metav1.ObjectMeta{Name: "standard", Annotations: map[string]string{"storageclass.kubernetes.io/is-default-class": "true"}},
-		Provisioner:          "example.com/block",
-		AllowVolumeExpansion: new(expands),
-	}
-	_, err := r.client.StorageV1().StorageClasses().Create(context.Background(), sc, metav1.CreateOptions{})
-	require.NoError(t, err)
 }
 
 func peerVMAgent(t *testing.T, r *AgentReconciler, name, memory, storage string, up bool) {
@@ -169,7 +157,7 @@ func TestTheMachineIsAskedForBeforeTheRunnerPodIsResized(t *testing.T) {
 	assert.Equal(t, "8704Mi", runnerPodRequest(t, r), "the resize still lands in the same reconcile")
 }
 
-// TEST_SCENARIO: the owner's other vm agents share the runner. A peer whose gateway is up should be running and counts toward the request; a peer that is stopped keeps only its disk, so it counts toward the claim but not the request.
+// TEST_SCENARIO: the owner's other vm agents share the runner. A peer whose gateway is up should be running and counts toward the request; a peer that is stopped does not.
 func TestPeersCountByWhetherTheyShouldRun(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
@@ -178,7 +166,7 @@ func TestPeersCountByWhetherTheyShouldRun(t *testing.T) {
 
 	d, err := r.ownerRunnerDemand(context.Background(), testOwner, agent, true)
 	require.NoError(t, err)
-	assert.Equal(t, runnerDemand{memoryMiB: 3072 + 2048, diskGiB: 10 + 20 + 30, machines: 3, vCPUs: 2 * max(r.config.VM.Runner.MachineCPUs, 1)}, d)
+	assert.Equal(t, runnerDemand{memoryMiB: 3072 + 2048, vCPUs: 2 * max(r.config.VM.Runner.MachineCPUs, 1)}, d)
 
 	d, err = r.ownerRunnerDemand(context.Background(), testOwner, agent, false)
 	require.NoError(t, err)
@@ -313,81 +301,37 @@ func TestARefusedResizeIsNotRetried(t *testing.T) {
 	assert.Equal(t, 1, resizeCalls(r))
 }
 
-// TEST_SCENARIO: one 10Gi agent must not cost a 100Gi claim. On a class that can expand, the claim holds the machine's disk, a GiB of headroom beside it, and the image cache budget when the cache lives on the claim — and grows as the owner adds agents, up to `runner.storage` and no further.
-func TestTheRunnerClaimIsSizedFromDemandAndGrowsWithIt(t *testing.T) {
+// TEST_SCENARIO: every machine disk may grow to the owner's whole pool, so the claim is created at the pool, grows when the pool rises, and is never shrunk when it falls.
+func TestTheRunnerClaimIsThePoolAndGrowsWithIt(t *testing.T) {
 	ctx := context.Background()
 	r, _, _ := setupVMReconciler(t, vmAgentCR())
-	expandableDefaultClass(t, r, true)
 
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{diskGiB: 10, machines: 1}, nil))
-	assert.Equal(t, "61Gi", runnerClaim(t, r), "10Gi of disk, 1Gi of headroom and the 50Gi image cache budget")
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, nil))
+	assert.Equal(t, "100Gi", runnerClaim(t, r))
 
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{diskGiB: 30, machines: 2}, nil))
-	assert.Equal(t, "82Gi", runnerClaim(t, r), "a second agent grows the claim")
+	r.config.VM.Runner.Storage = "200Gi"
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, nil))
+	assert.Equal(t, "200Gi", runnerClaim(t, r), "a larger pool grows the claim")
 
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{diskGiB: 10, machines: 1}, nil))
-	assert.Equal(t, "82Gi", runnerClaim(t, r), "a claim is never shrunk")
-
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{diskGiB: 200, machines: 4}, nil))
-	assert.Equal(t, "100Gi", runnerClaim(t, r), "runner.storage is the ceiling")
+	r.config.VM.Runner.Storage = "50Gi"
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, nil))
+	assert.Equal(t, "200Gi", runnerClaim(t, r), "a claim is never shrunk")
 }
 
-// TEST_SCENARIO: an install that puts the image cache on a node directory keeps no images on the claim, so the claim holds only the disks and their headroom.
-func TestACacheOffTheClaimIsNotCountedOnIt(t *testing.T) {
-	ctx := context.Background()
-	r, _, _ := setupVMReconciler(t, vmAgentCR())
-	expandableDefaultClass(t, r, true)
-	r.config.VM.Runner.ImageCacheHostPath = "/var/lib/platform-images"
-
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{diskGiB: 10, machines: 1}, nil))
-	assert.Equal(t, "11Gi", runnerClaim(t, r))
-}
-
-// TEST_SCENARIO: a claim sized for today is safe only where it can grow tomorrow. On a class without volume expansion — or one the controller cannot read — the claim is created at `runner.storage`, as before, so the owner's next agent still fits.
-func TestAClaimThatCouldNotGrowIsCreatedAtTheCeiling(t *testing.T) {
-	for _, tc := range []struct {
-		name  string
-		setup func(t *testing.T, r *AgentReconciler)
-	}{
-		{"class without expansion", func(t *testing.T, r *AgentReconciler) { expandableDefaultClass(t, r, false) }},
-		{"no class the controller can read", func(*testing.T, *AgentReconciler) {}},
-		{"named class that is missing", func(_ *testing.T, r *AgentReconciler) { r.config.VM.Runner.StorageClass = "fast" }},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			r, _, _ := setupVMReconciler(t, vmAgentCR())
-			tc.setup(t, r)
-			require.NoError(t, r.applyRunnerPVC(context.Background(), testOwner, runnerDemand{diskGiB: 10, machines: 1}, nil))
-			assert.Equal(t, "100Gi", runnerClaim(t, r))
-		})
-	}
-}
-
-// TEST_SCENARIO: the owner's demand outgrows a claim whose class refuses to expand. The runner serves every vm agent of that owner and works exactly as before at the size it has, so the refusal must not fail the reconcile.
+// TEST_SCENARIO: the owner's pool outgrows a claim whose class refuses to expand. The runner serves every vm agent of that owner and works exactly as before at the size it has, so the refusal must not fail the reconcile.
 func TestAClaimThatCannotGrowKeepsTheRunnerReconciling(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
-	expandableDefaultClass(t, r, true)
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{}, nil))
-	require.Equal(t, "50Gi", runnerClaim(t, r))
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, nil))
+	require.Equal(t, "100Gi", runnerClaim(t, r))
+	r.config.VM.Runner.Storage = "200Gi"
 	r.client.(*fake.Clientset).PrependReactor("update", "persistentvolumeclaims", func(k8stesting.Action) (bool, runtime.Object, error) {
 		return true, nil, fmt.Errorf("persistentvolumeclaims %q is forbidden: only dynamically provisioned pvc can be resized and the storageclass that provisions the pvc must support resize", r.runnerName(testOwner))
 	})
 
 	require.NoError(t, r.Reconcile(ctx, agent), "a claim that cannot grow must not take the owner's runner with it")
-	assert.Equal(t, "50Gi", runnerClaim(t, r), "the claim keeps the size it has")
-}
-
-// TEST_SCENARIO: a claim created under the old rule, at `runner.storage`, is already larger than its owner's demand. Kubernetes cannot shrink it, so it stays as it is.
-func TestAnExistingLargerClaimStaysAsItIs(t *testing.T) {
-	ctx := context.Background()
-	r, _, _ := setupVMReconciler(t, vmAgentCR())
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{diskGiB: 10, machines: 1}, nil))
-	require.Equal(t, "100Gi", runnerClaim(t, r))
-	expandableDefaultClass(t, r, true)
-
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{diskGiB: 10, machines: 1}, nil))
-	assert.Equal(t, "100Gi", runnerClaim(t, r))
+	assert.Equal(t, "100Gi", runnerClaim(t, r), "the claim keeps the size it has")
 }
 
 // TEST_SCENARIO: an install mistypes `runner.storage` after its owners' claims exist. Those claims keep the size they have and the runners keep reconciling, because a values typo must cost a warning rather than every owner's fleet.
@@ -395,7 +339,7 @@ func TestAMistypedCeilingLeavesExistingClaimsAlone(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
-	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, runnerDemand{}, nil))
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner, nil))
 
 	r.config.VM.Runner.Storage = "a lot"
 	require.NoError(t, r.Reconcile(ctx, agent))

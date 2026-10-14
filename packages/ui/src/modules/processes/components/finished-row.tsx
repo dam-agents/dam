@@ -6,7 +6,8 @@ import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
 import { timeAgo } from "../../../lib/format-time.js";
-import { ENDED_BY_LABEL } from "../lib/process-copy.js";
+import { ENDED_BY_LABEL, processTitle } from "../lib/process-copy.js";
+import { ContainerIcon } from "./container-icon.js";
 import { ProcessCommand } from "./process-command.js";
 
 interface Props {
@@ -30,7 +31,8 @@ export function FinishedRow({ row, now, outputOpen, onOpenOutput }: Props) {
       {...clickableProps(hasOutput ? () => onOpenOutput(row.key) : undefined)}
     >
       <EndedIcon endedBy={row.endedBy} />
-      <ProcessCommand command={row.command} />
+      {row.container && <ContainerIcon container={row.container} />}
+      <ProcessCommand command={row.command} title={processTitle(row)} />
       <span className="shrink-0 tabular-nums">
         {timeAgo(row.finishedAt, now)}
       </span>

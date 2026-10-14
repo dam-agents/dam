@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  agentUsage,
   sandboxSubtitle,
-  type SandboxSubtitleLookup,
-  sandboxSubtitleParts,
 } from "../../modules/agents/utils/sandbox-subtitle.js";
 import { findTemplate } from "../../modules/templates/lib/find-template.js";
 import type { AgentView, TemplateView } from "../../types.js";
@@ -47,41 +46,55 @@ const agent: AgentView = {
   runtimeMigratable: false,
 };
 
-const lookup: SandboxSubtitleLookup = {
-  templates: [template],
-  connectionTemplateIdById: new Map([["provider", "ibm-litellm"]]),
-  slotUnit: null,
-};
+const slotUnit = { cpuMilli: 1000, memoryMi: 1024 };
 
 describe("agent card subtitle", () => {
-  it("leaves the template out, starting with the provider", () => {
-    expect(sandboxSubtitle(agent, lookup)).toBe("IBM ETE LiteLLM Proxy");
+  const sized = { ...agent, size: { cpu: "2", memory: "2Gi" } };
+
+  it("names the resource class of a container agent, never its provider", () => {
+    expect(sandboxSubtitle(sized, slotUnit)).not.toMatch(/LiteLLM/);
+    expect(sandboxSubtitle(sized, slotUnit)).toBeTruthy();
+  });
+
+  // TEST_SCENARIO: a vm agent shows its own measured memory and storage as figures, never a size label, and a figure not measured, zero, or a paused agent's memory is left out.
+  it("shows a vm agent's own share of its pools, and nothing it has not measured", () => {
+    const vmAgent = { ...sized, vm: true, state: "running" as const };
+    const usage = (memoryUsedBytes: number, storageUsedBytes: number) => ({
+      memory: { usedBytes: 0, limitBytes: 0, level: "ok" as const },
+      storage: { usedBytes: 0, usableBytes: 0, level: "ok" as const },
+      agents: [{ id: "agent", memoryUsedBytes, storageUsedBytes, cpuMilli: 0 }],
+      observedAt: "",
+    });
+    expect(sandboxSubtitle(vmAgent, slotUnit)).toBeNull();
+    expect(agentUsage(vmAgent, usage(1.5 * 1024 ** 3, 8 * 1024 ** 3))).toEqual({
+      memoryBytes: 1.5 * 1024 ** 3,
+      storageBytes: 8 * 1024 ** 3,
+    });
+    expect(agentUsage(vmAgent, usage(0, 8 * 1024 ** 3))).toEqual({
+      memoryBytes: null,
+      storageBytes: 8 * 1024 ** 3,
+    });
+    expect(
+      agentUsage(
+        { ...vmAgent, state: "hibernated" },
+        usage(512 * 1024 ** 2, 0),
+      ),
+    ).toBeNull();
+    expect(agentUsage(vmAgent)).toBeNull();
+    expect(agentUsage(sized, usage(1, 1))).toBeNull();
   });
 });
 
-describe("agent template display names", () => {
+describe("findTemplate", () => {
   it.each(["default", "claude-code", "codex", "pi-agent", "bob"])(
-    "shows the name for %s even on an older image",
+    "resolves %s, an id or an alias of an older image",
     (templateId) => {
-      expect(
-        sandboxSubtitleParts({ ...agent, templateId }, lookup).harness,
-      ).toBe("Coding agent");
+      expect(findTemplate([template], templateId)).toBe(template);
     },
   );
 
-  it.each([null, "unknown"])(
-    "keeps the image fallback for template %s",
-    (templateId) => {
-      expect(
-        sandboxSubtitleParts({ ...agent, templateId }, lookup).harness,
-      ).toBe(agent.image);
-    },
-  );
-
-  it("keeps the image fallback while the catalogue is loading", () => {
-    expect(
-      sandboxSubtitleParts(agent, { ...lookup, templates: [] }).harness,
-    ).toBe(agent.image);
+  it.each([null, "unknown"])("finds nothing for template %s", (templateId) => {
+    expect(findTemplate([template], templateId)).toBeUndefined();
   });
 
   it("prefers a real template id over an alias regardless of list order", () => {
@@ -96,9 +109,6 @@ describe("agent template display names", () => {
       [custom, template],
     ]) {
       expect(findTemplate(templates, "claude-code")).toBe(custom);
-      expect(
-        sandboxSubtitleParts(agent, { ...lookup, templates }).harness,
-      ).toBe("Custom Claude");
     }
   });
 });

@@ -11,6 +11,13 @@ import {
   createLeaseApi,
   podBaseUrl,
 } from "./modules/agents/infrastructure/k8s.js";
+import {
+  composeStorageGate,
+  listRunnerUsageOwners,
+  readRunnerUsage,
+} from "./modules/budgets/index.js";
+import { composeResourceAlerts } from "./modules/resource-alerts/index.js";
+import { parseInfraAgent } from "./modules/agents/infrastructure/agent-mappers.js";
 import { createKitUpdateMarks } from "./modules/agents/infrastructure/kit-update-marks.js";
 import {
   AGENTS_PLURAL,
@@ -22,6 +29,7 @@ import {
 import {
   composeAgentsModule,
   composePublicAgentPage,
+  attachProviderToBareAgents,
   connectionGrantProvisioner,
   createAgentsRepository,
   createAgentEnvRepository,
@@ -86,6 +94,7 @@ import {
   findIdentityByExternalUser,
   findExternalUsersByIdentity,
   upsertIdentityLink,
+  findExternalLinksByIdentity,
   deleteIdentityLink,
 } from "./modules/channels/infrastructure/identity-links-repository.js";
 import {
@@ -248,6 +257,7 @@ import {
   createConnectionGrantsCleanupHook,
   listConnectionGrantAgentIds,
 } from "./modules/connections/compose.js";
+import { startAttachFirstProviderSaga } from "./modules/connections/sagas/attach-first-provider.js";
 import { createConnectionRulesSyncAdapter } from "./modules/egress-rules/compose.js";
 import {
   createAgentArtifactsSweeper,
@@ -535,7 +545,10 @@ export async function bootstrap() {
     namespace: config.namespace,
     bullConnection,
     agentRunningPort: {
-      isRunning: (agentId) => agentsRepo.isReady(agentId),
+      // UNIT_BOUNDARY_DESCRIPTION: a migrated machine is Ready only after the Backend switches, but its runtime waits just 15 s for the env the copy left behind before it starts the harness without it. A verified machine already holds the Agent's Service, so it takes the push at once.
+      isRunning: async (agentId) =>
+        (await agentsRepo.isReady(agentId)) ||
+        agentsRepo.peekCached(agentId)?.runtimeMigration?.phase === "verified",
     },
     snapshotWriter: createHarnessConfigSnapshotWriter({
       db,
@@ -763,6 +776,15 @@ export async function bootstrap() {
     log: (m) => getLogger().warn(`[public-agent-profile] ${m}`),
   });
   const publicAgentProfileSub = publicAgentPage.startSaga();
+  const attachFirstProviderSub = startAttachFirstProviderSaga(
+    async (owner, connectionId) =>
+      attachProviderToBareAgents(
+        connectionsServiceFor(owner),
+        harnessCatalog,
+        await agentsRepo.list(owner),
+        connectionId,
+      ),
+  );
   const publicAgentPageService = publicAgentPage.service;
   await periodicJobs.register(
     "public-agent-profile-reconcile",
@@ -869,7 +891,11 @@ export async function bootstrap() {
     bus: redisBus,
     log: (m) => getLogger().warn(`[live-events] ${m}`),
     k8s: k8sClient,
-    onAgentChanged: () => sessionWatcher.agentsChanged(),
+    onAgentChanged: (agentId) => {
+      sessionWatcher.agentsChanged();
+      const cached = agentStateCache.peekCached(agentId);
+      if (cached) resourceAlerts.agentChanged(parseInfraAgent(cached));
+    },
   });
   liveEventsModule.start();
   const agentWatchRole: LeaderRole = {
@@ -908,6 +934,7 @@ export async function bootstrap() {
   const identityLinkService = createIdentityLinkService({
     findByExternalUser: findIdentityByExternalUser(db),
     findExternalUsers: findExternalUsersByIdentity(db),
+    findExternalLinks: findExternalLinksByIdentity(db),
     upsert: upsertIdentityLink(db),
     delete: deleteIdentityLink(db),
   });
@@ -1122,6 +1149,21 @@ export async function bootstrap() {
     blobs: createRedisBlobHandoff(sharedRedis),
     isLeader: () => leaderLease.isRunning("channels"),
   });
+
+  const resourceAlerts = composeResourceAlerts({
+    db,
+    notify: (ownerSub, text) => channelManager.notifyPerson(ownerSub, text),
+    listStorageOwners: () => listRunnerUsageOwners(k8sClient),
+    readStorage: async (ownerSub) =>
+      (await readRunnerUsage(k8sClient, ownerSub))?.storage ?? null,
+    listOwnerAgents: async (ownerSub) =>
+      (await agentStateCache.list(ownerSub)).map(parseInfraAgent),
+    uiBaseUrl: config.uiBaseUrl,
+    log: (m) => getLogger().warn(`[resource-alerts] ${m}`),
+  });
+  await periodicJobs.register("resource-alerts", 5 * 60_000, () =>
+    resourceAlerts.evaluateStorage(),
+  );
 
   const leaderLease = createLeaderLease({
     leases: leaseApi,
@@ -1433,6 +1475,7 @@ export async function bootstrap() {
   const harnessAgentsServiceFor = (owner: string) =>
     composeAgentsModule({
       api,
+      storageGate: composeStorageGate({ k8s: k8sClient, owner }),
       resolveSlackWorkspace,
       agentStateCache,
       namespace: config.namespace,
@@ -1551,7 +1594,7 @@ export async function bootstrap() {
       liveAgentsRepo.writeRuntimeMigration(id, undefined, patch),
     log: (message) => process.stderr.write(`${message}\n`),
   });
-  await periodicJobs.register("runtime-migration-switch", 15_000, () =>
+  await periodicJobs.register("runtime-migration-switch", 2_000, () =>
     runtimeMigrationSwitch.tick(),
   );
 
@@ -1724,6 +1767,7 @@ export async function bootstrap() {
 
   const cleanup = async (): Promise<void> => {
     publicAgentProfileSub.unsubscribe();
+    attachFirstProviderSub.unsubscribe();
     usageMetrics.stop();
     kbShareAutoRefresh.unsubscribe();
     approvalsWakeSaga.unsubscribe();
@@ -1733,6 +1777,7 @@ export async function bootstrap() {
     await agentStateCache.stop();
     await leaderLease.stop();
     liveEventsModule.stop();
+    resourceAlerts.stop();
     await periodicJobs.close();
     channelRpc.close();
     await channelManager.stopAll();

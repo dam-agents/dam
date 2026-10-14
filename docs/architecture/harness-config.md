@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -18,7 +18,9 @@ It shows loading, unavailable and empty listings explicitly, with a retry for fa
 The catalog remains usable where discovery is not configured.
 Before a session starts, the picker lists every provider the harness accepts in one stable order: an attached provider shows its models and a disconnect action, and one not attached offers to attach it, so a provider never carries another provider's model.
 It grays out a harness that no provider the owner holds accepts.
-With no provider at all, the chat opens the provider list in a modal, and the picker's place holds a link that reopens it.
+With no provider at all, the chat opens the provider list in a modal.
+While the agent holds no provider, the chat blocks sending, and the picker's place holds a link to that modal; a provider connected or picked there is attached to the agent.
+With no pair picked or remembered, the picker preselects the default harness on the first granted provider it accepts, else the first carried harness a granted provider fits, with its default model.
 Until the agent has reported the harnesses it carries, as a new agent has not before it first answers, the picker shows the pair a new session is expected to run on, from the Agent's own harness, its granted providers and the harness catalog: the pair picked for the next session, else the remembered pair when it names that harness, otherwise the harness on the first granted provider it accepts, with its default model.
 Opened then, it shows a loader until the list arrives, and a session started meanwhile names its pair only after the harnesses and the remembered pair are read again.
 Until the harness catalog arrives, the picker label is a loader, never a raw harness name.
@@ -81,7 +83,10 @@ Reads that overlap share one listing.
 With no kept list, on the first read for an endpoint, the read waits for the listing.
 The seed and a lease's model never answer from the kept list: they ask the provider, and what it answers refreshes the list.
 A kept list can offer a model the provider has since retired.
-On Claude Code a name the gateway published for a tier, or one naming a tier, then goes to that tier's current model; any other name, on any harness, reaches the provider unchanged and the turn reports its refusal, so a stale list never runs a turn on a model nobody picked.
+On Claude Code a name the gateway published for a tier, or one naming a tier, then goes to that tier's current model.
+Any other name reaches the provider unchanged, so a model the provider serves without listing it still runs.
+When the provider refuses a name it does not list, and its refusal names that model, Claude Code's gateway sends the turn again on the model its opus tier maps to, Claude Code's default, and logs the remap; on other harnesses the turn reports the refusal.
+An existing session's label marks a model its provider no longer lists, so a turn that runs on another model than the pick never does so unseen.
 Which choices a harness offers is its catalog's to say: Codex's offers no mode, because its image runs it never asking for approval, so there is no permission mode to pick and nothing for a [channel turn](channel-turns.md) to refuse.
 
 ## Model discovery and the seeded model
@@ -110,9 +115,13 @@ What no listing can say is whether the account has been granted a model: that is
 Claude Code's catalog is model tiers, which Claude Code itself resolves to the region's Bedrock profiles ([connections](connections.md#app-preset-aws-bedrock)), so its source asks only the LiteLLM-shaped endpoint a connection points it at, and extends the tiers rather than replacing them.
 There its in-pod model gateway defaults every tier to the newest model the provider has for it, which on a provider that serves no Claude model is one model for all of them unless the Connection pins the slots; the provider's other models are reachable only by name, so the panel lists them after the tiers, under the lowercased, `claude/`-prefixed names the gateway publishes to Claude Code itself, so a choice made in the panel and one made in Claude Code's own model picker are the same value.
 Nothing is seeded: the tiers already resolve on any provider.
-Claude Code starts only once the gateway answers with the tier models, so the gateway keeps the last list each provider gave it on the agent's home volume and answers from that list at once on the next start, refreshing it from the provider afterwards.
+Claude Code reads its tier models only at start, from the gateway, so the gateway keeps the last list each provider gave it on the agent's home volume and answers from that list at once on the next start, refreshing it from the provider afterwards.
 A name it gave Claude Code for a tier that the provider has since retired goes to that tier's current model, so a kept list that is out of date costs nothing.
-With no kept list, on the agent's first start or a new provider, it waits for the listing at most three seconds; a provider still unlisted then leaves the tiers to the request-time mapping above.
+With no kept list, on the agent's first start or a new provider, the gateway does not wait for the listing: it listens at once and gives Claude Code its own tier names, `claude/opus` and the like, which each request maps to that tier's model once the listing is in, the request waiting for it.
+Claude Code knows those names no better than a provider's own, so it sizes the request as for any model it does not know; the next start gets the listed names.
+When the listing failed, the request goes upstream on the bare tier name, and a provider refuses it.
+On that refusal the gateway lists once more and, when the list is in, resends the turn on the tier's model: a provider attached moments ago can fail the first listings while its egress opens, and still answer by the time it refuses.
+A provider that never lists keeps refusing the turn.
 
 CurveBender pins Claude Code's Sonnet slot to its non-reasoning Nemotron model for the auto-permission classifier, and every work slot and the default conversation to GLM.
 It also turns off the server-side auto-mode check: GLM cannot answer the classifier's non-thinking request within its deadline, so the model pin and that flag are needed together.

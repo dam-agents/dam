@@ -42,6 +42,7 @@ export {
   satellites,
   satelliteGrants,
   satelliteJobs,
+  resourceAlerts,
 } from "./schema.js";
 export {
   eq,

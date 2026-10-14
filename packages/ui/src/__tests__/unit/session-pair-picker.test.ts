@@ -414,6 +414,32 @@ describe("session pair model choices", () => {
     },
   );
 
+  // TEST_SCENARIO: The provider no longer lists the session's model, as when it retired the model after the session picked it, so the label says so instead of showing the pick as if it still ran.
+  it("marks a session model the provider no longer lists", () => {
+    state.models = {
+      curve: { availableModels: [{ value: "glm-5-4", name: "GLM 5.4" }] },
+    };
+    const label = (model: string) =>
+      /data-testid="session-model-picker"[^>]*>(.*?)<\/button>/.exec(
+        renderToStaticMarkup(
+          createElement(ModelIndicator, {
+            agentId: "agent",
+            harness: "pi",
+            provider: "curve",
+            model,
+            carried,
+            onChoose: vi.fn(),
+            onConfigure: vi.fn(),
+            onNewSession: state.newSession,
+          }),
+        ),
+      )?.[0];
+    expect(label("glm-5-3")).toContain(
+      "glm-5-3 · Pi · Curve · Model not offered",
+    );
+    expect(label("glm-5-4")).not.toContain("Model not offered");
+  });
+
   it("uses a harness catalog only when discovery is explicitly not configured", () => {
     state.models = { ibm: { availableModels: null } };
     expect(renderPicker()).toContain("Static model");

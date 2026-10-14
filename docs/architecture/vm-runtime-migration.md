@@ -1,12 +1,13 @@
 # VM runtime migration
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 A **runtime migration** moves one container Agent onto the `vm` Backend's [runners](vm-runner.md) at the user's request, and can be undone until the Agent's machine has booted from the copy; the UI offers it only to users who opted into the new runtime.
 `HOME` is the only path a machine keeps whatever image it boots, and a container's root outside its persisted mounts is the image's and keeps nothing ([persistence](persistence.md#per-agent-pvcs)), so a migration carries exactly one thing: the volume that held `HOME`, copied as the machine's home.
 An Agent whose mounts persist any other path — outside `HOME`, or a volume of its own inside it — is refused with each such path named, rather than moved without it; a mount that is not persisted, such as `/tmp`, is carried by nothing and refuses nothing.
 The api-server plans from the mounts the controller renders — the Agent's own, or the install's template defaults when it names none — and refuses such a path, an Agent that does not persist `HOME`, which leaves nothing to carry, an Agent already being moved or still clearing up an earlier move, and one mid-way through a storage migration; the UI offers the move from that same refusal.
-Otherwise it writes a request and no spec: the **target** shape — the disk sized for `HOME`, which the preflight raises to its volume's capacity — and a **snapshot** of every field the switch will change.
+Starting the move is also refused while its owner's storage is 90% used; the plan does not say so in advance.
+Otherwise it writes a request and no spec: the **target** shape and a **snapshot** of every field the switch will change.
 That write, and every later one — an abort, a retry, the switch — is conditioned on the version of the Agent it was decided from, so a change in between — a storage migration starting, a second request, the controller's status — fails it as a conflict, decided again from a fresh read and reported to retry if it keeps losing.
 The container spec stays the Agent's spec until the machine has proven the copy, so the api-server stays the only spec writer and the switch is its write, not the controller's.
 The rest is the controller's, and every step is derived from cluster state and from the migration's status condition — its phase, its reason and the copy attempts — so a restart resumes it.
@@ -14,8 +15,8 @@ It first makes the owner's runner and the machine, stopped, in the target shape,
 Memory is admitted only when a machine starts, so a runner too small for it shows at the boot, still before the point of no return.
 Only then does it scale the container's StatefulSet to zero — keeping it, and its claims, for an abort, and the storage migration leaves those claims alone while a runtime migration runs — and record which volume held `HOME`; once the pod is gone it runs a copy Job — the runner image's own archive writer, reading that volume read-only, or, for a volume only one node can attach, a CSI clone of it cut for that attempt — that streams it to the owner's runner; and only then lets the machine boot, so platform-init seeds the fresh disk from the copy instead of from the image.
 The machine boots once even for an Agent that was asleep or stopped when the move began, and that stop holds again once the guest has answered.
-While it boots the gateway serves the machine, admitting the owner's runner, and the container stays down.
-A guest that answers with its home from the copy's seed, as the next paragraph says, makes the migration **verified**, the point of no return; the api-server, which polls for verified Agents, then switches the Backend to the target shape and withdraws the request in one write, and only after that does the controller remove the StatefulSet, the headless Service and the seed and retain the old home volume.
+While it boots the gateway serves the machine, admitting the owner's runner, and the container stays down, so the Agent's Service routes to the machine instead, as a vm Agent's does; an abort before the verified boot gives the container its headless Service back.
+A guest that answers with its home from the copy's seed, as the next paragraph says, makes the migration **verified**, the point of no return; the api-server, which polls for verified Agents, then switches the Backend to the target shape and withdraws the request in one write, and only after that does the controller remove the StatefulSet and the seed and retain the old home volume.
 A copy that fails is reported with the copy Job's own error and retried, and so is one whose pod has not started ten minutes after its Job was made — a volume still attached to another node, a mount that fails — with the reason its pod's Events give; after three attempts, or once the migration has run for six hours, it is **failed**, with the reason on the Agent.
 A copy no fresh attempt can change — a home past the copy's walk limits, or larger than the machine's disk — fails it at the first attempt instead, saying what the user can change.
 A failed migration keeps a container it had stopped stopped and one it never stopped running, until the user retries or aborts.
@@ -57,7 +58,7 @@ The clone is owned by the Agent and carries none of the Agent's volume labels, s
 A shared volume is read in place, as is one no CSI driver serves or whose PersistentVolume the controller may not read; an install whose driver cannot clone sets `virtualization.runtimeMigration.cloneSource: false` to read every volume in place.
 What holds a migration up is said as [observability](observability.md#runtime-migration) describes.
 
-**What the user is told.** Before anything is written, the api-server answers a read-only **plan** for the move, read off the very request a migrate would record and the same refusal it checks, so the plan and the request cannot disagree: the paths that cannot move and why, the disk's new size, whether a sleeping Agent will be started to finish the move — which counts against its owner's [budget](budgets.md) while it runs — and the retention window below, read from the same chart value the controller uses.
+**What the user is told.** Before anything is written, the api-server answers a read-only **plan** for the move, read off the same refusal a migrate checks, so the plan and the request cannot disagree: the paths that cannot move and why, that the new disk grows inside its owner's storage pool rather than having a size of its own, whether a sleeping Agent will be started to finish the move — which counts against its owner's [budget](budgets.md) while it runs — and the retention window below, read from the same chart value the controller uses.
 The confirm dialog shows that plan, and says the move can be aborted until the Agent has started on the new runtime.
 An Agent the api-server would refuse keeps a disabled Migrate whose card, opened by hover or tap, lists the refusal reasons in the words the request refuses with.
 From the container's stop until the machine has booted from the copy the Agent reads as **migrating**, ahead of every state but an error, and so does one whose migration failed after the stop, since it stays stopped until retried or aborted; through the preflight, an abort and a verified boot it reads as whichever side is starting or running.
@@ -73,6 +74,10 @@ An operator recovers from a retained volume as the runbook below says, and ends 
 Owners stay numeric, except that the uid and gid the install runs agent containers as become root's, the user a machine's harness runs as, so git and ssh accept what the agent owned; every other owner is kept.
 Extended attributes, ACLs, sockets, fifos and devices are not carried.
 What only the container used stays behind: the runtime's env file, which the platform pushes again when the machine's runtime first says hello, so no stale credentials land on the disk, and the container's link from `~/.cache` to pod-local scratch, so a machine keeps its caches in `HOME`.
+The machine's runtime waits for the env file for 15 seconds before it starts the harness without it, and a harness that started without its env is recycled when the push lands, which waits up to 10 seconds for a call in flight and then fails it.
+An Agent is ready only after the switch, so the push does not wait for that: it goes out once the migration is verified, which the guest's first answer makes it, through the Service that already routes to the machine.
+Only a verified machine gets it, because a machine whose home is not the copy is deleted, and the env holds the Agent's credentials.
+The api-server looks for verified Agents every 2 seconds, so the switch follows soon after.
 The copy Job walks the home within a bound on depth, entries and memory, and a home past one fails the copy with a message that names it.
 The runner drops an upload that sends nothing for minutes, because the upload holds the machine down; it flushes the seed and the share before it answers, and removes a seed a killed runner left half-staged at the machine's next action or when the seed is removed.
 The copy Job gives up an upload the runner stops reading or never answers, so the attempt is retried.

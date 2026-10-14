@@ -1,6 +1,6 @@
 # Experimental features
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -15,6 +15,7 @@ Stored rows are kept, so returning a feature to `experimental` restores each use
 
 A per-user flag says what a user wants to see; it cannot say what the install can do.
 The same module therefore answers a second, install-wide question — whether this deployment supports microVMs — read from the chart's own value rather than from any stored row.
+That answer also says whether the install pins every new agent on the new runtime, decided the same way as the create path, so the kit card and the kit page show the VM badge, and no size, for every kit there; until it arrives they show neither.
 The settings tab leaves the new sandbox runtime out entirely on an install that cannot run it, since its switch would change nothing there.
 A surface that needs both, like either form that creates an agent, asks both and acts only once each has answered: an unanswered question reads like a no, and an agent would otherwise be created as something its author did not choose.
 **A kit that declares `backend: vm` is the exception, and reads neither answer** ([starter-kits](starter-kits.md#kit-backend)): the kit says its work needs a machine, so the agent gets one whether or not its owner ever opted in, and a kit that declares nothing gets the ordinary sandbox even from an owner who did.
@@ -34,7 +35,7 @@ A **problem** is logged and named on every vm Agent whose runner is not ready.
 
 What the check cannot see is said as a **warning**, logged only and never on an Agent — so silence on an Agent is not a pass:
 
-- **Nodes it may not list.** Reading nodes needs a cluster-wide read-only grant the chart adds with virtualization; an install without it gets a log line instead of the device check.
+- **Nodes it may not list.** Reading nodes needs a cluster-wide read-only grant the chart adds with virtualization, which also feeds the node capacity in the operators' [pool metrics](observability.md#alerts); an install without it gets a log line instead of the device check, and pool metrics without node capacity.
 - **Egress that reaches the cluster.** The runner's egress ranges match in-cluster addresses too.
   No portable API names the pod range, so the exceptions are never defaulted from the cluster; the controller instead checks the ones configured against an address it knows sits in each range — the API server's Service address and its own pod address.
   Reaching one is only a warning, because an install may leave a range open on purpose.

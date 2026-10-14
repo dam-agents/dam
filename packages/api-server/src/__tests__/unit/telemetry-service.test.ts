@@ -150,6 +150,31 @@ describe("createTelemetryService", () => {
     }
   });
 
+  it("prices a Pi turn from the call records its image exports", async () => {
+    // TEST_SCENARIO: Pi's records carry the same attributes under pi.* event names, and its turns must not read as free.
+    const { reader } = spyReader({
+      logRecords: async () => [
+        log({ event: "pi.user_prompt", service: "pi" }),
+        log({
+          at: "2026-09-14T12:00:01.000Z",
+          event: "pi.api_request",
+          service: "pi",
+          attributes: { cost_usd_micros: "7500", model: "aws/claude-opus-4-8" },
+        }),
+      ],
+    });
+    const service = createTelemetryService({
+      reader,
+      listOwnedAgents: async () => owned,
+    });
+
+    const result = await service.turns(TURNS_QUERY);
+
+    expect(result.available && result.turns).toMatchObject([
+      { calls: 1, costUsd: 0.0075, models: ["aws/claude-opus-4-8"] },
+    ]);
+  });
+
   it("keeps the newest turns when the cap bites", async () => {
     /**
      * TEST_SCENARIO: reading oldest-first must not turn the row cap into a
