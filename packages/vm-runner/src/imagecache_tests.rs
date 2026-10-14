@@ -669,3 +669,33 @@ fn a_resolve_that_fails_holds_nothing() {
     assert!(locked(&cache.memory).holds.is_empty());
     assert_eq!(scratch_trees(&cache), 0);
 }
+
+// TEST_SCENARIO: a fetch that does not fit used to start anyway and evict only once it had succeeded, so a disk or budget it filled failed the fetch while unheld trees sat there. Unheld entries are evicted before the download starts, against what the image takes unpacked rather than its compressed size, so the room is there even when the fetch then fails. The evicted tree is deleted off the resolve's thread and is gone soon after.
+#[test]
+fn a_fetch_evicts_what_it_needs_before_it_downloads() {
+    let f = Fixture::new("room-first", PUBLIC_CRANE);
+    let cache = f.cache(|c| {
+        c.budget = 100;
+        c.hold_lease = Duration::ZERO;
+    });
+    let old = digest_of(&cache, "quay.io/x/a:1");
+    fs::write(f.dir.path().join("size"), "1000").unwrap();
+    fs::write(f.dir.path().join("export-fails"), "").unwrap();
+    let failed = cache.resolve("quay.io/x/b:1", &[]);
+    assert!(failed.resolved.is_err());
+    let report = failed.fetched.expect("the fetch ran");
+    assert_eq!(
+        report.freed.len(),
+        1,
+        "nothing was evicted before the fetch"
+    );
+    assert!(!cache.digest_entry(&old).exists());
+    let started = Instant::now();
+    while scratch_trees(&cache) > 0 || cache.reclaiming.load(Ordering::Relaxed) > 0 {
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "the evicted tree was never deleted"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}

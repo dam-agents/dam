@@ -1,6 +1,6 @@
 # VM image cache
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 A machine may reach only its gateway, so its image is fetched for it and unpacked into a tree every machine of that image mounts read-only.
 Where that tree lives is the one part of the runner's storage an install may move off its claim.
@@ -23,17 +23,19 @@ The writer remembers what a tag resolved to for a few minutes; a pinned digest i
 A machine records the digest it booted, which is how its runner knows, even after a restart, which tree it holds once the tag moves on.
 Every registry read names the host's platform, so a tag resolves to that platform's own image rather than to a multi-arch index, and each tree records the platform it was unpacked for: a claim that moves to a node of another architecture fetches a pinned index digest again rather than booting a tree it cannot run.
 
-**A tree is either whole under its name or not there.** A fetch unpacks into a scratch tree, flushes it to disk and only then renames it into place; an eviction renames the tree away before it deletes it.
+**A tree is either whole under its name or not there.** A fetch unpacks into a scratch tree, flushes it to disk and only then renames it into place; an eviction renames the tree away before it deletes it, and deletes it in the background, so no resolve waits on it.
 A writer that dies mid-fetch or mid-eviction leaves only a scratch tree, which the next open reclaims, never a partial tree a lookup would take as complete.
 A fetch that finds an incomplete tree, or another platform's, under its name moves it aside and puts its own in place.
 A resolve has one deadline for everything it does, fetch included, and a runner waits a little past it, so a service that is slow is told apart from one that is gone — only one that is gone lets a runner boot a tree it already holds.
-A fetch that fails for its image — a registry refusing the export, a stream tar cannot unpack — is reported as an unavailable image, and a disk that fills, or has less room than the image's manifest names before the download starts, as a lack of capacity, never as a boot to retry at once into the same state.
+A fetch that fails for its image — a registry refusing the export, a stream tar cannot unpack — is reported as an unavailable image, and a disk that fills, or has less room than the image takes unpacked before the download starts, as a lack of capacity, never as a boot to retry at once into the same state.
 On a runner's own volume that disk is the owner's claim, so there it is reported as the owner's storage being full ([persistence](persistence.md#per-agent-pvcs)).
 
 **Eviction never frees a tree a machine is running from.** It takes the oldest write first, down to a byte count the install states, sparing what is held.
+A fetch evicts before it downloads, until both the budget and the filesystem have room for the tree it unpacks.
+OCI metadata names only compressed sizes, so that tree is taken to be three times the compressed size the manifest names.
 A runner holds the digests its machines boot by naming them again every minute, and a hold lapses only once nobody names it — a runner that stopped has no machines left.
 A hold only extends, so no runner can release what another holds, and only a tree on disk is held, so a resolve that fails holds nothing; past half again its budget, the service fetches nothing.
-Each fetch under way counts toward that ceiling at the compressed size its manifest names, so fetches that start together cannot each find the cache under it.
+Each fetch under way counts toward that ceiling at that unpacked estimate, so fetches that start together cannot each find the cache under it.
 A service that restarts has forgotten every hold, so it evicts nothing until the runners have had time to name theirs again.
 A runner whose own claim runs short sheds every tree no machine holds, however far inside its budget the cache is, because a tree can be fetched again and a machine disk on the same claim cannot.
 

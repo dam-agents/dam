@@ -2,6 +2,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -26,6 +27,7 @@ pub struct ImageCache {
     memory: Mutex<Memory>,
     measuring: Mutex<()>,
     fetching: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    reclaiming: Arc<AtomicU64>,
 }
 
 pub const ROOTFS_DIR: &str = "rootfs";
@@ -47,6 +49,9 @@ pub fn node_fetch_ceiling(budget: i64) -> Option<u64> {
     let budget = u64::try_from(budget).ok().filter(|b| *b > 0)?;
     Some(budget.saturating_add(budget / 2))
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: how much larger an unpacked tree is taken to be than the compressed size its manifest names. OCI metadata gives no unpacked size, and agent images unpack to about two to three times their layers; this is a fixed guess. Reading each gzip layer's trailer would give a closer figure at one ranged read per layer.
+pub const UNPACKED_RATIO: u64 = 3;
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a hold keeps an entry from eviction after the holder last named it. A runner names every digest its machines boot at least once a minute, so a hold lapses only for a runner that has stopped, and its machines stopped with it.
 pub const HOLD_LEASE: Duration = Duration::from_secs(5 * 60);
@@ -167,6 +172,7 @@ impl ImageCache {
             memory: Mutex::new(Memory::default()),
             measuring: Mutex::new(()),
             fetching: Mutex::new(HashMap::new()),
+            reclaiming: Arc::default(),
         }
     }
 
@@ -298,7 +304,9 @@ impl ImageCache {
                 }
             }
         };
-        let reserved = match self.admit(prepared.floor) {
+        let need = prepared.floor.unwrap_or(0).saturating_mul(UNPACKED_RATIO);
+        let room = self.make_room(need);
+        let reserved = match self.admit(need) {
             Ok(reserved) => reserved,
             Err(e) => return Lookup::failed(e),
         };
@@ -307,12 +315,13 @@ impl ImageCache {
         let mut report = Fetched {
             ms: elapsed_ms(started),
             ok: fetched.is_ok(),
-            ..Fetched::default()
+            freed: room.freed,
+            used: room.used,
         };
         let resolved = fetched.map(|launch| {
             self.hold_one(&digest);
             let trim = self.evict(Some(&entry));
-            report.freed = trim.freed;
+            report.freed.extend(trim.freed);
             report.used = trim.used;
             Resolved { digest, launch }
         });
@@ -429,13 +438,34 @@ impl ImageCache {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: admits one fetch. The filesystem must have room for at least the image's compressed size. A node cache must not be past its ceiling counting every fetch already under way at what it reserved, so fetches that start together cannot each find the cache under its ceiling and together fill the disk: once the fetches in flight take it past the ceiling, the next is refused. Only a cache whose every other tree is held gets there, so that refusal is logged as an error for the operator: some runner holds more than its machines can be running. What this reserves is released when the returned reservation is dropped, once the entry is weighed in or the fetch has failed.
-    fn admit(&self, floor: Option<u64>) -> anyhow::Result<Reservation<'_>> {
-        let floor = floor.unwrap_or(0);
-        if let Some(free) = fetch::free_bytes(&self.config.dir) {
-            if free < floor {
+    // UNIT_BOUNDARY_DESCRIPTION: what the filesystem has free for a fetch: what statvfs reports, and what evicted trees still being deleted will give back.
+    fn free(&self) -> Option<u64> {
+        fetch::free_bytes(&self.config.dir)
+            .map(|free| free.saturating_add(self.reclaiming.load(Ordering::Relaxed)))
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: evicts before a fetch, so the tree it unpacks fits both the budget and the filesystem: unheld entries go, oldest first, until the cache is `need` inside its budget, and then until the filesystem has `need` free. A fetch that still does not fit is refused by admit. A cache with no budget evicts nothing, here as everywhere. The entry being fetched is never taken, since the resolve holds its gate.
+    fn make_room(&self, need: u64) -> Trim {
+        if self.config.budget <= 0 {
+            return Trim::default();
+        }
+        let budget = self.config.budget.saturating_sub_unsigned(need).max(1);
+        let mut trim = self.evict_to(None, budget);
+        if let Some(short) = self.free().and_then(|free| need.checked_sub(free)) {
+            let used = self.used();
+            let more = self.evict_to(None, used.saturating_sub(short).max(1) as i64);
+            trim.freed.extend(more.freed);
+            trim.used = more.used;
+        }
+        trim
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: admits one fetch of a tree taken to unpack to `need` bytes. The filesystem must have that much free, counting what evicted trees still being deleted give back. A node cache must not be past its ceiling counting every fetch already under way at what it reserved, so fetches that start together cannot each find the cache under its ceiling and together fill the disk: once the fetches in flight take it past the ceiling, the next is refused. Only a cache whose every other tree is held gets there, so that refusal is logged as an error for the operator: some runner holds more than its machines can be running. What this reserves is released when the returned reservation is dropped, once the entry is weighed in or the fetch has failed.
+    fn admit(&self, need: u64) -> anyhow::Result<Reservation<'_>> {
+        if let Some(free) = self.free() {
+            if free < need {
                 return Err(out_of_capacity(format!(
-                    "the image needs at least {floor} bytes, and the filesystem holding the image cache has {free} free"
+                    "the image needs about {need} bytes unpacked, and the filesystem holding the image cache has {free} free"
                 )));
             }
         }
@@ -457,10 +487,10 @@ impl ImageCache {
                 )));
             }
         }
-        memory.in_flight = memory.in_flight.saturating_add(floor);
+        memory.in_flight = memory.in_flight.saturating_add(need);
         Ok(Reservation {
             cache: self,
-            bytes: floor,
+            bytes: need,
         })
     }
 
@@ -689,7 +719,7 @@ impl ImageCache {
         trim
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: takes one chosen entry out of the cache, with the entry's fetch gate taken so no resolve reads the tree while it goes. A resolve of the digest that comes after waits on the gate, then finds the entry gone and fetches it again. An entry a resolve is reading now, or one held since it was chosen, is passed over: a resolve holds its digest before it lets go of the gate, so a hold is either seen here or its resolve still has the gate. The tree is renamed away under the gate and deleted after it is let go. An entry that cannot be renamed away stays, whole, and is counted as it was.
+    // UNIT_BOUNDARY_DESCRIPTION: takes one chosen entry out of the cache, with the entry's fetch gate taken so no resolve reads the tree while it goes. A resolve of the digest that comes after waits on the gate, then finds the entry gone and fetches it again. An entry a resolve is reading now, or one held since it was chosen, is passed over: a resolve holds its digest before it lets go of the gate, so a hold is either seen here or its resolve still has the gate. The tree is renamed away under the gate and deleted after it is let go, on a thread of its own, so the resolve or pass that chose it does not wait out a delete of every file of an image; until it is gone its size counts as free for admit. An entry that cannot be renamed away stays, whole, and is counted as it was.
     fn remove(&self, victim: &Entry) -> bool {
         let Some(digest) = entry_digest(&victim.path) else {
             return false;
@@ -714,7 +744,15 @@ impl ImageCache {
             memory.public.remove(&digest);
         }
         drop(resolving);
-        drop(aside);
+        if let Some(aside) = aside {
+            let reclaiming = self.reclaiming.clone();
+            reclaiming.fetch_add(victim.size, Ordering::Relaxed);
+            let size = victim.size;
+            std::thread::spawn(move || {
+                drop(aside);
+                reclaiming.fetch_sub(size, Ordering::Relaxed);
+            });
+        }
         true
     }
 
