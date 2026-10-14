@@ -22,6 +22,7 @@ The spec then stores `emoji:<emoji>` or `image:<id>`; anything else that is not 
 An emoji is accepted only as a single RGI emoji, and is drawn as SVG text, so it looks like the viewer's system emoji.
 An upload is at most 2 MB; the api-server crops it to a 512 px square PNG and stores it in Postgres under the SHA-256 of that PNG.
 It is served without sign-in, because an `<img>` sends no token; the id is a hash, so it cannot be guessed, and the image never changes.
+An hourly sweep deletes uploaded images older than a day that no Agent names, with their Slack icon URLs; the day covers an upload not yet saved onto a spec.
 A custom avatar has no eyes, so it shows no mood: it only greys out while the Agent sleeps.
 
 ## State

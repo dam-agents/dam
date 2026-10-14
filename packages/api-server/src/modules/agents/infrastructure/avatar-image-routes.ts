@@ -1,8 +1,18 @@
 import { createHash } from "node:crypto";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { AVATAR_IMAGE_RE } from "api-server-api/avatar/svg";
 import sharp from "sharp";
-import { avatarImages, type Db, eq } from "db";
+import {
+  and,
+  avatarImages,
+  type Db,
+  eq,
+  inArray,
+  lt,
+  notInArray,
+  slackIconUrls,
+} from "db";
 import type { ApiVariables } from "../../../core/http-context.js";
 
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
@@ -11,6 +21,7 @@ const AVATAR_PX = 512;
 export interface AvatarImages {
   save: (id: string, png: Buffer, ownerSub: string) => Promise<void>;
   load: (id: string) => Promise<Buffer | null>;
+  sweep: (keep: readonly string[], createdBefore: Date) => Promise<number>;
 }
 
 export function createAvatarImagesRepository(db: Db): AvatarImages {
@@ -29,7 +40,46 @@ export function createAvatarImagesRepository(db: Db): AvatarImages {
         .limit(1);
       return row?.png ?? null;
     },
+    async sweep(keep, createdBefore) {
+      return db.transaction(async (tx) => {
+        const removed = await tx
+          .delete(avatarImages)
+          .where(
+            and(
+              lt(avatarImages.createdAt, createdBefore),
+              keep.length > 0
+                ? notInArray(avatarImages.id, [...keep])
+                : undefined,
+            ),
+          )
+          .returning({ id: avatarImages.id });
+        const ids = removed.map((r) => r.id);
+        if (ids.length > 0)
+          await tx
+            .delete(slackIconUrls)
+            .where(inArray(slackIconUrls.hash, ids));
+        return ids.length;
+      });
+    },
   };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: An uploaded image no Agent spec names is removed,
+ * with its Slack icon URL, which is stored under the same hash. Only images
+ * older than a day go: an upload is saved before the spec that names it, so a
+ * younger image may still be on its way onto a spec.
+ */
+export async function sweepAvatarImages(
+  images: AvatarImages,
+  specAvatars: readonly (string | undefined)[],
+  now = Date.now(),
+): Promise<number> {
+  const keep = specAvatars.flatMap((a) => {
+    const id = a?.match(AVATAR_IMAGE_RE)?.[1];
+    return id ? [id] : [];
+  });
+  return images.sweep(keep, new Date(now - 24 * 60 * 60_000));
 }
 
 /**

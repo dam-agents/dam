@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: An owner uploads a JPG or PNG as an agent's avatar. The api-server crops it to a 512 px square PNG, stores it under the hash of that PNG, and answers the avatar value for the Agent spec. Anyone can read it back by that id, since an <img> sends no token. Other formats and files over 2 MB are refused.
+// TEST_OVERVIEW: An owner uploads a JPG or PNG as an agent's avatar. The api-server crops it to a 512 px square PNG, stores it under the hash of that PNG, and answers the avatar value for the Agent spec. Anyone can read it back by that id, since an <img> sends no token. Other formats and files over 2 MB are refused. An image no Agent names is swept once it is a day old.
 import { Hono } from "hono";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
@@ -6,6 +6,7 @@ import type { ApiVariables } from "../../core/http-context.js";
 import {
   type AvatarImages,
   createAvatarImageRoutes,
+  sweepAvatarImages,
 } from "../../modules/agents/infrastructure/avatar-image-routes.js";
 
 function world(scopes = ["agents:manage"]) {
@@ -13,6 +14,7 @@ function world(scopes = ["agents:manage"]) {
   const images: AvatarImages = {
     save: async (id, png) => void saved.set(id, png),
     load: async (id) => saved.get(id) ?? null,
+    sweep: async () => 0,
   };
   const routes = createAvatarImageRoutes(images);
   const app = new Hono<{ Variables: ApiVariables }>();
@@ -73,5 +75,24 @@ describe("avatar image routes", () => {
     expect((await upload(await jpeg(10, 10))).status).toBe(403);
     const read = await app.request(`/api/public/avatars/${"0".repeat(64)}`);
     expect(read.status).toBe(404);
+  });
+});
+
+describe("sweepAvatarImages", () => {
+  // TEST_SCENARIO: only the image ids that Agent specs name are kept, characters and emoji are ignored, and only images older than a day are eligible, so an upload not yet saved onto a spec survives.
+  it("keeps the images agents name and sweeps day-old others", async () => {
+    const id = "a".repeat(64);
+    const calls: [readonly string[], Date][] = [];
+    const now = Date.parse("2026-10-14T12:00:00Z");
+    await sweepAvatarImages(
+      {
+        save: async () => {},
+        load: async () => null,
+        sweep: async (keep, before) => (calls.push([keep, before]), 0),
+      },
+      [`image:${id}`, "lens", "emoji:🦊", undefined],
+      now,
+    );
+    expect(calls).toEqual([[[id], new Date("2026-10-13T12:00:00Z")]]);
   });
 });
