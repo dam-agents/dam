@@ -5,6 +5,7 @@ import type {
   ToolCallContent,
   ToolCallUpdate,
 } from "@agentclientprotocol/sdk";
+import { resultObjectTexts, terminalOutputPart } from "agent-runtime-api";
 import type {
   PlatformUndeliveredPrompt,
   PromptBlock,
@@ -57,16 +58,47 @@ const INTERRUPT_MARKER_RE = /^\[Request interrupted by user[^\]]*\]$/;
 function mapToolContent(
   content: ToolCallContent[] | undefined | null,
 ): ToolContent[] | undefined {
-  return content
-    ?.map<ToolContent>((c) => {
-      if (c.type === "content")
-        return {
-          type: c.type,
-          text: c.content.type === "text" ? c.content.text : "",
-        };
-      return { type: c.type, text: "" };
-    })
-    .filter((c) => c.text);
+  return content?.flatMap((c): ToolContent[] => {
+    if (c.type === "diff")
+      return [
+        {
+          type: "diff",
+          path: c.path,
+          oldText: c.oldText ?? null,
+          newText: c.newText,
+        },
+      ];
+    if (c.type === "content" && c.content.type === "text" && c.content.text)
+      return [{ type: "content", text: c.content.text }];
+    return [];
+  });
+}
+
+const TERMINAL_TEXT_LIMIT = 50 * 1024;
+
+function withTerminalPart(
+  previous: ToolContent[] | undefined,
+  part: string,
+): ToolContent[] {
+  const blocks = previous ?? [];
+  const last = blocks[blocks.length - 1];
+  const kept = last?.type === "terminal" ? blocks.slice(0, -1) : blocks;
+  const text = `${last?.type === "terminal" ? last.text : ""}${part}`;
+  return [
+    ...kept,
+    { type: "terminal", text: text.slice(-TERMINAL_TEXT_LIMIT) },
+  ];
+}
+
+function adapterOutput(
+  u: ToolCall | ToolCallUpdate,
+  previous: ToolContent[] | undefined,
+): ToolContent[] | undefined {
+  const results = resultObjectTexts(u);
+  if (results.length > 0)
+    return results.map((text) => ({ type: "content", text }));
+  const part = terminalOutputPart(u);
+  return part === null ? undefined : withTerminalPart(previous, part);
 }
 
 const EMBEDDED_RE =
@@ -682,12 +714,15 @@ function handleToolCall(
 ): Message[] {
   const existingIdx = findToolIdx(messages, u.toolCallId);
   if (existingIdx !== null) return patchToolChip(messages, existingIdx, u, at);
+  const content = mapToolContent(u.content);
   const chip: ToolChip = {
     kind: "tool",
     toolCallId: u.toolCallId,
     title: u.title,
     status: u.status ?? "pending",
-    content: mapToolContent(u.content),
+    content: content?.length
+      ? content
+      : (adapterOutput(u, undefined) ?? content),
     toolKind: u.kind,
     description: toolDescription(u.rawInput),
   };
@@ -747,7 +782,9 @@ function patchToolChip(
                   ...p,
                   status: u.status ?? p.status,
                   title: u.title ?? p.title,
-                  content: content?.length ? content : p.content,
+                  content: content?.length
+                    ? content
+                    : (adapterOutput(u, p.content) ?? p.content),
                   toolKind: u.kind ?? p.toolKind,
                   description: toolDescription(u.rawInput) ?? p.description,
                 }

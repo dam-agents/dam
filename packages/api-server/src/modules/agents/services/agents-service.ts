@@ -1263,6 +1263,8 @@ export function createAgentsService(deps: {
             : minutesToDuration(input.hibernationTimeoutMin);
       if (input.requireConnectionAddress !== undefined)
         patch.requireConnectionAddress = input.requireConnectionAddress || null;
+      if (input.whisper !== undefined)
+        patch.whispersOff = input.whisper ? null : true;
       let gateLiveResize:
         | ((
             apply: () => Promise<InfraAgent | null>,
@@ -1326,7 +1328,8 @@ export function createAgentsService(deps: {
       if (
         input.env !== undefined ||
         input.secretRef !== undefined ||
-        input.requireConnectionAddress !== undefined
+        input.requireConnectionAddress !== undefined ||
+        input.whisper !== undefined
       ) {
         securityLog("info", "agent.update", {
           category: "resource",
@@ -1336,6 +1339,7 @@ export function createAgentsService(deps: {
           result: "success",
           detail: {
             secretRefChanged: input.secretRef !== undefined,
+            ...(input.whisper !== undefined ? { whisper: input.whisper } : {}),
             ...(input.requireConnectionAddress !== undefined
               ? { requireConnectionAddress: input.requireConnectionAddress }
               : {}),

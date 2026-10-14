@@ -173,6 +173,7 @@ When the status already holds the agent side ready and only the gateway was miss
 Only the idle checker or [reclaim](vm-memory.md) hibernates it, not a lapsed timeout.
 An unreachable runner does not hold the gateway up, but the Agent is published hibernated only once its runner has confirmed the machine stopped.
 Until then its readiness is down and it reads as starting, the Agent's next reconcile stops the machine once the runner answers, and the idle checker tries the hibernation again on each sweep.
+A runner that took the stop answers before its guest has powered off, so while the machine is stopping its readiness is down too, but the Agent reads as pausing rather than starting, and its reconcile publishes hibernation once the runner reports the machine stopped.
 Whether an Agent is "idle" is **derived from observed activity, never stored** — there is no desired-state flag — and the derivation is split across two independent checks.
 
 **The decision.** The controller's idle checker scans Agents on a timer whose interval scales with the *shortest effective timeout it saw last sweep* — an Agent that chooses a window far below the cluster-wide default is swept inside its own window rather than at the default's pace, subject to a floor that keeps the sweep off the API server's back.
@@ -215,6 +216,8 @@ The controller resolves the effective value (override else default) and feeds it
 The UI offers it as *Sleep after being idle for* a short list of windows or *Never* (`0`), shows a custom value that is not in the list as its own option, and shows the *effective* value; an Agent created without a pick keeps its Template's seed.
 An Agent that never sleeps carries an *Always on* tag.
 **A vm Agent has no per-agent timeout.** It boots in seconds, so it always takes the chart-wide vm idle timeout, ignores any override, and the UI does not offer the setting.
+A cold first boot can still outlast that timeout — an image no runner has cached, a fresh runner, a large nested guest — so for a vm Agent whose pair is awake the idle checker also counts the clock from the moment it turned `Ready`, and holds a boot still in progress: a machine not ready for no reason of its own, with no start failure reported.
+The hold ends at the start failure report, and a boot that has not finished a quarter of an hour past the timeout is hibernated anyway.
 A running Agent with no session running but [kept background work](agent-processes.md#keeping-work) holding it awake shows *Background work* rather than *Idle*.
 
 It's a blunt instrument: it keeps known off-session work alive without making it visible, and a long or disabled timeout holds CPU and memory until lowered by hand.
@@ -235,7 +238,7 @@ A sleeping Agent is afterwards a plain hibernated Agent: its next deliberate use
 A **never-hibernate** Agent (effective timeout `0`) runs regardless of activity, so the UI does not offer it Sleep; a direct call still stamps it without the settle clear, the only stable sleep it can have.
 
 **Early reclaim for a blocked start.** The one scale-down neither the user nor the idle timeout asks for: when the [budget gate](budgets.md#reclaiming-room-for-a-blocked-start) refuses a start, it may hibernate that same owner's *unattended idle* Agents ahead of their timeout to admit it, longest-idle first and only when the freed Sizes provably cover the shortfall.
-Eligibility is deliberately narrower than the idle checker's, since reclaim takes down a pod whose own timeout still permits it to run: session and Invocation pins, sweepable Invocation targets, and never-hibernate Agents are all excluded, and survivors are probed the same way.
+Eligibility is deliberately narrower than the idle checker's, since reclaim takes down a pod whose own timeout still permits it to run: session and Invocation pins, sweepable Invocation targets, and never-hibernate Agents are all excluded, and survivors are probed more strictly: only an Agent whose runtime answers `idle` is reclaimed, and an unreachable pod is spared.
 A reclaimed Agent is marked as having **spent** the activity stamp it was reclaimed under, so `shouldRun` keeps it down until a *newer* bump arrives — otherwise its own next reconcile, still inside its timeout, would reclaim the room right back.
 It is otherwise an ordinary hibernated Agent: the mark self-clears when a deliberate touch outdates it, and the next use wakes it back through the gate.
 

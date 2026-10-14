@@ -16,7 +16,11 @@ import { createSessionWatcher } from "../../modules/attention/services/session-w
 const CAPTURE_RETRY_MS = 15_000;
 const CAPTURE_DEBOUNCE_MS = 250;
 
-function session(sessionId: string, updatedAt: string | null): PodSession {
+function session(
+  sessionId: string,
+  updatedAt: string | null,
+  threadTs: string | null = null,
+): PodSession {
   return {
     sessionId,
     mode: "chat",
@@ -25,7 +29,7 @@ function session(sessionId: string, updatedAt: string | null): PodSession {
     updatedAt,
     title: null,
     scheduleId: null,
-    threadTs: null,
+    threadTs,
     seenAt: null,
     runStartedAt: null,
     runTotalMs: null,
@@ -273,6 +277,33 @@ describe("createSessionWatcher", () => {
     await vi.advanceTimersByTimeAsync(CAPTURE_RETRY_MS);
     await flush();
     expect(h.deleted).toEqual([["s2"]]);
+
+    h.watcher.stop();
+  });
+
+  /*
+   * TEST_SCENARIO: a session's thread key changes while nothing else about it
+   * moves. The feed names the channel from that key, so the comparison that
+   * skips unchanged rows must count it as a change and write the row again.
+   */
+  it("rewrites a row whose thread key changed", async () => {
+    const h = harness();
+    h.setSessions([session("s1", "2026-09-10T00:00:00.000Z", "C1:1.0")]);
+
+    h.watcher.start();
+    await flush();
+    expect(h.upserted).toEqual(["s1"]);
+
+    h.notify();
+    await vi.advanceTimersByTimeAsync(CAPTURE_DEBOUNCE_MS);
+    await flush();
+    expect(h.upserted).toEqual(["s1"]);
+
+    h.setSessions([session("s1", "2026-09-10T00:00:00.000Z", "C2:1.0")]);
+    h.notify();
+    await vi.advanceTimersByTimeAsync(CAPTURE_DEBOUNCE_MS);
+    await flush();
+    expect(h.upserted).toEqual(["s1", "s1"]);
 
     h.watcher.stop();
   });

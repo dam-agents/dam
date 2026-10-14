@@ -36,5 +36,5 @@ A background task your harness runs for you is kept already and needs no mark.
 Kept work holds the agent awake until it exits, and the user sees it and can stop it.
 Never keep helper daemons (servers, watchers, bridges); plain `nohup … &` is right for those.
 
-Delegation: your harness's own subagent does work in this sandbox.
+Delegation: your harness's own subagent, if it has one, does work in this sandbox.
 The platform's `spawn_subagent` tool starts a separate agent in a new sandbox; use it only when the task needs another harness, its own setup, more resources, isolation from this workspace, or a schema-checked result.

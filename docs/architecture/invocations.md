@@ -43,6 +43,7 @@ The trigger that opens the target's first session names its harness, the inherit
 **A spawn may choose the model.** It can name the target's model, mode and harness settings — the choices the target's harness configuration offers — so one harness serves every model it runs, and a Driver can put one task to two models or a cheap model on a mechanical step.
 The choice is written into the target's own harness configuration in a delivery of its own, ahead of the task, so the one session already runs on it ([harness configuration](harness-config.md)).
 The platform does not check the values, and a wrong one need not fail: depending on the harness and the provider, a name the provider does not serve fails the target's first turn or runs a nearby model instead, so a Driver comparing models reads which model the target ran.
+The delegation view shows its user the same: each target's card names the model its recorded calls ran and, when the spawn named one, the requested model beside it, marked when the two differ, so a silent substitution is visible without opening the conversation.
 
 **A spawn carries a label.** It names the target, so the Driver's own vocabulary for the work — not an opaque identifier — is what shows up wherever agents are listed.
 The minted name keeps the target's prefix and its entropy either way, because that shape is how a target is still recognised as one after it is deleted and only spend rows remain ([observability](observability.md)).
@@ -88,6 +89,7 @@ A deleted root drops only the records whose reap landed; the sweep drops the res
 It goes with the root Driver's other agent-scoped rows ([persistence](persistence.md#lifetime)).
 No age limit and no knob.
 Spend is not on the record; it stays in telemetry, keyed by the invocation id the target's gateway stamps ([observability](observability.md)).
+The root Driver reads it per sub-agent through its own cost read, which the delegation view's figures match ([metrics — agent-facing read](metrics.md#agent-facing-read)).
 
 **The target's conversation is kept on the root Driver's volume.** Before a reap, the platform reads the target's one session out of its pod and hands the frames to the root Driver's runtime, which keeps them with the root's own sessions, one file per target, and the record notes that it was captured.
 Copies are byte-capped per target, keeping the newest frames, and in total per root, evicting the oldest.
@@ -96,6 +98,8 @@ A cascade that deletes the root itself skips capture, since the root's volume go
 The copy is read-only history, opened beside the Driver's chat and never loaded back as a live session.
 
 **The Driver's chat is the anchor.** The progress lines both SDKs print to stderr, naming each spawned target, are what the chat recognises in the Driver's tool output to draw the delegation in place, so their shape is a contract the SDKs and the chat share.
+Each harness's adapter shapes tool output its own way — in the standard content, as the raw tool result, or as a result object — so the chat and the Driver's runtime read it through one shared reader in the runtime contract, and a line means the same on every harness.
+Some adapters stream a shell command's output only in parts beside the tool call; the chat adds them up through the same reader, while the runtime, which needs only tool spawns, leaves them aside.
 While children run and no line names them yet, the chat shows the Driver's running Invocations from the record.
 
 ## The Invocation Pin
@@ -117,26 +121,29 @@ A Driver that crashed mid-fan-out stays up until its targets' deadlines end thei
 ## Sub-agent tools
 
 The platform MCP server offers every agent the everyday case as tools: **spawn_subagent** takes what the spawn route takes — prompt, result schema, harness or image, the setup, and the harness config as flat model, mode and config options — and returns the id at once; **await_subagents** takes the ids the agent is waiting on; **list_harnesses**, **list_connections** and **get_budget** answer what the SDK's reads answer.
-Scripts stay the path for orchestration logic — loops, wide fan-outs, scoring.
+Scripts stay the path for orchestration logic — loops, scoring one result with another — and wait for their sub-agents in the foreground; long waits and wide fan-outs use the tools, because only a tool spawn's result is delivered as a turn.
 
 **Waiting is a long poll, bounded under the request timeout.** await_subagents returns as soon as any listed Invocation is terminal, or after four minutes with the ones still running, and the agent calls it again.
 The bound sits under Node's 300-second request timeout, which the harness server does not override, as the [satellite](satellites.md) wait does; no harness's own tool timeout is raised.
+A harness's MCP client often gives up sooner, after a minute, so while a call waits it sends a progress message every 20 seconds to a client that asked for progress, which restarts that client's own timeout.
+The mesh also cuts open calls: every Agent created or removed reloads the proxy in front of the platform, which closes the calls open before it about 45 seconds later.
+A cut call collects nothing, so the agent, told to call again after a connection error, gets the result from its next call, or the sweep below delivers it as a turn.
 The Driver keeps the ids; the platform tracks nothing per call, a finished id asked again answers again, and an id that is not one of the caller's own Invocations answers as unknown.
 
 **An outcome nobody waited for is delivered as a turn.** An agent that spawned through the tool and ended its turn, or stopped calling await_subagents, is told when each Invocation ends: a short cluster-wide sweep leases such outcomes for one tick, writes one sub-agent-outcome turn per Driver, carrying what await_subagents would have returned, marks them delivered only once the turn is written, and wakes the Driver if it hibernated ([runtime-delivery](runtime-delivery.md)).
 A lease the server died holding expires and the next tick claims the outcome again, so none is lost.
-The turn continues the Session whose tool call started the Invocation: the Driver's runtime notes each spawn line as it passes and keeps the note on its own disk, so the result lands where it was asked for, and a Session it no longer knows gets a new one.
-A running await_subagents holds a short lease on its ids, renewed on every poll, so what it is about to return is not also pushed, and what it returns counts as delivered; a call whose client aborted collects nothing, and the sweep tells the agent instead.
+The turn continues the Session whose tool call started the Invocation: the Driver's runtime notes each spawn line as it passes, through the same shared reader as the chat, and keeps the note on its own disk, so the result lands where it was asked for on every harness, and a Session it no longer knows gets a new one.
+A running await_subagents holds a short lease on its ids, renewed on every poll, and keeps it for a minute on the ids it returns as still running, so the agent can ask again before the sweep pushes them; what it returns counts as delivered; a call whose client aborted collects nothing, and the sweep tells the agent instead.
 One outcome owes one turn: a turn that could not be written is released for the next sweep, and an hourly retry only re-wakes a Driver whose turn is written but that did not wake.
 **A stop wins over the wake**: a Driver the user stopped is not woken for an outcome; its turn waits in the outbox for the Driver's next deliberate wake.
 The check and the wake are one write conditional on the Agent the sweep read, never through the watch cache, so a stop landing in between fails the wake instead of being erased.
 Script spawns are never pushed — the SDK polls, and an extra turn per child would interrupt the script's agent.
 A runtime too old to know the kind drops it at dispatch; await_subagents still works.
 
-**The model is told when not to use it, and must say why it does.** Harnesses carry their own in-sandbox subagents, which start in seconds and cost nothing extra.
-spawn_subagent's description opens by steering the model there and names what only a platform sub-agent gives: another harness, its own setup, more resources or a microVM, isolation from the Driver's workspace, heavy parallel work, a schema-checked result.
+**The model is told when not to use it, and must say why it does.** Most harnesses carry their own in-sandbox subagents, which start in seconds and cost nothing extra.
+spawn_subagent's description opens by steering the model there when its harness has one, and names what only a platform sub-agent gives: another harness, its own setup, more resources or a microVM, isolation from the Driver's workspace, heavy parallel work, a schema-checked result.
 The call must name one or more of these as `needs`, and the server refuses a need the request does not bear out — another harness that is the Driver's own, a setup with no seed, install, env or skills, more resources with none asked — so a stated need is one the model acted on; the three it cannot check pass as stated.
-The base image's instructions carry the same rule in two sentences, for the harnesses that get no skill.
+Every harness gets the delegation skill from the base image, and the base image's instructions repeat the rule in two sentences.
 The SDK's spawn route has no `needs`: a script is a deliberate choice already.
 
 **A tool spawn anchors its Delegation block like a script spawn.** The spawn's result text carries the same `[invoke] spawned <label> -> <id>` line the SDK prints, so the chat recognises either chip the same way.

@@ -7,6 +7,7 @@
   "cpus": 2,
   "memoryMiB": 2048,
   "usedMiB": 640,
+  "warming": true,
   "diskGiB": 20,
   "message": "up",
   "version": 1,

@@ -1,6 +1,18 @@
 import { skipToken, useQuery } from "@tanstack/react-query";
+import type { inferOutput } from "@trpc/tanstack-react-query";
 
 import { trpc } from "../../../trpc.js";
+
+export type TelegramChatsPage = inferOutput<
+  typeof trpc.agents.listTelegramChats
+>;
+
+export function telegramChatsQueryOptions(agentId: string) {
+  return {
+    ...trpc.agents.listTelegramChats.queryOptions({ agentId }),
+    staleTime: 60_000,
+  };
+}
 
 export function useTelegramBot() {
   return useQuery({
@@ -11,9 +23,8 @@ export function useTelegramBot() {
 
 export function useTelegramChats(agentId: string | undefined) {
   return useQuery({
-    ...trpc.agents.listTelegramChats.queryOptions({ agentId: agentId ?? "" }),
+    ...telegramChatsQueryOptions(agentId ?? ""),
     enabled: !!agentId,
-    staleTime: 60_000,
   });
 }
 

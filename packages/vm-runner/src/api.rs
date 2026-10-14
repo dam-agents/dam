@@ -63,6 +63,9 @@ pub struct MachineStatus {
     // UNIT_BOUNDARY_DESCRIPTION: the host memory the running machine's VMM holds, as the prober last measured it. The guest hands freed memory back, so this is what the machine uses, and what the controller sizes the runner's memory request by. Zero while nothing has been measured, which the controller reads as the machine's full size.
     #[serde(rename = "usedMiB", skip_serializing_if = "is_zero")]
     pub used_mib: i32,
+    // UNIT_BOUNDARY_DESCRIPTION: whether the running machine is within WARMUP of its boot, when admission counts it at least at the warm-up floor however little it was measured at; the controller counts it the same way. It is kept out of what moves the status version, as `used_mib` is.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub warming: bool,
     // UNIT_BOUNDARY_DESCRIPTION: the disk the machine's last start asked for, in GiB; the disk itself never shrinks below a larger earlier one. A runner that reports it grows a disk at the machine's next start rather than restarting it, which is how the controller knows it may send a larger disk to a running machine. Zero before the first start, and from an older runner.
     #[serde(rename = "diskGiB", skip_serializing_if = "is_zero")]
     pub disk_gib: i32,
@@ -317,6 +320,7 @@ mod tests {
                 cpus: 2,
                 memory_mib: 2048,
                 used_mib: 640,
+                warming: true,
                 disk_gib: 20,
                 message: "up".into(),
                 version: 1,

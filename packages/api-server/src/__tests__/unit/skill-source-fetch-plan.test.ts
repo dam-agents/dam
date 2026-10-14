@@ -25,7 +25,12 @@ const denyRules: { host: string; pattern: string; verdict: string }[] = [
   },
   {
     host: "api.github.com",
-    pattern: "/repos/dam-agents/dam/contents/qa*",
+    pattern: "/repos/dam-agents/dam/contents/qa/*",
+    verdict: "allow",
+  },
+  {
+    host: "api.github.com",
+    pattern: "/repos/dam-agents/dam/contents/qa?*",
     verdict: "allow",
   },
 ];
@@ -38,7 +43,7 @@ const qaAgentDenies: EgressDenies = async (host, _method, path) => {
 };
 
 describe("planSourceFetch", () => {
-  // TEST_SCENARIO: the QA agent denies the repository and its archive host but allows contents/qa*, so a source with path qa is fetched by directory, one without a path or with another path is refused, and an agent with no deny rule keeps the archive.
+  // TEST_SCENARIO: the QA agent denies the repository and its archive host but allows contents/qa/* and contents/qa?*, so a source with path qa is fetched by directory, one without a path or with another path is refused, and an agent with no deny rule keeps the archive.
   it.each([
     [qaAgentDenies, "qa", { kind: "directory" }],
     [qaAgentDenies, undefined, { kind: "blocked", reason: "no-path" }],

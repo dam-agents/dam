@@ -88,6 +88,7 @@ connections:
 schedules:
   - name: {{AGENT_NAME}}-work-10m
     cron: "*/10 * * * *"
+    description: Picks up new work and runs the pre-flight on it.
     task: >-
       Work heartbeat. …
     sessionMode: fresh
@@ -102,6 +103,8 @@ schedules:
 
 - Names carry the agent prefix exactly as ONBOARDING's check-then-create expects, or the runbook creates a second copy of every schedule.
 - `task` is the text ONBOARDING would register: the one source of truth for the entry command (`references/preflight.md` → Schedule task text).
+- `description` is one plain sentence for the operator: what the schedule does, shown on its card in the apply form.
+  The task text is written for the agent and sits behind a disclosure; without a description the card shows only the name and cadence.
 - `enabled: false` makes a schedule **suggested**: created off, the operator turns it on.
 - `precheck` declares the check the repo carries (`references/preflight.md` → **The Precheck**).
   Only a kit that seeds its definition may declare one: the command must exist in the checkout by the first fire.
