@@ -1,9 +1,5 @@
 import type { Db } from "db";
-import type {
-  FeatureId,
-  FeatureMode,
-  FeaturesService,
-} from "api-server-api";
+import type { FeatureId, FeatureMode, FeaturesService } from "api-server-api";
 
 import { createFeaturesRepository } from "./infrastructure/features-repository.js";
 import { createFeaturesService } from "./services/features-service.js";
