@@ -1227,24 +1227,33 @@ impl Server {
         let runtime = self.runtime.clone();
         let target = id.to_string();
         let size = spec.memory_mib;
-        let boot = if self.config.boot_mib > 0 {
+        let own = self.config.runtime.clone().unwrap_or_default();
+        let marker = state::require_machine_dir(&self.config.state_dir, id)?.join(BOOT_WHOLE_FILE);
+        let whole = fs::read_to_string(&marker).is_ok_and(|runtime| runtime == own);
+        let boot = if self.config.boot_mib > 0 && !whole {
             size.min(self.config.boot_mib)
         } else {
             size
         };
+        let port = state::port(&self.config.state_dir, id);
         let result = bounded(
             "the runtime's start",
             Some(RUNTIME_CALL_LIMIT),
             None,
             None,
-            move || boot_and_grow(&*runtime, &target, boot, size),
+            move || boot_and_grow(&*runtime, &target, boot, size, || healthy(port)),
         );
         self.metrics
             .start(action, started.elapsed(), result.is_ok());
-        if let (Ok(()), Some(own)) = (&result, &self.config.runtime) {
+        if let Ok(true) = result {
+            if let Err(e) = crate::files::write(&marker, own.as_bytes(), state::PORT_MODE) {
+                tracing::warn!(machine = %id, error = %format!("{e:#}"), "could not record that the machine cannot grow");
+            }
+        }
+        if let (Ok(_), Some(own)) = (&result, &self.config.runtime) {
             state::write_runtime(&self.config.state_dir, id, own)?;
         }
-        result
+        result.map(|_| ())
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: a stop ends whatever boot the machine was waited on for. Without this a machine stopped before its guest ever answered would keep its stuck-boot note for as long as it stayed stopped.
@@ -1958,18 +1967,32 @@ impl Server {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: boots a machine with `boot` MiB of guest RAM and then grows it to its `size`. A guest's kernel writes a page descriptor for every page of its RAM before it runs anything, and under nested virtualization that costs 65 to 85 ms per GiB, so a 12 GiB machine booted whole spends most of a second on RAM it does not need yet. The grow runs as soon as the start returns, while the workload is starting, and readiness does not wait for it: the prober reports the guest ready when it answers. A machine that cannot grow is booted again at its full size, so a running machine always has the size its spec names.
-fn boot_and_grow(runtime: &dyn Runtime, id: &str, boot: i32, size: i32) -> anyhow::Result<()> {
+// UNIT_BOUNDARY_DESCRIPTION: the VM runtime that could not grow the machine, kept beside its spec. While it names this runner's runtime, the machine boots whole: a guest that cannot grow would otherwise pay a small boot and a failed grow on every start. A runner release with another runtime tries the grow again. It goes with the machine on delete.
+pub const BOOT_WHOLE_FILE: &str = "boot-whole";
+
+// UNIT_BOUNDARY_DESCRIPTION: boots a machine with `boot` MiB of guest RAM and then grows it to its `size`, and answers whether the grow failed. A guest's kernel writes a page descriptor for every page of its RAM before it runs anything, and under nested virtualization that costs 65 to 85 ms per GiB, so a 12 GiB machine booted whole spends most of a second on RAM it does not need yet. The grow runs as soon as the start returns, while the workload is starting, and readiness does not wait for it: the prober reports the guest ready when it answers. A machine that cannot grow and whose guest has not answered yet is booted again at its full size. A guest that already answered is left running at its boot size, because the agent reads ready by then, and a reboot would drop a prompt sent to it; its next start boots it whole.
+fn boot_and_grow(
+    runtime: &dyn Runtime,
+    id: &str,
+    boot: i32,
+    size: i32,
+    answered: impl Fn() -> bool,
+) -> anyhow::Result<bool> {
     runtime.start(id, boot)?;
     if boot == size {
-        return Ok(());
+        return Ok(false);
     }
     let Err(e) = runtime.grow(id, size) else {
-        return Ok(());
+        return Ok(false);
     };
+    if answered() {
+        tracing::warn!(machine = id, error = %format!("{e:#}"), boot_mib = boot, memory_mib = size, "the guest could not grow to its size and already answered; it runs at its boot size until its next start");
+        return Ok(true);
+    }
     tracing::warn!(machine = id, error = %format!("{e:#}"), boot_mib = boot, memory_mib = size, "the guest could not grow to its size; booting it again whole");
     runtime.stop(id)?;
-    runtime.start(id, size)
+    runtime.start(id, size)?;
+    Ok(true)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what a seed capability may seed, beyond the machine it is signed for. The machine must be marked as created for a migration in the latest spec the runner holds for it, so a capability never reaches a machine that is not being migrated. Its disk must hold no home yet — no guest has answered from it — so a capability never replaces a home. A seed already stored but not yet booted from may be replaced: an attempt can store its seed and still fail, its answer lost, and only the next Job's fresh capability can then finish the copy, since the controller removes a seed only once the guest has booted from it. The controller moves past the copy only after a Job succeeds, and drops the migration mark then, so no capability reaches a seed it has accepted. And the capability must not have been spent: each one seeds once, recorded on the runner's claim beside the machine, where it outlives a runner restart.
