@@ -560,6 +560,7 @@ export {
   formatEgressRuleInline,
   formatEgressRuleSource,
 } from "./modules/egress-rules/format.js";
+export { canonicalEgressHost } from "./modules/egress-rules/host.js";
 export type {
   GatewayRestartImpact,
   PromotionRule,
