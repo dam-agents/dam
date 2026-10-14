@@ -138,7 +138,7 @@ export interface AcpRuntime {
   pendingRestart(): PendingRestart | null;
   applyPendingRestart(): boolean;
   onPendingRestartChange(cb: () => void): void;
-  shutdown(): void;
+  shutdown(scope?: "process" | "lease"): void;
 }
 
 export interface RunningHarness {
@@ -251,6 +251,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   };
 
   let shuttingDown = false;
+  let processExiting = false;
 
   const autonomousTurns = createAutonomousTurns({
     onEnded: (sessionId, turnId) =>
@@ -320,7 +321,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       checkPendingRestart();
     },
     onTurnInterrupted: (sessionId, turn) => {
-      const unstoredPrompt = shuttingDown
+      const unstoredPrompt = processExiting
         ? undefined
         : deps.activeTurns.promptOf(sessionId);
       if (unstoredPrompt)
@@ -2063,7 +2064,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       pendingRestartListeners.push(cb);
     },
 
-    shutdown() {
+    shutdown(scope = "process") {
+      processExiting = scope === "process";
       lease.shutdown();
     },
   };
