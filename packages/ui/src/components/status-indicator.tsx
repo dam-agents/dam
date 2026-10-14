@@ -1,18 +1,8 @@
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Tooltip } from "@/components/ui/tooltip";
 
+import { badgeLabel } from "../modules/agents/lib/state-label.js";
 import type { AgentDisplayState } from "../modules/agents/utils/agent-resolver.js";
-
-const stateLabel: Record<AgentDisplayState, string> = {
-  running: "Running",
-  starting: "Starting",
-  preparing_workspace: "Preparing workspace",
-  hibernating: "Hibernating",
-  hibernated: "Hibernating",
-  error: "Error",
-  over_budget: "Over budget",
-  migrating: "Migrating",
-};
 
 const stateVariant: Record<
   AgentDisplayState,
@@ -43,10 +33,12 @@ export function StatusBadge({
   state,
   working,
   keptWork = 0,
+  vm,
   className,
 }: {
   state: AgentDisplayState;
   working?: boolean;
+  vm: boolean;
   keptWork?: number;
   className?: string;
 }) {
@@ -58,7 +50,7 @@ export function StatusBadge({
     ? working
       ? "Working"
       : "Idle"
-    : stateLabel[state];
+    : badgeLabel(state, vm);
   const variant = splitRunning && !working ? "accent" : stateVariant[state];
   return (
     <Badge variant={variant} className={className}>
@@ -97,7 +89,7 @@ export function AlwaysOnTag() {
   return (
     <Tooltip
       side="top"
-      content="This agent never hibernates on its own and keeps its compute reserved."
+      content="This agent never pauses on its own, so it keeps using its share of resources."
     >
       <span className="inline-flex" tabIndex={0}>
         <Badge variant="muted" data-testid="always-on-tag">

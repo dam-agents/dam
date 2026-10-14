@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import type { BudgetReserved, BudgetsService } from "api-server-api";
+import { getLogger } from "../../../core/logger.js";
 import { parseCpuMilli, parseMemoryBytes } from "../../../core/quantities.js";
 import {
   storageRefusal,
@@ -25,6 +26,7 @@ interface BudgetsServiceDeps {
   defaultCeiling: { cpu: string; memory: string };
   slotSize: { cpu: string; memory: string };
   readVmUsage(): Promise<RunnerUsage | null>;
+  isSlackUnlinked(): Promise<boolean>;
 }
 
 export interface ResizeGate {
@@ -35,7 +37,10 @@ export interface ResizeGate {
 }
 
 export function createResizeGate(
-  deps: Omit<BudgetsServiceDeps, "slotSize" | "readVmUsage">,
+  deps: Omit<
+    BudgetsServiceDeps,
+    "slotSize" | "readVmUsage" | "isSlackUnlinked"
+  >,
 ): ResizeGate {
   return {
     async assertResizeFits(agent, newSize) {
@@ -128,6 +133,12 @@ export function createBudgetsService(deps: BudgetsServiceDeps): BudgetsService {
         deps.readCeilingOverride(),
         deps.readVmUsage(),
       ]);
+      const slackUnlinked = vmUsage
+        ? await deps.isSlackUnlinked().catch((error: unknown) => {
+            getLogger().warn({ error }, "budgets.slack-link.failed");
+            return false;
+          })
+        : false;
       const { cpuMilli, memoryBytes } = reservedBy(agents);
       const ceiling = { ...deps.defaultCeiling, ...override };
       return {
@@ -145,14 +156,17 @@ export function createBudgetsService(deps: BudgetsServiceDeps): BudgetsService {
         },
         ...(vmUsage
           ? {
-              vm: vmUsageView(
-                vmUsage,
-                new Set(
-                  agents
-                    .filter((a) => a.spec.backend?.type === "vm")
-                    .map((a) => a.id),
+              vm: {
+                ...vmUsageView(
+                  vmUsage,
+                  new Set(
+                    agents
+                      .filter((a) => a.spec.backend?.type === "vm")
+                      .map((a) => a.id),
+                  ),
                 ),
-              ),
+                ...(slackUnlinked ? { slackUnlinked } : {}),
+              },
             }
           : {}),
       };

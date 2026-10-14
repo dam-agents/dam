@@ -117,18 +117,60 @@ const RECLAIM_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60)
 const RECLAIM_FLOOR: u64 = 64 << 20;
 
 fn reclaim_cold_cache() {
+    let order = fs::read_to_string("/sys/module/page_reporting/parameters/page_reporting_order")
+        .ok()
+        .and_then(|text| text.trim().parse().ok())
+        .unwrap_or(DEFAULT_REPORTING_ORDER);
+    let mut settled = scattered_free(order).unwrap_or(0);
     loop {
         std::thread::sleep(RECLAIM_INTERVAL);
-        let Some(cold) = fs::read_to_string("/sys/fs/cgroup/memory.stat")
+        if let Some(cold) = fs::read_to_string("/sys/fs/cgroup/memory.stat")
             .ok()
             .and_then(|stat| inactive_file(&stat))
-        else {
+        {
+            if cold >= RECLAIM_FLOOR {
+                let _ = fs::write("/sys/fs/cgroup/memory.reclaim", cold.to_string());
+            }
+        }
+        let Some(scattered) = scattered_free(order) else {
             continue;
         };
-        if cold >= RECLAIM_FLOOR {
-            let _ = fs::write("/sys/fs/cgroup/memory.reclaim", cold.to_string());
+        if scattered >= settled + SCATTERED_RISE {
+            let _ = fs::write(
+                "/sys/fs/cgroup/memory.reclaim",
+                (scattered - settled).to_string(),
+            );
+            let _ = fs::write("/proc/sys/vm/compact_memory", "1");
+            settled = scattered_free(order).unwrap_or(scattered);
+        } else {
+            settled = settled.min(scattered);
         }
     }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: free-page reporting hands the host only free blocks of at least the reporting order, 2 MiB on the guests' kernel, so memory a program frees between pages the guest still uses stays counted on the host: on dev about 600 MiB after a burst of processes ended, for as long as the pages pinning it lived. When the free memory in smaller blocks has risen by SCATTERED_RISE since the last look, that much cold cache and slab is reclaimed and the guest's memory compacted, which merges the free pages into blocks the host takes back, in about a quarter of a second of guest time. A guest whose memory stays scattered is not compacted again until more is freed.
+const SCATTERED_RISE: u64 = 128 << 20;
+const DEFAULT_REPORTING_ORDER: usize = 9;
+
+fn scattered_free(order: usize) -> Option<u64> {
+    let buddy = fs::read_to_string("/proc/buddyinfo").ok()?;
+    // SAFETY: sysconf has no preconditions.
+    let page = u64::try_from(unsafe { libc::sysconf(libc::_SC_PAGESIZE) }).ok()?;
+    Some(free_below_order(&buddy, order) * page)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: free pages in blocks smaller than `order`, over every zone of /proc/buddyinfo, whose lines are "Node N, zone NAME" and then the count of free blocks of each order from 0.
+fn free_below_order(buddyinfo: &str, order: usize) -> u64 {
+    buddyinfo
+        .lines()
+        .flat_map(|line| {
+            line.split_whitespace()
+                .skip(4)
+                .take(order)
+                .enumerate()
+                .filter_map(|(o, count)| count.parse::<u64>().ok().map(|count| count << o))
+        })
+        .sum()
 }
 
 fn inactive_file(stat: &str) -> Option<u64> {
@@ -2874,6 +2916,15 @@ mod tests {
         assert!(stopping);
     }
 
+    // TEST_SCENARIO: only free blocks below the reporting order count as scattered, summed in pages over every zone. Counting the larger blocks would compact a guest whose free memory the host already took back, and dropping a zone would miss memory freed there.
+    #[test]
+    fn scattered_free_counts_blocks_below_the_reporting_order_in_every_zone() {
+        let buddy = "Node 0, zone    DMA32      1      2      0      0      0      0      0      0      0      7    446 \n\
+                     Node 0, zone   Normal      3      0      0      0      0      0      0      0      1      5      2 \n";
+        assert_eq!(free_below_order(buddy, 9), 1 + 2 * 2 + 3 + 256);
+        assert_eq!(free_below_order(buddy, 1), 4);
+        assert_eq!(free_below_order("", 9), 0);
+    }
     // TEST_SCENARIO: the cold cache is read from the root cgroup's memory.stat, where `inactive_file` sits beside `file`, `active_file` and `inactive_anon`, all byte counts. Picking a neighbour would reclaim the wrong amount every minute — anonymous memory the guest cannot drop, or the active cache the agent is using.
     #[test]
     fn the_cold_cache_is_the_inactive_file_count() {
