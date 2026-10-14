@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Run by the [deps.target] provider in .mise/config.toml, and by the oci task,
+# which runs where providers do not (the Lima VM).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+# Cargo never deletes a build output. A new toolchain or a changed Cargo.lock
+# gives the affected crates new hashes, and their old builds stay beside the
+# new ones for good, so a long-lived target grows to several builds' worth. A
+# target is kept only while the rustc and the lock it was built with are the
+# current ones; otherwise it goes, at the cost of one full build. A new
+# toolchain recompiles everything anyway; after a lock change the full build
+# also recompiles the crates the change did not touch.
+# The record sits beside the target rather than in it, so a target with no
+# record, such as CI's restored cache, is taken as current and kept.
+# Simplification: a feature or profile change in Cargo.toml alone leaves its
+# old builds until the next toolchain or lock change.
+target="${CARGO_TARGET_DIR:-target}"
+record="$target.built-with"
+inputs="$(rustc -vV; git hash-object Cargo.lock)"
+if [ -f "$record" ] && [ "$(cat "$record")" != "$inputs" ]; then
+  rm -rf "$target"
+fi
+echo "$inputs" > "$record"

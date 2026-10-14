@@ -14,6 +14,13 @@ sources = ["smolvm.pin", "smolvm.patch"]
 outputs = [".smolvm/.pinned"]
 run = "./.mise/fetch-smolvm"
 
+# Keeps cargo's target at one build: see .mise/prune-target.
+[deps.target]
+description = "Empty cargo's target when the toolchain or Cargo.lock it was built with changed"
+auto = true
+sources = ["Cargo.lock", "../../mise.lock"]
+run = "./.mise/prune-target"
+
 [tasks.check]
 description = "Run this package's checks"
 depends = [":check:*"]
