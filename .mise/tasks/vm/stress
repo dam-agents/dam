@@ -104,7 +104,7 @@ if [ -n "${usage_grow:-}" ]; then
   runner_pod() { kubectl get pods -n "$ns" -l "agent-platform.ai/owner=$usage_owner,app.kubernetes.io/component=vm-runner" -o jsonpath='{.items[0].metadata.name}'; }
   pool_sample() {
     local pod; pod="$(runner_pod)"
-    local used; used="$(kubectl top pod -n "$ns" "$pod" --no-headers 2>/dev/null | awk '{print $3}')"
+    local used; used="$(kubectl top pod -n "$ns" "$pod" --no-headers 2>/dev/null | awk '{print $3}' || true)"
     local req; req="$(kubectl get pod -n "$ns" "$pod" -o jsonpath='{.spec.containers[?(@.name=="vm-runner")].resources.requests.memory}')"
     local lim; lim="$(kubectl get pod -n "$ns" "$pod" -o jsonpath='{.spec.containers[?(@.name=="vm-runner")].resources.limits.memory}')"
     local json; json="$(agent_json)"
