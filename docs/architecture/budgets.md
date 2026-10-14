@@ -128,7 +128,8 @@ Four rules bound it:
 
 - **Unattended only.** A session pin (`active-session`), an Invocation pin, or a sweepable Invocation target (whose driver is blocked on its result) is never a candidate, and neither is an Agent mid-way through a runtime migration, nor a **never-hibernate** agent — effective timeout `0` declares "always run", not a default to be overridden — nor a vm agent, which holds no budget room to free.
   The pins carry this weight because the runtime's own idle flag reads an attached-but-turnless chat as idle: probe alone would reclaim a pod somebody is watching.
-  Candidates are then probed exactly as an ordinary hibernation probes, so declared in-flight work is spared.
+  Candidates are then probed as an ordinary hibernation probes, so declared in-flight work is spared, but only a candidate whose status says it is idle is reclaimed.
+  Hibernation takes a silent agent as idle, so one that is down still sleeps; a reclaim does not, since an agent deep in a long turn with its guest saturated, or whose address just moved, is silent too.
 - **An idle floor** (3 minutes) beneath which nothing is reclaimed.
   Besides sparing an agent its user may be moments from returning to, the floor is what makes reclaim **non-recursive**: an agent admitted this way carries fresh activity and so cannot be the next start's victim, which is what stops A-evicting-B-evicting-A from cycling.
 - **Provably sufficient, or nothing.** The candidates' summed Sizes must cover the shortfall in both dimensions before any of them is touched, so no agent is ever hibernated for a start that was going to be refused regardless.
