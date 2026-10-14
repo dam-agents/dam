@@ -131,7 +131,7 @@ func TestUpdateAgentStatus_NotFound(t *testing.T) {
 // TEST_SCENARIO: a VM runner behind a proxy that answers errors with a large HTML page. The page reaches the Agent's condition capped, so the status stays writable under the API server's 32 KiB message limit.
 func TestSetStatusCondition_CapsMessage(t *testing.T) {
 	var s apiv1.AgentStatus
-	page := "502 Bad Gateway: <html>" + strings.Repeat("é<p>proxy</p>", 10000)
+	page := "502 Bad Gateway: <html>" + strings.Repeat("é", 50000)
 	setStatusCondition(&s, apiv1.ConditionAgentPodReady, false, "PodReady", "NotReady", page, 1)
 	msg := s.Conditions[0].Message
 	assert.LessOrEqual(t, len(msg), conditionMessageMax+len("…"))
