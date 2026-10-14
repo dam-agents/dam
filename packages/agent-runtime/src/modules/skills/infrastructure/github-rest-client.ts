@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import * as path from "node:path";
 import type {
   GitHubErrorBody,
   Result,
@@ -11,6 +12,8 @@ const GITHUB_API = "https://api.github.com";
 const MAX_SKILL_FILE_BYTES = 1024 * 1024;
 
 export const MAX_SUBTREE_REQUESTS = 200;
+
+const MAX_LINK_HOPS = 16;
 
 export interface DetectedOwnerRepo {
   owner: string;
@@ -71,6 +74,11 @@ interface ContentsFile {
   encoding?: string;
 }
 
+export interface ResolvedDir {
+  path: string;
+  hasManifest: boolean;
+}
+
 export interface GithubFetchOpts {
   withAuth?: boolean;
 }
@@ -109,11 +117,18 @@ export interface GitHubRestClient {
     sha: string,
     opts?: GithubFetchOpts,
   ) => Promise<Result<Uint8Array, SkillsDomainError>>;
+  resolveDir: (
+    host: DetectedOwnerRepo,
+    ref: string,
+    dirPath: string,
+    opts?: GithubFetchOpts,
+  ) => Promise<Result<ResolvedDir, SkillsDomainError>>;
   fetchSubtree: (
     host: DetectedOwnerRepo,
     ref: string,
     dirPath: string,
     opts?: GithubFetchOpts,
+    placeAt?: string,
   ) => Promise<Result<SubtreeFile[], SkillsDomainError>>;
   createBlob: (
     host: DetectedOwnerRepo,
@@ -225,12 +240,47 @@ export function createGitHubRestClient(clientOpts: {
         opts,
       );
     },
-    async fetchSubtree(host, ref, dirPath, opts) {
-      const source = `${host.owner}/${host.repo}`;
-      const fail = (detail: string) =>
-        err<SkillsDomainError>({ kind: "SourceFetchFailed", source, detail });
-      const contents = (p: string) =>
-        `${repoPath(host)}/contents/${encodePath(p)}?ref=${encodeURIComponent(ref)}`;
+    async resolveDir(host, ref, dirPath, opts) {
+      const fail = sourceFetchFailed(host);
+      let hops = 0;
+      const visit = async (
+        p: string,
+      ): Promise<Result<ResolvedDir, SkillsDomainError>> => {
+        if (++hops > MAX_LINK_HOPS) {
+          return fail(`${dirPath}@${ref} has too many symlinks to resolve`);
+        }
+        const r = await json<unknown>(
+          "GET",
+          contentsPath(host, ref, p),
+          undefined,
+          opts,
+        );
+        if (r.ok) {
+          if (Array.isArray(r.value)) {
+            const entries = r.value as ContentsEntry[];
+            const hasManifest = entries.some(
+              (e) => e.type === "file" && e.path === `${p}/SKILL.md`,
+            );
+            return ok({ path: p, hasManifest });
+          }
+          const target = symlinkTarget(p, r.value);
+          return target === null
+            ? fail(`${p}@${ref} is not a directory`)
+            : visit(target);
+        }
+        const parentPath = path.posix.dirname(p);
+        if (!isNotFound(r) || parentPath === ".") return r;
+        const parent = await visit(parentPath);
+        if (!parent.ok || parent.value.path === parentPath) return r;
+        return visit(
+          path.posix.join(parent.value.path, path.posix.basename(p)),
+        );
+      };
+      return visit(dirPath);
+    },
+    async fetchSubtree(host, ref, dirPath, opts, placeAt = dirPath) {
+      const fail = sourceFetchFailed(host);
+      const contents = (p: string) => contentsPath(host, ref, p);
       let requests = 0;
       const spend = (n: number) => {
         requests += n;
@@ -242,33 +292,49 @@ export function createGitHubRestClient(clientOpts: {
         );
 
       const files: SubtreeFile[] = [];
-      const pending = [dirPath];
+      const pending = [{ src: dirPath, dst: placeAt, viaLink: false }];
       while (pending.length > 0) {
-        const dir = pending.pop()!;
+        const { src, dst, viaLink } = pending.pop()!;
         if (!spend(1)) return overBudget();
         const listing = await json<unknown>(
           "GET",
-          contents(dir),
+          contents(src),
           undefined,
           opts,
         );
-        if (!listing.ok) return listing;
+        if (!listing.ok) {
+          if (viaLink && isNotFound(listing)) continue;
+          return listing;
+        }
         if (!Array.isArray(listing.value)) {
-          return fail(`${dir}@${ref} is not a directory`);
+          const target = symlinkTarget(src, listing.value);
+          if (target !== null)
+            pending.push({ src: target, dst, viaLink: true });
+          else if (!viaLink) return fail(`${src}@${ref} is not a directory`);
+          continue;
         }
-        const blobs: ContentsEntry[] = [];
+        const blobs: { entry: ContentsEntry; dst: string }[] = [];
         for (const entry of listing.value as ContentsEntry[]) {
-          if (entry.type === "dir") pending.push(entry.path);
-          else if (entry.type === "file" && entry.download_url !== null)
-            blobs.push(entry);
+          const at = `${dst}/${path.posix.basename(entry.path)}`;
+          if (entry.type === "dir" || entry.type === "symlink") {
+            pending.push({
+              src: entry.path,
+              dst: at,
+              viaLink: entry.type === "symlink",
+            });
+          } else if (entry.type === "file" && entry.download_url !== null) {
+            blobs.push({ entry, dst: at });
+          }
         }
-        const oversize = blobs.find((b) => b.size > MAX_SKILL_FILE_BYTES);
+        const oversize = blobs.find((b) => b.entry.size > MAX_SKILL_FILE_BYTES);
         if (oversize) {
-          return fail(`${oversize.path} too large: ${oversize.size} bytes`);
+          return fail(
+            `${oversize.entry.path} too large: ${oversize.entry.size} bytes`,
+          );
         }
         if (!spend(blobs.length)) return overBudget();
         const fetched = await Promise.all(
-          blobs.map(async (entry) => {
+          blobs.map(async ({ entry, dst: at }) => {
             const r = await json<ContentsFile>(
               "GET",
               contents(entry.path),
@@ -289,7 +355,7 @@ export function createGitHubRestClient(clientOpts: {
             }
             return ok(
               gitBlobSha(bytes) === entry.sha
-                ? { path: entry.path, bytes: new Uint8Array(bytes) }
+                ? { path: at, bytes: new Uint8Array(bytes) }
                 : null,
             );
           }),
@@ -341,6 +407,41 @@ export function createGitHubRestClient(clientOpts: {
       return ok({ htmlUrl: r.value.html_url });
     },
   };
+}
+
+function contentsPath(
+  host: DetectedOwnerRepo,
+  ref: string,
+  filePath: string,
+): string {
+  return `${repoPath(host)}/contents/${encodePath(filePath)}?ref=${encodeURIComponent(ref)}`;
+}
+
+function sourceFetchFailed(host: DetectedOwnerRepo) {
+  return (detail: string) =>
+    err<SkillsDomainError>({
+      kind: "SourceFetchFailed",
+      source: `${host.owner}/${host.repo}`,
+      detail,
+    });
+}
+
+function isNotFound(res: Result<unknown, SkillsDomainError>): boolean {
+  return (
+    !res.ok &&
+    res.error.kind === "UpstreamGitHubError" &&
+    res.error.status === 404
+  );
+}
+
+function symlinkTarget(linkPath: string, body: unknown): string | null {
+  const link = body as { type?: string; target?: unknown };
+  if (link?.type !== "symlink" || typeof link.target !== "string") return null;
+  if (link.target.startsWith("/")) return null;
+  const resolved = path.posix.normalize(
+    path.posix.join(path.posix.dirname(linkPath), link.target),
+  );
+  return resolved === ".." || resolved.startsWith("../") ? null : resolved;
 }
 
 function gitBlobSha(bytes: Buffer): string {

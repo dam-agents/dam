@@ -72,14 +72,21 @@ async function scanGithub(
   const version = head.value.sha;
 
   if (subPath && !subPathEscapes(subPath)) {
-    return deps.repo.withTempDir("platform-skills-scan-", async (tmp) => {
-      const fetched = await fetchGithubPath(deps, host, version, subPath, tmp);
-      if (isGithubNotFound(fetched)) {
-        return sourcePathError("path-missing", source, subPath, version);
-      }
-      if (!fetched.ok) return fetched;
-      return collectSkills(deps, source, tmp, version, subPath);
-    });
+    const byDirectory = await deps.repo.withTempDir(
+      "platform-skills-scan-",
+      async (tmp) => {
+        const fetched = await fetchGithubPath(
+          deps,
+          host,
+          version,
+          subPath,
+          tmp,
+        );
+        if (!fetched.ok) return null;
+        return collectSkills(deps, source, tmp, version, subPath);
+      },
+    );
+    if (byDirectory) return byDirectory;
   }
 
   const tarball = await deps.github.fetchTarball(host, version, {

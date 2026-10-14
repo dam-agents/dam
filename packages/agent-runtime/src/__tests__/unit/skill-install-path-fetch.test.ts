@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: A GitHub skill source with a path is fetched by directory through the contents API, never by tarball, so an agent whose egress allows only that directory can install and scan it, and the installed content hash matches the tarball fetch.
+// TEST_OVERVIEW: A GitHub skill source with a path is fetched by directory through the contents API, so an agent whose egress allows only that directory can install and scan it; the content hash matches the tarball fetch, and a failed directory fetch falls back to the tarball.
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs/promises";
@@ -23,6 +23,7 @@ const SOURCE = "https://github.com/acme/mono";
 interface FakeRepo {
   files: Record<string, string>;
   symlinks?: Record<string, string>;
+  dirLinks?: Record<string, string>;
   submodules?: string[];
   tarball?: Uint8Array;
   private?: boolean;
@@ -43,9 +44,11 @@ function serveGithub(fake: FakeRepo): Call[] {
   const calls: Call[] = [];
   const symlinks = fake.symlinks ?? {};
   const submodules = fake.submodules ?? [];
+  const dirLinks = fake.dirLinks ?? {};
   const leafs = [
     ...Object.keys(fake.files),
     ...Object.keys(symlinks),
+    ...Object.keys(dirLinks),
     ...submodules,
   ];
   const json = (body: unknown, status = 200) =>
@@ -69,6 +72,9 @@ function serveGithub(fake: FakeRepo): Call[] {
       const p = decodeURIComponent(
         u.pathname.replace("/repos/acme/mono/contents/", ""),
       );
+      if (p in dirLinks) {
+        return json({ type: "symlink", path: p, target: dirLinks[p] });
+      }
       const target = symlinks[p] ?? p;
       if (target in fake.files) {
         return json({
@@ -104,6 +110,15 @@ function serveGithub(fake: FakeRepo): Call[] {
               path: c,
               sha: blobSha(symlinks[c]),
               size,
+              download_url: raw,
+            };
+          }
+          if (c in dirLinks) {
+            return {
+              type: "symlink",
+              path: c,
+              sha: blobSha(dirLinks[c]),
+              size: Buffer.byteLength(dirLinks[c]),
               download_url: raw,
             };
           }
@@ -150,6 +165,18 @@ describe("install and scan of a GitHub source with a path", () => {
     vi.unstubAllGlobals();
     await fs.rm(tmp, { recursive: true, force: true });
   });
+
+  const tarballOf = async (files: Record<string, string>) => {
+    const tree = await fs.mkdtemp(path.join(tmp, "tree-"));
+    for (const [rel, content] of Object.entries(files)) {
+      const file = path.join(tree, "acme-mono-x", rel);
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, content);
+    }
+    const tgz = path.join(tree, "src.tgz");
+    execFileSync("tar", ["-czf", tgz, "-C", tree, "acme-mono-x"]);
+    return new Uint8Array(await fs.readFile(tgz));
+  };
 
   const install = (name: string, sourcePath?: string) => {
     const skill = makeSkillName(name);
@@ -217,29 +244,55 @@ describe("install and scan of a GitHub source with a path", () => {
     ]);
   });
 
-  // TEST_SCENARIO: one file over the per-file limit fails the install with a named fetch failure instead of downloading it.
-  it("fails on an oversize file", async () => {
-    serveGithub({
-      files: {
-        "qa/p/SKILL.md": skillMd("p"),
-        "qa/p/big.bin": "x".repeat(1024 * 1024 + 1),
-      },
-    });
+  // TEST_SCENARIO: a file over the per-file limit or a path over the request cap stops the directory fetch early, and the install falls back to the tarball, as before this change.
+  it.each([
+    ["an oversize file", { "qa/p/big.bin": "x".repeat(1024 * 1024 + 1) }],
+    [
+      "more requests than the cap",
+      Object.fromEntries(
+        Array.from({ length: MAX_SUBTREE_REQUESTS }, (_, i) => [
+          `qa/p/f${i}`,
+          "x",
+        ]),
+      ),
+    ],
+  ])("falls back to the tarball on %s", async (_, extra) => {
+    const files = { "qa/p/SKILL.md": skillMd("p"), ...extra };
+    const calls = serveGithub({ files, tarball: await tarballOf(files) });
     const res = await install("p", "qa");
-    expect(res.ok).toBe(false);
-    if (res.ok) return;
-    expect(res.error).toMatchObject({ kind: "SourceFetchFailed" });
+    expect(res.ok).toBe(true);
+    expect(calls.at(-1)?.path).toBe(`/repos/acme/mono/tarball/${SHA}`);
+    expect(calls.length).toBeLessThanOrEqual(MAX_SUBTREE_REQUESTS + 3);
   });
 
-  // TEST_SCENARIO: the request cap bounds a huge path, so one install can not issue unbounded contents requests.
-  it("fails when the path needs more requests than the cap", async () => {
-    const files: Record<string, string> = { "qa/p/SKILL.md": skillMd("p") };
-    for (let i = 0; i < MAX_SUBTREE_REQUESTS; i++) files[`qa/p/f${i}`] = "x";
-    serveGithub({ files });
-    const res = await install("p", "qa");
-    expect(res.ok).toBe(false);
-    if (res.ok) return;
-    expect(res.error).toMatchObject({ kind: "SourceFetchFailed" });
+  // TEST_SCENARIO: a repository may publish a skill root as a symlink to another directory (this repository links .claude/skills to .agents/skills); the contents API does not follow it, so the fetch resolves the link and fetches only the named skill below its target.
+  it("installs and scans through a symlinked path", async () => {
+    const fake = {
+      files: {
+        ".agents/skills/p/SKILL.md": skillMd("p"),
+        ".agents/skills/p/refs/a.md": "a",
+        ".agents/skills/other/SKILL.md": skillMd("other"),
+      },
+      dirLinks: { ".claude/skills": "../.agents/skills" },
+    };
+    const calls = serveGithub(fake);
+    const res = await install("p", ".claude/skills");
+    expect(res.ok).toBe(true);
+    expect(
+      await fs.readFile(path.join(target, "p", "refs", "a.md"), "utf8"),
+    ).toBe("a");
+    expect(calls.some((c) => c.path.includes("/tarball/"))).toBe(false);
+    expect(calls.some((c) => c.path.includes("/other"))).toBe(false);
+
+    serveGithub(fake);
+    const scan = await runScan(
+      { github, git: noGit, repo, log: () => {} },
+      { source: SOURCE, path: ".claude/skills" },
+    );
+    expect(scan.ok && scan.value.map((s) => s.dir)).toEqual([
+      ".claude/skills/other",
+      ".claude/skills/p",
+    ]);
   });
 
   // TEST_SCENARIO: a private repository answers 404 anonymously; the fetch retries the whole directory authenticated.
@@ -261,23 +314,7 @@ describe("install and scan of a GitHub source with a path", () => {
       "skills/p/scripts/run.sh": "#!/bin/sh\necho hi\n",
       "skills/p/.hidden": "dot",
     };
-    const tree = path.join(tmp, "tree");
-    for (const [rel, content] of Object.entries(files)) {
-      await fs.mkdir(path.dirname(path.join(tree, "acme-mono-x", rel)), {
-        recursive: true,
-      });
-      await fs.writeFile(path.join(tree, "acme-mono-x", rel), content);
-    }
-    execFileSync("tar", [
-      "-czf",
-      path.join(tmp, "src.tgz"),
-      "-C",
-      tree,
-      "acme-mono-x",
-    ]);
-    const tarball = new Uint8Array(
-      await fs.readFile(path.join(tmp, "src.tgz")),
-    );
+    const tarball = await tarballOf(files);
 
     const tarCalls = serveGithub({ files, tarball });
     const byTarball = await install("p");

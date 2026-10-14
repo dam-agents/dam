@@ -36,6 +36,7 @@ export async function runInstall(
       input.sourceUrl,
       input.version,
       input.path,
+      name,
       tmp,
     );
     if (!fetched.ok) return fetched;
@@ -67,11 +68,20 @@ async function fetchSourceAtVersion(
   source: string,
   version: string,
   subPath: string | undefined,
+  name: SkillName,
   dest: string,
 ): Promise<Result<void, SkillsDomainError>> {
   const host = detectGithubOwnerRepo(source);
   if (host && subPath && !subPathEscapes(subPath)) {
-    return fetchGithubPath(deps, host, version, subPath, dest);
+    const byDirectory = await fetchGithubPath(
+      deps,
+      host,
+      version,
+      subPath,
+      dest,
+      name,
+    );
+    if (byDirectory.ok) return byDirectory;
   }
   if (host) {
     let bytes = await deps.github.fetchTarball(host, version, {
