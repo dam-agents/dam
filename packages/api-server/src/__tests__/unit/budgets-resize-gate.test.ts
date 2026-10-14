@@ -92,6 +92,7 @@ describe("budgets meter (#1900)", () => {
       defaultCeiling: { cpu: "4", memory: "8Gi" },
       slotSize: { cpu: "1", memory: "2Gi" },
       readVmUsage: async () => null,
+      isSlackUnlinked: async () => false,
     });
     const reserved = await svc.reserved();
     expect(reserved.cpu).toEqual({ reservedMilli: 1500, ceilingMilli: 4000 });
@@ -121,6 +122,7 @@ describe("budgets meter (#1900)", () => {
       defaultCeiling: { cpu: "4", memory: "8Gi" },
       slotSize: { cpu: "1", memory: "2Gi" },
       readVmUsage: async () => null,
+      isSlackUnlinked: async () => false,
     });
     const reserved = await svc.reserved();
     expect(reserved.cpu.reservedMilli).toBe(1000);
@@ -140,6 +142,7 @@ describe("budgets meter (#1900)", () => {
       defaultCeiling: { cpu: "4", memory: "8Gi" },
       slotSize: { cpu: "1", memory: "2Gi" },
       readVmUsage: async () => usage(30, 100),
+      isSlackUnlinked: async () => false,
     });
     const { vm } = await svc.reserved();
     expect(vm).toEqual({
@@ -172,6 +175,7 @@ describe("budgets meter (#1900)", () => {
       defaultCeiling: { cpu: "4", memory: "8Gi" },
       slotSize: { cpu: "1", memory: "2Gi" },
       readVmUsage: async () => null,
+      isSlackUnlinked: async () => false,
     });
     const reserved = await svc.reserved();
     expect(reserved.cpu.ceilingMilli).toBe(8000);
@@ -185,6 +189,7 @@ describe("budgets meter (#1900)", () => {
       defaultCeiling: { cpu: "4", memory: "8Gi" },
       slotSize: { cpu: "1", memory: "2Gi" },
       readVmUsage: async () => null,
+      isSlackUnlinked: async () => false,
     });
     const reserved = await svc.reserved();
     expect(reserved.cpu.ceilingMilli).toBe(8000);

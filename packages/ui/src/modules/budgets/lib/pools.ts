@@ -132,3 +132,17 @@ export function formatBytes(bytes: number): string {
   if (gib >= 1) return `${gib.toFixed(1)} GiB`;
   return `${Math.round(bytes / 1024 ** 2)} MiB`;
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: a pool's warning-sign text: the advice at every level, and at critical also what the platform does and, for a user without a Slack link, the command that links it.
+export function poolWarning(
+  level: PoolLevel,
+  advice: string,
+  fact: string,
+  slackLoginCommand?: string,
+): string {
+  if (level !== "critical") return advice;
+  const invite =
+    slackLoginCommand &&
+    `Run ${slackLoginCommand} in Slack to get alerts like this there.`;
+  return [advice, fact, invite].filter(Boolean).join(" ");
+}

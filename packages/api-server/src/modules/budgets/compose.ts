@@ -19,6 +19,7 @@ export function composeBudgetsModule(deps: {
   listAgents(): Promise<BudgetedAgent[]>;
   defaultCeiling: { cpu: string; memory: string };
   slotSize: { cpu: string; memory: string };
+  isSlackUnlinked(): Promise<boolean>;
 }): {
   budgets: BudgetsService;
   resizeGate: ResizeGate;
@@ -30,6 +31,7 @@ export function composeBudgetsModule(deps: {
     defaultCeiling: deps.defaultCeiling,
     slotSize: deps.slotSize,
     readVmUsage: () => readRunnerUsage(deps.k8s, deps.owner),
+    isSlackUnlinked: deps.isSlackUnlinked,
   };
   return {
     budgets: createBudgetsService(serviceDeps),
