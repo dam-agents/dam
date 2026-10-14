@@ -10,6 +10,13 @@ export const AVATAR_CHARACTERS = [
 ] as const;
 
 export type AvatarCharacter = (typeof AVATAR_CHARACTERS)[number];
+export const AVATAR_EMOJI_RE = new RegExp("^emoji:(\\p{RGI_Emoji})$", "v");
+export const AVATAR_IMAGE_RE = /^image:([0-9a-f]{64})$/;
+
+export type Avatar =
+  | { kind: "character"; character: AvatarCharacter }
+  | { kind: "emoji"; emoji: string }
+  | { kind: "image"; id: string };
 
 export const SLACK_EMOJI_INDEX: Record<AvatarCharacter, number> = {
   compass: 0,
@@ -218,6 +225,21 @@ export function avatarCharacter(
     : hashedCharacter(`${owner}\n${name}`);
 }
 
+export function parseAvatar(
+  chosen: string | undefined,
+  owner: string,
+  name: string,
+): Avatar {
+  const emoji = chosen?.match(AVATAR_EMOJI_RE)?.[1];
+  if (emoji) return { kind: "emoji", emoji };
+  const id = chosen?.match(AVATAR_IMAGE_RE)?.[1];
+  if (id) return { kind: "image", id };
+  return { kind: "character", character: avatarCharacter(chosen, owner, name) };
+}
+
+export function emojiSvg(emoji: string): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text x="50" y="54" font-size="80" text-anchor="middle" dominant-baseline="central">${emoji}</text></svg>`;
+}
 export function leastUsedCharacter(
   used: readonly AvatarCharacter[],
   among: readonly AvatarCharacter[] = AVATAR_CHARACTERS,

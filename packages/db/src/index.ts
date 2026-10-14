@@ -43,6 +43,8 @@ export {
   satelliteGrants,
   satelliteJobs,
   resourceAlerts,
+  avatarImages,
+  slackIconUrls,
 } from "./schema.js";
 export {
   eq,

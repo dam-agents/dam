@@ -19,6 +19,10 @@ export {
 } from "./infrastructure/agents-repository.js";
 export { createAgentEnvRepository } from "./infrastructure/agent-env-repository.js";
 export { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-secret-port.js";
+export {
+  createAvatarImageRoutes,
+  createAvatarImagesRepository,
+} from "./infrastructure/avatar-image-routes.js";
 export { createKeycloakUserDirectory } from "./infrastructure/keycloak-user-directory.js";
 export type { InfraAgent } from "./infrastructure/agent-mappers.js";
 export { createAgentSweep } from "./services/agent-sweep.js";

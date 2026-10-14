@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { createDb, runMigrations } from "db";
+import { AVATAR_CHARACTERS } from "api-server-api/avatar/svg";
 import {
   type TriggerEventPayload,
   workspaceMutationEventKinds,
@@ -49,6 +50,7 @@ import {
   createRuntimeMigrationSwitch,
   createImageUpdate,
   podIsIdle,
+  createAvatarImagesRepository,
 } from "./modules/agents/index.js";
 import {
   composePrStateResolver,
@@ -73,7 +75,10 @@ import {
   type SlackOAuthPending,
   type ChannelRegistry,
 } from "./modules/channels/infrastructure/slack.js";
-import { createImgbbAgentIcons } from "./modules/channels/infrastructure/agent-avatar-icons.js";
+import {
+  createDbAgentIconStore,
+  createImgbbAgentIcons,
+} from "./modules/channels/infrastructure/agent-avatar-icons.js";
 import { createAgentWorkspaceFiles } from "./modules/channels/infrastructure/agent-workspace-files.js";
 import { DEFAULT_SETTLE_MS } from "./modules/channels/domain/turn-coalescing.js";
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
@@ -1046,6 +1051,16 @@ export async function bootstrap() {
       firePair: (agentId) => firePair(agentId, {}),
     });
 
+  const agentIcon =
+    slackGatewayFactory && config.imgbbApiKey
+      ? createImgbbAgentIcons(
+          config.imgbbApiKey,
+          createDbAgentIconStore(db, createAvatarImagesRepository(db).load),
+        )
+      : null;
+  if (agentIcon)
+    for (const character of AVATAR_CHARACTERS)
+      void agentIcon({ kind: "character", character });
   const slackWorker = slackGatewayFactory
     ? createSlackWorker({
         makeAcpClient,
@@ -1076,9 +1091,7 @@ export async function bootstrap() {
           ),
         listWorkspaces: listActiveSlackWorkspaces,
         settleMs: DEFAULT_SETTLE_MS,
-        agentIcon: config.imgbbApiKey
-          ? createImgbbAgentIcons(config.imgbbApiKey)
-          : null,
+        agentIcon,
         readPodRestarts: async (agentId) => {
           const agent = await agentsRepo.get(agentId);
           return agent

@@ -512,6 +512,13 @@
       "when": 1791960903810,
       "tag": "0072_bump_agents_for_pi_telemetry_rail",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1791990797022,
+      "tag": "0073_avatar_images_and_slack_icon_urls",
+      "breakpoints": true
     }
   ]
 }

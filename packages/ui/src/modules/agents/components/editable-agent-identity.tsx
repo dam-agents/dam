@@ -1,5 +1,5 @@
 import { Checkmark, Edit } from "@carbon/icons-react";
-import type { AvatarCharacter, AvatarMood } from "api-server-api/avatar/svg";
+import type { AvatarMood } from "api-server-api/avatar/svg";
 import { useRef, useState } from "react";
 
 import {
@@ -85,13 +85,16 @@ export function EditableIdentity({
   name: string;
   avatar: string | null | undefined;
   onRename: (name: string) => void;
-  onAvatarChange: (avatar: AvatarCharacter) => void;
+  onAvatarChange: (avatar: string) => void;
 } & IdentityDisplay) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const hasNewAvatar = useFreshAvatars().length > 0;
   const [draft, setDraft] = useState<string | null>(null);
   const editEnded = useRef(false);
-  const character = resolveCharacter(name, avatar);
+  const current =
+    avatar?.startsWith("emoji:") || avatar?.startsWith("image:")
+      ? avatar
+      : resolveCharacter(name, avatar);
 
   const startEdit = () => {
     editEnded.current = false;
@@ -114,7 +117,7 @@ export function EditableIdentity({
       <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
         <PopoverTrigger
           type="button"
-          aria-label={`Avatar: ${character}. Choose an avatar`}
+          aria-label={`Avatar: ${current}. Choose an avatar`}
           className={cn("group relative shrink-0 rounded-md", avatarClassName)}
         >
           <AgentAvatar
@@ -136,10 +139,10 @@ export function EditableIdentity({
         </PopoverTrigger>
         <PopoverContent align="start" className="w-auto p-3">
           <AvatarGrid
-            value={character}
+            value={current}
             onPick={(next) => {
               setPickerOpen(false);
-              if (next !== character) onAvatarChange(next);
+              if (next !== current) onAvatarChange(next);
             }}
             onLeave={() => setPickerOpen(false)}
           />

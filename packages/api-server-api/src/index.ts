@@ -98,6 +98,7 @@ export type {
 export {
   AGENT_ID_RE,
   agentCreateInputSchema,
+  avatarSchema,
   agentKindSchema,
   agentUpdateInputSchema,
 } from "./modules/agents/schemas.js";

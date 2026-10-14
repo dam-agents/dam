@@ -24,7 +24,7 @@ type AgentSpec struct {
 	// Description is an optional human-readable description.
 	// +optional
 	Description string `json:"description,omitempty"`
-	// Avatar is the agent's chosen avatar character; unset means one picked from its owner and name.
+	// Avatar is the agent's chosen avatar: a character name, "emoji:<emoji>" or "image:<sha256>"; unset means a character picked from its owner and name.
 	// +optional
 	Avatar string `json:"avatar,omitempty"`
 	// Init is an optional one-shot init script run before the agent starts.
