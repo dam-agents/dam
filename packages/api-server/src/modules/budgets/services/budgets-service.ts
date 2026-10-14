@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import type { BudgetReserved, BudgetsService } from "api-server-api";
+import { getLogger } from "../../../core/logger.js";
 import { parseCpuMilli, parseMemoryBytes } from "../../../core/quantities.js";
 import {
   storageRefusal,
@@ -130,7 +131,12 @@ export function createBudgetsService(deps: BudgetsServiceDeps): BudgetsService {
         deps.readVmUsage(),
       ]);
       const slackUnlinked =
-        vmUsage && deps.isSlackUnlinked ? await deps.isSlackUnlinked() : false;
+        vmUsage && deps.isSlackUnlinked
+          ? await deps.isSlackUnlinked().catch((error: unknown) => {
+              getLogger().warn({ error }, "budgets.slack-link.failed");
+              return false;
+            })
+          : false;
       const { cpuMilli, memoryBytes } = reservedBy(agents);
       const ceiling = { ...deps.defaultCeiling, ...override };
       return {

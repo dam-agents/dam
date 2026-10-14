@@ -142,4 +142,20 @@ describe("the Slack invite on the budgets read", () => {
     expect((await read(usage(), false)).vm).not.toHaveProperty("slackUnlinked");
     expect((await read(null, true)).vm).toBeUndefined();
   });
+
+  it("still answers when the Slack link lookup fails", async () => {
+    // TEST_SCENARIO: a failed identity lookup drops the invite, not the whole read.
+    const view = await createBudgetsService({
+      listAgents: async () => [],
+      readCeilingOverride: async () => null,
+      defaultCeiling: { cpu: "4", memory: "8Gi" },
+      slotSize: { cpu: "1", memory: "2Gi" },
+      readVmUsage: async () => usage(),
+      isSlackUnlinked: async () => {
+        throw new Error("db down");
+      },
+    }).reserved();
+    expect(view.vm).toBeDefined();
+    expect(view.vm).not.toHaveProperty("slackUnlinked");
+  });
 });
