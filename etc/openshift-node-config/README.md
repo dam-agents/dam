@@ -202,6 +202,7 @@ Do this after the chart changes above, on an install whose nodes all have the re
 
 1. Set `virtualization.runner.releaseHostPath: /var/lib/platform-vm-runner-releases` in the install's values and upgrade the release.
    The chart then deploys the release stager on the runners' nodes.
+   Installs that share nodes each take their own subdirectory, such as `/var/lib/platform-vm-runner-releases/<release>`: every stager keeps only the newest few releases in its directory, so in a shared one an install that releases often removes another's.
 2. The new hostPath changes every runner pod's shape, so the controller rolls every runner once, and each roll reboots all of that owner's machines.
    The roll follows `virtualization.runner.rollout`: `maxConcurrent` runners at a time, and a runner whose owner has an agent in the middle of a turn waits for it to go idle, at most `idleWait`.
    Expect the whole roll to take about owners / `maxConcurrent` × (runner restart + machine boot), plus the idle waits.
