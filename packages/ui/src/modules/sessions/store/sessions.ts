@@ -24,6 +24,7 @@ import { draftKey, EMPTY_DRAFT, type SessionDraft } from "../lib/draft-key.js";
 import { draftWriter, loadDraftSnapshot } from "../lib/draft-snapshot.js";
 
 const SESSIONS_SECTION_OPEN_STORAGE_KEY = "platform-sessions-open";
+const TOOL_ACTIVITY_EXPANDED_STORAGE_KEY = "platform-tool-activity-expanded";
 
 export type RewriteMode = "rewind" | "fork";
 
@@ -55,6 +56,7 @@ export interface SessionsSlice {
   pendingResumeSessionId: string | null;
   pendingResumeSessionMode: SessionMode | null;
   sessionsSectionOpen: boolean;
+  toolActivityExpanded: boolean;
 
   setSessionId: (id: string | null) => void;
   setPendingResumeSessionId: (
@@ -64,6 +66,7 @@ export interface SessionsSlice {
   setSessionMode: (mode: SessionMode | null) => void;
   setTerminalPaused: (paused: boolean) => void;
   setSessionsSectionOpen: (open: boolean) => void;
+  setToolActivityExpanded: (expanded: boolean) => void;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
   setRunStarts: (list: string[]) => void;
   setQueuedPrompts: (items: QueuedPrompt[]) => void;
@@ -150,6 +153,10 @@ export const createSessionsSlice: StateCreator<
       SESSIONS_SECTION_OPEN_STORAGE_KEY,
       true,
     ),
+    toolActivityExpanded: readPersistedFlag(
+      TOOL_ACTIVITY_EXPANDED_STORAGE_KEY,
+      false,
+    ),
 
     setSessionId: (id) => set({ sessionId: id }),
     setPendingResumeSessionId: (id, mode = null) =>
@@ -159,6 +166,10 @@ export const createSessionsSlice: StateCreator<
     setSessionsSectionOpen: (open) => {
       writePersistedFlag(SESSIONS_SECTION_OPEN_STORAGE_KEY, open);
       set({ sessionsSectionOpen: open });
+    },
+    setToolActivityExpanded: (expanded) => {
+      writePersistedFlag(TOOL_ACTIVITY_EXPANDED_STORAGE_KEY, expanded);
+      set({ toolActivityExpanded: expanded });
     },
     setMessages: (updater) =>
       set((s) => ({

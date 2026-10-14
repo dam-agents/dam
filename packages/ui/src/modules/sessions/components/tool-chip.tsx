@@ -12,14 +12,34 @@ export function stripFences(text: string): string {
   return text.replace(/^```\w*\n?/, "").replace(/\n?```\s*$/, "");
 }
 
+const OUTPUT_PREVIEW_LINES = 40;
+
 export function ToolContentBlock({ text }: { text: string }) {
   const stripped = stripFences(text);
+  const [showAll, setShowAll] = useState(false);
+  const lines = stripped.replace(/\n$/, "").split("\n");
+  const clipped = lines.length > OUTPUT_PREVIEW_LINES;
+  const shown =
+    clipped && !showAll
+      ? lines.slice(0, OUTPUT_PREVIEW_LINES).join("\n")
+      : stripped;
 
   return (
     <div className="group/content relative my-1 rounded bg-muted/40 border border-border/40 p-2">
       <pre className="text-2xs font-mono whitespace-pre-wrap break-words overflow-x-auto w-full leading-[1.5] m-0 pr-6 select-text text-foreground/90">
-        {stripped}
+        {shown}
       </pre>
+      {clipped && (
+        <div className="-mx-2 -mb-2 mt-2 border-t border-border px-2 py-1.5 text-2xs">
+          <button
+            type="button"
+            onClick={() => setShowAll((all) => !all)}
+            className="text-foreground underline decoration-border underline-offset-2 hover:decoration-foreground"
+          >
+            {showAll ? "Show less" : `Show all ${lines.length} lines`}
+          </button>
+        </div>
+      )}
       <CopyButton
         value={stripped}
         label="Copy output"
