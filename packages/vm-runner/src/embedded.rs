@@ -1316,7 +1316,7 @@ mod tests {
         assert!(!vm_data_dir("m1").join("storage.qcow2").exists());
     }
 
-    // TEST_SCENARIO: smolvm formats a storage disk at every start that lacks its format marker, by copying its template over it, and a first boot whose resize failed leaves the marker unwritten, as a Mac without resize2fs does for every disk below the template's size. So a machine whose disk already holds a filesystem, and no marker, is started here: after the runner has prepared it, the format smolvm's start runs must leave the agent's home on it, while a fresh machine's empty disk is still formatted from the template.
+    // TEST_SCENARIO: smolvm formats a storage disk at every start that lacks its format marker, by copying its template over it, and a first boot whose resize failed leaves the marker unwritten, as a Mac without resize2fs does for every disk below the template's size. So a machine whose disk already holds a filesystem, and no marker, is started here: after the runner has prepared it, the format smolvm's start runs must leave the agent's home on it, while a fresh machine's disk, which the create formats itself where mkfs.ext4 is installed, is otherwise still formatted from the template.
     #[test]
     fn a_start_never_copies_the_template_over_a_disk_that_holds_a_filesystem() {
         use std::os::unix::fs::FileExt;
