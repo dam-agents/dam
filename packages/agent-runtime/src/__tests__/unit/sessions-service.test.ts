@@ -88,6 +88,37 @@ describe("createSessionsService", () => {
     expect(listCalls).toHaveLength(4);
   });
 
+  // TEST_SCENARIO: the sessions list shows a badge per repository a session touched, with its pull request; the list carries what the changes module recorded for each session, and nothing for a session that edited no repository.
+  it("carries the repositories each session touched", async () => {
+    const { caller } = pagedHarness();
+    const touched = {
+      name: "acme/app",
+      path: "/home/agent/work/app",
+      branch: "feat/x",
+      pullRequest: { number: 7, url: "https://github.com/acme/app/pull/7" },
+    };
+    const service = createSessionsService({
+      openCaller: () => caller,
+      sessionMetadata: fakeStore(),
+      isRunning: () => false,
+      changes: createSessionChanges(0),
+      sessionFrames: () => ({ frames: [], truncated: false }),
+      delegations: { store: () => ({ truncated: false }), read: () => null },
+      sessionRepositories: (sessionId) =>
+        sessionId === "newer" ? [touched] : [],
+      log: () => {},
+    });
+
+    const { sessions } = await service.list();
+
+    expect(sessions.find((s) => s.sessionId === "newer")?.repositories).toEqual(
+      [touched],
+    );
+    expect(sessions.find((s) => s.sessionId === "older")).not.toHaveProperty(
+      "repositories",
+    );
+  });
+
   // TEST_SCENARIO: the first list after a boot starts the harness cold; the platform's own session records answer within the grace, and the harness-only sessions follow through a change notice that keeps the listing it just read.
   it("answers from the platform's records when the harness is slow, then announces the rest", async () => {
     let answer: (v: unknown) => void = () => {};

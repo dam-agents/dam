@@ -12,6 +12,12 @@ export interface PullRequestFinder {
   ): Promise<PullRequestLink | null>;
 }
 
+function asHttps(remoteUrl: string): string {
+  const scp = /^[^@/\s]+@([^:/\s]+):(.+)$/.exec(remoteUrl.trim());
+  if (scp) return `https://${scp[1]}/${scp[2]}`;
+  return remoteUrl.trim().replace(/^ssh:\/\/(?:[^@/]+@)?/, "https://");
+}
+
 interface Cached {
   at: number;
   link: Promise<PullRequestLink | null>;
@@ -74,7 +80,7 @@ export function createPullRequestFinder(deps: {
     find(remoteUrl, branch) {
       if (!remoteUrl || !branch) return Promise.resolve(null);
       if (deps.token() === INERT_GITHUB_TOKEN) return Promise.resolve(null);
-      const github = parseGithubRepo(remoteUrl);
+      const github = parseGithubRepo(asHttps(remoteUrl));
       if (!github) return Promise.resolve(null);
       const key = `${github.owner}/${github.repo}#${branch}`;
       const cached = cache.get(key);
