@@ -1,6 +1,6 @@
 # Metrics (spend read path)
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -180,7 +180,7 @@ The reader itself still receives ids alone; liveness never reaches the store and
 The reader is the only component in this subsystem that speaks to the telemetry store.
 It holds a process-wide read connection and translates each contract read into an aggregate query against the store, always gated on the owner allowlist plus the request's window filters.
 
-Its **spend** reads — every tRPC rollup and the agent-facing cost reads — take the per-LLM-call log records Claude Code exports, one record per API call.
+Its **spend** reads — every tRPC rollup and the agent-facing cost reads — take the per-LLM-call log records Claude Code exports, one record per API call, and the records of the same shape Pi's image exports ([observability](observability.md#agent-export)).
 Two agent-facing reads deliberately sit outside that shape: the emitted-record read drops the body predicate so an agent sees everything it emitted rather than only its LLM calls, and the span read goes to the **trace** store instead, which is why it is the one read that answers for a harness exporting traces alone.
 Neither widens the ownership gate, which is the same attribute in both stores.
 Where the reader does read the call records, it depends on a small, stable slice of their shape: the trusted **owner attribution** attribute (every query's ownership gate), the **session** and **trace** identifiers (session grouping and the trace-aware fold), the **model** name, the **timestamp** (windowing and first/last bounds), and the per-call counters it sums — the **token counters** (input, output, cache-read, cache-creation), the **cost counter**, which is carried in integer micro-dollars and scaled to dollars at read time, and the per-call **request latency**, whose sum is reported as model time.

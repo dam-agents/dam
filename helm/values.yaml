@@ -2031,7 +2031,7 @@ harnessTemplates:
 # session has no harness of its own yet, and seeds the harness of new agents.
 # `providers` lists the model-provider connection types the harness can run on;
 # the session picker offers only their models. `telemetry` names the export
-# rail the harness reads (claude-code or bob, see
+# rail the harness reads (claude-code, bob or pi, see
 # docs/architecture/observability.md); it applies only with clickstack.enabled.
 harnesses:
   default: claude-code
@@ -2056,6 +2056,9 @@ harnesses:
       displayName: "Pi"
       description: "Pi coding agent with multi-LLM support"
       providers: [ibm-litellm, curve-bender, anthropic, openai, bedrock]
+      # Pi has no exporter of its own; the image's extension writes the
+      # per-call log records on this rail.
+      telemetry: pi
       tags: ["Any provider"]
     bob:
       enabled: true

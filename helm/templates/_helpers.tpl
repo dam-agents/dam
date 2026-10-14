@@ -509,17 +509,19 @@ creates, so it has to match the ServiceAccount vm-runner.yaml renders.
 {{/* Call with (dict "root" $ "templateName" <name> "rail" <telemetry>), where
      <name> is a harnessTemplates entry or a harnesses.catalog entry.
      Each harness reads its own export env, so `telemetry` names the rail:
-     `true` (or "claude-code") for the Claude Code env, "bob" for Bob Shell's.
-     Both land on the same collector over the agent's ordinary gateway egress —
-     see docs/architecture/observability.md. */}}
+     `true` (or "claude-code") for the Claude Code env, "bob" for Bob Shell's,
+     "pi" for the image's Pi exporter. All land on the same collector over the
+     agent's ordinary gateway egress — see docs/architecture/observability.md. */}}
 {{- define "platform.agentTelemetry.env" -}}
 {{- $rail := toString .rail }}
 {{- if or (eq $rail "true") (eq $rail "claude-code") }}
 {{- include "platform.agentTelemetry.env.claudeCode" . }}
 {{- else if eq $rail "bob" }}
 {{- include "platform.agentTelemetry.env.bob" . }}
+{{- else if eq $rail "pi" }}
+{{- include "platform.agentTelemetry.env.pi" . }}
 {{- else }}
-{{- fail (printf "%s.telemetry: %q is not a known export rail — use true/claude-code or bob. An unknown name would silently render the wrong rail and the agent's spend would never reach Usage." .templateName $rail) }}
+{{- fail (printf "%s.telemetry: %q is not a known export rail — use true/claude-code, bob or pi. An unknown name would silently render the wrong rail and the agent's spend would never reach Usage." .templateName $rail) }}
 {{- end }}
 {{- end }}
 
@@ -556,6 +558,19 @@ creates, so it has to match the ServiceAccount vm-runner.yaml renders.
   value: "1000"
 - name: OTEL_TRACES_EXPORT_INTERVAL
   value: "1000"
+{{- end }}
+
+{{/* Pi exports nothing itself: the image's pi-platform-telemetry extension
+     posts one OTLP/HTTP JSON log record per model call (pi.api_request) to
+     {ENDPOINT}/v1/logs, and only while OTEL_LOGS_EXPORTER is "otlp". */}}
+{{- define "platform.agentTelemetry.env.pi" -}}
+{{- $host := include "platform.clickstack.collector.host" .root }}
+- name: OTEL_SERVICE_NAME
+  value: {{ .templateName | quote }}
+- name: OTEL_LOGS_EXPORTER
+  value: "otlp"
+- name: OTEL_EXPORTER_OTLP_ENDPOINT
+  value: {{ printf "https://%s:4318" $host | quote }}
 {{- end }}
 
 {{/* Bob Shell builds its own tracer from BOB_TELEMETRY_* and posts OTLP/HTTP
