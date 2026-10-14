@@ -85,7 +85,23 @@ pub struct MachineStatus {
 pub struct RunnerUsage {
     pub storage: StorageUsage,
     pub memory: MemoryUsage,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu: Option<CpuUsage>,
     pub machines: Vec<MachineUsage>,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the runner's CPU over the last minute, off its cgroup: the limit the kernel holds it to (zero for none), what its machines used on average, the percentage of active scheduler periods in which that limit held them back, and the CPU pressure: the share of the last minute in which its agents waited for a CPU, by the cgroup's pressure stall information or by that throttling, whichever is higher. The pressure is absent when the cgroup has no cpu.pressure, and the whole figure when the runner has no cgroup, or neither a CPU limit nor a pressure to read.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default)]
+pub struct CpuUsage {
+    #[serde(rename = "limitMilli")]
+    pub limit_milli: u64,
+    #[serde(rename = "usedMilli")]
+    pub used_milli: u64,
+    #[serde(rename = "throttledPercent")]
+    pub throttled_percent: u32,
+    #[serde(rename = "pressurePercent", skip_serializing_if = "Option::is_none")]
+    pub pressure_percent: Option<u32>,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the claim's use as the storage guard measures it; both zero when it could not be measured.
@@ -117,6 +133,10 @@ pub struct MachineUsage {
     pub used_mib: i32,
     #[serde(rename = "diskGiB", skip_serializing_if = "is_zero")]
     pub disk_gib: i32,
+    #[serde(rename = "diskUsedBytes", skip_serializing_if = "is_zero")]
+    pub disk_used_bytes: u64,
+    #[serde(rename = "cpuMilli", skip_serializing_if = "is_zero")]
+    pub cpu_milli: u64,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the answer to a seed upload: how many bytes the runner stored and their SHA-256, in lowercase hex. The uploader counts and hashes what it sent the same way, so a seed cut short or changed on the way is caught before the machine boots from it.
@@ -330,7 +350,15 @@ mod tests {
                     state: STATE_RUNNING.into(),
                     used_mib: 640,
                     disk_gib: 100,
+                    disk_used_bytes: 8589934592,
+                    cpu_milli: 350,
                 }],
+                cpu: Some(CpuUsage {
+                    limit_milli: 9000,
+                    used_milli: 1200,
+                    throttled_percent: 4,
+                    pressure_percent: Some(12),
+                }),
             },
         );
         matches_the_contract(

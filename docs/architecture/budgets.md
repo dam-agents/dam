@@ -30,7 +30,8 @@ The api-server's role is legibility: it translates the controller's refusal into
   An unfilled spec (a peer awaiting its own reconcile) counts at `legacyAgentSize` — fallback, never zero.
 - **Scaled-up means desired replicas ≥ 1** on the agent StatefulSet — an agent still starting already counts, so two near-simultaneous wakes cannot both slip under the ceiling.
 - **A `vm` Agent is not counted.** It has no Size of its own: its machine draws on its owner's [VM runner](vm-memory.md), whose memory limit is that owner's pool for every vm agent, so neither its start nor a resize meets the Ceiling, and the api-server refuses to set a Size on one.
-  The budget endpoint carries that pool beside the Ceiling instead: the memory the owner's runner admits against and has committed, its storage used and usable, and each of the owner's vm agents' measured memory, read from the runner on demand and never stored.
+  The budget endpoint carries that pool beside the Ceiling instead: the memory the owner's runner admits against and has committed, its storage used and usable, its CPU limit, how often that limit held it back and its CPU pressure — the share of the last minute its agents waited for a CPU — over the last minute, and each of the owner's vm agents' measured memory, CPU and disk share, read from the runner on demand and never stored.
+  Each pool carries a level, warning from 75% and critical from 90%, defined once so the home dashboard, the create refusal and the resource alerts agree; CPU is never refused on, since a short CPU only slows agents down, so its pressure is named as congestion instead — low, moderate from 20% (the warning level), high from 50% and severe from 75% (both critical) — with a fill that grows with the log of the slowdown and is full at four times slower.
 - **Deliberate exclusions:** the paired gateway pod (uniform per-agent platform overhead — operators price it into default ceilings) and per-command Run pods (a known undercount, unchanged from the original design).
 
 ## The Ceiling
@@ -91,11 +92,15 @@ This also means the whole enforcement path is invisible on the happy path: under
 **Slots** are how the UI presents all of this.
 One slot is the chart default Size, and the budget endpoint publishes that unit next to Reserved and Ceiling.
 An agent occupies as many slots as its larger dimension needs, rounded up; the Ceiling holds as many slots as its tighter dimension allows, rounded down.
-Users never touch CPU or memory directly: the Size picker offers a small fixed set of slot multiples (a legacy Size outside the presets stays selectable as its own multiple), each agent row carries its multiple, and the home dashboard shows compute usage as a slot meter: one cell per slot, colored working / idle / free, carrying a marker on the slots of agents that never hibernate, with the operator's budget-request link in the meter's header.
+Users never touch CPU or memory directly: the Size picker offers a small fixed set of slot multiples (a legacy Size outside the presets stays selectable as its own multiple), each agent row carries its multiple, and the home dashboard shows a container agent's compute usage, under "Container agents" and only to a user who has one, as a slot meter: one cell per slot, colored working / idle / free, carrying a marker on the slots of agents that never hibernate, with the operator's budget-request link in the meter's header.
 Hovering a held slot names the agent behind it, its size and state, and offers a way into that agent's settings.
 The multiples and copy live in the UI budgets module.
 A start the controller parks raises a dialog that names the cause and sends the user to the agent list on the home dashboard to free room; the settings picker warns inline when the chosen Size needs more free slots than remain.
 First-time users with no agents see none of it.
+The card shows a vm user their pools in its place, and a user with both kinds switches between the two views, which the browser remembers: memory and storage as bars showing how much is used of how much, each agent's share a segment largest first, with what the pool counts beyond the agents' own shares — headroom for memory, caches and system for storage — as the last.
+CPU's bar is its congestion, with its word beside it, not a use against a limit, because the limit moves with the machines running and reaching it fails nothing.
+The bar's colour and the meter's spoken value carry the level; at warning or critical a warning sign beside the pool's name says what to do — pause agents, delete old ones or have them clean their disks, or, for CPU, which agents use the most — and at critical what the platform does: idle agents are paused for memory, and new VM agents are refused for storage.
+Each vm agent's row carries its own memory and storage, and the dashboard reads the figures again every 15 s while it is open.
 
 **Resizing** changes an Agent's Size in the agent settings and always restarts the pod (the CR patch re-renders the pair — a "live" resize does not exist in Kubernetes terms).
 A sleeping Agent's new Size simply rides its next start through the 0→1 gate.

@@ -79,11 +79,11 @@ describe("slots", () => {
 
   it("labels a size with its multiplier", () => {
     expect(formatSizeLabel(sizeInMi({ cpu: "2", memory: "4Gi" }), unit)).toBe(
-      "2x · 2 CPU · 4 Gi",
+      "2x · 2 CPU · 4 GiB",
     );
     expect(
       formatSizeLabel(sizeInMi({ cpu: "1500m", memory: "2Gi" }), unit),
-    ).toBe("1.5x · 1.5 CPU · 2 Gi");
+    ).toBe("1.5x · 1.5 CPU · 2 GiB");
   });
 
   it("keeps the real ceiling when running agents exceed it", () => {
