@@ -23,7 +23,9 @@ The writer remembers what a tag resolved to for a few minutes; a pinned digest i
 A machine records the digest it booted, which is how its runner knows, even after a restart, which tree it holds once the tag moves on.
 Every registry read names the host's platform, so a tag resolves to that platform's own image rather than to a multi-arch index, and each tree records the platform it was unpacked for: a claim that moves to a node of another architecture fetches a pinned index digest again rather than booting a tree it cannot run.
 
-**A tree is either whole under its name or not there.** A fetch unpacks into a scratch tree, flushes it to disk and only then renames it into place; an eviction renames the tree away before it deletes it, and deletes it in the background, so no resolve waits on it.
+**A tree is either whole under its name or not there.** A fetch unpacks into a scratch tree and only then renames it into place; an eviction renames the tree away before it deletes it, and deletes it in the background, so no resolve waits on it.
+A fetch does not flush its tree, since a flush of the whole filesystem stalls every machine disk on it: the tree records the host boot it was written in, the writer flushes once as it closes, and a tree an earlier boot wrote and never flushed is fetched again rather than booted.
+After a host crash, every image fetched since the writer last closed is therefore fetched again.
 A writer that dies mid-fetch or mid-eviction leaves only a scratch tree, which the next open reclaims, never a partial tree a lookup would take as complete.
 A fetch that finds an incomplete tree, or another platform's, under its name moves it aside and puts its own in place.
 A resolve has one deadline for everything it does, fetch included, and a runner waits a little past it, so a service that is slow is told apart from one that is gone — only one that is gone lets a runner boot a tree it already holds.

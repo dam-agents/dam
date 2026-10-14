@@ -490,6 +490,8 @@ impl Server {
             let _ = tokio::task::spawn_blocking(move || server.stop_running(stopping)).await;
         }
         self.forwarder.unpublish_all();
+        let images = self.images.clone();
+        let _ = tokio::task::spawn_blocking(move || images.flush()).await;
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: stops every machine the runtime reports running, each on a thread of its own so one slow guest does not spend the others' time, and returns once all have answered or `within` has passed. A machine whose worker is still in a runtime call is left alone: the call holds the machine, and a stop beside it would only queue behind it.

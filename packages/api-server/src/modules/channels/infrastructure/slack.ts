@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { avatarCharacter, SLACK_EMOJI_INDEX } from "api-server-api/avatar/svg";
+import { parseAvatar, SLACK_EMOJI_INDEX } from "api-server-api/avatar/svg";
 import type { TtlStore } from "../../../core/ttl-store.js";
 import {
   annotateSpan,
@@ -2083,24 +2083,29 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               return [];
             }),
     ]);
-    const character = owner ? avatarCharacter(avatar, owner, username) : null;
+    const parsed = owner ? parseAvatar(avatar, owner, username) : null;
     if (!customize) {
       const custom =
-        character &&
+        parsed?.kind === "character" &&
         bound.find((c) => c.id === conversation.id)?.customEmoji?.[
-          SLACK_EMOJI_INDEX[character]
+          SLACK_EMOJI_INDEX[parsed.character]
         ];
-      const emoji = custom ? `:${custom}:` : ":robot_face:";
+      const emoji =
+        parsed?.kind === "emoji"
+          ? parsed.emoji
+          : custom
+            ? `:${custom}:`
+            : ":robot_face:";
       const name = username.replace(/[*<>&]/g, "");
       return {
         persona: {},
         sign: (text, bold) => `${emoji} ${bold}${name}${bold}\n\n${text}`,
       };
     }
-    const iconUrl = agentIcon && character ? await agentIcon(character) : null;
-    if (agentIcon && character && !iconUrl)
+    const iconUrl = agentIcon && parsed ? await agentIcon(parsed) : null;
+    if (agentIcon && parsed && !iconUrl)
       getLogger().warn(
-        { agentId: instanceName, character },
+        { agentId: instanceName, avatar: parsed.kind },
         "slack.agent_icon.missing",
       );
     return {

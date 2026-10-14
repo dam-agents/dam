@@ -1,7 +1,11 @@
-// TEST_OVERVIEW: With the chat:write.customize scope, an agent's Slack posts carry the agent's name as username and its avatar as icon_url, so a channel with several agents shows who said what. Without the scope, or when the granted set is unknown, posts go out under the app's own identity and open with an emoji and the agent's name in bold instead. The emoji is the custom emoji the connection names for the agent's character, and the robot face when the connection names none. The icon is the agent's chosen character, or the one picked from its owner and name when none is chosen. Each character is uploaded to ImgBB once per install, as a PNG named by a hash: its URL is stored under the SHA-256 of the PNG, so a restart or another replica reuses it. All characters are uploaded at startup, a failed upload is retried after a minute, and a post that goes out without the icon is logged.
+// TEST_OVERVIEW: With the chat:write.customize scope, an agent's Slack posts carry the agent's name as username and its avatar as icon_url, so a channel with several agents shows who said what. Without the scope, or when the granted set is unknown, posts go out under the app's own identity and open with an emoji and the agent's name in bold instead. The emoji is the agent's emoji avatar, else the custom emoji the connection names for the agent's character, and the robot face when the connection names none. The icon is the agent's chosen avatar, or the character picked from its owner and name when none is chosen. An emoji avatar links the public Twemoji PNG and is never uploaded; an uploaded image is read from the store and uploaded like a character. Each character is uploaded to ImgBB once per install, as a PNG named by a hash: its URL is stored under the SHA-256 of the PNG, so a restart or another replica reuses it. All characters are uploaded at startup, a failed upload is retried after a minute, and a post that goes out without the icon is logged.
 import { createHash } from "node:crypto";
 import { describe, it, expect, vi } from "vitest";
-import { AVATAR_CHARACTERS, avatarCharacter } from "api-server-api/avatar/svg";
+import {
+  AVATAR_CHARACTERS,
+  type Avatar,
+  avatarCharacter,
+} from "api-server-api/avatar/svg";
 import type { AgentsService } from "api-server-api";
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { configureLogger } from "../../core/logger.js";
@@ -11,6 +15,7 @@ import { createFakeSlackGateway } from "../../modules/channels/infrastructure/fa
 import {
   type AgentIconUrl,
   createImgbbAgentIcons,
+  twemojiUrl,
 } from "../../modules/channels/infrastructure/agent-avatar-icons.js";
 import type { PublicImageUrls } from "../../modules/channels/infrastructure/public-image-urls-repository.js";
 import { stubTurnAttendance } from "../helpers/turn-attendance.js";
@@ -91,9 +96,9 @@ function harness(
 describe("slack agent persona", () => {
   // TEST_SCENARIO: The scope is granted and the agent chose no character, so both agent-authored paths name the agent and show the character picked from its owner and name.
   it("posts and replies as the agent when chat:write.customize is granted", async () => {
-    const seen: string[] = [];
-    const icon: AgentIconUrl = async (character) => {
-      seen.push(character);
+    const seen: Avatar[] = [];
+    const icon: AgentIconUrl = async (avatar) => {
+      seen.push(avatar);
       return ICON;
     };
 
@@ -112,15 +117,18 @@ describe("slack agent persona", () => {
       text: "hello",
     });
     expect(reply).toMatchObject({ username: "Scout", iconUrl: ICON });
-    const hashed = avatarCharacter(undefined, OWNER, "Scout");
+    const hashed = {
+      kind: "character",
+      character: avatarCharacter(undefined, OWNER, "Scout"),
+    };
     expect(seen).toEqual([hashed, hashed]);
   });
 
   // TEST_SCENARIO: A character the owner chose wins over the one picked from the name, so Slack shows the same character as the UI.
   it("shows the agent's chosen character", async () => {
-    const seen: string[] = [];
-    const icon: AgentIconUrl = async (character) => {
-      seen.push(character);
+    const seen: Avatar[] = [];
+    const icon: AgentIconUrl = async (avatar) => {
+      seen.push(avatar);
       return ICON;
     };
     const chosen =
@@ -128,7 +136,30 @@ describe("slack agent persona", () => {
 
     await harness(["chat:write.customize"], icon, chosen).post();
 
-    expect(seen).toEqual([chosen]);
+    expect(seen).toEqual([{ kind: "character", character: chosen }]);
+  });
+
+  // TEST_SCENARIO: An emoji or an uploaded image the owner chose reaches the icon lookup as itself, not as a character.
+  it("passes an emoji or image avatar to the icon lookup", async () => {
+    const seen: Avatar[] = [];
+    const icon: AgentIconUrl = async (avatar) => {
+      seen.push(avatar);
+      return ICON;
+    };
+    const id = "a".repeat(64);
+    await harness(["chat:write.customize"], icon, "emoji:🦊").post();
+    await harness(["chat:write.customize"], icon, `image:${id}`).post();
+    expect(seen).toEqual([
+      { kind: "emoji", emoji: "🦊" },
+      { kind: "image", id },
+    ]);
+  });
+
+  // TEST_SCENARIO: Without the scope an emoji avatar signs the post itself, in place of the character's custom emoji or the robot face.
+  it("signs the post with the agent's emoji avatar", async () => {
+    const names = Array.from({ length: 8 }, (_, i) => `team-agent-${i + 1}`);
+    const post = await harness(["chat:write"], null, "emoji:🦊", names).post();
+    expect(post).toMatchObject({ text: "🦊 *Scout*\n\nhello" });
   });
 
   // TEST_SCENARIO: Without the scope Slack may refuse or ignore the override, and with an unknown granted set nothing proves it is allowed, so the post keeps the app's identity.
@@ -188,7 +219,7 @@ describe("slack agent persona", () => {
       .map((l) => JSON.parse(l))
       .filter((r) => r.msg === "slack.agent_icon.missing");
     expect(missing).toEqual([
-      expect.objectContaining({ agentId: "agent-1", character: "spark" }),
+      expect.objectContaining({ agentId: "agent-1", avatar: "character" }),
     ]);
   });
 });
@@ -221,13 +252,14 @@ describe("imgbb agent icons", () => {
     const { iconUrl } = createImgbbAgentIcons({
       apiKey: "secret",
       store,
+      loadImage: async () => null,
       fetchImpl: imgbb.fetchImpl,
     });
 
-    expect(await iconUrl("lens")).toBe(ICON);
-    expect(await iconUrl("lens")).toBe(ICON);
+    expect(await iconUrl({ kind: "character", character: "lens" })).toBe(ICON);
+    expect(await iconUrl({ kind: "character", character: "lens" })).toBe(ICON);
     expect(imgbb.uploads).toHaveLength(1);
-    expect(await iconUrl("wave")).toBe(ICON);
+    expect(await iconUrl({ kind: "character", character: "wave" })).toBe(ICON);
 
     expect(imgbb.uploads).toHaveLength(2);
     const form = imgbb.uploads[0]!;
@@ -242,6 +274,40 @@ describe("imgbb agent icons", () => {
     expect(store.rows.size).toBe(2);
   });
 
+  // TEST_SCENARIO: An uploaded image is read from the store and uploaded as it is; an image the store does not hold gives no icon.
+  it("uploads an uploaded image from the store", async () => {
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const imgbb = fakeImgbb([ok]);
+    const { iconUrl } = createImgbbAgentIcons({
+      apiKey: "secret",
+      store: memoryStore(),
+      loadImage: async (id) => (id === "img1" ? png : null),
+      fetchImpl: imgbb.fetchImpl,
+    });
+    expect(await iconUrl({ kind: "image", id: "img1" })).toBe(ICON);
+    const sent = imgbb.uploads[0]!.get("image") as File;
+    expect(new Uint8Array(await sent.arrayBuffer())).toEqual(png);
+    expect(await iconUrl({ kind: "image", id: "missing" })).toBeNull();
+    expect(imgbb.uploads).toHaveLength(1);
+  });
+
+  // TEST_SCENARIO: An emoji avatar links the Twemoji PNG named by its code points and uploads nothing. U+FE0F is dropped unless the emoji is a ZWJ sequence, the way Twemoji names its files.
+  it("links Twemoji for an emoji without uploading", async () => {
+    const imgbb = fakeImgbb([]);
+    const { iconUrl } = createImgbbAgentIcons({
+      apiKey: "secret",
+      store: memoryStore(),
+      loadImage: async () => null,
+      fetchImpl: imgbb.fetchImpl,
+    });
+    expect(await iconUrl({ kind: "emoji", emoji: "🦊" })).toMatch(
+      /\/1f98a\.png$/,
+    );
+    expect(twemojiUrl("❤️")).toMatch(/\/2764\.png$/);
+    expect(twemojiUrl("👩‍💻")).toMatch(/\/1f469-200d-1f4bb\.png$/);
+    expect(imgbb.uploads).toHaveLength(0);
+  });
+
   // TEST_SCENARIO: After a restart, or on another replica, the stored URL answers the post and ImgBB is not called again.
   it("reuses a stored URL across processes without uploading", async () => {
     const store = memoryStore();
@@ -249,16 +315,18 @@ describe("imgbb agent icons", () => {
     await createImgbbAgentIcons({
       apiKey: "secret",
       store,
+      loadImage: async () => null,
       fetchImpl: first.fetchImpl,
-    }).iconUrl("lens");
+    }).iconUrl({ kind: "character", character: "lens" });
 
     const second = fakeImgbb([]);
     const { iconUrl } = createImgbbAgentIcons({
       apiKey: "secret",
       store,
+      loadImage: async () => null,
       fetchImpl: second.fetchImpl,
     });
-    expect(await iconUrl("lens")).toBe(ICON);
+    expect(await iconUrl({ kind: "character", character: "lens" })).toBe(ICON);
     expect(second.uploads).toHaveLength(0);
   });
 
@@ -276,9 +344,10 @@ describe("imgbb agent icons", () => {
     const { iconUrl } = createImgbbAgentIcons({
       apiKey: "secret",
       store: broken,
+      loadImage: async () => null,
       fetchImpl: imgbb.fetchImpl,
     });
-    expect(await iconUrl("lens")).toBe(ICON);
+    expect(await iconUrl({ kind: "character", character: "lens" })).toBe(ICON);
     expect(imgbb.uploads).toHaveLength(1);
   });
 
@@ -288,6 +357,7 @@ describe("imgbb agent icons", () => {
     const icons = createImgbbAgentIcons({
       apiKey: "secret",
       store: memoryStore(),
+      loadImage: async () => null,
       fetchImpl: imgbb.fetchImpl,
       waitMs: 0,
     });
@@ -295,7 +365,7 @@ describe("imgbb agent icons", () => {
     expect(imgbb.uploads).toHaveLength(AVATAR_CHARACTERS.length);
 
     for (const character of AVATAR_CHARACTERS)
-      expect(await icons.iconUrl(character)).toBe(ICON);
+      expect(await icons.iconUrl({ kind: "character", character })).toBe(ICON);
     expect(imgbb.uploads).toHaveLength(AVATAR_CHARACTERS.length);
   });
 
@@ -311,17 +381,26 @@ describe("imgbb agent icons", () => {
       const { iconUrl } = createImgbbAgentIcons({
         apiKey: "secret",
         store: memoryStore(),
+        loadImage: async () => null,
         fetchImpl: imgbb.fetchImpl,
       });
 
-      expect(await iconUrl("lens")).toBeNull();
-      expect(await iconUrl("lens")).toBeNull();
+      expect(
+        await iconUrl({ kind: "character", character: "lens" }),
+      ).toBeNull();
+      expect(
+        await iconUrl({ kind: "character", character: "lens" }),
+      ).toBeNull();
       expect(imgbb.uploads).toHaveLength(1);
 
       vi.advanceTimersByTime(60_000);
-      expect(await iconUrl("lens")).toBeNull();
+      expect(
+        await iconUrl({ kind: "character", character: "lens" }),
+      ).toBeNull();
       vi.advanceTimersByTime(60_000);
-      expect(await iconUrl("lens")).toBe(ICON);
+      expect(await iconUrl({ kind: "character", character: "lens" })).toBe(
+        ICON,
+      );
       expect(imgbb.uploads).toHaveLength(3);
     } finally {
       vi.useRealTimers();
@@ -339,14 +418,15 @@ describe("imgbb agent icons", () => {
     const { iconUrl } = createImgbbAgentIcons({
       apiKey: "secret",
       store: memoryStore(),
+      loadImage: async () => null,
       fetchImpl,
       waitMs: 5,
     });
 
-    expect(await iconUrl("lens")).toBeNull();
+    expect(await iconUrl({ kind: "character", character: "lens" })).toBeNull();
     answer(ok());
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(await iconUrl("lens")).toBe(ICON);
+    expect(await iconUrl({ kind: "character", character: "lens" })).toBe(ICON);
     expect(calls).toBe(1);
   });
 });

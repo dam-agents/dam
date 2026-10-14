@@ -857,16 +857,14 @@ fn bind_ca() {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the folders that only ever hold temporary files or caches. The system ones are each a directory of the disk bound in place, empty on every boot, owned by root with the mode the image expects of them. Being plain directories of the disk rather than part of the root, they are bounded by the disk and not by the guest's memory, and nothing under them is the image's own. In the agent's home, npm's cache directory and the XDG cache directory are ordinary directories of the home and last as it does. evict_scratch deletes from all of them when the disk runs short.
-const SCRATCH_DIRS: [(&str, u32); 3] = [
-    ("/tmp", 0o1777),
-    ("/var/tmp", 0o1777),
-    ("/var/cache", 0o755),
-];
+// UNIT_BOUNDARY_DESCRIPTION: the folders that only ever hold temporary files or caches. The system ones are each a directory of the disk bound in place, empty on every boot, owned by root with the mode the image expects of them. Being plain directories of the disk rather than part of the root, they are bounded by the disk and not by the guest's memory, and nothing under them is the image's own. /var/cache is not one of them: an image ships its font, package and linker caches there, and an empty bind over them had every boot rebuild them, so it is part of the kept root, which lasts as long as the image's root generation. In the agent's home, npm's cache directory and the XDG cache directory are ordinary directories of the home and last as it does. evict_scratch deletes from all of them when the disk runs short.
+const SCRATCH_DIRS: [(&str, u32); 2] = [("/tmp", 0o1777), ("/var/tmp", 0o1777)];
+// UNIT_BOUNDARY_DESCRIPTION: scratch folders an earlier platform-init bound, whose stores on the disk are discarded at boot so the disk gets their space back.
+const RETIRED_SCRATCH: [&str; 1] = ["/var/cache"];
 const HOME_CACHES: [&str; 2] = [".cache", ".npm"];
 const SCRATCH_STORE: &str = "scratch";
 
-// UNIT_BOUNDARY_DESCRIPTION: binds every system scratch folder from its store on the disk. It runs once the root is in place and the home is mounted, and before the trust cache, which is bound under /var/cache. The last boot's folders are moved aside and deleted in the background, so the disk gets its space back without holding up the boot. A home cache that is a symlink — a home moved here from a container may have ~/.cache pointing at /tmp/agent-cache — is removed, so the tool makes a directory of the home there. Home caches that earlier boots moved aside are deleted the same way. A bind that fails is a warning: the folder then stays on the root, and the agent still runs.
+// UNIT_BOUNDARY_DESCRIPTION: binds every system scratch folder from its store on the disk. It runs once the root is in place and the home is mounted. The last boot's folders, and the store of /var/cache an earlier platform-init bound, are moved aside and deleted in the background, so the disk gets its space back without holding up the boot. A home cache that is a symlink — a home moved here from a container may have ~/.cache pointing at /tmp/agent-cache — is removed, so the tool makes a directory of the home there. Home caches that earlier boots moved aside are deleted the same way. A bind that fails is a warning: the folder then stays on the root, and the agent still runs.
 fn mount_scratch(root: &Path) {
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -888,6 +886,11 @@ fn mount_scratch(root: &Path) {
             logf!("WARNING: binding {dir} from the disk ({e}); it stays on the root");
         }
     }
+    for dir in RETIRED_SCRATCH {
+        if let Err(e) = discard(&store.join(scratch_name(dir)), stamp) {
+            logf!("WARNING: moving an earlier boot's {dir} aside ({e}); it is kept");
+        }
+    }
     let home = PathBuf::from(guest::AGENT_HOME);
     for name in HOME_CACHES {
         let path = home.join(name);
@@ -904,7 +907,12 @@ fn mount_scratch(root: &Path) {
         match store {
             Err(e) => logf!("WARNING: opening the scratch store ({e}); the last boot's folders stay on the disk until a later boot"),
             Ok(store) => {
-            let names = SCRATCH_DIRS.map(|(dir, _)| scratch_name(dir));
+            let names: Vec<String> = SCRATCH_DIRS
+                .map(|(dir, _)| dir)
+                .into_iter()
+                .chain(RETIRED_SCRATCH)
+                .map(scratch_name)
+                .collect();
             purge_discarded(
                 Path::new(&format!("/proc/self/fd/{}", store.as_raw_fd())),
                 &names,
@@ -952,7 +960,7 @@ fn purge_discarded(dir: &Path, names: &[impl AsRef<str>]) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: scratch on the disk shares it with the agent's home, so a tool that fills /tmp or its cache could leave the agent no room for its work. Every EVICT_INTERVAL, while the disk has less than EVICT_BELOW_PERCENT of it free or the runner marks the owner's claim short of room, the scratch folders lose whole entries, until EVICT_UNTIL_PERCENT is free and the mark is gone, or only entries used within the last EVICT_AGES pass are left. An entry is one name directly in a scratch folder, such as ~/.cache/go-build or /tmp/pr-body.md, and it goes whole or not at all: a tool that loses some of its cache's files and keeps the rest sees a half cache that looks complete, and fails on it with an error that says nothing about the disk. An entry counts as used at the newest modification or change time anywhere in it. Access times are not counted: the disk is mounted relatime, so a read often does not move them. The disk is a sparse file on that claim, and the guest agent's trim hands what this frees back to it. Each eviction goes to the console, so the host sees why a cache vanished. A deleted file that is still open frees its space only when it is closed.
+// UNIT_BOUNDARY_DESCRIPTION: scratch on the disk shares it with the agent's home, so a tool that fills /tmp or its home cache could leave the agent no room for its work. Every EVICT_INTERVAL, while the disk has less than EVICT_BELOW_PERCENT of it free or the runner marks the owner's claim short of room, the scratch folders lose whole entries, until EVICT_UNTIL_PERCENT is free and the mark is gone, or only entries used within the last EVICT_AGES pass are left. An entry is one name directly in a scratch folder, such as ~/.cache/go-build or /tmp/pr-body.md, and it goes whole or not at all: a tool that loses some of its cache's files and keeps the rest sees a half cache that looks complete, and fails on it with an error that says nothing about the disk. An entry counts as used at the newest modification or change time anywhere in it. Access times are not counted: the disk is mounted relatime, so a read often does not move them. The disk is a sparse file on that claim, and the guest agent's trim hands what this frees back to it. Each eviction goes to the console, so the host sees why a cache vanished. A deleted file that is still open frees its space only when it is closed.
 const EVICT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 const EVICT_BELOW_PERCENT: u64 = 10;
 const EVICT_UNTIL_PERCENT: u64 = 20;
@@ -2933,6 +2941,20 @@ mod tests {
         );
         assert!(store.path().join("tmp.notes").is_file());
         assert!(store.path().join("tmp").is_dir());
+    }
+
+    // TEST_SCENARIO: an image ships its font, package and linker caches in /var/cache, and an empty folder bound over it every boot had each boot rebuild them. /var/cache is no scratch folder, so it stays the image's and the kept root's, while the store an earlier platform-init bound there is among the names the background delete clears.
+    #[test]
+    fn the_images_var_cache_is_not_bound_over() {
+        assert!(SCRATCH_DIRS.iter().all(|(dir, _)| *dir != "/var/cache"));
+        let store = TempDir::new("retired-scratch");
+        fs::create_dir(store.path().join("var-cache")).unwrap();
+        fs::write(store.path().join("var-cache/fontconfig"), b"x").unwrap();
+        let aside = discard(&store.path().join(scratch_name(RETIRED_SCRATCH[0])), 9)
+            .unwrap()
+            .unwrap();
+        purge_discarded(store.path(), &RETIRED_SCRATCH.map(scratch_name));
+        assert!(!aside.exists());
     }
 
     // TEST_SCENARIO: a new image boots on an empty upper, and the old one can hold millions of files, which deleted in place hold up the boot for minutes. Clearing renames the kept upper aside with its image record, so nothing under the old names is left to mount, and a later delete takes it away. A root kept for the same image is left as it is, while the work layer is emptied on every boot.

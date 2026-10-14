@@ -49,6 +49,8 @@ import {
   createRuntimeMigrationSwitch,
   createImageUpdate,
   podIsIdle,
+  createAvatarImagesRepository,
+  sweepAvatarImages,
 } from "./modules/agents/index.js";
 import {
   composePrStateResolver,
@@ -517,6 +519,14 @@ export async function bootstrap() {
         shareBaseUrl: config.shareBaseUrl,
       }),
     },
+  });
+  await periodicJobs.register("avatar-images-sweep", 3_600_000, async () => {
+    const agents = await agentsRepo.list();
+    const removed = await sweepAvatarImages(
+      createAvatarImagesRepository(db),
+      agents.map((a) => a.spec.avatar),
+    );
+    if (removed > 0) getLogger().info({ removed }, "avatar_images.swept");
   });
   const sessionPresence = createSessionPresence(liveAgentsRepo, sharedRedis);
   await periodicJobs.register("session-presence-reconcile", 60_000, () =>
@@ -1052,6 +1062,7 @@ export async function bootstrap() {
       ? createImgbbAgentIcons({
           apiKey: config.imgbbApiKey,
           store: createPublicImageUrlsRepository(db),
+          loadImage: createAvatarImagesRepository(db).load,
         })
       : null;
   void agentIcons?.warm();
