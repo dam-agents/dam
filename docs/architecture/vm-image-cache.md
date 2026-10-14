@@ -1,6 +1,6 @@
 # VM image cache
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 A machine may reach only its gateway, so its image is fetched for it and unpacked into a tree every machine of that image mounts read-only.
 Where that tree lives is the one part of the runner's storage an install may move off its claim.
@@ -39,6 +39,7 @@ A runner whose own claim runs short sheds every tree no machine holds, however f
 
 **Nothing could fill that cache before an agent needed it.** A runner exists only once its owner's agents need one, so the first machine on an image, on every node after every deploy, would wait out the fetch with a user watching.
 The service therefore preloads the harness images the install ships, resolving their tags on every pass, and pins them against eviction.
+A fetch keeps nothing when it fails, so a digest whose preload failed is fetched again only after a wait that doubles with each failure, from one interval up to six hours; a tag that moves to another digest is fetched on the next pass.
 That set is fixed at deploy, so a custom agent image is never among them.
 It preloads with the install's default pull secrets, mounted into it, so an image only a per-template secret reads is fetched when a machine first needs it.
 
