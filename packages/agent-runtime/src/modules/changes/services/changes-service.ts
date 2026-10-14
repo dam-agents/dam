@@ -153,10 +153,7 @@ export function createChangesService(deps: {
     return { entries: perRepository.flat().sort(byRepositoryThenPath) };
   }
 
-  function current(sessionId?: string): Promise<Snapshot> {
-    const sessionPaths = sessionId
-      ? [...deps.touched.editedAtOf(sessionId).keys()]
-      : [];
+  function current(sessionPaths: readonly string[] = []): Promise<Snapshot> {
     const fresh = snapshot && Date.now() - snapshotAt < SNAPSHOT_REUSE_MS;
     if (fresh) {
       const known = snapshot!.then((s) =>
@@ -255,10 +252,10 @@ export function createChangesService(deps: {
 
   return {
     async list(sessionId) {
-      const { entries } = await current(sessionId);
       const editedAt = sessionId
         ? deps.touched.editedAtOf(sessionId)
         : new Map<string, string>();
+      const { entries } = await current([...editedAt.keys()]);
       return {
         changeSets: entries.map(({ changeSet }) => ({
           ...changeSet,
@@ -268,7 +265,9 @@ export function createChangesService(deps: {
     },
 
     async diff(path, compare) {
-      const { entries } = await current();
+      const { entries } = await current(
+        deps.touched.isTouched(path) ? [path] : [],
+      );
       const entry = entries.find(
         (candidate) => candidate.changeSet.path === path,
       );

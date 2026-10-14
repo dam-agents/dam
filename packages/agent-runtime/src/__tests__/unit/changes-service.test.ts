@@ -251,6 +251,31 @@ describe("changes service", () => {
   });
 
   /**
+   * TEST_SCENARIO: After a restart, a repository a session edited outside the
+   * roots is still listed from the persisted record, and its diff is served
+   * from the same record rather than refused as unknown.
+   */
+  it("should diff a session's repository outside the roots after a restart", async () => {
+    await fs.mkdir(home, { recursive: true });
+    const clone = path.join(elsewhere, "tmp.abc");
+    await repository(clone, { "x.md": "x\n" });
+    await write(path.join(clone, "x.md"), "y\n");
+    service.onToolActivity({
+      sessionId: "s1",
+      editedPaths: [path.join(clone, "x.md")],
+      settled: false,
+    });
+    await expect
+      .poll(() => service.repositoriesOf("s1").map((r) => r.path))
+      .toEqual([clone]);
+
+    const restarted = serviceFor([path.join(home, "work"), home]);
+    const diff = await restarted.diff(clone, "uncommitted");
+
+    expect(diff.ok && diff.value.files.map((f) => f.path)).toEqual(["x.md"]);
+  });
+
+  /**
    * TEST_SCENARIO: A branch with an open pull request carries its link. The
    * session that edited it gets the link once its tool call settles, before
    * anyone opens the panel, so the sessions list can show it.

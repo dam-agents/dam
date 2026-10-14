@@ -83,6 +83,7 @@ import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-
 import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
 import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
 import { DockedChangesPanel } from "../../changes/components/docked-changes-panel.js";
+import { useToggleChanges } from "../../changes/hooks/use-toggle-changes.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
@@ -253,7 +254,7 @@ export function ChatView() {
   const openChangesAgentId = useStore((s) =>
     s.openChangesAgentId === s.selectedAgent ? s.openChangesAgentId : null,
   );
-  const setOpenChanges = useStore((s) => s.setOpenChanges);
+  const toggleChanges = useToggleChanges();
   const browserMaximized = useStore((s) => s.browserMaximized);
   const openDelegation = useStore((s) =>
     s.openDelegation?.driverAgentId === s.selectedAgent
@@ -755,7 +756,9 @@ export function ChatView() {
                   tooltip="Show changes"
                   aria-pressed={openChangesAgentId !== null}
                   onClick={() =>
-                    setOpenChanges(openChangesAgentId ? null : selectedAgent)
+                    void toggleChanges(
+                      openChangesAgentId ? null : selectedAgent,
+                    )
                   }
                 >
                   <Branch size={16} />

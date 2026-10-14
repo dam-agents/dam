@@ -36,6 +36,7 @@ export interface TouchedRepositoryStore {
     pullRequest: PullRequestLink,
   ): void;
   editedAtOf(sessionId: string): Map<string, string>;
+  isTouched(path: string): boolean;
   repositoriesOf(sessionId: string): SessionRepository[];
 }
 
@@ -112,6 +113,12 @@ export function createTouchedRepositoryStore(
       const entries = store.read().sessions[sessionId] ?? {};
       return new Map(
         Object.entries(entries).map(([path, entry]) => [path, entry.editedAt]),
+      );
+    },
+
+    isTouched(path) {
+      return Object.values(store.read().sessions).some(
+        (entries) => entries[path] !== undefined,
       );
     },
 
