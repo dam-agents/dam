@@ -414,6 +414,11 @@ fn ram_to_add(geometry: &RamGeometry, target_mib: u32) -> u64 {
 const RAM_GROW_UNIT: u64 = 128 << 20;
 
 fn resident_mib(proc_root: &Path, pid: i32) -> Option<i32> {
+    #[cfg(target_os = "macos")]
+    if !proc_root.is_dir() {
+        let (bytes, _) = crate::runtime::darwin::task_usage(pid)?;
+        return i32::try_from(bytes >> 20).ok();
+    }
     let status = std::fs::read_to_string(proc_root.join(pid.to_string()).join("status")).ok()?;
     let kib: i64 = status
         .lines()
@@ -427,6 +432,10 @@ fn resident_mib(proc_root: &Path, pid: i32) -> Option<i32> {
 
 // UNIT_BOUNDARY_DESCRIPTION: utime plus stime from /proc/<pid>/stat, in microseconds. The fields after the command name are counted from its closing parenthesis, since the name itself may hold spaces.
 fn cpu_usec(proc_root: &Path, pid: i32) -> Option<u64> {
+    #[cfg(target_os = "macos")]
+    if !proc_root.is_dir() {
+        return crate::runtime::darwin::task_usage(pid).map(|(_, usec)| usec);
+    }
     let stat = std::fs::read_to_string(proc_root.join(pid.to_string()).join("stat")).ok()?;
     let mut fields = stat
         .get(stat.rfind(')')? + 1..)?
@@ -1896,6 +1905,27 @@ mod tests {
         assert_eq!(ram_to_add(&geometry, 1024), 0);
         assert_eq!(ram_to_add(&geometry, 200 << 10), 64 << 30);
         assert!(ram_geometry("ERR EIO RAM hot-add topology is unavailable\n").is_err());
+    }
+
+    // TEST_SCENARIO: a Mac has no /proc, so a VMM's memory and CPU time are read from the kernel's task info instead: this test process holds the buffer it just touched, and the CPU it burned shows up, scaled to microseconds whatever the machine's timebase.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_mac_reads_a_processs_memory_and_cpu_without_proc() {
+        let no_proc = Path::new("/proc");
+        let pid = i32::try_from(std::process::id()).unwrap();
+        let held = vec![1u8; 64 << 20];
+        let mib = resident_mib(no_proc, pid).unwrap();
+        assert!(mib >= 64, "resident {mib} MiB");
+        let before = cpu_usec(no_proc, pid).unwrap();
+        let started = std::time::Instant::now();
+        let mut spin = 0u64;
+        while started.elapsed() < Duration::from_millis(200) {
+            spin = std::hint::black_box(spin.wrapping_add(1));
+        }
+        let burned = cpu_usec(no_proc, pid).unwrap() - before;
+        assert!((100_000..2_000_000).contains(&burned), "burned {burned} us");
+        assert_eq!(resident_mib(no_proc, i32::MAX), None);
+        drop(held);
     }
 
     // TEST_SCENARIO: a VMM's command name may hold spaces and parentheses, so its CPU time is read from the fields after the name's last parenthesis; and a sparse disk as large as the pool counts only what was written to it.
