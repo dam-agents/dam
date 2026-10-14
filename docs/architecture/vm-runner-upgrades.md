@@ -10,9 +10,10 @@ How a change to the [runner](vm-runner.md) reaches owners whose machines are run
 The controller records a hash of the pod it rendered on each runner — less its memory limit, the owner's pool, and its memory request, both of which it changes in place ([vm-memory](vm-memory.md)) — leaves a runner alone while that hash is unchanged, and lets a changed one roll only while fewer than the install's roll width (one by default) are mid-roll.
 A runner is mid-roll from that moment until its new pod is ready and every machine that was ready before is ready again, or its agent is gone; a settle timeout bounds the wait for machines, so one that never comes back does not stall everyone else.
 A new pod that is still not ready at the timeout is a broken runner release, not a slow machine: that roll keeps its place, so the release goes no further, and is marked stalled and reported as an error until its pod becomes ready or the pod changes again.
-The exception is a pod that never started for a reason of its owner alone: one the scheduler cannot place, one still creating its containers with none ever started, as a claim stuck on Multi-Attach leaves it, or an old pod that never finishes terminating.
-That says nothing about the release, so the roll is reported as an error and skipped, and other owners keep rolling; the runner comes up on the new pod once its fault clears.
-A pod whose container started, or whose image does not pull, still halts the roll.
+The exception is a pod stuck in a state no release can cause: one still creating its containers, none ever started, whose claim the attach controller refuses as Multi-Attach, or an old pod that never finishes terminating because its node is gone or not ready.
+That says nothing about the release, so the roll is reported as an error, counted and skipped, and other owners keep rolling; the runner comes up on the new pod once its fault clears.
+Every other state still halts the roll: a pod the scheduler cannot place, since a release that adds a node selector or raises a request makes every runner unplaceable, a container that started, an image that does not pull.
+The node is read through the node read grant the chart adds with virtualization; an install without it cannot tell a lost node, so a pod stuck terminating halts the roll there.
 A runner whose pod is unchanged is not rolled, but labels or owner references that drifted on it are put back without touching the pod.
 A new owner's runner is created at once, since there is nothing of theirs to protect.
 A changed runner also waits for its owner's agents to be idle, since a roll ends the turn an agent is in.
