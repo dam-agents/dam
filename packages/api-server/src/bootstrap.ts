@@ -77,6 +77,7 @@ import { createImgbbAgentIcons } from "./modules/channels/infrastructure/agent-a
 import { createAgentWorkspaceFiles } from "./modules/channels/infrastructure/agent-workspace-files.js";
 import { DEFAULT_SETTLE_MS } from "./modules/channels/domain/turn-coalescing.js";
 import { createBoltSlackGateway } from "./modules/channels/infrastructure/bolt-slack-gateway.js";
+import { createPublicImageUrlsRepository } from "./modules/channels/infrastructure/public-image-urls-repository.js";
 import { createSlackIgnoredAppsRepository } from "./modules/channels/infrastructure/slack-ignored-apps-repository.js";
 import {
   createFakeSlackGateway,
@@ -1046,6 +1047,15 @@ export async function bootstrap() {
       firePair: (agentId) => firePair(agentId, {}),
     });
 
+  const agentIcons =
+    slackGatewayFactory && config.imgbbApiKey
+      ? createImgbbAgentIcons({
+          apiKey: config.imgbbApiKey,
+          store: createPublicImageUrlsRepository(db),
+        })
+      : null;
+  void agentIcons?.warm();
+
   const slackWorker = slackGatewayFactory
     ? createSlackWorker({
         makeAcpClient,
@@ -1076,9 +1086,7 @@ export async function bootstrap() {
           ),
         listWorkspaces: listActiveSlackWorkspaces,
         settleMs: DEFAULT_SETTLE_MS,
-        agentIcon: config.imgbbApiKey
-          ? createImgbbAgentIcons(config.imgbbApiKey)
-          : null,
+        agentIcon: agentIcons?.iconUrl ?? null,
         readPodRestarts: async (agentId) => {
           const agent = await agentsRepo.get(agentId);
           return agent
