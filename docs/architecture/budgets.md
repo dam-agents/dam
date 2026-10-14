@@ -161,7 +161,7 @@ Reserved is computed from live state and never persisted, so a hibernate, stop, 
 
 ## Resource alerts
 
-A vm agent's owner hears about a severe resource problem even when nobody is looking at the web app: the platform sends them a Slack direct message ([channels](channels.md)) when their agents' shared storage passes 90% — new and stopped agents can't start — or 98% — writes are failing ([persistence](persistence.md)), and when their runner was killed for running out of memory ([vm-memory](vm-memory.md)).
+A vm agent's owner hears about a severe resource problem even when nobody is looking at the web app: the platform sends them a Slack direct message ([channels](channels.md)) when their agents' shared storage passes 90% — no new agent can be created — or 98% — writes are failing ([persistence](persistence.md)), and when their runner was killed for running out of memory ([vm-memory](vm-memory.md)).
 Each message gives the figures or the agents affected, and what to do.
 Lower levels show only in the web app.
 

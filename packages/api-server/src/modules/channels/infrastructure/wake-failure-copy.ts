@@ -53,10 +53,8 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
           );
         case "MachineStorageFull":
           return (
-            "This agent failed to start: the storage its owner's agents " +
-            "share is full. Its owner can delete an agent they no longer " +
-            "need, clear caches inside their agents, or ask an admin for " +
-            "more storage."
+            "This agent can't start right now: its owner's agents have run " +
+            "out of storage. Contact its owner."
           );
         case "MachineRunnerUnschedulable":
           return (

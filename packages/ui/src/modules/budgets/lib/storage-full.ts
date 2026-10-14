@@ -14,7 +14,7 @@ export function showStorageFull(error: unknown): boolean {
   const message = (error as Error).message;
   void import("../../../store.js").then(async ({ useStore }) => {
     const { showConfirm, setView } = useStore.getState();
-    const ok = await showConfirm(message, "Your agents' storage is full", {
+    const ok = await showConfirm(message, "Your VM agents' storage is full", {
       confirmLabel: "Manage agents",
       cancelLabel: "Close",
     });

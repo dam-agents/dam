@@ -72,7 +72,7 @@ describe("resource alerts service", () => {
     });
     await Promise.all([svc.evaluateStorage(), svc.evaluateStorage()]);
     expect(notify).toHaveBeenCalledTimes(1);
-    expect(notify.mock.calls[0]![1]).toContain("92% full (92.0 of 100.0 GiB)");
+    expect(notify.mock.calls[0]![1]).toContain("used 92.0 of 100.0 GiB");
   });
 
   // TEST_SCENARIO: Many owners' runners answer slowly, as unreachable ones do at the read timeout; the pass reads them a bounded number at a time, so it finishes in a fraction of its tick without opening a read to every runner at once, and still reads every owner.

@@ -15,6 +15,18 @@ describe("wakeFailureUserCopy for a start failure", () => {
     expect(wakeFailureUserCopy(failure)).toContain("its storage is full");
     expect(wakeFailureUserCopy(failure)).not.toContain("crashed");
   });
+
+  // TEST_SCENARIO: whoever wrote in a channel need not own the agent, so a full storage pool is the owner's, not the reader's, and the reader is told to contact the owner.
+  it("speaks of the owner's storage, not the reader's", () => {
+    const copy = wakeFailureUserCopy(
+      classifyWakeFailure({
+        ...notReady,
+        agentPodNotReadyReason: "MachineStorageFull",
+      }),
+    );
+    expect(copy).toContain("its owner's agents have run out of storage");
+    expect(copy).not.toMatch(/\byour\b/i);
+  });
 });
 
 describe("wakeFailureUserCopy for a refusal", () => {

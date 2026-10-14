@@ -2414,9 +2414,9 @@ fn filled(percent: u64) -> Option<StorageUse> {
     })
 }
 
-// TEST_SCENARIO: once the owner's claim is critically full, every disk a new machine would add and every boot that would write to one is refused with the reason the controller shows as full storage, and nothing is created for it: a create, the start of a stopped machine, a restart for a changed spec and a seed upload alike. A running machine whose spec asks for nothing new keeps running untouched, since stopping it would lose what it holds in memory and free nothing. Once room is freed, the same start goes through.
+// TEST_SCENARIO: once the owner's claim is critically full, every write that adds much is refused with the reason the controller shows as full storage, and nothing is created for it: a create, an image fetched onto the claim and a seed upload alike. A machine that already exists still starts and restarts, so an owner whose agents are all asleep can get into one to clean it up, but at the disk size it has: a larger size waits for a start that finds room. A running machine whose spec asks for nothing new keeps running untouched.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_critical_claim_refuses_every_boot_and_leaves_running_machines_alone() {
+async fn a_critical_claim_refuses_big_writes_and_still_starts_existing_machines() {
     let (h, claim) = with_claim("storage-critical");
     h.server.put("m1", spec(true)).unwrap();
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
@@ -2424,25 +2424,69 @@ async fn a_critical_claim_refuses_every_boot_and_leaves_running_machines_alone()
     assert_eq!(h.settle("m2").await.state, STATE_STOPPED);
     let before = h.fake.calls();
 
-    *locked(&claim) = filled(91);
+    *locked(&claim) = filled(92);
     let created = h.server.put("m3", spec(true)).unwrap();
     assert_eq!(created.reason, REASON_STORAGE_FULL, "{created:?}");
-    assert!(created.message.contains("91% full"), "{created:?}");
+    assert!(
+        created.message.contains("used 92.0 of 100.0 GiB"),
+        "{created:?}"
+    );
+    assert!(
+        created.message.contains("can still be started"),
+        "{created:?}"
+    );
     assert!(read_spec(&h.dir.join("machines"), "m3").is_none());
-    let started = h.server.put("m2", spec(true)).unwrap();
-    assert_eq!(started.reason, REASON_STORAGE_FULL, "{started:?}");
+    let mut new_image = spec(true);
+    new_image.image = "quay.io/x/vm:2".into();
+    let fetch = h.server.put("m1", new_image).unwrap();
+    assert_eq!(fetch.reason, REASON_STORAGE_FULL, "{fetch:?}");
+    assert_eq!(
+        h.server.claim_seed("m2", None).err().map(|e| e.status),
+        Some(507)
+    );
     let steady = h.server.put("m1", spec(true)).unwrap();
     assert_eq!(
         (steady.state.as_str(), steady.reason.as_str()),
         (STATE_RUNNING, "")
     );
+    assert_eq!(h.fake.calls(), before, "nothing reached the runtime");
+
+    let mut grown = spec(true);
+    grown.storage_gib = 50;
+    assert_eq!(h.server.put("m2", grown).unwrap().state, STATE_STARTING);
+    let started = h.settle("m2").await;
+    assert_eq!(
+        (started.state.as_str(), started.disk_gib),
+        (STATE_RUNNING, 5)
+    );
+    let mut changed = spec(true);
+    changed.revision = "r2".into();
+    h.server.put("m1", changed).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+}
+
+// TEST_SCENARIO: once the claim is nearly full, no machine starts or restarts either, since even a boot's few writes could fail every guest's; a running machine that asks for nothing new still keeps running, and once room is freed the same start goes through.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_nearly_full_claim_refuses_every_boot_and_leaves_running_machines_alone() {
+    let (h, claim) = with_claim("storage-nearly-full");
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    h.server.put("m2", spec(false)).unwrap();
+    assert_eq!(h.settle("m2").await.state, STATE_STOPPED);
+    let before = h.fake.calls();
+
+    *locked(&claim) = filled(97);
+    let started = h.server.put("m2", spec(true)).unwrap();
+    assert_eq!(started.reason, REASON_STORAGE_FULL, "{started:?}");
+    assert!(started.message.contains("can't be started"), "{started:?}");
     let mut changed = spec(true);
     changed.revision = "r2".into();
     let restarted = h.server.put("m1", changed).unwrap();
     assert_eq!(restarted.reason, REASON_STORAGE_FULL, "{restarted:?}");
+    let steady = h.server.put("m1", spec(true)).unwrap();
     assert_eq!(
-        h.server.claim_seed("m2", None).err().map(|e| e.status),
-        Some(507)
+        (steady.state.as_str(), steady.reason.as_str()),
+        (STATE_RUNNING, "")
     );
     assert_eq!(h.fake.calls(), before, "nothing reached the runtime");
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
@@ -2467,7 +2511,10 @@ async fn a_boot_that_fails_on_a_critical_claim_reports_full_storage() {
     *locked(&claim) = filled(95);
     let failed = h.settle("m1").await;
     assert_eq!(failed.reason, REASON_STORAGE_FULL, "{failed:?}");
-    assert!(failed.message.contains("95% full"), "{failed:?}");
+    assert!(
+        failed.message.contains("used 95.0 of 100.0 GiB"),
+        "{failed:?}"
+    );
     assert!(failed.message.contains("EXT4-fs (vda)"), "{failed:?}");
 }
 

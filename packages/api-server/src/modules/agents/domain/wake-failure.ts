@@ -1,4 +1,5 @@
 import { TerminationCode } from "api-server-api";
+import { storageFullMessage } from "../../budgets/domain/vm-usage.js";
 export type WakeFailureCause =
   | { kind: "not-found" }
   | { kind: "over-budget"; message: string }
@@ -145,7 +146,7 @@ export function describeWakeFailure(c: WakeFailureCause): string {
         case "RunnerOutOfMemory":
           return "its owner's VM agents ran out of memory together and all restarted — pausing agents that aren't in use frees memory";
         case "MachineStorageFull":
-          return "the storage its owner's agents share is full";
+          return storageFullMessage();
         default:
           return "the agent crashed while starting";
       }
