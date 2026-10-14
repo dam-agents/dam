@@ -657,7 +657,7 @@ mod tests {
         }
     }
 
-    // TEST_SCENARIO: a sparse file is stored as its data and a map of its holes, so a 64 MiB file that holds a few bytes costs the seed a few blocks rather than 64 MiB, and one with no data at all costs none. A file with more regions than the header has room for carries the rest in extension blocks. What the archive reads back is the file byte for byte, holes as zeros, at its full size.
+    // TEST_SCENARIO: a sparse file is stored as its data and a map of its holes, so a 64 MiB file that holds a few bytes costs the seed a few blocks rather than 64 MiB, and one with no data at all costs none. A file with more regions than the header has room for carries the rest in extension blocks. What the archive reads back is the file byte for byte, holes as zeros, at its full size. A filesystem that allocates such a file in large extents, as APFS does, has no small holes to show, so the test does not run there.
     #[test]
     fn a_sparse_file_is_stored_as_its_data_and_its_holes() {
         let home = TempDir::new("seed-sparse");
@@ -674,7 +674,7 @@ mod tests {
             expected[at as usize..at as usize + 4].copy_from_slice(b"data");
         }
         drop(file);
-        if fs::metadata(&holes).unwrap().blocks() * 512 >= size {
+        if fs::metadata(&holes).unwrap().blocks() * 512 >= 1 << 20 {
             return;
         }
 

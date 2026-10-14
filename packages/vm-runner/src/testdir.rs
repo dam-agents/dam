@@ -2,14 +2,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-// UNIT_BOUNDARY_DESCRIPTION: a fresh directory for one test, removed when the test ends. Tests run in parallel threads of one process, so the name carries the process id and a counter as well as the test's own label, and no two tests ever share one.
+// UNIT_BOUNDARY_DESCRIPTION: a fresh directory for one test, removed when the test ends. Tests run in parallel threads of one process, so the name carries the process id and a counter as well as the test's own label, and no two tests ever share one. The prefix is short because some tests put a Unix socket in the directory, and a socket path holds at most 104 bytes on macOS, where the temp directory alone takes about 50.
 pub(crate) struct TempDir(PathBuf);
 
 impl TempDir {
     pub(crate) fn new(name: &str) -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let path = std::env::temp_dir().join(format!(
-            "vm-runner-{}-{}-{name}",
+            "vmr-{}-{}-{name}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
