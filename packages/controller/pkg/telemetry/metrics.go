@@ -84,6 +84,21 @@ func RunnerRollStalled(ctx context.Context) {
 	}
 }
 
+var runnerRollSkipped = sync.OnceValue(func() metric.Int64Counter {
+	counter, err := otel.Meter(ScopeName).Int64Counter("platform.vm_runner.roll_skipped",
+		metric.WithDescription("VM runner rolls whose new pod was not ready by the settle timeout for a fault of its owner alone, and which gave up their place in the roll"))
+	if err != nil {
+		otel.Handle(err)
+	}
+	return counter
+})
+
+func RunnerRollSkipped(ctx context.Context) {
+	if c := runnerRollSkipped(); c != nil {
+		c.Add(ctx, 1)
+	}
+}
+
 var runtimeMigrationEvents = sync.OnceValue(func() metric.Int64Counter {
 	counter, err := otel.Meter(ScopeName).Int64Counter("platform.runtime_migration.events",
 		metric.WithDescription("Runtime migration steps the controller reported on an Agent, by the reason of the Kubernetes Event it wrote"))
