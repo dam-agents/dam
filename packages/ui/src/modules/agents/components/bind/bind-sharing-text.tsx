@@ -6,29 +6,47 @@ export function BindSharingText({
   agentName,
   connectionNames,
   audience,
+  whisper,
 }: {
   agentName: string;
   connectionNames: readonly string[] | null;
   audience: SharedChannel;
+  whisper: boolean;
 }) {
   const name = (
     <strong className="font-semibold text-foreground">{agentName}</strong>
   );
   const phrase = <SharedChannelsPhrase channels={[audience]} />;
-  if (connectionNames === null)
-    return (
+  const whisperText = (
+    <>
+      Whispers are on: anyone in {phrase} can talk to {name} privately, so
+      someone could ask it to change its instructions, memory or settings
+      without the others seeing.
+    </>
+  );
+  if (connectionNames?.length === 0) return whisperText;
+  const sharing =
+    connectionNames === null ? (
       <>
         If {name} has connections, anyone in {phrase} can ask it to use them,
         with your access.
       </>
+    ) : (
+      <>
+        {name} has{" "}
+        {connectionNames.length === 1
+          ? "1 connection"
+          : `${connectionNames.length} connections`}
+        : <BoldList items={connectionNames} limit={4} />. Anyone in {phrase} can
+        ask it to use {connectionNames.length === 1 ? "it" : "them"}, with your
+        access.
+      </>
     );
-  const one = connectionNames.length === 1;
-  return (
+  return whisper ? (
     <>
-      {name} has{" "}
-      {one ? "1 connection" : `${connectionNames.length} connections`}:{" "}
-      <BoldList items={connectionNames} limit={4} />. Anyone in {phrase} can ask
-      it to use {one ? "it" : "them"}, with your access.
+      {sharing} {whisperText}
     </>
+  ) : (
+    sharing
   );
 }

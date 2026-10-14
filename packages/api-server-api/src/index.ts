@@ -417,6 +417,7 @@ export type {
   SpendCategory,
   SessionRuntime,
   CallContext,
+  SubAgentSpend,
 } from "./modules/metrics/types.js";
 
 export type {
@@ -559,6 +560,7 @@ export {
   formatEgressRuleInline,
   formatEgressRuleSource,
 } from "./modules/egress-rules/format.js";
+export { canonicalEgressHost } from "./modules/egress-rules/host.js";
 export type {
   GatewayRestartImpact,
   PromotionRule,

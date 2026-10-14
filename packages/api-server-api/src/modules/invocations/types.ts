@@ -54,6 +54,7 @@ export interface DelegationNode {
   connections: string[];
   cpu: string | null;
   memory: string | null;
+  requestedModel: string | null;
   createdAt: string;
   completedAt: string | null;
   transcriptAvailable: boolean;

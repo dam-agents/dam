@@ -88,6 +88,9 @@ function memoryRepo(): GettingStartedRepository & {
       const c = checklists.get(owner)!;
       checklists.set(owner, { ...c, dismissedAt: dismissed ? tick() : null });
     },
+    async reset(owner) {
+      checklists.set(owner, { dismissedAt: null, unlocks: [] });
+    },
   };
 }
 
@@ -392,5 +395,27 @@ describe("unlock avatars saga", () => {
       before.unlocks[1]!.character,
     );
     expect(after.unlocks.every((u) => !u.fresh)).toBe(true);
+  });
+
+  /** TEST_SCENARIO: resetting locks every character and reopens the checklist, and a task done again unlocks again even on the replica that recorded it before. */
+  it("locks everything on reset and unlocks a repeated task again", async () => {
+    const { service } = start();
+    const schedule = () =>
+      emit({
+        type: EventType.ScheduleCreated,
+        scheduleId: "s1",
+        agentId: "a1",
+        ownerSub: "u1",
+      });
+    schedule();
+    await settle();
+    await service("u1").setDismissed(true);
+    const reset = await service("u1").reset();
+    expect(reset).toEqual({ unlocks: [], dismissed: false });
+    schedule();
+    await settle();
+    expect((await service("u1").progress()).unlocks).toEqual([
+      expect.objectContaining({ task: "create-schedule" }),
+    ]);
   });
 });

@@ -5,5 +5,3 @@
 
 [oci.env]
 PLATFORM_HARNESS = "codex"
-# Satisfies the CLI's startup check; the real credential is injected on the wire.
-OPENAI_API_KEY = "dummy-placeholder"

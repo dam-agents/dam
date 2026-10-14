@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"hash/fnv"
 	"log/slog"
 	"maps"
 	"os"
@@ -65,7 +67,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// UNIT_BOUNDARY_DESCRIPTION: a reconcile spends almost all of its time waiting for this limiter rather than for the API server. Measured on a 80-agent install: each reconcile issues around thirty calls, every one of them answered in single-digit milliseconds and then followed by a wait until the next token — twenty milliseconds apart at fifty a second, which is where a 700 ms reconcile goes. The drift sweep hands the queue every agent at once, so the fleet costs thirty calls times its size, and an agent created during that window waits behind all of it. Raising the ceiling is what shortens that wait: a second worker would only queue for the same tokens, since the limiter is shared and the API server was never the thing saying no.
+	// UNIT_BOUNDARY_DESCRIPTION: a reconcile spends almost all of its time waiting for this limiter rather than for the API server. Measured on a 80-agent install: each reconcile issues around thirty calls, every one of them answered in single-digit milliseconds and then followed by a wait until the next token — twenty milliseconds apart at fifty a second, which is where a 700 ms reconcile goes. The drift sweep hands the queue every agent at once, so the fleet costs thirty calls times its size, and an agent created during that window waits behind all of it. Raising the ceiling is what shortens that wait: the agent workers all queue for the same tokens, since the limiter is shared, so more workers buy no throughput, and the API server was never the thing saying no.
 	if restCfg.QPS == 0 {
 		restCfg.QPS = 200
 		restCfg.Burst = 400
@@ -204,7 +206,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		every(ctx, 10*time.Minute, orphanSweep)
 	}()
 
-	agentQueue := newAgentQueue()
+	agentQueue := newShardedAgentQueue(agentInformer.Lister().ByNamespace(cfg.Namespace))
 	defer agentQueue.ShutDown()
 	agentReconciler.WithRequeue(ctx, func(name string, after time.Duration) {
 		if after == 0 {
@@ -348,12 +350,17 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		}
 	})
 
-	runAgentWorker(ctx, agentReconciler, agentInformer.Lister().ByNamespace(cfg.Namespace), agentQueue)
+	agentQueue.run(ctx, agentReconciler, agentInformer.Lister().ByNamespace(cfg.Namespace))
 }
 
 const maxReconcileRetries = 15
 
-func runAgentWorker(ctx context.Context, r *reconciler.AgentReconciler, agents cache.GenericNamespaceLister, queue agentQueue) {
+type agentReconcile interface {
+	Reconcile(ctx context.Context, agent *apiv1.Agent) error
+	SetBackoffExceeded(ctx context.Context, name string, attempts int, cause error)
+}
+
+func runAgentWorker(ctx context.Context, r agentReconcile, agents cache.GenericNamespaceLister, queue agentQueue) {
 	for {
 		name, shutdown := queue.Get()
 		if shutdown {
@@ -399,19 +406,88 @@ func runAgentWorker(ctx context.Context, r *reconciler.AgentReconciler, agents c
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the agent work queue, drained by the single worker, in two lanes. A change a person is waiting on — a wake bumping last-activity, a new Agent, a spec or annotation edit, a pod or machine moving — goes in the urgent lane; the startup list, the drift sweep, the retry and memory ticks and the controller's own status echoes go in the background lane. The worker always takes the urgent lane first, so a wake waits behind at most the one reconcile already running, not behind the fleet a restart enqueues. It is still one client-go queue with its dedupe, rate limiting and metrics: only the order of the items waiting changes, so the budget check still never interleaves.
+// UNIT_BOUNDARY_DESCRIPTION: how many workers reconcile agents. A reconcile can wait on its owner's VM runner for the runner client's whole timeout, under the owner's lock, and one worker for the install put every other owner's wake behind that wait. The workers share nothing a reconcile waits on but the Kubernetes client's rate limiter, so more of them only lower the share of owners one hung runner holds up, while queueing more calls for the same tokens.
+const agentWorkers = 8
+
+// UNIT_BOUNDARY_DESCRIPTION: the agent work queues, one per worker. An agent's owner label picks its queue, so every agent of one owner is reconciled by one worker, one at a time: the budget's read-decide-scale and the runner calls of two agents of one owner never interleave, while a runner that hangs holds up only the owners that share its worker. A name the agent cache does not hold is dropped rather than guessed at, because a guess could put one agent on two workers at once; the reconcile would only have found it missing, and the informer's add for it queues it when it lands. An Agent's owner label is set when it is created and never changes, so its queue never changes either.
+type shardedAgentQueue struct {
+	shards []agentQueue
+	agents cache.GenericNamespaceLister
+}
+
+func newShardedAgentQueue(agents cache.GenericNamespaceLister) shardedAgentQueue {
+	q := shardedAgentQueue{shards: make([]agentQueue, agentWorkers), agents: agents}
+	for i := range q.shards {
+		q.shards[i] = newAgentQueue(fmt.Sprintf("agent-%d", i))
+	}
+	return q
+}
+
+func (q shardedAgentQueue) shard(name string) (agentQueue, bool) {
+	obj, err := q.agents.Get(name)
+	if err != nil {
+		return agentQueue{}, false
+	}
+	m, err := meta.Accessor(obj)
+	if err != nil {
+		return agentQueue{}, false
+	}
+	h := fnv.New32a()
+	h.Write([]byte(reconciler.AgentOwner(m.GetLabels())))
+	return q.shards[h.Sum32()%uint32(len(q.shards))], true
+}
+
+func (q shardedAgentQueue) Add(name string) {
+	if s, ok := q.shard(name); ok {
+		s.Add(name)
+	}
+}
+
+func (q shardedAgentQueue) AddAfter(name string, after time.Duration) {
+	if s, ok := q.shard(name); ok {
+		s.AddAfter(name, after)
+	}
+}
+
+func (q shardedAgentQueue) AddUrgent(name string) {
+	if s, ok := q.shard(name); ok {
+		s.AddUrgent(name)
+	}
+}
+
+func (q shardedAgentQueue) add(background bool, name string) {
+	if s, ok := q.shard(name); ok {
+		s.add(background, name)
+	}
+}
+
+func (q shardedAgentQueue) ShutDown() {
+	for _, s := range q.shards {
+		s.ShutDown()
+	}
+}
+
+func (q shardedAgentQueue) run(ctx context.Context, r agentReconcile, agents cache.GenericNamespaceLister) {
+	var wg sync.WaitGroup
+	for _, s := range q.shards {
+		wg.Go(func() { runAgentWorker(ctx, r, agents, s) })
+	}
+	wg.Wait()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: one worker's agent queue, in two lanes. A change a person is waiting on — a wake bumping last-activity, a new Agent, a spec or annotation edit, a pod or machine moving — goes in the urgent lane; the startup list, the drift sweep, the retry and memory ticks and the controller's own status echoes go in the background lane. The worker always takes the urgent lane first, so a wake waits behind at most the one reconcile its worker is already running, not behind the fleet a restart enqueues. It is still a client-go queue with its dedupe, rate limiting and metrics: only the order of the items waiting changes.
 type agentQueue struct {
 	workqueue.TypedRateLimitingInterface[string]
 	lanes *agentLanes
 }
 
-func newAgentQueue() agentQueue {
+func newAgentQueue(name string) agentQueue {
 	lanes := &agentLanes{promoted: sets.New[string]()}
-	base := workqueue.NewTypedWithConfig(workqueue.TypedQueueConfig[string]{Name: "agent", Queue: lanes})
-	delaying := workqueue.NewTypedDelayingQueueWithConfig(workqueue.TypedDelayingQueueConfig[string]{Name: "agent", Queue: base})
+	base := workqueue.NewTypedWithConfig(workqueue.TypedQueueConfig[string]{Name: name, Queue: lanes})
+	delaying := workqueue.NewTypedDelayingQueueWithConfig(workqueue.TypedDelayingQueueConfig[string]{Name: name, Queue: base})
 	return agentQueue{
 		TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueueWithConfig(workqueue.DefaultTypedControllerRateLimiter[string](),
-			workqueue.TypedRateLimitingQueueConfig[string]{Name: "agent", DelayingQueue: delaying}),
+			workqueue.TypedRateLimitingQueueConfig[string]{Name: name, DelayingQueue: delaying}),
 		lanes: lanes,
 	}
 }
@@ -543,8 +619,8 @@ func resourceVersionChanged(oldObj, newObj interface{}) bool {
 	return oldMeta.GetResourceVersion() != newMeta.GetResourceVersion()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the sweep re-checks every agent there is, and handing them to the single worker at once is what makes an agent someone is waiting for queue behind the whole fleet — measured at forty seconds of a saturated worker on an eighty-agent install, and it grows with the fleet. Spread across the interval instead, each agent is re-checked exactly as often as before and the queue is never more than a reconcile or two deep, so a create arriving mid-sweep is answered rather than parked. The cost is that an agent's first check after startup can land up to one interval later than it used to; nothing waits on a drift check, and a real change arrives through the informer rather than through this.
-func spreadStoreObjects(store cache.Store, queue workqueue.TypedRateLimitingInterface[string], over time.Duration) int {
+// UNIT_BOUNDARY_DESCRIPTION: the sweep re-checks every agent there is, and handing them to the workers at once is what makes an agent someone is waiting for queue behind the whole fleet — measured at forty seconds of a saturated worker on an eighty-agent install, and it grows with the fleet. Spread across the interval instead, each agent is re-checked exactly as often as before and the queue is never more than a reconcile or two deep, so a create arriving mid-sweep is answered rather than parked. The cost is that an agent's first check after startup can land up to one interval later than it used to; nothing waits on a drift check, and a real change arrives through the informer rather than through this.
+func spreadStoreObjects(store cache.Store, queue interface{ AddAfter(string, time.Duration) }, over time.Duration) int {
 	items := store.List()
 	for i, obj := range items {
 		u := unstructuredFrom(obj)

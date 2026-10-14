@@ -31,4 +31,6 @@ export const gettingStartedRouter = t.router({
     .mutation(({ ctx, input }) =>
       ctx.gettingStarted.setDismissed(input.dismissed),
     ),
+
+  reset: browserOnlyProcedure.mutation(({ ctx }) => ctx.gettingStarted.reset()),
 });

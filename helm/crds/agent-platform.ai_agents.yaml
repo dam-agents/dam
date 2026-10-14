@@ -4,7 +4,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    agent-platform.ai/crd-schema-generation: "18"
+    agent-platform.ai/crd-schema-generation: "19"
     controller-gen.kubebuilder.io/version: v0.22.0
     helm.sh/resource-policy: keep
   name: agents.agent-platform.ai
@@ -294,6 +294,11 @@ spec:
                   a user-supplied value would forge attribution onto an agent the caller
                   does not drive; it is service-only input, like the pre-minted id.
                 type: string
+              whispersOff:
+                description: WhispersOff stops people in the conversations the agent
+                  is connected to from whispering to it privately; unset means whispers
+                  are on.
+                type: boolean
             required:
             - image
             type: object

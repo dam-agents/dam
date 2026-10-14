@@ -11,6 +11,7 @@ import {
   detectGithubOwnerRepo,
   type DetectedOwnerRepo,
   type GitHubRestClient,
+  type GithubFetchOpts,
 } from "../infrastructure/github-rest-client.js";
 import type { GitProtocolClient } from "../../git/protocol-client.js";
 import {
@@ -71,25 +72,31 @@ async function scanGithub(
   subPath: string | undefined,
   byDirectory: boolean,
 ): Promise<Result<ScannedSkill[], SkillsDomainError>> {
-  let head = await deps.github.getCommitHead(host, { withAuth: false });
+  const dirPath =
+    byDirectory && subPath && !subPathEscapes(subPath) ? subPath : undefined;
+  const resolveHead = (opts: GithubFetchOpts) =>
+    dirPath
+      ? headOfDefaultBranch(deps.github, host, opts)
+      : deps.github.getCommitHead(host, opts);
+  let head = await resolveHead({ withAuth: false });
   if (
     !head.ok &&
     head.error.kind === "UpstreamGitHubError" &&
     head.error.status === 404
   ) {
-    head = await deps.github.getCommitHead(host, { withAuth: true });
+    head = await resolveHead({ withAuth: true });
   }
   if (!head.ok) return head;
   const version = head.value.sha;
 
-  if (byDirectory && subPath && !subPathEscapes(subPath)) {
+  if (dirPath) {
     return deps.repo.withTempDir("platform-skills-scan-", async (tmp) => {
-      const fetched = await fetchGithubPath(deps, host, version, subPath, tmp);
+      const fetched = await fetchGithubPath(deps, host, version, dirPath, tmp);
       if (isGithubNotFound(fetched)) {
-        return sourcePathError("path-missing", source, subPath, version);
+        return sourcePathError("path-missing", source, dirPath, version);
       }
       if (!fetched.ok) return fetched;
-      return collectSkills(deps, source, tmp, version, subPath);
+      return collectSkills(deps, source, tmp, version, dirPath);
     });
   }
 
@@ -115,6 +122,16 @@ async function scanGithub(
 
     return collectSkills(deps, source, repoDir, version, subPath);
   });
+}
+
+async function headOfDefaultBranch(
+  github: GitHubRestClient,
+  host: DetectedOwnerRepo,
+  opts: GithubFetchOpts,
+) {
+  const repo = await github.getRepo(host, opts);
+  if (!repo.ok) return repo;
+  return github.getRef(host, repo.value.defaultBranch, opts);
 }
 
 async function scanGitClone(
