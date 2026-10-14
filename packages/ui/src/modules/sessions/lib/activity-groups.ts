@@ -1,3 +1,5 @@
+import { toolNameOf } from "agent-runtime-api";
+
 import type { MessagePart, ToolChip } from "../../../types.js";
 
 export type ActivityItem =
@@ -64,11 +66,17 @@ const KIND_PHRASES: Record<string, Phrase> = {
 const OTHER = "other";
 const otherPhrase = plural("used", "tool");
 
+function namesServerTool(chip: ToolChip): boolean {
+  return toolNameOf(chip.title) !== chip.title.trim();
+}
+
 export function kindSummary(chips: readonly ToolChip[]): string {
   const counts = new Map<string, number>();
   for (const chip of chips) {
     const kind =
-      chip.toolKind && chip.toolKind in KIND_PHRASES ? chip.toolKind : OTHER;
+      chip.toolKind && chip.toolKind in KIND_PHRASES && !namesServerTool(chip)
+        ? chip.toolKind
+        : OTHER;
     counts.set(kind, (counts.get(kind) ?? 0) + 1);
   }
   const text = [...counts]

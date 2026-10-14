@@ -10,6 +10,7 @@ export type Role = "user" | "assistant";
 
 export type ToolContent =
   | { type: "content"; text: string }
+  | { type: "terminal"; text: string }
   | { type: "diff"; path: string; oldText: string | null; newText: string };
 
 export interface ToolChip {
