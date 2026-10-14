@@ -293,4 +293,26 @@ describe("dam agent create --wait on a refused start (#4760)", () => {
       expect.stringContaining("your agents' shared storage is full"),
     );
   });
+
+  /** TEST_SCENARIO: An image pull failure is a refused start, as the UI says
+   * "can't start" for it, so the wait says "could not start" rather than
+   * "entered error state". */
+  it("says could not start for an image that can't be pulled", async () => {
+    const { run, getAgent } = setup();
+    getAgent.mockResolvedValue({
+      ok: true,
+      value: {
+        ...agent,
+        state: "error",
+        podTerminationCode: "ImagePullFailure",
+        podTerminationReason: "the agent's image can't be pulled",
+      },
+    });
+    await run(["--wait"], EXIT_RUNTIME_FAILURE);
+    expect(process.stderr.write).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "could not start: the agent's image can't be pulled",
+      ),
+    );
+  });
 });

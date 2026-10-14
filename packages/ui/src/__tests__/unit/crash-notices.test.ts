@@ -13,6 +13,7 @@ function agent(overrides: Partial<Watched> = {}): Watched {
     id: "a1",
     name: "Scout",
     state: "running",
+    vm: true,
     podRestarts: 0,
     ...overrides,
   };
@@ -42,8 +43,8 @@ describe("nextCrashNotices", () => {
     ]);
   });
 
-  // TEST_SCENARIO: the agent died because its home volume is full. The notice must name the disk, not a generic crash.
-  it("names a full home volume as the restart cause", () => {
+  // TEST_SCENARIO: the agent died because its storage is full. The notice must name storage and what to do, not a generic crash.
+  it("names full storage as the restart cause", () => {
     expect(
       replay(
         [agent({ podRestarts: 1 })],
@@ -51,7 +52,9 @@ describe("nextCrashNotices", () => {
       ),
     ).toEqual([
       [],
-      ["Scout ran out of space in its home volume and restarted"],
+      [
+        "Scout ran out of storage and restarted — ask it to delete files it no longer needs, or request more storage",
+      ],
     ]);
   });
 
@@ -132,6 +135,55 @@ describe("nextCrashNotices", () => {
       [],
       [again],
       [again],
+    ]);
+  });
+
+  // TEST_SCENARIO: one runner OOM kill restarts every running VM agent of the owner at once. The user must get one notice naming them all, not one toast per agent.
+  it("announces a runner out-of-memory kill once for all its agents", () => {
+    const oom = (id: string, name: string) =>
+      agent({
+        id,
+        name,
+        state: "starting",
+        podTerminationCode: "RunnerOutOfMemory",
+        podTerminationReason: "its owner's VM memory ran out",
+      });
+    expect(
+      replay(
+        [
+          agent({ id: "a", name: "Ada" }),
+          agent({ id: "b", name: "Bo" }),
+          agent({ id: "c", name: "Cy" }),
+        ],
+        [oom("a", "Ada"), oom("b", "Bo"), oom("c", "Cy")],
+      ),
+    ).toEqual([
+      [],
+      [
+        "Your VM agents ran out of memory together, so Ada, Bo and Cy restarted. Pause agents you aren't using to free memory.",
+      ],
+    ]);
+  });
+
+  // TEST_SCENARIO: a VM agent refused for full storage did not crash. The notice must say it can't start and carry the storage next step, without the console tail.
+  it("says a storage refusal can't start rather than crashed", () => {
+    expect(
+      replay(
+        [agent()],
+        [
+          agent({
+            state: "error",
+            podTerminationCode: "MachineStorageFull",
+            podTerminationReason:
+              "delete an agent you no longer need\nthe guest console ends:\nboot log",
+          }),
+        ],
+      ),
+    ).toEqual([
+      [],
+      [
+        "Scout can't start: your VM agents' storage is full. Delete an agent you no longer need",
+      ],
     ]);
   });
 });

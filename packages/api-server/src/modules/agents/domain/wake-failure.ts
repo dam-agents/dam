@@ -1,3 +1,4 @@
+import { TerminationCode } from "api-server-api";
 export type WakeFailureCause =
   | { kind: "not-found" }
   | { kind: "over-budget"; message: string }
@@ -24,17 +25,17 @@ export interface WakeConditionsSnapshot {
   gatewayPodNotReadyReason?: string;
 }
 
-export const POD_FAILURE_REASONS = new Set([
-  "OutOfMemory",
-  "HomeVolumeFull",
-  "ImagePullFailure",
-  "InvalidImageName",
-  "ContainerTerminated",
-  "MachineBootFailed",
-  "MachineImageUnavailable",
-  "MachineRunnerUnschedulable",
-  "RunnerOutOfMemory",
-  "MachineStorageFull",
+export const POD_FAILURE_REASONS: ReadonlySet<string> = new Set([
+  TerminationCode.OutOfMemory,
+  TerminationCode.HomeVolumeFull,
+  TerminationCode.ImagePullFailure,
+  TerminationCode.InvalidImageName,
+  TerminationCode.ContainerTerminated,
+  TerminationCode.MachineBootFailed,
+  TerminationCode.MachineImageUnavailable,
+  TerminationCode.MachineRunnerUnschedulable,
+  TerminationCode.RunnerOutOfMemory,
+  TerminationCode.MachineStorageFull,
 ]);
 
 export const GATEWAY_FAILURE_REASONS = new Set([
@@ -124,23 +125,23 @@ export function describeWakeFailure(c: WakeFailureCause): string {
     case "migration-failed":
       return "the agent's move to the new runtime failed, and it stays stopped until its owner retries or aborts the move";
     case "hibernated-not-scaled":
-      return "scale-up was never started";
+      return "the platform didn't start it";
     case "agent-pod-failed":
       switch (c.terminationReason) {
         case "OutOfMemory":
           return "the agent ran out of memory";
         case "HomeVolumeFull":
-          return "the agent's home volume is full";
+          return "the agent's storage is full";
         case "ImagePullFailure":
           return "the agent image cannot be pulled";
         case "InvalidImageName":
           return "the agent image reference is invalid";
         case "MachineImageUnavailable":
-          return "the agent image is not available to the VM runner";
+          return "the agent image is not available";
         case "MachineBootFailed":
-          return "the agent's microVM did not boot";
+          return "its VM didn't boot";
         case "MachineRunnerUnschedulable":
-          return "the VM runner for this agent's owner cannot be placed on any node";
+          return "no server can run it right now — tell an admin";
         case "RunnerOutOfMemory":
           return "its owner's VM agents ran out of memory together and all restarted — pausing agents that aren't in use frees memory";
         case "MachineStorageFull":
