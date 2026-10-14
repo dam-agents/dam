@@ -72,7 +72,7 @@ describe("resource alerts service", () => {
     });
     await Promise.all([svc.evaluateStorage(), svc.evaluateStorage()]);
     expect(notify).toHaveBeenCalledTimes(1);
-    expect(notify.mock.calls[0]![1]).toContain("92% full (92.0 of 100.0 GiB)");
+    expect(notify.mock.calls[0]![1]).toContain("used 92.0 of 100.0 GiB");
   });
 
   it("leaves an owner alone whose runner cannot be read", async () => {

@@ -7,10 +7,12 @@ pub struct StorageUse {
     pub usable: u64,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: past SHORT_PERCENT the runner sheds what it can fetch again — the image trees no machine holds, and the scratch every guest keeps — until use is back under SHORT_UNTIL_PERCENT. Past CRITICAL_PERCENT it creates, starts, restarts and grows no machine, and takes no seed, so what is left is for the machines already running; it never stops one.
+// UNIT_BOUNDARY_DESCRIPTION: past SHORT_PERCENT the runner sheds what it can fetch again — the image trees no machine holds, and the scratch every guest keeps — until use is back under SHORT_UNTIL_PERCENT. Past CRITICAL_PERCENT it takes no write that adds much: it creates no machine, grows no disk, fetches no image onto its own claim and takes no seed. A machine that already exists still starts and restarts, because a boot writes little and an owner whose agents are all asleep must be able to get into one to clean it up; only past START_LIMIT_PERCENT does the runner start or restart no machine. It never stops one.
 pub const SHORT_PERCENT: u64 = 75;
 pub const SHORT_UNTIL_PERCENT: u64 = 70;
 pub const CRITICAL_PERCENT: u64 = 90;
+pub const START_LIMIT_PERCENT: u64 = 97;
+const WRITES_FAILING_PERCENT: u64 = 98;
 
 impl StorageUse {
     pub fn percent(&self) -> u64 {
@@ -24,17 +26,31 @@ impl StorageUse {
         self.percent() >= CRITICAL_PERCENT
     }
 
+    pub fn refuses_starts(&self) -> bool {
+        self.percent() >= START_LIMIT_PERCENT
+    }
+
     // UNIT_BOUNDARY_DESCRIPTION: whether the claim is short, given whether it was at the last look: it turns short at SHORT_PERCENT and stays short until SHORT_UNTIL_PERCENT, so use that sits on the threshold does not turn shedding on and off at every look.
     pub fn short(&self, was: bool) -> bool {
         let percent = self.percent();
         percent >= SHORT_PERCENT || (was && percent >= SHORT_UNTIL_PERCENT)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: what the owner is told when the runner refuses a machine for want of storage: how full the claim is, that nothing waits on it but freed space, and the ways to free it.
+    // UNIT_BOUNDARY_DESCRIPTION: what the owner is told when the runner refuses a machine for want of storage, word for word the api-server's storage-full message: what is refused at this level, that a stopped VM agent can still be opened to clean up below START_LIMIT_PERCENT, and the ways to free space.
     pub fn refusal(&self) -> String {
+        let percent = self.percent();
+        let failing = if percent >= WRITES_FAILING_PERCENT {
+            "Your running VM agents may be failing to write files now. "
+        } else {
+            ""
+        };
+        let starts = if self.refuses_starts() {
+            "Stopped VM agents can't be started until space is freed."
+        } else {
+            "Stopped VM agents can still be started until storage is nearly full, so you can open one and ask it to clear its caches."
+        };
         format!(
-            "your agents' shared storage is {}% full ({} of {}): no agent can be created, started or have its disk grown until space is freed; delete an agent you no longer need, clear caches inside your agents, or ask an admin for more storage",
-            self.percent(),
+            "{failing}Your VM agents have used {} of {} GiB of their shared storage, so new VM agents can't be created and their disks can't grow. {starts} To free space, delete a VM agent you no longer need, open an agent and ask it to clear its caches, or request more storage.",
             gib(self.used),
             gib(self.usable)
         )
@@ -42,7 +58,7 @@ impl StorageUse {
 }
 
 fn gib(bytes: u64) -> String {
-    format!("{:.1} GiB", bytes as f64 / f64::from(1u32 << 30))
+    format!("{:.1}", bytes as f64 / f64::from(1u32 << 30))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the use of the filesystem holding `dir`, or nothing when it cannot be asked. A provisioner that hands out a directory of the node's disk rather than a volume of its own reports the node's disk, so there the guard watches that disk instead of the claim's size.
@@ -81,16 +97,17 @@ mod tests {
         }
     }
 
-    // TEST_SCENARIO: the claim turns critical at 90% and short at 75%, and once short stays short down to 70%, so a claim whose use hovers on a threshold does not shed and stop shedding at every look. An empty claim reads as full rather than dividing by zero.
+    // TEST_SCENARIO: the claim turns critical at 90%, refuses starts at 97% and turns short at 75%, and once short stays short down to 70%, so a claim whose use hovers on a threshold does not shed and stop shedding at every look. An empty claim reads as full rather than dividing by zero.
     #[test]
     fn the_thresholds_hold_and_shedding_has_hysteresis() {
         assert!(!at(89).critical() && at(90).critical());
+        assert!(!at(96).refuses_starts() && at(97).refuses_starts());
         assert!(!at(74).short(false) && at(75).short(false));
         assert!(at(71).short(true) && !at(69).short(true) && !at(71).short(false));
         assert_eq!(StorageUse { used: 0, usable: 0 }.percent(), 100);
     }
 
-    // TEST_SCENARIO: the refusal is what the owner reads on the agent, so it says how full the storage is and what to do about it.
+    // TEST_SCENARIO: the refusal is what the owner reads on the agent, so it says how much storage is used, whether a stopped agent can still be opened to clean up, and what to do; once writes may be failing it says that first.
     #[test]
     fn a_refusal_names_the_use_and_the_fixes() {
         let message = StorageUse {
@@ -98,11 +115,15 @@ mod tests {
             usable: 100 << 30,
         }
         .refusal();
+        assert!(message.contains("used 93.0 of 100.0 GiB"), "{message}");
+        assert!(message.contains("delete a VM agent"), "{message}");
+        assert!(message.contains("can still be started"), "{message}");
+        let nearly_full = at(98).refusal();
+        assert!(nearly_full.contains("can't be started"), "{nearly_full}");
         assert!(
-            message.contains("93% full (93.0 GiB of 100.0 GiB)"),
-            "{message}"
+            nearly_full.starts_with("Your running VM agents may be failing"),
+            "{nearly_full}"
         );
-        assert!(message.contains("delete an agent"), "{message}");
     }
 
     // TEST_SCENARIO: a real filesystem measures as some use of a usable size no smaller than it, which is what every decision divides.

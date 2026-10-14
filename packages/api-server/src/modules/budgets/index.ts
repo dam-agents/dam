@@ -11,4 +11,9 @@ export {
   readRunnerUsage,
   listRunnerUsageOwners,
 } from "./infrastructure/runner-usage.js";
-export { storagePercent, poolLevel } from "./domain/vm-usage.js";
+export {
+  storagePercent,
+  poolLevel,
+  storageFullMessage,
+  STORAGE_WRITES_FAILING_PERCENT,
+} from "./domain/vm-usage.js";

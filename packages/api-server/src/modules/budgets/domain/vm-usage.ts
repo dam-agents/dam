@@ -11,6 +11,9 @@ export interface RunnerUsage {
 // UNIT_BOUNDARY_DESCRIPTION: the same threshold the runner refuses a new disk at, so the api-server's refusal is the runner's, said before an Agent is written rather than after its machine is refused.
 export const STORAGE_FULL_PERCENT = 90;
 export const POOL_WARNING_PERCENT = 75;
+// UNIT_BOUNDARY_DESCRIPTION: the runner's own limits past STORAGE_FULL_PERCENT: from the first it starts no machine, and from the second a guest's writes are failing.
+export const STORAGE_START_LIMIT_PERCENT = 97;
+export const STORAGE_WRITES_FAILING_PERCENT = 98;
 
 export type PoolLevel = "ok" | "warning" | "critical";
 
@@ -49,7 +52,33 @@ export function storagePercent(usage: RunnerUsage): number | null {
   return usableBytes > 0 ? Math.floor((usedBytes * 100) / usableBytes) : null;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the refusal of a new vm agent once the owner's storage is STORAGE_FULL_PERCENT used: the figures, why nothing waits, and the three ways out. Unknown or unmeasured usage refuses nothing.
+// UNIT_BOUNDARY_DESCRIPTION: the one storage-full message, said the same way by the create refusal, the Slack alert and a refused wake, and matching the runner's own refusal: what is refused at the current level, that a stopped VM agent can still be opened to clean up until storage is nearly full, and the ways to free space. Without figures it speaks of storage that is full.
+export function storageFullMessage(figures?: {
+  usedBytes: number;
+  usableBytes: number;
+}): string {
+  const percent =
+    figures && figures.usableBytes > 0
+      ? Math.floor((figures.usedBytes * 100) / figures.usableBytes)
+      : null;
+  const used = figures
+    ? `Your VM agents have used ${gib(figures.usedBytes)} of ${gib(figures.usableBytes)} GiB of their shared storage`
+    : "Your VM agents' shared storage is full";
+  return [
+    percent !== null && percent >= STORAGE_WRITES_FAILING_PERCENT
+      ? "Your running VM agents may be failing to write files now."
+      : null,
+    `${used}, so new VM agents can't be created and their disks can't grow.`,
+    percent !== null && percent >= STORAGE_START_LIMIT_PERCENT
+      ? "Stopped VM agents can't be started until space is freed."
+      : "Stopped VM agents can still be started until storage is nearly full, so you can open one and ask it to clear its caches.",
+    "To free space, delete a VM agent you no longer need, open an agent and ask it to clear its caches, or request more storage.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the refusal of a new vm agent once the owner's storage is STORAGE_FULL_PERCENT used. Unknown or unmeasured usage refuses nothing.
 export function storageRefusal(usage: RunnerUsage | null): TRPCError | null {
   if (!usage) return null;
   const percent = storagePercent(usage);
@@ -57,12 +86,9 @@ export function storageRefusal(usage: RunnerUsage | null): TRPCError | null {
   const { usedBytes, usableBytes } = usage.storage;
   return new TRPCError({
     code: "PRECONDITION_FAILED",
-    message:
-      `Your agents' shared storage is ${percent}% full (${gib(usedBytes)} of ${gib(usableBytes)}), ` +
-      "so a new agent can't be created. Delete an agent you no longer need, clear caches inside your agents, " +
-      "or ask an admin for more storage.",
+    message: storageFullMessage(usage.storage),
     cause: { storageFull: { usedBytes, usableBytes, percent } },
   });
 }
 
-const gib = (n: number) => `${(n / 1024 ** 3).toFixed(1)} GiB`;
+const gib = (n: number) => (n / 1024 ** 3).toFixed(1);

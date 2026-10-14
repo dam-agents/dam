@@ -553,7 +553,11 @@ impl Server {
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: takes the controller's desired spec for one machine and answers with its status. The spec replaces any spec not yet acted on. When the machine needs work and no worker is converging it, one is started and the answer reports its first action as the state. A spec that would boot a machine the runner's memory cannot hold is refused here and not stored, so nothing is created for it. While a seed is being uploaded the spec is stored and no worker is started, because a guest booted then would read half a seed; the controller's next ensure after the upload starts it.
-    pub fn put(self: &Arc<Self>, id: &str, spec: MachineSpec) -> Result<MachineStatus, Rejected> {
+    pub fn put(
+        self: &Arc<Self>,
+        id: &str,
+        mut spec: MachineSpec,
+    ) -> Result<MachineStatus, Rejected> {
         check_id(id)?;
         admissible(&spec).map_err(Rejected::bad_request)?;
         gateway_port_admissible(&spec, &self.config.ports).map_err(Rejected::bad_request)?;
@@ -576,7 +580,10 @@ impl Server {
             let boots = spec.running && (converging || action.is_some_and(|a| a != Action::Stop));
             if boots || action == Some(Action::Create) {
                 if let Some(full) = self.storage_critical() {
-                    return Ok(self.refuse(id, status, REASON_STORAGE_FULL, full.refusal()));
+                    if full.refuses_starts() || self.writes_much(id, &spec, action) {
+                        return Ok(self.refuse(id, status, REASON_STORAGE_FULL, full.refusal()));
+                    }
+                    self.hold_growth(id, &mut spec);
                 }
             }
             let _admitting = boots.then(|| locked(&self.admission));
@@ -1392,6 +1399,22 @@ impl Server {
 
     fn storage_critical(&self) -> Option<StorageUse> {
         (self.config.measure_storage)().filter(StorageUse::critical)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: whether bringing a machine to `spec` writes much to the claim: a new machine's disk, or an image fetched into a cache on the claim itself. A start or restart of an existing machine writes only its logs and what its guest does, so a critical claim still lets it through.
+    fn writes_much(&self, id: &str, spec: &MachineSpec, action: Option<Action>) -> bool {
+        let Some(applied) = read_spec(&self.config.state_dir, id) else {
+            return true;
+        };
+        action == Some(Action::Create)
+            || (self.config.image_cache_socket.is_none() && applied.image != spec.image)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: on a critical claim a machine boots at the disk size it has, since a grow has ext4 fill in new block groups at boot; the larger size waits for a start that finds room, as any size change waits for the next start.
+    fn hold_growth(&self, id: &str, spec: &mut MachineSpec) {
+        if let Some(applied) = read_spec(&self.config.state_dir, id) {
+            spec.storage_gib = spec.storage_gib.min(applied.storage_gib);
+        }
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: why a guest that failed to come up has no room, when it has none: the owner's claim is critically full, or the guest's own disk is, as its console says. A guest whose writes fail fails its boot with nothing typed in the error, so the room is what explains it; the claim comes first, because a full claim also fails every guest's writes.

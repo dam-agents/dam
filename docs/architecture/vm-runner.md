@@ -84,7 +84,7 @@ A new image is fetched before the old machine is touched, so a pull that fails l
 A stopped machine takes the change when it next starts.
 A start also checks that what the record names to boot is still on the host, and resolves the image again when it is not: the record holds a path, so a tree evicted or relaid under a stopped machine would otherwise fail every start it makes.
 Each runner has its own limits, so a machine is admitted against its owner's memory alone, counted by what the machines use, and the controller resizes the pod's memory request in place to match, and its memory limit to the owner's pool; each boots with part of its memory and grows once up ([vm-memory](vm-memory.md)).
-It is admitted against its owner's claim too: on a claim past 90% used no machine is created, started, restarted or grown ([persistence](persistence.md#per-agent-pvcs)).
+It is admitted against its owner's claim too: on a claim past 90% used no machine is created or grown, and past 97% none is started or restarted ([persistence](persistence.md#per-agent-pvcs)).
 Without in-place resize, or on a node that defers or refuses it, the request stays put and the controller reports it ([vm-memory](vm-memory.md)).
 
 **A machine reaches the network without proxy settings.** In the cluster, smolvm relays every guest DNS query, whatever address it went to, to the gateway's resolver, which answers every public name with the gateway's address and never forwards or logs.
