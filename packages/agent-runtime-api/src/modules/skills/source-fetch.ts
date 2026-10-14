@@ -35,7 +35,7 @@ export async function planSourceFetch(
     ),
   ]);
   if (!apiDenied && !codeloadDenied) return { kind: "archive" };
-  const dir = source.path?.replace(/^\/+|\/+$/g, "");
+  const dir = source.path?.split("/").filter(Boolean).join("/");
   if (!dir) return { kind: "blocked", reason: "no-path" };
   const contentsDenied = await denies(
     "api.github.com",

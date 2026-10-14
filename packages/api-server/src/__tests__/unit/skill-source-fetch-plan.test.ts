@@ -32,11 +32,7 @@ const denyRules: { host: string; pattern: string; verdict: string }[] = [
 
 const qaAgentDenies: EgressDenies = async (host, _method, path) => {
   const match = denyRules
-    .filter(
-      (r) =>
-        r.host === host &&
-        new RegExp(`^${r.pattern.replace("*", ".*")}$`).test(path),
-    )
+    .filter((r) => r.host === host && path.startsWith(r.pattern.slice(0, -1)))
     .sort((a, b) => b.pattern.length - a.pattern.length)[0];
   return match?.verdict === "deny";
 };

@@ -35,7 +35,11 @@ export async function fetchGithubPath(
   skill?: string,
 ): Promise<Result<void, SkillsDomainError>> {
   const { github } = deps;
-  const dir = path.posix.normalize(subPath).replace(/\/+$/, "");
+  const dir = path.posix
+    .normalize(subPath)
+    .split("/")
+    .filter(Boolean)
+    .join("/");
   const write = async (files: Result<SubtreeFile[], SkillsDomainError>) => {
     if (!files.ok) return files;
     await deps.repo.writeFiles(dest, files.value);
