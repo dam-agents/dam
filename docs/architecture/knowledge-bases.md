@@ -1,6 +1,6 @@
 # Knowledge Bases
 
-Last verified: 2026-10-12
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -57,7 +57,7 @@ The hold is bounded, not absolute: an install that exhausts its budget, or lands
 
 The create itself is compensated rather than transactional: the share roots are stamped by the agent create while the install event is enqueued after it, and a failed enqueue deletes the fresh agent and surfaces the failure — so an agent whose setup never ran can only arise if that compensating delete itself fails.
 
-Lifecycle actions (wake, restart, pause, stop, delete) are the standard agent actions.
+Lifecycle actions (wake, restart, sleep, delete) are the standard agent actions.
 
 ## Sharing
 

@@ -17,10 +17,10 @@ export interface AgentsSlice {
   setRestartingAgent: (id: string, entry: RestartingEntry) => void;
   clearRestartingAgent: (id: string) => void;
   setRestartingAgents: (map: Map<string, RestartingEntry>) => void;
-  pausingAgents: Map<string, { clickedAt: number }>;
-  setPausingAgent: (id: string, entry: { clickedAt: number }) => void;
-  clearPausingAgent: (id: string) => void;
-  setPausingAgents: (map: Map<string, { clickedAt: number }>) => void;
+  fallingAsleepAgents: Map<string, { clickedAt: number }>;
+  setFallingAsleepAgent: (id: string, entry: { clickedAt: number }) => void;
+  clearFallingAsleepAgent: (id: string) => void;
+  setFallingAsleepAgents: (map: Map<string, { clickedAt: number }>) => void;
   startingSince: Map<string, number>;
   setStartingSince: (map: Map<string, number>) => void;
   unreachableAgents: ReadonlySet<string>;
@@ -60,20 +60,20 @@ export const createAgentsSlice: StateCreator<
     }),
   setRestartingAgents: (map) => set({ restartingAgents: map }),
 
-  pausingAgents: new Map(),
-  setPausingAgent: (id, entry) =>
+  fallingAsleepAgents: new Map(),
+  setFallingAsleepAgent: (id, entry) =>
     set((s) => {
-      const next = new Map(s.pausingAgents);
+      const next = new Map(s.fallingAsleepAgents);
       next.set(id, entry);
-      return { pausingAgents: next };
+      return { fallingAsleepAgents: next };
     }),
-  clearPausingAgent: (id) =>
+  clearFallingAsleepAgent: (id) =>
     set((s) => {
-      const next = new Map(s.pausingAgents);
+      const next = new Map(s.fallingAsleepAgents);
       next.delete(id);
-      return { pausingAgents: next };
+      return { fallingAsleepAgents: next };
     }),
-  setPausingAgents: (map) => set({ pausingAgents: map }),
+  setFallingAsleepAgents: (map) => set({ fallingAsleepAgents: map }),
 
   startingSince: new Map(),
   setStartingSince: (map) => set({ startingSince: map }),
@@ -161,9 +161,9 @@ export function transitionRestartingAgents(
   return next;
 }
 
-const PAUSE_DISPLAY_TTL_MS = 30_000;
+const SLEEP_DISPLAY_TTL_MS = 30_000;
 
-export function transitionPausingAgents(
+export function transitionFallingAsleepAgents(
   current: Map<string, { clickedAt: number }>,
   agents: readonly AgentView[],
   now: number = Date.now(),
@@ -174,7 +174,7 @@ export function transitionPausingAgents(
   for (const [id, entry] of current) {
     const agent = byId.get(id);
     if (!agent) continue;
-    if (now - entry.clickedAt >= PAUSE_DISPLAY_TTL_MS) continue;
+    if (now - entry.clickedAt >= SLEEP_DISPLAY_TTL_MS) continue;
     if (agent.state === "error") continue;
     if (agent.state !== "running") continue;
     next.set(id, entry);

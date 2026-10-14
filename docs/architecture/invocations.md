@@ -93,7 +93,7 @@ The root Driver reads it per sub-agent through its own cost read, which the dele
 
 **The target's conversation is kept on the root Driver's volume.** Before a reap, the platform reads the target's one session out of its pod and hands the frames to the root Driver's runtime, which keeps them with the root's own sessions, one file per target, and the record notes that it was captured.
 Copies are byte-capped per target, keeping the newest frames, and in total per root, evicting the oldest.
-Capture is best effort and bounded: it never blocks a report, never fails a reap, and **never wakes the root** — a root that is not up (stopped, paused, crashed, or whose script did not await its spawn) keeps no copy.
+Capture is best effort and bounded: it never blocks a report, never fails a reap, and **never wakes the root** — a root that is not up (sleeping, crashed, or whose script did not await its spawn) keeps no copy.
 A cascade that deletes the root itself skips capture, since the root's volume goes too.
 The copy is read-only history, opened beside the Driver's chat and never loaded back as a live session.
 
@@ -113,9 +113,9 @@ The write is conditional on the Driver it read, and a Driver changes under it fo
 A write that still fails fails the spawn and leaves no Invocation behind.
 **A periodic reconcile only releases it**, for each pinned Driver it finds with no running Invocation, reading that Driver first and only then checking its Invocations; the release is conditional on that read, so a spawn landing in between, which must change the Driver to pin it, fails the release and the next tick decides again.
 No terminal path has to remember to release it, whichever of them ended the last Invocation.
-**A hard stop or pause wins**: both clear the pin, and since the reconcile never sets one, a paused Driver stays down while its sub-agents finish; a spawn made while the stop still stands (inside a pause's settle window) leaves the Driver unpinned, and the spawn's write is conditional on the Driver being unchanged, so a pause landing mid-spawn fails it rather than being undone.
+**Sleep wins**: it clears the pin, and since the reconcile never sets one, a sleeping Driver stays down while its sub-agents finish; a spawn made while the stop stamp still stands (inside a sleep's settle window) leaves the Driver unpinned, and the spawn's write is conditional on the Driver being unchanged, so a sleep landing mid-spawn fails it rather than being undone.
 It is pinned again only by a spawn after it is awake.
-A release bumps the Driver's activity, so its ordinary idle window starts from the last result and a chained spawn never finds it asleep; the bump and the cleared pin are one write under that same condition, so a pause that cleared the pin meanwhile keeps its stale clock.
+A release bumps the Driver's activity, so its ordinary idle window starts from the last result and a chained spawn never finds it asleep; the bump and the cleared pin are one write under that same condition, so a sleep that cleared the pin meanwhile keeps its stale clock.
 A Driver that crashed mid-fan-out stays up until its targets' deadlines end their Invocations.
 
 ## Sub-agent tools

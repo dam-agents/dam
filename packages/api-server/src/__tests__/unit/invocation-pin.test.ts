@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import { createInvocationPinReconciler } from "../../modules/invocations/services/invocation-pin.js";
 
-// TEST_OVERVIEW: the Invocation Pin keeps a Driver awake while it has a running Invocation. A spawn sets it; each reconcile releases the pin of every pinned Driver that no longer has a running Invocation, reading the Driver before it checks and releasing only that version, and never sets one, so a pause or stop that cleared a pin stays in force.
+// TEST_OVERVIEW: the Invocation Pin keeps a Driver awake while it has a running Invocation. A spawn sets it; each reconcile releases the pin of every pinned Driver that no longer has a running Invocation, reading the Driver before it checks and releasing only that version, and never sets one, so a sleep that cleared a pin stays in force.
 
 function makeReconciler(opts: {
   pinned: string[];
@@ -73,7 +73,7 @@ describe("the Invocation Pin reconciler", () => {
     ]);
   });
 
-  // TEST_SCENARIO: the listing comes from a cache; a Driver whose pin a pause already cleared is left alone, stale clock and all.
+  // TEST_SCENARIO: the listing comes from a cache; a Driver whose pin a sleep already cleared is left alone, stale clock and all.
   test("skips a Driver found unpinned on the read", async () => {
     const { reconciler, released, checked } = makeReconciler({
       pinned: ["driver-1"],
@@ -86,11 +86,11 @@ describe("the Invocation Pin reconciler", () => {
     expect(checked).toEqual([]);
   });
 
-  // TEST_SCENARIO: a pause or stop clears the pin while sub-agents still run; the reconciler only ever releases, so it cannot pin that Driver again and wake it.
+  // TEST_SCENARIO: a sleep clears the pin while sub-agents still run; the reconciler only ever releases, so it cannot pin that Driver again and wake it.
   test("never pins a Driver it did not find pinned", async () => {
     const { reconciler, released, checked } = makeReconciler({
       pinned: [],
-      running: ["paused-driver"],
+      running: ["sleeping-driver"],
     });
 
     expect(await reconciler.tick()).toEqual({ released: 0 });

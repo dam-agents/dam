@@ -86,14 +86,9 @@ jobs:
         name: agents.wake
         headers: ["Content-Type: application/json"]
         data: "{\"id\": \"zap\"}"
-      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/agents.stop"
+      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/agents.sleep"
         method: POST
-        name: agents.stop
-        headers: ["Content-Type: application/json"]
-        data: "{\"id\": \"zap\"}"
-      - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/agents.pause"
-        method: POST
-        name: agents.pause
+        name: agents.sleep
         headers: ["Content-Type: application/json"]
         data: "{\"id\": \"zap\"}"
       - url: "https://dam-dev.apps.dam-cl.fmaas.res.ibm.com/api/trpc/agents.upgrade"

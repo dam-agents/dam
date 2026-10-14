@@ -91,7 +91,7 @@ export function AlwaysOnTag() {
   return (
     <Tooltip
       side="top"
-      content="This agent never pauses on its own, so it keeps using its share of resources."
+      content="This agent never sleeps on its own, so it keeps using its share of resources."
     >
       <span className="inline-flex" tabIndex={0}>
         <Badge variant="muted" data-testid="always-on-tag">

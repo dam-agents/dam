@@ -1,11 +1,11 @@
-import { Information, Play } from "@carbon/icons-react";
+import { Asleep, Play } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
 import { Spinner } from "@/components/ui/spinner";
 
-export function AgentStoppedCallout({
+export function AgentSleepingCallout({
   children,
   comingUp,
   onStart,
@@ -18,13 +18,13 @@ export function AgentStoppedCallout({
 }) {
   return (
     <Notice
-      icon={Information}
-      title="This agent is stopped"
+      icon={Asleep}
+      title="This agent is sleeping"
       className={className}
       action={
         <Button size="sm" disabled={comingUp} onClick={onStart}>
           {comingUp ? <Spinner size={14} /> : <Play size={14} />}
-          {comingUp ? "Starting…" : "Start agent"}
+          {comingUp ? "Waking…" : "Wake agent"}
         </Button>
       }
     >

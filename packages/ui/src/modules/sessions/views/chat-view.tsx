@@ -711,11 +711,7 @@ export function ChatView() {
               <EditableAgentIdentity
                 agent={agentView}
                 avatarSize={32}
-                mood={avatarMood(
-                  agentDisplay?.state,
-                  agentView.stopRequested,
-                  busy,
-                )}
+                mood={avatarMood(agentDisplay?.state, agentView.stopRequested)}
                 avatarClassName="@max-[149px]:hidden"
                 nameClassName="text-sm font-bold text-foreground"
               />
@@ -1288,7 +1284,7 @@ const RESUME_FAILURE_COPY: Record<
   },
   connection: {
     title: "Can't reach the agent",
-    body: "The agent didn't answer. It may be waking up or hibernating — try again in a moment.",
+    body: "The agent didn't answer. It may be waking up or falling asleep — try again in a moment.",
   },
   other: {
     title: "Can't open this conversation",
