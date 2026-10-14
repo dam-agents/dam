@@ -48,14 +48,14 @@ export function processTitle(
 export const PROCESS_GROUP_LABEL: Record<ProcessGroupId, string> = {
   turn: "In active turns",
   awake: "Keeping the agent awake",
-  hibernates: "Stops at hibernation",
+  hibernates: "Stops when the agent sleeps",
   "always-on": "Running",
 };
 
 export const ENDED_BY_LABEL: Record<FinishedRow["endedBy"], string> = {
   exit: "Exited",
   stop: "Stopped by you",
-  hibernation: "Ended by hibernation",
+  hibernation: "Ended when the agent slept",
 };
 
 export function keepSourceCaption(
@@ -73,7 +73,7 @@ export function keepSourceCaption(
 }
 
 export const ALWAYS_ON_KEEP_HINT =
-  "This agent is Always on. Nothing here stops at hibernation.";
+  "This agent is Always on. Nothing here stops for sleep.";
 
 export const NO_PID_STOP_HINT = "Can't find this task's process";
 

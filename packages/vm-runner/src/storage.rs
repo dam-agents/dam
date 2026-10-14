@@ -36,7 +36,7 @@ impl StorageUse {
         percent >= SHORT_PERCENT || (was && percent >= SHORT_UNTIL_PERCENT)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: what the owner is told when the runner refuses a machine for want of storage, word for word the api-server's storage-full message: what is refused at this level, that a stopped VM agent can still be opened to clean up below START_LIMIT_PERCENT, and the ways to free space.
+    // UNIT_BOUNDARY_DESCRIPTION: what the owner is told when the runner refuses a machine for want of storage, word for word the api-server's storage-full message: what is refused at this level, that a sleeping VM agent can still be opened to clean up below START_LIMIT_PERCENT, and the ways to free space.
     pub fn refusal(&self) -> String {
         let percent = self.percent();
         let failing = if percent >= WRITES_FAILING_PERCENT {
@@ -45,9 +45,9 @@ impl StorageUse {
             ""
         };
         let starts = if self.refuses_starts() {
-            "Stopped VM agents can't be started until space is freed."
+            "Sleeping VM agents can't be started until space is freed."
         } else {
-            "Stopped VM agents can still be started until storage is nearly full, so you can open one and ask it to clear its caches."
+            "Sleeping VM agents can still be started until storage is nearly full, so you can open one and ask it to clear its caches."
         };
         format!(
             "{failing}Your VM agents have used {} of {} GiB of their shared storage, so new VM agents can't be created and their disks can't grow. {starts} To free space, delete a VM agent you no longer need, open an agent and ask it to clear its caches, or request more storage.",

@@ -14,8 +14,11 @@ import {
   useSyncRestartingAgents,
 } from "./use-restart-agent.js";
 import { useRuntimeMigrationControls } from "./use-runtime-migration-controls.js";
+import {
+  useSleepAgent,
+  useSyncFallingAsleepAgents,
+} from "./use-sleep-agent.js";
 import { useSlowStartIds } from "./use-slow-start.js";
-import { useSuspendAgent, useSyncPausingAgents } from "./use-suspend-agent.js";
 import { useUpdateSandbox } from "./use-update-sandbox.js";
 import { useWakeAgent } from "./use-wake-agent.js";
 
@@ -24,12 +27,12 @@ export function useAgentRows() {
   const { data: budget } = useBudgetReserved();
   const restartingAgents = useStore((s) => s.restartingAgents);
   useSyncRestartingAgents();
-  const pausingAgents = useStore((s) => s.pausingAgents);
-  useSyncPausingAgents();
+  const fallingAsleepAgents = useStore((s) => s.fallingAsleepAgents);
+  useSyncFallingAsleepAgents();
   const slowStartIds = useSlowStartIds();
 
   const deleteAgent = useDeleteAgent();
-  const suspend = useSuspendAgent();
+  const sleep = useSleepAgent();
   const { restart: restartAgent } = useRestartAgent();
   const wakeAgent = useWakeAgent();
   const update = useUpdateSandbox();
@@ -40,9 +43,9 @@ export function useAgentRows() {
     () => new Set(restartingAgents.keys()),
     [restartingAgents],
   );
-  const pausingIds = useMemo(
-    () => new Set(pausingAgents.keys()),
-    [pausingAgents],
+  const fallingAsleepIds = useMemo(
+    () => new Set(fallingAsleepAgents.keys()),
+    [fallingAsleepAgents],
   );
 
   const slotUnit = budget ? slotUnitOf(budget) : null;
@@ -52,7 +55,7 @@ export function useAgentRows() {
     display: resolveAgentDisplay(
       agent,
       restartingIds,
-      pausingIds,
+      fallingAsleepIds,
       slowStartIds,
     ),
     subtitle: sandboxSubtitle(agent, slotUnit),
@@ -69,8 +72,7 @@ export function useAgentRows() {
     onRetryMigration: () => void migrationControls.retryOne(agent),
     onWake: () => wakeAgent.wake(agent.id),
     onRestart: () => restartAgent(agent.id),
-    onPause: () => suspend.pause(agent.id),
-    onStop: () => suspend.stop(agent.id),
+    onSleep: () => sleep(agent.id),
   });
 
   return {
@@ -78,7 +80,6 @@ export function useAgentRows() {
     initialLoaded: agentsData !== undefined,
     rowProps,
     deleteAgent,
-    suspend,
     update,
   };
 }

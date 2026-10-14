@@ -4,7 +4,7 @@ export interface InvocationPinReconciler {
   tick(): Promise<{ released: number }>;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: an Invocation can end on many paths (result, failed setup, deadline, restart, cascade), so no path releases the Invocation Pin itself: every tick releases the pin of each Driver that no longer has a running Invocation. Only a spawn sets a pin, so a pause or stop that cleared one is never overridden here. The Driver is read before its Invocations are checked and released only if it is still that version, so a spawn landing in between keeps its pin.
+// UNIT_BOUNDARY_DESCRIPTION: an Invocation can end on many paths (result, failed setup, deadline, restart, cascade), so no path releases the Invocation Pin itself: every tick releases the pin of each Driver that no longer has a running Invocation. Only a spawn sets a pin, so a sleep that cleared one is never overridden here. The Driver is read before its Invocations are checked and released only if it is still that version, so a spawn landing in between keeps its pin.
 export function createInvocationPinReconciler(deps: {
   listPinnedAgentIds: () => Promise<string[]>;
   readPin: (driverAgentId: string) => Promise<string | null>;

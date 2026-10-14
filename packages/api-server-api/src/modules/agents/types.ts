@@ -320,12 +320,11 @@ export interface AgentsService {
   delete: (id: string) => Promise<void>;
   restart: (id: string) => Promise<boolean>;
   wake: (id: string) => Promise<WakeAgentResult>;
-  stop: (id: string) => Promise<Agent | null>;
   retryWorkspace: (
     id: string,
     kind: WorkspaceMutationKind,
   ) => Promise<Agent | null>;
-  pause: (id: string) => Promise<Agent | null>;
+  sleep: (id: string) => Promise<Agent | null>;
   upgrade: (
     id: string,
     expectedToImage?: string,

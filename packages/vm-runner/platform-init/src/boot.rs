@@ -331,14 +331,11 @@ fn fresh_root(disk: &Path) {
     let booting = image_record(Path::new(guest::IMAGE_PATH));
     let recorded = image_record(&layers.image);
     let fresh = fresh_reason(booting.as_deref(), recorded.as_deref());
-    let mut cleared = vec![&layers.legacy_upper, &layers.work];
-    if fresh.is_some() {
-        cleared.extend([&layers.image, &layers.upper]);
-    }
-    for dir in cleared {
-        if let Err(e) = remove_all(dir) {
-            fatal!("clearing {}: {e}", dir.display());
-        }
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs());
+    if let Err(e) = layers.clear(fresh.is_some(), stamp) {
+        fatal!("{e}");
     }
     for dir in [&layers.upper, &layers.work, &layers.merged] {
         if let Err(e) = mkdir_all(dir) {
@@ -403,6 +400,7 @@ fn fresh_root(disk: &Path) {
     for point in &plan.left_behind {
         let _ = fs::remove_dir(point);
     }
+    layers.purge_discarded();
     logf!(
         "what the image writes outside {} stays until the machine boots another image",
         guest::AGENT_HOME
@@ -444,8 +442,15 @@ const OLD_ROOT: &str = ".platform-old-root";
 // UNIT_BOUNDARY_DESCRIPTION: the overlay features off, so a kept upper layer may sit over a lower that changed while it was not mounted, which is every new image of the root's generation. With them on, overlayfs records each copied-up directory's origin in the lower and verifies it at the next mount: the smolvm guest's kernel then refuses a fresh mount with a stale file handle, or, over platform-init's root, hides a new image's files under every directory the agent ever wrote into — a later image's baked tools vanished under a `mise use` this way. The kernel documents changing the lower between mounts as safe only with these off.
 const LOWER_MAY_CHANGE: &str = ",index=off,redirect_dir=off,metacopy=off,xino=off,uuid=off";
 
+const KEPT: &str = "kept";
+const LEGACY_UPPER: &str = "upper";
+const WORK: &str = "work";
+const DISCARDED_LAYERS: [&str; 3] = [KEPT, LEGACY_UPPER, WORK];
+
 // UNIT_BOUNDARY_DESCRIPTION: the platform root's layers. The lower layer is "/", the image as smolvm mounted it: overlayfs reads a lower directory without the mounts on top of it, so /proc, /storage and the rest are not part of it. The upper and work layers are on the disk and not in memory, so an agent that writes a lot outside HOME fills its disk and not its RAM. The kept upper layer and the record of the image that wrote it share a directory of their own, `kept`. A platform-init from before roots were kept empties `upper` and `work` on every boot and never looks in `kept`, so a runner rolled back and forward again finds the kept upper still beside the record of the image that wrote it. The old `upper` is cleared on every boot, so a disk from that layout gets its space back.
 struct FreshRoot {
+    store: PathBuf,
+    kept: PathBuf,
     upper: PathBuf,
     image: PathBuf,
     legacy_upper: PathBuf,
@@ -457,11 +462,43 @@ impl FreshRoot {
     fn on(disk: &Path) -> Self {
         let store = guest::system_store(disk, guest::ROOTFS_DIR);
         FreshRoot {
-            upper: store.join("kept").join("upper"),
-            image: store.join("kept").join("image"),
-            legacy_upper: store.join("upper"),
-            work: store.join("work"),
+            kept: store.join(KEPT),
+            upper: store.join(KEPT).join("upper"),
+            image: store.join(KEPT).join("image"),
+            legacy_upper: store.join(LEGACY_UPPER),
+            work: store.join(WORK),
             merged: store.join("merged"),
+            store,
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: empties the work layer and the legacy upper, and with `fresh` the kept upper and its image record together, so a boot cut short leaves no record and the next boot is fresh too. Each is renamed aside, which is one step however many files it holds; only a rename that fails deletes in place.
+    fn clear(&self, fresh: bool, stamp: u64) -> io::Result<()> {
+        let mut cleared = vec![&self.legacy_upper, &self.work];
+        if fresh {
+            cleared.push(&self.kept);
+        }
+        for dir in cleared {
+            discard(dir, stamp)
+                .map(drop)
+                .or_else(|_| remove_all(dir))
+                .map_err(|e| io::Error::other(format!("clearing {}: {e}", dir.display())))?;
+        }
+        Ok(())
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: deletes the layers fresh_root moved aside, in the background. A kept upper can hold millions of files, which would hold up the boot for minutes. leave_disk detaches the disk's root before the delete is done, so the store is reached through a descriptor opened now.
+    fn purge_discarded(&self) {
+        match File::open(&self.store) {
+            Err(e) => logf!("WARNING: opening the root's store ({e}); the old root's layers stay on the disk until a later boot"),
+            Ok(store) => {
+                std::thread::spawn(move || {
+                    purge_discarded(
+                        Path::new(&format!("/proc/self/fd/{}", store.as_raw_fd())),
+                        &DISCARDED_LAYERS,
+                    );
+                });
+            }
         }
     }
 
@@ -1168,13 +1205,25 @@ fn persist_home(root: &Path, seeded_before: bool, expected: Option<&SeedDigest>)
     ) {
         fatal!("seeding {} onto the disk: {e}", path.display());
     }
-    if let Err(e) = mkdir_all(path) {
+    if let Err(e) = mountpoint(path) {
         fatal!("creating the guest mountpoint {}: {e}", path.display());
     }
     if let Err(e) = mount(&store, path, libc::MS_BIND) {
         fatal!("mounting {} from the disk: {e}", path.display());
     }
     logf!("persisting {}", path.display());
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the home's mountpoint as a directory of the root. An image may ship the home as a link, to /root for example, and a bind onto a link lands wherever the link points. The link is replaced, so the disk is mounted at the home and nowhere else.
+fn mountpoint(path: &Path) -> io::Result<()> {
+    if fs::symlink_metadata(path).is_ok_and(|info| info.is_symlink()) {
+        logf!(
+            "{} is a link in the image; replacing it with a directory so the home is on the disk",
+            path.display()
+        );
+        fs::remove_file(path)?;
+    }
+    mkdir_all(path)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: seeds the store once, on the boot that finds none. A seed in the share wins over the image's home, because it is the agent's own home from before the move; a store that exists is never touched, even with a seed still in the share, since it already holds everything the agent did since. When the runner expects a seed, the image's home is never the fallback: a store is restored from exactly that seed or the boot fails, and a store that exists boots only if it was restored from that seed. A migration whose seed went missing then fails where it is seen, instead of booting the image's home and being taken for done.
@@ -1186,7 +1235,15 @@ fn prepare_home(
     expected: Option<&SeedDigest>,
 ) -> io::Result<()> {
     let record = seeded_from_path(store);
-    if !must_seed(store, seeded_before)? {
+    let linked = fs::symlink_metadata(store).is_ok_and(|info| info.is_symlink());
+    if linked {
+        logf!(
+            "WARNING: the home store on the disk is a link, made by an older platform-init from an image whose {} is a link, so the home was never on the disk. Seeding it again from what {} holds now",
+            home.display(),
+            home.display()
+        );
+    }
+    if !linked && !must_seed(store, seeded_before)? {
         return match expected {
             Some(expected) => restored_from(&record, expected),
             None => Ok(()),
@@ -1282,12 +1339,16 @@ fn needs_seed(store: &Path) -> io::Result<bool> {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the copy lands beside its destination and is renamed into place, so a boot interrupted halfway leaves no half-seeded store to be mistaken for a complete one: the next boot finds nothing and seeds again.
+// UNIT_BOUNDARY_DESCRIPTION: the copy lands beside its destination and is renamed into place, so a boot interrupted halfway leaves no half-seeded store to be mistaken for a complete one: the next boot finds nothing and seeds again. A home the image ships as a link is followed, and only there: the store is always a directory of the disk, holding what the link points at, because a store that is itself a link would put the bind, and so the agent's work, back on the root an image update discards.
 fn seed(from: &Path, store: &Path) -> io::Result<()> {
-    stage(store, |staged| match fs::symlink_metadata(from) {
+    stage(store, |staged| match fs::metadata(from) {
         Err(e) if e.kind() == io::ErrorKind::NotFound => mkdir_all(staged),
         Err(e) => Err(e),
-        Ok(source) => copy_tree(from, staged, &source),
+        Ok(source) if source.is_dir() => copy_tree(from, staged, &source),
+        Ok(_) => Err(io::Error::other(format!(
+            "{} is not a directory in the image",
+            from.display()
+        ))),
     })
 }
 
@@ -1352,7 +1413,7 @@ impl<R: io::Read> io::Read for Hashing<R> {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the staged tree is flushed to the disk before the rename, and the directory that holds the store after it, so the store is whole on the disk once it has its name. A store that exists is never seeded again, so a stop before the data reached the disk — on a disk with no journal most of all — would otherwise leave the name over files that were lost, and the next boot would take it as the agent's home.
+// UNIT_BOUNDARY_DESCRIPTION: the staged tree is flushed to the disk before the rename, and the directory that holds the store after it, so the store is whole on the disk once it has its name. A store that exists is never seeded again, so a stop before the data reached the disk — on a disk with no journal most of all — would otherwise leave the name over files that were lost, and the next boot would take it as the agent's home. A store an older boot made a link is swapped with the staged tree in one rename and removed after: a boot cut short before the swap finds the link and seeds again, where one that found no store would refuse the disk as a lost home.
 fn stage(store: &Path, fill: impl FnOnce(&Path) -> io::Result<()>) -> io::Result<()> {
     let parent = store
         .parent()
@@ -1365,8 +1426,29 @@ fn stage(store: &Path, fill: impl FnOnce(&Path) -> io::Result<()>) -> io::Result
         let _ = remove_all(&staged);
         return Err(e);
     }
-    fs::rename(&staged, store)?;
+    if fs::symlink_metadata(store).is_ok_and(|info| info.is_symlink()) {
+        exchange(&staged, store)?;
+        fs::remove_file(&staged)?;
+    } else {
+        fs::rename(&staged, store)?;
+    }
     File::open(parent)?.sync_all()
+}
+
+fn exchange(a: &Path, b: &Path) -> io::Result<()> {
+    let a = cstring(a.as_os_str())?;
+    let b = cstring(b.as_os_str())?;
+    // SAFETY: both paths are NUL-terminated strings that outlive the call, and AT_FDCWD resolves them as relative to the working directory, as rename(2) would.
+    let rc = unsafe {
+        libc::renameat2(
+            libc::AT_FDCWD,
+            a.as_ptr(),
+            libc::AT_FDCWD,
+            b.as_ptr(),
+            libc::RENAME_EXCHANGE,
+        )
+    };
+    succeeded(rc == 0)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: flushes everything written to the filesystem that holds `path`. One syncfs covers a whole seeded tree, where an fsync per file would cost a call for each of them.
@@ -2088,6 +2170,72 @@ mod tests {
         );
     }
 
+    // TEST_SCENARIO: an image may ship its home as a link, to the root user's home for example. The store must still be a directory on the disk holding what the link points at, because a store that is a link puts the agent's work on the root an image update discards. The mountpoint is then made a directory in place of the link, and what the link pointed at is left alone.
+    #[test]
+    fn a_home_the_image_links_elsewhere_is_seeded_and_mounted_as_a_directory() {
+        let image = TempDir::new("image");
+        let target = image.path().join("root");
+        fs::create_dir(&target).unwrap();
+        fs::write(target.join("file"), b"baked").unwrap();
+        std::os::unix::fs::symlink("inner", target.join("link")).unwrap();
+        let home = image.path().join("home");
+        std::os::unix::fs::symlink(&target, &home).unwrap();
+
+        let disk = TempDir::new("disk");
+        let store = disk.path().join("agent");
+        seed(&home, &store).unwrap();
+
+        assert!(fs::symlink_metadata(&store).unwrap().is_dir());
+        assert_eq!(fs::read(store.join("file")).unwrap(), b"baked");
+        assert_eq!(
+            fs::read_link(store.join("link")).unwrap(),
+            Path::new("inner"),
+            "only the home itself is followed"
+        );
+
+        mountpoint(&home).unwrap();
+        assert!(fs::symlink_metadata(&home).unwrap().is_dir());
+        assert_eq!(fs::read(target.join("file")).unwrap(), b"baked");
+    }
+
+    // TEST_SCENARIO: an older platform-init made the store a link on a disk whose image linked its home elsewhere, and the runner then recorded the disk as holding a home it never held. That disk is seeded again from what the image's home holds now, which while the root is kept is the agent's work since the last image update, instead of being refused as a lost home or mounted as the link.
+    #[test]
+    fn a_store_an_older_boot_made_a_link_is_seeded_again() {
+        let image = TempDir::new("image");
+        fs::write(image.path().join("file"), b"the agent's work").unwrap();
+        let disk = TempDir::new("disk");
+        let store = disk.path().join("agent");
+        std::os::unix::fs::symlink(image.path(), &store).unwrap();
+
+        prepare_home(
+            image.path(),
+            &disk.path().join("no-seed.tar"),
+            &store,
+            true,
+            None,
+        )
+        .unwrap();
+
+        assert!(fs::symlink_metadata(&store).unwrap().is_dir());
+        assert_eq!(fs::read(store.join("file")).unwrap(), b"the agent's work");
+        assert!(!with_suffix(&store, ".seeding").exists());
+    }
+
+    // TEST_SCENARIO: the reseed of a linked store can fail or be cut short. The link must then still be there, so the next boot seeds again instead of finding no store and refusing the disk as a lost home.
+    #[test]
+    fn a_failed_reseed_of_a_linked_store_keeps_the_link() {
+        let image = TempDir::new("image");
+        let home = image.path().join("home");
+        fs::write(&home, b"not a directory").unwrap();
+        let disk = TempDir::new("disk");
+        let store = disk.path().join("agent");
+        std::os::unix::fs::symlink(&home, &store).unwrap();
+
+        prepare_home(&home, &disk.path().join("no-seed.tar"), &store, true, None).unwrap_err();
+
+        assert!(fs::symlink_metadata(&store).unwrap().is_symlink());
+    }
+
     // TEST_SCENARIO: an image may ship nothing at the agent's home. That is an empty directory on the disk, not a failed boot.
     #[test]
     fn seeding_a_path_the_image_does_not_ship_starts_empty() {
@@ -2785,6 +2933,36 @@ mod tests {
         );
         assert!(store.path().join("tmp.notes").is_file());
         assert!(store.path().join("tmp").is_dir());
+    }
+
+    // TEST_SCENARIO: a new image boots on an empty upper, and the old one can hold millions of files, which deleted in place hold up the boot for minutes. Clearing renames the kept upper aside with its image record, so nothing under the old names is left to mount, and a later delete takes it away. A root kept for the same image is left as it is, while the work layer is emptied on every boot.
+    #[test]
+    fn a_new_image_moves_the_old_root_aside_without_deleting_it() {
+        let disk = TempDir::new("fresh-root");
+        let layers = FreshRoot::on(disk.path());
+        fs::create_dir_all(layers.upper.join("usr/local")).unwrap();
+        fs::write(layers.upper.join("usr/local/tool"), b"x").unwrap();
+        fs::write(&layers.image, b"image-a\n").unwrap();
+        fs::create_dir_all(layers.work.join("work")).unwrap();
+
+        layers.clear(false, 1).unwrap();
+        assert!(
+            layers.upper.join("usr/local/tool").is_file(),
+            "a kept root was cleared"
+        );
+        assert!(!layers.work.exists());
+
+        layers.clear(true, 2).unwrap();
+        assert!(!layers.kept.exists());
+        let aside = with_suffix(&layers.kept, ".discarded.2");
+        assert!(
+            aside.join("upper/usr/local/tool").is_file(),
+            "the old root was deleted on the boot path"
+        );
+        assert!(image_record(&aside.join("image")).is_some());
+
+        purge_discarded(&layers.store, &DISCARDED_LAYERS);
+        assert!(!aside.exists());
     }
 
     // TEST_SCENARIO: under pressure a scratch folder is evicted by whole entries. A leftover of a failed eviction goes first, then a cache its tool tagged as rebuildable, then the rest, so an agent's own file in /tmp is the last to go. A forged tag does not count, and an entry holding a socket a process may still listen on, an entry used within the last pass, and an entry on another device are not offered at all. A change time cannot be set back, so a clock moved forward stands for entries long unused.

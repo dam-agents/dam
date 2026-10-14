@@ -154,7 +154,7 @@ export function NotificationRow({
           kind={kind}
           avatarName={avatars ? avatarName : undefined}
           avatar={agent?.avatar}
-          mood={avatarMood(agent?.state, agent?.stopRequested, running)}
+          mood={avatarMood(agent?.state, agent?.stopRequested)}
         />
         {running && (
           <span

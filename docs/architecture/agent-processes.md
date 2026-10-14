@@ -32,14 +32,14 @@ The processes list reports a change waiting this way, with how many kept tasks i
 Right after a user saves an agent setting that can reach the harness, the UI checks for such a change for a few seconds and, if one waits, asks whether to restart now or to apply it when the tasks finish.
 That question is not behind the `processes` feature, since every agent waits this way.
 A change made from account settings, outside one agent, does not ask.
-The user unblocks it by applying it now, which stops that work, by stopping or unkeeping the kept tasks, or by a hard stop or pause.
+The user unblocks it by applying it now, which stops that work, by stopping or unkeeping the kept tasks, or by putting the agent to sleep.
 Once the last kept task is gone, the recycle runs at once on an idle runtime, or after the grace period while a turn still runs.
 Unkept tasks never hold a recycle back, since the recycle kills them anyway; a kept Detached Process never does either, since the recycle leaves it alone.
 A harness that stopped answering is recycled regardless, since a wedged harness serves no task.
 
 Only work a harness *supervises* reaches its report, which bounds what the contract promises.
 A job the agent detached from the harness is invisible to it, and what is reported can be adjacent to the real work — a detached loop whose progress a supervised log tail watches holds the session for the tail.
-Nothing times a hold out, so an agent with reported work does not scale to zero until that work ends; a [hard stop or pause](agent-lifecycle.md#hibernate) reclaims it regardless, and an install can refuse holds outright.
+Nothing times a hold out, so an agent with reported work does not scale to zero until that work ends; [sleep](agent-lifecycle.md#hibernate) reclaims it regardless, and an install can refuse holds outright.
 
 ## Process inventory
 

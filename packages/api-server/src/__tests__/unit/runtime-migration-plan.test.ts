@@ -272,7 +272,7 @@ describe("what a migration holds", () => {
   it("says a failed move waits on the owner", () => {
     const failure = { kind: "migration-failed" } as const;
     expect(wakeFailureUserCopy(failure)).toMatch(
-      /failed, and it stays stopped until its owner retries or aborts/,
+      /failed, and it stays asleep until its owner retries or aborts/,
     );
     expect(wakeFailureReasonToken(failure)).toBe(
       "wake-rejected:migration-failed",

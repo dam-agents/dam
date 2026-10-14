@@ -49,12 +49,11 @@ export const agentBackgroundWorkInputSchema = idSchema;
 export const agentDeleteInputSchema = idSchema;
 export const agentRestartInputSchema = idSchema;
 export const agentWakeInputSchema = idSchema;
-export const agentStopInputSchema = idSchema;
 export const agentRetryWorkspaceInputSchema = z.object({
   id: z.string().min(1),
   kind: z.enum(["workspace-seed", "workspace-command"]),
 });
-export const agentPauseInputSchema = idSchema;
+export const agentSleepInputSchema = idSchema;
 export const agentUpgradeInputSchema = idSchema.extend({
   expectedToImage: z.string().min(1).optional(),
 });

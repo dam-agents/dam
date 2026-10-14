@@ -157,12 +157,12 @@ export function useWakeAgentMutation() {
   });
 }
 
-export function usePauseAgent() {
+export function useSleepAgentMutation() {
   return useMutation({
-    ...trpc.agents.pause.mutationOptions(),
+    ...trpc.agents.sleep.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Couldn't pause agent",
+      errorToast: "Couldn't put the agent to sleep",
     },
   });
 }
@@ -173,16 +173,6 @@ export function useRetryWorkspace() {
     meta: {
       ...invalidatesAgentsAndBudget,
       errorToast: "Couldn't retry the workspace step",
-    },
-  });
-}
-
-export function useStopAgent() {
-  return useMutation({
-    ...trpc.agents.stop.mutationOptions(),
-    meta: {
-      ...invalidatesAgentsAndBudget,
-      errorToast: "Couldn't stop agent",
     },
   });
 }

@@ -3,7 +3,7 @@ import { getBrand } from "../../brand.js";
 export function startupTips(sandbox: string): readonly string[] {
   const { name, short } = getBrand();
   return [
-    "Idle agents hibernate to save resources, then wake the instant you or a schedule ping them.",
+    "Idle agents sleep to save resources, then wake the instant you or a schedule ping them.",
     "Your workspace survives between runs. Pick up exactly where the agent left off.",
     `Open a local terminal with the ${name} CLI: \`${short} chat ${sandbox}\``,
     "Approvals are enforced outside the sandbox, so a compromised agent cannot approve itself.",

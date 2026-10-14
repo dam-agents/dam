@@ -27,8 +27,9 @@ A custom avatar has no eyes, so it shows no mood: it only greys out while the Ag
 
 ## State
 
-The eyes follow the [lifecycle](agent-lifecycle.md): open while the Agent works on a prompt, closed between prompts, and closed and greyed while it hibernates or is stopped.
-Each character makes its own small gesture on hover, a hibernating one breathes, and the waking screen of a container Agent loops the gesture while it starts ([lifecycle](agent-lifecycle.md#wake)).
+The eyes follow the [lifecycle](agent-lifecycle.md): open while the Agent runs, working or idle, and closed while it sleeps.
+A sleeping character keeps its colours and twitches now and then.
+Each awake character makes its own small gesture on hover, a sleeping one breathes, and the waking screen of a container Agent loops the gesture while it starts ([lifecycle](agent-lifecycle.md#wake)).
 Motion stops when the user's system asks for reduced motion.
 
 ## One drawing everywhere
