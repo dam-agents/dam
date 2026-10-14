@@ -3,6 +3,7 @@ package reconciler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -26,6 +27,7 @@ const (
 	idleSweepsPerTimeout = 6
 	minIdleCheckInterval = 15 * time.Second
 	maxIdleCheckInterval = 5 * time.Minute
+	vmStartHold          = 15 * time.Minute
 )
 
 type IdleChecker struct {
@@ -45,7 +47,8 @@ func (c *IdleChecker) WithMachineHalt(halt MachineHalt) *IdleChecker {
 func NewIdleChecker(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *IdleChecker {
 	c := &IdleChecker{client: client, dynamic: dyn, config: cfg}
 	c.busyProbe = func(ctx context.Context, name string) bool {
-		return agentPodIsBusy(ctx, c.config.Namespace, name)
+		idle, answered := agentPodStatus(ctx, c.config.Namespace, name)
+		return answered && !idle
 	}
 	return c
 }
@@ -122,6 +125,10 @@ func (c *IdleChecker) check(ctx context.Context) {
 			continue
 		}
 
+		if !atZero[name] && vmStartHolds(agent, effective, now) {
+			continue
+		}
+
 		if c.busyProbe(ctx, name) {
 			slog.Info("idle checker: skipping busy agent", "agent", name)
 			continue
@@ -156,6 +163,35 @@ func hibernationPublished(agent *unstructured.Unstructured) bool {
 	return false
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a cold first boot of a vm agent can outlast the idle timeout the wake started: an image no runner has cached, a fresh runner expanding its disk templates, a large nested guest. The idle clock therefore runs from the moment the agent turned ready, and a boot still in progress is never idle, so a scheduled fire is not lost to a hibernation mid-boot. A boot in progress is a machine not ready for no reason of its own and with no start failure decided; the start failure report ends the hold for a machine that runs without answering. The hold is capped at vmStartHold past the idle timeout, since a machine can read not ready for causes no start failure covers, such as an unreachable runner. It needs the pair awake, which the caller checks: a hibernation the runner has not confirmed reads not ready too.
+func vmStartHolds(agent *unstructured.Unstructured, idleTimeout time.Duration, now time.Time) bool {
+	if !isVMObject(agent) || idleTimeout <= 0 {
+		return false
+	}
+	conds, _, _ := unstructured.NestedSlice(agent.Object, "status", "conditions")
+	var ready, podReady map[string]any
+	for _, raw := range conds {
+		cond, _ := raw.(map[string]any)
+		switch cond["type"] {
+		case apiv1.ConditionReady:
+			ready = cond
+		case apiv1.ConditionAgentPodReady:
+			podReady = cond
+		case apiv1.ConditionStartFailed:
+			return false
+		}
+	}
+	if ready != nil && ready["status"] == string(metav1.ConditionTrue) {
+		since, _ := ready["lastTransitionTime"].(string)
+		t, err := time.Parse(time.RFC3339, since)
+		return err == nil && now.Sub(t) <= idleTimeout
+	}
+	if podReady == nil || podReady["reason"] != vmrunner.ReasonNotReady {
+		return false
+	}
+	last, err := time.Parse(time.RFC3339, agent.GetAnnotations()[annLastActivity])
+	return err == nil && now.Sub(last) <= idleTimeout+vmStartHold
+}
 func (c *IdleChecker) agentsAtZero(ctx context.Context) map[string]bool {
 	sss, err := c.client.AppsV1().
 		StatefulSets(c.config.Namespace).
@@ -201,36 +237,37 @@ func hibernationOverride(agent *unstructured.Unstructured) *metav1.Duration {
 	return &metav1.Duration{Duration: d}
 }
 
-func agentPodIsBusy(ctx context.Context, namespace, agentName string) bool {
+// UNIT_BOUNDARY_DESCRIPTION: reports whether the agent's `/api/status` says `idle`, and whether it answered at all within three seconds. The idle checker and a runner roll take a silence as idle, so an agent that is down still hibernates and a stuck guest does not hold up the roll that would replace it; a reclaim does not, since a guest saturated by a long turn is silent too.
+func agentPodStatus(ctx context.Context, namespace, agentName string) (idle, answered bool) {
 	url := fmt.Sprintf("http://%s.%s.svc:8080/api/status", agentName, namespace)
 	client := &http.Client{Timeout: 3 * time.Second, Transport: telemetry.WrapTransport(nil)}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return false
+		return false, false
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return false
+		return false, false
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return false
+		return false, false
 	}
 	var status struct {
 		Idle bool `json:"idle"`
 	}
 	if err := json.Unmarshal(body, &status); err != nil {
-		return false
+		return false, false
 	}
-	return !status.Idle
+	return status.Idle, true
 }
 
 func (c *IdleChecker) hibernate(ctx context.Context, owner, name string) error {
 	return hibernateAgentPair(ctx, c.client, c.dynamic, c.halt, owner, c.config.Namespace, name)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: hibernation is published only once the agent's machine is stopped. The api-server trusts a health check answer on a wake from a published hibernation, because nothing should answer then, so a machine still running would pass for a woken one. When the runner cannot stop the machine, the gateway is scaled down anyway and readiness goes down, but the agent is not reported hibernated: the error makes the idle checker try again on its next sweep, and the agent's next reconcile stops the machine once the runner answers.
+// UNIT_BOUNDARY_DESCRIPTION: hibernation is published only once the agent's machine is stopped. The api-server trusts a health check answer on a wake from a published hibernation, because nothing should answer then, so a machine still running would pass for a woken one. When the runner cannot stop the machine, the gateway is scaled down anyway and readiness goes down, but the agent is not reported hibernated: the error makes the idle checker try again on its next sweep, and the agent's next reconcile stops the machine once the runner answers. A machine the runner is still stopping is no error: the agent reads as stopping, and its reconcile watches the machine and publishes hibernation once it reads stopped.
 func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dynamic.Interface, halt MachineHalt, owner, namespace, name string) error {
 	var haltErr error
 	if halt != nil {
@@ -240,15 +277,26 @@ func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dyna
 		return err
 	}
 	if haltErr != nil {
-		msg := fmt.Sprintf("hibernating: the machine has not stopped yet: %v", haltErr)
+		stopping := errors.Is(haltErr, errMachineStopping)
+		reason, msg := vmrunner.ReasonNotReady, fmt.Sprintf("hibernating: the machine has not stopped yet: %v", haltErr)
+		if stopping {
+			reason, msg = apiv1.ReasonMachineStopping, "hibernating: the machine is stopping"
+		}
 		if err := updateAgentStatus(ctx, dyn, namespace, name, func(s *apiv1.AgentStatus) {
-			setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", vmrunner.ReasonNotReady, msg, 0)
+			setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", reason, msg, 0)
 			setStatusCondition(s, apiv1.ConditionReady, false, "AllPodsReady", "PodsNotReady", "", 0)
 		}); err != nil {
 			return err
 		}
+		if stopping {
+			return nil
+		}
 		return fmt.Errorf("stopping the machine of %s: %w", name, haltErr)
 	}
+	return publishHibernated(ctx, dyn, namespace, name)
+}
+
+func publishHibernated(ctx context.Context, dyn dynamic.Interface, namespace, name string) error {
 	return updateAgentStatus(ctx, dyn, namespace, name, func(s *apiv1.AgentStatus) {
 		setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", apiv1.ReasonHibernated, "", 0)
 		setStatusCondition(s, apiv1.ConditionGatewayPodReady, false, "PodReady", apiv1.ReasonHibernated, "", 0)
@@ -261,7 +309,7 @@ func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dyna
 // UNIT_BOUNDARY_DESCRIPTION: a machine that cannot be stopped now — its runner is restarting or unreachable — does not keep the rest of the pair up. The gateway is scaled down anyway, and the agent's own next reconcile, which asks for the machine stopped because the agent should not run, stops it once the runner answers.
 func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, halt MachineHalt, owner, namespace, name string) error {
 	if halt != nil {
-		if err := halt(ctx, owner, name); err != nil {
+		if err := halt(ctx, owner, name); err != nil && !errors.Is(err, errMachineStopping) {
 			slog.WarnContext(ctx, "stopping the agent's machine failed; scaling the rest down, the next reconcile stops the machine", "agent", name, "owner", owner, "error", err)
 		}
 	}

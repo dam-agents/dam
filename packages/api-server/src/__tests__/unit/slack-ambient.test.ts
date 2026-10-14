@@ -104,6 +104,7 @@ function harness(opts: {
     ) => {
       ambientCalls.push({ agentId, channelId, ambient });
     },
+    agentsFor: () => ({}) as never,
     ignoredApps: {
       list: async () => [],
       ignore: async () => true,

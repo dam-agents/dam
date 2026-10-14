@@ -2,8 +2,8 @@
 name: spawn-subagent
 description: Spawn platform sub-agents on DAM — fresh agents in their own sandboxes that run one task and return a schema-validated result.
   Use when asked to spawn, delegate or hand off to a sub-agent or a throwaway agent, run work on another harness or in isolation, fan work out to fresh agents, or run a make/test/eval step and expect a typed result.
-  Its first step decides whether your harness's own subagent is enough.
-  For one hand-off use the spawn_subagent and await_subagents tools; for loops and wide fan-outs write a script with the driver SDK (Python driver_sdk, JS driver-sdk.mjs).
+  Its first step decides whether a platform sub-agent is needed at all.
+  Hand-offs, fan-outs and long waits use the spawn_subagent and await_subagents tools; a driver SDK script (Python driver_sdk, JS driver-sdk.mjs) is only for orchestration logic that finishes in one foreground command.
 allowed-tools: mcp__platform-outbound__spawn_subagent, mcp__platform-outbound__await_subagents, mcp__platform-outbound__list_harnesses, mcp__platform-outbound__list_connections, mcp__platform-outbound__get_budget, Bash(python3 *), Bash(node *), Write
 ---
 
@@ -13,13 +13,13 @@ The platform can **spawn a sub-agent**: start a fresh agent in its own sandbox t
 You (the driver) hand it a prompt plus the result shape you expect, and get the validated result back.
 It runs unattended and cannot ask you anything.
 
-## Step 1 — Decide: your harness's own subagent, or a platform sub-agent
+## Step 1 — Decide: is a platform sub-agent needed?
 
 Do this first, every time.
-Your harness's own subagent tool runs in this sandbox, starts in seconds and costs no extra compute.
 A platform sub-agent starts a new sandbox — tens of seconds to minutes before it runs, with compute counted against the budget.
+Your harness's own subagent, if it has one, runs in this sandbox, starts in seconds and costs no extra compute.
 Go through the needs below.
-**If none applies, stop here and use your harness's own subagent tool.** If one applies, carry on and name it in `needs` when you spawn:
+**If none applies, do not spawn: use your harness's own subagent if it has one, or do the work yourself.** If one applies, carry on and name it in `needs` when you spawn:
 
 - `different-harness` — it must run on another harness;
 - `own-setup` — its own repository to clone, an install command, env or skills;
@@ -29,9 +29,11 @@ Go through the needs below.
 - `checked-result` — a result the platform checks against a schema.
 
 The platform refuses a need the request does not bear out: `different-harness` on your own harness, `own-setup` without seed, install, env or skills, `more-resources` without resources or a vm backend.
-"The user said sub-agent" is not a need: unless they named the platform, a harness or a sandbox, they mean your harness's own.
+"The user said sub-agent" is not a need: unless they named the platform, a harness or a sandbox, they mean work done in this sandbox.
 
-## Hand off one task: the tools
+## Step 2 — Delegate with the tools
+
+The tools are the way to delegate: for one hand-off, for a fan-out, and for any wait that may be long.
 
 1. **Choose what it runs on — do not guess.** Call `list_harnesses` and `list_connections` and show the human what is available.
    If it is not obvious which to use, **ask them**.
@@ -41,13 +43,24 @@ The platform refuses a need the request does not bear out: `different-harness` o
    It returns the sub-agent id at once.
 3. **Wait.** Call `await_subagents` with the ids.
    It returns as soon as one finishes, or after about four minutes, with what is done, failed and still running; call it again with the running ids.
-   You may also end your turn instead: a sub-agent that finishes while nothing waits on it is delivered back into this session as a new turn.
+   A connection or transport error from the call does not stop the sub-agents: call it again with the same ids.
 
-Several independent tasks: call `spawn_subagent` once per task, then wait on all the ids together.
+For a fan-out, call `spawn_subagent` once per task, then wait on all the ids in one `await_subagents` call.
 
-## Orchestration: a script
+**You may stop waiting.** If you end your turn or stop calling `await_subagents`, the platform delivers each result to this session as a new turn when its sub-agent ends — on every harness, and also after the user has left.
+So never keep a shell command or a background job alive only to wait for a sub-agent.
 
-Use a script when the delegation has logic of its own — loops, a wide fan-out, scoring one agent's output with another.
+**Report only what you checked.** Never tell the user that a sub-agent or a script is running unless you checked it just now.
+`await_subagents`, or the script's own output, is the source of truth.
+A shell job left in the background can die at once on some harnesses, while it still looks started.
+
+## Orchestration logic: a script
+
+Use a script only when the delegation has logic of its own — a loop, or scoring one sub-agent's output with another — and it finishes inside one shell command.
+Run it in the foreground and let it print its results.
+Your shell tool may stop a command at its own default timeout (Claude Code's after 2 minutes), so give the command a timeout longer than the script can take; if you cannot, use the tools.
+**A script's results reach nobody if the script stops early**: the platform delivers results as a turn only for tool spawns, so the results of a script that dies or is cut off are lost.
+Write durable output (a file in `~/work`, a git ref) so a rerun is cheap.
 The options below mean the same in both: the tools take them as camelCase JSON (`ttlMs`, `env` as `[{name, value}]`).
 
 ### The SDK
@@ -59,17 +72,11 @@ The same SDK ships in two languages, both dependency-free and self-configuring f
 
 Examples below are Python; the JS names are the camelCase equivalents (`listImages`, `ttlMs`, …) and take one options object.
 
-## Before you spawn: choose what it runs on — do not guess
-
-1. Run `d.list_images()` and `d.list_connections()` and show the human what is available.
-2. **What it runs on** — `harness="claude-code"` (or `codex`, `pi`, `bob`; each `list_images()` entry names its `harness`).
-   The sub-agent runs on that harness's default image and size.
-   `image="<full ref>"` runs a custom image instead, with `harness` saying which harness is inside it; prefer `seed` and `install` below over building an image.
-3. **Model** — the sub-agent runs on *your* model provider; a harness that cannot run on it is refused at spawn.
-   It runs the harness's default model unless you pick one (see "Choose the model per spawn").
-4. **Connections** — pass what the task needs beyond the model (a repository, an API).
-   Everything you pass must be one of your own grants.
-   Its network access follows your egress rules, so what you can reach, it can reach.
+- **Look first** — run `d.list_images()` and `d.list_connections()` and show the human what is available, as with the tools.
+- **What it runs on** — `harness=` one of `claude-code`, `codex`, `pi`, `bob`, on that harness's default image and size.
+  `image="<full ref>"` runs a custom image instead, with `harness` saying which harness is inside it; prefer `seed` and `install` below over building an image.
+- **Model** — your model provider, which the harness must be able to run on, and the harness's default model unless you pick one (see "Choose the model per spawn").
+- **Connections** — only your own grants, for what the task needs beyond the model; its network access follows your egress rules, so what you can reach, it can reach.
 
 ## Quickstart: a sub-agent that returns a single integer
 
@@ -80,16 +87,13 @@ import driver_sdk as d
 answer = d.spawn(
     "Compute 6 * 7 and report the result as a single integer.",
     "integer",               # the result must be one integer
-    harness="claude-code",
+    harness="codex",         # any harness list_images() names
     label="demo",
 )
 print("returned:", answer)   # 42
 ```
 
-```bash
-python3 ~/spawn_demo.py
-```
-
+Run it in the foreground, with a long enough timeout: `python3 ~/spawn_demo.py`.
 `spawn()` blocks until the sub-agent reports a result that passes validation, then returns it.
 Progress lines (`[invoke] spawned demo (agent-xxx)`, `… done`) print to stderr.
 
@@ -101,7 +105,7 @@ A sub-agent is set up the way a starter kit sets up an agent, so it does not nee
 result = d.spawn(
     "Run one evaluation cell and report its verdict.",
     {"passed": "boolean", "note": "string?"},
-    harness="claude-code",
+    harness="pi",
     connections=[ghe_connection_id],             # clone access, from list_connections()
     seed={"url": "https://github.example/acme/tool", "commit": my_commit},
     install="uv venv && uv pip install ./tool",  # runs in the workspace before the prompt
@@ -142,7 +146,7 @@ They are written into the sub-agent's harness config before its first turn.
 
 ```python
 cheap = d.spawn(prompt, schema, harness="claude-code", model="haiku", mode="bypassPermissions")
-strong = d.spawn(prompt, schema, harness="claude-code", model="opus", config_options={"effort": "high"})
+strong = d.spawn(prompt, schema, harness="codex", config_options={"effort": "high"})
 ```
 
 | harness       | `model`                                                                      | `config_options`                                  |
@@ -189,9 +193,8 @@ The server validates the result against JSON Schema.
 
 - `d.budget()` returns your compute ceiling and what is reserved now; each `list_images()` entry carries its `size`.
   Spawns past the free room queue and start as room frees, so a wide fan-out runs slower, not dead.
-- Run parallel spawns from threads (Python) or `Promise.all` (JS).
+- In a script, run parallel spawns from threads (Python) or `Promise.all` (JS); a wide or long fan-out belongs to the tools.
 - **You stay awake while your sub-agents run.** The platform keeps this agent from hibernating while any sub-agent it spawned is still running.
-  Still, run a long fan-out script as a background task, not detached with `nohup`, so the session can watch it.
 
 ## Things to know
 
@@ -199,6 +202,4 @@ The server validates the result against JSON Schema.
   It reports through a `report_result` tool the platform injects.
 - **Validation is structural, not truth.** The platform checks the shape, never that it's correct.
   Judging correctness is your prompt's job.
-- **No resumability.** If your script dies mid-run, its in-memory state is lost.
-  Write durable output (a file in `~/work`, a git ref) so a rerun is cheap.
 - **Never retry a spawn call itself on a network error** without checking: a duplicated spawn is a second sub-agent.

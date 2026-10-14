@@ -26,7 +26,8 @@ ARTIFACTS_DIR="${KSEARCH_ARTIFACTS_DIR:-$HOME/work/.ksearch-output}"
 # LLM access flows through the DAM-injected OpenAI-compatible env (LiteLLM proxy).
 MODEL_NAME="${KSEARCH_MODEL:-${OPENAI_MODEL:-}}"
 BASE_URL="${KSEARCH_BASE_URL:-${OPENAI_BASE_URL:-}}"
-API_KEY="${OPENAI_API_KEY:-}"
+# a placeholder only; a provider's own one, which names its connection, wins
+API_KEY="${OPENAI_API_KEY:-dummy-placeholder}"
 
 if [ -z "$MODEL_NAME" ]; then
   echo "ksearch-run: no model set (OPENAI_MODEL or KSEARCH_MODEL)" >&2

@@ -61,3 +61,34 @@ export function countByStatus(
   }
   return counts;
 }
+
+export interface DelegationModel {
+  ran: string | null;
+  requested: string | null;
+  substituted: boolean;
+}
+
+function sameModel(a: string, b: string): boolean {
+  return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the model a sub-agent ran, from its turn's
+ * telemetry, against the model its driver asked for. The driver may name a
+ * model with a provider prefix that the recorded call omits, or the reverse,
+ * so a prefix alone never counts as a substitution.
+ */
+export function delegationModel(
+  requested: string | null,
+  ran: readonly string[] | undefined,
+): DelegationModel {
+  const recorded = ran ?? [];
+  return {
+    ran: recorded.length > 0 ? recorded.join(", ") : null,
+    requested,
+    substituted:
+      requested !== null &&
+      recorded.length > 0 &&
+      !recorded.some((model) => sameModel(model, requested)),
+  };
+}

@@ -1,6 +1,6 @@
 # VM runner upgrades
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 How a change to the [runner](vm-runner.md) reaches owners whose machines are running: as a **roll** of the runner pod, which reboots the owner's machines, or, for a new runner release only, as a **hand-off** inside the pod, which reboots none.
 
@@ -10,6 +10,10 @@ How a change to the [runner](vm-runner.md) reaches owners whose machines are run
 The controller records a hash of the pod it rendered on each runner — less its memory limit, the owner's pool, and its memory request, both of which it changes in place ([vm-memory](vm-memory.md)) — leaves a runner alone while that hash is unchanged, and lets a changed one roll only while fewer than the install's roll width (one by default) are mid-roll.
 A runner is mid-roll from that moment until its new pod is ready and every machine that was ready before is ready again, or its agent is gone; a settle timeout bounds the wait for machines, so one that never comes back does not stall everyone else.
 A new pod that is still not ready at the timeout is a broken runner release, not a slow machine: that roll keeps its place, so the release goes no further, and is marked stalled and reported as an error until its pod becomes ready or the pod changes again.
+The exception is a pod stuck in a state no release can cause: one still creating its containers, none ever started, whose claim the attach controller refuses as Multi-Attach, or an old pod that never finishes terminating because its node is gone or not ready.
+That says nothing about the release, so the roll is reported as an error, counted and skipped, and other owners keep rolling; the runner comes up on the new pod once its fault clears.
+Every other state still halts the roll: a pod the scheduler cannot place, since a release that adds a node selector or raises a request makes every runner unplaceable, a container that started, an image that does not pull.
+The node is read through the node read grant the chart adds with virtualization; an install without it cannot tell a lost node, so a pod stuck terminating halts the roll there.
 A runner whose pod is unchanged is not rolled, but labels or owner references that drifted on it are put back without touching the pod.
 A new owner's runner is created at once, since there is nothing of theirs to protect.
 A changed runner also waits for its owner's agents to be idle, since a roll ends the turn an agent is in.
@@ -64,7 +68,16 @@ Connections already open through a published port drop with the old process, and
 A VMM whose runner exited is reaped by the pod's init.
 A release that exits within a minute of taking over is held as **failed**, and the loader goes back to the release it replaced until the controller names another.
 
-**What the controller does.** It writes the configured runner image into every runner's ConfigMap at once: a hand-off reboots nothing, so it is not held to the roll's width, and the loader's fallback bounds a broken release.
+**What the controller does.** It names the configured runner image in each runner's ConfigMap, as many at a time as the roll's width.
+A hand-off reboots nothing, but the loader's fallback catches only a release that exits: one that runs and then refuses to manage machines would, named everywhere at once, break every owner together.
+So a hand-off holds a place in the same roll as a pod roll, and a new release is named only while fewer than the roll's width of runners are mid-roll or mid-hand-off.
+It ends no turn, so it does not wait for idle agents.
+A runner is mid-hand-off from the moment its release is named until it reports the release running, every machine that was ready before is ready again, stopped, or gone with its agent, and no ensure of that owner's machines was refused since.
+A runner with ready machines stays mid-hand-off for at least two health polls, so each running agent has had an ensure against the new release before the next owner is named it.
+A hand-off is in trouble when the runner holds the release as failed, when the runner refuses an ensure, or when it has not settled within the settle timeout; a runner that cannot be reached, or answers that it is shutting down, is the hand-off itself and does not count.
+A hand-off in trouble is marked stalled on the runner's ConfigMap, reported as an error and counted, and keeps its place, so the release goes no further, as with a pod that is never ready.
+A newer configured image resumes the release, starting with the runner that stalled, and so does an operator removing the stall annotation.
+A runner that needs a pod for the release ends its hand-off, and the pod roll that follows takes its own place.
 The pod's image is left out of what the roll compares, so a runner pod rolls only for a change to its shape.
 The runner serves what its loader holds and why, with the reason drawn from a fixed vocabulary: not staged yet, built for another pod, or failed.
 The controller reads it for a runner whose pod image is not the configured one.

@@ -5,7 +5,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { useStore } from "../../../store.js";
 import type { ToolChip } from "../../../types.js";
 import { ActivityBlock } from "../../sessions/components/activity-block.js";
-import { ToolContentBlock } from "../../sessions/components/tool-chip.js";
+import { ToolContentList } from "../../sessions/components/tool-chip.js";
 import { useDelegationTree } from "../api/queries.js";
 import type { FanOutSpawn } from "../lib/fan-out.js";
 import { isSpawnSubAgentChip } from "../lib/sub-agent-chips.js";
@@ -61,9 +61,7 @@ function SourceFold({ chip }: { chip: ToolChip }) {
         </span>
       }
     >
-      {chip.content?.map((c, i) =>
-        c.text ? <ToolContentBlock key={i} text={c.text} /> : null,
-      )}
+      <ToolContentList content={chip.content} />
     </ActivityBlock>
   );
 }
