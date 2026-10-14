@@ -316,11 +316,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     onTurnEnded: (sessionId) => {
       if (shuttingDown) return;
       deps.sessionMetadata?.finishRun(sessionId);
-      deps.sessionMetadata?.markStored(sessionId);
       deps.activeTurns.remove(sessionId);
       checkPendingRestart();
     },
     onTurnInterrupted: (sessionId, turn) => {
+      const unstoredPrompt = deps.activeTurns.promptOf(sessionId);
+      if (unstoredPrompt)
+        deps.undeliveredPrompts.remember(sessionId, [unstoredPrompt]);
       if (!turn.runPrompt && !isRunSession(sessionId)) return;
       const buffer = runTextBuffers.get(sessionId);
       runTextBuffers.delete(sessionId);
@@ -1487,6 +1489,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           if (turnEnded) {
             openToolCalls.delete(sid);
             generating.delete(sid);
+            deps.sessionMetadata?.markStored(sid);
           }
           for (const follower of steered)
             answerSteered(follower, extractStopReason(frame));

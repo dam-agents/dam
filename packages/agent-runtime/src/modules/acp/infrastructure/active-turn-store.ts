@@ -29,6 +29,7 @@ const stateSchema = z
 export interface ActiveTurnStore {
   record(sessionId: string, prompt?: PlatformUndeliveredPrompt): void;
   remove(sessionId: string): void;
+  promptOf(sessionId: string): PlatformUndeliveredPrompt | undefined;
   bumpAttempts(sessionId: string): void;
   leftovers(): ActiveTurnMarker[];
 }
@@ -96,6 +97,9 @@ export function createActiveTurnStore(
       const next = { ...sessions };
       delete next[sessionId];
       store.write({ sessions: next });
+    },
+    promptOf(sessionId) {
+      return store.read().sessions[sessionId]?.prompt;
     },
     bumpAttempts(sessionId) {
       const { sessions } = store.read();
