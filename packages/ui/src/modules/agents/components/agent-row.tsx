@@ -1,4 +1,5 @@
 import { Box, Chemistry } from "@carbon/icons-react";
+import { isStartRefusal } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -98,6 +99,7 @@ export function AgentRow({
   const kindBadge = agentKindBadge(agent);
   const kitBadge = starterKitBadge(agent);
   const keptWork = useKeptWorkCount(agent.id);
+  const refused = isStartRefusal(agent.podTerminationCode);
   const statusNote =
     agent.overBudgetMessage ??
     (display.state === "hibernated" ? reclaimSentence(agent) : undefined);
@@ -159,10 +161,14 @@ export function AgentRow({
               working={working}
               keptWork={keptWork}
               vm={agent.vm}
+              refused={refused}
               className={cn(
                 SECOND_LINE_ITEM,
-                display.state === "error" && "text-danger dark:text-danger",
-                display.state === "over_budget" &&
+                display.state === "error" &&
+                  !refused &&
+                  "text-danger dark:text-danger",
+                (display.state === "over_budget" ||
+                  (display.state === "error" && refused)) &&
                   "text-warning-fg dark:text-warning-fg",
               )}
             />

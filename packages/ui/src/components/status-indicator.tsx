@@ -34,11 +34,13 @@ export function StatusBadge({
   working,
   keptWork = 0,
   vm,
+  refused = false,
   className,
 }: {
   state: AgentDisplayState;
   working?: boolean;
   vm: boolean;
+  refused?: boolean;
   keptWork?: number;
   className?: string;
 }) {
@@ -50,8 +52,13 @@ export function StatusBadge({
     ? working
       ? "Working"
       : "Idle"
-    : badgeLabel(state, vm);
-  const variant = splitRunning && !working ? "accent" : stateVariant[state];
+    : badgeLabel(state, vm, refused);
+  const variant =
+    splitRunning && !working
+      ? "accent"
+      : state === "error" && refused
+        ? "warning"
+        : stateVariant[state];
   return (
     <Badge variant={variant} className={className}>
       {label}

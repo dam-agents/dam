@@ -1,7 +1,10 @@
 import type { PoolLevel } from "api-server-api";
 
+// UNIT_BOUNDARY_DESCRIPTION: the muted fill every Home meter shares for a figure that carries no warning, so the spend bars and the resource bars read as one design.
+export const NEUTRAL_FILL = "bg-slate-500 dark:bg-slate-400";
+
 const LEVEL_FILL: Record<PoolLevel, string> = {
-  ok: "bg-slate-500 dark:bg-slate-400",
+  ok: NEUTRAL_FILL,
   warning:
     "bg-[color-mix(in_srgb,var(--color-amber-600)_40%,var(--color-stone-500))] dark:bg-[color-mix(in_srgb,var(--color-amber-500)_40%,var(--color-stone-500))]",
   critical:
