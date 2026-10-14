@@ -6,7 +6,7 @@ An owner's machines share the memory of their [runner](vm-runner.md), and it is 
 That memory is the owner's whole pool for vm agents, which have no size of their own and stand outside the [budget](budgets.md)'s Ceiling.
 The pool is the install's runner memory limit (`virtualization.runner.resources.limits.memory`) unless the owner's [UserBudget](budgets.md#the-ceiling) sets `memory`; `cpu` there caps the runner's CPU limit the same way.
 
-**A pool changes in place.** The controller reads each owner's UserBudget again at every memory pass, every 30 seconds, and resizes the running runner pod's memory limit and CPU limit through its resize subresource, so a raised or lowered pool restarts no machine; the pod's roll leaves its memory limit and request out of what it compares, and a pod created later starts at the pool rendered then.
+**A pool changes in place.** The controller reads each owner's UserBudget again at every memory pass, every 30 seconds, and before it creates an owner's runner claim, which never shrinks; it resizes the running runner pod's memory limit and CPU limit through its resize subresource, so a raised or lowered pool restarts no machine; the pod's roll leaves its memory limit and request out of what it compares, and a pod created later starts at the pool rendered then.
 A pool that rises is the limit at once.
 One that falls is the target of admission and reclaim at once, but the limit itself stops at what the running machines are counted at plus the reserve, in 512 MiB steps, and comes down as they stop, since a limit under them would have the kernel kill the runner with every machine.
 A machine's new size reaches it at its next start.
@@ -62,7 +62,7 @@ A node that defers or refuses the resize leaves the pod at the request it has; e
 
 **Room is freed from the owner's own idle agents.** A start the runner refused, and an owner whose counted memory passes 90% of the runner's limit, hibernate that owner's vm agents under the rules a blocked start reclaims by in [budgets](budgets.md): unattended, hibernation enabled, idle past the floor, longest-idle first, and only when the agents chosen cover the whole shortfall; under pressure the target is 80%.
 A refused start is retried once their machines have stopped.
-No other owner's agent is touched, and an agent hibernated this way says it was put to sleep early to free memory ([budgets](budgets.md)).
+No other owner's agent is touched, and an agent hibernated this way says it was paused automatically to free memory ([budgets](budgets.md)).
 Because a running machine's use reaches the controller only when its agent reconciles, the controller also asks each owner's runner about its running machines every 30 seconds, which is what pressure is judged from and what moves the request between reconciles.
 That pass reconciles one of the owner's agents only when the request their counts call for differs from the runner pod's, so a count held within its step wakes nothing.
 The runner's own pressure signal runs the same pass for that owner at once, without waiting for the counted threshold, since the kernel's view is the one that kills the runner.
@@ -73,6 +73,7 @@ The two passes never run together for one owner.
 **Guests give back cold page cache.** A guest keeps the files it read cached until something needs the memory, and the host counts that cache as the machine's.
 Every minute platform-init hands the cache on the kernel's inactive list to cgroup v2 proactive reclaim, and the freed pages return to the host within seconds.
 Guests have no swap, so only file pages go.
+Free-page reporting returns only whole 2 MiB blocks, so memory a program frees between pages the guest still uses stays counted; when the free memory in smaller blocks rises by 128 MiB, the same pass reclaims that much cold cache and slab and compacts the guest's memory, so the freed pages merge into blocks the host takes back.
 
 **What can still go wrong.** Guests that grow faster than a second's sample and the seconds a hibernation takes can still take the runner over its limit, and the kernel then kills the runner with every machine of its owner.
 The pressure signal makes that rarer; it cannot rule it out.

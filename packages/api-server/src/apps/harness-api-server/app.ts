@@ -228,6 +228,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         listAgents: () => agentsRepo.list(owner),
         defaultCeiling,
         slotSize: defaultLimits,
+        isSlackUnlinked: async () => false,
       }).budgets,
     defaultLimits,
   };

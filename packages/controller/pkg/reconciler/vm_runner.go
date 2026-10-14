@@ -53,7 +53,7 @@ const (
 
 	vmRunnerSameRuntimeOnlyEnv = "VM_RUNNER_SAME_RUNTIME_ONLY"
 
-	// UNIT_BOUNDARY_DESCRIPTION: the runner's scrape port, apart from the machine API because it carries no token, and the component of the one pod its NetworkPolicy admits to it. The collector is the platform's own and scrapes the runners because they cannot push to it: a runner is off the mesh, and the collector admits only mesh identities.
+	// UNIT_BOUNDARY_DESCRIPTION: the runner's scrape port, apart from the machine API because it carries no token, and the component of the one pod its NetworkPolicy admits to it. The collector is the platform's own and scrapes the runners because they cannot push to it: a runner is off the mesh, and the collector's export port admits only mesh identities.
 	vmRunnerMetricsPort    = 4601
 	vmRunnerMetricsScraper = "clickstack-collector"
 
@@ -134,8 +134,18 @@ func vmRunnerLabels(owner, release string) map[string]string {
 // UNIT_BOUNDARY_DESCRIPTION: a runner outside the cluster has no objects here to build: the chart renders its credentials and the install starts it, so it counts as ready once it can be dialled, and a runner that is down fails the machine's ensure as unreachable.
 func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string) (*vmrunner.Client, bool, error) {
 	if r.config.VM.Runner.HostAddress != "" {
-		client, err := r.runnerFor(ctx, owner)
-		return client, err == nil, err
+		token, tls, tlsErr, err := r.runnerSecrets(ctx, owner)
+		if err != nil {
+			return nil, false, err
+		}
+		client, err := r.runnerClientOf(owner, token, tls, tlsErr)
+		if err != nil {
+			return nil, false, err
+		}
+		if err := r.applyRunnerUsageSecret(ctx, "", token, tls, r.runnerOwnerRef(ctx)); err != nil {
+			slog.Warn("vm runner: writing the usage Secret the api-server reads the host runner's use with; will retry on next reconcile", "error", err)
+		}
+		return client, true, nil
 	}
 	name := r.runnerName(owner)
 	ns := r.config.Namespace
@@ -194,10 +204,13 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string) (*vmru
 	return client, depErr == nil && dep.Status.ReadyReplicas > 0, nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the api-server reads an owner's runner with to show their pools and refuse an agent their storage cannot hold: the runner's URL, the CA its certificate chains to, and a usage capability derived from its token, which the runner accepts on its usage read alone. Neither the token, which creates and deletes machines, nor the TLS Secret, which holds the runner's key, is ever given to the api-server. The Secret carries the runner's labels, so the sweep and an uninstall collect it with the runner, and a label of its own the api-server selects it by; it is written again whenever the token or the CA it was built from changes. What was last written is remembered, so a reconcile whose token and CA have not changed reads nothing more.
+// UNIT_BOUNDARY_DESCRIPTION: what the api-server reads an owner's runner with to show their pools and refuse an agent their storage cannot hold: the runner's URL, the CA its certificate chains to, and a usage capability derived from its token, which the runner accepts on its usage read alone. Neither the token, which creates and deletes machines, nor the TLS Secret, which holds the runner's key, is ever given to the api-server. The Secret carries the runner's labels, so the sweep and an uninstall collect it with the runner, and a label of its own the api-server selects it by; it is written again whenever the token or the CA it was built from changes. What was last written is remembered, so a reconcile whose token and CA have not changed reads nothing more. A runner outside the cluster serves every owner, so its one Secret is written for no owner and carries no owner label.
 func (r *AgentReconciler) applyRunnerUsageSecret(ctx context.Context, owner string, token *corev1.Secret, tls *corev1.Secret, refs []metav1.OwnerReference) error {
 	name, ns := r.runnerUsageName(owner), r.config.Namespace
 	labels := vmRunnerLabels(owner, r.config.ReleaseName)
+	if owner == "" {
+		delete(labels, envoyOwnerLabel)
+	}
 	labels[vmRunnerUsageLabel] = "true"
 	data := map[string][]byte{
 		"url":        fmt.Appendf(nil, "https://%s:%d", r.runnerHost(owner), vmRunnerPort),
@@ -285,17 +298,24 @@ func (r *AgentReconciler) buildRunnerCertificate(owner string, ownerRefs []metav
 
 // UNIT_BOUNDARY_DESCRIPTION: every caller reaches an owner's runner the same way — read its token and the CA that issued its certificate, then dial it — so the credential is never handled anywhere but here. A runner whose certificate cert-manager has not issued yet cannot be dialled, and its pod cannot start either, so the caller requeues as it does for a gateway's leaf.
 func (r *AgentReconciler) runnerFor(ctx context.Context, owner string) (*vmrunner.Client, error) {
+	token, tls, tlsErr, err := r.runnerSecrets(ctx, owner)
+	if err != nil {
+		return nil, err
+	}
+	return r.runnerClientOf(owner, token, tls, tlsErr)
+}
+
+func (r *AgentReconciler) runnerSecrets(ctx context.Context, owner string) (token, tls *corev1.Secret, tlsErr, err error) {
 	secrets := r.client.CoreV1().Secrets(r.config.Namespace)
-	var token, tls *corev1.Secret
-	var tokenErr, tlsErr error
+	var tokenErr error
 	_ = concurrently(
 		func() error { token, tokenErr = secrets.Get(ctx, r.runnerName(owner), metav1.GetOptions{}); return nil },
 		func() error { tls, tlsErr = secrets.Get(ctx, r.runnerTLSName(owner), metav1.GetOptions{}); return nil },
 	)
 	if tokenErr != nil {
-		return nil, fmt.Errorf("reading the runner's token: %w", tokenErr)
+		return nil, nil, nil, fmt.Errorf("reading the runner's token: %w", tokenErr)
 	}
-	return r.runnerClientOf(owner, token, tls, tlsErr)
+	return token, tls, tlsErr, nil
 }
 
 func (r *AgentReconciler) runnerClientOf(owner string, token, tls *corev1.Secret, tlsErr error) (*vmrunner.Client, error) {
@@ -420,7 +440,8 @@ func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string, refs
 	} else if !k8serrors.IsNotFound(err) {
 		return err
 	}
-	if sizeErr != nil {
+	r.refreshVMPool(ctx, owner)
+	if size, sizeErr = r.runnerStorageCeiling(ctx, owner); sizeErr != nil {
 		return sizeErr
 	}
 	pvc := &corev1.PersistentVolumeClaim{

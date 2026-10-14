@@ -82,7 +82,7 @@ export async function waitForRunningOrExit(
 }
 
 export const REFUSAL_HINT =
-  "hint: stop an agent you are not using to free room, then start this one again; it may also start by itself once room frees";
+  "hint: pause agents you aren't using to free room, then start this one again; it may also start by itself once room frees";
 
 export function refusalReason(agent: AgentView): string {
   return agent.overBudgetMessage ?? "your agents' resources are in use";

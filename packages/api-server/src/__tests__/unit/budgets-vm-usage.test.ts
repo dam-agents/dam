@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { createBudgetsService } from "../../modules/budgets/services/budgets-service.js";
 import {
   cpuLevel,
   poolLevel,
@@ -121,5 +122,40 @@ describe("the budgets read's vm figures", () => {
         new Set(),
       ).cpu,
     ).toMatchObject({ pressurePercent: 25, congestion: "moderate" });
+  });
+});
+
+describe("the Slack invite on the budgets read", () => {
+  const read = (vm: RunnerUsage | null, unlinked: boolean) =>
+    createBudgetsService({
+      listAgents: async () => [],
+      readCeilingOverride: async () => null,
+      defaultCeiling: { cpu: "4", memory: "8Gi" },
+      slotSize: { cpu: "1", memory: "2Gi" },
+      readVmUsage: async () => vm,
+      isSlackUnlinked: async () => unlinked,
+    }).reserved();
+
+  it("marks vm usage only when the caller has no Slack link", async () => {
+    // TEST_SCENARIO: a vm user without a Slack link is invited, a linked one and a user with no runner are not.
+    expect((await read(usage(), true)).vm?.slackUnlinked).toBe(true);
+    expect((await read(usage(), false)).vm).not.toHaveProperty("slackUnlinked");
+    expect((await read(null, true)).vm).toBeUndefined();
+  });
+
+  it("still answers when the Slack link lookup fails", async () => {
+    // TEST_SCENARIO: a failed identity lookup drops the invite, not the whole read.
+    const view = await createBudgetsService({
+      listAgents: async () => [],
+      readCeilingOverride: async () => null,
+      defaultCeiling: { cpu: "4", memory: "8Gi" },
+      slotSize: { cpu: "1", memory: "2Gi" },
+      readVmUsage: async () => usage(),
+      isSlackUnlinked: async () => {
+        throw new Error("db down");
+      },
+    }).reserved();
+    expect(view.vm).toBeDefined();
+    expect(view.vm).not.toHaveProperty("slackUnlinked");
   });
 });
