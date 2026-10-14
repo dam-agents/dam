@@ -119,7 +119,9 @@ Claude Code reads its tier models only at start, from the gateway, so the gatewa
 A name it gave Claude Code for a tier that the provider has since retired goes to that tier's current model, so a kept list that is out of date costs nothing.
 With no kept list, on the agent's first start or a new provider, the gateway does not wait for the listing: it listens at once and gives Claude Code its own tier names, `claude/opus` and the like, which each request maps to that tier's model once the listing is in, the request waiting for it.
 Claude Code knows those names no better than a provider's own, so it sizes the request as for any model it does not know; the next start gets the listed names.
-A provider that never lists then receives the bare tier name and refuses the turn.
+When the listing failed, the request goes upstream on the bare tier name, and a provider refuses it.
+On that refusal the gateway lists once more and, when the list is in, resends the turn on the tier's model: a provider attached moments ago can fail the first listings while its egress opens, and still answer by the time it refuses.
+A provider that never lists keeps refusing the turn.
 
 CurveBender pins Claude Code's Sonnet slot to its non-reasoning Nemotron model for the auto-permission classifier, and every work slot and the default conversation to GLM.
 It also turns off the server-side auto-mode check: GLM cannot answer the classifier's non-thinking request within its deadline, so the model pin and that flag are needed together.
