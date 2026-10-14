@@ -95,6 +95,12 @@ func (r *AgentReconciler) runnerOvershootMiB(ctx context.Context, owner string, 
 // UNIT_BOUNDARY_DESCRIPTION: that did not answer as a last resort, as the kill
 // UNIT_BOUNDARY_DESCRIPTION: stops them too; an agent that says it is busy is
 // UNIT_BOUNDARY_DESCRIPTION: never hibernated.
+// UNIT_BOUNDARY_DESCRIPTION: An agent whose cold boot is still in progress
+// UNIT_BOUNDARY_DESCRIPTION: is never hibernated for another start, which
+// UNIT_BOUNDARY_DESCRIPTION: would lose the start it is waiting for: a slow
+// UNIT_BOUNDARY_DESCRIPTION: boot outlasts the idle floor its wake started.
+// UNIT_BOUNDARY_DESCRIPTION: The runner's pressure signal may still take it,
+// UNIT_BOUNDARY_DESCRIPTION: as the OOM kill would stop it too.
 // UNIT_BOUNDARY_DESCRIPTION: Each frees what it is counted at, so a guest
 // UNIT_BOUNDARY_DESCRIPTION: holding little frees little.
 func (r *AgentReconciler) reclaimRunnerMemory(ctx context.Context, owner, self string, needMiB int, partial bool) (bool, error) {
@@ -115,7 +121,7 @@ func (r *AgentReconciler) reclaimRunnerMemory(ctx context.Context, owner, self s
 		if left <= 0 {
 			break
 		}
-		if c.vmMiB == 0 {
+		if c.vmMiB == 0 || c.booting && !partial {
 			continue
 		}
 		idle, answered := r.podStatus(ctx, c.name)
