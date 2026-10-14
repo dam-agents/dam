@@ -266,7 +266,7 @@ func (r *AgentReconciler) readyMachines(ctx context.Context, owner string) []str
 	return ready
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runners still mid-roll. A runner that has settled has its roll annotations removed here, so the next pass reads it as settled without calling it again. A roll whose new pod became ready but whose machines did not all come back within `rollout.settleTimeout` stops holding its place: a machine whose agent stopped during the roll never comes back, and it must not stall every other owner's upgrade. A roll whose new pod never became ready keeps its place instead — a pod that does not start is a broken runner release, and letting the next owner roll would break them too — and is marked stalled, reported at error level and counted, once.
+// UNIT_BOUNDARY_DESCRIPTION: the runners still mid-roll. A runner that has settled has its roll annotations removed here, so the next pass reads it as settled without calling it again. A roll whose new pod became ready but whose machines did not all come back within `rollout.settleTimeout` stops holding its place: a machine whose agent stopped during the roll never comes back, and it must not stall every other owner's upgrade. A roll whose new pod never became ready keeps its place instead — a pod that does not start is a broken runner release, and letting the next owner roll would break them too — and is marked stalled, reported at error level and counted, once — unless the pod never started for a fault of its owner alone (runnerPodStuckOnItsOwner), which is skipped.
 func (r *AgentReconciler) runnersMidRoll(ctx context.Context) ([]string, error) {
 	if !r.runnerRoll.at.IsZero() && time.Since(r.runnerRoll.at) < r.rollViewTTL {
 		return r.runnerRoll.rolling, nil
@@ -323,6 +323,10 @@ func (r *AgentReconciler) runnerRollSettled(ctx context.Context, dep *appsv1.Dep
 	podReady := runnerPodRolledOut(dep)
 	if time.Since(rolledAt) > timeout {
 		if !podReady {
+			if r.runnerPodStuckOnItsOwner(ctx, owner) {
+				slog.Error("vm runner: the rolled pod never started for a reason of its own owner, skipping it so the next runner may roll", "owner", owner, "runner", dep.Name, "timeout", timeout)
+				return true, false
+			}
 			return false, true
 		}
 		slog.Warn("vm runner: the roll's machines did not all come back in time, the next runner may roll", "owner", owner, "timeout", timeout)
@@ -351,6 +355,29 @@ func (r *AgentReconciler) runnerRollSettled(ctx context.Context, dep *appsv1.Dep
 	return true, false
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: whether a rolled pod that is not ready failed for its owner alone rather than for the release. A pod the scheduler cannot place, a pod still in ContainerCreating with no container ever started (its claim stuck on Multi-Attach), or an old pod that never finishes terminating (its node is gone) says nothing about the release, and holding the roll for it would keep every security fix from every other owner. A started container that is not ready, an image that does not pull, or no pod at all may be the release, so those still halt the roll.
+func (r *AgentReconciler) runnerPodStuckOnItsOwner(ctx context.Context, owner string) bool {
+	pods, err := r.runnerPods(ctx, owner, true)
+	if err != nil || len(pods) == 0 {
+		return false
+	}
+	for _, pod := range pods {
+		if pod.DeletionTimestamp != nil {
+			continue
+		}
+		if slices.ContainsFunc(pod.Status.Conditions, func(c corev1.PodCondition) bool {
+			return c.Type == corev1.PodScheduled && c.Status == corev1.ConditionFalse
+		}) {
+			continue
+		}
+		for _, c := range slices.Concat(pod.Status.InitContainerStatuses, pod.Status.ContainerStatuses) {
+			if c.RestartCount > 0 || c.State.Waiting == nil || (c.State.Waiting.Reason != "ContainerCreating" && c.State.Waiting.Reason != "PodInitializing") {
+				return false
+			}
+		}
+	}
+	return true
+}
 func runnerPodRolledOut(dep *appsv1.Deployment) bool {
 	want := int32(1)
 	if dep.Spec.Replicas != nil {

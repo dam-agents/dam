@@ -290,6 +290,44 @@ func TestARollWhosePodNeverStartsHaltsTheRoll(t *testing.T) {
 	assert.Empty(t, dep.Annotations[annRunnerStalled])
 }
 
+// TEST_SCENARIO: the rolled pod of one owner never starts for a reason of its own — it cannot be scheduled, its claim is stuck on Multi-Attach, or its node is gone and the old pod never finishes terminating. That is not a broken release, so past the settle timeout the runner gives up its place and the next owner rolls. A pod whose container started and is still not ready, or whose image does not pull, keeps the roll halted.
+func TestARollStuckOnTheOwnersOwnPodIsSkipped(t *testing.T) {
+	scheduled := corev1.PodCondition{Type: corev1.PodScheduled, Status: corev1.ConditionTrue}
+	waiting := func(reason string) []corev1.ContainerStatus {
+		return []corev1.ContainerStatus{{Name: "runner", State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: reason}}}}
+	}
+	for name, tc := range map[string]struct {
+		pod     corev1.Pod
+		skipped bool
+	}{
+		"unschedulable":             {corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodPending, Conditions: []corev1.PodCondition{{Type: corev1.PodScheduled, Status: corev1.ConditionFalse, Reason: corev1.PodReasonUnschedulable}}}}, true},
+		"multi-attach":              {corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodPending, Conditions: []corev1.PodCondition{scheduled}, ContainerStatuses: waiting("ContainerCreating")}}, true},
+		"old pod stuck terminating": {corev1.Pod{ObjectMeta: metav1.ObjectMeta{DeletionTimestamp: &metav1.Time{Time: time.Now()}, Finalizers: []string{"test"}}, Status: corev1.PodStatus{Phase: corev1.PodRunning}}, true},
+		"image pull":                {corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodPending, Conditions: []corev1.PodCondition{scheduled}, ContainerStatuses: waiting("ImagePullBackOff")}}, false},
+		"crash loop":                {corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodRunning, Conditions: []corev1.PodCondition{scheduled}, ContainerStatuses: []corev1.ContainerStatus{{Name: "runner", RestartCount: 3, State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}}}}}}, false},
+		"never ready":               {corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodRunning, Conditions: []corev1.PodCondition{scheduled}, ContainerStatuses: []corev1.ContainerStatus{{Name: "runner", State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}}}}}}, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			r, _ := setupRolloutReconciler(t, "owner-a", "owner-b")
+			r.config.VM.Runner.Image = runnerV2
+			require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+			setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerSettleTimeout-time.Minute))
+			pod := tc.pod
+			pod.Name, pod.Namespace, pod.Labels = r.runnerName("owner-a")+"-x", "test-agents", vmRunnerSelector("owner-a")
+			_, err := r.client.CoreV1().Pods("test-agents").Create(ctx, &pod, metav1.CreateOptions{})
+			require.NoError(t, err)
+
+			require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+			want := runnerV1
+			if tc.skipped {
+				want = runnerV2
+			}
+			assert.Equal(t, want, runnerImageOf(t, r, "owner-b"))
+		})
+	}
+}
+
 // TEST_SCENARIO: the rollout sweep offers every runner its turn, and each turn asks which runners are mid-roll. That answer is kept for a few seconds, so a pass over many owners lists the runner Deployments a bounded number of times rather than once per owner.
 func TestTheRolloutSweepListsRunnersOncePerPass(t *testing.T) {
 	ctx := context.Background()
