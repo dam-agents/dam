@@ -77,13 +77,18 @@ func (r *AgentReconciler) runnerOvershootMiB(ctx context.Context, owner string, 
 // UNIT_BOUNDARY_DESCRIPTION: frees `needMiB` on the owner's runner by
 // UNIT_BOUNDARY_DESCRIPTION: hibernating their vm agents under the rules a
 // UNIT_BOUNDARY_DESCRIPTION: blocked start reclaims by: unattended, idle past
-// UNIT_BOUNDARY_DESCRIPTION: the floor, longest-idle first, and only when the
+// UNIT_BOUNDARY_DESCRIPTION: the floor, saying it is idle when asked,
+// UNIT_BOUNDARY_DESCRIPTION: longest-idle first, and only when the
 // UNIT_BOUNDARY_DESCRIPTION: agents chosen cover the whole need — no agent is
 // UNIT_BOUNDARY_DESCRIPTION: hibernated for room that would still not suffice.
 // UNIT_BOUNDARY_DESCRIPTION: A `partial` reclaim, on the runner's own pressure
 // UNIT_BOUNDARY_DESCRIPTION: signal, hibernates what it can instead: near an
 // UNIT_BOUNDARY_DESCRIPTION: OOM kill, which takes every machine of the owner,
-// UNIT_BOUNDARY_DESCRIPTION: freeing some memory beats freeing none.
+// UNIT_BOUNDARY_DESCRIPTION: freeing some memory beats freeing none. When no
+// UNIT_BOUNDARY_DESCRIPTION: agent says it is idle, it hibernates the agents
+// UNIT_BOUNDARY_DESCRIPTION: that did not answer as a last resort, as the kill
+// UNIT_BOUNDARY_DESCRIPTION: stops them too; an agent that says it is busy is
+// UNIT_BOUNDARY_DESCRIPTION: never hibernated.
 // UNIT_BOUNDARY_DESCRIPTION: Each frees what it is counted at, so a guest
 // UNIT_BOUNDARY_DESCRIPTION: holding little frees little.
 func (r *AgentReconciler) reclaimRunnerMemory(ctx context.Context, owner, self string, needMiB int, partial bool) (bool, error) {
@@ -98,23 +103,41 @@ func (r *AgentReconciler) reclaimRunnerMemory(ctx context.Context, owner, self s
 		return false, err
 	}
 	sort.Slice(candidates, func(i, j int) bool { return candidates[i].idleSince.Before(candidates[j].idleSince) })
-	var chosen []reclaimCandidate
+	var chosen, silent []reclaimCandidate
 	left := needMiB
 	for _, c := range candidates {
 		if left <= 0 {
 			break
 		}
-		if c.vmMiB == 0 || r.busyProbe(ctx, c.name) {
+		if c.vmMiB == 0 {
+			continue
+		}
+		idle, answered := r.podStatus(ctx, c.name)
+		if !idle {
+			if !answered {
+				silent = append(silent, c)
+			}
 			continue
 		}
 		left -= c.vmMiB
 		chosen = append(chosen, c)
 	}
+	why := "reclaimed idle agent to free memory on its owner's VM runner"
+	if partial && len(chosen) == 0 {
+		why = "reclaimed an agent that did not answer, as no agent said it is idle, to stop an OOM kill on its owner's VM runner"
+		for _, c := range silent {
+			if left <= 0 {
+				break
+			}
+			left -= c.vmMiB
+			chosen = append(chosen, c)
+		}
+	}
 	lock.Unlock()
 	if len(chosen) == 0 || left > 0 && !partial {
 		return false, nil
 	}
-	return true, r.hibernateReclaimed(ctx, chosen, owner, self, "reclaimed idle agent to free memory on its owner's VM runner")
+	return true, r.hibernateReclaimed(ctx, chosen, owner, self, why)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a running machine's use is learned only when its
