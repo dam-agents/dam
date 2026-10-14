@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Run by the [deps.target] provider in .mise/config.toml, and by the oci task,
-# which runs where providers do not (the Lima VM).
+# Run by the [deps.target] provider in .mise/config.toml. The oci task does not
+# run it for the Lima VM's target: every worktree of the host builds into that
+# one target, so a switch between two worktrees with different locks would
+# empty it each time.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
