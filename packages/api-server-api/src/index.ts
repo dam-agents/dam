@@ -117,6 +117,8 @@ export type {
   BudgetReserved,
   BudgetStorageFull,
   BudgetVmUsage,
+  PoolLevel,
+  CpuCongestion,
   BudgetsService,
 } from "./modules/budgets/types.js";
 export type { AgentSpecCR } from "./crd-types.gen.js";

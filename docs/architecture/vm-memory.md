@@ -37,6 +37,7 @@ The added RAM is anonymous memory rather than libkrun's shared-memory file, whic
 The guest writes the page descriptors of added RAM into that RAM itself, so huge pages also make the grow about five times faster.
 
 **The runner measures every running machine.** Its health prober reads the resident memory of each running machine's VMM at every probe and reports it in the machine's status.
+The owner sees the same figures on the home dashboard: what is committed against the pool, and each agent's share of it ([budgets](budgets.md)).
 The figure is kept out of what moves the status version, so it never wakes a waiting status read on its own.
 
 **The runner watches its own memory.** Every second it reads its working set off its cgroup — what the cgroup charges less the file cache the kernel can drop, the figure the kubelet reads — against its limit.
