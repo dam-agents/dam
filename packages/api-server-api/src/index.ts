@@ -107,6 +107,8 @@ export type {
   AgentSetupSeed,
 } from "./modules/agents/setup.js";
 export {
+  AGENT_UNREACHABLE,
+  type AgentUnreachableBody,
   isProtectedAgentEnvName,
   isStartRefusal,
   TerminationCode,

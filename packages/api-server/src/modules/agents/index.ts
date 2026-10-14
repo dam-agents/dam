@@ -26,6 +26,7 @@ export { createImageUpdate } from "./services/image-update.js";
 export { podIsIdle } from "./infrastructure/pod-status-client.js";
 export {
   AgentWakeTimeoutError,
+  describeWakeFailure,
   isAgentWakeTimeoutError,
   isTransientWakeFailure,
   wakeFailureReasonToken,
