@@ -44,7 +44,8 @@ Never ask which dependencies to update: handle all.
 - **7-day release age.** Every ecosystem refuses releases younger than 7 days: pnpm `minimumReleaseAge` (`pnpm-workspace.yaml`), pinact `min_age` (`.pinact.yaml`), the agent images' `minimum_release_age` (`packages/agents/base/rootfs/etc/mise/conf.d/settings.toml`), and `--minimum-release-age 7d` on `mise lock` / `mise upgrade`.
   Exclude a release only when it fixes a known vulnerability and is too young, with a comment naming the date the exclusion can go; other young releases wait for the next run.
   Remove exclusions `git blame` shows are older than 7 days.
-  Exceptions: smolvm (`packages/vm-runner/smolvm.pin`) always moves to its newest release, however young, because the runner tracks it closely; the upstream skills track their repo's branch head, which is ours.- **Shared majors in the VM runner.** `axum-server` and `reqwest` in `packages/vm-runner/Cargo.toml` stay on the major smolvm's own `Cargo.toml` asks for, so `Cargo.lock` holds one of each.
+  Exceptions: smolvm (`packages/vm-runner/smolvm.pin`) always moves to its newest release, however young, because the runner tracks it closely; the upstream skills track their repo's branch head, which is ours.
+- **Shared majors in the VM runner.** `axum-server` and `reqwest` in `packages/vm-runner/Cargo.toml` stay on the major smolvm's own `Cargo.toml` asks for, so `Cargo.lock` holds one of each.
   They move when smolvm's do.
 - **Keep the pin style.** An exact pin stays exact.
   `latest` stays `latest` and is re-locked.
