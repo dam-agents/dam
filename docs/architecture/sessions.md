@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 ## Session inside the pod
 
@@ -106,6 +106,14 @@ The marker is written only after the harness *took* the prompt, so resuming cont
 When a session goes idle — no engaged channel, no prompt active or queued, no agent request pending — the runtime sends `session/close` to the harness; a parked queue counts as queued work, holding the release back until its window passes.
 The per-session subprocess is reaped; the next attach respawns it.
 Permission requests with no engaged channel time out after ten minutes, answered to the agent as an error so the tool call aborts cleanly.
+
+**Questions the agent asks the user.** A harness can stop a turn to ask the user a question with a form — Claude Code's `AskUserQuestion` reaches the runtime as an ACP `elicitation/create`.
+One harness serves every client and reads client capabilities once, from the first `initialize`, so the runtime always tells it forms are supported; otherwise whichever client happened to connect first would switch the question tool on or off for everybody.
+Who can answer is decided per question instead: only a client that advertised `elicitation.form` in its own `initialize` is sent one — the web UI does, while the Slack relay, the CLI and the runtime's own drivers do not.
+The question goes to the person whose prompt started the running turn: when that client cannot render a form — a channel turn, a CLI run, a schedule fire — the runtime answers `decline` at once and the turn runs on, told the user skipped the question, so an unattended turn never waits on one.
+With no prompt turn running, the question goes to whoever on the session can answer it, and is declined when nobody can.
+A question that is asked is held like a permission request: it is shown to every client on the session that can answer, again to a tab that opens the session later, the first answer wins, and it expires after the same ten minutes once no such client is left.
+The web chat shows each choice with its description and always beside it a free-text "Other" box, so a fixed option list never forces a wrong pick; while the question is open the session reads as waiting on the user.
 A harness that leaves a cold re-attach unanswered — whichever verb it advertised for one — is wedged: that request's frames are suppressed and the process is recycled when work drains.
 
 One further condition holds that reap back: **background work the session reports**.

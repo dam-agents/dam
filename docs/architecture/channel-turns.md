@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer.
 What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
@@ -57,6 +57,7 @@ A few observations the diagram glosses over:
   Codex has no such dial: its image runs it never asking, so it raises no prompt to refuse ([harness-config](harness-config.md)).
   The platform's own tool surface is kept outside that dial: asked about one of the two MCP servers the platform injects, the relay answers allow-once, so disposing of a turn, reporting an invocation result and reading a knowledge base survive a mode that asks — wherever the prompt offers allowing once at all, since that is the only approval the relay will pick.
   Reach on those tools is the platform's to enforce (per-Agent endpoint, mesh identity, the binding), never the harness's, so approving them widens nothing.
+- **A question the agent asks on a relayed turn is declined.** The relay cannot render a form, so it never says it can, and the runtime answers the harness's question with `decline` the moment it is asked; the agent is told the user skipped it and carries on ([sessions](sessions.md)).
   The Claude Code image pre-approves the same two servers in its own managed settings, which keeps the question from being raised there at all — belt and braces, since an Agent whose image predates that, or whose harness has no allowlist to write, is answered by the relay just the same.
   What the relay goes on is the canonical tool name the prompt carries, never the display title, which is written for a human and which a prompt injection could otherwise dress up as a platform tool.
   A harness that sends no such name, or names the platform's tools some other way, falls back to the refusal, and an asking mode there costs the Agent its reply tool: it goes silent holding an answer it had no way to deliver, a refusal it cannot even report, since reporting one is also a tool call.
