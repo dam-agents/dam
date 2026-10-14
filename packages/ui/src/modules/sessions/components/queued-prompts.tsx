@@ -1,0 +1,228 @@
+import { Edit, SendAlt, Time, TrashCan } from "@carbon/icons-react";
+import type { PromptBlock, QueuedPrompt } from "api-server-api";
+import { useState } from "react";
+
+import { Button } from "@/components/ui/button";
+
+import { emitToast } from "../../../lib/toast.js";
+import { useStore } from "../../../store.js";
+import type { Message } from "../../../types.js";
+import { extractErrorMessage, isNotQueuedError } from "../../acp/errors.js";
+import { partsOf } from "../../acp/session-projection.js";
+import {
+  removeQueuedPrompt,
+  steerQueuedPrompt,
+  updateQueuedPrompt,
+} from "../api/acp-session-ops.js";
+import { ChatMessage } from "./chat-message.js";
+import { MessageEditor } from "./message-editor.js";
+
+const ALREADY_SENT = "Already sent — it can no longer be changed.";
+
+function queuedMessage(item: QueuedPrompt, index: number): Message {
+  return {
+    id: item.promptId ?? `queued-${String(index)}`,
+    role: "user",
+    parts: partsOf(item),
+    streaming: false,
+    queued: true,
+  };
+}
+
+function textOf(blocks: PromptBlock[]): string {
+  return blocks
+    .flatMap((b) => (b.type === "text" ? [b.text] : []))
+    .join("\n\n");
+}
+
+function withText(blocks: PromptBlock[], text: string): PromptBlock[] {
+  return [
+    ...blocks.filter((b) => b.type !== "text"),
+    ...(text ? [{ type: "text" as const, text }] : []),
+  ];
+}
+
+function reportEditFailure(err: unknown): void {
+  emitToast({
+    kind: "error",
+    message: isNotQueuedError(err) ? ALREADY_SENT : extractErrorMessage(err),
+  });
+}
+
+const noop = () => {};
+
+function pendingMessage(message: Message): Message {
+  return {
+    id: message.id,
+    role: message.role,
+    parts: message.parts,
+    streaming: false,
+    queued: true,
+  };
+}
+
+function QueuedPromptItem({
+  item,
+  message,
+  onFileClick,
+}: {
+  item: QueuedPrompt | null;
+  message: Message;
+  onFileClick: (path: string) => void;
+}) {
+  const agentId = useStore((s) => s.selectedAgent);
+  const sessionId = useStore((s) => s.sessionId);
+  const steers = useStore((s) => s.harnessSteers);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const target =
+    item?.editable && item.promptId !== null && agentId && sessionId
+      ? { agentId, sessionId, promptId: item.promptId, blocks: item.blocks }
+      : null;
+
+  const run = async (op: () => Promise<void>) => {
+    setPending(true);
+    try {
+      await op();
+      setDraft(null);
+    } catch (err) {
+      reportEditFailure(err);
+      if (isNotQueuedError(err)) setDraft(null);
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const save = (text: string) => {
+    if (target === null) return;
+    const blocks = withText(target.blocks, text);
+    if (blocks.length === 0) return;
+    void run(() =>
+      updateQueuedPrompt(
+        target.agentId,
+        target.sessionId,
+        target.promptId,
+        blocks,
+      ),
+    );
+  };
+
+  const sendNow = () => {
+    if (target === null) return;
+    void run(() =>
+      steerQueuedPrompt(target.agentId, target.sessionId, target.promptId),
+    );
+  };
+
+  const remove = () => {
+    if (target === null) return;
+    void run(() =>
+      removeQueuedPrompt(target.agentId, target.sessionId, target.promptId),
+    );
+  };
+
+  if (draft !== null) {
+    return (
+      <MessageEditor
+        initial={draft}
+        pending={pending}
+        onSave={save}
+        onCancel={() => setDraft(null)}
+      />
+    );
+  }
+
+  return (
+    <div className="group relative flex flex-col items-end gap-1">
+      <div className="w-full opacity-60 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+        <ChatMessage
+          message={message}
+          isLast={false}
+          hasPendingPermission={false}
+          onRetry={noop}
+          onFileClick={onFileClick}
+          onDelete={noop}
+        />
+      </div>
+      <div className="flex items-center gap-1 transition-opacity md:absolute md:right-0 md:top-full md:z-10 md:pt-0.5 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
+        <span
+          data-testid="prompt-queued-indicator"
+          className="inline-flex items-center gap-1.5 px-2 text-xs text-muted-foreground"
+        >
+          <Time size={14} />
+          Queued
+        </span>
+        {target !== null && (
+          <>
+            {steers && (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                tooltip="Send now — interrupts the agent"
+                aria-label="Send now"
+                disabled={pending}
+                onClick={sendNow}
+              >
+                <SendAlt size={14} />
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              tooltip="Edit"
+              aria-label="Edit"
+              disabled={pending}
+              onClick={() => setDraft(textOf(target.blocks))}
+            >
+              <Edit size={14} />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              tone="danger"
+              tooltip="Remove"
+              aria-label="Remove"
+              disabled={pending}
+              onClick={remove}
+            >
+              <TrashCan size={14} />
+            </Button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function QueuedPrompts({
+  onFileClick,
+}: {
+  onFileClick: (path: string) => void;
+}) {
+  const items = useStore((s) => s.queuedPrompts);
+  const messages = useStore((s) => s.messages);
+  const listed = new Set(items.flatMap((item) => item.promptId ?? []));
+  const pending = messages.filter(
+    (m) => m.role === "user" && m.queued === true && !listed.has(m.id),
+  );
+  return [
+    ...items
+      .filter((item) => item.starting !== true)
+      .map((item, i) => (
+        <QueuedPromptItem
+          key={item.promptId ?? `queued-${String(i)}`}
+          item={item}
+          message={queuedMessage(item, i)}
+          onFileClick={onFileClick}
+        />
+      )),
+    ...pending.map((m) => (
+      <QueuedPromptItem
+        key={m.id}
+        item={null}
+        message={pendingMessage(m)}
+        onFileClick={onFileClick}
+      />
+    )),
+  ];
+}

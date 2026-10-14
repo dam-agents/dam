@@ -1,0 +1,8 @@
+flavor = "gfm"
+extend-exclude = ["docs/activity-events.md"]
+
+[format]
+wrap = "semantic"
+table-indent = 0
+horizontal-rule-style = "compact"
+no-break-abbreviations = ["incl."]

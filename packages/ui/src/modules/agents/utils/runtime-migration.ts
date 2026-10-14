@@ -13,7 +13,6 @@ export interface VmRuntimeAnswer {
 
 export type RuntimeBadge =
   | { kind: "new"; label: string; title: string }
-  | { kind: "old"; label: string; title: string }
   | { kind: "migrating"; label: string; title: string }
   | { kind: "failed"; label: string; title: string };
 
@@ -61,9 +60,9 @@ export function migrationTitle(migration: RuntimeMigrationView): string {
   return migration.message ?? migrationPhaseDescription(migration);
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: which runtime badge an agent row shows. A migration under way is badged with its phase, and a failed one distinctly, whatever the experiment says, since the user started it and has something to decide. Otherwise, with the vm-sandboxes experiment off the new runtime is the rare case and is the one badged; with it on the new runtime is the default, so the badge moves to the agents still on the old container runtime, which are the ones with something left to do. Nothing is badged until both answers behind the experiment have arrived, so a row does not flip from one badge to the other on load.
+// UNIT_BOUNDARY_DESCRIPTION: which runtime badge an agent row shows. A migration under way is badged with its phase, and a failed one distinctly, whatever the experiment says, since the user started it and has something to decide. Otherwise, with the vm-sandboxes experiment off the new runtime is the rare case and is the one badged; with it on the new runtime is the default and nothing is badged, since an agent still on the old container runtime already shows its Migrate action. Nothing is badged until both answers behind the experiment have arrived, so a row does not flip from one badge to the other on load.
 export function runtimeBadge(
-  agent: Pick<AgentView, "vm" | "runtimeMigratable" | "runtimeMigration">,
+  agent: Pick<AgentView, "vm" | "runtimeMigration">,
   vmRuntime: VmRuntimeAnswer,
 ): RuntimeBadge | null {
   if (!vmRuntime.answered) return null;
@@ -80,22 +79,13 @@ export function runtimeBadge(
           label: `Migrating: ${migrationPhaseLabel(migration.phase).toLowerCase()}`,
           title: migrationTitle(migration),
         };
-  if (!vmRuntime.vm)
-    return agent.vm
-      ? {
-          kind: "new",
-          label: "New runtime",
-          title: "Runs on the new sandbox runtime",
-        }
-      : null;
-  if (agent.vm) return null;
-  return {
-    kind: "old",
-    label: "Old runtime",
-    title: agent.runtimeMigratable
-      ? "Runs on the previous container runtime. It can be migrated to the new sandbox runtime."
-      : "Runs on the previous container runtime. It cannot be moved to the new sandbox runtime as it is set up now.",
-  };
+  return !vmRuntime.vm && agent.vm
+    ? {
+        kind: "new",
+        label: "New runtime",
+        title: "Runs on the new sandbox runtime",
+      }
+    : null;
 }
 
 export type MigrateAction =

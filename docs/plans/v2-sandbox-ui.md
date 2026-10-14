@@ -35,7 +35,8 @@ Not yet committed.
 
 ## What was built
 
-1. Backend [x]
+1. Backend \[x\]
+
 - [x] Dynamic OAuth return: a `returnTo` is threaded through the OAuth pending-context keyed by state; the callback redirects there instead of the hardcoded connections view.
   Same-origin relative paths only (sanitized).
   The registered GitHub callback URL is untouched.
@@ -43,18 +44,21 @@ Not yet committed.
 - [x] Popup OAuth mode: a `popup` flag on the pending-context makes the callback return a small page that postMessages the result to the opener and closes, instead of redirecting.
   Used by the v2 popup flow; v1 redirect behaviour is unchanged.
 
-2. Routing and layout [x]
+2. Routing and layout \[x\]
+
 - [x] Custom router extended: `/v2` (list), `/v2/new` (wizard), `/v2/<id>` (terminal), with browser back/forward handled.
 - [x] Shell-less v2 layout (no sidebar or mobile nav), a thin breadcrumb header.
   Auth and terms gates are inherited at app entry, same as v1.
 
-3. List view [x]
+3. List view \[x\]
+
 - [x] Reuses the existing agents query (5s poll retained).
   Cards restyled to status + name; click opens the terminal; trash kept with a confirm; refresh / power / configure dropped.
 - [x] A minimal "Some setup didn't apply" line shows when an agent has contribution failures; the verbose badge was dropped.
 - [x] Placeholder "create sandbox" card opens the wizard.
 
-4. Creation wizard [x]
+4. Creation wizard \[x\]
+
 - [x] In-place full-screen wizard with breadcrumbs and cancel/back.
 - [x] Step 1: name + LLM picker; inline provider-secret create; verify-before-advance for Anthropic (the existing verify endpoint), create-and-trust for LiteLLM; reuse-if-exists matched on secret type plus identifying env var (so Anthropic API and Anthropic OAuth don't collide).
   The credential field, the reuse line, and the "credential ready" state all render inside the selected provider card.
@@ -65,7 +69,8 @@ Not yet committed.
 - [x] sessionStorage wizard snapshot (ids and pick-state, no secrets) persists across the redirect fallback and rehydrates on return; the popup path keeps the wizard mounted so no reload is needed.
 - [x] On the step-2 to terminal transition: a single agent create (claude-code template, egress trusted) granting the LLM secret and every authorized GitHub connection, then navigate to the terminal.
 
-5. Terminal step [x]
+5. Terminal step \[x\]
+
 - [x] Reuses the terminal component full-screen, keyed per agent for a fresh session.
   Its built-in "Connecting…" overlay covers the relay's auto-wake; breadcrumb returns to the list.
 

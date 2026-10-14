@@ -2,9 +2,11 @@ package reconciler
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 )
@@ -44,4 +46,33 @@ func TestTerminationReason_OtherMessagesStayContainerTerminated(t *testing.T) {
 		assert.True(t, ok)
 		assert.Equal(t, "ContainerTerminated", reason, "message %q", message)
 	}
+}
+
+// TEST_SCENARIO: an OOM kill of the runner takes every machine of its owner down at once, so each agent it took down carries the reason until it is ready again. An agent that came up after the kill, one that was not ready when it happened, one that is stopping, or a runner that restarted for another reason carries nothing, since the kill is not what keeps it down.
+func TestARunnerOOMKillIsBlamedOnlyOnTheAgentsItTookDown(t *testing.T) {
+	killed := time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC)
+	runner := &corev1.Pod{Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{
+		Name: vmRunnerComponent,
+		LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+			Reason: "OOMKilled", FinishedAt: metav1.NewTime(killed),
+		}},
+	}}}}
+	assert.Equal(t, killed, runnerOOMKilledAt(runner))
+	runner.Status.ContainerStatuses[0].LastTerminationState.Terminated.Reason = "Error"
+	assert.True(t, runnerOOMKilledAt(runner).IsZero(), "a restart that was not an OOM kill")
+
+	ready := func(at time.Time) *metav1.Condition {
+		return &metav1.Condition{Type: apiv1.ConditionAgentPodReady, Status: metav1.ConditionTrue, LastTransitionTime: metav1.NewTime(at)}
+	}
+	at := func() time.Time { return killed }
+	never := func() time.Time { return time.Time{} }
+	carried := &metav1.Condition{Type: apiv1.ConditionAgentPodReady, Status: metav1.ConditionFalse, Reason: apiv1.ReasonRunnerOutOfMemory}
+
+	assert.True(t, runnerOOMTookDown(ready(killed.Add(-time.Hour)), true, false, at), "ready before the kill")
+	assert.True(t, runnerOOMTookDown(carried, true, false, never), "the reason lasts through the boot")
+	assert.False(t, runnerOOMTookDown(carried, true, true, at), "ready again")
+	assert.False(t, runnerOOMTookDown(carried, false, false, at), "the agent is stopping")
+	assert.False(t, runnerOOMTookDown(ready(killed.Add(time.Minute)), true, false, at), "ready only after the kill")
+	assert.False(t, runnerOOMTookDown(ready(killed.Add(-time.Hour)), true, false, never), "no kill")
+	assert.False(t, runnerOOMTookDown(&metav1.Condition{Status: metav1.ConditionFalse, Reason: apiv1.ReasonHibernated}, true, false, at), "woken from hibernation")
 }

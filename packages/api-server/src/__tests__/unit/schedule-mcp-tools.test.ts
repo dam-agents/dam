@@ -13,6 +13,23 @@ import type {
 } from "api-server-api";
 
 async function mcpHarness() {
+  const stored = new Map<string, Schedule>([
+    [
+      "sched-9",
+      {
+        id: "sched-9",
+        agentId: "agent-1",
+        name: "Weekday PR review",
+        spec: {
+          version: "1",
+          type: "cron",
+          cron: "0 9 * * 1-5",
+          enabled: true,
+          createdBy: "agent",
+        },
+      },
+    ],
+  ]);
   const cronCalls: {
     input: ScheduleCreateCronInput;
     createdBy?: ScheduleCreator;
@@ -57,6 +74,20 @@ async function mcpHarness() {
         } satisfies Schedule;
       },
     ),
+    get: vi.fn(async (id: string) => stored.get(id) ?? null),
+    toggle: vi.fn(async (id: string, enabled?: boolean) => {
+      const found = stored.get(id);
+      if (!found) return null;
+      const next = {
+        ...found,
+        spec: { ...found.spec, enabled: enabled ?? !found.spec.enabled },
+      };
+      stored.set(id, next);
+      return next;
+    }),
+    delete: vi.fn(async (id: string) => {
+      stored.delete(id);
+    }),
   };
 
   const session = createMcpSession("agent-1", {
@@ -72,7 +103,7 @@ async function mcpHarness() {
   const client = new Client({ name: "test-harness", version: "1.0.0" });
   await client.connect(clientTransport);
 
-  return { client, cronCalls, rruleCalls };
+  return { client, cronCalls, rruleCalls, stored };
 }
 
 describe("create_schedule MCP tool", () => {
@@ -216,5 +247,40 @@ describe("create_schedule MCP tool", () => {
 
     expect(res.isError).toBe(true);
     expect(rruleCalls).toHaveLength(0);
+  });
+});
+
+describe("schedule changes answer with the schedule's name", () => {
+  it("toggle_schedule returns the name with the new state", async () => {
+    const { client } = await mcpHarness();
+
+    const res = await client.callTool({
+      name: "toggle_schedule",
+      arguments: { id: "sched-9", enabled: false },
+    });
+
+    expect(res.isError).toBeFalsy();
+    expect(JSON.parse((res.content as [{ text: string }])[0].text)).toEqual({
+      id: "sched-9",
+      name: "Weekday PR review",
+      enabled: false,
+    });
+  });
+
+  it("delete_schedule returns the name of the schedule it deleted", async () => {
+    const { client, stored } = await mcpHarness();
+
+    const res = await client.callTool({
+      name: "delete_schedule",
+      arguments: { id: "sched-9" },
+    });
+
+    expect(res.isError).toBeFalsy();
+    expect(JSON.parse((res.content as [{ text: string }])[0].text)).toEqual({
+      id: "sched-9",
+      name: "Weekday PR review",
+      deleted: true,
+    });
+    expect(stored.has("sched-9")).toBe(false);
   });
 });

@@ -6,6 +6,7 @@ import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
 import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
 import { createActivityStamper } from "./activity-stamper.js";
+import { readyOrAnswering } from "./ready-or-answering.js";
 import type { SessionPresence } from "./session-presence.js";
 
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
@@ -97,7 +98,13 @@ export function createSshRelay(
       client.on("message", buffer);
 
       try {
-        await repo.ensureReady(agentId);
+        await readyOrAnswering(
+          repo,
+          agentId,
+          repo.ensureReady(agentId),
+          `http://${podBaseUrl(agentId, namespace)}/healthz`,
+          () => clientGone,
+        );
       } catch (err) {
         const reason = isAgentWakeTimeoutError(err)
           ? `agent not ready: ${err.failure.kind}`

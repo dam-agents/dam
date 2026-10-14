@@ -44,7 +44,7 @@ export function registerArtifactLibraryTools(
 
   server.tool(
     "create_artifact",
-    "Publish an artifact (HTML page, React/JSX component, markdown, code, text, or a binary file) to the platform artifact library and optionally get a public share link. PREFER THIS for sharing work products with humans — artifacts outlive this sandbox, are versioned, and render on a share page (HTML/JSX render live; markdown and code render formatted). Content must be a single self-contained file: anything available only in your sandbox — companion files, installed packages, running services — does not exist for viewers, so inline all resources or reference them via absolute public URLs. Provide `content` inline for text, or `upload_ref` from create_artifact_upload_url for anything big or binary. Set visibility='public' to mint a share link (the unguessable URL is the access control); set `expires_in_hours` only if the platform should permanently delete the artifact after that time. Restricted sharing (a named list of viewers) is set by the owner in the app; this tool cannot set it or change an artifact that is already restricted. The response includes `internal_link` (platform://artifacts/<id>) — paste it into your chat reply as a markdown link, e.g. [My dashboard](platform://artifacts/<id>), and the user sees an inline chip that opens a live preview beside the chat.",
+    "Publish an artifact (HTML page, React/JSX component, markdown, code, text, or a binary file) to the platform artifact library. PREFER THIS for handing work products to humans — artifacts outlive this sandbox, are versioned, and render on a share page (HTML/JSX render live; markdown and code render formatted). Content must be a single self-contained file: anything available only in your sandbox — companion files, installed packages, running services — does not exist for viewers, so inline all resources or reference them via absolute public URLs. Provide `content` inline for text, or `upload_ref` from create_artifact_upload_url for anything big or binary. Artifacts are private by default: only the user sees them, in the app. Keep them private until the user picks how to share; publishing is not sharing. Set visibility='public' only when the user asks for a link anyone can open (the unguessable URL is the access control). Say in your reply whether the artifact is private or public. Set `expires_in_hours` only if the platform should permanently delete the artifact after that time. Restricted sharing (a named list of viewers) is set by the owner in the app's Share dialog; this tool cannot set it or change an artifact that is already restricted. When the user asks to share, name the three levels and recommend the narrowest that fits: private (only the user, in the app), Restricted (only people the user invites, by email address, in the app's Share dialog; you cannot set it), or public (anyone with the link). The response includes `internal_link` (platform://artifacts/<id>) — paste it into your chat reply as a markdown link, e.g. [My dashboard](platform://artifacts/<id>), and the user sees an inline chip that opens a live preview beside the chat.",
     {
       title: z.string().trim().min(1).max(ARTIFACT_TITLE_MAX_LENGTH),
       content: z
@@ -60,7 +60,12 @@ export function registerArtifactLibraryTools(
         .optional()
         .describe("Auto-detected from file name / content when omitted."),
       folder_id: z.string().optional(),
-      visibility: z.enum(["private", "public"]).optional(),
+      visibility: z
+        .enum(["private", "public"])
+        .optional()
+        .describe(
+          "Defaults to private. Pass 'public' only when the user asked for a public link.",
+        ),
       interactive: z
         .boolean()
         .optional()
@@ -282,7 +287,7 @@ export function registerArtifactLibraryTools(
 
   server.tool(
     "set_artifact_sharing",
-    "Control an artifact's sharing: visibility ('public' mints the link, 'private' disables it) and the deletion date (0 removes it). The deletion date is retention, not link lifetime — the platform permanently deletes the artifact on that date, even if it is private. Restricted sharing (a named list of viewers) is set by the owner in the app; this tool cannot set it or change an artifact that is already restricted.",
+    "Control an artifact's sharing: visibility ('public' mints a link anyone can open, 'private' disables it; make an artifact public only when the user asks) and the deletion date (0 removes it). The deletion date is retention, not link lifetime — the platform permanently deletes the artifact on that date, even if it is private. Restricted sharing (a named list of viewers) is set by the owner in the app's Share dialog; this tool cannot set it or change an artifact that is already restricted. When the user asks to share, name the three levels and recommend the narrowest that fits: private (only the user, in the app), Restricted (only people the user invites, by email address, in the app's Share dialog; you cannot set it), or public (anyone with the link).",
     {
       id: z.string().min(1),
       visibility: z.enum(["private", "public"]).optional(),

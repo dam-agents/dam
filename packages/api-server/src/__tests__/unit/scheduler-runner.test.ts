@@ -1,4 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { trace } from "@opentelemetry/api";
+import {
+  InMemorySpanExporter,
+  NodeTracerProvider,
+  SimpleSpanProcessor,
+} from "@opentelemetry/sdk-trace-node";
+import { afterEach, beforeEach, describe, it, expect } from "vitest";
+import { inBackgroundSpan } from "../../core/background-span.js";
 import type { Schedule } from "api-server-api";
 import { createSchedulerRunner } from "../../modules/schedules/services/scheduler-runner.js";
 import type { SchedulesRepository } from "../../modules/schedules/infrastructure/schedules-repository.js";
@@ -819,5 +826,65 @@ describe("scheduler-runner runNow", () => {
     );
 
     expect(stampedFires).toEqual(["k8s api unreachable"]);
+  });
+});
+
+describe("scheduler-runner fire: the trace of a fire", () => {
+  let spans: InMemorySpanExporter;
+  let tracerProvider: NodeTracerProvider;
+
+  beforeEach(() => {
+    spans = new InMemorySpanExporter();
+    tracerProvider = new NodeTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(spans)],
+    });
+    tracerProvider.register();
+  });
+
+  afterEach(async () => {
+    await tracerProvider.shutdown();
+    trace.disable();
+  });
+
+  async function traceFire(deps: ReturnType<typeof makeDeps>) {
+    await inBackgroundSpan("schedule.fire", {}, () =>
+      deps.runner.buildFireHandler()(
+        SCHEDULE_ID,
+        new Date("2026-06-12T10:30:00Z"),
+      ),
+    ).catch(() => {});
+    return spans.getFinishedSpans().at(-1)!.attributes;
+  }
+
+  /** TEST_SCENARIO: a fire that never reaches the agent still says why, so a
+   *  held occurrence reads apart from a failed one. */
+  it("records how each fire ended, from bounded values only", async () => {
+    expect(await traceFire(makeDeps())).toMatchObject({
+      "platform.schedule.type": "cron",
+      "platform.schedule.mode": "fresh",
+      "platform.schedule.precheck": false,
+      "platform.schedule.outcome": "success",
+    });
+    expect(await traceFire(makeDeps({ runtimeMigrating: true }))).toMatchObject(
+      {
+        "platform.schedule.outcome": "held",
+        "platform.schedule.hold_reason": "runtime_migration",
+      },
+    );
+    expect(
+      await traceFire(makeDeps({ bumpError: new Error("db down") })),
+    ).toMatchObject({
+      "platform.schedule.outcome": "failure",
+      "platform.schedule.failure_stage": "commit",
+    });
+    expect(
+      await traceFire(makeDeps({ wakeError: new Error("wake timed out") })),
+    ).toMatchObject({
+      "platform.schedule.outcome": "failure",
+      "platform.schedule.failure_stage": "poke",
+    });
+    expect(await traceFire(makeDeps({ enabled: false }))).toMatchObject({
+      "platform.schedule.outcome": "dropped",
+    });
   });
 });

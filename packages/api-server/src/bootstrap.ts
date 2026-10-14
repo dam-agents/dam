@@ -11,6 +11,13 @@ import {
   createLeaseApi,
   podBaseUrl,
 } from "./modules/agents/infrastructure/k8s.js";
+import {
+  composeStorageGate,
+  listRunnerUsageOwners,
+  readRunnerUsage,
+} from "./modules/budgets/index.js";
+import { composeResourceAlerts } from "./modules/resource-alerts/index.js";
+import { parseInfraAgent } from "./modules/agents/infrastructure/agent-mappers.js";
 import { createKitUpdateMarks } from "./modules/agents/infrastructure/kit-update-marks.js";
 import {
   AGENTS_PLURAL,
@@ -39,7 +46,7 @@ import {
   setSlackChannelDefault,
   createAgentSweep,
   createRuntimeMigrationSwitch,
-  createRetiredImageMigration,
+  createImageUpdate,
   podIsIdle,
 } from "./modules/agents/index.js";
 import {
@@ -86,6 +93,7 @@ import {
   findIdentityByExternalUser,
   findExternalUsersByIdentity,
   upsertIdentityLink,
+  findExternalLinksByIdentity,
   deleteIdentityLink,
 } from "./modules/channels/infrastructure/identity-links-repository.js";
 import {
@@ -165,7 +173,10 @@ import { configureLogger, getLogger } from "./core/logger.js";
 import { reconcileUsageViewGrants } from "./modules/usage/infrastructure/usage-view-grants.js";
 import { reportUsageViewGrants } from "./modules/usage/infrastructure/usage-view-grants-report.js";
 import { metrics } from "@opentelemetry/api";
-import { composeUsageMetricsModule } from "./modules/usage-metrics/index.js";
+import {
+  composeUsageMetricsModule,
+  createStateCountsRepository,
+} from "./modules/usage-metrics/index.js";
 import { formatError } from "./core/format-error.js";
 import type { ApiServerDeps } from "./apps/api-server/deps.js";
 import {
@@ -262,6 +273,7 @@ import {
   createLiveAgentStateCache,
 } from "./modules/agents/infrastructure/agent-state-cache.js";
 import { createOutOfMemoryWatch } from "./modules/agents/infrastructure/out-of-memory-watch.js";
+import { createReadyWatch } from "./modules/agents/infrastructure/ready-watch.js";
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import {
@@ -350,12 +362,25 @@ export async function bootstrap() {
 
   const k8sClient = createK8sClient(api, config.namespace);
   const leaseApi = createLeaseApi();
+  const outOfMemoryWatch = createOutOfMemoryWatch();
+  let deliverOnReady: (agentId: string) => Promise<void> = async () => {};
+  const readyWatch = createReadyWatch((agentId) => {
+    deliverOnReady(agentId).catch((err: unknown) =>
+      getLogger().warn(
+        { err },
+        `[runtime] ${agentId}: re-delivery on Ready failed; the outbox sweep will carry it`,
+      ),
+    );
+  });
   const agentStateCache = startAgentStateCache({
     informer: createAgentInformer(config.namespace),
     live: k8sClient,
     namespace: config.namespace,
     log: (m) => getLogger().warn(`[agents] ${m}`),
-    observe: createOutOfMemoryWatch(),
+    observe: (kind, obj) => {
+      outOfMemoryWatch(kind, obj);
+      readyWatch(kind, obj);
+    },
   });
   const agentsRepo = createAgentsRepository(k8sClient, agentStateCache);
   const delegationFrames = createPodSessionClient({
@@ -518,7 +543,10 @@ export async function bootstrap() {
     namespace: config.namespace,
     bullConnection,
     agentRunningPort: {
-      isRunning: (agentId) => agentsRepo.isReady(agentId),
+      // UNIT_BOUNDARY_DESCRIPTION: a migrated machine is Ready only after the Backend switches, but its runtime waits just 15 s for the env the copy left behind before it starts the harness without it. A verified machine already holds the Agent's Service, so it takes the push at once.
+      isRunning: async (agentId) =>
+        (await agentsRepo.isReady(agentId)) ||
+        agentsRepo.peekCached(agentId)?.runtimeMigration?.phase === "verified",
     },
     snapshotWriter: createHarnessConfigSnapshotWriter({
       db,
@@ -529,12 +557,18 @@ export async function bootstrap() {
     resolveOwner: resolveAgentOwner,
     deliveryConcurrency: config.runtimeDeliveryConcurrency,
   });
+  deliverOnReady = async (agentId) => {
+    if (!(await runtimeDelivery.contributionsProgress(agentId)).settled)
+      await runtimeDelivery.queue.enqueue(agentId);
+  };
   const firePair = composeFirePair({
     db,
     catalog: harnessCatalog,
     getCapabilities: async (agentId) =>
       (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
         ?.runtimeCapabilities ?? null,
+    specHarness: async (agentId) =>
+      (await agentsRepo.get(agentId))?.spec.harness,
   });
   await periodicJobs.register("starter-kits-refresh", 600_000, () =>
     starterKitsRefresh.run(),
@@ -760,6 +794,7 @@ export async function bootstrap() {
   });
   const usageMetrics = composeUsageMetricsModule({
     meter: metrics.getMeter("platform-apiserver"),
+    stateCounts: createStateCountsRepository(db),
     harnessOf: (agentId) => {
       const agent = agentsRepo.peekCached(agentId);
       return agent
@@ -845,7 +880,11 @@ export async function bootstrap() {
     bus: redisBus,
     log: (m) => getLogger().warn(`[live-events] ${m}`),
     k8s: k8sClient,
-    onAgentChanged: () => sessionWatcher.agentsChanged(),
+    onAgentChanged: (agentId) => {
+      sessionWatcher.agentsChanged();
+      const cached = agentStateCache.peekCached(agentId);
+      if (cached) resourceAlerts.agentChanged(parseInfraAgent(cached));
+    },
   });
   liveEventsModule.start();
   const agentWatchRole: LeaderRole = {
@@ -884,6 +923,7 @@ export async function bootstrap() {
   const identityLinkService = createIdentityLinkService({
     findByExternalUser: findIdentityByExternalUser(db),
     findExternalUsers: findExternalUsersByIdentity(db),
+    findExternalLinks: findExternalLinksByIdentity(db),
     upsert: upsertIdentityLink(db),
     delete: deleteIdentityLink(db),
   });
@@ -1099,6 +1139,21 @@ export async function bootstrap() {
     isLeader: () => leaderLease.isRunning("channels"),
   });
 
+  const resourceAlerts = composeResourceAlerts({
+    db,
+    notify: (ownerSub, text) => channelManager.notifyPerson(ownerSub, text),
+    listStorageOwners: () => listRunnerUsageOwners(k8sClient),
+    readStorage: async (ownerSub) =>
+      (await readRunnerUsage(k8sClient, ownerSub))?.storage ?? null,
+    listOwnerAgents: async (ownerSub) =>
+      (await agentStateCache.list(ownerSub)).map(parseInfraAgent),
+    uiBaseUrl: config.uiBaseUrl,
+    log: (m) => getLogger().warn(`[resource-alerts] ${m}`),
+  });
+  await periodicJobs.register("resource-alerts", 5 * 60_000, () =>
+    resourceAlerts.evaluateStorage(),
+  );
+
   const leaderLease = createLeaderLease({
     leases: leaseApi,
     namespace: config.namespace,
@@ -1114,6 +1169,7 @@ export async function bootstrap() {
       },
       agentWatchRole,
       sessionWatcherRole,
+      usageMetrics.stateGaugesRole,
     ],
     log: (m) => getLogger().info(`[leader] ${m}`),
   });
@@ -1408,6 +1464,7 @@ export async function bootstrap() {
   const harnessAgentsServiceFor = (owner: string) =>
     composeAgentsModule({
       api,
+      storageGate: composeStorageGate({ k8s: k8sClient, owner }),
       resolveSlackWorkspace,
       agentStateCache,
       namespace: config.namespace,
@@ -1526,11 +1583,11 @@ export async function bootstrap() {
       liveAgentsRepo.writeRuntimeMigration(id, undefined, patch),
     log: (message) => process.stderr.write(`${message}\n`),
   });
-  await periodicJobs.register("runtime-migration-switch", 15_000, () =>
+  await periodicJobs.register("runtime-migration-switch", 2_000, () =>
     runtimeMigrationSwitch.tick(),
   );
 
-  const retiredImageMigration = createRetiredImageMigration({
+  const imageUpdate = createImageUpdate({
     listAgents: () => agentsRepo.list(),
     getAgent: (id) => liveAgentsRepo.getLive(id, undefined),
     readTemplateSpec: templatesRepo.readSpec,
@@ -1540,9 +1597,8 @@ export async function bootstrap() {
     idleTimeoutMinutes: config.agentIdleTimeoutMinutes,
     log: (message) => process.stderr.write(`${message}\n`),
   });
-  await periodicJobs.register("retired-image-migration", 60_000, () =>
-    retiredImageMigration.tick(),
-  );
+  await periodicJobs.register("image-update", 60_000, () => imageUpdate.tick());
+  await periodicJobs.retire("retired-image-migration");
 
   const { sessionDirectory, retentionTick: sessionDirectoryRetentionTick } =
     composeSessionDirectory(db);
@@ -1709,6 +1765,7 @@ export async function bootstrap() {
     await agentStateCache.stop();
     await leaderLease.stop();
     liveEventsModule.stop();
+    resourceAlerts.stop();
     await periodicJobs.close();
     channelRpc.close();
     await channelManager.stopAll();

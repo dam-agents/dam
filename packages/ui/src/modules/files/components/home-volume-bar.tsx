@@ -17,9 +17,9 @@ export function HomeVolumeBar({ agentId }: { agentId: string | null }) {
         >
           <Warning size={16} className="mt-0.5 shrink-0" />
           <span>
-            This agent's home volume is full ({formatBytes(volume.freeBytes)}{" "}
-            free of {formatBytes(volume.totalBytes)}). The agent can't save its
-            work until you delete files in the Files panel.
+            This agent's storage is full ({formatBytes(volume.freeBytes)} free
+            of {formatBytes(volume.totalBytes)}). The agent can't save its work
+            until you delete files in the Files panel.
           </span>
         </div>
       </ChatColumn>

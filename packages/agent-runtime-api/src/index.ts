@@ -104,7 +104,11 @@ export type {
   SourceLocation,
 } from "./modules/skills/git-url.js";
 export type { SshService } from "./modules/ssh/types.js";
-export type { HarnessConfigService } from "./modules/harness-config/types.js";
+export type {
+  HarnessConfigNotice,
+  HarnessConfigService,
+} from "./modules/harness-config/types.js";
+export { harnessConfigNoticeSchema } from "./modules/harness-config/schemas.js";
 export type {
   FinishedRow,
   KeepMarkRequest,

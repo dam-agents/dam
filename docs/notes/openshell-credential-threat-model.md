@@ -27,7 +27,9 @@ The OpenShell sources cited are from a local clone at `context/OpenShell/` and w
 ### OpenShell
 
 1. The gateway stores provider credentials (real values) in SQLite or Postgres.
+
 2. The sandbox supervisor fetches them via gRPC at startup (`crates/openshell-server/src/grpc/policy.rs:1786-1840`, `GetSandboxProviderEnvironment`).
+
 3. The supervisor immediately wraps them into a `SecretResolver` whose private `by_placeholder: HashMap<String, String>` holds the real values (`crates/openshell-core/src/secrets.rs:179-200`):
 
    ```rust
@@ -39,6 +41,7 @@ The OpenShell sources cited are from a local clone at `context/OpenShell/` and w
    ```
 
 4. The agent process is spawned with `child_env` — placeholders only (`crates/openshell-supervisor-process/src/process.rs:135-150`, `crates/openshell-supervisor-process/src/process.rs:2184-2201` test asserts this for `ANTHROPIC_API_KEY`).
+
 5. The proxy (same process as the supervisor) consults the resolver and rewrites `Bearer openshell:resolve:env:KEY` to the real token on outbound HTTPS requests (`crates/openshell-core/src/secrets.rs:262-302`).
 
 This is uniform across **all** providers.
@@ -65,15 +68,15 @@ The agent pod's process tree, `/proc`, filesystem, and network namespace contain
 
 ## Side by side
 
-| Property | OpenShell | Platform |
-|---|---|---|
-| Real credential location | Supervisor process heap | Gateway pod (Envoy heap + mounted Secret file) |
-| Sandbox unit | 1 container or 1 microVM (libkrun driver) | 2 pods per instance (agent + gateway); each pod is 1 microVM under Kata |
-| Agent kernel | Shared with supervisor | Separate from gateway under Kata; separate cgroup/PID/net/mount namespaces always |
-| Agent's admitted IPC reach to credential holder | Multiple loopback ports + Unix sockets (proxy CONNECT, supervisor SSH, file sync, log push, relay) | One TCP destination (gateway Service on Envoy port), gated by per-pair NetworkPolicy |
-| K8s SA token in agent | Whatever chart provisions (in K8s driver) | `automountServiceAccountToken: false` — no token, no API reach |
-| Per-instance crypto identity | Gateway mTLS to control plane | Per-instance/per-fork SPIFFE SA principal + Istio AuthorizationPolicy on harness waypoint + ext-authz Service |
-| Destination-vs-credential pinning | Provider YAML declares `endpoints`; enforcement path needs verification (see §Open verifications) | Cryptographically pinned via SNI-bound STRICT_DNS clusters per credential |
+| Property                                        | OpenShell                                                                                          | Platform                                                                                                      |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Real credential location                        | Supervisor process heap                                                                            | Gateway pod (Envoy heap + mounted Secret file)                                                                |
+| Sandbox unit                                    | 1 container or 1 microVM (libkrun driver)                                                          | 2 pods per instance (agent + gateway); each pod is 1 microVM under Kata                                       |
+| Agent kernel                                    | Shared with supervisor                                                                             | Separate from gateway under Kata; separate cgroup/PID/net/mount namespaces always                             |
+| Agent's admitted IPC reach to credential holder | Multiple loopback ports + Unix sockets (proxy CONNECT, supervisor SSH, file sync, log push, relay) | One TCP destination (gateway Service on Envoy port), gated by per-pair NetworkPolicy                          |
+| K8s SA token in agent                           | Whatever chart provisions (in K8s driver)                                                          | `automountServiceAccountToken: false` — no token, no API reach                                                |
+| Per-instance crypto identity                    | Gateway mTLS to control plane                                                                      | Per-instance/per-fork SPIFFE SA principal + Istio AuthorizationPolicy on harness waypoint + ext-authz Service |
+| Destination-vs-credential pinning               | Provider YAML declares `endpoints`; enforcement path needs verification (see §Open verifications)  | Cryptographically pinned via SNI-bound STRICT_DNS clusters per credential                                     |
 
 ## Threat-by-threat
 
@@ -186,6 +189,7 @@ Reasonable boundary, but a compromised supervisor speaks mTLS to the gateway wit
 Needs verification.
 
 **Platform.** Two cryptographic boundaries:
+
 - **Agent layer.** Per-pair NetworkPolicy pins each agent to its paired gateway only.
   Pod-selector at [`network_policy.go:121-128`](../../packages/controller/pkg/reconciler/network_policy.go#L121-L128) targets the **specific gateway pod for this pair**; agent A cannot speak to gateway B's Envoy port at all.
 - **Gateway layer.** Istio AuthorizationPolicy on the api-server harness waypoint requires the per-instance SPIFFE principal.
@@ -241,12 +245,12 @@ Long answer:
 
 So the apples-to-apples table:
 
-| Adversary capability | OpenShell (libkrun) | Platform (Kata) |
-|---|---|---|
-| Container/VM escape to host | Hardware boundary, hard | Hardware boundary, hard |
-| In-sandbox kernel escalation | Inside the credential-holding VM; reads heap | Inside the agent VM; no credentials present |
-| Reach credential-holding process from agent | Local IPC, parent process | Different pod, different VM, no admitted IPC except Envoy CONNECT |
-| Cross-tenant motion | Requires gateway-mTLS-shaped exploit | Requires hypervisor escape + lateral pivot + SPIFFE-gated AuthZ bypass |
+| Adversary capability                        | OpenShell (libkrun)                          | Platform (Kata)                                                        |
+| ------------------------------------------- | -------------------------------------------- | ---------------------------------------------------------------------- |
+| Container/VM escape to host                 | Hardware boundary, hard                      | Hardware boundary, hard                                                |
+| In-sandbox kernel escalation                | Inside the credential-holding VM; reads heap | Inside the agent VM; no credentials present                            |
+| Reach credential-holding process from agent | Local IPC, parent process                    | Different pod, different VM, no admitted IPC except Envoy CONNECT      |
+| Cross-tenant motion                         | Requires gateway-mTLS-shaped exploit         | Requires hypervisor escape + lateral pivot + SPIFFE-gated AuthZ bypass |
 
 **Kata's benefit to OpenShell is purely the host-escape vector.** It does not change the in-sandbox attack surface against the supervisor.
 **Kata's benefit to Platform is the agent-pod boundary itself** — and that benefit compounds with NetworkPolicy, Istio mesh on the gateway side, OpenShift SCC pinning the agent UID, and SPIFFE-keyed AuthZ at the destination side.

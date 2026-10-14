@@ -17,7 +17,7 @@ import type { SessionPresence } from "../../apps/api-server/agent-proxies/sessio
 const securityLog = vi.hoisted(() => vi.fn());
 vi.mock("../../core/security-log.js", () => ({ securityLog }));
 
-// TEST_OVERVIEW: The browser panel's stream page opens a socket beside itself, /api/public/browser-stream/<agent>/api/websockets, which the api-server relays to the agent's display stream. It reaches only an agent the caller owns, only one that requires named connections, keeps the agent awake while open like any panel, and its traffic never counts as activity.
+// TEST_OVERVIEW: The browser panel's stream page opens a socket beside itself, /api/public/browser-stream/<agent>/api/websockets, which the api-server relays to the agent's display stream. It reaches only an agent the caller owns, only one that requires named connections, keeps the agent awake while open like any panel, and its traffic never counts as activity. It opens the agent's end once the agent is ready, or, on a wake from hibernation, once the agent answers its health check while its gateway is ready.
 
 const STREAM_ROUTE = "/api/public/browser-stream/:id/api/websockets";
 const UPSTREAM_PATH = "/api/browser/display";
@@ -35,9 +35,17 @@ async function listen(server: Server) {
 }
 
 async function fakeAgent() {
-  const wss = new WebSocketServer({ port: 0 });
-  await new Promise<void>((r) => wss.once("listening", () => r()));
-  closers.push(() => new Promise<void>((r) => wss.close(() => r())));
+  const state = { healthy: false };
+  const http = createServer((req, res) => {
+    res.writeHead(req.url === "/healthz" && state.healthy ? 200 : 503);
+    res.end();
+  });
+  const wss = new WebSocketServer({ server: http });
+  await new Promise<void>((r) => http.listen(0, "127.0.0.1", r));
+  closers.push(() => {
+    http.closeAllConnections();
+    return new Promise<void>((r) => wss.close(() => http.close(() => r())));
+  });
   const paths: string[] = [];
   const received: string[] = [];
   const sockets: WebSocket[] = [];
@@ -47,10 +55,11 @@ async function fakeAgent() {
     ws.on("message", (d) => received.push(d.toString()));
   });
   return {
-    base: `ws://127.0.0.1:${(wss.address() as { port: number }).port}`,
+    base: `ws://127.0.0.1:${(http.address() as { port: number }).port}`,
     paths,
     received,
     sockets,
+    state,
   };
 }
 
@@ -228,7 +237,8 @@ describe("browser stream relay", () => {
       ensureReady: async () => {
         ensured++;
       },
-    } as unknown as Pick<AgentsRepository, "ensureReady">;
+      peekCached: () => null,
+    } as unknown as Pick<AgentsRepository, "ensureReady" | "peekCached">;
     const presence = {
       acquire: () => {
         held++;
@@ -278,7 +288,8 @@ describe("browser stream relay", () => {
     let wake!: () => void;
     const repo = {
       ensureReady: () => new Promise<void>((r) => (wake = r)),
-    } as unknown as Pick<AgentsRepository, "ensureReady">;
+      peekCached: () => null,
+    } as unknown as Pick<AgentsRepository, "ensureReady" | "peekCached">;
     const presence = {
       acquire: () => () => {},
     } as unknown as SessionPresence;
@@ -324,5 +335,40 @@ describe("browser stream relay", () => {
       result: "success",
       detail: { relay: "browser", sinceConnectMs: expect.any(Number) },
     });
+  });
+
+  // TEST_SCENARIO: Ready reaches the api-server only after a full controller reconcile, about half a second after the guest answers. On a wake from hibernation, the stream opens its upstream as soon as the agent answers its health check while its gateway is ready, without waiting for Ready.
+  it("opens the stream on a wake from hibernation once the agent answers its health check with its gateway ready", async () => {
+    const agent = await fakeAgent();
+    const repo = {
+      ensureReady: () => new Promise<void>(() => {}),
+      peekCached: () => ({ hibernated: true, gatewayPodReady: true }),
+    } as unknown as Pick<AgentsRepository, "ensureReady" | "peekCached">;
+    const relay = createBrowserStreamRelay(
+      "ns",
+      repo,
+      { acquire: () => () => {} } as unknown as SessionPresence,
+      UPSTREAM_PATH,
+      () => agent.base,
+    );
+    closers.push(() => relay.close());
+    const server = createServer();
+    server.on("upgrade", (req, socket, head) =>
+      relay.handleUpgrade(req, socket, head, "agent-1", {
+        sub: "u",
+        surface: "web",
+        attached: () => {},
+      }),
+    );
+    const port = await listen(server);
+
+    const { ws } = await open(
+      `ws://127.0.0.1:${port}/api/public/browser-stream/agent-1/api/websockets`,
+    );
+    ws.send("first");
+    await new Promise((r) => setTimeout(r, 250));
+    expect(agent.sockets).toHaveLength(0);
+    agent.state.healthy = true;
+    await until(() => agent.received.includes("first"));
   });
 });

@@ -44,8 +44,8 @@ func userBudgetCR(cpu, memory string) *unstructured.Unstructured {
 		ObjectMeta: metav1.ObjectMeta{Name: "budget-" + budgetOwner, Namespace: "test-agents"},
 		Spec: apiv1.UserBudgetSpec{
 			Owner:  budgetOwner,
-			CPU:    resource.MustParse(cpu),
-			Memory: resource.MustParse(memory),
+			CPU:    new(resource.MustParse(cpu)),
+			Memory: new(resource.MustParse(memory)),
 		},
 	}
 	raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(b)
@@ -105,7 +105,7 @@ func TestBudgetOverCeilingParksWithFigures(t *testing.T) {
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
 	assert.Equal(t, apiv1.ReasonOverBudget, cond.Reason)
 	assert.Contains(t, cond.Message, "CPU")
-	assert.Contains(t, cond.Message, "stop a running agent")
+	assert.Contains(t, cond.Message, "pause agents you aren't using")
 }
 
 func TestBudgetDeniesOnMemoryDimensionAlone(t *testing.T) {

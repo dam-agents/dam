@@ -5,6 +5,7 @@ import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
 import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
 import { createActivityStamper } from "./activity-stamper.js";
+import { readyOrAnswering } from "./ready-or-answering.js";
 import type { ApprovalsRelayService } from "../../../modules/approvals/compose.js";
 import { acpNativeRowId } from "api-server-api";
 import type { SessionPresence } from "./session-presence.js";
@@ -235,7 +236,13 @@ export function createAcpRelay(
             }
             return;
           }
-          await repo.ensureReady(agentId);
+          await readyOrAnswering(
+            repo,
+            agentId,
+            repo.ensureReady(agentId),
+            `http://${podBaseUrl(agentId, namespace)}/healthz`,
+            () => clientGone,
+          );
         })
         .then(() => connectUpstream(upstreamUrl))
         .then((upstream) => {

@@ -28,6 +28,27 @@ export function harnessOptions(
   }));
 }
 
+export function harnessDisplayName(
+  name: string,
+  catalog: readonly HarnessView[] | undefined,
+): string | undefined {
+  return catalog && (catalog.find((h) => h.name === name)?.displayName ?? name);
+}
+
+export function pairLabel(
+  pair: SessionPair,
+  catalog: readonly HarnessView[] | undefined,
+  granted: readonly ProviderConnectionRef[],
+): string | undefined {
+  const harness = harnessDisplayName(pair.harness, catalog);
+  return (
+    harness &&
+    [pair.model, harness, granted.find((p) => p.id === pair.provider)?.name]
+      .filter(Boolean)
+      .join(" · ")
+  );
+}
+
 export function providerOptions(
   harness: string,
   catalog: readonly HarnessView[],

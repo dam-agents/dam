@@ -59,6 +59,7 @@ export function createDeliverySweeper(
           approvalId: row.id,
           agentId: row.agentId,
           ownerSub: row.ownerSub,
+          resolution: "expired",
         });
       }
     } finally {

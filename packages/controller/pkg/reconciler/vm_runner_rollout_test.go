@@ -26,6 +26,7 @@ func setupRolloutReconciler(t *testing.T, owners ...string) (*AgentReconciler, m
 	t.Helper()
 	r, _, _ := setupVMReconciler(t, vmAgentCR())
 	r.rollViewTTL = 0
+	r.busyProbe = func(context.Context, string) bool { return false }
 	cs := r.client.(*fake.Clientset)
 	cs.PrependReactor("update", "deployments", func(action k8stesting.Action) (bool, runtime.Object, error) {
 		dep := action.(k8stesting.UpdateAction).GetObject().(*appsv1.Deployment)
@@ -58,7 +59,7 @@ func createRolloutRunner(t *testing.T, r *AgentReconciler, owner string) {
 	t.Helper()
 	ctx := context.Background()
 	issueRunnerTLS(t, r, owner)
-	_, _, err := r.ensureRunner(ctx, owner, runnerDemand{})
+	_, _, err := r.ensureRunner(ctx, owner)
 	require.NoError(t, err)
 	sec, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, r.runnerName(owner), metav1.GetOptions{})
 	require.NoError(t, err)
@@ -139,7 +140,7 @@ func TestANewOwnersRunnerIsCreatedDuringARoll(t *testing.T) {
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
 
 	issueRunnerTLS(t, r, "owner-new")
-	_, _, err := r.ensureRunner(ctx, "owner-new", runnerDemand{})
+	_, _, err := r.ensureRunner(ctx, "owner-new")
 	require.NoError(t, err)
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-new"))
 }
@@ -155,6 +156,46 @@ func TestAnUnchangedRunnerIsNotWritten(t *testing.T) {
 	for _, a := range cs.Actions() {
 		assert.False(t, a.GetVerb() == "update" && a.GetResource().Resource == "deployments", "unexpected %s of %s", a.GetVerb(), a.GetResource().Resource)
 	}
+}
+
+// TEST_SCENARIO: a new runner image arrives while one owner's agent is in the middle of a turn. That runner does not roll — and holds no place, so another owner's runner rolls meanwhile — until the agent reports idle; an owner whose agent stays busy past `rollout.idleWait` rolls anyway.
+func TestARunnerRollWaitsForItsAgentsToBeIdle(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t, "owner-a", "owner-b", "owner-c")
+	for _, owner := range []string{"owner-a", "owner-c"} {
+		nodes[owner].specs["busy-"+owner] = vmrunner.MachineSpec{Running: true}
+		nodes[owner].set("busy-"+owner, vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	}
+	busy := map[string]bool{"busy-owner-a": true, "busy-owner-c": true}
+	r.busyProbe = func(_ context.Context, name string) bool { return busy[name] }
+	r.config.VM.Runner.Image = runnerV2
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"), "its agent is busy")
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-b"), "a waiting runner holds no place in the roll")
+	settleRunnerPod(t, r, "owner-b")
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"), "its agent is still busy")
+	busy["busy-owner-a"] = false
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-a"), "its agent is idle now")
+	a, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, r.runnerName("owner-a"), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.NotContains(t, a.Annotations, annRunnerBusy, "the roll clears the wait")
+	settleRunnerPod(t, r, "owner-a")
+
+	r.config.VM.Runner.Rollout.MaxConcurrent = 3
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-c", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-c"))
+	c, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, r.runnerName("owner-c"), metav1.GetOptions{})
+	require.NoError(t, err)
+	c.Annotations[annRunnerBusy] = time.Now().Add(-defaultRunnerIdleWait - time.Minute).UTC().Format(time.RFC3339)
+	_, err = r.client.AppsV1().Deployments("test-agents").Update(ctx, c, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-c", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-c"), "the idle wait is over")
 }
 
 // TEST_SCENARIO: a machine that was ready before the roll never comes back — its agent was hibernated mid-roll, say. The runner stops holding its place once the settle timeout has passed, so one owner cannot stall every other owner's upgrade.

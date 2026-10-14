@@ -1,7 +1,8 @@
 ---
 name: platform-github
 description: >
-   Use before running `gh` or `git` against GitHub inside a Platform agent pod, and whenever GitHub answers 403 or 404 for a repository, organisation or user you expected to reach. Covers how GitHub credentials work here (the network gateway injects them, so there is no token to find or paste), how to see which GitHub accounts this agent holds (`gh auth status`), how to act as a different one (`gh auth switch`, or `gh auth token --user` for a single command), and what the gateway's "names no account" refusal means.
+   Use before running `gh` or `git` against GitHub inside a Platform agent pod, and whenever GitHub answers 403 or 404 for a repository, organisation or user you expected to reach.
+   Covers how GitHub credentials work here (the network gateway injects them, so there is no token to find or paste), how to see which GitHub accounts this agent holds (`gh auth status`), how to act as a different one (`gh auth switch`, or `gh auth token --user` for a single command), and what the gateway's "names no account" refusal means.
 ---
 
 You are running inside a Platform agent pod.
@@ -30,8 +31,10 @@ With several, the active one is what the platform user set as the default, and e
 - `gh auth switch --user <account>` switches gh.
   `git` follows automatically through gh's credential helper, so clones, fetches and pushes act as the switched account too.
   With exactly two accounts, `gh auth switch` alone toggles.
+
 - Switching changes which account authenticates, not the name and email on your commits: `user.name` and `user.email` stay the default account's, and a default account that signed in with a token has none.
   To commit as the switched account, pass its details explicitly, for example `git -c user.name="<name>" -c user.email="<email>" commit`; `gh api user` shows them for the account you switched to.
+
 - For one command without switching:
 
   ```

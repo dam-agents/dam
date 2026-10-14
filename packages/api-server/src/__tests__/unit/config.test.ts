@@ -112,6 +112,7 @@ describe("agentsInstallSettings — what every agents module is built with", () 
     "RUNTIME_MIGRATION_RETENTION",
     "AGENT_DEFAULT_STORAGE_SIZE",
     "VIRTUALIZATION_ENABLED",
+    "FEATURE_MODES",
     "AGENT_DEFAULT_MOUNTS",
     "HARNESSES",
   ];
@@ -139,6 +140,7 @@ describe("agentsInstallSettings — what every agents module is built with", () 
     process.env.VIRTUALIZATION_ENABLED = "true";
     expect(agentsInstallSettings(loadConfig())).toEqual({
       virtualizationEnabled: true,
+      vmForced: false,
       defaultHarness: "claude-code",
       telemetry: false,
       agentDefaultStorageSize: "20Gi",
@@ -148,6 +150,18 @@ describe("agentsInstallSettings — what every agents module is built with", () 
       ],
       runtimeMigrationRetentionMs: 72 * 3600_000,
     });
+  });
+
+  // TEST_SCENARIO: an operator who pins the new sandbox runtime on makes every create a microVM, whichever path it comes from; the pin means nothing on an install that cannot run one.
+  it("forces the vm backend only when the runtime is pinned on and virtualization is enabled", () => {
+    process.env.FEATURE_MODES = JSON.stringify({ "vm-sandboxes": "on" });
+    expect(agentsInstallSettings(loadConfig()).vmForced).toBe(false);
+    process.env.VIRTUALIZATION_ENABLED = "true";
+    expect(agentsInstallSettings(loadConfig()).vmForced).toBe(true);
+    process.env.FEATURE_MODES = JSON.stringify({
+      "vm-sandboxes": "experimental",
+    });
+    expect(agentsInstallSettings(loadConfig()).vmForced).toBe(false);
   });
 
   /** TEST_SCENARIO: The chart names the harness new agents start on, and any

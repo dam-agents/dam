@@ -509,17 +509,19 @@ creates, so it has to match the ServiceAccount vm-runner.yaml renders.
 {{/* Call with (dict "root" $ "templateName" <name> "rail" <telemetry>), where
      <name> is a harnessTemplates entry or a harnesses.catalog entry.
      Each harness reads its own export env, so `telemetry` names the rail:
-     `true` (or "claude-code") for the Claude Code env, "bob" for Bob Shell's.
-     Both land on the same collector over the agent's ordinary gateway egress —
-     see docs/architecture/observability.md. */}}
+     `true` (or "claude-code") for the Claude Code env, "bob" for Bob Shell's,
+     "pi" for the image's Pi exporter. All land on the same collector over the
+     agent's ordinary gateway egress — see docs/architecture/observability.md. */}}
 {{- define "platform.agentTelemetry.env" -}}
 {{- $rail := toString .rail }}
 {{- if or (eq $rail "true") (eq $rail "claude-code") }}
 {{- include "platform.agentTelemetry.env.claudeCode" . }}
 {{- else if eq $rail "bob" }}
 {{- include "platform.agentTelemetry.env.bob" . }}
+{{- else if eq $rail "pi" }}
+{{- include "platform.agentTelemetry.env.pi" . }}
 {{- else }}
-{{- fail (printf "%s.telemetry: %q is not a known export rail — use true/claude-code or bob. An unknown name would silently render the wrong rail and the agent's spend would never reach Usage." .templateName $rail) }}
+{{- fail (printf "%s.telemetry: %q is not a known export rail — use true/claude-code, bob or pi. An unknown name would silently render the wrong rail and the agent's spend would never reach Usage." .templateName $rail) }}
 {{- end }}
 {{- end }}
 
@@ -558,20 +560,32 @@ creates, so it has to match the ServiceAccount vm-runner.yaml renders.
   value: "1000"
 {{- end }}
 
+{{/* Pi exports nothing itself: the image's pi-platform-telemetry extension
+     posts one OTLP/HTTP JSON log record per model call (pi.api_request) to
+     {ENDPOINT}/v1/logs, and only while OTEL_LOGS_EXPORTER is "otlp". */}}
+{{- define "platform.agentTelemetry.env.pi" -}}
+{{- $host := include "platform.clickstack.collector.host" .root }}
+- name: OTEL_SERVICE_NAME
+  value: {{ .templateName | quote }}
+- name: OTEL_LOGS_EXPORTER
+  value: "otlp"
+- name: OTEL_EXPORTER_OTLP_ENDPOINT
+  value: {{ printf "https://%s:4318" $host | quote }}
+{{- end }}
+
 {{/* Bob Shell builds its own tracer from BOB_TELEMETRY_* and posts OTLP/HTTP
      JSON to {URL}{SERVICE_PATH}. Only traces exist; there are no per-call log
-     records. Since 2.0.3 it also reads OTEL_EXPORTER_OTLP_{ENDPOINT,TRACES_ENDPOINT,
-     HEADERS,PROTOCOL}: when an endpoint is set it ignores BOB_TELEMETRY_PROVIDER
-     and exports to that endpoint and to IBM's own at once, and it accepts only
-     http/json — the Claude Code rail's http/protobuf fails its env parse, which
-     drops the whole rail and sends the export to IBM. So a Bob image belongs on
-     this rail, never on the Claude Code one.
+     records. It also reads the standard OTEL_EXPORTER_OTLP_* env: when an
+     endpoint is set it ignores BOB_TELEMETRY_PROVIDER and exports to that
+     endpoint and to IBM's own at once, and a value it cannot parse drops the
+     whole rail and sends the export to IBM only. So a Bob image belongs on this
+     rail, never on the Claude Code one.
      Three of these are load-bearing rather than cosmetic:
        - the LF key pair is validated even though the collector ignores it, and
          a failed parse silently falls back to Bob's own IBM endpoint;
        - AGENT_OPS gates the LLM Generation span, which carries every counter;
-       - the service name is hardcoded to "bob-shell" (OTEL_SERVICE_NAME is not
-         read), so templates off this image share one name in the UI. */}}
+       - the service name is hardcoded to "bob-shell" (OTEL_SERVICE_NAME is read
+         only on the standard OTLP env), so templates off this image share one name in the UI. */}}
 {{- define "platform.agentTelemetry.env.bob" -}}
 {{- $host := include "platform.clickstack.collector.host" .root }}
 - name: BOB_TELEMETRY_PROVIDER

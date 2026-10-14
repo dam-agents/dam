@@ -1,6 +1,6 @@
 import { Migrate, Renew, Undo, WarningAlt } from "@carbon/icons-react";
 import type * as React from "react";
-import { type SyntheticEvent, useState } from "react";
+import { type SyntheticEvent, useId, useRef, useState } from "react";
 import { match } from "ts-pattern";
 
 import { Button } from "@/components/ui/button";
@@ -87,6 +87,9 @@ export function MigrateRuntimeAction({
     .exhaustive(() => null);
 }
 
+const OLD_RUNTIME = "This agent runs on the old container runtime.";
+
+// UNIT_BOUNDARY_DESCRIPTION: the Migrate button that opens the confirm dialog. Its hover card sits above dialogs, so it must not open once the button was clicked: a hover that began just before the click still has its open delay running, and the card would then cover the dialog's own Migrate button until the pointer moved. A new hover or focus arms the card again.
 function OfferButton({
   onMigrate,
   stop,
@@ -94,19 +97,39 @@ function OfferButton({
   onMigrate: () => void;
   stop: (e: React.MouseEvent) => void;
 }) {
+  const describedBy = useId();
+  const [open, setOpen] = useState(false);
+  const clicked = useRef(false);
+  const rearm = () => {
+    clicked.current = false;
+  };
   return (
     <span onClick={stop}>
-      <HoverCard>
+      <HoverCard
+        open={open}
+        onOpenChange={(o) => setOpen(o && !clicked.current)}
+      >
         <HoverCardTrigger asChild>
           <Button
             variant="ghost"
             size="sm"
             tone="accent"
             className="shrink-0"
-            onClick={onMigrate}
+            onPointerEnter={rearm}
+            onFocus={rearm}
+            onClick={() => {
+              clicked.current = true;
+              setOpen(false);
+              onMigrate();
+            }}
+            aria-label="Migrate to the new runtime"
+            aria-describedby={describedBy}
           >
             <Migrate size={16} />
             Migrate
+            <span id={describedBy} className="sr-only">
+              {OLD_RUNTIME}
+            </span>
           </Button>
         </HoverCardTrigger>
         <HoverCardContent
@@ -116,11 +139,11 @@ function OfferButton({
         >
           <p className="font-bold text-foreground">Move to the new runtime</p>
           <p className="text-muted-foreground">
-            The agent restarts on the new sandbox runtime. Its home directory,
-            with the workspace and settings, is copied over, and the agent is
-            unavailable while the copy runs. The next step shows exactly what
-            moves. The move can be undone until the agent first starts on the
-            new runtime.
+            {OLD_RUNTIME} The agent restarts on the new sandbox runtime. Its
+            home directory, with the workspace and settings, is copied over, and
+            the agent is unavailable while the copy runs. The next step shows
+            exactly what moves. The move can be undone until the agent first
+            starts on the new runtime.
           </p>
         </HoverCardContent>
       </HoverCard>
@@ -143,7 +166,7 @@ function RefusedMigrate({ agentId }: { agentId: string }) {
             role="button"
             tabIndex={0}
             aria-expanded={open}
-            aria-label="Why this agent can't migrate"
+            aria-label="Migrate: why this agent on the old container runtime can't move yet"
             data-testid="migrate-refused"
             onClick={toggle}
             onKeyDown={(e) => {

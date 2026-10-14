@@ -9,7 +9,8 @@ import {
   type AttentionItem,
   SESSION_CATEGORIES,
   type SessionCategory,
-  type SessionMode,
+  SessionMode,
+  type SessionPair,
   SessionType,
   type SessionView,
 } from "api-server-api";
@@ -18,7 +19,11 @@ import { useMemo } from "react";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import { trpc } from "../../../trpc.js";
-import { useAgentLacksLiveUpdates } from "../../agents/api/queries.js";
+import {
+  untilAgentOperable,
+  useAgentLacksLiveUpdates,
+} from "../../agents/api/queries.js";
+import { askAgainWhenReady } from "../../agents/lib/agent-start.js";
 import {
   findAgentSession,
   listAgentSessionPage,
@@ -61,13 +66,13 @@ export function seedEmptySessionList(
   );
 }
 
-export function optimisticInsertSession(
+function sessionStub(
   agentId: string,
   sessionId: string,
   mode: SessionMode,
-  running = false,
-): void {
-  const stub: SessionView = {
+  running: boolean,
+): SessionView {
+  return {
     sessionId,
     agentId,
     type: SessionType.Regular,
@@ -78,6 +83,36 @@ export function optimisticInsertSession(
     updatedAt: null,
     running,
   };
+}
+
+export function seedStartedSession(
+  agentId: string,
+  sessionId: string,
+  pair: SessionPair | null,
+): void {
+  queryClient.setQueryData<SessionView | null>(
+    acpSessionsKeys.session(agentId, sessionId),
+    (cached) =>
+      cached ?? {
+        ...sessionStub(agentId, sessionId, SessionMode.Chat, false),
+        ...(pair && {
+          harness: pair.harness,
+          provider: pair.provider,
+          model: pair.model,
+          ...(pair.settings && { settings: pair.settings }),
+        }),
+      },
+    { updatedAt: 0 },
+  );
+}
+
+export function optimisticInsertSession(
+  agentId: string,
+  sessionId: string,
+  mode: SessionMode,
+  running = false,
+): void {
+  const stub = sessionStub(agentId, sessionId, mode, running);
   queryClient.setQueriesData<SessionPages>(
     { queryKey: acpSessionsKeys.pages(agentId) },
     (prev) => {
@@ -166,11 +201,15 @@ export function useSessionPages(
     queryKey,
     queryFn: live
       ? async ({ pageParam }) => {
-          const page = await listAgentSessionPage(agentId, {
-            categories: [...categories],
-            ...(pageParam && { after: pageParam }),
-            limit: SESSION_PAGE_SIZE,
-          });
+          const page = await askAgainWhenReady(
+            () =>
+              listAgentSessionPage(agentId, {
+                categories: [...categories],
+                ...(pageParam && { after: pageParam }),
+                limit: SESSION_PAGE_SIZE,
+              }),
+            () => untilAgentOperable(agentId),
+          );
           if (pageParam) return page;
           const coversAll =
             categories.length === SESSION_CATEGORIES.length &&

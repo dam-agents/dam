@@ -67,6 +67,7 @@ Creation is per-purpose: the plain create picks an image, and a [starter kit](st
 The **Agent Kind** marker survives only on agents stamped before kits: a knowledge base is now a kit that declares one capability, and a marker the platform no longer knows reads as no kind at all.
 A kit apply is the plain create with the kit's grants, followed by the kit's schedules and channel binding, compensated by delete on failure.
 A new agent takes its template's size and the trusted egress preset — or, for a kit that declares either, the kit's — both editable afterwards, plus a Backend the template has no say in: a container, or a microVM, which has no size and shares its owner's [memory pool](vm-memory.md) instead.
+The caller picks the Backend, except on an install that pins the new sandbox runtime on, where every create is a microVM ([features](features.md)).
 A plain create names neither a harness nor a provider, since each session picks both ([below](#session-inside-the-pod)): it boots the default Template on the install's default harness and grants the caller's IBM LiteLLM provider Connection, else their earliest-created one, that the harness runs on.
 A custom-image Template names the harness it wraps, if any, and may list its providers.
 Only a template create gets a default provider; a bare image and a [sub-agent](invocations.md) hold only what they name.
@@ -76,7 +77,7 @@ See [knowledge-bases](knowledge-bases.md) for what a knowledge base adds on top 
 The api-server writes a new Agent custom resource whose spec carries the Agent's image / mount declarations (copied from a Template at create time, if any), env, and secret refs.
 There is no stored desired state — running-vs-hibernated is observed status the controller derives from activity.
 The controller reconciles a paired set of owned resources: two StatefulSets (the agent and its gateway), two Services (the agent's headless ACP and the `<agent>-gateway` proxy), agent-egress and gateway-ingress NetworkPolicies, and a per-Agent Envoy bootstrap ConfigMap + leaf TLS Certificate.
-On the `vm` Backend the agent StatefulSet and its workspace PVC are not rendered at all: the Agent's storage is one disk on the owner's [VM runner](vm-runner.md), holding HOME and nothing else ([persistence](persistence.md)), and the agent Service selects that runner rather than a pod of its own.
+On the `vm` Backend the agent StatefulSet and its workspace PVC are not rendered at all: the Agent's storage is one disk on the owner's [VM runner](vm-runner.md), holding `HOME` and the machine's root ([persistence](persistence.md#per-agent-pvcs)), and the agent Service selects that runner rather than a pod of its own.
 
 When the create request carries a private-registry credential, the api-server writes an agent-scoped `dockerconfigjson` pull Secret *before* the Agent CR and rolls it back if that write fails; the controller hands that Secret first, ahead of any install-wide default, to whatever pulls the image — the kubelet, or on the vm Backend the owner's runner.
 It never enters the agent, and a bad one surfaces as a pull failure rather than a create-time error.
@@ -101,13 +102,12 @@ See [connections](connections.md) and [runtime delivery](runtime-delivery.md).
 
 ### Template upgrade
 
-Templates are captured at create time; an install upgrade does not reconfigure existing Agents.
-The api-server reports an update when an Agent's image differs from its Template's current image.
-Retired per-harness templates resolve to the default Template even when an install retains their old definitions, so their Agents [move](agent-images.md#retired-images) to it.
+Templates are captured at create time; an install upgrade reconfigures no existing Agent beyond its image.
+The api-server reports an update when an Agent's image differs from its Template's current image, and [moves](agent-images.md#image-updates) the Agent there by itself, never during work, and back when the Agent cannot start or keep running on it.
+Retired per-harness templates resolve to the default Template even when an install retains their old definitions.
 The upgrade preserves the Agent's chosen harness; when an older Agent has no explicit choice, its retired template identifies the harness to carry forward.
 
-Users apply upgrades individually or in a batch, confirming the target images and restart cost.
-The api-server refuses a target that changed since confirmation.
+A user may apply an upgrade sooner, confirming the target image and restart cost; the api-server refuses a target that changed since confirmation.
 A running pair or vm machine restarts; a hibernated Agent takes the image on its next wake.
 No configuration is re-seeded: template env stays frozen to preserve user edits, and mount/storage changes still require recreating the Agent.
 A runtime advertising kinds its predecessor did not is re-delivered the Contributions the old image refused, closing the capability gap ([runtime-delivery](runtime-delivery.md#capability-negotiation)).
@@ -116,7 +116,14 @@ A runtime advertising kinds its predecessor did not is re-delivered the Contribu
 
 Every caller that sends work to a pod — the api-server's ACP relay, channel adapters, skills management — routes through a single reachability primitive in the api-server.
 The primitive's contract: **the controller-published `Ready` condition is the authoritative answer to "can I call this pod?"** The primitive pokes activity by bumping the `agent-platform.ai/last-activity` annotation (the reconciler scales up any Agent with recent activity), single-flights concurrent waits per Agent, and bumps the same annotation on every successful call, so any caller implicitly keeps the pod warm.
-The deliberate opt-outs never wake anything: a **passive** relay connection (`passive=1`) fails closed unless `Ready`, takes no pin and never bumps activity; the per-agent tRPC relay takes no pin, waits out a wake already asked for, and keeps the stamp fresh while a view is open.
+The deliberate opt-outs never wake anything: a **passive** relay connection (`passive=1`) fails closed unless `Ready`, takes no pin and never bumps activity; the per-agent tRPC relay takes no pin, waits out a wake already asked for without stamping activity, and keeps the stamp fresh while a view is open.
+The agent relays — ACP, per-agent tRPC, terminal, browser stream and SSH — do not wait for `Ready` alone when they hold a socket for a wake from hibernation.
+`Ready` arrives only after the controller's next reconcile, so a relay whose hold began on a hibernated Agent also asks the agent's `/healthz` through its Service at a short interval, and opens its upstream on the first answer once the cached Agent shows `GatewayPodReady`.
+That answer is weaker than `Ready`: it does not say which pod or machine revision answered.
+It is trusted only on a wake from hibernation, because hibernation stops the agent's pod or machine, so what answers came up for this wake.
+For that reason the controller publishes hibernation only once the runner has confirmed the machine stopped ([Hibernate](#hibernate)).
+A running agent that is not `Ready` can be in a restart, and a vm machine keeps answering on its port until its restart stops it, so a hold on such an agent, or one that begins after the controller has started the wake, waits for `Ready`.
+A stop or a runtime migration ends that polling, and a wake that fails still closes the socket with its cause.
 Contributions are applied out-of-band by a single background worker (a pod's `hello` is presence-only — it just signals the worker to dispatch).
 The worker dispatches **only to a Ready agent** — the same readiness gate the relay's `ensureReady` uses — so an apply never targets a pod that is down or rolling; when the agent isn't Ready the outbox row stays unsettled and the periodic sweep re-dispatches once it is.
 Each apply runs every contribution to termination and records which drivers failed; a degraded agent (failed installs retrying in the background, capped) surfaces via its `contributionFailures` badge and never wedges.
@@ -140,6 +147,9 @@ Callers can additionally register for a cold-start signal, fired when a call ent
 The schedule-driven poke is the exception: it doesn't wait, so there is no bounded wait to fail.
 
 The UI holds a start to the same budget: past it, it offers Restart and the controller's not-ready message, timed from when it first saw the Agent starting.
+What the chat shows during the start depends on the Backend.
+A vm Agent boots in seconds, so its chat stays usable: the composer takes a prompt and holds it until the Agent is ready, and the sessions list shows a placeholder.
+A container Agent takes too long for that to make sense, so its chat sits behind an overlay while it starts, showing its avatar, a slow-start warning and any workspace failure.
 
 ### Schedule fire
 
@@ -148,122 +158,19 @@ Arming, firing, the Precheck and the Session each fire opens are owned by [sched
 
 ### Session inside the pod
 
-agent-runtime holds one harness process, a **Harness Lease**, per harness, provider Connection, model and process-scoped [session settings](harness-config.md#session-settings) its sessions ask for: the model and those settings reach the harness as its process env, never as a switch inside a live session, and changing a session's model or such a setting moves its next turn to the matching lease.
-Neither change is accepted while the session's turn runs.
-A lease outlives connections.
-ACP channels attach concurrently and engage sessions by the `sessionId` each frame carries.
-
-Each lease is the unchanged ACP runtime this section describes, behind a **lease router**.
-`session/new` names the session's harness, provider and model; the runtime persists that pair in its session-metadata store, so later frames, and a load or resume after a restart, route back to the same lease.
-A session naming none runs on the default harness and first granted provider, and keeps that pair.
-Leases spawn lazily, except the default one, which starts once the server listens so a waking chat finds it loaded; each is told about the client as the first was, and an agent's question is answered to the lease that asked.
-The default lease stays; any other shuts down once it holds no session, and one whose harness crashes is dropped for the next session to respawn.
-
-A lease spawns with the agent-wide env, its own provider's layer and its harness's layer ([connections](connections.md#contribution-fan-out)), then the pod's process env, then its harness, provider and model.
-Revoking a provider recycles only the leases on it; a prompt or setting sent to a session on a removed provider fails with a structured *provider removed* error naming it, and granting it again resumes the session.
-
-Each session is an append-only in-memory log (≤2 MB soft cap; inline image and audio bytes give way to a placeholder before any entry is evicted).
-Every channel keeps a per-session cursor; new events append to the log and fan out to engaged channels that have not yet seen them.
-Every entry the runtime appends live carries the wall-clock time it was written, as platform metadata on the frame; an entry filled in from a replay carries only what its source supplied, never a time the runtime invented.
-From a session-history provider that source can also supply the harness's own name for the prompt a reply answered — the prompt id by which [agent-telemetry](agent-telemetry.md#progressive-disclosure) joins a reply to its Turn once the Session is loaded.
-
-The runtime also tells engaged viewers when a scheduled fire begins its turn, and a load hands back the fire start times the session still holds — the newest, under a bound [persistence](persistence.md) owns.
-A thread draws each of those beside the prompt that opens its run, so a run boundary survives a reopen.
-A start whose prompt is not in view — older than the loaded tail — sits above the first message after it, and only the newest such start draws there, since one message opens one run; a start with no timed message to sit beside at all draws nothing.
-
-A `session/load` that opts in replays **only the newest tail** of the log, bounding the open cost at any length; without the opt-in the whole log replays, per ACP.
-The response reports any cut, with a cursor when the older range is still in the log; a load presenting that cursor is paged the older range, down to the eviction floor (cut without cursor).
-Cursors die with the log: a stale one is refused and the client reloads.
-Replay shares the connection with live fan-out, so replayed frames are tagged to their load for exact attribution.
-
-Both verbs are runtime-mediated: a hot `session/resume` engages the channel and answers synthetically with no replay.
-A cold request parks as a waiter.
-An image may declare a **session-history provider**: it fills the log with no harness process, and the first prompt rehydrates the harness silently, replay dropped — with `session/resume` where the harness advertises that session capability, `session/load` otherwise.
-Resume is the better fit: the log already holds the history, so a harness that streams its replay only after answering the load would otherwise duplicate it.
-Otherwise, or on provider failure, the runtime's own `session/load` fills the log, reaching no client.
-Waiters are then served from the log; the UI also reads its newest tail as data and renders it while the load engages the session.
-
-#### Prompt delivery
-
-A session runs one turn at a time, and one scheduler is the only place a prompt waits.
-A prompt is **queued** rather than refused or forwarded whenever its session cannot take it — a turn already running, no channel engaged to read the answer, or the harness not yet holding the session — and promoted the moment that clears — a scheduled fire is **unattended**, its sender gone once the prompt is accepted and nobody reading the turn live, so it waits on the harness alone and never on a channel; a queue at capacity rejects further prompts with an error whose cause a sender can tell from any other refusal.
-So a prompt has three fates its sender cares about — **accepted** (the runtime has it), **queued** (waiting for its session to be able to take it), and **started** (handed to the agent, where delivery becomes real) — and only the runtime can tell them apart.
-
-The runtime therefore reports them, over the same channel extension as the end-of-turn signal — which is logged and replayed, and names the ending turn's prompt id and stop reason: one notification on acceptance (and whether the prompt queued), one when it starts.
-Both ride a sender-minted prompt id as platform metadata, stripped before the agent sees it and used to group the prompt's echo in the log; a sender that mints none — channel workers, older clients — gets no notifications and behaves as before.
-Both are **sender-only and ephemeral** — never logged or replayed, since they describe one send's fate, not the conversation.
-Field-level contract: [`packages/api-server-api/`](../../packages/api-server-api/).
-
-This makes **the server authoritative about delivery**, which is the point: watching for content cannot separate "parked behind a running turn" from "never arrived".
-A client fails a prompt on evidence instead:
-
-- **No acceptance within a bounded wait** — the true delivery check, normally a matter of milliseconds.
-  Unacknowledged this long means it never arrived, and the failure carries the socket's stated cause when it gave one.
-- **Waiting is unbounded.** A queued prompt is never failed for waiting, however long the turn ahead of it runs.
-  The user is told it is waiting, which is true.
-
-A connection that drops while its prompt is still queued raises nothing on the client, because the queue survives the departure: queued prompts belong to the conversation, not to the channel that sent them, so the last channel leaving **parks** the queue for a grace window, and a client engaging again within it resumes it.
-A queue holding only unattended fires is never parked: nobody is coming back for it, and it needs nobody.
-A queue leaves the scheduler by four routes — the window expiring, the session forgotten, the scheduler cleared when the harness goes down, or a session the harness cannot load back refusing its queue — and all but the refusal record the queue's prompts as **undelivered** in a durable document on the pod, whole, inline images capped; the refusal errors each sender instead.
-Each session load hands the records back, marked on the conversation to send again or delete, and says whether a turn is still running; a record sent again or deleted is **retired** so its earlier echo drops from the replay rather than doubling.
-Recovery is always a send the user initiates: an automatic resend cannot know whether a prompt was dropped before or after the agent saw it, so it risks running it twice.
-A prompt already *handed to the harness* is the other side of that split: losing the channel costs the sender only its live view — the turn runs to completion and its output lands in the log for any later viewer.
-Every honest delivery report depends on this split ([channel-turns](channel-turns.md) states it for its surface).
-
-One failure is deliberately **not** detected: an agent alive but permanently stuck emits nothing and is indistinguishable from one thinking hard, so a prompt waits indefinitely.
-Silence after acceptance is timed nowhere — a deadline there fails healthy turns whose first word is merely slow — and telling wedged from slow is a separate problem from delivery.
-
-**Surviving memory pressure.** The harness and its tool processes share one memory ceiling, so a runaway command would take the whole agent down with it.
-Which ceiling depends on how the agent runs: a container is capped by its cgroup, while a machine on the `vm` Backend has no cgroup limit at all and is bounded by its own memory, read from the kernel's headroom estimate so that reclaimable cache is not mistaken for consumption.
-A container that carries no cgroup limit is left unwatched rather than measured against the node it shares, whose memory a neighbour moves.
-agent-runtime pushes back first: nearing the limit it kills the largest tool process, sparing every harness and the conversation processes any carried harness's manifest names, so the agent recovers mid-turn; only when those are the hog does the kernel's kill land.
-A turn that dies anyway is recovered from an [active-turns marker](persistence.md) surviving to the next boot: it resumes on its own, up to five times, with a notice to pick the task back up.
-The marker is written only after the harness *took* the prompt, so resuming continues a turn the agent already saw — not the [no-auto-resend](#session-inside-the-pod) of a prompt it never got.
-
-When a session goes idle — no engaged channel, no prompt active or queued, no agent request pending — the runtime sends `session/close` to the harness; a parked queue counts as queued work, holding the release back until its window passes.
-The per-session subprocess is reaped; the next attach respawns it.
-Permission requests with no engaged channel time out after ten minutes, answered to the agent as an error so the tool call aborts cleanly.
-A harness that leaves a cold re-attach unanswered — whichever verb it advertised for one — is wedged: that request's frames are suppressed and the process is recycled when work drains.
-
-One further condition holds that reap back: **background work the session reports**.
-While a session reports work still running, the runtime keeps it open, and busy while that work is kept, so neither the reap nor the [idle checker](#hibernate) ends the work underneath it.
-The contract, and the process inventory that shows the user everything running in the agent, live on [agent-processes](agent-processes.md).
-
-Terminal-mode sessions follow a different model from the chat path above.
-agent-runtime accepts at most one connection per terminal session, runs the terminal entrypoint in a PTY with the env of the harness and provider its WebSocket names, and pipes raw bytes both ways.
-A session on a removed provider or an unknown harness closes with the reason.
-Scrollback is tracked so that reattaching while the PTY lives replays it.
-A detached PTY is reaped on idleness, not on viewer loss: after a short detach grace it is killed only once the harness has also gone quiet.
-Liveness keys on harness output rather than viewer presence, so in-flight work (a running build, a streaming response) survives switching away and can be reattached live, while an abandoned idle prompt is cleaned up.
-There is no append-only log, no fan-out, and no `session/resume` — terminal sessions belong to one viewer at a time, and the harness's own on-disk session store is the only durable record.
-
-SSH sessions are unrelated to the session machinery above: they carry no session identity, no metadata entry, and no harness involvement — a per-connection in-pod OpenSSH the platform relays bytes to, with its own authentication and its own shell, several coexisting per agent.
-The transport and its auth belong to the CLI surface that uses it ([cli](cli.md#ssh-access)) and to agent-runtime's relay duties ([platform-topology](platform-topology.md)).
-For lifecycle an SSH connection matters only as a pin: while it is open the Agent will not hibernate, and the runtime's own idleness probe cannot see it ([Hibernate](#hibernate) states which signal carries it and how a lost connection's pin is reclaimed).
-
-Beyond per-session children, agent-runtime supervises at most one **pod service** — an optional background process the agent image provides at a well-known path, running for the life of the pod.
-The runtime spawns it once the runtime-channel env is first materialized, restarts crashes with capped backoff, and reads a clean exit as "nothing to do for this env" until the env next changes.
-An env rewrite refreshes a well-known env snapshot file and sends SIGHUP: a service reloads in place, or dies by the signal and is respawned with the fresh env.
-Its output joins the pod log stream.
-The pod's PID 1 is a minimal init (catatonit) wrapping agent-runtime, so descendants the runtime did not spawn — processes orphaned by a dying harness or service — are reaped rather than left as zombies.
-claude-code uses the hook to front custom Anthropic-compatible upstreams with a local model gateway, each provider apart; images without a pod service are unaffected.
-
-Switching a session's mode (e.g. chat → terminal) is metadata-only: the switching client persists the new mode over ACP, which the runtime merges into its session-metadata store.
-The running harness is unaffected — mode is a UI hint about which surface (chat vs. terminal PTY) to render.
-The metadata write raises a session-watch notice, so other clients re-read and follow.
-The `--reset` / terminal-reset path is independent: it closes the terminal WebSocket and resets the runtime session, dropping everything the runtime held for that session id.
-
-Beyond ACP frames, agent-runtime also serves a tRPC surface on the harness port for skill management and skill reads.
-The api-server is the sole caller; management calls wake a hibernated pod through the reachability primitive (above) before reaching it, while reads degrade gracefully and never wake.
-Skill files land on the PVC under the configured Skill Paths and are picked up by the harness on the next session start (no hot-reload).
-See [agent-skills](agent-skills.md).
+A running pod serves Sessions: the harness processes it leases to them, prompts, their delivery and queue, steering, rewriting a conversation, and the pod's own supervision of the harness.
+That lives on [sessions](sessions.md).
 
 ### Hibernate
 
 Hibernation scales an idle Agent's StatefulSets to zero to reclaim its pod's CPU and memory; the next activity wakes it (see [Wake](#wake)).
 On the `vm` Backend the gateway scales the same way and the agent side is the machine on the VM runner, which stops on the way down and starts on the way up — a stopped machine keeps its disks, so a wake is a boot of the same guest.
+A wake scales the gateway up before the agent side, because the gateway pod is the slower of the two to start.
+A `vm` Agent whose last start the runner refused for lack of room, or one with no status yet, keeps the gateway after the runner's answer, so a parked Agent's retries do not start and stop a gateway pod.
+When the status already holds the agent side ready and only the gateway was missing, the reconcile that sees the gateway pod ready publishes `Ready` right after it applies the gateway, before the runner call and the remaining applies.
 Only the idle checker or [reclaim](vm-memory.md) hibernates it, not a lapsed timeout.
-An unreachable runner does not hold the gateway up.
+An unreachable runner does not hold the gateway up, but the Agent is published hibernated only once its runner has confirmed the machine stopped.
+Until then its readiness is down and it reads as starting, the Agent's next reconcile stops the machine once the runner answers, and the idle checker tries the hibernation again on each sweep.
 Whether an Agent is "idle" is **derived from observed activity, never stored** — there is no desired-state flag — and the derivation is split across two independent checks.
 
 **The decision.** The controller's idle checker scans Agents on a timer whose interval scales with the *shortest effective timeout it saw last sweep* — an Agent that chooses a window far below the cluster-wide default is swept inside its own window rather than at the default's pace, subject to a floor that keeps the sweep off the API server's back.
@@ -280,7 +187,7 @@ For the rest it hibernates only when *both* checks below agree it is quiet:
 
 **What counts as activity.** Those two checks rest on four signals, each catching something the others miss:
 
-- **agent-runtime (`idle` flag).** Busy while a prompt turn is in flight, while prompts queue behind it, while an agent-initiated request (e.g. a permission prompt) awaits the client, while kept background work runs — a reported Harness Task or a marked Detached Process ([agent-processes](agent-processes.md#keeping-work)), or while a terminal (PTY) is open — an open-but-idle terminal counts, because the open PTY *is* the signal.
+- **agent-runtime (`idle` flag).** Busy while a prompt turn is in flight, while prompts queue behind it, while a session setting change (mode or model) waits to be sent or answered, while an agent-initiated request (e.g. a permission prompt) awaits the client, while kept background work runs — a reported Harness Task or a marked Detached Process ([agent-processes](agent-processes.md#keeping-work)), or while a terminal (PTY) is open — an open-but-idle terminal counts, because the open PTY *is* the signal.
   A chat is the exception to "open connection = busy": an attached chat with no turn running reads as `idle` here, since the flag tracks work, not watchers — such a chat stays awake via `active-session` below, not this probe.
   What the probe uniquely catches is in-flight work that no connection holds and `last-activity` no longer covers: a scheduled run outlasting the idle timeout, or a turn still running after its tab closed.
 - **api-server (`active-session` annotation).** A refcount of open chat, terminal, SSH and browser connections — set on the first, cleared on the last.

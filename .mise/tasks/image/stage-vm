@@ -16,6 +16,74 @@ name="$(printf '%s' "$IMAGE" | tr '/:@' '___')"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
+# The record the runner reads beside the tree: what the image says to run.
+config="$(tar -xOf "$usage_tar" manifest.json | jq -r '.[0].Config')"
+tar -xOf "$usage_tar" "$config" | jq \
+  '.config | {"entrypoint": (.Entrypoint // []), "cmd": (.Cmd // []), "env": (.Env // []), "workingDir": (.WorkingDir // "")}' \
+  > "$work/launch.json"
+
+# Runs as root on the node: fills a tree beside the live entry, moves the old
+# entry aside and the new one in, so a runner looking the entry up finds a
+# whole tree at every moment — never a half-written one, and never none. A
+# machine already booted from the old tree keeps its mounted files until it
+# restarts. The archive an earlier stage left under the same name goes last:
+# the runner prefers the tree, and the archive only costs disk. The tree keeps
+# the modes and owners the image gave it — the runner reads it with
+# DAC_OVERRIDE, and a file the image keeps from others, such as /etc/shadow,
+# must stay that way in the guest.
+# The source is either a flattened rootfs tar or, when the node's containerd
+# already holds the image, its ref: cluster:install imports every agent image
+# before staging it, and the snapshot that import unpacked is mounted and
+# copied, which skips re-reading, re-compressing and flattening the layers.
+# xattrs are left out, as tar leaves them out of the tar path's tree.
+place='set -e
+dest="$1"; src="$2"; launch="$3"
+rm -rf "$dest.new" "$dest.old"
+mkdir -p "$dest.new/rootfs"
+case "$src" in
+  *.tar) tar -xf "$src" -C "$dest.new/rootfs" ;;
+  *)
+    mnt="$(mktemp -d)"
+    k3s ctr images mount "$src" "$mnt" >/dev/null
+    rc=0; cp -a --no-preserve=xattr "$mnt/." "$dest.new/rootfs/" || rc=$?
+    k3s ctr images unmount --rm "$mnt" >/dev/null; rmdir "$mnt"
+    [ "$rc" = 0 ] ;;
+esac
+install -m 644 "$launch" "$dest.new/launch.json"
+chmod a+rx "$dest.new"
+[ ! -e "$dest" ] || mv "$dest" "$dest.old"
+mv "$dest.new" "$dest"
+rm -rf "$dest.old" "$dest.tar"'
+
+# containerd's name for the image: a bare name or one without a registry
+# host is normalized onto docker.io, as `ctr images import` stores it. The
+# node's image is used only when its ID is the tar's config digest: a tag
+# the node holds from an earlier build would give a tree that disagrees
+# with the launch record read from this tar.
+case "$IMAGE" in
+  *.*/* | *:*/* | localhost/*) ref="$IMAGE" ;;
+  */*) ref="docker.io/$IMAGE" ;;
+  *) ref="docker.io/library/$IMAGE" ;;
+esac
+if [ -n "${IS_SANDBOX:-}" ]; then
+  on_node() { as_root "$@"; }
+else
+  on_node() { limactl shell "$LIMA_INSTANCE" sudo "$@"; }
+fi
+digest="${config##*/}"; digest="sha256:${digest%.json}"
+if [ -z "${VM_HOST_RUNNER:-}" ] \
+  && [ "$(on_node k3s crictl inspecti -o go-template --template '{{.status.id}}' "$ref" 2>/dev/null)" = "$digest" ]; then
+  if [ -n "${IS_SANDBOX:-}" ]; then
+    as_root sh -c "$place" _ "$IMAGE_DIR/$name" "$ref" "$work/launch.json"
+  else
+    limactl copy "$work/launch.json" "$LIMA_INSTANCE:/tmp/$name.launch.json"
+    limactl shell "$LIMA_INSTANCE" sudo sh -c "$place" _ "$IMAGE_DIR/$name" "$ref" "/tmp/$name.launch.json"
+    limactl shell "$LIMA_INSTANCE" rm -f "/tmp/$name.launch.json"
+  fi
+  echo "staged $IMAGE at $IMAGE_DIR/$name, from the node's containerd"
+  exit 0
+fi
+
 # crane reads a docker-save tarball's layers as all gzip or all plain, judged
 # by the first layer alone, and a built image mixes the two: the layers its
 # build writes are plain tars, the ones it takes from its base stay gzip. Read
@@ -32,29 +100,6 @@ entries=()
 while IFS= read -r e; do entries+=("$e"); done < <(ls -A "$layout")
 tar -C "$layout" -cf - "${entries[@]}" | crane export - "$work/rootfs.tar"
 rm -rf "$layout"
-# The record the runner reads beside the tree: what the image says to run.
-tar -xOf "$usage_tar" "$(tar -xOf "$usage_tar" manifest.json | jq -r '.[0].Config')" | jq \
-  '.config | {"entrypoint": (.Entrypoint // []), "cmd": (.Cmd // []), "env": (.Env // []), "workingDir": (.WorkingDir // "")}' \
-  > "$work/launch.json"
-
-# Runs as root on the node: unpacks beside the live entry, moves the old entry
-# aside and the new one in, so a runner looking the entry up finds a whole
-# tree at every moment — never a half-written one, and never none. A machine
-# already booted from the old tree keeps its mounted files until it restarts.
-# The archive an earlier stage left under the same name goes last: the runner
-# prefers the tree, and the archive only costs disk. The tree keeps the modes
-# the image gave it — the runner reads it with DAC_OVERRIDE, and a file the
-# image keeps from others, such as /etc/shadow, must stay that way in the guest.
-place='set -e
-dest="$1"; tar="$2"; launch="$3"
-rm -rf "$dest.new" "$dest.old"
-mkdir -p "$dest.new/rootfs"
-tar -xf "$tar" -C "$dest.new/rootfs"
-install -m 644 "$launch" "$dest.new/launch.json"
-chmod a+rx "$dest.new"
-[ ! -e "$dest" ] || mv "$dest" "$dest.old"
-mv "$dest.new" "$dest"
-rm -rf "$dest.old" "$dest.tar"'
 
 if [ -n "${VM_HOST_RUNNER:-}" ]; then
   # The runner on this Mac reads its own image volume, as the user it runs

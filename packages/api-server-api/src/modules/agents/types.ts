@@ -21,6 +21,43 @@ export function isProtectedAgentEnvName(name: string): boolean {
   return PROTECTED_AGENT_ENV_NAMES.includes(name);
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the termination codes clients word for themselves. A view's code stays a string, since the controller can add one, but a client compares against these names, so a typo or a removed code fails to compile.
+export const TerminationCode = {
+  OutOfMemory: "OutOfMemory",
+  RunnerOutOfMemory: "RunnerOutOfMemory",
+  HomeVolumeFull: "HomeVolumeFull",
+  MachineStorageFull: "MachineStorageFull",
+  MachineImageUnavailable: "MachineImageUnavailable",
+  MachineBootFailed: "MachineBootFailed",
+  MachineRunnerUnschedulable: "MachineRunnerUnschedulable",
+  ImagePullFailure: "ImagePullFailure",
+  InvalidImageName: "InvalidImageName",
+  ContainerTerminated: "ContainerTerminated",
+} as const;
+
+// UNIT_BOUNDARY_DESCRIPTION: termination codes that mean the agent was refused a start rather than crashed, so every client says it "can't start" for the same codes.
+const START_REFUSAL_CODES: ReadonlySet<string> = new Set([
+  TerminationCode.MachineStorageFull,
+  TerminationCode.HomeVolumeFull,
+  TerminationCode.MachineImageUnavailable,
+  TerminationCode.MachineBootFailed,
+  TerminationCode.MachineRunnerUnschedulable,
+  TerminationCode.ImagePullFailure,
+  TerminationCode.InvalidImageName,
+]);
+
+// UNIT_BOUNDARY_DESCRIPTION: the body the api-server answers a call through an agent with when it could not wake the agent, in place of the agent's own answer. `message` is the sentence the web app shows for the same failure.
+export const AGENT_UNREACHABLE = "agent unreachable";
+export interface AgentUnreachableBody {
+  error: typeof AGENT_UNREACHABLE;
+  reason?: string;
+  message?: string;
+}
+
+export function isStartRefusal(code: string | undefined): boolean {
+  return code !== undefined && START_REFUSAL_CODES.has(code);
+}
+
 export interface Channel {
   type: ChannelType;
 }
@@ -58,6 +95,7 @@ export type AgentSpec = AgentSpecCR & { name: string };
 export interface TemplateUpdate {
   fromImage: string;
   toImage: string;
+  startFailed?: boolean;
 }
 
 export type RuntimeMigrationPhase =
@@ -87,6 +125,11 @@ export interface WorkspaceFailure {
   maxAttempts: number;
 }
 
+export interface AgentReclaim {
+  at: string;
+  for: "memory" | "compute";
+}
+
 export interface Agent {
   id: string;
   name: string;
@@ -102,7 +145,9 @@ export interface Agent {
   stopRequested: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
+  reclaimed?: AgentReclaim;
   podTerminationReason?: string;
+  podTerminationCode?: string;
   notReadyMessage?: string;
   podRestarts: number;
   podRestartReason?: string;
@@ -180,8 +225,6 @@ export type RuntimeMigrationRefusal = Exclude<
 
 export interface RuntimeMigrationPlan {
   unmovable: UnmovablePath[];
-  storageSize: string;
-  storageResized: boolean;
   bootsSleepingAgent: boolean;
   retentionMs: number | null;
   refusal: RuntimeMigrationRefusal | null;

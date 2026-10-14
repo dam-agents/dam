@@ -1,5 +1,5 @@
 {
-  "id": "f4870731-2dc5-465f-a2f8-dd96443eb9d5",
+  "id": "8f5408be-c54f-47cc-b317-828dcba39a2a",
   "prevId": "f548c624-76f7-41fe-b9dd-fb234685b6e0",
   "version": "7",
   "dialect": "postgresql",
@@ -1170,12 +1170,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "thread_ts": {
-          "name": "thread_ts",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -1962,6 +1956,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "team_id": {
+          "name": "team_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",

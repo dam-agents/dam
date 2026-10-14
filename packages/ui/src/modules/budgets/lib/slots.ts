@@ -92,7 +92,7 @@ function formatMultiplier(size: SizeMi, unit: SlotUnit): string {
 export function formatCpuMemory(size: SizeMi): string {
   return `${formatCores(size.cpuMilli)} CPU · ${formatGi(
     size.memoryMi * BYTES_PER_MI,
-  )} Gi`;
+  )} GiB`;
 }
 
 export function formatSizeLabel(size: SizeMi, unit: SlotUnit): string {

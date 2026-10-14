@@ -1,0 +1,58 @@
+#!/usr/bin/env node
+//MISE description="Test that the entrypoint puts the share's runc wrapper ahead of a docker whose runc is on a read-only mount"
+//MISE sources=["base/rootfs/usr/local/bin/agent-entrypoint", ".mise/tasks/test/entrypoint-runc-wrapper"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const entrypoint = fileURLToPath(new URL("../../../base/rootfs/usr/local/bin/agent-entrypoint", import.meta.url));
+const dir = mkdtempSync(join(tmpdir(), "entrypoint-runc-wrapper-"));
+const [docker, home, runBin, k3s] = ["docker", "home", "run-bin", "k3s"].map((d) => join(dir, d));
+for (const d of [docker, home]) mkdirSync(d);
+const wrapper = join(dir, "platform-runc");
+const dropin = join(k3s, "agent/etc/containerd/config-v3.toml.d/platform-runc.toml");
+writeFileSync(join(docker, "runc"), "#!/bin/sh\n", { mode: 0o755 });
+writeFileSync(join(dir, "passwd"), "agent:x:0:0::/home/agent:/bin/sh\n");
+writeFileSync(
+  join(dir, "agent-entrypoint"),
+  readFileSync(entrypoint, "utf8")
+    .replaceAll("uid=$(id -u)", "uid=0")
+    .replaceAll("sed -i 's/^agent:x:65532:0:/agent:x:0:0:/' /etc/passwd", ":")
+    .replaceAll("/etc/passwd", join(dir, "passwd"))
+    .replaceAll("/run/sshd", join(dir, "sshd"))
+    .replaceAll("/etc/platform/ca", join(dir, "ca"))
+    .replaceAll("/etc/rancher/k3s/config.yaml", join(dir, "k3s-config.yaml"))
+    .replaceAll("/var/lib/rancher/k3s", k3s)
+    .replaceAll("/platform/runc", wrapper)
+    .replaceAll("/run/platform/bin", runBin)
+    .replaceAll("/app/working-dir", join(dir, "working-dir")),
+);
+const boot = () =>
+  execFileSync("/bin/sh", [join(dir, "agent-entrypoint"), "sh", "-c", "command -v runc"], {
+    env: { PATH: `${docker}:${process.env.PATH}`, HOME: home },
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }).trim().split("\n").at(-1);
+
+try {
+  // TEST_SCENARIO: on a machine docker's runc sits on the read-only harness tools, so the wrapper is linked as runc in a directory put ahead of it on the PATH the entrypoint hands on, which docker's containers and builds then start through, and docker's own runc is left where it is.
+  writeFileSync(wrapper, "#!/bin/sh\n", { mode: 0o755 });
+  chmodSync(docker, 0o555);
+  assert.equal(boot(), join(runBin, "runc"));
+  assert.equal(readlinkSync(join(runBin, "runc")), wrapper);
+  assert.equal(existsSync(join(docker, "runc.real")), false);
+  assert.match(readFileSync(dropin, "utf8"), new RegExp(`BinaryName = "${wrapper}"`));
+
+  // TEST_SCENARIO: a share without the wrapper leaves docker's runc first and removes k3s's drop-in, so nothing names a runtime that is gone.
+  rmSync(wrapper);
+  rmSync(runBin, { recursive: true });
+  assert.equal(boot(), join(docker, "runc"));
+  assert.equal(existsSync(dropin), false);
+} finally {
+  chmodSync(docker, 0o755);
+  rmSync(dir, { recursive: true, force: true });
+}

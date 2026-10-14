@@ -31,6 +31,7 @@ It never means the session is gone.
 
 One reader outside Home shows the rows: an Agent's session list, while that Agent cannot answer for itself — asleep, or still waking.
 It shows its owner the rows filed for that Agent as a **provisional** list, display-only, and replaces it with the Agent's own list the moment the Agent answers.
+The UI asks the Agent for that list once the Agent shows as starting, not first at Ready: the agent's tRPC relay holds the ask while the wake runs, and an ask it refuses, or a hold that fails, is asked again when the Agent turns Ready.
 Nothing acts on a provisional row as proof the session exists: opening one asks the Agent, which still decides.
 
 That boundary is what makes the record safe to rebuild or discard.

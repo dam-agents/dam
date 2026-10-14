@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 //MISE description="Test that Pi starts on the session's provider and model, with its thinking level, even with stale saved defaults, and never on a LiteLLM placeholder as an Anthropic key"
-//MISE sources=["pi-agent/rootfs/usr/local/bin/pi-platform", "pi-agent/rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/**", ".mise/tasks/test/pi-provider-selection", "../../pnpm-lock.yaml"]
+//MISE sources=["pi-agent/rootfs/usr/local/bin/pi-platform", "pi-agent/rootfs/usr/local/share/pi-platform/extensions/**", ".mise/tasks/test/pi-provider-selection", "../../pnpm-lock.yaml"]
 //MISE outputs=[]
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -43,7 +43,7 @@ writeFileSync(join(shared, "settings.json"), JSON.stringify({ defaultProvider: "
 mkdirSync(join(home, "bin"));
 writeFileSync(join(home, "bin/pi"), `#!/bin/sh\nexec '${process.execPath}' '${cli}' "$@"\n`, { mode: 0o755 });
 writeFileSync(join(home, "bin/mise"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
-const wrapper = readFileSync(join(root, "rootfs/usr/local/bin/pi-platform"), "utf8").replace("/usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts", extension);
+const wrapper = readFileSync(join(root, "rootfs/usr/local/bin/pi-platform"), "utf8").replace("/usr/local/share/pi-platform/extensions", dirname(dirname(extension)));
 writeFileSync(join(home, "pi-platform"), wrapper);
 function startPi(env) {
   const child = spawn("/bin/sh", [join(home, "pi-platform"), "--mode", "rpc", "--no-session", "--no-extensions", "--no-skills", "--no-prompt-templates"], {

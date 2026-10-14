@@ -109,6 +109,7 @@ pub fn run(command: Vec<OsString>) -> ! {
     };
     std::thread::spawn(reclaim_cold_cache);
     std::thread::spawn(evict_scratch);
+    std::thread::spawn(trim_freed_blocks);
     supervise(&binary, &command, trust.as_deref())
 }
 
@@ -117,18 +118,60 @@ const RECLAIM_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60)
 const RECLAIM_FLOOR: u64 = 64 << 20;
 
 fn reclaim_cold_cache() {
+    let order = fs::read_to_string("/sys/module/page_reporting/parameters/page_reporting_order")
+        .ok()
+        .and_then(|text| text.trim().parse().ok())
+        .unwrap_or(DEFAULT_REPORTING_ORDER);
+    let mut settled = scattered_free(order).unwrap_or(0);
     loop {
         std::thread::sleep(RECLAIM_INTERVAL);
-        let Some(cold) = fs::read_to_string("/sys/fs/cgroup/memory.stat")
+        if let Some(cold) = fs::read_to_string("/sys/fs/cgroup/memory.stat")
             .ok()
             .and_then(|stat| inactive_file(&stat))
-        else {
+        {
+            if cold >= RECLAIM_FLOOR {
+                let _ = fs::write("/sys/fs/cgroup/memory.reclaim", cold.to_string());
+            }
+        }
+        let Some(scattered) = scattered_free(order) else {
             continue;
         };
-        if cold >= RECLAIM_FLOOR {
-            let _ = fs::write("/sys/fs/cgroup/memory.reclaim", cold.to_string());
+        if scattered >= settled + SCATTERED_RISE {
+            let _ = fs::write(
+                "/sys/fs/cgroup/memory.reclaim",
+                (scattered - settled).to_string(),
+            );
+            let _ = fs::write("/proc/sys/vm/compact_memory", "1");
+            settled = scattered_free(order).unwrap_or(scattered);
+        } else {
+            settled = settled.min(scattered);
         }
     }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: free-page reporting hands the host only free blocks of at least the reporting order, 2 MiB on the guests' kernel, so memory a program frees between pages the guest still uses stays counted on the host: on dev about 600 MiB after a burst of processes ended, for as long as the pages pinning it lived. When the free memory in smaller blocks has risen by SCATTERED_RISE since the last look, that much cold cache and slab is reclaimed and the guest's memory compacted, which merges the free pages into blocks the host takes back, in about a quarter of a second of guest time. A guest whose memory stays scattered is not compacted again until more is freed.
+const SCATTERED_RISE: u64 = 128 << 20;
+const DEFAULT_REPORTING_ORDER: usize = 9;
+
+fn scattered_free(order: usize) -> Option<u64> {
+    let buddy = fs::read_to_string("/proc/buddyinfo").ok()?;
+    // SAFETY: sysconf has no preconditions.
+    let page = u64::try_from(unsafe { libc::sysconf(libc::_SC_PAGESIZE) }).ok()?;
+    Some(free_below_order(&buddy, order) * page)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: free pages in blocks smaller than `order`, over every zone of /proc/buddyinfo, whose lines are "Node N, zone NAME" and then the count of free blocks of each order from 0.
+fn free_below_order(buddyinfo: &str, order: usize) -> u64 {
+    buddyinfo
+        .lines()
+        .flat_map(|line| {
+            line.split_whitespace()
+                .skip(4)
+                .take(order)
+                .enumerate()
+                .filter_map(|(o, count)| count.parse::<u64>().ok().map(|count| count << o))
+        })
+        .sum()
 }
 
 fn inactive_file(stat: &str) -> Option<u64> {
@@ -139,6 +182,59 @@ fn inactive_file(stat: &str) -> Option<u64> {
         .ok()
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the disk is a sparse file on the owner's claim, and a block the agent frees stays allocated there until it is trimmed. smolvm's guest agent trims only once free space has risen by a quarter GiB since its last trim, so a file rewritten in place or replaced by a renamed copy — free space back where it was, the new copy on other blocks — keeps the old copy's blocks counted for up to half an hour. Every TRIM_INTERVAL the disk is trimmed regardless: ext4 skips every block group that has freed nothing since its last trim, so a trim with nothing to return costs little. Machines boot at different times, so their trims do not run in step.
+const TRIM_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+// UNIT_BOUNDARY_DESCRIPTION: _IOWR('X', 121, struct fstrim_range), the same on every architecture a guest runs; the libc crate does not export it.
+const FITRIM: libc::c_ulong = 0xC018_5879;
+// UNIT_BOUNDARY_DESCRIPTION: free extents smaller than this are skipped, so a minute's trim sends no stream of tiny discards to the claim's storage.
+const TRIM_MIN_BYTES: u64 = 1 << 20;
+
+#[repr(C)]
+struct FstrimRange {
+    start: u64,
+    len: u64,
+    minlen: u64,
+}
+
+fn trim_freed_blocks() {
+    let home = match File::open(guest::AGENT_HOME) {
+        Ok(home) => home,
+        Err(e) => {
+            logf!(
+                "WARNING: opening {} ({e}); blocks the agent frees are not trimmed",
+                guest::AGENT_HOME
+            );
+            return;
+        }
+    };
+    let mut failing = false;
+    loop {
+        std::thread::sleep(TRIM_INTERVAL);
+        let mut range = FstrimRange {
+            start: 0,
+            len: u64::MAX,
+            minlen: TRIM_MIN_BYTES,
+        };
+        // SAFETY: `home` is an open file on the disk, and `range` is a live fstrim_range the kernel reads and writes back.
+        let rc = unsafe { libc::ioctl(home.as_raw_fd(), FITRIM as _, &mut range) };
+        if rc == 0 {
+            failing = false;
+            continue;
+        }
+        let error = io::Error::last_os_error();
+        if matches!(error.raw_os_error(), Some(libc::EOPNOTSUPP | libc::ENOTTY)) {
+            logf!("WARNING: the disk cannot be trimmed ({error}); blocks the agent frees stay counted until smolvm trims");
+            return;
+        }
+        if !failing {
+            logf!(
+                "WARNING: trimming the disk ({error}); retrying every {} s",
+                TRIM_INTERVAL.as_secs()
+            );
+        }
+        failing = true;
+    }
+}
 // UNIT_BOUNDARY_DESCRIPTION: the kernel refuses to move a mount out of a shared parent, and refuses pivot_root when either root's parent is shared. So the tree is made a slave before the disk is moved: mounts made elsewhere in the guest still arrive, and nothing this boot does leaves it. A private tree is left as it is.
 fn stop_propagation() {
     if let Err(e) = mount(Path::new(""), Path::new("/"), libc::MS_REC | libc::MS_SLAVE) {
@@ -817,7 +913,7 @@ fn purge_discarded(dir: &Path, names: &[impl AsRef<str>]) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: scratch on the disk shares it with the agent's home, so a tool that fills /tmp or its cache could leave the agent no room for its work. Every EVICT_INTERVAL, while the disk has less than EVICT_BELOW_PERCENT of it free, the scratch folders lose their files least recently used first, in passes of decreasing age, until EVICT_UNTIL_PERCENT is free or only files used within the last pass's age are left — so a file a running tool is writing is never taken. Only files on the disk are deleted: the walk stays on the disk's device, follows no symlink and leaves the image's trust cache alone. A deleted file that is still open frees its space only when it is closed.
+// UNIT_BOUNDARY_DESCRIPTION: scratch on the disk shares it with the agent's home, so a tool that fills /tmp or its cache could leave the agent no room for its work. Every EVICT_INTERVAL, while the disk has less than EVICT_BELOW_PERCENT of it free or the runner marks the owner's claim short of room, the scratch folders lose their files least recently used first, in passes of decreasing age, until EVICT_UNTIL_PERCENT is free and the mark is gone, or only files used within the last pass's age are left — so a file a running tool is writing is never taken. The disk is a sparse file on that claim, and the guest agent's trim hands what this frees back to it. Only files on the disk are deleted: the walk stays on the disk's device, follows no symlink and leaves the image's trust cache alone. A deleted file that is still open frees its space only when it is closed.
 const EVICT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 const EVICT_BELOW_PERCENT: u64 = 10;
 const EVICT_UNTIL_PERCENT: u64 = 20;
@@ -839,7 +935,7 @@ fn evict_scratch() {
         .collect();
     loop {
         std::thread::sleep(EVICT_INTERVAL);
-        if free_percent(home).is_none_or(|free| free >= EVICT_BELOW_PERCENT) {
+        if !evicting(free_percent(home), claim_short(), EVICT_BELOW_PERCENT) {
             continue;
         }
         let now = std::time::SystemTime::now()
@@ -853,21 +949,41 @@ fn evict_scratch() {
             if freed > 0 {
                 logf!("the disk is short of room: deleted {freed} bytes of scratch unused for {age} s");
             }
-            if free_percent(home).is_some_and(|free| free >= EVICT_UNTIL_PERCENT) {
+            if !evicting(free_percent(home), claim_short(), EVICT_UNTIL_PERCENT) {
                 break;
             }
         }
     }
 }
 
-fn free_percent(path: &Path) -> Option<u64> {
+// UNIT_BOUNDARY_DESCRIPTION: whether scratch is still to be freed: the disk has less than `percent` free, or the owner's claim under it is short. A disk whose room cannot be read is left alone unless the claim is short.
+fn evicting(free: Option<u64>, claim_short: bool, percent: u64) -> bool {
+    claim_short || free.is_some_and(|free| free < percent)
+}
+
+fn claim_short() -> bool {
+    Path::new(guest::STORAGE_SHORT_PATH).exists()
+}
+
+fn statvfs(path: &Path) -> Option<libc::statvfs> {
     let path = cstring(path.as_os_str()).ok()?;
     // SAFETY: statvfs is plain old data, and all-zero bytes are a valid value of it.
     let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
     // SAFETY: `path` is NUL-terminated and lives for the call, and `stat` is a live, writable statvfs.
     let rc = unsafe { libc::statvfs(path.as_ptr(), &mut stat) };
+    (rc == 0).then_some(stat)
+}
+
+fn free_percent(path: &Path) -> Option<u64> {
+    let stat = statvfs(path)?;
     #[allow(clippy::unnecessary_cast)]
-    (rc == 0 && stat.f_blocks > 0).then(|| stat.f_bavail as u64 * 100 / stat.f_blocks as u64)
+    (stat.f_blocks > 0).then(|| stat.f_bavail as u64 * 100 / stat.f_blocks as u64)
+}
+
+fn free_bytes(path: &Path) -> Option<u64> {
+    let stat = statvfs(path)?;
+    #[allow(clippy::unnecessary_cast)]
+    Some((stat.f_bavail as u64).saturating_mul(stat.f_frsize as u64))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: deletes the files under `dir` last used before `cutoff`, in seconds since the epoch, and returns the bytes they held. Only regular files and symlinks are deleted, never a socket or fifo a running process may still be listening on. A file counts as used at the latest of its access, modification and change times. A directory left empty is removed only if it too was unused before the cutoff, so one a tool just made stays. The walk holds one directory open per level of the tree.
@@ -1564,10 +1680,18 @@ fn supervise(binary: &Path, command: &[OsString], trust: Option<&Path>) -> ! {
                 NOT_STARTED
             }
         };
+        let full = status != 0
+            && free_bytes(Path::new(guest::AGENT_HOME))
+                .is_some_and(|free| free < guest::HOME_FULL_BYTES);
         announce(&format!(
-            "the image entrypoint {} after {}s",
+            "the image entrypoint {} after {}s{}",
             exit_description(status),
-            started.elapsed().as_secs()
+            started.elapsed().as_secs(),
+            if full {
+                format!("; {}", guest::HOME_FULL)
+            } else {
+                String::new()
+            }
         ));
         end_the_rest(&mut stopping);
         if stopping {
@@ -1784,6 +1908,16 @@ mod tests {
     // TEST_OVERVIEW: platform-init is what makes a machine's persistence the platform's promise rather than the image's behaviour. The mounting itself needs a guest, but everything that decides what ends up on the disk — seeding the home from the image exactly once, never leaving a half-copy behind, keeping the boot log readable, which mounts follow the image onto its root and when that root is kept, which cache folders are cleared from the home, resolving the entrypoint it hands off to — is ordinary file or table work and is covered here.
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    // TEST_SCENARIO: a guest's own disk can read as nearly empty while the owner's claim under it fills, so the runner's mark alone starts and continues eviction; without it, the disk's own free share decides, and a disk whose room cannot be read is left alone.
+    #[test]
+    fn scratch_is_freed_while_the_disk_or_the_claim_is_short() {
+        assert!(evicting(Some(5), false, EVICT_BELOW_PERCENT));
+        assert!(!evicting(Some(50), false, EVICT_BELOW_PERCENT));
+        assert!(evicting(Some(50), true, EVICT_BELOW_PERCENT));
+        assert!(evicting(None, true, EVICT_UNTIL_PERCENT));
+        assert!(!evicting(None, false, EVICT_BELOW_PERCENT));
+    }
 
     struct TempDir(PathBuf);
 
@@ -2836,6 +2970,15 @@ mod tests {
         assert!(stopping);
     }
 
+    // TEST_SCENARIO: only free blocks below the reporting order count as scattered, summed in pages over every zone. Counting the larger blocks would compact a guest whose free memory the host already took back, and dropping a zone would miss memory freed there.
+    #[test]
+    fn scattered_free_counts_blocks_below_the_reporting_order_in_every_zone() {
+        let buddy = "Node 0, zone    DMA32      1      2      0      0      0      0      0      0      0      7    446 \n\
+                     Node 0, zone   Normal      3      0      0      0      0      0      0      0      1      5      2 \n";
+        assert_eq!(free_below_order(buddy, 9), 1 + 2 * 2 + 3 + 256);
+        assert_eq!(free_below_order(buddy, 1), 4);
+        assert_eq!(free_below_order("", 9), 0);
+    }
     // TEST_SCENARIO: the cold cache is read from the root cgroup's memory.stat, where `inactive_file` sits beside `file`, `active_file` and `inactive_anon`, all byte counts. Picking a neighbour would reclaim the wrong amount every minute — anonymous memory the guest cannot drop, or the active cache the agent is using.
     #[test]
     fn the_cold_cache_is_the_inactive_file_count() {

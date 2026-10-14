@@ -3,13 +3,15 @@ import type { ClientConnection } from "@agentclientprotocol/sdk";
 class ConnectionClosedError extends Error {
   readonly name = "ConnectionClosedError";
   readonly closeReason: string | null;
-  constructor(closeReason: string | null) {
+  readonly closeCode: number | null;
+  constructor(closeReason: string | null, closeCode: number | null) {
     super(
       closeReason
         ? `Connection closed while request was in flight: ${closeReason}`
         : "Connection closed while request was in flight",
     );
     this.closeReason = closeReason;
+    this.closeCode = closeCode;
   }
 }
 
@@ -21,16 +23,24 @@ export function isConnectionClosed(e: unknown): boolean {
   return e instanceof ConnectionClosedError;
 }
 
+export function connectionWentAway(e: unknown): boolean {
+  return (
+    e instanceof ConnectionClosedError &&
+    (e.closeCode === 1001 || e.closeCode === 1006)
+  );
+}
+
 export function withCloseRace(
   conn: ClientConnection,
   closeReason: () => string | null,
+  closeCode: () => number | null = () => null,
 ): ClientConnection {
   const closedThrows = conn.closed.then(() => {
-    throw new ConnectionClosedError(closeReason());
+    throw new ConnectionClosedError(closeReason(), closeCode());
   });
   const asCloseIfClosed = (e: unknown): never => {
     if (conn.signal.aborted && !isConnectionClosed(e)) {
-      throw new ConnectionClosedError(closeReason());
+      throw new ConnectionClosedError(closeReason(), closeCode());
     }
     throw e;
   };

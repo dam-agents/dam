@@ -1,4 +1,10 @@
-import { Add, Close, Document, SendAltFilled, Stop } from "@carbon/icons-react";
+import {
+  Add,
+  Close,
+  Document,
+  SendAltFilled,
+  StopFilledAlt,
+} from "@carbon/icons-react";
 import {
   type KeyboardEvent,
   type RefObject,
@@ -197,6 +203,11 @@ export function ChatInput({
       e.preventDefault();
       return;
     }
+    if (e.key === "Escape" && showStop && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      onStop();
+      return;
+    }
     if (e.key !== "Enter" || e.shiftKey || isMobile()) return;
     e.preventDefault();
     if (e.altKey) document.execCommand("insertText", false, "\n");
@@ -273,9 +284,9 @@ export function ChatInput({
                 className="shrink-0 mb-[9px]"
                 onClick={onStop}
                 aria-label="Stop"
-                tooltip="Stop"
+                tooltip="Stop (Esc)"
               >
-                <Stop size={16} />
+                <StopFilledAlt size={16} />
               </Button>
             )}
             {showSend && (

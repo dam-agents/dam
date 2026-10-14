@@ -1,6 +1,7 @@
 import type { ClientConnection } from "@agentclientprotocol/sdk";
 import {
   platformClippedReplayMetaSchema,
+  platformQueueMetaSchema,
   platformReplayTurnMetaSchema,
   platformRunStartsMetaSchema,
   platformSupersededMetaSchema,
@@ -26,7 +27,8 @@ import {
 import type { AcpUpdate, FrameMeta, UpdateHandler } from "../../acp/types.js";
 import { RECONNECT_DELAYS } from "../../acp/utils.js";
 import { handOverUndelivered } from "../api/acp-session-ops.js";
-import { readNextSessionPair } from "../api/session-pair.js";
+import { seedStartedSession } from "../api/queries.js";
+import { settledNextSessionPair } from "../api/session-pair.js";
 import { draftKey } from "../lib/draft-key.js";
 import {
   type PromptDelivery,
@@ -202,17 +204,18 @@ export function useAcpConnection(
       let settled = false;
       let kept = false;
       const handler = makeUpdateHandler();
-      const { connection, ws } = await openInitializedConnection(
-        selectedAgent,
-        withDeliveryTracking(delivery, (update, updateSessionId, frame) => {
-          if (listening) handler(update, updateSessionId, frame);
-        }),
-      );
+      const { connection, ws, forksSessions, steers } =
+        await openInitializedConnection(
+          selectedAgent,
+          withDeliveryTracking(delivery, (update, updateSessionId, frame) => {
+            if (listening) handler(update, updateSessionId, frame);
+          }),
+        );
       ws.addEventListener("close", () => releaseStartSlot(holders));
 
       let startedSessionId: string;
       try {
-        const next = readNextSessionPair(agentId);
+        const next = await settledNextSessionPair(agentId);
         const session = await connection.agent.request("session/new", {
           cwd: ".",
           mcpServers: [],
@@ -226,6 +229,9 @@ export function useAcpConnection(
           },
         });
         startedSessionId = session.sessionId;
+        useStore.getState().setHarnessForks(forksSessions);
+        useStore.getState().setHarnessSteers(steers);
+        seedStartedSession(agentId, startedSessionId, next?.pair ?? null);
       } catch (err) {
         try {
           ws.close();
@@ -287,23 +293,26 @@ export function useAcpConnection(
     if (existing && existing.ws.readyState === WebSocket.OPEN) return existing;
     if (!selectedAgent) throw new Error("No agent selected");
     const handler = makeUpdateHandler();
-    const { connection, ws } = await openInitializedConnection(
-      selectedAgent,
-      withDeliveryTracking(delivery, (update, updateSessionId, frame) => {
-        const collector = collectorRef.current;
-        if (
-          collector &&
-          updateSessionId === collector.sid &&
-          frame?.replayFor === collector.token
-        ) {
-          collector.updates.push({ update, frame });
-          return;
-        }
-        handler(update, updateSessionId, frame);
-      }),
-    );
+    const { connection, ws, forksSessions, steers } =
+      await openInitializedConnection(
+        selectedAgent,
+        withDeliveryTracking(delivery, (update, updateSessionId, frame) => {
+          const collector = collectorRef.current;
+          if (
+            collector &&
+            updateSessionId === collector.sid &&
+            frame?.replayFor === collector.token
+          ) {
+            collector.updates.push({ update, frame });
+            return;
+          }
+          handler(update, updateSessionId, frame);
+        }),
+      );
     attachCloseHandler(ws);
     connectionRef.current = { connection, ws };
+    useStore.getState().setHarnessForks(forksSessions);
+    useStore.getState().setHarnessSteers(steers);
     return connectionRef.current;
   }, [selectedAgent, makeUpdateHandler, delivery, attachCloseHandler]);
 
@@ -346,6 +355,7 @@ export function useAcpConnection(
               undelivered?: unknown;
               superseded?: unknown;
               runStarts?: unknown;
+              queue?: unknown;
             };
           };
         } | null
@@ -364,6 +374,9 @@ export function useAcpConnection(
               platformRunStartsMetaSchema.element.safeParse(at).success,
           )
         : [];
+      const queue = platformQueueMetaSchema.safeParse(
+        platformMeta?.queue ?? [],
+      );
       const clipped =
         clippedRaw === undefined
           ? null
@@ -425,6 +438,7 @@ export function useAcpConnection(
           .setRunStarts([
             ...new Set([...useStore.getState().runStarts, ...runStarts]),
           ]);
+        useStore.getState().setQueuedPrompts(queue.success ? queue.data : []);
         if (turn.success && !turn.data.inFlight)
           idleSessionsRef.current.set(sid, Date.now());
         else idleSessionsRef.current.delete(sid);

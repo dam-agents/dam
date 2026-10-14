@@ -4,14 +4,14 @@
 
 ## The rule
 
-**[CRITICAL] All server state goes through TanStack Query.** No `useEffect` + `fetch` in components, no `useState` loading/error/data trios, no Zustand slices holding server lists.
+**\[CRITICAL\] All server state goes through TanStack Query.** No `useEffect` + `fetch` in components, no `useState` loading/error/data trios, no Zustand slices holding server lists.
 Anything from or to the server is a `useQuery` or `useMutation`.
 
 Why: TQ provides what hand-rolled fetch layers get wrong: deduplication, stale-while-revalidate, invalidation, cache GC, focus refetch, cancellation, paginated/infinite queries, optimistic updates with rollback, and one place for cross-cutting error handling.
 
 ## Setup: `@trpc/tanstack-react-query`
 
-**[HIGH]** For a tRPC backend, `createTRPCOptionsProxy` turns each procedure into typed `queryOptions` / `mutationOptions` / `queryKey` factories consumed by plain TQ hooks.
+**\[HIGH\]** For a tRPC backend, `createTRPCOptionsProxy` turns each procedure into typed `queryOptions` / `mutationOptions` / `queryKey` factories consumed by plain TQ hooks.
 No fetcher wrapper for tRPC calls.
 
 ```ts
@@ -36,7 +36,7 @@ For per-scope tRPC clients (one per authenticated entity or runtime instance), u
 
 ## QueryClient config
 
-**[HIGH]** Centralize defaults in `src/query-client.ts`.
+**\[HIGH\]** Centralize defaults in `src/query-client.ts`.
 That is where "every mutation toasts its error" and "every mutation invalidates its related queries" happen, exactly once:
 
 ```ts
@@ -70,7 +70,7 @@ export const queryClient = new QueryClient({
 
 ### Typed `meta`
 
-**[HIGH]** Module augmentation (in `src/query-client.ts`) types `meta`:
+**\[HIGH\]** Module augmentation (in `src/query-client.ts`) types `meta`:
 
 ```ts
 declare module "@tanstack/react-query" {
@@ -83,7 +83,7 @@ declare module "@tanstack/react-query" {
 
 ## Query keys
 
-**[CRITICAL] One source of truth per query shape; no string-literal keys, no duplicated hierarchies.** For tRPC, use the procedure's own `trpc.x.y.queryKey()` / `pathFilter()`.
+**\[CRITICAL\] One source of truth per query shape; no string-literal keys, no duplicated hierarchies.** For tRPC, use the procedure's own `trpc.x.y.queryKey()` / `pathFilter()`.
 For non-tRPC fetchers, one hierarchical factory per domain:
 
 ```ts
@@ -110,7 +110,7 @@ export function useAgents() {
 }
 ```
 
-**[HIGH] Use TQ's state directly**, never copied into `useState`:
+**\[HIGH\] Use TQ's state directly**, never copied into `useState`:
 
 ```tsx
 const { data, isLoading, error } = useAgents();
@@ -142,7 +142,7 @@ Call `mutate` when `onSuccess` handles everything; `mutateAsync` when the submit
 
 ### Invalidation
 
-**[CRITICAL] Use `meta.invalidates`.** Don't call `queryClient.invalidateQueries()` in `onSuccess`; the default mutation handler does it for every mutation.
+**\[CRITICAL\] Use `meta.invalidates`.** Don't call `queryClient.invalidateQueries()` in `onSuccess`; the default mutation handler does it for every mutation.
 When the key depends on the *response* (a server-returned id), extend the handler to accept `invalidates: (data) => [...]`, or call `invalidateQueries` in the mutation's own `onSuccess`.
 
 - **Invalidate narrowly.** After an agent create/update/delete, the list key is usually right; invalidate the domain root only when every query in it changed.
@@ -188,11 +188,11 @@ export function useStartOauth() {
 }
 ```
 
-**[HIGH] Zod-validate every non-tRPC response.** tRPC types end to end; raw `fetch` doesn't, so the parser is the only guard between a server bug and a runtime crash.
+**\[HIGH\] Zod-validate every non-tRPC response.** tRPC types end to end; raw `fetch` doesn't, so the parser is the only guard between a server bug and a runtime crash.
 
 ## `useSuspenseQuery`
 
-**[MODERATE] Opt-in.** It removes the `isLoading` ladder but needs `<Suspense>` + `<ErrorBoundary>` around it.
+**\[MODERATE\] Opt-in.** It removes the `isLoading` ladder but needs `<Suspense>` + `<ErrorBoundary>` around it.
 Default to `useQuery`; use suspense only in subtrees already wrapped, and pair each with a recoverable error boundary (`useQueryErrorResetBoundary`).
 
 ## Migration
@@ -221,7 +221,7 @@ return <ConnectionsList connections={data ?? []} />;
 
 ## Consuming query and mutation hooks
 
-**[HIGH] Destructure queries; keep mutations encapsulated.**
+**\[HIGH\] Destructure queries; keep mutations encapsulated.**
 
 Objects returned by `useQuery`/`useMutation` get a new identity every render.
 Their callables (`refetch`, `mutate`) are stable, but `react-hooks/exhaustive-deps` can't see that and demands the whole object, which re-fires the effect every render.
@@ -237,7 +237,7 @@ const updateSecret = useUpdateSecret();
 Queries yield render values (`data`, `isPending`) and stable callables that belong in deps (`refetch`), so destructure.
 Mutations fire from event handlers and their state is read inline, so `mutate` rarely lands in deps; `createSecret.mutate(...)` keeps the "this is a mutation" signal.
 
-**[CRITICAL] Never `eslint-disable react-hooks/exhaustive-deps` to hide the object-in-deps problem.** Destructure the stable field and the warning disappears.
+**\[CRITICAL\] Never `eslint-disable react-hooks/exhaustive-deps` to hide the object-in-deps problem.** Destructure the stable field and the warning disappears.
 
 ```tsx
 ❌ }, [fetchX, fetchY, query.refetch]);

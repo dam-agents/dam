@@ -3,6 +3,9 @@ import { WebSocket } from "ws";
 import { match } from "ts-pattern";
 import {
   platformRunResultResponseSchema,
+  STEER_METHOD,
+  steerResponseSchema,
+  steeringSupported,
   type AcpPermissionOption,
 } from "api-server-api";
 import { z } from "zod";
@@ -30,7 +33,6 @@ const STALL_PROBE_RPC_TIMEOUT_MS = 15_000;
 const TURN_STATUS_DEADLINE_MS = 20_000;
 const RUN_RESULT_METHOD = "platform/runResult";
 
-const STEER_METHOD = "_session/steering";
 const STEER_CEILING_MS = 30_000;
 
 export class AcpSessionLoadError extends Error {
@@ -177,18 +179,6 @@ export interface TriggerSessionResult {
 
 export type SteerOutcome =
   "injected" | "no-running-turn" | "unsupported" | "failed";
-
-const steerResponseSchema = z.object({
-  outcome: z.string().optional(),
-});
-
-function steeringSupported(init: InitializeResponse): boolean {
-  const meta = (init as { _meta?: unknown })._meta;
-  if (typeof meta !== "object" || meta === null) return false;
-  const steering = (meta as { steering?: unknown }).steering;
-  if (typeof steering !== "object" || steering === null) return false;
-  return (steering as { supported?: unknown }).supported === true;
-}
 
 type SessionAttach =
   | { resumeSessionId: string }

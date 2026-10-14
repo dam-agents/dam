@@ -88,6 +88,9 @@ export interface Message {
   parts: MessagePart[];
   streaming: boolean;
   queued?: boolean;
+  sentHere?: boolean;
+  steered?: boolean;
+  lastMessageId?: string;
   promptId?: string;
   retryWith?: RetryPayload;
   notice?: boolean;
@@ -144,9 +147,14 @@ export interface AgentView {
   name: string;
   createdAt?: string;
   templateId: string | null;
-  templateUpdate: { fromImage: string; toImage: string } | null;
+  templateUpdate: {
+    fromImage: string;
+    toImage: string;
+    startFailed?: boolean;
+  } | null;
   features: { liveUpdates: boolean | null };
   image: string;
+  harness?: string;
   description?: string;
   avatar: string | null;
   env?: EnvVar[];
@@ -159,8 +167,10 @@ export interface AgentView {
   stopRequested: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
+  reclaimed?: { at: string; for: "memory" | "compute" };
   size: { cpu?: string; memory?: string };
   podTerminationReason?: string;
+  podTerminationCode?: string;
   notReadyMessage?: string;
   podRestarts: number;
   podRestartReason?: string;
@@ -206,8 +216,6 @@ export interface RuntimeMigrationView {
 
 export interface RuntimeMigrationPlanView {
   unmovable: { path: string; reason: string }[];
-  storageSize: string;
-  storageResized: boolean;
   bootsSleepingAgent: boolean;
   retentionMs: number | null;
   allowed: boolean;

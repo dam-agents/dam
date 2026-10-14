@@ -13,6 +13,7 @@ import {
   useFocusTrap,
 } from "../../../components/modal.js";
 import { useStore } from "../../../store.js";
+import { useDenyApprovals } from "../../approvals/hooks/use-deny-approvals.js";
 import { useArtifact } from "../../artifacts/api/queries.js";
 import { ArtifactPreviewDialog } from "../../artifacts/components/artifact-preview-dialog.js";
 import {
@@ -84,6 +85,12 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
         filters,
       )
     : visible;
+  const { denyAll, denying } = useDenyApprovals();
+  const shownApprovals = shown.flatMap((item) =>
+    item.kind === "approval" && sticky.labelFor(item.id) === null
+      ? [item.approval]
+      : [],
+  );
 
   const toggleChannelType = (type: ChannelType) =>
     setFilters((prev) => {
@@ -152,6 +159,19 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
               className="ml-auto shrink-0 text-sm"
             >
               Clear all
+            </Button>
+          )}
+          {needsYou && shownApprovals.length > 0 && (
+            <Button
+              variant="link"
+              size="inline"
+              disabled={denying}
+              onClick={() => void denyAll(shownApprovals)}
+              title="Denies every approval shown here, once each. Nothing is remembered, so an agent asks again if it tries again."
+              data-testid="deny-all-approvals"
+              className="ml-auto shrink-0 text-sm"
+            >
+              Deny all
             </Button>
           )}
         </div>

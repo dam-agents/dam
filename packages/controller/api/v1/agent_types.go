@@ -211,6 +211,41 @@ const (
 	// ConditionNestedVirtualization is present only on an Agent that asks for
 	// spec.backend.vm.nestedVirtualization, and says whether its machine got it.
 	ConditionNestedVirtualization = "NestedVirtualization"
+	// ConditionStartFailed is present only while the pod or machine that runs
+	// the spec its observedGeneration names keeps failing after it started:
+	// its container keeps exiting (ReasonCrashLoop), or it runs without
+	// becoming ready (ReasonNeverReady); or while admission refuses the agent
+	// StatefulSet that spec's image (ReasonAdmissionDenied). AgentPodReady's
+	// termination cause can come from the pod a roll replaces; this condition
+	// never does, so the api-server can roll an image update back on it.
+	ConditionStartFailed = "StartFailed"
+	// ConditionRunnerCapacity is present only on a vm agent whose owner's
+	// runner pod the node cannot give what the owner's pool asks of it: an
+	// in-place resize it deferred (ReasonRunnerResizeDeferred) or found
+	// infeasible (ReasonRunnerResizeInfeasible). Status False, the kubelet's
+	// account in the message. The machine keeps running at what the pod has,
+	// so readiness does not follow it; it is for operators.
+	ConditionRunnerCapacity = "RunnerCapacity"
+)
+
+// Reasons on ConditionRunnerCapacity.
+const (
+	ReasonRunnerResizeDeferred   = "RunnerResizeDeferred"
+	ReasonRunnerResizeInfeasible = "RunnerResizeInfeasible"
+)
+
+// Reasons on ConditionStartFailed.
+const (
+	// ReasonCrashLoop: the current pod's agent container, or the machine's
+	// guest, was restarted at least three times on this spec, and is not
+	// ready now.
+	ReasonCrashLoop = "CrashLoop"
+	// ReasonNeverReady: the current pod's agent container, or the machine,
+	// has run for ten minutes on this spec without becoming ready.
+	ReasonNeverReady = "NeverReady"
+	// ReasonAdmissionDenied: an admission webhook or policy refused the agent
+	// StatefulSet with this spec's image, so the old pod keeps running.
+	ReasonAdmissionDenied = "AdmissionDenied"
 )
 
 // Reasons on ConditionRuntimeMigrating. Until Verified the container spec is
@@ -259,6 +294,13 @@ const ReasonStuckOnSupersededRevision = "StuckOnSupersededRevision"
 // it is not part of the machine API's vocabulary. The message carries the
 // scheduler's own account.
 const ReasonMachineRunnerUnschedulable = "MachineRunnerUnschedulable"
+
+// ReasonRunnerOutOfMemory is stamped on AgentPodReady of each vm agent the
+// kernel took down when it OOM-killed the owner's VM runner, from the
+// runner pod's last termination, until the agent is ready again. Every
+// machine of the owner is a process of that pod, so they all restart at
+// once. Not a Machine* reason: the agent is starting again, not failed.
+const ReasonRunnerOutOfMemory = "RunnerOutOfMemory"
 
 // ReasonHomeVolumeFull is stamped on AgentPodReady when the agent container
 // exited because its home volume ran out of space. agent-runtime reports it as

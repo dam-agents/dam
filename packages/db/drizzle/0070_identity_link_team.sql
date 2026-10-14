@@ -1,0 +1,1 @@
+ALTER TABLE "identity_links" ADD COLUMN "team_id" text;

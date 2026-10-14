@@ -63,14 +63,16 @@ mise generate git-pre-commit --write --task=check
 2. Make your change, with tests where they apply.
 3. Run `mise run check` and `mise run test`.
 4. Open a pull request that links the issue it addresses and explains what changed and why.
+   If the change alters what the web UI shows or does, add screenshots or a recording of it in the running app to the pull request body or its first comment.
+   A reviewer cannot see a UI change from the diff.
 
-One of the [maintainers](MAINTAINERS.md) will review it.
+One of the [maintainers](https://github.com/dam-agents/community/blob/main/GOVERNANCE.md#maintainers) will review it.
 Please respond to review comments by pushing follow-up commits to the same branch.
 
 ## Questions
 
 Ask in [GitHub Discussions](https://github.com/dam-agents/dam/discussions), or open an issue.
-[`MAINTAINERS.md`](MAINTAINERS.md) lists who maintains the project.
+The [community governance page](https://github.com/dam-agents/community/blob/main/GOVERNANCE.md#maintainers) lists who maintains the project.
 
 ## Working with coding agents
 

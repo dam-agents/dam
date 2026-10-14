@@ -8,6 +8,7 @@ export interface PeriodicJobs {
     everyMs: number,
     tick: () => Promise<unknown>,
   ): Promise<void>;
+  retire(name: string): Promise<void>;
   start(): void;
   close(): Promise<void>;
 }
@@ -62,6 +63,14 @@ export function createPeriodicJobs(opts: {
       });
       workers.push(worker);
       if (started) void worker.run();
+    },
+
+    async retire(name) {
+      const queue = new Queue(`${PERIODIC_QUEUE_PREFIX}${name}`, {
+        connection: opts.connection,
+      });
+      await queue.obliterate({ force: true });
+      await queue.close();
     },
 
     start() {

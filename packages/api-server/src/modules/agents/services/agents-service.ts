@@ -532,6 +532,11 @@ export interface ResizeGatePort {
   ): Promise<void>;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: refuses a new vm agent, or a move onto the vm backend, when its owner's shared storage is too full to hold one; it throws the refusal the caller sees.
+export interface StorageGatePort {
+  assertCanCreateVm(): Promise<void>;
+}
+
 export function createAgentsService(deps: {
   repo: AgentsRepository;
   agentEnvRepo: AgentEnvRepository;
@@ -550,10 +555,12 @@ export function createAgentsService(deps: {
   agentDefaultStorageSize?: string;
   agentDefaultMounts: readonly AgentMount[];
   virtualizationEnabled?: boolean;
+  vmForced?: boolean;
   defaultHarness?: string;
   telemetry?: boolean;
   runtimeMigrationRetentionMs?: number | null;
   resizeGate?: ResizeGatePort;
+  storageGate?: StorageGatePort;
   resizeLock: <T>(key: string, fn: () => Promise<T>) => Promise<T>;
   grantProvisioner?: {
     resolveSpecGrants(sel: {
@@ -723,7 +730,11 @@ export function createAgentsService(deps: {
     if (!infra.templateId) return undefined;
     const tmpl = await deps.readTemplateSpec(infra.templateId);
     if (!tmpl) return undefined;
-    return templateImageUpdate(infra.spec.image, tmpl.spec.image);
+    return templateImageUpdate(
+      infra.spec.image,
+      tmpl.spec.image,
+      infra.imageUpdateRefused,
+    );
   }
 
   async function project(
@@ -960,7 +971,11 @@ export function createAgentsService(deps: {
           deps.agentIdleTimeoutMinutes,
           status?.preparingWorkspace ?? false,
           templateImage
-            ? templateImageUpdate(infra.spec.image, templateImage)
+            ? templateImageUpdate(
+                infra.spec.image,
+                templateImage,
+                infra.imageUpdateRefused,
+              )
             : undefined,
           status?.features ?? runtimeFeaturesOf(null),
           status?.unsupportedKinds ?? [],
@@ -983,6 +998,7 @@ export function createAgentsService(deps: {
     }),
 
     async create(input: AgentCreateInput) {
+      const vm = input.vm === true || deps.vmForced === true;
       let spec: Record<string, unknown>;
       let templateId: string | undefined;
       let templateProviders: readonly string[] | undefined;
@@ -1012,7 +1028,7 @@ export function createAgentsService(deps: {
             description: input.description,
             size: input.size,
             storage: input.storage,
-            vm: input.vm,
+            vm,
           },
           deps.agentDefaultLimits,
         );
@@ -1031,7 +1047,7 @@ export function createAgentsService(deps: {
             description: input.description,
             size: input.size,
             storage: input.storage,
-            vm: input.vm,
+            vm,
           },
           deps.agentDefaultLimits,
         );
@@ -1044,6 +1060,7 @@ export function createAgentsService(deps: {
             "this agent would run as its own microVM, which is not enabled on this install (virtualization.enabled)",
         });
       }
+      if (backend?.type === "vm") await deps.storageGate?.assertCanCreateVm();
       const templateEnv = seedTelemetryIdentity(
         (spec.env as EnvVar[] | undefined) ?? [],
         input.name,
@@ -1058,7 +1075,8 @@ export function createAgentsService(deps: {
         );
       if (input.telemetryAttributionId !== undefined)
         spec.telemetryAttributionId = input.telemetryAttributionId;
-      if (input.requireConnectionAddress) spec.requireConnectionAddress = true;
+      if (input.requireConnectionAddress !== false)
+        spec.requireConnectionAddress = true;
 
       const providerConnectionId =
         input.providerConnectionId ??
@@ -1473,6 +1491,7 @@ export function createAgentsService(deps: {
     },
 
     async migrateRuntime(id) {
+      await deps.storageGate?.assertCanCreateVm();
       const result = await executeRuntimeMigration({
         ...runtimeMigrationWrites,
         migration: runtimeMigrationContext,
@@ -1504,7 +1523,6 @@ export function createAgentsService(deps: {
       return ok(
         runtimeMigrationPlan(infra, {
           ...runtimeMigrationContext,
-          defaultStorageSize: deps.agentDefaultStorageSize ?? "10Gi",
           retentionMs: deps.runtimeMigrationRetentionMs ?? null,
         }),
       );

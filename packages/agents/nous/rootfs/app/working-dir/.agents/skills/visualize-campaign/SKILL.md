@@ -16,6 +16,7 @@ Visualize a Nous campaign as an interactive knowledge graph.
   The canonical wiki data is NOT modified.
 
 Examples:
+
 - `/visualize-campaign epp-ttft-slope-detector`
 - `/visualize-campaign epp-ttft-slope-detector :: explain like I'm a novice`
 - `/visualize-campaign blis-search-algo2 :: brief and technical, no jargon expansion`

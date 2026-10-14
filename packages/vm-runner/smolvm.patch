@@ -1,7 +1,71 @@
+diff --git i/crates/smolvm-network/src/stack.rs w/crates/smolvm-network/src/stack.rs
+index 29ad5bc..15d51e2 100644
+--- i/crates/smolvm-network/src/stack.rs
++++ w/crates/smolvm-network/src/stack.rs
+@@ -830,7 +830,7 @@ fn relay_accepted_tcp_connection(
+                 Ok(connection) => {
+                     let guest_destination =
+                         SocketAddr::new(std::net::IpAddr::V4(guest_ipv4), connection.guest_port);
+-                    virtio_net_log!(
++                    tracing::debug!(
+                         "virtio-net: accepted published TCP connection peer={} host_port={} guest_destination={}",
+                         connection.peer_addr,
+                         connection.host_port,
 diff --git i/crates/smolvm-network/src/tcp_relay.rs w/crates/smolvm-network/src/tcp_relay.rs
-index 76b13688..95b89bf7 100644
+index 76b1368..dad5d21 100644
 --- i/crates/smolvm-network/src/tcp_relay.rs
 +++ w/crates/smolvm-network/src/tcp_relay.rs
+@@ -867,7 +867,7 @@ pub fn spawn_tcp_relay(
+     exit_state: RelayExitState,
+ ) -> io::Result<()> {
+     let thread_name = format!("smolvm-tcp-{}", destination.port());
+-    virtio_net_log!(
++    tracing::debug!(
+         "virtio-net: host TCP relay thread spawn attempt destination={} thread={}",
+         destination,
+         thread_name
+@@ -929,7 +929,7 @@ fn run_tcp_relay(
+ ) {
+     // The relay thread is intentionally isolated from smoltcp internals. Its
+     // contract is just channels in, channels out, and an exit code back.
+-    virtio_net_log!(
++    tracing::debug!(
+         "virtio-net: host TCP relay thread started destination={}",
+         destination
+     );
+@@ -943,7 +943,7 @@ fn run_tcp_relay(
+         &exit_state,
+     ) {
+         Ok(mode) => {
+-            virtio_net_log!(
++            tracing::debug!(
+                 "virtio-net: host TCP relay thread exited destination={} mode={:?}",
+                 destination,
+                 mode
+@@ -984,12 +984,12 @@ fn tcp_relay_loop(
+     let mut pending_guest_data: Option<(Vec<u8>, usize)> = None;
+     let stream = match relay_target {
+         RelayTarget::Connect(destination) => {
+-            virtio_net_log!(
++            tracing::debug!(
+                 "virtio-net: connecting host TCP relay socket destination={}",
+                 destination
+             );
+             let stream = TcpStream::connect(destination)?;
+-            virtio_net_log!(
++            tracing::debug!(
+                 "virtio-net: host TCP relay socket connected destination={}",
+                 destination
+             );
+@@ -999,7 +999,7 @@ fn tcp_relay_loop(
+             TcpStream::connect_timeout(&destination, INTERCEPT_VERDICT_TIMEOUT)?
+         }
+         RelayTarget::Attached(stream) => {
+-            virtio_net_log!(
++            tracing::debug!(
+                 "virtio-net: using accepted host TCP socket for published port guest_destination={} peer_addr={:?} local_addr={:?}",
+                 destination,
+                 stream.peer_addr().ok(),
 @@ -1345,6 +1345,22 @@ fn relay_stream(
              poller.modify(stream, interest)?;
              events.clear();

@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-10-12
+Last verified: 2026-10-14
 
 ## Overview
 
@@ -106,15 +106,15 @@ flowchart LR
   **Whether the install can run one is a capability, not a preference, and it decides visibility**: a `vm` kit is left out of the listing and reads as absent on a read when `virtualization.enabled` is off, for the same reason a disabled built-in kit never reaches the UI — a catalog that offers what this install cannot run wastes the user's time and ends in a parked agent.
   The **per-user** flag is treated the opposite way.
   `vm-sandboxes` is progressive disclosure rather than authorization ([features](features.md)), so it hides nothing here and shows a **New sandbox runtime** badge instead: the kit's own declaration is what makes the agent a microVM, the user is told which runtime they are getting before they create it, and the same kit is on offer to everyone on the install rather than appearing and disappearing with a settings toggle.
-  A kit that names no backend is created on whichever one the install and the user's own flag would have given it.
+  A kit that names no backend is created as a container, even for an owner who opted into the new runtime, unless the install pins the new runtime on: that pin is the install's choice, not a preference, and makes every create a microVM ([features](features.md)), so every kit then carries the badge.
 - **Kit Egress** — optional `egressPreset` (`none`, `trusted` or `all`, the presets an agent's egress settings offer) and `egressRules`, a list of host rules in the shape a hand-written rule takes (`host`, optional `port`, `method`, `pathPattern`, `verdict`, which defaults to `allow`).
   Apply passes the preset to the create, which seeds from it exactly as when the user picks one; a kit that names none gets the create's default (`trusted`).
   The rules are then written with source `kit`, before anything else the apply queues, so the first session already runs under them.
   A kit rule on a tuple the preset already holds takes that row over, so switching presets later never drops it; a rule whose verdict contradicts the row already there fails the apply, which then deletes the Agent, because the kit's intent would otherwise be lost without a word.
   Both are a create-time seed, not a lock: the rules are the owner's from then on and are edited like any agent's ([security-and-credentials](security-and-credentials.md)).
-- **Kit Credential Injection** — optional `requireConnectionAddress: true`: the Agent's gateway injects a Connection's credential only into a request that names that Connection, and leaves every other request with the credential it carries ([connections](connections.md)).
-  It is for a kit whose agent runs tools, like Docker containers or nested agents, that call the same services with their own credentials or none.
-  A kit sets it whatever the creating user's feature flags say; agent settings show the same switch only behind one.
+- **Kit Credential Injection** — optional `requireConnectionAddress`: with it on, the Agent's gateway injects a Connection's credential only into a request that names that Connection, and leaves every other request with the credential it carries ([connections](connections.md)).
+  A new agent has it on by default, so a kit that names nothing gets that; `true` says so explicitly, and `false` turns it off for an agent whose tools need credentials added to requests that name no Connection.
+  Agent settings show the same switch, so the owner can change it later.
 - **Install Command** — optional `install.command`: shell the agent-runtime runs once in the new agent's workspace, queued as a `workspace-command` event right after create and before anything else the apply queues, so a bootstrap has run by the time the initialization session opens.
   The command runs as the kit wrote it: every harness image states the family it runs in `PLATFORM_HARNESS` (`claude-code`, `codex`, `pi`, `bob`), set as an image `ENV` so the harness, the install command and terminal shells all inherit it; a bootstrap reads that instead of being told, and detects the harness itself on an image that carries none.
   The command runs **inside the agent's own sandbox** — the same pod, grants and egress rules under which the harness already executes whatever the kit's `ONBOARDING.md` asks of it — so a kit from any catalog may declare one; what it can never do is widen the platform-enforced boundary (the invariant below).
@@ -131,7 +131,7 @@ flowchart LR
   It is stated in the user-facing vocabulary and nothing else: limits are what an agent's power and its owner's Ceiling are measured in, so a kit never states requests — the controller derives those from the limits.
   Each dimension is independent and a stated one wins over the harness Template's own value, so a kit sizes its workload whether it brings an image or runs on a harness Template; an omitted dimension inherits the Template's, then the install default.
   CPU and memory stay editable on the Agent afterwards like any other Size; disk is fixed at create.
-  A kit on the `vm` backend gets only its disk: a machine has no CPU or memory size of its own and shares its owner's [pool](vm-memory.md).
+  A kit on the `vm` backend, or any kit on an install that pins the new runtime on, gets none of it and shows no size: a machine has no CPU, memory or disk size of its own and shares its owner's [memory](vm-memory.md) and [storage](persistence.md) pools.
   This is where the sizing the `preconfigured` Templates used to carry now lives.
 - **Seed** — optional `seed: { url, ref, into }`: the kit's definition repository.
   The catalog refresh resolves the ref to a commit and records it beside the declared ref (`seed.commit`), and apply hands both to the agent create as its workspace seed, so the `workspace-seed` event brings the repository in at that commit **on that branch**, tracking `origin/<ref>` — the same rail a plain create's `gitRepo` rides — ahead of `install` and the initialization session.

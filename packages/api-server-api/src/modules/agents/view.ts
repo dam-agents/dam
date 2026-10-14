@@ -14,6 +14,7 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
     templateUpdate: agent.templateUpdate ?? null,
     features: agent.features,
     image: agent.spec.image,
+    harness: agent.spec.harness,
     description: agent.spec.description,
     avatar: agent.spec.avatar ?? null,
     env: agent.spec.env,
@@ -26,11 +27,13 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
     stopRequested: agent.stopRequested,
     overBudget: agent.overBudget,
     overBudgetMessage: agent.overBudgetMessage,
+    ...(agent.reclaimed ? { reclaimed: agent.reclaimed } : {}),
     size: {
       cpu: agent.spec.resources?.limits?.cpu,
       memory: agent.spec.resources?.limits?.memory,
     },
     podTerminationReason: agent.podTerminationReason,
+    podTerminationCode: agent.podTerminationCode,
     notReadyMessage: agent.notReadyMessage,
     podRestarts: agent.podRestarts,
     podRestartReason: agent.podRestartReason,
@@ -87,8 +90,6 @@ export function runtimeMigrationRefusalReasons(
 export function toRuntimeMigrationPlanView(plan: RuntimeMigrationPlan) {
   return {
     unmovable: plan.unmovable,
-    storageSize: plan.storageSize,
-    storageResized: plan.storageResized,
     bootsSleepingAgent: plan.bootsSleepingAgent,
     retentionMs: plan.retentionMs,
     allowed: plan.refusal === null,

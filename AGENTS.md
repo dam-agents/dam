@@ -70,6 +70,11 @@ Proposed ideal flow for new features — see [`docs/guidelines/work-process.md`]
   Same type prefixes as commits.
 - **Pull requests**: open them with the [`pr-open`](.agents/skills/pr-open/SKILL.md) skill (self-review, checks, body with the `author-decisions` block).
   A Claude Code hook denies opening a PR until the skill is loaded.
+- **Web UI proof**: a pull request that changes what the web UI (`packages/ui`) shows or does carries screenshots or a recording of the change in the running app, in its body or its first comment.
+  A reviewer cannot see a UI change from the diff.
+  Bring the app up on the local cluster ([`cluster-ops`](.agents/skills/cluster-ops/SKILL.md), or [`ccweb`](.agents/skills/ccweb/SKILL.md) in a sandbox) and capture with agent-browser or Playwright.
+  Without a way to upload images, commit them to an orphan branch `screenshots/<branch>` and link `https://raw.githubusercontent.com/<owner>/<repo>/<commit>/<file>`.
+  The app cannot run where you are: open the pull request anyway, and say so in its body with what blocked it.
 - **Upstream skills**: `pr-open` and `review-remediation` are vendored from code-guardian and pinned in `.agents/upstream-skills.json`.
   Never edit them here: change them upstream, then `mise run skills:update`.
   Put dam-specific behavior in the skills that call them (`babysit`, …).

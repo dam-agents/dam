@@ -2,7 +2,8 @@
 name: implement-feature
 description: >
   Implement a feature from the plan that plan-feature produced under docs/plan/<feature>/, one
-  reviewed sub-issue at a time. Use when the user wants to implement or build a feature from a
+  reviewed sub-issue at a time.
+  Use when the user wants to implement or build a feature from a
   docs/plan/<feature>/ plan or a planned GitHub issue.
 ---
 

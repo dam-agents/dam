@@ -1,7 +1,14 @@
 import type { Context } from "hono";
+import { AGENT_UNREACHABLE, type AgentUnreachableBody } from "api-server-api";
 import { getLogger } from "../../../core/logger.js";
+import { formatError } from "../../../core/format-error.js";
+import {
+  hasErrorCode,
+  retryWhileUnreachable,
+} from "../../../core/retry-unreachable.js";
 import { securityLog } from "../../../core/security-log.js";
 import {
+  describeWakeFailure,
   isAgentStoppedError,
   isAgentWakeTimeoutError,
 } from "../../../modules/agents/index.js";
@@ -13,11 +20,47 @@ export interface AgentTrpcProxyDeps {
   namespace: string;
   verifyOwner: (agentId: string, ownerSub: string) => Promise<boolean>;
   ensureReady: (agentId: string) => Promise<unknown>;
+  upstreamBase?: (agentId: string) => string;
+}
+
+const CONNECT_RETRY_BUDGET_MS = 2_000;
+const CONNECT_RETRY_FIRST_DELAY_MS = 100;
+const CONNECT_RETRY_MAX_DELAY_MS = 800;
+const REPLAYABLE_BODY_MAX_BYTES = 1024 * 1024;
+const NEVER_REACHED_CODES = new Set([
+  "ECONNREFUSED",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "UND_ERR_CONNECT_TIMEOUT",
+]);
+const MAYBE_REACHED_CODES = new Set(["ECONNRESET", "EPIPE", "UND_ERR_SOCKET"]);
+
+function retryableFor(method: string, replayable: boolean) {
+  if (method === "GET" || method === "HEAD")
+    return (err: unknown) =>
+      hasErrorCode(err, NEVER_REACHED_CODES) ||
+      hasErrorCode(err, MAYBE_REACHED_CODES);
+  if (replayable)
+    return (err: unknown) => hasErrorCode(err, NEVER_REACHED_CODES);
+  return () => false;
+}
+
+async function replayableBody(req: Request): Promise<BodyInit | null> {
+  if (req.method === "GET" || req.method === "HEAD") return null;
+  const length = Number(req.headers.get("content-length") ?? NaN);
+  return length <= REPLAYABLE_BODY_MAX_BYTES
+    ? new Uint8Array(await req.arrayBuffer())
+    : req.body;
 }
 
 type ProxyCtx = Context<{ Variables: ApiVariables }>;
 
 export function createAgentTrpcProxy(deps: AgentTrpcProxyDeps) {
+  const upstreamBase =
+    deps.upstreamBase ??
+    ((agentId: string) => `http://${podBaseUrl(agentId, deps.namespace)}`);
   return async (c: ProxyCtx) => {
     const user = c.get("user");
     const agentId = c.req.param("id")!;
@@ -57,38 +100,65 @@ export function createAgentTrpcProxy(deps: AgentTrpcProxyDeps) {
         { agentId, error: (err as Error).message },
         "trpc-proxy.ensure-ready.failed",
       );
-      return c.json(
-        {
-          error: "agent unreachable",
-          ...(isAgentWakeTimeoutError(err) ? { reason: err.failure.kind } : {}),
-          ...(isAgentStoppedError(err) ? { reason: "stopped" } : {}),
-        },
-        502,
-      );
+      const body: AgentUnreachableBody = {
+        error: AGENT_UNREACHABLE,
+        ...(isAgentWakeTimeoutError(err)
+          ? {
+              reason: err.failure.kind,
+              message: describeWakeFailure(err.failure),
+            }
+          : {}),
+        ...(isAgentStoppedError(err)
+          ? { reason: "stopped", message: "the agent is stopped" }
+          : {}),
+      };
+      return c.json(body, 502);
     }
 
     const rest = c.req.path.replace(`/api/agents/${agentId}/trpc`, "");
     const qs = c.req.url.includes("?") ? "?" + c.req.url.split("?")[1] : "";
-    const upstreamUrl = `http://${podBaseUrl(agentId, deps.namespace)}/api/trpc${rest}${qs}`;
+    const upstreamUrl = `${upstreamBase(agentId)}/api/trpc${rest}${qs}`;
+    const headers = new Headers(c.req.raw.headers);
+    headers.delete("host");
+    headers.delete("authorization");
     try {
-      const headers = new Headers(c.req.raw.headers);
-      headers.delete("host");
-      headers.delete("authorization");
-      const upstream = await fetch(upstreamUrl, {
-        method: c.req.method,
-        headers,
-        body:
-          c.req.method !== "GET" && c.req.method !== "HEAD"
-            ? c.req.raw.body
-            : undefined,
-        // @ts-expect-error -- node fetch supports duplex
-        duplex: "half",
-      });
+      const body = await replayableBody(c.req.raw);
+      const replayable = !(body instanceof ReadableStream);
+      const upstream = await retryWhileUnreachable(
+        "trpc-proxy",
+        () =>
+          fetch(upstreamUrl, {
+            method: c.req.method,
+            headers,
+            body,
+            // @ts-expect-error -- node fetch supports duplex
+            duplex: "half",
+          }),
+        {
+          budgetMs: CONNECT_RETRY_BUDGET_MS,
+          delayMs: CONNECT_RETRY_FIRST_DELAY_MS,
+          maxDelayMs: CONNECT_RETRY_MAX_DELAY_MS,
+          retryable: retryableFor(c.req.method, replayable),
+          log: (msg) => getLogger().info({ agentId }, msg),
+        },
+      );
       return new Response(upstream.body, {
         status: upstream.status,
         headers: upstream.headers,
       });
-    } catch {
+    } catch (err) {
+      getLogger().warn(
+        {
+          agentId,
+          method: c.req.method,
+          error: formatError(err),
+          cause:
+            err instanceof Error && err.cause
+              ? formatError(err.cause)
+              : undefined,
+        },
+        "trpc-proxy.upstream.failed",
+      );
       return c.json({ error: "agent unreachable" }, 502);
     }
   };

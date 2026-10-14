@@ -1,5 +1,6 @@
 import {
   keepPreviousData,
+  type QueryMeta,
   skipToken,
   useQueries,
   useQuery,
@@ -19,6 +20,7 @@ export function useSpendBreakdown(
   to: string,
   timeZone: string,
   agentId?: string,
+  meta?: QueryMeta,
 ) {
   const [metricsDisabled, setMetricsDisabled] = useState(false);
   const query = useQuery({
@@ -29,6 +31,7 @@ export function useSpendBreakdown(
       ...(agentId ? { agentId } : {}),
     }),
     enabled: !metricsDisabled,
+    meta,
     staleTime: 60_000,
     retry: false,
     placeholderData: (previous, previousQuery) =>
@@ -44,6 +47,7 @@ export function useSpendBreakdown(
   return {
     data: query.data,
     isPending: query.isPending,
+    isFetching: query.isFetching,
     isError: query.isError,
     isPlaceholderData: query.isPlaceholderData,
     isUnavailable,

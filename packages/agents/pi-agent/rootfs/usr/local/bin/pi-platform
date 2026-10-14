@@ -51,4 +51,5 @@ if [ -n "$provider" ] && [ -z "$model" ]; then
 fi
 [ -z "$provider" ] || [ -z "$model" ] || set -- "$@" --provider "$provider"
 [ -z "$model" ] || set -- "$@" --model "$model"
-exec pi -e /usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts "$@"
+extensions=/usr/local/share/pi-platform/extensions
+exec pi -e "$extensions/pi-dynamic-providers/index.ts" -e "$extensions/pi-platform-telemetry/index.ts" "$@"

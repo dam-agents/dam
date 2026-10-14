@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { avatarCharacter, SLACK_EMOJI_INDEX } from "api-server-api/avatar/svg";
 import type { TtlStore } from "../../../core/ttl-store.js";
+import {
+  annotateSpan,
+  inBackgroundSpan,
+} from "../../../core/background-span.js";
 import type { ChannelTurnAttendance } from "../../../core/turn-attendance.js";
 import {
   addressedGuidance,
@@ -1026,6 +1030,7 @@ export interface SlackWorker {
     instanceName: string,
     query: AttachmentQuery,
   ): Promise<AttachmentResult | { error: string }>;
+  notifyPerson(keycloakSub: string, text: string): Promise<{ sent: number }>;
 }
 
 export interface SlackOAuthPending {
@@ -2745,7 +2750,15 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     });
   }
 
-  async function relayOwnerTurn(ctx: {
+  function relayOwnerTurn(ctx: Parameters<typeof runOwnerTurn>[0]) {
+    return inBackgroundSpan(
+      "channel.turn",
+      { "platform.channel": "slack", "platform.channel.ambient": false },
+      () => runOwnerTurn(ctx),
+    );
+  }
+
+  async function runOwnerTurn(ctx: {
     instanceName: string;
     channel: string;
     threadTs: string;
@@ -3071,6 +3084,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           watchTurn(nudgeSessionId, settledRefs, false, { endedAs: "clean" });
       }
       await presenter.clearStatus();
+      annotateSpan({
+        "platform.channel.outcome": outcome,
+        ...(failureReason !== undefined && {
+          "platform.channel.failure_reason": failureReason,
+        }),
+      });
       emit({
         type: EventType.ChannelTurnRelayed,
         channel: "slack",
@@ -4918,7 +4937,15 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     });
   }
 
-  async function relayAmbientTurn(args: {
+  function relayAmbientTurn(args: Parameters<typeof runAmbientTurn>[0]) {
+    return inBackgroundSpan(
+      "channel.turn",
+      { "platform.channel": "slack", "platform.channel.ambient": true },
+      () => runAmbientTurn(args),
+    );
+  }
+
+  async function runAmbientTurn(args: {
     instanceName: string;
     channel: string;
     teamId: SlackWorkspace;
@@ -5112,6 +5139,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         for (const sid of seenSessionIds)
           turnRecovery.dismiss(args.instanceName, sid);
       }
+      annotateSpan({
+        "platform.channel.outcome": outcome,
+        ...(failureReason !== undefined && {
+          "platform.channel.failure_reason": failureReason,
+        }),
+      });
       emit({
         type: EventType.ChannelTurnRelayed,
         channel: "slack",
@@ -6309,6 +6342,46 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       } finally {
         fetched.release();
       }
+    },
+
+    async notifyPerson(keycloakSub: string, text: string) {
+      const links = await identityLinks.externalLinksOf("slack", keycloakSub);
+      if (links.length === 0) return { sent: 0 };
+      const gw = await ensureGateway();
+      if (!gw) return { sent: 0 };
+      const active = await listWorkspaces();
+      let sent = 0;
+      for (const link of links) {
+        const teamId =
+          link.teamId ?? (active.length === 1 ? active[0] : undefined);
+        if (
+          teamId === undefined ||
+          (teamId !== "" && !active.includes(teamId))
+        ) {
+          process.stderr.write(
+            `[slack] no workspace to notify ${link.externalUserId} in\n`,
+          );
+          continue;
+        }
+        if (!(await hasScope(gw, teamId, "im:write"))) {
+          process.stderr.write(
+            `[slack] workspace ${teamId} did not grant im:write; cannot notify ${link.externalUserId}\n`,
+          );
+          continue;
+        }
+        try {
+          const channel = await gw.openDirectMessage(
+            link.externalUserId,
+            teamId,
+          );
+          if (await gw.postMessage({ channel, text, teamId })) sent++;
+        } catch (err) {
+          process.stderr.write(
+            `[slack] could not notify ${link.externalUserId}: ${formatError(err)}\n`,
+          );
+        }
+      }
+      return { sent };
     },
   };
 }
