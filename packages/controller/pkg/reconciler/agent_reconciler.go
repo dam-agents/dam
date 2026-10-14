@@ -382,10 +382,12 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			secretRefused = refusal
 		}
 		machineRuns := running
+		pairAtRest := false
 		if !running && !hardStop && !parked && !migration.holdsDown() {
 			if machineRuns, err = r.pairAwake(ctx, name); err != nil {
 				return r.setError(ctx, name, fmt.Sprintf("reading gateway statefulset: %v", err))
 			}
+			pairAtRest = !machineRuns && !migration.active()
 		}
 		machine, runnerReached, err = r.reconcileVMAgent(ctx, agent, ownerRef, gatewayIP, machineRuns && migration.machineMayRun(), true)
 		if stderrors.Is(err, errLeafSecretPending) || stderrors.Is(err, errRunnerTLSPending) {
@@ -397,6 +399,12 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		}
 		r.noteMachineUse(name, machine)
 		timer.mark("vmMachine")
+		// UNIT_BOUNDARY_DESCRIPTION: the hibernation the idle checker or reclaim began, finished once the runner reports the machine stopped; until then the agent reads as not ready, so a wake waits for readiness instead of trusting the first health check answer.
+		if pairAtRest && runnerReached && machineStopped(machine) && (lastReady == nil || lastReady.Reason != apiv1.ReasonHibernated) {
+			if err := publishHibernated(ctx, r.dynamic, r.config.Namespace, name); err != nil {
+				return fmt.Errorf("agent %s: publishing hibernation: %w", name, err)
+			}
+		}
 		if migration.active() {
 			migration.held = runtimeMigrationBootHeld(migration, hardStop, overBudget)
 			if err := r.continueRuntimeMigration(ctx, agent, migration, machine, runnerReached, nil); err != nil {

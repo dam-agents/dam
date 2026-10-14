@@ -173,6 +173,7 @@ When the status already holds the agent side ready and only the gateway was miss
 Only the idle checker or [reclaim](vm-memory.md) hibernates it, not a lapsed timeout.
 An unreachable runner does not hold the gateway up, but the Agent is published hibernated only once its runner has confirmed the machine stopped.
 Until then its readiness is down and it reads as starting, the Agent's next reconcile stops the machine once the runner answers, and the idle checker tries the hibernation again on each sweep.
+A runner that took the stop answers before its guest has powered off, so the Agent reads the same way while the machine is stopping, and its reconcile publishes hibernation once the runner reports the machine stopped.
 Whether an Agent is "idle" is **derived from observed activity, never stored** — there is no desired-state flag — and the derivation is split across two independent checks.
 
 **The decision.** The controller's idle checker scans Agents on a timer whose interval scales with the *shortest effective timeout it saw last sweep* — an Agent that chooses a window far below the cluster-wide default is swept inside its own window rather than at the default's pace, subject to a floor that keeps the sweep off the API server's back.
