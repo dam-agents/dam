@@ -2051,6 +2051,33 @@ async fn a_machine_on_a_node_cache_boots_the_tree_the_service_unpacked() {
     );
 }
 
+// TEST_SCENARIO: a hibernated agent's machine must not keep its tree on the node cache, or every deploy would leave one retired image per stopped machine held until the service refuses every fetch. Once the machine is stopped the runner holds nothing for it, the service evicts the tree, and the next start fetches it again and boots.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stopped_machine_holds_nothing_and_fetches_its_tree_again_on_start() {
+    let h = Harness::with("nc-stop", on_node_cache);
+    let (service, _stop) = node_service(&h, Duration::from_millis(300)).await;
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    h.server.put("m1", spec(false)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_STOPPED);
+
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let server = h.server.clone();
+    tokio::task::spawn_blocking(move || server.hold_images())
+        .await
+        .unwrap();
+    service.evict(None);
+    assert!(
+        !h.entry("m1").exists(),
+        "a stopped machine kept its tree held"
+    );
+
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    assert!(h.entry("m1").join(ROOTFS_DIR).join("hello").exists());
+    assert_eq!(h.crane_log("export"), 2, "the start fetched the tree again");
+}
+
 // TEST_SCENARIO: with the node's service down, a new image cannot be resolved, checked or fetched, so a machine of it is refused as an image problem that says why, and nothing is booted straight from the registry. A machine of an image another of this runner's machines already boots still starts, from the tree that machine holds, which is only read.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_node_cache_that_cannot_be_reached_boots_only_what_the_runner_holds() {
