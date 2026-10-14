@@ -3,6 +3,7 @@ package reconciler
 
 import (
 	"context"
+	"net/http"
 	"net/http/httptest"
 	"sort"
 	"testing"
@@ -125,6 +126,9 @@ func TestAChangedRunnerPodRollsOneOwnerAtATime(t *testing.T) {
 
 	nodes["owner-a"].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-b"), "the first runner's machines are asked about on its own owner's turn only")
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-b"), "the first runner settled, so the next one rolls")
 
 	a, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, r.runnerName("owner-a"), metav1.GetOptions{})
@@ -228,6 +232,7 @@ func TestAMachineWhoseAgentIsGoneDoesNotHoldTheRoll(t *testing.T) {
 	settleRunnerPod(t, r, "owner-a")
 	nodes["owner-a"].set("deleted-agent", vmrunner.MachineStatus{State: vmrunner.StateAbsent})
 
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-b"))
 }
@@ -442,15 +447,20 @@ func TestANewRunnerImageReachesEveryOwnerWithoutAPodRoll(t *testing.T) {
 	assert.Equal(t, runnerV1, namedRelease(t, r, "owner-b"), "only one runner hands off at a time")
 
 	nodes["owner-a"].release = vmrunner.RunnerRelease{Running: runnerV2, Target: runnerV2}
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV1, namedRelease(t, r, "owner-b"), "the first runner runs the release, but its agent has not had an ensure against it yet")
 
 	backdateHandoff(t, r, "owner-a", runnerHandoffObserve+time.Second)
 	nodes["owner-a"].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateCreating})
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV1, namedRelease(t, r, "owner-b"), "the first runner runs the release but its machine is not back")
 
 	nodes["owner-a"].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, namedRelease(t, r, "owner-b"), "the first runner's hand-off is settled on its own owner's turn only")
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
 	for _, owner := range []string{"owner-a", "owner-b"} {
 		assert.Equal(t, runnerV1, runnerImageOf(t, r, owner), "the pod keeps the image it started with")
@@ -520,7 +530,10 @@ func TestARunnerHandOffInTroubleHaltsTheRelease(t *testing.T) {
 			require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
 			trouble(t, r, nodes["owner-a"])
 
-			require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+			require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+			cm, err := r.client.CoreV1().ConfigMaps("test-agents").Get(ctx, r.runnerReleaseName("owner-a"), metav1.GetOptions{})
+			require.NoError(t, err)
+			assert.Contains(t, cm.Annotations, annRunnerHandoffStalled)
 			require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
 			assert.Equal(t, runnerV1, namedRelease(t, r, "owner-b"), "a stalled hand-off halts the release")
 
@@ -631,4 +644,74 @@ func aRunnerWithAnOutcomeIsNotRolled(t *testing.T, outcome vmrunner.RunnerReleas
 	r.runnerEndpoint = func(string) string { return "https://127.0.0.1:1" }
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"))
+}
+
+// TEST_SCENARIO: one owner's runner stops answering during a runner release, while its hand-off holds the place in the roll or while it decides whether to take one. Every owner's roll decision shares one lock, so a call to that runner under the lock would hold every other owner's agent starts for the call timeout. Another owner's turn still finishes at once: the hung runner delays only its own owner.
+func TestAHungRunnerDuringAReleaseHoldsUpNoOtherOwner(t *testing.T) {
+	for name, hangs := range map[string]func(*http.Request) bool{
+		"mid hand-off":           func(*http.Request) bool { return true },
+		"deciding its own place": func(req *http.Request) bool { return req.URL.Path != "/release" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			r, _ := setupRolloutReconciler(t)
+			r.config.VM.Runner.ReleaseHostPath = "/var/lib/platform-runner-releases"
+			for _, owner := range []string{"owner-a", "owner-b"} {
+				createRolloutRunner(t, r, owner)
+				require.NoError(t, r.applyRunnerDeployment(ctx, owner, r.runnerOwnerRef(ctx), true))
+			}
+			r.config.VM.Runner.Image = runnerV2
+			if name == "mid hand-off" {
+				require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+				require.Equal(t, runnerV2, namedRelease(t, r, "owner-a"))
+			}
+
+			entered, release := make(chan struct{}, 1), make(chan struct{})
+			hung := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				if !hangs(req) {
+					_, _ = w.Write([]byte("{}"))
+					return
+				}
+				select {
+				case entered <- struct{}{}:
+				default:
+				}
+				<-release
+			}))
+			t.Cleanup(hung.Close)
+			reachable := r.runnerEndpoint
+			r.runnerEndpoint = func(owner string) string {
+				if owner == "owner-a" {
+					return hung.URL
+				}
+				return reachable(owner)
+			}
+			delete(r.runners, "owner-a")
+			done := make(chan struct{})
+			go func() {
+				_ = r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), false)
+				close(done)
+			}()
+			t.Cleanup(func() {
+				close(release)
+				<-done
+			})
+			select {
+			case <-entered:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the hung owner's turn never called its runner")
+			}
+
+			finished := make(chan struct{})
+			go func() {
+				_ = r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true)
+				close(finished)
+			}()
+			select {
+			case <-finished:
+			case <-time.After(2 * time.Second):
+				t.Fatal("another owner's turn waited on the hung runner")
+			}
+		})
+	}
 }
