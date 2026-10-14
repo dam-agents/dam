@@ -164,6 +164,36 @@ export function formFieldsOf(schema: ElicitationSchema): FormField[] {
   return ordered;
 }
 
+type ChoiceField = Extract<FormField, { kind: "choice" }>;
+
+function otherReplacesPick(field: ChoiceField): boolean {
+  return field.otherKey === null && !field.multiple;
+}
+
+export function withPick(
+  field: ChoiceField,
+  answer: FieldAnswer,
+  value: string,
+): FieldAnswer {
+  return {
+    ...answer,
+    picked: [value],
+    ...(otherReplacesPick(field) && { other: "" }),
+  };
+}
+
+export function withOther(
+  field: ChoiceField,
+  answer: FieldAnswer,
+  other: string,
+): FieldAnswer {
+  return {
+    ...answer,
+    other,
+    ...(otherReplacesPick(field) && other.trim() !== "" && { picked: [] }),
+  };
+}
+
 function answerOf(answers: FormAnswers, key: string): FieldAnswer {
   return answers[key] ?? EMPTY_ANSWER;
 }

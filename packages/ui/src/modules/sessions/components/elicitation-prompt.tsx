@@ -14,6 +14,8 @@ import {
   type FormField,
   formFieldsOf,
   isFormComplete,
+  withOther,
+  withPick,
 } from "../lib/elicitation-form.js";
 import { ChatColumn } from "./chat-column.js";
 
@@ -89,7 +91,7 @@ function FieldInput({
       ) : (
         <RadioGroup
           value={answer.picked[0] ?? ""}
-          onValueChange={(v) => onChange({ ...answer, picked: [v] })}
+          onValueChange={(v) => onChange(withPick(field, answer, v))}
         >
           {field.options.map((o) => (
             <RadioGroupItem
@@ -112,7 +114,7 @@ function FieldInput({
         aria-label={`Other answer${field.title ? ` for ${field.title}` : ""}`}
         data-testid="elicitation-other"
         value={answer.other}
-        onChange={(e) => onChange({ ...answer, other: e.target.value })}
+        onChange={(e) => onChange(withOther(field, answer, e.target.value))}
       />
     </>
   );

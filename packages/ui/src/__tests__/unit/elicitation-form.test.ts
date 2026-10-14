@@ -7,6 +7,8 @@ import {
   formContentOf,
   formFieldsOf,
   isFormComplete,
+  withOther,
+  withPick,
 } from "../../modules/sessions/lib/elicitation-form.js";
 
 /**
@@ -167,6 +169,39 @@ describe("formContentOf", () => {
         }),
       ),
     ).toEqual({ region: "ap-south", tags: ["a", "c"] });
+  });
+});
+
+describe("withPick and withOther", () => {
+  /**
+   * TEST_SCENARIO: A single choice with no Other box of the agent's own: the
+   * typed text replaces the pick. So typing must clear the radio, and a new
+   * pick must clear the text, or the screen shows one answer and sends
+   * another. With the agent's own Other box both are kept, as a pick and a
+   * note.
+   */
+  it("should keep what is shown equal to what is sent", () => {
+    const [bare] = formFieldsOf({
+      type: "object",
+      properties: { region: { type: "string", enum: ["eu", "us"] } },
+    });
+    const [paired] = formFieldsOf(askUserQuestion);
+    if (bare?.kind !== "choice" || paired?.kind !== "choice")
+      throw new Error("expected choice fields");
+
+    const typed = withOther(bare, withPick(bare, EMPTY_ANSWER, "eu"), "ap");
+    expect(typed).toMatchObject({ picked: [], other: "ap" });
+    expect(withPick(bare, typed, "us")).toMatchObject({
+      picked: ["us"],
+      other: "",
+    });
+
+    const noted = withOther(
+      paired,
+      withPick(paired, EMPTY_ANSWER, "Redis"),
+      "note",
+    );
+    expect(noted).toMatchObject({ picked: ["Redis"], other: "note" });
   });
 });
 
