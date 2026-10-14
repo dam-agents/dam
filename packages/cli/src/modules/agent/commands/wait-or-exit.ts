@@ -1,3 +1,4 @@
+import { isStartRefusal } from "api-server-api";
 import type { AgentView } from "../domain/agent-view.js";
 import type { AgentService } from "../services/agent-service.js";
 import { fetchOrFallback } from "../services/fetch-or-fallback.js";
@@ -43,7 +44,7 @@ export async function waitForRunningOrExit(
       } else {
         const id = opts.showIdOnError ? ` (${waitResult.agent.id})` : "";
         process.stderr.write(
-          `error: agent "${opts.name}"${id} entered error state: ${failureReason(waitResult.agent)}\n`,
+          `error: agent "${opts.name}"${id} ${isStartRefusal(waitResult.agent.podTerminationCode) ? "could not start" : "entered error state"}: ${failureReason(waitResult.agent)}\n`,
         );
       }
       return process.exit(EXIT_RUNTIME_FAILURE);
@@ -68,6 +69,8 @@ export async function waitForRunningOrExit(
         );
         if (waitResult.agent.state === "over_budget")
           process.stderr.write(`${refusalReason(waitResult.agent)}\n`);
+        else if (waitResult.agent.podTerminationReason)
+          process.stderr.write(`${waitResult.agent.podTerminationReason}\n`);
       }
       return process.exit(EXIT_RUNTIME_FAILURE);
     case "transport":

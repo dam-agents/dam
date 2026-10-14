@@ -33,6 +33,7 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
       memory: agent.spec.resources?.limits?.memory,
     },
     podTerminationReason: agent.podTerminationReason,
+    podTerminationCode: agent.podTerminationCode,
     notReadyMessage: agent.notReadyMessage,
     podRestarts: agent.podRestarts,
     podRestartReason: agent.podRestartReason,

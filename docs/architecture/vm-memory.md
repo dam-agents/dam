@@ -77,6 +77,6 @@ Free-page reporting returns only whole 2 MiB blocks, so memory a program frees b
 
 **What can still go wrong.** Guests that grow faster than a second's sample and the seconds a hibernation takes can still take the runner over its limit, and the kernel then kills the runner with every machine of its owner.
 The pressure signal makes that rarer; it cannot rule it out.
-When it happens, each agent that was ready before the kill says that its owner's memory ran out, read off the runner pod's last termination, through the runner's restart and its machine's boot, until it is ready again or a more specific reason, such as a failed boot, replaces it; the owner sees it as a crash notice that asks them to pause agents they are not using.
+When it happens, each agent that was ready before the kill says that its owner's memory ran out, read off the runner pod's last termination, through the runner's restart and its machine's boot, until it is ready again or a more specific reason, such as a failed boot, replaces it; the owner sees one notice naming every agent that restarted, which asks them to pause agents they are not using.
 An agent woken after the kill carries nothing, and nothing on the agents records the kill once they are ready.
 The owner also gets one Slack direct message naming the agents that restarted, the [resource alert](budgets.md#resource-alerts) for the kill.

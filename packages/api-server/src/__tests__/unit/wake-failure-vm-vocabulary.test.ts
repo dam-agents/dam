@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { isStartRefusal, TerminationCode } from "api-server-api";
 import { describe, it, expect } from "vitest";
 import {
   POD_FAILURE_REASONS,
@@ -52,6 +53,15 @@ describe("the VM runner's failure reasons", () => {
           terminationReason: reason,
         }),
       ).not.toBe(fallback);
+    }
+  });
+});
+
+describe("the clients' refused-start codes", () => {
+  // TEST_SCENARIO: every code the UI and CLI call a refused start is one this module treats as a failed wake, so a client never says "can't start" for a code the server does not end a wake on, and a code dropped here fails here.
+  it("are all failure reasons", () => {
+    for (const code of Object.values(TerminationCode)) {
+      if (isStartRefusal(code)) expect(POD_FAILURE_REASONS).toContain(code);
     }
   });
 });

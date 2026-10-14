@@ -109,6 +109,7 @@ pub fn run(command: Vec<OsString>) -> ! {
     };
     std::thread::spawn(reclaim_cold_cache);
     std::thread::spawn(evict_scratch);
+    std::thread::spawn(trim_freed_blocks);
     supervise(&binary, &command, trust.as_deref())
 }
 
@@ -181,6 +182,59 @@ fn inactive_file(stat: &str) -> Option<u64> {
         .ok()
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the disk is a sparse file on the owner's claim, and a block the agent frees stays allocated there until it is trimmed. smolvm's guest agent trims only once free space has risen by a quarter GiB since its last trim, so a file rewritten in place or replaced by a renamed copy — free space back where it was, the new copy on other blocks — keeps the old copy's blocks counted for up to half an hour. Every TRIM_INTERVAL the disk is trimmed regardless: ext4 skips every block group that has freed nothing since its last trim, so a trim with nothing to return costs little. Machines boot at different times, so their trims do not run in step.
+const TRIM_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+// UNIT_BOUNDARY_DESCRIPTION: _IOWR('X', 121, struct fstrim_range), the same on every architecture a guest runs; the libc crate does not export it.
+const FITRIM: libc::c_ulong = 0xC018_5879;
+// UNIT_BOUNDARY_DESCRIPTION: free extents smaller than this are skipped, so a minute's trim sends no stream of tiny discards to the claim's storage.
+const TRIM_MIN_BYTES: u64 = 1 << 20;
+
+#[repr(C)]
+struct FstrimRange {
+    start: u64,
+    len: u64,
+    minlen: u64,
+}
+
+fn trim_freed_blocks() {
+    let home = match File::open(guest::AGENT_HOME) {
+        Ok(home) => home,
+        Err(e) => {
+            logf!(
+                "WARNING: opening {} ({e}); blocks the agent frees are not trimmed",
+                guest::AGENT_HOME
+            );
+            return;
+        }
+    };
+    let mut failing = false;
+    loop {
+        std::thread::sleep(TRIM_INTERVAL);
+        let mut range = FstrimRange {
+            start: 0,
+            len: u64::MAX,
+            minlen: TRIM_MIN_BYTES,
+        };
+        // SAFETY: `home` is an open file on the disk, and `range` is a live fstrim_range the kernel reads and writes back.
+        let rc = unsafe { libc::ioctl(home.as_raw_fd(), FITRIM as _, &mut range) };
+        if rc == 0 {
+            failing = false;
+            continue;
+        }
+        let error = io::Error::last_os_error();
+        if matches!(error.raw_os_error(), Some(libc::EOPNOTSUPP | libc::ENOTTY)) {
+            logf!("WARNING: the disk cannot be trimmed ({error}); blocks the agent frees stay counted until smolvm trims");
+            return;
+        }
+        if !failing {
+            logf!(
+                "WARNING: trimming the disk ({error}); retrying every {} s",
+                TRIM_INTERVAL.as_secs()
+            );
+        }
+        failing = true;
+    }
+}
 // UNIT_BOUNDARY_DESCRIPTION: the kernel refuses to move a mount out of a shared parent, and refuses pivot_root when either root's parent is shared. So the tree is made a slave before the disk is moved: mounts made elsewhere in the guest still arrive, and nothing this boot does leaves it. A private tree is left as it is.
 fn stop_propagation() {
     if let Err(e) = mount(Path::new(""), Path::new("/"), libc::MS_REC | libc::MS_SLAVE) {

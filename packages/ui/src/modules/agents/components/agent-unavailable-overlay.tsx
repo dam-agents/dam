@@ -16,6 +16,7 @@ import type {
 import { AgentAvatar } from "./avatar/agent-avatar.js";
 import { OverlayFrame } from "./overlay-frame.js";
 import { StartupTip } from "./startup-tip.js";
+import { TerminationReason } from "./termination-reason.js";
 import { VmRuntimeBadge } from "./vm-runtime-badge.js";
 
 const OVERLAY_ICON: Partial<Record<AgentDisplayState, typeof Asleep>> = {
@@ -128,12 +129,7 @@ export function AgentUnavailableOverlay({
           )}
         </div>
       )}
-      {agent.podTerminationReason && (
-        <p className="flex items-center gap-1.5 max-w-105 font-mono text-sm text-danger">
-          <Warning size={14} className="shrink-0" />
-          {agent.podTerminationReason}
-        </p>
-      )}
+      <TerminationReason agent={agent} size="sm" />
       {powerAction === "start" && (
         <Button onClick={() => wake(agent.id)}>
           <Play size={14} /> Start agent

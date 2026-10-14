@@ -2546,7 +2546,7 @@ async fn a_boot_whose_console_shows_a_full_home_reports_it() {
     let failed = h.settle("m1").await;
     assert_eq!(failed.reason, REASON_HOME_FULL, "{failed:?}");
     assert!(
-        failed.message.contains("the agent's disk is full"),
+        failed.message.contains("This agent's storage is full"),
         "{failed:?}"
     );
 }

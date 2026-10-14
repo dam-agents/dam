@@ -146,6 +146,7 @@ export interface InfraAgent {
   error?: string;
   reconciledReason?: string;
   podTerminationReason?: string;
+  podTerminationCode?: string;
   notReadyMessage?: string;
   podRestarts: number;
   podRestartReason?: string;
@@ -378,6 +379,12 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
       POD_FAILURE_REASONS.has(agentPod.reason)
         ? agentPod.message
         : undefined,
+    podTerminationCode:
+      agentPod?.status === "False" &&
+      agentPod.reason &&
+      POD_FAILURE_REASONS.has(agentPod.reason)
+        ? agentPod.reason
+        : undefined,
     notReadyMessage:
       agentPod?.status === "False" &&
       agentPod.message &&
@@ -442,6 +449,7 @@ export function assembleAgent(
     overBudgetMessage: infra.overBudgetMessage,
     ...(infra.reclaimed ? { reclaimed: infra.reclaimed } : {}),
     podTerminationReason: infra.podTerminationReason,
+    podTerminationCode: infra.podTerminationCode,
     notReadyMessage: infra.notReadyMessage,
     podRestarts: infra.podRestarts,
     podRestartReason: infra.podRestartReason,

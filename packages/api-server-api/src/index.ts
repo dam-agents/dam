@@ -106,7 +106,11 @@ export type {
   AgentSetupResources,
   AgentSetupSeed,
 } from "./modules/agents/setup.js";
-export { isProtectedAgentEnvName } from "./modules/agents/types.js";
+export {
+  isProtectedAgentEnvName,
+  isStartRefusal,
+  TerminationCode,
+} from "./modules/agents/types.js";
 export {
   runtimeMigrationRefusalReasons,
   toAgentView,
