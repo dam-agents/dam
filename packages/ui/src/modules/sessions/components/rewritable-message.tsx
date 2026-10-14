@@ -1,4 +1,5 @@
 import { Branch, Undo } from "@carbon/icons-react";
+import { joinRendererBlocks, separateRendererBlocks } from "api-server-api";
 import { type ReactNode, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -36,12 +37,13 @@ export function RewritableMessage({
   const setRewriting = useStore((s) => s.setRewriting);
   const [pending, setPending] = useState(false);
   const mode = rewriting?.messageId === message.id ? rewriting.mode : null;
+  const original = separateRendererBlocks(textOf(message));
 
   const save = async (text: string) => {
     if (mode === null) return;
     setPending(true);
     try {
-      await onRewrite(mode, text);
+      await onRewrite(mode, joinRendererBlocks(text, original.blocks));
     } catch (err) {
       emitToast({ kind: "error", message: extractErrorMessage(err) });
     } finally {
@@ -56,7 +58,7 @@ export function RewritableMessage({
           {EDITOR_COPY[mode].label}
         </span>
         <MessageEditor
-          initial={textOf(message)}
+          initial={original.text}
           pending={pending}
           canSave={enabled}
           saveLabel={EDITOR_COPY[mode].save}

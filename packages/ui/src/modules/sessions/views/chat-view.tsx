@@ -42,6 +42,11 @@ import {
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { AgentView, Message } from "../../../types.js";
+import { A2uiActionProvider } from "../../a2ui/contexts/a2ui-action-context.js";
+import { A2uiConversationProvider } from "../../a2ui/contexts/a2ui-conversation-context.js";
+import { useA2uiAutoReplies } from "../../a2ui/hooks/use-a2ui-auto-replies.js";
+import { useA2uiConversation } from "../../a2ui/hooks/use-a2ui-conversation.js";
+import { useChatFormsEnabled } from "../../a2ui/hooks/use-chat-forms-enabled.js";
 import { isQueuedSend, rewritePointsOf } from "../../acp/session-projection.js";
 import {
   useHarnessConfigCurrent,
@@ -136,6 +141,7 @@ import { Terminal } from "../components/terminal.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useChatArtifactPrompt } from "../hooks/use-chat-artifact-prompt.js";
+import { useChatFormPrompt } from "../hooks/use-chat-form-prompt.js";
 import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
 import { useOpenInitializationSession } from "../hooks/use-open-initialization-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
@@ -326,14 +332,15 @@ export function ChatView() {
     connectionState,
   } = useAcpSession(selectedAgent, textareaRef);
 
-  const sendArtifactPrompt = useChatArtifactPrompt({
+  const promptGate = {
     agentId: selectedAgent,
     sessionId,
     sessionMode,
     agentOperable,
     loadingSession,
     sendPrompt,
-  });
+  };
+  const sendArtifactPrompt = useChatArtifactPrompt(promptGate);
 
   const { openFileHandler } = useFileTree(selectedAgent);
   const { data: harnessCurrent } = useHarnessConfigCurrent(selectedAgent);
@@ -444,6 +451,24 @@ export function ChatView() {
       return sent;
     },
     [scrollToBottom, sendPrompt],
+  );
+
+  const sendFormPrompt = useChatFormPrompt({
+    ...promptGate,
+    sendPrompt: sendAndFollow,
+  });
+  const chatFormsEnabled = useChatFormsEnabled();
+  const a2uiConversation = useA2uiConversation(
+    messages,
+    sessionId ?? "",
+    chatFormsEnabled,
+  );
+  const { withRendererMetadata } = a2uiConversation;
+  useA2uiAutoReplies(a2uiConversation, sendFormPrompt);
+  const sendWithA2uiData = useCallback(
+    (...[text, ...rest]: Parameters<typeof sendPrompt>) =>
+      sendAndFollow(withRendererMetadata(text), ...rest),
+    [sendAndFollow, withRendererMetadata],
   );
 
   const pendingPrependRef = useRef<{
@@ -928,118 +953,126 @@ export function ChatView() {
                           )}
                         </div>
                       )}
-                    <DelegationOwnersProvider value={delegationOwners}>
-                      {items.map((item) => {
-                        if (item.kind === "divider") {
-                          return (
-                            <div
-                              key={item.key}
-                              className="flex items-center gap-3 py-2"
-                            >
-                              <span className="h-px flex-1 bg-border/60" />
-                              <span className="text-2xs text-muted-foreground">
-                                {dividerLabel(item, now)}
-                              </span>
-                              <span className="h-px flex-1 bg-border/60" />
-                            </div>
-                          );
-                        }
-                        if (userRuns.inner.has(item.message.id)) return null;
-                        const turn = turnForMessage.get(item.message.id);
-                        const members = userRuns.runs.get(item.message.id) ?? [
-                          item.message,
-                        ];
-                        const lastIndex = item.index + members.length - 1;
-                        const bubbles = members.map((m, k) => (
-                          <ChatMessage
-                            key={m.id}
-                            message={m}
-                            continued={k > 0}
-                            arriving={arrived.has(m.id)}
-                            avatarAgent={agentView ?? undefined}
-                            isLast={item.index + k === shown.length - 1}
-                            showModel={runStarts.length > 0}
-                            {...timeProps(m.at, now)}
-                            hasPendingPermission={hasPendingPermission}
-                            pendingNotice={
-                              item.index + k === shown.length - 1
-                                ? startNotice
-                                : undefined
+                    <A2uiActionProvider value={sendFormPrompt}>
+                      <A2uiConversationProvider value={a2uiConversation}>
+                        <DelegationOwnersProvider value={delegationOwners}>
+                          {items.map((item) => {
+                            if (item.kind === "divider") {
+                              return (
+                                <div
+                                  key={item.key}
+                                  className="flex items-center gap-3 py-2"
+                                >
+                                  <span className="h-px flex-1 bg-border/60" />
+                                  <span className="text-2xs text-muted-foreground">
+                                    {dividerLabel(item, now)}
+                                  </span>
+                                  <span className="h-px flex-1 bg-border/60" />
+                                </div>
+                              );
                             }
-                            onRetry={sendPrompt}
-                            onFileClick={openFileHandler}
-                            onDelete={deleteMessage}
-                            onLoadOlder={loadOlderKeepingScroll}
-                          />
-                        ));
-                        const chatMessage =
-                          members.length === 1 ? (
-                            bubbles[0]
-                          ) : (
-                            <div className="flex flex-col gap-2">{bubbles}</div>
-                          );
-                        const runMessage: Message =
-                          members.length === 1
-                            ? item.message
-                            : {
-                                ...item.message,
-                                parts: members.flatMap((m) =>
-                                  m.parts.filter((p) => p.kind === "text"),
-                                ),
-                              };
-                        const upTo = rewritePoints.get(item.message.id);
-                        const editingHere =
-                          rewriting?.messageId === item.message.id;
-                        const doomed =
-                          rewriting?.mode === "rewind" &&
-                          rewriteIndex !== -1 &&
-                          item.index > rewriteIndex;
-                        const content =
-                          canRewrite && rewritePoints.has(item.message.id) ? (
-                            <RewritableMessage
-                              message={runMessage}
-                              enabled={queueEmpty && !busy}
-                              onRewrite={(mode, text) =>
-                                rewriteFrom({
-                                  messageId: item.message.id,
-                                  upToMessageId: upTo,
-                                  mode,
-                                  text,
-                                  title: sessionView?.title ?? null,
-                                })
-                              }
-                            >
-                              {chatMessage}
-                            </RewritableMessage>
-                          ) : (
-                            chatMessage
-                          );
-                        return (
-                          <Fragment key={item.message.id}>
-                            {doomed ? (
-                              <div className="opacity-30 grayscale">
-                                {content}
-                              </div>
-                            ) : (
-                              content
-                            )}
-                            {editingHere && rewriting && (
-                              <RewriteMarker
-                                mode={rewriting.mode}
-                                following={shown.length - 1 - lastIndex}
+                            if (userRuns.inner.has(item.message.id))
+                              return null;
+                            const turn = turnForMessage.get(item.message.id);
+                            const members = userRuns.runs.get(
+                              item.message.id,
+                            ) ?? [item.message];
+                            const lastIndex = item.index + members.length - 1;
+                            const bubbles = members.map((m, k) => (
+                              <ChatMessage
+                                key={m.id}
+                                message={m}
+                                continued={k > 0}
+                                arriving={arrived.has(m.id)}
+                                avatarAgent={agentView ?? undefined}
+                                isLast={item.index + k === shown.length - 1}
+                                showModel={runStarts.length > 0}
+                                {...timeProps(m.at, now)}
+                                hasPendingPermission={hasPendingPermission}
+                                pendingNotice={
+                                  item.index + k === shown.length - 1
+                                    ? startNotice
+                                    : undefined
+                                }
+                                onRetry={sendPrompt}
+                                onFileClick={openFileHandler}
+                                onDelete={deleteMessage}
+                                onLoadOlder={loadOlderKeepingScroll}
                               />
-                            )}
-                            {selectedAgent && sessionId && turn && (
-                              <TurnTelemetry
-                                agentId={selectedAgent}
-                                sessionId={sessionId}
-                                turn={turn}
-                              />
-                            )}
-                          </Fragment>
-                        );
-                      })}
-                    </DelegationOwnersProvider>
+                            ));
+                            const chatMessage =
+                              members.length === 1 ? (
+                                bubbles[0]
+                              ) : (
+                                <div className="flex flex-col gap-2">
+                                  {bubbles}
+                                </div>
+                              );
+                            const runMessage: Message =
+                              members.length === 1
+                                ? item.message
+                                : {
+                                    ...item.message,
+                                    parts: members.flatMap((m) =>
+                                      m.parts.filter((p) => p.kind === "text"),
+                                    ),
+                                  };
+                            const upTo = rewritePoints.get(item.message.id);
+                            const editingHere =
+                              rewriting?.messageId === item.message.id;
+                            const doomed =
+                              rewriting?.mode === "rewind" &&
+                              rewriteIndex !== -1 &&
+                              item.index > rewriteIndex;
+                            const content =
+                              canRewrite &&
+                              rewritePoints.has(item.message.id) ? (
+                                <RewritableMessage
+                                  message={runMessage}
+                                  enabled={queueEmpty && !busy}
+                                  onRewrite={(mode, text) =>
+                                    rewriteFrom({
+                                      messageId: item.message.id,
+                                      upToMessageId: upTo,
+                                      mode,
+                                      text,
+                                      title: sessionView?.title ?? null,
+                                    })
+                                  }
+                                >
+                                  {chatMessage}
+                                </RewritableMessage>
+                              ) : (
+                                chatMessage
+                              );
+                            return (
+                              <Fragment key={item.message.id}>
+                                {doomed ? (
+                                  <div className="opacity-30 grayscale">
+                                    {content}
+                                  </div>
+                                ) : (
+                                  content
+                                )}
+                                {editingHere && rewriting && (
+                                  <RewriteMarker
+                                    mode={rewriting.mode}
+                                    following={shown.length - 1 - lastIndex}
+                                  />
+                                )}
+                                {selectedAgent && sessionId && turn && (
+                                  <TurnTelemetry
+                                    agentId={selectedAgent}
+                                    sessionId={sessionId}
+                                    turn={turn}
+                                  />
+                                )}
+                              </Fragment>
+                            );
+                          })}
+                        </DelegationOwnersProvider>
+                      </A2uiConversationProvider>
+                    </A2uiActionProvider>
                     {selectedAgent && (
                       <LiveDelegationBlock
                         driverAgentId={selectedAgent}
@@ -1091,7 +1124,7 @@ export function ChatView() {
                   textareaRef={textareaRef}
                   busy={busy}
                   loadingSession={loadingSession}
-                  onSend={sendAndFollow}
+                  onSend={sendWithA2uiData}
                   onStop={stopAgent}
                   blockedReason={
                     noGrantedProvider
