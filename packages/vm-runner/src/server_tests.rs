@@ -1669,6 +1669,28 @@ async fn a_registry_credential_reaches_crane_alone() {
     }
 }
 
+// TEST_SCENARIO: a cached private tree is named by its digest, and the staged-image lookup turns a reference into a file name before the cache checks any credential. A machine with no credential that names the digest as a bare reference, in any spelling that maps onto the entry's name, is refused, and never boots the tree another machine fetched with its credential.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_bare_digest_reference_cannot_boot_a_cached_private_tree() {
+    let h = Harness::new("bare-digest");
+    fs::write(h.dir.join("crane"), PRIVATE_CRANE).unwrap();
+    h.server.put("m1", with_credential(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    let hex = "f".repeat(64);
+    for (id, image) in [
+        ("m2", format!("sha256:{hex}")),
+        ("m3", format!("sha256_{hex}")),
+        ("m4", format!("SHA256@{hex}")),
+        ("m5", format!("sha256/{hex}")),
+    ] {
+        let bare = MachineSpec {
+            image: image.clone(),
+            ..spec(true)
+        };
+        assert_eq!(h.server.put(id, bare).unwrap_err().status, 400, "{image}");
+        assert!(!locked(&h.fake.created).contains_key(id), "{image} booted");
+    }
+}
 const STALE: &str = r#"{"auths":{"quay.io":{"auth":"c3RhbGU="}}}"#;
 
 // TEST_SCENARIO: a pod lists several pull Secrets and the kubelet tries each, so when an Agent's own credential for a registry has gone stale, the install default for that registry still pulls. The runner tries them in the order they were sent: the stale one is refused, the next one reads the config, and the layers are fetched with the one that worked.
