@@ -91,6 +91,7 @@ struct Memory {
     entries: HashMap<PathBuf, Entry>,
     in_flight: u64,
     measured: bool,
+    unflushed: Vec<PathBuf>,
     preload_failures: HashMap<String, (u32, Instant)>,
 }
 
@@ -137,6 +138,8 @@ pub trait Images: Send + Sync {
     fn shed(&self) -> Trim {
         Trim::default()
     }
+    // UNIT_BOUNDARY_DESCRIPTION: called as the runner closes, once nothing fetches any more. Only a writer has trees to flush.
+    fn flush(&self) {}
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what one eviction pass did: the size of each image it removed, and what the cache held after it, when it was weighed against a budget at all.
@@ -152,6 +155,14 @@ pub struct Trim {
 pub struct Origin {
     pub platform: String,
     pub repositories: BTreeSet<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unflushed: Option<String>,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the host's boot, as the kernel names it. A tree unpacked without a flush is recorded with the boot it was written in: while the host stays up the kernel serves its data from memory, so only a crash of the host can lose it, and a crash means another boot. Hosts without a boot ID flush each tree as it is unpacked.
+fn boot_id() -> Option<String> {
+    let id = fs::read_to_string("/proc/sys/kernel/random/boot_id").ok()?;
+    Some(id.trim().to_string()).filter(|id| !id.is_empty())
 }
 
 fn read_origin(entry: &Path) -> anyhow::Result<Origin> {
@@ -358,7 +369,7 @@ impl ImageCache {
             .insert(digest.to_string(), Instant::now());
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the launch and origin of a complete tree this host can boot, or nothing. A tree with no launch record beside it, or one whose records do not parse, is not complete, and one unpacked for another platform is not this host's: a claim that moved to a node of another architecture holds trees of the old one, and a pinned index digest names both. A record that cannot be read at all is an error, since fetching again would not fix the disk.
+    // UNIT_BOUNDARY_DESCRIPTION: the launch and origin of a complete tree this host can boot, or nothing. A tree with no launch record beside it, or one whose records do not parse, is not complete; neither is one written in an earlier boot and never flushed, whose files a host crash may have cut short; and one unpacked for another platform is not this host's: a claim that moved to a node of another architecture holds trees of the old one, and a pinned index digest names both. A record that cannot be read at all is an error, since fetching again would not fix the disk.
     fn cached(&self, entry: &Path) -> anyhow::Result<Option<(ImageLaunch, Origin)>> {
         let unparsable = |e: &anyhow::Error| e.downcast_ref::<serde_json::Error>().is_some();
         let launch = match read_launch(entry) {
@@ -373,6 +384,9 @@ impl ImageCache {
             Err(e) => return Err(e),
         };
         if !origin.platform.is_empty() && origin.platform != host_platform() {
+            return Ok(None);
+        }
+        if origin.unflushed.is_some() && origin.unflushed != boot_id() {
             return Ok(None);
         }
         Ok(Some((launch, origin)))
@@ -540,7 +554,7 @@ impl ImageCache {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: fetches an image into the entry `cached` and unpacks it. `reference` names a digest, so the tree is the image that digest names even if a tag moves while the fetch runs. What the image says to run and where it came from are written beside the tree, the launch record's presence is what marks the entry complete, and the whole scratch tree reaches the disk before it is renamed into place, so a crash leaves either no entry or a whole one. The layers come with the credential that read the config. An entry fetched anonymously, or one an anonymous read also reaches, is public: any caller may boot it.
+    // UNIT_BOUNDARY_DESCRIPTION: fetches an image into the entry `cached` and unpacks it. `reference` names a digest, so the tree is the image that digest names even if a tag moves while the fetch runs. What the image says to run and where it came from are written beside the tree, and the launch record's presence is what marks the entry complete. The tree is not flushed: a flush of each file is one call per file, and one of the whole filesystem stalls every machine disk on it. Its origin names the boot it was written in instead, so a host crash before the kernel wrote it out leaves an entry the next boot fetches again rather than serves. The layers come with the credential that read the config. An entry fetched anonymously, or one an anonymous read also reaches, is public: any caller may boot it.
     fn fetch(
         &self,
         reference: &str,
@@ -569,9 +583,11 @@ impl ImageCache {
             0o644,
         )
         .map_err(|e| written(e, "the launch record"))?;
+        let boot = boot_id();
         let origin = Origin {
             platform: host_platform(),
             repositories: [repository(reference).to_string()].into(),
+            unflushed: boot.clone(),
         };
         files::write(
             &scratch.path().join(ORIGIN_FILE),
@@ -583,7 +599,9 @@ impl ImageCache {
             || prepared.auth.is_empty()
             || prepared.auth == ANONYMOUS
             || fetch::readable(crane, reference, ANONYMOUS, deadline, lifetime);
-        sync_filesystem(scratch.path()).map_err(|e| written(e, "the unpacked tree"))?;
+        if boot.is_none() {
+            sync_filesystem(scratch.path()).map_err(|e| written(e, "the unpacked tree"))?;
+        }
         let size = cache::dir_size(scratch.path());
         tracing::info!(
             image = reference,
@@ -594,6 +612,9 @@ impl ImageCache {
         );
         self.install(scratch, cached, &origin)?;
         let mut memory = locked(&self.memory);
+        if boot.is_some() {
+            memory.unflushed.push(cached.to_path_buf());
+        }
         memory
             .entries
             .entry(cached.to_path_buf())
@@ -662,6 +683,34 @@ impl ImageCache {
         }
         sync_dir(&self.config.dir)?;
         Ok(Some(aside))
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: flushes the filesystem once, as the writer closes, and then records every tree unpacked since opening as flushed, so a host that reboots cleanly keeps them. The flush stalls the machine disks on the same filesystem once per writer, not once per fetch. A writer that dies without closing leaves its trees to be fetched again only if the host crashed too. Its ceiling: after a host crash, every image fetched since the writer last closed is fetched again; a periodic flush pass would bound that.
+    pub fn flush(&self) {
+        let unflushed = std::mem::take(&mut locked(&self.memory).unflushed);
+        if unflushed.is_empty() {
+            return;
+        }
+        if let Err(e) = sync_filesystem(&self.config.dir) {
+            tracing::warn!(error = %e, "image cache: flushing the cache's filesystem");
+            return;
+        }
+        for entry in unflushed.iter().filter(|entry| entry.is_dir()) {
+            let flushed = read_origin(entry).and_then(|origin| {
+                let origin = Origin {
+                    unflushed: None,
+                    ..origin
+                };
+                Ok(files::write(
+                    &entry.join(ORIGIN_FILE),
+                    &serde_json::to_vec(&origin)?,
+                    0o644,
+                )?)
+            });
+            if let Err(e) = flushed {
+                tracing::warn!(entry = %entry.display(), error = %format!("{e:#}"), "image cache: recording a tree as flushed");
+            }
+        }
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: holds each digest for another HOLD_LEASE. A hold only ever extends: a caller cannot drop what another holds, so a runner that sends a short list, or a wrong one, never frees a tree another owner's machine runs from. Only a digest with an entry on disk is held, and a call naming more than HOLDS_PER_CALL is refused, so what callers can make the service remember is bounded by what the directory holds.
@@ -870,6 +919,10 @@ impl Images for ImageCache {
     fn shed(&self) -> Trim {
         self.evict_to(None, 1)
     }
+
+    fn flush(&self) {
+        ImageCache::flush(self);
+    }
 }
 
 fn logged(reference: &str) -> String {
@@ -886,7 +939,7 @@ fn written(e: io::Error, what: &str) -> anyhow::Error {
     anyhow::anyhow!("writing {what} into the image cache: {e}")
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: flushes the whole filesystem holding `path`: every file of an unpacked tree at once, which is one call where a sync of each file would be one per file. On Linux it reports a write the disk failed. Elsewhere there is no syncfs, and sync(2) flushes every filesystem and reports nothing, so a failed write is not caught there; only a runner on a developer's Mac builds that arm.
+// UNIT_BOUNDARY_DESCRIPTION: flushes the whole filesystem holding `path`: every file of every unpacked tree at once, which is one call where a sync of each file would be one per file. On Linux it reports a write the disk failed. Elsewhere there is no syncfs, and sync(2) flushes every filesystem and reports nothing, so a failed write is not caught there; only a runner on a developer's Mac builds that arm.
 #[cfg(not(target_os = "linux"))]
 fn sync_filesystem(path: &Path) -> io::Result<()> {
     fs::File::open(path)?;

@@ -1,9 +1,12 @@
 // TEST_OVERVIEW: Every agent shows one of a fixed set of characters: the one its owner chose, or else one picked from a hash of its owner and name, so the same agent looks the same everywhere. A new agent is offered the character its owner uses least. One SVG string serves the UI and the Slack PNG, so the mood must already be right without page CSS: an awake character shows open eyes and an asleep one closed eyes, both in the character's own colours.
+import { avatarSchema } from "api-server-api";
 import {
   AVATAR_CHARACTERS,
   avatarCharacter,
   avatarSvg,
+  emojiSvg,
   leastUsedCharacter,
+  parseAvatar,
 } from "api-server-api/avatar/svg";
 import { describe, expect, it } from "vitest";
 
@@ -19,6 +22,23 @@ describe("avatarCharacter", () => {
   it("is deterministic and reaches every character", () => {
     expect(picked("velvet-comet")).toBe(picked("velvet-comet"));
     expect(new Set(NAMES.map(picked))).toEqual(new Set(AVATAR_CHARACTERS));
+  });
+});
+
+describe("parseAvatar", () => {
+  // TEST_SCENARIO: an emoji or uploaded image stored on the spec is shown as itself; anything else, including markup posing as an emoji, falls back to a character, so only one RGI emoji ever reaches the SVG text.
+  it("reads emoji and image avatars and falls back to a character", () => {
+    const id = "f".repeat(64);
+    expect(parseAvatar("emoji:👩‍💻", "o", "n")).toEqual({
+      kind: "emoji",
+      emoji: "👩‍💻",
+    });
+    expect(parseAvatar(`image:${id}`, "o", "n")).toEqual({ kind: "image", id });
+    for (const bad of ["emoji:<script>", "emoji:🦊🦊", "image:xyz", undefined])
+      expect(parseAvatar(bad, "o", "n").kind).toBe("character");
+    for (const bad of ["emoji:<b>", "image:../x", "robot"])
+      expect(avatarSchema.safeParse(bad).success).toBe(false);
+    expect(emojiSvg("🦊")).toContain(">🦊</text>");
   });
 });
 

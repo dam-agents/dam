@@ -305,14 +305,15 @@ Which of two strategies an optional scope gets follows from what its absence mea
 - **Agent persona on posts** is the one optional scope read proactively.
   With `chat:write.customize`, an agent's own posts (`send_channel_message`, `reply`) carry its name as the username and its avatar as the icon, so a conversation with several Agents shows who said what.
   Slack does not say whether it refuses or ignores those fields without the scope, so the override is sent only where the granted set is **known** to include it; an unknown set posts under the app's identity, the same message as before.
-  Slack fetches the icon from the public internet and an install has no public URL of its own, so the api-server draws the [avatar](agent-avatars.md) — the character the owner sees in the UI: the one stored on the Agent, or else the one picked from the owner and the Agent name — to a PNG and uploads it to ImgBB, named by a hash.
+  Slack fetches the icon from the public internet and an install has no public URL of its own, so the api-server draws the [avatar](agent-avatars.md) — the one the owner sees in the UI: the one stored on the Agent, or else the character picked from the owner and the Agent name — to a PNG, or reads the uploaded one, and uploads it to ImgBB, named by a hash.
+  An emoji avatar is not uploaded: the icon is the public Twemoji PNG for it.
   The URL is kept in Postgres under the SHA-256 of the PNG ([persistence](persistence.md)), so each image is uploaded once per install, and a restart or another replica reuses it.
   The api-server resolves every character at startup, so a post rarely waits on the image host.
   A post never waits long on that host: past a short wait it goes out with the name and the app's icon while the upload finishes for later posts, and a warning (`slack.agent_icon.missing`) records it.
   A failed upload is not retried for a minute.
   With no ImgBB key configured the post always keeps the name and the app's icon.
   Where the scope is not known to be granted, the post goes out as the app and its text opens with an emoji and the Agent's name in bold, so the Agents are still told apart.
-  The emoji is the robot face, unless the conversation's binding names custom emoji: whoever connects or edits the conversation can switch them on and name the workspace's emoji for each of the eight characters, prefilled `<brand.short>-agent-1` to `-8` in the order the set was drawn.
+  The emoji is the Agent's emoji avatar if it has one, else the robot face, unless the conversation's binding names custom emoji: whoever connects or edits the conversation can switch them on and name the workspace's emoji for each of the eight characters, prefilled `<brand.short>-agent-1` to `-8` in the order the set was drawn.
   The names are trusted as given — Slack shows an unknown name as literal text — and a post to a conversation the Agent is not connected to uses the robot face.
   When such a post reaches another Agent, the opening is removed first, so a peer named at the start of the reply is still addressed.
   Platform notices (a failed turn, a slow start) are the platform speaking and always post as the app.
