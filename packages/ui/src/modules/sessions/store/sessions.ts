@@ -281,6 +281,7 @@ export const createSessionsSlice: StateCreator<
         openArtifactDirty: false,
         openFileEdit: false,
         pendingPermissions: [],
+        pendingElicitations: [],
         pendingResumeSessionId: null,
       }),
 

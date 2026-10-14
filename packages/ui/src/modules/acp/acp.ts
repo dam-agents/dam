@@ -2,6 +2,9 @@ import {
   type AnyMessage,
   client,
   type ClientConnection,
+  type CreateElicitationRequest,
+  type CreateElicitationResponse,
+  type ElicitationFormMode,
   PROTOCOL_VERSION,
   type RequestPermissionRequest,
   type Stream,
@@ -107,6 +110,34 @@ function awaitPermission(
   });
 }
 
+function awaitElicitation(
+  params: CreateElicitationRequest,
+): Promise<CreateElicitationResponse> {
+  const form = params as Partial<ElicitationFormMode> & {
+    mode: string;
+    sessionId?: unknown;
+    toolCallId?: unknown;
+  };
+  if (
+    form.mode !== "form" ||
+    typeof form.sessionId !== "string" ||
+    typeof form.requestedSchema !== "object"
+  ) {
+    return Promise.resolve({ action: "decline" });
+  }
+  const { sessionId, requestedSchema } = form;
+  return new Promise((resolve) => {
+    useStore.getState().addPendingElicitation({
+      key: crypto.randomUUID(),
+      sessionId,
+      toolCallId: typeof form.toolCallId === "string" ? form.toolCallId : null,
+      message: params.message,
+      schema: requestedSchema,
+      resolve,
+    });
+  });
+}
+
 export async function openInitializedConnection(
   agentId: string,
   onUpdate: UpdateHandler,
@@ -122,7 +153,10 @@ export async function openInitializedConnection(
   try {
     init = await connection.agent.request("initialize", {
       protocolVersion: PROTOCOL_VERSION,
-      clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } },
+      clientCapabilities: {
+        fs: { readTextFile: true, writeTextFile: true },
+        elicitation: { form: {} },
+      },
       ...(opts?.clientInfo ? { clientInfo: opts.clientInfo } : {}),
     });
   } catch (err) {
@@ -160,6 +194,7 @@ export async function openConnection(
     .onRequest("session/request_permission", (ctx) =>
       awaitPermission(ctx.params),
     )
+    .onRequest("elicitation/create", (ctx) => awaitElicitation(ctx.params))
     .onNotification("session/update", ({ params }) => {
       onUpdate(params.update, params.sessionId, frameMetaOf(params._meta));
     })

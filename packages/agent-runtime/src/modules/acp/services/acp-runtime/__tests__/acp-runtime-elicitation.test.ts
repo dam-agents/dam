@@ -197,7 +197,9 @@ describe("acp-runtime: form elicitation", () => {
 
     vi.advanceTimersByTime(ORPHAN_TTL_MS);
     expect(world.harness().answersTo(73)).toEqual([
-      expect.objectContaining({ error: expect.objectContaining({ code: -32000 }) }),
+      expect.objectContaining({
+        error: expect.objectContaining({ code: -32000 }),
+      }),
     ]);
   });
 

@@ -49,6 +49,10 @@ import {
 } from "./modules/sessions/lib/draft-snapshot.js";
 import { removeAllUndelivered } from "./modules/sessions/lib/undelivered-store.js";
 import {
+  createElicitationsSlice,
+  type ElicitationsSlice,
+} from "./modules/sessions/store/elicitations.js";
+import {
   createPermissionsSlice,
   type PermissionsSlice,
 } from "./modules/sessions/store/permissions.js";
@@ -69,6 +73,7 @@ export type PlatformStore = DialogSlice &
   BrowserSlice &
   FeaturesSlice &
   PermissionsSlice &
+  ElicitationsSlice &
   ProcessesSlice &
   GettingStartedSlice;
 
@@ -85,6 +90,7 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createBrowserSlice(...a),
   ...createFeaturesSlice(...a),
   ...createPermissionsSlice(...a),
+  ...createElicitationsSlice(...a),
   ...createProcessesSlice(...a),
   ...createGettingStartedSlice(...a),
 }));

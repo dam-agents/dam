@@ -34,6 +34,8 @@ export function useAcpUpdateHandler(): () => UpdateHandler {
         update.status !== "pending"
       ) {
         dismissStalePermission(update.toolCallId);
+        if (update.toolCallId)
+          useStore.getState().dismissElicitationsOfToolCall(update.toolCallId);
       }
 
       if (kind === "platform_run_started" && viewing === sessionId) {
