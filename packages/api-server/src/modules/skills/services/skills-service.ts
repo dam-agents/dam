@@ -451,7 +451,7 @@ async function planFetchOrThrow(
     message:
       plan.reason === "no-path"
         ? `This agent's egress rules block downloading ${name}. Set a path on the skill source that the agent may read.`
-        : `This agent's egress rules block downloading ${name} and reading its path ${source.path}. Allow GET api.github.com /repos/${name}/contents/${source.path}/* and /repos/${name}/contents/${source.path}?* for the agent, or set another path.`,
+        : `This agent's egress rules block downloading ${name} and reading its path ${source.path}. Allow GET api.github.com /repos/${name}/contents/${source.path}/* and /repos/${name}/contents/${source.path}?* for the agent, or set another path. For a private repository, also allow GET /repos/${name} and /repos/${name}/git/refs/heads/<default branch>, which the scan reads.`,
   });
 }
 
