@@ -22,8 +22,10 @@ import { useKeptWorkCount } from "../../sessions/api/background-work.js";
 import { KitUpdateTag } from "../../starter-kits/components/kit-update-tag.js";
 import { OnboardingTag } from "../../starter-kits/components/onboarding-tag.js";
 import { reclaimSentence } from "../lib/reclaim-notices.js";
+import { statusTone } from "../lib/status-tone.js";
 import { agentKindBadge, starterKitBadge } from "../utils/agent-kind.js";
 import type { AgentDisplay } from "../utils/agent-resolver.js";
+import type { AgentUsage } from "../utils/sandbox-subtitle.js";
 import {
   formatTemporaryDraw,
   type TemporaryDraw,
@@ -38,6 +40,7 @@ import { MigrateRuntimeAction } from "./migrate-runtime-action.js";
 import { FreeUpComputeItems } from "./power-menu-items.js";
 import { UnsupportedContributionsBadge } from "./unsupported-contributions-badge.js";
 import { UpdateAvailableAction } from "./update-available-action.js";
+import { UsagePairs } from "./usage-pairs.js";
 import { VmRuntimeBadge } from "./vm-runtime-badge.js";
 
 const SECOND_LINE_ITEM =
@@ -48,6 +51,7 @@ interface Props {
   display: AgentDisplay;
   working?: boolean;
   subtitle: string | null;
+  usage: AgentUsage | null;
   temporaryDraw?: TemporaryDraw;
   deletePending: boolean;
   updatePending: boolean;
@@ -75,6 +79,7 @@ export function AgentRow({
   display,
   working,
   subtitle,
+  usage,
   temporaryDraw,
   deletePending,
   updatePending,
@@ -99,7 +104,6 @@ export function AgentRow({
   const kindBadge = agentKindBadge(agent);
   const kitBadge = starterKitBadge(agent);
   const keptWork = useKeptWorkCount(agent.id);
-  const refused = isStartRefusal(agent.podTerminationCode);
   const statusNote =
     agent.overBudgetMessage ??
     (display.state === "hibernated" ? reclaimSentence(agent) : undefined);
@@ -134,18 +138,6 @@ export function AgentRow({
           <UnsupportedContributionsBadge agent={agent} />
         </div>
         <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 text-sm text-muted-foreground [&>*+*]:before:mr-1.5 [&>*+*]:before:content-['·'_/_'']">
-          <OnboardingTag agent={agent} className={SECOND_LINE_ITEM} />
-          {kitBadge && (
-            <span
-              className="flex min-w-0 items-center gap-1"
-              title={kitBadge.title}
-              aria-label={`From the ${kitBadge.label} starter kit`}
-            >
-              <Box size={14} className="shrink-0" aria-hidden />
-              <span className="truncate">{kitBadge.label}</span>
-            </span>
-          )}
-          {subtitle && <span className="truncate">{subtitle}</span>}
           <span
             title={statusNote}
             {...(statusNote
@@ -161,18 +153,26 @@ export function AgentRow({
               working={working}
               keptWork={keptWork}
               vm={agent.vm}
-              refused={refused}
+              refused={isStartRefusal(agent.podTerminationCode)}
               className={cn(
                 SECOND_LINE_ITEM,
-                display.state === "error" &&
-                  !refused &&
-                  "text-danger dark:text-danger",
-                (display.state === "over_budget" ||
-                  (display.state === "error" && refused)) &&
-                  "text-warning-fg dark:text-warning-fg",
+                statusTone(display.state, working),
               )}
             />
           </span>
+          <OnboardingTag agent={agent} className={SECOND_LINE_ITEM} />
+          {kitBadge && (
+            <span
+              className="flex min-w-0 items-center gap-1"
+              title={kitBadge.title}
+              aria-label={`From the ${kitBadge.label} starter kit`}
+            >
+              <Box size={14} className="shrink-0" aria-hidden />
+              <span className="truncate">{kitBadge.label}</span>
+            </span>
+          )}
+          {subtitle && <span className="truncate">{subtitle}</span>}
+          {usage && <UsagePairs usage={usage} />}
         </div>
         <AgentChannelChips agent={agent} className="mt-2" />
         {temporaryDraw && temporaryDraw.count > 0 && (

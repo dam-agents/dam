@@ -1,4 +1,4 @@
-import { WarningAltFilled } from "@carbon/icons-react";
+import { type CarbonIconType, WarningAltFilled } from "@carbon/icons-react";
 
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -9,6 +9,7 @@ import type { PoolBarView, PoolSegment } from "../lib/pools.js";
 
 interface Props {
   title: string;
+  icon: CarbonIconType;
   value: string;
   bar: PoolBarView;
   valueText: string;
@@ -18,6 +19,7 @@ interface Props {
 
 export function PoolBar({
   title,
+  icon: Icon,
   value,
   bar,
   valueText,
@@ -28,6 +30,7 @@ export function PoolBar({
     <div className="flex flex-col gap-1.5">
       <div className="flex items-baseline justify-between gap-3 text-sm">
         <span className="flex items-center gap-1.5 text-foreground">
+          <Icon size={16} aria-hidden className="shrink-0" />
           {title}
           {bar.level !== "ok" && (
             <Tooltip content={warning}>

@@ -53,12 +53,7 @@ export function StatusBadge({
       ? "Working"
       : "Idle"
     : badgeLabel(state, vm, refused);
-  const variant =
-    splitRunning && !working
-      ? "accent"
-      : state === "error" && refused
-        ? "warning"
-        : stateVariant[state];
+  const variant = splitRunning && !working ? "accent" : stateVariant[state];
   return (
     <Badge variant={variant} className={className}>
       {label}

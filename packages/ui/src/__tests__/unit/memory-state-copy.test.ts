@@ -3,6 +3,10 @@ import { describe, expect, it } from "vitest";
 
 import { overlayDescription } from "../../modules/agents/lib/overlay-copy.js";
 import { badgeLabel } from "../../modules/agents/lib/state-label.js";
+import {
+  STATUS_TONE,
+  statusTone,
+} from "../../modules/agents/lib/status-tone.js";
 import type { AgentView } from "../../types.js";
 
 const agent = (over: Partial<AgentView>) =>
@@ -21,6 +25,17 @@ describe("memory and paused copy", () => {
     expect(badgeLabel("error", false, true)).toBe("Can't start");
     expect(badgeLabel("error", true)).toBe("Error");
     expect(badgeLabel("running", true, true)).toBe("Running");
+  });
+
+  // TEST_SCENARIO: the row's state word is green at work, blue when idle, red when failed or refused, and the line's own colour when paused or starting.
+  it("colours the row's state word by what the agent is doing", () => {
+    expect(statusTone("running", true)).toBe(STATUS_TONE.working);
+    expect(statusTone("running", undefined)).toBe(STATUS_TONE.working);
+    expect(statusTone("running", false)).toBe(STATUS_TONE.idle);
+    expect(statusTone("error", undefined)).toBe(STATUS_TONE.failed);
+    expect(statusTone("over_budget", undefined)).toBe(STATUS_TONE.waiting);
+    expect(statusTone("hibernated", undefined)).toBe("");
+    expect(statusTone("starting", undefined)).toBe("");
   });
 
   // TEST_SCENARIO: an agent going to sleep and one asleep use the same word.

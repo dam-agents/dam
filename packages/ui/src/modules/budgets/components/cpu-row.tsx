@@ -2,6 +2,7 @@ import type { BudgetVmUsage, CpuCongestion } from "api-server-api";
 
 import type { AgentView } from "../../../types.js";
 import { cpuBar, topCpuAgents } from "../lib/pools.js";
+import { RESOURCE_ICON } from "../lib/resource-icons.js";
 import { PoolBar } from "./pool-bar.js";
 
 const WORD: Record<CpuCongestion, string> = {
@@ -23,6 +24,7 @@ export function CpuRow({ cpu, usage, agents }: Props) {
   return (
     <PoolBar
       title="CPU"
+      icon={RESOURCE_ICON.cpu}
       value={word}
       bar={cpuBar(cpu)}
       valueText={`${word} congestion`}

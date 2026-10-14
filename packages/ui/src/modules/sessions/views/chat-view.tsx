@@ -9,7 +9,6 @@ import {
 } from "@carbon/icons-react";
 import { routesSessionPairs } from "agent-runtime-api";
 import {
-  isStartRefusal,
   SessionMode,
   SessionType,
   TELEMETRY_MAX_SINCE_HOURS,
@@ -664,12 +663,9 @@ export function ChatView() {
 
   const leftPanelWidth = { width: leftW };
 
-  const dotColor = !agentDisplay
-    ? "bg-warning"
-    : agentDisplay.state === "error" &&
-        isStartRefusal(agentView?.podTerminationCode)
-      ? "bg-warning"
-      : stateDotClass[agentDisplay.state];
+  const dotColor = agentDisplay
+    ? stateDotClass[agentDisplay.state]
+    : "bg-warning";
 
   const lastMessage = shown[shown.length - 1];
   const statusLineInThread =
