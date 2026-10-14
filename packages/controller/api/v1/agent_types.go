@@ -275,6 +275,12 @@ const (
 // scaled down) from one still starting — both report Ready=False.
 const ReasonHibernated = "Hibernated"
 
+// ReasonMachineStopping is stamped on AgentPodReady of a vm agent whose
+// hibernation has begun but whose machine the runner is still stopping. The
+// runner answers a stop before the guest has powered off, so the agent is not
+// yet Hibernated; the api-server reads it as hibernating, not as starting.
+const ReasonMachineStopping = "MachineStopping"
+
 // ReasonOverBudget is stamped on Ready when the agent wants to run but its
 // start would push the owner's summed Sizes (`spec.resources.limits`) past
 // their Ceiling (#1900). The pods stay at zero; the message carries the
