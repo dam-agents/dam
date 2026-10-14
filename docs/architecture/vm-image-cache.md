@@ -33,7 +33,8 @@ On a runner's own volume that disk is the owner's claim, so there it is reported
 **Eviction never frees a tree a machine is running from.** It takes the oldest write first, down to a byte count the install states, sparing what is held.
 A fetch evicts before it downloads, until both the budget and the filesystem have room for the tree it unpacks.
 OCI metadata names only compressed sizes, so that tree is taken to be three times the compressed size the manifest names.
-A runner holds the digests its machines boot by naming them again every minute, and a hold lapses only once nobody names it — a runner that stopped has no machines left.
+A runner holds the digests its running machines boot by naming them again every minute, and a hold lapses only once nobody names it — a runner that stopped has no machines left.
+A stopped machine holds nothing, so a hibernated agent never keeps an image a deploy retired; its start fetches the tree again when it is gone, and holds it before it checks it is there.
 A hold only extends, so no runner can release what another holds, and only a tree on disk is held, so a resolve that fails holds nothing; past half again its budget, the service fetches nothing.
 Each fetch under way counts toward that ceiling at that unpacked estimate, so fetches that start together cannot each find the cache under it.
 A service that restarts has forgotten every hold, so it evicts nothing until the runners have had time to name theirs again.

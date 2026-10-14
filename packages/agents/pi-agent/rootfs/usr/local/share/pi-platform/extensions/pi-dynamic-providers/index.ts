@@ -9,6 +9,7 @@ declare const process: { env: Record<string, string | undefined> };
 type ProviderSpec = {
 	name: string;
 	envPrefix: string;
+	fallbackApiKeyEnv?: string;
 	compat?: OpenAICompletionsCompat;
 	shadows?: { name: string; urlEnv: string; apiKeyEnv?: string }[];
 };
@@ -40,6 +41,7 @@ const SPECS: ProviderSpec[] = [
 	{
 		name: "openai-proxy",
 		envPrefix: "OPENAI_PROXY",
+		fallbackApiKeyEnv: "OPENAI_API_KEY",
 		compat: { supportsUsageInStreaming: true, maxTokensField: "max_completion_tokens" },
 		shadows: [{ name: "openai", urlEnv: "OPENAI_BASE_URL", apiKeyEnv: "OPENAI_API_KEY" }],
 	},
@@ -77,10 +79,13 @@ async function activateSpec(pi: ExtensionAPI, spec: ProviderSpec, state: ConfigS
 	if (!url) return undefined;
 
 	const baseUrl = /\/v\d+$/.test(url) ? url : `${url}/v1`;
-	const apiKey = env(`${spec.envPrefix}_API_KEY`) ?? "dummy-placeholder";
+	const apiKey =
+		env(`${spec.envPrefix}_API_KEY`) ??
+		(spec.fallbackApiKeyEnv ? env(spec.fallbackApiKeyEnv) : undefined) ??
+		"dummy-placeholder";
 	const requestedModel = env("PLATFORM_MODEL") ?? env(`${spec.envPrefix}_MODEL`);
 
-	const discovered = await discoverModels(`${baseUrl}/models`);
+	const discovered = await discoverModels(`${baseUrl}/models`, apiKey);
 	const models = discovered.length > 0 ? discovered : requestedModel ? [{ id: requestedModel }] : [];
 	if (models.length === 0) return undefined;
 
@@ -363,9 +368,12 @@ function buildModelConfig(
 	};
 }
 
-async function discoverModels(url: string): Promise<DiscoveredModel[]> {
+async function discoverModels(url: string, apiKey: string): Promise<DiscoveredModel[]> {
 	try {
-		const res = await fetch(url, { signal: AbortSignal.timeout(intEnv("PI_PROVIDER_DISCOVERY_TIMEOUT_MS", 5000)) });
+		const res = await fetch(url, {
+			headers: { Authorization: `Bearer ${apiKey}` },
+			signal: AbortSignal.timeout(intEnv("PI_PROVIDER_DISCOVERY_TIMEOUT_MS", 5000)),
+		});
 		if (!res.ok) {
 			console.warn(`[pi-dynamic-providers] ${url}: HTTP ${res.status} ${res.statusText}`);
 			return [];

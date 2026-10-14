@@ -64,10 +64,10 @@ export const agentTelemetryInputSchema = z.object(agentTelemetryShape);
 export const agentMetricsInputSchema = z.object({
   ...agentTelemetryShape,
   granularity: z
-    .enum(["summary", "session", "call"])
+    .enum(["summary", "session", "call", "subagent"])
     .default("summary")
     .describe(
-      "Detail level. 'summary': window totals and the per-model split. 'session': adds a row per session — calls, model time, tokens, cost, first/last activity. 'call': adds a row per LLM call — model, request latency, tokens, context size, cost.",
+      "Detail level. 'summary': window totals and the per-model split. 'session': adds a row per session — calls, model time, tokens, cost, first/last activity. 'call': adds a row per LLM call — model, request latency, tokens, context size, cost. 'subagent': adds a row per platform sub-agent you spawned, directly or through another sub-agent, keyed by the id spawn_subagent returned — models, calls, model time, tokens, cost, first/last activity.",
     ),
 });
 

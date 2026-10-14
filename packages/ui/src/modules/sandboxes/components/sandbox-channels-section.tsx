@@ -1,6 +1,7 @@
 import { useAgents } from "../../agents/api/queries.js";
 import { SlackChannelCard } from "./channels/slack-channel-card.js";
 import { TelegramChannelCard } from "./channels/telegram-channel-card.js";
+import { WhisperCard } from "./channels/whisper-card.js";
 
 export function SandboxChannelsSection({ agentId }: { agentId: string }) {
   const { data } = useAgents();
@@ -16,6 +17,11 @@ export function SandboxChannelsSection({ agentId }: { agentId: string }) {
     );
   return (
     <>
+      {available.slack && agent && (
+        <div className="mb-6">
+          <WhisperCard agent={agent} />
+        </div>
+      )}
       {available.slack && <SlackChannelCard agent={agent} />}
       {available.telegram && <TelegramChannelCard agentId={agentId} />}
     </>

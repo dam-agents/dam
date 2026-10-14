@@ -318,6 +318,7 @@ export function provisionalSessionView(item: AttentionItem): SessionView {
     createdAt: item.createdAt,
     scheduleId: item.scheduleId,
     title: item.title,
+    threadTs: item.threadTs,
     updatedAt: item.activityAt,
     running: item.working,
     seenAt: item.seenAt,

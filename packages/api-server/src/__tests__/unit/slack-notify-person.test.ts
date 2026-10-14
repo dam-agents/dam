@@ -32,6 +32,7 @@ async function harness(links: ExternalLink[], workspaces: string[]) {
     },
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    agentsFor: () => ({}) as never,
     ignoredApps: {
       list: async () => [],
       ignore: async () => true,

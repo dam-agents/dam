@@ -78,3 +78,14 @@ smolvm-network = { path = ".smolvm/crates/smolvm-network" }
 
 [lints.clippy]
 all = "deny"
+
+# Full debug info is most of a dev build's disk, multiplied by every test
+# binary. Line tables keep a backtrace's file:line for the workspace's own
+# frames; dependency frames keep only their function names. For a debugger
+# session, build with CARGO_PROFILE_DEV_DEBUG=full and, for dependency frames,
+# --config 'profile.dev.package."*".debug="full"'.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

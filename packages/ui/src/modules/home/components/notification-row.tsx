@@ -108,6 +108,7 @@ export function NotificationRow({
   agentName,
   avatarName,
   agents,
+  conversation,
   meta,
   artifacts,
   onOpen,
@@ -118,6 +119,7 @@ export function NotificationRow({
   agentName: string;
   avatarName: string | undefined;
   agents: readonly AgentView[];
+  conversation: string | undefined;
   meta: string;
   artifacts: readonly ArtifactTouched[];
   onOpen: () => void;
@@ -177,14 +179,27 @@ export function NotificationRow({
       </div>
 
       <div className="min-w-0 flex-1">
-        <p className="min-w-0 truncate text-sm leading-snug">
-          <span className={cn("text-foreground", !running && "font-semibold")}>
+        <p className="flex min-w-0 items-baseline gap-1 text-sm leading-snug">
+          <span
+            className={cn(
+              "shrink-0 text-foreground",
+              !running && "font-semibold",
+            )}
+          >
             {agentName}
           </span>
-          <span className="text-muted-foreground">
-            {" "}
+          <span className="min-w-0 truncate text-muted-foreground">
             {item.session.title ?? "Session"}
           </span>
+          {conversation && (
+            <span
+              data-testid="notification-row-conversation"
+              title={conversation}
+              className="max-w-[60%] shrink-0 truncate text-muted-foreground"
+            >
+              · {conversation}
+            </span>
+          )}
         </p>
         <p className="mt-0.5 text-xs text-muted-foreground">{meta}</p>
         <div

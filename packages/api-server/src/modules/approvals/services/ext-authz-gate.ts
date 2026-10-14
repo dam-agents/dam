@@ -9,6 +9,8 @@ import { securityLog } from "../../../core/security-log.js";
 import { getLogger } from "../../../core/logger.js";
 import { formatError } from "../../../core/format-error.js";
 import { emit, EventType } from "../../../events.js";
+import { hasDotSegment } from "../domain/dot-segment.js";
+import { canonicalEgressHost } from "api-server-api";
 
 export type ExtAuthzVerdict = "allow" | "deny";
 
@@ -61,7 +63,8 @@ interface CreateExtAuthzGateDeps {
 
 export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
   return {
-    async gateRequest({ agentId, host, port, tls, method, path }) {
+    async gateRequest({ agentId, host: requestHost, port, tls, method, path }) {
+      const host = canonicalEgressHost(requestHost);
       const identity = await deps.identityResolver.resolve(agentId);
       if (!identity) {
         securityLog("warn", "egress.decision", {
@@ -92,6 +95,21 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
           detail: { method, path: path.split("?")[0], basis: "platform", via },
         });
         return "allow";
+      }
+
+      if (hasDotSegment(path)) {
+        securityLog("warn", "egress.decision", {
+          category: "egress",
+          actor: identity.ownerSub,
+          actorKind: "agent",
+          surface: "ext-authz",
+          agentId: identity.agentId,
+          target: host,
+          decision: "deny",
+          reason: "dot-segment",
+          detail: { method, path, via },
+        });
+        return "deny";
       }
 
       const matched = await deps.ruleMatcher.match(

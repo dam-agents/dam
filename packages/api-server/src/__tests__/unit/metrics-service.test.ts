@@ -34,6 +34,7 @@ function spyReader(): {
       telemetryEvents: (ids, w) => record(ids, w),
       sessionResolves: async () => false,
       traceSpans: (ids, w) => record(ids, w),
+      spendBySubAgent: (ids, w) => record(ids, w),
     },
   };
 }
@@ -176,6 +177,7 @@ describe("metrics ownership gate", () => {
         telemetryEvents: async () => [],
         sessionResolves: async () => false,
         traceSpans: async () => [],
+        spendBySubAgent: async () => [],
       },
       listOwnedAgents: owned,
       isInvocationTargetName: neverTarget,
@@ -240,6 +242,7 @@ describe("spendBreakdown per-agent labels", () => {
       telemetryEvents: async () => [],
       sessionResolves: async () => false,
       traceSpans: async () => [],
+      spendBySubAgent: async () => [],
     };
   }
 

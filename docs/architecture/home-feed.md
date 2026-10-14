@@ -20,7 +20,8 @@ Waking every Agent to render a list would be absurd — it would defeat hibernat
 ## The record and its boundary
 
 One row per session, filed under the owner who should see it.
-The row carries enough to render a feed card and to decide whether it is unread: when the session was last active, when it was last seen, whether it was working at capture time, and how it was started.
+The row carries enough to render a feed card and to decide whether it is unread: when the session was last active, when it was last seen, whether it was working at capture time, how it was started, and the thread key that names the Slack channel or Telegram chat it came from.
+The card resolves that key to a name on the client, from the channel list every Agent already carries and the Telegram chats of the Agents on the feed, so the record stores no channel names that could go stale.
 
 The boundary matters more than the contents.
 **The Agent remains the sole source of truth for which sessions exist** — the record is never consulted to decide that, and nothing reads it to decide whether a session is real.
