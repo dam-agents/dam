@@ -976,25 +976,25 @@ export function ChatView() {
                           rewriting?.mode === "rewind" &&
                           rewriteIndex !== -1 &&
                           item.index > rewriteIndex;
-                        const content =
-                          rewritable && rewritePoints.has(item.message.id) ? (
-                            <RewritableMessage
-                              message={runMessage}
-                              onRewrite={(mode, text) =>
-                                rewriteFrom({
-                                  messageId: item.message.id,
-                                  upToMessageId: upTo,
-                                  mode,
-                                  text,
-                                  title: sessionView?.title ?? null,
-                                })
-                              }
-                            >
-                              {chatMessage}
-                            </RewritableMessage>
-                          ) : (
-                            chatMessage
-                          );
+                        const content = rewritePoints.has(item.message.id) ? (
+                          <RewritableMessage
+                            message={runMessage}
+                            enabled={Boolean(rewritable)}
+                            onRewrite={(mode, text) =>
+                              rewriteFrom({
+                                messageId: item.message.id,
+                                upToMessageId: upTo,
+                                mode,
+                                text,
+                                title: sessionView?.title ?? null,
+                              })
+                            }
+                          >
+                            {chatMessage}
+                          </RewritableMessage>
+                        ) : (
+                          chatMessage
+                        );
                         return (
                           <Fragment key={item.message.id}>
                             {doomed ? (
