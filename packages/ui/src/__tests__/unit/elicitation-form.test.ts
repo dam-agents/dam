@@ -170,6 +170,32 @@ describe("formContentOf", () => {
   });
 });
 
+describe("formContentOf numbers", () => {
+  /**
+   * TEST_SCENARIO: An integer field gets a fraction and a number field gets
+   * text. Neither may be sent as an answer the schema would refuse; a whole
+   * number and a fraction in the right fields are sent as numbers.
+   */
+  it("should send only numbers the field allows", () => {
+    const fields = formFieldsOf({
+      type: "object",
+      properties: { count: { type: "integer" }, ratio: { type: "number" } },
+    });
+    expect(
+      formContentOf(
+        fields,
+        answers({ count: { text: "1.5" }, ratio: { text: "x" } }),
+      ),
+    ).toEqual({});
+    expect(
+      formContentOf(
+        fields,
+        answers({ count: { text: "3" }, ratio: { text: "0.5" } }),
+      ),
+    ).toEqual({ count: 3, ratio: 0.5 });
+  });
+});
+
 describe("isFormComplete", () => {
   /**
    * TEST_SCENARIO: A required choice is unanswered, so the form cannot be

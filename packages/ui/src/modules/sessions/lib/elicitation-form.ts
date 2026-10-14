@@ -185,7 +185,9 @@ export function formContentOf(
     }
     if (field.kind !== "choice") {
       const n = Number(a.text);
-      if (a.text.trim() !== "" && Number.isFinite(n)) content[field.key] = n;
+      const whole = field.kind === "integer" ? Number.isInteger(n) : true;
+      if (a.text.trim() !== "" && Number.isFinite(n) && whole)
+        content[field.key] = n;
       continue;
     }
     const other = a.other.trim();
