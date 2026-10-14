@@ -126,7 +126,7 @@ function lastSegment(model: string): string {
 }
 
 function looseName(model: string): string {
-  return lastSegment(model).replace(/-\d{8}$/, "");
+  return lastSegment(model).replace(/-(\d{8}|\d{4}-\d{2}-\d{2})$/, "");
 }
 
 function modelFamily(model: string): string {
