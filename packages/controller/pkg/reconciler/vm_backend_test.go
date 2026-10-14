@@ -527,6 +527,39 @@ func TestAHostRunnerReachesTheGatewayOnItsOwnLoopback(t *testing.T) {
 	assert.Equal(t, []string{"my-agent"}, node.deleted)
 }
 
+// TEST_SCENARIO: the host runner serves every owner, so the api-server can show a laptop's pools only if the controller writes a usage Secret for it too. There is one runner, so there is one Secret, holding the host address, the runners' CA and a usage capability, and it names no owner: each owner's reconcile writes the same Secret, and an owner label would flip between them.
+func TestTheHostRunnerGetsOneUsageSecretNamingNoOwner(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.HostAddress = "192.168.5.2"
+	ctx := context.Background()
+	for _, sec := range []*corev1.Secret{runnerSecret(), runnerTLSSecret()} {
+		sec.Name = strings.Replace(sec.Name, runnerSuffix(testOwner), "host", 1)
+		_, err := r.client.CoreV1().Secrets("test-agents").Create(ctx, sec, metav1.CreateOptions{})
+		require.NoError(t, err)
+	}
+	r.client.(*fake.Clientset).PrependReactor("update", "services", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		svc := action.(k8stesting.UpdateAction).GetObject().(*corev1.Service)
+		if svc.Spec.Type == corev1.ServiceTypeNodePort && svc.Spec.Ports[0].NodePort == 0 {
+			svc.Spec.Ports[0].NodePort = 30123
+		}
+		return false, svc, nil
+	})
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	secrets := r.client.CoreV1().Secrets("test-agents")
+	usage, err := secrets.Get(ctx, r.runnerUsageName(""), metav1.GetOptions{})
+	require.NoError(t, err)
+	token, err := secrets.Get(ctx, r.runnerName(""), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "true", usage.Labels[vmRunnerUsageLabel])
+	_, owned := usage.Labels[envoyOwnerLabel]
+	assert.False(t, owned, "one Secret serves every owner, so it names none")
+	assert.Equal(t, fmt.Sprintf("https://192.168.5.2:%d", vmRunnerPort), string(usage.Data["url"]))
+	assert.Equal(t, vmrunner.MintUsageCapability(string(token.Data["token"])), string(usage.Data["capability"]))
+}
+
 // TEST_SCENARIO: an install switched from runner pods to the host runner still holds the runner Deployment it made for an owner before, whose pod can never schedule without a KVM device. The host-mode sweep removes that Deployment and keeps its claim, which holds the disks of the machines it ran, and leaves the host runner's own Secret, whose name a per-owner lookup would resolve to in host mode, alone.
 func TestTheHostRunnerSweepDropsRunnerPodsLeftFromBefore(t *testing.T) {
 	ctx := context.Background()

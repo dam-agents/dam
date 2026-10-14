@@ -1,6 +1,6 @@
 # VM host runner
 
-Last verified: 2026-10-05
+Last verified: 2026-10-14
 
 On a Mac, the local cluster's `vm` Backend runs on **one runner outside the cluster**, on the Mac's own hypervisor, instead of on the per-owner [runner pods](vm-runner.md) inside the cluster's VM, which would need a hypervisor nested in that VM.
 A nested guest boots several times slower, a busy laptop pushes it past smolvm's fixed ready window, and only recent Apple chips nest at all.
@@ -10,6 +10,8 @@ It is a local-development shape only: an install turns it on by naming the addre
 **One runner serves every owner.** There is no per-owner boundary.
 A guest that escapes its hypervisor reaches every owner's machines and the Mac itself, as the user who started the runner.
 The controller builds no runner objects: no Deployment, claim, Service, NetworkPolicy, roll or memory resize.
+It writes only the one usage Secret the api-server reads the runner's use with, naming no owner, so every owner's resource bars show the whole laptop's memory, storage and CPU.
+The controller still counts memory against the chart's limit rather than the runner's own share, so the runner refuses a machine that does not fit, but nothing hibernates idle agents to make room.
 The chart renders the runner's token and asks cert-manager for its serving certificate, which names the host address.
 The install copies both to the Mac and starts the runner.
 The controller trusts it through the runners' CA as it trusts a pod, and counts it ready as soon as it answers.
