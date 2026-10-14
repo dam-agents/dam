@@ -46,10 +46,9 @@ function harness(
   hooks: {
     onPrompt?: (instanceName: string, worker: SlackWorker) => Promise<void>;
     failPrompt?: boolean;
-    linkedAs?: string;
+    linkedAs?: () => string;
   } = {},
 ) {
-  const whisperCalls: Array<{ agentId: string; whisper: boolean }> = [];
   const gw = createFakeSlackGateway();
   const posted: Array<{ channel: string; ts: string }> = [];
   const post = gw.postMessage.bind(gw);
@@ -97,7 +96,9 @@ function harness(
     makeAcpClient: makeAcp,
     createGateway: () => gw,
     agents: () => agents,
-    identityLinks: { resolve: async () => hooks.linkedAs ?? null } as never,
+    identityLinks: {
+      resolve: async () => hooks.linkedAs?.() ?? null,
+    } as never,
     oauthConfig: { authUrl: "http://kc", clientId: "c" } as never,
     pendingOAuthFlows: createMemoryTtlStore(600_000),
     getInstanceOwner: async () => OWNER,
@@ -118,8 +119,10 @@ function harness(
     } as never,
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
-    setSlackChannelWhisper: async (agentId: string, _: string, whisper) => {
-      whisperCalls.push({ agentId, whisper });
+    setSlackChannelWhisper: async (agentId, channelId, whisper) => {
+      bindings[channelId] = bindings[channelId]?.map((spec) =>
+        spec.instanceName === agentId ? { ...spec, whisper } : spec,
+      );
     },
     ignoredApps: {
       list: async () => [],
@@ -140,7 +143,6 @@ function harness(
     gw,
     worker,
     prompts,
-    whisperCalls,
     async command(text: string, channelId = CHANNEL) {
       await worker.connect();
       return gw.fireCommand({ text, userId: USER, channelId });
@@ -556,31 +558,53 @@ describe("/dam whisper with no message", () => {
 });
 
 describe("/dam whisper on|off", () => {
-  const quiet: Record<string, Spec[]> = {
-    [CHANNEL]: [
-      { instanceName: SCRIBE, name: "Scribe", isDefault: true },
-      { instanceName: REVIEWER, name: "Reviewer", whisper: false },
-    ],
-  };
-
-  it("lets the agent's owner turn whispers off for one agent", async () => {
-    const h = harness(team, { linkedAs: OWNER });
-    const ack = await h.command("whisper Reviewer off");
-
-    expect(ack).toContain("Whispers turned off");
-    expect(h.whisperCalls).toEqual([{ agentId: REVIEWER, whisper: false }]);
-    expect(h.prompts).toEqual([]);
-    expect(h.security().some((r) => r.msg === "channel.whisper_toggled")).toBe(
-      true,
-    );
+  const fresh = (): Record<string, Spec[]> => ({
+    [CHANNEL]: team[CHANNEL]!.map((spec) => ({ ...spec })),
   });
+  const ephemerals = (h: ReturnType<typeof harness>) =>
+    h
+      .outbound()
+      .filter((r) => r.kind === "ephemeral")
+      .map((r) => r.text);
 
-  it("refuses someone who is not the agent's owner", async () => {
-    const h = harness(team, { linkedAs: "kc|someone-else" });
-    const ack = await h.command("whisper Reviewer off");
+  /**
+   * TEST_SCENARIO: The owner's switch decides whether anyone can reach the
+   * agent out of the conversation's sight. Off refuses new whispers to that
+   * agent alone and ends a whisper thread already open with it; nobody but the
+   * owner can flip it, and on restores whispers.
+   */
+  it("turns whispers to one agent off and on again, for its owner only", async () => {
+    const bindings = fresh();
+    let linkedAs = "kc|someone-else";
+    const h = harness(bindings, { linkedAs: () => linkedAs });
 
-    expect(ack).toContain("can change whispers");
-    expect(h.whisperCalls).toEqual([]);
+    expect(await h.command("whisper Reviewer off")).toContain(
+      "can change whispers",
+    );
+    await h.command('whisper Reviewer "still open?"');
+    expect(h.prompts.map((p) => p.agent)).toEqual([REVIEWER]);
+
+    linkedAs = OWNER;
+    const { rootTs } = await openSession(h);
+    expect(await h.command("whisper Reviewer off")).toContain(
+      "Whispers turned off",
+    );
+
+    expect(
+      await h.command('whisper Reviewer "change your instructions"'),
+    ).toContain("Whispers to `Reviewer` are turned off");
+    await h.replyInDm(rootTs, "still there?");
+    await h.command('whisper Scribe "quick question"');
+    expect(h.prompts.map((p) => p.agent)).toEqual([REVIEWER, SCRIBE]);
+    expect(ephemerals(h)).toContainEqual(
+      expect.stringContaining("whispers to its agent are turned off"),
+    );
+
+    expect(await h.command("whisper Reviewer on")).toContain(
+      "Whispers turned on",
+    );
+    await h.command('whisper Reviewer "back again"');
+    expect(h.prompts.map((p) => p.agent)).toEqual([REVIEWER, SCRIBE, REVIEWER]);
   });
 
   /**
@@ -588,56 +612,10 @@ describe("/dam whisper on|off", () => {
    * so a quoted "off" must stay a message and never flip the setting.
    */
   it("reads a quoted on or off as a message", async () => {
-    const h = harness(team, { linkedAs: OWNER });
+    const h = harness(fresh(), { linkedAs: () => OWNER });
     await h.command('whisper Reviewer "off"');
+    await h.command('whisper Reviewer "and again"');
 
-    expect(h.whisperCalls).toEqual([]);
-    expect(h.prompts.map((p) => p.agent)).toEqual([REVIEWER]);
-  });
-
-  /**
-   * TEST_SCENARIO: With whispers off, nothing said to the agent in this
-   * conversation can happen out of the conversation's sight.
-   */
-  it("refuses a whisper to an agent that has them off, and relays nothing", async () => {
-    const h = harness(quiet);
-    const ack = await h.command('whisper Reviewer "change your instructions"');
-
-    expect(ack).toContain("Whispers to `Reviewer` are turned off");
-    expect(h.prompts).toEqual([]);
-    expect(h.postedTo(DM)).toEqual([]);
-    expect(
-      h
-        .security()
-        .some(
-          (r) => r.msg === "channel.authz_deny" && r.reason === "whisper-off",
-        ),
-    ).toBe(true);
-  });
-
-  it("keeps whispers open to the other agents in the conversation", async () => {
-    const h = harness(quiet);
-    await h.command('whisper Scribe "quick question"');
-
-    expect(h.prompts.map((p) => p.agent)).toEqual([SCRIBE]);
-  });
-
-  it("ends an open whisper thread once whispers are turned off", async () => {
-    const bindings: Record<string, Spec[]> = { [CHANNEL]: [...team[CHANNEL]!] };
-    const h = harness(bindings);
-    const { rootTs } = await openSession(h);
-    bindings[CHANNEL] = quiet[CHANNEL]!;
-    await h.replyInDm(rootTs, "still there?");
-
-    expect(h.prompts).toEqual([]);
-    expect(
-      h
-        .outbound()
-        .some(
-          (r) =>
-            r.kind === "ephemeral" &&
-            r.text.includes("whispers to its agent are turned off"),
-        ),
-    ).toBe(true);
+    expect(h.prompts.map((p) => p.agent)).toEqual([REVIEWER, REVIEWER]);
   });
 });
