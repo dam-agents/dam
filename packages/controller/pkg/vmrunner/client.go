@@ -23,6 +23,9 @@ var ErrUnauthorized = errors.New("the VM runner refused the controller's token")
 // UNIT_BOUNDARY_DESCRIPTION: a 404: the machine is not on the runner, or the runner's release does not serve the route at all, as a runner from before the pressure read does not.
 var ErrNotServed = errors.New("404 Not Found")
 
+// UNIT_BOUNDARY_DESCRIPTION: a 503: the runner is closing, as it does for a stop or a hand-off, and did not store the spec.
+var ErrUnavailable = errors.New("503 Service Unavailable")
+
 type Client struct {
 	URL  string
 	HTTP *http.Client
@@ -32,7 +35,7 @@ type Client struct {
 	reload func(context.Context) (string, error)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a runner that is merely busy may take seconds to answer — a put may probe the guest's agent, and a delete waits out the operation in flight — but one that is unreachable must fail fast, because a single reconcile worker serves every agent in the install and would otherwise spend the whole request timeout on each attempt.
+// UNIT_BOUNDARY_DESCRIPTION: a runner that is merely busy may take seconds to answer — a put may probe the guest's agent, and a delete waits out the operation in flight — but one that is unreachable must fail fast, because the reconcile worker that calls it serves many owners' agents and would otherwise spend the whole request timeout on each attempt.
 func NewClient(url, token, caPEM string) (*Client, error) {
 	c := &Client{URL: url, token: token, HTTP: &http.Client{Timeout: 20 * time.Second}}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
@@ -174,6 +177,8 @@ func (c *Client) call(ctx context.Context, hc *http.Client, method, path string,
 			}
 		case resp.StatusCode == http.StatusNotFound:
 			return nil, fmt.Errorf("%w: %s", ErrNotServed, bytes.TrimSpace(raw))
+		case resp.StatusCode == http.StatusServiceUnavailable:
+			return nil, fmt.Errorf("%w: %s", ErrUnavailable, bytes.TrimSpace(raw))
 		case resp.StatusCode >= 300:
 			return nil, fmt.Errorf("%s: %s", resp.Status, bytes.TrimSpace(raw))
 		default:

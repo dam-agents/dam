@@ -57,6 +57,8 @@ type fakeNode struct {
 	release  vmrunner.RunnerRelease
 	usage    vmrunner.RunnerUsage
 	onPut    func(vmrunner.MachineSpec)
+	// UNIT_BOUNDARY_DESCRIPTION: every ensure is refused with a 500, as a runner release that runs but cannot manage machines refuses them.
+	refusesEnsures bool
 	// UNIT_BOUNDARY_DESCRIPTION: a stop answers stopping, as the real runner's does, and the machine stays so until a test sets it stopped. Without it a stop takes effect at once.
 	stopsSlowly bool
 }
@@ -97,6 +99,10 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 		}
 		switch r.Method {
 		case http.MethodPut:
+			if n.refusesEnsures {
+				http.Error(w, "the release cannot manage this machine", http.StatusInternalServerError)
+				return
+			}
 			var spec vmrunner.MachineSpec
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&spec))
 			n.specs[id] = spec
@@ -898,6 +904,65 @@ func TestADeleteWithNoOwnerReachesEveryRunner(t *testing.T) {
 	assert.Equal(t, []string{"my-agent"}, other.deleted)
 }
 
+// TEST_SCENARIO: the controller reconciles different owners' agents on different workers at once. A runner that hangs but keeps its listener holds its owner's reconcile for the runner client's timeout, and nothing the reconciler shares across owners may be held across that call, or another owner's wake waits on it anyway.
+func TestAHungRunnerHoldsUpNoOtherOwnersReconcile(t *testing.T) {
+	ctx := context.Background()
+	stuck := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, stuck)
+	addRunner(t, r, "owner-b")
+	woken := vmAgentCR()
+	woken.Name = "woken-agent"
+	woken.Labels = map[string]string{envoyOwnerLabel: "owner-b"}
+	u, err := agentToUnstructured(woken)
+	require.NoError(t, err)
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Create(ctx, u, metav1.CreateOptions{})
+	require.NoError(t, err)
+	leaf := leafSecret()
+	leaf.Name = EnvoyLeafSecretName(woken.Name)
+	_, err = r.client.CoreV1().Secrets("test-agents").Create(ctx, leaf, metav1.CreateOptions{})
+	require.NoError(t, err)
+	pod := readyRunnerPod()
+	pod.Name, pod.Labels = r.runnerName("owner-b")+"-pinned", vmRunnerSelector("owner-b")
+	_, err = r.client.CoreV1().Pods("test-agents").Create(ctx, pod, metav1.CreateOptions{})
+	require.NoError(t, err)
+	require.NoError(t, r.Reconcile(ctx, woken))
+
+	entered, release := make(chan struct{}, 1), make(chan struct{})
+	hung := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		<-release
+	}))
+	t.Cleanup(hung.Close)
+	reachable := r.runnerEndpoint
+	r.runnerEndpoint = func(owner string) string {
+		if owner == testOwner {
+			return hung.URL
+		}
+		return reachable(owner)
+	}
+	done := make(chan struct{})
+	go func() {
+		_ = r.Reconcile(ctx, stuck)
+		close(done)
+	}()
+	t.Cleanup(func() {
+		close(release)
+		<-done
+	})
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the stuck owner's reconcile never called its runner")
+	}
+
+	start := time.Now()
+	require.NoError(t, r.Reconcile(ctx, woken))
+	assert.Less(t, time.Since(start), 2*time.Second, "another owner's reconcile waited on the hung runner")
+}
+
 // TEST_SCENARIO: the sweep needs every runner's token and CA, and runs every ten minutes over every owner. Both of a runner's Secrets carry the component label — the token by the controller, the TLS Secret by cert-manager from the Certificate's template — so one List serves them all and no Secret is read by name.
 func TestTheSweepReadsRunnerSecretsInOneList(t *testing.T) {
 	ctx := context.Background()
@@ -1360,7 +1425,7 @@ func TestRunnerOwnershipFollowsARecreatedServiceAccount(t *testing.T) {
 		"a stale UID here is collected by the garbage collector the moment a runner object is written")
 }
 
-// TEST_SCENARIO: Helm never sees a runner — the controller creates it — so nothing would remove one on uninstall, on rollback, or when virtualization is switched off. Every object it creates is owned by the ServiceAccount the chart does render, which sits in the same namespace because an owner reference may not cross one; a single object missing the reference strands a running VM and its disk.
+// TEST_SCENARIO: Helm never sees a runner — the controller creates it — so nothing would remove one on uninstall, on rollback, or when virtualization is switched off. Every object it creates is owned by the ServiceAccount the chart does render, which sits in the same namespace because an owner reference may not cross one; a single object missing the reference strands a running VM. The claim is the exception: it holds every machine disk of the owner, so one deletion of the account must not collect it.
 func TestRunnerObjectsAreOwnedByTheRunnerServiceAccount(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -1386,7 +1451,7 @@ func TestRunnerObjectsAreOwnedByTheRunnerServiceAccount(t *testing.T) {
 	owners["certificate"] = cert.GetOwnerReferences()
 	pvc, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, name, metav1.GetOptions{})
 	require.NoError(t, err)
-	owners["pvc"] = pvc.OwnerReferences
+	assert.Empty(t, pvc.OwnerReferences, "a claim owned by the account loses every disk on it when the account is recreated")
 	svc, err := r.client.CoreV1().Services("test-agents").Get(ctx, name, metav1.GetOptions{})
 	require.NoError(t, err)
 	owners["service"] = svc.OwnerReferences

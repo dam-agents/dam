@@ -145,6 +145,7 @@ func (r *AgentReconciler) rollRunnerDeploymentFrom(ctx context.Context, owner st
 		r.runnerRoll.rolling = append(rolling, dep.Name)
 		sort.Strings(r.runnerRoll.rolling)
 	}
+	r.endRunnerHandoff(ctx, owner)
 	slog.Info("vm runner: rolling the pod", "owner", owner, "template", hash, "machines", dep.Annotations[annRunnerAwaiting])
 	return nil
 }
@@ -296,6 +297,18 @@ func (r *AgentReconciler) runnersMidRoll(ctx context.Context) ([]string, error) 
 		delete(dep.Annotations, annRunnerStalled)
 		if _, err := cli.Update(ctx, dep, metav1.UpdateOptions{}); err != nil {
 			slog.Warn("vm runner: clearing a settled roll", "runner", dep.Name, "error", err)
+		}
+	}
+	if r.config.VM.Runner.ReleaseHostPath != "" {
+		cms, err := r.client.CoreV1().ConfigMaps(r.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "app.kubernetes.io/component=" + vmRunnerComponent})
+		if err != nil {
+			return nil, err
+		}
+		for i := range cms.Items {
+			name := r.runnerName(cms.Items[i].Labels[envoyOwnerLabel])
+			if r.runnerHandoffHolds(ctx, &cms.Items[i], timeout) && !slices.Contains(rolling, name) {
+				rolling = append(rolling, name)
+			}
 		}
 	}
 	sort.Strings(rolling)

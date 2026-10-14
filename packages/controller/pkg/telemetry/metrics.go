@@ -84,6 +84,21 @@ func RunnerRollStalled(ctx context.Context) {
 	}
 }
 
+var runnerHandoffStalled = sync.OnceValue(func() metric.Int64Counter {
+	counter, err := otel.Meter(ScopeName).Int64Counter("platform.vm_runner.handoff_stalled",
+		metric.WithDescription("VM runner hand-offs to a new release that the runner held as failed, that saw an ensure refused, or that did not settle by the settle timeout, and which halt the release"))
+	if err != nil {
+		otel.Handle(err)
+	}
+	return counter
+})
+
+func RunnerHandoffStalled(ctx context.Context) {
+	if c := runnerHandoffStalled(); c != nil {
+		c.Add(ctx, 1)
+	}
+}
+
 var runtimeMigrationEvents = sync.OnceValue(func() metric.Int64Counter {
 	counter, err := otel.Meter(ScopeName).Int64Counter("platform.runtime_migration.events",
 		metric.WithDescription("Runtime migration steps the controller reported on an Agent, by the reason of the Kubernetes Event it wrote"))

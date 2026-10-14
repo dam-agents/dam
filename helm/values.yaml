@@ -330,6 +330,11 @@ virtualization:
     # a free place in the roll: it is offered again on the next pass, and
     # other owners roll meanwhile. `idleWait` bounds that wait; past it, the
     # runner rolls even with an agent busy.
+    # With `releaseHostPath` set, a new runner image is handed to each pod in
+    # place instead, and each hand-off takes a place in the same width until
+    # the runner runs the release and its machines answer again; a hand-off
+    # that fails, sees an ensure refused, or outlasts `settleTimeout` halts
+    # the release.
     rollout:
       maxConcurrent: 1
       settleTimeout: 10m
