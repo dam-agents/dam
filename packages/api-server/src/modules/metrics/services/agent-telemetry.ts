@@ -1,9 +1,11 @@
 import type {
+  agentMetricsInputSchema,
   CallContext,
   SessionRuntime,
   SubAgentSpend,
   TokenSpendByModel,
 } from "api-server-api";
+import type { z } from "zod";
 import type {
   MetricsReader,
   MetricsWindow,
@@ -11,8 +13,9 @@ import type {
   TraceSpan,
 } from "./metrics-service.js";
 
-export type AgentMetricsGranularity =
-  "summary" | "session" | "call" | "subagent";
+export type AgentMetricsGranularity = z.output<
+  typeof agentMetricsInputSchema
+>["granularity"];
 
 export interface AgentTelemetryQuery {
   days: number;
