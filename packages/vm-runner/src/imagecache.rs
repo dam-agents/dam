@@ -358,7 +358,7 @@ impl ImageCache {
         Ok(Some((launch, origin)))
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a cache hit is a boot the registry never saw, so on a shared cache an entry that is not known to be public is served only after a registry still gives it to the caller where it came from: an anonymous read of one of its origin repositories first, which marks it public, then each of the caller's credentials against each origin in turn. The repository the caller names is never what is asked, because anyone can name any digest under a registry of their own that answers every read. A caller whose repository is not an origin and whose credentials read none is unproven rather than refused, and fetches the digest itself. It fails closed: a registry that cannot be reached refuses the boot. What is known to be public is kept in memory only, so after a restart every entry is checked once again. A boot the registry granted is remembered per digest and credential, and an anonymous read that failed per digest, each for `ref_fresh`: a fleet of creates on one private image then asks the registry once, and a revoked pull secret still boots a tree it was granted for that long, as a tag boots what it last resolved to.
+    // UNIT_BOUNDARY_DESCRIPTION: a cache hit is a boot the registry never saw, so on a shared cache an entry that is not known to be public is served only after a registry still gives it to the caller where it came from: an anonymous read of one of its origin repositories first, which marks it public, then each of the caller's credentials against each origin in turn. The repository the caller names is never what is asked, because anyone can name any digest under a registry of their own that answers every read. A caller whose repository is not an origin and whose credentials read none is unproven rather than refused, and fetches the digest itself. It fails closed: a registry that cannot be reached refuses the boot. What is known to be public is kept in memory only, so after a restart every entry is checked once again. A boot the registry granted is remembered per digest and credential, and an anonymous read that failed per digest, each for `ref_fresh`: a fleet of creates on one private image then asks the registry once. A failed anonymous read only moves that read after the caller's credentials; it is never what refuses a boot, since a read that timed out reads the same as one refused, and a public image must still boot for a caller with no credential; and a revoked pull secret still boots a tree it was granted for that long, as a tag boots what it last resolved to.
     fn may_reuse(
         &self,
         caller_repo: &str,
@@ -402,17 +402,20 @@ impl ImageCache {
             .iter()
             .map(|repo| format!("{repo}@{digest}"))
             .collect();
-        if !known_private {
-            if origins
+        let anonymous = || {
+            let public = origins
                 .iter()
-                .any(|at| fetch::readable(crane, at, ANONYMOUS, deadline, lifetime))
-            {
-                locked(&self.memory).public.insert(digest.to_string());
-                return Ok(Reuse::Granted);
+                .any(|at| fetch::readable(crane, at, ANONYMOUS, deadline, lifetime));
+            let mut memory = locked(&self.memory);
+            if public {
+                memory.public.insert(digest.to_string());
+            } else {
+                memory.private.insert(digest.to_string(), Instant::now());
             }
-            locked(&self.memory)
-                .private
-                .insert(digest.to_string(), Instant::now());
+            public
+        };
+        if !known_private && anonymous() {
+            return Ok(Reuse::Granted);
         }
         if let Some(key) = auths.iter().zip(keys).find_map(|(auth, key)| {
             origins
@@ -421,6 +424,9 @@ impl ImageCache {
                 .then_some(key)
         }) {
             locked(&self.memory).granted.insert(key, Instant::now());
+            return Ok(Reuse::Granted);
+        }
+        if known_private && anonymous() {
             return Ok(Reuse::Granted);
         }
         if origin.repositories.contains(caller_repo) {

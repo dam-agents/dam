@@ -695,8 +695,8 @@ fn a_private_entry_granted_once_boots_again_without_asking() {
         .is_err());
     assert_eq!(
         f.calls("digest") - probes,
-        first + 1,
-        "the known-private entry was read anonymously again"
+        first + 2,
+        "a refusal must read anonymously again, after the credential"
     );
 
     let stale = f.cache(|c| c.ref_fresh = Duration::ZERO);
@@ -704,7 +704,25 @@ fn a_private_entry_granted_once_boots_again_without_asking() {
     assert!(stale.resolve(&pinned, &credential).resolved.is_ok());
     assert_eq!(
         f.calls("digest") - probes,
-        first + 1 + 4,
+        first + 2 + 4,
         "a lapsed grant was not asked again"
+    );
+}
+
+// TEST_SCENARIO: an anonymous read that fails because the registry timed out reads the same as one refused, and is remembered as private. A public image must still boot for a caller with no credential once the registry answers again, so a refusal reads anonymously again rather than trusting what it remembered.
+#[test]
+fn a_transient_anonymous_failure_does_not_refuse_a_public_image() {
+    let f = Fixture::new("transient", PUBLIC_CRANE);
+    let cache = f.cache(|_| {});
+    let digest = digest_of(&cache, IMAGE);
+    let pinned = format!("quay.io/x/vm@{digest}");
+    locked(&cache.memory).public.remove(&digest);
+    fs::write(f.dir.path().join("registry-down"), "").unwrap();
+    assert!(cache.resolve(&pinned, &[]).resolved.is_err());
+    assert!(locked(&cache.memory).private.contains_key(&digest));
+    fs::remove_file(f.dir.path().join("registry-down")).unwrap();
+    assert!(
+        cache.resolve(&pinned, &[]).resolved.is_ok(),
+        "a remembered failed read refused a public image"
     );
 }
