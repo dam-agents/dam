@@ -2940,7 +2940,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the entrypoint is started with argv exactly as the image names it, argv[0] included although the binary was found on PATH, and with the trust cache named in its environment. platform-init blocks the signals it forwards, and Rust ignores SIGPIPE; the entrypoint must inherit neither, or a shell pipeline in the image is never ended by a closed pipe and the entrypoint never sees SIGTERM.
+    // TEST_SCENARIO: the entrypoint is started with argv exactly as the image names it, argv[0] included although the binary was found on PATH, and with the trust cache named in its environment. platform-init blocks the signals it forwards, and Rust ignores SIGPIPE; the entrypoint must inherit neither, or a shell pipeline in the image is never ended by a closed pipe and the entrypoint never sees SIGTERM. The signals glibc reserves below SIGRTMIN are left out: under Docker's default seccomp profile the spawned process starts with them ignored, and the C library keeps them for its own use, so no program in the image can catch or send them.
     #[test]
     fn the_entrypoint_starts_with_the_images_argv_and_a_clean_signal_state() {
         let binary = look_path(OsStr::new("sh"), None).unwrap();
@@ -2970,9 +2970,10 @@ mod tests {
         let output = String::from_utf8(thread.join().unwrap().stdout).unwrap();
         let mut lines = output.lines();
         assert_eq!(lines.next(), Some("image-sh /var/cache/platform/trust"));
+        let glibc_reserved: u64 = (32..libc::SIGRTMIN()).map(|s| 1 << (s - 1)).sum();
         for line in lines {
             let mask = u64::from_str_radix(line.split_whitespace().nth(1).unwrap(), 16).unwrap();
-            assert_eq!(mask, 0, "the entrypoint inherited {line}");
+            assert_eq!(mask & !glibc_reserved, 0, "the entrypoint inherited {line}");
         }
     }
 
