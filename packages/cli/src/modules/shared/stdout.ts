@@ -1,5 +1,5 @@
 export async function writeStdoutAndExit(
-  data: string,
+  data: string | Uint8Array,
   exitCode: number,
 ): Promise<never> {
   await new Promise<void>((resolve) => {

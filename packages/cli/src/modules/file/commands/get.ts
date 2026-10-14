@@ -8,6 +8,7 @@ import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentService } from "../../agent/index.js";
 import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
+import { writeStdoutAndExit } from "../../shared/stdout.js";
 import { printTrpcError, serverDetail } from "../../shared/trpc/print.js";
 import { createAgentTrpcClient } from "../../shared/trpc/trpc-client.js";
 import {
@@ -95,8 +96,7 @@ export function buildFileGetCommand(deps: FileGetDeps): Command {
           : Buffer.from(result.content, "utf8");
 
         if (opts.stdout) {
-          process.stdout.write(bytes);
-          process.exit(EXIT_SUCCESS);
+          return writeStdoutAndExit(bytes, EXIT_SUCCESS);
         }
 
         const target_ = localPath as string;
