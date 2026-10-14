@@ -1,4 +1,8 @@
-import type { DelegationNode, InvocationStatus } from "api-server-api";
+import type {
+  DelegationNode,
+  InvocationHarnessConfig,
+  InvocationStatus,
+} from "api-server-api";
 
 export interface DelegationRecord {
   id: string;
@@ -10,6 +14,7 @@ export interface DelegationRecord {
   connections: string[];
   cpu: string | null;
   memory: string | null;
+  harnessConfig: InvocationHarnessConfig | null;
   status: InvocationStatus;
   errorReason: string | null;
   result: unknown;
@@ -35,6 +40,7 @@ function toNode(
     connections: row.connections,
     cpu: row.cpu,
     memory: row.memory,
+    requestedModel: row.harnessConfig?.model ?? null,
     createdAt: row.createdAt.toISOString(),
     completedAt: row.completedAt?.toISOString() ?? null,
     transcriptAvailable: row.transcriptCaptured,
