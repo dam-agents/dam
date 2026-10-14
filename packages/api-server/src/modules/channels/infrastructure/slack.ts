@@ -2094,6 +2094,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       };
     }
     const iconUrl = agentIcon && character ? await agentIcon(character) : null;
+    if (agentIcon && character && !iconUrl)
+      getLogger().warn(
+        { agentId: instanceName, character },
+        "slack.agent_icon.missing",
+      );
     return {
       persona: { username, ...(iconUrl ? { iconUrl } : {}) },
       sign: (text) => text,
