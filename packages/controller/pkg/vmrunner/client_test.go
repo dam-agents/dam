@@ -84,3 +84,20 @@ func TestAnUnreachableRunnerIsDescribedWithoutItsAddress(t *testing.T) {
 	assert.False(t, strings.Contains(err.Error(), strings.TrimPrefix(addr, "http://")), "the dialled address leaked: %s", err)
 	assert.NotNil(t, errors.Unwrap(unreachable))
 }
+
+// TEST_SCENARIO: a proxy in front of the runner answers with an error page far larger than any message. The client reads only the start of it, so the page is neither held in memory whole nor carried into the error.
+func TestALargeErrorPageIsReadOnlyInPart(t *testing.T) {
+	page := "<html>bad gateway" + strings.Repeat("<p>proxy</p>", 1<<20)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, page, http.StatusBadGateway)
+	}))
+	t.Cleanup(srv.Close)
+	c, err := NewClient(srv.URL, "t", "")
+	require.NoError(t, err)
+
+	_, err = c.Status(context.Background(), "m1")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "502 Bad Gateway: <html>bad gateway")
+	assert.Less(t, len(err.Error()), errorBodyMax+200)
+}

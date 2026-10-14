@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 
+import { ErrorBoundary } from "@/components/error-boundary";
 import { CopyButton } from "@/components/ui/copy-button";
 import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
-import type { ToolChip as T } from "../../../types.js";
+import type { ToolChip as T, ToolContent } from "../../../types.js";
 import { ActivityBlock } from "./activity-block.js";
 
 export function stripFences(text: string): string {
@@ -50,6 +51,32 @@ export function ToolContentBlock({ text }: { text: string }) {
   );
 }
 
+const ToolDiffBlock = lazy(() =>
+  import("./tool-diff-block.js").then((m) => ({ default: m.ToolDiffBlock })),
+);
+
+export function ToolContentList({
+  content,
+}: {
+  content: ToolContent[] | undefined;
+}) {
+  return content?.map((c, i) =>
+    c.type === "diff" ? (
+      <ErrorBoundary key={i} fallback={<ToolContentBlock text={c.newText} />}>
+        <Suspense fallback={<ToolContentBlock text={c.newText} />}>
+          <ToolDiffBlock
+            path={c.path}
+            oldText={c.oldText}
+            newText={c.newText}
+          />
+        </Suspense>
+      </ErrorBoundary>
+    ) : (
+      <ToolContentBlock key={i} text={c.text} />
+    ),
+  );
+}
+
 export function ToolChip({ chip }: { chip: T }) {
   const [open, setOpen] = useState(false);
   const running = chip.status === "in_progress" || chip.status === "running";
@@ -84,9 +111,7 @@ export function ToolChip({ chip }: { chip: T }) {
         />
       }
     >
-      {chip.content?.map((c, i) =>
-        c.text ? <ToolContentBlock key={i} text={c.text} /> : null,
-      )}
+      <ToolContentList content={chip.content} />
     </ActivityBlock>
   );
 }

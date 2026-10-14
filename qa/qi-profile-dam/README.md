@@ -13,7 +13,8 @@ A change that alters what a fresh install needs — a new prerequisite, a rename
 
 ## Delivery
 
-The inspector's operator adds this repository as a skill source with path `qa` and assigns `qi-profile-dam`; the platform fetches only this directory, and the inspector's egress allows only `GET /repos/dam-agents/dam/contents/qa*`.
+The inspector's operator adds this repository as a skill source with path `qa` and assigns `qi-profile-dam`; the platform fetches only this directory, and the inspector's egress allows only `GET /repos/dam-agents/dam/contents/qa/*` and `GET /repos/dam-agents/dam/contents/qa?*`.
+Keep `qa/` free of symlinks: the Contents API answers a symlink to a file with that file's content.
 
 ## Config (`work/CONFIG.md` of the inspector)
 

@@ -726,3 +726,61 @@ fn a_transient_anonymous_failure_does_not_refuse_a_public_image() {
         "a remembered failed read refused a public image"
     );
 }
+
+// TEST_SCENARIO: a fetch that does not fit used to start anyway and evict only once it had succeeded, so a disk or budget it filled failed the fetch while unheld trees sat there. Unheld entries are evicted before the download starts, against what the image takes unpacked rather than its compressed size, so the room is there even when the fetch then fails. The evicted tree is deleted off the resolve's thread and is gone soon after.
+#[test]
+fn a_fetch_evicts_what_it_needs_before_it_downloads() {
+    let f = Fixture::new("room-first", PUBLIC_CRANE);
+    let cache = f.cache(|c| {
+        c.budget = 100;
+        c.hold_lease = Duration::ZERO;
+    });
+    let old = digest_of(&cache, "quay.io/x/a:1");
+    fs::write(f.dir.path().join("size"), "1000").unwrap();
+    fs::write(f.dir.path().join("export-fails"), "").unwrap();
+    let failed = cache.resolve("quay.io/x/b:1", &[]);
+    assert!(failed.resolved.is_err());
+    let report = failed.fetched.expect("the fetch ran");
+    assert_eq!(
+        report.freed.len(),
+        1,
+        "nothing was evicted before the fetch"
+    );
+    assert!(!cache.digest_entry(&old).exists());
+    let started = Instant::now();
+    while scratch_trees(&cache) > 0 || cache.reclaiming.load(Ordering::Relaxed) > 0 {
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "the evicted tree was never deleted"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+// TEST_SCENARIO: a fetch keeps nothing when it fails, so a preloaded image that cannot unpack would be downloaded whole again on every pass, forever. A digest whose fetch failed waits out its retry before the next fetch, and the wait grows with each failure. The wait belongs to the digest: a tag that moves to a new image is fetched on the next pass.
+#[test]
+fn a_preload_that_fails_waits_before_it_fetches_again() {
+    let f = Fixture::new("preload-retry", PUBLIC_CRANE);
+    fs::write(f.dir.path().join("export-fails"), "").unwrap();
+    let cache = f.cache(|c| c.pins = vec![IMAGE.into()]);
+    cache.preload(&[]);
+    cache.preload(&[]);
+    assert_eq!(
+        f.calls("export"),
+        1,
+        "a failed preload was fetched again at once"
+    );
+    assert_eq!(preload_retry(1), PRELOAD_RETRY);
+    assert_eq!(preload_retry(2), PRELOAD_RETRY * 2);
+    assert_eq!(preload_retry(40), PRELOAD_RETRY_MAX);
+
+    fs::remove_file(f.dir.path().join("export-fails")).unwrap();
+    fs::write(f.dir.path().join("moved"), "v2").unwrap();
+    cache.preload(&[]);
+    assert_eq!(
+        f.calls("export"),
+        2,
+        "a moved tag waited out the old digest's retry"
+    );
+    assert!(locked(&cache.memory).preload_failures.is_empty());
+}

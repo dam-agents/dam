@@ -51,6 +51,9 @@ const (
 
 var errLeafSecretPending = errors.New("envoy leaf TLS Secret not yet issued")
 
+// UNIT_BOUNDARY_DESCRIPTION: the runner took the stop but the guest is still being signalled, quiesced and powered off. The runner answers a stop at once, so a machine reads stopped only on a later status.
+var errMachineStopping = errors.New("the machine is still stopping")
+
 // UNIT_BOUNDARY_DESCRIPTION: ensures the Agent's machine on its owner's runner. `publish` points the agent Service at the machine; a machine a runtime migration builds beside a container that still serves leaves the Service to the container, and takes it from its boot on, while the container is down, so the api-server can push the machine's env before the Backend switches.
 func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Agent, ownerRef metav1.OwnerReference, gatewayIP string, running, publish bool) (vmrunner.MachineStatus, bool, error) {
 	name, spec := agent.Name, &agent.Spec
@@ -176,6 +179,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		machine.Migration = &vmrunner.MachineMigration{}
 	}
 	st, err := runner.Ensure(ctx, name, machine)
+	r.stallRunnerHandoffOnEnsure(ctx, owner, err)
 	if err == nil && st.DiskGiB > 0 {
 		r.vmDiskGrows.Store(name, true)
 	}
@@ -197,7 +201,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 			return st, false, fmt.Errorf("applying agent service: %w", err)
 		}
 	}
-	if running && !st.Ready && (st.Reason == "" || st.Reason == vmrunner.ReasonNotReady) {
+	if running && !st.Ready && (st.Reason == "" || st.Reason == vmrunner.ReasonNotReady) || !running && !machineStopped(st) {
 		r.watchMachine(runner, name, st.Version)
 	} else {
 		r.unwatchMachine(name)
@@ -550,10 +554,20 @@ func (r *AgentReconciler) HaltMachine(ctx context.Context, owner, name string) e
 	if runtimeMigrationOfObject(agent).seedable() {
 		halt.Migration = &vmrunner.MachineMigration{}
 	}
-	if _, err := client.Ensure(ctx, name, halt); err != nil {
+	st, err := client.Ensure(ctx, name, halt)
+	r.stallRunnerHandoffOnEnsure(ctx, owner, err)
+	if err != nil {
 		return fmt.Errorf("stopping machine for %s: %w", name, err)
 	}
+	if !machineStopped(st) {
+		r.watchMachine(client, name, st.Version)
+		return fmt.Errorf("%w: it is %s", errMachineStopping, st.State)
+	}
 	return nil
+}
+
+func machineStopped(st vmrunner.MachineStatus) bool {
+	return st.State == vmrunner.StateStopped || st.State == vmrunner.StateAbsent
 }
 
 func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.Agent, st vmrunner.MachineStatus, runnerReached bool) error {

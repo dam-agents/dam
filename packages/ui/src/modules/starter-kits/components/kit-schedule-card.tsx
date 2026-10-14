@@ -33,6 +33,7 @@ import {
   overrideFromForm,
 } from "../lib/kit-schedule-form.js";
 import { kitScheduleCadence } from "../lib/setup.js";
+import { ClampedText } from "./clamped-text.js";
 import { KitScheduleInstructions } from "./kit-schedule-instructions.js";
 
 interface Props {
@@ -126,6 +127,12 @@ export function KitScheduleCard({
               </Badge>
             )}
           </div>
+          {schedule.description && (
+            <ClampedText
+              text={schedule.description}
+              className="mt-0.5 text-sm text-foreground/80"
+            />
+          )}
           <p className="mt-0.5 text-sm text-muted-foreground">
             {keepsDeclared
               ? kitScheduleCadence(schedule)
