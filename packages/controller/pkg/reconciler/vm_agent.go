@@ -578,7 +578,7 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 	killedAt := func() time.Time { return r.runnerOOMKilledAt(ctx, agent.Labels[envoyOwnerLabel]) }
 	if reason == vmrunner.ReasonNotReady && runnerOOMTookDown(apimeta.FindStatusCondition(agent.Status.Conditions, apiv1.ConditionAgentPodReady), running == true, st.Ready, killedAt) {
 		reason = apiv1.ReasonRunnerOutOfMemory
-		msg = "its owner's VM memory ran out, so every VM agent of theirs that was running restarted; stop agents you are not using to free memory"
+		msg = "Your VM agents ran out of memory together, so the ones that were running restarted. Pause agents you aren't using to free memory."
 	}
 	restartReason := ""
 	if st.Restarts > 0 {

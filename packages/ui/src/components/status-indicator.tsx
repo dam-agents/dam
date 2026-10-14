@@ -8,7 +8,7 @@ const stateLabel: Record<AgentDisplayState, string> = {
   starting: "Starting",
   preparing_workspace: "Preparing workspace",
   hibernating: "Hibernating",
-  hibernated: "Hibernating",
+  hibernated: "Paused",
   error: "Error",
   over_budget: "Over budget",
   migrating: "Migrating",
@@ -43,10 +43,12 @@ export function StatusBadge({
   state,
   working,
   keptWork = 0,
+  vm,
   className,
 }: {
   state: AgentDisplayState;
   working?: boolean;
+  vm?: boolean;
   keptWork?: number;
   className?: string;
 }) {
@@ -58,7 +60,9 @@ export function StatusBadge({
     ? working
       ? "Working"
       : "Idle"
-    : stateLabel[state];
+    : vm && state === "over_budget"
+      ? "Waiting for memory"
+      : stateLabel[state];
   const variant = splitRunning && !working ? "accent" : stateVariant[state];
   return (
     <Badge variant={variant} className={className}>

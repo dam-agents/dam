@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sort"
 	"time"
@@ -251,6 +252,17 @@ func (r *AgentReconciler) reclaimForRefusedStart(ctx context.Context, agent *api
 	}
 	_, err = r.reclaimRunnerMemory(ctx, owner, agent.Name, r.runnerOvershootMiB(ctx, owner, demand.memoryMiB, 100), false)
 	return err
+}
+
+func (r *AgentReconciler) vmMemoryFullMessage(ctx context.Context, agent *apiv1.Agent, owner string) string {
+	const next = "It starts on its own once room frees up, since the platform pauses idle agents to make room when it can, or you can pause one yourself."
+	limit := r.runnerLimitMiB(ctx, owner) - r.config.VM.Runner.ReserveMiB
+	demand, err := r.ownerRunnerDemand(ctx, owner, agent, false)
+	if limit <= 0 || err != nil {
+		return "Your VM agents' memory is full, so this agent can't start yet. " + next
+	}
+	return fmt.Sprintf("Your VM agents' memory is full (%.1f of %.1f GiB in use), so this agent can't start yet. %s",
+		float64(min(demand.memoryMiB, limit))/1024, float64(limit)/1024, next)
 }
 
 func (r *AgentReconciler) beginMemoryPass(owner string) bool {

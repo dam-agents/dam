@@ -24,6 +24,8 @@ interface OverlayCopy {
   description: string;
 }
 
+const VM_MEMORY_FULL =
+  "Your VM agents' memory is full. It starts once room frees up — or pause an agent you aren't using.";
 const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
   running: { description: "" },
   starting: { description: "" },
@@ -34,7 +36,7 @@ const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
   hibernated: {
     Icon: Asleep,
     description:
-      "The agent went to sleep after a period of inactivity. Start it to pick up where you left off.",
+      "The agent is paused after a period of inactivity. Start it to pick up where you left off.",
   },
   error: {
     Icon: Warning,
@@ -43,8 +45,8 @@ const OVERLAY_COPY: Record<AgentDisplayState, OverlayCopy> = {
   over_budget: {
     Icon: Warning,
     description:
-      "Starting this agent would exceed your compute budget. Pause or stop " +
-      "a running agent to free room, then start this one again.",
+      "Starting this agent would exceed your compute budget. Pause agents " +
+      "you aren't using to free room, then start this one again.",
   },
   migrating: {
     Icon: Migrate,
@@ -129,7 +131,7 @@ export function AgentUnavailableOverlay({
         </h2>
         <div className="flex items-center gap-2 empty:hidden">
           <VmRuntimeBadge agent={agent} />
-          {state !== "starting" && <StatusBadge state={state} />}
+          {state !== "starting" && <StatusBadge state={state} vm={agent.vm} />}
         </div>
       </div>
       {description && (
@@ -184,7 +186,8 @@ function overlayDescription(
   if (state === "error" && agent.error) return agent.error;
   const budget = agent.overBudgetMessage;
   if (state === "over_budget" && budget)
-    return `${budget[0].toUpperCase()}${budget.slice(1)}.`;
+    return `${budget[0].toUpperCase()}${budget.slice(1)}${budget.endsWith(".") ? "" : "."}`;
+  if (state === "over_budget" && agent.vm) return VM_MEMORY_FULL;
   const reclaimed = reclaimSentence(agent);
   if (state === "hibernated" && reclaimed) return reclaimed;
   if (state === "preparing_workspace") {
