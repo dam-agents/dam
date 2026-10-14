@@ -21,6 +21,8 @@ const PYRUN_DIRECTIVE = /__PYRUN__\s+(\S+)/;
 const ASK_DIRECTIVE = /__ASK__\s+(\S+)(?:\s+(\S+))?/;
 const FAIL_MIDTURN_DIRECTIVE = /__FAIL_MIDTURN__/;
 const ASK_TIMEOUT_MS = 30_000;
+const ELICIT_DIRECTIVE = /__ELICIT__/;
+const ELICIT_TIMEOUT_MS = 300_000;
 
 export interface AcpServiceDeps {
   channel: AcpChannel;
@@ -34,6 +36,7 @@ export interface AcpServiceDeps {
 export function startAcpService(deps: AcpServiceDeps): void {
   const knownSessions = new Set<string>();
   const pendingAsks = new Map<JsonRpcId, (outcome: string) => void>();
+  const pendingElicits = new Map<JsonRpcId, (result: unknown) => void>();
 
   deps.channel.onLine((line) => {
     void handleLine(line);
@@ -47,6 +50,11 @@ export function startAcpService(deps: AcpServiceDeps): void {
       if (settle) {
         pendingAsks.delete(frame.id);
         settle(askOutcomeOf(frame.result));
+      }
+      const answered = pendingElicits.get(frame.id);
+      if (answered) {
+        pendingElicits.delete(frame.id);
+        answered(frame.error ? { error: frame.error } : frame.result);
       }
       return;
     }
@@ -153,6 +161,15 @@ export function startAcpService(deps: AcpServiceDeps): void {
       return;
     }
 
+    if (ELICIT_DIRECTIVE.test(promptStr)) {
+      const answer = await askQuestion(sid);
+      const text = `answer ${JSON.stringify(answer)}`;
+      emitText(sid, text);
+      await maybeSlackReply(text, slackThreadTs);
+      respond(id, { stopReason: "end_turn" });
+      return;
+    }
+
     const pyrunPath = PYRUN_DIRECTIVE.exec(promptStr)?.[1];
     if (pyrunPath) {
       const { code, output } = await deps.processRunner.run({
@@ -219,6 +236,77 @@ export function startAcpService(deps: AcpServiceDeps): void {
         },
       });
     });
+  }
+
+  async function askQuestion(sid: string): Promise<unknown> {
+    const askId = `elicit-${randomUUID()}`;
+    notify("session/update", {
+      sessionId: sid,
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: askId,
+        title: "AskUserQuestion",
+        kind: "other",
+        status: "pending",
+      },
+    });
+    const answer = await new Promise<unknown>((resolve) => {
+      const timer = setTimeout(() => {
+        pendingElicits.delete(askId);
+        resolve("unanswered");
+      }, ELICIT_TIMEOUT_MS);
+      pendingElicits.set(askId, (result) => {
+        clearTimeout(timer);
+        resolve(result);
+      });
+      deps.channel.send({
+        jsonrpc: "2.0",
+        id: askId,
+        method: "elicitation/create",
+        params: {
+          mode: "form",
+          sessionId: sid,
+          toolCallId: askId,
+          message: "Which cache should the agent set up?",
+          requestedSchema: {
+            type: "object",
+            properties: {
+              question_0: {
+                type: "string",
+                title: "Cache",
+                oneOf: [
+                  {
+                    const: "Redis",
+                    title: "Redis",
+                    description: "In-memory store, one more service to run",
+                  },
+                  {
+                    const: "Postgres",
+                    title: "Postgres",
+                    description: "Reuse the database already running",
+                  },
+                ],
+              },
+              question_0_custom: {
+                type: "string",
+                title: "Other",
+                description:
+                  "Type your own answer, or add a note to the option you chose above (optional).",
+              },
+            },
+          },
+        },
+      });
+    });
+    notify("session/update", {
+      sessionId: sid,
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: askId,
+        status: "completed",
+      },
+    });
+    return answer;
   }
 
   function emitText(sid: string, text: string): void {
