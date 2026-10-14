@@ -21,14 +21,13 @@ export function A2uiChoicePicker({ component }: Props) {
   const [filter, setFilter] = useState("");
   const { id, value, checks, filterable } = component;
   const path = bindings.target(value, id);
-  const options = component.options
-    .map((option) => ({
-      value: option.value,
-      label: bindings.text(option.label),
-    }))
-    .filter((option) =>
-      option.label.toLowerCase().includes(filter.trim().toLowerCase()),
-    );
+  const allOptions = component.options.map((option) => ({
+    value: option.value,
+    label: bindings.text(option.label),
+  }));
+  const options = allOptions.filter((option) =>
+    option.label.toLowerCase().includes(filter.trim().toLowerCase()),
+  );
 
   return (
     <fieldset className="flex flex-col gap-2" {...a11y}>
@@ -49,6 +48,7 @@ export function A2uiChoicePicker({ component }: Props) {
       <A2uiChoiceOptions
         component={component}
         options={options}
+        allOptions={allOptions}
         selected={bindings.stringList(value, id)}
         onChange={(next) => setValue(id, path, next)}
       />

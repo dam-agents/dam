@@ -97,6 +97,7 @@ function CheckboxOption({ option, selected, onChange }: ToggleProps) {
 interface Props {
   component: ChoicePickerComponent;
   options: readonly Option[];
+  allOptions: readonly Option[];
   selected: readonly string[];
   onChange: (next: string[]) => void;
 }
@@ -104,6 +105,7 @@ interface Props {
 export function A2uiChoiceOptions({
   component,
   options,
+  allOptions,
   selected,
   onChange,
 }: Props) {
@@ -145,7 +147,7 @@ export function A2uiChoiceOptions({
         onChange={onChange}
       />
     ));
-  if (options.length > MAX_RADIO_OPTIONS)
+  if (allOptions.length > MAX_RADIO_OPTIONS)
     return (
       <Select
         value={selected[0] ?? ""}
@@ -157,11 +159,17 @@ export function A2uiChoiceOptions({
             Choose…
           </option>
         )}
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
+        {allOptions
+          .filter(
+            (option) =>
+              selected.includes(option.value) ||
+              options.some((shown) => shown.value === option.value),
+          )
+          .map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
       </Select>
     );
   return (

@@ -2,9 +2,15 @@ import { match, P } from "ts-pattern";
 import type { z } from "zod";
 
 import { catalogFor, SUPPORTED_CATALOG_IDS } from "./catalogs.js";
-import { deleteAt, setAt } from "./data-model.js";
+import { deleteAt, getAt, setAt } from "./data-model.js";
 import { callFunction } from "./functions/evaluate.js";
-import { A2uiExpressionError, isCall, isRecord } from "./functions/values.js";
+import {
+  A2uiExpressionError,
+  absolutePath,
+  isCall,
+  isRecord,
+} from "./functions/values.js";
+import { MAX_DEPTH, MAX_RENDERED_NODES, MAX_TEMPLATE_ITEMS } from "./limits.js";
 import { parsePartialJson } from "./partial-json.js";
 import {
   A2UI_VERSION,
@@ -402,6 +408,72 @@ function childIds(component: A2uiComponent): string[] {
     .exhaustive();
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: counts the nodes a surface renders from "root", template items included, and stops past the limit, so a shared child id or nested templates cannot make the count itself explode.
+export function renderedNodeCount(
+  surface: Pick<SurfaceState, "components">,
+  dataModel: unknown,
+  limit: number,
+): number {
+  let count = 0;
+  const visit = (id: string, depth: number, scope: string) => {
+    if (count > limit || depth > MAX_DEPTH) return;
+    const component = surface.components.get(id);
+    if (!component) return;
+    count += 1;
+    if ("children" in component && !Array.isArray(component.children)) {
+      const listPath = absolutePath(component.children.path, scope);
+      const items = getAt(dataModel, listPath);
+      if (!Array.isArray(items)) return;
+      const shown = Math.min(items.length, MAX_TEMPLATE_ITEMS);
+      for (let index = 0; index < shown; index += 1)
+        visit(
+          component.children.componentId,
+          depth + 1,
+          `${listPath}/${index}`,
+        );
+      return;
+    }
+    for (const child of childIds(component)) visit(child, depth + 1, scope);
+  };
+  visit("root", 0, "");
+  return count;
+}
+
+function structureErrors(surface: Draft): string[] {
+  const errors: string[] = [];
+  const parentOf = new Map<string, string>();
+  for (const component of surface.components.values())
+    for (const child of childIds(component)) {
+      if (parentOf.has(child))
+        errors.push(
+          `Component "${child}" has more than one parent; each component appears once in the tree.`,
+        );
+      else parentOf.set(child, component.id);
+    }
+  if (parentOf.has("root"))
+    errors.push(`Component "root" must not be a child of another component.`);
+  for (const id of surface.components.keys()) {
+    let current = parentOf.get(id);
+    for (let steps = 0; current !== undefined && current !== id; steps += 1)
+      current =
+        steps < surface.components.size ? parentOf.get(current) : undefined;
+    if (current === id) {
+      errors.push(
+        `Component "${id}" is its own ancestor; children must form a tree.`,
+      );
+      break;
+    }
+  }
+  if (
+    renderedNodeCount(surface, surface.dataModel, MAX_RENDERED_NODES) >
+    MAX_RENDERED_NODES
+  )
+    errors.push(
+      `Surface "${surface.id}" renders more than ${MAX_RENDERED_NODES} components; shorten its lists.`,
+    );
+  return [...new Set(errors)];
+}
+
 function functionCalls(value: unknown): FunctionCall[] {
   if (Array.isArray(value)) return value.flatMap(functionCalls);
   if (!isRecord(value)) return [];
@@ -438,6 +510,7 @@ function surfaceErrors(surface: Draft): RendererError[] {
     });
   if (!surface.components.has("root"))
     add(`Surface "${surface.id}" has no component with id "root".`);
+  for (const message of structureErrors(surface)) add(message);
   for (const component of surface.components.values()) {
     const catalogId = componentCatalogId(component, surface);
     if (catalogId === undefined)

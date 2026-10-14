@@ -66,6 +66,8 @@ A block that a finished reply never closes counts as complete, so its errors sho
 Two catalogs are supported: the A2UI **basic catalog** (layout, text, media, inputs, buttons, tabs, dialogs) and the **platform catalog**, a superset that adds callouts, badges, switches, code blocks and diffs.
 A component resolves through its own catalog identifier, else the surface's default; a component that resolves nowhere, or is not in its catalog, is not rendered.
 Messages and components are validated strictly against the v1.0 schema, so an unknown component or property is an error rather than a guess.
+The components form a tree: a component with two parents, or one that is its own ancestor, is an error.
+A surface that would render more than 2,000 elements, list templates included, is reported and not shown.
 
 Errors are listed under the block, each with a machine-readable code and the location in the block, and a button that forwards them to the agent as renderer error messages.
 The agent fixes the block and sends it again.

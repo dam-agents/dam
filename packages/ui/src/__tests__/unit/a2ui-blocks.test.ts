@@ -2,7 +2,10 @@
 import { describe, expect, test } from "vitest";
 
 import { BASIC_CATALOG_ID } from "../../modules/a2ui/lib/catalogs.js";
-import { buildConversation } from "../../modules/a2ui/lib/conversation.js";
+import {
+  buildConversation,
+  renderedNodeCount,
+} from "../../modules/a2ui/lib/conversation.js";
 import { evaluate } from "../../modules/a2ui/lib/functions/evaluate.js";
 import { splitA2uiBlocks } from "../../modules/a2ui/lib/split-blocks.js";
 import { failedChecks } from "../../modules/a2ui/lib/validation.js";
@@ -126,5 +129,35 @@ describe("A2UI v1.0", () => {
     expect(finished.blocks.get("a")?.errors.map((error) => error.code)).toEqual(
       ["VALIDATION_FAILED"],
     );
+  });
+
+  // TEST_SCENARIO: an agent that shares one child id between parents gets an error, and the node count stops at its limit instead of following the exponential fan-out.
+  test("rejects a shared child and caps the rendered node count", () => {
+    const components = [
+      { id: "root", component: "Row", children: ["a", "a"] },
+      ...Array.from({ length: 30 }, (_, index) => ({
+        id: index === 0 ? "a" : `a${index}`,
+        component: "Row",
+        children: index === 29 ? [] : [`a${index + 1}`, `a${index + 1}`],
+      })),
+    ];
+    const source = JSON.stringify([
+      {
+        version: "v1.0",
+        createSurface: {
+          surfaceId: "fan",
+          catalogId: BASIC_CATALOG_ID,
+          components,
+        },
+      },
+    ]);
+    const { surfaces, blocks } = buildConversation([
+      { key: "a", messageId: "m1", source, closed: true },
+    ]);
+    expect(blocks.get("a")?.errors.map((error) => error.message)).toContain(
+      'Component "a" has more than one parent; each component appears once in the tree.',
+    );
+    const surface = surfaces.get("fan");
+    expect(surface && renderedNodeCount(surface, {}, 100)).toBe(101);
   });
 });

@@ -40,6 +40,7 @@ Usually one message is enough: `createSurface` with the components and the initi
 - Components are a flat list.
   The one with `"id": "root"` comes first, and a parent comes before its children (the chat renders them as they stream).
   Children are referenced by id, never inline.
+  Each component has one parent; to repeat one, use a list template.
 - `catalogId` picks the components and functions you may use:
   - `urn:platform:a2ui:catalog:chat:v1` — everything below, including `Callout`, `Badge`, `Switch`, `CodeBlock` and `Diff`.
     Use this one.

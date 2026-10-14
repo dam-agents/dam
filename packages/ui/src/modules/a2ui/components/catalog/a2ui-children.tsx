@@ -1,10 +1,9 @@
 import { A2uiScopeProvider } from "../../contexts/a2ui-scope-context.js";
 import { useA2uiScope } from "../../contexts/a2ui-scope-context.js";
 import { useA2uiBindings } from "../../hooks/use-a2ui-bindings.js";
+import { MAX_TEMPLATE_ITEMS } from "../../lib/limits.js";
 import type { ChildList } from "../../lib/schema.js";
 import { A2uiNode } from "../a2ui-node.js";
-
-const MAX_TEMPLATE_ITEMS = 200;
 
 interface Props {
   childList: ChildList;
