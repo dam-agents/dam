@@ -43,6 +43,7 @@ export function ApprovalsPanel({ onClose }: { onClose: () => void }) {
       onClose={requestClose}
       onClosed={onClose}
       className="max-w-[520px]"
+      containerClassName="max-md:top-[52px] md:right-11"
     >
       <div className="flex items-center justify-between border-b border-border px-5 py-4">
         <h2 className="text-base font-semibold text-foreground">Approvals</h2>

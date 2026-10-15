@@ -17,14 +17,14 @@ export function AppTopBar({ actions }: { actions: ReactNode }) {
   const title = TITLES[view] ?? getBrand().name;
 
   return (
-    <div className="sticky top-0 z-raised flex items-center gap-2 px-4 pt-3 pointer-events-none max-md:h-[52px] max-md:border-b max-md:border-border max-md:bg-background max-md:pt-0 md:justify-end md:px-6">
-      <div className="pointer-events-auto flex min-w-0 flex-1 items-center gap-2 md:hidden">
+    <div className="sticky top-0 z-raised flex h-[52px] items-center gap-2 border-b border-border bg-background px-4 md:hidden">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         <MobileMenuButton />
         <span className="truncate text-sm font-semibold text-foreground">
           {title}
         </span>
       </div>
-      <div className="pointer-events-auto">{actions}</div>
+      <div className="flex items-center gap-1">{actions}</div>
     </div>
   );
 }

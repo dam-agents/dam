@@ -125,7 +125,12 @@ function MainApp() {
         <Sidebar />
         <main className="relative z-content flex flex-1 flex-col overflow-y-auto">
           <AppTopBar
-            actions={<ApprovalsButton onOpen={() => setApprovalsOpen(true)} />}
+            actions={
+              <>
+                <GettingStartedDock placement="header" />
+                <ApprovalsButton />
+              </>
+            }
           />
           <div
             className={cn(
@@ -153,6 +158,13 @@ function MainApp() {
             )}
           </div>
         </main>
+        <aside
+          aria-label="Notifications"
+          className="hidden w-11 shrink-0 flex-col items-center justify-end gap-1 border-l border-border bg-background py-2 md:flex"
+        >
+          <GettingStartedDock placement="rail" />
+          <ApprovalsButton />
+        </aside>
       </div>
       {approvalsOpen && (
         <ApprovalsPanel onClose={() => setApprovalsOpen(false)} />
@@ -161,7 +173,6 @@ function MainApp() {
       <MobileNavDrawer />
       <DialogOverlay />
       <ConnectionBanner />
-      <GettingStartedDock placement="page" />
     </div>
   );
 }
