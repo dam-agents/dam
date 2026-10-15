@@ -334,6 +334,37 @@ func TestAnAbortRemovesTheVMSideAndTheContainerResumes(t *testing.T) {
 	assert.Equal(t, int32(1), agentReplicas(t, r), "the container runs again")
 }
 
+// TEST_SCENARIO: an abort while the owner's runner cannot be reached still brings the container back at once. The machine the abort could not delete is marked as left on the Agent, and the orphan sweep removes it and the mark once the runner answers again.
+func TestAnAbortWithTheRunnerUnreachableBringsTheContainerBack(t *testing.T) {
+	ctx := context.Background()
+	agent := migratingAgentIn(apiv1.ReasonRuntimeMigrationCopying, time.Now())
+	agent.Annotations[annRuntimeMigrationSource] = "home-agent-my-agent-0"
+	r, node, _ := setupVMReconciler(t, agent)
+	createAll(t, r, homePVC("home-agent-my-agent-0"))
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	require.Equal(t, int32(0), agentReplicas(t, r))
+
+	reachable := r.runnerEndpoint
+	r.runnerEndpoint = func(string) string { return "https://127.0.0.1:1" }
+	r.runners = nil
+	agent = editStoredAgent(t, r, agent, withoutAnnotations(annRuntimeMigration, annRuntimeMigrationTarget))
+	for range 3 {
+		require.NoError(t, r.Reconcile(ctx, agent))
+		agent = reloaded(t, r, agent)
+	}
+	assert.Nil(t, migrationCondition(agent), "the abort does not wait on the machine delete")
+	assert.Equal(t, int32(1), agentReplicas(t, r), "the container runs again")
+	assert.Equal(t, "true", agent.Annotations[annRuntimeMigrationMachineLeft])
+	assert.NotContains(t, node.deleted, "my-agent")
+
+	r.runnerEndpoint, r.runners = reachable, nil
+	r.ReconcileOrphanMachines(ctx)
+	assert.Contains(t, node.deleted, "my-agent", "the sweep removes the machine the abort left")
+	assert.NotContains(t, reloaded(t, r, agent).Annotations, annRuntimeMigrationMachineLeft)
+}
+
 // TEST_SCENARIO: a guest that answers is verified only while the request still stands. An abort that the reconcile did not see yet — the Agent it holds is older than the stored one — wins, and the migration is not marked past its point of no return.
 func TestAVerifiedBootIsNotRecordedOverAnAbort(t *testing.T) {
 	ctx := context.Background()

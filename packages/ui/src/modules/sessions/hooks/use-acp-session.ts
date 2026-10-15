@@ -19,6 +19,7 @@ import {
   resumeFailureKind,
   type SessionFailureKind,
   type SessionListing,
+  unstoredSessionPrompts,
 } from "../../acp/errors.js";
 import { framesToMessages } from "../../acp/frames-to-messages.js";
 import {
@@ -220,6 +221,12 @@ export function useAcpSession(
         } catch {}
       } catch (e) {
         if (useStore.getState().sessionId !== sid) return;
+        const unstored = unstoredSessionPrompts(e);
+        if (unstored !== null) {
+          setLoadingSession(false);
+          await useStore.getState().reopenUnstoredSession(sid, unstored);
+          return;
+        }
         setMessages([]);
         const kind = await classifyResumeFailure(selectedAgent, sid, e);
         if (useStore.getState().sessionId !== sid) return;

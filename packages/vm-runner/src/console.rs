@@ -26,15 +26,16 @@ pub const TRIM_EVERY: Duration = Duration::from_secs(10);
 
 const CONSOLE_ENDS: &str = "\nthe guest console ends:\n";
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the guest's last entrypoint exit in a console tail was with the agent's home full, as platform-init marks it (guest::HOME_FULL). Only the last exit counts, so a home freed since, whose entrypoint then exited for another reason, is not reported full.
+// UNIT_BOUNDARY_DESCRIPTION: whether the guest's last entrypoint exit or refused boot in a console tail was with the agent's home full, as platform-init marks it (guest::HOME_FULL). Only the last one counts, so a home freed since, whose entrypoint then exited for another reason, is not reported full.
 pub fn home_full(tail: &str) -> bool {
     tail.lines()
         .rev()
-        .find(|line| line.contains(ENTRYPOINT_EXITED))
+        .find(|line| line.contains(ENTRYPOINT_EXITED) || line.contains(BOOT_REFUSED))
         .is_some_and(|line| line.contains(crate::guest::HOME_FULL))
 }
 
 const ENTRYPOINT_EXITED: &str = "platform-init: the image entrypoint ";
+const BOOT_REFUSED: &str = "platform-init: FATAL: ";
 
 // UNIT_BOUNDARY_DESCRIPTION: the guest agent's check of the disk before its first mount (smolvm.patch, storage_filesystem_checked) says what it did as a boot log line: a JSON object whose message starts with FSCK, names a repair with FSCK_REPAIRED followed by e2fsck's own output, and ends a check that left the disk damaged, or could not run, with FSCK_REFUSED.
 const FSCK: &str = "storage: e2fsck ";
@@ -302,6 +303,15 @@ mod tests {
             home_repaired("[ 1.0] storage: e2fsck repaired the filesystem, said a guest program"),
             None
         );
+    }
+
+    // TEST_SCENARIO: a disk with no space or inode left stops the boot before the entrypoint ever runs, and platform-init marks that refusal as a full home, so the runner reports it as one; a refusal for another reason is not.
+    #[test]
+    fn a_boot_refused_for_a_full_disk_is_a_full_home() {
+        assert!(home_full("[ 1.0] platform-init: FATAL: creating /storage/.platform/rootfs/work: No space left on device (os error 28); the agent's home is full"));
+        assert!(!home_full(
+            "[ 1.0] platform-init: FATAL: reading the mount table: Permission denied (os error 13)"
+        ));
     }
 
     // TEST_SCENARIO: a guest can print anything to its console, and the tail goes into a Kubernetes condition that an operator reads. Colour codes and cursor moves are dropped whole, other control characters are dropped, and the text between them is kept as it was.

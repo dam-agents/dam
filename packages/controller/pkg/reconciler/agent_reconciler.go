@@ -406,7 +406,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			}
 		}
 		if migration.active() {
-			migration.held = runtimeMigrationBootHeld(migration, hardStop, overBudget)
+			migration.held = runtimeMigrationBootHeld(migration, overBudget)
 			if err := r.continueRuntimeMigration(ctx, agent, migration, machine, runnerReached, nil); err != nil {
 				return r.setError(ctx, name, fmt.Sprintf("continuing runtime migration: %v", err))
 			}
@@ -470,7 +470,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			timer.mark("migrationMachine")
 		}
 		if migration.active() {
-			migration.held = runtimeMigrationBootHeld(migration, hardStop, overBudget)
+			migration.held = runtimeMigrationBootHeld(migration, overBudget)
 			if err := r.continueRuntimeMigration(ctx, agent, migration, machine, runnerReached, migrationVMErr); err != nil {
 				return r.setError(ctx, name, fmt.Sprintf("continuing runtime migration: %v", err))
 			}

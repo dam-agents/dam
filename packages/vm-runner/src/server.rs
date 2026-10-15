@@ -115,7 +115,7 @@ struct Seen {
     error: Option<String>,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `seeding` is set while a seed is uploaded into the machine's share, and no worker starts while it is. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change. `cancel` is the machine's own child of the runner's lifetime, cancelled by a delete so the action in flight stops waiting on its fetch. `acting_mib` is the memory of the spec the action in flight runs with, which a newer spec stored behind it does not change. `resident_mib` is what the prober last measured the running machine's VMM holding, kept beside `seen` rather than in it, so a figure that moves at every probe does not move the status version and wake every waiting read. `warming_since` is when the machine's last boot began, which admission counts it at the warm-up floor for WARMUP after. `deletes` counts the delete calls in progress, and `deleting` stays set after one gave up waiting, and while any runtime call it waited on still runs, so the worker still takes no further action and no ensure clears it. `calls` is held by every start, stop or delete call into the runtime until that call returns, also after the runner gave up waiting for it, so it counts one more holder per call still running. `gave_up` is when the runner last restarted the machine for going quiet, which holds its next such restart back.
+// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `seeding` is set while a seed is uploaded into the machine's share, and no worker starts while it is. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change. `cancel` is the machine's own child of the runner's lifetime, cancelled by a delete so the action in flight stops waiting on its fetch. `acting_mib` is the memory of the spec the action in flight runs with, which a newer spec stored behind it does not change. `resident_mib` is what the prober last measured the running machine's VMM holding, kept beside `seen` rather than in it, so a figure that moves at every probe does not move the status version and wake every waiting read. `warming_since` is when the machine's last boot began, which admission counts it at the warm-up floor for WARMUP after. `deletes` counts the delete calls in progress, and `deleting` stays set after one gave up waiting, and while any runtime call it waited on still runs, so the worker still takes no further action and no ensure clears it. `calls` is held by every start, stop or delete call into the runtime until that call returns, also after the runner gave up waiting for it, so it counts one more holder per call still running. `gave_up` is when the runner last restarted the machine for going quiet, which holds its next such restart back. `restarts` counts those restarts since the controller last asked the machine stopped: the controller publishes no count for a hibernated Agent, so one kept across the stop would read after the wake as a crash the user never had.
 #[derive(Default)]
 struct MachineEntry {
     desired: Option<MachineSpec>,
@@ -203,6 +203,7 @@ pub struct Server {
     admission: Mutex<()>,
     ports: Mutex<()>,
     storage_short: std::sync::atomic::AtomicBool,
+    shed_request: Mutex<Option<(u64, String)>>,
     lifetime: CancellationToken,
     work: TaskTracker,
     metrics: Metrics,
@@ -280,7 +281,7 @@ fn check_id(id: &str) -> Result<(), Rejected> {
 }
 
 impl Server {
-    // UNIT_BOUNDARY_DESCRIPTION: a runner over its state directory. It must be built inside the tokio runtime that will serve it, because every published port is a task on that runtime. Machines already on disk get their ports published again, since the listeners died with the previous process while the machines' ports did not.
+    // UNIT_BOUNDARY_DESCRIPTION: a runner over its state directory. It must be built inside the tokio runtime that will serve it, because every published port is a task on that runtime. Machines already on disk get their ports published again, since the listeners died with the previous process while the machines' ports did not. Each one the runtime finds running is measured before the runner admits anything, and the prober takes it from there: a runner that took the machines over in a hand-off or a restart would otherwise count each at the warm-up floor until the controller first asked about it, and admit a start into memory its running guests already hold.
     pub fn start(config: Config, runtime: Arc<dyn Runtime>) -> anyhow::Result<Arc<Self>> {
         let forwarder = Forwarder::new(tokio::runtime::Handle::current(), config.listen.clone());
         let lifetime = CancellationToken::new();
@@ -316,6 +317,7 @@ impl Server {
             admission: Mutex::new(()),
             ports: Mutex::new(()),
             storage_short: std::sync::atomic::AtomicBool::new(false),
+            shed_request: Mutex::new(None),
             lifetime,
             work: TaskTracker::new(),
             metrics: Metrics::default(),
@@ -326,6 +328,14 @@ impl Server {
                 if let Err(e) = server.forwarder.publish(&id, port) {
                     tracing::warn!(machine = %id, error = %e, "republishing machine port");
                 }
+            }
+            if server.runtime.state(&id).ok() == Some(State::Running) {
+                let resident = server.runtime.resident_mib(&id);
+                locked(&server.machines)
+                    .entries
+                    .entry(id)
+                    .or_default()
+                    .resident_mib = resident;
             }
         }
         server.hold_images();
@@ -481,6 +491,24 @@ impl Server {
         self.close_within(CLOSE_GRACE, None).await;
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: closes the runner after its machine API failed to serve. A runner its pod's loader supervises leaves every machine running, as a hand-off does: the loader goes back to the release this one replaced, or starts this one again, and that runner adopts them without a reboot. A pod stop that arrives during that close, through `stopped`, is the loader passing the pod's end on, so the machines are then stopped cleanly after all. A runner with no loader is the pod's last process, so it stops them before the pod's end powers them off.
+    pub async fn close_failed(
+        self: &Arc<Self>,
+        supervised: bool,
+        stopped: impl std::future::Future<Output = ()>,
+    ) {
+        if !supervised {
+            return self.close().await;
+        }
+        tokio::select! {
+            biased;
+            () = stopped => {
+                tracing::info!("vm runner: the pod stops while the runner closes after a failure; stopping its machines");
+                self.close().await;
+            }
+            () = self.hand_off() => {}
+        }
+    }
     async fn close_within(self: &Arc<Self>, grace: Duration, stopping: Option<Duration>) {
         self.stop_taking_work();
         if tokio::time::timeout(grace, self.work.wait()).await.is_err() {
@@ -583,7 +611,12 @@ impl Server {
         gateway_port_admissible(&spec, &self.config.ports).map_err(Rejected::bad_request)?;
         {
             let mut machines = locked(&self.machines);
-            let known = &mut machines.entries.entry(id.to_string()).or_default().secrets;
+            let entry = machines.entries.entry(id.to_string()).or_default();
+            if !spec.running && entry.restarts != 0 {
+                entry.restarts = 0;
+                self.bump(entry);
+            }
+            let known = &mut entry.secrets;
             for value in spec.env.values() {
                 if !known.contains(value) {
                     known.push(value.clone());
@@ -1521,23 +1554,53 @@ impl Server {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: one look at the claim, every STORAGE_CHECK. While it is short, the runner's own image cache gives up every tree no machine holds, since each can be fetched again, and every machine's share carries the mark that has its guest give back its scratch; what the guests keep beyond that is not the runner's to free.
+    // UNIT_BOUNDARY_DESCRIPTION: one look at the claim, every STORAGE_CHECK. Every machine's share gets a new grant of the bytes its guest may still add to the claim (StorageUse::guest_room), which platform-init holds the guest to; a claim that cannot be measured grants nothing, and the guests are then held to nothing. While it is short, the runner's own image cache gives up every tree no machine holds, since each can be fetched again, and every machine's share carries a request that its guest give back scratch: an id and the bytes asked of each running machine, its even part of what brings the claim back under SHORT_UNTIL_PERCENT. A guest serves each request once, so a new one goes out only when the claim has filled RESHED_STEP_PERCENT further since the last: the claim is mostly the agents' homes, which no guest gives back, and repeating the request would only have every guest delete its scratch again and again. What the guests keep beyond that is not the runner's to free.
     fn check_storage(&self) {
-        let Some(storage) = (self.config.measure_storage)() else {
+        let shares: Vec<(String, PathBuf)> = state::machine_ids(&self.config.state_dir)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|id| {
+                let share = machine_dir(&self.config.state_dir, &id)?.join(SHARE_DIR);
+                share.is_dir().then_some((id, share))
+            })
+            .collect();
+        let running = locked(&self.machines)
+            .entries
+            .values()
+            .filter(|e| e.seen.as_ref().is_some_and(|s| s.state == State::Running))
+            .count();
+        let storage = (self.config.measure_storage)();
+        let grant = storage.map(|storage| {
+            let id = self.versions.fetch_add(1, Ordering::Relaxed);
+            format!("{id} {}\n", storage.guest_room(running))
+        });
+        for (id, share) in &shares {
+            if let Err(e) = share::grant_storage_room(share, grant.as_deref()) {
+                tracing::warn!(machine = %id, error = %e, "vm runner: cannot grant the machine's guest its room on the claim");
+            }
+        }
+        let Some(storage) = storage else {
             return;
         };
         let was = self.storage_short.load(Ordering::Relaxed);
         let short = storage.short(was);
         self.storage_short.store(short, Ordering::Relaxed);
-        for id in state::machine_ids(&self.config.state_dir).unwrap_or_default() {
-            let Some(dir) = machine_dir(&self.config.state_dir, &id) else {
-                continue;
-            };
-            let share = dir.join(SHARE_DIR);
-            if !share.is_dir() {
-                continue;
+        let request = {
+            let mut current = locked(&self.shed_request);
+            let percent = storage.percent();
+            if !short {
+                *current = None;
+            } else if current
+                .as_ref()
+                .is_none_or(|(at, _)| percent >= at + crate::storage::RESHED_STEP_PERCENT)
+            {
+                let id = self.versions.fetch_add(1, Ordering::Relaxed);
+                *current = Some((percent, format!("{id} {}\n", storage.to_shed(running))));
             }
-            if let Err(e) = share::mark_storage_short(&share, short) {
+            current.as_ref().map(|(_, text)| text.clone())
+        };
+        for (id, share) in shares {
+            if let Err(e) = share::mark_storage_short(&share, request.as_deref()) {
                 tracing::warn!(machine = %id, error = %e, "vm runner: cannot mark the machine's share with the claim's room");
             }
         }
@@ -1610,18 +1673,18 @@ impl Server {
             .collect()
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: holds the digest of every machine that runs or is asked to, so the cache's eviction spares their trees. A stopped machine holds nothing: a hibernated agent would otherwise keep each image a deploy retires on the cache, and its start fetches the tree again when it is gone. A machine counts while either its stored spec or the one the controller last sent runs it, so a stop in flight still holds the tree its guest reads and a wake holds it before the start checks it is there. It runs at start, after a machine records a new digest, before a start, and every HOLD_REFRESH. A hold that fails is reported and not returned: the machines keep running, and the next refresh tries again inside the lease.
+    // UNIT_BOUNDARY_DESCRIPTION: holds the digest of every machine that runs or is asked to, so the cache's eviction spares their trees. A stopped machine holds nothing: a hibernated agent would otherwise keep each image a deploy retires on the cache, and its start fetches the tree again when it is gone. A machine counts while the controller last asked for it running, so a wake holds it before the start checks it is there, or while it runs as last recorded or as the runtime says, so a stop in flight still holds the tree its guest reads, and so does every machine a runner adopts after a hand-off or a restart from its first hold, before the controller has sent it anything. It runs at start, after a machine records a new digest, before a start, and every HOLD_REFRESH. A hold that fails is reported and not returned: the machines keep running, and the next refresh tries again inside the lease.
     pub fn hold_images(&self) {
         let held: BTreeSet<String> = state::machine_ids(&self.config.state_dir)
             .unwrap_or_default()
             .iter()
             .filter(|id| {
-                locked(&self.machines)
+                let asked = locked(&self.machines)
                     .entries
                     .get(*id)
                     .and_then(|e| e.desired.as_ref())
-                    .is_some_and(|d| d.running)
-                    || read_spec(&self.config.state_dir, id).is_some_and(|s| s.running)
+                    .is_some_and(|d| d.running);
+                asked || self.known_running(id)
             })
             .filter_map(|id| self.recorded_digest(id))
             .collect();
@@ -2109,6 +2172,19 @@ fn spend_capability(dir: &std::path::Path, nonce: &str) -> std::io::Result<()> {
     )
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: how often, in bytes written, a seed upload looks at the claim's room. A look is a statvfs, cheap but not free at every chunk of a many-GiB home; the claim can pass the line by at most this much before the upload stops.
+const SEED_ROOM_CHECK: u64 = 64 << 20;
+
+// UNIT_BOUNDARY_DESCRIPTION: a seed write the claim had no room for is the owner's storage being full, and is reported as such, with the ways to free it, rather than as the runner's own failure.
+fn seed_write_refused(step: &str, e: &std::io::Error) -> Rejected {
+    if matches!(e.raw_os_error(), Some(libc::ENOSPC | libc::EDQUOT)) {
+        return Rejected::insufficient_storage(format!(
+            "{step} the seed: {e}. Your VM agents' shared storage is full. To free space, delete a VM agent you no longer need or files from this agent's home, or request more storage."
+        ));
+    }
+    Rejected::internal(format!("{step} the seed: {e}"))
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: one seed upload, holding its machine's seed claim. Every chunk is counted against the machine's disk size before it is written. A commit renames the seed into the share unless the machine was deleted meanwhile; dropped uncommitted, the staged file is removed. Either way the claim is released, so the machine can be booted. `capability` is the seed capability that let the upload in, when the token did not.
 pub struct Seeding {
     server: Arc<Server>,
@@ -2124,14 +2200,25 @@ impl Seeding {
             .file
             .as_mut()
             .ok_or_else(|| Rejected::internal("the seed was not staged"))?;
-        if file.bytes().saturating_add(chunk.len() as u64) > self.limit {
+        let (before, after) = (
+            file.bytes(),
+            file.bytes().saturating_add(chunk.len() as u64),
+        );
+        if after > self.limit {
             return Err(Rejected::too_large(format!(
                 "the seed is larger than machine {}'s {} byte disk",
                 self.id, self.limit
             )));
         }
+        if before / SEED_ROOM_CHECK != after / SEED_ROOM_CHECK {
+            if let Some(refusal) =
+                (self.server.config.measure_storage)().and_then(|claim| claim.seed_refusal(after))
+            {
+                return Err(Rejected::insufficient_storage(refusal));
+            }
+        }
         file.write(chunk)
-            .map_err(|e| Rejected::internal(format!("writing the seed: {e}")))
+            .map_err(|e| seed_write_refused("writing", &e))
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: a capability is spent before the seed is stored, so it never seeds twice even when storing fails; the retry then takes the fresh capability the controller mints for its next Job. Every stored seed goes on the security trail with its size, digest and what let it in, naming a capability only by its fingerprint.
@@ -2160,7 +2247,7 @@ impl Seeding {
             .map_err(|e| Rejected::internal(format!("replacing the seed's record: {e}")))?;
         let stored = file
             .commit()
-            .map_err(|e| Rejected::internal(format!("storing the seed: {e}")))?;
+            .map_err(|e| seed_write_refused("storing", &e))?;
         share::record_seed_digest(&dir, &stored)
             .map_err(|e| Rejected::internal(format!("recording the seed: {e:#}")))?;
         let (authority, fingerprint, expires) = match &self.capability {

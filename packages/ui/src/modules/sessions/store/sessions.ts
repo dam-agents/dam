@@ -1,4 +1,5 @@
 import {
+  type PlatformUndeliveredPrompt,
   type QueuedPrompt,
   SESSION_CATEGORIES,
   type SessionCategory,
@@ -22,6 +23,11 @@ import { acpSessionsKeys } from "../api/keys.js";
 import { removeSessionFromCache } from "../api/queries.js";
 import { draftKey, EMPTY_DRAFT, type SessionDraft } from "../lib/draft-key.js";
 import { draftWriter, loadDraftSnapshot } from "../lib/draft-snapshot.js";
+import {
+  clearUndelivered,
+  readUndelivered,
+  rememberUndelivered,
+} from "../lib/undelivered-store.js";
 
 const SESSIONS_SECTION_OPEN_STORAGE_KEY = "platform-sessions-open";
 const TOOL_ACTIVITY_EXPANDED_STORAGE_KEY = "platform-tool-activity-expanded";
@@ -88,6 +94,10 @@ export interface SessionsSlice {
   setBusy: (busy: boolean) => void;
 
   deleteSession: (sessionId: string) => Promise<boolean>;
+  reopenUnstoredSession: (
+    sessionId: string,
+    undelivered: PlatformUndeliveredPrompt[],
+  ) => Promise<void>;
 
   resetChatContext: () => void;
 }
@@ -129,6 +139,18 @@ export const createSessionsSlice: StateCreator<
         changed = true;
       }
       return changed;
+    });
+  };
+
+  const forgetSession = async (agentId: string, sessionId: string) => {
+    if (get().sessionId === sessionId) get().resetChatContext();
+    await queryClient.cancelQueries({
+      queryKey: acpSessionsKeys.agent(agentId),
+    });
+    removeSessionFromCache(agentId, sessionId);
+    get().clearDraft(draftKey(agentId, sessionId));
+    queryClient.invalidateQueries({
+      queryKey: acpSessionsKeys.agent(agentId),
     });
   };
 
@@ -292,17 +314,28 @@ export const createSessionsSlice: StateCreator<
         "Failed to delete session",
       );
       if (ok === ACTION_FAILED) return false;
-      if (get().sessionId === sessionId) get().resetChatContext();
-      await queryClient.cancelQueries({
-        queryKey: acpSessionsKeys.agent(agentId),
-      });
-      removeSessionFromCache(agentId, sessionId);
-      get().clearDraft(draftKey(agentId, sessionId));
-      queryClient.invalidateQueries({
-        queryKey: acpSessionsKeys.agent(agentId),
-      });
+      await forgetSession(agentId, sessionId);
       emitToast({ kind: "success", message: "Session deleted" });
       return true;
+    },
+
+    reopenUnstoredSession: async (sessionId, undelivered) => {
+      const agentId = get().selectedAgent;
+      if (!agentId) return;
+      const own = draftKey(agentId, sessionId);
+      const prompts = [...readUndelivered(own), ...undelivered];
+      for (const prompt of prompts)
+        rememberUndelivered(draftKey(agentId, null), prompt);
+      clearUndelivered(own);
+      await deleteAgentSession(agentId, sessionId).catch(() => {});
+      await forgetSession(agentId, sessionId);
+      emitToast({
+        kind: "info",
+        message:
+          prompts.length > 0
+            ? "The agent stopped before it saved this conversation. Your message is back in a new chat."
+            : "The agent stopped before it saved this conversation, so it was removed.",
+      });
     },
   };
 };

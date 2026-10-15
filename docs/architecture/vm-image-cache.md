@@ -1,6 +1,6 @@
 # VM image cache
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 A machine may reach only its gateway, so its image is fetched for it and unpacked into a tree every machine of that image mounts read-only.
 Where that tree lives is the one part of the runner's storage an install may move off its claim.
@@ -36,6 +36,7 @@ On a runner's own volume that disk is the owner's claim, so there it is reported
 A fetch evicts before it downloads, until both the budget and the filesystem have room for the tree it unpacks.
 OCI metadata names only compressed sizes, so that tree is taken to be three times the compressed size the manifest names.
 A runner holds the digests its running machines boot by naming them again every minute, and a hold lapses only once nobody names it — a runner that stopped has no machines left.
+A runner names every machine its runtime finds running from the moment it starts, so one that took the machines over in a hand-off or a restart holds their trees before the controller has sent it a spec.
 A stopped machine holds nothing, so a hibernated agent never keeps an image a deploy retired; its start fetches the tree again when it is gone, and holds it before it checks it is there.
 A hold only extends, so no runner can release what another holds, and only a tree on disk is held, so a resolve that fails holds nothing; past half again its budget, the service fetches nothing.
 Each fetch under way counts toward that ceiling at that unpacked estimate, so fetches that start together cannot each find the cache under it.
