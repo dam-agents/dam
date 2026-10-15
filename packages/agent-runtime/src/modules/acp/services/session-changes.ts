@@ -77,6 +77,8 @@ export function notifyingSessionMetadataStore(
     all: () => store.all(),
     isTombstoned: (sessionId) => store.isTombstoned(sessionId),
     runStartsOf: (sessionId) => store.runStartsOf(sessionId),
+    markUnstored: (sessionId) => store.markUnstored(sessionId),
+    markStored: (sessionId) => store.markStored(sessionId),
 
     set(sessionId, meta) {
       store.set(sessionId, meta);

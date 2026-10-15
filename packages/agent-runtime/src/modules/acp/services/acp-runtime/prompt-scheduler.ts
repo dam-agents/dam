@@ -717,11 +717,9 @@ export function createPromptScheduler(
       const active = activeTurns.get(sessionId);
       activeTurns.delete(sessionId);
       settingsInFlight.delete(sessionId);
+      if (active !== undefined) deps.onTurnInterrupted?.(sessionId, active);
       dropQueue(sessionId, "session-forgotten");
-      if (active !== undefined) {
-        deps.onTurnInterrupted?.(sessionId, active);
-        deps.onTurnEnded?.(sessionId);
-      }
+      if (active !== undefined) deps.onTurnEnded?.(sessionId);
     },
 
     clear() {
@@ -737,12 +735,11 @@ export function createPromptScheduler(
         );
       const active = [...activeTurns.entries()];
       activeTurns.clear();
+      for (const [sessionId, turn] of active)
+        deps.onTurnInterrupted?.(sessionId, turn);
       for (const sessionId of new Set([...queues.keys(), ...steering.keys()]))
         dropQueue(sessionId, "scheduler-cleared");
-      for (const [sessionId, turn] of active) {
-        deps.onTurnInterrupted?.(sessionId, turn);
-        deps.onTurnEnded?.(sessionId);
-      }
+      for (const [sessionId] of active) deps.onTurnEnded?.(sessionId);
     },
   };
 }
