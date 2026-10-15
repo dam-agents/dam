@@ -1,6 +1,6 @@
 # VM runner upgrades
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 How a change to the [runner](vm-runner.md) reaches owners whose machines are running: as a **roll** of the runner pod, which reboots the owner's machines, or, for a new runner release only, as a **hand-off** inside the pod, which reboots none.
 
@@ -21,6 +21,9 @@ Before it takes a place in the roll, the controller asks each of the owner's rea
 A runner with a busy agent holds no place, so other owners roll meanwhile, and the next pass offers it again.
 The install's idle wait, an hour by default, bounds this from the first pass that found the owner busy, and is recorded on the runner so a controller restart does not start it over; past it, the runner rolls with the agent busy, so an owner who is never idle still gets the release.
 Rolls advance as agents reconcile and on the periodic sweep, which offers every runner its turn in name order so owners whose agents all sleep still roll; which runners are mid-roll is read once every few seconds rather than on every turn, and a roll the controller starts counts at once.
+That read takes only what the runners' Deployments and release ConfigMaps record, and calls no runner, since every owner's decision waits on it.
+Whether a runner's machines came back is asked on its own owner's turn, an agent of theirs reconciling or the sweep reaching them, and so is the owner's own list of ready machines before it takes a place.
+So a runner that stops answering holds up only its own owner's agents, during a roll or a release as at any other time.
 The sweep only ever updates a runner that exists — creating one is an agent's reconcile's alone.
 A roll still reboots each owner's machines once: nothing checkpoints them across it, and the VMM host is the same pod as the machine API it serves.
 So a published chart pins the runner image by digest, and a rebuild that changes nothing in the image — only the record of when and with what it was built — keeps the image it would have replaced: a release that leaves the runner as it was rolls no runner.
@@ -37,11 +40,10 @@ A cluster admin can instead have the nodes create and label the directory themse
 **A runner release** is the runner with the two guest binaries it copies into every machine's share, platform-init and platform-runc, so the side that writes a share and the side that reads it stay one version.
 Each release also records the **runtime** it was built against: the smolvm release with its guest agent, the guest kernel and the libkrun the platform patches, the image tooling, and the base image's libc.
 The runner is itself the VMM of every machine it starts, and loads its runtime's libraries and guest agent, so the runtime travels with the release.
-Its guest kernel is not the smolvm release's own but an older release's, Linux 6.12, which the same pin names.
-From 6.15 on, FUSE DAX corrupts a mapped file that another process opens, and a guest of 6 GiB or more dies of SIGBUS ([smol-machines/smolvm#1741](https://github.com/smol-machines/smolvm/issues/1741)).
-Linux 6.18 also stalls a guest whose mapped working set outgrows the DAX window, until [smol-machines/libkrunfw#31](https://github.com/smol-machines/libkrunfw/pull/31).
-The vm e2e lane boots a 6 GiB guest with the runner's kernel and checks both, so a kernel that passes them can replace the pinned one with no change to the lane.
-The Mac's host runner keeps the release's own kernel, and its guests have no FUSE DAX.
+Its guest kernel is the smolvm release's own, Linux 6.18 with [smol-machines/libkrunfw#31](https://github.com/smol-machines/libkrunfw/pull/31).
+Without that fix, from 6.15 on, FUSE DAX corrupts a mapped file that another process opens, and a guest of 6 GiB or more dies of SIGBUS ([smol-machines/smolvm#1741](https://github.com/smol-machines/smolvm/issues/1741)); 6.18 also stalls a guest whose mapped working set outgrows the DAX window.
+The vm e2e lane boots a 6 GiB guest with the runner's kernel and checks both, so a smolvm release whose kernel fails them fails the lane.
+The Mac's host runner has the same kernel, and its guests have no FUSE DAX.
 The pod's libc does not: a release whose runner does not load in the pod can take it over only as a new pod.
 
 **The stager** is a DaemonSet on the runners' nodes, and the only writer of the release directory.
@@ -56,6 +58,7 @@ The pod's own image is always available as a release.
 A staged one is used once the stager has reached the pod's node, and the loader first copies it, and its runtime, into the pod: the stager may remove them from the node while a runner still copies its guest binaries from one or a VMM still serves its guest agent from the other.
 Before a hand-off the loader checks that the release's runner loads in the pod at all.
 The loader restarts a runner that exits, with a backoff, and passes a stop of the pod to the runner, which then stops every machine as the [runner](vm-runner.md) page describes.
+A stop that arrives while no runner can take it — the old one closing for a hand-off, a release being copied in, a backoff — is kept: a hand-off not yet begun is dropped, a backoff is cut short, and the stop goes to the next runner once that runner has set up its own stop, since one killed before that leaves its machines to be powered off with the pod.
 
 **A hand-off** replaces the runner process.
 The loader signals the runner, which closes as it would for a stop but leaves every machine running, then starts the named release.
@@ -63,16 +66,22 @@ The new runner reads each machine's record, finds its VMM alive, and publishes i
 The machines and their disks are untouched, and each keeps the runtime it booted; the machines the new runner starts boot its own runtime, so a machine moves to a new runtime at its next boot.
 The runner records the runtime each machine booted, and manages a machine on another runtime assuming the two are compatible, rather than testing every pair of releases: a runtime error on such a machine, or a guest quiet for half a minute instead of ten, reboots it onto the runner's own runtime.
 platform-init flushes the agent's home to the disk when the workload stops, so a stop whose quiesce an older guest agent does not confirm, which the runner ends with a power-off, costs a journal replay and not the agent's last writes.
-The loader keeps a runtime in the pod while any VMM still maps it.
+The loader keeps a runtime in the pod while any VMM still boots from it: it finds each VMM by its command line and reads the guest agent root the runner recorded beside the VMM's boot config at its start.
+A VMM makes itself non-dumpable, so its memory map is shut to the loader, and smolvm deletes the boot config once read; a VMM with no record, one an older release started, keeps every runtime.
 Connections already open through a published port drop with the old process, and the machine API is down for the seconds between the two.
 A VMM whose runner exited is reaped by the pod's init.
 A release that exits within a minute of taking over is held as **failed**, and the loader goes back to the release it replaced until the controller names another.
+A runner under a loader whose machine API fails to serve exits as a hand-off does, leaving every machine running, so the release the loader goes back to, or the same one restarted, adopts them without a reboot; a pod stop that arrives during that close still stops them, and a runner with no loader stops them first, since its exit ends the pod.
 
 **What the controller does.** It names the configured runner image in each runner's ConfigMap, as many at a time as the roll's width.
 A hand-off reboots nothing, but the loader's fallback catches only a release that exits: one that runs and then refuses to manage machines would, named everywhere at once, break every owner together.
 So a hand-off holds a place in the same roll as a pod roll, and a new release is named only while fewer than the roll's width of runners are mid-roll or mid-hand-off.
 It ends no turn, so it does not wait for idle agents.
 A runner is mid-hand-off from the moment its release is named until it reports the release running, every machine that was ready before is ready again, stopped, or gone with its agent, and no ensure of that owner's machines was refused since.
+As with a roll, the runner is asked on its own owner's turn, so a hand-off settles, or is found in trouble, when an agent of that owner reconciles or the sweep reaches them.
+An owner with no ready machine has no agent to settle their hand-off, so the sweep, on its turn for them, waits until their runner has taken the release, the hand-off stalls, or the settle timeout passes, and then goes on to the next runner in the same pass.
+One sweep so takes a release to every owner with nothing running, about a minute each, the time the kubelet takes to refresh the mounted ConfigMap, while owners with running machines still take it a few at a time.
+The rollout sweep runs apart from the orphan sweep, so a long pass delays no cleanup.
 A runner with ready machines stays mid-hand-off for at least two health polls, so each running agent has had an ensure against the new release before the next owner is named it.
 A hand-off is in trouble when the runner holds the release as failed, when the runner refuses an ensure, or when it has not settled within the settle timeout; a runner that cannot be reached, or answers that it is shutting down, is the hand-off itself and does not count.
 A hand-off in trouble is marked stalled on the runner's ConfigMap, reported as an error and counted, and keeps its place, so the release goes no further, as with a pod that is never ready.

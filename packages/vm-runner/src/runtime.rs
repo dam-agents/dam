@@ -69,6 +69,8 @@ pub const GUEST_AGENT_PORT: u16 = 8080;
 
 // UNIT_BOUNDARY_DESCRIPTION: the file in a machine's smolvm directory naming the host loopback port its guest may reach at its gateway address. The runner writes it; the machine's VMM, which is this binary started with `_boot-vm`, reads it beside its boot config.
 pub const GATEWAY_HOST_PORT_FILE: &str = "platform-gateway-host-port";
+// UNIT_BOUNDARY_DESCRIPTION: the file in a machine's smolvm directory naming the guest agent root its VMM boots, which lies in the runtime the runner booted it on. The runner writes it before each start, beside the boot config the VMM deletes once read, so it lasts as long as the VMM; the loader reads it to keep that runtime in the pod (see release::booted_from).
+pub const AGENT_ROOTFS_FILE: &str = "platform-agent-rootfs";
 
 // UNIT_BOUNDARY_DESCRIPTION: the largest image archive a machine may boot from. smolvm refuses archives over 8 GiB by default, and agent images with their toolchains are bigger than that.
 pub const MAX_IMAGE_BYTES: u64 = 16 << 30;

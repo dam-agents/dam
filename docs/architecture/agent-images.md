@@ -1,6 +1,6 @@
 # Agent images
 
-Last verified: 2026-10-13
+Last verified: 2026-10-15
 
 The images an agent runs in: the **default image**, which the default Template boots, and the workloads and the e2e mock, each the default image under its own files.
 Each carries the agent-runtime and every harness.
@@ -36,7 +36,7 @@ mise's own data dir stays the image's, writable, so `mise use -g` still installs
 They are installed by that same image, once per node: a DaemonSet on every node an agent or a VM runner may land on runs the image's installer into a node directory, and then idles, so a node that joins later gets the tools too.
 On the container Backend every agent pod mounts that directory read-only at the system data dir's path, whatever its image: no other image uses the path.
 On the `vm` Backend each runner mounts it read-only and shares it read-only into every machine whose image asks for it ([vm-runner](vm-runner.md)), DAX-mapped on x86 so a guest reads the node's page cache rather than copying every file a harness start loads into its own memory.
-DAX is safe only on the pinned Linux 6.12 guest kernel ([vm-runner-upgrades](vm-runner-upgrades.md)): from 6.15 on, a process that runs a large binary from a DAX mount dies of SIGBUS once another process opens that binary ([smol-machines/smolvm#1741](https://github.com/smol-machines/smolvm/issues/1741)).
+DAX needs a guest kernel with [smol-machines/libkrunfw#31](https://github.com/smol-machines/libkrunfw/pull/31), which the pinned smolvm release ships ([vm-runner-upgrades](vm-runner-upgrades.md)): without it, from Linux 6.15 on, a process that runs a large binary from a DAX mount dies of SIGBUS once another process opens that binary ([smol-machines/smolvm#1741](https://github.com/smol-machines/smolvm/issues/1741)).
 A deploy with a new image rolls the DaemonSet on every node at once, which installs the new versions **in place**, beside the old ones: an agent still on an older image keeps the versions it names, and nothing is pruned.
 Playwright's browsers sit there too, each image naming its own.
 An install cut short (the installer killed, a node drained) is redone on the next run rather than taken as done: mise records a version as mid-install only in its cache, so the installer keeps that cache in the node directory too, and it removes any version directory left empty.
@@ -80,7 +80,7 @@ Layers are packed as plain tars: a local cluster imports them as they are, and C
 
 - **Container Backend:** the image runs as the agent user, whose account comes from a static extra-users database.
 - **vm Backend:** the machine boots the image as root after platform-init has mounted the home and bound the MITM CA, and platform-init stays the entrypoint's parent, so the image's init is not the first process of its PID namespace ([vm-runner](vm-runner.md)).
-  The entrypoint maps `agent` to uid 0 for SSH logins and prepares sshd.
+  The entrypoint maps `agent` to uid 0 for SSH logins, gives uid 0 the agent's home so OpenSSH keeps its keys there ([persistence](persistence.md#per-agent-pvcs)), and prepares sshd.
   The agent-runtime keeps Node's compile cache beside its own code here, since the root outlives a boot; a container's root is new on every start, so writing the cache would only cost it time.
   The cache is the runtime's alone: no harness or command it starts inherits it.
 

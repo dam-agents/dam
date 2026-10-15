@@ -5,6 +5,7 @@ import type {
   scheduleCreateCronInputSchema,
   scheduleCreateOnceInputSchema,
   scheduleCreateRRuleInputSchema,
+  scheduleUpdateCronInputSchema,
   scheduleUpdateOnceInputSchema,
   scheduleUpdateRRuleInputSchema,
 } from "./schemas.js";
@@ -90,6 +91,9 @@ export interface Schedule {
 export type ScheduleCreateCronInput = z.infer<
   typeof scheduleCreateCronInputSchema
 >;
+export type ScheduleUpdateCronInput = z.infer<
+  typeof scheduleUpdateCronInputSchema
+>;
 export type ScheduleCreateRRuleInput = z.infer<
   typeof scheduleCreateRRuleInputSchema
 >;
@@ -115,6 +119,7 @@ export interface SchedulesService {
     input: ScheduleCreateRRuleInput,
     createdBy?: ScheduleCreator,
   ) => Promise<Schedule>;
+  updateCron: (input: ScheduleUpdateCronInput) => Promise<Schedule | null>;
   updateRRule: (input: ScheduleUpdateRRuleInput) => Promise<Schedule | null>;
   createOnce: (
     input: ScheduleCreateOnceInput,

@@ -12,6 +12,7 @@ import {
 import { RESOURCE_ICON } from "../lib/resource-icons.js";
 import { CpuRow } from "./cpu-row.js";
 import { PoolBar } from "./pool-bar.js";
+import { StorageBreakdown } from "./storage-breakdown.js";
 
 const LEVEL_WORD: Record<PoolLevel, string> = {
   ok: "",
@@ -71,6 +72,9 @@ export function PoolUsage({ agents }: { agents: readonly AgentView[] }) {
           slackLogin,
         )}
       />
+      {storage.level !== "ok" && (
+        <StorageBreakdown usage={usage} agents={vmAgents} />
+      )}
       {usage.cpu && <CpuRow cpu={usage.cpu} usage={usage} agents={vmAgents} />}
     </div>
   );

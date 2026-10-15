@@ -374,6 +374,48 @@ describe("run service", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(cancels).toEqual([]);
   });
+
+  /**
+   * TEST_SCENARIO: The relay accepts the socket and then closes it because it
+   * could not wake the agent, as it does for an agent waiting for memory. The
+   * run says the agent could not start and why, read from the agent's state,
+   * rather than only that it could not connect.
+   */
+  it("says why the agent could not start when the relay closes before answering", async () => {
+    const wss = new WebSocketServer({ port: 0 });
+    wss.on("connection", (ws) =>
+      ws.close(1011, "agent not ready: over-budget"),
+    );
+    const { port } = wss.address() as { port: number };
+    relay = {
+      host: `http://127.0.0.1:${String(port)}`,
+      connections: 0,
+      close: () => wss.close(),
+    };
+    const service = createRunService({
+      bootstrap: () =>
+        Promise.resolve(
+          ok({ host: relay!.host, token: "t", agentId: "agent-1" }),
+        ),
+      out: () => {},
+      errOut: () => {},
+      whyNotStarted: async () => "your VM agents' memory is full",
+    });
+
+    const result = await service.run({
+      agentRef: "agent-1",
+      prompt: "hi",
+      timeoutSeconds: 10,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        kind: "agent-unreachable",
+        why: "your VM agents' memory is full",
+      },
+    });
+  });
 });
 
 describe("stallLine", () => {

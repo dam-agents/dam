@@ -3,6 +3,8 @@ import { useId } from "react";
 import type {
   Control,
   FieldErrors,
+  FieldValues,
+  Path,
   UseFormRegister,
   UseFormRegisterReturn,
 } from "react-hook-form";
@@ -291,13 +293,13 @@ export function ScheduleRecurrenceFields({
   );
 }
 
-export function ScheduleSessionTypeField({
+export function ScheduleSessionTypeField<T extends FieldValues>({
   layout,
   control,
   accentClassName = DEFAULT_ACCENT,
 }: {
   layout: ScheduleFieldLayout;
-  control: Control<ScheduleFormValues>;
+  control: Control<T>;
   accentClassName?: string;
 }) {
   return (
@@ -317,7 +319,7 @@ export function ScheduleSessionTypeField({
     >
       <Controller
         control={control}
-        name="sessionMode"
+        name={"sessionMode" as Path<T>}
         render={({ field }) => (
           <div
             className={cn("flex gap-1.5", layout === "rows" && "justify-end")}
@@ -348,34 +350,30 @@ const PRECHECK_PLACEHOLDER =
 
 interface PrecheckFieldProps {
   layout: ScheduleFieldLayout;
-  register: UseFormRegister<ScheduleFormValues>;
-  errors: FieldErrors<ScheduleFormValues>;
+  registration: UseFormRegisterReturn;
+  error?: string | undefined;
 }
 
 export function SchedulePrecheckField({
   layout,
-  register,
-  errors,
+  registration,
+  error,
 }: PrecheckFieldProps) {
   const fieldId = useId();
   const input = (
     <Textarea
       id={fieldId}
       className="min-h-[56px] resize-y font-mono text-xs"
-      variant={errors.precheck ? "invalid" : undefined}
+      variant={error ? "invalid" : undefined}
       placeholder={PRECHECK_PLACEHOLDER}
       rows={2}
-      {...register("precheck")}
+      {...registration}
     />
   );
 
   if (layout === "stacked")
     return (
-      <FormField
-        label="Precheck (optional)"
-        error={errors.precheck?.message}
-        hint={PRECHECK_HINT}
-      >
+      <FormField label="Precheck (optional)" error={error} hint={PRECHECK_HINT}>
         {input}
       </FormField>
     );
@@ -396,7 +394,7 @@ export function SchedulePrecheckField({
         </HintTooltip>
       </div>
       {input}
-      <FormError message={errors.precheck?.message} />
+      <FormError message={error} />
     </div>
   );
 }

@@ -10,6 +10,7 @@ import type {
 import { harnessRouter } from "api-server-api/harness-router";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import { resolveAgent } from "./agent-auth.js";
+import { MAX_TRPC_BATCH_SIZE } from "../../core/request-body-bounds.js";
 
 export interface RuntimeTrpcDeps {
   k8s: K8sClient;
@@ -45,6 +46,7 @@ export function mountRuntimeTrpc(app: Hono, deps: RuntimeTrpcDeps): void {
         duplex: "half",
       } as RequestInit),
       router: harnessRouter,
+      maxBatchSize: MAX_TRPC_BATCH_SIZE,
       createContext: (): HarnessContext => ({
         agentId,
         runtimeDelivery: deps.hello,

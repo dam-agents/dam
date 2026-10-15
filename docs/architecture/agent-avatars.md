@@ -1,6 +1,6 @@
 # Agent avatars
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 ## Overview
 
@@ -11,7 +11,8 @@ The characters tell a user's Agents apart at a glance and show each one's state 
 
 The owner picks the character in the Agent's settings, and the choice is stored on the Agent spec, so renaming keeps it.
 A user picks only from the characters they unlocked on the [Getting Started Checklist](getting-started.md); the rest show as eggs.
-A create from the UI stores the unlocked character the owner uses least, so new Agents differ by default; the kit modal shows it and lets the owner pick another before applying.
+A create from the UI stores the unlocked character the owner uses least, so new Agents differ by default; the kit modal shows it, or the kit's own avatar when the kit declares one, and lets the owner pick another before applying.
+A kit's character is the one exception to the unlock rule: the kit author chose it, so the modal applies it even when the owner has not unlocked it.
 An Agent with no stored choice, or one the platform does not know, shows a character picked by a hash of its name and its owner's identity.
 A rename from the settings page stores the character the page shows, so the Agent keeps it; a rename by any other path can change it.
 
@@ -22,7 +23,8 @@ The spec then stores `emoji:<emoji>` or `image:<id>`; anything else that is not 
 An emoji is accepted only as a single RGI emoji, and is drawn as SVG text, so it looks like the viewer's system emoji.
 An upload is at most 2 MB; the api-server crops it to a 512 px square PNG and stores it in Postgres under the SHA-256 of that PNG.
 It is served without sign-in, because an `<img>` sends no token; the id is a hash, so it cannot be guessed, and the image never changes.
-An hourly sweep deletes uploaded images older than a day that no Agent names, with their Slack icon URLs; the day covers an upload not yet saved onto a spec.
+An hourly sweep deletes uploaded images older than a day that no Agent and no resolved Starter Kit names, with their Slack icon URLs; the day covers an upload not yet saved onto a spec.
+A [Starter Kit](starter-kits.md) can declare the avatar its Agents start with, a custom one included.
 A custom avatar has no eyes, so it shows no mood: it only greys out while the Agent sleeps.
 
 ## State

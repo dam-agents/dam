@@ -104,7 +104,7 @@ fn gateway_host_port(boot_config: &Path) -> anyhow::Result<Option<u16>> {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: points the embedded runtime at the smolvm release the image installed, as the release's launcher script does for its own binary: libkrun and libkrunfw from its lib directory, the guest agent from its agent-rootfs. The environment is read by this process and inherited by every VMM it spawns, so it is set before any thread starts. The archive cap is the `--max-image-size` flag. SMOLVM_MOUNT_DAX gives every mount a machine boots with a 2 GiB DAX window, so the guest maps the host's page cache instead of copying each read through FUSE into its own: the harness tools, which every harness start reads `node` and its modules from, and the share. smolvm has no per-mount switch. Both mounts are read-only, and the runner replaces a share file by a rename and never writes one in place, so a mapped file is never truncated under the guest. The window costs the guest 32 MiB of RAM per mount for its page structs. smolvm ignores the variable on arm64, whose guest kernel has no FUSE DAX. DAX is safe only on the Linux 6.12 guest kernel smolvm.pin names: from 6.15 on, a process that runs a large binary from a DAX mount dies of SIGBUS once another process opens it (smol-machines/smolvm#1741), and the vm e2e lane holds the kernel to that. Setting it to 0 turns DAX off to compare.
+// UNIT_BOUNDARY_DESCRIPTION: points the embedded runtime at the smolvm release the image installed, as the release's launcher script does for its own binary: libkrun and libkrunfw from its lib directory, the guest agent from its agent-rootfs. The environment is read by this process and inherited by every VMM it spawns, so it is set before any thread starts. The archive cap is the `--max-image-size` flag. SMOLVM_MOUNT_DAX gives every mount a machine boots with a 2 GiB DAX window, so the guest maps the host's page cache instead of copying each read through FUSE into its own: the harness tools, which every harness start reads `node` and its modules from, and the share. smolvm has no per-mount switch. Both mounts are read-only, and the runner replaces a share file by a rename and never writes one in place, so a mapped file is never truncated under the guest. The window costs the guest 32 MiB of RAM per mount for its page structs. smolvm ignores the variable on arm64, whose guest kernel has no FUSE DAX. DAX needs a guest kernel with smol-machines/libkrunfw#31, which smolvm 1.27.4 and later ship: before it, from Linux 6.15 on, a process that runs a large binary from a DAX mount dies of SIGBUS once another process opens it (smol-machines/smolvm#1741), and the vm e2e lane checks the kernel for that. Setting it to 0 turns DAX off to compare.
 fn configure_smolvm(launcher: &Path) {
     let install = launcher.parent().unwrap_or(Path::new("/"));
     let lib = install.join("lib");
@@ -345,7 +345,7 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
     } else {
         let listener = bind(&args.metrics_listen)?;
         let handle = axum_server::Handle::new();
-        let serving = axum_server::from_tcp(listener)?
+        let serving = axum_server::from_tcp(listener)
             .handle(handle.clone())
             .serve(http::metrics_router(server.clone()).into_make_service());
         Some((handle, tokio::spawn(serving)))
@@ -368,7 +368,7 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
                 axum_server::tls_rustls::RustlsConfig::from_pem_file(&args.tls_cert, &args.tls_key)
                     .await?;
             reload_tls(tls.clone(), args.tls_cert.clone(), args.tls_key.clone());
-            axum_server::from_tcp_rustls(listener, tls)?
+            axum_server::from_tcp_rustls(listener, tls)
                 .handle(handle)
                 .serve(app)
                 .await
@@ -380,8 +380,22 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
         tokio::signal::unix::signal(tokio::signal::unix::SignalKind::user_defined1())?;
     let handing_off = tokio::select! {
         result = &mut serving => {
-            server.close().await;
-            return result.map_err(|e| anyhow::anyhow!("serving: {e}"));
+            let result = result.map_err(|e| anyhow::anyhow!("serving: {e}"));
+            let supervised = std::env::var_os(vm_runner::release::RELEASES_ENV).is_some_and(|dir| !dir.is_empty());
+            server
+                .close_failed(supervised, async {
+                    tokio::select! {
+                        _ = term.recv() => {}
+                        _ = tokio::signal::ctrl_c() => {}
+                    }
+                })
+                .await;
+            if supervised {
+                tracing::error!(error = ?result.err(), "VM runner failed to serve; its machines stay up for the loader's next runner");
+                // UNIT_BOUNDARY_DESCRIPTION: exits before the runtime is dropped, as a hand-off does, so the machines this runner started itself outlive it too.
+                std::process::exit(1);
+            }
+            return result;
         }
         _ = term.recv() => { tracing::info!(signal = "SIGTERM", "VM runner stopping"); false }
         _ = tokio::signal::ctrl_c() => { tracing::info!(signal = "SIGINT", "VM runner stopping"); false }

@@ -5,6 +5,7 @@ import {
   requirementAccepts,
   type StarterKitView,
 } from "api-server-api";
+import { isAvatarCharacter } from "api-server-api/avatar/svg";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -37,6 +38,7 @@ import {
 } from "../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
+import { useFeatures } from "../../features/api/queries.js";
 import { useVmForced } from "../../features/hooks/use-vm-forced.js";
 import { useUnlockedAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
 import { routeToPath } from "../../platform/lib/routes.js";
@@ -364,9 +366,15 @@ function KitDetail({
     isStarterKitSetupComplete(kit, form, owned, templateById);
 
   const unlocked = useUnlockedAvatars();
+  const customAvatars = useFeatures().data?.["custom-avatars"] ?? false;
+  const kitAvatar =
+    customAvatars || isAvatarCharacter(kit.avatar) ? kit.avatar : undefined;
   const avatar = useMemo(
-    () => form.avatar ?? defaultAvatar(form.name, unlocked, agents ?? []),
-    [form.avatar, form.name, unlocked, agents],
+    () =>
+      form.avatar ??
+      kitAvatar ??
+      defaultAvatar(form.name, unlocked, agents ?? []),
+    [form.avatar, kitAvatar, form.name, unlocked, agents],
   );
 
   const create = async () => {

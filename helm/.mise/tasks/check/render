@@ -63,15 +63,18 @@ helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   | "${KUBECONFORM[@]}" "$@"
 # A confined runner reaches DNS only at the resolver it uses. One that caches
 # on its own claim and names no resolver, a resolver range of /0, and an
-# egress entry naming the link-local metadata endpoint all fail the render.
+# egress entry naming the link-local metadata endpoint all fail the render, as
+# does a VMM seccomp mode smolvm would read as no filter.
 VM=(--set virtualization.enabled=true --set virtualization.runner.resources.limits.memory=8Gi
   --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0')
 for refused in 'virtualization.runner.dnsPolicy=Default' \
   'virtualization.runner.dnsCidrs[0]=0.0.0.0/0' \
   'virtualization.runner.egressCidrs[1]=169.254.169.254/32' \
-  'virtualization.runner.clusterDns=null'; do
+  'virtualization.runner.clusterDns=null' \
+  'virtualization.runner.seccomp=permissive'; do
   extra=(--set "$refused")
   case "$refused" in
+    *seccomp*) extra+=(--set virtualization.imageCache.hostPath=/var/lib/platform-images) ;;
     *egressCidrs*) extra+=(--set 'virtualization.runner.dnsCidrs[0]=10.0.2.3/32') ;;
     *clusterDns*) extra+=(--set virtualization.runner.dnsPolicy=ClusterFirst) ;;
   esac
@@ -80,6 +83,12 @@ for refused in 'virtualization.runner.dnsPolicy=Default' \
     exit 1
   fi
 done
+# An unquoted `seccomp: off` in a values file arrives as a boolean, and must
+# still mean no filter rather than the default.
+helm template platform . "${COMMON[@]}" "${VM[@]}" \
+  --set virtualization.imageCache.hostPath=/var/lib/platform-images \
+  --set virtualization.runner.seccomp=false | grep '\\"seccomp\\":\\"off\\"' >/dev/null ||
+  { echo "a render with seccomp=false did not give the runners seccomp off" >&2; exit 1; }
 # A runner on the node cache resolves nothing, so it needs no resolver named.
 helm template platform . "${COMMON[@]}" "${VM[@]}" \
   --set virtualization.imageCache.hostPath=/var/lib/platform-images >/dev/null

@@ -65,15 +65,13 @@ links:
 
 # -- Experimental features, one mode each: `experimental` leaves the per-user
 # switch in the hidden settings tab; `on` or `off` hides the switch and decides
-# for every user, whatever they stored. An omitted feature is `experimental`.
+# for every user, whatever they stored. A feature `features` does not name
+# takes `featureDefault`, so an install that sets it `off` also keeps features
+# added by later releases off until it names them.
 # `vm-sandboxes` also needs `virtualization.enabled`; pinned `on`, it makes
 # every new agent a microVM, starter kits and API creates included.
-features:
-  advanced-connections: experimental
-  vm-sandboxes: experimental
-  interactive-artifacts: experimental
-  agent-telemetry: experimental
-  custom-avatars: experimental
+featureDefault: experimental
+features: {}
 
 # -- Base domain for the app. UI and API share this host; the ingress
 # splits `/api/*` to the api-server and everything else to the UI. Keycloak
@@ -367,6 +365,15 @@ virtualization:
     # than letting a new runtime manage machines an older one started. The
     # switch back if a runtime turns out not to.
     releaseSameRuntimeOnly: false
+    # How smolvm checks every VMM's syscalls, from after its device setup,
+    # against the allowlist a running microVM needs. `audit` logs a call
+    # outside it as a kernel audit record (`type=1326`, in the node's audit
+    # log or kernel log, never the pod's) and lets it through; `enforce`
+    # kills the VMM on such a call, which stops its machine; `off` installs no
+    # filter. The pod's own seccomp profile bounds every VMM in each mode.
+    # Changing this value rolls every runner, which reboots its owner's
+    # machines.
+    seccomp: audit
     # Local dev on macOS only. Set, the controller creates no runner pods:
     # every vm machine, whatever its owner, runs on one vm-runner process on
     # the host, which uses the host's own hypervisor instead of one nested in

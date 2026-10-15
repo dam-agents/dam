@@ -1,10 +1,12 @@
 import { config } from "../config.js";
 import type { DocumentStoreBackend } from "../../core/document-store.js";
 import type { ArtifactTouch } from "./infrastructure/artifact-touch.js";
+import type { ToolActivity } from "../changes/index.js";
 import { leaseSpawnEnv, type LeaseEnvReader } from "../../core/runtime-env.js";
 import {
   sessionSettingsError,
   type HarnessConfigCatalog,
+  type SessionRepository,
 } from "agent-runtime-api";
 import type { SessionSettingBinding } from "../runtime-channel/manifest.js";
 import { createChildAgentProcess } from "./infrastructure/create-child-agent-process.js";
@@ -81,6 +83,8 @@ export interface ComposeAcpOptions {
   backgroundWorkHolds: boolean;
   keepPolicy: KeepPolicy;
   onArtifactTouch: (touch: ArtifactTouch) => void;
+  onToolActivity?: (activity: ToolActivity) => void;
+  sessionRepositories?: (sessionId: string) => SessionRepository[];
   beforeSpawn: () => Promise<void>;
   onPrompt: () => void;
   leaseModel: (lease: {
@@ -287,6 +291,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
         sessionMetadata,
         isTerminalSessionActive: opts.isTerminalSessionActive,
         onArtifactTouch: opts.onArtifactTouch,
+        ...(opts.onToolActivity && { onToolActivity: opts.onToolActivity }),
         onPrompt: opts.onPrompt,
         onSubAgentSpawn: ({ sessionId, subAgentIds }) =>
           subAgentSessions.record(sessionId, subAgentIds),
@@ -327,6 +332,9 @@ export function composeAcp(opts: ComposeAcpOptions): {
     changes: sessionChanges,
     sessionFrames: (sessionId) => runtime.sessionFrames(sessionId),
     delegations: createDelegationFramesStore(opts.agentHome),
+    ...(opts.sessionRepositories && {
+      sessionRepositories: opts.sessionRepositories,
+    }),
     ...(historyProvider ? { historyProvider } : {}),
     ...(sessionSpend
       ? {

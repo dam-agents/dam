@@ -101,7 +101,7 @@ export function buildSourceAddCommand(deps: {
         if (!result.ok) {
           if (result.error.kind === "source-exists") {
             process.stderr.write(
-              "error: a skill source for this git URL is already registered; see `dam skill source list`\n",
+              "error: a skill source for this git URL and path is already registered; see `dam skill source list`\n",
             );
             process.exit(EXIT_INVALID_INPUT);
           }

@@ -6,6 +6,7 @@ import {
   memoryBar,
   poolWarning,
   storageBar,
+  storageRows,
   topCpuAgents,
 } from "../../modules/budgets/lib/pools.js";
 import type { AgentView } from "../../types.js";
@@ -23,7 +24,13 @@ const agent = (id: string, state: AgentView["state"] = "running") =>
 
 const usage: BudgetVmUsage = {
   memory: { usedBytes: 6 * GiB, limitBytes: 10 * GiB, level: "ok" },
-  storage: { usedBytes: 95 * GiB, usableBytes: 100 * GiB, level: "critical" },
+  storage: {
+    usedBytes: 95 * GiB,
+    usableBytes: 100 * GiB,
+    imageCacheBytes: 3 * GiB,
+    seedBytes: 0,
+    level: "critical",
+  },
   agents: [
     {
       id: "a",
@@ -79,8 +86,29 @@ describe("pool bars", () => {
       "asleep",
       "a",
       "1 more",
-      "Caches and system",
+      "Image cache",
+      "Logs and system",
     ]);
+    expect(bar.segments.reduce((sum, s) => sum + s.fraction, 0)).toBeCloseTo(
+      0.95,
+    );
+  });
+
+  it("lists what fills storage largest first, each agent, the parts beside them and what is left, skipping what takes nothing", () => {
+    const rows = storageRows(
+      { ...usage, storage: { ...usage.storage, seedBytes: 1.25 * GiB } },
+      agents,
+    );
+    expect(rows.map((r) => [r.label, r.bytes / GiB])).toEqual([
+      ["b", 60],
+      ["asleep", 20],
+      ["a", 10],
+      ["Image cache", 3],
+      ["Agents moving to VMs", 1.25],
+      ["tiny", 0.5],
+      ["Logs and system", 0.25],
+    ]);
+    expect(rows.find((r) => r.label === "b")?.agent?.id).toBe("b");
   });
 
   it("fills the CPU bar with the server's congestion fill", () => {

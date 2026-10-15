@@ -312,7 +312,7 @@ func TestTheRunnersProblemsAreReportedWhileCopying(t *testing.T) {
 	require.NoError(t, r.Reconcile(ctx, reloaded(t, r, agent)))
 	_, err = r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
 	require.NoError(t, err)
-	assert.Empty(t, migrationMessage(t, r, agent))
+	assert.NotContains(t, migrationMessage(t, r, agent), "stopped")
 }
 
 // TEST_SCENARIO: an old pod stuck terminating — its node gone quiet — would hold `Stopping` forever without a word. After a few minutes the message names the pod and its node, since only an operator who can reach that node can end it; a pod only just going says nothing.
@@ -328,7 +328,7 @@ func TestAnOldPodStuckTerminatingIsNamedWithItsNode(t *testing.T) {
 	require.NoError(t, r.Reconcile(ctx, agent))
 	agent = reloaded(t, r, agent)
 	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationStopping)
-	assert.Empty(t, migrationMessage(t, r, agent))
+	assert.NotContains(t, migrationMessage(t, r, agent), "stopped")
 
 	pod.DeletionTimestamp = new(metav1.NewTime(time.Now().Add(-10 * time.Minute)))
 	_, err := r.client.CoreV1().Pods("test-agents").Update(ctx, pod, metav1.UpdateOptions{})
@@ -425,7 +425,7 @@ func TestAMigrationMessageIsSafeToShow(t *testing.T) {
 	assert.Equal(t, runtimeMigrationMessageMax+1, len([]rune(long)), "cut by characters, never inside one")
 }
 
-// TEST_SCENARIO: `Booting` is proven only by a guest that answers, so until then nothing that parks an idle agent may stop it: not the idle timeout, not a reclaim stamp, and a migrating agent is never picked to make room for another. A boot whose seed is not recorded is still held down. A stop the user asks for wins, and is said on the Agent.
+// TEST_SCENARIO: `Booting` is proven only by a guest that answers, so until then nothing that parks an idle agent may stop it: not the idle timeout, not a reclaim stamp, and a migrating agent is never picked to make room for another. A boot whose seed is not recorded is still held down. A sleep asked for since the move began does not hold the boot either: every wake is refused while the move runs, so nothing could release it, and it holds again once the guest has answered.
 func TestABootingMigrationRunsUntilItsGuestAnswers(t *testing.T) {
 	now := time.Now().UTC()
 	agent := bootingAgentCR(t)
@@ -439,19 +439,17 @@ func TestABootingMigrationRunsUntilItsGuestAnswers(t *testing.T) {
 	unseeded := migratingAgentIn(apiv1.ReasonRuntimeMigrationBooting, now)
 	assert.False(t, shouldRunMigrating(unseeded.Annotations, runtimeMigrationOf(unseeded.Annotations, unseeded.Status), 0, now), "a boot with no recorded seed stays down")
 
-	stopped := map[string]string{annStopRequested: "true"}
-	for k, v := range agent.Annotations {
-		stopped[k] = v
-	}
-	assert.False(t, shouldRunMigrating(stopped, m, time.Hour, now), "a user's stop wins")
-
 	ctx := context.Background()
 	agent = bootingAgentCR(t)
-	agent.Annotations[annStopRequested] = "true"
+	agent.Annotations[annStopRequested] = now.Add(time.Minute).Format(time.RFC3339)
 	r, node, _ := setupMigrationReconciler(t, agent)
 	require.NoError(t, r.Reconcile(ctx, agent))
-	assert.False(t, node.spec("my-agent").Running)
-	assert.Contains(t, migrationMessage(t, r, agent), "the move goes on when it next starts")
+	assert.True(t, node.spec("my-agent").Running, "a sleep whose clear was missed does not hold the boot")
+	assert.NotContains(t, migrationMessage(t, r, agent), "stopped")
+
+	verified := migratingAgentIn(apiv1.ReasonRuntimeMigrationVerified, now)
+	verified.Annotations[annStopRequested] = agent.Annotations[annStopRequested]
+	assert.False(t, shouldRunMigrating(verified.Annotations, runtimeMigrationOf(verified.Annotations, verified.Status), time.Hour, now), "once verified, the sleep holds again")
 }
 
 // TEST_SCENARIO: the plan tells the owner of a stopped Agent that it is started once to finish the move, so a stop from before the migration began does not hold its boot, and the Agent goes back to stopped once its guest has answered.

@@ -47,6 +47,7 @@ export const t = initTRPC.context<AgentRuntimeContext>().create({
       ...shape,
       data: {
         ...shape.data,
+        stack: undefined,
         ...(upstream ? { upstream } : {}),
         ...(sourcePath ? { sourcePath } : {}),
       },

@@ -50,6 +50,8 @@ The watcher pulls the list, compares it against what it last wrote, and writes o
 The comparison runs both ways: a session the Agent no longer lists has its row removed, along with any dismissal recorded against it.
 That is what keeps the Agent authoritative for existence in practice and not just in principle — a deleted session stops being mentioned rather than lingering as a card nothing stands behind.
 A backstop reconcile bounds the loss if a notice is missed, and Agents whose runtime image predates the watch surface are polled instead.
+An Agent that has not yet reported its runtime features is polled too, so a poll often targets a pod that is still starting or will never start.
+Each poll read is bounded in time and ends when the Agent leaves the watcher's list, so an Agent deleted before its pod answered does not leave a socket that retries until the replica restarts.
 When it does write, it emits the same per-owner invalidation hint every other domain emits, so open tabs re-read over the query path rather than being pushed rows.
 
 Two consequences are worth stating plainly, because both are costs.

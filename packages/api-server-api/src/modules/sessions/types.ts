@@ -1,3 +1,4 @@
+import type { SessionRepository } from "agent-runtime-api";
 import { z } from "zod";
 
 export const SessionType = {
@@ -66,6 +67,7 @@ export interface SessionView {
   model?: string | null;
   settings?: Record<string, string>;
   spend?: { unit: string; cost: number };
+  repositories?: SessionRepository[];
 }
 
 export {

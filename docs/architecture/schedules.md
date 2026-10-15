@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 ## Overview
 
@@ -30,6 +30,10 @@ A rule with no future occurrence is rejected at save time; the occurrence search
 An occurrence inside quiet hours resumes the search at the end of that window, and a rule still quiet after 64 windows counts as covered.
 Rules longer than 1,000 characters, with an `INTERVAL` above 10,000, or with a `BY*` value out of range (`BYHOUR` 0–23, `BYMINUTE` and `BYSECOND` 0–59 with no leap second, `BYMONTH` 1–12, `BYMONTHDAY` ±1–31, and so on) are rejected; the RRULE parser would otherwise drop such a value and fire more often than the rule says.
 The schedule form runs the same check as the save call, so it shows a refused rule's reason inline instead of a preview.
+A cron expression always fires in UTC, and a cron schedule has no timezone and no quiet hours.
+A user edits a cron schedule they created as cron, or converts it to an RRULE to get both.
+The conversion keeps the cron fields' values and reads them in a timezone the user picks — UTC by default, so the schedule fires at the same moments — and it shows the next runs before and after.
+An expression with no exact RRULE match is not converted and stays a cron schedule: one that names both days of the month and days of the week, which cron matches as either, or one that uses `L`, `W`, `#`, `H` or seconds.
 A local time erased by the spring-forward jump is skipped, as RFC 5545 requires.
 An enabled schedule with no next run shows why — a refused rule, one that never fires or has run out, or quiet hours that cover every remaining occurrence — worked out when the schedule is read, so it clears the moment an edit re-arms it.
 

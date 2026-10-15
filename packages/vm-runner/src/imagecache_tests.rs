@@ -205,13 +205,13 @@ fn digest_of(cache: &ImageCache, reference: &str) -> String {
     resolved(cache.resolve(reference, &[])).digest
 }
 
-// TEST_SCENARIO: an unpacked image is the root filesystem of every machine of it, so eviction takes only what nobody holds. A resolve holds its entry for the caller at once, a hold is kept while it is refreshed inside its lease, and one that lapsed — its runner stopped — leaves its tree to eviction, oldest write first.
+// TEST_SCENARIO: an unpacked image is the root filesystem of every machine of it, so eviction takes only what nobody holds. A resolve holds its entry for the caller at once, a hold is kept while it is refreshed inside its lease, and one that lapsed — its runner stopped — leaves its tree to eviction, oldest write first. The holds are aged past their lease rather than waited out, because a fetch on a loaded host can outlast a lease short enough to wait for.
 #[test]
 fn eviction_spares_what_is_held_until_the_hold_lapses() {
     let f = Fixture::new("holds", PUBLIC_CRANE);
     let cache = f.cache(|c| {
         c.budget = 1;
-        c.hold_lease = Duration::from_millis(1500);
+        c.hold_lease = Duration::from_secs(60);
     });
     let first = digest_of(&cache, "quay.io/x/a:1");
     let second = digest_of(&cache, "quay.io/x/b:1");
@@ -220,7 +220,9 @@ fn eviction_spares_what_is_held_until_the_hold_lapses() {
         "a tree just resolved was evicted"
     );
 
-    std::thread::sleep(Duration::from_millis(1600));
+    for at in locked(&cache.memory).holds.values_mut() {
+        *at -= Duration::from_secs(60);
+    }
     cache.hold(&[second.clone()].into()).unwrap();
     let trim = cache.evict(None);
     assert!(

@@ -253,8 +253,10 @@ function hostPods(selector: string): { uid: string; ready: boolean }[] {
     });
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the grows the agent's VM runner logged, as the fields of each JSON log line whose operation is a grow: one that succeeded logs "machine operation" (or "machine operation was slow"), one that failed "machine operation failed". The runner belongs to the agent's owner, so the grows of the owner's other machines are in it too.
-export function runnerGrows(agentId: string): Record<string, unknown>[] {
+// UNIT_BOUNDARY_DESCRIPTION: the grows of the agent's machine that its VM runner logged as done, as the fields of each JSON log line: the RAM the guest booted with and the total it has once its virtio-mem driver plugged, and its agent onlined, all of the added RAM. The runner belongs to the agent's owner, so the lines are kept to the agent's own machine.
+export function runnerGrows(
+  agentId: string,
+): { boot_mib: number; memory_mib: number }[] {
   const logs = kubectl(
     "-n",
     AGENT_NS,
@@ -268,7 +270,10 @@ export function runnerGrows(agentId: string): Record<string, unknown>[] {
       const { fields } = JSON.parse(line) as {
         fields?: Record<string, unknown>;
       };
-      return fields?.op === "grow" ? [fields] : [];
+      return fields?.machine === agentId &&
+        fields.message === "the guest has all its added RAM online"
+        ? [fields as { boot_mib: number; memory_mib: number }]
+        : [];
     } catch {
       return [];
     }

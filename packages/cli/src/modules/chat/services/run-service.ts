@@ -25,7 +25,9 @@ export const DEFAULT_RUN_TIMEOUT_SECONDS = 3600;
 const RECONNECT_BACKOFF_MS = [1_000, 2_000, 5_000, 10_000, 30_000];
 
 export type RunError =
-  BootstrapError | { kind: "run-failed"; reason: string; sessionId?: string };
+  | BootstrapError
+  | { kind: "run-failed"; reason: string; sessionId?: string }
+  | { kind: "agent-unreachable"; why: string | null; sessionId?: string };
 
 export type RunOutcome =
   | { kind: "completed"; sessionId: string; stopReason: string | null }
@@ -74,6 +76,7 @@ export interface RunServiceDeps {
   errOut: (line: string) => void;
   onInterrupt?: (handler: () => void) => () => void;
   reconnectBackoffMs?: number[];
+  whyNotStarted?: (ctx: BootstrapContext) => Promise<string | null>;
 }
 
 type RunEvent =
@@ -259,6 +262,14 @@ export function createRunService(deps: RunServiceDeps): RunService {
     return conn;
   }
 
+  async function unreachable(ctx: BootstrapContext, sessionId?: string) {
+    return err({
+      kind: "agent-unreachable" as const,
+      why: (await deps.whyNotStarted?.(ctx)) ?? null,
+      ...(sessionId === undefined ? {} : { sessionId }),
+    });
+  }
+
   async function loadSession(
     conn: RunConnection,
     sessionId: string,
@@ -415,11 +426,7 @@ export function createRunService(deps: RunServiceDeps): RunService {
           started = true;
         },
       );
-      if (conn === null)
-        return err({
-          kind: "run-failed" as const,
-          reason: "could not connect to the agent",
-        });
+      if (conn === null) return unreachable(ctx.value);
 
       let releaseInterrupt = (): void => {};
       try {
@@ -559,11 +566,7 @@ export function createRunService(deps: RunServiceDeps): RunService {
         );
         if (conn === null) {
           if (input.wait) continue;
-          return err({
-            kind: "run-failed" as const,
-            reason: "could not connect to the agent",
-            sessionId,
-          });
+          return unreachable(ctx.value, sessionId);
         }
 
         try {
@@ -611,12 +614,7 @@ export function createRunService(deps: RunServiceDeps): RunService {
         () => sessionId,
         () => {},
       );
-      if (conn === null)
-        return err({
-          kind: "run-failed" as const,
-          reason: "could not connect to the agent",
-          sessionId,
-        });
+      if (conn === null) return unreachable(ctx.value, sessionId);
       try {
         const record = await fetchRunResult(conn, sessionId);
         if (record === null)

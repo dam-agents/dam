@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-10-13
+Last verified: 2026-10-15
 
 ## Session inside the pod
 
@@ -13,7 +13,8 @@ Each lease is the unchanged ACP runtime this section describes, behind a **lease
 `session/new` names the session's harness, provider and model; the runtime persists that pair in its session-metadata store, so later frames, and a load or resume after a restart, route back to the same lease.
 A session naming none runs on the default harness and first granted provider, and keeps that pair.
 Leases spawn lazily, except the default one, which starts once the server listens so a waking chat finds it loaded; each is told about the client as the first was, and an agent's question is answered to the lease that asked.
-The default lease stays; any other shuts down once it holds no session, and one whose harness crashes is dropped for the next session to respawn.
+The default lease stays while its harness lives; any other shuts down once it holds no session.
+A lease whose harness crashes, the default one too, is dropped for the next session to respawn, so a harness killed for its memory or by the agent itself does not leave the agent running with no harness to take a session.
 
 A lease spawns with the agent-wide env, its own provider's layer and its harness's layer ([connections](connections.md#contribution-fan-out)), then the pod's process env, then its harness, provider and model.
 Revoking a provider recycles only the leases on it; a prompt or setting sent to a session on a removed provider fails with a structured *provider removed* error naming it, and granting it again resumes the session.
@@ -101,7 +102,13 @@ Which ceiling depends on how the agent runs: a container is capped by its cgroup
 A container that carries no cgroup limit is left unwatched rather than measured against the node it shares, whose memory a neighbour moves.
 agent-runtime pushes back first: nearing the limit it kills the largest tool process, sparing every harness and the conversation processes any carried harness's manifest names, so the agent recovers mid-turn; only when those are the hog does the kernel's kill land.
 A turn that dies anyway is recovered from an [active-turns marker](persistence.md) surviving to the next boot: it resumes on its own, up to five times, with a notice to pick the task back up.
+The resumed turn is unattended: nobody reads it live, so it waits for the harness to hold the Session again and never for a viewer, and it runs on a Sleep's wake with no chat open.
+A turn the platform stopped — a Sleep, an eviction, a restart, all of which reach the runtime as SIGTERM — is marked stopped as the runtime shuts down, so the notice and the chat name the stop instead of blaming memory.
 The marker is written only after the harness *took* the prompt, so resuming continues a turn the agent already saw — not the [no-auto-resend](#prompt-delivery) of a prompt it never got.
+A harness stores a new session only while its first turn runs, so the runtime flags a session from `session/new` as unstored until the harness answers a prompt of it, and the marker of an unstored session's turn keeps that turn's prompt.
+When the harness exits during such a turn, the runtime moves the kept prompt to the undelivered document; at a shutdown of the agent-runtime process the marker keeps it, for boot recovery or a failed load to settle.
+When the harness cannot load an unstored session, the runtime moves the kept prompt to the undelivered document, retires a session left with no undelivered prompt, and puts `data.platform.unstored` with the undelivered prompts on the load error.
+The UI then moves those prompts to a new chat, where they show as not delivered, and deletes the session: a harness cannot create a session under a given id, so sending again starts a new session.
 
 When a session goes idle — no engaged channel, no prompt active or queued, no agent request pending — the runtime sends `session/close` to the harness; a parked queue counts as queued work, holding the release back until its window passes.
 The per-session subprocess is reaped; the next attach respawns it.

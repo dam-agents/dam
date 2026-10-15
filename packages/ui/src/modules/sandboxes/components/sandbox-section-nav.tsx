@@ -12,7 +12,7 @@ interface SectionEntry {
   description?: string;
 }
 
-export const SECTIONS: SectionEntry[] = [
+const SECTIONS: SectionEntry[] = [
   {
     section: "setup",
     title: "Sandbox",
@@ -67,6 +67,20 @@ export const SECTIONS: SectionEntry[] = [
       "LLM spend for this agent, including work it delegated to other agents.",
   },
 ];
+
+export function sectionsFor(vm: boolean): SectionEntry[] {
+  return vm
+    ? SECTIONS.map((e) =>
+        e.section === "setup"
+          ? {
+              ...e,
+              description:
+                "How this agent's gateway adds credentials to its requests.",
+            }
+          : e,
+      )
+    : SECTIONS;
+}
 
 interface Props {
   sections: SectionEntry[];

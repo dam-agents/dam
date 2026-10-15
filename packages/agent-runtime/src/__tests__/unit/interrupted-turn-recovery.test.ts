@@ -7,6 +7,7 @@ import { createActiveTurnStore } from "../../modules/acp/infrastructure/active-t
 import { createSessionMetadataStore } from "../../modules/acp/infrastructure/session-metadata-store.js";
 import {
   INTERRUPTION_NOTICE,
+  STOPPED_NOTICE,
   recoverInterruptedTurns,
 } from "../../modules/acp/services/interrupted-turn-recovery.js";
 import type { TriggerSessionDriver } from "../../modules/acp/services/trigger-session-driver.js";
@@ -117,5 +118,27 @@ describe("interrupted-turn recovery", () => {
     expect(INTERRUPTION_NOTICE).toContain(
       "Do not stop or wait for the user because of it.",
     );
+  });
+
+  /**
+   * TEST_SCENARIO: a Sleep stops the agent with SIGTERM while `slept` runs a
+   * turn. That shutdown marks the turn stopped, so the next boot resumes it
+   * with a notice naming the stop, not memory. A turn of the previous boot
+   * that recovery has not resumed yet keeps the cause it had.
+   */
+  it("tells a turn the platform stopped that it was stopped, not out of memory", async () => {
+    const world = recoveryWorld();
+    createActiveTurnStore(world.backend).record("killed");
+    const sleeping = createActiveTurnStore(world.backend);
+    sleeping.record("slept");
+    sleeping.markStopped();
+
+    await world.recover(createActiveTurnStore(world.backend));
+
+    expect(world.resumed).toEqual(["killed", "slept"]);
+    expect(world.tasks).toEqual([INTERRUPTION_NOTICE, STOPPED_NOTICE]);
+    expect(STOPPED_NOTICE).toContain("put to sleep");
+    expect(STOPPED_NOTICE).not.toContain("memory");
+    expect(STOPPED_NOTICE).toContain("Nobody rejected it");
   });
 });

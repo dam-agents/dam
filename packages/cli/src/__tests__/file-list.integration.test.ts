@@ -5,7 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "api-server-api/router";
-import { ALL_SCOPES, type Agent, type ApiContext } from "api-server-api";
+import {
+  AGENT_UNREACHABLE,
+  ALL_SCOPES,
+  type Agent,
+  type ApiContext,
+} from "api-server-api";
 import { appRouter as runtimeRouter } from "agent-runtime-api/router";
 import type { AgentRuntimeContext, DirListResult } from "agent-runtime-api";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -19,8 +24,12 @@ describe("dam file list (integration)", () => {
   let requested: string[];
   let batches: string[][];
   let requestLengths: number[];
+  let agentState: Partial<Agent>;
+  let relayAnswer: { status: number; type: string; body: string } | null;
 
   beforeEach(async () => {
+    agentState = {};
+    relayAnswer = null;
     home = await mkdtemp(join(tmpdir(), "dam-file-list-"));
     requested = [];
     batches = [];
@@ -70,6 +79,7 @@ describe("dam file list (integration)", () => {
           unsupportedContributionKinds: [],
           workspaceFailures: [],
           channels: [],
+          ...agentState,
         }),
       },
     } as unknown as ApiContext;
@@ -97,6 +107,11 @@ describe("dam file list (integration)", () => {
       }
       if (req.headers.authorization !== "Bearer test-token") {
         res.writeHead(401).end();
+        return;
+      }
+      if (relayAnswer && req.url?.startsWith("/api/agents/")) {
+        res.writeHead(relayAnswer.status, { "Content-Type": relayAnswer.type });
+        res.end(relayAnswer.body);
         return;
       }
       const request = new Request(`http://localhost${req.url}`);
@@ -338,5 +353,73 @@ describe("dam file list (integration)", () => {
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toBe("");
     expect(result.stderr).toContain("cannot list `missing`: not-found");
+  });
+
+  /**
+   * TEST_SCENARIO: The api-server could not wake the agent because its owner's
+   * VM memory is full, and answers with its own body carrying the reason. The
+   * listing says the agent could not start and why, not that the server could
+   * not be reached, and exits with the agent-not-reachable code.
+   */
+  it("says why the agent could not start when the server could not wake it", async () => {
+    relayAnswer = {
+      status: 502,
+      type: "application/json",
+      body: JSON.stringify({
+        error: AGENT_UNREACHABLE,
+        reason: "over-budget",
+        message: "Your VM agents are using 23.5 of 24.0 GiB of memory",
+      }),
+    };
+
+    const result = await runList();
+    expect(result.exitCode).toBe(7);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe(
+      'error: agent "demo" could not start: Your VM agents are using 23.5 of 24.0 GiB of memory\n',
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: A gateway in front of the api-server gives up on a slow wake
+   * and answers with an HTML error page. The listing reads why from the
+   * agent's own state, the storage-full sentence the web app shows, instead of
+   * failing to parse the page as JSON.
+   */
+  it("reads why from the agent when a gateway answers with an HTML page", async () => {
+    relayAnswer = {
+      status: 504,
+      type: "text/html",
+      body: "<html><body><h1>504 Gateway Time-out</h1></body></html>",
+    };
+    agentState = {
+      state: "error",
+      podTerminationReason: "your VM agents' storage is full",
+    };
+
+    const result = await runList();
+    expect(result.exitCode).toBe(7);
+    expect(result.stderr).toBe(
+      'error: agent "demo" could not start: your VM agents\' storage is full\n',
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: An HTML error page for an agent that is not failing names
+   * the HTTP status the server answered with, not a JSON parse error and not
+   * "cannot reach server".
+   */
+  it("names the HTTP status of an HTML error page when the agent is not failing", async () => {
+    relayAnswer = {
+      status: 502,
+      type: "text/html",
+      body: "<html><body>Bad Gateway</body></html>",
+    };
+
+    const result = await runList();
+    expect(result.exitCode).toBe(7);
+    expect(result.stderr).toBe(
+      "error: the server answered HTTP 502 Bad Gateway with a body that is not an API response\n",
+    );
   });
 });

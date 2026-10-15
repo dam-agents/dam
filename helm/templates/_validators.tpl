@@ -46,6 +46,34 @@ The api-server refuses to start on a feature mode it cannot read.
 {{- fail (printf "features.%s must be off, experimental or on, got %v." $id $mode) -}}
 {{- end -}}
 {{- end -}}
+{{- if not (has (include "platform.featureDefault" .) (list "off" "experimental" "on")) -}}
+{{- fail (printf "featureDefault must be off, experimental or on, got %v." .Values.featureDefault) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+`featureDefault`, read the way `platform.featureModes` reads each mode.
+*/}}
+{{- define "platform.featureDefault" -}}
+{{- $mode := .Values.featureDefault -}}
+{{- if kindIs "bool" $mode -}}
+{{- ternary "on" "off" $mode -}}
+{{- else -}}
+{{- $mode | default "experimental" -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+`virtualization.runner.seccomp`, read the way `platform.featureModes` reads a
+mode: an unquoted `off` arrives as `false`, which `default` would take as unset.
+*/}}
+{{- define "platform.vmRunner.seccomp" -}}
+{{- $mode := .Values.virtualization.runner.seccomp -}}
+{{- if kindIs "bool" $mode -}}
+{{- ternary "on" "off" $mode -}}
+{{- else -}}
+{{- $mode | default "audit" -}}
+{{- end -}}
 {{- end -}}
 
 {{/*
@@ -291,7 +319,8 @@ Values the controller would otherwise take in and fail on later, one agent at a
 time: a range that is not a CIDR makes Kubernetes reject the runner's
 NetworkPolicy on every reconcile, and an exception that is not one is dropped
 without a word, leaving the range it was meant to close open. A DNS policy
-other than the two the runner supports is silently read as `Default`. A budget
+other than the two the runner supports is silently read as `Default`, and a
+seccomp mode smolvm does not know installs no filter. A budget
 that is not a positive quantity refuses every runner. `0.0.0.0/0` with no
 exceptions is not refused here: the values name it as the way to leave the
 runner unconfined on purpose, and the controller warns about it at startup.
@@ -313,6 +342,10 @@ runner unconfined on purpose, and the controller warns about it at startup.
 {{- $dns := $v.runner.dnsPolicy | default "Default" -}}
 {{- if not (has $dns (list "Default" "ClusterFirst")) -}}
 {{- fail (printf "virtualization.runner.dnsPolicy %q is not one the runner supports — use `Default` (the node's resolver) or `ClusterFirst`. See the comment on it in values.yaml for which one." $dns) -}}
+{{- end -}}
+{{- $seccomp := include "platform.vmRunner.seccomp" . -}}
+{{- if not (has $seccomp (list "audit" "enforce" "off")) -}}
+{{- fail (printf "virtualization.runner.seccomp %q is not a mode smolvm knows — use `audit`, `enforce` or `off`. smolvm reads any other value as `off`, so a typo would install no filter at all." (toString $seccomp)) -}}
 {{- end -}}
 {{- $budget := toString (($v.imageCache | default dict).budget | default "") -}}
 {{- if not (regexMatch `^[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$` $budget) -}}

@@ -2,7 +2,12 @@ import { TRPCError } from "@trpc/server";
 import type { BudgetVmUsage, CpuCongestion, PoolLevel } from "api-server-api";
 
 export interface RunnerUsage {
-  storage: { usedBytes: number; usableBytes: number };
+  storage: {
+    usedBytes: number;
+    usableBytes: number;
+    imageCacheBytes: number;
+    seedBytes: number;
+  };
   memory: { limitMiB: number; committedMiB: number };
   cpu?: {
     limitMilli: number;
@@ -73,6 +78,8 @@ export function vmUsageView(
     storage: {
       usedBytes: storage.usedBytes,
       usableBytes: storage.usableBytes,
+      imageCacheBytes: storage.imageCacheBytes,
+      seedBytes: storage.seedBytes,
       level: levelOf(storage.usedBytes, storage.usableBytes),
     },
     ...(cpu && (cpu.limitMilli > 0 || cpu.pressurePercent !== undefined)

@@ -112,9 +112,11 @@ const keyOf = (pair: LeasePair): string =>
  * another model moves its next turn to that model's lease. A session with no
  * pair, or with a harness but no provider, runs on the default harness and the
  * first granted provider, and keeps that pair once a provider is granted. A
- * lease other than the default one is shut down once it holds no session; one
- * that lost its harness is dropped, one whose provider was removed is shut
- * down, and one that chose its model from an env that changed is reopened. The
+ * lease other than the default one is shut down once it holds no session; any
+ * lease that lost its harness is dropped, the default one too, so the next
+ * session respawns it rather than meeting a dead process; one whose provider
+ * was removed is shut down, and one that chose its model from an env that
+ * changed is reopened. The
  * default lease opened before any provider was granted takes the first one
  * granted and restarts on its env, so a client attached early and the next
  * session meet on the same lease. A lease's going away closes a client
@@ -177,7 +179,6 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       pair: () => lease.pair,
       backgroundWork: scopedBackgroundWork(() => self!),
       onHarnessExited: () => {
-        if (lease.key === keyOf(defaultPair())) return;
         deps.log(
           `lease ${lease.key} lost its harness; the next session respawns it`,
         );
@@ -515,7 +516,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
         `lease ${from.key} holds no session after a move; shutting it down`,
       );
       drop(from);
-      from.runtime.shutdown();
+      from.runtime.shutdown("lease");
     }
   }
 
@@ -582,7 +583,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       if (lease.runtime.holdsSessions()) continue;
       deps.log(`lease ${lease.key} holds no session; shutting it down`);
       drop(lease);
-      lease.runtime.shutdown();
+      lease.runtime.shutdown("lease");
     }
   }
 
@@ -699,7 +700,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
             .filter(([, v]) => v.used)
             .map(([real]) => real);
           drop(lease);
-          lease.runtime.shutdown();
+          lease.runtime.shutdown("lease");
           for (const real of users)
             if (real.isOpen()) real.close(1012, PROVIDER_REMOVED_REASON);
           continue;
@@ -715,7 +716,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
             `lease ${lease.key} chose its model from the old env; reopening it`,
           );
           drop(lease);
-          lease.runtime.shutdown();
+          lease.runtime.shutdown("lease");
           continue;
         }
         lease.runtime.refreshEnv({
@@ -770,7 +771,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
 
     shutdown() {
       clearInterval(idleTimer);
-      for (const lease of leases.values()) lease.runtime.shutdown();
+      for (const lease of leases.values()) lease.runtime.shutdown("process");
       leases.clear();
     },
   };

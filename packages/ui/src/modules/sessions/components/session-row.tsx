@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils";
 
 import { useAgentsList } from "../../agents/api/queries.js";
 import { onboardingBadge } from "../../agents/utils/agent-kind.js";
+import { SessionRepositoryBadges } from "../../changes/components/session-repository-badges.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import {
   formatHarnessSpend,
@@ -276,6 +277,9 @@ export function SessionRow({
             </span>
           )}
         </span>
+        {s.repositories && s.repositories.length > 0 && (
+          <SessionRepositoryBadges repositories={s.repositories} />
+        )}
       </div>
       {}
       {menuOpen && (

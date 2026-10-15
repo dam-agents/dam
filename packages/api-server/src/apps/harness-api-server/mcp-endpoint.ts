@@ -12,6 +12,7 @@ import {
   type AppRouter,
 } from "agent-runtime-api";
 import type { SatelliteView } from "api-server-api";
+import { skillSourcePathSchema } from "api-server-api";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
@@ -36,6 +37,7 @@ import type {
 import { resolveAgent } from "./agent-auth.js";
 import type { DriverOps, DriverOpsFor } from "./driver-ops.js";
 import { registerSubAgentTools } from "./sub-agent-tools.js";
+import { rejectOversizedArrays } from "../../core/mcp-input-bounds.js";
 import { securityLog } from "../../core/security-log.js";
 import { emit, EventType } from "../../events.js";
 import {
@@ -799,11 +801,23 @@ export function createMcpSession(
       source: z.string().url(),
       name: z.string().min(1),
       version: z.string().min(1),
+      path: skillSourcePathSchema
+        .optional()
+        .describe(
+          "The path of the source the skill was listed from, when the repository is connected with several paths.",
+        ),
     },
-    ({ source, name, version }) =>
+    ({ source, name, version, path }) =>
       textTool(
         "Failed to install skill",
-        () => deps.skills.install({ agentId, source, name, version }),
+        () =>
+          deps.skills.install({
+            agentId,
+            source,
+            name,
+            version,
+            ...(path !== undefined ? { path } : {}),
+          }),
         (installed) =>
           `Installed ${name} @ ${version.slice(0, 8)}. Agent now has ${installed.length} skill(s).`,
       ),
@@ -1402,6 +1416,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
           : null,
     });
     await session.server.connect(session.transport);
+    rejectOversizedArrays(session.transport);
 
     return session.transport.handleRequest(c.req.raw);
   });

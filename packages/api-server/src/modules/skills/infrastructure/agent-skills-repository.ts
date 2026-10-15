@@ -35,7 +35,11 @@ export interface AgentSkillsRepository {
     key: { source: string; name: string },
     tx?: Db | DbTx,
   ): Promise<void>;
-  removeBySource(agentIds: string[], gitUrl: string): Promise<void>;
+  removeBySource(
+    agentIds: string[],
+    gitUrl: string,
+    path: string | undefined,
+  ): Promise<void>;
   listGhosts(agentId: string, presentNames: Set<string>): Promise<SkillKey[]>;
   reap(agentId: string, ghosts: SkillKey[], tx?: Db | DbTx): Promise<void>;
 
@@ -129,7 +133,7 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
         );
     },
 
-    async removeBySource(agentIds, gitUrl) {
+    async removeBySource(agentIds, gitUrl, path) {
       if (agentIds.length === 0) return;
       await db
         .delete(agentSkills)
@@ -137,6 +141,9 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
           and(
             inArray(agentSkills.agentId, agentIds),
             eq(agentSkills.source, gitUrl),
+            path === undefined
+              ? isNull(agentSkills.path)
+              : eq(agentSkills.path, path),
           ),
         );
     },

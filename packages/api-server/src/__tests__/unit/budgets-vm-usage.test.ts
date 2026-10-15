@@ -16,7 +16,7 @@ import {
  */
 
 const usage = (over: Partial<RunnerUsage> = {}): RunnerUsage => ({
-  storage: { usedBytes: 0, usableBytes: 100 },
+  storage: { usedBytes: 0, usableBytes: 100, imageCacheBytes: 0, seedBytes: 0 },
   memory: { limitMiB: 1000, committedMiB: 100 },
   machines: [],
   observedAt: "2026-10-13T12:00:00.000Z",
@@ -49,7 +49,14 @@ describe("pool levels", () => {
 
   it("refuses a new vm agent exactly when storage is critical", () => {
     for (const usedBytes of [89, 90, 100]) {
-      const u = usage({ storage: { usedBytes, usableBytes: 100 } });
+      const u = usage({
+        storage: {
+          usedBytes,
+          usableBytes: 100,
+          imageCacheBytes: 0,
+          seedBytes: 0,
+        },
+      });
       expect(storageRefusal(u) !== null).toBe(
         vmUsageView(u, new Set()).storage.level === "critical",
       );

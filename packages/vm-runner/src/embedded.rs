@@ -103,6 +103,17 @@ impl Smolvm {
         vmms_left(&self.proc_root, &dir, vmms, VMM_EXIT_WAIT);
         Ok(end()?)
     }
+
+    // UNIT_BOUNDARY_DESCRIPTION: removes a machine directory no record owns. smolvm forgets a machine before it removes its directory, so a delete cut short between the two — a killed runner, a removal that failed — leaves the disk with no record, and smolvm then neither deletes it nor creates over it: a machine created again under the name would boot on the deleted one's home. Any VMM still holding that directory is killed first.
+    fn remove_unowned(&self, id: &str) -> anyhow::Result<()> {
+        let dir = vm_data_dir(id);
+        if !dir.exists() || self.record(id)?.is_some() {
+            return Ok(());
+        }
+        tracing::warn!(machine = id, dir = %dir.display(), "removing a machine directory no record owns");
+        kill_orphans(&self.proc_root, &dir);
+        std::fs::remove_dir_all(&dir).with_context(|| format!("removing {}", dir.display()))
+    }
 }
 
 impl Runtime for Smolvm {
@@ -120,6 +131,7 @@ impl Runtime for Smolvm {
     fn create(&self, id: &str, machine: &Machine<'_>) -> anyhow::Result<()> {
         let secrets: Vec<&str> = machine.spec.env.values().map(String::as_str).collect();
         timed("create", id, &secrets, || {
+            self.remove_unowned(id)?;
             let (spec, workload) = embedded_spec(id, machine)?;
             let storage_gib = spec.resources.storage_gib;
             self.runtime.create_machine_with_workload(
@@ -239,6 +251,13 @@ impl Runtime for Smolvm {
         if let Some(record) = &record {
             write_boot_image(record)?;
         }
+        let rootfs = AgentManager::default_rootfs_path()?;
+        crate::files::write(
+            &dir.join(crate::runtime::AGENT_ROOTFS_FILE),
+            rootfs.as_os_str().as_encoded_bytes(),
+            0o644,
+        )
+        .context("recording the guest agent root the machine boots")?;
         self.db.update_vm(id, |r| {
             r.mem = boot;
             guest_dns(r, r.dns.unwrap_or(GUEST_DNS_SINK));
@@ -252,7 +271,7 @@ impl Runtime for Smolvm {
         result
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: grows the guest's RAM through the virtio-mem area smolvm gives every machine, as smolvm's own resize does, but without its two host checks: it refuses a VMM that is not in a cgroup of its own, and every VMM of a runner shares the runner pod's, and it admits the growth against the host's free memory, while a runner admits its machines by what they use (see capacity). The guest kernel is first told to online each memory block as it adds it: it leaves added RAM offline by default, its virtio-mem driver plugs no more once 1 GiB of it waits offline, and the guest agent onlines a range only once every block of it exists, so left to the agent a grow past 1 GiB never finishes. The VMM then maps the added RAM, and once it reports all of it plugged, the guest agent confirms the range is online. That check is retried until the wait runs out, since a block the agent finds offline can be onlined by the kernel before the agent's own write, which then fails. Each step is idempotent, so a retry of a grow that stopped part-way finishes it. The record is set to the size the guest now has.
+    // UNIT_BOUNDARY_DESCRIPTION: grows the guest's RAM through the virtio-mem area smolvm gives every machine, as smolvm's own resize does, but without its two host checks: it refuses a VMM that is not in a cgroup of its own, and every VMM of a runner shares the runner pod's, and it admits the growth against the host's free memory, while a runner admits its machines by what they use (see capacity). The VMM maps the added RAM, the guest agent puts each memory block online as the guest's virtio-mem driver adds it (the driver adds no more once 1 GiB of it waits offline), and the grow ends once the VMM reports all of it plugged, the order smolvm's own resize takes. Each step is idempotent, so a retry of a grow that stopped part-way finishes it. The record is set to the size the guest now has.
     fn grow(&self, id: &str, memory_mib: i32) -> anyhow::Result<()> {
         let target = u32::try_from(memory_mib).context("memoryMiB")?;
         timed("grow", id, &[], || {
@@ -265,27 +284,6 @@ impl Runtime for Smolvm {
             if added == 0 {
                 return Ok(());
             }
-            let manager = AgentManager::for_vm(id)?;
-            manager.detach();
-            let mut client = AgentClient::connect(manager.vsock_socket())?;
-            let (code, _, stderr) = client.vm_exec(
-                [
-                    "/bin/sh",
-                    "-c",
-                    "echo online_kernel > /sys/devices/system/memory/auto_online_blocks",
-                ]
-                .map(String::from)
-                .to_vec(),
-                Vec::new(),
-                None,
-                Some(Duration::from_secs(10)),
-                None,
-            )?;
-            anyhow::ensure!(
-                code == 0,
-                "the guest did not turn on onlining added RAM: {}",
-                String::from_utf8_lossy(&stderr).trim()
-            );
             if added > geometry.mapped {
                 let reply =
                     control_socket_cmd(&socket, &format!("PROTOTYPE_GROW_MEMORY {}", added >> 20))?;
@@ -295,25 +293,31 @@ impl Runtime for Smolvm {
                     reply.trim()
                 );
             }
+            let manager = AgentManager::for_vm(id)?;
+            manager.detach();
+            AgentClient::connect(manager.vsock_socket())?
+                .online_memory(geometry.base, added)
+                .context("the guest did not put its added RAM online")?;
             let deadline = std::time::Instant::now() + RAM_PLUG_WAIT;
             loop {
                 let plugged = info()?.plugged;
-                let online = if plugged == added {
-                    client
-                        .online_memory(geometry.base, added)
-                        .map_err(anyhow::Error::from)
-                } else {
-                    Err(anyhow::anyhow!("{plugged} of {added} bytes plugged"))
-                };
-                let Err(e) = online else { break };
+                if plugged == added {
+                    break;
+                }
                 anyhow::ensure!(
                     std::time::Instant::now() < deadline,
-                    "the guest did not put its added RAM to use within {RAM_PLUG_WAIT:?}: {e:#}"
+                    "the guest plugged {plugged} of {added} bytes of its added RAM within {RAM_PLUG_WAIT:?}"
                 );
                 std::thread::sleep(Duration::from_millis(25));
             }
             let total = geometry.boot_mib + u32::try_from(added >> 20).context("added RAM")?;
             self.db.update_vm(id, |r| r.mem = total)?;
+            tracing::info!(
+                machine = id,
+                boot_mib = geometry.boot_mib,
+                memory_mib = total,
+                "the guest has all its added RAM online"
+            );
             Ok(())
         })
     }
@@ -331,7 +335,8 @@ impl Runtime for Smolvm {
 
     fn delete(&self, id: &str) -> anyhow::Result<()> {
         timed("delete", id, &[], || {
-            self.ended(id, || self.runtime.delete_machine(id))
+            self.ended(id, || self.runtime.delete_machine(id))?;
+            self.remove_unowned(id)
         })
     }
 
@@ -1780,6 +1785,39 @@ mod tests {
         smolvm.delete("m1").unwrap();
         assert_eq!(smolvm.state("m1").unwrap(), State::Absent);
         assert!(!vm_data_dir("m1").exists());
+    }
+
+    // TEST_SCENARIO: a delete was cut short after smolvm forgot the machine and before its directory went, leaving the disk with no record. The controller's retried delete must remove that disk, and a machine created again under the name must never boot on a disk such a delete left.
+    #[test]
+    fn a_disk_an_interrupted_delete_left_is_removed_and_never_reused() {
+        let home = Home::new("leftover");
+        let share = home.path.join("share");
+        fs::create_dir_all(&share).unwrap();
+        let smolvm = Smolvm::open(false, None).unwrap();
+        let spec = spec();
+        let launch = launch();
+        let machine = Machine {
+            spec: &spec,
+            image: "quay.io/x/vm:1",
+            host_port: 32000,
+            share: &share,
+            launch: &launch,
+        };
+        let interrupted = |smolvm: &Smolvm| {
+            smolvm.create("m1", &machine).unwrap();
+            fs::write(vm_data_dir("m1").join("home-of-the-deleted"), "secret").unwrap();
+            smolvm.db.remove_vm("m1").unwrap();
+            assert_eq!(smolvm.state("m1").unwrap(), State::Absent);
+        };
+
+        interrupted(&smolvm);
+        smolvm.delete("m1").unwrap();
+        assert!(!vm_data_dir("m1").exists());
+
+        interrupted(&smolvm);
+        smolvm.create("m1", &machine).unwrap();
+        assert!(!vm_data_dir("m1").join("home-of-the-deleted").exists());
+        assert!(storage_disk_path("m1").exists());
     }
 
     // TEST_SCENARIO: a new image and a new allowlist are applied to the same machine. smolvm reads the image, the command it launches, its workdir, env and allowlist from the record at every start, so the update rewrites those fields and nothing else: the record is the one the create wrote, the port is kept, and the storage disk holds the same bytes. The env is rebuilt from the new image's, so a variable only the old image set is gone.

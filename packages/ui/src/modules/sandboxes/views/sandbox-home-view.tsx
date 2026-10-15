@@ -23,7 +23,7 @@ import {
 import { SandboxProvidersSection } from "../components/sandbox-providers-section.js";
 import {
   SandboxSectionNav,
-  SECTIONS,
+  sectionsFor,
 } from "../components/sandbox-section-nav.js";
 import { SandboxSetupSection } from "../components/sandbox-setup-section.js";
 import { SandboxSkillsSection } from "../components/sandbox-skills-section.js";
@@ -31,7 +31,7 @@ import { useSectionSummaries } from "../hooks/use-section-summaries.js";
 
 export function SandboxHomeView() {
   const agentId = useStore((s) => s.agentId);
-  const storedSection = useStore((s) => s.sandboxSection);
+  const section = useStore((s) => s.sandboxSection);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const openAgentSession = useStore((s) => s.openAgentSession);
   const agentsQuery = useAgents();
@@ -46,12 +46,7 @@ export function SandboxHomeView() {
   useHarnessConfigWatch(agentId);
 
   const { summaries, warnings } = useSectionSummaries(agent);
-  // UNIT_BOUNDARY_DESCRIPTION: vm agents have no setup settings, so links to "setup" land on the first section they do have.
-  const sections = agent?.vm
-    ? SECTIONS.filter((e) => e.section !== "setup")
-    : SECTIONS;
-  const section =
-    storedSection === "setup" && agent?.vm ? "providers" : storedSection;
+  const sections = sectionsFor(!!agent?.vm);
   const sectionEntry = sections.find((e) => e.section === section);
 
   if (!agent || !display) {

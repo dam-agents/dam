@@ -16,6 +16,8 @@ import {
 } from "../admission/auth.js";
 import { watchApiKey } from "../admission/api-key-watch.js";
 import { addUpgradeSecurityHeaders } from "../agent-proxies/upgrade.js";
+import { getLogger } from "../../../core/logger.js";
+import { MAX_USER_REQUEST_BODY_BYTES } from "../../../core/request-body-bounds.js";
 import { logInternalError } from "./log-internal-error.js";
 
 const trpcDenial: Record<
@@ -68,7 +70,10 @@ function firstRequestOrTimeout(ws: WebSocket, ms: number): Promise<void> {
 }
 
 export function createTrpcWsEndpoint(deps: TrpcWsDeps) {
-  const wss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({
+    noServer: true,
+    maxPayload: MAX_USER_REQUEST_BODY_BYTES,
+  });
   addUpgradeSecurityHeaders(wss);
 
   function attachCredentialLifecycle(
@@ -100,7 +105,14 @@ export function createTrpcWsEndpoint(deps: TrpcWsDeps) {
   const handler = applyWSSHandler({
     wss,
     router: appRouter,
-    onError: logInternalError,
+    onError: (opts) =>
+      (opts.error.cause as { code?: string } | undefined)?.code ===
+      "WS_ERR_UNSUPPORTED_MESSAGE_LENGTH"
+        ? getLogger().warn(
+            { maxPayload: MAX_USER_REQUEST_BODY_BYTES },
+            "trpc_ws.oversized_message_refused",
+          )
+        : logInternalError(opts),
     keepAlive: { enabled: true, pingMs: 30_000, pongWaitMs: 10_000 },
     createContext: async ({ req, res, info }): Promise<ApiContext> => {
       const site = {

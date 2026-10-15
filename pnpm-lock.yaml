@@ -687,6 +687,9 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
+      cron-parser:
+        specifier: ^5.10.1
+        version: 5.10.1
       cronstrue:
         specifier: ^3.29.0
         version: 3.29.0
