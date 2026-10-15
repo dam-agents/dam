@@ -164,7 +164,6 @@ export function useProviderConnections(agentId: string | null): {
 }
 
 export function useGrantProvider(agentId: string | null) {
-  const showConfirm = useStore((s) => s.showConfirm);
   const update = useMutation({
     mutationFn: (change: { grant?: string[]; revoke?: string[] }) =>
       api.connections.updateAgentConnections.mutate({
@@ -190,16 +189,8 @@ export function useGrantProvider(agentId: string | null) {
       () => false,
     );
   return {
-    attach: async (connection: { id: string; name: string }) => {
-      if (
-        !(await showConfirm(
-          `This agent gets ${connection.name}'s credentials and can use them in its sessions, schedules and channels.`,
-          `Attach ${connection.name} to this agent?`,
-          { confirmLabel: "Attach" },
-        )) ||
-        !(await settle({ grant: [connection.id] }))
-      )
-        return false;
+    attachAll: async (connectionIds: readonly string[]) => {
+      if (!(await settle({ grant: [...connectionIds] }))) return false;
       await queryClient.invalidateQueries({
         queryKey: trpc.connections.getAgentConnections.queryKey(),
       });

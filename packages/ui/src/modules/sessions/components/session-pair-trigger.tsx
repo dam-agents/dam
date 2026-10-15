@@ -1,12 +1,18 @@
 import type { ComponentProps } from "react";
 
+import { HarnessIcons } from "@/components/harness-icons";
 import { Spinner } from "@/components/ui/spinner";
 
 export function SessionPairTrigger({
   label,
   testId = "session-pair-picker",
+  harness,
   ...props
-}: ComponentProps<"button"> & { label: string | undefined; testId?: string }) {
+}: ComponentProps<"button"> & {
+  label: string | undefined;
+  testId?: string;
+  harness?: string;
+}) {
   return (
     <button
       type="button"
@@ -16,7 +22,14 @@ export function SessionPairTrigger({
       className="flex items-center gap-1 pl-3 text-sm text-muted-foreground transition-colors hover:text-foreground"
       {...props}
     >
-      {label || <Spinner size={12} />}
+      {label ? (
+        <>
+          {harness && <HarnessIcons harnesses={[harness]} size="xs" />}
+          {label}
+        </>
+      ) : (
+        <Spinner size={12} />
+      )}
     </button>
   );
 }
