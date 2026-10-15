@@ -185,10 +185,14 @@ fw_version() { LC_ALL=C grep -aom1 'Linux version [0-9.]*' "$1"; }
 install -m 755 "$fw_so" "$b/opt/smolvm/lib/libkrunfw.so.5.5.0"
 
 # The btrfs storage disk template the runner expands over a new machine's disk
-# (BTRFS_TEMPLATE in src/embedded.rs). Metadata is single, not mkfs's default
-# DUP, which would store every metadata block twice on one device.
+# (BTRFS_TEMPLATE in src/embedded.rs). Its block groups are mixed (-M): data
+# and metadata share one pool of space, as on ext4. With them apart, the guard
+# file platform-init preallocates to hold a guest to its grant takes every
+# unallocated chunk for data, and the next file the guest creates fails with
+# ENOSPC while the guard still leaves room. Single profiles, not mkfs's
+# default DUP, which would store every metadata block twice on one device.
 truncate -s 256M "$work/storage-template.btrfs"
-mkfs.btrfs -q -m single -L smolvm --nodiscard "$work/storage-template.btrfs"
+mkfs.btrfs -q -M -d single -m single -L smolvm --nodiscard "$work/storage-template.btrfs"
 zstd -q -19 --rm "$work/storage-template.btrfs" -o "$b/opt/smolvm/storage-template.btrfs.zst"
 # The guest agent is rebuilt from the pinned source with smolvm.patch applied,
 # as the release builds it (static musl, release-small), in place of the
