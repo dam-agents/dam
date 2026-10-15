@@ -193,6 +193,7 @@ It holds a process-wide read connection and translates each contract read into a
 Its **spend** reads (every tRPC rollup and the agent-facing cost reads) take one log record per LLM call.
 On a runtime with the Model Router ([harness configuration](harness-config.md#the-model-router)) the router writes that record for every call on every harness: the token counts read off the response, the cost from the catalog's price in integer micro-dollars, the provider Connection and alias, the upstream model id and the harness; Claude Code keeps writing its own record beside it.
 The reader sums an agent from the router's records when it has any in the window, else from the harness's own (Claude Code's, and Pi's of the same shape), so a router export that never reached the store leaves the harness's count and no call is summed twice.
+The switch is per agent and invocation, at its own first router record, so an agent moved to a router image mid-window keeps the harness records from before, whenever the owner's other agents moved.
 A Claude Code call on a native Connection (Bedrock) has no router record; Claude Code's own record names the model without the `claude/` prefix and is always counted, with no provider.
 A call the router could not price is still a record: cut before its usage arrived, answered without usage, or on a model the catalog has no price for.
 Each per-model and per-provider row carries its **uncounted** count beside its total, and the Usage surfaces say so, so a total reads as a floor.

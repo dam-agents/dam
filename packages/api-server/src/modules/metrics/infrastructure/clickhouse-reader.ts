@@ -26,23 +26,27 @@ const ROUTER_CALL = "Body = 'platform.model_call'";
 
 const CALL_KEY =
   "(ResourceAttributes['platform.agent.id'], ResourceAttributes['platform.invocation.id'])";
+const CALL_KEY_TEXT =
+  "concat(ResourceAttributes['platform.agent.id'], '|', ResourceAttributes['platform.invocation.id'])";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Claude Code writes its own record beside the
  * Model Router's, so a harness record is left out where the router's record
  * stands in for it: the same agent and invocation (a sub-agent reports under
- * its driver's id, on a runtime of its own) with router records in the
- * window, from the first router record on (an image updated mid-window
- * keeps its earlier harness records); the split is read from the data, so a
- * router export that never arrived leaves the harness's count rather than
- * none. A native Claude Code call names its model without the `claude/`
- * prefix and always counts from the harness's record.
+ * its driver's id, on a runtime of its own) from that key's own first router
+ * record in the window on, so an image updated mid-window keeps its earlier
+ * harness records whenever the owner's other agents moved. ClickHouse has no
+ * correlated subquery, so the first records are one map looked up per row.
+ * The split is read from the data, so a router export that never arrived
+ * leaves the harness's count rather than none. A native Claude Code call
+ * names its model without the `claude/` prefix and always counts from the
+ * harness's record.
  */
 const callRows = (w: MetricsWindow): string => {
   const routerRows = [ROUTER_CALL, AGENT_GATE, ...timeBounds(w)].join(" AND ");
   return `(${ROUTER_CALL} OR (${HARNESS_CALL} AND (${CLAUDE_NATIVE_CALL}
      OR ${CALL_KEY} NOT IN (SELECT DISTINCT ${CALL_KEY} FROM otel_logs WHERE ${routerRows})
-     OR Timestamp < (SELECT min(Timestamp) FROM otel_logs WHERE ${routerRows}))))`;
+     OR Timestamp < (SELECT mapFromArrays(groupArray(k), groupArray(m)) FROM (SELECT ${CALL_KEY_TEXT} AS k, min(Timestamp) AS m FROM otel_logs WHERE ${routerRows} GROUP BY k))[${CALL_KEY_TEXT}])))`;
 };
 
 const timeBounds = (w: MetricsWindow): string[] => [

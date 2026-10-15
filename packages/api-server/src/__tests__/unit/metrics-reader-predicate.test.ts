@@ -39,7 +39,8 @@ describe("ownedApiRequests", () => {
    * TEST_SCENARIO: An agent on the Model Router exports one record per call
    * from the router and, on Claude Code, a second from the harness. The read
    * sums the router's records for every agent that has any in the window and
-   * the harness's (Claude Code's, Pi's) for the rest, decided from the data. Claude Code on a
+   * the harness's (Claude Code's, Pi's) for the rest, decided from the data,
+   * each agent and invocation from its own first router record on. Claude Code on a
    * subscription token or Bedrock runs outside the router, so its own record,
    * which names the model without the `claude/` prefix, still counts.
    */
@@ -51,8 +52,9 @@ describe("ownedApiRequests", () => {
       `OR ${key} NOT IN (SELECT DISTINCT ${key} FROM otel_logs`,
     );
     expect(sql).toContain(
-      "OR Timestamp < (SELECT min(Timestamp) FROM otel_logs",
+      "OR Timestamp < (SELECT mapFromArrays(groupArray(k), groupArray(m)) FROM (SELECT concat(ResourceAttributes['platform.agent.id'], '|', ResourceAttributes['platform.invocation.id']) AS k, min(Timestamp) AS m FROM otel_logs",
     );
+    expect(sql).not.toContain("SELECT min(Timestamp) FROM otel_logs");
     expect(sql).toContain(
       "(Body = 'claude_code.api_request' AND LogAttributes['model'] NOT LIKE 'claude/%')",
     );
