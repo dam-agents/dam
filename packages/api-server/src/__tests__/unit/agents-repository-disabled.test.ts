@@ -19,7 +19,10 @@ function setup() {
       },
     } as KubeObject,
   ]);
-  const repo = createAgentsRepository(client, createLiveAgentStateCache(client));
+  const repo = createAgentsRepository(
+    client,
+    createLiveAgentStateCache(client),
+  );
   const annotations = () => store.get("a1")?.metadata?.annotations ?? {};
   return { repo, annotations };
 }

@@ -372,7 +372,9 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
 describe("scheduler-runner fire", () => {
   // TEST_SCENARIO: a disabled agent does nothing, so a recurring fire neither commits a trigger nor wakes it; the occurrence is held with a reason the schedules page shows, and the next one is armed for when the agent is enabled again.
   it("holds the occurrence while the agent is disabled", async () => {
-    const { runner, calls, fires, enqueued } = makeDeps({ agentDisabled: true });
+    const { runner, calls, fires, enqueued } = makeDeps({
+      agentDisabled: true,
+    });
 
     await runner.buildFireHandler()(
       SCHEDULE_ID,

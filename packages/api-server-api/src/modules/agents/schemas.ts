@@ -54,7 +54,9 @@ export const agentRetryWorkspaceInputSchema = z.object({
   kind: z.enum(["workspace-seed", "workspace-command"]),
 });
 export const agentSleepInputSchema = idSchema;
-export const agentSetDisabledInputSchema = idSchema.extend({ disabled: z.boolean() });
+export const agentSetDisabledInputSchema = idSchema.extend({
+  disabled: z.boolean(),
+});
 export const agentUpgradeInputSchema = idSchema.extend({
   expectedToImage: z.string().min(1).optional(),
 });

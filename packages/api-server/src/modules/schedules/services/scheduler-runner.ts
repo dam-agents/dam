@@ -274,10 +274,7 @@ export function createSchedulerRunner(
       await emitChanged(sched.agentId, sched.id);
       return;
     }
-    if (
-      action.kind !== "poke" &&
-      (await deps.agentDisabled?.(sched.agentId))
-    ) {
+    if (action.kind !== "poke" && (await deps.agentDisabled?.(sched.agentId))) {
       log(`fire: one-time schedule ${sched.id}'s agent is disabled; missed`);
       noteFire("missed");
       await deps.repo.recordFire(sched.id, OnceResult.Missed, null);

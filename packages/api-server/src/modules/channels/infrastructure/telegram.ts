@@ -568,7 +568,8 @@ export function createTelegramWorker(deps: {
       if (isAgentWakeTimeoutError(err)) {
         await thread.post(wakeFailureUserCopy(err.failure)).catch(() => {});
       } else if (err instanceof AcpTurnAbandonedError) {
-        await thread.post(turnFailureUserCopy(err)).catch(() => {});      } else if (isAgentStoppedError(err) && err.disabled) {
+        await thread.post(turnFailureUserCopy(err)).catch(() => {});
+      } else if (isAgentStoppedError(err) && err.disabled) {
         await thread
           .post("This agent is disabled by its owner — ask them to enable it.")
           .catch(() => {});
