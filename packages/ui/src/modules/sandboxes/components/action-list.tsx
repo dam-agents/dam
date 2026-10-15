@@ -8,12 +8,12 @@ import { cn } from "@/lib/utils";
 
 export interface Action {
   id?: string;
+  icon: ReactNode;
   title: string;
   description: ReactNode;
   content?: ReactNode;
   control?: ReactNode;
   button?: {
-    icon: ReactNode;
     label: string;
     onClick: () => void;
     disabled?: boolean;
@@ -44,6 +44,7 @@ export function ActionList({
 
 function ActionRow({
   id,
+  icon,
   title,
   description,
   content,
@@ -55,6 +56,12 @@ function ActionRow({
   return (
     <div id={id} className="flex scroll-mt-24 flex-col gap-3 px-4 py-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <span
+          aria-hidden
+          className="hidden size-5 shrink-0 items-center justify-center self-start pt-0.5 text-muted-foreground sm:flex [&_svg]:size-5"
+        >
+          {icon}
+        </span>
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-semibold text-foreground">{title}</h3>
           <p className="text-sm text-muted-foreground">{description}</p>
@@ -72,7 +79,6 @@ function ActionRow({
             onClick={button.onClick}
             data-testid={button.testId}
           >
-            {button.icon}
             {button.label}
           </Button>
         )}
@@ -93,7 +99,11 @@ function ActionRow({
           </Button>
         )}
       </div>
-      {content && open && <div id={contentId}>{content}</div>}
+      {content && open && (
+        <div id={contentId} className="sm:pl-8">
+          {content}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,20 +1,9 @@
-import {
-  Box,
-  Chemistry,
-  Play,
-  Restart,
-  Tools,
-  TrashCan,
-} from "@carbon/icons-react";
+import { Box, Chemistry, Tools } from "@carbon/icons-react";
 import { isStartRefusal } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import {
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
-import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
@@ -23,7 +12,6 @@ import {
   StatusBadge,
 } from "../../../components/status-indicator.js";
 import type { AgentView } from "../../../types.js";
-import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { AgentChannelChips } from "../../sandboxes/components/channels/agent-channel-chips.js";
 import { useKeptWorkCount } from "../../sessions/api/background-work.js";
 import { KitUpdateTag } from "../../starter-kits/components/kit-update-tag.js";
@@ -59,7 +47,6 @@ interface Props {
   subtitle: string | null;
   usage: AgentUsage | null;
   temporaryDraw?: TemporaryDraw;
-  deletePending: boolean;
   updatePending: boolean;
   updateBusy: boolean;
   onSelect: () => void;
@@ -71,11 +58,6 @@ interface Props {
   onRetryMigration: () => void;
   onConfigure: () => void;
   configureLabel: string;
-  onWake: () => void;
-  onRestart: () => void;
-  onDelete: () => void;
-  onAddToChannel?: (messenger: "slack" | "telegram") => void;
-  messengers?: { slack?: boolean; telegram?: boolean };
 }
 
 export function AgentRow({
@@ -85,7 +67,6 @@ export function AgentRow({
   subtitle,
   usage,
   temporaryDraw,
-  deletePending,
   updatePending,
   updateBusy,
   onSelect,
@@ -97,11 +78,6 @@ export function AgentRow({
   onRetryMigration,
   onConfigure,
   configureLabel,
-  onWake,
-  onRestart,
-  onDelete,
-  onAddToChannel,
-  messengers = {},
 }: Props) {
   const kindBadge = agentKindBadge(agent);
   const kitBadge = starterKitBadge(agent);
@@ -210,55 +186,19 @@ export function AgentRow({
         />
         {agent.hibernationTimeoutMin === 0 && <AlwaysOnTag />}
         {}
-        <span onClick={(e) => e.stopPropagation()}>
-          <RowActionsMenu label="Agent actions">
-            <DropdownMenuItem onSelect={onConfigure}>
-              <Tools />
-              {configureLabel}
-            </DropdownMenuItem>
-            {onAddToChannel && (messengers.slack || messengers.telegram) && (
-              <>
-                <DropdownMenuSeparator />
-                {messengers.slack && (
-                  <DropdownMenuItem onSelect={() => onAddToChannel("slack")}>
-                    <ConnectionIcon iconSlug="slack" alt="" size={16} />
-                    Add to Slack channel
-                  </DropdownMenuItem>
-                )}
-                {messengers.telegram && (
-                  <DropdownMenuItem onSelect={() => onAddToChannel("telegram")}>
-                    <ConnectionIcon iconSlug="telegram" alt="" size={16} />
-                    Add to Telegram chat
-                  </DropdownMenuItem>
-                )}
-              </>
-            )}
-            <DropdownMenuSeparator />
-            {display.powerAction === "start" ? (
-              <DropdownMenuItem onSelect={onWake}>
-                <Play />
-                {display.state === "over_budget" ? "Start" : "Wake"}
-              </DropdownMenuItem>
-            ) : (
-              <DropdownMenuItem
-                disabled={display.powerAction === null}
-                onSelect={onRestart}
-              >
-                <Restart />
-                Restart
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              tone="danger"
-              disabled={deletePending}
-              onSelect={onDelete}
-            >
-              <TrashCan />
-              Delete agent
-            </DropdownMenuItem>
-          </RowActionsMenu>
-        </span>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={configureLabel}
+          tooltip={configureLabel}
+          className="shrink-0 text-muted-foreground"
+          onClick={(e) => {
+            e.stopPropagation();
+            onConfigure();
+          }}
+        >
+          <Tools size={16} />
+        </Button>
       </div>
     </Card>
   );

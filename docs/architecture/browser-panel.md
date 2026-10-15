@@ -127,7 +127,7 @@ Launches, failures and restarts go to a log file in the agent's home, so a misbe
 
 The browser keeps running when the last panel closes, since the agent may be using it; agent-browser never idle-closes a headed browser.
 An open panel keeps the agent awake the way an open chat does: it counts towards the agent's open connections, not towards runtime work.
-The panel never wakes a sleeping agent, since the stream client reconnects by itself whenever its socket closes, as it does when the user puts the agent to sleep: the stream socket only waits out a wake something deliberate asked for, such as the chat or the wake button, and counts as an open connection only once the agent's end is open.
+The panel never wakes a sleeping agent, since the stream client reconnects by itself whenever its socket closes, as it does when the agent falls asleep or is disabled: the stream socket only waits out a wake something deliberate asked for, such as the chat, and counts as an open connection only once the agent's end is open.
 The control rides the UI's tRPC connection to the agent, which stamps last activity while it is open, as for any open view of the agent; nothing on the stream socket does — the stream client acknowledges frames many times a second.
 A hidden tab stops its stream until it is shown again.
 A running Chromium never keeps the agent awake on its own.

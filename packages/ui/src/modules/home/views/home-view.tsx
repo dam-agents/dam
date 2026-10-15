@@ -5,7 +5,6 @@ import { EntryPointButtons } from "../../agents/components/entry-point-buttons.j
 import { SandboxList } from "../../agents/components/sandbox-list.js";
 import { WelcomeEntryPoints } from "../../agents/components/welcome-entry-points.js";
 import { useAgentRows } from "../../agents/hooks/use-agent-rows.js";
-import { useSandboxRowActions } from "../../agents/hooks/use-sandbox-row-actions.js";
 import { splitTemporarySandboxes } from "../../agents/utils/temporary-sandboxes.js";
 import { ResourcesCard } from "../../budgets/components/resources-card.js";
 import { useFeed } from "../api/queries.js";
@@ -14,9 +13,8 @@ import { WidgetSkeleton } from "../components/home-skeletons.js";
 import { SpendWidget } from "../components/spend-widget.js";
 
 export function HomeView() {
-  const { agentsData, initialLoaded, rowProps, deleteAgent } = useAgentRows();
+  const { agentsData, initialLoaded, rowProps } = useAgentRows();
   const { workingAgentIds, workingByAgent } = useFeed();
-  const { deleteSandbox } = useSandboxRowActions({ deleteAgent });
 
   const allAgents = agentsData?.list ?? [];
   const { visible, drawByDriver } = splitTemporarySandboxes(allAgents);
@@ -58,7 +56,6 @@ export function HomeView() {
         drawByDriver={drawByDriver}
         rowProps={rowProps}
         workingByAgent={workingByAgent}
-        onDelete={(agent) => void deleteSandbox(agent)}
       />
     </div>
   );

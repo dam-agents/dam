@@ -1,4 +1,4 @@
-import { Play, Power, Restart, TrashCan } from "@carbon/icons-react";
+import { Power, Restart, TrashCan } from "@carbon/icons-react";
 import { useEffect } from "react";
 
 import { useStore } from "../../../store.js";
@@ -9,7 +9,6 @@ import {
 } from "../../agents/api/mutations.js";
 import { useConfirmDeleteAgent } from "../../agents/hooks/use-confirm-delete-agent.js";
 import { useRestartAgent } from "../../agents/hooks/use-restart-agent.js";
-import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
 import { AGENT_ENABLE_ANCHOR } from "../../agents/lib/overlay-copy.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { type Action, ActionList } from "./action-list.js";
@@ -26,7 +25,6 @@ export function AgentManagementActions({
   const confirmDelete = useConfirmDeleteAgent();
   const deleteAgent = useDeleteAgent();
   const setDisabled = useSetAgentDisabled();
-  const wakeAgent = useWakeAgent();
   const { restart } = useRestartAgent();
 
   useEffect(() => {
@@ -58,44 +56,34 @@ export function AgentManagementActions({
   const actions: Action[] = [
     {
       id: AGENT_ENABLE_ANCHOR,
+      icon: <Power />,
       title: agent.disabled ? "Enable agent" : "Disable agent",
       description: agent.disabled
         ? "The agent is disabled. Enable it to let messages, schedules and connections wake it again."
         : "Stop the agent and keep it asleep.",
       button: {
-        icon: <Power />,
         label: agent.disabled ? "Enable" : "Disable",
         disabled: setDisabled.isPending,
         onClick: () => void onToggleDisabled(),
         testId: "agent-toggle-disabled",
       },
     },
-    display.powerAction === "start"
-      ? {
-          title: "Wake agent",
-          description: "Start the agent now instead of on its next use.",
-          button: {
-            icon: <Play />,
-            label: "Wake",
-            onClick: () => wakeAgent.wake(agent.id),
-          },
-        }
-      : {
-          title: "Restart agent",
-          description: "Interrupt in-flight work and start the agent fresh.",
-          button: {
-            icon: <Restart />,
-            label: "Restart",
-            disabled: display.powerAction === null,
-            onClick: () => restart(agent.id),
-          },
-        },
     {
+      icon: <Restart />,
+      title: "Restart agent",
+      description: "Interrupt in-flight work and start the agent fresh.",
+      button: {
+        label: "Restart",
+        disabled: display.powerAction !== "restart",
+        onClick: () => restart(agent.id),
+      },
+    },
+    {
+      icon: <TrashCan />,
       title: "Delete agent",
       description:
         "Delete the agent with its workspace and sessions. There is no going back.",
       button: {
-        icon: <TrashCan />,
         label: "Delete",
         disabled: deleteAgent.isPending,
         onClick: () => void onDelete(),

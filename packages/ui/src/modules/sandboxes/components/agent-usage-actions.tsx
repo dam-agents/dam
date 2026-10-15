@@ -1,8 +1,15 @@
-import { Chat, ChevronDown, Terminal } from "@carbon/icons-react";
+import {
+  Chat,
+  ChevronDown,
+  Code,
+  LogoSlack,
+  Terminal,
+} from "@carbon/icons-react";
 import { SessionMode } from "api-server-api";
 import type { ReactNode } from "react";
 
 import { getBrand } from "@/brand";
+import { TelegramIcon } from "@/components/brand-icons";
 import { CopyableCommand } from "@/components/copyable-command";
 import { Button } from "@/components/ui/button";
 import { externalLinkProps } from "@/lib/external-link";
@@ -41,15 +48,16 @@ export function AgentUsageActions({ agent }: { agent: AgentView }) {
 
   const actions: Action[] = [
     {
+      icon: <Chat />,
       title: "Chat",
       description: "Chat with the agent in this browser.",
       button: {
-        icon: <Chat />,
         label: "Open chat",
         onClick: () => selectAgent(agent.id),
       },
     },
     {
+      icon: <Terminal />,
       title: "Web terminal",
       description: "Open the harnesses' terminal UI in this browser.",
       control: (
@@ -68,7 +76,6 @@ export function AgentUsageActions({ agent }: { agent: AgentView }) {
             variant="outline"
             className="shrink-0 self-start sm:self-auto"
           >
-            <Terminal />
             Open terminal
             <ChevronDown />
           </Button>
@@ -76,6 +83,7 @@ export function AgentUsageActions({ agent }: { agent: AgentView }) {
       ),
     },
     {
+      icon: <Code />,
       title: "CLI and SSH",
       description: (
         <>
@@ -104,6 +112,7 @@ export function AgentUsageActions({ agent }: { agent: AgentView }) {
     ...(available.slack
       ? [
           {
+            icon: <LogoSlack />,
             title: "Slack",
             description: "Mention the agent in a Slack channel or DM it.",
             content: (
@@ -123,6 +132,7 @@ export function AgentUsageActions({ agent }: { agent: AgentView }) {
     ...(available.telegram
       ? [
           {
+            icon: <TelegramIcon />,
             title: "Telegram",
             description: "Message the agent from a Telegram chat.",
             content: <MessengerInstructions messenger="telegram" />,
