@@ -29,6 +29,7 @@ export interface AgentsSlice {
     agentId: string,
     sessionId: string,
     mode?: SessionMode,
+    fresh?: boolean,
   ) => void;
   goBack: () => void;
 }
@@ -94,7 +95,7 @@ export const createAgentsSlice: StateCreator<
     });
   },
 
-  openAgentSession: (agentId, sessionId, mode) => {
+  openAgentSession: (agentId, sessionId, mode, fresh = false) => {
     history.pushState(
       null,
       "",
@@ -107,6 +108,7 @@ export const createAgentsSlice: StateCreator<
       mobileScreen: "chat",
       pendingResumeSessionId: sessionId,
       pendingResumeSessionMode: mode ?? null,
+      pendingResumeFresh: fresh,
     });
   },
 

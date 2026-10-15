@@ -125,7 +125,7 @@ export function ChannelBindModal({
   );
 }
 
-function MessengerInstructions({ messenger }: { messenger: BindMessenger }) {
+export function MessengerInstructions({ messenger }: { messenger: BindMessenger }) {
   const brand = getBrand();
   const telegramBot = useTelegramBot();
   const handle = telegramBot.data?.username;

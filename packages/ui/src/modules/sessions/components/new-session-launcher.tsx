@@ -1,5 +1,5 @@
 import { Code, Terminal } from "@carbon/icons-react";
-import { type ReactNode, useState } from "react";
+import { type ComponentProps, type ReactNode, useState } from "react";
 
 import { useAgents } from "../../agents/api/queries.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
@@ -11,16 +11,15 @@ import {
   OpenInIdeDialog,
   OpenInTerminalDialog,
 } from "../../sandboxes/components/open-in-dialogs.js";
+import { TerminalHarnessMenu } from "./terminal-harness-menu.js";
 
 type LocalTarget = "terminal" | "ide";
 
 export function NewSessionLauncher({
   agentId,
-  agentName,
   onNewTerminal,
 }: {
   agentId: string;
-  agentName: string;
   onNewTerminal: () => void;
 }) {
   const [dialog, setDialog] = useState<LocalTarget | null>(null);
@@ -30,22 +29,23 @@ export function NewSessionLauncher({
   return (
     <>
       <div className="mt-5 grid w-full max-w-[640px] grid-cols-1 gap-3 @md/chat:grid-cols-2">
+        <TerminalHarnessMenu agentId={agentId} onOpen={onNewTerminal}>
+          <LauncherTile
+            icon={<Terminal size={18} />}
+            title="Web terminal"
+            description="Terminal UI session right here"
+          />
+        </TerminalHarnessMenu>
         <LauncherTile
           icon={<Terminal size={18} />}
-          title="Browser terminal"
-          description="Interactive session in this tab"
-          onClick={onNewTerminal}
-        />
-        <LauncherTile
-          icon={<Terminal size={18} />}
-          title="Local terminal"
-          description="SSH into the agent from your machine"
+          title="CLI and SSH"
+          description="Terminal UI session in your own terminal"
           onClick={() => setDialog("terminal")}
         />
         <LauncherTile
           icon={<Code size={18} />}
           title="VS Code / Zed"
-          description="Open workspace in your local editor"
+          description="Editor session inside the agent's sandbox"
           onClick={() => setDialog("ide")}
         />
         {available.slack && (
@@ -61,14 +61,12 @@ export function NewSessionLauncher({
       {dialog === "terminal" && (
         <OpenInTerminalDialog
           agentId={agentId}
-          agentName={agentName}
           onClose={() => setDialog(null)}
         />
       )}
       {dialog === "ide" && (
         <OpenInIdeDialog
           agentId={agentId}
-          agentName={agentName}
           onClose={() => setDialog(null)}
         />
       )}
@@ -86,17 +84,16 @@ function LauncherTile({
   icon,
   title,
   description,
-  onClick,
+  ...props
 }: {
   icon: ReactNode;
   title: string;
   description: string;
-  onClick: () => void;
-}) {
+} & ComponentProps<"button">) {
   return (
     <button
       type="button"
-      onClick={onClick}
+      {...props}
       className="flex flex-col items-start gap-3 rounded-lg border border-border bg-background p-4 text-left transition-colors hover:bg-muted/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
     >
       <span className="flex size-9 items-center justify-center rounded-md border border-border text-foreground">

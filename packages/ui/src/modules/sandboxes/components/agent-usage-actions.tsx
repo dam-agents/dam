@@ -1,21 +1,21 @@
-import { Chat, Terminal } from "@carbon/icons-react";
+import { Chat, ChevronDown, Terminal } from "@carbon/icons-react";
 import { SessionMode } from "api-server-api";
-import { type ReactNode, useState } from "react";
+import type { ReactNode } from "react";
 
 import { getBrand } from "@/brand";
 import { CopyableCommand } from "@/components/copyable-command";
+import { Button } from "@/components/ui/button";
 import { externalLinkProps } from "@/lib/external-link";
 
 import { CLI_REFERENCE_URL } from "../../../constants.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useAgents } from "../../agents/api/queries.js";
-import { ConnectionIcon } from "../../connections/components/connection-icon.js";
+import { useSlackInstallRequestUrl } from "../../links/api/queries.js";
+import { TerminalHarnessMenu } from "../../sessions/components/terminal-harness-menu.js";
+import { SlackInstallRequest } from "../../slack/components/slack-install-request.js";
 import { type Action, ActionList } from "./action-list.js";
-import {
-  type BindMessenger,
-  ChannelBindModal,
-} from "./channels/channel-bind-modal.js";
+import { MessengerInstructions } from "./channels/channel-bind-modal.js";
 
 const VS_CODE_REMOTE_URL =
   "https://code.visualstudio.com/docs/remote/ssh";
@@ -37,7 +37,7 @@ export function AgentUsageActions({ agent }: { agent: AgentView }) {
   const selectAgent = useStore((s) => s.selectAgent);
   const openAgentSession = useStore((s) => s.openAgentSession);
   const available = useAgents().data?.availableChannels ?? {};
-  const [messenger, setMessenger] = useState<BindMessenger | null>(null);
+  const slackInstallUrl = useSlackInstallRequestUrl();
   const brand = getBrand();
 
   const actions: Action[] = [
@@ -52,13 +52,26 @@ export function AgentUsageActions({ agent }: { agent: AgentView }) {
     },
     {
       title: "Web terminal",
-      description: "Run an interactive shell on the agent in this browser.",
-      button: {
-        icon: <Terminal />,
-        label: "Open terminal",
-        onClick: () =>
-          openAgentSession(agent.id, crypto.randomUUID(), SessionMode.Terminal),
-      },
+      description: "Open the harnesses' terminal UI in this browser.",
+      control: (
+        <TerminalHarnessMenu
+          agentId={agent.id}
+          onOpen={() =>
+            openAgentSession(
+              agent.id,
+              crypto.randomUUID(),
+              SessionMode.Terminal,
+              true,
+            )
+          }
+        >
+          <Button variant="outline" className="shrink-0 self-start sm:self-auto">
+            <Terminal />
+            Open terminal
+            <ChevronDown />
+          </Button>
+        </TerminalHarnessMenu>
+      ),
     },
     {
       title: "CLI and SSH",
@@ -91,11 +104,17 @@ export function AgentUsageActions({ agent }: { agent: AgentView }) {
           {
             title: "Slack",
             description: "Mention the agent in a Slack channel or DM it.",
-            button: {
-              icon: <ConnectionIcon iconSlug="slack" alt="" size={16} />,
-              label: "Add to Slack",
-              onClick: () => setMessenger("slack"),
-            },
+            content: (
+              <div className="flex flex-col gap-4">
+                <MessengerInstructions messenger="slack" />
+                {slackInstallUrl && (
+                  <SlackInstallRequest
+                    href={slackInstallUrl}
+                    workspaceLabel="Slack workspace"
+                  />
+                )}
+              </div>
+            ),
           },
         ]
       : []),
@@ -104,25 +123,11 @@ export function AgentUsageActions({ agent }: { agent: AgentView }) {
           {
             title: "Telegram",
             description: "Message the agent from a Telegram chat.",
-            button: {
-              icon: <ConnectionIcon iconSlug="telegram" alt="" size={16} />,
-              label: "Add to Telegram",
-              onClick: () => setMessenger("telegram"),
-            },
+            content: <MessengerInstructions messenger="telegram" />,
           },
         ]
       : []),
   ];
 
-  return (
-    <>
-      <ActionList actions={actions} />
-      {messenger && (
-        <ChannelBindModal
-          messengers={[messenger]}
-          onClose={() => setMessenger(null)}
-        />
-      )}
-    </>
-  );
+  return <ActionList actions={actions} />;
 }

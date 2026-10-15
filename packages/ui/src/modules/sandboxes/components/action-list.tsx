@@ -10,6 +10,7 @@ export interface Action {
   title: string;
   description: ReactNode;
   content?: ReactNode;
+  control?: ReactNode;
   button?: {
     icon: ReactNode;
     label: string;
@@ -32,7 +33,7 @@ export function ActionList({
     <section className="mb-8">
       {label && <SectionLabel spaced>{label}</SectionLabel>}
       <Card className="divide-y divide-border">
-        {actions.map(({ id, title, description, content, button }) => (
+        {actions.map(({ id, title, description, content, control, button }) => (
           <div
             key={title}
             id={id}
@@ -45,6 +46,7 @@ export function ActionList({
                 </h3>
                 <p className="text-sm text-muted-foreground">{description}</p>
               </div>
+              {control}
               {button && (
                 <Button
                   variant="outline"

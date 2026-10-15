@@ -536,12 +536,14 @@ export function ChatView() {
     (s) => s.setPendingResumeSessionId,
   );
   const pendingResumeSessionMode = useStore((s) => s.pendingResumeSessionMode);
+  const pendingResumeFresh = useStore((s) => s.pendingResumeFresh);
   useEffect(() => {
     if (!selectedAgent || !pendingResumeSessionId) return;
     const sid = pendingResumeSessionId;
     const mode = pendingResumeSessionMode;
     setPendingResumeSessionId(null);
     if (mode === SessionMode.Terminal) {
+      terminalFreshRef.current = pendingResumeFresh;
       setSessionMode(mode);
       setSessionId(sid);
       return;
@@ -551,6 +553,7 @@ export function ChatView() {
     selectedAgent,
     pendingResumeSessionId,
     pendingResumeSessionMode,
+    pendingResumeFresh,
     setPendingResumeSessionId,
     setSessionMode,
     setSessionId,
@@ -921,7 +924,6 @@ export function ChatView() {
                           {selectedAgent && (
                             <NewSessionLauncher
                               agentId={selectedAgent}
-                              agentName={selectedAgentName ?? ""}
                               onNewTerminal={handleNewTerminal}
                             />
                           )}

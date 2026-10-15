@@ -9,78 +9,80 @@ import { CLI_REFERENCE_URL } from "../../../constants.js";
 
 interface Props {
   agentId: string;
-  agentName: string;
   onClose: () => void;
 }
 
-function CliQuickstartNote() {
+function CliSetupNote() {
   return (
     <p className="text-sm text-muted-foreground">
-      First time? Installing the CLI and logging in is covered in the{" "}
+      Follow the{" "}
       <a
         href={CLI_REFERENCE_URL}
         {...externalLinkProps}
         className="inline-flex items-center gap-1 font-medium text-foreground hover:underline"
       >
         CLI quickstart <Launch size={13} />
-      </a>
+      </a>{" "}
+      to set up the {getBrand().name} CLI first.
     </p>
   );
 }
 
-export function OpenInTerminalDialog({ agentId, agentName, onClose }: Props) {
-  const cli = getBrand().short;
+function CommandDialog({
+  title,
+  commands,
+  onClose,
+}: {
+  title: string;
+  commands: { label: string; command: string }[];
+  onClose: () => void;
+}) {
   return (
     <Modal onClose={onClose} size="sm">
-      <DialogHeader
-        title="Open in terminal"
-        onClose={onClose}
-        subtitle={
-          <>
-            <code className="font-mono">{cli} chat</code> connects your terminal
-            to <strong className="text-foreground">{agentName}</strong>'s
-            interactive TUI.
-          </>
-        }
-      />
+      <DialogHeader title={title} onClose={onClose} />
       <DialogBody className="flex flex-col gap-3">
-        <span className="text-sm font-medium text-foreground">
-          Attach to the agent
-        </span>
-        <CopyableCommand command={`${cli} chat ${agentId}`} />
-        <CliQuickstartNote />
+        <CliSetupNote />
+        {commands.map(({ label, command }) => (
+          <div key={command} className="mt-1 flex flex-col gap-2">
+            <span className="text-sm font-medium text-foreground">{label}</span>
+            <CopyableCommand command={command} />
+          </div>
+        ))}
       </DialogBody>
     </Modal>
   );
 }
 
-export function OpenInIdeDialog({ agentId, agentName, onClose }: Props) {
+export function OpenInTerminalDialog({ agentId, onClose }: Props) {
   const cli = getBrand().short;
   return (
-    <Modal onClose={onClose} size="sm">
-      <DialogHeader
-        title="Open in VS Code / Zed"
-        onClose={onClose}
-        subtitle={
-          <>
-            <code className="font-mono">{cli} ssh connect</code> launches your
-            editor against{" "}
-            <strong className="text-foreground">{agentName}</strong>'s workspace
-            over SSH.
-          </>
-        }
-      />
-      <DialogBody className="flex flex-col gap-3">
-        <span className="text-sm font-medium text-foreground">
-          Open in VS Code
-        </span>
-        <CopyableCommand command={`${cli} ssh connect -x code ${agentId}`} />
-        <span className="mt-1 text-sm font-medium text-foreground">
-          Open in Zed
-        </span>
-        <CopyableCommand command={`${cli} ssh connect -x zed ${agentId}`} />
-        <CliQuickstartNote />
-      </DialogBody>
-    </Modal>
+    <CommandDialog
+      title="CLI and SSH"
+      onClose={onClose}
+      commands={[
+        { label: "Open the agent TUI", command: `${cli} chat ${agentId}` },
+        { label: "SSH to the agent", command: `${cli} ssh connect ${agentId}` },
+      ]}
+    />
+  );
+}
+
+export function OpenInIdeDialog({ agentId, onClose }: Props) {
+  const cli = getBrand().short;
+  return (
+    <CommandDialog
+      title="VS Code / Zed"
+      onClose={onClose}
+      commands={[
+        {
+          label: "Open in VS Code",
+          command: `${cli} ssh connect -x code ${agentId}`,
+        },
+        {
+          label: "Open in Zed",
+          command: `${cli} ssh connect -x zed ${agentId}`,
+        },
+      ]}
+    />
   );
 }
