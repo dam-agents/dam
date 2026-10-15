@@ -325,6 +325,91 @@ describe("auth-service.login pre-flight (claim 9: distinct error kinds)", () => 
   });
 });
 
+/**
+ * TEST_SCENARIO: The configured server permanently redirects to a new host,
+ * and the user holds credentials for the old one. Login follows the redirect:
+ * it skips the re-login prompt for the old host, stores the credentials under
+ * the new host, and saves the new host as the server.
+ */
+describe("auth-service.login on a moved server", () => {
+  it("logs in to the redirect target and saves it as the server", async () => {
+    const NEW: HostUrl = "https://new.test/";
+    const store = emptyStore();
+    await store.write(HOST, {
+      issuer: "x",
+      username: "u",
+      sub: "s",
+      cliClientId: "platform-cli",
+      accessToken: "a",
+      refreshToken: "r",
+      expiresAt: new Date("2099-01-01"),
+    });
+    const saved: string[] = [];
+    const svc = createAuthService({
+      compatService: compatVerdict("ok"),
+      configService: {
+        async getResolved() {
+          return ok({ server: saved.at(-1) ?? HOST });
+        },
+        async set(_key, value) {
+          saved.push(value);
+          return ok(undefined);
+        },
+      },
+      authConfigProbe: {
+        async probe() {
+          return ok<AuthConfig>({
+            issuer: "http://idp/realms/platform",
+            clientId: "platform-ui",
+            cliClientId: "platform-cli",
+            movedTo: NEW,
+          });
+        },
+      },
+      oidcDiscovery: oidcOk(),
+      deviceFlowClient: {
+        async authorize() {
+          return ok({
+            deviceCode: "dc",
+            userCode: "UC",
+            verificationUri: "http://idp/device",
+            expiresIn: 600,
+            interval: 1,
+          });
+        },
+      },
+      tokenEndpointClient: {
+        ...tokenClientUnused(),
+        async exchangeDeviceCode() {
+          return ok({
+            kind: "success",
+            access_token: "x.e30.y",
+            refresh_token: "rt",
+            expires_in: 300,
+            token_type: "Bearer",
+          });
+        },
+      },
+      revokeClient: revokeUnused(),
+      browserOpener: browserUnused(),
+      authStore: store,
+      authEnvReader: envReader(),
+      sleepMs: async () => {},
+    });
+
+    const r = await svc.login({
+      host: HOST,
+      openBrowser: false,
+      force: false,
+      isTty: false,
+    });
+
+    expect(r.ok && r.value.host).toBe(NEW);
+    expect(saved).toEqual([NEW]);
+    const stored = await store.read();
+    expect(stored.ok && stored.value.get(NEW)?.refreshToken).toBe("rt");
+  });
+});
 describe("auth-service.logout", () => {
   it("idempotent on unknown host (alreadyLoggedOut: true)", async () => {
     const svc = createAuthService({
