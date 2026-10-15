@@ -760,6 +760,7 @@ export async function bootstrap() {
       db,
       version: config.terms.version,
       text: config.terms.text,
+      signUps: config.signUps,
     });
 
   const fakeSlackGateway =

@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { PAGE_TITLE } from "@/components/ui/page-header";
+import { getErrorMessage } from "@/lib/errors";
 import { formatDate } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
@@ -62,6 +63,11 @@ export function TermsView() {
           />
         )}
       </div>
+      {accept.error && (
+        <p role="alert" className="mt-4 text-sm text-danger">
+          {getErrorMessage(accept.error, "Couldn't accept the Terms of Use.")}
+        </p>
+      )}
     </div>
   );
 }

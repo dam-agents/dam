@@ -26,6 +26,13 @@ export const termsRouter = t.router({
           cause: stale,
         });
       }
-      await ctx.terms.accept(ctx.user.sub, input.version);
+      const accepted = await ctx.terms.accept(ctx.user.sub, input.version);
+      if (!accepted.ok) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message:
+            "Sign-ups are closed for now, so new users cannot start yet. Please try again later.",
+        });
+      }
     }),
 });
