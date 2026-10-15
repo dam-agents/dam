@@ -853,25 +853,45 @@ jobs:
       # audit, sig=31 when enforce killed the VMM). With no auditd, as on this
       # runner, they reach the kernel log, which is gone with the runner.
       # Every run prints them and their count; a failed run keeps the whole
-      # kernel log too, for a VMM that died some other way.
+      # kernel log too, for a VMM that died some other way. A canary process
+      # first makes one logged call (getppid under SECCOMP_RET_LOG), so a count
+      # of zero is known to mean no records rather than records never kept.
       - name: Kernel log and VMM seccomp records
         if: ${{ !cancelled() }}
         run: |
+          python3 - <<'EOF' || echo "::warning::the seccomp canary did not run"
+          import ctypes, os
+          libc = ctypes.CDLL(None, use_errno=True)
+          class Insn(ctypes.Structure):
+              _fields_ = [("code", ctypes.c_ushort), ("jt", ctypes.c_ubyte), ("jf", ctypes.c_ubyte), ("k", ctypes.c_uint)]
+          class Prog(ctypes.Structure):
+              _fields_ = [("len", ctypes.c_ushort), ("filter", ctypes.POINTER(Insn))]
+          # x86_64: load the syscall number; getppid (110) returns LOG, all else ALLOW.
+          insns = (Insn * 4)(Insn(0x20, 0, 0, 0), Insn(0x15, 0, 1, 110), Insn(0x06, 0, 0, 0x7FFC0000), Insn(0x06, 0, 0, 0x7FFF0000))
+          libc.prctl(15, b"seccomp-canary", 0, 0, 0)
+          if libc.prctl(38, 1, 0, 0, 0) or libc.prctl(22, 2, ctypes.byref(Prog(4, insns)), 0, 0):
+              raise SystemExit(f"the seccomp canary could not install its filter: errno {ctypes.get_errno()}")
+          os.getppid()
+          EOF
+          sleep 2
           mkdir -p /tmp/kernel-log
           sudo journalctl -k -b --no-pager -o short-precise > /tmp/kernel-log/kernel.log ||
             sudo dmesg -T > /tmp/kernel-log/kernel.log
           [ ! -e /var/log/audit/audit.log ] || sudo cat /var/log/audit/audit.log > /tmp/kernel-log/audit.log
-          grep -hs 'type=1326\|type=SECCOMP' /tmp/kernel-log/kernel.log /tmp/kernel-log/audit.log > /tmp/seccomp.log || true
+          grep -hs 'type=1326\|type=SECCOMP' /tmp/kernel-log/kernel.log /tmp/kernel-log/audit.log | grep -v 'comm="seccomp-canary"' > /tmp/seccomp.log || true
+          canary="$(cat /tmp/kernel-log/kernel.log /tmp/kernel-log/audit.log 2>/dev/null | grep -c 'comm="seccomp-canary"' || true)"
           killed="$(grep -c ' sig=31 ' /tmp/seccomp.log || true)"
           # The kernel rate-limits audit records it prints, so a count can be short.
           dropped="$(grep -c 'kauditd_printk_skb: .* callbacks suppressed\|audit: rate limit exceeded\|audit: backlog limit exceeded' /tmp/kernel-log/kernel.log || true)"
-          line="seccomp audit records: $(wc -l < /tmp/seccomp.log), $killed of them SIGSYS kills; audit drop notices: $dropped"
+          line="seccomp audit records: $(wc -l < /tmp/seccomp.log), $killed of them SIGSYS kills; audit drop notices: $dropped; canary records: $canary"
           echo "$line" | tee -a "$GITHUB_STEP_SUMMARY"
           if [ -s /tmp/seccomp.log ]; then
             echo "::warning::$line"
             tail -n 200 /tmp/seccomp.log
             cp /tmp/seccomp.log /tmp/kernel-log/
           fi
+          [ "$canary" != 0 ] || echo "::warning::the seccomp canary left no record, so the kernel log may not keep seccomp records here, and a low count proves nothing"
+          grep -h 'kauditd_printk_skb: .* callbacks suppressed\|audit: rate limit exceeded\|audit: backlog limit exceeded' /tmp/kernel-log/kernel.log || true
       - if: ${{ failure() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
