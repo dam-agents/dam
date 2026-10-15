@@ -140,9 +140,10 @@ Three paths trigger a wake:
   See [skills](skills.md).
 
 Wake is bounded — the primitive polls pod readiness with backoff and gives up after two minutes, and a per-replica watch releases each wait the moment the condition flips and backs a read cache.
-A read bypasses that cache when its result decides a write — spec read-modify-write, the sleep flow's compare-and-clear — and while the watch is unsynced, when the cache cannot tell an absent Agent from an unseen one.It does not wait out the two minutes for a start that cannot succeed: an over-budget refusal ([budgets](budgets.md#failure-semantics-upstream)), or a vm machine's start the runner refused because the owner's VM storage is full, the image is unavailable, or the guest did not boot.
+A read bypasses that cache when its result decides a write — spec read-modify-write, the sleep flow's compare-and-clear — and while the watch is unsynced, when the cache cannot tell an absent Agent from an unseen one.
+It does not wait out the two minutes for a start that cannot succeed: an over-budget refusal ([budgets](budgets.md#failure-semantics-upstream)), or a vm machine's start the runner refused because the owner's VM storage is full, the image is unavailable, or the guest did not boot.
 Such a wake fails with that cause once it saw the refusal appear during its own poll, or once the refusal outlasted a ten-second grace, because its first polls can read the previous attempt's refusal.
-A refusal read while the Agent still shows hibernated does not count, since the controller has not acted on the wake yet.
+A vm start refusal read while the Agent still shows hibernated does not count, since the controller has not acted on the wake yet.
 An unschedulable runner and a machine still pulling or booting keep the wait, because both can still come up.
 On giving up it reads the controller's readiness conditions one final time and classifies the failure into a typed wake-failure cause — hibernation never acted on, a pod start failure (with the controller's termination cause, a full home volume named), pods still progressing, a gateway still coming up, a gateway failure it cannot outgrow, or a reconcile error — which callers receive and surface in their own idiom (channel reply copy, WS close reason, HTTP body, skills call error).
 The classification distinguishes transient causes (progressing, worth waiting or retrying) from hard ones (needing intervention); the two gateway causes split along exactly that line.
