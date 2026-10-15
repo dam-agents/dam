@@ -495,32 +495,32 @@ describe("acp-runtime: one harness process per harness", () => {
     expect(onA.isOpen()).toBe(false);
     expect(idle.isOpen()).toBe(true);
   });
-  /** TEST_SCENARIO: The default pair's harness dies, as from an
+  /** TEST_SCENARIO: A harness dies, as from an
    * out-of-memory kill, while the runtime itself keeps running. The next
    * session starts a new harness process instead of hanging on the dead one,
    * and so does a client that connected before that session asked. */
-  it("respawns the default pair's process for the next session after its harness died", async () => {
+  it("respawns a dead harness's process for the next session, closing only its old clients", async () => {
     const world = createLeaseWorld({ providers: ["conn-a"] });
     const before = world.connect();
-    startSession(world, before, "claude-code/conn-a", "s-a", 1, {});
+    startSession(world, before, "claude-code", "s-a", 1, {});
 
-    world.harness("claude-code/conn-a").exit();
+    world.harness("claude-code").exit();
     await Promise.resolve();
     expect(before.isOpen()).toBe(false);
 
     const early = world.connect();
     const late = world.connect();
-    startSession(world, late, "claude-code/conn-a", "s-b", 2, {});
-    expect(world.harnessCount("claude-code/conn-a")).toBe(2);
+    startSession(world, late, "claude-code", "s-b", 2, {});
+    expect(world.harnessCount("claude-code")).toBe(2);
     expect(late.reply(2)).toMatchObject({ result: { sessionId: "s-b" } });
     late.send(frames.prompt(3, "s-b", "after the crash"));
-    expect(promptTextsOf(world.harness("claude-code/conn-a"))).toEqual([
+    expect(promptTextsOf(world.harness("claude-code"))).toEqual([
       "after the crash",
     ]);
 
     early.send(frames.prompt(4, "s-a", "on the old session"));
     expect(early.isOpen()).toBe(true);
-    expect(world.harnessCount("claude-code/conn-a")).toBe(2);
+    expect(world.harnessCount("claude-code")).toBe(2);
   });
 
   /** TEST_SCENARIO: A process goes away once it has held no session for the
