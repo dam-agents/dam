@@ -9,6 +9,7 @@ import remarkGfm from "remark-gfm";
 import { MarkdownCodeBlock } from "@/components/markdown-code-block";
 import { DisclosureToggle } from "@/components/ui/disclosure";
 import { externalLinkProps } from "@/lib/external-link";
+import { cn } from "@/lib/utils";
 
 import {
   ARTIFACT_LINK_PREFIX,
@@ -76,9 +77,11 @@ function FrontmatterBlock({ source }: { source: string }) {
 export function Markdown({
   children,
   onFileClick,
+  className,
 }: {
   children: string;
   onFileClick?: (path: string) => void;
+  className?: string;
 }) {
   const { frontmatter, body } = useMemo(
     () => splitFrontmatter(children),
@@ -131,7 +134,7 @@ export function Markdown({
   );
 
   return (
-    <div className="prose">
+    <div className={cn("prose", className)}>
       {frontmatter !== null && <FrontmatterBlock source={frontmatter} />}
       <ReactMarkdown
         remarkPlugins={REMARK_PLUGINS}

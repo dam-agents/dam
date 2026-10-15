@@ -39,10 +39,10 @@ function service(resolveTerminal: SessionsPort["resolveTerminal"]) {
     } as never,
     createAgentService: () => ({
       list: vi.fn(),
-      runtimeFleet: vi.fn(),
       get: async () => ({ ok: true, value: { id: AGENT_ID } as never }),
       deleteAgent: vi.fn(),
       restart: vi.fn(),
+      runtimeFleet: vi.fn(),
     }),
     createSessionsPort: () => ({ list: vi.fn(), resolveTerminal }),
     confirmModeSwitch: async () => false,
