@@ -1,6 +1,6 @@
 # Observability (agent telemetry)
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 ## Overview
 
@@ -65,12 +65,12 @@ The UI is unaffected: it reads the telemetry store directly, not the collector.
 
 Harnesses produce telemetry by exporting it themselves over OTLP — the platform does not scrape or tap it.
 Export turns on with the backend: enabling `clickstack.enabled` stands up the collector, the gateway's collector egress chain, and the [trusted attribution](#trusted-attribution) below, and configures the harness to export to the collector.
-Each harness in the install's harness catalog may name a `telemetry` rail, which opts it in **and names which env rail it gets**, because the harnesses read different export configuration: Claude Code the standard OTLP env, Bob Shell its own `BOB_TELEMETRY_*` set, Pi a standard OTLP subset read by the image's own exporter.
+Each harness in the install's harness catalog may name a `telemetry` rail, which opts it in **and names which env rail it gets**, because the harnesses read different export configuration: Claude Code the standard OTLP env, Bob Shell its own `BOB_TELEMETRY_*` set, Pi a standard OTLP subset read by the image's own exporter, and Codex the same subset, which its image turns into overrides of Codex's own configuration at launch, since Codex reads its exporters from its configuration file alone.
 Bob Shell reads the standard OTLP exporter env too, but on it the harness also sends a copy of its export to the vendor endpoint, so a Bob image does not share the Claude Code rail.
 Pi exports nothing itself: its image ships an extension that writes one log record per model call and one per prompt, shaped like Claude Code's records under Pi's own event names, and stays off unless its rail turns log export on.
-Three rails exist today — Claude Code's, Bob Shell's and Pi's — and all point at the same collector over the same gateway egress; a further harness means a further rail, not a change to anything downstream.
+Four rails exist today — Claude Code's, Bob Shell's, Pi's and Codex's — and all point at the same collector over the same gateway egress; a further harness means a further rail, plus a reshaping step in the collector where its records do not match the shape the read path takes.
 
-- **Rides the agent's ordinary egress.** Claude Code's exporter and Pi's extension honour the agent's `HTTPS_PROXY`, so their telemetry leaves through the paired gateway pod over HTTPS to the bundled collector — the same dedicated, MITM-terminating chain that performs the trusted attribution below.
+- **Rides the agent's ordinary egress.** Claude Code's exporter, Pi's extension and Codex's exporter honour the agent's `HTTPS_PROXY`, so their telemetry leaves through the paired gateway pod over HTTPS to the bundled collector — the same dedicated, MITM-terminating chain that performs the trusted attribution below.
   No new network path, and no credential is injected into the export.
   This is a **precondition, not a convenience**: for a correctly configured rail the collector is reachable no other way, and an exporter that ignored the proxy would also miss the attribution stamp, so its records could never be attributed to a user.
   Honouring it is not automatic: Bob Shell's OTLP exporter builds its own HTTP agent, which the runtime's env-proxy support does not cover, so on the platform its export is attempted directly and dies at the agent's egress policy, silently — today Bob's spend reaches no collector, and the Bob rail is wired for the day its export goes through the proxy.
@@ -91,14 +91,21 @@ Three rails exist today — Claude Code's, Bob Shell's and Pi's — and all poin
   The [metrics](metrics.md) read path takes its **spend** from Claude Code's and Pi's log records only, so even once Bob's export reaches the collector no Usage surface reads it yet; normalizing that shape is separate work.
   That path does also read the trace store, for the agent-facing span read alone — which is therefore the one read that answers something for a traces-only harness, though what it answers is span shape, not spend.
   Bob additionally gates those spans behind its own agent-operations switch, so the rail turns it on explicitly; without it the harness exports its lifecycle spans and none of the spend.
+  Codex exports **log records and traces**, but in a shape of its own: no record body, its event name and counter names its own, its thread id where the others carry the session, and input counted with cache reads included.
+  The collector reshapes Codex's records on arrival — body from the event name, session from the thread id, and its per-call usage record renamed with the common counters, input net of cache reads — so the read path takes Codex spend from them like Claude Code's.
+  Codex reports no per-call cost, so that spend is tokens at zero cost.
+  Its usage record carries no trace context, so a session-scoped span read finds no Codex session.
 
 - **Content bodies are not exported** — prompt text, tool arguments, and raw API bodies stay off; only structural telemetry (durations, model/tool names, token and cost counters, span shape) leaves the agent.
   Claude Code omits them by default, and Pi's extension never writes them.
   Bob **includes** them by default, so its image writes the payload-exclusion setting into the harness's own configuration at startup rather than relying on the env rail: the invariant is the platform's, and a harness that defaults the other way must be corrected where it reads its settings.
+  Codex's image likewise pins its prompt and response logging off in the launch overrides, which outrank the user's own configuration file.
+  Codex also writes every tool call's arguments and an output preview into its log records, and has no setting to stop it, so the collector keeps only a fixed list of structural attributes on Codex's records: that content reaches the collector over the platform's own path but is never stored.
 
 - **Self-declared identity for exploration.** On the Claude Code rail the export env names the OTel service after the **harness** the session ran on, and seeds the user-declared agent name as a `platform.agent.name` resource attribute, kept current on rename.
   Both are exported by the harness itself and exist for finding an instance in the exploration UI — they are **display-only**; attribution rests solely on the gateway-stamped `platform.agent.id` below.
   Pi's extension reads the same two from the standard env.
+  Codex reads the standard resource environment, so the agent name arrives, though still URL-encoded, but it fixes its own service name for each kind of Codex process.
   Bob supplies **neither**: it fixes its own service name and builds its resource attributes internally, reading no standard OTel resource environment, so its signals are findable by service and by trusted agent id but not by the user's name for the agent.
   That the gap is tolerable is the same point — nothing but exploration ever depended on those two.
   This split is what lets an Invocation target keep its own name in the UI while its spend merges into the Driver that drove it (see [trusted attribution](#trusted-attribution)).

@@ -18,7 +18,8 @@ import type {
 const AGENT_GATE =
   "ResourceAttributes['platform.agent.id'] IN {agentIds:Array(String)}";
 
-const API_REQUEST = "Body IN ('claude_code.api_request', 'pi.api_request')";
+const API_REQUEST =
+  "Body IN ('claude_code.api_request', 'pi.api_request', 'codex.response_completed')";
 
 const timeBounds = (w: MetricsWindow): string[] => [
   ...(w.hours === undefined

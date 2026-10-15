@@ -29,7 +29,7 @@ describe("ownedApiRequests", () => {
   it("scopes to the harnesses' call records by Body, not template ServiceName", () => {
     const sql = ownedApiRequests({ hours: 24 });
     expect(sql).toContain(
-      "Body IN ('claude_code.api_request', 'pi.api_request')",
+      "Body IN ('claude_code.api_request', 'pi.api_request', 'codex.response_completed')",
     );
     expect(sql).not.toContain("ServiceName");
   });
