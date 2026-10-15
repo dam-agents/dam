@@ -52,15 +52,11 @@ export const agentsRouter = t.router({
     );
   }),
 
-  runtimeFleet: readAgentProcedure.query(async ({ ctx }) => {
-    const fleet = await ctx.agents.runtimeFleet();
-    if (ctx.user.agentIds === "*") return fleet;
-    const bound = new Set(ctx.user.agentIds);
-    return {
-      ...fleet,
-      outdated: fleet.outdated.filter((a) => bound.has(a.agentId)),
-    };
-  }),
+  runtimeFleet: readAgentProcedure.query(({ ctx }) =>
+    ctx.agents.runtimeFleet(
+      ctx.user.agentIds === "*" ? undefined : ctx.user.agentIds,
+    ),
+  ),
 
   get: readAgentProcedure
     .input(agentGetInputSchema)

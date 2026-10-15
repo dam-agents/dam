@@ -326,7 +326,7 @@ export interface RuntimeFleet {
 
 export interface AgentsService {
   list: () => Promise<Agent[]>;
-  runtimeFleet: () => Promise<RuntimeFleet>;
+  runtimeFleet: (agentIds?: readonly string[]) => Promise<RuntimeFleet>;
   get: (id: string) => Promise<Agent | null>;
   backgroundWork: (id: string) => Promise<AgentBackgroundWork | null>;
   create: (input: AgentCreateInput) => Promise<Agent>;

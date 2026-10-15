@@ -991,10 +991,13 @@ export function createAgentsService(deps: {
     /**
      * UNIT_BOUNDARY_DESCRIPTION: read from the Agent resources' image pins,
      * since a hibernated agent has said no hello since it slept. The count
-     * the old runtime path waits on.
+     * the old runtime path waits on; a key bound to some agents counts only
+     * those.
      */
-    async runtimeFleet() {
-      const infraAgents = await deps.repo.list(deps.owner);
+    async runtimeFleet(agentIds) {
+      const infraAgents = (await deps.repo.list(deps.owner)).filter(
+        (a) => !agentIds || agentIds.includes(a.id),
+      );
       const templateIds = [
         ...new Set(infraAgents.flatMap((a) => a.templateId ?? [])),
       ];
