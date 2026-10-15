@@ -744,7 +744,9 @@ export function ChatView() {
                       />
                     ))}
                     {!statusLineInThread && <PermissionStatusLine />}
-                    <ChatLiveJobBlocks agentId={selectedAgent} />
+                    {sessionId === MOCK_SESSION_IDS.tasks && (
+                      <ChatLiveJobBlocks agentId={selectedAgent} />
+                    )}
                   </ChatColumn>
                 </div>
 
@@ -796,7 +798,9 @@ export function ChatView() {
                             }
                           />
                         )}
-                        <BackgroundTasksIndicator agentId={selectedAgent} />
+                        {sessionId === MOCK_SESSION_IDS.tasks && (
+                          <BackgroundTasksIndicator agentId={selectedAgent} />
+                        )}
                       </div>
                     </ChatColumn>
                   </div>

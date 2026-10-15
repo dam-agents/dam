@@ -55,7 +55,7 @@ async function main() {
     useStore.setState({
       view: "chat",
       selectedAgent: agents[0]!.id,
-      pendingResumeSessionId: MOCK_SESSION_IDS.diffs,
+      pendingResumeSessionId: MOCK_SESSION_IDS.chat,
     });
 
     const { default: App } = await import("./app.js");

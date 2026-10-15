@@ -141,6 +141,8 @@ function generateSessions(
 export const MOCK_SESSION_IDS = {
   artifact: "sess-artifact-example",
   browser: "sess-browser-example",
+  tasks: "sess-tasks-running",
+  chat: "sess-normal-chat",
   longChat: "sess-long-chat-example",
   diffs: "sess-diffs-showing",
 };
@@ -148,12 +150,34 @@ export const MOCK_SESSION_IDS = {
 export const mockSessions: Record<string, unknown[]> = {
   [AGENT_IDS.codexResearch]: [
     {
+      sessionId: MOCK_SESSION_IDS.chat,
+      agentId: AGENT_IDS.codexResearch,
+      type: "regular" as const,
+      mode: "chat" as const,
+      createdAt: new Date(now - 10 * min).toISOString(),
+      updatedAt: new Date(now - 2 * min).toISOString(),
+      title: "Fix login redirect",
+      running: false,
+      seenAt: new Date(now - 1 * min).toISOString(),
+    },
+    {
+      sessionId: MOCK_SESSION_IDS.tasks,
+      agentId: AGENT_IDS.codexResearch,
+      type: "regular" as const,
+      mode: "chat" as const,
+      createdAt: new Date(now - 20 * min).toISOString(),
+      updatedAt: new Date(now - 3 * min).toISOString(),
+      title: "Background tasks",
+      running: true,
+      seenAt: new Date(now - 1 * min).toISOString(),
+    },
+    {
       sessionId: MOCK_SESSION_IDS.diffs,
       agentId: AGENT_IDS.codexResearch,
       type: "regular" as const,
       mode: "chat" as const,
       createdAt: new Date(now - 25 * min).toISOString(),
-      updatedAt: new Date(now - 3 * min).toISOString(),
+      updatedAt: new Date(now - 5 * min).toISOString(),
       title: "Diffs showing",
       running: true,
       seenAt: new Date(now - 1 * min).toISOString(),

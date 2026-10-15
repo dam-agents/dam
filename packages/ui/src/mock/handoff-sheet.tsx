@@ -140,8 +140,6 @@ function makeMockChrome(overrides?: Partial<AgentChrome>): AgentChrome {
 
 function HeaderBoard() {
   const [openPanels, setOpenPanels] = useState<Set<LeftPanelKind>>(new Set());
-  const [browserActive, setBrowserActive] = useState(false);
-
   const chrome = makeMockChrome();
 
   return (
@@ -158,8 +156,6 @@ function HeaderBoard() {
           })
         }
         onNewChat={() => {}}
-        browserActive={browserActive}
-        onToggleBrowser={() => setBrowserActive((b) => !b)}
       />
     </Board>
   );
@@ -243,8 +239,6 @@ function FullLayoutBoard() {
   const [openPanels, setOpenPanels] = useState<Set<LeftPanelKind>>(
     new Set(["files"]),
   );
-  const [browserActive, setBrowserActive] = useState(true);
-
   const chrome = makeMockChrome();
 
   return (
@@ -253,9 +247,7 @@ function FullLayoutBoard() {
         <div
           className={cn(
             "flex shrink-0 items-center justify-end border-b px-6 h-10 transition-colors duration-200",
-            openPanels.size > 0 || browserActive
-              ? "border-border"
-              : "border-transparent",
+            openPanels.size > 0 ? "border-border" : "border-transparent",
           )}
         >
           <button
@@ -278,8 +270,6 @@ function FullLayoutBoard() {
             })
           }
           onNewChat={() => {}}
-          browserActive={browserActive}
-          onToggleBrowser={() => setBrowserActive((b) => !b)}
         />
         <div className="flex flex-1 min-h-0">
           <LeftDockedPanel
@@ -303,17 +293,10 @@ function FullLayoutBoard() {
               </p>
             </div>
           </div>
-          {browserActive && (
-            <>
-              <div className="w-px bg-border" />
-              <div className="flex w-[380px] shrink-0 flex-col">
-                <MockBrowserPanel
-                  agentId="mock-agent-1"
-                  agentName="ci-pipeline"
-                />
-              </div>
-            </>
-          )}
+          <div className="w-px bg-border" />
+          <div className="flex w-[380px] shrink-0 flex-col">
+            <MockBrowserPanel agentId="mock-agent-1" agentName="ci-pipeline" />
+          </div>
         </div>
       </div>
     </Board>

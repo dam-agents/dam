@@ -30,6 +30,7 @@ import { summarizeProcesses } from "../modules/processes/lib/process-summary.js"
 import type { SessionListInclude } from "../modules/sessions/api/queries.js";
 import { useAcpSessions } from "../modules/sessions/api/queries.js";
 import { WorkingDots } from "../modules/sessions/components/working-dots.js";
+import { MOCK_SESSION_IDS } from "../mock/data/sessions.js";
 import { useStore } from "../store.js";
 import type { AgentView } from "../types.js";
 import { SidebarSessionItem } from "./sidebar-session-item.js";
@@ -183,6 +184,7 @@ export function AgentJobsBadge({ agentId }: { agentId: string }) {
   const { data } = useProcesses(agentId, { enabled: true, poll: false });
   const now = useNow(5_000);
   const selectAgent = useStore((s) => s.selectAgent);
+  const sessionId = useStore((s) => s.sessionId);
 
   const background = useMemo(
     () => (data ? data.running.filter((r) => r.kind !== "turn") : []),
@@ -191,7 +193,7 @@ export function AgentJobsBadge({ agentId }: { agentId: string }) {
 
   const { running } = data ? summarizeProcesses(data) : { running: 0 };
 
-  if (running === 0) return null;
+  if (running === 0 || sessionId !== MOCK_SESSION_IDS.tasks) return null;
 
   return (
     <HoverCard openDelay={150} closeDelay={300}>
