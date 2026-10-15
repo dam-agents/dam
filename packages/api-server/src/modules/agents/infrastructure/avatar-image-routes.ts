@@ -15,7 +15,7 @@ import {
 } from "db";
 import type { ApiVariables } from "../../../core/http-context.js";
 
-const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
+export const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const AVATAR_PX = 512;
 
 export interface AvatarImages {
@@ -83,6 +83,35 @@ export async function sweepAvatarImages(
 }
 
 /**
+ * UNIT_BOUNDARY_DESCRIPTION: Turns untrusted image bytes into a stored avatar:
+ * only a JPG or PNG within the decode limit is accepted, cropped to a 512 px
+ * square PNG and saved under its SHA-256. The caller bounds the byte size
+ * before it reads the bytes.
+ */
+export async function storeAvatarImage(
+  images: AvatarImages,
+  input: Buffer,
+  ownerSub: string,
+): Promise<{ avatar: `image:${string}` } | { error: string }> {
+  const format = await sharp(input)
+    .metadata()
+    .then((m) => m.format)
+    .catch(() => undefined);
+  if (format !== "jpeg" && format !== "png")
+    return { error: "image must be a JPG or PNG" };
+  const png = await sharp(input, { limitInputPixels: 40_000_000 })
+    .rotate()
+    .resize(AVATAR_PX, AVATAR_PX, { fit: "cover" })
+    .png()
+    .toBuffer()
+    .catch(() => null);
+  if (!png) return { error: "image could not be read" };
+  const id = createHash("sha256").update(png).digest("hex");
+  await images.save(id, png, ownerSub);
+  return { avatar: `image:${id}` };
+}
+
+/**
  * UNIT_BOUNDARY_DESCRIPTION: An uploaded agent avatar. `POST /api/avatars`
  * takes a JPG or PNG of at most 2 MB, crops it to a 512 px square PNG, and
  * stores it in Postgres under the SHA-256 of that PNG; the answer is the avatar
@@ -95,29 +124,18 @@ export function createAvatarImageRoutes(images: AvatarImages) {
   upload.post(
     "/",
     bodyLimit({
-      maxSize: MAX_UPLOAD_BYTES,
+      maxSize: MAX_AVATAR_BYTES,
       onError: (c) => c.json({ error: "image is larger than 2 MB" }, 413),
     }),
     async (c) => {
       if (!c.get("user").scopes.includes("agents:manage"))
         return c.json({ error: "forbidden" }, 403);
-      const input = Buffer.from(await c.req.arrayBuffer());
-      const format = await sharp(input)
-        .metadata()
-        .then((m) => m.format)
-        .catch(() => undefined);
-      if (format !== "jpeg" && format !== "png")
-        return c.json({ error: "image must be a JPG or PNG" }, 400);
-      const png = await sharp(input, { limitInputPixels: 40_000_000 })
-        .rotate()
-        .resize(AVATAR_PX, AVATAR_PX, { fit: "cover" })
-        .png()
-        .toBuffer()
-        .catch(() => null);
-      if (!png) return c.json({ error: "image could not be read" }, 400);
-      const id = createHash("sha256").update(png).digest("hex");
-      await images.save(id, png, c.get("user").sub);
-      return c.json({ avatar: `image:${id}` });
+      const stored = await storeAvatarImage(
+        images,
+        Buffer.from(await c.req.arrayBuffer()),
+        c.get("user").sub,
+      );
+      return "error" in stored ? c.json(stored, 400) : c.json(stored);
     },
   );
 

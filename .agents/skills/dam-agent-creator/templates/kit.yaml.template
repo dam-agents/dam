@@ -28,6 +28,7 @@ category: software
 # TODO(creator): uncomment and fill what the catalog card should show.
 # tagline: One line — the hook, not a summary.
 # icon: robot
+# avatar: {path: avatar.png}  # or a character (shield) or "emoji:🛡️"; a JPG or PNG of at most 2 MB
 # docsUrl: https://github.com/<org>/{{AGENT_NAME}}/blob/main/README.md
 
 # The definition is seeded from this very repository, at the commit the kit was read
