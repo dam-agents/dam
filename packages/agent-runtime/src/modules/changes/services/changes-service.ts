@@ -12,6 +12,7 @@ import { createFilesWatcher, type WatchHandle } from "../../files-watch.js";
 import { repositoryNameOf } from "../domain/git-output.js";
 import { GIT_CONCURRENCY, mapLimit } from "../domain/map-limit.js";
 import type { ToolActivity } from "../domain/tool-activity.js";
+import { createToolCallWindows } from "../domain/tool-call-windows.js";
 import {
   findRepositoryDirs,
   groupWorktrees,
@@ -21,6 +22,10 @@ import {
 } from "../infrastructure/discovery.js";
 import type { Git } from "../infrastructure/git.js";
 import type { PullRequestFinder } from "../infrastructure/pull-requests.js";
+import {
+  createPushLogWatcher,
+  type Push,
+} from "../infrastructure/push-logs.js";
 import type { TouchedRepositoryStore } from "../infrastructure/touched-repositories.js";
 import {
   defaultBranchRef,
@@ -33,6 +38,7 @@ import {
 const SNAPSHOT_REUSE_MS = 1_000;
 const NOTICE_INTERVAL_MS = 2_000;
 const SESSION_PULL_REQUEST_CHECK_MS = 30_000;
+const REPOSITORY_INDEX_MS = 5 * 60_000;
 
 interface ChangeSetEntry {
   changeSet: Omit<ChangeSet, "sessionEditedAt">;
@@ -90,8 +96,18 @@ export function createChangesService(deps: {
     const checkedAt = pullRequestsCheckedAt.get(sessionId) ?? 0;
     if (Date.now() - checkedAt < SESSION_PULL_REQUEST_CHECK_MS) return;
     pullRequestsCheckedAt.set(sessionId, Date.now());
+    const pushes = deps.touched.pushesOf(sessionId);
+    for (const push of pushes) {
+      const pullRequest = await deps.pullRequests.find(
+        push.remote,
+        push.branch,
+      );
+      if (pullRequest)
+        deps.touched.linkPullRequest(push.path, push.branch, pullRequest);
+    }
     for (const touched of deps.touched.repositoriesOf(sessionId)) {
       if (touched.branch === null) continue;
+      if (pushes.some((push) => push.path === touched.path)) continue;
       const { branch, remote } = await describe(touched.path);
       if (branch !== touched.branch) continue;
       const pullRequest = await deps.pullRequests.find(remote, branch);
@@ -229,6 +245,101 @@ export function createChangesService(deps: {
     noticeTimer = undefined;
   }
 
+  const windows = createToolCallWindows();
+  const toplevelOf = new Map<string, string>();
+  let indexedAt = Number.NEGATIVE_INFINITY;
+  let indexing = false;
+
+  const pushLogs = createPushLogWatcher({
+    onPush: (push) =>
+      void recordPush(push).catch((error: unknown) =>
+        deps.log(
+          `recording a push to ${push.branch} failed: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      ),
+    log: deps.log,
+  });
+
+  function indexRepositories(): void {
+    if (indexing || Date.now() - indexedAt < REPOSITORY_INDEX_MS) return;
+    indexing = true;
+    indexedAt = Date.now();
+    void (async () => {
+      const dirs = await findRepositoryDirs(deps.roots);
+      const located = await mapLimit(
+        [...new Set([...dirs, ...deps.touched.paths()])],
+        GIT_CONCURRENCY,
+        (dir) => locateRepository(deps.git, dir),
+      );
+      for (const location of located)
+        if (location && !toplevelOf.has(location.commonDir))
+          toplevelOf.set(location.commonDir, location.toplevel);
+      await pushLogs.watch([...toplevelOf.keys()]);
+    })()
+      .catch((error: unknown) =>
+        deps.log(
+          `indexing repositories for pushes failed: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      )
+      .finally(() => {
+        indexing = false;
+      });
+  }
+
+  function pusherOf(
+    at: number,
+    worktreePaths: readonly string[],
+  ): string | null {
+    const running = windows.sessionsAt(at);
+    if (running.length === 1) return running[0]!;
+    const tied = running.filter((sessionId) =>
+      deps.touched
+        .repositoriesOf(sessionId)
+        .some((repository) => worktreePaths.includes(repository.path)),
+    );
+    return tied.length === 1 ? tied[0]! : null;
+  }
+
+  async function recordPush(push: Push): Promise<void> {
+    const toplevel = toplevelOf.get(push.commonDir);
+    if (!toplevel) return;
+    const [repository] = await groupWorktrees(deps.git, [
+      { toplevel, commonDir: push.commonDir },
+    ]);
+    const worktrees = repository?.worktrees ?? [];
+    const sessionId = pusherOf(
+      push.at,
+      worktrees.map((worktree) => worktree.path),
+    );
+    if (!sessionId) {
+      deps.log(
+        `a push to ${push.branch} in ${toplevel} matches no single session; not linked`,
+      );
+      return;
+    }
+    const path =
+      worktrees.find((worktree) => worktree.branch === push.branch)?.path ??
+      toplevel;
+    const remote = await deps.git(toplevel, [
+      "config",
+      "--get",
+      `remote.${push.remote}.url`,
+    ]);
+    const remoteUrl = remote.ok ? remote.value.trim() || null : null;
+    const { name } = await describe(path);
+    deps.touched.record(sessionId, path, {
+      name,
+      branch: push.branch,
+      editedAt: now().toISOString(),
+      remote: remoteUrl,
+    });
+    editedThisBoot.add(path);
+    const pullRequest = await deps.pullRequests.find(remoteUrl, push.branch);
+    if (pullRequest)
+      deps.touched.linkPullRequest(path, push.branch, pullRequest);
+    changed();
+  }
+
   async function recordEdits(activity: ToolActivity): Promise<void> {
     const editedAt = now().toISOString();
     const locations = await mapLimit(
@@ -240,6 +351,10 @@ export function createChangesService(deps: {
     for (const location of locations)
       if (location) toplevels.set(location.toplevel, location);
     for (const location of toplevels.values()) {
+      if (!toplevelOf.has(location.commonDir)) {
+        toplevelOf.set(location.commonDir, location.toplevel);
+        void pushLogs.watch([location.commonDir]);
+      }
       const { name, branch } = await describe(location.toplevel);
       deps.touched.record(activity.sessionId, location.toplevel, {
         name,
@@ -299,6 +414,13 @@ export function createChangesService(deps: {
     },
 
     onToolActivity(activity) {
+      indexRepositories();
+      if (activity.toolCallId !== null) {
+        if (activity.started)
+          windows.started(activity.sessionId, activity.toolCallId);
+        if (activity.settled)
+          windows.settled(activity.sessionId, activity.toolCallId);
+      }
       const recorded =
         activity.editedPaths.length > 0
           ? recordEdits(activity).catch((error: unknown) =>
