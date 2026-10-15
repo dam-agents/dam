@@ -271,7 +271,7 @@ impl Runtime for Smolvm {
         result
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: grows the guest's RAM through the virtio-mem area smolvm gives every machine, as smolvm's own resize does, but without its two host checks: it refuses a VMM that is not in a cgroup of its own, and every VMM of a runner shares the runner pod's, and it admits the growth against the host's free memory, while a runner admits its machines by what they use (see capacity). The guest kernel is first told to online each memory block as it adds it: it leaves added RAM offline by default, its virtio-mem driver plugs no more once 1 GiB of it waits offline, and the guest agent onlines a range only once every block of it exists, so left to the agent a grow past 1 GiB never finishes. The VMM then maps the added RAM, and once it reports all of it plugged, the guest agent confirms the range is online. That check is retried until the wait runs out, since a block the agent finds offline can be onlined by the kernel before the agent's own write, which then fails. Each step is idempotent, so a retry of a grow that stopped part-way finishes it. The record is set to the size the guest now has.
+    // UNIT_BOUNDARY_DESCRIPTION: grows the guest's RAM through the virtio-mem area smolvm gives every machine, as smolvm's own resize does, but without its two host checks: it refuses a VMM that is not in a cgroup of its own, and every VMM of a runner shares the runner pod's, and it admits the growth against the host's free memory, while a runner admits its machines by what they use (see capacity). The VMM maps the added RAM, the guest agent puts each memory block online as the guest's virtio-mem driver adds it (the driver adds no more once 1 GiB of it waits offline), and the grow ends once the VMM reports all of it plugged, the order smolvm's own resize takes. Each step is idempotent, so a retry of a grow that stopped part-way finishes it. The record is set to the size the guest now has.
     fn grow(&self, id: &str, memory_mib: i32) -> anyhow::Result<()> {
         let target = u32::try_from(memory_mib).context("memoryMiB")?;
         timed("grow", id, &[], || {
@@ -284,27 +284,6 @@ impl Runtime for Smolvm {
             if added == 0 {
                 return Ok(());
             }
-            let manager = AgentManager::for_vm(id)?;
-            manager.detach();
-            let mut client = AgentClient::connect(manager.vsock_socket())?;
-            let (code, _, stderr) = client.vm_exec(
-                [
-                    "/bin/sh",
-                    "-c",
-                    "echo online_kernel > /sys/devices/system/memory/auto_online_blocks",
-                ]
-                .map(String::from)
-                .to_vec(),
-                Vec::new(),
-                None,
-                Some(Duration::from_secs(10)),
-                None,
-            )?;
-            anyhow::ensure!(
-                code == 0,
-                "the guest did not turn on onlining added RAM: {}",
-                String::from_utf8_lossy(&stderr).trim()
-            );
             if added > geometry.mapped {
                 let reply =
                     control_socket_cmd(&socket, &format!("PROTOTYPE_GROW_MEMORY {}", added >> 20))?;
@@ -314,20 +293,20 @@ impl Runtime for Smolvm {
                     reply.trim()
                 );
             }
+            let manager = AgentManager::for_vm(id)?;
+            manager.detach();
+            AgentClient::connect(manager.vsock_socket())?
+                .online_memory(geometry.base, added)
+                .context("the guest did not put its added RAM online")?;
             let deadline = std::time::Instant::now() + RAM_PLUG_WAIT;
             loop {
                 let plugged = info()?.plugged;
-                let online = if plugged == added {
-                    client
-                        .online_memory(geometry.base, added)
-                        .map_err(anyhow::Error::from)
-                } else {
-                    Err(anyhow::anyhow!("{plugged} of {added} bytes plugged"))
-                };
-                let Err(e) = online else { break };
+                if plugged == added {
+                    break;
+                }
                 anyhow::ensure!(
                     std::time::Instant::now() < deadline,
-                    "the guest did not put its added RAM to use within {RAM_PLUG_WAIT:?}: {e:#}"
+                    "the guest plugged {plugged} of {added} bytes of its added RAM within {RAM_PLUG_WAIT:?}"
                 );
                 std::thread::sleep(Duration::from_millis(25));
             }
