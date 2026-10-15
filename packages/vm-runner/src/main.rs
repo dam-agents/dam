@@ -382,7 +382,14 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
         result = &mut serving => {
             let result = result.map_err(|e| anyhow::anyhow!("serving: {e}"));
             let supervised = std::env::var_os(vm_runner::release::RELEASES_ENV).is_some_and(|dir| !dir.is_empty());
-            server.close_failed(supervised).await;
+            server
+                .close_failed(supervised, async {
+                    tokio::select! {
+                        _ = term.recv() => {}
+                        _ = tokio::signal::ctrl_c() => {}
+                    }
+                })
+                .await;
             if supervised {
                 tracing::error!(error = ?result.err(), "VM runner failed to serve; its machines stay up for the loader's next runner");
                 // UNIT_BOUNDARY_DESCRIPTION: exits before the runtime is dropped, as a hand-off does, so the machines this runner started itself outlive it too.
