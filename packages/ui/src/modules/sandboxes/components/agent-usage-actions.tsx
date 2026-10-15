@@ -1,8 +1,9 @@
-import { Chat, Code, Terminal } from "@carbon/icons-react";
+import { Chat, Terminal } from "@carbon/icons-react";
 import { SessionMode } from "api-server-api";
 import { useState } from "react";
 
 import { getBrand } from "@/brand";
+import { CopyableCommand } from "@/components/copyable-command";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
@@ -13,13 +14,12 @@ import {
   type BindMessenger,
   ChannelBindModal,
 } from "./channels/channel-bind-modal.js";
-import { OpenInIdeDialog, OpenInTerminalDialog } from "./open-in-dialogs.js";
+import { CliQuickstartNote } from "./open-in-dialogs.js";
 
 export function AgentUsageActions({ agent }: { agent: AgentView }) {
   const selectAgent = useStore((s) => s.selectAgent);
   const openAgentSession = useStore((s) => s.openAgentSession);
   const available = useAgents().data?.availableChannels ?? {};
-  const [dialog, setDialog] = useState<"cli" | "ssh" | null>(null);
   const [messenger, setMessenger] = useState<BindMessenger | null>(null);
   const cli = getBrand().short;
 
@@ -27,17 +27,21 @@ export function AgentUsageActions({ agent }: { agent: AgentView }) {
     {
       title: "Web chat",
       description: "Chat with the agent in this browser.",
-      icon: <Chat />,
-      label: "Open chat",
-      onClick: () => selectAgent(agent.id),
+      button: {
+        icon: <Chat />,
+        label: "Open chat",
+        onClick: () => selectAgent(agent.id),
+      },
     },
     {
       title: "Web terminal",
       description: "Run an interactive shell on the agent in this browser.",
-      icon: <Terminal />,
-      label: "Open terminal",
-      onClick: () =>
-        openAgentSession(agent.id, crypto.randomUUID(), SessionMode.Terminal),
+      button: {
+        icon: <Terminal />,
+        label: "Open terminal",
+        onClick: () =>
+          openAgentSession(agent.id, crypto.randomUUID(), SessionMode.Terminal),
+      },
     },
     {
       title: "CLI",
@@ -47,25 +51,33 @@ export function AgentUsageActions({ agent }: { agent: AgentView }) {
           to the agent.
         </>
       ),
-      icon: <Terminal />,
-      label: "Show command",
-      onClick: () => setDialog("cli"),
+      content: (
+        <div className="flex flex-col gap-2">
+          <CopyableCommand command={`${cli} chat ${agent.id}`} />
+          <CliQuickstartNote />
+        </div>
+      ),
     },
     {
       title: "SSH",
       description: "Open the agent's workspace in VS Code or Zed over SSH.",
-      icon: <Code />,
-      label: "Show commands",
-      onClick: () => setDialog("ssh"),
+      content: (
+        <div className="flex flex-col gap-2">
+          <CopyableCommand command={`${cli} ssh connect -x code ${agent.id}`} />
+          <CopyableCommand command={`${cli} ssh connect -x zed ${agent.id}`} />
+        </div>
+      ),
     },
     ...(available.slack
       ? [
           {
             title: "Slack",
             description: "Mention the agent in a Slack channel or DM it.",
-            icon: <ConnectionIcon iconSlug="slack" alt="" size={16} />,
-            label: "Add to Slack",
-            onClick: () => setMessenger("slack"),
+            button: {
+              icon: <ConnectionIcon iconSlug="slack" alt="" size={16} />,
+              label: "Add to Slack",
+              onClick: () => setMessenger("slack"),
+            },
           },
         ]
       : []),
@@ -74,9 +86,11 @@ export function AgentUsageActions({ agent }: { agent: AgentView }) {
           {
             title: "Telegram",
             description: "Message the agent from a Telegram chat.",
-            icon: <ConnectionIcon iconSlug="telegram" alt="" size={16} />,
-            label: "Add to Telegram",
-            onClick: () => setMessenger("telegram"),
+            button: {
+              icon: <ConnectionIcon iconSlug="telegram" alt="" size={16} />,
+              label: "Add to Telegram",
+              onClick: () => setMessenger("telegram"),
+            },
           },
         ]
       : []),
@@ -84,21 +98,7 @@ export function AgentUsageActions({ agent }: { agent: AgentView }) {
 
   return (
     <>
-      <ActionList label="Use" actions={actions} />
-      {dialog === "cli" && (
-        <OpenInTerminalDialog
-          agentId={agent.id}
-          agentName={agent.name}
-          onClose={() => setDialog(null)}
-        />
-      )}
-      {dialog === "ssh" && (
-        <OpenInIdeDialog
-          agentId={agent.id}
-          agentName={agent.name}
-          onClose={() => setDialog(null)}
-        />
-      )}
+      <ActionList actions={actions} />
       {messenger && (
         <ChannelBindModal
           messengers={[messenger]}

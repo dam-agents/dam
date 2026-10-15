@@ -5,6 +5,8 @@ import type { AgentDisplayState } from "../utils/agent-resolver.js";
 import { reclaimSentence } from "./reclaim-notices.js";
 import { workspaceFailureSentence } from "./workspace-failure.js";
 
+export const AGENT_ENABLE_ANCHOR = "enable-agent";
+
 const VM_MEMORY_FULL =
   "Your VM agents' memory is full. It starts once room frees up — or disable an agent you aren't using.";
 const OVERLAY_DESCRIPTION: Record<AgentDisplayState, string> = {
@@ -13,8 +15,7 @@ const OVERLAY_DESCRIPTION: Record<AgentDisplayState, string> = {
   preparing_workspace: "Setting up the workspace. This finishes shortly.",
   hibernating: "The agent is falling asleep.",
   hibernated: "The agent is sleeping. Wake it to pick up where you left off.",
-  disabled:
-    "The agent is disabled. Enable it on its General page to use it again.",
+  disabled: "",
   error: "The agent hit an error and isn't running.",
   over_budget:
     "Starting this agent would exceed your compute budget. Disable agents " +

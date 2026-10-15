@@ -13,7 +13,7 @@ interface Props {
   onClose: () => void;
 }
 
-function CliQuickstartNote() {
+export function CliQuickstartNote() {
   return (
     <p className="text-sm text-muted-foreground">
       First time? Installing the CLI and logging in is covered in the{" "}

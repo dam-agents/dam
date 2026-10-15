@@ -30,6 +30,7 @@ import {
 } from "../components/sandbox-section-nav.js";
 import { SandboxSetupSection } from "../components/sandbox-setup-section.js";
 import { SandboxSkillsSection } from "../components/sandbox-skills-section.js";
+import { ConnectionAddressingSection } from "../components/setup/setup-sections.js";
 import { useSectionSummaries } from "../hooks/use-section-summaries.js";
 
 export function SandboxHomeView() {
@@ -108,14 +109,17 @@ export function SandboxHomeView() {
           ) : section === "usage" ? (
             <SandboxUsageSection agentId={agent.id} />
           ) : (
-            <ConnectionsSection
-              agentId={agent.id}
-              oauthReturnView={routeToPath({
-                view: "sandbox-home",
-                agentId: agent.id,
-                sandboxSection: "connections",
-              })}
-            />
+            <>
+              <ConnectionAddressingSection agent={agent} />
+              <ConnectionsSection
+                agentId={agent.id}
+                oauthReturnView={routeToPath({
+                  view: "sandbox-home",
+                  agentId: agent.id,
+                  sandboxSection: "connections",
+                })}
+              />
+            </>
           )}
         </div>
       </div>
