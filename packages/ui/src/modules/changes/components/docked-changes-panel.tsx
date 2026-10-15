@@ -4,7 +4,7 @@ import {
   type CompareTo,
   compareToSchema,
 } from "agent-runtime-api";
-import { useId, useState } from "react";
+import { memo, useId, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -28,7 +28,10 @@ interface Props {
   sessionId: string | null;
 }
 
-export function DockedChangesPanel({ agentId, sessionId }: Props) {
+export const DockedChangesPanel = memo(function DockedChangesPanel({
+  agentId,
+  sessionId,
+}: Props) {
   const close = useStore((s) => s.setOpenChanges);
   const operable = useIsAgentOperable(agentId);
   const { data, error, isPending } = useChangeSets(agentId, sessionId);
@@ -106,7 +109,7 @@ export function DockedChangesPanel({ agentId, sessionId }: Props) {
       )}
     </div>
   );
-}
+});
 
 function ChangeSetBody({
   agentId,

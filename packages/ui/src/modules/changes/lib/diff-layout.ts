@@ -21,3 +21,24 @@ export function fileDiffBody(
 export function fileDiffAnchor(prefix: string, index: number): string {
   return `${prefix}-file-${index}`;
 }
+
+export interface FileDiffData {
+  oldFile: { fileName: string };
+  newFile: { fileName: string };
+  hunks: string[];
+}
+
+const diffData = new WeakMap<FileDiff, FileDiffData>();
+
+export function fileDiffData(file: FileDiff): FileDiffData {
+  let data = diffData.get(file);
+  if (!data) {
+    data = {
+      oldFile: { fileName: file.oldPath ?? file.path },
+      newFile: { fileName: file.path },
+      hunks: file.patch === null ? [] : [file.patch],
+    };
+    diffData.set(file, data);
+  }
+  return data;
+}
