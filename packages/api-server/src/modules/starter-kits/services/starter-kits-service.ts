@@ -81,6 +81,7 @@ export interface StarterKitsServiceDeps {
     ): Promise<void>;
   };
   virtualizationEnabled?: boolean;
+  chatFormsEnabled?: () => Promise<boolean>;
   kitUpstream: KitUpstream;
   kitUpdateMarks: KitUpdateMarks;
 }
@@ -228,6 +229,7 @@ export function createStarterKitsService(
         })),
         boundChannels: agent.channels.map((c) => c.type),
         familyTitles: await familyTitles(),
+        chatForms: (await deps.chatFormsEnabled?.()) ?? false,
       },
       harness,
     );
@@ -260,6 +262,7 @@ export function createStarterKitsService(
     wakeAgent: deps.wakeAgent,
     runtimeMutator: deps.runtimeMutator,
     sessionPair: deps.sessionPair,
+    chatFormsEnabled: deps.chatFormsEnabled,
   });
 
   return {

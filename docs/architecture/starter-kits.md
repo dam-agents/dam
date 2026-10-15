@@ -216,6 +216,7 @@ What onboarding asks for is `ONBOARDING.md`'s to say; the platform declares noth
 Reading live matters because the user can change any of it between create and the first turn: disable a schedule, drop a connection, or simply never grant a suggested one.
 A connection the user has since deleted reads as not connected rather than failing the prompt.
 Every kit ships `ONBOARDING.md` beside `kit.yaml`; the platform has seeded the definition into the work directory before the session opens, so the briefing points at the checkout rather than asking for a clone.
+With the owner's [chat forms](chat-forms.md) on, it also announces that the chat renders forms.
 
 ## Kit Update
 

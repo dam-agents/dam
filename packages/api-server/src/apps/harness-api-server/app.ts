@@ -65,6 +65,7 @@ import type {
   CaseStudySubmissionsService,
 } from "../../modules/case-studies/index.js";
 import type { AgentTelemetryService } from "../../modules/metrics/index.js";
+import { composeFeaturesForOwner } from "../../modules/features/index.js";
 
 export interface HarnessApiServerAppDeps {
   agentStateCache: AgentStateCache;
@@ -261,6 +262,15 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     caseStudySubmissions,
     caseStudyInspection,
     carriesInspectorRole,
+    chatFormsEnabled: async (owner) =>
+      (
+        await composeFeaturesForOwner({
+          db,
+          owner,
+          surface: "mcp",
+          modes: config.featureModes,
+        }).features.flags()
+      )["chat-forms"],
     agentImage: createAgentImageReader(k8sClient),
     agentTelemetry,
     satelliteOps: deps.satellitesBoot.agentOps,

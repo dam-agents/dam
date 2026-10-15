@@ -4,4 +4,4 @@ metadata:
   name: platform-local-no-mesh
   namespace: kube-system
 data:
-  created-by: qa/qi-profile-dam
+  created-by: .quality-inspector/qi-profile-dam
