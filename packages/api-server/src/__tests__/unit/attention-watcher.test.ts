@@ -352,6 +352,8 @@ describe("createPodSessionClient", () => {
    * TEST_SCENARIO: a one-off read targets an Agent whose pod cannot be
    * reached. Once the caller gives up, the read must fail and its socket must
    * stop retrying, rather than keep dialling a name that no longer resolves.
+   * A dial already in flight at the abort may still fail once, so the count
+   * is taken after it settles.
    */
   it("stops a read and its retries when the caller aborts", async () => {
     const errors: string[] = [];
@@ -364,9 +366,10 @@ describe("createPodSessionClient", () => {
     await vi.waitFor(() => expect(errors.length).toBeGreaterThan(0));
     reads.abort();
     await expect(read).rejects.toThrow();
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
 
     const seen = errors.length;
-    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    await new Promise((resolve) => setTimeout(resolve, 4_500));
     expect(errors.length).toBe(seen);
-  }, 10_000);
+  }, 15_000);
 });
