@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 
 import { useStore } from "../../../store.js";
-import type { AgentState, AgentView } from "../../../types.js";
+import type { AgentView } from "../../../types.js";
 import {
   type AgentActivitySession,
   useActivitySessions,
@@ -13,11 +13,6 @@ import {
   orderByLatestSession,
 } from "../lib/sidebar-agent-order.js";
 import { splitTemporarySandboxes } from "../utils/temporary-sandboxes.js";
-
-const FOLDED_STATES: ReadonlySet<AgentState> = new Set([
-  "hibernating",
-  "hibernated",
-]);
 
 const NO_AGENTS: AgentView[] = [];
 const NO_SESSIONS: AgentActivitySession[] = [];
@@ -35,16 +30,14 @@ export function useSidebarAgents() {
     [activity.items, filters],
   );
 
-  const { active, folded } = useMemo(() => {
-    const { visible } = splitTemporarySandboxes(list);
-    const ordered = orderByLatestSession(visible, sessionsByAgent);
-    const isFolded = (agent: AgentView) =>
-      agent.id !== openAgentId && FOLDED_STATES.has(agent.state);
-    return {
-      active: ordered.filter((agent) => !isFolded(agent)),
-      folded: ordered.filter(isFolded),
-    };
-  }, [list, openAgentId, sessionsByAgent]);
+  const agents = useMemo(
+    () =>
+      orderByLatestSession(
+        splitTemporarySandboxes(list).visible,
+        sessionsByAgent,
+      ),
+    [list, sessionsByAgent],
+  );
 
   const unreadAgentIds = new Set(
     activity.items
@@ -55,5 +48,5 @@ export function useSidebarAgents() {
   const sessionsOf = (agentId: string) =>
     sessionsByAgent.get(agentId) ?? NO_SESSIONS;
 
-  return { active, folded, openAgentId, unreadAgentIds, sessionsOf };
+  return { agents, openAgentId, unreadAgentIds, sessionsOf };
 }

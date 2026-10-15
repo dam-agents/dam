@@ -24,21 +24,19 @@ export function SidebarAgents({
   stickyHeaderClassName: string;
   onNavigate?: () => void;
 }) {
-  const { active, folded, openAgentId, unreadAgentIds, sessionsOf } =
+  const { agents, openAgentId, unreadAgentIds, sessionsOf } =
     useSidebarAgents();
   const activity = useActivitySessions();
-  const agents = useAgentsList();
+  const allAgents = useAgentsList();
   const attention = useMemo(
     () => activity.items.map((item) => item.session),
     [activity.items],
   );
-  const conversationOf = useActivityConversations(attention, agents);
+  const conversationOf = useActivityConversations(attention, allAgents);
   const filters = useStore((s) => s.sidebarActivityFilters);
   const setFilters = useStore((s) => s.setSidebarActivityFilters);
   const selectAgent = useStore((s) => s.selectAgent);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const showFolded = useStore((s) => s.sidebarShowHibernating);
-  const setShowFolded = useStore((s) => s.setSidebarShowHibernating);
   const startSession = useStartSession();
 
   const navigate = (go: () => void) => () => {
@@ -105,20 +103,7 @@ export function SidebarAgents({
           Recent sessions can't be loaded right now.
         </p>
       )}
-      <ul className="flex flex-col gap-px">
-        {active.map(row)}
-        {showFolded && folded.map(row)}
-      </ul>
-      {folded.length > 0 && (
-        <button
-          type="button"
-          onClick={() => setShowFolded(!showFolded)}
-          aria-expanded={showFolded}
-          className="mt-px flex h-[30px] w-full items-center rounded-lg px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          {showFolded ? "Show less" : `See all (${folded.length} hibernating)`}
-        </button>
-      )}
+      <ul className="flex flex-col gap-px">{agents.map(row)}</ul>
     </section>
   );
 }

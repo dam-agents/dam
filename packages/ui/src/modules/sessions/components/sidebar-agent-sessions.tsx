@@ -91,7 +91,7 @@ function SessionPreview({
   const toggle = sessionListToggle({
     total: sessions.length,
     expanded: false,
-    hasNextPage: false,
+    hasNextPage: true,
   });
 
   return (
