@@ -94,7 +94,11 @@ pub const ROOTFS_DIR: &str = "rootfs";
 
 // UNIT_BOUNDARY_DESCRIPTION: the system store file that says which layout the disk is in: one decimal version on one line. Every disk carries one from its first boot, so a later layout change can upgrade a disk in place at boot, from the version it reads, instead of guessing from what the disk happens to hold. A disk from before the file existed is in the first layout, the only one there has been, and is marked as such on its next boot.
 pub const LAYOUT_FILE: &str = "layout";
-pub const LAYOUT_VERSION: u32 = 1;
+pub const LAYOUT_VERSION: u32 = LAYOUT_SUBVOLUMES;
+
+// UNIT_BOUNDARY_DESCRIPTION: the two layouts. In LAYOUT_DIRECTORY the platform's root is the disk's DISK_ROOT_DIR, holding AGENT_DIR and SYSTEM_DIR as plain directories; every ext4 disk is in it, and every btrfs disk made before LAYOUT_SUBVOLUMES. In LAYOUT_SUBVOLUMES, a new btrfs disk's, the root is the whole filesystem, AGENT_DIR and SYSTEM_DIR are subvolumes, and so is the kept root under ROOTFS_DIR, which a boot onto a new image then deletes in one step however many files it holds. A disk stays in the layout it was made in.
+pub const LAYOUT_DIRECTORY: u32 = 1;
+pub const LAYOUT_SUBVOLUMES: u32 = 2;
 
 pub fn agent_store(root: &Path) -> PathBuf {
     root.join(AGENT_DIR)

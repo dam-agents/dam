@@ -87,6 +87,10 @@ The guest's init is platform-init, not smolvm's guest agent: smolvm boots it fro
 That disk is made once, by the runner when it creates the machine: btrfs from the runner image's template, at its full size, under a UUID of its own, which the guest mounts compressed with zstd.
 A create whose disk cannot be made fails and leaves no machine, since smolvm would make a disk of its own at the next start.
 Disks made before btrfs are ext4, and stay ext4.
+A new btrfs disk holds two subvolumes: `agent`, mounted as `HOME`, and `system`, the platform state and the root's layers.
+The home is then a tree btrfs can snapshot, send or put a quota on alone.
+The root's upper and work layers stay in one subvolume: btrfs refuses a rename between subvolumes, and overlayfs renames from the work layer into the upper layer.
+Disks made before subvolumes keep their directory layout, and the layout mark records which of the two a disk is in.
 A btrfs disk that does not mount fails the boot and stays as it is, since btrfs has no repair a boot may run unattended.
 A start never copies smolvm's template over a disk that already holds a filesystem — not even one whose first format stopped short of resizing it to the size asked for.
 A stop has platform-init send the workload SIGTERM and give it a few seconds, as a pod's container gets, then sync and freeze that disk, and a guest that does not confirm it did is powered off anyway, so a stop or a delete always ends the machine.

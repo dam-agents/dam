@@ -87,6 +87,8 @@ mod vm;
 pub use vm::stage0;
 
 pub fn run() -> ! {
+    // UNIT_BOUNDARY_DESCRIPTION: a panic of the guest's init ends the guest, and its message would go only to the boot log, which a thread may not have written out yet; it goes to the console too, where the runner reads why a boot ended.
+    std::panic::set_hook(Box::new(|info| announce(&format!("FATAL: {info}"))));
     block_signals();
     stop_propagation();
     let machine = vm::prepare();
@@ -94,7 +96,7 @@ pub fn run() -> ! {
     open_boot_log(&disk);
 
     logf!("storage disk mounted at {}", disk.display());
-    claim_layout(&disk);
+    claim_layout(&disk, machine.layout);
     fresh_root(&disk, &machine);
     vm::serve();
     let root = PathBuf::from(guest::DISK_PATH);
@@ -382,16 +384,16 @@ fn stop_propagation() {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: holds the boot to a disk whose layout this platform-init knows, before anything else is read from the disk or written to it. A disk marked with a newer layout was written by a newer platform-init — a runner rolled back past it — and this one would misread it, so the boot stops rather than seed or mount by the wrong names. A disk with no mark is in the one layout there has been, and gets the mark now. A mark that is empty or only zeros counts as no mark: a disk with no journal can lose a file's data to an unclean stop and keep its name, and the home under it is still intact.
-fn claim_layout(root: &Path) {
-    match mark_layout(root) {
+// UNIT_BOUNDARY_DESCRIPTION: holds the boot to a disk whose layout this platform-init knows, before anything else is read from the disk or written to it. A disk marked with a newer layout was written by a newer platform-init — a runner rolled back past it — and this one would misread it, so the boot stops rather than seed or mount by the wrong names. A disk with no mark is in the layout the storage mount found it in (vm::mount_storage), and gets the mark now; a mark that names the other layout means the disk is not what its mark says, and the boot stops rather than guess. A mark that is empty or only zeros counts as no mark: a disk with no journal can lose a file's data to an unclean stop and keep its name, and the home under it is still intact.
+fn claim_layout(root: &Path, layout: u32) {
+    match mark_layout(root, layout) {
         Ok(Some(version)) => logf!("marked the disk as layout {version}"),
         Ok(None) => {}
         Err(e) => fatal!("reading the disk's layout: {e}"),
     }
 }
 
-fn mark_layout(root: &Path) -> io::Result<Option<u32>> {
+fn mark_layout(root: &Path, layout: u32) -> io::Result<Option<u32>> {
     let path = guest::system_store(root, guest::LAYOUT_FILE);
     let text = match fs::read_to_string(&path) {
         Ok(text) => text,
@@ -400,14 +402,17 @@ fn mark_layout(root: &Path) -> io::Result<Option<u32>> {
     };
     let text = text.trim_matches(|c: char| c == '\0' || c.is_whitespace());
     if text.is_empty() {
-        write_record(&path, format!("{}\n", guest::LAYOUT_VERSION).as_bytes())?;
-        return Ok(Some(guest::LAYOUT_VERSION));
+        write_record(&path, format!("{layout}\n").as_bytes())?;
+        return Ok(Some(layout));
     }
     match text.parse::<u32>() {
-        Ok(version) if version == guest::LAYOUT_VERSION => Ok(None),
+        Ok(version) if version == layout => Ok(None),
         Ok(version) if version > guest::LAYOUT_VERSION => Err(io::Error::other(format!(
             "the disk is in layout {version}, and this platform-init knows layouts up to {}. Refusing to boot a disk a newer platform-init wrote",
             guest::LAYOUT_VERSION
+        ))),
+        Ok(version) if version <= guest::LAYOUT_VERSION => Err(io::Error::other(format!(
+            "the disk is marked as layout {version}, but holds layout {layout}"
         ))),
         _ => Err(io::Error::other(format!(
             "{} holds {:?}, which is not a layout this platform-init knows",
@@ -3922,21 +3927,42 @@ mod tests {
         assert!(!must_seed(&store, false).unwrap());
     }
 
-    // TEST_SCENARIO: every disk leaves its first boot marked with the layout it is in, and a disk from before the mark existed is marked on its next boot, since it can only be in the one layout there has been. A disk already marked with this layout boots without being written.
+    // TEST_SCENARIO: every disk leaves its first boot marked with the layout the storage mount found it in, and a disk from before the mark existed is marked on its next boot. A disk already marked with its layout boots without being written; one whose mark names the other layout is refused, since its names are not what the mark says.
     #[test]
     fn a_disk_is_marked_with_its_layout_once() {
         let disk = TempDir::new("disk");
         let mark = guest::system_store(disk.path(), guest::LAYOUT_FILE);
 
         assert_eq!(
-            mark_layout(disk.path()).unwrap(),
+            mark_layout(disk.path(), guest::LAYOUT_VERSION).unwrap(),
             Some(guest::LAYOUT_VERSION)
         );
         assert_eq!(
             fs::read_to_string(&mark).unwrap(),
             format!("{}\n", guest::LAYOUT_VERSION)
         );
-        assert_eq!(mark_layout(disk.path()).unwrap(), None);
+        assert_eq!(
+            mark_layout(disk.path(), guest::LAYOUT_VERSION).unwrap(),
+            None
+        );
+        let marked = mark_layout(disk.path(), guest::LAYOUT_DIRECTORY)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            marked.contains("marked as layout 2, but holds layout 1"),
+            "{marked}"
+        );
+
+        let older = TempDir::new("older");
+        assert_eq!(
+            mark_layout(older.path(), guest::LAYOUT_DIRECTORY).unwrap(),
+            Some(guest::LAYOUT_DIRECTORY),
+            "an ext4 disk, or a btrfs disk from before subvolumes, is marked with the directory layout"
+        );
+        assert_eq!(
+            mark_layout(older.path(), guest::LAYOUT_DIRECTORY).unwrap(),
+            None
+        );
     }
 
     // TEST_SCENARIO: on a disk with no journal an unclean stop can leave the mark with its name and none of its data, as an empty file or one of zeros. The home under it is intact, so the boot takes it for no mark and marks the disk again, instead of refusing every boot until the agent is deleted.
@@ -3949,7 +3975,7 @@ mod tests {
         for emptied in ["", "\0\0"] {
             fs::write(&mark, emptied).unwrap();
             assert_eq!(
-                mark_layout(disk.path()).unwrap(),
+                mark_layout(disk.path(), guest::LAYOUT_VERSION).unwrap(),
                 Some(guest::LAYOUT_VERSION),
                 "{emptied:?}"
             );
@@ -3968,13 +3994,15 @@ mod tests {
         fs::create_dir_all(mark.parent().unwrap()).unwrap();
 
         fs::write(&mark, format!("{}\n", guest::LAYOUT_VERSION + 1)).unwrap();
-        let newer = mark_layout(disk.path()).unwrap_err().to_string();
+        let newer = mark_layout(disk.path(), guest::LAYOUT_VERSION)
+            .unwrap_err()
+            .to_string();
         assert!(newer.contains("a newer platform-init wrote"), "{newer}");
 
         for unreadable in ["0", "one", "-1"] {
             fs::write(&mark, unreadable).unwrap();
             assert!(
-                mark_layout(disk.path()).is_err(),
+                mark_layout(disk.path(), guest::LAYOUT_VERSION).is_err(),
                 "{unreadable:?} was taken for a layout"
             );
             assert_eq!(fs::read_to_string(&mark).unwrap(), unreadable);

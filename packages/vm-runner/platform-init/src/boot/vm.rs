@@ -101,6 +101,7 @@ pub struct Machine {
     pub image: PathBuf,
     pub shares: Vec<(PathBuf, PathBuf)>,
     pub launch: guest::Launch,
+    pub layout: u32,
     pub hostname: Option<String>,
     pub dns: Option<String>,
 }
@@ -127,7 +128,7 @@ pub fn prepare() -> Machine {
         Ok(dns) => dns,
         Err(e) => fatal!("configuring the guest's network: {e}"),
     };
-    let disk = mount_storage(&Path::new(STAGE).join("disk"));
+    let (disk, layout) = mount_storage(&Path::new(STAGE).join("disk"));
     let Some(tag) = std::env::var("SMOLVM_PACKED_LAYERS")
         .ok()
         .and_then(|value| value.split_once(':').map(|(tag, _)| tag.to_string()))
@@ -171,6 +172,7 @@ pub fn prepare() -> Machine {
         image,
         shares,
         launch,
+        layout,
         hostname,
         dns,
     }
@@ -317,8 +319,8 @@ fn magic_at(device: &str, offset: u64, magic: &[u8]) -> bool {
         .is_ok_and(|()| read == magic)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: mounts the storage disk, which the runner formats before the first boot: btrfs compressed with zstd level 1 and grown online to its disk, or the ext4 of an older machine, checked and grown before the mount. A disk with neither filesystem is never formatted here, since the only disk that has none is one whose filesystem was lost, and formatting it would erase what is left; the boot stops with the reason on the console. The platform's part of the disk is its DISK_ROOT_DIR, made on a disk's first boot.
-fn mount_storage(target: &Path) -> PathBuf {
+// UNIT_BOUNDARY_DESCRIPTION: mounts the storage disk, which the runner formats before the first boot: btrfs compressed with zstd level 1 and grown online to its disk, or the ext4 of an older machine, checked and grown before the mount. A disk with neither filesystem is never formatted here, since the only disk that has none is one whose filesystem was lost, and formatting it would erase what is left; the boot stops with the reason on the console. Returns the platform's root on the disk and its layout (guest::LAYOUT_DIRECTORY or guest::LAYOUT_SUBVOLUMES): a btrfs disk that holds no DISK_ROOT_DIR is in the subvolume layout, and gets its subvolumes on its first boot; every other disk's root is its DISK_ROOT_DIR, made on its first boot.
+fn mount_storage(target: &Path) -> (PathBuf, u32) {
     if let Err(e) = mkdir_all(target) {
         fatal!("creating {}: {e}", target.display());
     }
@@ -334,6 +336,14 @@ fn mount_storage(target: &Path) -> PathBuf {
         }
         if let Err(e) = grow_btrfs(target) {
             logf!("WARNING: growing btrfs to the disk ({e}); it keeps the size it had");
+        }
+        if !target.join(guest::DISK_ROOT_DIR).exists() {
+            for name in [guest::AGENT_DIR, guest::SYSTEM_DIR] {
+                if let Err(e) = ensure_subvolume(target, name) {
+                    fatal!("creating the subvolume {name}: {e}");
+                }
+            }
+            return (target.to_path_buf(), guest::LAYOUT_SUBVOLUMES);
         }
     } else if magic_at(STORAGE_DEVICE, 1024 + 56, &[0x53, 0xEF]) {
         check_ext4();
@@ -358,24 +368,46 @@ fn mount_storage(target: &Path) -> PathBuf {
     if let Err(e) = mkdir_all(&root) {
         fatal!("creating {}: {e}", root.display());
     }
-    root
+    (root, guest::LAYOUT_DIRECTORY)
 }
 
-fn grow_btrfs(mount: &Path) -> io::Result<()> {
-    // UNIT_BOUNDARY_DESCRIPTION: struct btrfs_ioctl_vol_args; "max" grows device 1, the disk's only one, to the end of the disk, and is a no-op when it already fills it.
-    #[repr(C)]
-    struct VolArgs {
-        fd: i64,
-        name: [u8; 4088],
-    }
+// UNIT_BOUNDARY_DESCRIPTION: struct btrfs_ioctl_vol_args, which the resize and the subvolume ioctls take: a NUL-terminated name in a fixed buffer.
+#[repr(C)]
+struct VolArgs {
+    fd: i64,
+    name: [u8; 4088],
+}
+
+fn btrfs_ioctl(dir: &Path, request: u8, name: &str) -> io::Result<()> {
     let mut args = VolArgs {
         fd: 0,
         name: [0; 4088],
     };
-    args.name[..3].copy_from_slice(b"max");
-    let dir = File::open(mount)?;
-    // SAFETY: BTRFS_IOC_RESIZE, _IOW(0x94, 3, struct btrfs_ioctl_vol_args), on an open directory of the mount, with `args` alive for the call.
-    succeeded(unsafe { libc::ioctl(dir.as_raw_fd(), libc::_IOW::<VolArgs>(0x94, 3), &args) } == 0)
+    args.name[..name.len()].copy_from_slice(name.as_bytes());
+    let dir = File::open(dir)?;
+    // SAFETY: _IOW(0x94, request, struct btrfs_ioctl_vol_args), on an open directory of the filesystem, with `args` alive for the call.
+    succeeded(
+        unsafe {
+            libc::ioctl(
+                dir.as_raw_fd(),
+                libc::_IOW::<VolArgs>(0x94, request.into()),
+                &args,
+            )
+        } == 0,
+    )
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: BTRFS_IOC_RESIZE with "max" grows device 1, the disk's only one, to the end of the disk, and is a no-op when it already fills it.
+fn grow_btrfs(mount: &Path) -> io::Result<()> {
+    btrfs_ioctl(mount, 3, "max")
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: makes `parent/name` a subvolume (BTRFS_IOC_SUBVOL_CREATE) unless something is there already.
+fn ensure_subvolume(parent: &Path, name: &str) -> io::Result<()> {
+    if fs::symlink_metadata(parent.join(name)).is_ok() {
+        return Ok(());
+    }
+    btrfs_ioctl(parent, 14, name)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: e2fsck's passes, from least to most invasive: a preen returns at once on a clean filesystem and fixes what is safe to fix unattended; what it leaves gets a full repair, then one that also rebuilds directories. Exit codes 0 to 3 mean clean or repaired; 4 means errors are left, which escalates; anything else, or a pass killed by a signal, stops the boot with the disk as it is.

@@ -89,8 +89,8 @@ test("grows its machine past the boot RAM", async () => {
     .toBe(true);
 });
 
-// TEST_SCENARIO: every vm machine runs on the guest kernel, guest agent and runner this platform patches for them. HOME is on btrfs, mounted compressed with zstd level 1, under a UUID of the disk's own rather than the template's (the template's stays as its metadata UUID), and the guest swaps to zram compressed with zstd. An unpatched kernel has neither, and an unpatched agent or runner would mount ext4 or format over the disk.
-test("keeps HOME on compressed btrfs with its own UUID, and swaps to zram", async () => {
+// TEST_SCENARIO: every vm machine runs on the guest kernel, guest agent and runner this platform patches for them. HOME is the root of a btrfs subvolume of its own, mounted compressed with zstd level 1, under a UUID of the disk's own rather than the template's (the template's stays as its metadata UUID), and the guest swaps to zram compressed with zstd. An unpatched kernel has neither, and an unpatched agent or runner would mount ext4 or format over the disk.
+test("keeps HOME on a compressed btrfs subvolume with its own UUID, and swaps to zram", async () => {
   test.skip(
     laneBackend !== "vm",
     "only a vm machine has a disk and a kernel of its own",
@@ -100,7 +100,7 @@ test("keeps HOME on compressed btrfs with its own UUID, and swaps to zram", asyn
     "grep ' /home/agent ' /proc/self/mountinfo; for d in /sys/fs/btrfs/*-*; do echo \"fsid ${d##*/} metadata $(cat $d/metadata_uuid)\"; done; cat /proc/swaps; cat /sys/block/zram0/comp_algorithm",
   );
   expect(guest).toMatch(
-    / \/home\/agent .* - btrfs \/dev\/vda \S*compress=zstd:1/,
+    /^\S+ \S+ \S+ \/agent \/home\/agent .* - btrfs \/dev\/vda \S*compress=zstd:1/m,
   );
   const [, fsid, metadata] = /^fsid (\S+) metadata (\S+)$/m.exec(guest) ?? [];
   expect(fsid, "the guest mounted one btrfs filesystem").toBeDefined();
