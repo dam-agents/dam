@@ -12,7 +12,11 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
-import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import {
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSwitchItem,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { Spinner } from "@/components/ui/spinner";
@@ -159,6 +163,22 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
           <DropdownMenuItem tone="danger" onSelect={() => void clearData()}>
             Clear browser data
           </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuSwitchItem
+            checked={stream.testingMode ?? true}
+            disabled={stream.testingMode === undefined}
+            onCheckedChange={stream.setTestingMode}
+            data-testid="browser-testing-mode"
+          >
+            <span className="flex min-w-0 max-w-64 flex-col gap-0.5 whitespace-normal">
+              <span>Browser testing mode</span>
+              <span className="text-2xs text-muted-foreground">
+                {stream.testingMode === undefined
+                  ? "This agent's image cannot change how its browser starts."
+                  : "Choose how the browser starts. Turning testing mode off does not disable agent control. Switching restarts the browser and keeps sign-ins and the open page."}
+              </span>
+            </span>
+          </DropdownMenuSwitchItem>
         </RowActionsMenu>
         <Button
           variant="ghost"

@@ -14,6 +14,11 @@ export const browserSnapshotSchema = z.object({
   state: browserStateSchema,
   message: z.string().nullable(),
   page: pageStateSchema.nullable(),
+  testingMode: z.boolean().optional(),
+});
+
+export const browserTestingModeInputSchema = z.object({
+  on: z.boolean(),
 });
 
 export const browserNavigateInputSchema = z.object({
