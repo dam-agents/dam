@@ -21,6 +21,7 @@ import {
 } from "../../sessions/api/session-pair.js";
 import { OptionPicker } from "../../sessions/components/model-settings-panel.js";
 import { OptionField } from "../../sessions/components/option-field.js";
+import { settingsForModel } from "../../sessions/components/session-settings-controls.js";
 import {
   findModel,
   modelGroups,
@@ -131,13 +132,21 @@ function DefaultPairPicker({ agentId }: { agentId: string }) {
   if (!pair || !routesSessionPairs(carried)) return null;
   const groups = modelGroups(catalogModels);
 
-  const save = (next: SessionPair) =>
+  const save = (next: SessionPair) => {
+    const kept =
+      remembered?.harness === next.harness && remembered.settings
+        ? settingsForModel(
+            carried.find((h) => h.name === next.harness),
+            groups,
+            next.model,
+            remembered.settings,
+          )
+        : {};
     rememberSessionPair(
       agentId,
-      remembered?.harness === next.harness && remembered.settings
-        ? { ...next, settings: remembered.settings }
-        : next,
+      Object.keys(kept).length > 0 ? { ...next, settings: kept } : next,
     );
+  };
   const modelChoices = routed
     ? groups.flatMap((g) =>
         g.models.map((m) => ({

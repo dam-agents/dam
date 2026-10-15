@@ -163,6 +163,8 @@ The CLI presents Agents as single, atomic entities — one resource carrying bot
 
 `dam chat <agent>` connects the local terminal to a running agent's interactive TUI over a WebSocket, using the same binary terminal-frame protocol as the UI's terminal mode.
 It requires a TTY and puts stdin in raw mode so keystrokes — including Ctrl+C — pass through to the remote harness rather than being intercepted locally.
+There is no detach key: as in the UI, closing the terminal is how the user leaves, and Ctrl+C stays the harness's interrupt.
+Before it attaches, the CLI prints one line that says so, with the resume command to come back.
 
 Session strategy is resolved **client-side**: sessions are agent-owned, so the CLI lists them over its own ACP connection to the api-server relay and resolves locally — mint a fresh id (new, the default), match the single most-recent terminal session (continue), or target a specific id (resume, prompting before a chat→terminal mode switch) — then builds the terminal-relay URL itself.
 There is no server-side session endpoint.

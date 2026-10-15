@@ -836,3 +836,16 @@ export type {
   SatellitesService,
   WorkItem,
 } from "./modules/satellites/types.js";
+export {
+  A2UI_BASIC_CATALOG_ID,
+  A2UI_PLATFORM_CATALOG_ID,
+  CHAT_FORM_CATALOG_IDS,
+  chatFormCapabilities,
+} from "./modules/chat-forms/capabilities.js";
+export {
+  findRendererBlocks,
+  joinRendererBlocks,
+  type RendererBlock,
+  type RendererTag,
+  separateRendererBlocks,
+} from "./modules/chat-forms/renderer-blocks.js";

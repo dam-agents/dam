@@ -1,5 +1,5 @@
 ---
-id: 104
+id: 105
 title: Model spend is metered and limited in each agent's gateway
 status: accepted
 supersedes:
@@ -8,7 +8,7 @@ tags: [spend, gateway, envoy, ext_authz, cost]
 summary: DAM measures model spend in each agent's gateway and enforces spend limits there, with soft owner limits that refuse and ask and a hard operator ceiling per user; spend that a harness or an in-pod component reports stays display only.
 ---
 
-# ADR-104: Model spend is metered and limited in each agent's gateway
+# ADR-105: Model spend is metered and limited in each agent's gateway
 
 **Date:** 2026-10-13
 **Status:** Accepted

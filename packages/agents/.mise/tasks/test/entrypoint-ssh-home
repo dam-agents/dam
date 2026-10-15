@@ -4,7 +4,7 @@
 //MISE outputs=[]
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chownSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -70,6 +70,8 @@ try {
 
   // TEST_SCENARIO: ssh refuses a config another uid owns, so a config a moved agent's home keeps with the container's uid is given to root, the uid ssh runs as on a machine.
   writeFileSync(join(home, ".ssh/config"), "Host *\n");
+  // TEST_OVERVIEW: run as root, the config is root's already, so it is given to the container's uid first.
+  if (process.getuid() === 0) chownSync(join(home, ".ssh/config"), 65532, 0);
   boot();
   assert.equal(readFileSync(chowned, "utf8"), `0:0 ${join(home, ".ssh/config")}\n`);
 } finally {

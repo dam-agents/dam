@@ -196,6 +196,7 @@ export function composeRuntimeDelivery(
     outboxRepo,
     agentsRuntimeRepo,
     snapshotWriter: opts.snapshotWriter,
+    stateBuilder,
     queue,
     uow: createUnitOfWork(opts.db),
     resolveOwner: opts.resolveOwner,

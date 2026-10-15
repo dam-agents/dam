@@ -1,5 +1,10 @@
 import { Edit, SendAlt, Time, TrashCan } from "@carbon/icons-react";
-import type { PromptBlock, QueuedPrompt } from "api-server-api";
+import {
+  joinRendererBlocks,
+  type PromptBlock,
+  type QueuedPrompt,
+  separateRendererBlocks,
+} from "api-server-api";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -95,7 +100,13 @@ function QueuedPromptItem({
 
   const save = (text: string) => {
     if (target === null) return;
-    const blocks = withText(target.blocks, text);
+    const { blocks: rendererBlocks } = separateRendererBlocks(
+      textOf(target.blocks),
+    );
+    const blocks = withText(
+      target.blocks,
+      joinRendererBlocks(text, rendererBlocks),
+    );
     if (blocks.length === 0) return;
     void run(() =>
       updateQueuedPrompt(
@@ -172,7 +183,9 @@ function QueuedPromptItem({
               tooltip="Edit"
               aria-label="Edit"
               disabled={pending}
-              onClick={() => setDraft(textOf(target.blocks))}
+              onClick={() =>
+                setDraft(separateRendererBlocks(textOf(target.blocks)).text)
+              }
             >
               <Edit size={14} />
             </Button>

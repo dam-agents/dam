@@ -47,6 +47,7 @@ export interface KitUpdatesDeps {
   wakeAgent: (agentId: string) => Promise<void>;
   runtimeMutator: Pick<RuntimeMutator, "bump" | "enqueueAfterCommit">;
   sessionPair: (agentId: string) => Promise<SessionPair | null | undefined>;
+  chatFormsEnabled?: () => Promise<boolean>;
   now?: () => Date;
 }
 
@@ -135,12 +136,14 @@ export function createKitUpdates(deps: KitUpdatesDeps): KitUpdateOps {
         });
       const targetCommit = status.latest!;
       const { agent, stamp, current } = found;
-      const [granted, schedules, familyTitles, pair] = await Promise.all([
-        deps.grantedTemplates(agentId),
-        deps.schedules.list(agentId),
-        deps.familyTitles(),
-        deps.sessionPair(agentId),
-      ]);
+      const [granted, schedules, familyTitles, pair, chatForms] =
+        await Promise.all([
+          deps.grantedTemplates(agentId),
+          deps.schedules.list(agentId),
+          deps.familyTitles(),
+          deps.sessionPair(agentId),
+          deps.chatFormsEnabled?.() ?? false,
+        ]);
       const task = composeKitUpdatePrompt({
         stamp,
         targetCommit,
@@ -153,6 +156,7 @@ export function createKitUpdates(deps: KitUpdatesDeps): KitUpdateOps {
         })),
         env: agent.spec.env ?? [],
         familyTitles,
+        chatForms,
       });
       const at = now();
       const pending = { targetCommit, startedAt: at.toISOString() };
