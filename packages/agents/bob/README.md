@@ -99,7 +99,7 @@ Bob's subagents ask for a tier alias of Bob's own gateway (`premium-ide`, `explo
 A Bob process the platform starts with session approvals of its own still gets a settings file of its own, `~/.bob/platform-processes/<hash>/settings.json`: [`bob-settings-file.mjs`](rootfs/usr/local/lib/bob-settings-file.mjs), preloaded through `NODE_OPTIONS` into `bob acp` only, redirects Bob's reads, writes, renames and watches of `~/.bob/settings/settings.json` to the file `BOB_SETTINGS_FILE` names.
 `bob-settings.mjs` runs without it, so it reads the agent-wide choices from the shared file and writes the process's copy.
 The rest of `~/.bob` (task store, rules, MCP configuration) stays shared.
-`mise run //packages/agents:test:bob-settings-isolation` checks the redirect; `mise run //packages/agents:test:bob-router-rewrite` drives the real Bob against a mock router when `BOB_CLI` names it.
+`mise run //packages/agents:test:bob-settings-isolation` checks the redirect; `mise run //packages/agents:live:bob-router-rewrite` drives the real Bob against a mock router, by hand: it needs `BOB_CLI` naming Bob and does not run in CI.
 
 ### The Config panel (per agent)
 

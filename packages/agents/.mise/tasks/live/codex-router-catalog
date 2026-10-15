@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-//MISE description="Test (with a real codex-acp, when CODEX_ACP names it) that Codex picks from the router's catalog and switches providers per turn in one thread"
-//MISE sources=["codex/rootfs/etc/codex/config.toml", "test-lib/acp-client.mjs", ".mise/tasks/test/codex-router-catalog"]
+//MISE description="Live test, run by hand with CODEX_ACP naming a real codex-acp, not in CI: Codex picks from the router's catalog and switches providers per turn in one thread"
+//MISE sources=["codex/rootfs/etc/codex/config.toml", "test-lib/acp-client.mjs", ".mise/tasks/live/codex-router-catalog"]
 //MISE outputs=[]
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -11,12 +11,8 @@ import { acpClient, mockCodexRouter, modelOption, pickerValues } from "../../../
 
 const adapter = process.env.CODEX_ACP;
 if (!adapter) {
-  if (process.env.CI) {
-    console.error("CODEX_ACP is not set: the real-adapter test cannot run under CI");
-    process.exit(1);
-  }
-  console.log("skipped: set CODEX_ACP=<path to codex-acp dist/index.js> to run against the real adapter");
-  process.exit(0);
+  console.error("CODEX_ACP is not set: set CODEX_ACP=<path to codex-acp dist/index.js> to run against the real adapter");
+  process.exit(1);
 }
 const imageConfig = readFileSync(fileURLToPath(new URL("../../../codex/rootfs/etc/codex/config.toml", import.meta.url)), "utf8");
 const home = mkdtempSync(join(tmpdir(), "codex-router-catalog-"));

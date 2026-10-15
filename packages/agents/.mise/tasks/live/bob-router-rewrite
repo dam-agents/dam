@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-//MISE description="Test (with a real Bob, when BOB_CLI names it) that Bob's calls carry the session as X-Task-Id, run on the model the runtime set for the session, and its subagents on the session's subagent model"
-//MISE sources=["bob/rootfs/app/bob-settings.mjs", "test-lib/acp-client.mjs", ".mise/tasks/test/bob-router-rewrite"]
+//MISE description="Live test, run by hand with BOB_CLI naming a real Bob, not in CI: Bob's calls carry the session as X-Task-Id, run on the model the runtime set for the session, and its subagents on the session's subagent model"
+//MISE sources=["bob/rootfs/app/bob-settings.mjs", "test-lib/acp-client.mjs", ".mise/tasks/live/bob-router-rewrite"]
 //MISE outputs=[]
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -12,12 +12,8 @@ import { acpClient, allowPermission, chatStream } from "../../../test-lib/acp-cl
 
 const bob = process.env.BOB_CLI;
 if (!bob) {
-  if (process.env.CI) {
-    console.error("BOB_CLI is not set: the real-adapter test cannot run under CI");
-    process.exit(1);
-  }
-  console.log("skipped: set BOB_CLI=<path to Bob's dist/bob.js> to run against the real Bob");
-  process.exit(0);
+  console.error("BOB_CLI is not set: set BOB_CLI=<path to Bob's dist/bob.js> to run against the real Bob");
+  process.exit(1);
 }
 const home = mkdtempSync(join(tmpdir(), "bob-router-rewrite-"));
 const work = join(home, "work");

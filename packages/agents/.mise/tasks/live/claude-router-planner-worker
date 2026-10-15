@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-//MISE description="Test (with a real claude-agent-acp, when CLAUDE_AGENT_ACP names it) that one Claude process runs its conversation on one provider and its subagents on another through the router"
-//MISE sources=["test-lib/acp-client.mjs", ".mise/tasks/test/claude-router-planner-worker"]
+//MISE description="Live test, run by hand with CLAUDE_AGENT_ACP naming a real claude-agent-acp, not in CI: one Claude process runs its conversation on one provider and its subagents on another through the router"
+//MISE sources=["test-lib/acp-client.mjs", ".mise/tasks/live/claude-router-planner-worker"]
 //MISE outputs=[]
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
@@ -10,12 +10,8 @@ import { acpClient, allowPermission, conversationCalls, mockRouter, modelOption 
 
 const adapter = process.env.CLAUDE_AGENT_ACP;
 if (!adapter) {
-  if (process.env.CI) {
-    console.error("CLAUDE_AGENT_ACP is not set: the real-adapter test cannot run under CI");
-    process.exit(1);
-  }
-  console.log("skipped: set CLAUDE_AGENT_ACP=<path to claude-agent-acp dist/index.js> to run against the real adapter");
-  process.exit(0);
+  console.error("CLAUDE_AGENT_ACP is not set: set CLAUDE_AGENT_ACP=<path to claude-agent-acp dist/index.js> to run against the real adapter");
+  process.exit(1);
 }
 const home = mkdtempSync(join(tmpdir(), "claude-router-planner-worker-"));
 const work = join(home, "work");
