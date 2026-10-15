@@ -647,6 +647,26 @@ postgres:
       cpu: 500m
       memory: 512Mi
 
+  # -- Timing of the `pg_isready` health checks (gated by top-level
+  # `probes.enabled`). A Postgres that is only slow under load — a rollout
+  # of the api-server opening its pool, say — must not be killed for it:
+  # a restart turns a short slowdown into a longer outage, and Keycloak
+  # loses its database with it. So liveness gives each check 10s and kills
+  # only after 6 misses in a row (90s at the 15s period); readiness takes
+  # the pod out of the Service sooner, which is safe to do. The check
+  # command itself is fixed: it targets the `postgres` database so it does
+  # not log a FATAL error on every run.
+  livenessProbe:
+    initialDelaySeconds: 15
+    periodSeconds: 15
+    timeoutSeconds: 10
+    failureThreshold: 6
+  readinessProbe:
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 5
+    failureThreshold: 10
+
   # -- Event logging. Authentication events (connect, disconnect, failed
   # auth) and admin events (DDL — CREATE/ALTER/DROP, GRANT/REVOKE, ROLE
   # changes) are surfaced on the pod's stderr so the external log
