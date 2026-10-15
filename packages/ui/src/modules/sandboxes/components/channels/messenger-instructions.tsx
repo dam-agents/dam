@@ -1,17 +1,12 @@
 import { Launch } from "@carbon/icons-react";
-import { useState } from "react";
 
 import { CopyableCommand } from "@/components/copyable-command";
-import { DialogBody, DialogHeader, Modal } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 
 import { getBrand } from "../../../../brand.js";
-import { ConnectionIcon } from "../../../connections/components/connection-icon.js";
-import { useSlackInstallRequestUrl } from "../../../links/api/queries.js";
-import { SlackInstallRequest } from "../../../slack/components/slack-install-request.js";
 import { useTelegramBot } from "../../../telegram/api/queries.js";
 
-export type BindMessenger = "slack" | "telegram";
+type BindMessenger = "slack" | "telegram";
 
 interface BindStep {
   title: string;
@@ -19,11 +14,6 @@ interface BindStep {
   command?: string;
   note?: string;
 }
-
-const MESSENGER_TITLE: Record<BindMessenger, string> = {
-  slack: "Add to Slack channel",
-  telegram: "Add to Telegram Chat",
-};
 
 function slackSteps(brandName: string, brandShort: string): BindStep[] {
   return [
@@ -61,68 +51,6 @@ function telegramSteps(): BindStep[] {
       body: "Follow the link the bot posts, pick this agent, and confirm. That confirmation grants the access. The link works for about 10 minutes.",
     },
   ];
-}
-
-export function ChannelBindModal({
-  messengers,
-  onClose,
-}: {
-  messengers: BindMessenger[];
-  onClose: () => void;
-}) {
-  const [stepIndex, setStepIndex] = useState(0);
-  const installRequestUrl = useSlackInstallRequestUrl();
-  const messenger = messengers[stepIndex] ?? messengers[0];
-  if (!messenger) return null;
-
-  const total = messengers.length;
-  const isLast = stepIndex === total - 1;
-  const next = messengers[stepIndex + 1];
-
-  return (
-    <Modal onClose={onClose}>
-      <DialogHeader
-        title={
-          <span className="flex items-center gap-2">
-            <ConnectionIcon iconSlug={messenger} alt="" size={20} />
-            {MESSENGER_TITLE[messenger]}
-          </span>
-        }
-        subtitle={total > 1 ? `Step ${stepIndex + 1} of ${total}` : undefined}
-        onClose={onClose}
-      />
-      <DialogBody>
-        <MessengerInstructions messenger={messenger} />
-      </DialogBody>
-      <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-3 px-5 pb-5 md:px-6 md:pb-6">
-        {messenger === "slack" && installRequestUrl && (
-          <div className="mr-auto">
-            <SlackInstallRequest
-              href={installRequestUrl}
-              workspaceLabel="Slack workspace"
-            />
-          </div>
-        )}
-        {stepIndex > 0 && (
-          <Button variant="ghost" onClick={() => setStepIndex(stepIndex - 1)}>
-            Back
-          </Button>
-        )}
-        {total > 1 && stepIndex === 0 && (
-          <Button variant="ghost" onClick={onClose}>
-            Close
-          </Button>
-        )}
-        {isLast ? (
-          <Button onClick={onClose}>Done</Button>
-        ) : (
-          <Button onClick={() => setStepIndex(stepIndex + 1)}>
-            Set up {next === "telegram" ? "Telegram" : "Slack"} next
-          </Button>
-        )}
-      </div>
-    </Modal>
-  );
 }
 
 export function MessengerInstructions({

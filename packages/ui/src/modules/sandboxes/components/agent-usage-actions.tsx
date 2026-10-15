@@ -15,7 +15,7 @@ import { useSlackInstallRequestUrl } from "../../links/api/queries.js";
 import { TerminalHarnessButtons } from "../../sessions/components/terminal-harness-buttons.js";
 import { SlackInstallRequest } from "../../slack/components/slack-install-request.js";
 import { type Action, ActionList } from "./action-list.js";
-import { MessengerInstructions } from "./channels/channel-bind-modal.js";
+import { MessengerInstructions } from "./channels/messenger-instructions.js";
 
 const VS_CODE_REMOTE_URL = "https://code.visualstudio.com/docs/remote/ssh";
 const ZED_REMOTE_URL = "https://zed.dev/docs/remote-development";
@@ -32,7 +32,15 @@ function DocLink({ href, children }: { href: string; children: ReactNode }) {
   );
 }
 
-export function AgentUsageActions({ agent }: { agent: AgentView }) {
+export function AgentUsageActions({
+  agent,
+  showChat = true,
+  onNewTerminal,
+}: {
+  agent: AgentView;
+  showChat?: boolean;
+  onNewTerminal?: () => void;
+}) {
   const selectAgent = useStore((s) => s.selectAgent);
   const openAgentSession = useStore((s) => s.openAgentSession);
   const available = useAgents().data?.availableChannels ?? {};
@@ -40,12 +48,16 @@ export function AgentUsageActions({ agent }: { agent: AgentView }) {
   const brand = getBrand();
 
   const actions: Action[] = [
-    {
-      icon: <Chat />,
-      title: "Chat",
-      description: "Chat with the agent in this browser.",
-      onClick: () => selectAgent(agent.id),
-    },
+    ...(showChat
+      ? [
+          {
+            icon: <Chat />,
+            title: "Chat",
+            description: "Chat with the agent in this browser.",
+            onClick: () => selectAgent(agent.id),
+          },
+        ]
+      : []),
     {
       icon: <Terminal />,
       title: "Web terminal",
@@ -53,13 +65,15 @@ export function AgentUsageActions({ agent }: { agent: AgentView }) {
       control: (
         <TerminalHarnessButtons
           agentId={agent.id}
-          onOpen={() =>
-            openAgentSession(
-              agent.id,
-              crypto.randomUUID(),
-              SessionMode.Terminal,
-              true,
-            )
+          onOpen={
+            onNewTerminal ??
+            (() =>
+              openAgentSession(
+                agent.id,
+                crypto.randomUUID(),
+                SessionMode.Terminal,
+                true,
+              ))
           }
         />
       ),
