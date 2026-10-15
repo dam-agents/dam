@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 ## Overview
 
@@ -16,8 +16,10 @@ The model list a session or a [schedule](schedules.md#session-choices) picks fro
 The session picker offers named models, not a generic default-model choice.
 It shows loading, unavailable and empty listings explicitly, with a retry for failed discovery; a failed listing never falls back to the harness's static catalog.
 The catalog remains usable where discovery is not configured.
-Before a session starts, the picker lists every provider the harness accepts in one stable order: an attached provider shows its models and a disconnect action, and one not attached offers to attach it, so a provider never carries another provider's model.
+Before a session starts, the picker lists every provider the harness accepts in one stable order: an attached provider shows its models and a disconnect action, and one not attached offers to attach it, after asking, so a provider never carries another provider's model.
 It grays out a harness that no provider the owner holds accepts.
+A web terminal starts from a row of harness buttons on the agent's General page and on the empty chat: a button stores its harness, with the first attached provider it accepts, as the next session pair, and the terminal sends that pair when it connects.
+A harness that only a provider the owner holds but has not attached accepts asks to attach that provider, then opens; a harness no provider the owner holds accepts is grayed, and its tooltip names the harness and says why.
 With no provider at all, the chat opens the provider list in a modal.
 While the agent holds no provider, the chat blocks sending, and the picker's place holds a link to that modal; a provider connected or picked there is attached to the agent.
 With no pair picked or remembered, the picker preselects the default harness on the first granted provider it accepts, else the first carried harness a granted provider fits, with its default model.
@@ -123,6 +125,7 @@ The router **owns upstream auth**: the client's credential headers are dropped a
 It adds Anthropic's OAuth beta flag to a call bound for the subscription Connection, removes it from every other call, and passes the other `anthropic-beta` flags as sent, so one Claude Code process mixes the subscription with any routed provider.
 The body goes out with `model` rewritten to the upstream id; the response comes back with only its model field rewritten to the name the harness asked for, so transcripts record the provider.
 No retries: a second model call is a second bill.
+An upstream error keeps its status and headers, and its message gets a lead sentence that names the provider, the model, the API and the harness, so the harness shows where the call failed; a [spend refusal](spend-limits.md#refusal) passes unchanged.
 Each call is reported once with its Connection, upstream model, dialect, harness and session, the source of [spend](metrics.md).
 
 **Replay rules** apply by target, since the router cannot know which model wrote a history: for a Claude model, every assistant message but the last has its thinking blocks turned into `<thinking>…</thinking>` text; for a Responses target other than OpenAI, reasoning items and `client_metadata` are dropped and a tool-less request's tool items become text; for OpenAI only reasoning items with a non-empty `content` array are dropped; chat completions replay unchanged.

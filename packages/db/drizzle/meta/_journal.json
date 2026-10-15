@@ -551,8 +551,22 @@
     {
       "idx": 78,
       "version": "7",
-      "when": 1792067770772,
-      "tag": "0078_bump_agents_for_codex_telemetry_rail",
+      "when": 1792074625841,
+      "tag": "0078_spend_daily",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1792074655458,
+      "tag": "0079_spend_limits",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1792095725267,
+      "tag": "0080_bump_agents_for_codex_telemetry_rail",
       "breakpoints": true
     }
   ]

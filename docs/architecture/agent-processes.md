@@ -1,6 +1,6 @@
 # Agent processes
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 ## Overview
 
@@ -32,7 +32,7 @@ The processes list reports a change waiting this way, with how many kept tasks i
 Right after a user saves an agent setting that can reach the harness, the UI checks for such a change for a few seconds and, if one waits, asks whether to restart now or to apply it when the tasks finish.
 That question is not behind the `processes` feature, since every agent waits this way.
 A change made from account settings, outside one agent, does not ask.
-The user unblocks it by applying it now, which stops that work, by stopping or unkeeping the kept tasks, or by putting the agent to sleep.
+The user unblocks it by applying it now, which stops that work, by stopping or unkeeping the kept tasks, or by disabling the agent.
 Once the last kept task is gone, the recycle runs at once on an idle runtime, or after the grace period while a turn still runs.
 Unkept tasks never hold a recycle back, since the recycle kills them anyway; a kept Detached Process never does either, since the recycle leaves it alone.
 A harness that stopped answering is recycled regardless, since a wedged harness serves no task.
@@ -80,12 +80,12 @@ A watch sends data-less change notices when a row appears, goes, or changes whet
 The runtime scans every few seconds while someone watches, every quarter minute while a Keep Mark or kept Detached Process lives, and twice a minute otherwise, so finished work is recorded even when nobody looks.
 The user's decisions — the keep switch and Stop — go through the same surface.
 Field-level contract: [`packages/agent-runtime-api/`](../../packages/agent-runtime-api/).
-The chat view shows the inventory as a Processes section beside Sessions, Files and Artifacts, behind the `processes` [experimental feature](features.md); a row's output opens in the panel docked beside the conversation, the way a file does, and follows the file while the process runs.
+The chat view shows the inventory as a Processes tab of its side panel, beside Files, Changes, Artifacts and Browser, behind the `processes` [experimental feature](features.md); a row's output opens in that tab, the way a file opens in the Files tab, and follows the file while the process runs.
 Running rows are grouped by their effect on the agent: active turns, the work keeping the agent awake, and the work that stops at hibernation (on an Always on agent the last two are one group, since nothing stops there).
 Each row's menu has a Stop that asks first; for a Harness Task or Detached Process it also has the keep choice, which names who decided and is disabled on an Always on agent, and changing it moves the row to the other group.
 A change [waiting for kept tasks](#reported-background-work) shows above the rows with its Apply now.
-A header indicator counts the running Harness Tasks and Detached Processes and those keeping the agent awake, and opens the section — so a user who wonders why the agent stays awake finds the answer one click away.
-The section and the indicator show the same list: while the agent runs but the UI has lost its connection to it, both keep the last list and the section says the agent can't be reached; while the agent does not run, neither shows it.
+A header indicator counts the running Harness Tasks and Detached Processes and those keeping the agent awake, and opens the tab — so a user who wonders why the agent stays awake finds the answer one click away.
+The tab and the indicator show the same list: while the agent runs but the UI has lost its connection to it, both keep the last list and the tab says the agent can't be reached; while the agent does not run, neither shows it.
 
 ## Keeping work
 

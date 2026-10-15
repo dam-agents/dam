@@ -129,3 +129,33 @@ export function CurveBenderIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+export function TelegramIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      xmlns="http://www.w3.org/2000/svg"
+      {...props}
+    >
+      <path d="M21.94 3.35 18.6 19.1c-.25 1.1-.9 1.38-1.83.86l-5.06-3.73-2.44 2.35c-.27.27-.5.5-1.02.5l.36-5.15 9.38-8.47c.4-.36-.09-.57-.63-.2L5.77 12.57.78 11.01c-1.08-.34-1.1-1.08.23-1.6L20.53 1.88c.9-.33 1.69.21 1.4 1.47z" />
+    </svg>
+  );
+}
+
+export function PromptIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      xmlns="http://www.w3.org/2000/svg"
+      {...props}
+    >
+      <path d="m4 7 5 5-5 5M12 18h8" />
+    </svg>
+  );
+}

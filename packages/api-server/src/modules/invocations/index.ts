@@ -21,8 +21,10 @@ export {
   InvalidSchemaError,
   ModelNameError,
   ProviderMismatchError,
+  SpendLimitReachedError,
   UnresolvableDriverError,
   type InvocationsService,
+  type SpendHoldGate,
   type SpawnInput,
 } from "./services/invocations-service.js";
 export { createTargetAdmission } from "./services/target-admission.js";

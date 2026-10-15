@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the browser panel shows every tab of the agent's one browser and keeps the user and the agent on the same tab. The spec boots its own container agent on the default Template, whose browser and agent-browser come from the node's harness tools — the mock agents of the rest of the suite carry neither — so only the vm lane, which installs both, runs it. It opens the agent's panel and drives the browser from both sides: agent-browser in the agent's pod, as the agent's own commands do, and the panel's tab bar, as the user does. After each step the tab the panel marks active — the one on the user's screen — is the tab agent-browser reports as its own, compared by CDP target id, never by position.
+// TEST_OVERVIEW: the browser panel shows every tab of the agent's one browser and keeps the user and the agent on the same tab; as in Safari, its tab bar shows only while the browser has two tabs or more. The spec boots its own container agent on the default Template, whose browser and agent-browser come from the node's harness tools — the mock agents of the rest of the suite carry neither — so only the vm lane, which installs both, runs it. It opens the agent's panel and drives the browser from both sides: agent-browser in the agent's pod, as the agent's own commands do, and the panel's tab bar, as the user does. After each step the tab the panel marks active — the one on the user's screen — is the tab agent-browser reports as its own, compared by CDP target id, never by position.
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
 import { baseUrl } from "../../config.js";
@@ -55,6 +55,8 @@ function agentOpens(title: string): string {
 const tabBar = (page: Page) => page.getByTestId("browser-tabs");
 const panelTab = (page: Page, targetId: string): Locator =>
   tabBar(page).locator(`[data-tab-id="${targetId}"]`);
+const newTabButton = (page: Page) =>
+  page.getByRole("button", { name: "New tab", exact: true });
 const panelActive = (page: Page) =>
   tabBar(page).locator("[data-active]").getAttribute("data-tab-id");
 
@@ -74,8 +76,16 @@ async function expectSameTab(page: Page, targetId: string) {
 
 async function openPanel(page: Page) {
   await page.goto(`${baseUrl}/chat/${encodeURIComponent(agentId)}`);
-  await page.getByRole("button", { name: "Open browser" }).click();
-  await expect(tabBar(page)).toBeVisible({ timeout: 120_000 });
+  await page.getByTestId("side-panel-tab-browser").click();
+  await expect(page.getByLabel("Address in the agent's browser")).toBeVisible();
+  await expect(page.getByText(/Starting the agent's browser/)).toHaveCount(0, {
+    timeout: 120_000,
+  });
+}
+
+async function expectNoTabBar(page: Page) {
+  await expect(tabBar(page)).toHaveCount(0, { timeout: SYNC_MS });
+  await expect(newTabButton(page)).toHaveCount(0);
 }
 
 test.beforeAll(async () => {
@@ -101,15 +111,22 @@ test.afterAll(async () => {
   if (agentId) await api.agents.delete.mutate({ id: agentId });
 });
 
-// TEST_SCENARIO: one open panel, driven from both sides. Tabs the agent opens and names appear without a reload, the last one active — the same target agent-browser reports as selected. The user selecting a tab brings it on screen, and agent-browser selects the same target, so the agent's next command reads the page the user sees; the agent selecting another tab brings it on the user's screen in turn. Closing the active tab from the panel closes it in the browser and brings the tab before it, the last one closed, to the front for both; a new tab from the panel is blank, and the agent is on it too.
+// TEST_SCENARIO: one open panel, driven from both sides. A fresh browser has one tab, for agent-browser too — Chromium's own start-up page is not a second one — and the panel shows no tab bar for it. Tabs the agent opens and names appear without a reload, the last one active — the same target agent-browser reports as selected. The user selecting a tab brings it on screen, and agent-browser selects the same target, so the agent's next command reads the page the user sees; the agent selecting another tab brings it on the user's screen in turn. Closing the active tab from the panel closes it in the browser and brings the tab before it, the last one closed, to the front for both; a new tab from the panel is blank, and the agent is on it too. With the agent's tabs closed down to one, the tab bar hides again.
 test("keeps the user and the agent on the same tab", async ({ page }) => {
   test.setTimeout(300_000);
   await openPanel(page);
   let alpha = "";
   let beta = "";
 
+  await test.step("a fresh browser has one tab and no tab bar", async () => {
+    expect(agentTabs()).toHaveLength(1);
+    await expectNoTabBar(page);
+  });
+
   await test.step("the agent opens two tabs", async () => {
     alpha = agentOpens("Alpha");
+    await expect(tabBar(page)).toBeVisible({ timeout: SYNC_MS });
+    await expect(tabBar(page).getByRole("tab")).toHaveCount(2);
     beta = agentOpens("Beta");
     await expect(panelTab(page, alpha)).toContainText("Alpha", {
       timeout: SYNC_MS,
@@ -143,9 +160,7 @@ test("keeps the user and the agent on the same tab", async ({ page }) => {
 
   await test.step("the user opens a new tab", async () => {
     const before = new Set(agentTabs().map((t) => t.targetId));
-    await tabBar(page)
-      .getByRole("button", { name: "New tab", exact: true })
-      .click();
+    await newTabButton(page).click();
     await expect
       .poll(async () => panelActive(page), { timeout: SYNC_MS })
       .not.toBe(alpha);
@@ -153,6 +168,15 @@ test("keeps the user and the agent on the same tab", async ({ page }) => {
     expect(before.has(opened)).toBe(false);
     await expect(panelTab(page, opened)).toContainText("New tab");
     await expectSameTab(page, opened);
+  });
+
+  await test.step("the agent closes its tabs down to one", async () => {
+    const tabs = agentTabs();
+    const kept = tabs.find((t) => t.active)!.targetId;
+    for (const tab of tabs)
+      if (tab.targetId !== kept) agentBrowser("tab", "close", tab.targetId);
+    expect(agentTabs().map((t) => t.targetId)).toEqual([kept]);
+    await expectNoTabBar(page);
   });
 });
 

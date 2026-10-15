@@ -21,6 +21,7 @@ import { gettingStartedRouter } from "./modules/getting-started/router.js";
 import { harnessConfigRouter } from "./modules/harness-config/router.js";
 import { schedulesRouter } from "./modules/schedules/router.js";
 import { skillsRouter } from "./modules/skills/router.js";
+import { spendRouter } from "./modules/spend/router.js";
 import { starterKitsRouter } from "./modules/starter-kits/router.js";
 import { reposRouter } from "./modules/repos/router.js";
 import { metricsRouter } from "./modules/metrics/router.js";
@@ -58,6 +59,7 @@ export const appRouter = t.router({
   satellites: satellitesRouter,
   harnessConfig: harnessConfigRouter,
   budgets: budgetsRouter,
+  spend: spendRouter,
   events: eventsRouter,
 });
 

@@ -21,6 +21,7 @@ function agent(extra: Partial<Agent> = {}): Agent {
     state: "running",
     effectiveHibernationTimeoutMin: 30,
     stopRequested: false,
+    disabled: false,
     overBudget: false,
     podRestarts: 0,
     contributionFailures: [],
