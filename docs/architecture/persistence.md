@@ -283,7 +283,7 @@ The runtime's disk templates live there too, sparse enough to need no share of i
 It grows in place when the pool rises and is never shrunk, so a lowered pool only stops its growth.
 A refused growth is reported and reconciliation continues: the runner still serves every agent at the size it has.
 
-**The runner guards the claim by its use.** The disks are sparse, so they can add up to more than the claim holds, and a guest sees its own disk as free while the claim under it fills; once the claim has no block left, a guest's write into its disk fails and its filesystem reports the loss.
+**The runner guards the claim by its use.** The disks are sparse, so they can add up to more than the claim holds, and a guest sees its own disk as free while the claim under it fills; once the claim has no block left, a guest's write into its disk has nowhere to go.
 So the runner measures the claim itself: past 75% used it sheds what it can fetch again — every image tree no machine holds, when the cache is on the claim — and asks every machine's guest, through its share, to give back scratch: each running one its even part of what would bring use back under 70%.
 It asks again only once the claim has filled five points further, and clears the request once use is back under 70%, so a claim the homes keep full does not have every guest delete its scratch again every minute.
 Every guest is held to the claim's room as well: at each look the runner grants each running guest an even part of what is left below 95% of the claim, through its share, and platform-init sizes a preallocated file on the disk so that the guest can write only what is left of its grant.
@@ -292,6 +292,7 @@ The agent that used it up gets room again once the claim has room, through a gra
 A write past it fails inside the guest with "no space left on device", which the agent handles and the runner reports as a full home, and the claim stays writable for the owner's other agents.
 The file's blocks are only marked in the guest's filesystem and never written, so it takes nothing from the claim; it has no name, so the filesystem frees it whenever the guest stops, and an older platform-init never finds it.
 Eviction does not count it as used, so a guest held to the claim does not read its own disk as short.
+The guard counts what the guest's filesystem reports as used, so it does not see all that the claim gives a disk: journal and inode table blocks are holes until first written, and blocks a guest frees take room on the claim until the next trim; the next look's grant accounts for them, and the 5% above 95% absorbs them between looks.
 Past 90% it creates no machine, fetches no image onto the claim and takes no seed, and a machine it starts boots at the disk size it has; past 97% it starts and restarts no machine either, so between the two an owner whose agents are all asleep can still get into one to clean it up.
 It reports each refusal as `MachineStorageFull` with how full the storage is and how to free it, and never stops a running machine, which would free nothing and lose what the guest holds in memory.
 An out-of-space error the runner meets anywhere on the claim is reported the same way, and so is a boot that fails while the claim is that full, since a guest whose writes fail fails its boot with nothing typed in the error.
@@ -299,6 +300,12 @@ A storage refusal does not park the Agent the way a memory refusal does: parking
 The api-server says the same before an Agent is written: it reads the owner's runner through its read-only usage capability, and refuses a new vm agent — a create, a kit applied, a spawn, a move onto the vm backend — once the claim is 90% used, with the figures and the same three ways out.
 Usage it cannot read refuses nothing, since the runner refuses the machine anyway.
 Past 90%, and again past 98% when writes start failing, the owner also gets a Slack direct message with the same figures and ways out ([resource alerts](budgets.md#resource-alerts)).
+
+**A write the claim has no room for waits instead of failing.** virtio-blk can report a failed write to the guest only as an I/O error, and on that error the guest drops the data in its page cache that a write had accepted, aborts its journal and marks its filesystem with errors.
+So the runner's libkrun holds a guest write that the claim refuses with no space, and tries it again every second until it fits, as QEMU does by default.
+The guest's I/O waits meanwhile, and continues with nothing lost once the claim has room: through the runner's shedding, another guest's trim, a deleted agent or a larger storage.
+A stop of the machine ends the wait: the write fails as before, or a kill ends the machine as a power cut would, which the journal recovers without errors.
+A flush is never tried again: after a failed fsync the host can have dropped the data, and a second fsync would report it written.
 
 ### The machine image cache
 
