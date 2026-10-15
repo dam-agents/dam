@@ -85,6 +85,48 @@ describe("updateRRule sessionMode", () => {
   });
 });
 
+describe("updateRRule on a cron schedule", () => {
+  // TEST_SCENARIO: converting a cron schedule saves it as an RRULE, so the cron expression must not stay behind in the spec and every other setting must carry over.
+  it("saves it as an RRULE without the cron expression", async () => {
+    const cron: Schedule = {
+      id: SCHEDULE_ID,
+      agentId: "agent-1",
+      name: "daily",
+      spec: {
+        version: "1",
+        type: "cron",
+        cron: "0 9 * * *",
+        task: "do the thing",
+        precheck: "check.sh",
+        enabled: false,
+        sessionMode: "continuous",
+        createdBy: "user",
+      },
+    };
+    const { service, getSavedSpec } = makeDeps(cron);
+
+    await service.updateRRule({
+      ...baseUpdate,
+      timezone: "UTC",
+      sessionMode: "continuous",
+      precheck: "check.sh",
+    });
+
+    expect(getSavedSpec()).toEqual({
+      version: "1",
+      type: "rrule",
+      rrule: RRULE,
+      timezone: "UTC",
+      quietHours: [],
+      task: "do the thing",
+      precheck: "check.sh",
+      enabled: false,
+      sessionMode: "continuous",
+      createdBy: "user",
+    });
+  });
+});
+
 describe("createRRule createdBy", () => {
   function makeCreateDeps() {
     let created:

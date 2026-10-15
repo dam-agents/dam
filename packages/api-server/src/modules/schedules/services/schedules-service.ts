@@ -361,8 +361,12 @@ export function createSchedulesService(deps: {
         await ensureSessionModel(current.agentId, input.model, undefined);
       if (current.spec.type === "once")
         throw badRequest("a one-time schedule is edited with updateOnce");
+      const { cron: _cron, ...unchanged } =
+        current.spec.type === "cron"
+          ? current.spec
+          : { ...current.spec, cron: undefined };
       const spec: ScheduleSpec = {
-        ...current.spec,
+        ...unchanged,
         type: "rrule",
         rrule: input.rrule,
         timezone: input.timezone,

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import type { CronConversion } from "../lib/cron-conversion.js";
 import type { ScheduleLock } from "../lib/schedule-lock.js";
 
 interface Notice {
@@ -11,6 +12,7 @@ interface Notice {
 export function scheduleLockNotice(
   lock: ScheduleLock,
   sandboxName: string,
+  conversion?: CronConversion,
 ): Notice {
   if (lock === "agent-managed") {
     return {
@@ -45,15 +47,36 @@ export function scheduleLockNotice(
       ),
     };
   }
+  const intro = (
+    <p>
+      It runs on a cron expression in UTC. The editor works with the newer
+      format only, so it can&apos;t show this schedule&apos;s timing without
+      converting it.
+    </p>
+  );
+  if (conversion?.kind === "exact") {
+    return {
+      title: "This schedule uses the older cron format",
+      action: "Convert to the new format",
+      body: (
+        <div className="flex flex-col gap-3">
+          {intro}
+          <p>
+            Convert it to edit it like any other schedule. You see its next run
+            times before and after, and nothing changes until you confirm.
+          </p>
+        </div>
+      ),
+    };
+  }
   return {
     title: "This schedule uses the older cron format",
     body: (
       <div className="flex flex-col gap-3">
-        <p>
-          It runs on a cron expression in UTC. The editor works with the newer
-          format only, so it can&apos;t show this schedule&apos;s timing without
-          rewriting it.
-        </p>
+        {intro}
+        {conversion && (
+          <p>It can&apos;t be converted exactly. {conversion.reason}</p>
+        )}
         <p>
           To change when it runs, delete this schedule and create a new one. You
           can pause it here anytime.

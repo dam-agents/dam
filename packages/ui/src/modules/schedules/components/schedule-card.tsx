@@ -24,6 +24,7 @@ import {
   useToggleSchedule,
 } from "../api/mutations.js";
 import { useScheduleEditGuard } from "../hooks/use-schedule-edit-guard.js";
+import type { ExactCronConversion } from "../lib/cron-conversion.js";
 import { scheduleOnceState } from "../lib/once-schedule.js";
 import {
   lastRunStatus,
@@ -39,6 +40,7 @@ interface Props {
   isExpanded: boolean;
   onToggleExpanded: () => void;
   onEdit: () => void;
+  onConvert: (conversion: ExactCronConversion) => void;
   onViewResults: () => void;
 }
 
@@ -47,6 +49,7 @@ export function ScheduleCard({
   isExpanded,
   onToggleExpanded,
   onEdit,
+  onConvert,
   onViewResults,
 }: Props) {
   const { id, name, enabled, sessionMode, status } = schedule;
@@ -69,7 +72,8 @@ export function ScheduleCard({
       ? lastRunStatus(status?.lastResult)
       : null;
 
-  const handleEdit = () => void guardEdit(schedule, sandboxName, onEdit);
+  const handleEdit = () =>
+    void guardEdit(schedule, sandboxName, { onEdit, onConvert });
 
   const handleDelete = async () => {
     if (

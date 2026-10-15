@@ -8,12 +8,17 @@ import { SectionLabel } from "@/components/ui/section-label";
 import type { Schedule } from "../../../types.js";
 import { useSchedules } from "../api/queries.js";
 import { ScheduleFormModal } from "../forms/schedule-form-modal.js";
+import type { ExactCronConversion } from "../lib/cron-conversion.js";
 import { isPastOnce } from "../lib/once-schedule.js";
+import { ConvertCronModal } from "./convert-cron-modal.js";
 import { ScheduleCard } from "./schedule-card.js";
 import { ScheduleResultsModal } from "./schedule-results-modal.js";
 
 type FormState =
-  { mode: "create" } | { mode: "edit"; schedule: Schedule } | null;
+  | { mode: "create" }
+  | { mode: "edit"; schedule: Schedule }
+  | { mode: "convert"; schedule: Schedule; conversion: ExactCronConversion }
+  | null;
 
 export function SchedulesPanel({
   agentId,
@@ -47,6 +52,9 @@ export function SchedulesPanel({
         setExpandedId((prev) => (prev === schedule.id ? null : schedule.id))
       }
       onEdit={() => setForm({ mode: "edit", schedule })}
+      onConvert={(conversion) =>
+        setForm({ mode: "convert", schedule, conversion })
+      }
       onViewResults={() => setResultsFor(schedule)}
     />
   );
@@ -79,12 +87,23 @@ export function SchedulesPanel({
         </section>
       )}
 
-      {form && (
-        <ScheduleFormModal
-          agentId={agentId}
-          existing={form.mode === "edit" ? form.schedule : undefined}
+      {form?.mode === "convert" ? (
+        <ConvertCronModal
+          schedule={form.schedule}
+          conversion={form.conversion}
           onClose={closeForm}
+          onConverted={(converted) =>
+            setForm({ mode: "edit", schedule: converted })
+          }
         />
+      ) : (
+        form && (
+          <ScheduleFormModal
+            agentId={agentId}
+            existing={form.mode === "edit" ? form.schedule : undefined}
+            onClose={closeForm}
+          />
+        )
       )}
 
       {resultsFor && (
