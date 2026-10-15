@@ -8,7 +8,7 @@ import type {
   UseFormRegister,
   UseFormRegisterReturn,
 } from "react-hook-form";
-import { Controller } from "react-hook-form";
+import { Controller, useController, useWatch } from "react-hook-form";
 
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -20,12 +20,32 @@ import { cn } from "@/lib/utils";
 
 import { FormError } from "../../../components/form-error.js";
 import { FormField } from "../../../components/form-field.js";
+import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
+import {
+  useHarnessCatalog,
+  useHarnessCatalogModels,
+  useHarnessConfigured,
+  useProviderConnections,
+} from "../../sessions/api/session-pair.js";
 import {
   type Choice,
   OptionPicker,
 } from "../../sessions/components/model-settings-panel.js";
 import {
+  SessionSettingsControls,
+  settingDefaults,
+  settingsForModel,
+} from "../../sessions/components/session-settings-controls.js";
+import {
+  findModel,
+  modelGroups,
+  modelIndicatorLabel,
+  sameSideGroups,
+} from "../../sessions/lib/catalog-groups.js";
+import { fittingProviders } from "../../sessions/lib/session-pair-options.js";
+import {
   useHasHarnessDefault,
+  useScheduleDefault,
   useSessionModelChoices,
 } from "../api/session-model.js";
 import {
@@ -402,6 +422,10 @@ export function SchedulePrecheckField({
 const MODEL_HINT =
   "Default is the harness's own default; where the agent has none, a schedule without a model follows the agent's model.";
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Old runtime path: remove when agents.runtimeFleet.outdated is empty on prod.
+ * The single model field of a schedule: a bare name from the agent's list.
+ */
 export function ScheduleModelField({
   agentId,
   value,
@@ -471,5 +495,187 @@ export function ScheduleSessionTitleField({
         {...registration}
       />
     </FormField>
+  );
+}
+
+interface ChoicesControl {
+  harness: string;
+  model: string;
+  settings: Record<string, string>;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the same three choices a session picks.
+ * "Agent default" is the empty choice and says what that default is now. On
+ * a runtime without the Model Router the old single model field stands.
+ */
+export function ScheduleChoicesField<T extends ChoicesControl>({
+  agentId,
+  control,
+  migrationNote,
+}: {
+  agentId: string;
+  control: Control<T>;
+  migrationNote: string | null;
+}) {
+  const typed = control as unknown as Control<ChoicesControl>;
+  const { data: status } = useHarnessConfigStatus(agentId || null);
+  const routed = status?.modelRouter ?? false;
+  const harnessValue = useWatch({ control: typed, name: "harness" });
+  const { field: modelField } = useController({
+    control: typed,
+    name: "model",
+  });
+  const { field: settingsField } = useController({
+    control: typed,
+    name: "settings",
+  });
+  const storedModel = modelField.value;
+  const settingsValue = settingsField.value;
+  const { data: catalog } = useHarnessCatalog();
+  const carried = status?.harnesses ?? [];
+  const { data: fallback } = useScheduleDefault(
+    routed && agentId ? agentId : null,
+    harnessValue || null,
+  );
+  const harness =
+    harnessValue ||
+    fallback?.harness ||
+    status?.defaultHarness ||
+    carried[0]?.name ||
+    "";
+  const { data: catalogModels, operable } = useHarnessCatalogModels(
+    routed && agentId ? agentId : null,
+    routed ? harness || null : null,
+  );
+  const { granted } = useProviderConnections(routed ? agentId : null);
+  const capability = carried.find((h) => h.name === harness);
+  const defaults = settingDefaults(
+    capability,
+    useHarnessConfigured(agentId, harness),
+  );
+  if (!routed)
+    return (
+      <ScheduleModelField
+        agentId={agentId}
+        value={modelField.value}
+        onChange={modelField.onChange}
+      />
+    );
+  const groups = modelGroups(catalogModels);
+  const modelValue = storedModel
+    ? (findModel(groups, storedModel)?.model.name ?? storedModel)
+    : storedModel;
+  const fitting = fittingProviders(catalog?.harnesses ?? [], granted);
+  const harnessChoices: Choice[] = carried
+    .filter((h) => h.name === harnessValue || fitting(h.name).length > 0)
+    .map((h) => ({
+      id: h.name,
+      name:
+        catalog?.harnesses.find((v) => v.name === h.name)?.displayName ??
+        h.name,
+    }));
+  const modelChoices: Choice[] = groups.flatMap((g) =>
+    g.models.map((m) => ({
+      id: m.name,
+      name: `${m.upstreamId} · ${g.displayName}`,
+    })),
+  );
+  if (modelValue && !modelChoices.some((c) => c.id === modelValue))
+    modelChoices.push({
+      id: modelValue,
+      name: modelValue,
+      ...(catalogModels !== undefined && {
+        description: "Not in this agent's model list",
+      }),
+      ...(!operable && { description: "Start the agent to check this model" }),
+    });
+  const todayModel = fallback?.model
+    ? modelIndicatorLabel(groups, fallback.model)
+    : null;
+  return (
+    <div className="flex flex-col gap-4">
+      <FormField
+        label="Harness"
+        hint="Agent default runs on the agent's default harness and model."
+      >
+        <Controller
+          control={typed}
+          name="harness"
+          render={({ field }) => (
+            <OptionPicker
+              title="Harness"
+              choices={harnessChoices}
+              value={field.value || null}
+              clearable
+              clearedLabel="Agent default"
+              clearedDescription={
+                fallback?.harness
+                  ? `Today: ${harnessChoices.find((c) => c.id === fallback.harness)?.name ?? fallback.harness}`
+                  : "Follows the agent's default harness"
+              }
+              onSelect={(id) => {
+                field.onChange(id ?? "");
+                modelField.onChange("");
+                settingsField.onChange({});
+              }}
+            />
+          )}
+        />
+      </FormField>
+      <FormField
+        label="Model"
+        hint="Named with its provider. Agent default runs on the agent's default model for the harness."
+        {...(migrationNote ? { error: migrationNote } : {})}
+      >
+        <OptionPicker
+          title="Model"
+          choices={modelChoices}
+          value={modelValue || null}
+          clearable
+          clearedLabel="Agent default"
+          clearedDescription={
+            todayModel
+              ? `Today: ${todayModel}`
+              : "Follows the agent's default model for the harness"
+          }
+          onSelect={(id) => {
+            modelField.onChange(id ?? "");
+            if (!id && fallback === undefined) return;
+            const current = settingsValue ?? {};
+            const kept = settingsForModel(
+              capability,
+              groups,
+              id || fallback?.model || null,
+              current,
+            );
+            if (Object.keys(kept).length !== Object.keys(current).length)
+              settingsField.onChange(kept);
+          }}
+        />
+      </FormField>
+      {capability?.sessionSettings && capability.sessionSettings.length > 0 && (
+        <FormField label="Session settings">
+          <SessionSettingsControls
+            capability={capability}
+            model={modelValue || null}
+            settings={settingsValue ?? {}}
+            defaults={defaults}
+            modelChoices={sameSideGroups(
+              groups,
+              modelValue || fallback?.model || null,
+            ).flatMap((g) =>
+              g.models.map((m) => ({
+                value: m.name,
+                name: `${m.upstreamId} · ${g.displayName}`,
+              })),
+            )}
+            onChange={(id, value) =>
+              settingsField.onChange({ ...(settingsValue ?? {}), [id]: value })
+            }
+          />
+        </FormField>
+      )}
+    </div>
   );
 }

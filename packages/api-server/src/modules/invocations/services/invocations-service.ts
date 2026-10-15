@@ -13,6 +13,7 @@ import {
   type ProviderPresetType,
   type SkillSetApplyResult,
   type SkillsService,
+  parseQualifiedModel,
 } from "api-server-api";
 import {
   type RuntimeMutator,
@@ -65,6 +66,15 @@ export class InvalidSchemaError extends Error {
   constructor(detail: string) {
     super(`invalid result schema: ${detail}`);
     this.name = "InvalidSchemaError";
+  }
+}
+
+export class ModelNameError extends Error {
+  constructor(model: string) {
+    super(
+      `name the target's model with its provider, as <provider>/<model id> (for example ibm/${model}); a tier name is no model`,
+    );
+    this.name = "ModelNameError";
   }
 }
 
@@ -170,10 +180,25 @@ export function createInvocationsService(deps: {
 
       compileSchema(input.schema);
 
-      const provider = inheritProvider(
-        input.driverProviders,
-        input.target.runsOn,
-      );
+      const requestedModel = input.harnessConfig?.model;
+      const parsedModel = requestedModel
+        ? parseQualifiedModel(requestedModel, { claudePrefix: true })
+        : null;
+      if (requestedModel && !parsedModel)
+        throw new ModelNameError(requestedModel);
+      if (parsedModel && input.harnessConfig)
+        input = {
+          ...input,
+          harnessConfig: {
+            ...input.harnessConfig,
+            model: `${parsedModel.alias}/${parsedModel.upstreamId}`,
+          },
+        };
+      const provider = inheritProvider(input.driverProviders, {
+        runsOn: input.target.runsOn,
+        ...(parsedModel && { alias: parsedModel.alias }),
+        ...(input.target.harness && { harness: input.target.harness }),
+      });
       if (provider.kind === "incompatible")
         throw new ProviderMismatchError(
           provider.offered,

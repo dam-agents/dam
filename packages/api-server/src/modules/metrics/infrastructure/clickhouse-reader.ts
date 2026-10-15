@@ -6,6 +6,7 @@ import type {
   SpendByDay,
   SubAgentSpend,
   TokenSpendByModel,
+  TokenSpendByProvider,
 } from "api-server-api";
 import type {
   MetricsReader,
@@ -18,7 +19,35 @@ import type {
 const AGENT_GATE =
   "ResourceAttributes['platform.agent.id'] IN {agentIds:Array(String)}";
 
-const API_REQUEST = "Body IN ('claude_code.api_request', 'pi.api_request')";
+const HARNESS_CALL = "Body IN ('claude_code.api_request', 'pi.api_request')";
+const CLAUDE_NATIVE_CALL =
+  "(Body = 'claude_code.api_request' AND LogAttributes['model'] NOT LIKE 'claude/%')";
+const ROUTER_CALL = "Body = 'platform.model_call'";
+
+const CALL_KEY =
+  "(ResourceAttributes['platform.agent.id'], ResourceAttributes['platform.invocation.id'])";
+const CALL_KEY_TEXT =
+  "concat(ResourceAttributes['platform.agent.id'], '|', ResourceAttributes['platform.invocation.id'])";
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Claude Code writes its own record beside the
+ * Model Router's, so a harness record is left out where the router's record
+ * stands in for it: the same agent and invocation (a sub-agent reports under
+ * its driver's id, on a runtime of its own) from that key's own first router
+ * record in the window on, so an image updated mid-window keeps its earlier
+ * harness records whenever the owner's other agents moved. ClickHouse has no
+ * correlated subquery, so the first records are one map looked up per row.
+ * The split is read from the data, so a router export that never arrived
+ * leaves the harness's count rather than none. A native Claude Code call
+ * names its model without the `claude/` prefix and always counts from the
+ * harness's record.
+ */
+const callRows = (w: MetricsWindow): string => {
+  const routerRows = [ROUTER_CALL, AGENT_GATE, ...timeBounds(w)].join(" AND ");
+  return `(${ROUTER_CALL} OR (${HARNESS_CALL} AND (${CLAUDE_NATIVE_CALL}
+     OR ${CALL_KEY} NOT IN (SELECT DISTINCT ${CALL_KEY} FROM otel_logs WHERE ${routerRows})
+     OR Timestamp < (SELECT mapFromArrays(groupArray(k), groupArray(m)) FROM (SELECT ${CALL_KEY_TEXT} AS k, min(Timestamp) AS m FROM otel_logs WHERE ${routerRows} GROUP BY k))[${CALL_KEY_TEXT}])))`;
+};
 
 const timeBounds = (w: MetricsWindow): string[] => [
   ...(w.hours === undefined
@@ -33,7 +62,7 @@ const timeBounds = (w: MetricsWindow): string[] => [
 ];
 
 const ownedCallRows = (w: MetricsWindow): string =>
-  [API_REQUEST, AGENT_GATE, ...timeBounds(w)].join(" AND ");
+  [callRows(w), AGENT_GATE, ...timeBounds(w)].join(" AND ");
 
 const sessionMatch = (w: MetricsWindow): string | undefined => {
   if (w.sessionId !== undefined)
@@ -65,7 +94,7 @@ const ownedLogRows = (w: MetricsWindow, body: string[]): string => {
 };
 
 export const ownedApiRequests = (w: MetricsWindow): string =>
-  ownedLogRows(w, [API_REQUEST]);
+  ownedLogRows(w, [callRows(w)]);
 
 export const ownedAgentLogs = (w: MetricsWindow): string => ownedLogRows(w, []);
 
@@ -96,6 +125,7 @@ const TOK_IN = IN("'input_tokens'");
 const TOK_CACHE_R = IN("'cache_read_tokens'");
 const TOK_CACHE_C = IN("'cache_creation_tokens'");
 const COST_USD = `${IN("'cost_usd_micros'")} / 1e6`;
+const UNCOUNTED = "countIf(LogAttributes['platform.uncounted'] != '')";
 
 const n = (v: unknown): number => Number(v ?? 0);
 
@@ -130,6 +160,7 @@ export function createClickhouseReader(
         `SELECT
            LogAttributes['model'] AS model,
            count() AS calls,
+           ${UNCOUNTED} AS uncountedCalls,
            sum(${TOK_IN}) AS inputTokens,
            sum(${IN("'output_tokens'")}) AS outputTokens,
            sum(${TOK_CACHE_R}) AS cacheReadTokens,
@@ -145,6 +176,7 @@ export function createClickhouseReader(
       return r.map((x) => ({
         model: String(x.model ?? ""),
         calls: n(x.calls),
+        uncountedCalls: n(x.uncountedCalls),
         inputTokens: n(x.inputTokens),
         outputTokens: n(x.outputTokens),
         cacheReadTokens: n(x.cacheReadTokens),
@@ -152,6 +184,38 @@ export function createClickhouseReader(
         costUsd: n(x.costUsd),
         durationMs: n(x.durationMs),
       })) satisfies TokenSpendByModel[];
+    },
+
+    async tokenSpendByProvider(agentIds, window) {
+      const r = await rows(
+        `SELECT
+           LogAttributes['platform.provider.alias'] AS provider,
+           LogAttributes['platform.connection.id'] AS connectionId,
+           count() AS calls,
+           ${UNCOUNTED} AS uncountedCalls,
+           sum(${TOK_IN}) AS inputTokens,
+           sum(${IN("'output_tokens'")}) AS outputTokens,
+           sum(${TOK_CACHE_R}) AS cacheReadTokens,
+           sum(${TOK_CACHE_C}) AS cacheCreationTokens,
+           sum(${COST_USD}) AS costUsd
+         FROM otel_logs
+         WHERE ${ownedApiRequests(window)}
+         GROUP BY provider, connectionId
+         ORDER BY costUsd DESC, calls DESC`,
+        windowParams(agentIds, window),
+      );
+      return r.map((x) => ({
+        provider: String(x.provider ?? ""),
+        connectionId: String(x.connectionId ?? ""),
+        connectionName: null,
+        calls: n(x.calls),
+        uncountedCalls: n(x.uncountedCalls),
+        inputTokens: n(x.inputTokens),
+        outputTokens: n(x.outputTokens),
+        cacheReadTokens: n(x.cacheReadTokens),
+        cacheCreationTokens: n(x.cacheCreationTokens),
+        costUsd: n(x.costUsd),
+      })) satisfies TokenSpendByProvider[];
     },
 
     async spendByAgent(agentIds, window) {

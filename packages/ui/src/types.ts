@@ -241,7 +241,10 @@ export interface Schedule {
   rrule: string | null;
   at: string | null;
   inSession: "fresh" | "continue" | "report" | null;
+  harness: string | null;
   model: string | null;
+  settings: Record<string, string> | null;
+  migrationNote: string | null;
   sessionTitle: string | null;
   timezone: string | null;
   quietHours: QuietWindowView[];

@@ -26,7 +26,10 @@ const cronSchedule: Schedule = {
   status: null,
   at: null,
   inSession: null,
+  harness: null,
   model: null,
+  settings: null,
+  migrationNote: null,
   sessionTitle: null,
 };
 
@@ -57,7 +60,9 @@ describe("the cron schedule editor", () => {
       cron: "30 7 * * 1-5",
       task: "Post the digest",
       precheck: "",
+      harness: "",
       model: "",
+      settings: {},
       sessionTitle: "",
       sessionMode: "continuous",
     });

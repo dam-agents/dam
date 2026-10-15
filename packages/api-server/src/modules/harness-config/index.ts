@@ -1,7 +1,7 @@
 export {
   composeFirePair,
   composeHarnessConfigModule,
-  composeSessionModelChoices,
+  composeSessionChoicesValidator,
   type FirePair,
 } from "./compose.js";
 export {
@@ -10,3 +10,7 @@ export {
 } from "./services/harness-config-service.js";
 export { harnessConfigEvent } from "./domain/harness-config-event.js";
 export { createHarnessConfigSnapshotWriter } from "./infrastructure/snapshot-writer.js";
+export type {
+  SessionChoices,
+  SessionChoicesValidator,
+} from "./services/session-choices.js";

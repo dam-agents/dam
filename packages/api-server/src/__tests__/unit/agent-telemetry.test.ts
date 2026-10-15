@@ -21,6 +21,7 @@ function spend(model: string, costUsd: number, durationMs: number) {
   return {
     model,
     calls: 1,
+    uncountedCalls: 0,
     inputTokens: 10,
     outputTokens: 5,
     cacheReadTokens: 0,
@@ -89,6 +90,7 @@ function reader(
       note(ids, window);
       return byModel;
     },
+    tokenSpendByProvider: async () => [],
     runtimeBySession: async (ids, window) => {
       note(ids, window);
       return sessions;
@@ -312,6 +314,7 @@ describe("agent telemetry", () => {
     const svc = createAgentTelemetry({
       reader: {
         tokenSpendByModel: async () => [],
+        tokenSpendByProvider: async () => [],
         runtimeBySession: async () => rowsFor(2) as never,
         contextPerCall: async (_i, _w, limit) => rowsFor(limit - 1) as never,
         telemetryEvents: async (_i, _w, limit) => rowsFor(limit - 1) as never,
@@ -346,6 +349,7 @@ describe("agent telemetry", () => {
     const svc = createAgentTelemetry({
       reader: {
         tokenSpendByModel: async () => [],
+        tokenSpendByProvider: async () => [],
         runtimeBySession: async () => rowsFor(3) as never,
         contextPerCall: async (_i, _w, limit) => rowsFor(limit) as never,
         telemetryEvents: async (_i, _w, limit) => rowsFor(limit) as never,

@@ -28,6 +28,7 @@ function makeService(
     get: vi.fn(async () => getResult()),
     deleteAgent: vi.fn(async () => ok(undefined)),
     restart: vi.fn(async () => ok(undefined)),
+    runtimeFleet: vi.fn(async () => ok({ onCurrent: 0, outdated: [] })),
   };
 }
 

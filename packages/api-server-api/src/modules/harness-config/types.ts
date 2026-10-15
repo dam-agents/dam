@@ -23,6 +23,7 @@ export interface HarnessConfigStatus {
   supported: boolean;
   catalog: HarnessConfigCatalog | null;
   sessionModel: boolean;
+  modelRouter: boolean;
   defaultHarness: string | null;
   harnesses: HarnessCapability[] | null;
 }
@@ -51,4 +52,5 @@ export interface HarnessConfigService {
   ): Promise<HarnessConfigSnapshotResult>;
   sessionPair(agentId: string): Promise<SessionPair | null>;
   rememberSessionPair(agentId: string, pair: SessionPair): Promise<void>;
+  defaultFor(agentId: string, harness?: string): Promise<SessionPair | null>;
 }

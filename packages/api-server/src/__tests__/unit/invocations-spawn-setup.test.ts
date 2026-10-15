@@ -6,6 +6,7 @@ import { AGENTS_PLURAL } from "../../modules/agents/infrastructure/labels.js";
 import type { InvocationsRepository } from "../../modules/invocations/infrastructure/invocations-repository.js";
 import {
   createInvocationsService,
+  ModelNameError,
   ProviderMismatchError,
   type SpawnInput,
 } from "../../modules/invocations/services/invocations-service.js";
@@ -344,19 +345,46 @@ describe("spawn inherits the driver's provider", () => {
           { id: "a", type: "anthropic" },
           { id: "b", type: "openai" },
         ],
-        ["openai"],
+        { runsOn: ["openai"] },
       ),
     ).toEqual({ kind: "inherited", id: "b" });
   });
 
+  // TEST_SCENARIO: the driver holds IBM and Anthropic; a spawn naming an Anthropic model must land on the Anthropic Connection, not on IBM because it sorts first, and a spawn naming none follows the target harness's home order (Codex is at home on OpenAI, Claude Code on Anthropic). A model whose provider the target cannot take is incompatible.
+  test("the requested model's provider wins, else the target harness's home provider", () => {
+    const held = [
+      { id: "ibm", type: "ibm-litellm" as const },
+      { id: "anth", type: "anthropic" as const },
+      { id: "oai", type: "openai" as const },
+    ];
+    expect(inheritProvider(held, { alias: "anthropic" })).toEqual({
+      kind: "inherited",
+      id: "anth",
+    });
+    expect(inheritProvider(held, { harness: "codex" })).toEqual({
+      kind: "inherited",
+      id: "oai",
+    });
+    expect(inheritProvider(held, { harness: "claude-code" })).toEqual({
+      kind: "inherited",
+      id: "anth",
+    });
+    expect(
+      inheritProvider(held, { alias: "anthropic", runsOn: ["openai"] }),
+    ).toEqual({ kind: "incompatible", offered: ["anthropic"] });
+  });
+
   test("a driver without a provider spawns without one", () => {
-    expect(inheritProvider([], ["openai"])).toEqual({ kind: "none" });
+    expect(inheritProvider([], { runsOn: ["openai"] })).toEqual({
+      kind: "none",
+    });
   });
 
   test("an image target narrows nothing", () => {
-    expect(
-      inheritProvider([{ id: "a", type: "anthropic" }], undefined),
-    ).toEqual({ kind: "inherited", id: "a" });
+    expect(inheritProvider([{ id: "a", type: "anthropic" }], {})).toEqual({
+      kind: "inherited",
+      id: "a",
+    });
   });
 });
 
@@ -608,5 +636,35 @@ describe("the spawn endpoint", () => {
         skills: [],
       },
     });
+  });
+});
+
+describe("spawn model naming", () => {
+  /** TEST_SCENARIO: A target runs on the current image, whose runtime routes
+   * by model name, so a spawn that names the target's model must name its
+   * provider too; a bare name is refused before anything is created. */
+  test("refuses a bare model name for the target", async () => {
+    const { service, created } = makeService();
+    await expect(
+      service.spawn({ ...baseInput, harnessConfig: { model: "gpt-5.5" } }),
+    ).rejects.toBeInstanceOf(ModelNameError);
+    await expect(
+      service.spawn({ ...baseInput, harnessConfig: { model: "sonnet" } }),
+    ).rejects.toThrow(/a tier name is no model/);
+    expect(created).toHaveLength(0);
+  });
+
+  /** TEST_SCENARIO: A Claude Code driver names the model the way its own
+   * picker spells it (`claude/<provider>/<id>`, lowercased); the spawn takes
+   * it and writes the provider-qualified form into the target's config. */
+  test("folds Claude Code's spelling into the provider-qualified name", async () => {
+    const { service, bumped } = makeService();
+    await service.spawn({
+      ...baseInput,
+      harnessConfig: { model: "claude/ibm/azure/gpt-5.5" },
+    });
+    expect(bumped.flat().map((e) => e.payload)).toContainEqual(
+      expect.objectContaining({ model: "ibm/azure/gpt-5.5" }),
+    );
   });
 });

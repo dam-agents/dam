@@ -1,0 +1,71 @@
+#!/usr/bin/env node
+//MISE description="Re-vendor LiteLLM's model price and context-window table, pruned to the fields the model catalog reads"
+//MISE sources=[".mise/tasks/update/model-prices"]
+//MISE outputs=["src/modules/model-catalog/infrastructure/model-prices.json"]
+import { writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const REPO = "BerriAI/litellm";
+const FILE = "model_prices_and_context_window.json";
+const RAW = `https://raw.githubusercontent.com/${REPO}/main/${FILE}`;
+const COMMITS = `https://api.github.com/repos/${REPO}/commits?path=${FILE}&per_page=1`;
+const MODES = new Set(["chat", "responses", "completion"]);
+const FIELDS = [
+  "mode",
+  "max_input_tokens",
+  "max_output_tokens",
+  "max_tokens",
+  "input_cost_per_token",
+  "output_cost_per_token",
+  "cache_read_input_token_cost",
+  "cache_creation_input_token_cost",
+  "supports_vision",
+  "supports_reasoning",
+];
+
+const normalize = (key) =>
+  key.split("/").at(-1).toLowerCase().replace(/\./g, "-");
+const plainness = (key) =>
+  (key.includes("/") ? 2 : 0) + (/^[a-z-]+\.[a-z]/i.test(key) ? 1 : 0);
+
+const out = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../../src/modules/model-catalog/infrastructure/model-prices.json",
+);
+
+const commits = await (await fetch(COMMITS, { headers: { accept: "application/vnd.github+json" } })).json();
+const commit = commits[0]?.sha;
+if (!commit) throw new Error("could not read the latest commit of the price table");
+const table = await (await fetch(`https://raw.githubusercontent.com/${REPO}/${commit}/${FILE}`)).json();
+
+const models = {};
+const keys = Object.keys(table)
+  .filter((key) => key !== "sample_spec" && table[key] && typeof table[key] === "object" && MODES.has(table[key].mode))
+  .sort((a, b) => plainness(a) - plainness(b) || a.localeCompare(b));
+for (const key of keys) {
+  const family = normalize(key);
+  if (models[family]) continue;
+  const entry = table[key];
+  const kept = { key };
+  for (const field of FIELDS) if (entry[field] !== undefined) kept[field] = entry[field];
+  models[family] = kept;
+}
+
+writeFileSync(
+  out,
+  JSON.stringify(
+    {
+      source: {
+        url: RAW,
+        commit,
+        fetchedAt: new Date().toISOString().slice(0, 10),
+        pruned: "mode in chat|responses|completion; one entry per family name (last path segment, lowercased, dots as dashes); fields the model catalog reads",
+      },
+      models,
+    },
+    null,
+    0,
+  ) + "\n",
+);
+console.log(`wrote ${Object.keys(models).length} models from ${REPO}@${commit.slice(0, 12)} to ${out}`);

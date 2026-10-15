@@ -314,8 +314,22 @@ export type UnbindTelegramChatError =
 export type UnbindTelegramChatResult =
   { ok: true; value: null } | { ok: false; error: UnbindTelegramChatError };
 
+export interface RuntimeFleetAgent {
+  agentId: string;
+  name: string;
+  image: string;
+  templateImage: string;
+  lastHello: string | null;
+}
+
+export interface RuntimeFleet {
+  onCurrent: number;
+  outdated: RuntimeFleetAgent[];
+}
+
 export interface AgentsService {
   list: () => Promise<Agent[]>;
+  runtimeFleet: (agentIds?: readonly string[]) => Promise<RuntimeFleet>;
   get: (id: string) => Promise<Agent | null>;
   backgroundWork: (id: string) => Promise<AgentBackgroundWork | null>;
   create: (input: AgentCreateInput) => Promise<Agent>;
