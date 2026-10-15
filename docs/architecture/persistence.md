@@ -284,6 +284,7 @@ So the runner measures the claim itself: past 75% used it sheds what it can fetc
 It asks again only once the claim has filled five points further, and clears the request once use is back under 70%, so a claim the homes keep full does not have every guest delete its scratch again every minute.
 Every guest is held to the claim's room as well: at each look the runner grants each running guest an even part of what is left below 95% of the claim, through its share, and platform-init sizes a preallocated file on the disk so that the guest can write only what is left of its grant.
 A guest held below 256 MiB may still write 256 MiB in all, once, until a grant with room comes, so with N agents running the claim can pass 95% by at most N times that.
+The agent that used it up gets room again once the claim has room, through a grant that holds the floor: when another agent is deleted or frees files, or the storage grows, as the full-home message says; a sleep and wake also gives it the floor again, for one more way in to free its own files.
 A write past it fails inside the guest with "no space left on device", which the agent handles and the runner reports as a full home, and the claim stays writable for the owner's other agents.
 The file's blocks are only marked in the guest's filesystem and never written, so it takes nothing from the claim; it has no name, so the filesystem frees it whenever the guest stops, and an older platform-init never finds it.
 Eviction does not count it as used, so a guest held to the claim does not read its own disk as short.
