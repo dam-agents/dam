@@ -10,8 +10,10 @@ import {
 } from "api-server-api";
 import { harnessRouter } from "api-server-api/harness-router";
 import { appRouter } from "api-server-api/router";
+import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
+import { mountInvocationRoutes } from "../../apps/harness-api-server/invocation-endpoints.js";
 import { rejectOversizedArrays } from "../../core/mcp-input-bounds.js";
 
 const MAX = 100_000;
@@ -134,5 +136,36 @@ describe("input array bounds", () => {
       message: OVERSIZED_ARRAY_MESSAGE,
     });
     expect(parsed).toBe(0);
+  });
+
+  // TEST_SCENARIO: an agent pod also posts a spawn request as a plain JSON body, outside tRPC and MCP, so the same limit holds there.
+  it("refuses an oversized array in an agent's spawn request body", async () => {
+    const app = new Hono();
+    mountInvocationRoutes(app, {
+      k8s: {
+        getCustomObject: async () => ({
+          metadata: {
+            uid: "uid-1",
+            labels: { "agent-platform.ai/owner": "owner-1" },
+          },
+          spec: {},
+        }),
+      },
+      invocationsServiceFor: () => ({}),
+      connectionsServiceFor: () => ({}),
+    } as never);
+
+    const res = await app.request("/api/agents/driver-1/invocations", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: "go",
+        schema: { type: "object" },
+        connections: new Array(MAX + 1).fill("x"),
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: OVERSIZED_ARRAY_MESSAGE });
   });
 });
