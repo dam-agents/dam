@@ -6,6 +6,7 @@ import {
   featureModeSchema,
   harnessCatalogConfigSchema,
   linksSchema,
+  signUpsSchema,
 } from "api-server-api";
 import { DEFAULT_DB_POOL_MAX } from "db";
 import { z } from "zod";
@@ -242,6 +243,7 @@ const configSchema = z.object({
     version: z.string().min(1, "terms.version must be set"),
     text: z.string().min(1, "terms.text must be set"),
   }),
+  signUps: signUpsSchema.default("open"),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -440,5 +442,6 @@ export function loadConfig(): Config {
       version: process.env.TERMS_VERSION,
       text: process.env.TERMS_TEXT,
     },
+    signUps: process.env.SIGN_UPS || undefined,
   });
 }

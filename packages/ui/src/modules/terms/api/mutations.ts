@@ -7,7 +7,7 @@ export function useAcceptTerms() {
     ...trpc.terms.accept.mutationOptions(),
     meta: {
       invalidates: [trpc.terms.latestAcceptance.queryKey()],
-      errorToast: "Couldn't accept Terms of Use",
+      suppressErrorToast: true,
     },
   });
 }

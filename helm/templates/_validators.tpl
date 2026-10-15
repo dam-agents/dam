@@ -20,6 +20,7 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.vmValuesThisChartNoLongerReads" . -}}
 {{- include "platform.validate.egressLockdownModeExclusive" . -}}
 {{- include "platform.validate.termsRequired" . -}}
+{{- include "platform.validate.signUps" . -}}
 {{- include "platform.validate.enterpriseGitHubNeedsBothHostAndToken" . -}}
 {{- include "platform.validate.unenforcedMeshOnlyOnALocalCluster" . -}}
 {{- include "platform.validate.gatewayEgressCidrs" . -}}
@@ -201,6 +202,15 @@ A missing text or version would lock out every account at first request.
 {{- end -}}
 {{- if not (.Values.terms.version | default "" | trim) -}}
 {{- fail "terms.version is required. Bump on material text changes to re-prompt every user." -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The api-server refuses to start on any other value, so catch it at install.
+*/}}
+{{- define "platform.validate.signUps" -}}
+{{- if not (has .Values.signUps (list "open" "closed")) -}}
+{{- fail (printf "signUps must be \"open\" or \"closed\", got %q." (toString .Values.signUps)) -}}
 {{- end -}}
 {{- end -}}
 

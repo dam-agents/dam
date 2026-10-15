@@ -676,7 +676,11 @@ export type {
   AcceptedAcceptance,
   TermsService,
 } from "./modules/terms/types.js";
-export { termsDocumentSchema } from "./modules/terms/schemas.js";
+export {
+  signUpsSchema,
+  termsDocumentSchema,
+  type SignUps,
+} from "./modules/terms/schemas.js";
 export { PRE_TERMS_PROCEDURES } from "./modules/terms/types.js";
 
 export type { EntryPointChoice, UsageService } from "./modules/usage/types.js";

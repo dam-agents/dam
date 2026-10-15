@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { PAGE_TITLE } from "@/components/ui/page-header";
+import { getErrorMessage } from "@/lib/errors";
 import { formatDate } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
@@ -62,8 +63,20 @@ export function TermsView() {
           />
         )}
       </div>
+      {accept.error && (
+        <p role="alert" className="mt-4 text-sm text-danger">
+          {acceptErrorText(accept.error)}
+        </p>
+      )}
     </div>
   );
+}
+
+function acceptErrorText(error: unknown): string {
+  const message = getErrorMessage(error, "Couldn't accept the Terms of Use.");
+  return message === "terms_stale"
+    ? "The Terms of Use changed while you were reading. Reload the page to review the current version."
+    : message;
 }
 
 function TermsMeta({
