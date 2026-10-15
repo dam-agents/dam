@@ -848,6 +848,37 @@ jobs:
           key: *harness-tools-key
       - *e2e-image-log
       - *e2e-provision-log
+      # smolvm's VMM seccomp filter reports to the kernel, never to a pod log: a
+      # call outside its allowlist is an audit record (type=1326, sig=0 in
+      # audit, sig=31 when enforce killed the VMM). With no auditd, as on this
+      # runner, they reach the kernel log, which is gone with the runner.
+      # Every run prints them and their count; a failed run keeps the whole
+      # kernel log too, for a VMM that died some other way.
+      - name: Kernel log and VMM seccomp records
+        if: ${{ !cancelled() }}
+        run: |
+          mkdir -p /tmp/kernel-log
+          sudo journalctl -k -b --no-pager -o short-precise > /tmp/kernel-log/kernel.log ||
+            sudo dmesg -T > /tmp/kernel-log/kernel.log
+          [ ! -e /var/log/audit/audit.log ] || sudo cat /var/log/audit/audit.log > /tmp/kernel-log/audit.log
+          grep -hs 'type=1326\|type=SECCOMP' /tmp/kernel-log/kernel.log /tmp/kernel-log/audit.log > /tmp/seccomp.log || true
+          killed="$(grep -c ' sig=31 ' /tmp/seccomp.log || true)"
+          # The kernel rate-limits audit records it prints, so a count can be short.
+          dropped="$(grep -c 'kauditd_printk_skb: .* callbacks suppressed\|audit: rate limit exceeded\|audit: backlog limit exceeded' /tmp/kernel-log/kernel.log || true)"
+          line="seccomp audit records: $(wc -l < /tmp/seccomp.log), $killed of them SIGSYS kills; audit drop notices: $dropped"
+          echo "$line" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ -s /tmp/seccomp.log ]; then
+            echo "::warning::$line"
+            tail -n 200 /tmp/seccomp.log
+            cp /tmp/seccomp.log /tmp/kernel-log/
+          fi
+      - if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: kernel-log-vm
+          path: /tmp/kernel-log/
+          retention-days: 7
+          if-no-files-found: ignore
       # The background provision and image fetch each end by writing their
       # status file, so its mtime is when they finished.
       - name: Timing summary
