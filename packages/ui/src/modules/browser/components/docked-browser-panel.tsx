@@ -28,6 +28,7 @@ import {
 import { useStore } from "../../../store.js";
 import { useBrowserControl } from "../hooks/use-browser-control.js";
 import { addressUrl } from "../lib/address.js";
+import { BrowserTabBar } from "./browser-tab-bar.js";
 import { StreamView } from "./stream-view.js";
 
 const SIGN_IN_NOTICE_KEY = "platform.browserPanel.signInNoticeSeen";
@@ -45,6 +46,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
   const openRequestId = useStore((s) => s.browserOpenRequest?.id);
   const takeOpenRequest = useStore((s) => s.takeBrowserOpenRequest);
   const screenRef = useRef<HTMLIFrameElement>(null);
+  const addressRef = useRef<HTMLInputElement>(null);
   const stream = useBrowserControl(agentId);
   const [address, setAddress] = useState("");
   const [editing, setEditing] = useState(false);
@@ -73,6 +75,12 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
     stream.navigate(url);
     setEditing(false);
     screenRef.current?.focus();
+  };
+
+  const openTab = () => {
+    stream.newTab();
+    setAddress("");
+    addressRef.current?.focus();
   };
 
   const clearData = async () => {
@@ -113,6 +121,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
         </Button>
         <form onSubmit={submit} className="min-w-0 flex-1">
           <Input
+            ref={addressRef}
             value={address}
             onChange={(e) => setAddress(e.target.value)}
             onFocus={(e) => {
@@ -202,6 +211,16 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
           <Close size={16} />
         </Button>
       </div>
+
+      {stream.tabs && (
+        <BrowserTabBar
+          tabs={stream.tabs}
+          activeTab={stream.activeTab}
+          onSelect={stream.selectTab}
+          onClose={stream.closeTab}
+          onNew={openTab}
+        />
+      )}
 
       <div className="relative flex shrink-0 items-center gap-2 border-b border-border/60 px-4 py-1.5 text-xs text-muted-foreground">
         {stream.page.title && (
