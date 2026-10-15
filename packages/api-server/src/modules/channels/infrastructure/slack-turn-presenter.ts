@@ -28,8 +28,8 @@ export interface TurnPresenter {
  * holds just the fence and an optional language, and closes it only on a line
  * that holds just the fence. A fence that ends a line moves to its own line,
  * and text after an opening fence that is not one lowercase word moves below
- * it. This works line by line: it does not split a pair of fences inside one
- * line of prose, and it also rewrites such lines inside a longer fence.
+ * it. This works line by line: it leaves a fence pair that opens after prose
+ * as it is, and it also rewrites such lines inside a longer fence.
  */
 export function renderAssistantBlocks(
   footer: AgentFooter,
@@ -37,7 +37,10 @@ export function renderAssistantBlocks(
 ): SlackBlock[] {
   const markdown = text
     .replace(/^([ \t]*```)(?!`|[a-z0-9+#-]*[ \t]*$)/gm, "$1\n")
-    .replace(/(?<!^[ \t>]*|```.*)(?<=[^\s`][ \t]*)```[ \t]*$/gm, "\n```");
+    .replace(
+      /```(?<!^[ \t>]*```|```.*```|[^\s`>][ \t]*```[^`]*```)(?<=[^\s`][ \t]*```)[ \t]*$/gm,
+      "\n```",
+    );
   return [
     { type: "markdown", text: markdown || "(no response)" },
     agentContextBlock(footer),

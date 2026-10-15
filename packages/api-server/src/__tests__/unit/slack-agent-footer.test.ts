@@ -295,6 +295,11 @@ describe("renderAssistantBlocks", () => {
       "Run ```pwd```\nMore text.",
     ],
     [
+      "a fence after a mid-line opening fence",
+      "Here: ```ls -la\npwd```\nAfter.",
+      "Here: ```ls -la\npwd```\nAfter.",
+    ],
+    [
       "standard Markdown with a language",
       "Before\n```bash\necho hello\n```\nAfter.",
       "Before\n```bash\necho hello\n```\nAfter.",
