@@ -266,7 +266,7 @@ impl Loader {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: removes the pod's copies the loader no longer needs: every release but the one running and the one it would go back to, and every runtime none of those runs against and no VMM still maps. A machine booted before a hand-off keeps the runtime it booted until it stops.
+    // UNIT_BOUNDARY_DESCRIPTION: removes the pod's copies the loader no longer needs: every release but the one running and the one it would go back to, and every runtime none of those runs against and no running VMM boots from. A machine booted before a hand-off keeps the runtime it booted until it stops.
     fn prune(&self, running: &Running) {
         let kept: Vec<&Release> = std::iter::once(&running.release)
             .chain(running.replaced.as_ref())
@@ -279,7 +279,7 @@ impl Loader {
                 .flatten()
                 .filter_map(Result::ok)
                 .map(|entry| entry.path())
-                .filter(|dir| release::mapped(Path::new("/proc"), dir)),
+                .filter(|dir| release::booted_from(Path::new("/proc"), dir)),
         );
         let runtimes: Vec<&Path> = runtimes.iter().map(PathBuf::as_path).collect();
         for (dir, keep) in [(&self.copies, &releases), (&self.runtimes, &runtimes)] {
