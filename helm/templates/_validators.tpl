@@ -64,6 +64,19 @@ The api-server refuses to start on a feature mode it cannot read.
 {{- end -}}
 
 {{/*
+`virtualization.runner.seccomp`, read the way `platform.featureModes` reads a
+mode: an unquoted `off` arrives as `false`, which `default` would take as unset.
+*/}}
+{{- define "platform.vmRunner.seccomp" -}}
+{{- $mode := .Values.virtualization.runner.seccomp -}}
+{{- if kindIs "bool" $mode -}}
+{{- ternary "on" "off" $mode -}}
+{{- else -}}
+{{- $mode | default "audit" -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 `features` as JSON. YAML 1.1 reads an unquoted on/off as a boolean, so a
 boolean is taken as the mode it was written as.
 */}}
@@ -330,7 +343,7 @@ runner unconfined on purpose, and the controller warns about it at startup.
 {{- if not (has $dns (list "Default" "ClusterFirst")) -}}
 {{- fail (printf "virtualization.runner.dnsPolicy %q is not one the runner supports — use `Default` (the node's resolver) or `ClusterFirst`. See the comment on it in values.yaml for which one." $dns) -}}
 {{- end -}}
-{{- $seccomp := $v.runner.seccomp | default "audit" -}}
+{{- $seccomp := include "platform.vmRunner.seccomp" . -}}
 {{- if not (has $seccomp (list "audit" "enforce" "off")) -}}
 {{- fail (printf "virtualization.runner.seccomp %q is not a mode smolvm knows — use `audit`, `enforce` or `off`. smolvm reads any other value as `off`, so a typo would install no filter at all." (toString $seccomp)) -}}
 {{- end -}}

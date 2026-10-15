@@ -83,6 +83,12 @@ for refused in 'virtualization.runner.dnsPolicy=Default' \
     exit 1
   fi
 done
+# An unquoted `seccomp: off` in a values file arrives as a boolean, and must
+# still mean no filter rather than the default.
+helm template platform . "${COMMON[@]}" "${VM[@]}" \
+  --set virtualization.imageCache.hostPath=/var/lib/platform-images \
+  --set virtualization.runner.seccomp=false | grep -q '\\"seccomp\\":\\"off\\"' ||
+  { echo "a render with seccomp=false did not give the runners seccomp off" >&2; exit 1; }
 # A runner on the node cache resolves nothing, so it needs no resolver named.
 helm template platform . "${COMMON[@]}" "${VM[@]}" \
   --set virtualization.imageCache.hostPath=/var/lib/platform-images >/dev/null
