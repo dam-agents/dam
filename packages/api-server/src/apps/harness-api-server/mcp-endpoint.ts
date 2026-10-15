@@ -136,6 +136,8 @@ function renderChecklist(steps: OnboardingStep[]): string {
   ].join("\n");
 }
 
+const SESSION_LOOKUP_TIMEOUT_MS = 2_000;
+
 export interface McpSessionDeps {
   owner: string;
   channelManager: ChannelManager;
@@ -1339,9 +1341,29 @@ export function createMcpSession(
   if (deps.spendStatus)
     registerSpendLimitsTool(server, { status: deps.spendStatus });
 
+  const sessionRef = deps.sessionRef;
   registerSubAgentTools(server, {
     ops: deps.driverOps,
     awaits: deps.subAgentAwaits,
+    ...(sessionRef
+      ? {
+          spawningSession: async () => {
+            try {
+              const { sessionId } = await runtimeClient.sessions.byRef.query(
+                { ref: sessionRef },
+                { signal: AbortSignal.timeout(SESSION_LOOKUP_TIMEOUT_MS) },
+              );
+              return sessionId;
+            } catch (err) {
+              console.warn(
+                `[invocations] ${agentId}: could not resolve the spawning session; the sub-agent shows in every chat`,
+                err,
+              );
+              return null;
+            }
+          },
+        }
+      : {}),
     requestSignal: deps.requestSignal,
     subagentModel: async () => {
       const ref = deps.sessionRef;

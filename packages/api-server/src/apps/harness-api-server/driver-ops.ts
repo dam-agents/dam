@@ -75,7 +75,9 @@ function driverOps(
   return {
     async spawn(
       body: SpawnRequest,
-      origin: InvocationOrigin = "script",
+      from: { origin: InvocationOrigin; driverSessionId?: string | null } = {
+        origin: "script",
+      },
     ): Promise<SpawnOutcome> {
       const target: SpawnInput["target"] = body.image
         ? { image: body.image }
@@ -158,7 +160,8 @@ function driverOps(
           ...(body.label !== undefined ? { label: body.label } : {}),
           ...(body.ttlMs !== undefined ? { ttlMs: body.ttlMs } : {}),
           ...(body.harnessConfig ? { harnessConfig: body.harnessConfig } : {}),
-          origin,
+          origin: from.origin,
+          driverSessionId: from.driverSessionId ?? null,
         });
         return { ok: true, id };
       } catch (err) {

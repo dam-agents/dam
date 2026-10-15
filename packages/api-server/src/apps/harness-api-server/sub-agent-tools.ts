@@ -296,6 +296,7 @@ export function registerSubAgentTools(
   deps: {
     ops: DriverOps;
     awaits: SubAgentAwaitMarks;
+    spawningSession?: () => Promise<string | null>;
     requestSignal?: AbortSignal;
     subagentModel?: () => Promise<string | null>;
     catalogModels?: (harness: string) => Promise<CatalogModelRef[] | null>;
@@ -340,13 +341,20 @@ export function registerSubAgentTools(
               : `spawn_subagent refused: ${unlisted}`,
           );
       }
-      const unmet = unmetNeed(needs, body, await ops.harness());
+      const [harness, driverSessionId] = await Promise.all([
+        ops.harness(),
+        deps.spawningSession?.() ?? null,
+      ]);
+      const unmet = unmetNeed(needs, body, harness);
       if (unmet) {
         return errorResult(
           `spawn_subagent refused: ${unmet}. Do the work in this sandbox, with your harness's own subagent if it has one, or state a need the request bears out.`,
         );
       }
-      const outcome = await ops.spawn(body, "tool");
+      const outcome = await ops.spawn(body, {
+        origin: "tool",
+        driverSessionId,
+      });
       if (!outcome.ok) {
         return errorResult(`spawn_subagent refused: ${outcome.message}`);
       }

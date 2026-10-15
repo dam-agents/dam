@@ -49,17 +49,20 @@ export function useInvocationTurns(
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: a driver's running children are read while its
- * turn runs, while its transcript names a fan-out, and for as long as the last
- * answer still had a child running, so a background fan-out stays in view
- * without every open chat polling forever.
+ * UNIT_BOUNDARY_DESCRIPTION: a driver's running children, as one of its
+ * chats shows them: the ones that chat's Session spawned and the ones with no
+ * recorded Session. They are read while its turn runs, while its transcript
+ * names a fan-out, and for as long as the last answer still had a child
+ * running, so a background fan-out stays in view without every open chat
+ * polling forever.
  */
 export function useRunningDelegations(
   driverAgentId: string | null,
+  sessionId: string | null,
   opts: { busy: boolean; watch: boolean },
 ) {
   const options = trpc.invocations.running.queryOptions(
-    driverAgentId ? { driverAgentId } : skipToken,
+    driverAgentId ? { driverAgentId, sessionId } : skipToken,
   );
   const cached = useQueryClient().getQueryData(options.queryKey);
   return useQuery({

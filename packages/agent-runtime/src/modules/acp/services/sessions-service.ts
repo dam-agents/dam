@@ -274,6 +274,16 @@ export function createSessionsService(deps: {
       return deps.sessionMetadata.get(sessionId)?.meta.settings ?? {};
     },
 
+    async byRef(ref) {
+      const sessionId = deps.sessionMetadata.findByRef(ref);
+      if (
+        sessionId === undefined ||
+        deps.sessionMetadata.isTombstoned(sessionId)
+      )
+        return null;
+      return sessionId;
+    },
+
     async storeDelegationFrames(input) {
       return deps.delegations.store(input);
     },

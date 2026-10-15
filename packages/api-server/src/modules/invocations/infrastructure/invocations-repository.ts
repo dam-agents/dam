@@ -43,6 +43,7 @@ export interface InvocationRow extends InvocationSpec {
   transcriptCaptured: boolean;
   transcriptTruncated: boolean;
   harnessConfig: InvocationHarnessConfig | null;
+  driverSessionId: string | null;
 }
 
 export interface InvocationsRepository {
@@ -56,6 +57,7 @@ export interface InvocationsRepository {
       expiresAt: Date;
       harnessConfig: InvocationHarnessConfig | null;
       origin?: InvocationOrigin;
+      driverSessionId?: string | null;
     },
   ): Promise<void>;
   get(id: string): Promise<InvocationRow | null>;
@@ -103,6 +105,7 @@ export function toRow(r: typeof invocationsTable.$inferSelect): InvocationRow {
     transcriptCaptured: r.transcriptCaptured,
     transcriptTruncated: r.transcriptTruncated,
     harnessConfig: r.harnessConfig as InvocationHarnessConfig | null,
+    driverSessionId: r.driverSessionId,
   };
 }
 
@@ -127,6 +130,7 @@ export function createInvocationsRepository(db: Db): InvocationsRepository {
         expiresAt: input.expiresAt,
         harnessConfig: input.harnessConfig,
         ...(input.origin ? { origin: input.origin } : {}),
+        driverSessionId: input.driverSessionId ?? null,
       });
     },
 
