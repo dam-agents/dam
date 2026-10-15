@@ -1,6 +1,8 @@
 export type { AppRouter } from "./router.js";
 export type { ApiContext, UserIdentity } from "./context.js";
 
+export { hasOversizedArray, OVERSIZED_ARRAY_MESSAGE } from "./input-bounds.js";
+
 export { ChannelType, type EnvVar } from "./modules/shared.js";
 
 export { liveEventSchema, type LiveEvent } from "./modules/events/schemas.js";

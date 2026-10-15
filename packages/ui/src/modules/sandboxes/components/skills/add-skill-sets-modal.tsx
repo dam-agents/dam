@@ -1,5 +1,4 @@
 import type { SkillSet } from "api-server-api";
-import { skillKey } from "api-server-api";
 import { useMemo, useState } from "react";
 
 import {
@@ -12,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RemoveButton } from "@/components/ui/remove-button";
 import { useToggleSet } from "@/hooks/use-toggle-set";
+
+import type { SkillIdentity } from "../../lib/skill-identity.js";
 
 interface SetPreview {
   set: SkillSet;
@@ -117,7 +118,7 @@ export function AddSkillSetsModal({
   loadFailed,
   available,
   installedKeys,
-  unreadableSources,
+  resolveSetEntry,
   ready,
   applying,
   onApply,
@@ -128,7 +129,9 @@ export function AddSkillSetsModal({
   loadFailed: boolean;
   available: ReadonlySet<string>;
   installedKeys: ReadonlySet<string>;
-  unreadableSources: ReadonlySet<string>;
+  resolveSetEntry: (
+    entry: SkillIdentity,
+  ) => { key: string; unreadable: boolean } | null;
   ready: boolean;
   applying: boolean;
   onApply: (setIds: string[]) => Promise<boolean>;
@@ -145,10 +148,10 @@ export function AddSkillSetsModal({
         let unavailable = 0;
         let unreadable = 0;
         for (const entry of set.skills) {
-          const key = skillKey(entry);
-          if (available.has(key)) {
-            if (!installedKeys.has(key)) adds.push(key);
-          } else if (unreadableSources.has(entry.source)) {
+          const resolved = resolveSetEntry(entry);
+          if (resolved && available.has(resolved.key)) {
+            if (!installedKeys.has(resolved.key)) adds.push(resolved.key);
+          } else if (resolved?.unreadable) {
             unreadable += 1;
           } else {
             unavailable += 1;
@@ -156,7 +159,7 @@ export function AddSkillSetsModal({
         }
         return { set, adds, unavailable, unreadable };
       }),
-    [sets, available, installedKeys, unreadableSources],
+    [sets, available, installedKeys, resolveSetEntry],
   );
 
   const unionAdds = useMemo(() => {

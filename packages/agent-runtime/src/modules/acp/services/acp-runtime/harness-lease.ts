@@ -65,8 +65,8 @@ export interface HarnessLeaseDeps {
  * cleanup and reports one reason — agent-exited, config-recycle, env-recycle,
  * harness-unresponsive, or shutdown — so the cleanup steps cannot drift apart
  * between the paths. A crash is final for this lease, which the pod's lease
- * router then drops unless it is the default one; a recycle respawns on the
- * next attach. A forced recycle for env or config is held back while a kept
+ * router then drops so the next session respawns it; a recycle respawns on
+ * the next attach. A forced recycle for env or config is held back while a kept
  * Harness Task runs, because the recycle would kill it: the recycle stays owed
  * until the task ends or stops being kept, or a caller applies it now. An
  * unresponsive harness is forced anyway.

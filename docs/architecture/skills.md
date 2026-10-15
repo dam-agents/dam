@@ -1,6 +1,6 @@
 # Skills
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 ## Overview
 
@@ -95,14 +95,16 @@ Input that names no repository is refused in the field, before the source exists
 The directory of a browse link becomes the source's path when the user gave none.
 The branch is **not** honoured — both scanners read the repository's default branch — so the product says the branch was ignored rather than silently scanning something else.
 
-Listing dedupes on `gitUrl` with first-wins precedence: user → system → template.
-A user creating a custom source for the same URL shadows the system entry; deleting the user row exposes the system entry again.
+A source is identified by its repository **and** its path, so one owner may connect the same repository several times, once per path — the developer skills of a repository, and a test profile under another directory of it that an agent with narrower egress installs.
+"No path" is a value of its own, and paths compare in canonical form.
+Listing dedupes on `(gitUrl, path)` with first-wins precedence: user → system → template.
+A user creating a custom source for the same URL and path shadows the system entry; deleting the user row exposes the system entry again.
 
 A source may carry an optional repo-relative **path** — a subdirectory the scanner walks instead of the defaults.
 When set, that directory is scanned (and skills resolved) exclusively, bypassing the [Source Roots](#source-roots) union and top-level fallback — and failing by name when it resolves to nothing, whichever scanner answers: no such directory, or no skill under it; when absent, resolution is unchanged.
 A path that **is itself a skill directory** — the common case when someone shares a link to one skill's folder — contributes itself as a skill, alongside any skills one level below it, rather than resolving to nothing.
-Path is a property of the source, resolved server-side; it is denormalized onto each installed ref (`agent_skills`) so the apply path resolves the skill dir without re-reading the source.
-One path per `(owner, gitUrl)`; changing it is delete + re-add.
+Path is part of the source's identity; it is denormalized onto each installed ref (`agent_skills`) so the apply path resolves the skill dir without re-reading the source.
+Another path of the same repository is another source; changing a source's path is delete + re-add.
 
 ### Skill, Installed Skill Ref, Local Skill
 
@@ -110,7 +112,10 @@ A **Scanned Skill** is what a scan reports about one skill in a Source, from eit
 A pod predating that last field reports none, which is why the api-server's own shape keeps it optional.
 The field-level shape lives in the contract package ([`packages/api-server-api/`](../../packages/api-server-api/)).
 
-An **Installed Skill Ref** is a row in `agent_skills` keyed `(agentId, source, name)` recording which Scanned Skill is installed at which Version on which Agent.
+An **Installed Skill Ref** is a row in `agent_skills` keyed `(agentId, source, name)` recording which Scanned Skill is installed at which Version on which Agent, and the path of the source it was installed from.
+That recorded path, not a lookup by repository, drives the ref's fetch and egress check, and deleting a source removes only the refs installed from its path.
+An agent holds a skill name from one path of a repository at a time; installing the same name from another path of it replaces the ref.
+An install names the path of the source it comes from; one that names none takes the repository's path-less source, or its only source, and is refused when several paths could match.
 The on-disk directory at the configured Skill Paths is the source of truth for "what is installed" — the Postgres row is a declarative record that self-heals on each `state` query.
 
 A **Local Skill** is a directory present in some [Skill Path](agent-skills.md#skill-path) on the pod, regardless of how it got there; the pod judges its [Skill Origin](agent-skills.md#skill-origin) at the same time.
@@ -169,7 +174,7 @@ And a skill installed after first boot from outside the image has no pristine co
 
 A per-user, named selection of skills (`skill_sets`, owner-scoped, names unique per owner) — so configuring an agent's skills is not manual work repeated from memory on each new one.
 
-A set stores **`(gitUrl, name)` pairs only**.
+A set stores **`(gitUrl, name)` pairs**, each with the source path when the skill came from a source that has one.
 The git URL, not the source id, because a set must survive its source row being deleted and re-added — and it is the identity `agent_skills` installs on, so two sources that both carry an `xlsx` stay distinct.
 No version: an apply resolves each entry against the source's current scan, so an old set installs what the source serves today.
 Only source-backed skills are representable — a Standalone or image-shipped skill has nowhere to install *from*.
@@ -382,12 +387,12 @@ The cost is an out-of-band deletion noticed one read later.
 Skills are entirely an **Application State** subsystem ([persistence](persistence.md)).
 Four Postgres tables in [`packages/db/src/schema.ts`](../../packages/db/src/schema.ts):
 
-| Table                   | Key                                 | Owner     |
-| ----------------------- | ----------------------------------- | --------- |
-| `skill_sources`         | `(id)`, unique on `(owner, gitUrl)` | per-user  |
-| `skill_sets`            | `(id)`, unique on `(owner, name)`   | per-user  |
-| `agent_skills`          | `(agentId, source, name)`           | per-agent |
-| `agent_skill_publishes` | `(id)`, indexed by `agentId`        | per-agent |
+| Table                   | Key                                       | Owner     |
+| ----------------------- | ----------------------------------------- | --------- |
+| `skill_sources`         | `(id)`, unique on `(owner, gitUrl, path)` | per-user  |
+| `skill_sets`            | `(id)`, unique on `(owner, name)`         | per-user  |
+| `agent_skills`          | `(agentId, source, name)`                 | per-agent |
+| `agent_skill_publishes` | `(id)`, indexed by `agentId`              | per-agent |
 
 System and template sources do **not** persist — system sources come from `SKILL_SOURCES_SEED`, template sources from the template's `spec.skillSources`.
 Both are computed at request time.

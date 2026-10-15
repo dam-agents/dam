@@ -1,5 +1,9 @@
 import type { Hono } from "hono";
-import { spawnInvocationRequestSchema } from "api-server-api";
+import {
+  hasOversizedArray,
+  OVERSIZED_ARRAY_MESSAGE,
+  spawnInvocationRequestSchema,
+} from "api-server-api";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import {
   createDriverOps,
@@ -32,7 +36,11 @@ export function mountInvocationRoutes(
 
     let body: SpawnRequest;
     try {
-      body = spawnInvocationRequestSchema.parse(await c.req.json());
+      const raw: unknown = await c.req.json();
+      if (hasOversizedArray(raw)) {
+        return c.json({ error: OVERSIZED_ARRAY_MESSAGE }, 400);
+      }
+      body = spawnInvocationRequestSchema.parse(raw);
     } catch (err) {
       return c.json({ error: (err as Error).message }, 400);
     }

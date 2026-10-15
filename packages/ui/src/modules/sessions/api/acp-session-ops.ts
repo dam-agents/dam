@@ -156,6 +156,7 @@ function toSessionViewFromPod(agentId: string, s: PodSession): SessionView {
     model: s.model ?? null,
     ...(s.settings && { settings: s.settings }),
     ...(s.spend ? { spend: s.spend } : {}),
+    ...(s.repositories?.length ? { repositories: s.repositories } : {}),
   };
 }
 

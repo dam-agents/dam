@@ -36,6 +36,7 @@ import {
   subAgentSpawnIn,
   type SubAgentSpawn,
 } from "../../infrastructure/sub-agent-spawn.js";
+import { toolActivityIn, type ToolActivity } from "../../../changes/index.js";
 import { frameDirectTurn, isDirectSurface } from "../../domain/direct-turn.js";
 import {
   isNonNullObject,
@@ -175,6 +176,7 @@ export interface AcpRuntimeDeps {
   isTerminalSessionActive?: (sessionId: string) => boolean;
   onArtifactTouch: (touch: ArtifactTouch) => void;
   onSubAgentSpawn?: (spawn: SubAgentSpawn) => void;
+  onToolActivity?: (activity: ToolActivity) => void;
   onHarnessExited?: () => void;
   sessionSettingFrames?: (sessionId: string) => SessionSettingFrame[];
   modeSettingId?: string;
@@ -397,10 +399,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     turnInFlight(sessionId) {
       return promptScheduler.hasTurnInFlight(sessionId);
     },
-    interruptedAt(sessionId) {
+    interruption(sessionId) {
       if (promptScheduler.hasTurnInFlight(sessionId)) return undefined;
-      return deps.activeTurns.leftovers().find((m) => m.sessionId === sessionId)
-        ?.startedAt;
+      return deps.activeTurns
+        .leftovers()
+        .find((m) => m.sessionId === sessionId);
     },
     undeliveredFor(sessionId) {
       return deps.undeliveredPrompts.readFor(sessionId);
@@ -1553,6 +1556,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         if (touch) deps.onArtifactTouch(touch);
         const spawn = subAgentSpawnIn(frame);
         if (spawn) deps.onSubAgentSpawn?.(spawn);
+        const activity = deps.onToolActivity && toolActivityIn(frame);
+        if (activity) deps.onToolActivity?.(activity);
       }
       if (bootstrap.has(sessionId)) {
         transcript.appendReplay(sessionId, line);

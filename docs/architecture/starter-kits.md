@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 ## Overview
 
@@ -97,6 +97,13 @@ flowchart LR
 - **Harnesses** — a kit without its own image may name the harness families it runs on (`harnesses: [claude-code, bob]`); the apply form says so when none is installed.
   The default Template carries every harness and its sessions choose one, so it fits any such list.
   Helm declares only harness images (`harnessTemplates`), never workloads.
+- **Avatar** — optional: the avatar an Agent created from the kit starts with ([agent avatars](agent-avatars.md)).
+  `avatar` names a built-in character (`avatar: shield`), an emoji (`avatar: "emoji:🛡️"`), or an image file in the kit repository (`avatar: {path: avatar.png}`, relative to `kit.yaml`).
+  The refresh reads the file at the kit's resolved commit, takes it only as a JPG or PNG of at most 2 MB, as the upload does, and stores it as an uploaded avatar; the resolved kit then carries `image:<id>`, and the hourly sweep keeps every image a resolved kit names.
+  A built-in kit ships the file in the chart, which puts a PNG or JPG into the catalog ConfigMap as binary data, so it must stay small: a ConfigMap holds at most 1 MiB.
+  A file the refresh cannot use leaves the kit listed with no avatar, and a log line says why; a stored `image:<id>` in `kit.yaml` is refused, because it names a row of one install only.
+  The apply form starts from the kit's avatar; an emoji or image needs the `custom-avatars` feature, and without it the form starts from the generated character, as for any kit with no avatar.
+  The avatar applies at create only: a Kit Update does not change the Agent's avatar.
 - **Own image** — optional.
   A kit for a workload baked into a custom image (the research frameworks) names the image itself — an OCI reference, the harness family inside it, and the providers it can run on — and its sessions have no harness choice.
   The Agent is created on that image exactly as a custom-image agent is, with the install's default mounts; nothing has to be declared in Helm for a kit to work.

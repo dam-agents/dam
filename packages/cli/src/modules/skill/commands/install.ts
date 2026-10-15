@@ -123,6 +123,7 @@ export function buildInstallCommand(deps: {
           name,
           version: scanned.version,
           contentHash: scanned.contentHash,
+          ...(source.path !== undefined ? { path: source.path } : {}),
         });
         if (!installRes.ok) {
           if (installRes.error.kind === "agent-not-reachable") {
