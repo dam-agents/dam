@@ -42,7 +42,9 @@ The trigger that opens the target's first session names its harness, the inherit
 
 **A spawn may choose the model.** It can name the target's model, mode and harness settings — the choices the target's harness configuration offers — so one harness serves every model it runs, and a Driver can put one task to two models or a cheap model on a mechanical step.
 The choice is written into the target's own harness configuration in a delivery of its own, ahead of the task, so the one session already runs on it ([harness configuration](harness-config.md)).
-The `spawn_subagent` tool also refuses a model the driver's catalog does not list for the named harness, and runs the driver session's subagent model, when set, whatever the spawn names.
+The `spawn_subagent` tool also refuses a model the driver's catalog does not list for the named harness, and runs the driver session's subagent model, when set, on every spawn that names a harness, whatever the spawn names; a harness that does not list that model refuses the spawn naming the setting, and a spawn on an image alone keeps its own model.
+The driver SDK's spawn route takes the same provider-qualified names, folds Claude Code's `claude/` spelling, and refuses a bare or tier name as a bad request.
+The sub-agent inherits the driver's Connection of the provider its model names, or the first in its harness's home order when it names none.
 A Driver REST spawn checks only that the name is qualified, so a Driver comparing models reads which model the target ran.
 Mode and settings are checked when the target applies them.
 The delegation view shows its user the same: each target's card names the model its recorded calls ran and, when the spawn named one, the requested model beside it, marked when the two differ, so a silent substitution is visible without opening the conversation.

@@ -11,6 +11,10 @@ import { acpClient, mockCodexRouter, modelOption, pickerValues } from "../../../
 
 const adapter = process.env.CODEX_ACP;
 if (!adapter) {
+  if (process.env.CI) {
+    console.error("CODEX_ACP is not set: the real-adapter test cannot run under CI");
+    process.exit(1);
+  }
   console.log("skipped: set CODEX_ACP=<path to codex-acp dist/index.js> to run against the real adapter");
   process.exit(0);
 }

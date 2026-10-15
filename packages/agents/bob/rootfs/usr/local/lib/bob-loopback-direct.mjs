@@ -46,3 +46,13 @@ if (direct && typeof direct.dispatch === "function") {
     "bob-loopback-direct: no proxy-aware dispatcher (NODE_USE_ENV_PROXY unset?); Bob's loopback calls will go through its proxy\n",
   );
 }
+
+/** UNIT_BOUNDARY_DESCRIPTION: Bob's own process is the one with the proxy
+ * agent; the Node processes it starts (tools, MCP servers, scripts) keep
+ * their dispatchers as they are, so the preload leaves NODE_OPTIONS. */
+const ownImport = /(^|\s)--import=\S*bob-loopback-direct\.mjs(?=\s|$)/g;
+const remaining = (process.env.NODE_OPTIONS ?? "")
+  .replace(ownImport, " ")
+  .trim();
+if (remaining) process.env.NODE_OPTIONS = remaining;
+else delete process.env.NODE_OPTIONS;

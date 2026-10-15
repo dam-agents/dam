@@ -29,6 +29,7 @@ export {
 } from "./modules/sessions/types.js";
 export {
   sessionSettingsSchema,
+  modelConstraintsFor,
   sessionSettingsError,
   type SessionSettings,
 } from "./modules/harness-config/session-settings.js";

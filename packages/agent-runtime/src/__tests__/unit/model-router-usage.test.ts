@@ -9,6 +9,7 @@ import { Readable } from "node:stream";
 import {
   costUsdMicros,
   createModelCallExporter,
+  createSseModelRewrite,
   createUsageScanner,
   otlpLogRecord,
   otlpTargetOf,
@@ -71,6 +72,10 @@ describe("usage off the stream", () => {
   /** TEST_SCENARIO: Messages reports input and cache counts on
    * message_start and the output count on message_delta; the stream passes
    * through byte for byte however it is chunked. */
+  /** TEST_SCENARIO: A Messages stream names the counts in message_start and
+   * again in message_delta, where a gateway sends null or 0 for the ones it
+   * did not change; the start's counts stand and the delta's output count
+   * wins. */
   it("merges Messages' start and delta usage", async () => {
     const text = sse([
       {
@@ -85,7 +90,15 @@ describe("usage off the stream", () => {
         },
       },
       { type: "content_block_delta", delta: { text: "hi" } },
-      { type: "message_delta", delta: {}, usage: { output_tokens: 42 } },
+      {
+        type: "message_delta",
+        delta: {},
+        usage: {
+          input_tokens: null,
+          cache_read_input_tokens: 0,
+          output_tokens: 42,
+        },
+      },
     ]);
     const { usage, passed } = await scan("anthropic-messages", text, 3);
     expect(usage).toEqual({
@@ -158,6 +171,33 @@ describe("usage off the stream", () => {
       `${sse([{ choices: [{ delta: {} }] }])}data: [DONE]\n\n`,
     );
     expect(bare.usage).toBeNull();
+  });
+});
+
+describe("the stream rewrite", () => {
+  /** TEST_SCENARIO: The upstream's chunks cut a Japanese character and an
+   * emoji in the middle of their bytes; the rewritten stream carries the
+   * text intact, and the model name the harness asked for. */
+  it("keeps a multi-byte character split across two chunks", async () => {
+    const text = `data: {"type":"message_start","message":{"model":"aws/claude-sonnet-5"}}\n\ndata: {"type":"content_block_delta","delta":{"text":"日本語😀"}}\n\n`;
+    const bytes = Buffer.from(text);
+    const cuts = [
+      bytes.indexOf(Buffer.from("語")) + 1,
+      bytes.indexOf(Buffer.from("😀")) + 2,
+    ];
+    const pieces = [
+      bytes.subarray(0, cuts[0]),
+      bytes.subarray(cuts[0], cuts[1]),
+      bytes.subarray(cuts[1]),
+    ];
+    const out: Buffer[] = [];
+    for await (const c of Readable.from(pieces).pipe(
+      createSseModelRewrite("anthropic-messages", "claude/ibm/aws/claude-sonnet-5"),
+    ))
+      out.push(c as Buffer);
+    expect(Buffer.concat(out).toString()).toBe(
+      text.replace("aws/claude-sonnet-5", "claude/ibm/aws/claude-sonnet-5"),
+    );
   });
 });
 
@@ -313,7 +353,7 @@ describe("the export rail", () => {
         state({
           OTEL_EXPORTER_OTLP_ENDPOINT: "https://collector:4318/",
           OTEL_EXPORTER_OTLP_HEADERS: "x-a=1,x-b=two",
-          OTEL_RESOURCE_ATTRIBUTES: "platform.agent.name=bob",
+          OTEL_RESOURCE_ATTRIBUTES: "platform.agent.name=bob,team=50%",
         }),
       ),
     ).toEqual({
@@ -322,6 +362,7 @@ describe("the export rail", () => {
       resource: {
         "service.name": "platform-model-router",
         "platform.agent.name": "bob",
+        team: "50%",
       },
     });
     expect(otlpTargetOf(state({}))).toBeNull();

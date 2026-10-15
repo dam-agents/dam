@@ -1,4 +1,5 @@
 import { Transform } from "node:stream";
+import { StringDecoder } from "node:string_decoder";
 import type { ModelDialect, ModelPrices } from "../../model-catalog/index.js";
 
 export interface ModelUsage {
@@ -17,14 +18,40 @@ const num = (v: unknown): number =>
 const obj = (v: unknown): Json | null =>
   v && typeof v === "object" && !Array.isArray(v) ? (v as Json) : null;
 
+const count = (v: unknown): number | undefined =>
+  typeof v === "number" && Number.isFinite(v) ? v : undefined;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a Messages stream reports its counts in
+ * message_start and again, cumulative, in message_delta, where a provider
+ * may send null or 0 for a count it has not changed; a field counts only
+ * when it is a number, and the larger of the two reports stands.
+ */
 function messagesUsage(raw: Json): Partial<ModelUsage> {
+  const fields: [keyof ModelUsage, string][] = [
+    ["inputTokens", "input_tokens"],
+    ["outputTokens", "output_tokens"],
+    ["cacheReadTokens", "cache_read_input_tokens"],
+    ["cacheCreationTokens", "cache_creation_input_tokens"],
+  ];
   const out: Partial<ModelUsage> = {};
-  if ("input_tokens" in raw) out.inputTokens = num(raw.input_tokens);
-  if ("output_tokens" in raw) out.outputTokens = num(raw.output_tokens);
-  if ("cache_read_input_tokens" in raw)
-    out.cacheReadTokens = num(raw.cache_read_input_tokens);
-  if ("cache_creation_input_tokens" in raw)
-    out.cacheCreationTokens = num(raw.cache_creation_input_tokens);
+  for (const [key, field] of fields) {
+    const value = count(raw[field]);
+    if (value !== undefined) out[key] = value;
+  }
+  return out;
+}
+
+function mergeUsage(
+  base: Partial<ModelUsage> | null,
+  next: Partial<ModelUsage>,
+): Partial<ModelUsage> {
+  const out: Partial<ModelUsage> = { ...(base ?? {}) };
+  for (const [key, value] of Object.entries(next) as [
+    keyof ModelUsage,
+    number,
+  ][])
+    out[key] = Math.max(out[key] ?? 0, value);
   return out;
 }
 
@@ -120,7 +147,7 @@ export function createUsageScanner(dialect: ModelDialect): UsageScanner {
               ? obj(event.usage)
               : null;
         if (!raw) return;
-        partial = { ...(partial ?? {}), ...messagesUsage(raw) };
+        partial = mergeUsage(partial, messagesUsage(raw));
         found = true;
         if (event.type === "message_delta") finished = true;
         return;
@@ -148,9 +175,10 @@ export function createUsageScanner(dialect: ModelDialect): UsageScanner {
       }
     }
   };
+  const decoder = new StringDecoder("utf8");
   const scanner = new Transform({
     transform(chunk: Buffer, _enc, done) {
-      pending += chunk.toString("utf8");
+      pending += decoder.write(chunk);
       let at = pending.indexOf("\n");
       while (at !== -1) {
         see(pending.slice(0, at).replace(/\r$/, ""));
@@ -160,6 +188,7 @@ export function createUsageScanner(dialect: ModelDialect): UsageScanner {
       done(null, chunk);
     },
     flush(done) {
+      pending += decoder.end();
       if (pending) see(pending);
       pending = "";
       done();

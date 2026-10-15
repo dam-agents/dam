@@ -346,6 +346,27 @@ describe("session choices on a schedule", () => {
 
     expect(getSavedSpec()?.task).toBe("do the other thing");
   });
+
+  /** TEST_SCENARIO: An API caller changes only the harness of a schedule
+   * that keeps its model: the validator sees the harness together with the
+   * stored model, so a harness that cannot run it is refused instead of
+   * saved for the fire to fail on. */
+  it("validates the merged choices on a partial update", async () => {
+    const current = makeCurrent();
+    current.spec = { ...current.spec, model: "anthropic/claude-sonnet-5-5" };
+    const seen: unknown[] = [];
+    const { service } = makeDeps(current, async (_agentId, choices) => {
+      seen.push(choices);
+      return "the codex harness cannot run on anthropic";
+    });
+
+    await expect(
+      service.updateRRule({ ...baseUpdate, harness: "codex" }),
+    ).rejects.toThrow(/codex harness cannot run on anthropic/);
+    expect(seen).toEqual([
+      { harness: "codex", model: "anthropic/claude-sonnet-5-5" },
+    ]);
+  });
 });
 
 describe("createRRule createdBy", () => {

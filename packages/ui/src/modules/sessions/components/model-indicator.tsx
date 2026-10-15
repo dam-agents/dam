@@ -1,4 +1,9 @@
 import type { HarnessCapability } from "agent-runtime-api";
+import {
+  aliasForProviderType,
+  parseQualifiedModel,
+  type ProviderPresetType,
+} from "api-server-api";
 
 import { HarnessIcons } from "@/components/harness-icons";
 import { Button } from "@/components/ui/button";
@@ -11,6 +16,7 @@ import {
 } from "@/components/ui/popover";
 
 import { useStore } from "../../../store.js";
+import { useIsAgentAnswerableSoon } from "../../agents/api/queries.js";
 import {
   useGrantProvider,
   useHarnessCatalog,
@@ -20,7 +26,11 @@ import {
   useProviderModels,
   useRememberedPair,
 } from "../api/session-pair.js";
-import { modelGroups, modelIndicatorLabel } from "../lib/catalog-groups.js";
+import {
+  modelGroups,
+  modelIndicatorLabel,
+  sameSideGroups,
+} from "../lib/catalog-groups.js";
 import { harnessDisplayName } from "../lib/session-pair-options.js";
 import { SessionModelList } from "./session-model-list.js";
 import { SetAsDefault } from "./session-pair-picker.js";
@@ -67,10 +77,22 @@ export function ModelIndicator({
   );
   const { granted, owned, loaded } = useProviderConnections(agentId);
   const { grant, pending } = useGrantProvider(agentId);
+  const answerableSoon = useIsAgentAnswerableSoon(agentId);
   const activeProvider = granted.find((p) => p.id === provider);
-  const removed = loaded && provider !== null && !activeProvider;
+  const alias = routed
+    ? (parseQualifiedModel(model, { claudePrefix: true })?.alias ?? null)
+    : null;
+  const byAlias = (p: { type: ProviderPresetType }) =>
+    aliasForProviderType(p.type) === alias;
+  const removed =
+    loaded &&
+    (routed
+      ? alias !== null && !granted.some(byAlias)
+      : provider !== null && !activeProvider);
   const removedConnection = removed
-    ? owned.find((p) => p.id === provider)
+    ? routed
+      ? owned.find(byAlias)
+      : owned.find((p) => p.id === provider)
     : undefined;
   const { data, isLoading, isError, operable } = useProviderModels(
     removed || routed ? null : agentId,
@@ -205,6 +227,7 @@ export function ModelIndicator({
               loading={catalogModels.isLoading}
               failed={catalogModels.isError}
               operable={catalogModels.operable}
+              starting={answerableSoon}
               onRetry={() => void catalogModels.refetch()}
               onChoose={(name) => onChoose(name)}
             />
@@ -228,7 +251,7 @@ export function ModelIndicator({
               model={model}
               settings={settings}
               defaults={defaults}
-              modelChoices={groups.flatMap((g) =>
+              modelChoices={sameSideGroups(groups, model).flatMap((g) =>
                 g.models.map((m) => ({
                   value: m.name,
                   name: `${m.upstreamId} · ${g.displayName}`,

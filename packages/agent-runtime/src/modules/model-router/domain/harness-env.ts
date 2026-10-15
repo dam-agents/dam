@@ -3,7 +3,11 @@ import type {
   CatalogEntry,
   CatalogProvider,
 } from "../../model-catalog/index.js";
-import { renderName, servesHarness } from "../../model-catalog/index.js";
+import {
+  forHarness,
+  renderName,
+  servesHarness,
+} from "../../model-catalog/index.js";
 import type { ModelRouterBinding } from "../../runtime-channel/manifest.js";
 
 const TIERS = ["fable", "opus", "sonnet", "haiku"] as const;
@@ -33,6 +37,7 @@ const newest = (ids: readonly string[], tier: string): string | null => {
   const tiered = ids.filter((id) => id.toLowerCase().includes(tier));
   return tiered.length ? [...tiered].sort(byVersion).at(-1)! : null;
 };
+const NOT_A_CHAT_MODEL = /embed|rerank|tts|whisper|moderation|image|audio/i;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Claude Code's tier slots, which its picker and
@@ -41,8 +46,9 @@ const newest = (ids: readonly string[], tier: string): string | null => {
  * one of its own.
  */
 export function tierModels(
-  ids: readonly string[],
+  candidates: readonly string[],
 ): Record<(typeof TIERS)[number], string> | null {
+  const ids = candidates.filter((id) => !NOT_A_CHAT_MODEL.test(id));
   if (ids.length === 0) return null;
   const [fable, opus, sonnet, haiku] = TIERS.map((t) => newest(ids, t));
   const fallback = opus ?? sonnet ?? haiku ?? [...ids].sort(byVersion).at(-1)!;
@@ -80,6 +86,10 @@ export function routerEnvFor(input: {
   for (const name of binding.credentialEnv ?? [])
     env[name] = ROUTER_PLACEHOLDER;
   const serving = providers
+    .map((p) => ({
+      ...p,
+      entries: forHarness(p.entries, input.harness, binding),
+    }))
     .filter(
       (p) => p.entries.length > 0 && servesHarness(p, input.harness, binding),
     )

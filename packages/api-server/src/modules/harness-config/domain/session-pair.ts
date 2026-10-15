@@ -39,6 +39,41 @@ export function qualifiedPairModel(model: string | null): string | null {
 }
 
 /**
+ * UNIT_BOUNDARY_DESCRIPTION: Old runtime path: remove when agents.runtimeFleet.outdated is empty on prod.
+ * A runtime from before qualified names knows a model by the spelling it
+ * listed (the upstream id, or `claude/<id>` on Claude Code), so a qualified
+ * name is sent to it in that spelling; the listed spelling wins, else the
+ * upstream id. A bare name is returned as it is.
+ */
+export function legacyModelName(
+  model: string,
+  listed: readonly string[] | null,
+): string | null {
+  const parsed = parseQualifiedModel(model, { claudePrefix: true });
+  if (!parsed) return listed === null || listed.includes(model) ? model : null;
+  const candidates = [parsed.upstreamId, `claude/${parsed.upstreamId}`];
+  if (listed === null) return parsed.upstreamId;
+  return (
+    listed.find((name) =>
+      candidates.some((c) => c.toLowerCase() === name.toLowerCase()),
+    ) ?? null
+  );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Claude Code lists the catalog lowercased while
+ * the provider spells its ids as it likes, so two spellings of one model
+ * match without regard to case.
+ */
+export function sameModelName(
+  listed: string | null,
+  model: string,
+): boolean {
+  const a = qualifiedPairModel(listed);
+  return a !== null && a.toLowerCase() === model.toLowerCase();
+}
+
+/**
  * UNIT_BOUNDARY_DESCRIPTION: the run stays on the harness asked for; its
  * provider is the remembered model's when still granted and accepted, else
  * the agent's default for that harness, and its model falls back to that
@@ -127,13 +162,25 @@ function resolveLeasedPair(input: SessionPairInputs): SessionPair | null {
       remembered.provider === null
         ? firstFitting(remembered.harness)
         : input.granted.find((p) => p.id === remembered.provider);
+    const legacyModel = (model: string | null): string | null =>
+      model === null
+        ? null
+        : legacyModelName(
+            model,
+            input.availableModels?.(remembered.harness) ?? null,
+          );
     if (provider && fits(remembered.harness, provider))
-      return { ...remembered, provider: provider.id };
+      return {
+        ...remembered,
+        provider: provider.id,
+        model: legacyModel(remembered.model),
+      };
     if (input.granted.length === 0)
       return {
         harness: remembered.harness,
         provider: null,
-        model: remembered.provider === null ? remembered.model : null,
+        model:
+          remembered.provider === null ? legacyModel(remembered.model) : null,
         ...(remembered.settings && { settings: remembered.settings }),
       };
   } else {

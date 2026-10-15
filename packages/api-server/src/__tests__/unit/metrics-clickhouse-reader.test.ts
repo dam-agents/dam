@@ -39,7 +39,9 @@ describe("runtimeBySession folds sessions under their trace root", () => {
     const gates = queries[0].match(
       /ResourceAttributes\['platform\.agent\.id'\] IN \{agentIds:Array\(String\)\}/g,
     );
-    expect(gates).toHaveLength(6);
+    expect(gates).toHaveLength(
+      (queries[0].match(/FROM otel_logs/g) ?? []).length,
+    );
   });
 
   it("computes roots session-unfiltered even when the read is session-scoped", async () => {

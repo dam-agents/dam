@@ -22,6 +22,7 @@ import { z } from "zod";
 import type { SessionPairRepo } from "../infrastructure/session-pair-repo.js";
 import {
   qualifiedPairModel,
+  sameModelName,
   resolveSessionPair,
 } from "../domain/session-pair.js";
 import { harnessFits } from "../../templates/index.js";
@@ -221,12 +222,15 @@ export function createHarnessConfigService(deps: {
       });
     const listed = (await deps.snapshotRepo.read(agentId, pair.harness))
       ?.availableModels;
-    if (listed && !listed.some((m) => qualifiedPairModel(m.value) === model))
+    const spelled = listed
+      ?.map((m) => qualifiedPairModel(m.value))
+      .find((m): m is string => m !== null && sameModelName(m, model));
+    if (listed && spelled === undefined)
       throw new TRPCError({
         code: "BAD_REQUEST",
         message: `the ${pair.harness} harness does not list ${model} on this agent`,
       });
-    return { ...pair, provider: provider.id, model };
+    return { ...pair, provider: provider.id, model: spelled ?? model };
   }
 
   async function declaredBy(

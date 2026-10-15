@@ -85,10 +85,12 @@ describe("spawn_subagent harness config", () => {
   });
 
   /** TEST_SCENARIO: The user set a subagent model on the calling session, in
-   * Claude Code's own spelling. Every spawn runs on it, in the
-   * provider-qualified form the spawn route takes, whatever model the spawn
-   * names; a session with no setting keeps the spawn's own model, and one
-   * whose value is no provider-qualified name (a tier word) sends none. */
+   * Claude Code's own spelling. Every spawn on a named harness runs on it,
+   * in the provider-qualified form the spawn route takes, whatever model the
+   * spawn names; a spawn on an image alone keeps its own model, since no
+   * harness view can check the setting against it; a session with no
+   * setting keeps the spawn's own model, and one whose value is no
+   * provider-qualified name (a tier word) sends none. */
   it("runs every spawn on the session's subagent model", async () => {
     const set = setup(async () => "claude/ibm/azure/gpt-5.3-codex");
     await set.spawn({});
@@ -102,6 +104,14 @@ describe("spawn_subagent harness config", () => {
       model: "ibm/azure/gpt-5.3-codex",
     });
     expect(result.content[0]!.text).toMatch(/model argument is ignored/);
+    await set.spawn({
+      harness: undefined,
+      image: "ghcr.io/x/y:1",
+      model: "cb/rits/zai-org/glm-5-3",
+    });
+    expect(set.spawned[2]!.harnessConfig).toEqual({
+      model: "cb/rits/zai-org/glm-5-3",
+    });
     const unset = setup(async () => null);
     await unset.spawn({ model: "cb/rits/zai-org/glm-5-3" });
     expect(unset.spawned[0]!.harnessConfig).toEqual({
@@ -139,6 +149,17 @@ describe("spawn_subagent harness config", () => {
     });
     await s.spawn({ harness: "pi", model: "openai/gpt-5.3-codex" });
     expect(s.spawned).toHaveLength(2);
+    const bound = setup(
+      async () => "claude/anthropic/claude-sonnet-5-5",
+      async (h) => (h === "codex" ? listed : null),
+    );
+    const refusedByBinding = (await bound.spawn({ model: "ibm/azure/gpt-5.3-codex" })) as {
+      content: { text: string }[];
+    };
+    expect(refusedByBinding.content[0]!.text).toMatch(
+      /session's subagent model setting \(anthropic\/claude-sonnet-5-5\) binds every sub-agent.*clear the session's subagent model/,
+    );
+    expect(bound.spawned).toEqual([]);
   });
 
   it("refuses an empty model before the spawn", async () => {

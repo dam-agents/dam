@@ -90,7 +90,7 @@ export interface ComposeAcpOptions {
   onPrompt: () => void;
   providerAliases: () => string[];
   aliasOfConnection: (connectionId: string) => string | null;
-  unroutedProviderEnv?: () => Record<string, string>;
+  unroutedProviderEnv?: (harness: string) => Record<string, string>;
   routerEnv?: (harness: string) => Record<string, string>;
   nativeConnectionOf?: (harness: string, model: string | null) => string | null;
   nativeEnv?: (connectionId: string) => Record<string, string>;
@@ -147,15 +147,38 @@ function modelFrames(
   ];
 }
 
+const isModelSetting = (
+  harness: HarnessRuntime | undefined,
+  id: string,
+): boolean =>
+  harness?.catalog?.options.some(
+    (o) => o.id === id && o.category === "model",
+  ) === true;
+
+const canonicalSetting = (value: string): string => {
+  const parsed = parseQualifiedModel(value, { claudePrefix: true });
+  return parsed ? `${parsed.alias}/${parsed.upstreamId}` : value;
+};
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a native process names a model the way the
+ * harness does, without the Connection's alias, as the model frame does.
+ */
 function processEnvOf(
   harness: HarnessRuntime | undefined,
   settings: Record<string, string> | undefined,
+  native: boolean,
 ): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [id, value] of Object.entries(settings ?? {})) {
     const binding = harness?.sessionSettings?.[id];
-    if (binding && "env" in binding)
-      for (const name of binding.env) env[name] = value;
+    if (!binding || !("env" in binding)) continue;
+    const rendered =
+      native && isModelSetting(harness, id)
+        ? (parseQualifiedModel(value, { claudePrefix: true })?.upstreamId ??
+          value)
+        : value;
+    for (const name of binding.env) env[name] = rendered;
   }
   return env;
 }
@@ -266,9 +289,18 @@ export function composeAcp(opts: ComposeAcpOptions): {
       const unbound = Object.keys(settings).find(
         (id) => runtime?.sessionSettings?.[id] === undefined,
       );
-      return unbound
-        ? `The ${harness} harness cannot set ${unbound} for one session`
-        : sessionSettingsError(runtime?.catalog, settings, model);
+      if (unbound)
+        return `The ${harness} harness cannot set ${unbound} for one session`;
+      const native = (m: string | null) =>
+        (opts.nativeConnectionOf?.(harness, m) ?? null) !== null;
+      const crossed = Object.entries(settings).find(
+        ([id, value]) =>
+          isModelSetting(runtime, id) &&
+          native(canonicalSetting(value)) !== native(model),
+      );
+      if (crossed)
+        return `The ${crossed[0]} setting ${crossed[1]} cannot run beside this session's model: one harness process reaches either the Model Router or a provider it runs natively, not both`;
+      return sessionSettingsError(runtime?.catalog, settings, model);
     },
     sessionMetadata,
     backgroundWork,
@@ -299,10 +331,14 @@ export function composeAcp(opts: ComposeAcpOptions): {
               ...(pair.native
                 ? opts.nativeEnv?.(pair.native)
                 : {
-                    ...opts.unroutedProviderEnv?.(),
+                    ...opts.unroutedProviderEnv?.(pair.harness),
                     ...opts.routerEnv?.(pair.harness),
                   }),
-              ...processEnvOf(harness, scoped.pair().settings),
+              ...processEnvOf(
+                harness,
+                scoped.pair().settings,
+                scoped.pair().native !== undefined,
+              ),
             },
           });
         },

@@ -69,6 +69,15 @@ export class InvalidSchemaError extends Error {
   }
 }
 
+export class ModelNameError extends Error {
+  constructor(model: string) {
+    super(
+      `name the target's model with its provider, as <provider>/<model id> (for example ibm/${model}); a tier name is no model`,
+    );
+    this.name = "ModelNameError";
+  }
+}
+
 export class ProviderMismatchError extends Error {
   constructor(offered: ProviderPresetType[], runsOn: ProviderPresetType[]) {
     super(
@@ -172,14 +181,24 @@ export function createInvocationsService(deps: {
       compileSchema(input.schema);
 
       const requestedModel = input.harnessConfig?.model;
-      if (requestedModel && !parseQualifiedModel(requestedModel))
-        throw new Error(
-          `name the target's model with its provider, as <provider>/${requestedModel}`,
-        );
-      const provider = inheritProvider(
-        input.driverProviders,
-        input.target.runsOn,
-      );
+      const parsedModel = requestedModel
+        ? parseQualifiedModel(requestedModel, { claudePrefix: true })
+        : null;
+      if (requestedModel && !parsedModel)
+        throw new ModelNameError(requestedModel);
+      if (parsedModel && input.harnessConfig)
+        input = {
+          ...input,
+          harnessConfig: {
+            ...input.harnessConfig,
+            model: `${parsedModel.alias}/${parsedModel.upstreamId}`,
+          },
+        };
+      const provider = inheritProvider(input.driverProviders, {
+        runsOn: input.target.runsOn,
+        ...(parsedModel && { alias: parsedModel.alias }),
+        ...(input.target.harness && { harness: input.target.harness }),
+      });
       if (provider.kind === "incompatible")
         throw new ProviderMismatchError(
           provider.offered,

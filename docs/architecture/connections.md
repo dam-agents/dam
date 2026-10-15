@@ -305,7 +305,7 @@ The Connection also asks the harness's Bedrock client for HTTP/1.1, which every 
 IAM access keys and assumed roles are not accepted: Bedrock requires those to sign each request with SigV4, and the gateway's request signing serves S3-compatible storage only (below).
 
 **Claude Code** runs on it, outside the Model Router, since the gateway cannot sign for it; a routed Pi does not reach it ([harness configuration](harness-config.md#model-discovery-and-the-agents-default-model)).
-Claude Code has Bedrock built in; its image switches it on whenever the key placeholder is present, and leaves model choice to Claude Code itself.
+Claude Code has Bedrock built in; its image switches it on whenever the key placeholder is present in a process the runtime did not mark as routed, and leaves model choice to Claude Code itself.
 At start it resolves each of its model tiers to the region's profile, falling back to an earlier version, or from Opus to Sonnet, when the account cannot invoke the default; the platform pins no tier, which would lose that fallback.
 The pin is a new session's default only, and Claude Code ignores it when the account cannot invoke it.
 

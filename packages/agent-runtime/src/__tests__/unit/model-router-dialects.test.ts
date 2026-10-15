@@ -860,7 +860,9 @@ describe("replay rules", () => {
    * refuses that on gpt-4o (16384 at most) and refuses max_tokens itself on
    * its reasoning models, so a chat call to OpenAI carries the budget as
    * max_completion_tokens, cut to the model's known limit; another provider
-   * keeps max_tokens, cut the same way, and an unknown limit cuts nothing. */
+   * keeps max_tokens, cut the same way, and an unknown limit cuts nothing.
+   * A cut Messages budget pulls the thinking budget under it, and drops
+   * thinking when too little is left for it. */
   it("fits the output budget to the model", () => {
     expect(
       fitOutputBudget(
@@ -888,6 +890,22 @@ describe("replay rules", () => {
         maxOutputTokens: null,
       }),
     ).toBe(unknown);
+    const thinking = { type: "enabled", budget_tokens: 16000 };
+    expect(
+      fitOutputBudget(
+        { max_tokens: 64000, thinking },
+        { dialect: "anthropic-messages", alias: "ibm", maxOutputTokens: 8192 },
+      ),
+    ).toEqual({
+      max_tokens: 8192,
+      thinking: { type: "enabled", budget_tokens: 8191 },
+    });
+    expect(
+      fitOutputBudget(
+        { max_tokens: 64000, thinking },
+        { dialect: "anthropic-messages", alias: "ibm", maxOutputTokens: 1000 },
+      ),
+    ).toEqual({ max_tokens: 1000 });
   });
 
   /** TEST_SCENARIO: A streamed chat completion without stream_options gets

@@ -434,6 +434,37 @@ describe("acp-runtime: one harness process per harness", () => {
     expect(world.metadata.store.get("old")?.meta.model).toBe("ibm/opus");
   });
 
+  /** TEST_SCENARIO: A session from before qualified models names a provider
+   * Connection the agent no longer holds; nothing can qualify its model, so
+   * its prompt is refused as provider-removed with what to do, instead of
+   * running on whatever provider lists that bare name. */
+  it("refuses an old session whose provider Connection was revoked", () => {
+    const world = createLeaseWorld({ providers: ["conn-a"] });
+    for (const [sessionId, model] of [
+      ["old-model", "opus"],
+      ["old-default", undefined],
+    ] as const)
+      world.metadata.store.set(sessionId, {
+        mode: "chat",
+        harness: "claude-code",
+        provider: "conn-gone",
+        ...(model && { model }),
+      });
+    const client = world.connect();
+    client.send(frames.prompt(1, "old-model", "hi"));
+    expect(client.reply(1)?.error).toMatchObject({
+      message: expect.stringMatching(/Attach it again/),
+      data: {
+        platform: { reason: PROVIDER_REMOVED_REASON, provider: "conn-gone" },
+      },
+    });
+    client.send(frames.prompt(2, "old-default", "hi"));
+    expect(client.reply(2)?.error).toMatchObject({
+      data: { platform: { reason: PROVIDER_REMOVED_REASON } },
+    });
+    expect(world.harnessCount("claude-code")).toBe(0);
+  });
+
   /** TEST_SCENARIO: A session whose harness this agent no longer carries is
    * refused with a clear error, not run on another harness. */
   it("refuses a session on a harness the agent does not carry", () => {
@@ -713,23 +744,68 @@ describe("acp-runtime: one harness process per harness", () => {
 
   /** TEST_SCENARIO: A change that names no value is refused, and the saved
    * value stays. */
-  it("refuses to clear a session setting", () => {
+  /** TEST_SCENARIO: The user puts a setting back to "Same as session" (the
+   * UI sends an empty value) or a client sends null: the setting is cleared
+   * and the others stay, rather than the change being refused. */
+  it("clears a session setting given an empty or null value", () => {
     const world = createLeaseWorld({ providers: ["conn-a"] });
     const client = world.connect();
     startSession(world, client, "claude-code", "s", 1, {});
-    const configure = (id: number, mode: string | null) =>
+    const configure = (id: number, settings: Record<string, unknown>) =>
       client.send({
         jsonrpc: "2.0",
         id,
         method: CONFIGURE_SESSION_METHOD,
-        params: { sessionId: "s", settings: { mode } },
+        params: { sessionId: "s", settings },
       });
-    configure(2, "plan");
-    configure(3, null);
-    expect(client.reply(3)?.error).toMatchObject({ code: -32602 });
-    expect(world.metadata.store.get("s")?.meta.settings).toEqual({
-      mode: "plan",
+    configure(2, { mode: "plan", cacheTtl: "1h" });
+    configure(3, { cacheTtl: "" });
+    expect(client.reply(3)?.result).toEqual({ settings: { mode: "plan" } });
+    configure(4, { mode: null });
+    expect(client.reply(4)?.result).toEqual({ settings: {} });
+    expect(world.metadata.store.get("s")?.meta.settings ?? {}).toEqual({});
+  });
+
+  /** TEST_SCENARIO: A new session arrives with a setting left at "Same as
+   * session" (an empty value) beside a real one: the empty one is dropped
+   * and the session keeps its harness, model and the other setting. A
+   * setting of the wrong shape refuses the session instead of silently
+   * losing every choice it carried. */
+  it("drops an empty setting on session/new and refuses a malformed one", () => {
+    const world = createLeaseWorld({ providers: ["conn-a"] });
+    const client = world.connect();
+    client.send({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "session/new",
+      params: {
+        cwd: ".",
+        _meta: {
+          platform: {
+            harness: "claude-code",
+            model: "ibm/aws/claude-opus-4-8",
+            settings: { mode: "plan", cacheTtl: "" },
+          },
+        },
+      },
     });
+    const harness = world.harness("claude-code");
+    harness.replyTo("session/new", { sessionId: "s" });
+    expect(world.metadata.store.get("s")?.meta).toMatchObject({
+      harness: "claude-code",
+      model: "ibm/aws/claude-opus-4-8",
+      settings: { mode: "plan" },
+    });
+    client.send({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "session/new",
+      params: {
+        cwd: ".",
+        _meta: { platform: { settings: { mode: 5 } } },
+      },
+    });
+    expect(client.reply(2)?.error).toMatchObject({ code: -32602 });
   });
 
   /** TEST_SCENARIO: A harness can switch a session's mode on its own; the

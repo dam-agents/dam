@@ -25,6 +25,7 @@ import {
   useHarnessCatalog,
   useHarnessCatalogModels,
   useHarnessConfigured,
+  useProviderConnections,
 } from "../../sessions/api/session-pair.js";
 import {
   type Choice,
@@ -39,6 +40,7 @@ import {
   modelGroups,
   modelIndicatorLabel,
 } from "../../sessions/lib/catalog-groups.js";
+import { fittingProviders } from "../../sessions/lib/session-pair-options.js";
 import {
   useHasHarnessDefault,
   useScheduleDefault,
@@ -530,16 +532,21 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
   const settingsValue = settingsField.value;
   const { data: catalog } = useHarnessCatalog();
   const carried = status?.harnesses ?? [];
-  const harness =
-    harnessValue || status?.defaultHarness || carried[0]?.name || "";
-  const { data: catalogModels } = useHarnessCatalogModels(
-    routed && agentId ? agentId : null,
-    routed ? harness || null : null,
-  );
   const { data: fallback } = useScheduleDefault(
     routed && agentId ? agentId : null,
     harnessValue || null,
   );
+  const harness =
+    harnessValue ||
+    fallback?.harness ||
+    status?.defaultHarness ||
+    carried[0]?.name ||
+    "";
+  const { data: catalogModels, operable } = useHarnessCatalogModels(
+    routed && agentId ? agentId : null,
+    routed ? harness || null : null,
+  );
+  const { granted } = useProviderConnections(routed ? agentId : null);
   const capability = carried.find((h) => h.name === harness);
   const defaults = settingDefaults(
     capability,
@@ -557,11 +564,15 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
   const modelValue = storedModel
     ? (findModel(groups, storedModel)?.model.name ?? storedModel)
     : storedModel;
-  const harnessChoices: Choice[] = carried.map((h) => ({
-    id: h.name,
-    name:
-      catalog?.harnesses.find((v) => v.name === h.name)?.displayName ?? h.name,
-  }));
+  const fitting = fittingProviders(catalog?.harnesses ?? [], granted);
+  const harnessChoices: Choice[] = carried
+    .filter((h) => h.name === harnessValue || fitting(h.name).length > 0)
+    .map((h) => ({
+      id: h.name,
+      name:
+        catalog?.harnesses.find((v) => v.name === h.name)?.displayName ??
+        h.name,
+    }));
   const modelChoices: Choice[] = groups.flatMap((g) =>
     g.models.map((m) => ({
       id: m.name,
@@ -572,7 +583,10 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
     modelChoices.push({
       id: modelValue,
       name: modelValue,
-      description: "Not in this agent's model list",
+      ...(catalogModels !== undefined && {
+        description: "Not in this agent's model list",
+      }),
+      ...(!operable && { description: "Start the agent to check this model" }),
     });
   const todayModel = fallback?.model
     ? modelIndicatorLabel(groups, fallback.model)
@@ -581,7 +595,7 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
     <div className="flex flex-col gap-4">
       <FormField
         label="Harness"
-        hint="Agent default runs on the agent's default harness."
+        hint="Agent default runs on the agent's default harness and model."
       >
         <Controller
           control={typed}

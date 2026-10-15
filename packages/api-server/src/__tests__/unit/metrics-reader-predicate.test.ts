@@ -23,7 +23,7 @@ describe("ownedApiRequests", () => {
     const gates = sql.match(
       /ResourceAttributes\['platform\.agent\.id'\] IN \{agentIds:Array\(String\)\}/g,
     );
-    expect(gates).toHaveLength(6);
+    expect(gates).toHaveLength(9);
   });
 
   it("scopes to call records by Body, not template ServiceName", () => {
@@ -45,14 +45,12 @@ describe("ownedApiRequests", () => {
    */
   it("prefers the router's records per agent and keeps the harness's records of calls the router never saw", () => {
     const sql = ownedApiRequests({ hours: 24 });
+    const key =
+      "(ResourceAttributes['platform.agent.id'], ResourceAttributes['platform.invocation.id'])";
+    expect(sql).toContain(`OR ${key} NOT IN (SELECT DISTINCT ${key} FROM otel_logs`);
+    expect(sql).toContain("OR Timestamp < (SELECT min(Timestamp) FROM otel_logs");
     expect(sql).toContain(
-      "OR ResourceAttributes['platform.agent.id'] NOT IN (",
-    );
-    expect(sql).toContain(
-      "SELECT DISTINCT ResourceAttributes['platform.agent.id'] FROM otel_logs",
-    );
-    expect(sql).toContain(
-      "(Body = 'claude_code.api_request' AND LogAttributes['model'] NOT LIKE 'claude/%') OR ResourceAttributes",
+      "(Body = 'claude_code.api_request' AND LogAttributes['model'] NOT LIKE 'claude/%')",
     );
   });
 

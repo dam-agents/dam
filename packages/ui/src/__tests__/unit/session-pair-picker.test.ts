@@ -123,6 +123,10 @@ vi.mock("@/components/ui/tooltip", () => ({
   },
 }));
 
+vi.mock("../../modules/agents/api/queries.js", () => ({
+  useIsAgentAnswerableSoon: () => state.answerable ?? state.operable,
+}));
+
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   useHarnessCatalog: () => ({
     data: state.catalogLoaded && {
@@ -607,9 +611,10 @@ describe("one model list on a runtime that routes by model name", () => {
     expect(html).not.toContain(">Change<");
   });
 
-  /** TEST_SCENARIO: The provider a running session started on was removed
-   * from the agent. The session says so and offers the other providers'
-   * models and, since the owner still holds the Connection, re-attaching it. */
+  /** TEST_SCENARIO: The provider a running session's model names (the
+   * runtime keeps no Connection id on a routed session) was removed from the
+   * agent. The session says so and offers the other providers' models and,
+   * since the owner still holds the Connection, re-attaching it. */
   it("offers re-attach or another provider's model when the provider was removed", () => {
     state.catalog = {
       ...routedCatalog,
@@ -617,18 +622,18 @@ describe("one model list on a runtime that routes by model name", () => {
     };
     state.owned = [
       {
-        id: "ibm-gone",
-        name: "IBM old",
-        type: "ibm-litellm",
-        templateId: "ibm-litellm",
+        id: "anthropic-gone",
+        name: "Anthropic old",
+        type: "anthropic",
+        templateId: "anthropic",
       } as never,
     ];
     const html = renderToStaticMarkup(
       createElement(ModelIndicator, {
         agentId: "agent",
         harness: "pi",
-        provider: "ibm-gone",
-        model: "ibm/gpt-5.5",
+        provider: null,
+        model: "anthropic/claude-sonnet-5-5",
         carried,
         routed: true,
         onChoose: vi.fn(),
@@ -637,7 +642,7 @@ describe("one model list on a runtime that routes by model name", () => {
       }),
     );
     expect(html).toContain("Provider removed");
-    expect(html).toContain("Attach IBM old again");
+    expect(html).toContain("Attach Anthropic old again");
     expect(html).toContain("rits/zai-org/glm-5-3");
   });
 });

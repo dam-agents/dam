@@ -9,6 +9,14 @@ export interface OtlpTarget {
   resource: Record<string, string>;
 }
 
+const decoded = (value: string): string => {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+};
+
 const pairs = (raw: string | undefined): Record<string, string> =>
   Object.fromEntries(
     (raw ?? "")
@@ -19,10 +27,7 @@ const pairs = (raw: string | undefined): Record<string, string> =>
         const at = pair.indexOf("=");
         return at === -1
           ? [pair, ""]
-          : [
-              pair.slice(0, at).trim(),
-              decodeURIComponent(pair.slice(at + 1).trim()),
-            ];
+          : [pair.slice(0, at).trim(), decoded(pair.slice(at + 1).trim())];
       }),
   );
 
@@ -196,11 +201,18 @@ export function createModelCallExporter(deps: {
       );
   };
 
+  const sendNext = (): Promise<void> => {
+    inflight = inflight.then(send).catch((err: Error) => {
+      deps.log(`[model-router] spend export failed: ${err.message}`);
+    });
+    return inflight;
+  };
+
   const schedule = (): void => {
     if (timer || stopped) return;
     timer = setTimeout(() => {
       timer = null;
-      inflight = inflight.then(send);
+      void sendNext();
     }, flushMs);
     timer.unref();
   };
@@ -212,7 +224,7 @@ export function createModelCallExporter(deps: {
       if (queue.length >= maxBatch) {
         if (timer) clearTimeout(timer);
         timer = null;
-        inflight = inflight.then(send);
+        void sendNext();
         return;
       }
       schedule();
@@ -220,8 +232,7 @@ export function createModelCallExporter(deps: {
     async flush() {
       if (timer) clearTimeout(timer);
       timer = null;
-      inflight = inflight.then(send);
-      await inflight;
+      await sendNext();
     },
     async stop() {
       stopped = true;

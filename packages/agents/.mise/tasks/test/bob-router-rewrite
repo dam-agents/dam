@@ -12,6 +12,10 @@ import { acpClient, allowPermission, chatStream } from "../../../test-lib/acp-cl
 
 const bob = process.env.BOB_CLI;
 if (!bob) {
+  if (process.env.CI) {
+    console.error("BOB_CLI is not set: the real-adapter test cannot run under CI");
+    process.exit(1);
+  }
   console.log("skipped: set BOB_CLI=<path to Bob's dist/bob.js> to run against the real Bob");
   process.exit(0);
 }

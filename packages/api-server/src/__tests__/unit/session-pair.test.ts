@@ -34,6 +34,31 @@ describe("resolveSessionPair", () => {
     expect(resolveSessionPair(inputs({ remembered }))).toEqual(remembered);
   });
 
+  /** TEST_SCENARIO: The migration qualified a saved model with its provider,
+   * but this agent still runs an image from before qualified names, which
+   * knows the model only as it listed it: the fire sends that spelling
+   * (Claude Code's own `claude/<id>`), or the upstream id when the runtime
+   * has listed nothing yet. */
+  it("sends an old runtime the spelling it listed", () => {
+    const remembered = {
+      harness: "claude-code",
+      provider: "lite",
+      model: "ibm/azure/gpt-5.5",
+    };
+    expect(
+      resolveSessionPair(
+        inputs({
+          remembered,
+          availableModels: () => ["claude/azure/gpt-5.5", "sonnet"],
+        }),
+      ),
+    ).toEqual({ ...remembered, model: "claude/azure/gpt-5.5" });
+    expect(resolveSessionPair(inputs({ remembered }))).toEqual({
+      ...remembered,
+      model: "azure/gpt-5.5",
+    });
+  });
+
   /** TEST_SCENARIO: An agent nobody has picked for runs its own harness on
    * the first provider that harness can use. */
   it("starts an unpicked agent on its harness and first fitting provider", () => {

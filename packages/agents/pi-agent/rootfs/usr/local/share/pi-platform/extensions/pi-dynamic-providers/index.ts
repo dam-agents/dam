@@ -107,11 +107,7 @@ export default async function register(pi: ExtensionAPI): Promise<void> {
   const router = env("PLATFORM_MODEL_ROUTER_URL")?.replace(/\/+$/, "");
   if (router) {
     const activated = await activateRouter(pi, router, state);
-    if (onBedrock) await activateBedrock(pi, state);
-    if (
-      activated &&
-      (!onBedrock || isRouterModel(state.settings.defaultModel))
-    ) {
+    if (activated) {
       state.settings.defaultProvider = ROUTER_PROVIDER;
       state.settings.defaultModel = activated.model;
     }
@@ -146,15 +142,26 @@ async function activateRouter(
   router: string,
   state: ConfigState,
 ): Promise<Activation | undefined> {
-  const listed = await discoverRouterModels(`${router}/v1/models`);
-  for (const name of ROUTER_BUILTINS_OFF) {
+  const url = `${router}/v1/models`;
+  const deadline = Date.now() + intEnv("PI_ROUTER_LISTING_WAIT_MS", 30_000);
+  let listed = await discoverRouterModels(url);
+  while (listed.length === 0 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    listed = await discoverRouterModels(url);
+  }
+  const off = [
+    ...ROUTER_BUILTINS_OFF,
+    ...SPECS.flatMap((s) => [s.name, ...(s.shadows ?? []).map((x) => x.name)]),
+  ];
+  for (const name of off) {
     pi.unregisterProvider(name);
     delete state.models.providers[name];
     delete state.auth[name];
   }
   if (listed.length === 0) {
-    console.warn("[pi-dynamic-providers] the model router lists no model yet");
-    delete state.models.providers[ROUTER_PROVIDER];
+    console.warn(
+      `[pi-dynamic-providers] the model router lists no model yet${state.models.providers[ROUTER_PROVIDER] ? "; keeping the saved platform provider" : ""}`,
+    );
     return undefined;
   }
   const provider: ProviderConfig = {

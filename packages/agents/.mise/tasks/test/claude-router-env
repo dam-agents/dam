@@ -67,6 +67,12 @@ try {
   assert.equal(bedrock.ANTHROPIC_DEFAULT_MODEL, "us.anthropic.claude-opus-4-8-v1:0");
   assert.equal(bedrock.ANTHROPIC_BASE_URL, "https://bedrock.example");
 
+  // TEST_SCENARIO: A process the runtime marked as routed reaches the router even when Bedrock's env is beside the mark; Bedrock runs only in a process the runtime starts without the mark.
+  const both = envAfter(rewritten, { PATH: process.env.PATH, PLATFORM_MODEL_ROUTER_SERVES: "1", PLATFORM_MODEL_ROUTER_PORT: "24180", AWS_BEARER_TOKEN_BEDROCK: "platform:conn:aws", AWS_BEDROCK_MODEL: "us.anthropic.claude-opus-4-8-v1:0" });
+  assert.equal(both.CLAUDE_CODE_USE_BEDROCK, undefined);
+  assert.equal(both.ANTHROPIC_DEFAULT_MODEL, undefined);
+  assert.equal(both.ANTHROPIC_BASE_URL, "http://127.0.0.1:24180");
+
   // TEST_SCENARIO: Nous's hook still follows the router for its own OpenAI-format calls once the base shim repointed Claude Code.
   symlinkSync(nousHook, join(hooks, "nous.sh"));
   const nous = envAfter(rewritten, { PATH: process.env.PATH, ANTHROPIC_BASE_URL: "https://x.example", OPENAI_BASE_URL: "https://ete-litellm.example" });

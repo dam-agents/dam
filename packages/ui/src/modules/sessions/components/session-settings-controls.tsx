@@ -2,6 +2,7 @@ import type {
   HarnessCapability,
   HarnessConfigCurrent,
 } from "agent-runtime-api";
+import { modelConstraintsFor } from "agent-runtime-api";
 import { Fragment, useId } from "react";
 
 import { Select } from "@/components/ui/select";
@@ -66,9 +67,10 @@ export function SessionSettingsControls({
       className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 text-xs"
     >
       {options.map((o) => {
-        const allowed = model
-          ? capability?.harnessConfigCatalog?.modelConstraints?.[model]?.[o.id]
-          : undefined;
+        const allowed = modelConstraintsFor(
+          capability?.harnessConfigCatalog,
+          model,
+        )?.[o.id];
         const modelValued = isModelOption(o);
         const value =
           settings[o.id] ??

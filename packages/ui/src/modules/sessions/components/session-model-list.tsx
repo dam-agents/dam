@@ -20,6 +20,7 @@ interface Props {
   loading: boolean;
   failed: boolean;
   operable: boolean;
+  starting?: boolean;
   onRetry: () => void;
   onChoose: (model: string, group: ModelGroup) => void;
   onDisconnect?: (group: ModelGroup) => void;
@@ -37,6 +38,7 @@ export function SessionModelList({
   loading,
   failed,
   operable,
+  starting = false,
   onRetry,
   onChoose,
   onDisconnect,
@@ -46,7 +48,14 @@ export function SessionModelList({
   if (!operable)
     return (
       <p className="px-1 py-1 text-muted-foreground">
-        Start the agent to list models.
+        {starting ? (
+          <span className="inline-flex items-center gap-1.5">
+            <Spinner size={12} className="text-muted-foreground" />
+            Loading models…
+          </span>
+        ) : (
+          "Start the agent to list models."
+        )}
       </p>
     );
   if (groups.length === 0)

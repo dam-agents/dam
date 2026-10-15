@@ -9,7 +9,9 @@ case "${ANTHROPIC_BASE_URL:-}" in
 *) _ROUTED=1 ;;
 esac
 
-if [ -n "${AWS_BEARER_TOKEN_BEDROCK:-}" ]; then
+# A process the runtime marked as routed never reaches Bedrock, whatever else
+# its env carries.
+if [ -z "${PLATFORM_MODEL_ROUTER_SERVES:-}" ] && [ -n "${AWS_BEARER_TOKEN_BEDROCK:-}" ]; then
 	export CLAUDE_CODE_USE_BEDROCK=1
 	if [ -n "${AWS_BEDROCK_MODEL:-}" ] && [ -z "${ANTHROPIC_DEFAULT_MODEL:-}" ]; then
 		export ANTHROPIC_DEFAULT_MODEL="$AWS_BEDROCK_MODEL"

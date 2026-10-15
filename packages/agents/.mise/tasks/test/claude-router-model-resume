@@ -10,6 +10,10 @@ import { acpClient, allowPermission, conversationCalls, mockRouter, modelOption,
 
 const adapter = process.env.CLAUDE_AGENT_ACP;
 if (!adapter) {
+  if (process.env.CI) {
+    console.error("CLAUDE_AGENT_ACP is not set: the real-adapter test cannot run under CI");
+    process.exit(1);
+  }
   console.log("skipped: set CLAUDE_AGENT_ACP=<path to claude-agent-acp dist/index.js> to run against the real adapter");
   process.exit(0);
 }

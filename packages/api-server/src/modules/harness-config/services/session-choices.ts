@@ -7,7 +7,11 @@ import { aliasForProviderType, type HarnessCatalog } from "api-server-api";
 import type { SessionPairRepo } from "../infrastructure/session-pair-repo.js";
 import type { HarnessConfigSnapshotRepo } from "../infrastructure/snapshot-repo.js";
 import { harnessFits } from "../../templates/index.js";
-import { qualifiedPairModel } from "../domain/session-pair.js";
+import {
+  legacyModelName,
+  qualifiedPairModel,
+  sameModelName,
+} from "../domain/session-pair.js";
 import { harnessesOf, sessionModelChoices } from "./harness-config-service.js";
 
 export interface SessionChoices {
@@ -53,7 +57,7 @@ export function createSessionChoicesValidator(deps: {
         );
     if (listed === null)
       return "this agent's harness cannot run a session on a chosen model; leave the model unset";
-    if (listed.length > 0 && !listed.includes(choices.model))
+    if (listed.length > 0 && legacyModelName(choices.model, listed) === null)
       return `unknown model "${choices.model}"; choose one of: ${listed.join(", ")}`;
     return undefined;
   };
@@ -90,7 +94,7 @@ export function createSessionChoicesValidator(deps: {
         return `the ${harness} harness cannot run on ${alias}`;
       const listed = (await deps.snapshotRepo.read(agentId, harness))
         ?.availableModels;
-      if (listed && !listed.some((m) => qualifiedPairModel(m.value) === model))
+      if (listed && !listed.some((m) => sameModelName(m.value, model)))
         return `the ${harness} harness does not list ${model} on this agent`;
     }
     if (choices.settings !== undefined) {

@@ -50,7 +50,7 @@ const ROUTED = {
             ],
           },
         ],
-        modelConstraints: { "ibm/gpt-5-mini": { effort: ["low"] } },
+        modelConstraints: { mini: { effort: ["low"] } },
       },
     },
     { name: "codex", harnessConfig: true, sessionModel: true },
@@ -166,20 +166,34 @@ describe("session choices on a runtime without the router", () => {
           id: "model",
           name: "Model",
           category: "model",
-          choices: [{ value: "sonnet", name: "Sonnet" }],
+          choices: [
+            { value: "sonnet", name: "Sonnet" },
+            { value: "claude/azure/gpt-5.5", name: "GPT 5.5" },
+          ],
         },
       ],
     },
   };
 
   /** TEST_SCENARIO: Such a runtime takes no harness or settings; its model
-   * must be one of the listed choices, as before the router. */
+   * must be one of the listed choices, as before the router. A name the
+   * migration qualified with its provider still passes when the old list
+   * carries it in the old spelling (bare, or under Claude Code's prefix). */
   it("keeps the listed-choices rule and refuses harness or settings", async () => {
     const check = validator({ capabilities: legacy });
     await expect(
       check("agent-1", { model: "sonnet" }),
     ).resolves.toBeUndefined();
+    await expect(
+      check("agent-1", { model: "ibm/sonnet" }),
+    ).resolves.toBeUndefined();
+    await expect(
+      check("agent-1", { model: "ibm/azure/gpt-5.5" }),
+    ).resolves.toBeUndefined();
     await expect(check("agent-1", { model: "opus" })).resolves.toMatch(
+      /choose one of: sonnet/,
+    );
+    await expect(check("agent-1", { model: "ibm/opus" })).resolves.toMatch(
       /choose one of: sonnet/,
     );
     await expect(check("agent-1", { harness: "codex" })).resolves.toMatch(

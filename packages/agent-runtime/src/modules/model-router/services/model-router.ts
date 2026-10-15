@@ -329,12 +329,24 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
     let streamed: { usage(): ModelUsage | null; completed(): boolean } | null =
       null;
     let upstreamStatus = 499;
+    let upstreamBroke = false;
+    const brokeUpstream = (reason: string): void => {
+      if (ac.signal.aborted || upstreamBroke) return;
+      upstreamBroke = true;
+      deps.log(
+        `[model-router] ${harness} ${entry.alias}/${entry.upstreamId} (${dialect}): upstream stream broke (${reason})`,
+      );
+    };
     res.on("close", () => {
       if (res.writableEnded) return;
       ac.abort();
       if (streamed?.completed()) record(upstreamStatus, streamed.usage());
-      else record(499, null);
+      else record(upstreamBroke ? 502 : 499, null);
     });
+    const onceSent = (fn: () => void): void => {
+      res.on("finish", fn);
+      res.on("close", fn);
+    };
 
     let upstream: Response;
     try {
@@ -383,13 +395,13 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
             "x-should-retry": "false",
           }),
       });
-      res.on("finish", () => record(upstream.status, null));
+      onceSent(() => record(upstream.status, null));
       res.end(explained);
       return;
     }
     res.writeHead(upstream.status, resHeaders);
     if (!upstream.body) {
-      res.on("finish", () => record(upstream.status, null));
+      onceSent(() => record(upstream.status, null));
       res.end();
       return;
     }
@@ -397,17 +409,27 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       const scanner = createUsageScanner(dialect);
       streamed = scanner;
       upstreamStatus = upstream.status;
-      res.on("finish", () => record(upstream.status, scanner.usage()));
+      onceSent(() => record(upstream.status, scanner.usage()));
       const source = Readable.fromWeb(upstream.body as never);
-      source.on("error", () => res.destroy());
+      source.on("error", (err: Error) => {
+        brokeUpstream(err.message);
+        res.destroy();
+      });
       source
         .pipe(scanner)
         .pipe(createSseModelRewrite(dialect, publicName))
         .pipe(res);
       return;
     }
-    const text = await upstream.text();
-    res.on("finish", () => record(upstream.status, usageOfBody(dialect, text)));
+    let text: string;
+    try {
+      text = await upstream.text();
+    } catch (err) {
+      brokeUpstream((err as Error).message);
+      res.destroy();
+      return;
+    }
+    onceSent(() => record(upstream.status, usageOfBody(dialect, text)));
     res.end(
       upstream.ok && contentType.includes("json")
         ? rewriteBody(dialect, text, publicName)

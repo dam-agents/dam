@@ -1492,6 +1492,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             deps.log?.(
               `session setting ${mapping.method} for ${mapping.settingSessionId} refused: ${String(error.message)}`,
             );
+          if (error === undefined && mapping.critical === true)
+            criticalRetries.delete(
+              `${mapping.settingSessionId}:${mapping.method}`,
+            );
           const deferred =
             error !== undefined &&
             mapping.critical === true &&

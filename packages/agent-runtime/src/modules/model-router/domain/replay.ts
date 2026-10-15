@@ -222,9 +222,35 @@ export function fitOutputBudget(
   const limit = target.maxOutputTokens;
   const fitted = limit !== null && limit > 0 ? Math.min(asked, limit) : asked;
   if (!chatToOpenAi)
-    return fitted === asked ? body : { ...body, [field]: fitted };
+    return fitted === asked
+      ? body
+      : fitThinkingBudget({ ...body, [field]: fitted }, fitted);
   const { max_tokens: _legacy, ...rest } = body;
   return { ...rest, max_completion_tokens: fitted };
+}
+
+const MIN_THINKING_BUDGET = 1024;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a Messages call refuses a thinking budget at or
+ * above max_tokens, so a cut output budget shrinks the thinking budget under
+ * it, and drops thinking when nothing meaningful is left for it.
+ */
+function fitThinkingBudget(body: Json, maxTokens: number): Json {
+  const thinking = isObject(body.thinking) ? body.thinking : null;
+  if (
+    !thinking ||
+    thinking.type !== "enabled" ||
+    typeof thinking.budget_tokens !== "number" ||
+    thinking.budget_tokens < maxTokens
+  )
+    return body;
+  const budget = maxTokens - 1;
+  if (budget < MIN_THINKING_BUDGET) {
+    const { thinking: _dropped, ...rest } = body;
+    return rest;
+  }
+  return { ...body, thinking: { ...thinking, budget_tokens: budget } };
 }
 
 export function ensureStreamUsage(body: Json, dialect: ModelDialect): Json {

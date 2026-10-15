@@ -240,10 +240,12 @@ function summarize(settled: Settled[]) {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the session's subagent model, when the user set
- * one, is the model every platform sub-agent spawned from the session runs
- * on, whatever the spawn names, as it is for the harness's own subagents.
- * The setting is spelled the way the calling harness names models; the
- * spawn route takes the provider-qualified form.
+ * one, is the model every platform sub-agent spawned from the session on a
+ * named harness runs on, whatever the spawn names, as it is for the
+ * harness's own subagents; a spawn on an image alone names no harness to
+ * check it against and keeps its own model. The setting is spelled the way
+ * the calling harness names models; the spawn route takes the
+ * provider-qualified form.
  */
 async function sessionSubagentModel(
   read: (() => Promise<string | null>) | undefined,
@@ -308,7 +310,10 @@ export function registerSubAgentTools(
   server.tool("spawn_subagent", SPAWN_DESCRIPTION, spawnInput, (args) =>
     run(async () => {
       const { needs, ...rest } = args;
-      const sessionModel = await sessionSubagentModel(deps.subagentModel);
+      const sessionModel =
+        rest.harness !== undefined
+          ? await sessionSubagentModel(deps.subagentModel)
+          : null;
       const model = sessionModel ?? canonicalModel(rest.model);
       const parsed = spawnInvocationRequestSchema.safeParse(
         withHarnessConfig({
@@ -328,7 +333,12 @@ export function registerSubAgentTools(
           model,
           await deps.catalogModels(body.harness),
         );
-        if (unlisted) return errorResult(`spawn_subagent refused: ${unlisted}`);
+        if (unlisted)
+          return errorResult(
+            sessionModel
+              ? `spawn_subagent refused: this session's subagent model setting (${model}) binds every sub-agent, and ${unlisted}. Spawn on a harness that lists it, or clear the session's subagent model.`
+              : `spawn_subagent refused: ${unlisted}`,
+          );
       }
       const unmet = unmetNeed(needs, body, await ops.harness());
       if (unmet) {

@@ -321,6 +321,7 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
                 ? "unsupported"
                 : p.status,
             listedAt: p.listedAt,
+            native: native !== null,
             models: native
               ? native.map((id) => nativeModelView(p.alias, id, binding))
               : forHarness(p.entries, harness, binding).map(modelView),

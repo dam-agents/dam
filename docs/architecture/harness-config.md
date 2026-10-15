@@ -101,6 +101,8 @@ Metadata is layered per model, first answer wins: the listing itself (Bob's mode
 An Anthropic subscription (OAuth token) Connection is listed from Anthropic's model list like the key Connection and offered to Claude Code alone, since Anthropic accepts the token only from Claude Code; the router refuses it to any other harness by name.
 Bedrock is the one **native Connection**: its SigV4 signing is no header swap, so the router never lists or routes it, and every harness but Claude Code sees it as unsupported.
 Claude Code's view lists it under its alias with Claude Code's own tier names (`bedrock/sonnet`); a session on one runs in a Claude Code process of its own, started with the Connection's env instead of the router's, and switching between it and a routed model moves the session between processes once the running turn ends.
+Beside a routed provider, a session with no model runs on the router's default, and Bedrock's env reaches a process only when no routed provider serves the harness.
+One process reaches either the router or Bedrock, so a session's subagent model is offered from, and must come from, the same side as its model.
 
 Each harness's manifest declares in its `modelRouter` section the dialects it speaks (Claude Code: Messages; Codex: Responses; Bob: chat; Pi: all three) and its name spelling (Claude Code's gateway discovery keeps only ids containing `claude`, lowercased, so it sees `claude/<alias>/<id>`); a harness's view of the catalog is the entries whose provider serves one of its dialects.
 The catalog is built when the env rail materialises, rebuilt on every env change and on a timer; a failed listing keeps that Connection's last good list, marked unavailable, and never empties another's.

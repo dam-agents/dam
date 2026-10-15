@@ -184,17 +184,29 @@ describe("routerEnvFor", () => {
    * Every harness a granted provider serves is marked as served, even before
    * that provider has listed, so Claude Code does not start on Anthropic's
    * own endpoint while the first listing is still out; with nothing granted
-   * there is no mark. */
+   * there is no mark. A model the harness is never offered (an embedding
+   * model, a window under the coding floor) neither caps the window nor
+   * fills a tier slot. */
   it("fills Claude Code's tiers from the default provider and caps the window", () => {
     const providers = [
       provider(openai, [entry(openai, "gpt-5.5", 1_000_000)]),
-      provider(cb, [entry(cb, "rits/zai-org/glm-5-3", 128_000)]),
+      provider(cb, [
+        entry(cb, "rits/zai-org/glm-5-3", 128_000),
+        entry(cb, "rits/tiny-chat", 16_000),
+      ]),
       provider(ibm, [
         entry(ibm, "aws/claude-opus-4-8", 200_000),
         entry(ibm, "aws/claude-sonnet-4-6", 200_000),
         entry(ibm, "gpt-5.5", null),
+        entry(ibm, "text-embedding-3-large", 8_191),
       ]),
     ];
+    expect(tierModels(["text-embedding-3-large", "rerank-english-v3"])).toBe(
+      null,
+    );
+    expect(tierModels(["text-embedding-3-large", "gpt-5.5"])?.opus).toBe(
+      "gpt-5.5",
+    );
     expect(
       routerEnvFor({
         harness: "claude-code",

@@ -27,6 +27,7 @@ const provider = (
   displayName: connectionId,
   status,
   listedAt: null,
+  native: false,
   models: [],
 });
 const catalog = (...providers: CatalogProviderView[]): HarnessCatalogView => ({
@@ -37,11 +38,15 @@ const catalog = (...providers: CatalogProviderView[]): HarnessCatalogView => ({
 
 describe("catalogSettled", () => {
   /** TEST_SCENARIO: A grant the pod has not received yet is missing from
-   * the catalog, and a provider still listing is unavailable: neither is
-   * settled. A provider that serves another harness is unsupported, which is
-   * final. With no grants an empty catalog is the answer; no read yet is not. */
+   * the catalog, a revoked provider the pod still lists has not left it yet,
+   * and a provider still listing is unavailable: none is settled. A provider
+   * that serves another harness is unsupported, which is final. With no
+   * grants an empty catalog is the answer; no read yet is not. */
   it("settles once every granted provider is listed or unsupported", () => {
     expect(catalogSettled(catalog(), ["conn-ibm"])).toBe(false);
+    expect(catalogSettled(catalog(provider("conn-ibm", "listed")), [])).toBe(
+      false,
+    );
     expect(
       catalogSettled(catalog(provider("conn-ibm", "listed")), [
         "conn-ibm",
@@ -79,6 +84,7 @@ describe("modelIndicatorLabel", () => {
         alias: "ibm",
         displayName: "IBM ETE LiteLLM Proxy",
         status: "listed" as const,
+        native: false,
         models: [
           {
             name: "claude/ibm/aws/claude-opus-4-5",

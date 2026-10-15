@@ -36,6 +36,7 @@ export interface CatalogProviderView {
   displayName: string;
   status: CatalogProviderStatus;
   listedAt: string | null;
+  native: boolean;
   models: CatalogModelView[];
 }
 

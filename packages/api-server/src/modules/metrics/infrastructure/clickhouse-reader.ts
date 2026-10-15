@@ -24,18 +24,26 @@ const CLAUDE_NATIVE_CALL =
   "(Body = 'claude_code.api_request' AND LogAttributes['model'] NOT LIKE 'claude/%')";
 const ROUTER_CALL = "Body = 'platform.model_call'";
 
+const CALL_KEY =
+  "(ResourceAttributes['platform.agent.id'], ResourceAttributes['platform.invocation.id'])";
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Claude Code writes its own record beside the
- * Model Router's, so an agent with router records in the window is summed
- * from those alone, and one without any from the harness's; the split is
- * read from the data, so a router export that never arrived leaves the
- * harness's count rather than none. A native Claude Code call names its model
- * without the `claude/` prefix and always counts from the harness's record.
+ * Model Router's, so a harness record is left out where the router's record
+ * stands in for it: the same agent and invocation (a sub-agent reports under
+ * its driver's id, on a runtime of its own) with router records in the
+ * window, from the first router record on (an image updated mid-window
+ * keeps its earlier harness records); the split is read from the data, so a
+ * router export that never arrived leaves the harness's count rather than
+ * none. A native Claude Code call names its model without the `claude/`
+ * prefix and always counts from the harness's record.
  */
-const callRows = (w: MetricsWindow): string =>
-  `(${ROUTER_CALL} OR (${HARNESS_CALL} AND (${CLAUDE_NATIVE_CALL} OR ResourceAttributes['platform.agent.id'] NOT IN (
-     SELECT DISTINCT ResourceAttributes['platform.agent.id'] FROM otel_logs
-     WHERE ${[ROUTER_CALL, AGENT_GATE, ...timeBounds(w)].join(" AND ")}))))`;
+const callRows = (w: MetricsWindow): string => {
+  const routerRows = [ROUTER_CALL, AGENT_GATE, ...timeBounds(w)].join(" AND ");
+  return `(${ROUTER_CALL} OR (${HARNESS_CALL} AND (${CLAUDE_NATIVE_CALL}
+     OR ${CALL_KEY} NOT IN (SELECT DISTINCT ${CALL_KEY} FROM otel_logs WHERE ${routerRows})
+     OR Timestamp < (SELECT min(Timestamp) FROM otel_logs WHERE ${routerRows}))))`;
+};
 
 const timeBounds = (w: MetricsWindow): string[] => [
   ...(w.hours === undefined

@@ -1,4 +1,5 @@
 import { Transform } from "node:stream";
+import { StringDecoder } from "node:string_decoder";
 import type { ModelDialect } from "../../model-catalog/index.js";
 
 type Json = Record<string, unknown>;
@@ -43,7 +44,8 @@ function rewriteEvent(dialect: ModelDialect, obj: Json, name: string): boolean {
  * the response's model field, since claude-agent-acp restores a loaded
  * session from its transcript's last assistant model, which must stay a name
  * the router resolves. Streams are rewritten line by line; every other byte
- * passes through unchanged.
+ * passes through unchanged, a multi-byte character split across two chunks
+ * included.
  */
 export function rewriteBody(
   dialect: ModelDialect,
@@ -64,6 +66,7 @@ export function createSseModelRewrite(
   name: string,
 ): Transform {
   let tail = "";
+  const decoder = new StringDecoder("utf8");
   const rewriteLine = (line: string): string => {
     if (!line.startsWith("data:")) return line;
     const payload = line.slice(5).trimStart();
@@ -73,13 +76,14 @@ export function createSseModelRewrite(
   };
   return new Transform({
     transform(chunk: Buffer, _enc, cb) {
-      const text = tail + chunk.toString("utf8");
+      const text = tail + decoder.write(chunk);
       const lines = text.split("\n");
       tail = lines.pop() ?? "";
       cb(null, lines.map((l) => `${rewriteLine(l)}\n`).join(""));
     },
     flush(cb) {
-      cb(null, tail ? rewriteLine(tail) : "");
+      const rest = tail + decoder.end();
+      cb(null, rest ? rewriteLine(rest) : "");
     },
   });
 }

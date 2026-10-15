@@ -18,6 +18,7 @@ export interface ModelGroup {
   alias: string;
   displayName: string;
   status: CatalogProviderView["status"];
+  native: boolean;
   models: CatalogModelView[];
 }
 
@@ -34,14 +35,15 @@ export function modelGroups(
     alias: p.alias,
     displayName: p.displayName,
     status: p.status,
+    native: p.native,
     models: p.models,
   }));
 }
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a granted provider missing from the catalog has
- * not reached the pod yet, and an unavailable one has not listed yet; either
- * way the UI asks again.
+ * not reached the pod yet, a revoked one still listed has not left it yet,
+ * and an unavailable one has not listed yet; either way the UI asks again.
  */
 export function catalogSettled(
   catalog: HarnessCatalogView | undefined,
@@ -49,10 +51,28 @@ export function catalogSettled(
 ): boolean {
   if (!catalog) return false;
   const held = new Set(catalog.providers.map((p) => p.connectionId));
+  const granted = new Set(grantedIds);
   return (
     grantedIds.every((id) => held.has(id)) &&
-    catalog.providers.every((p) => p.status !== "unavailable")
+    catalog.providers.every(
+      (p) => granted.has(p.connectionId) && p.status !== "unavailable",
+    )
   );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: one harness process reaches either the Model
+ * Router or a native provider, so a model-valued session setting (the
+ * subagent model) is offered from the session model's side only.
+ */
+export function sameSideGroups(
+  groups: readonly ModelGroup[],
+  model: string | null,
+): ModelGroup[] {
+  const own = model ? findModel(groups, model)?.group : undefined;
+  return own === undefined
+    ? [...groups]
+    : groups.filter((g) => g.native === own.native);
 }
 
 export function modelLabel(model: CatalogModelView): string {

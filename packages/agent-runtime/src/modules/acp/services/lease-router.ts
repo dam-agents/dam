@@ -32,6 +32,7 @@ export interface SessionChoice {
   harness: string;
   model: string | null;
   settings?: SessionSettings;
+  revoked?: string;
 }
 
 export const PROVIDER_REMOVED_REASON = "provider-removed";
@@ -230,13 +231,18 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     const meta = entry?.meta;
     const harness = meta?.harness ?? deps.defaultHarness;
     let model: string | null = meta?.model ?? null;
+    let revoked: string | undefined;
     if (model !== null && !parseQualifiedModel(model)) {
       const canonical = canonicalModel(model);
       if (canonical !== model) model = canonical;
-      else if (meta?.provider !== undefined) {
-        const alias = deps.aliasOfConnection(meta.provider);
-        if (alias) model = `${alias}/${model}`;
-      }
+    }
+    if (
+      meta?.provider !== undefined &&
+      (model === null || !parseQualifiedModel(model))
+    ) {
+      const alias = deps.aliasOfConnection(meta.provider);
+      if (alias === null) revoked = meta.provider;
+      else if (model !== null) model = `${alias}/${model}`;
     }
     if (
       freeze &&
@@ -253,6 +259,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       harness,
       model,
       ...(meta?.settings && { settings: meta.settings }),
+      ...(revoked !== undefined && { revoked }),
     };
   }
 
@@ -370,11 +377,12 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     if (real.isOpen()) real.send(JSON.stringify({ jsonrpc: "2.0", id, error }));
   }
 
-  function providerRemoved(alias: string): object {
+  function providerRemoved(provider: string, alias: string | null): object {
+    const named = alias === null ? "" : ` (${alias})`;
     return {
       code: -32001,
-      message: `This session's model provider (${alias}) was removed from the agent; pick another provider's model`,
-      data: { platform: { reason: PROVIDER_REMOVED_REASON, provider: alias } },
+      message: `This session's model provider${named} was removed from the agent. Attach it again, or start a new session on another provider's model.`,
+      data: { platform: { reason: PROVIDER_REMOVED_REASON, provider } },
     };
   }
 
@@ -432,6 +440,13 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
 
     if (method === "session/new") {
       const requested = platformChoice(params);
+      if (requested.invalidSettings) {
+        refuse(real, frame.id, {
+          code: -32602,
+          message: SETTINGS_SHAPE_MESSAGE,
+        });
+        return;
+      }
       const choice: SessionChoice = {
         harness: requested.harness ?? deps.defaultHarness,
         model: requested.model ?? null,
@@ -453,7 +468,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       }
       const revoked = revokedAlias(choice.model);
       if (revoked !== null) {
-        refuse(real, frame.id, providerRemoved(revoked));
+        refuse(real, frame.id, providerRemoved(revoked, revoked));
         return;
       }
       const v = channelOn(real, leaseFor(leasePairOf(choice)));
@@ -503,11 +518,17 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     }
     const revoked = revokedAlias(choice.model);
     if (
-      revoked !== null &&
+      (revoked !== null || choice.revoked !== undefined) &&
       isRequest(frame) &&
       (method === "session/prompt" || method.startsWith("session/set_"))
     ) {
-      refuse(real, frame.id, providerRemoved(revoked));
+      refuse(
+        real,
+        frame.id,
+        revoked !== null
+          ? providerRemoved(revoked, revoked)
+          : providerRemoved(choice.revoked!, null),
+      );
       return;
     }
     const lease = leaseFor(leasePairOf(choice));
@@ -538,7 +559,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     }
     const revoked = revokedAlias(model);
     if (revoked !== null) {
-      refuse(real, id, providerRemoved(revoked));
+      refuse(real, id, providerRemoved(revoked, revoked));
       return;
     }
     const choice = sessionChoice(sessionId, true);
@@ -594,12 +615,14 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     }
     const changes = isNonNullObject(params?.settings) ? params.settings : {};
     const merged: Record<string, unknown> = { ...entry.meta.settings };
-    for (const [key, value] of Object.entries(changes)) merged[key] = value;
+    for (const [key, value] of Object.entries(changes))
+      if (isUnset(value)) delete merged[key];
+      else merged[key] = value;
     const parsed = sessionSettingsSchema.safeParse(merged);
     const choice = sessionChoice(sessionId, true);
     const invalid = parsed.success
       ? deps.settingsError?.(choice.harness, parsed.data, choice.model)
-      : "Session settings must map setting ids to values";
+      : SETTINGS_SHAPE_MESSAGE;
     if (invalid || !parsed.success) {
       refuse(real, id, { code: -32602, message: invalid });
       return;
@@ -788,9 +811,22 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
   };
 }
 
+const SETTINGS_SHAPE_MESSAGE =
+  "Session settings must map setting ids to values";
+
+const isUnset = (value: unknown): boolean => value === "" || value === null;
+
+function withoutUnset(
+  settings: Record<string, unknown>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(settings).filter(([, value]) => !isUnset(value)),
+  );
+}
+
 function platformChoice(
   params: Record<string, unknown> | undefined,
-): Partial<SessionChoice> {
+): Partial<SessionChoice> & { invalidSettings?: true } {
   const meta = isNonNullObject(params?._meta) ? params._meta : undefined;
   const platform = isNonNullObject(meta?.platform) ? meta.platform : undefined;
   const text = (key: string): string | undefined => {
@@ -799,11 +835,15 @@ function platformChoice(
   };
   const harness = text("harness");
   const model = text("model");
-  const settings = sessionSettingsSchema.safeParse(platform?.settings);
+  const raw = platform?.settings;
+  const settings = isNonNullObject(raw)
+    ? sessionSettingsSchema.safeParse(withoutUnset(raw))
+    : undefined;
   return {
     ...(harness !== undefined && { harness }),
     ...(model !== undefined && { model: canonicalModel(model) }),
-    ...(settings.success && { settings: settings.data }),
+    ...(settings?.success && { settings: settings.data }),
+    ...(settings?.success === false && { invalidSettings: true }),
   };
 }
 
@@ -814,7 +854,7 @@ function withPlatformChoice(
   const params = isNonNullObject(frame.params) ? frame.params : {};
   const meta = isNonNullObject(params._meta) ? params._meta : {};
   const platform = isNonNullObject(meta.platform) ? meta.platform : {};
-  const { provider: _provider, ...rest } = platform;
+  const { provider: _provider, settings: _settings, ...rest } = platform;
   return {
     ...frame,
     params: {

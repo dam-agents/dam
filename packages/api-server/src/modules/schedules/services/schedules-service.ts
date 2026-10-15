@@ -85,6 +85,32 @@ function choicesOf(input: {
   };
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a partial update names only the choices it
+ * changes (undefined keeps, null clears), so the choices validated are the
+ * ones the stored schedule ends up with, never the changed fields alone.
+ */
+function mergedChoices(
+  input: {
+    harness?: string | null;
+    model?: string | null;
+    settings?: Record<string, string> | null;
+  },
+  spec: {
+    harness?: string;
+    model?: string;
+    settings?: Record<string, string>;
+  },
+): { harness?: string; model?: string; settings?: Record<string, string> } {
+  const pick = <T>(next: T | null | undefined, stored: T | undefined) =>
+    next === undefined ? stored : (next ?? undefined);
+  return {
+    harness: pick(input.harness, spec.harness),
+    model: pick(input.model, spec.model),
+    settings: pick(input.settings, spec.settings),
+  };
+}
+
 function choicesChanged(
   input: {
     harness?: string | null;
@@ -436,14 +462,15 @@ export function createSchedulesService(deps: {
       );
       const current = await deps.repo.get(input.id, deps.owner);
       if (!current) return null;
-      if (choicesChanged(input, current.spec))
-        await ensureSessionChoices(
-          current.agentId,
-          choicesOf(input),
-          undefined,
-        );
       if (current.spec.type === "once")
         throw badRequest("a one-time schedule is edited with updateOnce");
+      const merged = mergedChoices(input, current.spec);
+      if (choicesChanged(merged, current.spec))
+        await ensureSessionChoices(
+          current.agentId,
+          choicesOf(merged),
+          undefined,
+        );
       const { cron: _cron, ...unchanged } =
         current.spec.type === "cron"
           ? current.spec

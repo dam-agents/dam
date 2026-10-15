@@ -22,6 +22,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
+import { useIsAgentAnswerableSoon } from "../../agents/api/queries.js";
 import {
   rememberSessionPair,
   useGrantProvider,
@@ -37,6 +38,7 @@ import {
   modelGroups,
   modelIndicatorLabel,
   sameModel,
+  sameSideGroups,
 } from "../lib/catalog-groups.js";
 import {
   fittingProviders,
@@ -128,6 +130,7 @@ export function SessionPairPicker({
     routed ? agentId : null,
     harness,
   );
+  const answerableSoon = useIsAgentAnswerableSoon(routed ? agentId : null);
   const groups = routed ? modelGroups(catalogModels.data) : [];
   const addable = routed
     ? addableProviders(providers.granted, providers.owned, (c) =>
@@ -226,6 +229,7 @@ export function SessionPairPicker({
                 loading={catalogModels.isLoading}
                 failed={catalogModels.isError}
                 operable={catalogModels.operable}
+                starting={answerableSoon}
                 onRetry={() => void catalogModels.refetch()}
                 onChoose={(model, group) =>
                   choose(
@@ -288,6 +292,7 @@ export function SessionPairPicker({
               {groups.length === 0 &&
                 addable.length === 0 &&
                 !catalogModels.isLoading &&
+                !catalogModels.isError &&
                 catalogModels.operable && (
                   <p className="px-1 text-muted-foreground">
                     No connected model provider runs {harnessName(harness)}.
@@ -328,15 +333,21 @@ export function SessionPairPicker({
               model={pair.model}
               settings={settings}
               defaults={defaults}
-              modelChoices={groups.flatMap((g) =>
+              modelChoices={sameSideGroups(groups, pair.model).flatMap((g) =>
                 g.models.map((m) => ({
                   value: m.name,
                   name: `${m.upstreamId} · ${g.displayName}`,
                 })),
               )}
-              onChange={(id, value) =>
-                choose({ ...pair, settings: { ...settings, [id]: value } })
-              }
+              onChange={(id, value) => {
+                const rest = Object.fromEntries(
+                  Object.entries(settings).filter(([key]) => key !== id),
+                );
+                choose({
+                  ...pair,
+                  settings: value === "" ? rest : { ...rest, [id]: value },
+                });
+              }}
             />
           </div>
         )}
@@ -388,7 +399,7 @@ export function SetAsDefault({
   const saved =
     !!remembered &&
     remembered.harness === pair.harness &&
-    remembered.provider === pair.provider &&
+    (pair.provider === null || remembered.provider === pair.provider) &&
     (remembered.model === pair.model ||
       sameModel(remembered.model, pair.model)) &&
     Object.entries(pair.settings ?? {}).every(

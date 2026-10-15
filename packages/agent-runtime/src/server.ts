@@ -295,11 +295,15 @@ const aliasOfConnection = (connectionId: string): string | null => {
 };
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the env of a provider Connection the router does
- * not serve (Bedrock) still reaches every harness process, since Claude
- * Code's shim picks Bedrock when it is set.
+ * not serve (Bedrock) reaches a harness process only when no granted provider
+ * serves that harness through the router, since the harness's shim picks
+ * Bedrock whenever it is set; beside a routed provider, a session names
+ * Bedrock by its model and runs in a native process of its own.
  */
-const unroutedProviderEnv = (): Record<string, string> =>
-  Object.assign(
+const FIRST_LISTING_WAIT_MS = 10_000;
+const unroutedProviderEnv = (harness: string): Record<string, string> => {
+  if (routerEnvOf(harness).PLATFORM_MODEL_ROUTER_SERVES) return {};
+  return Object.assign(
     {},
     ...envStore.state().providers.flatMap((l) => {
       const alias = l.template ? aliasForTemplateId(l.template) : null;
@@ -307,6 +311,7 @@ const unroutedProviderEnv = (): Record<string, string> =>
       return routed ? [] : [l.env];
     }),
   ) as Record<string, string>;
+};
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the Connection a session runs on outside the
  * router, when its model's alias names one the harness's manifest runs
@@ -356,7 +361,7 @@ const terminalModelEnv = (lease: {
       }),
     };
   return {
-    ...unroutedProviderEnv(),
+    ...unroutedProviderEnv(lease.harness),
     ...routerEnvOf(lease.harness),
     ...(lease.model !== null && {
       PLATFORM_MODEL: renderSessionModel(
@@ -445,9 +450,13 @@ const {
   onToolActivity: changes.onToolActivity,
   sessionRepositories: changes.repositoriesOf,
   onPrompt: startDisplay,
-  beforeSpawn: () => {
-    return Promise.resolve();
-  },
+  beforeSpawn: () =>
+    Promise.race([
+      modelCatalog.listed(),
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, FIRST_LISTING_WAIT_MS).unref();
+      }),
+    ]),
   providerAliases: grantedAliases,
   aliasOfConnection,
   unroutedProviderEnv,
@@ -1166,6 +1175,17 @@ server.listen(config.PORT, () => {
 
   if (envStore.ready()) refreshPodEnv();
 
+  modelCatalog.onChange(() =>
+    acpRuntime.applyEnvChange({
+      namesChanged: false,
+      base: null,
+      providers: [],
+      harnesses: Object.keys(harnessManifests).map((id) => ({
+        id,
+        namesChanged: false,
+      })),
+    }),
+  );
   acpRuntime.prestart();
 
   if (imageSkillReconciler) {
