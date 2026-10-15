@@ -242,6 +242,7 @@ Temporary folders are kept off that root instead: `/tmp` and `/var/tmp` are dire
 `/var/cache` stays part of the root, because an image ships its font, package and linker caches there, and an empty folder over them had every boot rebuild them.
 They share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their least recently used entries, never anything outside them.
 A folder that is itself a symlink, such as a `~/.cache` an agent pointed at its work, is skipped, since what it points at is not scratch; a pass works through the folders it opened, so one swapped for a link meanwhile is not followed either.
+Nor is a mount scratch: a work directory bound into a cache, or onto one, is on the same disk but not on the cache's mount, so an entry that holds a mount stays whole, a folder that is not on the mount it had at boot is skipped, and no delete platform-init makes on the disk, at boot or after, goes into a mount.
 An entry is one name directly in such a folder, such as `~/.cache/go-build` or `/tmp/pr-body.md`, and it goes whole or not at all, because a tool that keeps part of its cache takes it for complete and fails on it.
 Use is the newest modification or change time anywhere in the entry, since the disk is mounted `relatime` and a read often leaves access times alone.
 An entry used in the last ten minutes stays, and so does one a process holds a BSD lock on, the way `systemd-tmpfiles` leaves it.
