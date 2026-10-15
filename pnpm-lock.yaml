@@ -144,11 +144,11 @@ importers:
   packages/agents/pi-agent/rootfs/usr/local/share/pi-platform/extensions/pi-platform-telemetry:
     devDependencies:
       '@earendil-works/pi-ai':
-        specifier: 1.0.4
-        version: 1.0.4(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.32.0(zod@4.6.6))(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.22.0)(zod@4.6.6)
+        specifier: 1.1.0
+        version: 1.1.0(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.32.0(zod@4.6.6))(@smithy/signature-v4@5.7.3)(undici@8.10.2)(ws@8.22.0)(zod@4.6.6)
       '@earendil-works/pi-coding-agent':
-        specifier: 1.0.4
-        version: 1.0.4(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.32.0(zod@4.6.6))(@smithy/signature-v4@5.7.3)(ws@8.22.0)(zod@4.6.6)
+        specifier: 1.1.0
+        version: 1.1.0(@aws-sdk/credential-provider-node@3.972.84)(@modelcontextprotocol/sdk@1.32.0(zod@4.6.6))(@smithy/signature-v4@5.7.3)(ws@8.22.0)(zod@4.6.6)
 
   packages/api-server:
     dependencies:
