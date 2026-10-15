@@ -37,11 +37,26 @@ test("exchange messages with the agent", async ({ page }) => {
   });
 
   await test.step("the configure button sits right after the agent name", async () => {
-    const name = await page.getByTitle(`Rename ${agentName}`).boundingBox();
-    const configure = await page.getByTestId("configure-agent").boundingBox();
-    expect(name).not.toBeNull();
-    expect(configure).not.toBeNull();
-    expect(configure!.x - (name!.x + name!.width)).toBeLessThan(16);
+    const name = page.getByTitle(`Rename ${agentName}`);
+    const configure = page.getByTestId("configure-agent");
+    await expect(name).toBeVisible();
+    await expect(configure).toBeVisible();
+    await expect
+      .poll(() =>
+        page.evaluate(async (title) => {
+          await document.fonts.ready;
+          const nameBox = [...document.querySelectorAll("[title]")]
+            .find((el) => el.getAttribute("title") === title)
+            ?.getBoundingClientRect();
+          const configureBox = document
+            .querySelector('[data-testid="configure-agent"]')
+            ?.getBoundingClientRect();
+          return nameBox && configureBox
+            ? configureBox.left - nameBox.right
+            : Infinity;
+        }, `Rename ${agentName}`),
+      )
+      .toBeLessThan(16);
   });
 
   await test.step("send a message and receive the scripted reply", async () => {
