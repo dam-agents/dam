@@ -28,6 +28,8 @@ The nested install is a fresh, single-user platform at `http://localhost:4444`, 
   Without it, an AC that needs an agent to reply or run is `blocked`, not failed.
 - One user.
   ACs about sharing, other users' access or approvals between people need a second account — `testable: no — single user` until the profile adds one.
+- No service mesh: the VM's kernel cannot run Istio, so the nested install runs without it.
+  Network isolation between agents is not enforced — an AC that one agent cannot reach or act as another is `testable: no — no mesh`.
 - No email, no SSO federation, no real billing.
 
 ## Versions
@@ -45,3 +47,4 @@ The HTTP API takes the same key as a bearer token.
 
 `candidate_channel`: `main` (default) \| `release`.
 `baseline_channel`: `release` (default) \| `none`.
+Releases up to `0.2.17` cannot install without the mesh: until a newer release ships, use `baseline_channel: none`.

@@ -4,7 +4,9 @@ The DAM profile for the [quality-inspector](https://github.com/dam-agents/qualit
 It is data only: the inspector's `helm-k3s` engine runs the published chart in a nested k3s cluster inside the inspector's VM from `profile.json` → `engine_config`.
 Contract: quality-inspector `docs/profile-contract.md`; engine configuration: `engines/helm-k3s/README.md` there.
 
-- `profile.json` — the chart, its channels (`main` = `0.0.0-main.<n>`, `release` = `X.Y.Z`), the prerequisites (cert-manager, Gateway API CRDs, Istio ambient), the Helm values for a single-user QA install with a generated test owner, egress, requirements, config keys.
+- `profile.json` — the chart, its channels (`main` = `0.0.0-main.<n>`, `release` = `X.Y.Z`), the prerequisites (cert-manager, Gateway API CRDs, Istio CRDs without the mesh dataplane), the Helm values for a single-user QA install with a generated test owner, egress, requirements, config keys.
+- `no-mesh-marker.yaml` — the `kube-system/platform-local-no-mesh` ConfigMap that lets the chart take `istio.enforce=false`.
+  The inspector's VM kernel cannot run the Istio ambient dataplane, so the nested install runs without it; applied as a `file` prerequisite (quality-inspector 2.20.0 or later).
 - `SKILL.md` — DAM from a tester's point of view: vocabulary, and what the nested install cannot do.
   User-facing only — never implementation detail.
 
