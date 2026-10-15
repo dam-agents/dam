@@ -263,6 +263,9 @@ Both are rebuilt or resumed by the next boot rather than being state an Agent ca
 
 **A disk that holds a filesystem is never formatted at boot.** smolvm's guest agent repairs a storage disk it cannot mount, and formatted it when the repair did not help, which erased a home that only a passing I/O error, a killed repair or a kernel that lacks one of its features kept from mounting.
 The runner image ships that agent rebuilt with a patch that refuses the format when the disk carries a filesystem, or cannot be read, and counts a repair killed by a signal as failed: the boot fails with the reason on the machine's console and the disk stays as it was, for the next start to mount once the cause passes.
+The same agent checks the disk's filesystem before its first mount at every boot, since a write that failed, a full claim's among them, leaves it marked with errors that a mount alone keeps and lets grow.
+`e2fsck -p` returns at once on a clean filesystem and preens one marked with errors; what that cannot fix gets a full repair, and then one that also rebuilds directories.
+A repair is a line on the machine's console; a filesystem still damaged after all three, or an `e2fsck` that failed or was killed, fails the boot with the reason there, and the disk stays as it was.
 A Mac host runner runs its installed smolvm's own agent, which still formats.
 
 **A disk that has lost its home fails the boot.** A disk that was formatted anyway looks exactly like one never seeded.
