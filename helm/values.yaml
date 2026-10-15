@@ -2107,7 +2107,7 @@ harnessTemplates:
 # session has no harness of its own yet, and seeds the harness of new agents.
 # `providers` lists the model-provider connection types the harness can run on;
 # the session picker offers only their models. `telemetry` names the export
-# rail the harness reads (claude-code, bob or pi, see
+# rail the harness reads (claude-code, bob, pi or codex, see
 # docs/architecture/observability.md); it applies only with clickstack.enabled.
 harnesses:
   default: claude-code
@@ -2126,6 +2126,9 @@ harnesses:
       description: "OpenAI Codex coding agent"
       releaseNotesUrl: "https://github.com/openai/codex/releases"
       providers: [ibm-litellm, curve-bender, openai]
+      # Codex reads its exporters from config.toml alone; the image's launch
+      # scripts render this rail into `-c otel.*` flags.
+      telemetry: codex
       tags: ["OpenAI"]
     pi:
       enabled: true

@@ -142,7 +142,7 @@ export function modelIndicatorLabel(
   name: string | null,
 ): string | null {
   const hit = findModel(groups, name);
-  if (hit) return `${modelLabel(hit.model)} · ${hit.group.displayName}`;
+  if (hit) return `${modelLabel(hit.model)} (${hit.group.displayName})`;
   return name;
 }
 
@@ -176,4 +176,13 @@ export function addableProviders(
       connection,
       conflict: providerAliasConflict(grantedAliased, aliased(connection)),
     }));
+}
+
+export function attachableProviders(
+  granted: readonly ProviderConnectionRef[],
+  candidates: readonly ProviderConnectionRef[],
+): ProviderConnectionRef[] {
+  return addableProviders(granted, candidates, () => true)
+    .filter((a) => a.conflict === null)
+    .map((a) => a.connection);
 }

@@ -28,6 +28,7 @@ import {
 import { useStore } from "../../../store.js";
 import { useBrowserControl } from "../hooks/use-browser-control.js";
 import { addressUrl } from "../lib/address.js";
+import { showsTabBar } from "../lib/tabs.js";
 import { BrowserTabBar } from "./browser-tab-bar.js";
 import { StreamView } from "./stream-view.js";
 
@@ -212,7 +213,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
         </Button>
       </div>
 
-      {stream.tabs && (
+      {showsTabBar(stream.tabs) && (
         <BrowserTabBar
           tabs={stream.tabs}
           activeTab={stream.activeTab}

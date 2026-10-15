@@ -1,11 +1,10 @@
-import { Activity, Bot } from "@carbon/icons-react";
+import { Bot } from "@carbon/icons-react";
 
 import { ResizeHandle } from "@/components/resize-handle";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
 import { SidebarAgents } from "../../../agents/components/sidebar-agents.js";
-import { SidebarActivity } from "../../../home/components/sidebar-activity.js";
 import { useActivitySessions } from "../../../home/hooks/use-activity-sessions.js";
 import { useSidebarDestinations } from "../../hooks/use-sidebar-destinations.js";
 import { useSidebarWidth } from "../../hooks/use-sidebar-layout.js";
@@ -67,12 +66,9 @@ function CollapsedRail() {
         ))}
       </div>
       <div className="mt-4 flex flex-col gap-px">
-        <SidebarFlyout label="Agents" icon={Bot}>
-          {(close) => <SidebarAgents onNavigate={close} />}
-        </SidebarFlyout>
-        <SidebarFlyout label="Activity" icon={Activity} badge={hasUnread}>
+        <SidebarFlyout label="Agents" icon={Bot} badge={hasUnread}>
           {(close) => (
-            <SidebarActivity
+            <SidebarAgents
               stickyHeaderClassName="bg-popover"
               onNavigate={close}
             />

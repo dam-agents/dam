@@ -25,10 +25,11 @@ function combineTelegramChats(
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Names the channel each Activity session came
- * from. Activity spans every Agent the user owns, so Slack names come from the
- * channel list every Agent already carries, and Telegram chat titles are
- * fetched only for the Agents that have a Telegram session in Activity.
+ * UNIT_BOUNDARY_DESCRIPTION: Names the channel each session in the sidebar
+ * preview came from. The preview spans every Agent the user owns, so Slack
+ * names come from the channel list every Agent already carries, and Telegram
+ * chat titles are fetched only for the Agents that have a Telegram session in
+ * the attention record.
  */
 export function useActivityConversations(
   sessions: readonly AttentionItem[],

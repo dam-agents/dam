@@ -27,7 +27,7 @@ export function ActivityFilterMenu({
   onChange: (filters: ActivityFilters) => void;
 }) {
   const filtered = isFiltered(filters);
-  const label = filtered ? "Filter activity (filtered)" : "Filter activity";
+  const label = filtered ? "Filter sessions (filtered)" : "Filter sessions";
 
   const toggleChannel = (type: (typeof CHANNEL_TYPES)[number]) => {
     const next = new Set(filters.channelTypes);
@@ -43,7 +43,7 @@ export function ActivityFilterMenu({
           type="button"
           aria-label={label}
           title={label}
-          data-testid="sidebar-activity-filter"
+          data-testid="sidebar-session-filter"
           className={cn(
             "relative flex size-6 items-center justify-center rounded-md border border-border transition-colors hover:bg-muted hover:text-foreground",
             filtered ? "text-primary" : "text-muted-foreground",

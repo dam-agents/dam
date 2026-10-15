@@ -46,7 +46,8 @@ Safe Browsing and the component updater stay on: the updater is how Chrome gets 
 
 ## Tabs
 
-The one browser has tabs, and the panel shows them all in a tab bar under its toolbar: each tab's title, whether it is loading, and which one is on screen.
+The one browser has tabs, and once it has two or more the panel shows them all in a tab bar under its toolbar: each tab's title, whether it is loading, and which one is on screen.
+As in Safari, a browser with one tab shows no tab bar, and with it no button for a new tab: a second tab is typically one the agent opens, and the bar hides again when one tab is left.
 The user opens, selects and closes tabs there, and a tab opened, selected, renamed or closed by the agent or by a page — a link that opens a new tab, a popup — shows in the bar as Chromium reports it.
 The kiosk window shows only one tab, so **the tab on screen is the active tab**: the panel's address, title, loading and Back and Forward are always that tab's.
 
@@ -57,6 +58,8 @@ The user and the agent share the active tab both ways.
 A tab the agent brings to the front — `agent-browser tab`, `tab new`, a page's popup — comes on screen, and Chromium sends no event for that, nor for a script that renames a page, so the runtime asks each tab for its visibility and title once a second while a panel watches; a tab that has just turned visible becomes the active tab.
 A tab the user selects comes to the front at once, and the runtime then selects it in agent-browser too (`agent-browser tab <target id>`, in agent-browser's queue), so the agent's next command acts on the page the user sees.
 agent-browser does not list the browser's own pages, such as the new tab page a keyboard shortcut opens; the panel shows them and brings them to the front, but the agent stays on its last tab.
+Chromium starts with a New Tab page of its own, which agent-browser never takes as its tab, opening one of its own beside it; the runtime closes that start-up page when its connection opens, while another tab is open, so a fresh browser has one tab for the panel and the agent alike.
+Chromium is not given a start-up address instead, as it then reopens the last session's tabs beside it on every launch.
 What the agent only reads — a snapshot, a screenshot, a script — changes neither.
 
 A new tab from the panel is blank (`about:blank`), so agent-browser takes it as its own tab; the address bar is focused for it, and what the user enters there opens in the new tab, even before the runtime reports it.

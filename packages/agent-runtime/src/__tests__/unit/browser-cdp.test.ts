@@ -419,6 +419,29 @@ describe("watchPages", () => {
     expect(page.state().tabs).toHaveLength(2);
   });
 
+  // TEST_SCENARIO: a fresh browser holds Chromium's own New Tab page beside the tab agent-browser opened, which agent-browser never lists; the watcher closes that start-up page, so the panel lists the one tab agent-browser does. A New Tab page that is the browser's only tab stays, as closing it would close the browser.
+  it("closes Chromium's start-up page beside agent-browser's tab", async () => {
+    const start = tab("S", "chrome://newtab/", false);
+    const own = tab("A", "about:blank", true);
+    const chrome = await fakeChrome([start, own]);
+    const { page } = await watching(chrome.url);
+    expect(page.state().tabs.map((t) => t.id)).toEqual(["A"]);
+    expect(page.state().activeTab).toBe("A");
+    expect(chrome.calls).toContainEqual(
+      expect.objectContaining({
+        method: "Target.closeTarget",
+        params: { targetId: "S" },
+      }),
+    );
+
+    const alone = await fakeChrome([tab("S", "chrome://newtab/", true)]);
+    const { page: only } = await watching(alone.url);
+    expect(only.state().tabs.map((t) => t.id)).toEqual(["S"]);
+    expect(alone.calls.some((c) => c.method === "Target.closeTarget")).toBe(
+      false,
+    );
+  });
+
   // TEST_SCENARIO: closing a tab that is not on screen leaves the active tab as it is.
   it("keeps the active tab when another closes", async () => {
     const a = tab("A", "http://a/", true);

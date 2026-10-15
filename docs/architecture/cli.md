@@ -98,7 +98,7 @@ The CLI is at parity with the web UI across these groups.
 Each concept's depth lives on its owning architecture page; per-verb flags, exit-code numbers, and tRPC procedure names live in the code, not here.
 
 - **`auth`** — login, logout, status, and API-key management ([Authentication](#authentication)).
-- **`agent`** — list, get, create, interactive create, delete, restart, plus read-only template listing ([Agent lifecycle](#agent-lifecycle)).
+- **`agent`** — list, get, create, interactive create, delete, restart, disable, enable, plus read-only template listing ([Agent lifecycle](#agent-lifecycle)).
 - **`chat`** / **`session`** — attach a local terminal to a running agent's TUI, and list an agent's sessions ([Terminal attach](#terminal-attach)).
 - **`telemetry`** — list a session's turns, and export its traces and log records as newline-delimited JSON ([Agent telemetry](agent-telemetry.md)).
 - **`run`** — headless programmatic runs for CI and orchestration: submit a prompt, stream the answer, read a finished run's result later, cancel a running one ([Headless runs](#headless-runs)).
@@ -146,6 +146,8 @@ The CLI presents Agents as single, atomic entities — one resource carrying bot
 - **Create** is one mutation; env vars and description attach to the payload and the merged Agent is provisioned atomically server-side.
   **Delete** cascades through Kubernetes ownership to the StatefulSet, Service, NetworkPolicy, and owned volumes — the same path the UI's delete uses.
   **Restart** deletes the agent's pod; the controller recreates it with the current spec and persistent volumes survive.
+  **Disable** puts the agent to sleep and keeps anything from waking it until **Enable**, which leaves it asleep until its next use ([agent-lifecycle](agent-lifecycle.md#disable)).
+  Both refuse with a conflict while a runtime migration holds the agent, and `list` and `get` show a disabled agent's state as `disabled`.
 - **Scripted create may name a model-provider Connection**, by id or unique name; without one the server grants every provider of the caller's that the harness runs on ([agent-lifecycle](agent-lifecycle.md#create)), and each session picks its harness and model.
   An id goes directly to creation with agent-management permission; name lookup additionally needs credential-read permission and rejects ambiguous matches.
   Before creating the Agent, the server checks that a named Connection belongs to the caller and is an active model provider, then includes it in the initial grants; an invalid one fails with guidance to choose or reconnect a provider.

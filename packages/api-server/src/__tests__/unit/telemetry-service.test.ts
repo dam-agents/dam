@@ -175,6 +175,50 @@ describe("createTelemetryService", () => {
     ]);
   });
 
+  it("counts a Codex turn from the usage records the collector reshapes", async () => {
+    // TEST_SCENARIO: Codex's per-call usage reaches the store as codex.response_completed with Claude Code's counters, beside its HTTP-level codex.api_request, which carries no tokens and must not count as a call.
+    const { reader } = spyReader({
+      logRecords: async () => [
+        log({ event: "codex.user_prompt", service: "codex-app-server" }),
+        log({
+          at: "2026-09-14T12:00:01.000Z",
+          event: "codex.api_request",
+          service: "codex-app-server",
+          attributes: { model: "gpt-5.5", duration_ms: "900" },
+        }),
+        log({
+          at: "2026-09-14T12:00:02.000Z",
+          event: "codex.response_completed",
+          service: "codex-app-server",
+          attributes: {
+            model: "gpt-5.5",
+            input_tokens: "60",
+            output_tokens: "20",
+            cache_read_tokens: "40",
+            cache_creation_tokens: "0",
+          },
+        }),
+      ],
+    });
+    const service = createTelemetryService({
+      reader,
+      listOwnedAgents: async () => owned,
+    });
+
+    const result = await service.turns(TURNS_QUERY);
+
+    expect(result.available && result.turns).toMatchObject([
+      {
+        prompted: true,
+        calls: 1,
+        inputTokens: 60,
+        outputTokens: 20,
+        cacheReadTokens: 40,
+        models: ["gpt-5.5"],
+      },
+    ]);
+  });
+
   it("keeps the newest turns when the cap bites", async () => {
     /**
      * TEST_SCENARIO: reading oldest-first must not turn the row cap into a
