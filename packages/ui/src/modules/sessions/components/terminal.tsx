@@ -53,8 +53,10 @@ export function Terminal({
   const [refusal, setRefusal] = useState<string | null>(null);
   const [reconnectKey, setReconnectKey] = useState(0);
   const connectEnabled = useRef(autoConnect);
+  const userConnect = useRef(false);
   const handleReconnect = () => {
     connectEnabled.current = true;
+    userConnect.current = true;
     setRefusal(null);
     setState("connecting");
     setReconnectKey((k) => k + 1);
@@ -113,8 +115,10 @@ export function Terminal({
       if (cancelled) return;
 
       const lease = fresh ? readNextSessionPair(agentId) : null;
+      const wakes = userConnect.current;
+      userConnect.current = false;
       ws = new WebSocket(
-        `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/agents/${agentId}/terminal?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}${fresh ? "&reset=1" : ""}${lease ? `&${new URLSearchParams(pairMeta(lease.pair)).toString()}` : ""}`,
+        `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/api/agents/${agentId}/terminal?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}${fresh ? "&reset=1" : ""}${wakes ? "" : "&wake=0"}${lease ? `&${new URLSearchParams(pairMeta(lease.pair)).toString()}` : ""}`,
       );
       ws.binaryType = "arraybuffer";
 

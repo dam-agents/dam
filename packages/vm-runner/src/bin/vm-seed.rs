@@ -131,8 +131,12 @@ fn client(ca_file: &Path) -> anyhow::Result<reqwest::Client> {
         "{} holds no certificate",
         ca_file.display()
     );
-    Ok(reqwest::Client::builder()
-        .tls_certs_only(certs)
+    Ok(certs
+        .into_iter()
+        .fold(
+            reqwest::Client::builder().tls_built_in_root_certs(false),
+            reqwest::ClientBuilder::add_root_certificate,
+        )
         .https_only(true)
         .no_proxy()
         .connect_timeout(Duration::from_secs(30))

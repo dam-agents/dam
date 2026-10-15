@@ -1,3 +1,214 @@
+diff --git i/Cargo.toml w/Cargo.toml
+index ed555c2..f429733 100644
+--- i/Cargo.toml
++++ w/Cargo.toml
+@@ -96,7 +96,7 @@ axum = { version = "0.8", features = ["macros", "ws"] }
+ # mTLS for the fleet serve API (control↔node). axum-server's rustls acceptor
+ # does the TLS handshake + client-cert verification; rustls-pemfile parses the
+ # CA/cert/key PEMs handed to us at enrollment.
+-axum-server = { version = "0.7", features = ["tls-rustls"] }
++axum-server = { version = "0.7", features = ["tls-rustls-no-provider"] }
+ # Wraps a response body so serve counts a request until it has been sent.
+ http-body = "1"
+ rustls = { version = "0.23.45", default-features = false, features = ["ring"] }
+diff --git i/crates/smolvm-agent/src/main.rs w/crates/smolvm-agent/src/main.rs
+index b8dc6ea..450e581 100644
+--- i/crates/smolvm-agent/src/main.rs
++++ w/crates/smolvm-agent/src/main.rs
+@@ -1206,6 +1206,9 @@ fn setup_persistent_rootfs() {
+     let storage_handle = if Path::new(STORAGE_DEVICE).exists() {
+         ensure_mount_dir(STORAGE_TEMP_MOUNT);
+         Some(std::thread::spawn(|| {
++            if !storage_filesystem_checked() {
++                return false;
++            }
+             // Resize before mount — template may be smaller than device.
+             // Skip if filesystem already fills the device (subsequent boots).
+             // If resize fails (e.g. macOS-created template with incompatible features),
+@@ -1780,6 +1783,10 @@ fn mount_storage_disk() -> bool {
+         return true;
+     }
+ 
++    if !storage_filesystem_checked() {
++        return false;
++    }
++
+     // --- Attempt 1: resize (if needed) + mount (works on subsequent boots) ---
+     let resized =
+         ext4_already_full_size(STORAGE_DEVICE) || resize_ext4_if_needed(STORAGE_DEVICE, "storage");
+@@ -1801,7 +1808,8 @@ fn mount_storage_disk() -> bool {
+         .status()
+     {
+         Ok(status) => {
+-            let code = status.code().unwrap_or(-1);
++            // A signal-killed fsck has no exit code and repaired nothing.
++            let code = status.code().unwrap_or(i32::MAX);
+             if code <= 1 {
+                 info!(exit_code = code, "fsck completed");
+                 true
+@@ -1827,6 +1835,17 @@ fn mount_storage_disk() -> bool {
+     }
+ 
+     // --- Attempt 3: mkfs (last resort, destroys data) ---
++    // The host formats every disk before its first boot, so a disk that still
++    // holds a filesystem here failed to mount for a reason that may pass (an I/O
++    // error, a killed fsck, a feature this kernel lacks). Formatting it would
++    // erase the agent's data for good, so the boot fails and the disk is kept.
++    if !may_format_storage(STORAGE_DEVICE) {
++        boot_log(
++            "ERROR",
++            "storage disk could not be mounted and holds a filesystem (or could not be read); refusing to format it, so its data is kept for the next boot",
++        );
++        return false;
++    }
+     info!("formatting storage disk (first boot or unrecoverable)");
+     match Command::new("mkfs.ext4")
+         .args(["-F", "-q", "-O", "^has_journal", STORAGE_DEVICE])
+@@ -1853,6 +1872,104 @@ fn mount_storage_disk() -> bool {
+     false
+ }
+ 
++/// Checks the storage disk's filesystem once per boot, before its first mount:
++/// a filesystem the kernel marked with errors (a failed write, an aborted
++/// journal) is otherwise mounted as it is, and the damage stays and grows.
++/// `e2fsck -p` returns at once on a clean filesystem and preens one marked
++/// with errors; what preening cannot fix gets a full repair, then one that
++/// also rebuilds directories (the kernel's "Please run e2fsck -D"). False
++/// when the filesystem is still damaged, or e2fsck failed or was killed: the
++/// boot then fails with the reason on the console and the disk stays as it
++/// is not formatted. A disk with no filesystem yet is not checked, so the
++/// format step can make one. A guest without e2fsck mounts as before.
++#[cfg(target_os = "linux")]
++fn storage_filesystem_checked() -> bool {
++    static CHECKED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++    *CHECKED.get_or_init(|| {
++        const STORAGE_DEVICE: &str = "/dev/vda";
++        // A disk that never held a filesystem has nothing to check; the
++        // format step below makes one.
++        if may_format_storage(STORAGE_DEVICE) {
++            return true;
++        }
++        let passes: [&[&str]; 3] = [&["-p"], &["-f", "-y"], &["-f", "-y", "-D"]];
++        for (i, args) in passes.iter().enumerate() {
++            let output = match std::process::Command::new("e2fsck")
++                .args(*args)
++                .arg(STORAGE_DEVICE)
++                .output()
++            {
++                Ok(output) => output,
++                Err(e) if i == 0 => {
++                    boot_log("WARN", &format!("storage: e2fsck not run ({e}); mounting unchecked"));
++                    return true;
++                }
++                Err(e) => {
++                    boot_log("ERROR", &format!("storage: e2fsck {} could not run ({e}); refusing to mount a damaged filesystem", args.join(" ")));
++                    return false;
++                }
++            };
++            let said = String::from_utf8_lossy(&output.stdout).trim().to_string()
++                + " "
++                + String::from_utf8_lossy(&output.stderr).trim();
++            match fsck_verdict(output.status.code()) {
++                FsckVerdict::Clean => return true,
++                FsckVerdict::Repaired => {
++                    boot_log("WARN", &format!("storage: e2fsck {} repaired the filesystem: {}", args.join(" "), said.trim()));
++                    return true;
++                }
++                FsckVerdict::Damaged if i + 1 < passes.len() => {
++                    boot_log("WARN", &format!("storage: e2fsck {} left errors ({}); trying a fuller repair", args.join(" "), said.trim()));
++                }
++                verdict => {
++                    boot_log("ERROR", &format!("storage: e2fsck {} {verdict:?} (exit {:?}): {}; refusing to mount, and the disk is kept as it is", args.join(" "), output.status.code(), said.trim()));
++                    return false;
++                }
++            }
++        }
++        false
++    })
++}
++
++#[cfg(not(target_os = "linux"))]
++#[allow(dead_code)]
++fn storage_filesystem_checked() -> bool {
++    true
++}
++
++#[derive(Debug, PartialEq)]
++enum FsckVerdict {
++    Clean,
++    Repaired,
++    Damaged,
++    Failed,
++}
++
++/// e2fsck's exit status: 0 clean, 1 and 2 errors corrected (2 asks for a
++/// reboot, which an unmounted disk does not need), 4 errors left, 8 and up an
++/// operational error, a cancel or a library error. A signal-killed e2fsck has
++/// no code and repaired nothing it can vouch for.
++fn fsck_verdict(code: Option<i32>) -> FsckVerdict {
++    match code {
++        Some(0) => FsckVerdict::Clean,
++        Some(1..=3) => FsckVerdict::Repaired,
++        Some(code) if code & !3 == 4 => FsckVerdict::Damaged,
++        _ => FsckVerdict::Failed,
++    }
++}
++
++/// Whether the storage disk may be formatted: only when it can be read and
++/// carries no ext2/3/4 superblock magic, i.e. it never held a filesystem.
++#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
++fn may_format_storage(device: &str) -> bool {
++    use std::os::unix::fs::FileExt;
++    let mut magic = [0u8; 2];
++    match std::fs::File::open(device).and_then(|f| f.read_exact_at(&mut magic, 1024 + 56)) {
++        Ok(()) => magic != [0x53, 0xEF],
++        Err(_) => false,
++    }
++}
++
+ /// Stub for non-Linux platforms.
+ #[cfg(not(target_os = "linux"))]
+ fn mount_storage_disk() -> bool {
+@@ -8047,6 +8164,39 @@ mod bg_reap_tests {
+ 
+ #[cfg(test)]
+ mod tests {
++    // A clean or repaired filesystem mounts, one with errors left escalates,
++    // and an e2fsck that failed or was killed refuses the mount.
++    #[test]
++    fn platform_patch_fsck_exit_codes_decide_the_mount() {
++        use super::{fsck_verdict, FsckVerdict::*};
++        assert_eq!(fsck_verdict(Some(0)), Clean);
++        assert_eq!(fsck_verdict(Some(1)), Repaired);
++        assert_eq!(fsck_verdict(Some(2)), Repaired);
++        assert_eq!(fsck_verdict(Some(4)), Damaged);
++        assert_eq!(fsck_verdict(Some(5)), Damaged);
++        assert_eq!(fsck_verdict(Some(8)), Failed);
++        assert_eq!(fsck_verdict(Some(12)), Failed);
++        assert_eq!(fsck_verdict(None), Failed);
++    }
++
++    // A disk that holds a filesystem, or cannot be read, is never formatted;
++    // only a disk that never held one is.
++    #[test]
++    fn platform_patch_storage_with_a_filesystem_is_never_formatted() {
++        use std::os::unix::fs::FileExt;
++        let dir = tempfile::tempdir().unwrap();
++        let disk = dir.path().join("disk");
++        let file = std::fs::File::create(&disk).unwrap();
++        file.set_len(1 << 20).unwrap();
++        let path = disk.to_str().unwrap();
++        assert!(super::may_format_storage(path));
++        file.write_all_at(&[0x53, 0xEF], 1024 + 56).unwrap();
++        assert!(!super::may_format_storage(path));
++        assert!(!super::may_format_storage(dir.path().join("missing").to_str().unwrap()));
++        file.set_len(100).unwrap();
++        assert!(!super::may_format_storage(path));
++    }
++
+     /// A listing is what a caller uses to decide where to recurse and what to
+     /// download, so the shape matters: names only, sorted, with sizes only
+     /// where they mean something.
 diff --git i/crates/smolvm-network/src/stack.rs w/crates/smolvm-network/src/stack.rs
 index 29ad5bc..15d51e2 100644
 --- i/crates/smolvm-network/src/stack.rs

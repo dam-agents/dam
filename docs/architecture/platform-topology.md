@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 ## Overview
 
@@ -255,7 +255,7 @@ The controller-reconciled domain resources are CRDs under the `agent-platform.ai
   It is also how a user with the UI open learns of a crash they did not watch happen: a refresh rarely lands in the short window where the termination cause is visible, so the UI announces a *rise* in the count between two refreshes, once, naming memory when that was the cause; a crash from before the page loaded is not announced.
   A rise is only trustworthy if the count moves on an observed pod or machine, so a failed pod read, or a runner that does not answer, leaves the published count and cause as they were.
   The count describes the pod currently backing the Agent, so it resets when that pod is replaced and is cleared on hibernation; a scaled-down Agent never reads as crashed.
-  For the `vm` backend it counts the times the runner has revived a guest that stopped answering its health check, published with the cause `GuestStoppedAnswering` — readiness there comes from that check rather than a pod event, so the controller polls for it — closely while the machine is on its way up, since that wait is the last of a wake a user feels, and loosely once that window has passed, because a machine unready long after it was asked is not about to become ready.
+  For the `vm` backend it counts the times the runner has revived a guest that stopped answering its health check since the controller last asked the machine stopped, published with the cause `GuestStoppedAnswering` — readiness there comes from that check rather than a pod event, so the controller polls for it — closely while the machine is on its way up, since that wait is the last of a wake a user feels, and loosely once that window has passed, because a machine unready long after it was asked is not about to become ready.
   A guest that answers is ready even while the runtime's start call runs on, and a guest that has answered stays ready through one missed probe — a probe is bounded to two seconds, which a guest under nested virtualization or on a busy node can take, and a readiness that flapped on each such miss would fail the deliveries riding on it — reading unready on the second consecutive miss, and revived only once quiet far longer than that.
   The liveness sweep reads the count the same way for either backend.
   The vm Agent's restart verb, resizes and template-driven env and image changes reach the machine as a restart.

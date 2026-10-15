@@ -91,3 +91,14 @@ export function refusalReason(agent: AgentView): string {
 export function failureReason(agent: AgentView): string {
   return agent.error ?? agent.podTerminationReason ?? "unknown";
 }
+
+export async function startFailure(
+  svc: AgentService,
+  agentId: string,
+): Promise<string | null> {
+  const now = await svc.get(agentId);
+  if (!now.ok || now.value === null) return null;
+  if (now.value.state === "over_budget") return refusalReason(now.value);
+  if (now.value.state === "error") return failureReason(now.value);
+  return null;
+}

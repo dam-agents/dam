@@ -283,7 +283,15 @@ export function createFilesService(workingDir: string): FilesService {
     ): Promise<Result<{ ok: true }, FilesDomainError>> => {
       const abs = toWritableAbs(rel);
       if (!abs) return err(forbidden("forbidden path"));
-      await rm(abs, { recursive: true, force: false });
+      try {
+        await rm(abs, { recursive: true, force: false });
+      } catch (e) {
+        const code = (e as NodeJS.ErrnoException).code;
+        if (code === "ENOENT" || code === "ENOTDIR") {
+          return err({ kind: "NotFound", path: rel });
+        }
+        throw e;
+      }
       return ok({ ok: true });
     },
     uploadFileSafe: async (

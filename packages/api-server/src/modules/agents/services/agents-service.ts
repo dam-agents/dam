@@ -1443,6 +1443,12 @@ export function createAgentsService(deps: {
       if (!(await ownsOrDeny(id, "agent.sleep"))) return null;
       const current = await deps.repo.get(id, deps.owner);
       if (!current) return null;
+      if ((current.runtimeMigrationHold ?? "none") !== "none")
+        throw new TRPCError({
+          code: "CONFLICT",
+          message:
+            "This agent is moving to the new runtime and is not running; abort the move to stop it",
+        });
       const effectiveTimeout = resolveEffectiveHibernationTimeoutMin(
         current.spec.hibernationTimeout,
         current.spec.backend?.type === "vm",

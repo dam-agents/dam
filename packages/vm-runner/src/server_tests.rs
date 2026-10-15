@@ -238,6 +238,35 @@ impl Harness {
         }
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: hands this runner's machines off and starts the next runner on the same directories, fake runtime and ports, as the loader starts a new release. `tune` sets what the next runner is given beyond that.
+    async fn hand_off(&self, tune: impl FnOnce(&mut Config)) -> Harness {
+        self.server.hand_off().await;
+        let mut config = Config {
+            state_dir: self.dir.join("machines"),
+            image_dir: self.dir.join("images"),
+            image_cache_socket: None,
+            image_budget: 1 << 40,
+            crane: self.dir.join("crane").to_string_lossy().into_owned(),
+            init: Some(self.dir.join("platform-init")),
+            runc: None,
+            ports: self.base..=self.base + 1,
+            memory_mib: 1 << 20,
+            reserve_mib: 0,
+            headroom_mib: 0,
+            boot_mib: 0,
+            listen: Some(retrying_listen()),
+            runtime: None,
+            cgroup_dir: None,
+            measure_storage: Arc::new(|| None),
+        };
+        tune(&mut config);
+        Harness {
+            dir: self.dir.clone(),
+            fake: self.fake.clone(),
+            server: Server::start(config, self.fake.clone()).unwrap(),
+            base: self.base,
+        }
+    }
     // UNIT_BOUNDARY_DESCRIPTION: the cache entry a machine boots from, by the digest it recorded.
     fn entry(&self, id: &str) -> PathBuf {
         let digest = fs::read_to_string(self.dir.join("machines").join(id).join(IMAGE_DIGEST_FILE))
@@ -282,14 +311,14 @@ impl Harness {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: waits on the machine's status version, as the controller does, until the status satisfies `done`.
+    // UNIT_BOUNDARY_DESCRIPTION: waits on the machine's status version, as the controller does, until the status satisfies `done`. The deadline is long because a boot runs the fake crane several times, and on a loaded Mac each run of a fresh script takes up to a second; only a failing test waits it out.
     async fn until(
         &self,
         id: &str,
         what: &str,
         done: impl Fn(&MachineStatus) -> bool,
     ) -> MachineStatus {
-        let deadline = Instant::now() + Duration::from_secs(10);
+        let deadline = Instant::now() + Duration::from_secs(30);
         let mut status = self.server.status(id);
         while !done(&status) {
             assert!(
@@ -309,9 +338,9 @@ impl Harness {
             .unwrap()
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: waits until the runtime has been called with `call`, so a test can act while that call is still running.
+    // UNIT_BOUNDARY_DESCRIPTION: waits until the runtime has been called with `call`, so a test can act while that call is still running. Its deadline is as long as `until`'s, for the same reason.
     async fn wait_for_call(&self, call: &str) {
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + Duration::from_secs(30);
         while !self.fake.calls().iter().any(|c| c == call) {
             assert!(
                 Instant::now() < deadline,
@@ -605,6 +634,27 @@ async fn a_seed_uploaded_to_a_stopped_machine_is_still_there_when_it_boots() {
         .join(SHARE_DIR)
         .join(share::SEED_FILE);
     assert_eq!(fs::read(seed).unwrap(), b"a home");
+}
+
+// TEST_SCENARIO: a seed stays on the owner's claim until the move finishes and its restore writes as much again onto the same claim, so an upload that started with room stops, as storage full and before anything more is written, once what it wrote would take the claim past the critical level after the restore; checking only at the start let a large home fill the claim under every other agent.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_seed_whose_restore_would_fill_the_claim_stops_as_storage_full() {
+    let (h, claim) = with_claim("seed-room");
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+    *locked(&claim) = Some(StorageUse {
+        used: (90 << 30) - (32 << 20),
+        usable: 100 << 30,
+    });
+    let mut seeding = h.server.claim_seed("m1", None).unwrap();
+    seeding.write(b"a").unwrap();
+    let refused = seeding.write(&vec![0; 64 << 20]).unwrap_err();
+    assert_eq!(refused.status, 507, "{}", refused.message);
+    assert!(
+        refused.message.contains("twice the home's size"),
+        "{}",
+        refused.message
+    );
 }
 
 // TEST_SCENARIO: a machine with an action in flight may be about to boot, so a seed claimed then could be read half-written; it is refused, as is a second upload to a machine that already has one running. And while a seed is being uploaded, an ensure that asks for the machine running is stored but boots nothing until the upload is done; the next ensure boots it.
@@ -1472,6 +1522,26 @@ async fn a_guest_that_went_quiet_is_restarted_once_and_counted() {
     assert_eq!(h.server.put("m1", spec(true)).unwrap().state, STATE_RUNNING);
     assert_eq!(h.settle("m1").await.restarts, 1);
     assert_eq!(h.fake.calls(), calls, "the restart earned another one");
+}
+// TEST_SCENARIO: a stop the controller asks for, as hibernation does, clears the count of restarts, so the wake after it does not read as a crash; a restart the runner chose for a quiet guest keeps it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_requested_stop_clears_the_restart_count() {
+    let h = Harness::new("stop-clears");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.machine("m1", |m| {
+        m.health = Health {
+            ever_ready: true,
+            quiet_since: Some(SystemTime::now() - UNHEALTHY_RESTART - Duration::from_secs(1)),
+        }
+    });
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.restarts, 1);
+
+    h.server.put("m1", spec(false)).unwrap();
+    assert_eq!(h.settle("m1").await.restarts, 0);
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.restarts, 0);
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: marks the machine quiet for just longer than STALLED_RESTART, as a guest that stopped answering that long ago looks.
@@ -2682,6 +2752,75 @@ async fn a_short_claim_marks_every_share_until_it_has_room_again() {
     }
 }
 
+// TEST_SCENARIO: a guest's disk is sized at the whole claim, so the runner grants every machine's guest, at each look, its part of what is left below 95% of the claim, with an id new at every look so the guest counts its writes from the latest grant; a claim that cannot be measured grants nothing, so no guest is held to a grant nobody renews.
+#[tokio::test(flavor = "multi_thread")]
+async fn every_look_grants_each_guest_its_room_on_the_claim() {
+    let (h, claim) = with_claim("storage-room");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let grant = h
+        .dir
+        .join("machines/m1")
+        .join(SHARE_DIR)
+        .join(share::STORAGE_ROOM_FILE);
+    *locked(&claim) = filled(55);
+    h.server.check_storage();
+    let first = std::fs::read_to_string(&grant).unwrap();
+    assert_eq!(
+        first.split_whitespace().nth(1),
+        Some((40u64 << 30).to_string().as_str()),
+        "{first}"
+    );
+    h.server.check_storage();
+    assert_ne!(std::fs::read_to_string(&grant).unwrap(), first);
+    *locked(&claim) = None;
+    h.server.check_storage();
+    assert!(!grant.exists());
+}
+
+// TEST_SCENARIO: a guest serves each request to give back scratch once, and only a running guest frees anything, so the shortage is split among the running machines alone. The runner keeps the same request while the claim stays short at about the same use, and sends a new one, with a new id and its part of the new shortage, only once the claim has filled RESHED_STEP_PERCENT further; a claim that has room again clears it, and the next shortage is a new request.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_short_claim_asks_again_only_when_it_fills_further() {
+    let (h, claim) = with_claim("storage-reshed");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.server.put("m2", spec(false)).unwrap();
+    h.settle("m2").await;
+    let mark = h
+        .dir
+        .join("machines/m1")
+        .join(SHARE_DIR)
+        .join(share::STORAGE_SHORT_FILE);
+    let request = |percent| {
+        *locked(&claim) = filled(percent);
+        h.server.check_storage();
+        std::fs::read_to_string(&mark).ok()
+    };
+    let first = request(80).expect("a short claim asks");
+    let bytes = |text: &str| {
+        text.split_whitespace()
+            .nth(1)
+            .unwrap()
+            .parse::<u64>()
+            .unwrap()
+    };
+    assert_eq!(
+        bytes(&first),
+        10 << 30,
+        "the running machine is asked for the whole shortage: {first}"
+    );
+    assert_eq!(
+        request(82).as_deref(),
+        Some(first.as_str()),
+        "a small rise asks nothing new"
+    );
+    let second = request(85).expect("still short");
+    assert_ne!(second, first, "a claim that filled further asks again");
+    assert!(bytes(&second) > bytes(&first), "{second} {first}");
+    assert_eq!(request(65), None);
+    assert_ne!(request(80).as_deref(), Some(first.as_str()));
+}
+
 // TEST_SCENARIO: a guest whose own disk filled has an agent that exits as it starts, which on its own reads as a boot that failed. platform-init marks that exit on the console, and the runner reports it as a full home, which the controller shows as the full home volume a container agent reports.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_boot_whose_console_shows_a_full_home_reports_it() {
@@ -2819,4 +2958,88 @@ async fn a_booted_machine_reports_its_warm_up() {
         !h.settle("m1").await.warming,
         "a stopped machine reported a warm-up"
     );
+}
+
+// TEST_SCENARIO: a runner handed running machines by another release holds the image tree each one boots from as it starts, before the controller sends it a spec. A short claim's first storage check on the new runner then sheds no tree a running guest reads, whether or not the controller has sent the machine's unchanged spec yet; a stopped machine's tree is still given up.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_hand_off_keeps_the_trees_of_running_machines_through_a_short_claim() {
+    let (h, claim) = with_claim("hand-off-holds");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let mut other = spec(false);
+    other.image = "quay.io/x/vm:2".into();
+    h.server.put("m2", other).unwrap();
+    h.settle("m2").await;
+    let (running, stopped) = (h.entry("m1"), h.entry("m2"));
+    assert!(running.exists() && stopped.exists());
+
+    let measured = claim.clone();
+    let next = h
+        .hand_off(move |c| c.measure_storage = Arc::new(move || *locked(&measured)))
+        .await;
+    *locked(&claim) = filled(85);
+    next.server.check_storage();
+    assert!(
+        running.exists(),
+        "the hand-off shed a running machine's tree"
+    );
+    assert!(!stopped.exists(), "a stopped machine's tree was kept");
+
+    next.server.put("m1", spec(true)).unwrap();
+    next.server.check_storage();
+    assert!(running.exists(), "an unchanged spec let the tree go");
+    next.server.close().await;
+}
+
+// TEST_SCENARIO: a runner whose machine API fails to serve after it has taken its machines over must not reboot them. Under a loader it leaves every machine running, as a hand-off does, so the release the loader goes back to adopts them; a pod stop that the loader passes on during that close still stops them cleanly; and a runner with no loader is the pod's last process and stops them before the pod's end powers them off.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_runner_that_fails_to_serve_leaves_its_machines_to_its_loader() {
+    let h = Harness::new("failed-serve");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let next = h.hand_off(|_| {}).await;
+
+    next.server.close_failed(true, std::future::pending()).await;
+    let calls = h.fake.calls();
+    assert!(!calls.iter().any(|c| c == "stop m1"), "{calls:?}");
+    assert_eq!(h.fake.state("m1").unwrap(), State::Running);
+
+    let stopped = next.hand_off(|_| {}).await;
+    stopped
+        .server
+        .close_failed(true, std::future::ready(()))
+        .await;
+    assert_eq!(h.fake.state("m1").unwrap(), State::Stopped);
+
+    let alone = Harness::new("failed-serve-alone");
+    alone.server.put("m1", spec(true)).unwrap();
+    alone.settle("m1").await;
+    alone
+        .server
+        .close_failed(false, std::future::pending())
+        .await;
+    assert_eq!(alone.fake.state("m1").unwrap(), State::Stopped);
+}
+
+// TEST_SCENARIO: a runner handed running machines by another release counts each at what it holds from its first admission on, not at the warm-up floor until the controller first asks about it. With one guest holding 7500 of 8192 MiB, the runner that booted it refuses a 2 GiB start, and so does the runner it hands off to, before any status read.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_hand_off_admits_no_start_into_memory_adopted_machines_hold() {
+    let tune = |c: &mut Config| {
+        c.memory_mib = 8192;
+        c.boot_mib = 1024;
+    };
+    let h = Harness::with("hand-off-memory", tune);
+    let mut big = spec(true);
+    big.memory_mib = 8000;
+    h.server.put("m1", big).unwrap();
+    h.settle("m1").await;
+    *locked(&h.fake.resident) = Some(7500);
+    h.server.probe("m1");
+    let refused = h.server.put("m2", spec(true)).unwrap();
+    assert_eq!(refused.reason, REASON_OUT_OF_CAPACITY, "{refused:?}");
+
+    let next = h.hand_off(tune).await;
+    let refused = next.server.put("m2", spec(true)).unwrap();
+    assert_eq!(refused.reason, REASON_OUT_OF_CAPACITY, "{refused:?}");
+    next.server.close().await;
 }

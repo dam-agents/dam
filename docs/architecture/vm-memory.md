@@ -1,6 +1,6 @@
 # VM memory
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 An owner's machines share the memory of their [runner](vm-runner.md), and it is counted by what they use rather than by their sizes.
 That memory is the owner's whole pool for vm agents, which have no size of their own and stand outside the [budget](budgets.md)'s Ceiling.
@@ -47,6 +47,7 @@ A pressure read waits on a version of its own, which moves when pressure starts 
 A runner with no cgroup v2 to read — the host runner, a cgroup v1 node — never reports pressure.
 
 **A running machine is counted at its use plus headroom.** That is its measured use plus a per-machine headroom (`virtualization.runner.headroomMiB`), never more than its size.
+A runner measures every machine it finds running as it starts, before it admits anything, so after a hand-off or a restart the machines it took over count at what they hold rather than as machines not yet measured.
 **A machine warming up counts at least at the warm-up floor** (`virtualization.runner.bootMiB`), or its size when that is smaller: a machine not yet measured, every machine an action is bringing up, and a running machine for two minutes after its boot began, whatever it was measured at.
 The harness starts only once the guest answers, about a second after the boot, and grows to 2 to 3 GiB within the next minute, so a machine measured right after its boot holds little of what it will hold; the warm-up is a fixed time rather than one that ends at the guest's answer, since the answer is when the growth begins.
 The runner reports a machine warming up in its status, and the controller counts it the same way.
@@ -62,6 +63,7 @@ A cluster without in-place resize keeps the install's request.
 A node that defers or refuses the resize leaves the pod at the request it has; each of the owner's vm Agents then carries a `RunnerCapacity` condition saying which, with the kubelet's account, and a Warning Event, while readiness is left alone, since the machines run at what the pod has ([observability](observability.md#platform-service-export)).
 
 **Room is freed from the owner's own idle agents.** A start the runner refused, and an owner whose counted memory passes 90% of the runner's limit, hibernate that owner's vm agents under the rules a blocked start reclaims by in [budgets](budgets.md): unattended, hibernation enabled, idle past the floor, saying it is idle when asked (one that does not answer may be mid-turn with its guest saturated, so it is spared), longest-idle first, and only when the agents chosen cover the whole shortfall; under pressure the target is 80%.
+An agent whose cold boot is still in progress is not hibernated for a refused start or past the 90% threshold, since its last activity is the wake that began a boot which can outlast the idle floor; the runner's pressure signal may still take it, as the OOM kill would stop it too.
 A refused start is retried once their machines have stopped.
 No other owner's agent is touched, and an agent hibernated this way says it was put to sleep automatically to free memory ([budgets](budgets.md)).
 Because a running machine's use reaches the controller only when its agent reconciles, the controller also asks each owner's runner about its running machines every 30 seconds, which is what pressure is judged from and what moves the request between reconciles.
@@ -69,8 +71,9 @@ That pass reconciles one of the owner's agents only when the request their count
 The runner's own pressure signal runs the same pass for that owner at once, without waiting for the counted threshold, since the kernel's view is the one that kills the runner.
 Its need is the larger of the counted and the measured overshoot of the 80% target, and it may hibernate fewer agents than cover it: near an OOM kill, freeing some memory beats freeing none.
 When no candidate says it is idle, this pass alone hibernates the candidates that did not answer, as a last resort, because the kill would stop them too; one that answered busy is never hibernated.
-The controller holds one watch on each owner's pressure, and a pass on it hibernates nothing more for fifteen seconds after one that did, because the machines it hibernated still count until they have stopped.
+The controller holds one watch on each owner's pressure, and a pass on it hibernates nothing more for fifteen seconds after any reclaim of that owner hibernated agents, because the runner's measured working set still holds their machines until they have stopped.
 The two passes never run together for one owner.
+A refused start's reclaim and the pass do run side by side, so each reads its need and hibernates the agents it chose under the owner's lock, and those agents stop counting at once: the reclaim that comes next sees the room already freed and does not choose or count them again.
 
 **Guests give back cold page cache.** A guest keeps the files it read cached until something needs the memory, and the host counts that cache as the machine's.
 Every minute platform-init hands the cache on the kernel's inactive list to cgroup v2 proactive reclaim, and the freed pages return to the host within seconds.
