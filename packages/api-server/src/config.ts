@@ -1,4 +1,6 @@
 import {
+  type FeatureId,
+  type FeatureMode,
   brandSchema,
   featureIdSchema,
   featureModeSchema,
@@ -79,10 +81,11 @@ const featureModesSchema = z
       .pipe(z.record(z.string(), featureModeSchema)),
     fallback: featureModeSchema.default("experimental"),
   })
-  .transform(({ named, fallback }) =>
-    Object.fromEntries(
-      featureIdSchema.options.map((id) => [id, named[id] ?? fallback]),
-    ),
+  .transform(
+    ({ named, fallback }) =>
+      Object.fromEntries(
+        featureIdSchema.options.map((id) => [id, named[id] ?? fallback]),
+      ) as Record<FeatureId, FeatureMode>,
   );
 
 // UNIT_BOUNDARY_DESCRIPTION: the chart's harness catalog. Without one (a dev run outside the chart) the default image's harness is Claude Code with nothing else on offer.
