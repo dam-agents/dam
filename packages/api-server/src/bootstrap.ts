@@ -566,6 +566,8 @@ export async function bootstrap() {
 
   const resolveAgentOwner = async (agentId: string) =>
     (await agentsRepo.get(agentId).catch(() => null))?.owner ?? null;
+  const resolveAgentName = async (agentId: string) =>
+    (await agentsRepo.getLive(agentId, undefined))?.name ?? null;
 
   const runtimeDelivery = composeRuntimeDelivery({
     db,
@@ -584,6 +586,7 @@ export async function bootstrap() {
     harnessServerUrl: config.harnessServerUrl,
     telemetryEnv: harnessCatalog.telemetryEnv,
     resolveOwner: resolveAgentOwner,
+    resolveAgentName,
     deliveryConcurrency: config.runtimeDeliveryConcurrency,
   });
   deliverOnReady = async (agentId) => {
