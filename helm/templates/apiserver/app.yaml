@@ -250,6 +250,8 @@ spec:
             {{- end }}
             - name: FEATURE_MODES
               value: {{ include "platform.featureModes" . | quote }}
+            - name: FEATURE_DEFAULT_MODE
+              value: {{ include "platform.featureDefault" . | quote }}
             - name: HARNESSES
               value: {{ include "platform.harnesses" . | quote }}
             {{- if .Values.virtualization.enabled }}

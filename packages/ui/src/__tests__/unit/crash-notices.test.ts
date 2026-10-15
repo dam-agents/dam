@@ -75,13 +75,19 @@ describe("nextCrashNotices", () => {
     ).toEqual([[]]);
   });
 
-  // TEST_SCENARIO: the count falls to zero when the pod is replaced or the agent hibernates, then rises from there. Only the rise is a crash.
+  // TEST_SCENARIO: a container agent's count falls to zero when the pod is replaced or the agent hibernates, then rises from there. Only the rise is a crash.
   it("treats a reset count as a new baseline", () => {
     expect(
       replay(
-        [agent({ podRestarts: 2 })],
-        [agent({ state: "hibernated", podRestarts: 0 })],
-        [agent({ podRestarts: 1, podRestartReason: "OutOfMemory" })],
+        [agent({ vm: false, podRestarts: 2 })],
+        [agent({ vm: false, state: "hibernated", podRestarts: 0 })],
+        [
+          agent({
+            vm: false,
+            podRestarts: 1,
+            podRestartReason: "OutOfMemory",
+          }),
+        ],
       ),
     ).toEqual([
       [],
@@ -90,6 +96,23 @@ describe("nextCrashNotices", () => {
         "Scout ran out of memory and restarted — give it a larger size in its settings",
       ],
     ]);
+  });
+
+  // TEST_SCENARIO: a vm agent's count is the runner's and survives the machine's stop, while hibernation publishes zero. Waking it, here seconds after its user put it to sleep, brings the old count back, which is not a crash; a restart once it runs again still is.
+  it("does not report a vm agent's old count, back after it slept, as a crash", () => {
+    const restarted = {
+      podRestarts: 1,
+      podRestartReason: "GuestStoppedAnswering",
+    };
+    expect(
+      replay(
+        [agent(restarted)],
+        [agent({ state: "hibernated", podRestarts: 0 })],
+        [agent({ ...restarted, state: "starting" })],
+        [agent(restarted)],
+        [agent({ ...restarted, podRestarts: 2 })],
+      ),
+    ).toEqual([[], [], [], [], ["Scout stopped responding and restarted"]]);
   });
 
   // TEST_SCENARIO: a refresh caught the not-ready window and the termination cause was announced. The restart count that follows is the same crash and must not raise a second notice.

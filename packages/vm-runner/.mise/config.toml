@@ -8,11 +8,18 @@
 # a path dependency there). Undeclared, a cached pass taken against the old
 # source replays.
 [deps.smolvm]
-description = "Clone the pinned smolvm source this crate builds against"
+description = "Link the shared clone of the pinned smolvm source this crate builds against"
 auto = true
 sources = ["smolvm.pin", "smolvm.patch"]
 outputs = [".smolvm/.pinned"]
 run = "./.mise/fetch-smolvm"
+
+# Keeps cargo's target at one build: see .mise/prune-target.
+[deps.target]
+description = "Empty cargo's target when the toolchain or Cargo.lock it was built with changed"
+auto = true
+sources = ["Cargo.lock", "../../mise.lock"]
+run = "./.mise/prune-target"
 
 [tasks.check]
 description = "Run this package's checks"

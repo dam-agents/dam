@@ -262,6 +262,7 @@ export {
 export type {
   FeatureId,
   FeatureFlags,
+  FeatureMode,
   FeatureModes,
   FeaturesService,
 } from "./modules/features/types.js";

@@ -26,6 +26,7 @@ export interface TerminalRelay {
   close(): void;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a terminal wakes a hibernated agent, unless its client asks with `wake=0`, as the web app does for a connect of its own rather than the user's: then it only waits out a wake already asked for, so a tab left open does not wake an agent its user just put to sleep. It holds the agent awake only once the agent's end is open, since the hold alone would wake it.
 export function createTerminalRelay(
   namespace: string,
   repo: AgentsRepository,
@@ -76,6 +77,7 @@ export function createTerminalRelay(
     const url = new URL(req.url!, `http://${req.headers.host}`);
     const sessionId = url.searchParams.get("sessionId") ?? "default";
     const reset = url.searchParams.get("reset") === "1";
+    const waitOnly = url.searchParams.get("wake") === "0";
     const lease = new URLSearchParams();
     for (const name of ["harness", "provider", "model"]) {
       const value = url.searchParams.get(name);
@@ -94,7 +96,7 @@ export function createTerminalRelay(
       void bus.publish(EVICT_CHANNEL, JSON.stringify({ key, from: replicaId }));
       activeClients.set(key, client);
 
-      const release = presence.acquire(agentId);
+      let release = () => {};
       let clientGone = false;
       client.once("close", () => {
         clientGone = true;
@@ -124,7 +126,7 @@ export function createTerminalRelay(
       readyOrAnswering(
         repo,
         agentId,
-        repo.ensureReady(agentId),
+        repo.ensureReady(agentId, { waitOnly }),
         `${upstreamBase(agentId).replace(/^ws/, "http")}/healthz`,
         () => clientGone,
       )
@@ -148,6 +150,7 @@ export function createTerminalRelay(
             } catch {}
             return;
           }
+          release = presence.acquire(agentId);
           actor.attached();
           client.off("message", buffer);
           for (const { data, isBinary } of pending)

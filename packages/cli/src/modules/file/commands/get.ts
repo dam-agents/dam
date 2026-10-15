@@ -6,9 +6,14 @@ import type { FileReadResult } from "agent-runtime-api";
 import type { TokenProvider } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentService } from "../../agent/index.js";
-import { resolveAgentOrExit } from "../../agent/commands/errors.js";
+import type { AgentView } from "../../agent/domain/agent-view.js";
+import {
+  exitOnAgentCallError,
+  resolveAgentOrExit,
+} from "../../agent/commands/errors.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
-import { printTrpcError, serverDetail } from "../../shared/trpc/print.js";
+import { writeStdoutAndExit } from "../../shared/stdout.js";
+import { serverDetail } from "../../shared/trpc/print.js";
 import { createAgentTrpcClient } from "../../shared/trpc/trpc-client.js";
 import {
   EXIT_INVALID_INPUT,
@@ -86,7 +91,7 @@ export function buildFileGetCommand(deps: FileGetDeps): Command {
         try {
           result = await trpc.files.read.query({ path: remotePath });
         } catch (e) {
-          printTrpcReadError(e, remotePath, host);
+          await printTrpcReadError(e, remotePath, svc, agent, host);
           process.exit(EXIT_RUNTIME_FAILURE);
         }
 
@@ -95,8 +100,7 @@ export function buildFileGetCommand(deps: FileGetDeps): Command {
           : Buffer.from(result.content, "utf8");
 
         if (opts.stdout) {
-          process.stdout.write(bytes);
-          process.exit(EXIT_SUCCESS);
+          return writeStdoutAndExit(bytes, EXIT_SUCCESS);
         }
 
         const target_ = localPath as string;
@@ -145,7 +149,13 @@ async function fileExists(path: string): Promise<boolean> {
   }
 }
 
-function printTrpcReadError(e: unknown, path: string, host: string): void {
+async function printTrpcReadError(
+  e: unknown,
+  path: string,
+  svc: AgentService,
+  agent: AgentView,
+  host: string,
+): Promise<void> {
   const code =
     e instanceof TRPCClientError
       ? (e.data?.code as string | undefined)
@@ -163,5 +173,5 @@ function printTrpcReadError(e: unknown, path: string, host: string): void {
     );
     return;
   }
-  printTrpcError(e, host);
+  return exitOnAgentCallError(e, svc, agent, host);
 }

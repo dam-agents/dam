@@ -5,9 +5,13 @@ import { Command } from "commander";
 import type { TokenProvider } from "../../auth/index.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentService } from "../../agent/index.js";
-import { resolveAgentOrExit } from "../../agent/commands/errors.js";
+import type { AgentView } from "../../agent/domain/agent-view.js";
+import {
+  exitOnAgentCallError,
+  resolveAgentOrExit,
+} from "../../agent/commands/errors.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
-import { printTrpcError, serverDetail } from "../../shared/trpc/print.js";
+import { serverDetail } from "../../shared/trpc/print.js";
 import { createAgentTrpcClient } from "../../shared/trpc/trpc-client.js";
 import {
   EXIT_INVALID_INPUT,
@@ -91,7 +95,7 @@ export function buildFilePutCommand(deps: FilePutDeps): Command {
             overwrite: !!opts.overwrite,
           });
         } catch (e) {
-          printTrpcUploadError(e, remotePath, host);
+          await printTrpcUploadError(e, remotePath, svc, agent, host);
           process.exit(EXIT_RUNTIME_FAILURE);
         }
 
@@ -103,11 +107,13 @@ export function buildFilePutCommand(deps: FilePutDeps): Command {
     );
 }
 
-function printTrpcUploadError(
+async function printTrpcUploadError(
   e: unknown,
   remotePath: string,
+  svc: AgentService,
+  agent: AgentView,
   host: string,
-): void {
+): Promise<void> {
   const code =
     e instanceof TRPCClientError
       ? (e.data?.code as string | undefined)
@@ -132,5 +138,5 @@ function printTrpcUploadError(
     );
     return;
   }
-  printTrpcError(e, host);
+  return exitOnAgentCallError(e, svc, agent, host);
 }

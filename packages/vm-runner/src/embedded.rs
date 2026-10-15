@@ -251,6 +251,13 @@ impl Runtime for Smolvm {
         if let Some(record) = &record {
             write_boot_image(record)?;
         }
+        let rootfs = AgentManager::default_rootfs_path()?;
+        crate::files::write(
+            &dir.join(crate::runtime::AGENT_ROOTFS_FILE),
+            rootfs.as_os_str().as_encoded_bytes(),
+            0o644,
+        )
+        .context("recording the guest agent root the machine boots")?;
         self.db.update_vm(id, |r| {
             r.mem = boot;
             guest_dns(r, r.dns.unwrap_or(GUEST_DNS_SINK));

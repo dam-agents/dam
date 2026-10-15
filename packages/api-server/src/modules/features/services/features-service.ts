@@ -1,7 +1,8 @@
 import {
   featureIdSchema,
   type FeatureFlags,
-  type FeatureModes,
+  type FeatureId,
+  type FeatureMode,
   type FeaturesService,
 } from "api-server-api";
 
@@ -12,13 +13,13 @@ export function createFeaturesService(deps: {
   repo: FeaturesRepository;
   owner: string;
   surface: string;
-  modes: FeatureModes;
+  modes: Record<FeatureId, FeatureMode>;
 }): FeaturesService {
   async function flags(): Promise<FeatureFlags> {
     const stored = await deps.repo.listEnabled(deps.owner);
     return Object.fromEntries(
       featureIdSchema.options.map((id) => {
-        const mode = deps.modes[id] ?? "experimental";
+        const mode = deps.modes[id];
         return [
           id,
           mode === "experimental" ? (stored[id] ?? false) : mode === "on",
