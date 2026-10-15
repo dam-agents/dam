@@ -42,7 +42,7 @@ export function SidebarFlyout({ label, icon: Icon, badge, children }: Props) {
         onFocusOutside={(event) => event.preventDefault()}
         className="flex max-h-[min(70vh,560px)] w-[280px] flex-col p-2"
       >
-        <div className="min-h-0 overflow-y-auto">
+        <div className="min-h-0 overflow-y-auto [overflow-anchor:none]">
           {children(() => setOpen(false))}
         </div>
       </PopoverContent>
