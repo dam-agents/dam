@@ -2,9 +2,12 @@ import { replaceEqualDeep } from "@tanstack/react-query";
 import type { FileDiff } from "agent-runtime-api";
 import { describe, expect, it } from "vitest";
 
-import { fileDiffData } from "../../modules/changes/lib/diff-layout.js";
+import {
+  fileDiffData,
+  scrollTopToShow,
+} from "../../modules/changes/lib/diff-layout.js";
 
-// TEST_OVERVIEW: the data the Changes panel hands each diff view — it stays the same object while the file is unchanged, so a chat update or a watch refetch does not make every diff re-parse and re-highlight.
+// TEST_OVERVIEW: what keeps the Changes panel still — the data it hands each diff view stays the same object while the file is unchanged, so a chat update or a watch refetch does not make every diff re-parse and re-highlight; and a jump to a file scrolls the panel alone, to the offset that puts the file at its top.
 
 function file(path: string, patch: string): FileDiff {
   return {
@@ -64,5 +67,37 @@ describe("file diff data", () => {
 
     expect(fileDiffData(renamed).oldFile.fileName).toBe("a.ts");
     expect(fileDiffData(renamed).newFile.fileName).toBe("b.ts");
+  });
+});
+
+describe("jump to a file", () => {
+  // TEST_SCENARIO: the file sits below the panel's top; the panel scrolls by that distance, less the file's scroll margin.
+  it("scrolls the panel to put the file at its top", () => {
+    expect(
+      scrollTopToShow(
+        { top: 100, scrollTop: 50 },
+        { top: 400, scrollMarginTop: 8 },
+      ),
+    ).toBe(342);
+  });
+
+  // TEST_SCENARIO: the file sits above the panel's top, already scrolled past; the panel scrolls back up to it.
+  it("scrolls back up to a file above the view", () => {
+    expect(
+      scrollTopToShow(
+        { top: 100, scrollTop: 600 },
+        { top: -200, scrollMarginTop: 8 },
+      ),
+    ).toBe(292);
+  });
+
+  // TEST_SCENARIO: the first file sits at the very top of the panel's content; the offset never goes below zero.
+  it("never scrolls above the top", () => {
+    expect(
+      scrollTopToShow(
+        { top: 100, scrollTop: 0 },
+        { top: 104, scrollMarginTop: 8 },
+      ),
+    ).toBe(0);
   });
 });

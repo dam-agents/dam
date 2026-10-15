@@ -22,6 +22,16 @@ export function fileDiffAnchor(prefix: string, index: number): string {
   return `${prefix}-file-${index}`;
 }
 
+export function scrollTopToShow(
+  container: { top: number; scrollTop: number },
+  target: { top: number; scrollMarginTop: number },
+): number {
+  return Math.max(
+    0,
+    container.scrollTop + target.top - container.top - target.scrollMarginTop,
+  );
+}
+
 export interface FileDiffData {
   oldFile: { fileName: string };
   newFile: { fileName: string };
