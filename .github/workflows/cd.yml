@@ -236,14 +236,14 @@ jobs:
           quay-password: ${{ secrets.QUAY_PASSWORD }}
       - id: d
         env:
-          # image:resolve resolves a merge group as it does a PR.
-          EVENT: ${{ github.event_name == 'merge_group' && 'pull_request' || github.event_name }}
+          EVENT: ${{ github.event_name }}
           MAIN_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         run: |
           set -euo pipefail
           # A tag, the nightly run and a dispatch publish every image afresh;
-          # a PR or a main push reuses what its source did not change.
-          [ "$EVENT" = pull_request ] || [ "$MAIN_PUSH" = true ] || export RESOLVE_NO_REUSE=1
+          # a PR, a merge group or a main push reuses what its source did not
+          # change.
+          [ "$EVENT" = pull_request ] || [ "$EVENT" = merge_group ] || [ "$MAIN_PUSH" = true ] || export RESOLVE_NO_REUSE=1
           # By path: mise here installs crane alone; the same file is the image:resolve task.
           out="$(.mise/tasks/image/resolve gha-outputs)"
           printf '%s\n' "$out" | tee -a "$GITHUB_OUTPUT"
@@ -252,14 +252,17 @@ jobs:
   build-images:
     # One job per arch builds the stale ones of the five images side by side;
     # see image:ci-build. merge-images tags the rest. A PR builds its images in
-    # e2e instead: see e2e:ci-images.
+    # e2e instead: see e2e:ci-images. A merge group builds them there too, and
+    # here on arm64 alone, without a push, so an arm64-only break never
+    # reaches main. A PR stays amd64-only: it runs on every push to its
+    # branch, the merge group once per merge.
     needs: [changes]
-    if: ${{ github.event_name != 'pull_request' && github.event_name != 'merge_group' && needs.changes.outputs.images != '[]' }}
+    if: ${{ github.event_name != 'pull_request' && needs.changes.outputs.images != '[]' }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 30
     strategy:
       matrix:
-        arch: ${{ fromJSON(needs.changes.outputs.archs) }}
+        arch: ${{ fromJSON(github.event_name == 'merge_group' && '["arm64"]' || needs.changes.outputs.archs) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -317,6 +320,7 @@ jobs:
           IMAGES: ${{ join(fromJSON(needs.changes.outputs.images), ' ') }}
         run: |
           read -r -a images <<< "$IMAGES"
+          [ "$VERIFY" != true ] || images=("${images[@]/%/:cacheonly}")
           .mise/tasks/image/ci-build "$ARCH" "${images[@]}"
       # Main writes it on a miss, once the build has compiled into it; a PR's
       # e2e-vm job reads the amd64 one.
@@ -333,7 +337,8 @@ jobs:
         with:
           path: *task-artifacts
           key: &keycloak-theme-key mise-task-artifacts-${{ runner.os }}-keycloak-theme-${{ github.sha }}
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - if: env.VERIFY != 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: digests-images-${{ matrix.arch }}
           path: /tmp/digests
@@ -936,10 +941,10 @@ jobs:
     name: verify
     # The one check the merge queue and PRs require. Required checks are
     # matched by job name, and a matrix job that is skipped reports under its
-    # bare name, so `build-agents (amd64)` would never report on a run that
+    # bare name, so `build-images (arm64)` would never report on a run that
     # changes no agent and the queue would wait on it forever. A skipped job
     # here is one this change does not need, as for a docs-only change.
-    needs: [check-test, changes, build-agents, docs-only, e2e, e2e-vm]
+    needs: [check-test, changes, build-images, build-agents, docs-only, e2e, e2e-vm]
     if: ${{ always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
