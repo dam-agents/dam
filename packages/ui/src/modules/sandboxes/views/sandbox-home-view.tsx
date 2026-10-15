@@ -56,7 +56,7 @@ export function SandboxHomeView() {
   const sections = chatFormsEnabled
     ? SECTIONS
     : SECTIONS.filter((e) => e.section !== "chat-forms");
-  const sectionEntry = sections.find((e) => e.section === section);
+  const sectionEntry = SECTIONS.find((e) => e.section === section);
 
   if (!agent || !display) {
     return (

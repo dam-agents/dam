@@ -70,7 +70,13 @@ export function ChatFormSettings({ agentId }: { agentId: string }) {
   const enabled = useChatFormsEnabled();
   const { data } = useChatFormPreferences(agentId);
   const save = useSetChatFormPreferences();
-  if (!enabled || !data) return null;
+  if (!enabled)
+    return (
+      <p className="text-sm text-muted-foreground">
+        Chat forms are an experimental feature, and it is off for your account.
+      </p>
+    );
+  if (!data) return null;
 
   const preferences = save.isPending ? save.variables.preferences : data;
   const update = (patch: Partial<ChatFormPreferences>) =>
