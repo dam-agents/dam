@@ -268,9 +268,9 @@ The runner image ships that agent rebuilt with a patch that refuses the format w
 The same agent checks the disk's filesystem before its first mount at every boot, since a write that failed, a full claim's among them, leaves it marked with errors that a mount alone keeps and lets grow.
 `e2fsck -p` returns at once on a clean filesystem and preens one marked with errors; what that cannot fix gets a full repair, and then one that also rebuilds directories.
 A repair is a line on the machine's console; a filesystem still damaged after all three, or an `e2fsck` that failed or was killed, fails the boot with the reason there, and the disk is not formatted; a disk with no filesystem yet is not checked.
-The runner reads those lines, so what the check found is on the Agent.
-When a boot the guest then answered from repaired the filesystem, the runner keeps what the check said beside the machine's spec and reports it in the machine's status until a later boot answers from a clean disk; the controller puts it on the Agent as the `HomeRepaired` condition, and the agent's page tells the owner that files in the damaged folders may be missing.
-When the check refused to mount a disk it could not repair, the runner reports the failed boot as `MachineHomeDamaged`, which the api-server reads as a failed start, with the ways out: start the agent again, since a cause that has passed — storage that was full, a passing disk error — lets the next boot's check repair it; if it keeps failing, have an admin check the disk, which stays as it is, or delete the agent and create it again, which gives it an empty disk and loses its files.
+The runner reads those lines, so the result is on the Agent.
+A repair shows, until a later boot finds the disk clean, as a notice that files in the damaged folders may be missing.
+A refusal is a failed start with the ways out: start again, since a cause that has passed lets the next check repair it; if it keeps failing, have an admin check the disk, which stays as it is, or delete and recreate the agent, which loses its files.
 A Mac host runner runs its installed smolvm's own agent, which still formats.
 
 **A disk that has lost its home fails the boot.** A disk that was formatted anyway looks exactly like one never seeded.
