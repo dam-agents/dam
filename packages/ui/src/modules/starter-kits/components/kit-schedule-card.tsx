@@ -208,8 +208,8 @@ export function KitScheduleCard({
             />
             <SchedulePrecheckField
               layout="rows"
-              register={register}
-              errors={errors}
+              registration={register("precheck")}
+              error={errors.precheck?.message}
             />
             <div className="px-4 py-3">
               <QuietHoursEditor

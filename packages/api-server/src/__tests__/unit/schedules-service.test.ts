@@ -127,6 +127,70 @@ describe("updateRRule on a cron schedule", () => {
   });
 });
 
+describe("updateCron", () => {
+  const cronSchedule = (): Schedule => ({
+    id: SCHEDULE_ID,
+    agentId: "agent-1",
+    name: "daily",
+    spec: {
+      version: "1",
+      type: "cron",
+      cron: "0 9 * * *",
+      task: "do the thing",
+      precheck: "check.sh",
+      enabled: false,
+      sessionMode: "continuous",
+      createdBy: "user",
+    },
+  });
+  const cronUpdate = {
+    id: SCHEDULE_ID,
+    name: "weekdays",
+    cron: "30 7 * * 1-5",
+    task: "do the other thing",
+  };
+
+  // TEST_SCENARIO: a cron schedule stays a cron schedule when its owner edits it, so the new expression and fields land in the spec and its enabled state is kept.
+  it("saves the new expression and fields on a cron schedule", async () => {
+    const { service, getSavedSpec } = makeDeps(cronSchedule());
+
+    await service.updateCron({
+      ...cronUpdate,
+      sessionMode: "continuous",
+      precheck: null,
+    });
+
+    expect(getSavedSpec()).toEqual({
+      version: "1",
+      type: "cron",
+      cron: "30 7 * * 1-5",
+      task: "do the other thing",
+      enabled: false,
+      sessionMode: "continuous",
+      createdBy: "user",
+    });
+  });
+
+  it("refuses an expression cron can't read", async () => {
+    const { service, getSavedSpec } = makeDeps(cronSchedule());
+
+    await expect(
+      service.updateCron({ ...cronUpdate, cron: "every day" }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(getSavedSpec()).toBeUndefined();
+  });
+
+  // TEST_SCENARIO: updateCron writes a cron expression, so it must not turn an RRULE schedule into a cron one.
+  it("refuses an RRULE schedule", async () => {
+    const { service, getSavedSpec } = makeDeps(makeCurrent());
+
+    await expect(service.updateCron(cronUpdate)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+    expect(getSavedSpec()).toBeUndefined();
+  });
+});
+
 describe("createRRule createdBy", () => {
   function makeCreateDeps() {
     let created:

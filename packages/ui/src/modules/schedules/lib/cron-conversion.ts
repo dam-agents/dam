@@ -12,7 +12,7 @@ export interface ExactCronConversion {
 export type CronConversion =
   ExactCronConversion | { kind: "inexact"; reason: string };
 
-const PREVIEW_RUNS = 5;
+export const PREVIEW_RUNS = 5;
 const CRON_TO_BYDAY = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
 const MONDAY_FIRST = [1, 2, 3, 4, 5, 6, 0];
 const NAMES = /[a-z]{3}/gi;
@@ -42,6 +42,28 @@ export function convertCron(
     from: now,
     cronRuns: expression.take(PREVIEW_RUNS).map((d) => d.toDate()),
   };
+}
+
+export function cronProblem(cron: string): string | null {
+  try {
+    CronExpressionParser.parse(cron, { tz: CRON_TIMEZONE });
+    return null;
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+}
+
+export function nextCronRuns(cron: string, from: Date, count: number): Date[] {
+  try {
+    return CronExpressionParser.parse(cron, {
+      currentDate: from,
+      tz: CRON_TIMEZONE,
+    })
+      .take(count)
+      .map((d) => d.toDate());
+  } catch {
+    return [];
+  }
 }
 
 function inexactReason(

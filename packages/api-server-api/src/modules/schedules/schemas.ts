@@ -42,6 +42,17 @@ export const scheduleCreateCronInputSchema = z.object({
   sessionTitle: sessionTitleSchema.optional(),
 });
 
+export const scheduleUpdateCronInputSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  cron: z.string().min(1),
+  task: z.string().min(1),
+  sessionMode: scheduleSessionModeSchema.optional(),
+  precheck: precheckSchema.nullable().optional(),
+  model: scheduleModelSchema.nullable().optional(),
+  sessionTitle: sessionTitleSchema.nullable().optional(),
+});
+
 export const scheduleCreateRRuleInputSchema = z.object({
   name: z.string().min(1),
   agentId: z.string().min(1),

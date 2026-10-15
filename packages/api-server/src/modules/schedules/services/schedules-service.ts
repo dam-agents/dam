@@ -8,6 +8,7 @@ import type {
   ScheduleCreateRRuleInput,
   ScheduleSpec,
   ScheduleUpdateOnceInput,
+  ScheduleUpdateCronInput,
   ScheduleUpdateRRuleInput,
 } from "api-server-api";
 import { OnceResult, SPEC_VERSION } from "api-server-api";
@@ -348,6 +349,43 @@ export function createSchedulesService(deps: {
         ownerSub: deps.owner,
       });
       return deps.repo.get(updated.id, deps.owner);
+    },
+
+    async updateCron(input: ScheduleUpdateCronInput) {
+      asBadRequest(() => validateCron(input.cron));
+      const current = await deps.repo.get(input.id, deps.owner);
+      if (!current) return null;
+      if (current.spec.type !== "cron")
+        throw badRequest("only a cron schedule is edited with updateCron");
+      if (input.model && input.model !== current.spec.model)
+        await ensureSessionModel(current.agentId, input.model, undefined);
+      const spec: ScheduleSpec = {
+        ...current.spec,
+        cron: input.cron,
+        task: input.task,
+      };
+      if (input.sessionMode) spec.sessionMode = input.sessionMode;
+      else delete spec.sessionMode;
+      if (input.precheck) spec.precheck = input.precheck;
+      else if (input.precheck !== undefined) delete spec.precheck;
+      if (input.model) spec.model = input.model;
+      else if (input.model !== undefined) delete spec.model;
+      if (input.sessionTitle) spec.sessionTitle = input.sessionTitle;
+      else if (input.sessionTitle !== undefined) delete spec.sessionTitle;
+      await deps.repo.updateName(input.id, deps.owner, input.name);
+      const updated = await deps.repo.updateSpec(input.id, deps.owner, spec);
+      if (updated && spec.precheck !== current.spec.precheck)
+        await deps.repo.clearPrecheckStatus(input.id);
+      if (updated) {
+        await deps.runner.sync(updated.id);
+        emit({
+          type: EventType.ScheduleUpdated,
+          scheduleId: updated.id,
+          agentId: updated.agentId,
+          ownerSub: deps.owner,
+        });
+      }
+      return updated;
     },
 
     async updateRRule(input: ScheduleUpdateRRuleInput) {

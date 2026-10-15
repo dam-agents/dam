@@ -2,12 +2,7 @@ import { rruleToText } from "api-server-api";
 import { useMemo, useState } from "react";
 
 import { FormField } from "@/components/form-field";
-import {
-  DialogActions,
-  DialogBody,
-  DialogHeader,
-  Modal,
-} from "@/components/modal";
+import { DialogActions, DialogBody, DialogHeader } from "@/components/modal";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { formatDateTime } from "@/lib/format-time";
 
@@ -22,6 +17,7 @@ import { CRON_TIMEZONE, cronToText } from "../lib/schedule-format.js";
 interface Props {
   schedule: Schedule;
   conversion: ExactCronConversion;
+  onBack: () => void;
   onClose: () => void;
   onConverted: (converted: Schedule) => void;
 }
@@ -35,9 +31,10 @@ const RUN_FORMAT: Intl.DateTimeFormatOptions = {
   timeZoneName: "short",
 };
 
-export function ConvertCronModal({
+export function ConvertCronStep({
   schedule,
   conversion,
+  onBack,
   onClose,
   onConverted,
 }: Props) {
@@ -79,7 +76,7 @@ export function ConvertCronModal({
     );
 
   return (
-    <Modal onClose={onClose}>
+    <>
       <DialogHeader
         title="Convert to the new format"
         subtitle={schedule.name}
@@ -121,19 +118,20 @@ export function ConvertCronModal({
             (sameRuns
               ? "It runs at the same moments as now. "
               : "It runs at different moments from now. ")}
-          Its prompt, session and other settings stay as they are. After
-          converting, it opens in the editor.
+          Its prompt, session and other settings carry over. After converting,
+          it opens in the editor.
         </p>
       </DialogBody>
       <DialogActions
-        onCancel={onClose}
+        onCancel={onBack}
+        cancelLabel="Back"
         label="Convert"
         pendingLabel="Converting…"
         pending={updateSchedule.isPending}
         disabled={!timezone}
         onSubmit={convert}
       />
-    </Modal>
+    </>
   );
 }
 

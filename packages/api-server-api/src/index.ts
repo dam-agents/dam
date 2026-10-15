@@ -153,6 +153,7 @@ export type {
   ScheduleCreator,
   ScheduleCreateCronInput,
   ScheduleCreateRRuleInput,
+  ScheduleUpdateCronInput,
   ScheduleUpdateRRuleInput,
   ScheduleCreateOnceInput,
   ScheduleUpdateOnceInput,
