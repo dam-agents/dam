@@ -11,3 +11,7 @@ export interface AmbiguousError {
   ref: string;
   matches: readonly { id: string; name: string }[];
 }
+
+export interface RuntimeMigratingError {
+  kind: "runtime-migrating";
+}

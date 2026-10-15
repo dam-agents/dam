@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import type { ChannelConfig } from "api-server-api";
 import { ChannelType } from "api-server-api";
-import type { AgentView } from "../domain/agent-view.js";
+import { type AgentView, displayState } from "../domain/agent-view.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentService } from "../services/agent-service.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
@@ -46,7 +46,7 @@ function renderAgent(agent: AgentView): string {
     ["ID", agent.id],
     ["TEMPLATE", agent.templateId ?? "<custom>"],
     ["IMAGE", agent.image],
-    ["STATE", agent.disabled ? "disabled" : agent.state],
+    ["STATE", displayState(agent)],
   ];
   if (agent.description) entries.push(["DESCRIPTION", agent.description]);
   entries.push(["CHANNELS", renderChannels(agent.channels)]);
