@@ -144,7 +144,30 @@ pub fn run() -> ! {
     if let Some(guard) = guard {
         std::thread::spawn(move || guard_pool(guard));
     }
-    supervise(&binary, &command, env, trust.as_deref())
+    let openrc = Path::new(OPENRC).exists();
+    if openrc {
+        ["sysinit", "boot", "default"]
+            .into_iter()
+            .for_each(run_openrc);
+    }
+    supervise(&binary, &command, env, trust.as_deref(), openrc)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an image that ships openrc opts in to its services: platform-init stays PID 1 and runs openrc's runlevels before the entrypoint, as an init that boots openrc would, and openrc's shutdown when the machine stops. An image without it boots its entrypoint alone.
+const OPENRC: &str = "/sbin/openrc";
+
+// UNIT_BOUNDARY_DESCRIPTION: a runlevel that fails is a line on the console and not a failed boot: the entrypoint, which is the agent, may not need the service that failed.
+fn run_openrc(runlevel: &str) {
+    let status = std::process::Command::new(OPENRC)
+        .arg(runlevel)
+        .env_clear()
+        .env("PATH", DEFAULT_PATH)
+        .status();
+    match status {
+        Ok(status) if status.success() => logf!("openrc {runlevel} done"),
+        Ok(status) => announce(&format!("WARNING: openrc {runlevel} {status}")),
+        Err(e) => announce(&format!("WARNING: running openrc {runlevel}: {e}")),
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a guest keeps the files it read in its page cache until something needs the memory, and the host counts that cache as memory the machine holds, so an agent that once read a large tree holds it long after. Every RECLAIM_INTERVAL the cache on the kernel's inactive list — what nothing has touched lately — is handed to the root cgroup's proactive reclaim, and the pages it frees go back to the host through free-page reporting within seconds. With compressed swap (`swapping`) the inactive anonymous memory is handed over too, so what the agent's processes hold but have not touched lately is compressed into zram and the rest of its pages go back to the host; without it reclaim drops only file pages. A guest kernel without cgroup v2 reclaim gives nothing to read or write, and the loop does nothing.
@@ -2270,8 +2293,10 @@ fn supervise(
     command: &[OsString],
     env: &[(String, String)],
     trust: Option<&Path>,
+    openrc: bool,
 ) -> ! {
     let words: Vec<_> = command.iter().map(|word| word.to_string_lossy()).collect();
+    let cgroup = if openrc { entrypoint_cgroup() } else { None };
     let mut delay = None;
     let mut stopping = false;
     loop {
@@ -2280,7 +2305,16 @@ fn supervise(
             words.join(" ")
         ));
         let started = std::time::Instant::now();
-        let status = match entrypoint(binary, command, env, trust).spawn() {
+        let mut start = entrypoint(binary, command, env, trust);
+        if let Some(procs) = &cgroup {
+            use std::os::unix::process::CommandExt;
+            let procs = procs.as_raw_fd();
+            // SAFETY: the child only calls write(2), which is async-signal-safe, on a descriptor the parent keeps open across the fork; "0" moves the writer itself.
+            unsafe {
+                start.pre_exec(move || succeeded(libc::write(procs, b"0".as_ptr().cast(), 1) == 1))
+            };
+        }
+        let status = match start.spawn() {
             Ok(child) => wait_for(child.id(), &mut stopping),
             Err(e) if delay.is_none() => fatal!("starting {}: {e}", binary.display()),
             Err(e) => {
@@ -2299,10 +2333,14 @@ fn supervise(
                 String::new()
             }
         ));
-        end_the_rest(&mut stopping);
+        // UNIT_BOUNDARY_DESCRIPTION: with openrc the other processes are its services, which a restart of the entrypoint keeps, so only the entrypoint's cgroup is ended. A guest whose cgroup could not be made keeps what the old entrypoint left too, holding its ports.
+        if !openrc {
+            end_the_rest(&mut stopping);
+        } else if cgroup.is_some() {
+            end_cgroup(&mut stopping);
+        }
         if stopping {
-            flush_home_on_stop();
-            vm::stopped();
+            stop(openrc);
         }
         let wait = restart_delay(delay, started.elapsed());
         delay = Some(wait);
@@ -2311,10 +2349,55 @@ fn supervise(
             wait.as_secs()
         ));
         if pause(wait, &mut stopping) {
-            flush_home_on_stop();
-            vm::stopped();
+            stop(openrc);
         }
     }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the cgroup an openrc guest's entrypoint runs in, apart from openrc's services, so that whatever the entrypoint started can be ended without them, however it detached itself. Returns its cgroup.procs, open for the child to move itself into.
+const ENTRYPOINT_CGROUP: &str = "/sys/fs/cgroup/entrypoint";
+
+fn entrypoint_cgroup() -> Option<File> {
+    let cgroup = Path::new(ENTRYPOINT_CGROUP);
+    match mkdir_all(cgroup).and_then(|()| {
+        OpenOptions::new()
+            .write(true)
+            .open(cgroup.join("cgroup.procs"))
+    }) {
+        Ok(procs) => Some(procs),
+        Err(e) => {
+            announce(&format!("WARNING: making the entrypoint's cgroup {ENTRYPOINT_CGROUP} ({e}); a restart of the entrypoint ends none of what it started"));
+            None
+        }
+    }
+}
+
+fn end_cgroup(stopping: &mut bool) {
+    let cgroup = Path::new(ENTRYPOINT_CGROUP);
+    if let Err(e) = fs::write(cgroup.join("cgroup.kill"), "1") {
+        announce(&format!("WARNING: ending the entrypoint's cgroup: {e}"));
+        return;
+    }
+    let deadline = std::time::Instant::now() + END_GRACE;
+    while fs::read_to_string(cgroup.join("cgroup.procs"))
+        .is_ok_and(|procs| !procs.trim().is_empty())
+        && std::time::Instant::now() < deadline
+    {
+        reap();
+        if let Some(signal) = next_signal(REAP_INTERVAL / 10) {
+            on_signal(signal, stopping);
+        }
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the end of the workload once its entrypoint has exited on a stop: openrc's services are stopped by openrc first, so each gets its own stop, and whatever is left is ended after.
+fn stop(openrc: bool) -> ! {
+    if openrc {
+        run_openrc("shutdown");
+        end_the_rest(&mut true);
+    }
+    flush_home_on_stop();
+    vm::stopped()
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: writes the agent's home out to the disk once the workload has stopped, before the guest is quiesced and powered off. A stop asks smolvm to quiesce the disk, and a runner may be stopping a machine an older smolvm started, whose guest agent may not confirm it; the runner then powers the guest off. Flushing here makes that power-off cost at most a journal replay, never what the agent last wrote, whatever version the host runs.
