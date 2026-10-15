@@ -53,6 +53,10 @@ import { mountRuntimeTrpc } from "./runtime-trpc.js";
 import { mountInvocationRoutes } from "./invocation-endpoints.js";
 import { createDriverOps, type DriverOpsDeps } from "./driver-ops.js";
 import { createAgentImageReader } from "./agent-image.js";
+import {
+  limitRequestBody,
+  MAX_AGENT_REQUEST_BODY_BYTES,
+} from "../../core/request-body-bounds.js";
 import { agentsInstallSettings, type Config } from "../../config.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
@@ -234,6 +238,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
   };
 
   const app = new Hono();
+  app.use(limitRequestBody(MAX_AGENT_REQUEST_BODY_BYTES));
   mountMcpRoutes(app, {
     channelManager,
     k8s: k8sClient,
