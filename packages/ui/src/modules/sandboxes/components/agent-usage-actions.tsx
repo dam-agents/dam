@@ -14,6 +14,7 @@ import { useAgents } from "../../agents/api/queries.js";
 import { useSlackInstallRequestUrl } from "../../links/api/queries.js";
 import { TerminalHarnessButtons } from "../../sessions/components/terminal-harness-buttons.js";
 import { SlackInstallRequest } from "../../slack/components/slack-install-request.js";
+import { cliAgentRef } from "../lib/cli-agent-ref.js";
 import { type Action, ActionList } from "./action-list.js";
 import { MessengerInstructions } from "./channels/messenger-instructions.js";
 
@@ -43,7 +44,9 @@ export function AgentUsageActions({
 }) {
   const selectAgent = useStore((s) => s.selectAgent);
   const openAgentSession = useStore((s) => s.openAgentSession);
-  const available = useAgents().data?.availableChannels ?? {};
+  const agentsData = useAgents().data;
+  const available = agentsData?.availableChannels ?? {};
+  const ref = cliAgentRef(agent, agentsData?.list ?? [agent]);
   const slackInstallUrl = useSlackInstallRequestUrl();
   const brand = getBrand();
 
@@ -94,9 +97,9 @@ export function AgentUsageActions({
             install the {brand.name} CLI and log in.
           </p>
           <p className="mt-1">Open the agent TUI in your terminal:</p>
-          <CopyableCommand command={`${brand.short} chat ${agent.id}`} />
+          <CopyableCommand command={`${brand.short} chat ${ref}`} />
           <p className="mt-1">SSH to the agent:</p>
-          <CopyableCommand command={`${brand.short} ssh connect ${agent.id}`} />
+          <CopyableCommand command={`${brand.short} ssh connect ${ref}`} />
           <p className="mt-1">
             Open a remote <DocLink href={VS_CODE_REMOTE_URL}>VS Code</DocLink>{" "}
             (or <DocLink href={ZED_REMOTE_URL}>Zed</DocLink> with{" "}
@@ -104,7 +107,7 @@ export function AgentUsageActions({
             in the agent's sandbox:
           </p>
           <CopyableCommand
-            command={`${brand.short} ssh connect -x code ${agent.id}`}
+            command={`${brand.short} ssh connect -x code ${ref}`}
           />
         </div>
       ),
