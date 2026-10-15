@@ -24,7 +24,9 @@ describe("BUTLER_NAMES", () => {
 describe("nextAgentName", () => {
   test("picks a butler name at random", () => {
     expect(nextAgentName([], { random: first })).toBe(BUTLER_NAMES[0]);
-    expect(nextAgentName([], { random: last })).toBe(BUTLER_NAMES.at(-1));
+    expect(nextAgentName([], { random: last })).toBe(
+      BUTLER_NAMES[BUTLER_NAMES.length - 1],
+    );
   });
 
   // TEST_SCENARIO: the user already has agents named after the first butler names, in another case and with stray spaces; the pick skips them all.
