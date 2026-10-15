@@ -380,7 +380,7 @@ virtualization:
     # filter. The pod's own seccomp profile bounds every VMM in each mode.
     # Changing this value rolls every runner, which reboots its owner's
     # machines.
-    seccomp: audit
+    seccomp: enforce
     # Local dev on macOS only. Set, the controller creates no runner pods:
     # every vm machine, whatever its owner, runs on one vm-runner process on
     # the host, which uses the host's own hypervisor instead of one nested in
