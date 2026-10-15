@@ -281,6 +281,11 @@ See [`helm/`](../../helm/) for the install layout.
 - **Bounded input arrays.** Every array in a request from outside the api-server — a user or agent tRPC call, the e2e test API, an MCP message on either MCP endpoint, an agent request body — holds at most 100 000 items.
   The api-server checks the raw input before any schema parses it, so no schema parses the elements of an oversized array, and the e2e API refuses it before its access check.
   The limit lives outside the input schemas, so no published JSON schema or MCP tool description shows it.
+  The request that carries the input has a byte limit too, checked before anything buffers or parses the body: 32 MiB on the user tRPC HTTP endpoint and for one tRPC WebSocket message, 128 MiB on every agent endpoint of the harness listener.
+  An HTTP body over the limit gets 413; a WebSocket message over it closes the connection with code 1009.
+  Each limit sits well above the largest legitimate input: a `skills.createLocal` call for users, a 20 000-file kb-publish plan for agents.
+  The MCP SDK also holds each MCP endpoint to 4 MiB and 100 messages per JSON-RPC batch.
+  A tRPC HTTP batch, user or agent, holds at most 1 000 calls; a tRPC WebSocket batch is bounded only by the message byte limit, because the WebSocket adapter has no batch limit.
 - **Credential isolation.** Agent pods never hold real upstream credentials.
   The paired gateway pod intercepts agent TLS using a per-agent leaf cert and injects the credential header from a K8s Secret mounted only on the gateway — the agent pod has no path to TCP 80/443 except through the paired gateway.
   See [security-and-credentials](security-and-credentials.md).
