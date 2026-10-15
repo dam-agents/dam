@@ -235,6 +235,7 @@ An Agent whose mounts ask to persist a path outside `HOME` is refused rather tha
 
 **The whole machine persists, per root generation.** Everything outside `HOME` is the image's root: an overlay platform-init lays over the image, its upper layer on the disk, kept across stops, restarts and new images of one generation — an integer an image declares in its env and bumps only on a change that breaks an older root; an image declaring none is its own generation.
 The runner names it in the share at every start, and a new generation, or none named, boots onto an empty upper: what must outlast that belongs under `HOME`.
+The agent runs as root there, and a tool that takes its home from the user database rather than `HOME`, as OpenSSH does for keys and known hosts, would write to `/root` on that root, so the entrypoint gives uid 0's entry the agent's `HOME` and moves what an older boot left in `/root/.ssh` into it, without overwriting a file the home already holds.
 The old upper is renamed aside with the record of its image and deleted in the background, so a root of millions of files does not hold up the boot; one a stop cut short is deleted on the next boot.
 smolvm keeps a root of its own and binds the whole disk into it; platform-init leaves both behind, and fails the boot rather than run on them.
 Temporary folders are kept off that root instead: `/tmp` and `/var/tmp` are directories of the disk bound in place, empty on every boot, and `HOME`'s `.cache` and `.npm` are ordinary directories of the home.
