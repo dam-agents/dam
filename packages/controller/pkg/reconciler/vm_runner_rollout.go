@@ -31,7 +31,7 @@ const (
 	defaultRunnerSettleTimeout = 10 * time.Minute
 	defaultRunnerIdleWait      = time.Hour
 
-	// UNIT_BOUNDARY_DESCRIPTION: how long the list of runners mid-roll is reused. The rollout sweep offers every runner its turn, and each turn asks which others are mid-roll; listing every runner Deployment and asking each mid-roll runner about its machines on every turn is quadratic in owners. A roll this controller starts is added to the kept list at once, so the width still holds; what can be late is only a roll settling, by this much.
+	// UNIT_BOUNDARY_DESCRIPTION: how long the list of runners mid-roll is reused. The rollout sweep offers every runner its turn, and each turn asks which others are mid-roll; listing every runner Deployment and release ConfigMap on every turn is quadratic in owners. A roll this controller starts is added to the kept list at once, so the width still holds; what can be late is only a roll settling, by this much.
 	runnerRollViewTTL = 10 * time.Second
 )
 
@@ -102,24 +102,27 @@ func (r *AgentReconciler) rollRunnerDeploymentFrom(ctx context.Context, owner st
 		}
 		existing = updated
 	}
+	existing = r.settleRunnerRoll(ctx, owner, existing)
 	if existing.Annotations[annRunnerTemplate] == hash && !r.runnerNeedsPodForRelease(ctx, owner, existing) {
 		return r.repairRunnerDeploymentMeta(ctx, owner, existing, dep)
 	}
 
+	const waiting = "vm runner: the pod changed, waiting for other runners to finish rolling"
 	r.runnerRollMu.Lock()
-	defer r.runnerRollMu.Unlock()
-	limit, _ := runnerRolloutLimits(r.config.VM.Runner)
-	rolling, err := r.runnersMidRoll(ctx)
-	if err != nil {
+	_, free, err := r.runnerRollPlace(ctx, owner, dep.Name, waiting)
+	r.runnerRollMu.Unlock()
+	if err != nil || !free {
 		return err
-	}
-	others := slices.DeleteFunc(slices.Clone(rolling), func(name string) bool { return name == dep.Name })
-	if len(others) >= limit {
-		slog.Info("vm runner: the pod changed, waiting for other runners to finish rolling", "owner", owner, "rolling", others)
-		return nil
 	}
 	if r.runnerRollWaitsForIdle(ctx, owner, existing) {
 		return nil
+	}
+	ready := r.readyMachines(ctx, owner)
+	r.runnerRollMu.Lock()
+	defer r.runnerRollMu.Unlock()
+	rolling, free, err := r.runnerRollPlace(ctx, owner, dep.Name, waiting)
+	if err != nil || !free {
+		return err
 	}
 	dep.Annotations = map[string]string{}
 	for k, v := range existing.Annotations {
@@ -130,7 +133,7 @@ func (r *AgentReconciler) rollRunnerDeploymentFrom(ctx context.Context, owner st
 	delete(dep.Annotations, annRunnerBusy)
 	dep.Annotations[annRunnerTemplate] = hash
 	dep.Annotations[annRunnerRolledAt] = time.Now().UTC().Format(time.RFC3339)
-	if ready := r.readyMachines(ctx, owner); len(ready) > 0 {
+	if len(ready) > 0 {
 		dep.Annotations[annRunnerAwaiting] = strings.Join(ready, ",")
 	}
 	dep.ResourceVersion, dep.Status = existing.ResourceVersion, existing.Status
@@ -267,7 +270,7 @@ func (r *AgentReconciler) readyMachines(ctx context.Context, owner string) []str
 	return ready
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runners still mid-roll. A runner that has settled has its roll annotations removed here, so the next pass reads it as settled without calling it again. A roll whose new pod became ready but whose machines did not all come back within `rollout.settleTimeout` stops holding its place: a machine whose agent stopped during the roll never comes back, and it must not stall every other owner's upgrade. A roll whose new pod never became ready keeps its place instead — a pod that does not start is a broken runner release, and letting the next owner roll would break them too — and is marked stalled, reported at error level and counted, once — unless the pod never started for a fault of its owner alone (runnerPodStuckOnItsOwner), which is skipped.
+// UNIT_BOUNDARY_DESCRIPTION: the runners still mid-roll, read from the Deployments' and release ConfigMaps' annotations alone. Every owner's roll decision reads this under one lock, so it calls no runner: a hung runner would hold that lock for a call timeout and stall every owner's agent starts. Whether a runner's machines came back, or its runner took a new release, is asked on that owner's own turn (settleRunnerRoll, settleRunnerHandoff), which clears the annotations. A roll that has settled by its annotations alone — its new pod is ready and it had no machines to wait for — has them removed here, so the next pass reads it as settled. A roll whose new pod became ready but whose machines did not all come back within `rollout.settleTimeout` stops holding its place: a machine whose agent stopped during the roll never comes back, and it must not stall every other owner's upgrade. A roll whose new pod never became ready keeps its place instead — a pod that does not start is a broken runner release, and letting the next owner roll would break them too — and is marked stalled, reported at error level and counted, once — unless the pod never started for a fault of its owner alone (runnerPodStuckOnItsOwner), which is skipped.
 func (r *AgentReconciler) runnersMidRoll(ctx context.Context) ([]string, error) {
 	if !r.runnerRoll.at.IsZero() && time.Since(r.runnerRoll.at) < r.rollViewTTL {
 		return r.runnerRoll.rolling, nil
@@ -306,7 +309,7 @@ func (r *AgentReconciler) runnersMidRoll(ctx context.Context) ([]string, error) 
 		}
 		for i := range cms.Items {
 			name := r.runnerName(cms.Items[i].Labels[envoyOwnerLabel])
-			if r.runnerHandoffHolds(ctx, &cms.Items[i], timeout) && !slices.Contains(rolling, name) {
+			if r.runnerHandoffHolds(&cms.Items[i]) && !slices.Contains(rolling, name) {
 				rolling = append(rolling, name)
 			}
 		}
@@ -346,16 +349,18 @@ func (r *AgentReconciler) runnerRollSettled(ctx context.Context, dep *appsv1.Dep
 		slog.Warn("vm runner: the roll's machines did not all come back in time, the next runner may roll", "owner", owner, "timeout", timeout)
 		return true, false
 	}
-	if !podReady {
-		return false, false
-	}
+	return podReady && dep.Annotations[annRunnerAwaiting] == "", false
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: settles the owner's own roll once its new pod is ready and every machine that was ready before the roll is ready again, or gone with its agent. It runs on the owner's turn, under the owner's lock and outside the roll lock, so the runner it calls holds up only this owner. It returns the Deployment as it now stands.
+func (r *AgentReconciler) settleRunnerRoll(ctx context.Context, owner string, dep *appsv1.Deployment) *appsv1.Deployment {
 	awaiting := dep.Annotations[annRunnerAwaiting]
-	if awaiting == "" {
-		return true, false
+	if dep.Annotations[annRunnerRolledAt] == "" || awaiting == "" || !runnerPodRolledOut(dep) {
+		return dep
 	}
 	client, err := r.runnerFor(ctx, owner)
 	if err != nil {
-		return false, false
+		return dep
 	}
 	for _, id := range strings.Split(awaiting, ",") {
 		if st, err := client.Status(ctx, id); err == nil && st.Ready {
@@ -364,9 +369,44 @@ func (r *AgentReconciler) runnerRollSettled(ctx context.Context, dep *appsv1.Dep
 		if _, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, id, metav1.GetOptions{}); k8serrors.IsNotFound(err) {
 			continue
 		}
-		return false, false
+		return dep
 	}
-	return true, false
+	settled := dep.DeepCopy()
+	delete(settled.Annotations, annRunnerRolledAt)
+	delete(settled.Annotations, annRunnerAwaiting)
+	delete(settled.Annotations, annRunnerStalled)
+	updated, err := r.client.AppsV1().Deployments(dep.Namespace).Update(ctx, settled, metav1.UpdateOptions{})
+	if err != nil {
+		slog.Warn("vm runner: clearing a settled roll", "runner", dep.Name, "error", err)
+		return dep
+	}
+	if r.runnerDeploys != nil {
+		r.runnerDeploys.Mutation(updated)
+	}
+	r.resetRunnerRollView()
+	return updated
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a runner can hold its place by two records at once, a pod roll on its Deployment and a hand-off on its release ConfigMap, and one settling says nothing of the other. So a settle drops the kept view, and the next decision reads both records again.
+func (r *AgentReconciler) resetRunnerRollView() {
+	r.runnerRollMu.Lock()
+	defer r.runnerRollMu.Unlock()
+	r.runnerRoll = runnerRollView{}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the roll has a place for this runner: fewer than `rollout.maxConcurrent` others are mid-roll or mid-hand-off. The caller holds runnerRollMu. A runner that finds one asks its own runner which machines are ready with the lock released, then asks again with it held before it takes the place, so no runner call is made under the lock.
+func (r *AgentReconciler) runnerRollPlace(ctx context.Context, owner, name, waiting string) (rolling []string, free bool, err error) {
+	rolling, err = r.runnersMidRoll(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	limit, _ := runnerRolloutLimits(r.config.VM.Runner)
+	others := slices.DeleteFunc(slices.Clone(rolling), func(n string) bool { return n == name })
+	if len(others) >= limit {
+		slog.Info(waiting, "owner", owner, "rolling", others)
+		return rolling, false, nil
+	}
+	return rolling, true, nil
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: whether a rolled pod that is not ready failed for its owner alone rather than for the release. Only states a release cannot plausibly cause count: a pod still creating its containers, none ever started, whose volume the attach controller refuses as Multi-Attach (the claim is still held on another node), or an old pod that never finishes terminating because its node is gone or not ready. A pod the scheduler cannot place halts the roll, because a release that adds a node selector or raises a request makes every runner unschedulable; so do a started container that is not ready, an image that does not pull, no pod at all, and a failed read.

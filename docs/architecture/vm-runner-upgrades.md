@@ -21,6 +21,9 @@ Before it takes a place in the roll, the controller asks each of the owner's rea
 A runner with a busy agent holds no place, so other owners roll meanwhile, and the next pass offers it again.
 The install's idle wait, an hour by default, bounds this from the first pass that found the owner busy, and is recorded on the runner so a controller restart does not start it over; past it, the runner rolls with the agent busy, so an owner who is never idle still gets the release.
 Rolls advance as agents reconcile and on the periodic sweep, which offers every runner its turn in name order so owners whose agents all sleep still roll; which runners are mid-roll is read once every few seconds rather than on every turn, and a roll the controller starts counts at once.
+That read takes only what the runners' Deployments and release ConfigMaps record, and calls no runner, since every owner's decision waits on it.
+Whether a runner's machines came back is asked on its own owner's turn, an agent of theirs reconciling or the sweep reaching them, and so is the owner's own list of ready machines before it takes a place.
+So a runner that stops answering holds up only its own owner's agents, during a roll or a release as at any other time.
 The sweep only ever updates a runner that exists — creating one is an agent's reconcile's alone.
 A roll still reboots each owner's machines once: nothing checkpoints them across it, and the VMM host is the same pod as the machine API it serves.
 So a published chart pins the runner image by digest, and a rebuild that changes nothing in the image — only the record of when and with what it was built — keeps the image it would have replaced: a release that leaves the runner as it was rolls no runner.
@@ -76,6 +79,7 @@ A hand-off reboots nothing, but the loader's fallback catches only a release tha
 So a hand-off holds a place in the same roll as a pod roll, and a new release is named only while fewer than the roll's width of runners are mid-roll or mid-hand-off.
 It ends no turn, so it does not wait for idle agents.
 A runner is mid-hand-off from the moment its release is named until it reports the release running, every machine that was ready before is ready again, stopped, or gone with its agent, and no ensure of that owner's machines was refused since.
+As with a roll, the runner is asked on its own owner's turn, so a hand-off settles, or is found in trouble, when an agent of that owner reconciles or the sweep reaches them.
 A runner with ready machines stays mid-hand-off for at least two health polls, so each running agent has had an ensure against the new release before the next owner is named it.
 A hand-off is in trouble when the runner holds the release as failed, when the runner refuses an ensure, or when it has not settled within the settle timeout; a runner that cannot be reached, or answers that it is shutting down, is the hand-off itself and does not count.
 A hand-off in trouble is marked stalled on the runner's ConfigMap, reported as an error and counted, and keeps its place, so the release goes no further, as with a pod that is never ready.
