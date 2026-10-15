@@ -228,6 +228,7 @@ impl Harness {
             runtime: None,
             cgroup_dir: None,
             measure_storage: Arc::new(|| None),
+            zram_swap: false,
         };
         tune(&mut config);
         let fake = Arc::new(Fake::default());
@@ -260,6 +261,7 @@ impl Harness {
             runtime: None,
             cgroup_dir: None,
             measure_storage: Arc::new(|| None),
+            zram_swap: false,
         };
         tune(&mut config);
         Harness {
@@ -1355,6 +1357,7 @@ async fn a_restarted_runner_republishes_its_ports() {
             runtime: None,
             cgroup_dir: None,
             measure_storage: Arc::new(|| None),
+            zram_swap: false,
         },
         h.fake.clone(),
     )
@@ -2502,6 +2505,7 @@ async fn a_hand_off_leaves_every_machine_running_for_the_next_runner() {
             runtime: None,
             cgroup_dir: None,
             measure_storage: Arc::new(|| None),
+            zram_swap: false,
         },
         h.fake.clone(),
     )
@@ -2542,6 +2546,7 @@ async fn a_guest_quiet_across_a_hand_off_is_restarted_by_the_next_runner() {
                 runtime: None,
                 cgroup_dir: None,
                 measure_storage: Arc::new(|| None),
+                zram_swap: false,
             },
             h.fake.clone(),
         )
@@ -3026,6 +3031,7 @@ async fn admission_after_a_hand_off_does_not_wait_on_silent_guests() {
             runtime: None,
             cgroup_dir: None,
             measure_storage: Arc::new(|| None),
+            zram_swap: false,
         },
         h.fake.clone(),
     )

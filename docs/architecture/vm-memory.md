@@ -75,9 +75,11 @@ The controller holds one watch on each owner's pressure, and a pass on it hibern
 The two passes never run together for one owner.
 A refused start's reclaim and the pass do run side by side, so each reads its need and hibernates the agents it chose under the owner's lock, and those agents stop counting at once: the reclaim that comes next sees the room already freed and does not choose or count them again.
 
-**Guests give back cold page cache.** A guest keeps the files it read cached until something needs the memory, and the host counts that cache as the machine's.
+**Guests give back cold memory.** A guest keeps the files it read cached until something needs the memory, and the host counts that cache as the machine's.
 Every minute platform-init hands the cache on the kernel's inactive list to cgroup v2 proactive reclaim, and the freed pages return to the host within seconds.
-Guests have no swap, so only file pages go.
+An install that sets `virtualization.runner.zramSwap` has its guests swap to zram, which platform-init sets up at boot at twice the RAM the guest boots with, compressed with zstd, so the same pass also hands over the inactive anonymous memory: what the agent's processes hold but have not touched lately is kept compressed, and the pages it filled return to the host.
+Without it, or on a guest kernel without zram, guests have no swap, and only file pages go.
+A V8 heap is cold only between collections: Node's idle memory reducer walks the whole heap a couple of times after it stops growing, which reads every page back from zram once, and the next pass compresses it again.
 Free-page reporting returns only whole 2 MiB blocks, so memory a program frees between pages the guest still uses stays counted; when the free memory in smaller blocks rises by 128 MiB, the same pass reclaims that much cold cache and slab and compacts the guest's memory, so the freed pages merge into blocks the host takes back.
 
 **What can still go wrong.** A harness that grows past the warm-up floor while it warms up, or past its headroom between two probes after, and the seconds a hibernation takes can still take the runner over its limit, and the kernel then kills the runner with every machine of its owner.

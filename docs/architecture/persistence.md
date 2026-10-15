@@ -268,7 +268,7 @@ The runner image ships that agent rebuilt with a patch that refuses the format w
 The same agent checks the disk's filesystem before its first mount at every boot, since a write that failed, a full claim's among them, leaves it marked with errors that a mount alone keeps and lets grow.
 `e2fsck -p` returns at once on a clean filesystem and preens one marked with errors; what that cannot fix gets a full repair, and then one that also rebuilds directories.
 A repair is a line on the machine's console; a filesystem still damaged after all three, or an `e2fsck` that failed or was killed, fails the boot with the reason there, and the disk is not formatted; a disk with no filesystem yet is not checked.
-A Mac host runner runs its installed smolvm's own agent, which still formats.
+A Mac host runner runs the same agent, taken from the runner image.
 
 **A disk that has lost its home fails the boot.** A disk that was formatted anyway looks exactly like one never seeded.
 So the runner records in the machine's share, the first time its guest answers — which it does only once platform-init has put the home on the disk, from the image or from a migration's copy — that the disk holds a home, and keeps the record for as long as the machine exists.
@@ -278,6 +278,9 @@ The record is learned from the answer rather than read off the disk, because the
 The runner formats every new disk itself, with a journal and at its full size, before any guest has touched it.
 A runner without `mkfs.ext4`, or whose format fails, leaves that format to smolvm, which can write no journal, and so did every disk made before the runner formatted its own; on those an unclean stop — a killed runner — is what brings that repair on.
 On a Mac host runner the loss is refused, not prevented.
+**A runner can make btrfs disks.** An install that sets `virtualization.runner.storageFilesystem` to `btrfs` has new disks made as btrfs, which the guest mounts compressed with zstd and grows to the disk.
+A disk keeps the filesystem it was made with, so ext4 and btrfs disks live side by side.
+btrfs has no repair a boot may run unattended, so a btrfs disk that does not mount fails the boot and stays as it is.
 
 **The claim those disks sit on is the owner's pool.** One claim per owner holds every machine disk they have, their bookkeeping, a [runtime migration](vm-runtime-migration.md)'s seed while it waits, and the image cache when the cache lives there, and every disk may grow to the pool, so the claim is created at the pool; the controller refuses an install whose image cache budget would take the whole of it.
 The runtime's disk templates live there too, sparse enough to need no share of it.

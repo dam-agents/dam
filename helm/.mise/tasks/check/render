@@ -64,17 +64,19 @@ helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
 # A confined runner reaches DNS only at the resolver it uses. One that caches
 # on its own claim and names no resolver, a resolver range of /0, and an
 # egress entry naming the link-local metadata endpoint all fail the render, as
-# does a VMM seccomp mode smolvm would read as no filter.
+# does a VMM seccomp mode smolvm would read as no filter, and a storage
+# filesystem the runner does not know.
 VM=(--set virtualization.enabled=true --set virtualization.runner.resources.limits.memory=8Gi
   --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0')
 for refused in 'virtualization.runner.dnsPolicy=Default' \
   'virtualization.runner.dnsCidrs[0]=0.0.0.0/0' \
   'virtualization.runner.egressCidrs[1]=169.254.169.254/32' \
   'virtualization.runner.clusterDns=null' \
-  'virtualization.runner.seccomp=permissive'; do
+  'virtualization.runner.seccomp=permissive' \
+  'virtualization.runner.storageFilesystem=xfs'; do
   extra=(--set "$refused")
   case "$refused" in
-    *seccomp*) extra+=(--set virtualization.imageCache.hostPath=/var/lib/platform-images) ;;
+    *seccomp* | *storageFilesystem*) extra+=(--set virtualization.imageCache.hostPath=/var/lib/platform-images) ;;
     *egressCidrs*) extra+=(--set 'virtualization.runner.dnsCidrs[0]=10.0.2.3/32') ;;
     *clusterDns*) extra+=(--set virtualization.runner.dnsPolicy=ClusterFirst) ;;
   esac

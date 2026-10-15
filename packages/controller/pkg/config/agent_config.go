@@ -118,6 +118,10 @@ type VMRunnerSpec struct {
 	ReleaseSameRuntimeOnly bool `json:"releaseSameRuntimeOnly,omitempty"`
 	// UNIT_BOUNDARY_DESCRIPTION: how smolvm checks every VMM's syscalls against its allowlist: `audit` logs a call outside it, `enforce` kills the VMM, `off` installs no filter. Empty means `audit`.
 	Seccomp string `json:"seccomp,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: the filesystem a runner makes a new machine's storage disk with: `btrfs`, mounted compressed, or `ext4` when empty.
+	StorageFilesystem string `json:"storageFilesystem,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: set, every machine's guest swaps to zram, so the memory its processes no longer touch is kept compressed.
+	ZramSwap bool `json:"zramSwap,omitempty"`
 }
 
 type VMRunnerClusterDNS struct {

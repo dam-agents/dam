@@ -30,6 +30,7 @@ pub struct Smolvm {
     proc_root: PathBuf,
     nested: bool,
     tools: Option<PathBuf>,
+    btrfs: Option<PathBuf>,
 }
 
 const USER: &str = "root";
@@ -57,7 +58,11 @@ const GUEST_DNS_SINK: std::net::Ipv4Addr = std::net::Ipv4Addr::LOCALHOST;
 const MANAGED_BY: (&str, &str) = ("app.kubernetes.io/managed-by", "vm-runner");
 
 impl Smolvm {
-    pub fn open(allow_nesting: bool, tools: Option<&Path>) -> anyhow::Result<Self> {
+    pub fn open(
+        allow_nesting: bool,
+        tools: Option<&Path>,
+        btrfs: Option<PathBuf>,
+    ) -> anyhow::Result<Self> {
         let nested = allow_nesting && host_nests(Path::new("/sys"));
         tracing::info!(
             allow_nesting,
@@ -76,6 +81,7 @@ impl Smolvm {
             proc_root: PathBuf::from("/proc"),
             nested,
             tools,
+            btrfs,
         })
     }
 
@@ -141,7 +147,7 @@ impl Runtime for Smolvm {
                 Some(USER.to_string()),
             )?;
             if let Some(gib) = storage_gib {
-                raw_storage_disk(id, gib)?;
+                raw_storage_disk(id, gib, self.btrfs.as_deref())?;
             }
             record_gateway_host_port(id, machine.spec)?;
             let resolver = guest_resolver(machine.spec)?;
@@ -726,15 +732,56 @@ fn resolved_image(image: &str) -> anyhow::Result<String> {
     })
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: creates the machine's storage disk as a raw sparse file before its first boot. Left to smolvm, a disk of smolvm's default size is made instead as a qcow2 overlay over the template shipped with the runner image, named by its absolute path in that image — so an upgrade that ships a different template would change the bytes under every such agent's home. A raw disk depends on nothing. A new one is formatted here, with a journal, at its full size: both of smolvm's own fallbacks — formatting on the host when it finds no template, and formatting in the guest when the disk will not mount — leave a disk with no journal, and an unclean stop of such a disk can lose what the agent last wrote. Only a file no guest has written is formatted, so the host never parses a filesystem a guest had root on.
-fn raw_storage_disk(id: &str, gib: u64) -> anyhow::Result<()> {
+// UNIT_BOUNDARY_DESCRIPTION: creates the machine's storage disk as a raw sparse file before its first boot. Left to smolvm, a disk of smolvm's default size is made instead as a qcow2 overlay over the template shipped with the runner image, named by its absolute path in that image — so an upgrade that ships a different template would change the bytes under every such agent's home. A raw disk depends on nothing. A new one is formatted here, with a journal, at its full size: both of smolvm's own fallbacks — formatting on the host when it finds no template, and formatting in the guest when the disk will not mount — leave a disk with no journal, and an unclean stop of such a disk can lose what the agent last wrote. A runner that makes btrfs disks makes it from the btrfs template instead (format_btrfs), and formats it as ext4 only when that fails. Only a file no guest has written is formatted, so the host never parses a filesystem a guest had root on.
+fn raw_storage_disk(id: &str, gib: u64, btrfs: Option<&Path>) -> anyhow::Result<()> {
     let disk = storage_disk_path(id);
     let fresh = !disk.exists();
     StorageDisk::open_or_create_at(&disk, gib)?;
-    if fresh {
+    if fresh && !btrfs.is_some_and(|template| format_btrfs(&disk, gib, template)) {
         format_journaled(&disk);
     }
     Ok(())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the btrfs template, beside the smolvm release: an empty 256 MiB btrfs (single metadata, so a home of many small files does not pay twice for its metadata), compressed with zstd to a few KiB. Every disk made from it shares its filesystem UUID; that is harmless while a guest sees one btrfs disk, and a second one beside it (a copy from an old disk, say) would need `btrfstune -u` first.
+pub const BTRFS_TEMPLATE: &str = "storage-template.btrfs.zst";
+
+// UNIT_BOUNDARY_DESCRIPTION: makes a fresh sparse disk a btrfs one by expanding the template over its first 256 MiB, sparse, so only the few MiB that hold data are written, and puts the file back at its full size. The guest grows the filesystem to the disk while it mounts it. A format that succeeds writes smolvm's format marker, as format_journaled does. False when it fails, with the disk back to an empty sparse file of its size for ext4 to format instead.
+fn format_btrfs(disk: &Path, gib: u64, template: &Path) -> bool {
+    let expanded = std::process::Command::new("zstd")
+        .args(["-d", "-q", "-f", "--sparse", "-o"])
+        .arg(disk)
+        .arg(template)
+        .output();
+    let size = gib << 30;
+    let resized = || {
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(disk)?
+            .set_len(size)
+    };
+    let failure = match expanded {
+        Ok(out) if out.status.success() => {
+            match resized().and_then(|()| std::fs::write(disk.with_extension("formatted"), "1")) {
+                Ok(()) => return true,
+                Err(e) => e.to_string(),
+            }
+        }
+        Ok(out) => String::from_utf8_lossy(&out.stderr).trim().to_string(),
+        Err(e) => e.to_string(),
+    };
+    tracing::warn!(disk = %disk.display(), template = %template.display(), error = %failure, "formatting the storage disk as btrfs failed; formatting it as ext4 instead");
+    let emptied = std::fs::OpenOptions::new()
+        .write(true)
+        .open(disk)
+        .and_then(|file| {
+            file.set_len(0)?;
+            file.set_len(size)
+        });
+    if let Err(e) = emptied {
+        tracing::warn!(disk = %disk.display(), error = %e, "could not empty the storage disk after a failed btrfs format");
+    }
+    false
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: where mkfs.ext4 is: on the runner image's PATH, or Homebrew's e2fsprogs on a Mac host runner, which installs it outside PATH.
@@ -848,7 +895,7 @@ mod tests {
         let tree = home.path.join("images/quay.io_x_vm_1/rootfs");
         fs::create_dir_all(&share).unwrap();
         fs::create_dir_all(&tree).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, None).unwrap();
         let spec = spec();
         let launch = launch();
 
@@ -1066,7 +1113,7 @@ mod tests {
         let home = Home::new("loopback");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, None).unwrap();
         let looped = MachineSpec {
             allow_cidrs: Vec::new(),
             gateway_host_port: 30100,
@@ -1144,7 +1191,7 @@ mod tests {
         let home = Home::new("nested");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let mut smolvm = Smolvm::open(false, None).unwrap();
+        let mut smolvm = Smolvm::open(false, None, None).unwrap();
         smolvm.nested = true;
         let plain = MachineSpec {
             gateway_host_port: 30100,
@@ -1200,7 +1247,7 @@ mod tests {
         let home = Home::new("open");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, None).unwrap();
         let launch = launch();
         smolvm
             .create(
@@ -1233,7 +1280,7 @@ mod tests {
         let home = Home::new("dns");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, None).unwrap();
         let spec = MachineSpec {
             gateway_host_port: 30100,
             ..spec()
@@ -1277,7 +1324,7 @@ mod tests {
         let home = Home::new("resolver");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, None).unwrap();
         let named = MachineSpec {
             guest_resolver: "10.96.0.7".into(),
             ..spec()
@@ -1352,7 +1399,7 @@ mod tests {
         let home = Home::new("raw");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, None).unwrap();
         let spec = spec();
         let launch = launch();
         smolvm
@@ -1404,7 +1451,7 @@ mod tests {
             &home.path.join(".smolvm/storage-template.ext4"),
             b"TEMPLATE",
         );
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, None).unwrap();
         let spec = spec();
         let launch = launch();
         for id in ["used", "fresh"] {
@@ -1465,7 +1512,7 @@ mod tests {
         let home = Home::new("journal");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, None).unwrap();
         let spec = spec();
         let launch = launch();
         let machine = Machine {
@@ -1493,7 +1540,7 @@ mod tests {
         use std::os::unix::fs::FileExt;
         let file = fs::OpenOptions::new().write(true).open(&disk).unwrap();
         file.write_all_at(b"HOMEDATA", 10 << 30).unwrap();
-        raw_storage_disk("m1", 20).unwrap();
+        raw_storage_disk("m1", 20, None).unwrap();
         let mut read = [0; 8];
         fs::File::open(&disk)
             .unwrap()
@@ -1502,13 +1549,68 @@ mod tests {
         assert_eq!(&read, b"HOMEDATA");
     }
 
+    // TEST_SCENARIO: a runner that makes btrfs disks expands the template over a new machine's sparse disk and puts the file back at its full size, marked formatted, so smolvm never copies its ext4 template over it and a start keeps it as it is. A template that cannot be expanded leaves no half-written disk: the disk is emptied and formatted as ext4 instead.
+    #[test]
+    fn a_new_btrfs_disk_is_the_template_at_its_full_size() {
+        use std::os::unix::fs::{FileExt, MetadataExt};
+        if std::process::Command::new("zstd")
+            .arg("-V")
+            .output()
+            .is_err()
+        {
+            eprintln!("skipping: no zstd on this host");
+            return;
+        }
+        let home = Home::new("btrfs");
+        let image = home.path.join("template");
+        let file = fs::File::create(&image).unwrap();
+        file.set_len(256 << 20).unwrap();
+        file.write_all_at(b"_BHRfS_M", 0x10040).unwrap();
+        let template = home.path.join(BTRFS_TEMPLATE);
+        assert!(std::process::Command::new("zstd")
+            .args(["-q", "-o"])
+            .arg(&template)
+            .arg(&image)
+            .status()
+            .unwrap()
+            .success());
+        let magic = |disk: &Path| {
+            let mut read = [0; 8];
+            fs::File::open(disk)
+                .unwrap()
+                .read_exact_at(&mut read, 0x10040)
+                .unwrap();
+            read
+        };
+
+        fs::create_dir_all(vm_data_dir("m1")).unwrap();
+        raw_storage_disk("m1", 20, Some(&template)).unwrap();
+        let disk = storage_disk_path("m1");
+        assert_eq!(&magic(&disk), b"_BHRfS_M");
+        assert!(
+            disk.with_extension("formatted").exists(),
+            "the btrfs disk is not marked"
+        );
+        assert_eq!(fs::metadata(&disk).unwrap().len(), 20 << 30);
+        assert!(
+            fs::metadata(&disk).unwrap().blocks() * 512 < 1 << 20,
+            "expanding the template filled the sparse disk"
+        );
+
+        fs::create_dir_all(vm_data_dir("m2")).unwrap();
+        raw_storage_disk("m2", 20, Some(&home.path.join("missing.zst"))).unwrap();
+        let disk = storage_disk_path("m2");
+        assert_eq!(magic(&disk), [0; 8]);
+        assert_eq!(fs::metadata(&disk).unwrap().len(), 20 << 30);
+        assert_eq!(disk.with_extension("formatted").exists(), mkfs_available());
+    }
     // TEST_SCENARIO: an update reshapes a stopped machine in place — size, env, and a disk that grows — so the agent keeps its disk across a resize.
     #[test]
     fn an_update_reshapes_the_stopped_machine_and_keeps_its_disk() {
         let home = Home::new("update");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, None).unwrap();
         let applied = spec();
         let launch = launch();
         smolvm
@@ -1564,7 +1666,7 @@ mod tests {
         let home = Home::new("grow-unknown");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, None).unwrap();
         let created = spec();
         let launch = launch();
         smolvm
@@ -1613,7 +1715,7 @@ mod tests {
     #[test]
     fn a_failed_create_does_not_repeat_the_agents_secrets() {
         let home = Home::new("redact");
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, None).unwrap();
         let mut spec = spec();
         spec.env.insert("TOKEN".into(), "hunter22".into());
         spec.cpus = 0;
@@ -1647,7 +1749,7 @@ mod tests {
         let home = Home::new("zombie");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, None).unwrap();
         let spec = spec();
         let launch = launch();
         smolvm
@@ -1707,7 +1809,7 @@ mod tests {
         let home = Home::new("unconfirmed");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, None).unwrap();
         let spec = spec();
         let launch = launch();
         smolvm
@@ -1765,7 +1867,7 @@ mod tests {
         let home = Home::new("delete");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, None).unwrap();
         smolvm.delete("never-created").unwrap();
 
         let spec = spec();
@@ -1793,7 +1895,7 @@ mod tests {
         let home = Home::new("leftover");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, None).unwrap();
         let spec = spec();
         let launch = launch();
         let machine = Machine {
@@ -1831,7 +1933,7 @@ mod tests {
         for dir in [&share, &old_tree, &new_tree] {
             fs::create_dir_all(dir).unwrap();
         }
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, None).unwrap();
         let old = spec();
         let old_launch = launch();
         smolvm

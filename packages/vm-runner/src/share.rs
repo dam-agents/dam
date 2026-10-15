@@ -96,6 +96,18 @@ fn digest_of(seed: &SeedResult) -> SeedDigest {
     }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the share's mark that the machine's guest swaps to zram, which platform-init reads at guest::ZRAM_SWAP_PATH.
+pub const ZRAM_SWAP_FILE: &str = "zram-swap";
+
+pub fn mark_zram_swap(share: &Path, on: bool) -> io::Result<()> {
+    let mark = share.join(ZRAM_SWAP_FILE);
+    if on {
+        files::write(&mark, b"1", CA_MODE)
+    } else {
+        remove_if_present(&mark)
+    }
+}
+
 pub fn mark_storage_short(share: &Path, request: Option<&str>) -> io::Result<()> {
     let mark = share.join(STORAGE_SHORT_FILE);
     let Some(request) = request else {
@@ -329,8 +341,24 @@ mod tests {
             format!("{}/{STORAGE_ROOM_FILE}", guest::SHARE_PATH),
             "the guest looks for its storage grant where the runner does not write it"
         );
+        assert_eq!(
+            guest::ZRAM_SWAP_PATH,
+            format!("{}/{ZRAM_SWAP_FILE}", guest::SHARE_PATH),
+            "the guest looks for the zram mark where the runner does not set it"
+        );
     }
 
+    // TEST_SCENARIO: the zram mark follows the install at every boot: an install that turns compressed swap off must take it away from machines that booted with it, or they would keep swapping after the switch.
+    #[test]
+    fn the_zram_mark_follows_the_install() {
+        let dir = TempDir::new("zram");
+        mark_zram_swap(dir.path(), true).unwrap();
+        assert!(dir.path().join(ZRAM_SWAP_FILE).exists());
+        mark_zram_swap(dir.path(), true).unwrap();
+        mark_zram_swap(dir.path(), false).unwrap();
+        assert!(!dir.path().join(ZRAM_SWAP_FILE).exists());
+        mark_zram_swap(dir.path(), false).unwrap();
+    }
     // TEST_SCENARIO: the expected seed in the share is the expectation of the boot about to run. A spec that expects a seed writes it in the form platform-init parses, and a spec that no longer expects one removes it — otherwise a machine whose migration has ended, and whose seed the controller has deleted, would be refused by platform-init on every later boot.
     #[test]
     fn the_expected_seed_follows_the_spec() {

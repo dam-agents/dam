@@ -61,6 +61,26 @@ func TestARunnerTheInstallLetsNestIsStartedWithTheNestingArgs(t *testing.T) {
 	}))
 }
 
+// TEST_SCENARIO: an install that sets virtualization.runner.storageFilesystem to btrfs starts its runners with the fixture's args plus the btrfs args the runner's tests parse. One on ext4 is held to the plain fixture, so its runner pods do not roll.
+func TestARunnerTheInstallGivesBtrfsIsStartedWithTheBtrfsArgs(t *testing.T) {
+	var base, btrfs []string
+	readRunnerContract(t, "runner-args.json", &base)
+	readRunnerContract(t, "runner-args-btrfs.json", &btrfs)
+	assert.Equal(t, append(base, btrfs...), renderedRunnerArgsWith(t, func(spec *config.VMRunnerSpec) {
+		spec.StorageFilesystem = "btrfs"
+	}))
+}
+
+// TEST_SCENARIO: an install that sets virtualization.runner.zramSwap starts its runners with the fixture's args plus the zram args the runner's tests parse.
+func TestARunnerTheInstallGivesZramSwapIsStartedWithTheZramArgs(t *testing.T) {
+	var base, zram []string
+	readRunnerContract(t, "runner-args.json", &base)
+	readRunnerContract(t, "runner-args-zram.json", &zram)
+	assert.Equal(t, append(base, zram...), renderedRunnerArgsWith(t, func(spec *config.VMRunnerSpec) {
+		spec.ZramSwap = true
+	}))
+}
+
 // TEST_SCENARIO: the runner publishes each machine on a port from the range its args name, and the NetworkPolicy admits the api-server to exactly the range it opens. Two ranges that differ leave a machine the api-server cannot dial, with nothing in any status saying why, so both are rendered from one pair of constants and held equal here.
 func TestTheRunnerPublishesMachinesOnlyOnPortsItsPolicyOpens(t *testing.T) {
 	flag := func(args []string, name string) int {

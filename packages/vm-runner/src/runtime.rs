@@ -416,12 +416,14 @@ pub fn discard_overlay(id: &str, proc_root: &Path, vm_dir: &Path, vmms: Vec<i32>
 
 // UNIT_BOUNDARY_DESCRIPTION: where ext4 keeps its magic number: the superblock starts 1024 bytes into the disk, and its magic, 0xEF53 little-endian, is 56 bytes into the superblock.
 const EXT4_MAGIC_OFFSET: u64 = 1024 + 56;
+// UNIT_BOUNDARY_DESCRIPTION: where btrfs keeps its magic: the primary superblock starts 64 KiB into the disk, and its magic, `_BHRfS_M`, is 64 bytes into the superblock.
+const BTRFS_MAGIC_OFFSET: u64 = 0x10000 + 0x40;
 
-// UNIT_BOUNDARY_DESCRIPTION: marks a storage disk that holds a filesystem as formatted when its marker is missing, so smolvm never copies its template over it. smolvm copies the template over any storage disk without the marker at every start, and it writes the marker only once that copy has also been resized to the size asked for. A resize that fails — on a host without resize2fs, every disk smaller than the template — leaves a disk without the marker, and every later start then replaced it, and the agent's home on it, with the template. A disk with an ext4 superblock was formatted whatever its marker says, so it is marked here. Only a disk that holds no filesystem yet, the sparse file a create makes, is left for smolvm to format.
+// UNIT_BOUNDARY_DESCRIPTION: marks a storage disk that holds a filesystem as formatted when its marker is missing, so smolvm never copies its template over it. smolvm copies the template over any storage disk without the marker at every start, and it writes the marker only once that copy has also been resized to the size asked for. A resize that fails — on a host without resize2fs, every disk smaller than the template — leaves a disk without the marker, and every later start then replaced it, and the agent's home on it, with the template. A disk with an ext4 or btrfs superblock was formatted whatever its marker says, so it is marked here. Only a disk that holds no filesystem yet, the sparse file a create makes, is left for smolvm to format.
 fn keep_formatted_storage(id: &str, vm_dir: &Path) -> anyhow::Result<()> {
     let disk = vm_dir.join(STORAGE_DISK_FILENAME);
     let marker = disk.with_extension("formatted");
-    if marker.exists() || !holds_ext4(&disk)? {
+    if marker.exists() || !holds_filesystem(&disk)? {
         return Ok(());
     }
     tracing::warn!(
@@ -431,19 +433,22 @@ fn keep_formatted_storage(id: &str, vm_dir: &Path) -> anyhow::Result<()> {
     fs::write(&marker, "1").with_context(|| format!("marking {} formatted", disk.display()))
 }
 
-fn holds_ext4(disk: &Path) -> anyhow::Result<bool> {
+fn holds_filesystem(disk: &Path) -> anyhow::Result<bool> {
     use std::os::unix::fs::FileExt;
     let file = match fs::File::open(disk) {
         Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(e) => return Err(e).with_context(|| format!("reading {}", disk.display())),
     };
-    let mut magic = [0; 2];
-    match file.read_exact_at(&mut magic, EXT4_MAGIC_OFFSET) {
-        Ok(()) => Ok(magic == [0x53, 0xEF]),
-        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
-        Err(e) => Err(e).with_context(|| format!("reading {}", disk.display())),
-    }
+    let magic_at = |offset, magic: &[u8]| {
+        let mut read = vec![0; magic.len()];
+        match file.read_exact_at(&mut read, offset) {
+            Ok(()) => Ok(read == magic),
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
+            Err(e) => Err(e).with_context(|| format!("reading {}", disk.display())),
+        }
+    };
+    Ok(magic_at(EXT4_MAGIC_OFFSET, &[0x53, 0xEF])? || magic_at(BTRFS_MAGIC_OFFSET, b"_BHRfS_M")?)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a VMM killed with SIGKILL may take to be gone. A process leaves at once unless it is stuck in the kernel, and one stuck there keeps the disks open however long it is waited on.
