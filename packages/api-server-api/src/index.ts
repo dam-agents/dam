@@ -171,6 +171,7 @@ export {
 export type {
   SpendCeilingSource,
   SpendCeilingView,
+  SpendConnectionTotal,
   SpendDailyInput,
   SpendDailyRow,
   SpendLimitScope,

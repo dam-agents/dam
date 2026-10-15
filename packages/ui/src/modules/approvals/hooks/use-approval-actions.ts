@@ -34,6 +34,7 @@ interface ApprovalAction {
 
 interface ApprovalActions {
   actions: readonly ApprovalAction[];
+  primaryLabel: string;
   inflight: boolean;
   hostLabel: string | null;
   expiredNote: string | null;
@@ -84,7 +85,29 @@ export function useApprovalActions(row: ApprovalView): ApprovalActions {
     }
   };
 
-  const actions: ApprovalAction[] = [
+  const spendLimitActions: ApprovalAction[] = [
+    {
+      id: "allow-once",
+      label: "Continue",
+      icon: Checkmark,
+      danger: false,
+      disabled: inflight || !live,
+      tooltip: live ? undefined : "The question expired at midnight UTC",
+      resolvedLabel: "Continued",
+      run: () => direct(() => approveOnce.mutateAsync({ id: row.id })),
+    },
+    {
+      id: "dismiss",
+      label: "Stop for today",
+      icon: Close,
+      danger: true,
+      disabled: inflight || !live,
+      resolvedLabel: "Stopped for today",
+      run: () => direct(() => dismiss.mutateAsync({ id: row.id })),
+    },
+  ];
+
+  const egressActions: ApprovalAction[] = [
     {
       id: "allow-once",
       label: "Allow once",
@@ -154,8 +177,11 @@ export function useApprovalActions(row: ApprovalView): ApprovalActions {
     },
   ];
 
+  const spendLimit = row.type === "spend_limit";
+
   return {
-    actions,
+    actions: spendLimit ? spendLimitActions : egressActions,
+    primaryLabel: spendLimit ? "Continue" : "Allow",
     inflight,
     hostLabel,
     expiredNote:

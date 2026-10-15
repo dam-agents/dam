@@ -129,7 +129,7 @@ export function createSpendService(deps: {
       const day = utcDay(now);
       const agentId = input?.agentId;
       if (agentId) await requireOwned(agentId);
-      const [limits, ceiling, rows] = await Promise.all([
+      const [limits, ceiling, rows, byConnection] = await Promise.all([
         deps.limits.applying(
           { agentId: agentId ?? null, ownerSub: deps.ownerSub },
           day,
@@ -141,6 +141,13 @@ export function createSpendService(deps: {
           from: day,
           to: day,
         }),
+        agentId
+          ? deps.ledger.byConnection({
+              ownerSub: deps.ownerSub,
+              agentId,
+              day,
+            })
+          : [],
       ]);
       const spent = new Map<string, SpendTotal>();
       for (const row of rows) {
@@ -159,6 +166,7 @@ export function createSpendService(deps: {
         limits: await Promise.all(limits.map((limit) => limitView(limit, day))),
         ceiling: ceiling ? await ceilingView(ceiling, day) : null,
         spent: [...spent.values()],
+        spentByConnection: byConnection,
       };
     },
 

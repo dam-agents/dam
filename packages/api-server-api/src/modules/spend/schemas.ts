@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const SPEND_DAILY_MAX_DAYS = 92;
+export const SPEND_DAILY_MAX_DAYS = 366;
 
 export const MICROS_PER_UNIT = 1_000_000;
 

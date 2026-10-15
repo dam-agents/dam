@@ -1,6 +1,6 @@
 # Spend limits
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 ## Overview
 
@@ -251,3 +251,20 @@ The ceiling asks nothing.
 
 **The agent's view.** Through a platform tool, an agent reads the limits that count its calls, today's spend, what is left, the state of each limit, and when the day resets.
 It has no tool to set, clear or continue a limit.
+
+## Screens
+
+The owner sets each limit where the work happens, and each limit shows its metered spend, what is left, and a meter:
+
+- **The agent's page:** the Usage section sets the agent limit and shows today's Metered Spend and when the day resets.
+  When the own limit or the ceiling stops the agent first, it says so.
+  The agent's summary shows today's spend and the limit.
+- **The agent's Providers section:** each granted Connection that takes a limit sets its Connection limit there, in the Connection's unit, next to today's spend on that Connection.
+- **Settings, Usage tab:** the own limit, and the ceiling with its state when one applies.
+- **Home:** the spend widget shows the dollar Metered Spend of today or of the last 7, 30 or 365 UTC days, the top agents, and today's own limit when one is set.
+  It does not need the telemetry store.
+
+A meter takes the warning colour at 80% of its limit and the danger colour when the limit is reached.
+A sub-agent's page sets no limit: its spend counts for its root driver, so the page names the root driver instead.
+A spend-limit question shows on Home with "Continue" and "Stop for today".
+The rest of the Usage pages still shows the spend that the harnesses report ([metrics](metrics.md)).

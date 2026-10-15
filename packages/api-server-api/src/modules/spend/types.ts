@@ -58,12 +58,17 @@ export interface SpendTotal {
   estimatedCalls: number;
 }
 
+export interface SpendConnectionTotal extends SpendTotal {
+  connectionId: string;
+}
+
 export interface SpendStatus {
   day: string;
   resetsAt: string;
   limits: SpendLimitView[];
   ceiling: SpendCeilingView | null;
   spent: SpendTotal[];
+  spentByConnection: SpendConnectionTotal[];
 }
 
 export interface SpendService {

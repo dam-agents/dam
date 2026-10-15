@@ -3,6 +3,7 @@ import type { TokenSpendByModel } from "api-server-api";
 import { Card } from "@/components/ui/card";
 import { SectionLabel } from "@/components/ui/section-label";
 
+import { AgentSpendLimitCard } from "../../spend/components/agent-spend-limit-card.js";
 import { useMonthlySpend } from "../hooks/use-monthly-spend.js";
 import { fillMonthDays, monthLabel, monthRange } from "../lib/month-range.js";
 import { totalCostUsd } from "../lib/totals.js";
@@ -53,6 +54,7 @@ export function SandboxUsageSection({ agentId }: { agentId: string }) {
 
   return (
     <section className="mb-8">
+      <AgentSpendLimitCard agentId={agentId} />
       <div className="mb-3 flex items-center justify-end gap-4">
         {state !== "unavailable" && (
           <div className="flex items-center gap-3">

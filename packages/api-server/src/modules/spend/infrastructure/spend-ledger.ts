@@ -10,7 +10,11 @@ import {
   spendDaily,
   type Db,
 } from "db";
-import type { SpendDailyRow, SpendUnit } from "api-server-api";
+import type {
+  SpendConnectionTotal,
+  SpendDailyRow,
+  SpendUnit,
+} from "api-server-api";
 import { match } from "ts-pattern";
 import type { CallAmounts, DayCounter, SpendRow } from "../domain/ledger.js";
 
@@ -30,6 +34,11 @@ export interface SpendLedger {
     from: string;
     to: string;
   }): Promise<SpendDailyRow[]>;
+  byConnection(query: {
+    ownerSub: string;
+    agentId: string;
+    day: string;
+  }): Promise<SpendConnectionTotal[]>;
 }
 
 type Counted =
@@ -219,6 +228,32 @@ export function createSpendLedger(db: Db): SpendLedger {
         cacheWrite5mTokens: Number(r.cacheWrite5mTokens),
         cacheWrite1hTokens: Number(r.cacheWrite1hTokens),
         webSearches: Number(r.webSearches),
+      }));
+    },
+
+    async byConnection({ ownerSub, agentId, day }) {
+      const rows = await db
+        .select({
+          connectionId: spendDaily.connectionId,
+          unit: spendDaily.unit,
+          costMicros: sumOf("costMicros"),
+          estimatedCalls: sumOf("estimatedCalls"),
+        })
+        .from(spendDaily)
+        .where(
+          and(
+            eq(spendDaily.ownerSub, ownerSub),
+            eq(spendDaily.payerAgentId, agentId),
+            eq(spendDaily.day, day),
+          ),
+        )
+        .groupBy(spendDaily.connectionId, spendDaily.unit)
+        .orderBy(asc(spendDaily.connectionId), asc(spendDaily.unit));
+      return rows.map((r) => ({
+        connectionId: r.connectionId,
+        unit: r.unit as SpendUnit,
+        costMicros: Number(r.costMicros),
+        estimatedCalls: Number(r.estimatedCalls),
       }));
     },
   };

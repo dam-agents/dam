@@ -6,8 +6,7 @@ Last verified: 2026-10-15
 
 The **metrics** subsystem is the user-facing read path over agent telemetry: it answers *how much have my agents spent, and where* for the signed-in user.
 It backs the two **Usage** surfaces — the Settings tab spanning every agent the user owns, and the per-agent section narrowed to one — with per-model token/cost aggregates, monthly spend per day, spend per session kind, and (unnarrowed) a per-agent spend breakdown, reading live from the columnar telemetry store that [observability](observability.md) fills.
-Home's spend widget reads the same unnarrowed breakdown over a period the user picks.
-It asks for a fresh window every 30 seconds and keeps the last breakdown it has for the period on screen while one loads, so a return to Home shows numbers at once.
+Home's spend widget and each agent's spend summary read Metered Spend instead, which the gateway measures ([spend-limits](spend-limits.md#screens)).
 A separate **Session costs** read serves a different consumer — the cost-per-session line in the sidebar's list of an Agent's Sessions — not either Usage surface.
 It is almost entirely a query surface: it mutates nothing and emits no events.
 Spend is the only question it answers; the raw traces and log records behind those numbers are read by [agent-telemetry](agent-telemetry.md), which opens its own connection to the same store and shares this subsystem's owner scoping but inverts its fail-closed posture on an empty result.
@@ -214,7 +213,7 @@ The telemetry store is optional (it ships with [observability](observability.md)
 When no store endpoint is configured, the metrics service is wired to a **disabled** variant whose every read fails loud with a `PRECONDITION_FAILED` error rather than returning empty results.
 Failing closed is deliberate: an empty success is indistinguishable from "no spend yet" and would silently misreport a bill as zero.
 Both Usage surfaces treat that error as *metrics unavailable on this deployment* and show an unavailable message, distinct from the empty-but-enabled state where a real store simply has no rows for the window.
-Because the verdict is deployment-wide rather than per-window, they withdraw the period control instead of offering months that would fail identically; the per-agent nav summary degrades to its neutral placeholder, and Home's spend widget leaves the page rather than occupy it with an error the user cannot act on.
+Because the verdict is deployment-wide rather than per-window, they withdraw the period control instead of offering months that would fail identically.
 The agent-facing read deliberately inverts this: it answers `available: false` with a reason, as a *success*, because its caller is unattended and needs to report "cost is not measured on this install" and carry on rather than treat a thrown error as a failed task.
 Both variants are chosen once at composition time from the same configuration, so neither can be reached on an install of the other kind.
 

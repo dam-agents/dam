@@ -270,7 +270,8 @@ The new `spend` module in `packages/api-server-api` (`router.ts` plus browser-sa
   - `day` (UTC date) and `resetsAt`;
   - `limits[]`: for each limit, its scope, unit, `amountMicros`, `extensions`, `effectiveMicros`, `spentMicros`, `leftMicros`, and `state` (`ok`, `warn` at 80% or more, `reached`);
   - `ceiling`: `amountMicros`, `spentMicros`, `state`, and its source (`default` or `UserSpendLimit`), or `null` when off;
-  - `spent[]`: today's metered spend per unit, with the count of estimated calls.
+  - `spent[]`: today's metered spend per unit, with the count of estimated calls;
+  - `spentByConnection[]`: with an `agentId`, today's metered spend of that agent per Connection and unit, for the Providers section; empty without an `agentId` (slice 07, decided 2026-10-15).
 - `spend.setLimit({ scope, amountMicros })`: set a limit, or remove it with `amountMicros: null`.
   `scope` is one of `{ kind: "agent", agentId }`, `{ kind: "owner" }`, `{ kind: "connection", agentId, connectionId }`.
   The unit follows from the scope.
@@ -278,6 +279,7 @@ The new `spend` module in `packages/api-server-api` (`router.ts` plus browser-sa
   It needs `agents:manage` and an unrestricted principal, so an API key bound to an agent cannot change a limit.
 - `spend.daily({ agentId?, from, to })`: metered spend per UTC day, payer agent and unit, with the count of estimated calls, for the meters.
   Slice 03 adds it, so that slice 03 can be verified.
+  It accepts at most 366 days, so that Home can show one year (slice 07 raised it from 92, decided 2026-10-15).
 - "Continue" uses the existing approvals router, so the existing UI and CLI actions work.
   Any allow action (`approveOnce`, `approvePermanent`, `approveHost`) on a `spend_limit` approval adds one extension.
   `dismiss` and `denyForever` leave the limit reached.
@@ -335,7 +337,7 @@ Amounts are integers in micro-units of the unit, like the existing `cost_usd_mic
 | 04  | [Agent limit, refusal and "continue?"](./04-agent-limit-and-refusal.md)    | Limit tables, `spend` router, gate refusal per API path, `spend_limit` approval, continue, chat error rule, CLI `dam spend`, harness refusal tests. | 03         | ✅   |
 | 05  | [Ceiling, own limit, provider limits](./05-ceiling-and-provider-limits.md) | `UserSpendLimit` CRD and Helm default, own daily limit, Connection limits in their units, ceiling refusal, CLI flags.                               | 04         | ✅   |
 | 06  | [Stop unattended work, agent read](./06-unattended-work.md)                | Schedule holds, sub-agent spawn refusal, Slack and Telegram holds, owner question on a hold, read-only MCP tool.                                    | 04         | ✅   |
-| 07  | [Screens](./07-screens.md)                                                 | Limit fields and meters in the agent page, Providers section, Settings and Home; approval card text.                                                | 04, 05     |      |
+| 07  | [Screens](./07-screens.md)                                                 | Limit fields and meters in the agent page, Providers section, Settings and Home; approval card text.                                                | 04, 05     | ✅   |
 
 ```mermaid
 flowchart LR

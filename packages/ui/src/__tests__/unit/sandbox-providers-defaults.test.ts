@@ -48,6 +48,14 @@ vi.mock("../../modules/agents/api/harness-config.js", () => ({
   }),
 }));
 
+vi.mock("../../modules/agents/api/queries.js", () => ({
+  useAgentsList: () => [],
+}));
+
+vi.mock("../../modules/spend/components/connection-spend-limit.js", () => ({
+  ConnectionSpendLimit: () => null,
+}));
+
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   useHarnessCatalog: () => ({
     data: {

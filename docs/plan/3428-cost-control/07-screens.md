@@ -44,6 +44,8 @@ A limit field is a one-field inline edit, so controlled `useState` is enough (no
      Today it shows the agent-reported month total.
 3. **Providers section** (`modules/sandboxes/components/sandbox-providers-section.tsx`).
    In each granted Connection card, add a Connection limit with `SpendLimitField` in the Connection's unit, and today's spend on that Connection.
+   Today's spend comes from the new `spentByConnection[]` of `spend.status({ agentId })`, so a card shows it also without a limit (decided 2026-10-15).
+   The ledger already keeps the Connection, so the server only groups today's rows of the agent by Connection and unit.
    Hide it for `free` Connections, for `openai` and `bedrock` Connections (not priced in this feature), and for Connections that are not metered.
    The contract's `connectionLimitRule(templateId)` (slice 05) gives this rule and the Connection's unit, and the server uses the same rule.
 4. **Settings.**
@@ -55,6 +57,9 @@ A limit field is a one-field inline edit, so controlled `useState` is enough (no
    `SpendWidget` (`modules/home/components/spend-widget.tsx`) reads `spend.daily` (metered, `usd`) for its periods and its top agents.
    When an own limit is set, it shows today's own-limit meter.
    It no longer returns nothing when the telemetry store is off, because the metered spend does not need it.
+   The periods become UTC days, like the limits: 1d is today, 1w the last 7 days, 1m the last 30 days and 1y the last 365 days, today included.
+   For 1y, the contract's `SPEND_DAILY_MAX_DAYS` goes from 92 to 366 (decided 2026-10-15).
+   A deleted agent shows its id, as the feed does.
 6. **Approval card.**
    - `modules/home/lib/approval-copy.ts`: for `spend_limit`, the headline "Reached its spend limit" and a detail line with the agent, the limit and today's amount.
      For example: "$10.00 of $10.00 today.
@@ -63,9 +68,13 @@ A limit field is a one-field inline edit, so controlled `useState` is enough (no
    - `modules/home/components/feed-approval-card.tsx` and `modules/approvals/hooks/use-approval-actions.ts`: for `spend_limit`, the primary action is "Continue" (allow once), and the menu has only "Stop for today" (dismiss).
      Hide the actions that write egress rules.
    - `modules/home/hooks/use-approval-toasts.tsx` and the banner copy (`approvalsBannerCopy`): use the same texts.
-7. **Brand.**
+7. **Sub-agent pages** (decided 2026-10-15).
+   A sub-agent's spend and limits count for its root driver, so its own limit never applies and its own meter stays at 0.
+   On the page of an agent that a driver spawned, the Usage card and the Providers section show no limit field and no meter.
+   One line says that its spend counts for the limits of its root driver, with the root driver's name.
+8. **Brand.**
    All copy uses `getBrand()` (`packages/ui/src/brand.ts`) where it names the product.
-8. **Docs** (same commit):
+9. **Docs** (same commit):
    - `docs/architecture/spend-limits.md`: a short "Screens" section (where each limit is set, the 80% colour, the metered number on Home and on the agent).
    - `docs/architecture/home-feed.md`: the feed also shows spend-limit questions, with "Continue" and "Stop for today".
    - Bump `Last verified:`, and run `mise run fix:markdown`.
@@ -76,6 +85,8 @@ A limit field is a one-field inline edit, so controlled `useState` is enough (no
   Editing the limit saves it, and clearing it removes it.
 - [ ] The meter shows the warning colour at 80% or more and the danger colour at 100% or more, in light and dark themes.
 - [ ] The Providers section shows a limit field in the Connection's unit for each metered, paid Connection, and none for Curve Bender.
+  Each such card shows today's spend on its Connection, also without a limit.
+- [ ] A sub-agent's page shows no limit field and names its root driver instead.
 - [ ] Settings › Usage shows the own limit and, when set, the ceiling.
 - [ ] Home's spend widget shows the metered spend, also when the telemetry store is off.
 - [ ] A spend-limit question shows on Home with "Continue" and "Stop for today".

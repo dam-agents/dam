@@ -2,6 +2,7 @@ import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
 
+import { OwnSpendLimitCard } from "../../spend/components/own-spend-limit-card.js";
 import { AgentSpendBars } from "../components/agent-spend-bars.js";
 import { ModelSpendBars } from "../components/model-spend-bars.js";
 import { MonthSwitcher } from "../components/month-switcher.js";
@@ -51,6 +52,7 @@ export function UsageView() {
     return (
       <div>
         <PageHeader title="Usage" description={PAGE_DESCRIPTION} />
+        <OwnSpendLimitCard />
         <UsageNotice>{readFailureMessage(true, label)}</UsageNotice>
       </div>
     );
@@ -72,6 +74,7 @@ export function UsageView() {
           </div>
         }
       />
+      <OwnSpendLimitCard />
 
       {}
       {state === "failed" && (
