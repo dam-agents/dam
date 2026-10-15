@@ -69,7 +69,7 @@ func TestRunnerMemoryIsReclaimedOnlyWhenIdlePeersCoverTheNeed(t *testing.T) {
 		require.NoError(t, err)
 		r.noteMachineUse("idle-peer", measured(700))
 
-		freed, err := r.reclaimRunnerMemory(ctx, testOwner, agent.Name, tc.need, tc.partial)
+		freed, err := r.reclaimRunnerMemory(ctx, testOwner, agent.Name, func() (int, error) { return tc.need, nil }, tc.partial)
 		require.NoError(t, err)
 		assert.Equal(t, tc.hibernated, freed, "need %d MiB (partial %v) against a peer counted at 956 MiB", tc.need, tc.partial)
 		peer, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "idle-peer", metav1.GetOptions{})
@@ -266,7 +266,7 @@ func TestASilentPeerIsReclaimedForMemoryOnlyAsAPressureLastResort(t *testing.T) 
 		require.NoError(t, err)
 		r.noteMachineUse("silent-peer", measured(700))
 
-		freed, err := r.reclaimRunnerMemory(ctx, testOwner, agent.Name, 800, tc.partial)
+		freed, err := r.reclaimRunnerMemory(ctx, testOwner, agent.Name, func() (int, error) { return 800, nil }, tc.partial)
 		require.NoError(t, err)
 		assert.Equal(t, tc.hibernated, freed, "partial=%v answered=%v", tc.partial, tc.answered)
 	}
@@ -295,4 +295,87 @@ func TestAPressureSignalRightAfterAReclaimHibernatesNothingMore(t *testing.T) {
 	peer, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "idle-peer", metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.Empty(t, peer.GetAnnotations()[annReclaimedAt], "a signal inside the cooldown hibernated another agent")
+}
+
+// TEST_SCENARIO: a peer woken long ago whose cold boot is still in progress has an old last activity, but hibernating it for another start loses the start it is waiting for, so a start's reclaim passes it over. Once its boot is done it is reclaimable as before, and the runner's pressure signal may still take it, as the OOM kill would stop it too.
+func TestAPeerStillBootingIsNotReclaimedForAnotherStart(t *testing.T) {
+	ctx := context.Background()
+	booting := `[{"type":"` + apiv1.ConditionAgentPodReady + `","status":"False","reason":"` + vmrunner.ReasonNotReady + `"},{"type":"` + apiv1.ConditionReady + `","status":"False","reason":"PodsNotReady"}]`
+	ready := `[{"type":"` + apiv1.ConditionAgentPodReady + `","status":"True","reason":"PodReady"},{"type":"` + apiv1.ConditionReady + `","status":"True","reason":"AllPodsReady","lastTransitionTime":"` + time.Now().UTC().Add(-time.Minute).Format(time.RFC3339) + `"}]`
+	for _, tc := range []struct {
+		name       string
+		conditions string
+		partial    bool
+		hibernated bool
+	}{
+		{"booting", booting, false, false},
+		{"booting under pressure", booting, true, true},
+		{"booted", ready, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			agent := vmAgentCR()
+			r, _, _ := setupVMReconciler(t, agent)
+			r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
+			peerVMAgent(t, r, "peer", "4Gi", "20Gi", true)
+			_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, "peer", "application/merge-patch+json",
+				[]byte(`{"metadata":{"annotations":{"`+annLastActivity+`":"`+time.Now().UTC().Add(-10*time.Minute).Format(time.RFC3339)+`"}},"status":{"conditions":`+tc.conditions+`}}`),
+				metav1.PatchOptions{})
+			require.NoError(t, err)
+			r.noteMachineUse("peer", measured(700))
+
+			freed, err := r.reclaimRunnerMemory(ctx, testOwner, agent.Name, func() (int, error) { return 800, nil }, tc.partial)
+			require.NoError(t, err)
+			assert.Equal(t, tc.hibernated, freed)
+		})
+	}
+}
+
+// TEST_SCENARIO: a refused start and the memory pass reclaim for one owner from different goroutines. Once the start's reclaim has hibernated the idle agents its need called for, those agents no longer count, so the pass that follows sees the owner under its threshold and hibernates nothing more, rather than choosing more agents for room already freed. The runner's measured working set still holds their machines until they stop, so a pressure signal right after hibernates nothing more either.
+func TestAReclaimAfterAnotherDoesNotCountItsVictimsAgain(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("8Gi")}}
+	r.config.VM.Runner.BootMiB = 1024
+	ctx := context.Background()
+	r.vmRunning.Store(agent.Name, false)
+	var peers []*apiv1.Agent
+	for _, name := range []string{"idle-a", "idle-b", "idle-c", "idle-d", "idle-e", "idle-f", "idle-g", "idle-h"} {
+		peerVMAgent(t, r, name, "4Gi", "20Gi", true)
+		_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, name, "application/merge-patch+json",
+			[]byte(`{"metadata":{"annotations":{"`+annLastActivity+`":"`+time.Now().UTC().Add(-10*time.Minute).Format(time.RFC3339)+`"}}}`),
+			metav1.PatchOptions{})
+		require.NoError(t, err)
+		_, err = r.client.AppsV1().StatefulSets("test-agents").Patch(ctx, GatewayName(name), "application/merge-patch+json",
+			[]byte(`{"metadata":{"labels":{"`+LabelAgent+`":"`+name+`"}}}`), metav1.PatchOptions{})
+		require.NoError(t, err)
+		node.mu.Lock()
+		node.statuses[name] = measured(700)
+		node.mu.Unlock()
+		r.noteMachineUse(name, measured(700))
+		r.vmRunning.Store(name, true)
+		peer := vmAgentCR()
+		peer.Name = name
+		peers = append(peers, peer)
+	}
+	reclaimed := func() int {
+		n := 0
+		for _, p := range peers {
+			got, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, p.Name, metav1.GetOptions{})
+			require.NoError(t, err)
+			if got.GetAnnotations()[annReclaimedAt] != "" {
+				n++
+			}
+		}
+		return n
+	}
+
+	require.NoError(t, r.reclaimForRefusedStart(ctx, agent, testOwner))
+	require.Equal(t, 2, reclaimed(), "the start needs 992 MiB, two agents counted at 956 MiB each")
+
+	r.ownerMemoryPass(ctx, testOwner, peers, nil)
+	assert.Equal(t, 2, reclaimed(), "the pass counted the agents the start's reclaim hibernated and hibernated more")
+
+	r.ownerMemoryPass(ctx, testOwner, peers, &vmrunner.RunnerPressure{Version: 2, Pressured: true, LimitMiB: 8192, WorkingSetMiB: 8000})
+	assert.Equal(t, 2, reclaimed(), "the runner's working set still holds the machines the start's reclaim is stopping, and the signal hibernated more for them")
 }

@@ -29,12 +29,23 @@ macro_rules! logf {
     ($($arg:tt)*) => { log(format_args!($($arg)*)) };
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: every caller is a condition under which the guest would come up without its persisted paths. An agent that runs and quietly discards its work looks healthy until the machine stops, so a machine that cannot persist does not boot at all.
+// UNIT_BOUNDARY_DESCRIPTION: every caller is a condition under which the guest would come up without its persisted paths. An agent that runs and quietly discards its work looks healthy until the machine stops, so a machine that cannot persist does not boot at all. A step that failed because the disk has no space or no inode left says the home is full (guest::HOME_FULL), so the runner reports a full home and its fix, more storage, rather than a boot that failed for no reason it names.
 macro_rules! fatal {
     ($($arg:tt)*) => {{
-        announce(&format!("FATAL: {}", format_args!($($arg)*)));
+        announce(&fatal_line(&format!("{}", format_args!($($arg)*))));
         exit(1)
     }};
+}
+
+fn fatal_line(message: &str) -> String {
+    let full = [libc::ENOSPC, libc::EDQUOT]
+        .iter()
+        .any(|code| message.contains(&io::Error::from_raw_os_error(*code).to_string()));
+    if full {
+        format!("FATAL: {message}; {}", guest::HOME_FULL)
+    } else {
+        format!("FATAL: {message}")
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a line the runner must be able to read as well as the boot log. The boot log is on the guest's disk, which the host never reads, and before it is open stderr is /dev/null. The kernel log reaches the machine's console, whose end the runner puts in the Agent's status when a boot fails or goes quiet, so these lines go there too.
@@ -96,6 +107,7 @@ pub fn run(command: Vec<OsString>) -> ! {
     );
     mount_scratch(&root);
     let trust = offer_trust_cache(&root);
+    let guard = pool_guard(&root);
     leave_disk(&root);
     share_mounts();
     enter_workdir(&workdir);
@@ -110,6 +122,9 @@ pub fn run(command: Vec<OsString>) -> ! {
     std::thread::spawn(reclaim_cold_cache);
     std::thread::spawn(evict_scratch);
     std::thread::spawn(trim_freed_blocks);
+    if let Some(guard) = guard {
+        std::thread::spawn(move || guard_pool(guard));
+    }
     supervise(&binary, &command, trust.as_deref())
 }
 
@@ -337,10 +352,24 @@ fn fresh_root(disk: &Path) {
     if let Err(e) = layers.clear(fresh.is_some(), stamp) {
         fatal!("{e}");
     }
-    for dir in [&layers.upper, &layers.work, &layers.merged] {
-        if let Err(e) = mkdir_all(dir) {
-            fatal!("creating {}: {e}", dir.display());
+    let make = || {
+        [&layers.upper, &layers.work, &layers.merged]
+            .into_iter()
+            .try_for_each(|dir| {
+                mkdir_all(dir).map_err(|e| {
+                    io::Error::new(e.kind(), format!("creating {}: {e}", dir.display()))
+                })
+            })
+    };
+    if let Err(e) = make().or_else(|e| {
+        if !out_of_room(&e) {
+            return Err(e);
         }
+        logf!("{e}; deleting what earlier boots left to delete, and trying again");
+        free_room_for_boot(disk);
+        make()
+    }) {
+        fatal!("{e}");
     }
     match (fresh, booting.as_deref()) {
         (None, _) => logf!(
@@ -922,6 +951,28 @@ fn mount_scratch(root: &Path) {
     });
 }
 
+fn out_of_room(e: &io::Error) -> bool {
+    matches!(e.raw_os_error(), Some(libc::ENOSPC | libc::EDQUOT))
+        || e.kind() == io::ErrorKind::StorageFull
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what a boot that found the disk full deletes at once, before the step that failed is tried again: the root layers and scratch folders earlier boots moved aside, which are otherwise deleted in the background only after a boot that succeeded, and the last boot's /tmp and /var/tmp, which this boot would empty anyway. A disk with no inode left cannot even create the empty work layer the boot needs, so without this the agent never boots again although its home is intact. Nothing of the home or the kept root is touched.
+fn free_room_for_boot(disk: &Path) {
+    let layers = FreshRoot::on(disk);
+    purge_discarded(&layers.store, &DISCARDED_LAYERS);
+    let scratch = guest::system_store(disk, SCRATCH_STORE);
+    let names: Vec<String> = SCRATCH_DIRS
+        .map(|(dir, _)| dir)
+        .into_iter()
+        .chain(RETIRED_SCRATCH)
+        .map(scratch_name)
+        .collect();
+    for name in &names {
+        let _ = remove_all(&scratch.join(name));
+    }
+    purge_discarded(&scratch, &names);
+}
+
 fn scratch_name(dir: &str) -> String {
     dir.trim_start_matches('/').replace('/', "-")
 }
@@ -960,11 +1011,12 @@ fn purge_discarded(dir: &Path, names: &[impl AsRef<str>]) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: scratch on the disk shares it with the agent's home, so a tool that fills /tmp or its home cache could leave the agent no room for its work. Every EVICT_INTERVAL, while the disk has less than EVICT_BELOW_PERCENT of it free or the runner marks the owner's claim short of room, the scratch folders lose whole entries, until EVICT_UNTIL_PERCENT is free and the mark is gone, or only entries used within the last EVICT_AGES pass are left. An entry is one name directly in a scratch folder, such as ~/.cache/go-build or /tmp/pr-body.md, and it goes whole or not at all: a tool that loses some of its cache's files and keeps the rest sees a half cache that looks complete, and fails on it with an error that says nothing about the disk. An entry counts as used at the newest modification or change time anywhere in it. Access times are not counted: the disk is mounted relatime, so a read often does not move them. The disk is a sparse file on that claim, and the guest agent's trim hands what this frees back to it. Each eviction goes to the console, so the host sees why a cache vanished. A deleted file that is still open frees its space only when it is closed.
+// UNIT_BOUNDARY_DESCRIPTION: scratch on the disk shares it with the agent's home, so a tool that fills /tmp or its home cache could leave the agent no room for its work. Every EVICT_INTERVAL, while the disk has less than EVICT_BELOW_PERCENT of it free, the scratch folders lose whole entries, until EVICT_UNTIL_PERCENT is free or only entries used within the last EVICT_AGES pass are left. A request from the runner that the owner's claim is short (ClaimRequest) is served once, with one pass that stops at the bytes the runner asked this machine for and evicts nothing used within CLAIM_EVICT_AGE: the claim is mostly the agents' homes, which no eviction touches, so a claim that stays short would otherwise give every agent's /tmp a ten-minute life with nothing gained. The runner sends a new request only when the claim fills further. An entry is one name directly in a scratch folder, such as ~/.cache/go-build or /tmp/pr-body.md, and it goes whole or not at all: a tool that loses some of its cache's files and keeps the rest sees a half cache that looks complete, and fails on it with an error that says nothing about the disk. An entry counts as used at the newest modification or change time anywhere in it. Access times are not counted: the disk is mounted relatime, so a read often does not move them. The disk is a sparse file on that claim, and the guest agent's trim hands what this frees back to it. Each eviction goes to the console, so the host sees why a cache vanished. A deleted file that is still open frees its space only when it is closed.
 const EVICT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 const EVICT_BELOW_PERCENT: u64 = 10;
 const EVICT_UNTIL_PERCENT: u64 = 20;
 const EVICT_AGES: [u64; 4] = [7 * 86_400, 86_400, 3_600, 600];
+const CLAIM_EVICT_AGE: u64 = 3_600;
 
 // UNIT_BOUNDARY_DESCRIPTION: the Cache Directory Tagging Specification's mark (bford.info/cachedir) that a directory holds only a cache its tool can rebuild. Go, cargo and ccache write it. In each pass a tagged entry goes before an untagged one, which may be an agent's work in progress.
 const CACHEDIR_TAG: &str = "CACHEDIR.TAG";
@@ -994,19 +1046,24 @@ fn evict_scratch() {
         .map(|(dir, ..)| PathBuf::from(dir))
         .chain(HOME_CACHES.iter().map(|name| home.join(name)))
         .collect();
-    let mut stuck = false;
+    let (mut stuck, mut served) = (false, None::<String>);
     loop {
         std::thread::sleep(EVICT_INTERVAL);
-        if !evicting(free_percent(home), claim_short(), EVICT_BELOW_PERCENT) {
+        let request = claim_request();
+        if request.is_none() {
+            served = None;
+        }
+        let Some(pass) = eviction_pass(free_percent(home), request.as_ref(), served.as_deref())
+        else {
             stuck = false;
             continue;
-        }
+        };
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |since| since.as_secs());
         let (mut freed, mut deleted) = (0, Vec::new());
-        for entry in scratch_entries(&dirs, disk, now) {
-            if !evicting(free_percent(home), claim_short(), EVICT_UNTIL_PERCENT) {
+        for entry in scratch_entries(&dirs, disk, now, pass.youngest) {
+            if !pass.continues(free_percent(home), freed) {
                 break;
             }
             match evict(&entry.path, now) {
@@ -1018,13 +1075,21 @@ fn evict_scratch() {
                 Err(e) => logf!("WARNING: evicting {} ({e})", entry.path.display()),
             }
         }
+        if let Some(request) = request.filter(|_| pass.claim_only) {
+            served = Some(request.id);
+        }
         if !deleted.is_empty() {
             announce(&format!(
-                "the disk is short of room: deleted {freed} bytes of unused scratch: {}",
+                "the {} is short of room: deleted {freed} bytes of unused scratch: {}",
+                if pass.claim_only {
+                    "owner's storage"
+                } else {
+                    "disk"
+                },
                 deleted.join(" ")
             ));
         }
-        let short = evicting(free_percent(home), false, EVICT_BELOW_PERCENT);
+        let short = disk_short(free_percent(home), EVICT_BELOW_PERCENT);
         if short && !stuck {
             announce(&format!(
                 "the disk is still short of room: no scratch is left that was unused for {} s, so writes to the agent's home may fail",
@@ -1035,8 +1100,8 @@ fn evict_scratch() {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: every entry of the scratch folders that may be evicted at `now`, in the order to evict them: by the first EVICT_AGES pass it is old enough for, then rebuildable before not, then oldest first. An entry is left out when it is younger than the last pass, when it holds the image's trust cache, a socket or fifo a process may still listen on, or a mount, or when it cannot be read.
-fn scratch_entries(dirs: &[PathBuf], disk: u64, now: u64) -> Vec<ScratchEntry> {
+// UNIT_BOUNDARY_DESCRIPTION: every entry of the scratch folders that may be evicted at `now`, in the order to evict them: by the first EVICT_AGES pass it is old enough for, then rebuildable before not, then oldest first. An entry is left out when it was used within `youngest` seconds, when it holds the image's trust cache, a socket or fifo a process may still listen on, or a mount, or when it cannot be read.
+fn scratch_entries(dirs: &[PathBuf], disk: u64, now: u64, youngest: u64) -> Vec<ScratchEntry> {
     let trust = Path::new(TRUST_CACHE_PATH);
     let mut entries: Vec<(usize, ScratchEntry)> = dirs
         .iter()
@@ -1051,6 +1116,7 @@ fn scratch_entries(dirs: &[PathBuf], disk: u64, now: u64) -> Vec<ScratchEntry> {
             let used = if leftover { 0 } else { used };
             let pass = EVICT_AGES
                 .iter()
+                .take_while(|age| **age >= youngest)
                 .position(|age| used < now.saturating_sub(*age))?;
             let rebuildable = leftover || cache_tagged(&path);
             Some((
@@ -1132,13 +1198,202 @@ fn evict(path: &Path, stamp: u64) -> io::Result<bool> {
     Ok(true)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether scratch is still to be freed: the disk has less than `percent` free, or the owner's claim under it is short. A disk whose room cannot be read is left alone unless the claim is short.
-fn evicting(free: Option<u64>, claim_short: bool, percent: u64) -> bool {
-    claim_short || free.is_some_and(|free| free < percent)
+fn disk_short(free: Option<u64>, percent: u64) -> bool {
+    free.is_some_and(|free| free < percent)
 }
 
-fn claim_short() -> bool {
-    Path::new(guest::STORAGE_SHORT_PATH).exists()
+// UNIT_BOUNDARY_DESCRIPTION: the runner's request that this machine give back scratch because the owner's claim is short, read from guest::STORAGE_SHORT_PATH: an id that changes with every new request, and the bytes asked of this machine. A mark from an older runner is empty, and is one request with no byte bound.
+#[derive(Debug, PartialEq)]
+struct ClaimRequest {
+    id: String,
+    bytes: Option<u64>,
+}
+
+fn claim_request() -> Option<ClaimRequest> {
+    fs::read_to_string(guest::STORAGE_SHORT_PATH)
+        .ok()
+        .map(|text| parse_claim_request(&text))
+}
+
+fn parse_claim_request(text: &str) -> ClaimRequest {
+    let text = text.trim();
+    ClaimRequest {
+        id: text.to_string(),
+        bytes: text
+            .split_whitespace()
+            .nth(1)
+            .and_then(|bytes| bytes.parse().ok()),
+    }
+}
+
+#[derive(Debug, PartialEq)]
+struct EvictionPass {
+    youngest: u64,
+    claim_only: bool,
+    bytes: Option<u64>,
+}
+
+impl EvictionPass {
+    // UNIT_BOUNDARY_DESCRIPTION: whether the pass goes on to the next entry: while the disk is short, until EVICT_UNTIL_PERCENT is free; for a claim request alone, until the bytes asked for are freed.
+    fn continues(&self, free: Option<u64>, freed: u64) -> bool {
+        if self.claim_only {
+            self.bytes.is_none_or(|bytes| freed < bytes)
+        } else {
+            disk_short(free, EVICT_UNTIL_PERCENT)
+        }
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether this look evicts, and how: a disk with less than EVICT_BELOW_PERCENT free gets the whole EVICT_AGES ladder, and a claim request not yet served gets one pass of entries unused for CLAIM_EVICT_AGE. A disk whose room cannot be read is left alone unless a request is pending.
+fn eviction_pass(
+    free: Option<u64>,
+    request: Option<&ClaimRequest>,
+    served: Option<&str>,
+) -> Option<EvictionPass> {
+    if disk_short(free, EVICT_BELOW_PERCENT) {
+        return Some(EvictionPass {
+            youngest: EVICT_AGES[EVICT_AGES.len() - 1],
+            claim_only: false,
+            bytes: None,
+        });
+    }
+    let request = request.filter(|request| served != Some(request.id.as_str()))?;
+    Some(EvictionPass {
+        youngest: CLAIM_EVICT_AGE,
+        claim_only: true,
+        bytes: request.bytes,
+    })
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a guest's disk is a sparse file sized at the owner's whole claim, which every other disk of the owner shares, so the guest sees room the claim no longer has, and a write past the claim's last block fails as a broken disk would, for every agent of the owner at once. So platform-init holds the guest to the room the runner grants it (guest::STORAGE_ROOM_PATH): every POOL_GUARD_INTERVAL it sizes a file it preallocates on the disk so that what the guest can still write is the grant, less what the guest wrote since the grant came, or, once that is below POOL_GUARD_FLOOR, the floor once per shortage (PoolGuard). A write past it then fails inside the guest with "no space left on device", which the agent and its tools handle and the runner reports as a full home, and the claim stays writable for the other agents. Preallocated blocks are only marked in the guest's filesystem and never written, so the file takes nothing from the claim. It is an unnamed temporary file: no older platform-init, no image and no agent can find it, and the guest's filesystem frees it whenever the guest stops, however it stops. The floor keeps room for SSH keys, a shell and the agent's own state while every agent of an owner is held near zero, so with N agents running the claim can pass the runner's level by N times the floor.
+const POOL_GUARD_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+const POOL_GUARD_FLOOR: u64 = 256 << 20;
+const POOL_GUARD_STEP: u64 = 16 << 20;
+
+static POOL_GUARD_HELD: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn pool_guard(root: &Path) -> Option<File> {
+    let dir = root.join(guest::SYSTEM_DIR);
+    match OpenOptions::new()
+        .read(true)
+        .write(true)
+        .custom_flags(libc::O_TMPFILE)
+        .mode(0o600)
+        .open(&dir)
+    {
+        Ok(file) => Some(file),
+        Err(e) => {
+            logf!("WARNING: making the guard file in {} ({e}); this agent's writes are not held to the owner's storage", dir.display());
+            None
+        }
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what the guard knows between two looks: the latest grant, as its id and bytes and what the guest had written when it came, and, once the guest is held below the floor, what it had written then. The floor is one allowance per shortage and not per look: it counts down from that point across every grant too small to hold it, and is given again only once a grant arrives that holds it, which means the claim has room again. So a guest past its grant adds at most the floor in all, however many grants of nothing the runner renews. A guest that used it up gets room back once the claim has room, or with the fresh floor of its next boot, which is how its user gets in to free its own files.
+#[derive(Default)]
+struct PoolGuard {
+    grant: Option<(String, u64, u64)>,
+    floor_from: Option<u64>,
+}
+
+impl PoolGuard {
+    // UNIT_BOUNDARY_DESCRIPTION: takes one look's grant, and returns how large the guard file is to be, given the guest could still write `avail` bytes without it and has written `used` bytes of its own. No grant holds nothing back.
+    fn size(&mut self, grant: Option<(String, u64)>, avail: u64, used: u64) -> u64 {
+        match grant {
+            None => {
+                *self = PoolGuard::default();
+                return 0;
+            }
+            Some((id, bytes)) if self.grant.as_ref().is_none_or(|(held, ..)| *held != id) => {
+                if bytes >= POOL_GUARD_FLOOR {
+                    self.floor_from = None;
+                }
+                self.grant = Some((id, bytes, used));
+            }
+            Some(_) => {}
+        }
+        let Some((_, bytes, used_at)) = self.grant else {
+            return 0;
+        };
+        let left = bytes.saturating_sub(used.saturating_sub(used_at));
+        if left < POOL_GUARD_FLOOR && self.floor_from.is_none() {
+            self.floor_from = Some(used);
+        }
+        let floor = self.floor_from.map_or(POOL_GUARD_FLOOR, |from| {
+            POOL_GUARD_FLOOR.saturating_sub(used.saturating_sub(from))
+        });
+        avail.saturating_sub(left.max(floor))
+    }
+}
+
+fn read_grant(text: &str) -> Option<(String, u64)> {
+    let mut words = text.split_whitespace();
+    let id = words.next()?.to_string();
+    Some((id, words.next()?.parse().ok()?))
+}
+
+fn guard_pool(guard: File) {
+    let home = Path::new(guest::AGENT_HOME);
+    let mut state = PoolGuard::default();
+    let mut held = 0u64;
+    loop {
+        std::thread::sleep(POOL_GUARD_INTERVAL);
+        let Some(stat) = statvfs(home) else {
+            continue;
+        };
+        #[allow(clippy::unnecessary_cast)]
+        let (size, blocks, free, avail) = (
+            stat.f_frsize as u64,
+            stat.f_blocks as u64,
+            stat.f_bfree as u64,
+            stat.f_bavail as u64,
+        );
+        let used = blocks
+            .saturating_sub(free)
+            .saturating_mul(size)
+            .saturating_sub(held);
+        let avail = avail.saturating_mul(size).saturating_add(held);
+        let grant = fs::read_to_string(guest::STORAGE_ROOM_PATH)
+            .ok()
+            .as_deref()
+            .and_then(read_grant);
+        let want = state.size(grant, avail, used);
+        if want.abs_diff(held) < POOL_GUARD_STEP && !(want == 0 && held > 0) {
+            continue;
+        }
+        let Ok(length) = libc::off_t::try_from(want) else {
+            continue;
+        };
+        // SAFETY: the descriptor is open for the call, and neither call takes a pointer.
+        let rc = unsafe {
+            if want > held {
+                libc::fallocate(guard.as_raw_fd(), 0, 0, length)
+            } else {
+                libc::ftruncate(guard.as_raw_fd(), length)
+            }
+        };
+        let was = held;
+        held = match guard.metadata() {
+            Ok(info) => info.blocks() * 512,
+            Err(_) if rc == 0 => want,
+            Err(_) => held,
+        };
+        POOL_GUARD_HELD.store(held, std::sync::atomic::Ordering::Relaxed);
+        if rc != 0 {
+            logf!(
+                "WARNING: sizing the storage guard to {want} bytes: {}",
+                io::Error::last_os_error()
+            );
+        }
+        if (was < POOL_GUARD_FLOOR) != (held < POOL_GUARD_FLOOR) {
+            announce(&if held < POOL_GUARD_FLOOR {
+                "the owner's storage has room again: this agent's writes are no longer held back"
+                    .to_string()
+            } else {
+                format!("the owner's storage is nearly full: this agent may write {} more bytes before its writes fail with no space left", avail.saturating_sub(held))
+            });
+        }
+    }
 }
 
 fn statvfs(path: &Path) -> Option<libc::statvfs> {
@@ -1150,16 +1405,38 @@ fn statvfs(path: &Path) -> Option<libc::statvfs> {
     (rc == 0).then_some(stat)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the smaller of the disk's free share of blocks and of inodes. A disk gets one inode per 16 KiB, so a home of many small files (dependency trees, checkouts) runs out of inodes with most of its space free, and a write then fails with "no space left on device" all the same.
+// UNIT_BOUNDARY_DESCRIPTION: the storage guard's blocks count as free here: they hold the guest to the owner's storage, which the runner's claim requests already shed for, so they must not have the disk read as its own disk short and evict every few minutes.
 fn free_percent(path: &Path) -> Option<u64> {
-    let stat = statvfs(path)?;
+    let mut stat = statvfs(path)?;
+    let held = POOL_GUARD_HELD.load(std::sync::atomic::Ordering::Relaxed);
     #[allow(clippy::unnecessary_cast)]
-    (stat.f_blocks > 0).then(|| stat.f_bavail as u64 * 100 / stat.f_blocks as u64)
+    let held_blocks = (held / (stat.f_frsize as u64).max(1)) as libc::fsblkcnt_t;
+    stat.f_bavail = stat.f_bavail.saturating_add(held_blocks);
+    free_share(&stat)
 }
 
-fn free_bytes(path: &Path) -> Option<u64> {
-    let stat = statvfs(path)?;
-    #[allow(clippy::unnecessary_cast)]
-    Some((stat.f_bavail as u64).saturating_mul(stat.f_frsize as u64))
+#[allow(clippy::unnecessary_cast)]
+fn free_share(stat: &libc::statvfs) -> Option<u64> {
+    let share = |free: u64, total: u64| (total > 0).then(|| free * 100 / total);
+    let blocks = share(stat.f_bavail as u64, stat.f_blocks as u64)?;
+    Some(
+        share(stat.f_favail as u64, stat.f_files as u64)
+            .map_or(blocks, |inodes| blocks.min(inodes)),
+    )
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the home has less than guest::HOME_FULL_BYTES or guest::HOME_FULL_INODES left, so an agent that crashed for want of inodes is reported full as one that ran out of space is. A filesystem that reports no inode count at all is judged by its space alone.
+fn home_full(path: &Path) -> bool {
+    statvfs(path).is_some_and(|stat| {
+        #[allow(clippy::unnecessary_cast)]
+        let (bytes, inodes, files) = (
+            (stat.f_bavail as u64).saturating_mul(stat.f_frsize as u64),
+            stat.f_favail as u64,
+            stat.f_files as u64,
+        );
+        bytes < guest::HOME_FULL_BYTES || (files > 0 && inodes < guest::HOME_FULL_INODES)
+    })
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the image's own boot may keep its extracted CA trust store here rather than rebuilding it every time. The variable is set only on this backend, so an image that honors it caches on a machine and silently does without in a container, where there is no disk to cache on. The store is bound to a path of its own because the disk itself is detached before the image runs.
@@ -1871,9 +2148,7 @@ fn supervise(binary: &Path, command: &[OsString], trust: Option<&Path>) -> ! {
                 NOT_STARTED
             }
         };
-        let full = status != 0
-            && free_bytes(Path::new(guest::AGENT_HOME))
-                .is_some_and(|free| free < guest::HOME_FULL_BYTES);
+        let full = status != 0 && home_full(Path::new(guest::AGENT_HOME));
         announce(&format!(
             "the image entrypoint {} after {}s{}",
             exit_description(status),
@@ -2100,14 +2375,160 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    // TEST_SCENARIO: a guest's own disk can read as nearly empty while the owner's claim under it fills, so the runner's mark alone starts and continues eviction; without it, the disk's own free share decides, and a disk whose room cannot be read is left alone.
+    // TEST_SCENARIO: the guard file leaves the guest what is left of its grant: the grant less what the guest wrote since it came, never less than the floor, and nothing held back without a grant or when the disk has less free than the grant anyway. A new grant counts from what the guest had written when it came.
     #[test]
-    fn scratch_is_freed_while_the_disk_or_the_claim_is_short() {
-        assert!(evicting(Some(5), false, EVICT_BELOW_PERCENT));
-        assert!(!evicting(Some(50), false, EVICT_BELOW_PERCENT));
-        assert!(evicting(Some(50), true, EVICT_BELOW_PERCENT));
-        assert!(evicting(None, true, EVICT_UNTIL_PERCENT));
-        assert!(!evicting(None, false, EVICT_BELOW_PERCENT));
+    fn the_storage_guard_leaves_the_guest_its_grant() {
+        let gib = 1u64 << 30;
+        let grant = |id: &str, bytes| Some((id.to_string(), bytes));
+        assert_eq!(PoolGuard::default().size(None, 90 * gib, 5 * gib), 0);
+        let mut guard = PoolGuard::default();
+        assert_eq!(
+            guard.size(grant("1", 10 * gib), 90 * gib, 5 * gib),
+            80 * gib
+        );
+        assert_eq!(
+            guard.size(grant("1", 10 * gib), 86 * gib, 9 * gib),
+            80 * gib
+        );
+        assert_eq!(
+            guard.size(grant("2", 10 * gib), 86 * gib, 9 * gib),
+            76 * gib
+        );
+        assert_eq!(guard.size(grant("3", 10 * gib), 8 * gib, 9 * gib), 0);
+        assert_eq!(read_grant("7 1024\n"), Some(("7".into(), 1024)));
+        assert_eq!(read_grant("7"), None);
+        assert_eq!(read_grant(""), None);
+    }
+
+    // TEST_SCENARIO: a guest that writes without pause past a grant of nothing, which the runner renews at every look while the claim stays full, may add the floor once and then nothing more: the floor counts down across the renewed grants rather than coming back with each, which would let one writer fill the claim a floor at a time. A grant with room gives the floor back.
+    #[test]
+    fn a_writer_past_its_grant_adds_at_most_the_floor_across_looks() {
+        let (disk, start) = (100u64 << 30, 10u64 << 30);
+        let mut guard = PoolGuard::default();
+        let mut used = start;
+        for tick in 0..400u64 {
+            let room = Some(((tick / 15).to_string(), 0));
+            let want = guard.size(room, disk - used, used);
+            used += (disk - used).saturating_sub(want).min(100 << 20);
+        }
+        assert!(
+            used - start <= POOL_GUARD_FLOOR,
+            "wrote {} bytes past a grant of nothing",
+            used - start
+        );
+        let want = guard.size(Some(("room".into(), 1 << 30)), disk - used, used);
+        assert_eq!(disk - used - want, 1 << 30);
+    }
+
+    // TEST_SCENARIO: the guard file has no name, so no older platform-init, image or agent can find it, and the filesystem frees it once the guest stops; a disk where it cannot be made boots without it.
+    #[test]
+    fn the_storage_guard_is_an_unnamed_file_on_the_disk() {
+        let disk = TempDir::new("guard");
+        assert!(pool_guard(disk.path()).is_none());
+        fs::create_dir_all(disk.path().join(guest::SYSTEM_DIR)).unwrap();
+        let guard = pool_guard(disk.path()).expect("an unnamed file on the disk");
+        assert_eq!(guard.metadata().unwrap().nlink(), 0);
+        assert_eq!(
+            fs::read_dir(disk.path().join(guest::SYSTEM_DIR))
+                .unwrap()
+                .count(),
+            0
+        );
+    }
+
+    // TEST_SCENARIO: a disk of many small files runs out of inodes with most of its space free, and a write then fails as on a full disk, so the free share is the smaller of blocks and inodes; a filesystem that counts no inodes is judged by its blocks.
+    #[test]
+    fn a_disk_out_of_inodes_reads_as_full() {
+        // SAFETY: statvfs is plain old data, and all-zero bytes are a valid value of it.
+        let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+        (stat.f_blocks, stat.f_bavail) = (100, 97);
+        assert_eq!(free_share(&stat), Some(97));
+        (stat.f_files, stat.f_favail) = (100, 0);
+        assert_eq!(free_share(&stat), Some(0));
+        stat.f_blocks = 0;
+        assert_eq!(free_share(&stat), None);
+    }
+
+    // TEST_SCENARIO: a boot step that failed for want of space or inodes says the home is full, which the runner reads to report a full home and its fix; any other failure does not.
+    #[test]
+    fn a_boot_refused_for_a_full_disk_says_the_home_is_full() {
+        let full = fatal_line(&format!(
+            "creating /x: {}",
+            io::Error::from_raw_os_error(libc::ENOSPC)
+        ));
+        assert!(
+            full.starts_with("FATAL: creating /x") && full.ends_with(guest::HOME_FULL),
+            "{full}"
+        );
+        let other = fatal_line(&format!(
+            "creating /x: {}",
+            io::Error::from_raw_os_error(libc::EACCES)
+        ));
+        assert!(!other.contains(guest::HOME_FULL), "{other}");
+    }
+
+    // TEST_SCENARIO: a full disk cannot create even the empty work layer a boot needs, so the boot first deletes what earlier boots set aside and the last boot's temporary folders, then tries again; the kept root and the home stay.
+    #[test]
+    fn a_full_disk_gives_back_only_what_a_boot_discards() {
+        let disk = TempDir::new("free-room");
+        let layers = FreshRoot::on(disk.path());
+        let scratch = guest::system_store(disk.path(), SCRATCH_STORE);
+        let home = disk.path().join("home");
+        for dir in [
+            layers.upper.clone(),
+            layers.store.join(format!("work{DISCARDED_INFIX}1")),
+            scratch.join("tmp/repo"),
+            scratch.join(format!("var-tmp{DISCARDED_INFIX}1")),
+            home.clone(),
+        ] {
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("f"), b"x").unwrap();
+        }
+        free_room_for_boot(disk.path());
+        assert!(layers.upper.join("f").exists());
+        assert!(home.join("f").exists());
+        assert!(!layers
+            .store
+            .join(format!("work{DISCARDED_INFIX}1"))
+            .exists());
+        assert!(!scratch.join("tmp").exists());
+        assert!(!scratch.join(format!("var-tmp{DISCARDED_INFIX}1")).exists());
+    }
+
+    // TEST_SCENARIO: a guest's own disk that is short is evicted on every look down to the last EVICT_AGES step, until it has room; a disk whose room cannot be read is left alone.
+    #[test]
+    fn a_short_disk_is_evicted_until_it_has_room() {
+        let pass = eviction_pass(Some(5), None, None).unwrap();
+        assert_eq!(pass.youngest, 600);
+        assert!(pass.continues(Some(15), 1 << 40) && !pass.continues(Some(20), 0));
+        assert_eq!(eviction_pass(Some(50), None, None), None);
+        assert_eq!(eviction_pass(None, None, None), None);
+    }
+
+    // TEST_SCENARIO: the owner's claim is mostly the agents' homes, which eviction never touches, so a claim that stays short must not give every agent's /tmp a ten-minute life. A request from the runner is served once, by a pass that keeps whatever was used in the last hour and stops at the bytes asked; only a new request, which the runner sends when the claim fills further, brings another pass. An older runner's empty mark is one unbounded request.
+    #[test]
+    fn a_short_claim_is_served_once_per_request_and_spares_recent_work() {
+        let request = parse_claim_request("17 1000\n");
+        assert_eq!(request.bytes, Some(1000));
+        let pass = eviction_pass(Some(50), Some(&request), None).unwrap();
+        assert_eq!((pass.youngest, pass.claim_only), (CLAIM_EVICT_AGE, true));
+        assert!(pass.continues(Some(50), 999) && !pass.continues(Some(50), 1000));
+        assert_eq!(
+            eviction_pass(Some(50), Some(&request), Some("17 1000")),
+            None
+        );
+        assert!(eviction_pass(
+            Some(50),
+            Some(&parse_claim_request("18 1000")),
+            Some("17 1000")
+        )
+        .is_some());
+        let legacy = parse_claim_request("");
+        assert_eq!(legacy.bytes, None);
+        assert!(eviction_pass(Some(50), Some(&legacy), None)
+            .unwrap()
+            .continues(Some(50), u64::MAX));
+        assert_eq!(eviction_pass(Some(50), Some(&legacy), Some("")), None);
     }
 
     struct TempDir(PathBuf);
@@ -2987,7 +3408,7 @@ mod tests {
         assert!(!aside.exists());
     }
 
-    // TEST_SCENARIO: under pressure a scratch folder is evicted by whole entries. A leftover of a failed eviction goes first, then a cache its tool tagged as rebuildable, then the rest, so an agent's own file in /tmp is the last to go. A forged tag does not count, and an entry holding a socket a process may still listen on, an entry used within the last pass, and an entry on another device are not offered at all. A change time cannot be set back, so a clock moved forward stands for entries long unused.
+    // TEST_SCENARIO: under pressure a scratch folder is evicted by whole entries. A leftover of a failed eviction goes first, then a cache its tool tagged as rebuildable, then the rest, so an agent's own file in /tmp is the last to go. A forged tag does not count, and an entry holding a socket a process may still listen on, an entry used within the last pass, and an entry on another device are not offered at all, and a pass for the claim offers only what was unused for an hour. A change time cannot be set back, so a clock moved forward stands for entries long unused.
     #[test]
     fn scratch_is_offered_whole_and_rebuildable_caches_first() {
         let scratch = TempDir::new("evict");
@@ -3015,7 +3436,7 @@ mod tests {
             .as_secs();
         let dirs = [s.to_path_buf()];
         let names = |now, disk| -> Vec<String> {
-            scratch_entries(&dirs, disk, now)
+            scratch_entries(&dirs, disk, now, EVICT_AGES[3])
                 .iter()
                 .map(|entry| {
                     entry
@@ -3038,9 +3459,16 @@ mod tests {
         let mut rest = order[2..].to_vec();
         rest.sort();
         assert_eq!(rest, ["forged", "link", "pr-body.md"]);
-        assert!(scratch_entries(&dirs, disk, now + 2 * EVICT_AGES[3])
-            .iter()
-            .any(|entry| entry.path.ends_with("go-build") && entry.bytes >= 8192));
+        assert_eq!(
+            scratch_entries(&dirs, disk, now + 2 * EVICT_AGES[3], CLAIM_EVICT_AGE).len(),
+            1,
+            "a claim pass keeps what was used within the hour"
+        );
+        assert!(
+            scratch_entries(&dirs, disk, now + 2 * EVICT_AGES[3], EVICT_AGES[3])
+                .iter()
+                .any(|entry| entry.path.ends_with("go-build") && entry.bytes >= 8192)
+        );
         assert!(
             names(now + 2 * EVICT_AGES[3], disk + 1).is_empty(),
             "another device is not walked"

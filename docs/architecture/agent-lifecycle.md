@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 ## Overview
 
@@ -141,6 +141,10 @@ Three paths trigger a wake:
 
 Wake is bounded — the primitive polls pod readiness with backoff and gives up after two minutes, and a per-replica watch releases each wait the moment the condition flips and backs a read cache.
 A read bypasses that cache when its result decides a write — spec read-modify-write, the sleep flow's compare-and-clear — and while the watch is unsynced, when the cache cannot tell an absent Agent from an unseen one.
+It does not wait out the two minutes for a start that cannot succeed: an over-budget refusal ([budgets](budgets.md#failure-semantics-upstream)), or a vm machine's start the runner refused because the owner's VM storage is full, the image is unavailable, or the guest did not boot.
+Such a wake fails with that cause once it saw the refusal appear during its own poll, or once the refusal outlasted a ten-second grace, because its first polls can read the previous attempt's refusal.
+A vm start refusal read while the Agent still shows hibernated does not count, since the controller has not acted on the wake yet.
+An unschedulable runner and a machine still pulling or booting keep the wait, because both can still come up.
 On giving up it reads the controller's readiness conditions one final time and classifies the failure into a typed wake-failure cause — hibernation never acted on, a pod start failure (with the controller's termination cause, a full home volume named), pods still progressing, a gateway still coming up, a gateway failure it cannot outgrow, or a reconcile error — which callers receive and surface in their own idiom (channel reply copy, WS close reason, HTTP body, skills call error).
 The classification distinguishes transient causes (progressing, worth waiting or retrying) from hard ones (needing intervention); the two gateway causes split along exactly that line.
 A gateway wedged on a superseded configuration counts as hard even though the platform replaces such pods by itself ([security-and-credentials](security-and-credentials.md)): classification runs only once the budget is spent, so a repair that was going to land already had its chance.
@@ -235,6 +239,7 @@ The api-server clears the stamp itself once the Agent settles Hibernated (a sett
 The clear is a **compare-and-clear** of the exact stamp the sleep wrote: a second sleep issued during the settle window carries a newer stamp and is not erased by the first one's watcher.
 Staling the clock in the *initial* patch (never at settle time) is what keeps the watcher from ever clobbering a concurrent wake.
 A sleeping Agent is afterwards a plain hibernated Agent: its next deliberate use wakes it.
+A sleep is refused while a [runtime migration](vm-runtime-migration.md) holds the Agent, since every wake is refused then too.
 A **never-hibernate** Agent (effective timeout `0`) runs regardless of activity, so the UI does not offer it Sleep; a direct call still stamps it without the settle clear, the only stable sleep it can have.
 
 **Early reclaim for a blocked start.** The one scale-down neither the user nor the idle timeout asks for: when the [budget gate](budgets.md#reclaiming-room-for-a-blocked-start) refuses a start, it may hibernate that same owner's *unattended idle* Agents ahead of their timeout to admit it, longest-idle first and only when the freed Sizes provably cover the shortfall.

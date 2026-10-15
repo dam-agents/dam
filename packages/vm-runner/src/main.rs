@@ -345,7 +345,7 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
     } else {
         let listener = bind(&args.metrics_listen)?;
         let handle = axum_server::Handle::new();
-        let serving = axum_server::from_tcp(listener)?
+        let serving = axum_server::from_tcp(listener)
             .handle(handle.clone())
             .serve(http::metrics_router(server.clone()).into_make_service());
         Some((handle, tokio::spawn(serving)))
@@ -368,7 +368,7 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
                 axum_server::tls_rustls::RustlsConfig::from_pem_file(&args.tls_cert, &args.tls_key)
                     .await?;
             reload_tls(tls.clone(), args.tls_cert.clone(), args.tls_key.clone());
-            axum_server::from_tcp_rustls(listener, tls)?
+            axum_server::from_tcp_rustls(listener, tls)
                 .handle(handle)
                 .serve(app)
                 .await
@@ -380,8 +380,22 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
         tokio::signal::unix::signal(tokio::signal::unix::SignalKind::user_defined1())?;
     let handing_off = tokio::select! {
         result = &mut serving => {
-            server.close().await;
-            return result.map_err(|e| anyhow::anyhow!("serving: {e}"));
+            let result = result.map_err(|e| anyhow::anyhow!("serving: {e}"));
+            let supervised = std::env::var_os(vm_runner::release::RELEASES_ENV).is_some_and(|dir| !dir.is_empty());
+            server
+                .close_failed(supervised, async {
+                    tokio::select! {
+                        _ = term.recv() => {}
+                        _ = tokio::signal::ctrl_c() => {}
+                    }
+                })
+                .await;
+            if supervised {
+                tracing::error!(error = ?result.err(), "VM runner failed to serve; its machines stay up for the loader's next runner");
+                // UNIT_BOUNDARY_DESCRIPTION: exits before the runtime is dropped, as a hand-off does, so the machines this runner started itself outlive it too.
+                std::process::exit(1);
+            }
+            return result;
         }
         _ = term.recv() => { tracing::info!(signal = "SIGTERM", "VM runner stopping"); false }
         _ = tokio::signal::ctrl_c() => { tracing::info!(signal = "SIGINT", "VM runner stopping"); false }

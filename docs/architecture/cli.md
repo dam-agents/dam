@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 ## Overview
 
@@ -65,6 +65,7 @@ The server can also reject a request that looked valid locally, and the CLI surf
 A 401 becomes session-expired — with a hint that switches to "check `DAM_TOKEN`" when that variable is set, because a bearer supplied that way lives outside the credential store and re-login can't fix it.
 A 403 becomes access-denied with no login hint: the caller is authenticated but not authorized (e.g. a pending-approval account), so the remedy is an admin, not re-authentication.
 Any other reached-but-rejected request surfaces the server's own reason; "cannot reach server" is reserved for genuine connectivity failures.
+An error answer that is not JSON — a gateway's HTML page — names the HTTP status it came with, never a parse error.
 The 412 Terms gate's remedy is now `dam terms accept` (see the `terms` group), so a headless/CI caller can review and clear the gate entirely from the CLI with no browser.
 
 For headless / CI use, `DAM_TOKEN=<bearer>` is used verbatim and bypasses the credential store.
@@ -130,6 +131,8 @@ The recurring patterns, stated once:
   A very small number of verbs augment the raw shape where the annotation is the whole point of the flag — those departures are documented at the call site.
 - **TTY discipline.** Destructive verbs confirm on a TTY, take `--yes` to bypass, and refuse on non-TTY without it.
   Interactive-only verbs (interactive create, masked secret prompts) refuse on non-TTY and point at the scripted path.
+- **An agent that cannot start says why.** A call through an agent (`dam run`, `dam file`, `dam ssh`) that the api-server could not wake the agent for says so, with the server's sentence for the wake failure — the one the web app shows; `dam run` and `dam file` exit with the agent-not-reachable code.
+  When no sentence comes back — the run relay closes its socket, or a gateway gives up on a slow wake and answers with its own page — the CLI reads the reason from the agent's state: the refusal of an agent waiting for room, or the error of a failed one.
 - **Client-side ref resolution.** Agent refs resolve through `resolveAgent`; connection and skill-source refs generally resolve id-or-value against a team list before mutating, so a typo can't ride through a server-side no-op and report a false success.
 - **Full-replace mutations are read-merge-write.** Where a server mutation replaces an entire set (agent grants, allow-lists, egress presets, a schedule's whole spec), the CLI reads the current value, overlays the change, and writes the whole set back, so the server re-derives the downstream effects for the correct final state.
 - **Shared formatting and builders.** Where the CLI and UI must render or compute identically — egress-rule and approval-payload labels, the recurrence builder and its human-readable text — the logic is a React-free helper in the contract package that both consume, so the two can never drift.
