@@ -36,7 +36,7 @@ pub const SEED_EXPECTED_FILE: &str = "seed-expected";
 // UNIT_BOUNDARY_DESCRIPTION: the share's record of the image the boot about to run boots, which platform-init reads at guest::IMAGE_PATH to decide whether the machine keeps its root. A start writes it, not write_share, because every boot passes a start and the image a start boots is the one in smolvm's record at that moment.
 pub const IMAGE_FILE: &str = "image";
 
-// UNIT_BOUNDARY_DESCRIPTION: the share's mark that the owner's claim is short of room, which platform-init looks for at guest::STORAGE_SHORT_PATH. write_share leaves it alone: the runner's storage check owns it, and sets or clears it in every machine's share at each look.
+// UNIT_BOUNDARY_DESCRIPTION: the share's mark that the owner's claim is short of room, which platform-init reads at guest::STORAGE_SHORT_PATH: one line, the id of the runner's request to give back scratch and the bytes asked of this machine. write_share leaves it alone: the runner's storage check owns it, and sets, replaces or clears it in every machine's share at each look.
 pub const STORAGE_SHORT_FILE: &str = "storage-short";
 
 // UNIT_BOUNDARY_DESCRIPTION: the machine directory's record of the seed now in the share, as its upload was answered: the runner's own bookkeeping, outside the share the guest reads. It is what a start compares with the seed the spec expects, so the seed is checked without reading many GiB again on every start. It is removed before a new seed is renamed into the share and written after, so it never names a seed that is not there.
@@ -85,15 +85,15 @@ fn digest_of(seed: &SeedResult) -> SeedDigest {
     }
 }
 
-pub fn mark_storage_short(share: &Path, short: bool) -> io::Result<()> {
+pub fn mark_storage_short(share: &Path, request: Option<&str>) -> io::Result<()> {
     let mark = share.join(STORAGE_SHORT_FILE);
-    if !short {
+    let Some(request) = request else {
         return remove_if_present(&mark);
-    }
-    if mark.exists() {
+    };
+    if fs::read_to_string(&mark).is_ok_and(|text| text == request) {
         return Ok(());
     }
-    files::write(&mark, b"", CA_MODE)
+    files::write(&mark, request.as_bytes(), CA_MODE)
 }
 
 pub fn seeded(share: &Path) -> bool {

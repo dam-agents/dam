@@ -10,6 +10,7 @@ pub struct StorageUse {
 // UNIT_BOUNDARY_DESCRIPTION: past SHORT_PERCENT the runner sheds what it can fetch again — the image trees no machine holds, and the scratch every guest keeps — until use is back under SHORT_UNTIL_PERCENT. Past CRITICAL_PERCENT it takes no write that adds much: it creates no machine, grows no disk, fetches no image onto its own claim and takes no seed. A machine that already exists still starts and restarts, because a boot writes little and an owner whose agents are all asleep must be able to get into one to clean it up; only past START_LIMIT_PERCENT does the runner start or restart no machine. It never stops one.
 pub const SHORT_PERCENT: u64 = 75;
 pub const SHORT_UNTIL_PERCENT: u64 = 70;
+pub const RESHED_STEP_PERCENT: u64 = 5;
 pub const CRITICAL_PERCENT: u64 = 90;
 pub const START_LIMIT_PERCENT: u64 = 97;
 const WRITES_FAILING_PERCENT: u64 = 98;
@@ -34,6 +35,13 @@ impl StorageUse {
     pub fn short(&self, was: bool) -> bool {
         let percent = self.percent();
         percent >= SHORT_PERCENT || (was && percent >= SHORT_UNTIL_PERCENT)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the bytes each of `machines` running guests is asked to give back so the claim is back under SHORT_UNTIL_PERCENT, an even part of the whole; a guest frees only what it can, so this bounds a pass and is no promise.
+    pub fn to_shed(&self, machines: usize) -> u64 {
+        let target = u64::try_from(u128::from(self.usable) * u128::from(SHORT_UNTIL_PERCENT) / 100)
+            .unwrap_or(u64::MAX);
+        self.used.saturating_sub(target) / u64::try_from(machines.max(1)).unwrap_or(1)
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: what the owner is told when the runner refuses a machine for want of storage, word for word the api-server's storage-full message: what is refused at this level, that a sleeping VM agent can still be opened to clean up below START_LIMIT_PERCENT, and the ways to free space.
@@ -105,6 +113,14 @@ mod tests {
         assert!(!at(74).short(false) && at(75).short(false));
         assert!(at(71).short(true) && !at(69).short(true) && !at(71).short(false));
         assert_eq!(StorageUse { used: 0, usable: 0 }.percent(), 100);
+    }
+
+    // TEST_SCENARIO: what the runner asks each guest to give back is its even part of what brings the claim back under 70%, and nothing once it is there; no machine at all reads as one.
+    #[test]
+    fn each_guest_is_asked_its_part_of_the_shortage() {
+        assert_eq!(at(80).to_shed(2), 5);
+        assert_eq!(at(80).to_shed(0), 10);
+        assert_eq!(at(60).to_shed(3), 0);
     }
 
     // TEST_SCENARIO: the refusal is what the owner reads on the agent, so it says how much storage is used, whether a stopped agent can still be opened to clean up, and what to do; once writes may be failing it says that first.

@@ -199,6 +199,7 @@ pub struct Server {
     admission: Mutex<()>,
     ports: Mutex<()>,
     storage_short: std::sync::atomic::AtomicBool,
+    shed_request: Mutex<Option<(u64, String)>>,
     lifetime: CancellationToken,
     work: TaskTracker,
     metrics: Metrics,
@@ -312,6 +313,7 @@ impl Server {
             admission: Mutex::new(()),
             ports: Mutex::new(()),
             storage_short: std::sync::atomic::AtomicBool::new(false),
+            shed_request: Mutex::new(None),
             lifetime,
             work: TaskTracker::new(),
             metrics: Metrics::default(),
@@ -1484,7 +1486,7 @@ impl Server {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: one look at the claim, every STORAGE_CHECK. While it is short, the runner's own image cache gives up every tree no machine holds, since each can be fetched again, and every machine's share carries the mark that has its guest give back its scratch; what the guests keep beyond that is not the runner's to free.
+    // UNIT_BOUNDARY_DESCRIPTION: one look at the claim, every STORAGE_CHECK. While it is short, the runner's own image cache gives up every tree no machine holds, since each can be fetched again, and every machine's share carries a request that its guest give back scratch: an id and the bytes asked of each running machine, its even part of what brings the claim back under SHORT_UNTIL_PERCENT. A guest serves each request once, so a new one goes out only when the claim has filled RESHED_STEP_PERCENT further since the last: the claim is mostly the agents' homes, which no guest gives back, and repeating the request would only have every guest delete its scratch again and again. What the guests keep beyond that is not the runner's to free.
     fn check_storage(&self) {
         let Some(storage) = (self.config.measure_storage)() else {
             return;
@@ -1492,15 +1494,35 @@ impl Server {
         let was = self.storage_short.load(Ordering::Relaxed);
         let short = storage.short(was);
         self.storage_short.store(short, Ordering::Relaxed);
-        for id in state::machine_ids(&self.config.state_dir).unwrap_or_default() {
-            let Some(dir) = machine_dir(&self.config.state_dir, &id) else {
-                continue;
-            };
-            let share = dir.join(SHARE_DIR);
-            if !share.is_dir() {
-                continue;
+        let shares: Vec<(String, PathBuf)> = state::machine_ids(&self.config.state_dir)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|id| {
+                let share = machine_dir(&self.config.state_dir, &id)?.join(SHARE_DIR);
+                share.is_dir().then_some((id, share))
+            })
+            .collect();
+        let running = locked(&self.machines)
+            .entries
+            .values()
+            .filter(|e| e.seen.as_ref().is_some_and(|s| s.state == State::Running))
+            .count();
+        let request = {
+            let mut current = locked(&self.shed_request);
+            let percent = storage.percent();
+            if !short {
+                *current = None;
+            } else if current
+                .as_ref()
+                .is_none_or(|(at, _)| percent >= at + crate::storage::RESHED_STEP_PERCENT)
+            {
+                let id = self.versions.fetch_add(1, Ordering::Relaxed);
+                *current = Some((percent, format!("{id} {}\n", storage.to_shed(running))));
             }
-            if let Err(e) = share::mark_storage_short(&share, short) {
+            current.as_ref().map(|(_, text)| text.clone())
+        };
+        for (id, share) in shares {
+            if let Err(e) = share::mark_storage_short(&share, request.as_deref()) {
                 tracing::warn!(machine = %id, error = %e, "vm runner: cannot mark the machine's share with the claim's room");
             }
         }

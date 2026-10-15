@@ -243,6 +243,7 @@ They share the disk with the agent's work, so when it runs short, or the runner 
 An entry is one name directly in such a folder, such as `~/.cache/go-build` or `/tmp/pr-body.md`, and it goes whole or not at all, because a tool that keeps part of its cache takes it for complete and fails on it.
 Use is the newest modification or change time anywhere in the entry, since the disk is mounted `relatime` and a read often leaves access times alone.
 An entry used in the last ten minutes stays, and so does one a process holds a BSD lock on, the way `systemd-tmpfiles` leaves it.
+A short claim is mostly the agents' homes, which no eviction touches, so it does not bring that ten-minute rule on: each request the runner sends is served once, by one pass that keeps whatever was used in the last hour and stops at the bytes the runner asked of that machine.
 A cache tagged with `CACHEDIR.TAG` goes before an untagged entry of the same age, since its tool can rebuild it and an untagged one may be the agent's work in progress.
 Each eviction, and a disk still short once nothing is left to evict, is a line on the machine's console, which the runner reads.
 Short counts inodes as well as space: a disk gets one inode per 16 KiB, so a home of many small files runs out of them with most of its space free, and a write then fails as on a full disk.
@@ -280,7 +281,8 @@ It grows in place when the pool rises and is never shrunk, so a lowered pool onl
 A refused growth is reported and reconciliation continues: the runner still serves every agent at the size it has.
 
 **The runner guards the claim by its use.** The disks are sparse, so they can add up to more than the claim holds, and a guest sees its own disk as free while the claim under it fills; once the claim has no block left, a guest's write into its disk fails and its filesystem reports the loss.
-So the runner measures the claim itself: past 75% used it sheds what it can fetch again — every image tree no machine holds, when the cache is on the claim — and marks every machine's share, so each guest gives back its scratch, until use is back under 70%.
+So the runner measures the claim itself: past 75% used it sheds what it can fetch again — every image tree no machine holds, when the cache is on the claim — and asks every machine's guest, through its share, to give back scratch: each running one its even part of what would bring use back under 70%.
+It asks again only once the claim has filled five points further, and clears the request once use is back under 70%, so a claim the homes keep full does not have every guest delete its scratch again every minute.
 Past 90% it creates no machine, fetches no image onto the claim and takes no seed, and a machine it starts boots at the disk size it has; past 97% it starts and restarts no machine either, so between the two an owner whose agents are all asleep can still get into one to clean it up.
 It reports each refusal as `MachineStorageFull` with how full the storage is and how to free it, and never stops a running machine, which would free nothing and lose what the guest holds in memory.
 An out-of-space error the runner meets anywhere on the claim is reported the same way, and so is a boot that fails while the claim is that full, since a guest whose writes fail fails its boot with nothing typed in the error.
