@@ -1289,7 +1289,7 @@ fn pool_guard(root: &Path) -> Option<File> {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the guard knows between two looks: the latest grant, as its id and bytes and what the guest had written when it came, and, once the guest is held below the floor, what it had written then. The floor is one allowance per shortage and not per look: it counts down from that point across every grant too small to hold it, and is given again only once a grant arrives that holds it, which means the claim has room again. So a guest past its grant adds at most the floor in all, however many grants of nothing the runner renews.
+// UNIT_BOUNDARY_DESCRIPTION: what the guard knows between two looks: the latest grant, as its id and bytes and what the guest had written when it came, and, once the guest is held below the floor, what it had written then. The floor is one allowance per shortage and not per look: it counts down from that point across every grant too small to hold it, and is given again only once a grant arrives that holds it, which means the claim has room again. So a guest past its grant adds at most the floor in all, however many grants of nothing the runner renews. A guest that used it up gets room back once the claim has room, or with the fresh floor of its next boot, which is how its user gets in to free its own files.
 #[derive(Default)]
 struct PoolGuard {
     grant: Option<(String, u64, u64)>,
