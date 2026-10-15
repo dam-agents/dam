@@ -68,7 +68,7 @@ The loader keeps a runtime in the pod while any VMM still maps it.
 Connections already open through a published port drop with the old process, and the machine API is down for the seconds between the two.
 A VMM whose runner exited is reaped by the pod's init.
 A release that exits within a minute of taking over is held as **failed**, and the loader goes back to the release it replaced until the controller names another.
-A runner under a loader whose machine API fails to serve exits as a hand-off does, leaving every machine running, so the release the loader goes back to, or the same one restarted, adopts them without a reboot; only a runner with no loader stops its machines first, since its exit ends the pod.
+A runner under a loader whose machine API fails to serve exits as a hand-off does, leaving every machine running, so the release the loader goes back to, or the same one restarted, adopts them without a reboot; a pod stop that arrives during that close still stops them, and a runner with no loader stops them first, since its exit ends the pod.
 
 **What the controller does.** It names the configured runner image in each runner's ConfigMap, as many at a time as the roll's width.
 A hand-off reboots nothing, but the loader's fallback catches only a release that exits: one that runs and then refuses to manage machines would, named everywhere at once, break every owner together.
