@@ -92,7 +92,7 @@ So [`codex-otel.sh`](rootfs/usr/local/lib/codex-otel.sh), which `codex-app-serve
 Without the rail, the scripts add no flag and Codex exports nothing.
 
 Codex's exporter honours `HTTPS_PROXY` and trusts the CA bundle in `SSL_CERT_FILE`, so the export goes through the gateway and gets the trusted agent attribution.
-Codex fixes its own service name (`codex-app-server` for chat, `codex_cli_rs` for the terminal) and ignores `OTEL_SERVICE_NAME`.
+Codex fixes its own service name for each kind of process (`codex-app-server` for chat sessions) and ignores `OTEL_SERVICE_NAME`.
 It reads `OTEL_RESOURCE_ATTRIBUTES`, so `platform.agent.name` arrives, but still URL-encoded.
 
 Codex's records do not have the shape the Usage reads take, and its tool-result records carry each tool call's arguments and an output preview.
