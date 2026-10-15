@@ -1,4 +1,5 @@
 import {
+  type HarnessCapability,
   routesByModelName,
   sessionSettingsError,
   type SessionSettings,
@@ -61,6 +62,55 @@ export function createSessionChoicesValidator(deps: {
       return `unknown model "${choices.model}"; choose one of: ${listed.join(", ")}`;
     return undefined;
   };
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: one harness process reaches either the Model
+   * Router or a provider it runs natively (Bedrock), so a model-valued
+   * setting (the subagent model) must be on the side of the model the fire
+   * runs: the schedule's own, else the saved default for that harness, else
+   * the router's default. A runtime that names no native templates splits
+   * nothing.
+   */
+  const crossedSubagentModel = async (
+    agentId: string,
+    harness: string,
+    capability: HarnessCapability | undefined,
+    choices: SessionChoices,
+  ): Promise<string | undefined> => {
+    const nativeTemplates = capability?.nativeTemplates ?? [];
+    if (nativeTemplates.length === 0 || !choices.settings) return undefined;
+    const modelSettings = new Set(
+      capability?.harnessConfigCatalog?.options
+        .filter((o) => o.category === "model" && o.choices.length === 0)
+        .map((o) => o.id),
+    );
+    const granted = await deps.pairRepo.grantedProviders(agentId);
+    const nativeOf = (name: string | null): boolean | undefined => {
+      if (name === null) return false;
+      const qualified = qualifiedPairModel(name);
+      if (qualified === null) return undefined;
+      const alias = qualified.slice(0, qualified.indexOf("/"));
+      const provider = granted.find(
+        (p) => aliasForProviderType(p.type) === alias,
+      );
+      return provider
+        ? nativeTemplates.includes(provider.templateId ?? provider.type)
+        : undefined;
+    };
+    const saved = await deps.pairRepo.read(agentId);
+    const fireModel =
+      choices.model ?? (saved?.harness === harness ? saved.model : null);
+    const side = nativeOf(fireModel);
+    if (side === undefined) return undefined;
+    const crossed = Object.entries(choices.settings).find(([id, value]) => {
+      if (!modelSettings.has(id) || value === "") return false;
+      const own = nativeOf(value);
+      return own !== undefined && own !== side;
+    });
+    return crossed
+      ? `the ${crossed[0]} setting ${crossed[1]} cannot run beside ${fireModel ?? "the default model"}: one harness process reaches either the Model Router or a provider it runs natively, not both`
+      : undefined;
+  };
+
   return async (agentId, choices) => {
     const capabilities = await deps.getCapabilities(agentId);
     if (!routesByModelName(capabilities))
@@ -109,6 +159,13 @@ export function createSessionChoicesValidator(deps: {
         choices.model ? qualifiedPairModel(choices.model) : null,
       );
       if (invalid) return invalid;
+      const crossed = await crossedSubagentModel(
+        agentId,
+        harness,
+        harnessCapability,
+        choices,
+      );
+      if (crossed) return crossed;
     }
     return undefined;
   };

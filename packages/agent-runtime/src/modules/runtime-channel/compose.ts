@@ -326,6 +326,8 @@ export async function composeRuntimeChannel(
         defaultHarness,
         harnesses: Object.keys(opts.manifests).map((name) => {
           const plugin = harnessConfigs.get(name);
+          const nativeTemplates =
+            opts.manifests[name]?.modelRouter?.native?.templates;
           return {
             name,
             harnessConfig: plugin !== undefined,
@@ -334,6 +336,7 @@ export async function composeRuntimeChannel(
             ...(plugin?.sessionSettings && {
               sessionSettings: plugin.sessionSettings,
             }),
+            ...(nativeTemplates?.length && { nativeTemplates }),
           };
         }),
         kbPublish: 2,

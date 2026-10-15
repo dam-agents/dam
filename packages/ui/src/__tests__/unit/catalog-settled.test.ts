@@ -10,6 +10,7 @@ import {
   modelGroups,
   modelIndicatorLabel,
   sameModel,
+  sameSideGroups,
 } from "../../modules/sessions/lib/catalog-groups.js";
 
 /**
@@ -95,6 +96,40 @@ describe("modelGroups", () => {
       },
     ]);
     expect(modelGroups(undefined, granted)).toEqual([]);
+  });
+});
+
+describe("sameSideGroups", () => {
+  const group = (connectionId: string, native: boolean, model: string) => ({
+    ...modelGroups(catalog(provider(connectionId, "listed")))[0]!,
+    native,
+    models: [
+      {
+        name: model,
+        upstreamId: model.slice(model.indexOf("/") + 1),
+        contextWindow: null,
+        maxOutputTokens: null,
+        reasoning: null,
+        vision: null,
+        prices: null,
+        source: { limits: "none" as const, prices: "none" as const },
+      },
+    ],
+  });
+  const groups = [
+    group("conn-ibm", false, "ibm/gpt-5.5"),
+    group("conn-bed", true, "bedrock/sonnet"),
+  ];
+
+  /** TEST_SCENARIO: A subagent model is offered from the session model's
+   * side only. A session or schedule with no model runs on the router's
+   * default, so it is offered the routed providers and never Bedrock. */
+  it("offers the model's own side, and the router side for no model", () => {
+    const ids = (model: string | null) =>
+      sameSideGroups(groups, model).map((g) => g.connectionId);
+    expect(ids("bedrock/sonnet")).toEqual(["conn-bed"]);
+    expect(ids("ibm/gpt-5.5")).toEqual(["conn-ibm"]);
+    expect(ids(null)).toEqual(["conn-ibm"]);
   });
 });
 

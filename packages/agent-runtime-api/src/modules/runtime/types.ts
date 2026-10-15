@@ -365,6 +365,7 @@ export const harnessCapability = z.object({
   harnessConfigCatalog: harnessConfigCatalog.optional(),
   sessionModel: z.boolean(),
   sessionSettings: z.array(z.string().min(1)).optional(),
+  nativeTemplates: z.array(z.string().min(1)).optional(),
 });
 export type HarnessCapability = z.infer<typeof harnessCapability>;
 export function routesSessionPairs(

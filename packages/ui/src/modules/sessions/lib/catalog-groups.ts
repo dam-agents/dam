@@ -85,13 +85,16 @@ export function catalogSettled(
 /**
  * UNIT_BOUNDARY_DESCRIPTION: one harness process reaches either the Model
  * Router or a native provider, so a model-valued session setting (the
- * subagent model) is offered from the session model's side only.
+ * subagent model) is offered from the session model's side only. No model
+ * runs on the router's default, as the runtime decides, so it is the router
+ * side; a model the catalog does not list leaves the side open.
  */
 export function sameSideGroups(
   groups: readonly ModelGroup[],
   model: string | null,
 ): ModelGroup[] {
-  const own = model ? findModel(groups, model)?.group : undefined;
+  if (model === null) return groups.filter((g) => !g.native);
+  const own = findModel(groups, model)?.group;
   return own === undefined
     ? [...groups]
     : groups.filter((g) => g.native === own.native);

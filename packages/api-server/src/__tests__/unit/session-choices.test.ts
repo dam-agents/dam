@@ -201,3 +201,76 @@ describe("session choices on a runtime without the router", () => {
     );
   });
 });
+
+describe("a subagent model beside a natively run provider", () => {
+  const capabilities = {
+    ...ROUTED,
+    harnesses: [
+      {
+        name: "claude-code",
+        harnessConfig: true,
+        sessionModel: true,
+        sessionSettings: ["subagentModel"],
+        nativeTemplates: ["bedrock"],
+        harnessConfigCatalog: {
+          options: [
+            {
+              id: "subagentModel",
+              name: "Subagent model",
+              category: "model",
+              choices: [],
+            },
+          ],
+        },
+      },
+    ],
+  };
+  const check = createSessionChoicesValidator({
+    catalog: {
+      ...CATALOG,
+      harnesses: [
+        {
+          ...CATALOG.harnesses[0]!,
+          providers: ["ibm-litellm", "anthropic", "bedrock"],
+        },
+      ],
+    },
+    pairRepo: {
+      read: async () => null,
+      grantedProviders: async () => [
+        { id: "lite", type: "ibm-litellm", templateId: "ibm-litellm" },
+        { id: "bed", type: "bedrock", templateId: "bedrock" },
+      ],
+    },
+    snapshotRepo: { read: async () => null },
+    getCapabilities: async () => capabilities,
+  });
+
+  /** TEST_SCENARIO: One Claude Code process reaches either the Model Router
+   * or Bedrock, so a schedule whose model and subagent model sit on different
+   * sides is refused at save, not on every fire; a schedule with no model
+   * runs on the router's default, so a Bedrock subagent model is refused
+   * there too, and a pair on one side passes. */
+  it("refuses a subagent model on the other side of the fire's model", async () => {
+    expect(
+      await check("a", {
+        model: "ibm/gpt-5.5",
+        settings: { subagentModel: "bedrock/opus" },
+      }),
+    ).toMatch(
+      /subagentModel setting bedrock\/opus cannot run beside ibm\/gpt-5\.5/,
+    );
+    expect(
+      await check("a", { settings: { subagentModel: "bedrock/haiku" } }),
+    ).toMatch(/cannot run beside the default model/);
+    expect(
+      await check("a", {
+        model: "bedrock/sonnet",
+        settings: { subagentModel: "bedrock/haiku" },
+      }),
+    ).toBeUndefined();
+    expect(
+      await check("a", { settings: { subagentModel: "claude/ibm/gpt-5.5" } }),
+    ).toBeUndefined();
+  });
+});

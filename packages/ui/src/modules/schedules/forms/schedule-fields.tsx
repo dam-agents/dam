@@ -39,6 +39,7 @@ import {
   findModel,
   modelGroups,
   modelIndicatorLabel,
+  sameSideGroups,
 } from "../../sessions/lib/catalog-groups.js";
 import { fittingProviders } from "../../sessions/lib/session-pair-options.js";
 import {
@@ -647,10 +648,15 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
             model={modelValue || null}
             settings={settingsValue ?? {}}
             defaults={defaults}
-            modelChoices={modelChoices.map((c) => ({
-              value: c.id,
-              name: c.name,
-            }))}
+            modelChoices={sameSideGroups(
+              groups,
+              modelValue || fallback?.model || null,
+            ).flatMap((g) =>
+              g.models.map((m) => ({
+                value: m.name,
+                name: `${m.upstreamId} · ${g.displayName}`,
+              })),
+            )}
             onChange={(id, value) =>
               settingsField.onChange({ ...(settingsValue ?? {}), [id]: value })
             }
