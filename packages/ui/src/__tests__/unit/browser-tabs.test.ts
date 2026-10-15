@@ -5,6 +5,7 @@ import { describe, expect, test } from "vitest";
 import {
   closeTabLocally,
   selectTabLocally,
+  showsTabBar,
   tabLabel,
 } from "../../modules/browser/lib/tabs.js";
 
@@ -27,6 +28,14 @@ const snapshot = (activeTab: string, ids: string[]): BrowserSnapshot => ({
   },
   tabs: ids.map((id) => tab(id)),
   activeTab,
+});
+
+// TEST_SCENARIO: as in Safari, a browser with one tab shows no tab bar; the bar shows once there are two tabs, typically one the agent opened, and hides again when one is left.
+test("shows the tab bar from two tabs on", () => {
+  expect(showsTabBar(undefined)).toBe(false);
+  expect(showsTabBar([])).toBe(false);
+  expect(showsTabBar([tab("a")])).toBe(false);
+  expect(showsTabBar([tab("a"), tab("b")])).toBe(true);
 });
 
 describe("tabLabel", () => {
