@@ -150,4 +150,27 @@ describe("shared trpc-client adapter", () => {
       "the agent is unavailable: your VM agents' memory is full",
     );
   });
+
+  /**
+   * TEST_SCENARIO: A gateway in front of the api-server answers an agent call
+   * with an HTML error page. The client names the HTTP status instead of
+   * throwing a JSON parse error such as "Unexpected token '<'".
+   */
+  it("names the status of an HTML error page instead of failing to parse it", async () => {
+    const trpc = createAgentTrpcClient({
+      host: HOST,
+      agentId: "agent-0123456789abcdef",
+      tokenProvider: fakeTokenProvider(async () => ok("AT-1")),
+      fetch: (async () =>
+        new Response("<html><body>504</body></html>", {
+          status: 504,
+          statusText: "Gateway Timeout",
+          headers: { "content-type": "text/html" },
+        })) as unknown as typeof fetch,
+    });
+
+    await expect(trpc.files.listDirs.query({ paths: [""] })).rejects.toThrow(
+      "the server answered HTTP 504 Gateway Timeout with a body that is not an API response",
+    );
+  });
 });
