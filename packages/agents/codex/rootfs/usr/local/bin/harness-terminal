@@ -12,6 +12,7 @@ if [ -n "$PLATFORM_MODEL" ]; then
 elif [ -n "$OPENAI_MODEL" ] && ! codex-config-sets-model; then
   set -- "$@" -c "model=\"$OPENAI_MODEL\""
 fi
+. /usr/local/lib/codex-otel.sh
 
 # pinned by the SessionStart hook in /etc/codex/requirements.toml
 THREAD_FILE="$HOME/.codex/platform-sessions/$HARNESS_SESSION_ID"

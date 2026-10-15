@@ -79,6 +79,37 @@ The write fails and reports a delivery failure, and the file stays as it is unti
 The terminal TUI still fetches its announcement tip from `raw.githubusercontent.com`.
 Codex has no setting to turn that off.
 
+## Telemetry
+
+With the telemetry backend on (`clickstack.enabled`), the `codex` rail in the harness catalog gives Codex `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_LOGS_EXPORTER=otlp` and `OTEL_TRACES_EXPORTER=otlp` (see [observability](../../../docs/architecture/observability.md#agent-export)).
+Codex reads its exporters only from the `[otel]` table of `config.toml` and never from that env.
+So [`codex-otel.sh`](rootfs/usr/local/lib/codex-otel.sh), which `codex-app-server` and `harness-terminal` source, turns the env into `-c otel.*` flags:
+
+- Log records go to `<endpoint>/v1/logs` and traces go to `<endpoint>/v1/traces`, over OTLP/HTTP protobuf.
+- `log_user_prompt`, `log_agent_responses` and `log_guardian_assessments` are pinned to `false`.
+  A `-c` flag outranks `~/.codex/config.toml`, so a hand-set `[otel]` table cannot turn them on while the rail is on.
+
+Without the rail, the scripts add no flag and Codex exports nothing.
+
+Codex's exporter honours `HTTPS_PROXY` and trusts the CA bundle in `SSL_CERT_FILE`, so the export goes through the gateway and gets the trusted agent attribution.
+Codex fixes its own service name (`codex-app-server` for chat, `codex_cli_rs` for the terminal) and ignores `OTEL_SERVICE_NAME`.
+It reads `OTEL_RESOURCE_ATTRIBUTES`, so `platform.agent.name` arrives, but still URL-encoded.
+
+Codex's records do not have the shape the Usage reads take, and its tool-result records carry each tool call's arguments and an output preview.
+The platform's collector therefore reshapes every `codex.*` log record:
+
+- It keeps only structural attributes, so tool arguments, tool output and the account e-mail are never stored.
+- It sets the body to the event name and `session.id` to `conversation.id`, the Codex thread id that codex-acp uses as the session id.
+- It renames the per-call usage record (`codex.sse_event` of kind `response.completed` with token counts) to `codex.response_completed`, with `input_tokens` (net of cache reads), `output_tokens`, `cache_read_tokens` and `cache_creation_tokens`.
+
+Codex reports no per-call cost, so Codex spend shows as tokens at zero cost.
+Session titles run on a Codex thread of their own, so their calls count for the agent but not for the chat session.
+
+With the log exporter on, the chat app-server also starts Codex's turn-cost poller.
+The poller asks OpenAI's backend for turn prices only for a Codex login (`codex login`, or `CODEX_API_KEY`).
+The provider's `OPENAI_API_KEY` is not a login, so the poller stays idle and sends nothing.
+After a `codex login` in the terminal, it polls `chatgpt.com`, which the gateway holds for egress approval like any new host.
+
 ## Harness scripts
 
 | Script                                                      | Runs                              | Purpose                                                                                        |

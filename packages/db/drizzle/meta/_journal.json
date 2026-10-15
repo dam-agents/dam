@@ -540,6 +540,13 @@
       "when": 1792050125623,
       "tag": "0076_skill_source_per_path",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1792067770772,
+      "tag": "0077_bump_agents_for_codex_telemetry_rail",
+      "breakpoints": true
     }
   ]
 }
