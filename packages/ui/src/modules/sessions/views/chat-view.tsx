@@ -667,9 +667,10 @@ export function ChatView() {
   });
   const dockedTab = dockedItemTab(docked);
   const dockedShown = dockedTab !== null && dockedTab === activeTab;
+  const dockedKept = dockedTab !== null && (dockedShown || draftDocked);
   const sidePanelOpen = activeTab !== null;
-  const mobilePanelOpen =
-    sidePanelOpen && (mobileScreen === "files" || dockedShown);
+  const mobileOnPanel = sidePanelOpen && mobileScreen === "files";
+  const mobilePanelOpen = mobileOnPanel || (sidePanelOpen && dockedShown);
   const hiddenTabs = new Set<SidePanelTab>([
     ...(canOpenBrowser ? [] : (["browser"] as const)),
     ...(processesEnabled ? [] : (["processes"] as const)),
@@ -722,7 +723,7 @@ export function ChatView() {
         />
       )}
       <header
-        className={`${mobileScreen === "files" ? "hidden md:flex" : "flex"} items-stretch h-[70px] max-md:h-[52px] max-md:border-b border-border shrink-0 relative z-content`}
+        className={`${mobileOnPanel ? "hidden md:flex" : "flex"} items-stretch h-[70px] max-md:h-[52px] max-md:border-b border-border shrink-0 relative z-content`}
       >
         <div className="@container flex min-w-0 flex-1 items-center gap-3 overflow-hidden px-4 md:max-w-[400px]">
           <MobileMenuButton />
@@ -799,7 +800,7 @@ export function ChatView() {
       <div ref={setColumnsEl} className="flex flex-1 min-h-0">
         {}
         <div
-          className={`@container/chat relative flex flex-1 flex-col min-w-0 ${mobileScreen === "files" ? "hidden md:flex" : "flex"} ${sidePanelFills ? "md:!hidden" : ""}`}
+          className={`@container/chat relative flex flex-1 flex-col min-w-0 ${mobileOnPanel ? "hidden md:flex" : "flex"} ${sidePanelFills ? "md:!hidden" : ""}`}
         >
           {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
           <ContributionGapNotice agentId={selectedAgent} />
@@ -1167,7 +1168,7 @@ export function ChatView() {
                 : "md:shrink-0",
           )}
         >
-          {sidePanelOpen && (
+          {(sidePanelOpen || dockedKept) && (
             <div
               ref={filePanelRef}
               style={
@@ -1177,6 +1178,7 @@ export function ChatView() {
               }
               className={cn(
                 "flex flex-col min-w-0 overflow-hidden max-md:flex-1",
+                !sidePanelOpen && "hidden",
                 sidePanelFills || sidePanelW === null
                   ? "md:flex-1"
                   : "md:shrink-0 md:w-[var(--file-w)]",
@@ -1221,7 +1223,7 @@ export function ChatView() {
                   className="flex-1"
                 />
               )}
-              {dockedTab !== null && (dockedShown || draftDocked) && (
+              {dockedKept && (
                 <div
                   className={cn(
                     "flex flex-1 min-h-0 flex-col",
