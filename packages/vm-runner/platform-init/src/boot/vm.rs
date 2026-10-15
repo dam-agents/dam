@@ -641,7 +641,7 @@ fn exec(
     };
     let (lock, cvar) = &EXECS;
     let mut execs = lock.lock().unwrap_or_else(|e| e.into_inner());
-    let spawned = std::process::Command::new(program)
+    let spawned = super::unblocked(&mut std::process::Command::new(program))
         .args(args)
         .env_clear()
         .env("PATH", DEFAULT_PATH)

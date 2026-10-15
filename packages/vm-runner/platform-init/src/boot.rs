@@ -146,9 +146,13 @@ pub fn run() -> ! {
     }
     let openrc = Path::new(OPENRC).exists();
     if openrc {
-        ["sysinit", "boot", "default"]
-            .into_iter()
-            .for_each(run_openrc);
+        let mut stopping = false;
+        for runlevel in ["sysinit", "boot", "default"] {
+            run_openrc(runlevel, &mut stopping);
+        }
+        if stopping {
+            stop(openrc);
+        }
     }
     supervise(&binary, &command, env, trust.as_deref(), openrc)
 }
@@ -156,16 +160,19 @@ pub fn run() -> ! {
 // UNIT_BOUNDARY_DESCRIPTION: an image that ships openrc opts in to its services: platform-init stays PID 1 and runs openrc's runlevels before the entrypoint, as an init that boots openrc would, and openrc's shutdown when the machine stops. An image without it boots its entrypoint alone.
 const OPENRC: &str = "/sbin/openrc";
 
-// UNIT_BOUNDARY_DESCRIPTION: a runlevel that fails is a line on the console and not a failed boot: the entrypoint, which is the agent, may not need the service that failed.
-fn run_openrc(runlevel: &str) {
-    let status = std::process::Command::new(OPENRC)
+// UNIT_BOUNDARY_DESCRIPTION: a runlevel that fails is a line on the console and not a failed boot: the entrypoint, which is the agent, may not need the service that failed. It is waited for as the entrypoint is, reaping every orphan meanwhile: a service's daemon is an orphan of PID 1, and openrc stopping one waits until its process is gone, which a zombie never is. A stop that arrives meanwhile is passed on to openrc and noted in `stopping`.
+fn run_openrc(runlevel: &str, stopping: &mut bool) {
+    let spawned = unblocked(&mut std::process::Command::new(OPENRC))
         .arg(runlevel)
         .env_clear()
         .env("PATH", DEFAULT_PATH)
-        .status();
-    match status {
-        Ok(status) if status.success() => logf!("openrc {runlevel} done"),
-        Ok(status) => announce(&format!("WARNING: openrc {runlevel} {status}")),
+        .spawn();
+    match spawned.map(|child| wait_for(child.id(), stopping)) {
+        Ok(0) => logf!("openrc {runlevel} done"),
+        Ok(status) => announce(&format!(
+            "WARNING: openrc {runlevel} {}",
+            exit_description(status)
+        )),
         Err(e) => announce(&format!("WARNING: running openrc {runlevel}: {e}")),
     }
 }
@@ -2226,7 +2233,7 @@ const FORWARDED: [libc::c_int; 7] = [
 ];
 const STOPPING: [libc::c_int; 3] = [libc::SIGTERM, libc::SIGINT, libc::SIGQUIT];
 
-// UNIT_BOUNDARY_DESCRIPTION: every signal platform-init handles is blocked in every thread and read with sigtimedwait instead, so none arrives while the boot is half done and none is lost to the thread that writes the boot log. It runs before that thread exists, because a thread takes its signal mask from the one that starts it. A handler that does nothing is installed as well, because a signal the first process of a PID namespace leaves at its default is dropped by the kernel. std's spawn resets the mask in the entrypoint.
+// UNIT_BOUNDARY_DESCRIPTION: every signal platform-init handles is blocked in every thread and read with sigtimedwait instead, so none arrives while the boot is half done and none is lost to the thread that writes the boot log. It runs before that thread exists, because a thread takes its signal mask from the one that starts it. A handler that does nothing is installed as well, because a signal the first process of a PID namespace leaves at its default is dropped by the kernel. A child inherits the mask, so every child that outlives a moment is started unblocked.
 fn block_signals() {
     // SAFETY: the sigset is initialised by sigemptyset before any other use, sigaction is given a zeroed struct naming a handler with the signature the kernel calls, and both calls read only the memory passed to them.
     unsafe {
@@ -2241,6 +2248,19 @@ fn block_signals() {
 }
 
 extern "C" fn ignore_signal(_: libc::c_int) {}
+
+// UNIT_BOUNDARY_DESCRIPTION: starts `command`'s child with no signal blocked. std clears the mask it inherited only when it forks, not when it uses posix_spawn, and a child that waits for SIGCHLD, as openrc-run does, then waits forever.
+fn unblocked(command: &mut std::process::Command) -> &mut std::process::Command {
+    use std::os::unix::process::CommandExt;
+    // SAFETY: sigemptyset and sigprocmask are async-signal-safe and touch only the set on the child's stack.
+    unsafe {
+        command.pre_exec(|| {
+            let mut set: libc::sigset_t = std::mem::zeroed();
+            libc::sigemptyset(&mut set);
+            succeeded(libc::sigprocmask(libc::SIG_SETMASK, &set, std::ptr::null_mut()) == 0)
+        })
+    }
+}
 
 fn handled_signals() -> libc::sigset_t {
     // SAFETY: sigemptyset initialises the set before sigaddset reads it, and a zeroed sigset_t is valid memory for both.
@@ -2284,6 +2304,7 @@ fn entrypoint(
     if let Some(trust) = trust {
         entrypoint.env(TRUST_CACHE_ENV, trust);
     }
+    unblocked(&mut entrypoint);
     entrypoint
 }
 
@@ -2393,7 +2414,7 @@ fn end_cgroup(stopping: &mut bool) {
 // UNIT_BOUNDARY_DESCRIPTION: the end of the workload once its entrypoint has exited on a stop: openrc's services are stopped by openrc first, so each gets its own stop, and whatever is left is ended after.
 fn stop(openrc: bool) -> ! {
     if openrc {
-        run_openrc("shutdown");
+        run_openrc("shutdown", &mut true);
         end_the_rest(&mut true);
     }
     flush_home_on_stop();
