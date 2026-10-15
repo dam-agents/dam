@@ -1,3 +1,7 @@
+import {
+  platformUndeliveredPromptSchema,
+  type PlatformUndeliveredPrompt,
+} from "api-server-api";
 import { z } from "zod";
 
 import type { DocumentStoreBackend } from "../../../core/document-store.js";
@@ -6,6 +10,7 @@ const markerSchema = z.object({
   startedAt: z.string(),
   attempts: z.number().int().nonnegative().default(0),
   stopped: z.literal(true).optional(),
+  prompt: platformUndeliveredPromptSchema.optional(),
 });
 export type ActiveTurnMarker = z.infer<typeof markerSchema> & {
   sessionId: string;
@@ -23,8 +28,9 @@ const stateSchema = z
   });
 
 export interface ActiveTurnStore {
-  record(sessionId: string): void;
+  record(sessionId: string, prompt?: PlatformUndeliveredPrompt): void;
   remove(sessionId: string): void;
+  promptOf(sessionId: string): PlatformUndeliveredPrompt | undefined;
   bumpAttempts(sessionId: string): void;
   markStopped(): void;
   leftovers(): ActiveTurnMarker[];
@@ -48,8 +54,10 @@ export interface ActiveTurnStore {
  * one interruption: only the turn recovery itself starts, right after bumping
  * it, keeps it on record. Any other turn is a new interruption to come and
  * starts again at zero, or one resume that died would leave the Session
- * unrecoverable for good. Only a marker inherited from the
- * previous process is a leftover. Recovery reads leftovers a few seconds after
+ * unrecoverable for good. A turn of a Session the harness has not stored yet
+ * keeps its prompt in the marker: the harness's own store cannot give it back
+ * if the process dies before the Session is stored. Only a marker inherited
+ * from the previous process is a leftover. Recovery reads leftovers a few seconds after
  * boot, and a turn this process starts before that, such as the first chat
  * message after a restart, is live work: counting its marker would resume the
  * Session with an interruption notice and run a second turn nobody asked for.
@@ -69,14 +77,21 @@ export function createActiveTurnStore(
   const resuming = new Set<string>();
 
   return {
-    record(sessionId) {
+    record(sessionId, prompt) {
       inherited.delete(sessionId);
       const { sessions } = store.read();
       const attempts = resuming.delete(sessionId)
         ? (sessions[sessionId]?.attempts ?? 0)
         : 0;
       store.write({
-        sessions: { ...sessions, [sessionId]: { startedAt: now(), attempts } },
+        sessions: {
+          ...sessions,
+          [sessionId]: {
+            startedAt: now(),
+            attempts,
+            ...(prompt !== undefined && { prompt }),
+          },
+        },
       });
     },
     remove(sessionId) {
@@ -87,6 +102,9 @@ export function createActiveTurnStore(
       const next = { ...sessions };
       delete next[sessionId];
       store.write({ sessions: next });
+    },
+    promptOf(sessionId) {
+      return store.read().sessions[sessionId]?.prompt;
     },
     bumpAttempts(sessionId) {
       const { sessions } = store.read();

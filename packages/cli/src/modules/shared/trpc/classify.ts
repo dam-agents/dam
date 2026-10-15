@@ -2,8 +2,10 @@ import { TRPCClientError } from "@trpc/client";
 import { err, ok, type Result } from "../../../result.js";
 import type { AuthRequiredError, TransportError } from "../errors.js";
 import {
+  AgentUnavailableAtTransportError,
   AuthRequiredAtTransportError,
   ForbiddenAtTransportError,
+  NonJsonAnswerAtTransportError,
   TermsStaleAtTransportError,
 } from "./trpc-client.js";
 
@@ -20,6 +22,18 @@ export function classifyTrpcError(
     if (cursor instanceof ForbiddenAtTransportError) throw cursor;
     if (cursor instanceof AuthRequiredAtTransportError)
       return err({ kind: "auth-required", reason: cursor.message });
+    if (cursor instanceof AgentUnavailableAtTransportError)
+      return err({
+        kind: "transport",
+        reason: cursor.message,
+        serverCode: "AGENT_UNAVAILABLE",
+      });
+    if (cursor instanceof NonJsonAnswerAtTransportError)
+      return err({
+        kind: "transport",
+        reason: cursor.message,
+        serverCode: `HTTP_${String(cursor.status)}`,
+      });
     cursor = (cursor as { cause?: unknown }).cause;
   }
 

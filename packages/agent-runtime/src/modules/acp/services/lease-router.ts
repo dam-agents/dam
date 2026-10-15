@@ -516,7 +516,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
         `lease ${from.key} holds no session after a move; shutting it down`,
       );
       drop(from);
-      from.runtime.shutdown();
+      from.runtime.shutdown("lease");
     }
   }
 
@@ -583,7 +583,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       if (lease.runtime.holdsSessions()) continue;
       deps.log(`lease ${lease.key} holds no session; shutting it down`);
       drop(lease);
-      lease.runtime.shutdown();
+      lease.runtime.shutdown("lease");
     }
   }
 
@@ -700,7 +700,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
             .filter(([, v]) => v.used)
             .map(([real]) => real);
           drop(lease);
-          lease.runtime.shutdown();
+          lease.runtime.shutdown("lease");
           for (const real of users)
             if (real.isOpen()) real.close(1012, PROVIDER_REMOVED_REASON);
           continue;
@@ -716,7 +716,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
             `lease ${lease.key} chose its model from the old env; reopening it`,
           );
           drop(lease);
-          lease.runtime.shutdown();
+          lease.runtime.shutdown("lease");
           continue;
         }
         lease.runtime.refreshEnv({
@@ -771,7 +771,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
 
     shutdown() {
       clearInterval(idleTimer);
-      for (const lease of leases.values()) lease.runtime.shutdown();
+      for (const lease of leases.values()) lease.runtime.shutdown("process");
       leases.clear();
     },
   };

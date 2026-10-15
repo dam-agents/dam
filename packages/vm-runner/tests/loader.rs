@@ -60,6 +60,41 @@ struct Pod {
 }
 
 impl Pod {
+    // UNIT_BOUNDARY_DESCRIPTION: a loader running the pod's own release, runner:1, whose runner is `script`.
+    fn start(name: &str, script: &str) -> Self {
+        let dir =
+            std::env::temp_dir().join(format!("vm-runner-loader-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let builtin = dir.join("builtin");
+        let builtin_runtime = dir.join("builtin-runtime");
+        release_dir(&builtin, script, "runtime-a");
+        std::fs::create_dir_all(dir.join("releases")).unwrap();
+        std::fs::write(dir.join("release"), "runner:1").unwrap();
+        let loader = Command::new(env!("CARGO_BIN_EXE_vm-runner-loader"))
+            .args(["run", "--builtin"])
+            .arg(&builtin)
+            .arg("--builtin-runtime")
+            .arg(&builtin_runtime)
+            .args(["--", "--smolvm"])
+            .arg(builtin_runtime.join("smolvm"))
+            .env(release::RELEASES_ENV, dir.join("releases"))
+            .env(release::RELEASE_FILE_ENV, dir.join("release"))
+            .env(release::LOADER_DIR_ENV, dir.join("loader"))
+            .env(release::BUILTIN_RELEASE_ENV, "runner:1")
+            .env("VM_RUNNER_LOADER_POLL_MS", "50")
+            .env("RUNNER_LOG", dir.join("runners"))
+            .env("MACHINE_LOG", dir.join("machines"))
+            .spawn()
+            .unwrap();
+        Self { dir, loader }
+    }
+
+    fn terminate(&mut self) -> std::process::ExitStatus {
+        // SAFETY: kill(2) takes plain integers and touches no memory of this process.
+        unsafe { libc::kill(i32::try_from(self.loader.id()).unwrap(), libc::SIGTERM) };
+        self.loader.wait().unwrap()
+    }
+
     fn status(&self) -> RunnerRelease {
         release::read_status(&release::status_file(&self.dir.join("loader")))
     }
@@ -91,34 +126,11 @@ impl Drop for Pod {
 // TEST_SCENARIO: a new release takes over without the machine the old runner started going down, against the pod's runtime or against its own; a release that exits right after it took over is held as failed while the machines go back to the release it replaced; one that does not even load in the pod is held for a new pod; and the pod's stop reaches the runner and ends the loader.
 #[test]
 fn a_release_takes_over_the_machines_and_a_broken_one_gives_them_back() {
-    let dir = std::env::temp_dir().join(format!("vm-runner-loader-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+    let mut pod = Pod::start("hand-off", RUNS);
+    let dir = pod.dir.clone();
     let builtin = dir.join("builtin");
     let builtin_runtime = dir.join("builtin-runtime");
-    release_dir(&builtin, RUNS, "runtime-a");
-    std::fs::create_dir_all(dir.join("releases")).unwrap();
-    std::fs::write(dir.join("release"), "runner:1").unwrap();
     let smolvm = |runtime: &Path| format!("--smolvm {}/smolvm", runtime.display());
-    let loader = Command::new(env!("CARGO_BIN_EXE_vm-runner-loader"))
-        .args(["run", "--builtin"])
-        .arg(&builtin)
-        .arg("--builtin-runtime")
-        .arg(&builtin_runtime)
-        .args(["--", "--smolvm"])
-        .arg(builtin_runtime.join("smolvm"))
-        .env(release::RELEASES_ENV, dir.join("releases"))
-        .env(release::RELEASE_FILE_ENV, dir.join("release"))
-        .env(release::LOADER_DIR_ENV, dir.join("loader"))
-        .env(release::BUILTIN_RELEASE_ENV, "runner:1")
-        .env("VM_RUNNER_LOADER_POLL_MS", "50")
-        .env("RUNNER_LOG", dir.join("runners"))
-        .env("MACHINE_LOG", dir.join("machines"))
-        .spawn()
-        .unwrap();
-    let mut pod = Pod {
-        dir: dir.clone(),
-        loader,
-    };
 
     wait_for("the pod's own runner", || {
         pod.status().running == "runner:1" && lines(&dir.join("machines")).len() == 1
@@ -173,9 +185,7 @@ fn a_release_takes_over_the_machines_and_a_broken_one_gives_them_back() {
         "a machine on the old runtime went down with the hand-off"
     );
 
-    // SAFETY: kill(2) takes plain integers and touches no memory of this process.
-    unsafe { libc::kill(i32::try_from(pod.loader.id()).unwrap(), libc::SIGTERM) };
-    let exited = pod.loader.wait().unwrap();
+    let exited = pod.terminate();
     assert!(exited.success(), "the loader exited with {exited}");
     let runners = lines(&dir.join("runners"));
     let copies = dir.join("loader").join("releases");
@@ -205,4 +215,42 @@ fn a_release_takes_over_the_machines_and_a_broken_one_gives_them_back() {
         std::fs::read_to_string(pod_runtime.join("smolvm")).unwrap(),
         "runtime-b"
     );
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a runner that, like the real one, sets up its stop only some time after it starts, and takes two seconds to close for a hand-off. Each step is logged to the pod's runner log.
+const SLOW: &str = r#"#!/bin/sh
+[ "$1" = --help ] && exit 0
+sleep 0.5
+trap 'echo "stopped $0" >> "$RUNNER_LOG"; exit 0' TERM
+trap 'echo "closing $0" >> "$RUNNER_LOG"; sleep 2; exit 0' USR1
+echo "started $0" >> "$RUNNER_LOG"
+while :; do sleep 0.1; done
+"#;
+
+// TEST_SCENARIO: a stop of the pod that arrives while the old runner is still closing for a hand-off must reach a runner that stops the machines: the loader starts the next release, waits for it to set up its stop, and passes the stop on, rather than killing it before its first line and leaving the machines to be powered off with the pod. The caught-signal mask the loader waits on is Linux's, the only place the loader runs.
+#[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "reads /proc/<pid>/status")]
+fn a_stop_during_a_hand_off_reaches_the_next_runner() {
+    let mut pod = Pod::start("stop-mid-hand-off", SLOW);
+    let log = pod.dir.join("runners");
+    wait_for("the pod's own runner", || lines(&log).len() == 1);
+    pod.stage("runner:2", SLOW, "runtime-a");
+    pod.name("runner:2");
+    wait_for("the hand-off to begin", || {
+        lines(&log).iter().any(|l| l.starts_with("closing "))
+    });
+
+    let exited = pod.terminate();
+    let copy = pod
+        .dir
+        .join("loader/releases")
+        .join(release::key("runner:2"))
+        .join(RUNNER);
+    assert_eq!(
+        lines(&log).last().map(String::as_str),
+        Some(format!("stopped {}", copy.display()).as_str()),
+        "{:?}",
+        lines(&log)
+    );
+    assert!(exited.success(), "the loader exited with {exited}");
 }

@@ -105,6 +105,10 @@ A turn that dies anyway is recovered from an [active-turns marker](persistence.m
 The resumed turn is unattended: nobody reads it live, so it waits for the harness to hold the Session again and never for a viewer, and it runs on a Sleep's wake with no chat open.
 A turn the platform stopped — a Sleep, an eviction, a restart, all of which reach the runtime as SIGTERM — is marked stopped as the runtime shuts down, so the notice and the chat name the stop instead of blaming memory.
 The marker is written only after the harness *took* the prompt, so resuming continues a turn the agent already saw — not the [no-auto-resend](#prompt-delivery) of a prompt it never got.
+A harness stores a new session only while its first turn runs, so the runtime flags a session from `session/new` as unstored until the harness answers a prompt of it, and the marker of an unstored session's turn keeps that turn's prompt.
+When the harness exits during such a turn, the runtime moves the kept prompt to the undelivered document; at a shutdown of the agent-runtime process the marker keeps it, for boot recovery or a failed load to settle.
+When the harness cannot load an unstored session, the runtime moves the kept prompt to the undelivered document, retires a session left with no undelivered prompt, and puts `data.platform.unstored` with the undelivered prompts on the load error.
+The UI then moves those prompts to a new chat, where they show as not delivered, and deletes the session: a harness cannot create a session under a given id, so sending again starts a new session.
 
 When a session goes idle — no engaged channel, no prompt active or queued, no agent request pending — the runtime sends `session/close` to the harness; a parked queue counts as queued work, holding the release back until its window passes.
 The per-session subprocess is reaped; the next attach respawns it.

@@ -72,6 +72,7 @@ export interface SessionBootstrapDeps {
     sessionId: string,
   ): { startedAt: string; stopped?: true } | undefined;
   undeliveredFor(sessionId: string): PlatformUndeliveredPrompt[];
+  settleUnstored(sessionId: string): PlatformUndeliveredPrompt[] | null;
   queueOf(sessionId: string): QueuedPrompt[];
   supersededFor(sessionId: string): string[];
   runStartsOf(sessionId: string): string[];
@@ -103,6 +104,10 @@ export interface SessionBootstrapDeps {
  * replayBefore cursor; the cursor names one transcript generation, so a cursor
  * minted before a restart or rebuild is refused rather than bootstrapped or
  * served from a renumbered log.
+ * A failed load of a Session the harness never stored settles it: the prompt
+ * its cut first turn kept becomes undelivered, a Session that holds no prompt
+ * is retired, and the error carries `data.platform.unstored` with the
+ * undelivered prompts, so a client can offer them again in a new Session.
  * When the harness image declares a session-history provider, a cold fill
  * prefers it: the provider's replay lines fill the transcript with no harness
  * process at all, the response is synthesized with placeholder metadata, and
@@ -208,6 +213,24 @@ export function createSessionBootstrap(
       ),
     });
     if (channel.isOpen()) channel.send(rewriteAuthError(response));
+  }
+
+  function withUnstoredData(sessionId: string, frame: unknown): unknown {
+    const error = (frame as { error?: unknown } | null)?.error;
+    if (typeof error !== "object" || error === null) return frame;
+    const undelivered = deps.settleUnstored(sessionId);
+    if (undelivered === null) return frame;
+    const data = (error as { data?: unknown }).data;
+    return {
+      ...(frame as object),
+      error: {
+        ...error,
+        data: {
+          ...(typeof data === "object" && data !== null ? data : {}),
+          platform: { unstored: true, undelivered },
+        },
+      },
+    };
   }
 
   function startHarnessLoad(sessionId: string, state: BootstrapState): void {
@@ -404,12 +427,13 @@ export function createSessionBootstrap(
       clearTimeout(boot.deadline);
       bootstrapBySession.delete(sessionId);
       const loadFailed = !deps.transcript.metadataOf(sessionId).cached;
+      const failure = loadFailed ? withUnstoredData(sessionId, frame) : frame;
       for (const done of boot.fills) done(!loadFailed);
       for (const waiter of boot.waiters) {
         if (!waiter.channel.isOpen()) continue;
         if (loadFailed) {
           const out = JSON.stringify({
-            ...(frame as object),
+            ...(failure as object),
             id: waiter.originalId,
           });
           waiter.channel.send(rewriteAuthError(out));
