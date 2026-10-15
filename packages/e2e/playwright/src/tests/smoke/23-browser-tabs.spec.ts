@@ -19,8 +19,6 @@ let agentId = "";
 interface AgentTab {
   targetId: string;
   active: boolean;
-  title: string;
-  url: string;
 }
 
 function agentBrowser(...args: string[]): string {
@@ -103,68 +101,59 @@ test.afterAll(async () => {
   if (agentId) await api.agents.delete.mutate({ id: agentId });
 });
 
-// TEST_SCENARIO: tabs the agent opens and names appear in the open panel, without a reload, and the tab the agent opened last is the one the panel marks active — the same target agent-browser reports as selected.
-test("shows the agent's tabs as the agent opens them", async ({ page }) => {
+// TEST_SCENARIO: one open panel, driven from both sides. Tabs the agent opens and names appear without a reload, the last one active — the same target agent-browser reports as selected. The user selecting a tab brings it on screen, and agent-browser selects the same target, so the agent's next command reads the page the user sees; the agent selecting another tab brings it on the user's screen in turn. Closing the active tab from the panel closes it in the browser and brings the tab before it, the last one closed, to the front for both; a new tab from the panel is blank, and the agent is on it too.
+test("keeps the user and the agent on the same tab", async ({ page }) => {
   test.setTimeout(300_000);
   await openPanel(page);
-  const alpha = agentOpens("Alpha");
-  const beta = agentOpens("Beta");
-  await expect(panelTab(page, alpha)).toContainText("Alpha", {
-    timeout: SYNC_MS,
-  });
-  await expect(panelTab(page, beta)).toContainText("Beta", {
-    timeout: SYNC_MS,
-  });
-  await expectSameTab(page, beta);
-});
+  let alpha = "";
+  let beta = "";
 
-// TEST_SCENARIO: the user selects a tab in the panel: it is on the user's screen at once, and agent-browser selects the same target, so the agent's next command acts on the page the user sees; the agent selecting another tab brings it to the user's screen in turn.
-test("keeps the user and the agent on the same tab both ways", async ({
-  page,
-}) => {
-  test.setTimeout(300_000);
-  await openPanel(page);
-  const tabs = agentTabs();
-  const alpha = tabs.find((t) => t.title === "Alpha")!.targetId;
-  const beta = tabs.find((t) => t.title === "Beta")!.targetId;
-
-  await panelTab(page, alpha).getByRole("tab").click();
-  await expectSameTab(page, alpha);
-  expect(agentBrowser("eval", "document.title")).toContain("Alpha");
-
-  agentBrowser("tab", beta);
-  await expectSameTab(page, beta);
-});
-
-// TEST_SCENARIO: closing the active tab from the panel closes it in the browser and brings another tab to the front, for the user and the agent alike; a new tab from the panel is blank, and the agent is on it too.
-test("closes and opens tabs from the panel", async ({ page }) => {
-  test.setTimeout(300_000);
-  await openPanel(page);
-  const beta = agentTabs().find((t) => t.title === "Beta")!.targetId;
-  await expectSameTab(page, beta);
-
-  await panelTab(page, beta)
-    .getByRole("button", { name: "Close tab Beta" })
-    .click();
-  await expect(panelTab(page, beta)).toHaveCount(0, { timeout: SYNC_MS });
-  await expect
-    .poll(() => agentTabs().some((t) => t.targetId === beta), {
+  await test.step("the agent opens two tabs", async () => {
+    alpha = agentOpens("Alpha");
+    beta = agentOpens("Beta");
+    await expect(panelTab(page, alpha)).toContainText("Alpha", {
       timeout: SYNC_MS,
-    })
-    .toBe(false);
-  const next = await panelActive(page);
-  expect(next).not.toBeNull();
-  await expectSameTab(page, next!);
+    });
+    await expect(panelTab(page, beta)).toContainText("Beta", {
+      timeout: SYNC_MS,
+    });
+    await expectSameTab(page, beta);
+  });
 
-  const before = new Set(agentTabs().map((t) => t.targetId));
-  await tabBar(page).getByRole("button", { name: "New tab" }).click();
-  await expect
-    .poll(async () => panelActive(page), { timeout: SYNC_MS })
-    .not.toBe(next);
-  const opened = (await panelActive(page))!;
-  expect(before.has(opened)).toBe(false);
-  await expect(panelTab(page, opened)).toContainText("New tab");
-  await expectSameTab(page, opened);
+  await test.step("the user selects a tab, then the agent another", async () => {
+    await panelTab(page, alpha).getByRole("tab").click();
+    await expectSameTab(page, alpha);
+    expect(agentBrowser("eval", "document.title")).toContain("Alpha");
+    agentBrowser("tab", beta);
+    await expectSameTab(page, beta);
+  });
+
+  await test.step("the user closes the active tab", async () => {
+    await panelTab(page, beta)
+      .getByRole("button", { name: "Close tab Beta" })
+      .click();
+    await expect(panelTab(page, beta)).toHaveCount(0, { timeout: SYNC_MS });
+    await expect
+      .poll(() => agentTabs().some((t) => t.targetId === beta), {
+        timeout: SYNC_MS,
+      })
+      .toBe(false);
+    await expectSameTab(page, alpha);
+  });
+
+  await test.step("the user opens a new tab", async () => {
+    const before = new Set(agentTabs().map((t) => t.targetId));
+    await tabBar(page)
+      .getByRole("button", { name: "New tab", exact: true })
+      .click();
+    await expect
+      .poll(async () => panelActive(page), { timeout: SYNC_MS })
+      .not.toBe(alpha);
+    const opened = (await panelActive(page))!;
+    expect(before.has(opened)).toBe(false);
+    await expect(panelTab(page, opened)).toContainText("New tab");
+    await expectSameTab(page, opened);
+  });
 });
 
 // TEST_SCENARIO: a panel opened again is sent the browser's tabs and active tab as they are now, not the list it last showed: a tab the agent opened while no panel watched is there, and active, and so is every other tab agent-browser knows.
