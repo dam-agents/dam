@@ -1,3 +1,5 @@
+import type { TextFieldComponent } from "api-server-api/chat-forms";
+
 import { FormField } from "@/components/form-field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -5,7 +7,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { useA2uiSurface } from "../../contexts/a2ui-surface-context.js";
 import { useA2uiA11y } from "../../hooks/use-a2ui-a11y.js";
 import { useA2uiBindings } from "../../hooks/use-a2ui-bindings.js";
-import type { TextFieldComponent } from "../../lib/schema.js";
 import { A2uiFieldMessages } from "./a2ui-field-messages.js";
 
 const INPUT_TYPE = {

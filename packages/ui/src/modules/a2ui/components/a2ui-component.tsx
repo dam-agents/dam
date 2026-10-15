@@ -1,6 +1,6 @@
+import type { A2uiComponent as Component } from "api-server-api/chat-forms";
 import { match, P } from "ts-pattern";
 
-import type { A2uiComponent as Component } from "../lib/schema.js";
 import { A2uiAudioPlayer } from "./catalog/a2ui-audio-player.js";
 import { A2uiBadge } from "./catalog/a2ui-badge.js";
 import { A2uiButton } from "./catalog/a2ui-button.js";

@@ -1,6 +1,7 @@
-import { catalogFor } from "../catalogs.js";
-import { getAt } from "../data-model.js";
-import type { FunctionCall } from "../schema.js";
+import type { FunctionCall } from "api-server-api/chat-forms";
+import { catalogFor } from "api-server-api/chat-forms";
+import { getAt } from "api-server-api/chat-forms";
+
 import { runBuiltin } from "./builtins.js";
 import { formatString } from "./format-string.js";
 import {

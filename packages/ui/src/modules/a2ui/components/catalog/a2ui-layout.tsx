@@ -1,7 +1,8 @@
+import type { LayoutComponent } from "api-server-api/chat-forms";
+
 import { cn } from "@/lib/utils";
 
 import { useA2uiSurface } from "../../contexts/a2ui-surface-context.js";
-import type { LayoutComponent } from "../../lib/schema.js";
 import { A2uiChildren } from "./a2ui-children.js";
 import { ALIGN_CLASS, JUSTIFY_CLASS } from "./layout-classes.js";
 

@@ -1,6 +1,7 @@
+import type { CardComponent } from "api-server-api/chat-forms";
+
 import { Card } from "@/components/ui/card";
 
-import type { CardComponent } from "../../lib/schema.js";
 import { A2uiNode } from "../a2ui-node.js";
 
 interface Props {

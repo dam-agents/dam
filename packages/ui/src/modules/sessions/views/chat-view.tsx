@@ -47,6 +47,10 @@ import { A2uiConversationProvider } from "../../a2ui/contexts/a2ui-conversation-
 import { useA2uiAutoReplies } from "../../a2ui/hooks/use-a2ui-auto-replies.js";
 import { useA2uiConversation } from "../../a2ui/hooks/use-a2ui-conversation.js";
 import { useChatFormsEnabled } from "../../a2ui/hooks/use-chat-forms-enabled.js";
+import {
+  COMPOSER_LOCKED_REASON,
+  composerLocked,
+} from "../../a2ui/lib/composer-lock.js";
 import { isQueuedSend, rewritePointsOf } from "../../acp/session-projection.js";
 import {
   useHarnessConfigCurrent,
@@ -464,6 +468,10 @@ export function ChatView() {
     chatFormsEnabled,
   );
   const { withRendererMetadata } = a2uiConversation;
+  const formLocksComposer = composerLocked(
+    a2uiConversation.conversation,
+    a2uiConversation.liveMessageId,
+  );
   useA2uiAutoReplies(a2uiConversation, sendFormPrompt);
   const sendWithA2uiData = useCallback(
     (...[text, ...rest]: Parameters<typeof sendPrompt>) =>
@@ -1129,7 +1137,9 @@ export function ChatView() {
                   blockedReason={
                     noGrantedProvider
                       ? "No LLM provider connected to this agent."
-                      : null
+                      : formLocksComposer
+                        ? COMPOSER_LOCKED_REASON
+                        : null
                   }
                 />
                 {!hasPendingPermission && pickable && (

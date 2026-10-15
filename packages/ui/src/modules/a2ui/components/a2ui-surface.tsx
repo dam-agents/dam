@@ -1,10 +1,13 @@
+import {
+  renderedNodeCount,
+  type SurfaceState,
+} from "api-server-api/chat-forms";
+import { MAX_RENDERED_NODES } from "api-server-api/chat-forms";
 import { useMemo } from "react";
 
 import { useA2uiConversationState } from "../contexts/a2ui-conversation-context.js";
 import { A2uiSurfaceProvider } from "../contexts/a2ui-surface-context.js";
 import { useA2uiSurfaceState } from "../hooks/use-a2ui-surface-state.js";
-import { renderedNodeCount, type SurfaceState } from "../lib/conversation.js";
-import { MAX_RENDERED_NODES } from "../lib/limits.js";
 import { A2uiNode } from "./a2ui-node.js";
 
 interface Props {

@@ -1,7 +1,7 @@
 import { chatFormCapabilities } from "api-server-api";
+import type { A2uiConversation } from "api-server-api/chat-forms";
 
 import { a2uiEditKey } from "../store.js";
-import type { A2uiConversation } from "./conversation.js";
 import { withDataModels } from "./prompts.js";
 
 export function withRendererMetadata(

@@ -1,10 +1,11 @@
+import type { SwitchComponent } from "api-server-api/chat-forms";
+
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 import { useA2uiSurface } from "../../contexts/a2ui-surface-context.js";
 import { useA2uiBindings } from "../../hooks/use-a2ui-bindings.js";
 import { splitRecommended } from "../../lib/recommended.js";
-import type { SwitchComponent } from "../../lib/schema.js";
 import { A2uiFieldMessages } from "./a2ui-field-messages.js";
 import { A2uiRecommendedMark } from "./a2ui-recommended-mark.js";
 

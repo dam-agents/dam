@@ -1,4 +1,5 @@
 import { Document } from "@carbon/icons-react";
+import { hasA2uiBlock } from "api-server-api/chat-forms";
 import { useState } from "react";
 
 import { formatBytes } from "@/lib/format-size";
@@ -12,7 +13,6 @@ import type {
 import { A2uiAssistantText } from "../../a2ui/components/a2ui-assistant-text.js";
 import { A2uiUserText } from "../../a2ui/components/a2ui-user-text.js";
 import { hasRendererBlocks } from "../../a2ui/lib/prompts.js";
-import { hasA2uiBlock } from "../../a2ui/lib/split-blocks.js";
 import { DelegationBlock } from "../../invocations/components/delegation-block.js";
 import { useOwnedSpawns } from "../../invocations/components/delegation-owners.js";
 import {

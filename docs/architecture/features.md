@@ -61,7 +61,8 @@ It controls where a feature *appears*:
 
 - **Agent surface** — whether the feature's MCP tools are registered into an agent's MCP session, decided at session creation.
   A toggle then reaches live agents when their session rolls over (bounded by the session TTL) and new sessions immediately.
-  No current feature carries an agent surface (the artifact library did before its promotion to a standard surface); the session-creation check is reintroduced with the next feature that needs it.
+  [Chat forms](chat-forms.md) carries one: the `check_chat_form` tool.
+  The endpoint creates a session per request, so the owner's flags are read on every request.
 
 - **A rollup inside a shared read** — where a feature adds one section to a response every caller already receives, the flag decides whether that section is computed.
   The gate is a cost decision, not an access one: the section rides in a procedure nobody can opt out of, so leaving it ungated would charge every user its backing queries to render nothing.

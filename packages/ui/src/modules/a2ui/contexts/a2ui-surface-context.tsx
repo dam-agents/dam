@@ -1,7 +1,7 @@
+import type { SurfaceState } from "api-server-api/chat-forms";
+import type { FunctionCall } from "api-server-api/chat-forms";
 import { createContext, useContext } from "react";
 
-import type { SurfaceState } from "../lib/conversation.js";
-import type { FunctionCall } from "../lib/schema.js";
 import type { A2uiScope } from "./a2ui-scope-context.js";
 
 export interface A2uiEvent {

@@ -1,6 +1,7 @@
+import type { AudioPlayerComponent } from "api-server-api/chat-forms";
+
 import { useA2uiBindings } from "../../hooks/use-a2ui-bindings.js";
 import { safeMediaUrl } from "../../lib/safe-url.js";
-import type { AudioPlayerComponent } from "../../lib/schema.js";
 
 interface Props {
   component: AudioPlayerComponent;

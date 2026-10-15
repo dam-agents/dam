@@ -1,6 +1,7 @@
+import type { BlockInput } from "api-server-api/chat-forms";
+import { hasA2uiBlock, splitA2uiBlocks } from "api-server-api/chat-forms";
+
 import type { Message } from "../../../types.js";
-import type { BlockInput } from "./conversation.js";
-import { hasA2uiBlock, splitA2uiBlocks } from "./split-blocks.js";
 
 export function blockKey(partKey: string, blockIndex: number): string {
   return `${partKey}:${blockIndex}`;

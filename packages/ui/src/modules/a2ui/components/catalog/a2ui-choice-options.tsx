@@ -1,3 +1,5 @@
+import type { ChoicePickerComponent } from "api-server-api/chat-forms";
+
 import { cardSelectionVariants } from "@/components/ui/card";
 import { CheckboxItem } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -6,7 +8,6 @@ import { cn } from "@/lib/utils";
 
 import { useA2uiSurface } from "../../contexts/a2ui-surface-context.js";
 import { splitRecommended } from "../../lib/recommended.js";
-import type { ChoicePickerComponent } from "../../lib/schema.js";
 import { A2uiRecommendedMark } from "./a2ui-recommended-mark.js";
 
 interface Option {

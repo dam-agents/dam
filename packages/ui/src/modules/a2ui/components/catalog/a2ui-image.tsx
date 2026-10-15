@@ -1,8 +1,9 @@
+import type { ImageComponent } from "api-server-api/chat-forms";
+
 import { cn } from "@/lib/utils";
 
 import { useA2uiBindings } from "../../hooks/use-a2ui-bindings.js";
 import { safeMediaUrl } from "../../lib/safe-url.js";
-import type { ImageComponent } from "../../lib/schema.js";
 
 type Fit = NonNullable<ImageComponent["fit"]>;
 type Variant = NonNullable<ImageComponent["variant"]>;

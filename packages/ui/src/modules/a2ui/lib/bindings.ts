@@ -1,13 +1,3 @@
-import { getAt } from "./data-model.js";
-import { evaluate } from "./functions/evaluate.js";
-import {
-  absolutePath,
-  type EvalContext,
-  isBinding,
-  toBoolean,
-  toNumber,
-  toText,
-} from "./functions/values.js";
 import type {
   CheckRule,
   DynamicBoolean,
@@ -17,8 +7,19 @@ import type {
   DynamicTone,
   DynamicValue,
   Tone,
-} from "./schema.js";
-import { TONES } from "./schema.js";
+} from "api-server-api/chat-forms";
+import { getAt } from "api-server-api/chat-forms";
+import { TONES } from "api-server-api/chat-forms";
+
+import { evaluate } from "./functions/evaluate.js";
+import {
+  absolutePath,
+  type EvalContext,
+  isBinding,
+  toBoolean,
+  toNumber,
+  toText,
+} from "./functions/values.js";
 import { type CheckFailure, failedChecks } from "./validation.js";
 
 export interface A2uiBindings {

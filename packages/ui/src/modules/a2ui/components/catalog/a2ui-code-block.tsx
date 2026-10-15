@@ -1,8 +1,9 @@
+import type { CodeBlockComponent } from "api-server-api/chat-forms";
+
 import { Markdown } from "@/components/markdown";
 
 import { useA2uiBindings } from "../../hooks/use-a2ui-bindings.js";
 import { fencedCode } from "../../lib/fence.js";
-import type { CodeBlockComponent } from "../../lib/schema.js";
 
 const LANGUAGE = /^[\w+#.-]*$/;
 

@@ -1,15 +1,9 @@
 import { match, P } from "ts-pattern";
 import type { z } from "zod";
 
+import { A2UI_CHAT_EXTENSION_ID } from "./capabilities.js";
 import { catalogFor, SUPPORTED_CATALOG_IDS } from "./catalogs.js";
 import { deleteAt, getAt, setAt } from "./data-model.js";
-import { callFunction } from "./functions/evaluate.js";
-import {
-  A2uiExpressionError,
-  absolutePath,
-  isCall,
-  isRecord,
-} from "./functions/values.js";
 import { MAX_DEPTH, MAX_RENDERED_NODES, MAX_TEMPLATE_ITEMS } from "./limits.js";
 import { parsePartialJson } from "./partial-json.js";
 import {
@@ -18,9 +12,16 @@ import {
   A2uiComponent as ComponentSchema,
   type A2uiMessage,
   type A2uiMessageKind,
+  ChatExtension,
   type FunctionCall,
   MESSAGE_SCHEMAS,
 } from "./schema.js";
+import {
+  A2uiExpressionError,
+  absolutePath,
+  isCall,
+  isRecord,
+} from "./values.js";
 
 export interface BlockInput {
   key: string;
@@ -53,6 +54,8 @@ export interface SurfaceState {
   sendDataModel: boolean;
   components: ReadonlyMap<string, A2uiComponent>;
   dataModel: unknown;
+  lockComposer: boolean;
+  assumed: boolean;
   version: number;
   ownerKey: string;
   lastTouchKey: string;
@@ -74,6 +77,11 @@ export interface BlockOutcome {
 export interface A2uiConversation {
   surfaces: ReadonlyMap<string, SurfaceState>;
   blocks: ReadonlyMap<string, BlockOutcome>;
+}
+
+export interface ConversationOptions {
+  callFunction: (call: FunctionCall) => unknown;
+  assumeEarlierSurfaces?: boolean;
 }
 
 interface Draft extends Omit<SurfaceState, "components"> {
@@ -142,6 +150,8 @@ class ConversationBuilder {
   readonly blocks = new Map<string, BlockOutcome>();
   private outcome!: BlockOutcome;
   private block!: BlockInput;
+
+  constructor(private readonly options: ConversationOptions) {}
 
   addBlock(block: BlockInput) {
     this.block = block;
@@ -222,6 +232,8 @@ class ConversationBuilder {
   private existing(surfaceId: string, index: number): Draft | undefined {
     const draft = this.surfaces.get(surfaceId);
     if (draft && !draft.deleted) return draft;
+    if (!draft && this.options.assumeEarlierSurfaces)
+      return this.draft(surfaceId, undefined, true);
     this.report({
       code: "SURFACE_NOT_FOUND",
       surfaceId,
@@ -292,12 +304,32 @@ class ConversationBuilder {
         path: pointer([index, "createSurface", "catalogId"]),
         message: `Catalog "${catalogId}" is not supported. Supported catalogs: ${SUPPORTED_CATALOG_IDS.join(", ")}.`,
       });
+    const draft = this.draft(surfaceId, catalogId, false);
+    draft.sendDataModel = payload.sendDataModel ?? false;
+    draft.dataModel = payload.dataModel ?? {};
+    draft.lockComposer = this.lockComposer(payload.metadata, index, surfaceId);
+    for (const component of this.components(
+      payload.components,
+      [index, "createSurface", "components"],
+      surfaceId,
+    ))
+      draft.components.set(component.id, component);
+    this.outcome.owned.push(surfaceId);
+  }
+
+  private draft(
+    surfaceId: string,
+    catalogId: string | undefined,
+    assumed: boolean,
+  ): Draft {
     const draft: Draft = {
       id: surfaceId,
       catalogId,
-      sendDataModel: payload.sendDataModel ?? false,
+      sendDataModel: false,
       components: new Map(),
-      dataModel: payload.dataModel ?? {},
+      dataModel: {},
+      lockComposer: false,
+      assumed,
       version: 0,
       ownerKey: this.block.key,
       lastTouchKey: this.block.key,
@@ -305,14 +337,33 @@ class ConversationBuilder {
       deleted: false,
       streaming: !this.block.closed,
     };
-    for (const component of this.components(
-      payload.components,
-      [index, "createSurface", "components"],
-      surfaceId,
-    ))
-      draft.components.set(component.id, component);
     this.surfaces.set(surfaceId, draft);
-    this.outcome.owned.push(surfaceId);
+    return draft;
+  }
+
+  private lockComposer(
+    metadata: { extensions?: Record<string, unknown> } | undefined,
+    index: number,
+    surfaceId: string,
+  ): boolean {
+    const extension = metadata?.extensions?.[A2UI_CHAT_EXTENSION_ID];
+    if (extension === undefined) return false;
+    const parsed = ChatExtension.safeParse(extension);
+    if (parsed.success) return parsed.data.lockComposer ?? false;
+    this.report(
+      issueError(
+        parsed.error,
+        [
+          index,
+          "createSurface",
+          "metadata",
+          "extensions",
+          A2UI_CHAT_EXTENSION_ID,
+        ],
+        surfaceId,
+      ),
+    );
+    return false;
   }
 
   private callRendererFunction({
@@ -346,13 +397,7 @@ class ConversationBuilder {
       outcome = reject(`Function "${name}" needs a user action.`);
     else {
       try {
-        const value = callFunction(call, {
-          model: {},
-          scope: "",
-          indexes: [],
-          catalogId: call.catalogId,
-          userActivation: false,
-        });
+        const value = this.options.callFunction(call);
         outcome = { name, response: { functionCallId, value: value ?? null } };
       } catch (error) {
         outcome = {
@@ -499,8 +544,16 @@ export function resolvesInCatalog(
   );
 }
 
+function hasEventButton(surface: Draft): boolean {
+  return [...surface.components.values()].some(
+    (component) =>
+      component.component === "Button" && "event" in component.action,
+  );
+}
+
 function surfaceErrors(surface: Draft): RendererError[] {
   const errors: RendererError[] = [];
+  if (surface.assumed) return errors;
   const add = (message: string, path?: string) =>
     errors.push({
       code: "VALIDATION_FAILED",
@@ -511,6 +564,10 @@ function surfaceErrors(surface: Draft): RendererError[] {
   if (!surface.components.has("root"))
     add(`Surface "${surface.id}" has no component with id "root".`);
   for (const message of structureErrors(surface)) add(message);
+  if (surface.lockComposer && !hasEventButton(surface))
+    add(
+      `Surface "${surface.id}" locks the composer but has no Button with an event action, so the user could not answer.`,
+    );
   for (const component of surface.components.values()) {
     const catalogId = componentCatalogId(component, surface);
     if (catalogId === undefined)
@@ -545,8 +602,9 @@ function surfaceErrors(surface: Draft): RendererError[] {
 
 export function buildConversation(
   blocks: readonly BlockInput[],
+  options: ConversationOptions,
 ): A2uiConversation {
-  const builder = new ConversationBuilder();
+  const builder = new ConversationBuilder(options);
   for (const block of blocks) builder.addBlock(block);
   for (const surface of builder.surfaces.values()) {
     if (surface.deleted || surface.streaming) continue;

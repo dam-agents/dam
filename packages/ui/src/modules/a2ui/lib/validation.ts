@@ -1,3 +1,5 @@
+import type { CheckRule } from "api-server-api/chat-forms";
+
 import { BASIC_VALIDATORS } from "./functions/builtins.js";
 import { evaluate } from "./functions/evaluate.js";
 import {
@@ -6,7 +8,6 @@ import {
   isValidationResult,
   type ValidationResult,
 } from "./functions/values.js";
-import type { CheckRule } from "./schema.js";
 
 export interface CheckFailure {
   message: string;

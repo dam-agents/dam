@@ -1,9 +1,9 @@
+import { A2UI_VERSION } from "api-server-api/chat-forms";
 import { useEffect, useRef } from "react";
 
 import { emitToast } from "../../../lib/toast.js";
 import type { A2uiConversationState } from "../contexts/a2ui-conversation-context.js";
 import { formatRendererMessage } from "../lib/prompts.js";
-import { A2UI_VERSION } from "../lib/schema.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the A2UI renderer must answer every callRendererFunction, so the chat sends the rendererFunctionResponse of the newest finished agent message on its own, once per call, and stops after a run of automatic replies so a looping agent cannot keep itself busy.

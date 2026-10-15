@@ -1,7 +1,7 @@
+import type { SurfaceState } from "api-server-api/chat-forms";
 import type { StateCreator } from "zustand";
 
 import type { PlatformStore } from "../../store.js";
-import type { SurfaceState } from "./lib/conversation.js";
 
 export interface A2uiSlice {
   a2uiEdits: Readonly<Record<string, unknown>>;

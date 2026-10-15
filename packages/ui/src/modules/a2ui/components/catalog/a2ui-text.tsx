@@ -1,5 +1,6 @@
+import type { TextComponent } from "api-server-api/chat-forms";
+
 import { useA2uiBindings } from "../../hooks/use-a2ui-bindings.js";
-import type { TextComponent } from "../../lib/schema.js";
 import { A2uiMarkdown } from "./a2ui-markdown.js";
 
 interface Props {

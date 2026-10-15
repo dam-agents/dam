@@ -1,6 +1,6 @@
 # Chat forms
 
-Last verified: 2026-10-12
+Last verified: 2026-10-15
 
 ## Overview
 
@@ -16,7 +16,7 @@ The first users are [Kit Onboarding and Kit Update](starter-kits.md): the questi
 
 ## The conversation is the transport
 
-There is no dedicated tool and no side channel.
+No tool carries a form and there is no side channel.
 Everything travels inside the Session Transcript:
 
 ```mermaid
@@ -41,6 +41,11 @@ sequenceDiagram
   It names the catalogs, components, functions and rules, with worked examples.
   Where the context supports one, it asks the agent to preselect a recommended answer, mark it and say why; matters of taste, values only the user knows and risky choices stay empty.
   The chat shows a label's trailing `(Recommended)` as a muted tag.
+- **The check tool.** While the owner has the feature on, the agent's [platform MCP server](features.md#what-a-flag-does--and-does-not--gate) also offers `check_chat_form`.
+  It validates a reply's blocks with the same code the chat replays them with, so the agent can fix a form before the user sees it.
+  A surface the reply updates without creating is taken to come from an earlier reply, and only its components' shape is checked; agent function calls are checked, not run.
+  The tool takes the attempt number and refuses a fourth: after the third failed check the skill and the tool's answer both tell the agent to ask in plain text.
+  The count travels in the call, because the endpoint keeps no state between requests.
 
 In the user's own message the chat shows a short summary — the action's human-readable label and the values sent — instead of the raw renderer messages.
 
@@ -61,6 +66,14 @@ While a reply streams, the chat renders the complete part of the block and shows
 Validation errors are reported only once the block is complete.
 A block that a finished reply never closes counts as complete, so its errors show.
 
+## Locking the chat input
+
+A surface can ask the chat to lock its text input while the form waits, through the platform extension `urn:platform:a2ui:extension:chat:v1` in the surface's metadata (`lockComposer`).
+The input is locked only while the newest finished reply holds that surface, valid and complete; it shows that the user should answer the form.
+A surface that asks for the lock must offer a button that sends an event, otherwise it is a validation error.
+A block with any error never locks the input, so a broken form cannot leave the user without a way to answer.
+Sending the form, or any newer reply, ends the lock.
+
 ## Catalogs and validation
 
 Two catalogs are supported: the A2UI **basic catalog** (layout, text, media, inputs, buttons, tabs, dialogs) and the **platform catalog**, a superset that adds callouts, badges, switches, code blocks and diffs.
@@ -73,6 +86,8 @@ Errors are listed under the block, each with a machine-readable code and the loc
 The agent fixes the block and sends it again; the forwarded errors carry the renderer capabilities, like any other renderer message.
 A second button asks the agent for plain text instead and carries no capabilities.
 After a second failed block for the same question, the skill tells the agent to ask in plain text.
+
+Once the user can no longer change a surface — it is older than the newest reply, or it was sent — its inputs, callouts and badges show greyed out.
 
 ## Functions and checks
 
@@ -106,4 +121,5 @@ The specification requires a reply to each call, and the chat sends it on its ow
 - **Read-only views**, such as a delegated agent's transcript, render surfaces without input.
 - **Feature off** — a collapsed note with the block's source.
 
-The renderer lives in the UI ([`packages/ui/`](../../packages/ui/)); the catalog identifiers and the capability announcement are shared with the api-server through the contract package ([`packages/api-server-api/`](../../packages/api-server-api/)).
+The renderer lives in the UI ([`packages/ui/`](../../packages/ui/)).
+The schema, the catalogs, the replay and its validation, the capability announcement and the form check live in the contract package ([`packages/api-server-api/`](../../packages/api-server-api/)), shared by the chat and the api-server's check tool ([`packages/api-server/src/modules/chat-forms/`](../../packages/api-server/src/modules/chat-forms/)).

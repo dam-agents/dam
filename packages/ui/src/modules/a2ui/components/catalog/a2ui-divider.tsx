@@ -1,6 +1,6 @@
-import { cn } from "@/lib/utils";
+import type { DividerComponent } from "api-server-api/chat-forms";
 
-import type { DividerComponent } from "../../lib/schema.js";
+import { cn } from "@/lib/utils";
 
 interface Props {
   component: DividerComponent;

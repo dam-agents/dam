@@ -1,3 +1,6 @@
+import type { SurfaceState } from "api-server-api/chat-forms";
+import { setAt } from "api-server-api/chat-forms";
+import { A2UI_VERSION, type FunctionCall } from "api-server-api/chat-forms";
 import { useCallback, useMemo, useState } from "react";
 
 import { emitToast } from "../../../lib/toast.js";
@@ -8,11 +11,8 @@ import type {
   A2uiEvent,
   A2uiSurfaceState,
 } from "../contexts/a2ui-surface-context.js";
-import type { SurfaceState } from "../lib/conversation.js";
-import { setAt } from "../lib/data-model.js";
 import { callFunction } from "../lib/functions/evaluate.js";
 import { formatRendererMessage } from "../lib/prompts.js";
-import { A2UI_VERSION, type FunctionCall } from "../lib/schema.js";
 import { a2uiEditKey } from "../store.js";
 
 function errorText(error: unknown, fallback: string): string {

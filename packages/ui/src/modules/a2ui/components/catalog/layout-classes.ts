@@ -1,4 +1,4 @@
-import type { Align, Justify } from "../../lib/schema.js";
+import type { Align, Justify } from "api-server-api/chat-forms";
 
 export const JUSTIFY_CLASS: Record<Justify, string> = {
   start: "justify-start",

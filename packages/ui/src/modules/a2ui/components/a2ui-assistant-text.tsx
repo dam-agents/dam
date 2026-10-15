@@ -1,9 +1,9 @@
+import { splitA2uiBlocks } from "api-server-api/chat-forms";
 import { useMemo } from "react";
 
 import { Markdown } from "@/components/markdown";
 
 import { blockKey } from "../lib/collect-blocks.js";
-import { splitA2uiBlocks } from "../lib/split-blocks.js";
 import { A2uiBlock } from "./a2ui-block.js";
 
 type View =

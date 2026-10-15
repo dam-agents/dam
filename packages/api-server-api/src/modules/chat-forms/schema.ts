@@ -374,6 +374,10 @@ const AgentFunctionResponseMessage = z.strictObject({
   }),
 });
 
+export const ChatExtension = z.strictObject({
+  lockComposer: z.boolean().optional(),
+});
+
 export const MESSAGE_SCHEMAS = {
   createSurface: CreateSurfaceMessage,
   updateComponents: UpdateComponentsMessage,

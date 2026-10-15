@@ -1,7 +1,7 @@
 import {
   A2UI_BASIC_CATALOG_ID as BASIC_CATALOG_ID,
   A2UI_PLATFORM_CATALOG_ID as PLATFORM_CATALOG_ID,
-} from "api-server-api";
+} from "./capabilities.js";
 
 import type { ComponentType } from "./schema.js";
 

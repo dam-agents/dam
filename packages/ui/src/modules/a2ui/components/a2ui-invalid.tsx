@@ -1,11 +1,11 @@
+import type { RendererError } from "api-server-api/chat-forms";
+import { A2UI_VERSION } from "api-server-api/chat-forms";
 import { useState } from "react";
 
 import { Callout } from "@/components/ui/callout";
 import { DisclosureToggle } from "@/components/ui/disclosure";
 
-import type { RendererError } from "../lib/conversation.js";
 import { formatRendererMessage } from "../lib/prompts.js";
-import { A2UI_VERSION } from "../lib/schema.js";
 import { A2uiSendButton } from "./a2ui-send-button.js";
 
 const TEXT_INSTEAD = "The form didn't work. Ask me in plain text instead.";

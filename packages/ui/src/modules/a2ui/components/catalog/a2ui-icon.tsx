@@ -58,10 +58,10 @@ import {
   VolumeUp,
   WarningAlt,
 } from "@carbon/icons-react";
+import type { IconComponent } from "api-server-api/chat-forms";
+import { ICON_NAMES, type IconName } from "api-server-api/chat-forms";
 
 import { useA2uiBindings } from "../../hooks/use-a2ui-bindings.js";
-import { ICON_NAMES, type IconName } from "../../lib/icon-names.js";
-import type { IconComponent } from "../../lib/schema.js";
 
 const ICONS: Record<IconName, CarbonIconType> = {
   accountCircle: UserAvatar,

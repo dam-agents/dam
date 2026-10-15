@@ -1,13 +1,15 @@
 // TEST_OVERVIEW: A2UI v1.0 in agent chat text — blocks split out of markdown, surfaces replay across the Session Transcript, catalog functions evaluate against the data model, and a streaming block renders the components that are already complete.
+import {
+  A2UI_BASIC_CATALOG_ID as BASIC_CATALOG_ID,
+  A2UI_CHAT_EXTENSION_ID,
+  renderedNodeCount,
+  splitA2uiBlocks,
+} from "api-server-api/chat-forms";
 import { describe, expect, test } from "vitest";
 
-import { BASIC_CATALOG_ID } from "../../modules/a2ui/lib/catalogs.js";
-import {
-  buildConversation,
-  renderedNodeCount,
-} from "../../modules/a2ui/lib/conversation.js";
+import { buildConversation } from "../../modules/a2ui/lib/build-conversation.js";
+import { composerLocked } from "../../modules/a2ui/lib/composer-lock.js";
 import { evaluate } from "../../modules/a2ui/lib/functions/evaluate.js";
-import { splitA2uiBlocks } from "../../modules/a2ui/lib/split-blocks.js";
 import { failedChecks } from "../../modules/a2ui/lib/validation.js";
 
 const CREATE = JSON.stringify([
@@ -159,5 +161,48 @@ describe("A2UI v1.0", () => {
     );
     const surface = surfaces.get("fan");
     expect(surface && renderedNodeCount(surface, {}, 100)).toBe(101);
+  });
+
+  // TEST_SCENARIO: a valid form that asks for the lock locks the composer only while it is the newest reply; an invalid one never does, so the user can still answer.
+  test("locks the composer only for a valid surface in the newest reply", () => {
+    const form = (components: unknown[]) =>
+      JSON.stringify({
+        version: "v1.0",
+        createSurface: {
+          surfaceId: "ask",
+          catalogId: BASIC_CATALOG_ID,
+          metadata: {
+            extensions: { [A2UI_CHAT_EXTENSION_ID]: { lockComposer: true } },
+          },
+          components,
+        },
+      });
+    const valid = buildConversation([
+      {
+        key: "a",
+        messageId: "m1",
+        closed: true,
+        source: form([
+          {
+            id: "root",
+            component: "Button",
+            child: "label",
+            action: { event: { name: "go" } },
+          },
+          { id: "label", component: "Text", text: "Go" },
+        ]),
+      },
+    ]);
+    expect(composerLocked(valid, "m1")).toBe(true);
+    expect(composerLocked(valid, null)).toBe(false);
+    const invalid = buildConversation([
+      {
+        key: "a",
+        messageId: "m1",
+        closed: true,
+        source: form([{ id: "root", component: "Text", text: "No button" }]),
+      },
+    ]);
+    expect(composerLocked(invalid, "m1")).toBe(false);
   });
 });

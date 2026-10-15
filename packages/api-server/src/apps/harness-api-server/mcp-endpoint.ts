@@ -71,6 +71,7 @@ import {
   registerSatelliteTools,
 } from "../../modules/satellites/index.js";
 import type { SatelliteAgentOpsImpl } from "../../modules/satellites/index.js";
+import { registerChatFormTools } from "../../modules/chat-forms/index.js";
 
 function resolveWorkspacePath(input: string): string {
   if (input.startsWith("/")) {
@@ -161,6 +162,7 @@ export interface McpSessionDeps {
   agentImage: (agentId: string) => Promise<string | null>;
   agentTelemetry: AgentTelemetryService;
   sessionRef?: string;
+  chatForms?: boolean;
   satellites?: {
     ops: SatelliteAgentOpsImpl;
     granted: SatelliteView[];
@@ -1281,6 +1283,8 @@ export function createMcpSession(
     requestSignal: deps.requestSignal,
   });
 
+  if (deps.chatForms) registerChatFormTools(server);
+
   if (deps.satellites)
     registerSatelliteTools(server, {
       ops: deps.satellites.ops,
@@ -1327,6 +1331,7 @@ export interface MountMcpDeps {
   caseStudySubmissions: CaseStudySubmissionsService;
   caseStudyInspection: CaseStudyInspectionService;
   carriesInspectorRole: (sub: string) => Promise<boolean>;
+  chatFormsEnabled: (owner: string) => Promise<boolean>;
   agentImage: (agentId: string) => Promise<string | null>;
   agentTelemetry: AgentTelemetryService;
   satelliteOps?: SatelliteAgentOpsImpl;
@@ -1354,8 +1359,15 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const schedules = deps.schedulesServiceFor(verified.owner);
     const artifactLibrary = deps.artifactLibraryFor(verified.owner);
     const invocations = deps.invocationsServiceFor(verified.owner);
-    const [ownerIsInspector, grantedSatellites] = await Promise.all([
+    const [ownerIsInspector, chatForms, grantedSatellites] = await Promise.all([
       deps.carriesInspectorRole(verified.owner),
+      deps.chatFormsEnabled(verified.owner).catch((err: unknown) => {
+        console.error(
+          `[chat-forms] could not read ${agentId}'s owner flags; serving the session without check_chat_form`,
+          err,
+        );
+        return false;
+      }),
       Promise.resolve(deps.satelliteOps?.granted(agentId) ?? []).catch(
         (err: unknown) => {
           console.error(
@@ -1370,6 +1382,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const session = createMcpSession(agentId, {
       owner: verified.owner,
       ...(sessionRef ? { sessionRef } : {}),
+      chatForms,
       channelManager: deps.channelManager,
       k8s: deps.k8s,
       skills,

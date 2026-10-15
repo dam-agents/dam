@@ -1,7 +1,6 @@
 import { findRendererBlocks, separateRendererBlocks } from "api-server-api";
+import { A2UI_VERSION } from "api-server-api/chat-forms";
 import { z } from "zod";
-
-import { A2UI_VERSION } from "./schema.js";
 
 const ActionPayload = z.object({
   name: z.string(),

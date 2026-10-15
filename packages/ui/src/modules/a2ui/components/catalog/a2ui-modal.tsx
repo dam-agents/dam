@@ -1,8 +1,8 @@
+import type { ModalComponent } from "api-server-api/chat-forms";
 import { type MouseEvent, useState } from "react";
 
 import { DialogBody, DialogHeader, Modal } from "@/components/modal";
 
-import type { ModalComponent } from "../../lib/schema.js";
 import { A2uiNode } from "../a2ui-node.js";
 
 interface Props {

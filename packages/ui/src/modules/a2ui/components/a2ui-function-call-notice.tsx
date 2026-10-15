@@ -1,10 +1,11 @@
+import type { FunctionCallOutcome } from "api-server-api/chat-forms";
+import { A2UI_VERSION } from "api-server-api/chat-forms";
+
 import { Callout } from "@/components/ui/callout";
 
 import { useA2uiConversationState } from "../contexts/a2ui-conversation-context.js";
-import type { FunctionCallOutcome } from "../lib/conversation.js";
 import { MAX_AUTOMATIC_REPLIES } from "../lib/function-replies.js";
 import { formatRendererMessage } from "../lib/prompts.js";
-import { A2UI_VERSION } from "../lib/schema.js";
 import { A2uiSendButton } from "./a2ui-send-button.js";
 
 function ReplyStatus({ outcome }: { outcome: FunctionCallOutcome }) {

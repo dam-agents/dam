@@ -46,6 +46,7 @@ Usually one message is enough: `createSurface` with the components and the initi
     Use this one.
   - `https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json` — the A2UI basic catalog only.
 - Optional: `"sendDataModel": true` makes the chat attach the whole data model of the form to every later user message (see "What comes back").
+- Optional: `"metadata"` locks the chat input while the form waits (see "Lock the chat input").
 
 ## Values, bindings and functions
 
@@ -150,6 +151,27 @@ Ask me in plain text instead."), answer that question in plain text and send no 
 - Only where the conversation carries renderer capabilities (see above).
 - Never ask for secrets.
   Credentials are set by the user in the platform's connections, not typed into chat.
+
+## Check before you send
+
+When your tools include `check_chat_form` (on the platform MCP server), call it with your whole reply before you send it, with `"attempt": 1`.
+It answers `ok`, or the problems the chat would report.
+Fix every problem and call it again with the next attempt number.
+If attempt 3 still fails, send no block: ask the same questions in plain text, as a numbered list with the options and your recommendation.
+The tool refuses a fourth attempt.
+
+## Lock the chat input
+
+Add this to `createSurface` to disable the chat's text input until the user answers through the form:
+
+```
+"metadata": {"extensions": {"urn:platform:a2ui:extension:chat:v1": {"lockComposer": true}}}
+```
+
+- Lock only when the form covers every answer the user may want to give: a confirmation, a short closed question, or a choice with an "Other" option and a text field.
+- Do not lock a long form, a question the user may want to discuss, or a card that only shows a result.
+- The form needs a `Button` with an `event` action; without one the chat reports an error.
+- The lock ends when the user sends the form or a newer reply arrives, and the chat never locks a form that has an error.
 
 ## Recommend where you can
 

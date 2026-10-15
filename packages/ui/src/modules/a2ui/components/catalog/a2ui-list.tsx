@@ -1,6 +1,7 @@
+import type { ListComponent } from "api-server-api/chat-forms";
+
 import { cn } from "@/lib/utils";
 
-import type { ListComponent } from "../../lib/schema.js";
 import { A2uiChildren } from "./a2ui-children.js";
 import { ALIGN_CLASS } from "./layout-classes.js";
 

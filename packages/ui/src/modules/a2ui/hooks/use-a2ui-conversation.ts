@@ -3,8 +3,8 @@ import { useCallback, useMemo } from "react";
 import { useStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
 import type { A2uiConversationState } from "../contexts/a2ui-conversation-context.js";
+import { buildConversation } from "../lib/build-conversation.js";
 import { collectBlocks } from "../lib/collect-blocks.js";
-import { buildConversation } from "../lib/conversation.js";
 import {
   answeredCallIds,
   MAX_AUTOMATIC_REPLIES,

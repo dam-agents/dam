@@ -1,3 +1,4 @@
+import type { SliderComponent } from "api-server-api/chat-forms";
 import { useId } from "react";
 
 import { SectionLabel } from "@/components/ui/section-label";
@@ -5,7 +6,6 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { useA2uiSurface } from "../../contexts/a2ui-surface-context.js";
 import { useA2uiA11y } from "../../hooks/use-a2ui-a11y.js";
 import { useA2uiBindings } from "../../hooks/use-a2ui-bindings.js";
-import type { SliderComponent } from "../../lib/schema.js";
 import { A2uiFieldMessages } from "./a2ui-field-messages.js";
 
 interface Props {

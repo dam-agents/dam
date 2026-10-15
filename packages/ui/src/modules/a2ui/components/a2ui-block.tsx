@@ -6,7 +6,7 @@ import {
   useA2uiConversationState,
 } from "../contexts/a2ui-conversation-context.js";
 import { useChatFormsEnabled } from "../hooks/use-chat-forms-enabled.js";
-import { buildConversation } from "../lib/conversation.js";
+import { buildConversation } from "../lib/build-conversation.js";
 import { withRendererMetadata as attachMetadata } from "../lib/outgoing.js";
 import { A2uiBlockView } from "./a2ui-block-view.js";
 import { A2uiFormsOff } from "./a2ui-forms-off.js";

@@ -1,16 +1,12 @@
-import type { DataBinding, FunctionCall } from "../schema.js";
+import { type DataBinding, isRecord } from "api-server-api/chat-forms";
 
-export type ErrorCode =
-  "EXPRESSION_ERROR" | "EXECUTION_ERROR" | "INVALID_FUNCTION_CALL";
-
-export class A2uiExpressionError extends Error {
-  constructor(
-    readonly code: ErrorCode,
-    message: string,
-  ) {
-    super(message);
-  }
-}
+export {
+  A2uiExpressionError,
+  absolutePath,
+  type ErrorCode,
+  isCall,
+  isRecord,
+} from "api-server-api/chat-forms";
 
 export interface ValidationResult {
   valid: boolean;
@@ -27,24 +23,12 @@ export interface EvalContext {
   userActivation: boolean;
 }
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 export function isBinding(value: unknown): value is DataBinding {
   return isRecord(value) && typeof value["@path"] === "string";
 }
 
-export function isCall(value: unknown): value is FunctionCall {
-  return isRecord(value) && typeof value["@call"] === "string";
-}
-
 export function isValidationResult(value: unknown): value is ValidationResult {
   return isRecord(value) && typeof value.valid === "boolean";
-}
-
-export function absolutePath(path: string, scope: string): string {
-  return path.startsWith("/") ? path : `${scope}/${path}`;
 }
 
 export function toText(value: unknown): string {

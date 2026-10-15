@@ -1,5 +1,9 @@
+import type {
+  A2uiConversation,
+  FunctionResponse,
+} from "api-server-api/chat-forms";
+
 import type { Message } from "../../../types.js";
-import type { A2uiConversation, FunctionResponse } from "./conversation.js";
 import { parseUserText } from "./prompts.js";
 
 export const MAX_AUTOMATIC_REPLIES = 3;

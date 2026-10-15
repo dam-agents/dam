@@ -1,4 +1,5 @@
-import type { Accessibility } from "../lib/schema.js";
+import type { Accessibility } from "api-server-api/chat-forms";
+
 import { useA2uiBindings } from "./use-a2ui-bindings.js";
 
 export interface A11yAttributes {

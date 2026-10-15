@@ -1,9 +1,9 @@
+import type { TabsComponent } from "api-server-api/chat-forms";
 import { useState } from "react";
 
 import { Tabs } from "@/components/ui/tabs";
 
 import { useA2uiBindings } from "../../hooks/use-a2ui-bindings.js";
-import type { TabsComponent } from "../../lib/schema.js";
 import { A2uiNode } from "../a2ui-node.js";
 
 interface Props {

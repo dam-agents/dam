@@ -1,3 +1,6 @@
+import type { A2uiComponent as Component } from "api-server-api/chat-forms";
+import { resolvesInCatalog } from "api-server-api/chat-forms";
+import { MAX_DEPTH } from "api-server-api/chat-forms";
 import type { CSSProperties } from "react";
 
 import { TextSkeleton } from "@/components/ui/text-skeleton";
@@ -5,9 +8,6 @@ import { cn } from "@/lib/utils";
 
 import { useA2uiSurface } from "../contexts/a2ui-surface-context.js";
 import { useA2uiA11y } from "../hooks/use-a2ui-a11y.js";
-import { resolvesInCatalog } from "../lib/conversation.js";
-import { MAX_DEPTH } from "../lib/limits.js";
-import type { A2uiComponent as Component } from "../lib/schema.js";
 import { A2uiComponent } from "./a2ui-component.js";
 import { A2uiNodeBoundary } from "./a2ui-node-boundary.js";
 
