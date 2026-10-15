@@ -5,6 +5,7 @@ It is data only: the inspector's `helm-k3s` engine runs the published chart in a
 Contract: quality-inspector `docs/profile-contract.md`; engine configuration: `engines/helm-k3s/README.md` there.
 
 - `profile.json` — the chart, its channels (`main` = `0.0.0-main.<n>`, `release` = `X.Y.Z`), the prerequisites (cert-manager, Gateway API CRDs, Istio CRDs without the mesh dataplane), the Helm values for a single-user QA install with a generated test owner, egress, requirements, config keys.
+- Two install choices keep the nested product inside the inspector's egress, which is deny-by-default on GitHub: `harnessTools.hostPath: ""` leaves out the harness tools installer (its mise backends download from GitHub hosts), and the images the chart takes from `mirror.gcr.io` are in `egress`.
 - `no-mesh-marker.yaml` — the `kube-system/platform-local-no-mesh` ConfigMap that lets the chart take `istio.enforce=false`.
   The inspector's VM kernel cannot run the Istio ambient dataplane, so the nested install runs without it; applied as a `file` prerequisite (quality-inspector 2.21.0 or later).
 - `SKILL.md` — DAM from a tester's point of view: vocabulary, and what the nested install cannot do.
