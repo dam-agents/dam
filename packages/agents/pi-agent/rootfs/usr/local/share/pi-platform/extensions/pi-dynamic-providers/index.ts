@@ -196,10 +196,6 @@ async function activateRouter(
   };
 }
 
-function isRouterModel(model: unknown): boolean {
-  return typeof model === "string" && /^[a-z][a-z0-9-]*\//.test(model);
-}
-
 const RESPONSES_FAMILY = /(^|\/)(gpt-([5-9]|\d{2,})|o[1-9](?:-|$))/i;
 const CLAUDE_FAMILY = /(^|\/)claude-/i;
 const LITELLM_ALIASES = new Set(["ibm", "cb"]);
