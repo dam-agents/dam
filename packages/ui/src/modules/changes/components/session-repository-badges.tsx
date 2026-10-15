@@ -2,11 +2,9 @@ import type { SessionRepository } from "agent-runtime-api";
 
 import { Badge } from "@/components/ui/badge";
 
-const SHOWN_REPOSITORIES = 3;
+import { repositoryShortName } from "../lib/pull-request-links.js";
 
-function shortName(name: string): string {
-  return name.split("/").pop() ?? name;
-}
+const SHOWN_REPOSITORIES = 3;
 
 export function SessionRepositoryBadges({
   repositories,
@@ -29,7 +27,9 @@ export function SessionRepositoryBadges({
           className="max-w-full gap-1"
           title={`${repository.name}${repository.branch ? ` · ${repository.branch}` : ""}\n${repository.path}`}
         >
-          <span className="truncate">{shortName(repository.name)}</span>
+          <span className="truncate">
+            {repositoryShortName(repository.name)}
+          </span>
           {repository.pullRequest && (
             <a
               href={repository.pullRequest.url}

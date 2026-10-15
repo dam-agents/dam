@@ -4,7 +4,7 @@ import {
   type CompareTo,
   compareToSchema,
 } from "agent-runtime-api";
-import { useId, useState } from "react";
+import { memo, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -28,7 +28,10 @@ interface Props {
   sessionId: string | null;
 }
 
-export function DockedChangesPanel({ agentId, sessionId }: Props) {
+export const DockedChangesPanel = memo(function DockedChangesPanel({
+  agentId,
+  sessionId,
+}: Props) {
   const close = useStore((s) => s.setOpenChanges);
   const operable = useIsAgentOperable(agentId);
   const { data, error, isPending } = useChangeSets(agentId, sessionId);
@@ -106,7 +109,7 @@ export function DockedChangesPanel({ agentId, sessionId }: Props) {
       )}
     </div>
   );
-}
+});
 
 function ChangeSetBody({
   agentId,
@@ -120,6 +123,7 @@ function ChangeSetBody({
   layout: DiffLayout;
 }) {
   const anchorPrefix = useId();
+  const scrollRef = useRef<HTMLDivElement>(null);
   const {
     data: diff,
     error,
@@ -142,9 +146,13 @@ function ChangeSetBody({
           }
         />
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
           <div className="max-h-48 overflow-y-auto border-b border-border">
-            <ChangedFileList files={diff.files} anchorPrefix={anchorPrefix} />
+            <ChangedFileList
+              files={diff.files}
+              anchorPrefix={anchorPrefix}
+              scrollRef={scrollRef}
+            />
           </div>
           {diff.truncated && (
             <p className="px-4 pt-2 text-xs text-muted-foreground">

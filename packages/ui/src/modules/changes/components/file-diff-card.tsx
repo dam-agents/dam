@@ -7,7 +7,11 @@ import { useState } from "react";
 
 import { useStore } from "../../../store.js";
 import { isDarkTheme } from "../../platform/store/theme.js";
-import { type DiffLayout, fileDiffBody } from "../lib/diff-layout.js";
+import {
+  type DiffLayout,
+  fileDiffBody,
+  fileDiffData,
+} from "../lib/diff-layout.js";
 import { DiffStatText } from "./diff-stat-text.js";
 import { FileStatusMark } from "./file-status-mark.js";
 
@@ -53,11 +57,7 @@ export function FileDiffCard({ file, layout, anchor }: Props) {
       </header>
       {body === "shown" && file.patch !== null ? (
         <DiffView
-          data={{
-            oldFile: { fileName: file.oldPath ?? file.path },
-            newFile: { fileName: file.path },
-            hunks: [file.patch],
-          }}
+          data={fileDiffData(file)}
           diffViewMode={
             layout === "split" ? DiffModeEnum.Split : DiffModeEnum.Unified
           }
