@@ -27,8 +27,6 @@ const TABS: readonly {
   { tab: "processes", label: "Processes", icon: Activity },
 ];
 
-// A count on a tab's icon, such as the processes running now; `label` names
-// the tab with its count for screen readers and the tooltip.
 export interface SidePanelBadge {
   count: number;
   label: string;
