@@ -2937,3 +2937,33 @@ async fn a_hand_off_keeps_the_trees_of_running_machines_through_a_short_claim() 
     assert!(running.exists(), "an unchanged spec let the tree go");
     next.server.close().await;
 }
+
+// TEST_SCENARIO: a runner whose machine API fails to serve after it has taken its machines over must not reboot them. Under a loader it leaves every machine running, as a hand-off does, so the release the loader goes back to adopts them; a pod stop that the loader passes on during that close still stops them cleanly; and a runner with no loader is the pod's last process and stops them before the pod's end powers them off.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_runner_that_fails_to_serve_leaves_its_machines_to_its_loader() {
+    let h = Harness::new("failed-serve");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let next = h.hand_off(|_| {}).await;
+
+    next.server.close_failed(true, std::future::pending()).await;
+    let calls = h.fake.calls();
+    assert!(!calls.iter().any(|c| c == "stop m1"), "{calls:?}");
+    assert_eq!(h.fake.state("m1").unwrap(), State::Running);
+
+    let stopped = next.hand_off(|_| {}).await;
+    stopped
+        .server
+        .close_failed(true, std::future::ready(()))
+        .await;
+    assert_eq!(h.fake.state("m1").unwrap(), State::Stopped);
+
+    let alone = Harness::new("failed-serve-alone");
+    alone.server.put("m1", spec(true)).unwrap();
+    alone.settle("m1").await;
+    alone
+        .server
+        .close_failed(false, std::future::pending())
+        .await;
+    assert_eq!(alone.fake.state("m1").unwrap(), State::Stopped);
+}
