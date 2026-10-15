@@ -14,6 +14,7 @@ import {
   integer,
   doublePrecision,
   customType,
+  unique,
 } from "drizzle-orm/pg-core";
 
 const bytea = customType<{ data: Buffer }>({ dataType: () => "bytea" });
@@ -1025,3 +1026,85 @@ export const avatarImages = pgTable("avatar_images", {
     .defaultNow()
     .notNull(),
 });
+
+export const spendDaily = pgTable(
+  "spend_daily",
+  {
+    day: date("day").notNull(),
+    payerAgentId: text("payer_agent_id").notNull(),
+    connectionId: text("connection_id").notNull(),
+    model: text("model").notNull(),
+    ownerSub: text("owner_sub").notNull(),
+    providerTemplate: text("provider_template").notNull(),
+    unit: text("unit").notNull(),
+    costMicros: bigint("cost_micros", { mode: "number" }).notNull().default(0),
+    uncachedInputTokens: bigint("uncached_input_tokens", { mode: "number" })
+      .notNull()
+      .default(0),
+    outputTokens: bigint("output_tokens", { mode: "number" })
+      .notNull()
+      .default(0),
+    cacheReadTokens: bigint("cache_read_tokens", { mode: "number" })
+      .notNull()
+      .default(0),
+    cacheWrite5mTokens: bigint("cache_write_5m_tokens", { mode: "number" })
+      .notNull()
+      .default(0),
+    cacheWrite1hTokens: bigint("cache_write_1h_tokens", { mode: "number" })
+      .notNull()
+      .default(0),
+    webSearches: integer("web_searches").notNull().default(0),
+    calls: integer("calls").notNull().default(0),
+    estimatedCalls: integer("estimated_calls").notNull().default(0),
+    refusedCalls: integer("refused_calls").notNull().default(0),
+    maxCallCostMicros: bigint("max_call_cost_micros", { mode: "number" })
+      .notNull()
+      .default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.day, table.payerAgentId, table.connectionId, table.model],
+    }),
+    index("spend_daily_owner_day_idx").on(table.ownerSub, table.day),
+  ],
+);
+
+export const spendLimits = pgTable(
+  "spend_limits",
+  {
+    id: text("id").primaryKey(),
+    ownerSub: text("owner_sub").notNull(),
+    scope: text("scope").notNull(),
+    agentId: text("agent_id"),
+    connectionId: text("connection_id"),
+    unit: text("unit").notNull(),
+    amountMicros: bigint("amount_micros", { mode: "number" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("spend_limits_scope_key")
+      .on(table.ownerSub, table.scope, table.agentId, table.connectionId)
+      .nullsNotDistinct(),
+    index("spend_limits_agent_idx").on(table.agentId),
+  ],
+);
+
+export const spendLimitExtensions = pgTable(
+  "spend_limit_extensions",
+  {
+    limitId: text("limit_id")
+      .notNull()
+      .references(() => spendLimits.id, { onDelete: "cascade" }),
+    day: date("day").notNull(),
+    extensions: integer("extensions").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.limitId, table.day] })],
+);

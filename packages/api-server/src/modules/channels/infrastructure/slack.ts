@@ -99,6 +99,11 @@ import {
   type PodRestartState,
 } from "../../agents/index.js";
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
+import {
+  slackResetTime,
+  spendHoldUserCopy,
+  type ChannelSpendHold,
+} from "./spend-hold-copy.js";
 import { runWhileAgentStarts, type WakeWaitOptions } from "./wake-wait.js";
 import { FileTooLargeError } from "./slack-gateway.js";
 import type {
@@ -1327,6 +1332,7 @@ export type SlackWorkerDeps = {
   ) => Promise<boolean>;
   brand: { name: string; short: string };
   isTermsAccepted: (sub: string) => Promise<boolean>;
+  spendHold?: ChannelSpendHold;
   uiBaseUrl: string;
   attendance: ChannelTurnAttendance;
   workspaceFiles: AgentWorkspaceFilesFactory;
@@ -1355,6 +1361,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     setSlackDefault,
     brand,
     isTermsAccepted,
+    spendHold,
     uiBaseUrl,
     attendance,
     workspaceFiles,
@@ -5138,6 +5145,31 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       return;
     }
 
+    const held = await spendHold?.(args.instanceName);
+    if (held) {
+      const text = spendHoldUserCopy(
+        held,
+        `\`${await resolveAgentName(args.instanceName)}\``,
+        brand.name,
+        slackResetTime(new Date()),
+      );
+      if (args.slackUserId)
+        await gateway.postEphemeral({
+          channel: args.channel,
+          user: args.slackUserId,
+          teamId: args.teamId,
+          text,
+        });
+      else
+        await gateway.postMessage({
+          channel: args.channel,
+          teamId: args.teamId,
+          threadTs: args.threadTs,
+          text,
+        });
+      return;
+    }
+
     await relayOwnerTurn({
       instanceName: args.instanceName,
       channel: args.channel,
@@ -5454,14 +5486,22 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         const readers: RosterEntry[] = [];
         for (const entry of roster) {
           if (!entry.ambient) continue;
-          if (await isTermsAccepted(entry.owner)) {
-            readers.push(entry);
+          if (!(await isTermsAccepted(entry.owner))) {
+            getLogger().debug(
+              { agentId: entry.instanceName, channelId },
+              "slack.ambient_turn.skipped_terms",
+            );
             continue;
           }
-          getLogger().debug(
-            { agentId: entry.instanceName, channelId },
-            "slack.ambient_turn.skipped_terms",
-          );
+          const held = await spendHold?.(entry.instanceName);
+          if (held) {
+            getLogger().debug(
+              { agentId: entry.instanceName, channelId, reason: held },
+              "slack.ambient_turn.skipped_spend",
+            );
+            continue;
+          }
+          readers.push(entry);
         }
         if (readers.length === 0) return;
 
@@ -5957,6 +5997,17 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             `"${target.name}" cannot take turns yet — whoever connected it ` +
             "must accept the Terms of Use first. Answer it yourself, or say " +
             "you can't.",
+        };
+      const held = await spendHold?.(target.instanceName);
+      if (held)
+        return {
+          error:
+            `"${target.name}" reached ` +
+            (held === "limit"
+              ? "its spend limit"
+              : "its owner's spend ceiling") +
+            " for today, so it cannot take turns. Answer it yourself, or " +
+            "say you can't.",
         };
 
       const self = await resolveAgentName(instanceName);

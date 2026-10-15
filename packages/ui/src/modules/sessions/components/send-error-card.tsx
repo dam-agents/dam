@@ -13,11 +13,11 @@ interface Props {
 }
 
 export function SendErrorCard({ rawError, interrupted, quiet }: Props) {
-  const { message, hint } = describeSendError(rawError);
+  const { title, message, hint } = describeSendError(rawError);
   if (interrupted && quiet) {
     return (
       <QuietNotice testId="prompt-delivery-error">
-        Response interrupted: {message}
+        {title ?? "Response interrupted:"} {message}
       </QuietNotice>
     );
   }
@@ -35,7 +35,7 @@ export function SendErrorCard({ rawError, interrupted, quiet }: Props) {
       <div className="flex-1 min-w-0 flex flex-col gap-2">
         <div className="text-sm text-foreground break-words">
           <span className="font-bold text-danger">
-            {interrupted ? "Response interrupted:" : "Send failed:"}
+            {title ?? (interrupted ? "Response interrupted:" : "Send failed:")}
           </span>{" "}
           {message}
         </div>

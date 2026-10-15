@@ -1,5 +1,5 @@
 import { match } from "ts-pattern";
-import { OnceResult } from "api-server-api";
+import { nextUtcMidnight, OnceResult } from "api-server-api";
 import type {
   EventOutcome,
   EventStage,
@@ -26,7 +26,15 @@ const TRIGGER_TTL_SECONDS = 3600;
 
 export type ActivityStamp = AgentActivityStamp;
 
-export type RunNowResult = "started" | "onboarding-pending";
+export type SpendHoldReason = "limit" | "ceiling";
+
+export type SpendHoldGate = (input: {
+  agentId: string;
+  connectionId?: string;
+}) => Promise<SpendHoldReason | null>;
+
+export type RunNowResult =
+  "started" | "onboarding-pending" | "spend-limit" | "spend-ceiling";
 
 export interface SchedulerRunner {
   buildFireHandler(): (
@@ -72,10 +80,27 @@ export interface SchedulerRunnerDeps {
   activityStamps?: TtlStore<ActivityStamp>;
   onboardingPending?: (agentId: string) => Promise<boolean>;
   runtimeMigrating?: (agentId: string) => Promise<boolean>;
+  spendHold?: SpendHoldGate;
   agentDisabled: (agentId: string) => Promise<boolean>;
   log?: (msg: string) => void;
   now?: () => Date;
 }
+
+const SPEND_HOLD = {
+  limit: {
+    holdReason: "spend_limit",
+    result: "held: spend limit reached for today",
+    runNow: "spend-limit",
+  },
+  ceiling: {
+    holdReason: "spend_ceiling",
+    result: "held: spend ceiling reached for today",
+    runNow: "spend-ceiling",
+  },
+} as const satisfies Record<
+  SpendHoldReason,
+  { holdReason: string; result: string; runNow: RunNowResult }
+>;
 
 const VERDICT: Record<EventOutcome, PrecheckVerdict> = {
   ok: "allowed",
@@ -122,8 +147,12 @@ export function createSchedulerRunner(
     if (sched.status?.lastRun) return;
     const at = onceFireAt(spec, sched.status, now());
     if (at) {
-      await deps.repo.setNextRun(sched.id, at);
-      await deps.queue.ensure(sched.id, at, now());
+      const waiting = sched.status?.nextRun
+        ? new Date(sched.status.nextRun)
+        : null;
+      const next = waiting && waiting > at ? waiting : at;
+      await deps.repo.setNextRun(sched.id, next);
+      await deps.queue.ensure(sched.id, next, now());
       return;
     }
     log(`restore: one-time schedule ${sched.id} never fired in its window`);
@@ -186,6 +215,20 @@ export function createSchedulerRunner(
         payload.origin = { ...sched.spec.origin, name: sched.name };
     }
     return payload;
+  }
+
+  async function spendHeld(
+    sched: Schedule,
+    payload: Record<string, unknown>,
+  ): Promise<(typeof SPEND_HOLD)[SpendHoldReason] | null> {
+    if (!deps.spendHold) return null;
+    const reason = await deps.spendHold({
+      agentId: sched.agentId,
+      ...(typeof payload.provider === "string" && {
+        connectionId: payload.provider,
+      }),
+    });
+    return reason ? SPEND_HOLD[reason] : null;
   }
 
   async function emitFired(
@@ -286,12 +329,25 @@ export function createSchedulerRunner(
       log(`fire: one-time schedule ${sched.id} is committed; poking again`);
     } else {
       try {
-        await commitTrigger(
-          sched,
-          eventId,
-          await triggerPayload(sched, fireAt),
-          action.expiresAt,
-        );
+        const payload = await triggerPayload(sched, fireAt);
+        const held = await spendHeld(sched, payload);
+        if (held) {
+          const until = new Date(
+            Math.min(
+              nextUtcMidnight(now()).getTime(),
+              action.expiresAt.getTime(),
+            ),
+          );
+          log(
+            `fire: one-time schedule ${sched.id} ${held.result}; waiting until ${until.toISOString()}`,
+          );
+          noteFire("held", { holdReason: held.holdReason });
+          await deps.repo.setNextRun(sched.id, until);
+          await deps.queue.ensure(sched.id, until, now());
+          await emitChanged(sched.agentId, sched.id);
+          return;
+        }
+        await commitTrigger(sched, eventId, payload, action.expiresAt);
       } catch (err) {
         const reason = (err as Error).message ?? String(err);
         log(`fire: one-time schedule ${sched.id} failed: ${reason}`);
@@ -374,12 +430,15 @@ export function createSchedulerRunner(
 
     let stage: "commit" | "poke" = "commit";
     try {
-      await commitTrigger(
-        sched,
-        eventId,
-        await triggerPayload(sched, fireAt),
-        expiresAt,
-      );
+      const payload = await triggerPayload(sched, fireAt);
+      const held = await spendHeld(sched, payload);
+      if (held) {
+        log(`fire: agent ${sched.agentId} ${held.result}`);
+        noteFire("held", { holdReason: held.holdReason });
+        await hold(held.result);
+        return;
+      }
+      await commitTrigger(sched, eventId, payload, expiresAt);
       stage = "poke";
       await pokeAgent(sched, eventId);
     } catch (err) {
@@ -441,12 +500,13 @@ export function createSchedulerRunner(
       );
 
       try {
-        await commitTrigger(
-          sched,
-          eventId,
-          await triggerPayload(sched, firedAt),
-          expiresAt,
-        );
+        const payload = await triggerPayload(sched, firedAt);
+        const held = await spendHeld(sched, payload);
+        if (held) {
+          log(`run-now: agent ${sched.agentId} ${held.result}; refusing`);
+          return held.runNow;
+        }
+        await commitTrigger(sched, eventId, payload, expiresAt);
       } catch (err) {
         log(
           `run-now: schedule ${scheduleId} commit failed: ${(err as Error).message}`,

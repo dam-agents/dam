@@ -11,6 +11,7 @@ Two surfaces read it: the sidebar's **Activity** lists Sessions across every Age
 Three sources sit behind the feed, and they are deliberately different kinds of thing.
 
 **Approvals** come from their own table: a decision is genuinely pending until someone makes it, so it is durable state the api-server owns outright.
+A spend-limit question is an approval too, but it belongs to no session: its card offers only "Continue" and "Stop for today", and it stays open until the next UTC midnight ([spend-limits](spend-limits.md#continue)).
 **Live agent state** says which Agents are awake right now, and comes from the same Agent watch that feeds every other surface.
 **Sessions** come from the attention record — a per-owner, server-side account of the sessions that have asked for attention.
 

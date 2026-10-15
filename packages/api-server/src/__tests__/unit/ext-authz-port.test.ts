@@ -37,7 +37,7 @@ type CheckClient = grpc.Client & {
 
 describe("ext-authz gRPC Check: requested port and scheme", () => {
   const seen: Array<{ host: string; port: number; tls: boolean }> = [];
-  let server: grpc.Server | undefined;
+  let stop: ((deadlineMs: number) => Promise<void>) | undefined;
   let client: CheckClient | undefined;
 
   beforeAll(async () => {
@@ -51,8 +51,13 @@ describe("ext-authz gRPC Check: requested port and scheme", () => {
           return "allow";
         },
       },
+      spend: {
+        callStarted: async () => {},
+        record: async () => {},
+        settleUnrecordedCalls: async () => {},
+      },
     });
-    server = app.server;
+    stop = app.stop;
     const Client = grpc.makeGenericClientConstructor(
       AuthorizationService,
       "Authorization",
@@ -64,9 +69,9 @@ describe("ext-authz gRPC Check: requested port and scheme", () => {
     ) as unknown as CheckClient;
   });
 
-  afterAll(() => {
+  afterAll(async () => {
     client?.close();
-    server?.forceShutdown();
+    await stop?.(0);
   });
 
   async function check(attributes: DeepPartial<CheckRequest>["attributes"]) {

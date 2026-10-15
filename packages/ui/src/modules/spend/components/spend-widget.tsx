@@ -1,4 +1,4 @@
-import { useQueryClient } from "@tanstack/react-query";
+import type { SpendDailyRow } from "api-server-api";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -6,25 +6,61 @@ import { Spinner } from "@/components/ui/spinner";
 import { TextSkeleton } from "@/components/ui/text-skeleton";
 import { cn } from "@/lib/utils";
 
+import type { AgentView } from "../../../types.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { NEUTRAL_FILL } from "../../budgets/lib/pool-colors.js";
-import { useSpendBreakdown } from "../../metrics/api/queries.js";
-import { totalCostUsd } from "../../metrics/lib/totals.js";
-import { cachedSpend } from "../api/queries.js";
+import { useOwnerSpendStatus, useSpendDaily } from "../api/queries.js";
+import { apiSpendHelp, OWN_LIMIT_NAME } from "../lib/copy.js";
+import { microsToUsd } from "../lib/format.js";
 import {
   SPEND_PERIODS,
+  spendDays,
   type SpendPeriod,
-  spendRange,
 } from "../lib/spend-period.js";
 import { AnimatedUsd } from "./animated-usd.js";
+import { HelpTip } from "./help-tip.js";
+import { SpendLimitMeter } from "./spend-limit-meter.js";
 
 const TOP_SPENDERS = 3;
 const ROUNDS_TO_A_VISIBLE_CENT_USD = 0.005;
 const REFRESH_MS = 30_000;
 const ROW_HIDDEN = { opacity: 0, y: 16 };
 
-export function SpendWidget() {
+interface Spender {
+  agentId: string;
+  agentName: string;
+  costUsd: number;
+}
+
+function usdSpend(
+  rows: readonly SpendDailyRow[],
+  agents: readonly AgentView[],
+): { total: number; spenders: Spender[] } {
+  const byAgent = new Map<string, number>();
+  for (const row of rows) {
+    if (row.unit !== "usd") continue;
+    byAgent.set(row.agentId, (byAgent.get(row.agentId) ?? 0) + row.costMicros);
+  }
+  const spenders = [...byAgent].map(([agentId, micros]) => ({
+    agentId,
+    agentName: agents.find((a) => a.id === agentId)?.name ?? agentId,
+    costUsd: microsToUsd(micros),
+  }));
+  return {
+    total: spenders.reduce((sum, spender) => sum + spender.costUsd, 0),
+    spenders: spenders
+      .filter((spender) => spender.costUsd >= ROUNDS_TO_A_VISIBLE_CENT_USD)
+      .sort((a, b) => b.costUsd - a.costUsd)
+      .slice(0, TOP_SPENDERS),
+  };
+}
+
+export function SpendWidget({
+  showOwnLimit = true,
+}: {
+  showOwnLimit?: boolean;
+}) {
   const [period, setPeriod] = useState<SpendPeriod>("1m");
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -34,29 +70,15 @@ export function SpendWidget() {
     return () => clearInterval(timer);
   }, []);
   const agents = useAgentsList();
-  const queryClient = useQueryClient();
-  const timeZone = useMemo(
-    () => Intl.DateTimeFormat().resolvedOptions().timeZone,
-    [],
-  );
   const { from, to } = useMemo(
-    () => spendRange(period, new Date(now)),
+    () => spendDays(period, new Date(now)),
     [period, now],
   );
-  const homeSpend = `${period} ${timeZone}`;
-  const query = useSpendBreakdown(from, to, timeZone, undefined, { homeSpend });
-  const cached = cachedSpend(queryClient, homeSpend);
-  const data = query.isPlaceholderData
-    ? (cached ?? query.data)
-    : (query.data ?? cached);
-
-  if (query.isUnavailable) return null;
-
-  const total = data ? totalCostUsd(data.byModel) : 0;
-  const spenders = (data?.byAgent ?? [])
-    .filter((row) => row.costUsd >= ROUNDS_TO_A_VISIBLE_CENT_USD)
-    .sort((a, b) => b.costUsd - a.costUsd)
-    .slice(0, TOP_SPENDERS);
+  const query = useSpendDaily({ from, to });
+  const { data: status } = useOwnerSpendStatus();
+  const ownLimit = status?.limits.find((view) => view.scope.kind === "owner");
+  const data = query.data;
+  const { total, spenders } = usdSpend(data ?? [], agents);
   const top = spenders[0]?.costUsd ?? 0;
 
   return (
@@ -64,7 +86,8 @@ export function SpendWidget() {
       <div className="flex flex-col rounded-lg border border-border bg-card p-6">
         <div className="mb-1 flex min-h-[32px] items-center justify-between">
           <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            Spend
+            API spend
+            <HelpTip content={apiSpendHelp()} />
             {query.isFetching && (
               <Spinner
                 size={12}
@@ -102,6 +125,20 @@ export function SpendWidget() {
             <TextSkeleton width={96} />
           )}
         </p>
+
+        {showOwnLimit && ownLimit && (
+          <div className="mb-5">
+            <SpendLimitMeter
+              label={OWN_LIMIT_NAME}
+              showLabel
+              unit="usd"
+              spentMicros={ownLimit.spentMicros}
+              limitMicros={ownLimit.effectiveMicros}
+              state={ownLimit.state}
+              extensions={ownLimit.extensions}
+            />
+          </div>
+        )}
 
         <div className="relative min-h-[132px]">
           {data ? (
@@ -149,7 +186,7 @@ export function SpendWidget() {
                     exit={ROW_HIDDEN}
                     className="text-sm text-muted-foreground"
                   >
-                    No spend in this period.
+                    No API spend in this period.
                   </motion.p>
                 )}
               </AnimatePresence>
