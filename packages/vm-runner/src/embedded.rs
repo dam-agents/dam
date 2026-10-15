@@ -293,6 +293,12 @@ impl Runtime for Smolvm {
             }
             let total = geometry.boot_mib + u32::try_from(added >> 20).context("added RAM")?;
             self.db.update_vm(id, |r| r.mem = total)?;
+            tracing::info!(
+                machine = id,
+                boot_mib = geometry.boot_mib,
+                memory_mib = total,
+                "the guest has all its added RAM online"
+            );
             Ok(())
         })
     }
