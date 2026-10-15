@@ -40,7 +40,7 @@ export function ActionList({
       {label && <SectionLabel spaced>{label}</SectionLabel>}
       <Card className="divide-y divide-border overflow-hidden">
         {actions.map((action) => (
-          <ActionRow key={action.title} {...action} />
+          <ActionRow key={action.id ?? action.title} {...action} />
         ))}
       </Card>
     </section>

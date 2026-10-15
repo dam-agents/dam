@@ -149,15 +149,17 @@ export function useProviderConnections(agentId: string | null): {
   granted: ProviderConnectionRef[];
   owned: ProviderConnectionRef[];
   loaded: boolean;
+  failed: boolean;
 } {
-  const { data: grants } = useAgentConnections(agentId);
-  const { data: connections } = useAppConnections();
+  const { data: grants, isError: grantsFailed } = useAgentConnections(agentId);
+  const { data: connections, isError: connectionsFailed } = useAppConnections();
   return {
     ...grantedProviderRefs(
       (grants?.connections ?? []).map((g) => g.connectionId),
       connections ?? [],
     ),
     loaded: grants !== undefined && connections !== undefined,
+    failed: grantsFailed || connectionsFailed,
   };
 }
 

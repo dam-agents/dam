@@ -27,12 +27,14 @@ export function TerminalHarnessButtons({
 }) {
   const setNextSessionPair = useStore((s) => s.setNextSessionPair);
   const status = useHarnessConfigStatus(agentId);
-  const catalog = useHarnessCatalog().data?.harnesses;
-  const { granted, owned, loaded } = useProviderConnections(agentId);
+  const catalogQuery = useHarnessCatalog();
+  const catalog = catalogQuery.data?.harnesses;
+  const { granted, owned, loaded, failed } = useProviderConnections(agentId);
   const harnesses = status.data?.harnesses ?? [];
 
-  if (status.isPending || !catalog || !loaded) return null;
-  if (harnesses.length === 0)
+  if (status.isPending || catalogQuery.isPending || (!loaded && !failed))
+    return null;
+  if (harnesses.length === 0 || !catalog || failed)
     return (
       <Button
         variant="ghost"
