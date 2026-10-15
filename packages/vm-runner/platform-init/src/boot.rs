@@ -85,6 +85,7 @@ fn exit(code: i32) -> ! {
     std::process::exit(code)
 }
 
+mod copy;
 mod vm;
 
 pub use vm::stage0;
