@@ -330,7 +330,7 @@ func TestAPeerStillBootingIsNotReclaimedForAnotherStart(t *testing.T) {
 	}
 }
 
-// TEST_SCENARIO: a refused start and the memory pass reclaim for one owner from different goroutines. Once the start's reclaim has hibernated the idle agents its need called for, those agents no longer count, so the pass that follows sees the owner under its threshold and hibernates nothing more, rather than choosing more agents for room already freed.
+// TEST_SCENARIO: a refused start and the memory pass reclaim for one owner from different goroutines. Once the start's reclaim has hibernated the idle agents its need called for, those agents no longer count, so the pass that follows sees the owner under its threshold and hibernates nothing more, rather than choosing more agents for room already freed. The runner's measured working set still holds their machines until they stop, so a pressure signal right after hibernates nothing more either.
 func TestAReclaimAfterAnotherDoesNotCountItsVictimsAgain(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
@@ -375,4 +375,7 @@ func TestAReclaimAfterAnotherDoesNotCountItsVictimsAgain(t *testing.T) {
 
 	r.ownerMemoryPass(ctx, testOwner, peers, nil)
 	assert.Equal(t, 2, reclaimed(), "the pass counted the agents the start's reclaim hibernated and hibernated more")
+
+	r.ownerMemoryPass(ctx, testOwner, peers, &vmrunner.RunnerPressure{Version: 2, Pressured: true, LimitMiB: 8192, WorkingSetMiB: 8000})
+	assert.Equal(t, 2, reclaimed(), "the runner's working set still holds the machines the start's reclaim is stopping, and the signal hibernated more for them")
 }

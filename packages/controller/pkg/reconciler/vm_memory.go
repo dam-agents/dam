@@ -159,9 +159,7 @@ func (r *AgentReconciler) reclaimRunnerMemory(ctx context.Context, owner, self s
 	if len(chosen) == 0 || left > 0 && !partial {
 		return false, nil
 	}
-	for _, c := range chosen {
-		r.vmRunning.Store(c.name, false)
-	}
+	r.noteFreedUnderPressure(owner)
 	return true, r.hibernateReclaimed(ctx, chosen, owner, self, why)
 }
 
@@ -203,7 +201,9 @@ func (r *AgentReconciler) MemoryPass(ctx context.Context) []string {
 // UNIT_BOUNDARY_DESCRIPTION: one owner's pass, from the half-minute tick or,
 // UNIT_BOUNDARY_DESCRIPTION: with `pressure`, from their runner's signal. The
 // UNIT_BOUNDARY_DESCRIPTION: two never run together for one owner, since both
-// UNIT_BOUNDARY_DESCRIPTION: would pick the same idle agents for the same need.
+// UNIT_BOUNDARY_DESCRIPTION: would pick the same idle agents for the same need;
+// UNIT_BOUNDARY_DESCRIPTION: a refused start's reclaim beside them is kept
+// UNIT_BOUNDARY_DESCRIPTION: apart by the owner's lock in reclaimRunnerMemory.
 // UNIT_BOUNDARY_DESCRIPTION: Under the signal the counted threshold is not
 // UNIT_BOUNDARY_DESCRIPTION: waited for: the kernel's view is what kills the
 // UNIT_BOUNDARY_DESCRIPTION: runner, so the need is the larger of the counted
@@ -240,7 +240,7 @@ func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, age
 	if err != nil {
 		return "", false
 	}
-	freed, err := r.reclaimRunnerMemory(ctx, owner, "", func() (int, error) {
+	_, err = r.reclaimRunnerMemory(ctx, owner, "", func() (int, error) {
 		demand, err := r.ownerRunnerDemand(ctx, owner, first, true)
 		if err != nil {
 			return 0, err
@@ -259,9 +259,6 @@ func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, age
 	}, pressure != nil)
 	if err != nil {
 		slog.WarnContext(ctx, "vm memory: reclaiming under pressure", "owner", owner, "error", err)
-	}
-	if freed && pressure != nil {
-		r.noteFreedUnderPressure(owner)
 	}
 	if !r.runnerPodMoves(ctx, owner, demand) {
 		return "", false
@@ -283,6 +280,9 @@ func (r *AgentReconciler) hibernateReclaimed(ctx context.Context, chosen []recla
 	for _, c := range chosen {
 		if err := r.stampReclaimed(ctx, c.name, now); err != nil {
 			return err
+		}
+		if c.vmMiB > 0 {
+			r.vmRunning.Store(c.name, false)
 		}
 		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.HaltMachine, owner, r.config.Namespace, c.name); err != nil {
 			return err
