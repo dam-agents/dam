@@ -12,7 +12,7 @@ index ed555c2..f429733 100644
  http-body = "1"
  rustls = { version = "0.23.45", default-features = false, features = ["ring"] }
 diff --git i/crates/smolvm-agent/src/main.rs w/crates/smolvm-agent/src/main.rs
-index b8dc6ea..c397fff 100644
+index b8dc6ea..450e581 100644
 --- i/crates/smolvm-agent/src/main.rs
 +++ w/crates/smolvm-agent/src/main.rs
 @@ -1206,6 +1206,9 @@ fn setup_persistent_rootfs() {
@@ -64,7 +64,7 @@ index b8dc6ea..c397fff 100644
      info!("formatting storage disk (first boot or unrecoverable)");
      match Command::new("mkfs.ext4")
          .args(["-F", "-q", "-O", "^has_journal", STORAGE_DEVICE])
-@@ -1853,6 +1872,98 @@ fn mount_storage_disk() -> bool {
+@@ -1853,6 +1872,104 @@ fn mount_storage_disk() -> bool {
      false
  }
  
@@ -76,12 +76,18 @@ index b8dc6ea..c397fff 100644
 +/// also rebuilds directories (the kernel's "Please run e2fsck -D"). False
 +/// when the filesystem is still damaged, or e2fsck failed or was killed: the
 +/// boot then fails with the reason on the console and the disk stays as it
-+/// is (never formatted). A guest without e2fsck mounts as before.
++/// is not formatted. A disk with no filesystem yet is not checked, so the
++/// format step can make one. A guest without e2fsck mounts as before.
 +#[cfg(target_os = "linux")]
 +fn storage_filesystem_checked() -> bool {
 +    static CHECKED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
 +    *CHECKED.get_or_init(|| {
 +        const STORAGE_DEVICE: &str = "/dev/vda";
++        // A disk that never held a filesystem has nothing to check; the
++        // format step below makes one.
++        if may_format_storage(STORAGE_DEVICE) {
++            return true;
++        }
 +        let passes: [&[&str]; 3] = [&["-p"], &["-f", "-y"], &["-f", "-y", "-D"]];
 +        for (i, args) in passes.iter().enumerate() {
 +            let output = match std::process::Command::new("e2fsck")
@@ -163,7 +169,7 @@ index b8dc6ea..c397fff 100644
  /// Stub for non-Linux platforms.
  #[cfg(not(target_os = "linux"))]
  fn mount_storage_disk() -> bool {
-@@ -8047,6 +8158,39 @@ mod bg_reap_tests {
+@@ -8047,6 +8164,39 @@ mod bg_reap_tests {
  
  #[cfg(test)]
  mod tests {
