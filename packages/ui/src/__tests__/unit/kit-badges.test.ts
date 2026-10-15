@@ -51,13 +51,14 @@ describe("kitRunsOnVm", () => {
 });
 
 describe("kitAlwaysOnEndsOnVm", () => {
-  // TEST_SCENARIO: a kit that ships Always on, created on the new runtime, says it will sleep after the vm idle timeout; on a container, without Always on, or before the install answers, it says nothing.
+  // TEST_SCENARIO: a kit that ships Always on, created on the new runtime, says it will sleep after the vm idle timeout; on a container, without Always on, before the install answers, or on an install whose vm agents never sleep, it says nothing.
   test("tells only an Always on kit on the new runtime", () => {
     const alwaysOn = { hibernationTimeoutMin: 0 };
     expect(kitAlwaysOnEndsOnVm(alwaysOn, true, 5)).toContain("5 minutes idle");
     expect(kitAlwaysOnEndsOnVm(alwaysOn, false, 5)).toBeNull();
     expect(kitAlwaysOnEndsOnVm(alwaysOn, undefined, 5)).toBeNull();
     expect(kitAlwaysOnEndsOnVm(alwaysOn, true, undefined)).toBeNull();
+    expect(kitAlwaysOnEndsOnVm(alwaysOn, true, 0)).toBeNull();
     expect(kitAlwaysOnEndsOnVm({}, true, 5)).toBeNull();
   });
 });

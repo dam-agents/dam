@@ -40,14 +40,14 @@ export const CATEGORY_LABEL: Record<StarterKitView["category"], string> = {
   research: "Research",
 };
 
-// UNIT_BOUNDARY_DESCRIPTION: a vm agent has no per-agent idle timeout, so a kit that ships Always on still sleeps after the install's vm idle timeout once it runs on the new runtime. Said before the create, so the user hears it before the kit's unkept background work is stopped; nothing while the install or the runtime is not known yet.
+// UNIT_BOUNDARY_DESCRIPTION: a vm agent has no per-agent idle timeout, so a kit that ships Always on still sleeps after the install's vm idle timeout once it runs on the new runtime. Said before the create, so the user hears it before the kit's unkept background work is stopped; nothing while the install or the runtime is not known yet, or on an install whose vm idle timeout of 0 never puts a vm agent to sleep.
 export function kitAlwaysOnEndsOnVm(
   kit: Pick<StarterKitView, "hibernationTimeoutMin">,
   vm: boolean | undefined,
   vmIdleTimeoutMin: number | undefined,
 ): string | null {
   if (vm !== true || kit.hibernationTimeoutMin !== 0) return null;
-  if (vmIdleTimeoutMin === undefined) return null;
+  if (vmIdleTimeoutMin === undefined || vmIdleTimeoutMin === 0) return null;
   return `This kit asks to stay Always on, but on the new sandbox runtime every agent sleeps after ${vmIdleTimeoutMin} minutes idle. Background work stops then unless it is kept.`;
 }
 

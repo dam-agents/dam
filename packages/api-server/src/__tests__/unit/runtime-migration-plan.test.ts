@@ -73,7 +73,7 @@ describe("the runtime migration plan", () => {
     });
   });
 
-  // TEST_SCENARIO: a vm agent sleeps after the install-wide vm idle timeout whatever its own setting, so an Always on agent — its own override 0, or no override on an install whose default never sleeps — is told the timeout it will sleep after; any other agent is told nothing.
+  // TEST_SCENARIO: a vm agent sleeps after the install-wide vm idle timeout whatever its own setting, so an Always on agent — its own override 0, or no override on an install whose default never sleeps — is told the timeout it will sleep after; any other agent, or any agent on an install whose vm agents never sleep, is told nothing.
   it("says an Always on agent starts sleeping when idle", () => {
     expect(
       runtimeMigrationPlan(agent({ hibernationTimeout: "0s" }), INPUTS)
@@ -88,6 +88,12 @@ describe("the runtime migration plan", () => {
     expect(
       runtimeMigrationPlan(agent({ hibernationTimeout: "2h" }), INPUTS)
         .endsAlwaysOnAfterMin,
+    ).toBeNull();
+    expect(
+      runtimeMigrationPlan(agent({ hibernationTimeout: "0s" }), {
+        ...INPUTS,
+        idleTimeoutMinutes: { container: 30, vm: 0 },
+      }).endsAlwaysOnAfterMin,
     ).toBeNull();
   });
 

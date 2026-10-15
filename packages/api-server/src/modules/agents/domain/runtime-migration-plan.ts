@@ -20,7 +20,7 @@ export interface PlanInputs extends RuntimeMigrationContext {
   idleTimeoutMinutes: IdleTimeoutMinutes;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what moving one agent to the new runtime would do, read without writing anything, so the user can see it before they agree. It is read off the same refusal the request checks, so the plan and the request cannot disagree. It names no disk size: the agent's disk on the new runtime grows inside its owner's storage pool. The unmovable paths come from the same rule the refusal applies. A sleeping agent is booted once to finish the move, because only a guest that answered proves the copy, and a booted agent counts against its owner's budget. A vm agent has no per-agent idle timeout, so an Always on agent starts sleeping after the vm idle timeout, which the plan names so the user hears it before its unkept background work is stopped.
+// UNIT_BOUNDARY_DESCRIPTION: what moving one agent to the new runtime would do, read without writing anything, so the user can see it before they agree. It is read off the same refusal the request checks, so the plan and the request cannot disagree. It names no disk size: the agent's disk on the new runtime grows inside its owner's storage pool. The unmovable paths come from the same rule the refusal applies. A sleeping agent is booted once to finish the move, because only a guest that answered proves the copy, and a booted agent counts against its owner's budget. A vm agent has no per-agent idle timeout, so an Always on agent starts sleeping after the vm idle timeout, which the plan names so the user hears it before its unkept background work is stopped. An install whose vm idle timeout is 0 never puts a vm agent to sleep, so there it says nothing.
 export function runtimeMigrationPlan(
   agent: {
     spec: AgentSpec;
@@ -42,7 +42,7 @@ export function runtimeMigrationPlan(
         agent.spec.hibernationTimeout,
         false,
         inputs.idleTimeoutMinutes,
-      ) === 0
+      ) === 0 && inputs.idleTimeoutMinutes.vm > 0
         ? inputs.idleTimeoutMinutes.vm
         : null,
     retentionMs: inputs.retentionMs,
