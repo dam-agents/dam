@@ -82,6 +82,7 @@ A stop signal ends the supervision instead.
 platform-init's refusals to boot, each hand-off and each exit reach the console as kernel log lines, because its own log is on the disk the host never reads ([observability](observability.md#vm-runner)).
 A machine's egress allows one destination, the paired gateway, so the controller marks the address ranges a guest might itself hold — the private, carrier-grade-NAT and link-local ones — as local to it, and a client that honors that marking reaches them directly rather than through a gateway that could never route them.
 What a machine keeps across a stop is its storage disk on the runner's one PVC: `HOME`, and the upper layer of its root for as long as its images share a root generation ([persistence](persistence.md#per-agent-pvcs) owns the rule).
+It is the machine's one disk: smolvm's guest agent keeps its own root's changes in RAM, since nothing there outlives a boot.
 That disk is made once, by the runner when it creates the machine: btrfs from the runner image's template, at its full size, under a UUID of its own, which the guest mounts compressed with zstd.
 A create whose disk cannot be made fails and leaves no machine, since smolvm would make a disk of its own at the next start.
 Disks made before btrfs are ext4, and stay ext4.

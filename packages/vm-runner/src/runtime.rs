@@ -101,9 +101,6 @@ pub const STALE_RUNTIME_FILES: [&str; 5] = [
     "agent.pid",
 ];
 
-// UNIT_BOUNDARY_DESCRIPTION: the root overlay of smolvm's guest agent in both of the forms smolvm writes it — a qcow2 over the shipped template, or a raw disk whenever smolvm cannot overlay the template — and the marker that says it was formatted. All three go, so the next boot formats a fresh root whichever form this one had.
-pub const OVERLAY_FILES: [&str; 3] = ["overlay.qcow2", "overlay.raw", "overlay.formatted"];
-
 // UNIT_BOUNDARY_DESCRIPTION: what the guest runs and with what, as the create hands it to smolvm.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Workload {
@@ -399,35 +396,12 @@ pub fn kill_orphans(proc_root: &Path, vm_dir: &Path) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: throws away the machine's root overlay, which is the root of smolvm's own guest agent and not the image's. The image's root is an overlay on the storage disk that smolvm keeps, and platform-init replaces it with a fresh one on every boot; that is what keeps a machine to HOME and nothing else. Discarding this one still means every boot starts the guest agent from the shipped template, so an agent root that was left corrupt, or written by an older runner, is never booted again. It runs after a stop and again before a start, because a machine that died with its runner never got the stop. Nothing is removed while a VMM still holds the disks.
-pub fn discard_overlay(id: &str, proc_root: &Path, vm_dir: &Path, vmms: Vec<i32>) {
-    if !vm_dir.is_dir() {
-        return;
-    }
-    if !vmms_left(proc_root, vm_dir, vmms, VMM_EXIT_WAIT).is_empty() {
-        tracing::warn!(
-            machine = id,
-            "machine still has a VMM holding its disks; leaving the root overlay in place"
-        );
-        return;
-    }
-    for file in OVERLAY_FILES {
-        match fs::remove_file(vm_dir.join(file)) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => {
-                tracing::warn!(machine = id, file, error = %e, "could not discard the root overlay")
-            }
-        }
-    }
-}
-
 // UNIT_BOUNDARY_DESCRIPTION: where ext4 keeps its magic number: the superblock starts 1024 bytes into the disk, and its magic, 0xEF53 little-endian, is 56 bytes into the superblock.
 const EXT4_MAGIC_OFFSET: u64 = 1024 + 56;
 // UNIT_BOUNDARY_DESCRIPTION: where btrfs keeps its magic: the primary superblock starts 64 KiB into the disk, and its magic, `_BHRfS_M`, is 64 bytes into the superblock.
 const BTRFS_MAGIC_OFFSET: u64 = 0x10000 + 0x40;
 
-// UNIT_BOUNDARY_DESCRIPTION: marks a storage disk that holds a filesystem as formatted when its marker is missing, so smolvm never copies its template over it. smolvm copies the template over any storage disk without the marker at every start, and it writes the marker only once that copy has also been resized to the size asked for. A resize that fails — on a host without resize2fs, every disk smaller than the template — leaves a disk without the marker, and every later start then replaced it, and the agent's home on it, with the template. A disk with an ext4 or btrfs superblock was formatted whatever its marker says, so it is marked here. Only a disk that holds no filesystem yet, the sparse file a create makes, is left for smolvm to format.
+// UNIT_BOUNDARY_DESCRIPTION: marks a storage disk that holds a filesystem as formatted when its marker is missing, so smolvm never copies its template over it. smolvm copies the template over any storage disk without the marker at every start, and it writes the marker only once that copy has also been resized to the size asked for. A resize that fails — on a host without resize2fs, every disk smaller than the template — leaves a disk without the marker, and every later start then replaced it, and the agent's home on it, with the template. A disk with an ext4 or btrfs superblock was formatted whatever its marker says, so it is marked here. A disk with no filesystem never reaches a start: a create whose disk cannot be made fails.
 fn keep_formatted_storage(id: &str, vm_dir: &Path) -> anyhow::Result<()> {
     let disk = vm_dir.join(STORAGE_DISK_FILENAME);
     let marker = disk.with_extension("formatted");
@@ -462,7 +436,7 @@ fn holds_filesystem(disk: &Path) -> anyhow::Result<bool> {
 // UNIT_BOUNDARY_DESCRIPTION: how long a VMM killed with SIGKILL may take to be gone. A process leaves at once unless it is stuck in the kernel, and one stuck there keeps the disks open however long it is waited on.
 pub const KILLED_EXIT_WAIT: Duration = Duration::from_secs(1);
 
-// UNIT_BOUNDARY_DESCRIPTION: prepares a machine's directory for a fresh boot: any VMM still holding it is waited out for `wait` and then killed, the files a dead VMM leaves are removed, the overlay is discarded, a storage disk that holds a filesystem is marked formatted, and the console an earlier boot wrote is emptied. A VMM that outlives even SIGKILL — stuck in uninterruptible sleep on its disk — fails the start instead: its lock and sockets are what keep a second VMM off the same storage disk, and a second VMM writing that disk under the first corrupts the agent's home.
+// UNIT_BOUNDARY_DESCRIPTION: prepares a machine's directory for a fresh boot: any VMM still holding it is waited out for `wait` and then killed, the files a dead VMM leaves are removed, a storage disk that holds a filesystem is marked formatted, and the console an earlier boot wrote is emptied. A VMM that outlives even SIGKILL — stuck in uninterruptible sleep on its disk — fails the start instead: its lock and sockets are what keep a second VMM off the same storage disk, and a second VMM writing that disk under the first corrupts the agent's home.
 pub fn clear_for_start(
     id: &str,
     proc_root: &Path,
@@ -486,7 +460,6 @@ pub fn clear_for_start(
     for file in STALE_RUNTIME_FILES {
         let _ = fs::remove_file(vm_dir.join(file));
     }
-    discard_overlay(id, proc_root, vm_dir, Vec::new());
     keep_formatted_storage(id, vm_dir)?;
     crate::console::clear_console(id, vm_dir);
     Ok(())
@@ -862,28 +835,7 @@ mod tests {
         assert!(vmms_left(proc.path(), &dir, vec![100], wait).is_empty());
     }
 
-    // TEST_SCENARIO: the root overlay is discarded in whichever form smolvm wrote it, and only once no VMM holds it. The storage disk, which is the agent's home, is never touched.
-    #[test]
-    fn the_overlay_goes_and_the_storage_disk_stays() {
-        let proc = TempDir::new("discard-proc");
-        let vm = TempDir::new("discard-vm");
-        for file in OVERLAY_FILES.iter().chain(&["storage.raw"]) {
-            fs::write(vm.path().join(file), "x").unwrap();
-        }
-        discard_overlay("m1", proc.path(), vm.path(), Vec::new());
-        for file in OVERLAY_FILES {
-            assert!(
-                !vm.path().join(file).exists(),
-                "{file} survived the discard"
-            );
-        }
-        assert!(
-            vm.path().join("storage.raw").exists(),
-            "the agent's disk was discarded"
-        );
-    }
-
-    // TEST_SCENARIO: a machine's directory outlives the runner process that made it, and a VMM that died with its runner leaves its sockets, lock and pid file in it. What a start clears and what a discard removes is pinned to the names smolvm writes, so a renamed entry here does not leave a stale socket in place and the next boot believing the machine is still up.
+    // TEST_SCENARIO: a machine's directory outlives the runner process that made it, and a VMM that died with its runner leaves its sockets, lock and pid file in it. What a start clears is pinned to the names smolvm writes, so a renamed entry here does not leave a stale socket in place and the next boot believing the machine is still up.
     #[test]
     fn a_start_clears_the_files_a_vmm_leaves_behind() {
         assert_eq!(
@@ -895,10 +847,6 @@ mod tests {
                 "vm.lock",
                 "agent.pid",
             ]
-        );
-        assert_eq!(
-            OVERLAY_FILES,
-            ["overlay.qcow2", "overlay.raw", "overlay.formatted"]
         );
     }
 

@@ -283,7 +283,6 @@ Disks made before that are ext4, and those smolvm formatted have no journal; on 
 On a Mac host runner the loss is refused, not prevented.
 
 **The claim those disks sit on is the owner's pool.** One claim per owner holds every machine disk they have, their bookkeeping, a [runtime migration](vm-runtime-migration.md)'s seed while it waits, and the image cache when the cache lives there, and every disk may grow to the pool, so the claim is created at the pool; the controller refuses an install whose image cache budget would take the whole of it.
-The runtime's disk templates live there too, sparse enough to need no share of it.
 It grows in place when the pool rises and is never shrunk, so a lowered pool only stops its growth.
 A refused growth is reported and reconciliation continues: the runner still serves every agent at the size it has.
 
