@@ -42,7 +42,7 @@ export function AgentUsageActions({ agent }: { agent: AgentView }) {
 
   const actions: Action[] = [
     {
-      title: "Web chat",
+      title: "Chat",
       description: "Chat with the agent in this browser.",
       button: {
         icon: <Chat />,
@@ -61,7 +61,7 @@ export function AgentUsageActions({ agent }: { agent: AgentView }) {
       },
     },
     {
-      title: "CLI",
+      title: "CLI and SSH",
       description: (
         <>
           Follow the <DocLink href={CLI_REFERENCE_URL}>CLI quickstart</DocLink>{" "}
