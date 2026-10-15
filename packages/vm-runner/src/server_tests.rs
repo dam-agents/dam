@@ -2935,6 +2935,44 @@ async fn the_usage_read_names_the_image_cache_and_the_seeds() {
     assert!(storage.image_cache_bytes > 0, "{storage:?}");
 }
 
+// TEST_SCENARIO: the disk check at boot refuses to mount a disk it could not repair, which fails the boot with nothing typed in the error. The runner reads the refusal off the console and reports the damaged home with the way out, so the owner is not told only that the machine did not boot.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_boot_the_disk_check_refused_reports_a_damaged_home() {
+    let h = Harness::new("home-damaged");
+    *locked(&h.fake.fail_start_once) = Some("start machine: guest agent never became ready".into());
+    *locked(&h.fake.console) = r#"{"level":"ERROR","message":"storage: e2fsck -f -y -D Damaged (exit Some(4)): errors left; refusing to mount, and the disk is kept as it is","target":"smolvm_agent::boot"}"#.into();
+    h.server.put("m1", spec(true)).unwrap();
+    let failed = h.settle("m1").await;
+    assert_eq!(failed.reason, REASON_HOME_DAMAGED, "{failed:?}");
+    assert!(failed.message.contains("could not repair"), "{failed:?}");
+}
+
+// TEST_SCENARIO: a boot whose disk check repaired the filesystem comes up as usual, and the status says what was repaired, so the owner learns that files may be gone; the record outlives the boot it came from only until the next boot answers from a clean disk.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_repair_at_boot_is_reported_until_a_clean_boot() {
+    let h = Harness::new("home-repaired");
+    *locked(&h.fake.console) = r#"{"level":"WARN","message":"storage: e2fsck -p repaired the filesystem: /dev/vda: 12/65536 files","target":"smolvm_agent::boot"}"#.into();
+    *locked(&h.fake.start_delay) = Duration::from_millis(300);
+    h.server.put("m1", spec(true)).unwrap();
+    h.wait_for_call("start m1").await;
+    let _up = guest(h.base);
+    let ready = h.until("m1", "ready", |s| s.ready).await;
+    assert_eq!(
+        ready.home_repaired,
+        "storage: e2fsck -p repaired the filesystem: /dev/vda: 12/65536 files"
+    );
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+    *locked(&h.fake.console) = "clean".into();
+    h.server.put("m1", spec(true)).unwrap();
+    let again = h
+        .until("m1", "ready after a clean boot", |s| {
+            s.ready && s.home_repaired.is_empty()
+        })
+        .await;
+    assert!(again.ready);
+}
+
 // TEST_SCENARIO: a machine's CPU share is what it used over its last two looks while running. Once it stops, the usage read reports no CPU for it, so the bars never name a paused agent among the heaviest CPU users.
 #[tokio::test]
 async fn a_stopped_machine_reports_no_cpu() {

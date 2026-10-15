@@ -11,14 +11,16 @@ use tokio_util::task::TaskTracker;
 
 use crate::api::{
     CpuUsage, MachineSpec, MachineStatus, MachineUsage, MemoryUsage, RunnerPressure, RunnerUsage,
-    SeedResult, State, StorageUsage, REASON_BOOT_FAILED, REASON_HOME_FULL, REASON_OUT_OF_CAPACITY,
-    REASON_STORAGE_FULL, STATE_RUNNING,
+    SeedResult, State, StorageUsage, REASON_BOOT_FAILED, REASON_HOME_DAMAGED, REASON_HOME_FULL,
+    REASON_OUT_OF_CAPACITY, REASON_STORAGE_FULL, STATE_RUNNING,
 };
 use crate::cache::{self, pinned_digest};
 use crate::cacheapi::CacheClient;
 use crate::capability::Verified;
 use crate::capacity::Capacity;
-use crate::console::{home_full, with_console, SLOW_BOOT, SLOW_BOOT_AFTER};
+use crate::console::{
+    home_damaged, home_full, home_repaired, with_console, FSCK, SLOW_BOOT, SLOW_BOOT_AFTER,
+};
 use crate::fetch::{failure_reason, on_own_claim, seed_missing, unusable};
 use crate::forward::{healthy, Forwarder, Listen, LOOPBACK_OFFSET};
 use crate::imagecache::{
@@ -33,7 +35,8 @@ use crate::plan::{
 use crate::runtime::{redact, Machine, Runtime, Update};
 use crate::share::{self, write_share, SeedFile, SHARE_DIR};
 use crate::state::{
-    self, is_image_ref, is_machine_id, machine_dir, read_spec, write_spec, IMAGE_DIGEST_FILE,
+    self, is_image_ref, is_machine_id, machine_dir, read_spec, write_spec, HOME_REPAIRED_FILE,
+    IMAGE_DIGEST_FILE,
 };
 use crate::storage::StorageUse;
 
@@ -1050,7 +1053,7 @@ impl Server {
             let mut reason = failure_reason(&e);
             if reason == REASON_BOOT_FAILED {
                 let tail = self.console_tail(id);
-                if let Some((why, explained)) = self.out_of_room(&tail) {
+                if let Some((why, explained)) = self.boot_trouble(&tail) {
                     reason = why;
                     message = format!("{explained}; {message}");
                 }
@@ -1347,6 +1350,10 @@ impl Server {
 
     // UNIT_BOUNDARY_DESCRIPTION: the machine's console, redacted with every env value this runner has been given for it and the ones its applied spec holds, the way a failed smolvm call's output is. A tail this runner cannot redact, because it holds no spec for the machine at all, is not shown.
     fn console_tail(&self, id: &str) -> String {
+        self.redacted(id, &self.runtime.console_tail(id))
+    }
+
+    fn redacted(&self, id: &str, console: &str) -> String {
         let remembered = locked(&self.machines)
             .entries
             .get(id)
@@ -1358,10 +1365,7 @@ impl Server {
         }
         let mut secrets = remembered.unwrap_or_default();
         secrets.extend(applied.into_iter().flat_map(|spec| spec.env.into_values()));
-        redact(
-            &self.runtime.console_tail(id),
-            secrets.iter().map(String::as_str),
-        )
+        redact(console, secrets.iter().map(String::as_str))
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: a guest that boots and never answers has no failure to report — its start call returned — so without this the Agent reads not ready for as long as it stays stuck, and why is only on the console. The prober writes the note once the boot is SLOW_BOOT_AFTER old and refreshes it no more often than that. A recorded failure carries its own tail and wins. An answer ends the boot: from then on a probe the guest misses is a health blip, not a boot still waited on, so the note does not come back for it.
@@ -1392,7 +1396,7 @@ impl Server {
             boot.at
         };
         let tail = self.console_tail(id);
-        let (message, reason) = match self.out_of_room(&tail) {
+        let (message, reason) = match self.boot_trouble(&tail) {
             Some((why, explained)) => (with_console(&explained, &tail), Some(why)),
             None => (with_console(SLOW_BOOT, &tail), None),
         };
@@ -1535,10 +1539,13 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: why a guest that failed to come up has no room, when it has none: the owner's claim is critically full, or the guest's own disk is, as its console says. A guest whose writes fail fails its boot with nothing typed in the error, so the room is what explains it; the claim comes first, because a full claim also fails every guest's writes.
-    fn out_of_room(&self, tail: &str) -> Option<(&'static str, String)> {
+    // UNIT_BOUNDARY_DESCRIPTION: why a guest that failed to come up failed, when its storage explains it: the owner's claim is critically full, the check at boot refused to mount a damaged disk, or the guest's own disk is full, as its console says. A guest whose writes fail fails its boot with nothing typed in the error, so the storage is what explains it; the claim comes first, because a full claim also fails every guest's writes, the check's repairs among them.
+    fn boot_trouble(&self, tail: &str) -> Option<(&'static str, String)> {
         if let Some(full) = self.storage_critical() {
             return Some((REASON_STORAGE_FULL, full.refusal()));
+        }
+        if home_damaged(tail) {
+            return Some((REASON_HOME_DAMAGED, HOME_DAMAGED.to_string()));
         }
         home_full(tail).then(|| {
             (
@@ -1840,6 +1847,7 @@ impl Server {
                 .and_then(|e| e.boot.as_ref().map(|boot| boot.seed.clone()));
             if let Some(seed) = ending {
                 self.record_seeded(id, seed.as_deref());
+                self.record_repair(id);
             }
         }
         let mut machines = locked(&self.machines);
@@ -1884,6 +1892,26 @@ impl Server {
             if let Err(e) = share::record_seeded(&share, from) {
                 tracing::warn!(machine = %id, error = %format!("{e:#}"), "could not record that the machine's disk holds a home");
             }
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: at the first answer of a boot, keeps beside the machine's spec what the disk check of that boot repaired, or removes what an earlier boot's check left there, so the status reports the last boot's repair until the next boot, across a runner restart too. A record that cannot be written is logged, and the status goes on reporting the one before.
+    fn record_repair(&self, id: &str) {
+        let Some(path) =
+            machine_dir(&self.config.state_dir, id).map(|dir| dir.join(HOME_REPAIRED_FILE))
+        else {
+            return;
+        };
+        let checked = self.redacted(id, &self.runtime.console_lines(id, FSCK));
+        let written = match home_repaired(&checked) {
+            Some(repaired) => crate::files::write(&path, repaired.as_bytes(), 0o644),
+            None => match fs::remove_file(&path) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+                _ => Ok(()),
+            },
+        };
+        if let Err(e) = written {
+            tracing::warn!(machine = %id, error = %format!("{e:#}"), "could not record what the disk check at boot repaired");
         }
     }
 
@@ -2056,12 +2084,20 @@ impl Server {
         }
         drop(machines);
         // UNIT_BOUNDARY_DESCRIPTION: read after the lock is let go, so a stalled disk holds up only this read. A guest's first answer writes the seeded record before it marks the machine ready, so a status that read ready above reads the record from that answer.
-        status.home_seeded_from = machine_dir(&self.config.state_dir, id)
+        let dir = machine_dir(&self.config.state_dir, id);
+        status.home_seeded_from = dir
+            .as_ref()
             .map(|dir| share::seeded_from(&dir.join(SHARE_DIR)))
+            .unwrap_or_default();
+        status.home_repaired = dir
+            .and_then(|dir| fs::read_to_string(dir.join(HOME_REPAIRED_FILE)).ok())
             .unwrap_or_default();
         (state, status)
     }
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: what the owner is told when the disk check at boot left the agent's disk damaged: that the disk is kept, that the next start tries the repair again and helps when the damage came from a cause that has passed, and the two ways out when it keeps failing, as the persistence architecture page gives them.
+const HOME_DAMAGED: &str = "This agent's disk has file system errors that the check at start could not repair, so the agent was not started and its files are kept as they are. Start it again: when the errors came from storage that was full or a passing disk error, the next start can repair them. If it keeps failing, ask an admin to check the agent's disk, or delete the agent and create it again, which gives it an empty disk and loses its files";
 
 // UNIT_BOUNDARY_DESCRIPTION: the VM runtime that could not grow the machine, kept beside its spec. While it names this runner's runtime, the machine boots whole: a guest that cannot grow would otherwise pay a small boot and a failed grow on every start. A runner release with another runtime tries the grow again. It goes with the machine on delete.
 pub const BOOT_WHOLE_FILE: &str = "boot-whole";
