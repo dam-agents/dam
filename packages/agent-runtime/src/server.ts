@@ -67,6 +67,7 @@ import {
   DISPLAY_COMMAND,
   displayAvailable,
   fileLog,
+  LAUNCH_MODE_FILE,
 } from "./modules/browser-preview.js";
 import {
   startDisplaySupervisor,
@@ -1097,6 +1098,7 @@ const browserPreview = createBrowserPreview({
     join(homeDir, ".local/share/platform/browser"),
   socketDir:
     process.env.AGENT_BROWSER_SOCKET_DIR ?? join(homeDir, ".agent-browser"),
+  launchModeFile: join(homeDir, LAUNCH_MODE_FILE),
   log: browserLog("browser-preview"),
 });
 
