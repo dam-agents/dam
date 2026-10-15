@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { HarnessIcons } from "@/components/harness-icons";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -56,6 +57,7 @@ export function TerminalHarnessMenu({
                   onOpen();
                 }}
               >
+                <HarnessIcons harnesses={[name]} size="xs" />
                 {harnessDisplayName(name, catalog) ?? name}
                 {provider === undefined && (
                   <span className="ml-auto pl-4 text-xs text-muted-foreground">
