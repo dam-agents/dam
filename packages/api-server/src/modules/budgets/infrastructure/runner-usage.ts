@@ -14,6 +14,8 @@ const runnerUsageSchema = z.object({
   storage: z.object({
     usedBytes: z.number().nonnegative(),
     usableBytes: z.number().nonnegative(),
+    imageCacheBytes: z.number().nonnegative().default(0),
+    seedBytes: z.number().nonnegative().default(0),
   }),
   memory: z.object({
     limitMiB: z.number().nonnegative(),

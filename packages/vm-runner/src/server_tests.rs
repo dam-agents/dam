@@ -2918,6 +2918,23 @@ async fn a_boot_whose_console_shows_a_full_home_reports_it() {
     );
 }
 
+// TEST_SCENARIO: a user whose storage is short is told what fills it, so the usage read names, beside each machine's disk, what the runner's own image cache and a migration's seed take of the claim.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_usage_read_names_the_image_cache_and_the_seeds() {
+    let h = Harness::new("usage-parts");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let seed = h
+        .dir
+        .join("machines/m1")
+        .join(SHARE_DIR)
+        .join(share::SEED_FILE);
+    fs::write(&seed, vec![1u8; 1 << 20]).unwrap();
+    let storage = h.server.usage().unwrap().storage;
+    assert!(storage.seed_bytes >= 1 << 20, "{storage:?}");
+    assert!(storage.image_cache_bytes > 0, "{storage:?}");
+}
+
 // TEST_SCENARIO: a machine's CPU share is what it used over its last two looks while running. Once it stops, the usage read reports no CPU for it, so the bars never name a paused agent among the heaviest CPU users.
 #[tokio::test]
 async fn a_stopped_machine_reports_no_cpu() {

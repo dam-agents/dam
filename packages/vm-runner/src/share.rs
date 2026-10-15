@@ -247,6 +247,17 @@ impl Drop for SeedFile {
     }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: what the share's seed, and a staged one an upload left, take of the claim. A seed is removed once its migration ends, so this is what migrations in progress, or stopped short of their end, still hold.
+pub fn seed_bytes(share: &Path) -> u64 {
+    use std::os::unix::fs::MetadataExt;
+    let seed = share.join(SEED_FILE);
+    [staged_path(&seed), seed]
+        .iter()
+        .filter_map(|path| fs::metadata(path).ok())
+        .map(|meta| meta.blocks() * 512)
+        .sum()
+}
+
 pub fn remove_seed(share: &Path) -> io::Result<()> {
     remove_if_present(&share.join(SEED_FILE))
 }
