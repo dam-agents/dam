@@ -1027,9 +1027,43 @@ const EVICTED_INFIX: &str = ".evicted.";
 
 struct ScratchEntry {
     path: PathBuf,
+    shown: PathBuf,
     used: u64,
     bytes: u64,
     rebuildable: bool,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a scratch folder opened for one pass. The pass names everything in it through `dir`'s descriptor and never by `shown`, so a folder swapped for a symlink after it was opened is not followed either.
+struct ScratchRoot {
+    dir: File,
+    shown: PathBuf,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: opens the scratch folders for a pass, without following a symlink. A folder that is one, such as a ~/.cache an agent pointed at its work, is skipped, since what it points at is not scratch. A missing folder is skipped quietly.
+fn open_scratch_roots(dirs: &[PathBuf]) -> Vec<ScratchRoot> {
+    dirs.iter()
+        .filter_map(|shown| {
+            match OpenOptions::new()
+                .read(true)
+                .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
+                .open(shown)
+            {
+                Ok(dir) => Some(ScratchRoot {
+                    dir,
+                    shown: shown.clone(),
+                }),
+                Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+                Err(_) if fs::symlink_metadata(shown).is_ok_and(|info| info.is_symlink()) => {
+                    logf!("WARNING: not evicting from {}, which is a symlink: what it points at is not scratch", shown.display());
+                    None
+                }
+                Err(e) => {
+                    logf!("WARNING: not evicting from {} ({e})", shown.display());
+                    None
+                }
+            }
+        })
+        .collect()
 }
 
 fn evict_scratch() {
@@ -1062,17 +1096,18 @@ fn evict_scratch() {
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |since| since.as_secs());
         let (mut freed, mut deleted) = (0, Vec::new());
-        for entry in scratch_entries(&dirs, disk, now, pass.youngest) {
+        let roots = open_scratch_roots(&dirs);
+        for entry in scratch_entries(&roots, disk, now, pass.youngest) {
             if !pass.continues(free_percent(home), freed) {
                 break;
             }
             match evict(&entry.path, now) {
                 Ok(true) => {
                     freed += entry.bytes;
-                    deleted.push(entry.path.display().to_string());
+                    deleted.push(entry.shown.display().to_string());
                 }
                 Ok(false) => {}
-                Err(e) => logf!("WARNING: evicting {} ({e})", entry.path.display()),
+                Err(e) => logf!("WARNING: evicting {} ({e})", entry.shown.display()),
             }
         }
         if let Some(request) = request.filter(|_| pass.claim_only) {
@@ -1101,14 +1136,21 @@ fn evict_scratch() {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: every entry of the scratch folders that may be evicted at `now`, in the order to evict them: by the first EVICT_AGES pass it is old enough for, then rebuildable before not, then oldest first. An entry is left out when it was used within `youngest` seconds, when it holds the image's trust cache, a socket or fifo a process may still listen on, or a mount, or when it cannot be read.
-fn scratch_entries(dirs: &[PathBuf], disk: u64, now: u64, youngest: u64) -> Vec<ScratchEntry> {
+fn scratch_entries(roots: &[ScratchRoot], disk: u64, now: u64, youngest: u64) -> Vec<ScratchEntry> {
     let trust = Path::new(TRUST_CACHE_PATH);
-    let mut entries: Vec<(usize, ScratchEntry)> = dirs
+    let mut entries: Vec<(usize, ScratchEntry)> = roots
         .iter()
-        .filter_map(|dir| fs::read_dir(dir).ok())
-        .flat_map(|names| names.flatten().map(|name| name.path()))
-        .filter(|path| !trust.starts_with(path))
-        .filter_map(|path| {
+        .filter_map(|root| {
+            let at = PathBuf::from(format!("/proc/self/fd/{}", root.dir.as_raw_fd()));
+            Some((root, fs::read_dir(&at).ok()?))
+        })
+        .flat_map(|(root, names)| {
+            names
+                .flatten()
+                .map(|name| (name.path(), root.shown.join(name.file_name())))
+        })
+        .filter(|(_, shown)| !trust.starts_with(shown))
+        .filter_map(|(path, shown)| {
             let (used, bytes) = tree_use(&path, disk)?;
             let leftover = path
                 .file_name()
@@ -1123,6 +1165,7 @@ fn scratch_entries(dirs: &[PathBuf], disk: u64, now: u64, youngest: u64) -> Vec<
                 pass,
                 ScratchEntry {
                     path,
+                    shown,
                     used,
                     bytes,
                     rebuildable,
@@ -3434,7 +3477,7 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        let dirs = [s.to_path_buf()];
+        let dirs = open_scratch_roots(&[s.to_path_buf()]);
         let names = |now, disk| -> Vec<String> {
             scratch_entries(&dirs, disk, now, EVICT_AGES[3])
                 .iter()
@@ -3474,6 +3517,38 @@ mod tests {
             "another device is not walked"
         );
         drop(socket);
+    }
+
+    // TEST_SCENARIO: a scratch folder that is itself a symlink to the agent's work, such as a ~/.cache pointed at a work directory, is not scratch: a pass offers nothing from it, and the work's long-unused file stays. A folder swapped for such a link after the pass opened it is still evicted from where it was opened, and the link's target keeps its file of the same name.
+    #[test]
+    fn a_scratch_folder_that_is_a_symlink_is_not_followed() {
+        let home = TempDir::new("evict-linked-home");
+        let h = home.path();
+        fs::create_dir_all(h.join("work")).unwrap();
+        fs::write(h.join("work/main.rs"), b"fn main() {}").unwrap();
+        std::os::unix::fs::symlink("work", h.join(".cache")).unwrap();
+        fs::create_dir_all(h.join(".npm/_cacache")).unwrap();
+        fs::write(h.join(".npm/main.rs"), b"cache").unwrap();
+        let disk = fs::metadata(h).unwrap().dev();
+        let later = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 2 * EVICT_AGES[0];
+
+        let roots = open_scratch_roots(&[h.join(".cache"), h.join(".npm")]);
+        let offered = scratch_entries(&roots, disk, later, EVICT_AGES[3]);
+        let mut shown: Vec<_> = offered.iter().map(|entry| entry.shown.clone()).collect();
+        shown.sort();
+        assert_eq!(shown, [h.join(".npm/_cacache"), h.join(".npm/main.rs")]);
+
+        fs::rename(h.join(".npm"), h.join("npm-moved")).unwrap();
+        std::os::unix::fs::symlink("work", h.join(".npm")).unwrap();
+        for entry in &offered {
+            assert!(evict(&entry.path, 9).unwrap());
+        }
+        assert_eq!(fs::read(h.join("work/main.rs")).unwrap(), b"fn main() {}");
+        assert_eq!(fs::read_dir(h.join("npm-moved")).unwrap().count(), 0);
     }
 
     // TEST_SCENARIO: an evicted entry goes whole, and a link goes without its target. An entry a process holds a BSD lock on stays, the way systemd-tmpfiles leaves it, and goes once the lock is released. A leftover of a failed eviction is deleted where it is.
