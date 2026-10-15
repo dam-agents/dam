@@ -177,6 +177,192 @@ index 6d6a35a..2576fa4 100644
 +        );
 +    }
 +}
+diff --git i/src/devices/src/virtio/block/worker.rs w/src/devices/src/virtio/block/worker.rs
+index 8432761..4d1b3b0 100644
+--- i/src/devices/src/virtio/block/worker.rs
++++ w/src/devices/src/virtio/block/worker.rs
+@@ -394,10 +394,69 @@ pub struct BlockWorker {
+     async_io: Option<AsyncIo>,
+     in_flight: usize,
+     in_flight_bytes: usize,
++    stopping: bool,
+     #[cfg(target_os = "windows")]
+     pipeline: Option<win_pipeline::Pipeline>,
+ }
+ 
++/// How long a write the host has no room for waits before it is tried again.
++const NO_SPACE_RETRY_MS: i32 = 1000;
++
++/// Run a write until the host has room for it, as QEMU's default
++/// `werror=enospc` does by pausing the guest. A sparse image on a full host
++/// filesystem fails the write with ENOSPC, and virtio-blk can only report
++/// that as an I/O error: the guest drops the data it had in its page cache,
++/// aborts its journal and marks the filesystem with errors. Held here, the
++/// guest only waits, and resumes with nothing lost once the host frees room.
++/// A stop fails the write as before, so the worker still yields the queue.
++/// A flush is never retried: after a failed fsync the host may have dropped
++/// the dirty pages, and a second fsync would report them written.
++fn until_room<T>(
++    stop_fd: &EventFd,
++    stopping: bool,
++    mut write: impl FnMut() -> io::Result<T>,
++) -> io::Result<T> {
++    let mut waited = false;
++    loop {
++        let error = match write() {
++            Err(error) if matches!(error.raw_os_error(), Some(libc::ENOSPC | libc::EDQUOT)) => {
++                error
++            }
++            done => {
++                if waited {
++                    info!("block write resumed: the host has room again");
++                }
++                return done;
++            }
++        };
++        if stopping || !wait_for_room(stop_fd) {
++            return Err(error);
++        }
++        if !waited {
++            warn!("block write held until the host has room: {error}");
++            waited = true;
++        }
++    }
++}
++
++/// Wait out one retry interval; false when a stop came meanwhile.
++#[cfg(unix)]
++fn wait_for_room(stop_fd: &EventFd) -> bool {
++    let mut poll = libc::pollfd {
++        fd: stop_fd.as_raw_fd(),
++        events: libc::POLLIN,
++        revents: 0,
++    };
++    // SAFETY: `poll` is one live pollfd for the call.
++    let ready = unsafe { libc::poll(&mut poll, 1, NO_SPACE_RETRY_MS) };
++    ready == 0 || (ready < 0 && io::Error::last_os_error().kind() == io::ErrorKind::Interrupted)
++}
++
++#[cfg(not(unix))]
++fn wait_for_room(_stop_fd: &EventFd) -> bool {
++    false
++}
++
+ impl BlockWorker {
+     pub fn new(
+         device_queue: DeviceQueue,
+@@ -425,6 +484,7 @@ impl BlockWorker {
+             async_io,
+             in_flight: 0,
+             in_flight_bytes: 0,
++            stopping: false,
+             #[cfg(target_os = "windows")]
+             pipeline: None,
+         })
+@@ -471,6 +531,7 @@ impl BlockWorker {
+     }
+ 
+     fn work(mut self) -> BlockWorker {
++        self.stopping = false;
+         let virtq_ev_fd = self.device_queue.event.as_raw_fd();
+         let stop_ev_fd = self.stop_fd.as_raw_fd();
+         let async_ev_fd = self
+@@ -559,6 +620,7 @@ impl BlockWorker {
+                             EventSet::IN if source == stop_ev_fd => {
+                                 debug!("stopping worker thread");
+                                 let _ = self.stop_fd.read();
++                                self.stopping = true;
+                                 // Drain: complete any requests the guest made
+                                 // available before the stop so we yield the
+                                 // queue at a clean boundary (no in-flight I/O).
+@@ -1146,9 +1208,10 @@ impl BlockWorker {
+                 if !data_len.is_multiple_of(512) {
+                     Err(RequestError::InvalidDataLength)
+                 } else {
+-                    reader
+-                        .read_to_at(&self.disk, data_len, request_header.sector * 512)
+-                        .map_err(RequestError::ReadingFromDescriptor)
++                    until_room(&self.stop_fd, self.stopping, || {
++                        reader.read_to_at(&self.disk, data_len, request_header.sector * 512)
++                    })
++                    .map_err(RequestError::ReadingFromDescriptor)
+                 }
+             }
+             VIRTIO_BLK_T_FLUSH => match self.disk.cache_type() {
+@@ -1204,13 +1267,13 @@ impl BlockWorker {
+                         )
+                         .map_err(RequestError::DiscardingToZero)?;
+                 } else {
+-                    self.disk
+-                        .file
+-                        .write_zeroes(
++                    until_room(&self.stop_fd, self.stopping, || {
++                        self.disk.file.write_zeroes(
+                             discard_write_data.sector * 512,
+                             discard_write_data.num_sectors as u64 * 512,
+                         )
+-                        .map_err(RequestError::WritingZeroes)?;
++                    })
++                    .map_err(RequestError::WritingZeroes)?;
+                 }
+                 Ok(0)
+             }
+@@ -1223,6 +1286,55 @@ impl BlockWorker {
+ mod tests {
+     use super::*;
+ 
++    fn no_space() -> io::Result<()> {
++        Err(io::Error::from_raw_os_error(libc::ENOSPC))
++    }
++
++    #[test]
++    fn a_write_the_host_has_no_room_for_waits_until_it_has() {
++        let stop = EventFd::new(EFD_NONBLOCK).unwrap();
++        let mut tries = 0;
++        let started = std::time::Instant::now();
++        until_room(&stop, false, || {
++            tries += 1;
++            if tries < 3 { no_space() } else { Ok(()) }
++        })
++        .unwrap();
++        assert_eq!(tries, 3);
++        assert!(
++            started.elapsed() >= std::time::Duration::from_millis(2 * NO_SPACE_RETRY_MS as u64)
++        );
++    }
++
++    #[test]
++    fn a_stop_fails_a_write_held_for_room() {
++        let stop = EventFd::new(EFD_NONBLOCK).unwrap();
++        stop.write(1).unwrap();
++        let mut tries = 0;
++        let error = until_room(&stop, false, || {
++            tries += 1;
++            no_space()
++        })
++        .unwrap_err();
++        assert_eq!(error.raw_os_error(), Some(libc::ENOSPC));
++        assert_eq!(tries, 1);
++        let stop = EventFd::new(EFD_NONBLOCK).unwrap();
++        assert!(until_room(&stop, true, no_space).is_err());
++    }
++
++    #[test]
++    fn other_write_errors_fail_at_once() {
++        let stop = EventFd::new(EFD_NONBLOCK).unwrap();
++        let mut tries = 0;
++        let error = until_room(&stop, false, || -> io::Result<()> {
++            tries += 1;
++            Err(io::Error::from_raw_os_error(libc::EIO))
++        })
++        .unwrap_err();
++        assert_eq!(error.raw_os_error(), Some(libc::EIO));
++        assert_eq!(tries, 1);
++    }
++
+     fn submit_reads(io: &mut AsyncIo, requests: u16) {
+         for index in 0..requests {
+             io.submit_read(AsyncJob {
 diff --git i/src/devices/src/virtio/fs/linux/passthrough.rs w/src/devices/src/virtio/fs/linux/passthrough.rs
 index 0dc67a5..d086dc2 100644
 --- i/src/devices/src/virtio/fs/linux/passthrough.rs
