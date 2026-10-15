@@ -337,7 +337,16 @@ fn mount_storage(target: &Path) -> (PathBuf, u32) {
         if let Err(e) = grow_btrfs(target) {
             logf!("WARNING: growing btrfs to the disk ({e}); it keeps the size it had");
         }
+        if target.join(guest::DISK_ROOT_DIR).exists() {
+            match migrate_to_subvolumes(target) {
+                Ok(()) => announce("moved the storage disk to the subvolume layout"),
+                Err(e) => announce(&format!(
+                    "WARNING: moving the storage disk to the subvolume layout ({e}); it boots in the directory layout, and the next boot tries again"
+                )),
+            }
+        }
         if !target.join(guest::DISK_ROOT_DIR).exists() {
+            delete_migrated(target);
             for name in [guest::AGENT_DIR, guest::SYSTEM_DIR] {
                 if let Err(e) = ensure_subvolume(target, name) {
                     fatal!("creating the subvolume {name}: {e}");
@@ -379,8 +388,12 @@ struct VolArgs {
 }
 
 fn btrfs_ioctl(dir: &Path, request: u8, name: &str) -> io::Result<()> {
+    btrfs_ioctl_fd(dir, request, 0, name)
+}
+
+fn btrfs_ioctl_fd(dir: &Path, request: u8, fd: i64, name: &str) -> io::Result<()> {
     let mut args = VolArgs {
-        fd: 0,
+        fd,
         name: [0; 4088],
     };
     args.name[..name.len()].copy_from_slice(name.as_bytes());
@@ -408,6 +421,121 @@ fn ensure_subvolume(parent: &Path, name: &str) -> io::Result<()> {
         return Ok(());
     }
     btrfs_ioctl(parent, 14, name)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: deletes the subvolume `parent/name` and everything in it (BTRFS_IOC_SNAP_DESTROY).
+fn delete_subvolume(parent: &Path, name: &str) -> io::Result<()> {
+    btrfs_ioctl(parent, 15, name)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: makes `parent/name` a snapshot of the subvolume at `parent` (BTRFS_IOC_SNAP_CREATE). It shares every extent with its source, so it takes no copy and no space until either side changes.
+fn snapshot(parent: &Path, name: &str) -> io::Result<()> {
+    let source = File::open(parent)?;
+    btrfs_ioctl_fd(parent, 1, source.as_raw_fd().into(), name)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: where a migration puts the disk's directory layout, at the top of the disk and inside the system subvolume, until the background delete is through with it. Every boot in the subvolume layout deletes what is left of it, so a delete cut short by a stop goes on at the next boot.
+const MIGRATED: &str = "workspace.migrated";
+const MIGRATING: &str = ".migrating";
+
+// UNIT_BOUNDARY_DESCRIPTION: moves a btrfs disk from the directory layout, everything under DISK_ROOT_DIR, to the subvolume layout. What else is at the top of the disk is set aside first: a disk smolvm's guest agent once booted holds its image and container directories, which nothing uses since platform-init replaced it. Each subvolume starts as a snapshot of the whole disk, which copies nothing, and becomes its store by renames inside it: the store's entries move up to its root, which takes the store's owner and mode, the rest is set aside, and the empty directories a snapshot shows for the subvolumes beside its source go. Nothing of the old tree is changed until both subvolumes are complete and the system one is marked with its layout; moving DISK_ROOT_DIR aside is then the one step that switches the disk. A boot cut short before it finds the directory layout and starts again, deleting the subvolumes the last attempt left. The home's subvolume must not show the rest to the agent, so its share of it is deleted before the switch; the system's, a copy of the home, is deleted in the background afterwards. A home entry named MIGRATED fails the move, and the disk stays in the directory layout.
+fn migrate_to_subvolumes(top: &Path) -> io::Result<()> {
+    let stores = [guest::AGENT_DIR, guest::SYSTEM_DIR];
+    let ours = |name: &str| {
+        stores
+            .iter()
+            .any(|store| name == *store || name == format!("{store}{MIGRATING}"))
+    };
+    let aside = top.join(MIGRATED);
+    mkdir_all(&aside)?;
+    for entry in fs::read_dir(top)? {
+        let name = entry?.file_name();
+        let text = name.to_string_lossy();
+        if ours(&text) {
+            delete_subvolume(top, &text)?;
+        } else if name != guest::DISK_ROOT_DIR && name != MIGRATED {
+            rename_noreplace(&top.join(&name), &aside.join(&name))?;
+        }
+    }
+    for store in stores {
+        let staged = format!("{store}{MIGRATING}");
+        snapshot(top, &staged)?;
+        let root = top.join(&staged);
+        for entry in fs::read_dir(&root)? {
+            let entry = entry?;
+            if ours(&entry.file_name().to_string_lossy()) {
+                fs::remove_dir(entry.path())?;
+            }
+        }
+        let old = root.join(MIGRATED).join(guest::DISK_ROOT_DIR);
+        fs::rename(root.join(guest::DISK_ROOT_DIR), &old)?;
+        let from = old.join(store);
+        if let Ok(info) = fs::symlink_metadata(&from) {
+            for entry in fs::read_dir(&from)? {
+                let entry = entry?;
+                rename_noreplace(&entry.path(), &root.join(entry.file_name()))?;
+            }
+            std::os::unix::fs::lchown(&root, Some(info.uid()), Some(info.gid()))?;
+            fs::set_permissions(&root, info.permissions())?;
+        }
+        if store == guest::AGENT_DIR {
+            remove_all(&root.join(MIGRATED))?;
+        }
+    }
+    let staged_system = top.join(format!("{}{MIGRATING}", guest::SYSTEM_DIR));
+    write_record(
+        &staged_system.join(guest::LAYOUT_FILE),
+        format!("{}\n", guest::LAYOUT_SUBVOLUMES).as_bytes(),
+    )?;
+    flush_filesystem(top)?;
+    for store in stores {
+        fs::rename(top.join(format!("{store}{MIGRATING}")), top.join(store))?;
+    }
+    rename_noreplace(
+        &top.join(guest::DISK_ROOT_DIR),
+        &aside.join(guest::DISK_ROOT_DIR),
+    )?;
+    flush_filesystem(top)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: deletes in the background what a migration set aside (MIGRATED). The directories are opened now and reached through /proc/self/fd, because the disk's root is detached once the boot is through with it.
+fn delete_migrated(top: &Path) {
+    for dir in [top.to_path_buf(), top.join(guest::SYSTEM_DIR)] {
+        if !dir.join(MIGRATED).exists() {
+            continue;
+        }
+        match File::open(&dir) {
+            Ok(dir) => {
+                std::thread::spawn(move || {
+                    let path =
+                        PathBuf::from(format!("/proc/self/fd/{}", dir.as_raw_fd())).join(MIGRATED);
+                    if let Err(e) = remove_all(&path) {
+                        logf!("WARNING: deleting the disk's old directory layout ({e}); a later boot tries again");
+                    }
+                });
+            }
+            Err(e) => logf!(
+                "WARNING: opening {} ({e}); its old directory layout stays until a later boot",
+                dir.display()
+            ),
+        }
+    }
+}
+
+fn rename_noreplace(from: &Path, to: &Path) -> io::Result<()> {
+    let from = cstring(from.as_os_str())?;
+    let to = cstring(to.as_os_str())?;
+    // SAFETY: both paths are NUL-terminated strings that outlive the call, and AT_FDCWD resolves them as rename(2) would.
+    let rc = unsafe {
+        libc::renameat2(
+            libc::AT_FDCWD,
+            from.as_ptr(),
+            libc::AT_FDCWD,
+            to.as_ptr(),
+            libc::RENAME_NOREPLACE,
+        )
+    };
+    succeeded(rc == 0)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: e2fsck's passes, from least to most invasive: a preen returns at once on a clean filesystem and fixes what is safe to fix unattended; what it leaves gets a full repair, then one that also rebuilds directories. Exit codes 0 to 3 mean clean or repaired; 4 means errors are left, which escalates; anything else, or a pass killed by a signal, stops the boot with the disk as it is.
@@ -965,5 +1093,106 @@ mod tests {
         assert!(capabilities
             .iter()
             .any(|c| c == smolvm_protocol::ONLINE_MEMORY_GROWTH_CAPABILITY));
+    }
+
+    // TEST_SCENARIO: a btrfs disk in the directory layout moves to the subvolume layout at boot: the home becomes the root of its own subvolume with its owner, mode and every entry, one named like the old layout's directory included, the platform state keeps its kept root and is marked with the new layout, and the old tree is set aside for the background delete, with what smolvm's guest agent left at the top. What an attempt cut short left is deleted first. Needs root and mkfs.btrfs, for a loop-mounted filesystem: `sudo -E cargo test -p platform-init -- --ignored migrates`.
+    #[test]
+    #[ignore = "needs root and mkfs.btrfs"]
+    fn migrates_a_directory_layout_disk_to_subvolumes() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let dir =
+            std::env::temp_dir().join(format!("platform-init-migrate-{}", std::process::id()));
+        mkdir_all(&dir).unwrap();
+        let image = dir.join("disk.raw");
+        File::create(&image).unwrap().set_len(256 << 20).unwrap();
+        let run = |program: &str, args: &[&std::ffi::OsStr]| {
+            let out = std::process::Command::new(program)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "{program}: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        };
+        run(
+            "mkfs.btrfs",
+            &["-q".as_ref(), "-M".as_ref(), image.as_os_str()],
+        );
+        let top = dir.join("top");
+        mkdir_all(&top).unwrap();
+        run(
+            "mount",
+            &[
+                "-o".as_ref(),
+                "loop".as_ref(),
+                image.as_os_str(),
+                top.as_os_str(),
+            ],
+        );
+        let old = top.join(guest::DISK_ROOT_DIR);
+        let home = guest::agent_store(&old);
+        mkdir_all(&home.join(".cache")).unwrap();
+        fs::write(home.join(".cache/file"), b"cache").unwrap();
+        fs::write(home.join(guest::DISK_ROOT_DIR), b"the agent's own file").unwrap();
+        std::os::unix::fs::lchown(&home, Some(65532), Some(65532)).unwrap();
+        fs::set_permissions(&home, fs::Permissions::from_mode(0o750)).unwrap();
+        let kept = guest::system_store(&old, "rootfs/kept/upper/etc");
+        mkdir_all(&kept).unwrap();
+        fs::write(kept.join("installed"), b"kept").unwrap();
+        fs::write(guest::system_store(&old, guest::LAYOUT_FILE), b"1\n").unwrap();
+        mkdir_all(&top.join("containers/crun")).unwrap();
+        snapshot(&top, &format!("{}{MIGRATING}", guest::AGENT_DIR)).unwrap();
+
+        let migrated = migrate_to_subvolumes(&top);
+        let agent = top.join(guest::AGENT_DIR);
+        let system = top.join(guest::SYSTEM_DIR);
+        let checks = || -> Result<(), String> {
+            migrated.as_ref().map_err(|e| e.to_string())?;
+            let info = fs::metadata(&agent).unwrap();
+            assert_eq!(info.ino(), 256, "the home is a subvolume's root");
+            assert_eq!((info.uid(), info.mode() & 0o777), (65532, 0o750));
+            assert_eq!(fs::read(agent.join(".cache/file")).unwrap(), b"cache");
+            assert_eq!(
+                fs::read(agent.join(guest::DISK_ROOT_DIR)).unwrap(),
+                b"the agent's own file"
+            );
+            assert!(
+                !agent.join(MIGRATED).exists(),
+                "the agent does not see the old tree"
+            );
+            assert_eq!(fs::metadata(&system).unwrap().ino(), 256);
+            assert_eq!(
+                fs::read(system.join("rootfs/kept/upper/etc/installed")).unwrap(),
+                b"kept"
+            );
+            assert_eq!(
+                fs::read_to_string(system.join(guest::LAYOUT_FILE)).unwrap(),
+                "2\n"
+            );
+            assert!(!old.exists());
+            assert!(top
+                .join(MIGRATED)
+                .join(guest::DISK_ROOT_DIR)
+                .join(guest::AGENT_DIR)
+                .exists());
+            assert!(
+                top.join(MIGRATED).join("containers/crun").exists(),
+                "smolvm's directories are set aside"
+            );
+            assert!(!system.join("containers").exists() && !agent.join("containers").exists());
+            let mut names: Vec<_> = fs::read_dir(&top)
+                .unwrap()
+                .map(|e| e.unwrap().file_name())
+                .collect();
+            names.sort();
+            assert_eq!(names, [guest::AGENT_DIR, guest::SYSTEM_DIR, MIGRATED]);
+            Ok(())
+        };
+        let result = checks();
+        run("umount", &[top.as_os_str()]);
+        let _ = fs::remove_dir_all(&dir);
+        result.unwrap();
     }
 }
