@@ -2061,6 +2061,19 @@ fn spend_capability(dir: &std::path::Path, nonce: &str) -> std::io::Result<()> {
     )
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: how often, in bytes written, a seed upload looks at the claim's room. A look is a statvfs, cheap but not free at every chunk of a many-GiB home; the claim can pass the line by at most this much before the upload stops.
+const SEED_ROOM_CHECK: u64 = 64 << 20;
+
+// UNIT_BOUNDARY_DESCRIPTION: a seed write the claim had no room for is the owner's storage being full, and is reported as such, with the ways to free it, rather than as the runner's own failure.
+fn seed_write_refused(step: &str, e: &std::io::Error) -> Rejected {
+    if matches!(e.raw_os_error(), Some(libc::ENOSPC | libc::EDQUOT)) {
+        return Rejected::insufficient_storage(format!(
+            "{step} the seed: {e}. Your VM agents' shared storage is full. To free space, delete a VM agent you no longer need or files from this agent's home, or request more storage."
+        ));
+    }
+    Rejected::internal(format!("{step} the seed: {e}"))
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: one seed upload, holding its machine's seed claim. Every chunk is counted against the machine's disk size before it is written. A commit renames the seed into the share unless the machine was deleted meanwhile; dropped uncommitted, the staged file is removed. Either way the claim is released, so the machine can be booted. `capability` is the seed capability that let the upload in, when the token did not.
 pub struct Seeding {
     server: Arc<Server>,
@@ -2076,14 +2089,25 @@ impl Seeding {
             .file
             .as_mut()
             .ok_or_else(|| Rejected::internal("the seed was not staged"))?;
-        if file.bytes().saturating_add(chunk.len() as u64) > self.limit {
+        let (before, after) = (
+            file.bytes(),
+            file.bytes().saturating_add(chunk.len() as u64),
+        );
+        if after > self.limit {
             return Err(Rejected::too_large(format!(
                 "the seed is larger than machine {}'s {} byte disk",
                 self.id, self.limit
             )));
         }
+        if before / SEED_ROOM_CHECK != after / SEED_ROOM_CHECK {
+            if let Some(refusal) =
+                (self.server.config.measure_storage)().and_then(|claim| claim.seed_refusal(after))
+            {
+                return Err(Rejected::insufficient_storage(refusal));
+            }
+        }
         file.write(chunk)
-            .map_err(|e| Rejected::internal(format!("writing the seed: {e}")))
+            .map_err(|e| seed_write_refused("writing", &e))
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: a capability is spent before the seed is stored, so it never seeds twice even when storing fails; the retry then takes the fresh capability the controller mints for its next Job. Every stored seed goes on the security trail with its size, digest and what let it in, naming a capability only by its fingerprint.
@@ -2112,7 +2136,7 @@ impl Seeding {
             .map_err(|e| Rejected::internal(format!("replacing the seed's record: {e}")))?;
         let stored = file
             .commit()
-            .map_err(|e| Rejected::internal(format!("storing the seed: {e}")))?;
+            .map_err(|e| seed_write_refused("storing", &e))?;
         share::record_seed_digest(&dir, &stored)
             .map_err(|e| Rejected::internal(format!("recording the seed: {e:#}")))?;
         let (authority, fingerprint, expires) = match &self.capability {

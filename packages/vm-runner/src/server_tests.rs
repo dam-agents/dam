@@ -607,6 +607,27 @@ async fn a_seed_uploaded_to_a_stopped_machine_is_still_there_when_it_boots() {
     assert_eq!(fs::read(seed).unwrap(), b"a home");
 }
 
+// TEST_SCENARIO: a seed stays on the owner's claim until the move finishes and its restore writes as much again onto the same claim, so an upload that started with room stops, as storage full and before anything more is written, once what it wrote would take the claim past the critical level after the restore; checking only at the start let a large home fill the claim under every other agent.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_seed_whose_restore_would_fill_the_claim_stops_as_storage_full() {
+    let (h, claim) = with_claim("seed-room");
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+    *locked(&claim) = Some(StorageUse {
+        used: (90 << 30) - (32 << 20),
+        usable: 100 << 30,
+    });
+    let mut seeding = h.server.claim_seed("m1", None).unwrap();
+    seeding.write(b"a").unwrap();
+    let refused = seeding.write(&vec![0; 64 << 20]).unwrap_err();
+    assert_eq!(refused.status, 507, "{}", refused.message);
+    assert!(
+        refused.message.contains("twice the home's size"),
+        "{}",
+        refused.message
+    );
+}
+
 // TEST_SCENARIO: a machine with an action in flight may be about to boot, so a seed claimed then could be read half-written; it is refused, as is a second upload to a machine that already has one running. And while a seed is being uploaded, an ensure that asks for the machine running is stored but boots nothing until the upload is done; the next ensure boots it.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_seed_and_a_boot_never_overlap() {
