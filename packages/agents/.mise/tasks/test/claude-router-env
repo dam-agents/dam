@@ -1,0 +1,83 @@
+#!/usr/bin/env node
+//MISE description="Test that Claude Code's launch env points at the Model Router when the runtime says a provider serves it, leaves Bedrock alone and forces a session's subagent model"
+//MISE sources=["claude-code/rootfs/usr/local/lib/model-gateway.sh", "nous/rootfs/usr/local/lib/model-gateway.d/nous.sh", ".mise/tasks/test/claude-router-env"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const shim = fileURLToPath(new URL("../../../claude-code/rootfs/usr/local/lib/model-gateway.sh", import.meta.url));
+const nousHook = fileURLToPath(new URL("../../../nous/rootfs/usr/local/lib/model-gateway.d/nous.sh", import.meta.url));
+const root = mkdtempSync(join(tmpdir(), "claude-router-env-"));
+const hooks = join(root, "model-gateway.d");
+mkdirSync(hooks);
+
+function envAfter(script, env) {
+  const out = execFileSync("/bin/sh", ["-c", `. "${script}"; exec "${process.execPath}" -p "JSON.stringify(process.env)"`], { env, encoding: "utf8" });
+  return JSON.parse(out);
+}
+const rewritten = join(root, "model-gateway.sh");
+execFileSync("/bin/sh", ["-c", `sed 's#/usr/local/lib/model-gateway.d#${hooks}#' "${shim}" > "${rewritten}"`]);
+
+try {
+  // TEST_SCENARIO: A LiteLLM provider's env names a custom upstream; the process must reach it only through the router, name itself to the router, discover models through the router, and carry no provider pin of the session model.
+  const custom = envAfter(rewritten, {
+    PATH: process.env.PATH,
+    ANTHROPIC_BASE_URL: "https://ete-litellm.example",
+    ANTHROPIC_AUTH_TOKEN: "sk-platform:conn:ibm",
+    ANTHROPIC_MODEL: "aws/claude-opus-4-8",
+    PLATFORM_MODEL_ROUTER_PORT: "24180",
+  });
+  assert.equal(custom.ANTHROPIC_BASE_URL, "http://127.0.0.1:24180");
+  assert.equal(custom.ANTHROPIC_CUSTOM_HEADERS, "X-Platform-Harness: claude-code");
+  assert.equal(custom.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY, "1");
+  assert.equal(custom.ANTHROPIC_MODEL, undefined);
+  assert.match(custom.NO_PROXY, /^127\.0\.0\.1,localhost,::1/);
+  assert.equal(custom.ANTHROPIC_AUTH_TOKEN, "sk-platform:conn:ibm");
+
+  // TEST_SCENARIO: On the runtime with the Model Router, provider env never reaches Claude Code; the runtime's mark that a granted provider serves the harness alone switches it to the router, with the router's placeholder as its credential (an Anthropic OAuth token beside it gives way).
+  const marked = envAfter(rewritten, { PATH: process.env.PATH, PLATFORM_MODEL_ROUTER_SERVES: "1", PLATFORM_MODEL_ROUTER_PORT: "24180", CLAUDE_CODE_OAUTH_TOKEN: "platform:conn:oauth" });
+  assert.equal(marked.ANTHROPIC_BASE_URL, "http://127.0.0.1:24180");
+  assert.equal(marked.ANTHROPIC_AUTH_TOKEN, "platform:conn:router");
+  assert.equal(marked.ANTHROPIC_CUSTOM_HEADERS, "X-Platform-Harness: claude-code");
+  assert.equal(marked.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY, "1");
+  assert.match(marked.NO_PROXY, /^127\.0\.0\.1,localhost,::1/);
+
+  // TEST_SCENARIO: A custom header set by the pod (a workload's own) stays after the harness marker.
+  const stacked = envAfter(rewritten, { PATH: process.env.PATH, ANTHROPIC_BASE_URL: "https://x.example", ANTHROPIC_CUSTOM_HEADERS: "X-Other: 1" });
+  assert.equal(stacked.ANTHROPIC_CUSTOM_HEADERS, "X-Platform-Harness: claude-code\nX-Other: 1");
+
+  // TEST_SCENARIO: Without the runtime's mark and without a custom base URL (an image run outside the platform, on an Anthropic token of its own), the env is left as it was.
+  const bare = envAfter(rewritten, { PATH: process.env.PATH, CLAUDE_CODE_OAUTH_TOKEN: "sk-ant-oat-example", ANTHROPIC_MODEL: "opus" });
+  assert.equal(bare.ANTHROPIC_BASE_URL, undefined);
+  assert.equal(bare.ANTHROPIC_CUSTOM_HEADERS, undefined);
+  assert.equal(bare.ANTHROPIC_MODEL, "opus");
+
+  // TEST_SCENARIO: A session's subagent model is forced, so neither an Agent tool call's model argument nor an agent definition's model outranks it; a session without one leaves Claude Code's own precedence alone.
+  const subagent = envAfter(rewritten, { PATH: process.env.PATH, PLATFORM_MODEL_ROUTER_SERVES: "1", CLAUDE_CODE_SUBAGENT_MODEL: "claude/ibm/azure/gpt-5.3-codex" });
+  assert.equal(subagent.CLAUDE_CODE_SUBAGENT_MODEL_FORCE, "1");
+  assert.equal(marked.CLAUDE_CODE_SUBAGENT_MODEL_FORCE, undefined);
+
+  // TEST_SCENARIO: Bedrock stays on Claude Code's native path with the connection's model as the default.
+  const bedrock = envAfter(rewritten, { PATH: process.env.PATH, AWS_BEARER_TOKEN_BEDROCK: "platform:conn:aws", AWS_BEDROCK_MODEL: "us.anthropic.claude-opus-4-8-v1:0", ANTHROPIC_BASE_URL: "https://bedrock.example" });
+  assert.equal(bedrock.CLAUDE_CODE_USE_BEDROCK, "1");
+  assert.equal(bedrock.ANTHROPIC_DEFAULT_MODEL, "us.anthropic.claude-opus-4-8-v1:0");
+  assert.equal(bedrock.ANTHROPIC_BASE_URL, "https://bedrock.example");
+
+  // TEST_SCENARIO: A process the runtime marked as routed reaches the router even when Bedrock's env is beside the mark; Bedrock runs only in a process the runtime starts without the mark.
+  const both = envAfter(rewritten, { PATH: process.env.PATH, PLATFORM_MODEL_ROUTER_SERVES: "1", PLATFORM_MODEL_ROUTER_PORT: "24180", AWS_BEARER_TOKEN_BEDROCK: "platform:conn:aws", AWS_BEDROCK_MODEL: "us.anthropic.claude-opus-4-8-v1:0" });
+  assert.equal(both.CLAUDE_CODE_USE_BEDROCK, undefined);
+  assert.equal(both.ANTHROPIC_DEFAULT_MODEL, undefined);
+  assert.equal(both.ANTHROPIC_BASE_URL, "http://127.0.0.1:24180");
+
+  // TEST_SCENARIO: Nous's hook still follows the router for its own OpenAI-format calls once the base shim repointed Claude Code.
+  symlinkSync(nousHook, join(hooks, "nous.sh"));
+  const nous = envAfter(rewritten, { PATH: process.env.PATH, ANTHROPIC_BASE_URL: "https://x.example", OPENAI_BASE_URL: "https://ete-litellm.example" });
+  assert.equal(nous.OPENAI_BASE_URL, "http://127.0.0.1:24180");
+  console.log("claude-code launches against the router when a provider serves it, with the session's subagent model forced");
+} finally {
+  rmSync(root, { recursive: true, force: true });
+}

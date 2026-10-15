@@ -52,6 +52,12 @@ export const agentsRouter = t.router({
     );
   }),
 
+  runtimeFleet: readAgentProcedure.query(({ ctx }) =>
+    ctx.agents.runtimeFleet(
+      ctx.user.agentIds === "*" ? undefined : ctx.user.agentIds,
+    ),
+  ),
+
   get: readAgentProcedure
     .input(agentGetInputSchema)
     .query(async ({ ctx, input }) => {

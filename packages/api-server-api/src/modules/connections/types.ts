@@ -259,9 +259,9 @@ export interface ConnectionsService {
 
   validateProviderConnection(id: string): Promise<void>;
 
-  defaultProviderConnection(
+  defaultProviderConnections(
     fits: (type: ProviderPresetType, templateId: string) => boolean,
-  ): Promise<string | null>;
+  ): Promise<string[]>;
   getProviderBalance(id: string): Promise<ProviderBalance | null>;
 
   validateGrantSet(connectionIds: string[]): Promise<void>;

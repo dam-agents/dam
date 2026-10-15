@@ -7,7 +7,11 @@ import { useState } from "react";
 
 import { useStore } from "../../../store.js";
 import { isDarkTheme } from "../../platform/store/theme.js";
-import { type DiffLayout, fileDiffBody } from "../lib/diff-layout.js";
+import {
+  type DiffLayout,
+  fileDiffBody,
+  fileDiffData,
+} from "../lib/diff-layout.js";
 import { DiffStatText } from "./diff-stat-text.js";
 import { FileStatusMark } from "./file-status-mark.js";
 
@@ -27,7 +31,7 @@ export function FileDiffCard({ file, layout, anchor }: Props) {
   return (
     <section
       id={anchor}
-      className="scroll-mt-2 overflow-hidden rounded-md border border-border"
+      className="scroll-mt-2 overflow-hidden rounded-md border border-border [&_[data-component=git-diff-view]_.sticky]:static!"
     >
       <header className="sticky top-0 z-10 flex items-center gap-2 border-b border-border bg-muted px-3 py-1.5">
         <button
@@ -53,11 +57,7 @@ export function FileDiffCard({ file, layout, anchor }: Props) {
       </header>
       {body === "shown" && file.patch !== null ? (
         <DiffView
-          data={{
-            oldFile: { fileName: file.oldPath ?? file.path },
-            newFile: { fileName: file.path },
-            hunks: [file.patch],
-          }}
+          data={fileDiffData(file)}
           diffViewMode={
             layout === "split" ? DiffModeEnum.Split : DiffModeEnum.Unified
           }

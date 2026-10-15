@@ -354,6 +354,10 @@ impl Runtime for Smolvm {
         console::machine_tail(&vm_data_dir(id))
     }
 
+    fn console_lines(&self, id: &str, needle: &str) -> String {
+        console::machine_lines(&vm_data_dir(id), needle)
+    }
+
     fn nests(&self) -> bool {
         self.nested
     }

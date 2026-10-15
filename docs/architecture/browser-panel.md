@@ -29,6 +29,15 @@ The image sets agent-browser's defaults through its `AGENT_BROWSER_*` variables:
 So every plain `agent-browser` command — the agent's, and the runtime's for the panel — runs on that one browser: the user watches what the agent does and shares its sign-ins, and the agent sees what the user does.
 A command-line flag still overrides its variable, so an agent that passes `--session` or `--profile` gets a browser of its own that the panel does not show; the agent instructions and the `agent-browser` skill say not to.
 
+**Testing mode.** Chromium reports itself automated (`navigator.webdriver`) whenever its DevTools port is open, and agent-browser drives it through that port, so by default every page sees an automated browser; some sites' bot checks then refuse the user's own clicks.
+The panel's menu has a "Browser testing mode" switch, on by default.
+With it off, Chromium is launched with that report turned off (`--disable-blink-features=AutomationControlled`), a launch switch, not a script in the page, and the DevTools port stays: the agent and the panel control the browser as before.
+It changes only that report: a site may still tell the browser apart by other signs, and turning testing mode off does not promise that its check passes.
+The choice is a file in the agent's home, `~/.local/share/platform/browser-launch`, beside the profile, so it survives a restarted browser, a restarted agent and "Clear browser data".
+agent-browser launches Chromium through the image's launcher, `platform-browser` (its `AGENT_BROWSER_EXECUTABLE_PATH`), which reads that file on every launch, so a browser the agent's own command starts is launched the same way as the panel's, and opening the panel, a new turn or the agent's command never sets it back.
+Switching saves the choice and restarts the browser at once, on the same profile, and opens the page it showed again; the panels show it starting meanwhile.
+A runtime too old to report the mode shows the switch disabled.
+
 **Quiet in the background.** The browser is Chrome for Testing, which calls Google's services on its own: network time, account and sync checks, push-messaging check-in, search suggestions.
 Every such call is egress the gateway holds for the user's approval, though no page asked for it.
 A managed policy in the image (`/etc/opt/chrome_for_testing/policies/managed/platform.json`) turns off network time, sign-in, sync, search suggestions and Google's AI and search side panel features, and makes DuckDuckGo the default search engine, as the panel's address bar already is — so the new tab page is Chromium's own, not Google's, which fetches from `www.google.com`.
@@ -112,6 +121,7 @@ Nothing about the link is trusted: it carries only an address, which must be htt
 The browser's profile lives in the agent's home, so sign-ins survive hibernation and a closed panel.
 The agent can use them — the panel says so once — and "Clear browser data" stops the browser and deletes the profile.
 "Restart browser" stops it and the supervisor launches a fresh one on the same profile while the panels stay connected.
+Both keep the testing mode choice.
 Every browser command has a short deadline and runs in its own process group, killed whole when the deadline passes, so a stuck page cannot pile commands up.
 Launches, failures and restarts go to a log file in the agent's home, so a misbehaving panel can be read after the fact.
 

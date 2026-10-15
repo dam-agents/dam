@@ -37,7 +37,10 @@ import {
   subAgentSpawnIn,
   type SubAgentSpawn,
 } from "../../infrastructure/sub-agent-spawn.js";
-import { toolActivityIn, type ToolActivity } from "../../../changes/index.js";
+import {
+  createToolActivityReader,
+  type ToolActivity,
+} from "../../../changes/index.js";
 import { frameDirectTurn, isDirectSurface } from "../../domain/direct-turn.js";
 import {
   isNonNullObject,
@@ -186,6 +189,7 @@ export interface AcpRuntimeDeps {
 export interface SessionSettingFrame {
   method: string;
   params: Record<string, unknown>;
+  critical?: boolean;
 }
 
 export const SCHEDULE_SURFACE = "schedule";
@@ -207,6 +211,7 @@ interface OutboundMapping {
   platformMeta: PlatformSessionMeta | null;
   rehydrate?: boolean;
   settingSessionId?: string;
+  critical?: boolean;
 }
 
 export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
@@ -395,6 +400,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   let nextOutboundId = 1;
 
+  const toolActivityIn = createToolActivityReader();
   const bootstrap = createSessionBootstrap({
     transcript,
     turnInFlight(sessionId) {
@@ -624,6 +630,53 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     promptScheduler.refuseQueue(sessionId, rehydrateFailureMessage(error));
   }
 
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a harness may refuse a model name it has not
+   * listed yet (Claude Code lists the router's catalog lazily), so a critical
+   * setting is sent once more after a short wait; a second refusal answers
+   * the queued prompts with the harness's own reason rather than running
+   * them on a substitute. The refused value is forgotten, so the next prompt
+   * asks again until the model changes.
+   */
+  const criticalRetries = new Map<string, number>();
+  const CRITICAL_RETRY_MS = 2_000;
+  function retryCriticalSetting(
+    sessionId: string,
+    mapping: OutboundMapping,
+    outboundId: number,
+    error: { message?: unknown; data?: unknown },
+  ): boolean {
+    const key = `${sessionId}:${mapping.method}`;
+    const tried = criticalRetries.get(key) ?? 0;
+    if (tried < 1) {
+      criticalRetries.set(key, tried + 1);
+      const timer = setTimeout(() => {
+        const applied = appliedSettings.get(sessionId);
+        for (const [k] of applied ?? [])
+          if (k.startsWith(mapping.method)) applied?.delete(k);
+        syncSettings(sessionId);
+        promptScheduler.onSettingResponse(sessionId, outboundId);
+      }, CRITICAL_RETRY_MS);
+      timer.unref?.();
+      return true;
+    }
+    criticalRetries.delete(key);
+    const applied = appliedSettings.get(sessionId);
+    for (const [k] of applied ?? [])
+      if (k.startsWith(mapping.method)) applied?.delete(k);
+    const details =
+      error.data !== null &&
+      typeof error.data === "object" &&
+      typeof (error.data as { details?: unknown }).details === "string"
+        ? (error.data as { details: string }).details
+        : null;
+    promptScheduler.refuseQueue(
+      sessionId,
+      `The harness refused the session's model: ${details ?? String(error.message ?? "unknown error")}`,
+    );
+    return false;
+  }
+
   function syncSettings(sessionId: string): void {
     if (harnessColdSessions.has(sessionId)) return;
     const applied = appliedSettings.get(sessionId) ?? new Map<string, string>();
@@ -643,6 +696,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         attachSessionId: null,
         platformMeta: null,
         settingSessionId: sessionId,
+        ...(frame.critical && { critical: true }),
       });
       promptScheduler.submitSetting({
         sessionId,
@@ -1432,15 +1486,31 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         }
 
         if (mapping.settingSessionId !== undefined) {
-          const error = (frame as { error?: { message?: unknown } }).error;
+          const error = (
+            frame as { error?: { message?: unknown; data?: unknown } }
+          ).error;
           if (error !== undefined && mapping.channel === settingsChannel)
             deps.log?.(
               `session setting ${mapping.method} for ${mapping.settingSessionId} refused: ${String(error.message)}`,
             );
-          promptScheduler.onSettingResponse(
-            mapping.settingSessionId,
-            outboundId,
-          );
+          if (error === undefined && mapping.critical === true)
+            criticalRetries.delete(
+              `${mapping.settingSessionId}:${mapping.method}`,
+            );
+          const deferred =
+            error !== undefined &&
+            mapping.critical === true &&
+            retryCriticalSetting(
+              mapping.settingSessionId,
+              mapping,
+              outboundId,
+              error,
+            );
+          if (!deferred)
+            promptScheduler.onSettingResponse(
+              mapping.settingSessionId,
+              outboundId,
+            );
         }
 
         if (mapping.attachSessionId) {
@@ -1895,6 +1965,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         if (title)
           deps.sessionMetadata?.set(promptSessionId, { ...meta, title });
 
+        syncSettings(promptSessionId);
         const fate = promptScheduler.submit({
           sessionId: promptSessionId,
           channel,
@@ -2189,6 +2260,20 @@ function toAcpPlatformMeta(session: PodSession): Record<string, unknown> {
     ...(session.provider !== undefined && { provider: session.provider }),
     ...(session.model !== undefined && { model: session.model }),
   };
+}
+
+export function sessionListAnswer(
+  store: SessionMetadataStore,
+  isRunning: (sessionId: string) => boolean,
+  platformSessionOf: PlatformSessionOf | undefined,
+): unknown {
+  const answered = injectPlatformMetaIntoList(
+    { result: { sessions: [] } },
+    store,
+    isRunning,
+    platformSessionOf,
+  ) as { result: unknown };
+  return answered.result;
 }
 
 function injectPlatformMetaIntoList(

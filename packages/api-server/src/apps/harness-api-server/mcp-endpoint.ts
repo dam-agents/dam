@@ -19,7 +19,9 @@ import {
   ChannelType,
   onceState,
   precheckSchema,
+  scheduleHarnessSchema,
   scheduleModelSchema,
+  scheduleSettingsSchema,
   quietWindowSchema,
   type SchedulesService,
   type SkillsService,
@@ -995,10 +997,20 @@ export function createMcpSession(
         .describe(
           "Shell command run before each fire, deciding whether the run happens at all. Runs under `bash -lc` from the workspace root (/home/agent/work) in this pod's environment, so relative paths resolve there — a script in a repo cloned into the workspace is ./<repo>/scripts/check.sh, and a path that does not resolve exits 127, which counts as the check breaking. Exit 0 runs the task, exit 1 skips this occurrence without any model call, and any other exit (or a two-minute timeout) means the check itself broke and the task runs anyway. Whatever it prints on stdout is appended to the task prompt. Use it for a cheap deterministic 'did anything change?' test so a frequent schedule only costs a turn when there is work: PLATFORM_LAST_RUN_AT (ISO timestamp of the last fire that actually ran, empty if never), PLATFORM_FIRE_AT and PLATFORM_SCHEDULE_ID are in the environment.",
         ),
+      harness: scheduleHarnessSchema
+        .optional()
+        .describe(
+          "Optional harness this schedule's sessions run on, one the agent's image carries (`get_agent_config` lists them); omit it to run on the agent's default harness.",
+        ),
       model: scheduleModelSchema
         .optional()
         .describe(
-          "Optional model this schedule's sessions run on, instead of the default, e.g. a cheap model for a frequent routine check. Use a name from this agent's model settings (for Claude Code: fable, opus, sonnet or haiku). Omit it to run on the harness's own default, what the agent's Default model setting gives, not on whatever model the agent is currently set to. On a harness with no such default (no provider pin and none declared by the harness), a schedule without a model follows the agent's current model instead. A model the harness cannot switch to fails the run with the reason rather than running on the default.",
+          "Optional model this schedule's sessions run on, instead of the default, e.g. a cheap model for a frequent routine check. Name it with its provider, as <provider>/<model id> (e.g. anthropic/claude-haiku-4-5-20251001, ibm/gpt-5-mini); the agent's model settings list the names. The provider must be one this agent holds and the harness accepts, else the schedule is refused with the reason. Omit it to run on the harness's own default, what the agent's Default model setting gives, not on whatever model the agent is currently set to. A model the agent can no longer reach at fire time fails that run with the reason rather than running on a substitute.",
+        ),
+      settings: scheduleSettingsSchema
+        .optional()
+        .describe(
+          'Optional per-session settings of the harness the sessions run on, as {settingId: value} (e.g. {"effort": "high"}); the agent\'s model settings list each harness\'s settings and their values. A setting the harness does not offer, or a value not valid for the chosen model, is refused with the reason.',
         ),
       sessionTitle: sessionTitleSchema
         .optional()
@@ -1015,7 +1027,9 @@ export function createMcpSession(
       task,
       sessionMode,
       precheck,
+      harness,
       model,
+      settings,
       sessionTitle,
     }) => {
       if ((cron === undefined) === (rrule === undefined)) {
@@ -1044,7 +1058,9 @@ export function createMcpSession(
                   task,
                   sessionMode,
                   precheck,
+                  harness,
                   model,
+                  settings,
                   sessionTitle,
                 },
                 "agent",
@@ -1057,7 +1073,9 @@ export function createMcpSession(
                   task,
                   sessionMode,
                   precheck,
+                  harness,
                   model,
+                  settings,
                   sessionTitle,
                 },
                 "agent",
@@ -1114,12 +1132,22 @@ export function createMcpSession(
         .describe(
           "fresh (default): a new session of its own. continue: a new turn in THIS session, with its context. report: a new session whose result comes back into THIS session as a new turn.",
         ),
+      harness: scheduleHarnessSchema
+        .optional()
+        .describe(
+          "Harness the new session runs on, one the agent's image carries (`get_agent_config` lists them); omit to run on the agent's default harness. Not with inSession continue, which keeps this session's harness.",
+        ),
       model: z
         .string()
         .min(1)
         .optional()
         .describe(
-          "Model the new session runs on, e.g. 'haiku' for a routine check or 'opus' for a hard one; omit to run on the harness's own default (what the agent's Default model setting gives), not on whatever model the agent is currently set to. Not with inSession continue, which keeps this session's model. An unknown value is refused with the list of choices.",
+          "Model the new session runs on, named with its provider as <provider>/<model id> (e.g. anthropic/claude-haiku-4-5-20251001 for a routine check, ibm/gpt-5 for a hard one); the agent's model settings list the names. Omit to run on the harness's own default (what the agent's Default model setting gives), not on whatever model the agent is currently set to. Not with inSession continue, which keeps this session's model. A model this agent cannot reach is refused with the reason.",
+        ),
+      settings: scheduleSettingsSchema
+        .optional()
+        .describe(
+          'Per-session settings of the harness the session runs on, as {settingId: value} (e.g. {"effort": "high"}); the agent\'s model settings list each harness\'s settings and their values. Not with inSession continue. A setting the harness does not offer, or a value not valid for the chosen model, is refused with the reason.',
         ),
       sessionTitle: sessionTitleSchema
         .optional()
@@ -1127,7 +1155,17 @@ export function createMcpSession(
           "Optional title for the new session, shown in the session list instead of the one the harness derives from the task. Not with inSession continue, which keeps this session's title.",
         ),
     },
-    async ({ name, task, at, timezone, inSession, model, sessionTitle }) => {
+    async ({
+      name,
+      task,
+      at,
+      timezone,
+      inSession,
+      harness,
+      model,
+      settings,
+      sessionTitle,
+    }) => {
       if (at !== undefined && !timezone)
         return errorResult("`at` requires `timezone`.");
       const zone = timezone ?? "UTC";
@@ -1144,7 +1182,9 @@ export function createMcpSession(
             task,
             timezone: zone,
             ...(at ? { at } : {}),
+            ...(harness ? { harness } : {}),
             ...(model ? { model } : {}),
+            ...(settings ? { settings } : {}),
             ...(sessionTitle ? { sessionTitle } : {}),
           },
           "agent",
@@ -1281,6 +1321,35 @@ export function createMcpSession(
     ops: deps.driverOps,
     awaits: deps.subAgentAwaits,
     requestSignal: deps.requestSignal,
+    subagentModel: async () => {
+      const ref = deps.sessionRef;
+      if (!ref) return null;
+      try {
+        const { settings } = await runtimeClient.sessions.settings.query({
+          ref,
+        });
+        return settings.subagentModel ?? null;
+      } catch {
+        return null;
+      }
+    },
+    catalogModels: async (harness) => {
+      try {
+        const view = await runtimeClient.harnessConfig.catalog.query({
+          harness,
+        });
+        if (!view.routed) return null;
+        return view.providers.flatMap((p) =>
+          p.models.map((m) => ({
+            alias: p.alias,
+            upstreamId: m.upstreamId,
+            name: m.name,
+          })),
+        );
+      } catch {
+        return null;
+      }
+    },
   });
 
   if (deps.chatForms) registerChatFormTools(server);

@@ -10,11 +10,15 @@ import {
   trpcCall,
   trpcErrorCode,
 } from "../../shared/trpc/classify.js";
+import type { RuntimeFleet } from "api-server-api";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 
 export interface AgentService {
   list(): Promise<
     Result<readonly AgentView[], TransportError | AuthRequiredError>
+  >;
+  runtimeFleet(): Promise<
+    Result<RuntimeFleet, TransportError | AuthRequiredError>
   >;
   get(
     id: string,
@@ -40,6 +44,9 @@ export function createAgentService(deps: { trpc: TrpcClient }): AgentService {
   return {
     async list() {
       return trpcCall(() => deps.trpc.agents.list.query());
+    },
+    async runtimeFleet() {
+      return trpcCall(() => deps.trpc.agents.runtimeFleet.query());
     },
     async get(id) {
       try {

@@ -7,6 +7,29 @@ export const sessionSettingsSchema = z
 
 export type SessionSettings = z.infer<typeof sessionSettingsSchema>;
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a catalog keys its model constraints by a tier
+ * word (haiku), while a session names a provider-qualified model, so the
+ * constraints of the key the model's upstream id carries apply to it.
+ */
+export function modelConstraintsFor(
+  catalog: HarnessConfigCatalog | undefined,
+  model: string | null | undefined,
+): Record<string, string[]> | undefined {
+  const constraints = catalog?.modelConstraints;
+  if (!constraints || !model) return undefined;
+  if (constraints[model]) return constraints[model];
+  const unprefixed = model.replace(/^claude\//i, "");
+  const slash = unprefixed.indexOf("/");
+  const upstream = (
+    slash === -1 ? unprefixed : unprefixed.slice(slash + 1)
+  ).toLowerCase();
+  const key = Object.keys(constraints).find((k) =>
+    upstream.includes(k.toLowerCase()),
+  );
+  return key === undefined ? undefined : constraints[key];
+}
+
 export function sessionSettingsError(
   catalog: HarnessConfigCatalog | undefined,
   settings: SessionSettings,
@@ -14,13 +37,13 @@ export function sessionSettingsError(
 ): string | undefined {
   for (const [id, value] of Object.entries(settings)) {
     const option = catalog?.options.find(
-      (o) => o.id === id && o.category !== "model",
+      (o) => o.id === id && (o.id !== "model" || o.category !== "model"),
     );
-    if (!option?.choices.some((choice) => choice.value === value))
+    if (!option) return `Unsupported session setting: ${id}=${value}`;
+    if (option.category === "model" && option.choices.length === 0) continue;
+    if (!option.choices.some((choice) => choice.value === value))
       return `Unsupported session setting: ${id}=${value}`;
-    const allowed = model
-      ? catalog?.modelConstraints?.[model]?.[id]
-      : undefined;
+    const allowed = modelConstraintsFor(catalog, model)?.[id];
     if (allowed && !allowed.includes(value))
       return `The ${id} setting is not available for ${model}`;
   }

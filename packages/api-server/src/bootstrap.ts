@@ -138,7 +138,7 @@ import {
   createHarnessConfigSnapshotWriter,
   harnessConfigSupportOf,
   composeFirePair,
-  composeSessionModelChoices,
+  composeSessionChoicesValidator,
 } from "./modules/harness-config/index.js";
 import {
   composeSchedulesAtBoot,
@@ -760,6 +760,7 @@ export async function bootstrap() {
       db,
       version: config.terms.version,
       text: config.terms.text,
+      signUps: config.signUps,
     });
 
   const fakeSlackGateway =
@@ -1270,11 +1271,13 @@ export async function bootstrap() {
       maxOpen: config.onceScheduleAgentMaxOpen,
       maxPerHour: config.onceScheduleAgentMaxPerHour,
     },
-    sessionModelChoices: composeSessionModelChoices({
+    validateSessionChoices: composeSessionChoicesValidator({
       db,
+      catalog: harnessCatalog,
       getCapabilities: async (agentId) =>
         (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
           ?.runtimeCapabilities ?? null,
+      firePair,
     }),
     bullConnection,
     runtimeMutator: runtimeDelivery.runtimeMutator,

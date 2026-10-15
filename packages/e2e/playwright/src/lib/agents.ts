@@ -119,6 +119,26 @@ export function chatInput(page: Page): Locator {
   return page.getByPlaceholder(/^(queue a )?message(…|\.\.\.)/i);
 }
 
+export async function ensureSidebarExpanded(page: Page): Promise<void> {
+  const expand = page
+    .getByTestId("app-sidebar")
+    .getByRole("button", { name: "Expand navigation" });
+  if (await expand.isVisible()) await expand.click();
+  await expect(page.getByTestId("sidebar-agents")).toBeVisible();
+}
+
+export function sidebarAgentRow(page: Page, agentName: string): Locator {
+  return page
+    .getByTestId("sidebar-agents")
+    .locator("li")
+    .filter({
+      has: page.getByTestId("sidebar-agent-row").filter({
+        hasText: new RegExp(`^${agentName}\\s*(\\(unread\\))?$`),
+      }),
+    })
+    .first();
+}
+
 export async function gotoAgentChat(
   page: Page,
   agentName: string,
@@ -128,6 +148,7 @@ export async function gotoAgentChat(
   await expect(page).toHaveURL(
     new RegExp(`/chat/${encodeURIComponent(agentId)}`),
   );
+  await ensureSidebarExpanded(page);
 }
 
 export async function openAgentChat(

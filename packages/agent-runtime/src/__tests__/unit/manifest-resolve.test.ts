@@ -164,7 +164,6 @@ describe("shipped agent manifests resolve", () => {
       file: "$HOME/.codex/config.toml",
       format: "toml",
       keys: {
-        model: "model",
         configOptions: { effort: "model_reasoning_effort" },
       },
       modelDiscovery: {

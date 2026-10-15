@@ -10,6 +10,8 @@ const state = vi.hoisted(() => ({
     provider: string | null;
     model: string | null;
   } | null,
+  routed: false,
+  saved: [] as unknown[],
 }));
 
 vi.mock("../../store.js", () => ({
@@ -20,6 +22,7 @@ vi.mock("../../store.js", () => ({
 vi.mock("../../modules/agents/api/harness-config.js", () => ({
   useHarnessConfigStatus: () => ({
     data: {
+      modelRouter: state.routed,
       defaultHarness: "codex",
       harnesses: [
         {
@@ -64,7 +67,38 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   useProviderModels: () => ({
     data: { availableModels: [{ value: "gpt", name: "GPT" }] },
   }),
-  rememberSessionPair: vi.fn(),
+  useHarnessCatalogModels: () => ({
+    data: state.routed
+      ? {
+          harness: "codex",
+          routed: true,
+          providers: [
+            {
+              connectionId: "oai",
+              alias: "openai",
+              template: "openai",
+              displayName: "OpenAI",
+              status: "listed",
+              listedAt: null,
+              models: [
+                {
+                  name: "openai/gpt-5.5",
+                  upstreamId: "gpt-5.5",
+                  contextWindow: null,
+                  maxOutputTokens: null,
+                  reasoning: null,
+                  vision: null,
+                  prices: null,
+                  source: { limits: "none", prices: "none" },
+                },
+              ],
+            },
+          ],
+        }
+      : undefined,
+  }),
+  rememberSessionPair: (_agent: string, pair: unknown) =>
+    state.saved.push(pair),
 }));
 
 describe("agent default session pair", () => {
@@ -85,5 +119,27 @@ describe("agent default session pair", () => {
     );
     expect(html).toMatch(/aria-label="Harness"[^>]*><span[^>]*>Pi</);
     expect(html).toMatch(/aria-label="Model"[^>]*><span[^>]*>GPT</);
+  });
+});
+
+describe("agent default on a runtime that routes by model name", () => {
+  /** TEST_SCENARIO: The default model is picked from the harness's catalog
+   * across providers as a qualified name; the provider follows the model, so
+   * no provider picker is shown. */
+  it("offers qualified names and no provider picker", () => {
+    state.routed = true;
+    state.remembered = {
+      harness: "codex",
+      provider: "oai",
+      model: "openai/gpt-5.5",
+    };
+    const html = renderToStaticMarkup(
+      createElement(SandboxProvidersSection, { agentId: "agent" }),
+    );
+    expect(html).toMatch(
+      /aria-label="Model"[^>]*><span[^>]*>gpt-5.5 · OpenAI</,
+    );
+    expect(html).not.toContain('aria-label="Provider"');
+    state.routed = false;
   });
 });

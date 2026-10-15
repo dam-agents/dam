@@ -1,0 +1,56 @@
+#!/usr/bin/env node
+//MISE description="Test that Bob's proxy agent leaves loopback calls to the Model Router direct and every other host on the proxy"
+//MISE sources=["bob/rootfs/usr/local/lib/bob-loopback-direct.mjs", ".mise/tasks/test/bob-loopback-direct"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { once } from "node:events";
+import { createServer } from "node:http";
+import { fileURLToPath } from "node:url";
+
+const preload = fileURLToPath(new URL("../../../bob/rootfs/usr/local/lib/bob-loopback-direct.mjs", import.meta.url));
+
+const router = createServer((_req, res) => res.end("router"));
+router.listen(0, "127.0.0.1");
+await once(router, "listening");
+const port = router.address().port;
+
+// TEST_SCENARIO: Bob sets one global ProxyAgent from HTTPS_PROXY, which would carry its loopback call to the Model Router through the gateway proxy. Here a stand-in agent takes the place of Bob's ProxyAgent and records what reaches it; under the preload a loopback request is answered by the router directly and never reaches the agent, while a request to any other host still does.
+const bob = `
+const KEY = Symbol.for("undici.globalDispatcher.2");
+const reached = [];
+const bobAgent = {
+  dispatch(opts, handler) {
+    reached.push(opts.origin);
+    handler.onResponseError?.(null, new Error("proxied"));
+    return true;
+  },
+  close: async () => {},
+  destroy: async () => {},
+};
+Object.defineProperty(globalThis, KEY, { value: bobAgent, writable: true, enumerable: false, configurable: false });
+const body = await fetch("http://127.0.0.1:${port}/v1/chat/completions").then((r) => r.text());
+const elsewhere = await fetch("http://example.invalid/").then(() => "answered", () => "failed");
+console.log(JSON.stringify({ body, elsewhere, reached }));
+process.exit(0);
+`;
+
+const run = async (env) => {
+  const { stdout } = await promisify(execFile)(process.execPath, ["--import", preload, "--input-type=module", "-e", bob], {
+    env: { ...process.env, ...env },
+    encoding: "utf8",
+    timeout: 30_000,
+  });
+  return JSON.parse(stdout.trim());
+};
+
+try {
+  const out = await run({ NODE_USE_ENV_PROXY: "1", HTTPS_PROXY: "http://127.0.0.1:9", HTTP_PROXY: "http://127.0.0.1:9", NO_PROXY: "localhost,127.0.0.1,::1" });
+  assert.equal(out.body, "router");
+  assert.equal(out.elsewhere, "failed");
+  assert.deepEqual(out.reached, ["http://example.invalid"]);
+  console.log("Bob reaches the loopback Model Router directly and keeps its proxy for other hosts");
+} finally {
+  router.close();
+}

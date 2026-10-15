@@ -486,6 +486,19 @@ describe("rrule presets", () => {
     });
   });
 
+  it.each([
+    "FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0;BYMONTH=1,7",
+    "FREQ=DAILY;BYHOUR=9;BYMINUTE=0;BYSECOND=0;BYMONTHDAY=1,15",
+    "FREQ=MINUTELY;INTERVAL=15;BYMONTH=3",
+    "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO;BYHOUR=9;BYMINUTE=0",
+    "FREQ=DAILY;BYHOUR=9;BYMINUTE=0;UNTIL=20271231T000000",
+  ])(
+    "reads %s as custom, so the editor keeps the parts no preset has a field for",
+    (rrule) => {
+      expect(detectPreset(rrule)).toEqual({ kind: "custom", rrule });
+    },
+  );
+
   it("describes the minutes and the days of a rule", () => {
     expect(rruleToText("FREQ=DAILY;BYHOUR=9;BYMINUTE=30;BYSECOND=0")).toBe(
       "every day at 9:30 AM",

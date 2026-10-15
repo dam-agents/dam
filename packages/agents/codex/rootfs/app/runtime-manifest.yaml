@@ -6,6 +6,25 @@
 # defaults of the base manifest.
 manifestVersion: 1
 
+# Codex drops a served catalog whose entries carry no instructions template,
+# so the router stamps a one-line template on every entry it serves.
+modelRouter:
+  dialects: [openai-responses]
+  sessionModel: { configOption: model }
+  # Codex refuses to list models or start a turn without a key, so the
+  # runtime sets the router's placeholder; the router drops it.
+  credentialEnv: [OPENAI_API_KEY]
+  # Codex's subagents and auto-review ask for its built-in models by bare
+  # name; the router puts them on the session's model instead.
+  bareNamesFromSession: true
+
+# Declared so the runtime answers initialize before any harness process runs.
+# Re-captured from the image pin by test:harness-initialize-capabilities.
+initializeCapabilities:
+  agentCapabilities: {"auth": {"logout": {}}, "providers": {}, "loadSession": true, "promptCapabilities": {"embeddedContext": true, "image": true}, "sessionCapabilities": {"resume": {}, "list": {}, "close": {}, "delete": {}, "fork": {}, "additionalDirectories": {}, "subagents": {}}, "mcpCapabilities": {"acp": false, "http": true, "sse": false}, "_meta": {"authStatus": {}}}
+  authMethods: [{"id": "api-key", "name": "API Key", "description": "Use an API key to authenticate", "_meta": {"api-key": {"provider": "openai"}}}, {"id": "chat-gpt", "name": "ChatGPT", "description": "Use ChatGPT to authenticate"}]
+  agentInfo: {"name": "@agentclientprotocol/codex-acp", "title": "Codex"}
+
 # Codex mints its own thread id for a terminal session's conversation. The
 # SessionStart hook in /etc/codex/requirements.toml pins it here under the
 # platform session id, so the session list shows that conversation once, under
@@ -29,10 +48,14 @@ drivers:
   harness-config:
     file: "$HOME/.codex/config.toml"
     format: toml
+    # The router reads the subagent model itself: Codex's subagent threads
+    # carry their own thread-id beside the session's.
     sessionSettings:
       effort: { configOption: reasoning_effort }
+      subagentModel: { router: true }
+    # No model key: the model is sent over ACP, never written into the shared
+    # config.toml.
     keys:
-      model: model
       configOptions:
         effort: model_reasoning_effort
     catalog:
@@ -40,6 +63,12 @@ drivers:
         - id: model
           name: Model
           description: AI model to use
+          category: model
+          choices: []
+        # No fixed choices: the picker offers the catalog.
+        - id: subagentModel
+          name: Subagent model
+          description: Model Codex's subagents run on
           category: model
           choices: []
         - id: effort

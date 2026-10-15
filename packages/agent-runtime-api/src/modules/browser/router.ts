@@ -1,6 +1,9 @@
 import { TRPCError } from "@trpc/server";
 import { t } from "../../trpc.js";
-import { browserNavigateInputSchema } from "./schemas.js";
+import {
+  browserNavigateInputSchema,
+  browserTestingModeInputSchema,
+} from "./schemas.js";
 import type { BrowserAction, BrowserDomainError } from "./types.js";
 
 function toTrpcError(error: BrowserDomainError): TRPCError {
@@ -54,4 +57,10 @@ export const browserRouter = t.router({
   forward: action("forward"),
   restart: action("restart"),
   clearData: action("clearData"),
+  setTestingMode: t.procedure
+    .input(browserTestingModeInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const result = await ctx.browser.setTestingMode(input.on);
+      if (!result.ok) throw toTrpcError(result.error);
+    }),
 });

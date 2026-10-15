@@ -151,6 +151,7 @@ export interface InfraAgent {
   notReadyMessage?: string;
   podRestarts: number;
   podRestartReason?: string;
+  homeRepaired?: string;
   agentPodNotReadyReason?: string;
   agentPodReady?: boolean;
   gatewayPodReady?: boolean;
@@ -165,6 +166,9 @@ const IMAGE_START_FAILURES = new Set([
   "MachineBootFailed",
   "MachineImageUnavailable",
 ]);
+
+// UNIT_BOUNDARY_DESCRIPTION: the controller's condition on a vm agent whose last boot repaired the filesystem on its disk, its message what the check repaired.
+const HOME_REPAIRED_CONDITION = "HomeRepaired";
 
 const TERMINAL_MACHINE_REASONS = new Set(
   [...POD_FAILURE_REASONS].filter((r) => r.startsWith("Machine")),
@@ -399,6 +403,10 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
         ? restarts
         : 0,
     podRestartReason: status.agentPodRestartReason || undefined,
+    homeRepaired:
+      status.conditions?.find(
+        (c) => c.type === HOME_REPAIRED_CONDITION && c.status === "True",
+      )?.message || undefined,
     agentPodNotReadyReason:
       agentPod?.status === "False" ? agentPod.reason : undefined,
     agentPodReady: agentPod ? agentPod.status === "True" : undefined,
@@ -456,6 +464,7 @@ export function assembleAgent(
     notReadyMessage: infra.notReadyMessage,
     podRestarts: infra.podRestarts,
     podRestartReason: infra.podRestartReason,
+    homeRepaired: infra.homeRepaired,
     gatewayFailure: infra.gatewayFailure,
     contributionFailures,
     unsupportedContributionKinds,

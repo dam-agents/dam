@@ -93,7 +93,7 @@ flowchart LR
   A channel never blocks apply; the apply form offers the Slack picker, other messengers are a note onboarding repeats.
 - **Provider compatibility** — a kit never states a provider as a Connection Requirement: it lists the provider presets it supports in `providers` (a kit with its own image states them on the image instead).
   The requirement list is for the connections the *job* needs; a kit from an external catalog that still declares a provider under `accepts` is read as its provider list and kept out of the Connections section.
-  The apply form asks for no provider: on the default Template a kit starts on the first harness it lists, and the platform grants the creating user's default provider Connection for that harness, and each session picks its model from the providers the Agent holds ([agent-lifecycle](agent-lifecycle.md#create)).
+  The apply form asks for no provider: on the default Template a kit starts on the first harness it lists, and the platform grants every provider Connection of the creating user's that the harness runs on, and each session picks its model from the providers the Agent holds ([agent-lifecycle](agent-lifecycle.md#create)).
 - **Harnesses** — a kit without its own image may name the harness families it runs on (`harnesses: [claude-code, bob]`); the apply form says so when none is installed.
   The default Template carries every harness and its sessions choose one, so it fits any such list.
   Helm declares only harness images (`harnessTemplates`), never workloads.
@@ -202,7 +202,7 @@ Apply — the `create` procedure of the starter-kits router, since tRPC reserves
    This step waits for the Agent to be reachable, like every skill install, so a kit with external skills returns once the Agent is up; its verdicts ride back on the apply result, and a failure here is reported, never compensated by deleting the Agent — the requirements that justify a refusal were all checked before create.
    The apply is recorded in the security log last, once the outcome including the skill verdicts is known, and recorded once more as usage activity naming the kit it applied, so which kits people take up and what they do with the Agent afterwards are answerable from one log ([usage tracking](usage-tracking.md)).
 
-The catalog lives in one place, the **Browse Kits modal**, opened from the rail's **Starter kits** entry and from Home's browse button.
+The catalog lives in one place, the **Browse Kits modal**, opened from the sidebar's **Starter kits** entry and from Home's browse button.
 Its first card, **Default**, is no kit: it creates a plain agent at once.
 A kit pick opens the **kit modal** at the kit's own URL over Home, which shows what the kit brings and takes the only input apply needs — the agent's name and avatar (generated, editable), the required connections, the schedules to adjust or skip, and the Slack channel — then applies without a further page.
 Every kit shows at one size.
@@ -232,7 +232,7 @@ The catalog is not consulted: one that pins the kit behind the branch head still
 **What changed** is read lazily for the hover card: the definition's own `VERSION` and `CHANGELOG.md` at both ends of the range, or, for a repository without a changelog, the compare API's commit list, cached for good because two commits never change.
 
 **Starting an update** marks it pending on the Agent with the head it targets and queues a session on the initialization session's rail.
-The session runs on the harness, provider and model the owner saved as the agent's default, resolved the way a [schedule](schedules.md) fire resolves them; when no pair resolves, such as on an agent whose runtime has not yet reported its harnesses, it runs on the agent's default lease.
+The session runs on the harness, provider and model the owner saved as the agent's default, resolved the way a [schedule](schedules.md) fire resolves them; when no pair resolves, such as on an agent whose runtime has not yet reported its harnesses, it runs on the agent's default harness.
 Its briefing is platform-composed like Kit Onboarding: the commit range, and the kit's **current catalog entry** against the Agent's live state.
 The user picks which upstream changes to take and decides every conflict; their own changes are **never committed or pushed**, and a declined change becomes one of them.
 What they decide for later updates is kept inside the checkout's git directory, outside history.

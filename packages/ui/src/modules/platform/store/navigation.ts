@@ -28,8 +28,8 @@ export interface NavigationSlice {
   navigateToSandboxHome: (agentId: string, section?: SandboxSection) => void;
   navigateToStarterKit: (catalog: string, kitId: string) => void;
   setKitBrowserOpen: (open: boolean) => void;
-  mobileScreen: "sessions" | "chat";
-  setMobileScreen: (screen: "sessions" | "chat") => void;
+  mobileScreen: "files" | "chat";
+  setMobileScreen: (screen: "files" | "chat") => void;
 }
 
 const IN_APP_ENTRY = "in-app";
@@ -102,6 +102,6 @@ export const createNavigationSlice: StateCreator<
     });
   },
   setKitBrowserOpen: (open) => set({ kitBrowserOpen: open }),
-  mobileScreen: "sessions",
+  mobileScreen: "chat",
   setMobileScreen: (screen) => set({ mobileScreen: screen }),
 });

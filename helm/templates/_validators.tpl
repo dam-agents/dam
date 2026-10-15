@@ -20,6 +20,7 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.vmValuesThisChartNoLongerReads" . -}}
 {{- include "platform.validate.egressLockdownModeExclusive" . -}}
 {{- include "platform.validate.termsRequired" . -}}
+{{- include "platform.validate.signUps" . -}}
 {{- include "platform.validate.enterpriseGitHubNeedsBothHostAndToken" . -}}
 {{- include "platform.validate.unenforcedMeshOnlyOnALocalCluster" . -}}
 {{- include "platform.validate.gatewayEgressCidrs" . -}}
@@ -60,6 +61,19 @@ The api-server refuses to start on a feature mode it cannot read.
 {{- ternary "on" "off" $mode -}}
 {{- else -}}
 {{- $mode | default "experimental" -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+`virtualization.runner.seccomp`, read the way `platform.featureModes` reads a
+mode: an unquoted `off` arrives as `false`, which `default` would take as unset.
+*/}}
+{{- define "platform.vmRunner.seccomp" -}}
+{{- $mode := .Values.virtualization.runner.seccomp -}}
+{{- if kindIs "bool" $mode -}}
+{{- ternary "on" "off" $mode -}}
+{{- else -}}
+{{- $mode | default "audit" -}}
 {{- end -}}
 {{- end -}}
 
@@ -192,6 +206,15 @@ A missing text or version would lock out every account at first request.
 {{- end -}}
 
 {{/*
+The api-server refuses to start on any other value, so catch it at install.
+*/}}
+{{- define "platform.validate.signUps" -}}
+{{- if not (has .Values.signUps (list "open" "closed")) -}}
+{{- fail (printf "signUps must be \"open\" or \"closed\", got %q." (toString .Values.signUps)) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 The runner admits machines against its own memory limit, read through the
 downward API. With no limit that reads as the node's allocatable, so the
 runner promises machines the whole node while itself being BestEffort and
@@ -306,7 +329,8 @@ Values the controller would otherwise take in and fail on later, one agent at a
 time: a range that is not a CIDR makes Kubernetes reject the runner's
 NetworkPolicy on every reconcile, and an exception that is not one is dropped
 without a word, leaving the range it was meant to close open. A DNS policy
-other than the two the runner supports is silently read as `Default`. A budget
+other than the two the runner supports is silently read as `Default`, and a
+seccomp mode smolvm does not know installs no filter. A budget
 that is not a positive quantity refuses every runner. `0.0.0.0/0` with no
 exceptions is not refused here: the values name it as the way to leave the
 runner unconfined on purpose, and the controller warns about it at startup.
@@ -328,6 +352,10 @@ runner unconfined on purpose, and the controller warns about it at startup.
 {{- $dns := $v.runner.dnsPolicy | default "Default" -}}
 {{- if not (has $dns (list "Default" "ClusterFirst")) -}}
 {{- fail (printf "virtualization.runner.dnsPolicy %q is not one the runner supports — use `Default` (the node's resolver) or `ClusterFirst`. See the comment on it in values.yaml for which one." $dns) -}}
+{{- end -}}
+{{- $seccomp := include "platform.vmRunner.seccomp" . -}}
+{{- if not (has $seccomp (list "audit" "enforce" "off")) -}}
+{{- fail (printf "virtualization.runner.seccomp %q is not a mode smolvm knows — use `audit`, `enforce` or `off`. smolvm reads any other value as `off`, so a typo would install no filter at all." (toString $seccomp)) -}}
 {{- end -}}
 {{- $budget := toString (($v.imageCache | default dict).budget | default "") -}}
 {{- if not (regexMatch `^[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$` $budget) -}}

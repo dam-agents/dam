@@ -115,7 +115,8 @@ The field-level shape lives in the contract package ([`packages/api-server-api/`
 An **Installed Skill Ref** is a row in `agent_skills` keyed `(agentId, source, name)` recording which Scanned Skill is installed at which Version on which Agent, and the path of the source it was installed from.
 That recorded path, not a lookup by repository, drives the ref's fetch and egress check, and deleting a source removes only the refs installed from its path.
 An agent holds a skill name from one path of a repository at a time; installing the same name from another path of it replaces the ref.
-An install names the path of the source it comes from; one that names none takes the repository's path-less source, or its only source, and is refused when several paths could match.
+An install names the path of the source it comes from.
+One that names none keeps the path the agent already installed the skill from; a first install takes the repository's path-less source, or its only source, and is refused when several paths could match.
 The on-disk directory at the configured Skill Paths is the source of truth for "what is installed" — the Postgres row is a declarative record that self-heals on each `state` query.
 
 A **Local Skill** is a directory present in some [Skill Path](agent-skills.md#skill-path) on the pod, regardless of how it got there; the pod judges its [Skill Origin](agent-skills.md#skill-origin) at the same time.

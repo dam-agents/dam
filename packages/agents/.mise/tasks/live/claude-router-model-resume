@@ -1,0 +1,88 @@
+#!/usr/bin/env node
+//MISE description="Live test, run by hand with CLAUDE_AGENT_ACP naming a real claude-agent-acp, not in CI: a model picked over ACP routes by its catalog name and holds across cold loads with no ANTHROPIC_MODEL"
+//MISE sources=["test-lib/acp-client.mjs", ".mise/tasks/live/claude-router-model-resume"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { acpClient, allowPermission, conversationCalls, mockRouter, modelOption, pickerValues } from "../../../test-lib/acp-client.mjs";
+
+const adapter = process.env.CLAUDE_AGENT_ACP;
+if (!adapter) {
+  console.error("CLAUDE_AGENT_ACP is not set: set CLAUDE_AGENT_ACP=<path to claude-agent-acp dist/index.js> to run against the real adapter");
+  process.exit(1);
+}
+const home = mkdtempSync(join(tmpdir(), "claude-router-model-resume-"));
+const work = join(home, "work");
+mkdirSync(work);
+
+const catalog = [
+  { alias: "ibm", id: "aws/claude-sonnet-4-6" },
+  { alias: "ibm", id: "aws/claude-opus-4-8" },
+  { alias: "cb", id: "rits/zai-org/glm-5-3" },
+];
+const router = await mockRouter({
+  catalog,
+  answer: () => ({ text: "ok" }),
+});
+const env = {
+  PATH: process.env.PATH, HOME: home,
+  ANTHROPIC_BASE_URL: router.base, ANTHROPIC_AUTH_TOKEN: "sk-platform:conn:test",
+  ANTHROPIC_CUSTOM_HEADERS: "X-Platform-Harness: claude-code",
+  CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: "1", CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1",
+  DISABLE_TELEMETRY: "1", DISABLE_ERROR_REPORTING: "1", DISABLE_AUTOUPDATER: "1", CLAUDE_CODE_HARBOR_KITE: "0",
+  NO_PROXY: "127.0.0.1,localhost,::1",
+};
+const start = async (name) => {
+  const c = acpClient("node", [adapter], { env, cwd: work, name, onRequest: allowPermission });
+  await c.request("initialize", { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } }, clientInfo: { name: "dam-test", version: "0" } });
+  return c;
+};
+let turns = 0;
+const modelsOfTurn = async (c, sessionId) => {
+  const before = router.seen.length;
+  const text = `Reply with the single word: ok (turn ${++turns})`;
+  const r = await c.request("session/prompt", { sessionId, prompt: [{ type: "text", text }] }, 180_000);
+  assert.equal(r.stopReason, "end_turn");
+  return [...new Set(conversationCalls(router.seen.slice(before), text).map((s) => s.body?.model))];
+};
+
+try {
+  // TEST_SCENARIO: The first session on a fresh HOME lists tiers only (discovery is lazy); a second session lists the router's catalog names, and a pick over ACP routes the turn by that name.
+  const a = await start("A");
+  const first = await a.request("session/new", { cwd: work, mcpServers: [] }, 180_000);
+  const second = await a.request("session/new", { cwd: work, mcpServers: [] }, 180_000);
+  const values = pickerValues(second.configOptions);
+  assert.ok(values.includes("claude/cb/rits/zai-org/glm-5-3"), `picker lacks the catalog: ${values.join(", ")}`);
+  const sessionId = second.sessionId;
+  const sonnet = "claude/ibm/aws/claude-sonnet-4-6";
+  const set = await a.request("session/set_config_option", { sessionId, configId: "model", value: sonnet });
+  assert.equal(modelOption(set.configOptions)?.currentValue, sonnet);
+  assert.deepEqual(await modelsOfTurn(a, sessionId), [sonnet]);
+  await a.close();
+  void first;
+
+  // TEST_SCENARIO: A cold session/load in a new process, with no ANTHROPIC_MODEL anywhere, keeps a Claude-family pick from the transcript the router's response rewrite recorded.
+  const b = await start("B");
+  const loaded = await b.request("session/load", { sessionId, cwd: work, mcpServers: [] }, 180_000);
+  assert.equal(modelOption(loaded.configOptions)?.currentValue, sonnet);
+  assert.deepEqual(await modelsOfTurn(b, sessionId), [sonnet]);
+
+  // TEST_SCENARIO: A pick of a model outside Claude's own families (GLM) routes in the process that picked it; on the next cold load Claude Code refuses to restore it from the transcript ("not a model this version of Claude Code recognizes") and would run its default, so the runtime re-sends the session's model after every load, which the adapter honours.
+  const glm = "claude/cb/rits/zai-org/glm-5-3";
+  await b.request("session/set_config_option", { sessionId, configId: "model", value: glm });
+  assert.deepEqual(await modelsOfTurn(b, sessionId), [glm]);
+  await b.close();
+  const c = await start("C");
+  await c.request("session/load", { sessionId, cwd: work, mcpServers: [] }, 180_000);
+  const resent = await c.request("session/set_config_option", { sessionId, configId: "model", value: glm });
+  assert.equal(modelOption(resent.configOptions)?.currentValue, glm);
+  assert.deepEqual(await modelsOfTurn(c, sessionId), [glm]);
+  await c.close();
+  console.log("a model picked over ACP routes by its catalog name and survives cold loads");
+} finally {
+  router.close();
+  await new Promise((r) => setTimeout(r, 500));
+  rmSync(home, { recursive: true, force: true });
+}

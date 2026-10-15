@@ -2,6 +2,7 @@ import {
   ArrowDown,
   ArrowLeft,
   Branch,
+  Document,
   Globe,
   Renew,
   Tools,
@@ -34,7 +35,6 @@ import { cn } from "@/lib/utils";
 
 import { ResizeHandle } from "../../../components/resize-handle.js";
 import { useNow } from "../../../hooks/use-now.js";
-import { isMobile } from "../../../lib/breakpoints.js";
 import {
   readPersistedNumber,
   writePersistedNumber,
@@ -92,6 +92,7 @@ import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-
 import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
 import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
 import { DockedChangesPanel } from "../../changes/components/docked-changes-panel.js";
+import { SessionPullRequests } from "../../changes/components/session-pull-requests.js";
 import { useToggleChanges } from "../../changes/hooks/use-toggle-changes.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
@@ -106,6 +107,7 @@ import {
 } from "../../invocations/components/delegation-owners.js";
 import { DockedDelegationPanel } from "../../invocations/components/docked-delegation-panel.js";
 import { LiveDelegationBlock } from "../../invocations/components/live-delegation-block.js";
+import { MobileMenuButton } from "../../platform/components/sidebar/mobile-menu-button.js";
 import { DockedProcessOutputPanel } from "../../processes/components/docked-process-output-panel.js";
 import { ProcessesIndicator } from "../../processes/components/processes-indicator.js";
 import { ProcessesPanel } from "../../processes/components/processes-panel.js";
@@ -140,7 +142,6 @@ import {
 import { SessionPairOutdatedNotice } from "../components/session-pair-outdated-notice.js";
 import { SessionPairPicker } from "../components/session-pair-picker.js";
 import { SessionPairPlaceholder } from "../components/session-pair-placeholder.js";
-import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
@@ -281,8 +282,6 @@ export function ChatView() {
   useProcessesLiveUpdates(selectedAgent, processesEnabled);
   const goBack = useStore((s) => s.goBack);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const sessionsSectionOpen = useStore((s) => s.sessionsSectionOpen);
-  const setSessionsSectionOpen = useStore((s) => s.setSessionsSectionOpen);
   const filesSectionOpen = useStore((s) => s.filesSectionOpen);
   const setFilesSectionOpen = useStore((s) => s.setFilesSectionOpen);
   const hasPendingPermission = useHasPendingPermission();
@@ -311,7 +310,6 @@ export function ChatView() {
   }, [columnsEl]);
   const filePanelRef = useRef<HTMLDivElement>(null);
   const panelStack = useSidebarPanels([
-    { id: "sessions", open: sessionsSectionOpen },
     { id: "files", open: filesSectionOpen },
     { id: "artifacts", open: artifactsSectionOpen },
     ...(processesEnabled
@@ -368,6 +366,7 @@ export function ChatView() {
           agentId: newSessionAgent,
           carried,
           defaultHarness: harnessStatus?.defaultHarness ?? carried[0]!.name,
+          routed: harnessStatus?.modelRouter ?? false,
         }
       : null;
   const providerConnections = useProviderConnections(newSessionAgent);
@@ -602,7 +601,7 @@ export function ChatView() {
     [view, selectedAgent],
   );
 
-  const mobileResumeSession = useCallback(
+  const openSession = useCallback(
     (sid: string, mode?: SessionMode) => {
       pushSessionUrl(sid, mode ?? SessionMode.Chat);
       setMobileScreen("chat");
@@ -662,6 +661,15 @@ export function ChatView() {
     ],
   );
 
+  const chatRequest = useStore((s) => s.chatRequest);
+  const requestChat = useStore((s) => s.requestChat);
+  useEffect(() => {
+    if (!chatRequest) return;
+    requestChat(null);
+    if (chatRequest.kind === "new") handleNewSession();
+    else openSession(chatRequest.sessionId, chatRequest.mode ?? undefined);
+  }, [chatRequest, requestChat, handleNewSession, openSession]);
+
   const handleNewTerminal = useCallback(() => {
     resetSession();
     const id = crypto.randomUUID();
@@ -696,13 +704,9 @@ export function ChatView() {
   }, [selectedAgent, navigateToSandboxHome]);
 
   const handleBack = useCallback(() => {
-    if (isMobile() && mobileScreen === "chat") {
-      setMobileScreen("sessions");
-      return;
-    }
     resetSession();
     goBack();
-  }, [mobileScreen, setMobileScreen, resetSession, goBack]);
+  }, [resetSession, goBack]);
 
   const leftPanelWidth = { width: leftW };
 
@@ -724,21 +728,13 @@ export function ChatView() {
         />
       )}
       <header
-        className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-stretch h-[70px] max-md:border-b border-border shrink-0 relative z-content`}
+        className={`${mobileScreen === "files" ? "hidden md:flex" : "flex"} items-stretch h-[70px] max-md:h-[52px] max-md:border-b border-border shrink-0 relative z-content`}
       >
         <div
           style={leftPanelWidth}
-          className="@container flex min-w-0 shrink-0 items-center gap-3 overflow-hidden px-6 md:px-4 max-md:!w-auto max-md:flex-1 md:border-r md:border-b md:border-border"
+          className="@container flex min-w-0 shrink-0 items-center gap-3 overflow-hidden px-4 max-md:!w-auto max-md:flex-1 md:border-r md:border-b md:border-border"
         >
-          <Button
-            variant="ghost"
-            size="inline"
-            aria-label="Back"
-            onClick={handleBack}
-            className="md:hidden gap-1 text-sm font-medium text-muted-foreground hover:bg-transparent"
-          >
-            <ArrowLeft size={14} />
-          </Button>
+          <MobileMenuButton />
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <span
               aria-hidden
@@ -800,8 +796,19 @@ export function ChatView() {
               <Button
                 variant="ghost"
                 size="icon-sm"
+                aria-label="Files and artifacts"
+                data-testid="open-agent-files"
+                className="md:hidden"
+                onClick={() => setMobileScreen("files")}
+              >
+                <Document size={16} />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
                 aria-label="Configure agent"
                 tooltip="Configure agent"
+                className="max-md:hidden"
                 onClick={handleConfigureSandbox}
               >
                 <Tools size={16} />
@@ -809,7 +816,7 @@ export function ChatView() {
             </div>
           </div>
         </div>
-        <div className="ml-auto flex items-center gap-2 pl-6 pr-14 md:pr-16">
+        <div className="ml-auto flex items-center gap-2 pl-2 pr-12 md:pl-6 md:pr-16">
           <ChatHeaderStatus
             selectedAgent={selectedAgent}
             agents={agents}
@@ -828,21 +835,26 @@ export function ChatView() {
           style={leftPanelWidth}
           className={`shrink-0 flex flex-col border-r border-border overflow-hidden relative z-content ${
             mobileScreen === "chat" ? "hidden md:flex" : "flex"
-          } ${mobileScreen === "sessions" ? "max-md:!w-full" : ""} ${
+          } ${mobileScreen === "files" ? "max-md:!w-full" : ""} ${
             browserFills ? "md:!hidden" : ""
           }`}
         >
+          <div className="flex h-[52px] shrink-0 items-center gap-2 border-b border-border px-3 md:hidden">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Back to chat"
+              onClick={() => setMobileScreen("chat")}
+            >
+              <ArrowLeft size={16} />
+            </Button>
+            <span className="truncate text-sm font-bold text-foreground">
+              {selectedAgentName}
+            </span>
+          </div>
           {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
           <ContributionGapNotice agentId={selectedAgent} />
           <WorkspaceFailureNotice agentId={selectedAgent} />
-          <SessionsSidebar
-            open={sessionsSectionOpen}
-            onToggle={() => setSessionsSectionOpen(!sessionsSectionOpen)}
-            {...panelStack.panelProps("sessions")}
-            onResumeSession={mobileResumeSession}
-            onNewSession={handleNewSession}
-          />
-          <PanelDivider stack={panelStack} below="files" />
           <FilesPanel
             open={filesSectionOpen}
             onToggle={() => setFilesSectionOpen(!filesSectionOpen)}
@@ -883,7 +895,7 @@ export function ChatView() {
 
         {}
         <div
-          className={`@container/chat relative flex flex-1 flex-col min-w-0 ${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} ${sidePanelFills ? "md:!hidden" : ""}`}
+          className={`@container/chat relative flex flex-1 flex-col min-w-0 ${mobileScreen === "files" ? "hidden md:flex" : "flex"} ${sidePanelFills ? "md:!hidden" : ""}`}
         >
           {}
           {sessionMode === SessionMode.Terminal &&
@@ -935,7 +947,6 @@ export function ChatView() {
                           if (!(await deleteSession(sessionError.sessionId)))
                             return;
                           setSessionError(null);
-                          if (isMobile()) setMobileScreen("sessions");
                         }}
                       />
                     )}
@@ -1173,19 +1184,26 @@ export function ChatView() {
                       {selectedAgent && pairOutdated ? (
                         <SessionPairOutdatedNotice agentId={selectedAgent} />
                       ) : selectedAgent && currentSession?.harness ? (
-                        <ModelIndicator
-                          agentId={selectedAgent}
-                          harness={currentSession.harness}
-                          provider={currentSession.provider ?? null}
-                          model={currentSession.model ?? null}
-                          settings={currentSession.settings}
-                          carried={harnessStatus?.harnesses ?? []}
-                          onChoose={(value) => void chooseSessionModel(value)}
-                          onConfigure={(change) =>
-                            void configureSession(change)
-                          }
-                          onNewSession={() => handleNewSession(true)}
-                        />
+                        <div className="flex min-w-0 items-center justify-between gap-3">
+                          <ModelIndicator
+                            agentId={selectedAgent}
+                            harness={currentSession.harness}
+                            provider={currentSession.provider ?? null}
+                            model={currentSession.model ?? null}
+                            settings={currentSession.settings}
+                            carried={harnessStatus?.harnesses ?? []}
+                            routed={harnessStatus?.modelRouter ?? false}
+                            turnRunning={busy}
+                            onChoose={(value) => void chooseSessionModel(value)}
+                            onConfigure={(change) =>
+                              void configureSession(change)
+                            }
+                            onNewSession={() => handleNewSession(true)}
+                          />
+                          <SessionPullRequests
+                            repositories={currentSession.repositories}
+                          />
+                        </div>
                       ) : selectedAgent ? (
                         <Button
                           variant="link"

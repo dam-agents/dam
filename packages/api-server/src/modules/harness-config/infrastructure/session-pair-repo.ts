@@ -9,6 +9,7 @@ import {
   type Db,
 } from "db";
 import {
+  orderByAlias,
   PROVIDER_TEMPLATE_IDS,
   providerTypeForTemplateId,
   sessionPairSchema,
@@ -58,10 +59,12 @@ export function createSessionPairRepo(db: Db): SessionPairRepo {
           ),
         )
         .orderBy(asc(connectionsTable.name), asc(connectionsTable.id));
-      return rows.flatMap((r) => {
-        const type = providerTypeForTemplateId(r.templateId);
-        return type ? [{ id: r.id, type, templateId: r.templateId }] : [];
-      });
+      return orderByAlias(
+        rows.flatMap((r) => {
+          const type = providerTypeForTemplateId(r.templateId);
+          return type ? [{ id: r.id, type, templateId: r.templateId }] : [];
+        }),
+      );
     },
   };
 }

@@ -1,11 +1,14 @@
 export interface ToolActivity {
   sessionId: string;
+  toolCallId: string | null;
   editedPaths: string[];
+  started: boolean;
   settled: boolean;
 }
 
 interface ToolCallFrameUpdate {
   sessionUpdate?: unknown;
+  toolCallId?: unknown;
   kind?: unknown;
   status?: unknown;
   locations?: unknown;
@@ -39,18 +42,48 @@ function pathsOf(update: ToolCallFrameUpdate): string[] {
   return [...new Set([...fromLocations, ...fromInput, ...fromContent])];
 }
 
-export function toolActivityIn(frame: unknown): ToolActivity | null {
-  const params = (frame as { params?: unknown } | null)?.params;
-  const sessionId = (params as { sessionId?: unknown } | null)?.sessionId;
-  if (typeof sessionId !== "string" || sessionId === "") return null;
-  const update = (params as { update?: ToolCallFrameUpdate } | null)?.update;
-  if (
-    update?.sessionUpdate !== "tool_call" &&
-    update?.sessionUpdate !== "tool_call_update"
-  )
-    return null;
-  const settled = update.status === "completed" || update.status === "failed";
-  const editedPaths = update.kind === "edit" ? pathsOf(update) : [];
-  if (!settled && editedPaths.length === 0) return null;
-  return { sessionId, editedPaths, settled };
+export const MAX_OPEN_EDITS = 500;
+
+export type ToolActivityReader = (frame: unknown) => ToolActivity | null;
+
+export function createToolActivityReader(): ToolActivityReader {
+  const openEdits = new Set<string>();
+
+  function isEdit(key: string | null, kind: unknown): boolean {
+    if (key === null) return kind === "edit";
+    if (kind === "edit") {
+      openEdits.delete(key);
+      openEdits.add(key);
+      for (const oldest of openEdits) {
+        if (openEdits.size <= MAX_OPEN_EDITS) break;
+        openEdits.delete(oldest);
+      }
+      return true;
+    }
+    if (kind !== undefined) openEdits.delete(key);
+    return openEdits.has(key);
+  }
+
+  return (frame) => {
+    const params = (frame as { params?: unknown } | null)?.params;
+    const sessionId = (params as { sessionId?: unknown } | null)?.sessionId;
+    if (typeof sessionId !== "string" || sessionId === "") return null;
+    const update = (params as { update?: ToolCallFrameUpdate } | null)?.update;
+    if (
+      update?.sessionUpdate !== "tool_call" &&
+      update?.sessionUpdate !== "tool_call_update"
+    )
+      return null;
+    const toolCallId =
+      typeof update.toolCallId === "string" && update.toolCallId !== ""
+        ? update.toolCallId
+        : null;
+    const key = toolCallId === null ? null : `${sessionId}\n${toolCallId}`;
+    const started = update.sessionUpdate === "tool_call";
+    const settled = update.status === "completed" || update.status === "failed";
+    const editedPaths = isEdit(key, update.kind) ? pathsOf(update) : [];
+    if (settled && key !== null) openEdits.delete(key);
+    if (!started && !settled && editedPaths.length === 0) return null;
+    return { sessionId, toolCallId, editedPaths, started, settled };
+  };
 }

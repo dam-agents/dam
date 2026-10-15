@@ -174,8 +174,23 @@ export interface ProviderPresetMode {
   isDefault?: boolean;
 }
 
+export type ProviderAlias =
+  "ibm" | "cb" | "anthropic" | "openai" | "bedrock" | "bob";
+
+export const PROVIDER_ALIASES: readonly ProviderAlias[] = [
+  "ibm",
+  "cb",
+  "anthropic",
+  "openai",
+  "bedrock",
+  "bob",
+];
+
+export const PROVIDER_ALIAS_RE = /^[a-z][a-z0-9-]*$/;
+
 export interface ProviderPreset {
   id: ProviderPresetType;
+  alias: ProviderAlias;
   displayName: string;
   modes: readonly ProviderPresetMode[];
 }
@@ -183,6 +198,7 @@ export interface ProviderPreset {
 export const PROVIDERS = {
   anthropic: {
     id: "anthropic",
+    alias: "anthropic",
     displayName: "Anthropic",
     modes: [
       {
@@ -202,26 +218,31 @@ export const PROVIDERS = {
   },
   "ibm-litellm": {
     id: "ibm-litellm",
+    alias: "ibm",
     displayName: "IBM ETE LiteLLM Proxy",
     modes: [{ key: "api-key", label: "API Token", templateId: "ibm-litellm" }],
   },
   "curve-bender": {
     id: "curve-bender",
+    alias: "cb",
     displayName: "IBM ETE LiteLLM CurveBender",
     modes: [{ key: "api-key", label: "API Token", templateId: "curve-bender" }],
   },
   openai: {
     id: "openai",
+    alias: "openai",
     displayName: "OpenAI",
     modes: [{ key: "api-key", label: "API Key", templateId: "openai" }],
   },
   bob: {
     id: "bob",
+    alias: "bob",
     displayName: "Bob Shell",
     modes: [{ key: "api-key", label: "API Key", templateId: "bob" }],
   },
   bedrock: {
     id: "bedrock",
+    alias: "bedrock",
     displayName: "AWS Bedrock",
     modes: [
       { key: "api-key", label: "API Key", templateId: BEDROCK_TEMPLATE_ID },
@@ -263,6 +284,76 @@ export function providerTypeForTemplateId(
   templateId: string,
 ): ProviderPresetType | null {
   return TEMPLATE_TO_PROVIDER.get(templateId) ?? null;
+}
+
+export function aliasForProviderType(type: ProviderPresetType): ProviderAlias {
+  return PROVIDERS[type].alias;
+}
+
+export function aliasForTemplateId(templateId: string): ProviderAlias | null {
+  const type = providerTypeForTemplateId(templateId);
+  return type === null ? null : aliasForProviderType(type);
+}
+
+export function templateIdsForAlias(alias: ProviderAlias): string[] {
+  return PROVIDER_PRESET_TYPES.filter(
+    (type) => PROVIDERS[type].alias === alias,
+  ).flatMap((type) => PROVIDERS[type].modes.map((mode) => mode.templateId));
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a harness's home provider is its default
+ * whenever the agent holds it; a harness with none takes the shared order.
+ */
+export const HARNESS_HOME_PROVIDERS: Readonly<
+  Record<string, readonly ProviderAlias[]>
+> = {
+  "claude-code": ["anthropic"],
+  codex: ["openai"],
+  bob: ["bob"],
+};
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the order granted providers are tried in as a
+ * default: the harness's home providers first, then the catalog order.
+ */
+export function aliasOrder(alias: ProviderAlias, harness?: string): number {
+  const home = harness ? (HARNESS_HOME_PROVIDERS[harness] ?? []) : [];
+  const at = home.indexOf(alias);
+  return at >= 0 ? at - home.length : PROVIDER_ALIASES.indexOf(alias);
+}
+
+export interface AliasedConnection {
+  id: string;
+  name: string;
+  templateId: string;
+}
+
+export interface ProviderAliasConflict {
+  alias: ProviderAlias;
+  displayName: string;
+  held: AliasedConnection;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: an Agent holds at most one provider Connection
+ * per alias, because the alias names the provider in every qualified model
+ * name and two Connections behind one alias would leave a name pointing at
+ * either. Returns the held Connection that blocks the candidate.
+ */
+export function providerAliasConflict(
+  granted: readonly AliasedConnection[],
+  candidate: AliasedConnection,
+): ProviderAliasConflict | null {
+  const type = providerTypeForTemplateId(candidate.templateId);
+  if (type === null) return null;
+  const alias = aliasForProviderType(type);
+  const held = granted.find(
+    (c) => c.id !== candidate.id && aliasForTemplateId(c.templateId) === alias,
+  );
+  if (!held) return null;
+  const heldType = providerTypeForTemplateId(held.templateId)!;
+  return { alias, displayName: PROVIDERS[heldType].displayName, held };
 }
 
 export function templateIdForProvider(

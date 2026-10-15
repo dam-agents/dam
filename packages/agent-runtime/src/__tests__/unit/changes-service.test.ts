@@ -66,6 +66,7 @@ const noPullRequests: PullRequestFinder = { find: async () => null };
 function serviceFor(
   roots: string[],
   pullRequests: PullRequestFinder = noPullRequests,
+  log: (msg: string) => void = () => undefined,
 ): ChangesRuntime {
   return createChangesService({
     roots,
@@ -74,7 +75,7 @@ function serviceFor(
       createFileDocumentStoreBackend(path.join(tmp, "state")),
     ),
     pullRequests,
-    log: () => undefined,
+    log,
     now: () => new Date("2026-10-14T10:00:00.000Z"),
   });
 }
@@ -230,6 +231,8 @@ describe("changes service", () => {
 
     service.onToolActivity({
       sessionId: "s1",
+      toolCallId: null,
+      started: false,
       editedPaths: [path.join(clone, "x.md")],
       settled: false,
     });
@@ -266,6 +269,8 @@ describe("changes service", () => {
     await write(path.join(linked, "x.md"), "z\n");
     service.onToolActivity({
       sessionId: "s1",
+      toolCallId: null,
+      started: false,
       editedPaths: [path.join(clone, "x.md")],
       settled: false,
     });
@@ -312,6 +317,8 @@ describe("changes service", () => {
     });
     service.onToolActivity({
       sessionId: "s1",
+      toolCallId: null,
+      started: false,
       editedPaths: [path.join(repo, "a.txt")],
       settled: true,
     });
@@ -373,5 +380,121 @@ describe("changes service", () => {
 
     expect(diff.ok).toBe(false);
     expect(!diff.ok && diff.error.kind).toBe("NotFound");
+  });
+});
+
+describe("session pushes", () => {
+  const link = { number: 9, url: "https://github.com/acme/app/pull/9" };
+  const findsFeature: PullRequestFinder = {
+    find: async (_remote, branch) => (branch === "feat/push" ? link : null),
+  };
+
+  async function repositoryWithRemote(): Promise<string> {
+    const remote = path.join(tmp, "remote.git");
+    await fs.mkdir(remote, { recursive: true });
+    await git(remote, "init", "--quiet", "--bare");
+    const repo = path.join(home, "work", "app");
+    await repository(repo, { "a.txt": "a\n" });
+    await git(repo, "remote", "add", "origin", remote);
+    await git(repo, "push", "--quiet", "origin", "main");
+    await git(repo, "checkout", "--quiet", "-b", "feat/push");
+    await write(path.join(repo, "a.txt"), "b\n");
+    await git(repo, "commit", "--quiet", "-am", "change");
+    return repo;
+  }
+
+  function toolCall(sessionId: string, toolCallId: string, settled = false) {
+    service.onToolActivity({
+      sessionId,
+      toolCallId,
+      editedPaths: [],
+      started: !settled,
+      settled,
+    });
+  }
+
+  const watching = () => new Promise((resolve) => setTimeout(resolve, 1_000));
+
+  /**
+   * TEST_SCENARIO: A session pushes its branch from a shell command, which
+   * names no file. The push links the branch's pull request to that session
+   * alone; the push made before the watch started is not anyone's.
+   */
+  it("should link the pull request a session pushed from a shell command", async () => {
+    const repo = await repositoryWithRemote();
+    service = serviceFor([home], findsFeature);
+    toolCall("s1", "t1");
+    await watching();
+
+    await git(repo, "push", "--quiet", "-u", "origin", "feat/push");
+    toolCall("s1", "t1", true);
+
+    await expect
+      .poll(() => service.repositoriesOf("s1"), { timeout: 5_000 })
+      .toEqual([
+        expect.objectContaining({
+          path: repo,
+          branch: "feat/push",
+          pullRequest: link,
+        }),
+      ]);
+    expect(service.repositoriesOf("other")).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: Two sessions run tool calls when the push lands. The one
+   * that already worked in the repository pushed it; the other gets nothing.
+   */
+  it("should give a push to the running session that worked in the repository", async () => {
+    const repo = await repositoryWithRemote();
+    service = serviceFor([home], findsFeature);
+    service.onToolActivity({
+      sessionId: "s1",
+      toolCallId: "t0",
+      editedPaths: [path.join(repo, "a.txt")],
+      started: true,
+      settled: false,
+    });
+    toolCall("s1", "t0", true);
+    toolCall("s1", "t1");
+    toolCall("s2", "t2");
+    await expect.poll(() => service.repositoriesOf("s1").length).toBe(1);
+    await watching();
+
+    await git(repo, "push", "--quiet", "origin", "feat/push");
+
+    await expect
+      .poll(() => service.repositoriesOf("s1")[0]?.pullRequest, {
+        timeout: 5_000,
+      })
+      .toEqual(link);
+    expect(service.repositoriesOf("s2")).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: Two sessions run tool calls when the push lands and
+   * neither worked in the repository: the push is nobody's rather than a
+   * guess, and the log says so.
+   */
+  it("should link a push no single session ran to nobody", async () => {
+    const repo = await repositoryWithRemote();
+    const logged: string[] = [];
+    service = serviceFor([home], findsFeature, (msg) => logged.push(msg));
+    toolCall("s1", "t1");
+    toolCall("s2", "t2");
+    await watching();
+
+    await git(repo, "push", "--quiet", "origin", "feat/push");
+
+    await expect
+      .poll(
+        () => logged.some((msg) => msg.includes("matches no single session")),
+        {
+          timeout: 5_000,
+        },
+      )
+      .toBe(true);
+    expect(service.repositoriesOf("s1")).toEqual([]);
+    expect(service.repositoriesOf("s2")).toEqual([]);
   });
 });

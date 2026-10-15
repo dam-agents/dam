@@ -30,7 +30,17 @@ function makeCurrent(
   return { id: SCHEDULE_ID, agentId: "agent-1", name: "daily", spec };
 }
 
-function makeDeps(current: Schedule) {
+function makeDeps(
+  current: Schedule,
+  validateSessionChoices?: (
+    agentId: string,
+    choices: {
+      harness?: string;
+      model?: string;
+      settings?: Record<string, string>;
+    },
+  ) => Promise<string | undefined>,
+) {
   let savedSpec: ScheduleSpec | undefined;
   let cleared = 0;
   const repo = {
@@ -54,6 +64,7 @@ function makeDeps(current: Schedule) {
     runner,
     owner: OWNER,
     agentBinding: "*",
+    ...(validateSessionChoices ? { validateSessionChoices } : {}),
   });
   return { service, getSavedSpec: () => savedSpec, getCleared: () => cleared };
 }
@@ -82,6 +93,298 @@ describe("updateRRule sessionMode", () => {
     await service.updateRRule({ ...baseUpdate, sessionMode: "continuous" });
 
     expect(getSavedSpec()?.sessionMode).toBe("continuous");
+  });
+});
+
+describe("updateRRule on a cron schedule", () => {
+  // TEST_SCENARIO: converting a cron schedule saves it as an RRULE, so the cron expression must not stay behind in the spec and every other setting must carry over.
+  it("saves it as an RRULE without the cron expression", async () => {
+    const cron: Schedule = {
+      id: SCHEDULE_ID,
+      agentId: "agent-1",
+      name: "daily",
+      spec: {
+        version: "1",
+        type: "cron",
+        cron: "0 9 * * *",
+        task: "do the thing",
+        precheck: "check.sh",
+        enabled: false,
+        sessionMode: "continuous",
+        createdBy: "user",
+      },
+    };
+    const { service, getSavedSpec } = makeDeps(cron);
+
+    await service.updateRRule({
+      ...baseUpdate,
+      timezone: "UTC",
+      sessionMode: "continuous",
+      precheck: "check.sh",
+    });
+
+    expect(getSavedSpec()).toEqual({
+      version: "1",
+      type: "rrule",
+      rrule: RRULE,
+      timezone: "UTC",
+      quietHours: [],
+      task: "do the thing",
+      precheck: "check.sh",
+      enabled: false,
+      sessionMode: "continuous",
+      createdBy: "user",
+    });
+  });
+});
+
+describe("updateCron", () => {
+  const cronSchedule = (): Schedule => ({
+    id: SCHEDULE_ID,
+    agentId: "agent-1",
+    name: "daily",
+    spec: {
+      version: "1",
+      type: "cron",
+      cron: "0 9 * * *",
+      task: "do the thing",
+      precheck: "check.sh",
+      enabled: false,
+      sessionMode: "continuous",
+      createdBy: "user",
+    },
+  });
+  const cronUpdate = {
+    id: SCHEDULE_ID,
+    name: "weekdays",
+    cron: "30 7 * * 1-5",
+    task: "do the other thing",
+  };
+
+  // TEST_SCENARIO: a cron schedule stays a cron schedule when its owner edits it, so the new expression and fields land in the spec and its enabled state is kept.
+  it("saves the new expression and fields on a cron schedule", async () => {
+    const { service, getSavedSpec } = makeDeps(cronSchedule());
+
+    await service.updateCron({
+      ...cronUpdate,
+      sessionMode: "continuous",
+      precheck: null,
+    });
+
+    expect(getSavedSpec()).toEqual({
+      version: "1",
+      type: "cron",
+      cron: "30 7 * * 1-5",
+      task: "do the other thing",
+      enabled: false,
+      sessionMode: "continuous",
+      createdBy: "user",
+    });
+  });
+
+  it("refuses an expression cron can't read", async () => {
+    const { service, getSavedSpec } = makeDeps(cronSchedule());
+
+    await expect(
+      service.updateCron({ ...cronUpdate, cron: "every day" }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(getSavedSpec()).toBeUndefined();
+  });
+
+  // TEST_SCENARIO: a cron schedule carries the same session choices as any other, so an edit checks the harness, model and settings it ends up with and saves them.
+  it("checks and saves a cron schedule's session choices", async () => {
+    const checked: unknown[] = [];
+    const { service, getSavedSpec } = makeDeps(cronSchedule(), async (_, c) => {
+      checked.push(c);
+      return undefined;
+    });
+    const choices = {
+      harness: "codex",
+      model: "openai/gpt-5.5",
+      settings: { effort: "high" },
+    };
+
+    await service.updateCron({ ...cronUpdate, ...choices });
+
+    expect(checked).toEqual([choices]);
+    expect(getSavedSpec()).toMatchObject({ type: "cron", ...choices });
+  });
+
+  // TEST_SCENARIO: updateCron writes a cron expression, so it must not turn an RRULE schedule into a cron one.
+  it("refuses an RRULE schedule", async () => {
+    const { service, getSavedSpec } = makeDeps(makeCurrent());
+
+    await expect(service.updateCron(cronUpdate)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+    expect(getSavedSpec()).toBeUndefined();
+  });
+});
+
+describe("session choices on a schedule", () => {
+  function makeCreateDeps(
+    validateSessionChoices: (
+      agentId: string,
+      choices: {
+        harness?: string;
+        model?: string;
+        settings?: Record<string, string>;
+      },
+    ) => Promise<string | undefined>,
+  ) {
+    let created:
+      { agentId: string; owner: string; spec: ScheduleSpec } | undefined;
+    const repo = {
+      async create(input: {
+        agentId: string;
+        owner: string;
+        name: string;
+        spec: ScheduleSpec;
+      }) {
+        created = input;
+        return {
+          id: SCHEDULE_ID,
+          agentId: input.agentId,
+          name: input.name,
+          spec: input.spec,
+        };
+      },
+    } as unknown as SchedulesRepository;
+    const runner = { async sync() {} } as unknown as SchedulerRunner;
+    const service = createSchedulesService({
+      repo,
+      runner,
+      owner: OWNER,
+      agentBinding: "*",
+      validateSessionChoices,
+    });
+    return { service, getCreated: () => created };
+  }
+
+  const choices = {
+    harness: "codex",
+    model: "openai/gpt-5.5",
+    settings: { effort: "high" },
+  };
+
+  /** TEST_SCENARIO: The schedule names a harness, a qualified model and a
+   * setting the validator accepts, so the spec carries all three for the
+   * fire. */
+  it("saves the harness, model and settings the validator accepts", async () => {
+    const checked: unknown[] = [];
+    const { service, getCreated } = makeCreateDeps(async (agentId, c) => {
+      checked.push([agentId, c]);
+      return undefined;
+    });
+
+    await service.createRRule({
+      name: "daily",
+      agentId: "agent-1",
+      rrule: RRULE,
+      timezone: TIMEZONE,
+      task: "do the thing",
+      ...choices,
+    });
+
+    expect(checked).toEqual([["agent-1", choices]]);
+    expect(getCreated()?.spec).toMatchObject(choices);
+  });
+
+  /** TEST_SCENARIO: The validator refuses the model (the agent holds no such
+   * provider), so the schedule is not saved and the reason reaches the
+   * caller. */
+  it("refuses a schedule with the validator's reason", async () => {
+    const { service, getCreated } = makeCreateDeps(
+      async () => "this agent holds no openai provider",
+    );
+
+    await expect(
+      service.createCron({
+        name: "hourly",
+        agentId: "agent-1",
+        cron: "0 * * * *",
+        task: "do the thing",
+        model: "openai/gpt-5.5",
+      }),
+    ).rejects.toThrow(/holds no openai provider/);
+    expect(getCreated()).toBeUndefined();
+  });
+
+  /** TEST_SCENARIO: A one-time task that continues its session keeps that
+   * session's choices, so naming any of them is refused before the validator
+   * is asked. */
+  it("refuses choices on a task that continues its session", async () => {
+    const { service } = makeCreateDeps(async () => {
+      throw new Error("the validator must not run");
+    });
+
+    await expect(
+      service.createOnce(
+        {
+          name: "later",
+          agentId: "agent-1",
+          task: "check back",
+          timezone: "UTC",
+          settings: { effort: "high" },
+        },
+        "agent",
+        { sessionRef: "sess-1", mode: "continue" },
+      ),
+    ).rejects.toThrow(/keeps that session's harness, model and settings/);
+  });
+
+  /** TEST_SCENARIO: A migration cleared this schedule's model and left a note.
+   * The owner picks a model again on edit: the new choices are checked, saved,
+   * and the note is gone. */
+  it("drops the migration note once the model is chosen again", async () => {
+    const current = makeCurrent();
+    current.spec = { ...current.spec, migrationNote: "model cleared" };
+    const { service, getSavedSpec } = makeDeps(current, async () => undefined);
+
+    await service.updateRRule({ ...baseUpdate, model: "ibm/gpt-5.5" });
+
+    expect(getSavedSpec()?.model).toBe("ibm/gpt-5.5");
+    expect(getSavedSpec()?.migrationNote).toBeUndefined();
+  });
+
+  /** TEST_SCENARIO: An edit that keeps the choices as they were is not
+   * re-validated, so a schedule whose provider went away can still be renamed
+   * or retimed. */
+  it("skips the validator when the choices are unchanged", async () => {
+    const current = makeCurrent();
+    current.spec = { ...current.spec, model: "ibm/gpt-5.5" };
+    const { service, getSavedSpec } = makeDeps(current, async () => {
+      throw new Error("the validator must not run");
+    });
+
+    await service.updateRRule({
+      ...baseUpdate,
+      task: "do the other thing",
+      model: "ibm/gpt-5.5",
+    });
+
+    expect(getSavedSpec()?.task).toBe("do the other thing");
+  });
+
+  /** TEST_SCENARIO: An API caller changes only the harness of a schedule
+   * that keeps its model: the validator sees the harness together with the
+   * stored model, so a harness that cannot run it is refused instead of
+   * saved for the fire to fail on. */
+  it("validates the merged choices on a partial update", async () => {
+    const current = makeCurrent();
+    current.spec = { ...current.spec, model: "anthropic/claude-sonnet-5-5" };
+    const seen: unknown[] = [];
+    const { service } = makeDeps(current, async (_agentId, choices) => {
+      seen.push(choices);
+      return "the codex harness cannot run on anthropic";
+    });
+
+    await expect(
+      service.updateRRule({ ...baseUpdate, harness: "codex" }),
+    ).rejects.toThrow(/codex harness cannot run on anthropic/);
+    expect(seen).toEqual([
+      { harness: "codex", model: "anthropic/claude-sonnet-5-5" },
+    ]);
   });
 });
 

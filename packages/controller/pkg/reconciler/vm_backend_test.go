@@ -1588,6 +1588,36 @@ func TestAFullHomeInsideAGuestIsPublishedAsAFullHomeVolume(t *testing.T) {
 	assert.Contains(t, cond.Message, "disk is full")
 }
 
+// TEST_SCENARIO: a boot that repaired the machine's disk runs as usual, so the repair would otherwise be only on the console; the controller puts what the runner says was repaired on the Agent, and drops it once a boot finds the disk clean.
+func TestARepairAtBootIsOnTheAgentUntilACleanBoot(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	node.statuses["my-agent"] = vmrunner.MachineStatus{
+		State:        vmrunner.StateRunning,
+		Ready:        true,
+		HomeRepaired: "storage: e2fsck -p repaired the filesystem: /dev/vda: 12/65536 files",
+	}
+	repaired := func() *metav1.Condition {
+		require.NoError(t, r.Reconcile(ctx, agent))
+		obj, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+		require.NoError(t, err)
+		got, err := FromCacheObject[apiv1.Agent](obj)
+		require.NoError(t, err)
+		agent.Status = got.Status
+		return apimeta.FindStatusCondition(got.Status.Conditions, apiv1.ConditionHomeRepaired)
+	}
+
+	cond := repaired()
+	require.NotNil(t, cond)
+	assert.Equal(t, metav1.ConditionTrue, cond.Status)
+	assert.Equal(t, apiv1.ReasonHomeRepaired, cond.Reason)
+	assert.Contains(t, cond.Message, "repaired the filesystem")
+
+	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true}
+	assert.Nil(t, repaired())
+}
+
 // TEST_SCENARIO: a machine no Agent of this owner claims holds guest memory forever, so the sweep deletes it — and ownership is part of the match, because an Agent of the same name belonging to someone else says nothing about this runner's machine.
 func TestOrphanSweepDeletesAMachineNoAgentOfThisOwnerClaims(t *testing.T) {
 	ctx := context.Background()
@@ -1999,6 +2029,23 @@ func TestTheRunnerAuditsItsVMMsSyscalls(t *testing.T) {
 		env[e.Name] = e.Value
 	}
 	assert.Equal(t, "audit", env["SMOLVM_SECCOMP"], "unset checks nothing, and enforce kills a VMM on a call outside the allowlist")
+}
+
+// TEST_SCENARIO: an install switches its VMMs' syscall filter to enforce, or back, through its values, without a release.
+func TestTheRunnerChecksItsVMMsSyscallsInTheInstallsMode(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Seccomp = "enforce"
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(
+		context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	env := map[string]string{}
+	for _, e := range dep.Spec.Template.Spec.Containers[0].Env {
+		env[e.Name] = e.Value
+	}
+	assert.Equal(t, "enforce", env["SMOLVM_SECCOMP"])
 }
 
 // TEST_SCENARIO: smolvm confines a VMM's filesystem only when its embedder asks, and the runner is the embedder. Unconfined, a guest writes through its root virtiofs export into the agent rootfs every sibling machine boots from.

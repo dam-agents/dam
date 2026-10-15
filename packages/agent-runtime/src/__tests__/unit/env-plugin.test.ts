@@ -5,10 +5,12 @@ import {
   type EnvChange,
 } from "../../modules/runtime-channel/drivers/env-plugin.js";
 import {
+  layerEnvOf,
   leaseEnvOf,
   type EnvStateStore,
   type RuntimeEnvState,
 } from "../../modules/runtime-channel/infrastructure/env-state-store.js";
+import { leaseSpawnEnv } from "../../core/runtime-env.js";
 
 const ctx: DispatchContext = {
   agentHome: "/home/agent",
@@ -49,6 +51,8 @@ function harness(initial: Record<string, string> = {}) {
   return {
     apply: (c: Contribution[]) => handler(c, ctx),
     env: () => value.env,
+    state: () => value,
+    store,
     forLease,
     changes,
   };
@@ -225,5 +229,46 @@ describe("env driver provider and harness layers", () => {
         harnesses: [],
       }),
     ]);
+  });
+});
+
+describe("lease spawn env precedence", () => {
+  /** TEST_SCENARIO: The image bakes a placeholder (OPENAI_API_KEY=dummy) and
+   * the pod's own PATH; the provider layer carries the Connection's addressed
+   * placeholder. The process must start with the layer's value, the pod's PATH
+   * and the agent-wide EDITOR the pod does not set, while a pod value still
+   * beats an agent-wide one. */
+  it("lets a layer's variables win over the pod env, and the pod env over the agent-wide env", async () => {
+    const h = harness({ EDITOR: "vim", TERM: "agent-wide" });
+    await h.apply([
+      env("EDITOR", "vim"),
+      env("TERM", "agent-wide"),
+      env("OPENAI_API_KEY", "platform:conn:conn-a", { provider: "conn-a" }),
+    ]);
+    const saved = {
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+      TERM: process.env.TERM,
+    };
+    process.env.OPENAI_API_KEY = "dummy-placeholder";
+    process.env.TERM = "pod";
+    try {
+      const store: EnvStateStore = {
+        ...h.store,
+        layerEnvFor: (lease) => layerEnvOf(h.state(), lease),
+      };
+      const spawned = leaseSpawnEnv(store, {
+        harness: "codex",
+        provider: "conn-a",
+        model: null,
+      });
+      expect(spawned.OPENAI_API_KEY).toBe("platform:conn:conn-a");
+      expect(spawned.TERM).toBe("pod");
+      expect(spawned.EDITOR).toBe("vim");
+      expect(spawned.PLATFORM_PROVIDER).toBe("conn-a");
+    } finally {
+      for (const [k, v] of Object.entries(saved))
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+    }
   });
 });

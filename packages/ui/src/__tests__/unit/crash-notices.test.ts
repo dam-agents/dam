@@ -209,4 +209,25 @@ describe("nextCrashNotices", () => {
       ],
     ]);
   });
+
+  // TEST_SCENARIO: a VM agent whose disk the check at start could not repair did not crash and will not start by waiting. The notice must say it can't start and give the ways out, without the console tail.
+  it("gives a damaged disk's ways out", () => {
+    const [, [notice]] = replay(
+      [agent()],
+      [
+        agent({
+          state: "error",
+          podTerminationCode: "MachineHomeDamaged",
+          podTerminationReason:
+            "the disk is damaged\nthe guest console ends:\nboot log",
+        }),
+      ],
+    );
+    expect(notice).toMatch(
+      /^Scout can't start: its disk has file system errors/,
+    );
+    expect(notice).toContain("Start it again");
+    expect(notice).toContain("delete the agent and create it again");
+    expect(notice).not.toContain("boot log");
+  });
 });

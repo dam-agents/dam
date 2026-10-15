@@ -3,6 +3,9 @@ import { useState } from "react";
 import { Modal } from "@/components/modal";
 
 import type { Schedule } from "../../../types.js";
+import type { ExactCronConversion } from "../lib/cron-conversion.js";
+import { ConvertCronStep } from "./convert-cron-step.js";
+import { CronScheduleForm } from "./cron-schedule-form.js";
 import { OnceScheduleForm } from "./once-schedule-form.js";
 import { RecurringScheduleForm } from "./recurring-schedule-form.js";
 import {
@@ -17,14 +20,52 @@ interface Props {
   onClose: () => void;
 }
 
+interface Converting {
+  draft: Schedule;
+  conversion: ExactCronConversion;
+}
+
 export function ScheduleFormModal({ agentId, existing, onClose }: Props) {
   const [kind, setKind] = useState<ScheduleKind>(
     existing?.type === "once" ? "once" : "repeat",
   );
   const [draft, setDraft] = useState<ScheduleDraft>({ name: "", task: "" });
+  const [editing, setEditing] = useState(existing);
+  const [converting, setConverting] = useState<Converting | null>(null);
+  const [cronDraft, setCronDraft] = useState<Schedule | null>(null);
 
-  const formProps = existing
-    ? { agentId, existing, onClose }
+  if (editing?.type === "cron")
+    return (
+      <Modal onClose={onClose}>
+        {converting ? (
+          <ConvertCronStep
+            schedule={converting.draft}
+            conversion={converting.conversion}
+            onBack={() => {
+              setCronDraft(converting.draft);
+              setConverting(null);
+            }}
+            onClose={onClose}
+            onConverted={(converted) => {
+              setConverting(null);
+              setEditing(converted);
+            }}
+          />
+        ) : (
+          <CronScheduleForm
+            agentId={agentId}
+            existing={cronDraft ?? editing}
+            onClose={onClose}
+            onConvert={(draft, conversion) =>
+              setConverting({ draft, conversion })
+            }
+          />
+        )}
+      </Modal>
+    );
+
+  const formProps = editing
+    ? { agentId, existing: editing, onClose }
     : {
         agentId,
         draft,
