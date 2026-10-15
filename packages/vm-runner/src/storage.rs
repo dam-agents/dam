@@ -39,7 +39,7 @@ impl StorageUse {
         percent >= SHORT_PERCENT || (was && percent >= SHORT_UNTIL_PERCENT)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the bytes each of `machines` guests is asked to give back so the claim is back under SHORT_UNTIL_PERCENT, an even part of the whole; a guest frees only what it can, so this bounds a pass and is no promise.
+    // UNIT_BOUNDARY_DESCRIPTION: the bytes each of `machines` running guests is asked to give back so the claim is back under SHORT_UNTIL_PERCENT, an even part of the whole; a guest frees only what it can, so this bounds a pass and is no promise.
     pub fn to_shed(&self, machines: usize) -> u64 {
         let target = u64::try_from(u128::from(self.usable) * u128::from(SHORT_UNTIL_PERCENT) / 100)
             .unwrap_or(u64::MAX);
