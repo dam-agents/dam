@@ -1,6 +1,8 @@
 import { Code, Terminal } from "@carbon/icons-react";
 import { type ComponentProps, type ReactNode, useState } from "react";
 
+import { PromptIcon } from "@/components/brand-icons";
+
 import { useAgents } from "../../agents/api/queries.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import {
@@ -11,7 +13,7 @@ import {
   OpenInIdeDialog,
   OpenInTerminalDialog,
 } from "../../sandboxes/components/open-in-dialogs.js";
-import { TerminalHarnessMenu } from "./terminal-harness-menu.js";
+import { TerminalHarnessButtons } from "./terminal-harness-buttons.js";
 
 type LocalTarget = "terminal" | "ide";
 
@@ -29,15 +31,24 @@ export function NewSessionLauncher({
   return (
     <>
       <div className="mt-5 grid w-full max-w-[640px] grid-cols-1 gap-3 @md/chat:grid-cols-2">
-        <TerminalHarnessMenu agentId={agentId} onOpen={onNewTerminal}>
-          <LauncherTile
-            icon={<Terminal size={18} />}
+        <div className="flex flex-col items-start gap-3 rounded-lg border border-border bg-background p-4 text-left">
+          <div className="flex w-full items-start justify-between gap-2">
+            <TileIcon>
+              <Terminal size={18} />
+            </TileIcon>
+            <TerminalHarnessButtons
+              agentId={agentId}
+              onOpen={onNewTerminal}
+              className="flex-wrap justify-end"
+            />
+          </div>
+          <TileText
             title="Web terminal"
             description="Terminal UI session right here"
           />
-        </TerminalHarnessMenu>
+        </div>
         <LauncherTile
-          icon={<Terminal size={18} />}
+          icon={<PromptIcon width={18} height={18} />}
           title="CLI and SSH"
           description="Terminal UI session in your own terminal"
           onClick={() => setDialog("terminal")}
@@ -93,17 +104,33 @@ function LauncherTile({
       {...props}
       className="flex flex-col items-start gap-3 rounded-lg border border-border bg-background p-4 text-left transition-colors hover:bg-muted/50 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <span className="flex size-9 items-center justify-center rounded-md border border-border text-foreground">
-        {icon}
-      </span>
-      <span className="min-w-0">
-        <span className="block text-sm font-medium text-foreground">
-          {title}
-        </span>
-        <span className="mt-0.5 block text-sm text-muted-foreground">
-          {description}
-        </span>
-      </span>
+      <TileIcon>{icon}</TileIcon>
+      <TileText title={title} description={description} />
     </button>
+  );
+}
+
+function TileIcon({ children }: { children: ReactNode }) {
+  return (
+    <span className="flex size-9 shrink-0 items-center justify-center rounded-md border border-border text-foreground">
+      {children}
+    </span>
+  );
+}
+
+function TileText({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <span className="min-w-0">
+      <span className="block text-sm font-medium text-foreground">{title}</span>
+      <span className="mt-0.5 block text-sm text-muted-foreground">
+        {description}
+      </span>
+    </span>
   );
 }

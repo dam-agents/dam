@@ -25,12 +25,13 @@ An upload is at most 2 MB; the api-server crops it to a 512 px square PNG and st
 It is served without sign-in, because an `<img>` sends no token; the id is a hash, so it cannot be guessed, and the image never changes.
 An hourly sweep deletes uploaded images older than a day that no Agent and no resolved Starter Kit names, with their Slack icon URLs; the day covers an upload not yet saved onto a spec.
 A [Starter Kit](starter-kits.md) can declare the avatar its Agents start with, a custom one included.
-A custom avatar has no eyes, so it shows its state only by the marks every avatar carries while it sleeps ([state](#state)).
+A custom avatar has no eyes, so it shows sleep with a *zzz* mark instead ([state](#state)).
 
 ## State
 
 The eyes follow the [lifecycle](agent-lifecycle.md): open while the Agent runs, working or idle, and closed while it sleeps.
-A sleeping avatar, a character, an emoji or an upload, keeps its colours and carries a blue *zzz* at its top right; a [disabled](agent-lifecycle.md#disable) one looks the same but grey.
+A sleeping avatar keeps its colours; an emoji or an upload, which has no eyes to close, carries a grey *zzz* at its top right.
+A [disabled](agent-lifecycle.md#disable) avatar looks the same as a sleeping one, but grey.
 A sleeping character twitches now and then.
 Each awake character makes its own small gesture on hover, a sleeping one breathes, and the waking screen of a container Agent loops the gesture while it starts ([lifecycle](agent-lifecycle.md#wake)).
 Motion stops when the user's system asks for reduced motion.

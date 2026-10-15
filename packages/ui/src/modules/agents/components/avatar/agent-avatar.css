@@ -580,14 +580,15 @@
   position: relative;
 }
 
-.agent-avatar:not([data-mood="awake"])::after {
+.agent-avatar:not([data-mood="awake"]):not([data-character])::after {
   content: "";
   position: absolute;
   top: -18%;
   right: -22%;
   width: 52%;
   height: 52%;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236366f1' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.5 15.5h4l-4 5h4'/%3E%3Cpath d='M8 9.5h5l-5 6.5h5'/%3E%3Cpath d='M15.5 2h7l-7 8.5h7'/%3E%3C/svg%3E")
+  background-color: var(--color-muted-foreground);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.5 15.5h4l-4 5h4'/%3E%3Cpath d='M8 9.5h5l-5 6.5h5'/%3E%3Cpath d='M15.5 2h7l-7 8.5h7'/%3E%3C/svg%3E")
     center / contain no-repeat;
   pointer-events: none;
 }

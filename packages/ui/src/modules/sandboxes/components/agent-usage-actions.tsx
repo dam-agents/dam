@@ -1,17 +1,10 @@
-import {
-  Chat,
-  ChevronDown,
-  Code,
-  LogoSlack,
-  Terminal,
-} from "@carbon/icons-react";
+import { Chat, Launch, LogoSlack, Terminal } from "@carbon/icons-react";
 import { SessionMode } from "api-server-api";
 import type { ReactNode } from "react";
 
 import { getBrand } from "@/brand";
-import { TelegramIcon } from "@/components/brand-icons";
+import { PromptIcon, TelegramIcon } from "@/components/brand-icons";
 import { CopyableCommand } from "@/components/copyable-command";
-import { Button } from "@/components/ui/button";
 import { externalLinkProps } from "@/lib/external-link";
 
 import { CLI_REFERENCE_URL } from "../../../constants.js";
@@ -19,7 +12,7 @@ import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useAgents } from "../../agents/api/queries.js";
 import { useSlackInstallRequestUrl } from "../../links/api/queries.js";
-import { TerminalHarnessMenu } from "../../sessions/components/terminal-harness-menu.js";
+import { TerminalHarnessButtons } from "../../sessions/components/terminal-harness-buttons.js";
 import { SlackInstallRequest } from "../../slack/components/slack-install-request.js";
 import { type Action, ActionList } from "./action-list.js";
 import { MessengerInstructions } from "./channels/channel-bind-modal.js";
@@ -32,9 +25,9 @@ function DocLink({ href, children }: { href: string; children: ReactNode }) {
     <a
       href={href}
       {...externalLinkProps}
-      className="font-medium text-foreground hover:underline"
+      className="inline-flex items-center gap-1 font-medium text-foreground hover:underline"
     >
-      {children}
+      {children} <Launch size={13} />
     </a>
   );
 }
@@ -51,17 +44,14 @@ export function AgentUsageActions({ agent }: { agent: AgentView }) {
       icon: <Chat />,
       title: "Chat",
       description: "Chat with the agent in this browser.",
-      button: {
-        label: "Open chat",
-        onClick: () => selectAgent(agent.id),
-      },
+      onClick: () => selectAgent(agent.id),
     },
     {
       icon: <Terminal />,
       title: "Web terminal",
       description: "Open the harnesses' terminal UI in this browser.",
       control: (
-        <TerminalHarnessMenu
+        <TerminalHarnessButtons
           agentId={agent.id}
           onOpen={() =>
             openAgentSession(
@@ -71,29 +61,22 @@ export function AgentUsageActions({ agent }: { agent: AgentView }) {
               true,
             )
           }
-        >
-          <Button
-            variant="outline"
-            className="shrink-0 self-start sm:self-auto"
-          >
-            Open terminal
-            <ChevronDown />
-          </Button>
-        </TerminalHarnessMenu>
+        />
       ),
     },
     {
-      icon: <Code />,
+      icon: <PromptIcon />,
       title: "CLI and SSH",
-      description: (
-        <>
-          Follow the <DocLink href={CLI_REFERENCE_URL}>CLI quickstart</DocLink>{" "}
-          to install the {brand.name} CLI and log in.
-        </>
-      ),
+      description:
+        "Use the agent from your own terminal, over SSH, or in your editor.",
       content: (
         <div className="flex flex-col gap-2 text-sm text-muted-foreground">
-          <p>Open the agent TUI in your terminal:</p>
+          <p>
+            Follow the{" "}
+            <DocLink href={CLI_REFERENCE_URL}>CLI quickstart</DocLink> to
+            install the {brand.name} CLI and log in.
+          </p>
+          <p className="mt-1">Open the agent TUI in your terminal:</p>
           <CopyableCommand command={`${brand.short} chat ${agent.id}`} />
           <p className="mt-1">SSH to the agent:</p>
           <CopyableCommand command={`${brand.short} ssh connect ${agent.id}`} />
