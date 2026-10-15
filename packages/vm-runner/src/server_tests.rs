@@ -1233,6 +1233,17 @@ async fn a_machine_whose_stored_spec_is_unreadable_takes_the_image_it_is_asked_f
     );
 }
 
+// TEST_SCENARIO: the runtime reads a machine as absent once it has forgotten it, even when a delete cut short left the machine's disk behind. A delete of an absent machine must still ask the runtime, which is what removes that disk.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_delete_of_an_absent_machine_still_asks_the_runtime() {
+    let h = Harness::new("absent-delete");
+    let server = h.server.clone();
+    tokio::task::spawn_blocking(move || server.delete("m1").unwrap())
+        .await
+        .unwrap();
+    assert_eq!(h.fake.calls(), ["delete m1"]);
+}
+
 // TEST_SCENARIO: a machine id is a path segment under the state directory, and an image reference names a cache entry. Anything that could leave either is refused before it reaches the disk.
 #[tokio::test(flavor = "multi_thread")]
 async fn names_that_could_escape_their_directories_are_refused() {
@@ -2296,7 +2307,7 @@ async fn a_delete_does_not_wait_out_the_fetch_its_machine_is_waiting_on() {
     );
     assert_eq!(h.server.status("m1").state, STATE_ABSENT);
     assert!(!h.dir.join("machines/m1").exists());
-    assert!(!h.fake.calls().iter().any(|c| c.ends_with("m1")));
+    assert_eq!(h.fake.calls(), ["delete m1"]);
     h.server.close().await;
 }
 

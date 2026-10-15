@@ -103,6 +103,17 @@ impl Smolvm {
         vmms_left(&self.proc_root, &dir, vmms, VMM_EXIT_WAIT);
         Ok(end()?)
     }
+
+    // UNIT_BOUNDARY_DESCRIPTION: removes a machine directory no record owns. smolvm forgets a machine before it removes its directory, so a delete cut short between the two — a killed runner, a removal that failed — leaves the disk with no record, and smolvm then neither deletes it nor creates over it: a machine created again under the name would boot on the deleted one's home. Any VMM still holding that directory is killed first.
+    fn remove_unowned(&self, id: &str) -> anyhow::Result<()> {
+        let dir = vm_data_dir(id);
+        if !dir.exists() || self.record(id)?.is_some() {
+            return Ok(());
+        }
+        tracing::warn!(machine = id, dir = %dir.display(), "removing a machine directory no record owns");
+        kill_orphans(&self.proc_root, &dir);
+        std::fs::remove_dir_all(&dir).with_context(|| format!("removing {}", dir.display()))
+    }
 }
 
 impl Runtime for Smolvm {
@@ -120,6 +131,7 @@ impl Runtime for Smolvm {
     fn create(&self, id: &str, machine: &Machine<'_>) -> anyhow::Result<()> {
         let secrets: Vec<&str> = machine.spec.env.values().map(String::as_str).collect();
         timed("create", id, &secrets, || {
+            self.remove_unowned(id)?;
             let (spec, workload) = embedded_spec(id, machine)?;
             let storage_gib = spec.resources.storage_gib;
             self.runtime.create_machine_with_workload(
@@ -338,7 +350,8 @@ impl Runtime for Smolvm {
 
     fn delete(&self, id: &str) -> anyhow::Result<()> {
         timed("delete", id, &[], || {
-            self.ended(id, || self.runtime.delete_machine(id))
+            self.ended(id, || self.runtime.delete_machine(id))?;
+            self.remove_unowned(id)
         })
     }
 
@@ -1787,6 +1800,39 @@ mod tests {
         smolvm.delete("m1").unwrap();
         assert_eq!(smolvm.state("m1").unwrap(), State::Absent);
         assert!(!vm_data_dir("m1").exists());
+    }
+
+    // TEST_SCENARIO: a delete was cut short after smolvm forgot the machine and before its directory went, leaving the disk with no record. The controller's retried delete must remove that disk, and a machine created again under the name must never boot on a disk such a delete left.
+    #[test]
+    fn a_disk_an_interrupted_delete_left_is_removed_and_never_reused() {
+        let home = Home::new("leftover");
+        let share = home.path.join("share");
+        fs::create_dir_all(&share).unwrap();
+        let smolvm = Smolvm::open(false, None).unwrap();
+        let spec = spec();
+        let launch = launch();
+        let machine = Machine {
+            spec: &spec,
+            image: "quay.io/x/vm:1",
+            host_port: 32000,
+            share: &share,
+            launch: &launch,
+        };
+        let interrupted = |smolvm: &Smolvm| {
+            smolvm.create("m1", &machine).unwrap();
+            fs::write(vm_data_dir("m1").join("home-of-the-deleted"), "secret").unwrap();
+            smolvm.db.remove_vm("m1").unwrap();
+            assert_eq!(smolvm.state("m1").unwrap(), State::Absent);
+        };
+
+        interrupted(&smolvm);
+        smolvm.delete("m1").unwrap();
+        assert!(!vm_data_dir("m1").exists());
+
+        interrupted(&smolvm);
+        smolvm.create("m1", &machine).unwrap();
+        assert!(!vm_data_dir("m1").join("home-of-the-deleted").exists());
+        assert!(storage_disk_path("m1").exists());
     }
 
     // TEST_SCENARIO: a new image and a new allowlist are applied to the same machine. smolvm reads the image, the command it launches, its workdir, env and allowlist from the record at every start, so the update rewrites those fields and nothing else: the record is the one the create wrote, the port is kept, and the storage disk holds the same bytes. The env is rebuilt from the new image's, so a variable only the old image set is gone.

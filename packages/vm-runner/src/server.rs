@@ -804,18 +804,16 @@ impl Server {
 
     fn remove(&self, id: &str) -> Result<(), Rejected> {
         let internal = |e: anyhow::Error| Rejected::internal(format!("{e:#}"));
-        if self.runtime.state(id).map_err(internal)? != State::Absent {
-            let runtime = self.runtime.clone();
-            let target = id.to_string();
-            bounded(
-                "the runtime's delete",
-                Some(RUNTIME_CALL_LIMIT),
-                None,
-                None,
-                move || runtime.delete(&target),
-            )
-            .map_err(internal)?;
-        }
+        let runtime = self.runtime.clone();
+        let target = id.to_string();
+        bounded(
+            "the runtime's delete",
+            Some(RUNTIME_CALL_LIMIT),
+            None,
+            None,
+            move || runtime.delete(&target),
+        )
+        .map_err(internal)?;
         let dir = machine_dir(&self.config.state_dir, id)
             .ok_or_else(|| Rejected::bad_request("invalid machine id"))?;
         match fs::remove_dir_all(&dir) {
