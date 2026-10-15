@@ -97,9 +97,7 @@ export function useSkillsConfirms(
   ) => {
     const list = scope ?? derived.listBySource.get(src.id) ?? [];
     if (!on) {
-      const removing = list.filter(
-        (s) => installedRef(s.source, s.name) !== undefined,
-      ).length;
+      const removing = list.filter((s) => installedRef(s) !== undefined).length;
       const ok = await showConfirm(
         `${removing} skill${removing === 1 ? "" : "s"} from ${src.name} will be removed from the agent. You can turn ${removing === 1 ? "it" : "them"} back on at any time.`,
         scope

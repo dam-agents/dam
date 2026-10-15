@@ -5,15 +5,19 @@ import { type BaseSyntheticEvent, useMemo } from "react";
 import { useForm, type UseFormReturn } from "react-hook-form";
 import { z } from "zod";
 
+import { sameSourcePath } from "../lib/skill-identity.js";
+
 function duplicateOf(
   sources: readonly SkillSource[],
   gitUrl: string,
+  path: string | undefined,
 ): SkillSource | undefined {
   return sources.find(
     (s) =>
       !s.system &&
       !s.fromTemplate &&
-      normalizeGitUrl(s.gitUrl)?.gitUrl === gitUrl,
+      normalizeGitUrl(s.gitUrl)?.gitUrl === gitUrl &&
+      sameSourcePath(s.path, path),
   );
 }
 
@@ -49,7 +53,11 @@ function buildSchema(sources: readonly SkillSource[]) {
         });
         return;
       }
-      const existing = duplicateOf(sources, normalized.gitUrl);
+      const existing = duplicateOf(
+        sources,
+        normalized.gitUrl,
+        data.path.trim() || normalized.path,
+      );
       if (existing) {
         ctx.addIssue({
           code: "custom",
