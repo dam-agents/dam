@@ -1,6 +1,7 @@
 import type {
   Contribution,
   ContributionKind,
+  HelloInput,
   RuntimeEvent,
   RuntimeEventKind,
 } from "api-server-api";
@@ -11,6 +12,18 @@ export interface AgentCapabilities {
   contributions: ContributionKind[];
   events: RuntimeEventKind[];
   harnesses?: readonly string[];
+}
+
+export function deliveryCapabilities(
+  reported: HelloInput["capabilities"],
+): AgentCapabilities {
+  return {
+    contributions: reported.contributions,
+    events: reported.events,
+    ...(reported.harnesses && {
+      harnesses: reported.harnesses.map((h) => h.name),
+    }),
+  };
 }
 
 export interface CapabilityFilterResult {
