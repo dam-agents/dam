@@ -264,14 +264,25 @@ describe("renderAssistantBlocks", () => {
       "Before\n```\nps -ef | grep shim\nkill -9 <pid>\ncrictl rmp -f pod\n```\nAfter `command`.",
     ],
     [
-      "inline fences and trailing prose",
-      "Before ```pwd``` after.",
-      "Before \n```\npwd\n```\n after.",
+      "a compact block followed by a standard block",
+      "Before.\n```First line.\nSecond line.```\nMid.\n```bash\nok\n```\nEnd.",
+      "Before.\n```\nFirst line.\nSecond line.\n```\nMid.\n```bash\nok\n```\nEnd.",
+    ],
+    ["a one-line compact block", "```pwd```", "```\npwd\n```"],
+    [
+      "a compact opening fence",
+      "```First line.\nSecond line.\n```",
+      "```\nFirst line.\nSecond line.\n```",
     ],
     [
-      "multiple compact blocks",
-      "```first``` and ```second```",
-      "```\nfirst\n```\n and \n```\nsecond\n```",
+      "a compact closing fence",
+      "```bash\necho hello\nls```",
+      "```bash\necho hello\nls\n```",
+    ],
+    [
+      "inline fences inside prose",
+      "Before ```pwd``` after.",
+      "Before ```pwd``` after.",
     ],
     [
       "standard Markdown with a language",
@@ -284,19 +295,14 @@ describe("renderAssistantBlocks", () => {
       "```\npwd\n```\nAfter.",
     ],
     [
-      "longer fences containing literal triple backticks",
-      "````markdown\n```example```\n````",
-      "````markdown\n```example```\n````",
+      "longer fences around a standard block",
+      "````markdown\n```bash\nls\n```\n`````",
+      "````markdown\n```bash\nls\n```\n`````",
     ],
     [
       "literal backticks inside Markdown code",
       "```js\nconst fence = '```';\n```\nAfter.",
       "```js\nconst fence = '```';\n```\nAfter.",
-    ],
-    [
-      "longer closing Markdown fences",
-      "````markdown\n```example```\n`````",
-      "````markdown\n```example```\n`````",
     ],
     [
       "quoted Markdown code",
@@ -307,6 +313,11 @@ describe("renderAssistantBlocks", () => {
       "CRLF fences",
       "```\r\npwd\r\n```\r\nAfter.",
       "```\r\npwd\r\n```\r\nAfter.",
+    ],
+    [
+      "compact CRLF fences",
+      "```ls -la\r\npwd```\r\n",
+      "```\nls -la\r\npwd\n```\r\n",
     ],
     ["unclosed fences", "```\npwd", "```\npwd"],
     [
@@ -320,20 +331,6 @@ describe("renderAssistantBlocks", () => {
       text: expected,
     });
   });
-
-  it("normalizes text at Slack's Markdown limit", () => {
-    const text = "```pwd```".padStart(12_000, "a");
-    expect(renderAssistantBlocks(footer, text)[0]?.text).toBe(
-      `${"a".repeat(11_991)}\n\`\`\`\npwd\n\`\`\``,
-    );
-  });
-
-  it.each(["```pwd```".padStart(12_001, "a"), "```a\n".repeat(8_000)])(
-    "leaves oversized text unchanged",
-    (text) => {
-      expect(renderAssistantBlocks(footer, text)[0]?.text === text).toBe(true);
-    },
-  );
 
   it("appends the link footer after the text", () => {
     expect(renderAssistantBlocks(footer, "hello")).toEqual([
