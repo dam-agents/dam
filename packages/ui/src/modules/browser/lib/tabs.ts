@@ -2,6 +2,12 @@ import type { BrowserSnapshot, TabState } from "agent-runtime-api";
 
 const BLANK_URLS = new Set(["", "about:blank", "chrome://newtab/"]);
 
+export function showsTabBar(
+  tabs: TabState[] | undefined,
+): tabs is TabState[] {
+  return (tabs?.length ?? 0) > 1;
+}
+
 export function tabLabel(tab: TabState): string {
   if (tab.title && tab.title !== tab.url && tab.title !== "about:blank")
     return tab.title;
