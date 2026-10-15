@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { watchWithRetry } from "../../../lib/watch-retry.js";
 import { agentTrpc } from "../../agents/agent-trpc.js";
+import { closeTabLocally, selectTabLocally } from "../lib/tabs.js";
 
 const ERROR_SHOWN_MS = 6_000;
 
@@ -37,8 +38,12 @@ type Client = ReturnType<typeof agentTrpc>;
  * browser, over the agent's tRPC. Watching keeps the browser running while the
  * panel is open and reports its state and page; the toolbar's actions are
  * mutations, and so is the testing mode switch; a runtime too old to have it
- * reports no mode. An address asked for before the watch is live is sent once
- * it is, as the agent may still be waking. `connects` counts each time the watch
+ * reports no mode. The browser's tabs come with its state, and the toolbar acts
+ * on the tab the panel shows, named by its target id, so an agent bringing
+ * another tab to the front meanwhile does not redirect it; a runtime too old
+ * to report tabs reports none, and is sent no tab. A select or close shows at
+ * once. An address asked for before the watch is live is sent once it is, as
+ * the agent may still be waking. `connects` counts each time the watch
  * goes live, which the stream page uses to check its token. An agent that does
  * not offer the panel is told apart from one that cannot be reached, and is
  * not retried.
@@ -55,6 +60,8 @@ export function useBrowserControl(agentId: string) {
   const [connects, setConnects] = useState(0);
   const live = useRef(false);
   const pendingUrl = useRef<string | null>(null);
+  const shownTab = useRef<string | undefined>(undefined);
+  shownTab.current = (snapshot.tabs && snapshot.activeTab) || undefined;
 
   useEffect(() => {
     if (!error) return;
@@ -80,10 +87,18 @@ export function useBrowserControl(agentId: string) {
         pendingUrl.current = url;
         return;
       }
-      run((client) => client.browser.navigate.mutate({ url }));
+      const tab = shownTab.current;
+      run((client) => client.browser.navigate.mutate({ url, tab }));
     },
     [run],
   );
+
+  const onShownTab = (
+    call: (client: Client, input: { tab: string } | undefined) => unknown,
+  ) => {
+    const tab = shownTab.current;
+    run(async (client) => call(client, tab ? { tab } : undefined));
+  };
 
   useEffect(() => {
     live.current = false;
@@ -125,12 +140,23 @@ export function useBrowserControl(agentId: string) {
     browser: { state: snapshot.state, message: snapshot.message },
     testingMode: snapshot.testingMode,
     page: snapshot.page ?? NO_PAGE,
+    tabs: snapshot.tabs,
+    activeTab: snapshot.activeTab ?? null,
     error,
     navigate,
-    reload: () => run((client) => client.browser.reload.mutate()),
-    stop: () => run((client) => client.browser.stop.mutate()),
-    back: () => run((client) => client.browser.back.mutate()),
-    forward: () => run((client) => client.browser.forward.mutate()),
+    reload: () => onShownTab((client, i) => client.browser.reload.mutate(i)),
+    stop: () => onShownTab((client, i) => client.browser.stop.mutate(i)),
+    back: () => onShownTab((client, i) => client.browser.back.mutate(i)),
+    forward: () => onShownTab((client, i) => client.browser.forward.mutate(i)),
+    selectTab: (tab: string) => {
+      setSnapshot((s) => selectTabLocally(s, tab));
+      run((client) => client.browser.selectTab.mutate({ tab }));
+    },
+    closeTab: (tab: string) => {
+      setSnapshot((s) => closeTabLocally(s, tab));
+      run((client) => client.browser.closeTab.mutate({ tab }));
+    },
+    newTab: () => run((client) => client.browser.newTab.mutate()),
     clearData: () => run((client) => client.browser.clearData.mutate()),
     restartBrowser: () => run((client) => client.browser.restart.mutate()),
     setTestingMode: (on: boolean) =>
