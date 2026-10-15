@@ -64,6 +64,7 @@ export interface SessionsSlice {
   terminalPaused: boolean;
   pendingResumeSessionId: string | null;
   pendingResumeSessionMode: SessionMode | null;
+  pendingResumeFresh: boolean;
   chatRequest: ChatRequest | null;
   toolActivityExpanded: boolean;
 
@@ -174,6 +175,7 @@ export const createSessionsSlice: StateCreator<
     terminalPaused: false,
     pendingResumeSessionId: null,
     pendingResumeSessionMode: null,
+    pendingResumeFresh: false,
     chatRequest: null,
     toolActivityExpanded: readPersistedFlag(
       TOOL_ACTIVITY_EXPANDED_STORAGE_KEY,
@@ -182,7 +184,11 @@ export const createSessionsSlice: StateCreator<
 
     setSessionId: (id) => set({ sessionId: id }),
     setPendingResumeSessionId: (id, mode = null) =>
-      set({ pendingResumeSessionId: id, pendingResumeSessionMode: mode }),
+      set({
+        pendingResumeSessionId: id,
+        pendingResumeSessionMode: mode,
+        pendingResumeFresh: false,
+      }),
     setSessionMode: (mode) => set({ sessionMode: mode }),
     setTerminalPaused: (paused) => set({ terminalPaused: paused }),
     requestChat: (request) => set({ chatRequest: request }),

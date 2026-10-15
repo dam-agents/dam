@@ -63,6 +63,7 @@ export interface ComposeSchedulesAtBootOpts {
   onboardingPending?: (agentId: string) => Promise<boolean>;
   runtimeMigrating?: (agentId: string) => Promise<boolean>;
   spendHold?: SpendHoldGate;
+  agentDisabled: (agentId: string) => Promise<boolean>;
 }
 
 export function composeSchedulesAtBoot(
@@ -93,6 +94,7 @@ export function composeSchedulesAtBoot(
       ? { validateSessionChoices: opts.validateSessionChoices }
       : {}),
     ...(opts.spendHold ? { spendHold: opts.spendHold } : {}),
+    agentDisabled: opts.agentDisabled,
     log,
   });
   const worker = startScheduleWorker({

@@ -1,7 +1,8 @@
-import { Box, Chemistry } from "@carbon/icons-react";
+import { Box, Chemistry, Tools } from "@carbon/icons-react";
 import { isStartRefusal } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
@@ -24,7 +25,6 @@ import {
   formatTemporaryDraw,
   type TemporaryDraw,
 } from "../utils/temporary-sandboxes.js";
-import { AgentActionsMenu } from "./agent-actions-menu.js";
 import { AgentAvatar, avatarMood } from "./avatar/agent-avatar.js";
 import {
   agentFailures,
@@ -47,7 +47,6 @@ interface Props {
   subtitle: string | null;
   usage: AgentUsage | null;
   temporaryDraw?: TemporaryDraw;
-  deletePending: boolean;
   updatePending: boolean;
   updateBusy: boolean;
   onSelect: () => void;
@@ -59,12 +58,6 @@ interface Props {
   onRetryMigration: () => void;
   onConfigure: () => void;
   configureLabel: string;
-  onWake: () => void;
-  onRestart: () => void;
-  onSleep: () => void;
-  onDelete: () => void;
-  onAddToChannel?: (messenger: "slack" | "telegram") => void;
-  messengers?: { slack?: boolean; telegram?: boolean };
 }
 
 export function AgentRow({
@@ -74,7 +67,6 @@ export function AgentRow({
   subtitle,
   usage,
   temporaryDraw,
-  deletePending,
   updatePending,
   updateBusy,
   onSelect,
@@ -86,12 +78,6 @@ export function AgentRow({
   onRetryMigration,
   onConfigure,
   configureLabel,
-  onWake,
-  onRestart,
-  onSleep,
-  onDelete,
-  onAddToChannel,
-  messengers = {},
 }: Props) {
   const kindBadge = agentKindBadge(agent);
   const kitBadge = starterKitBadge(agent);
@@ -109,7 +95,7 @@ export function AgentRow({
         name={agent.name}
         avatar={agent.avatar}
         size={64}
-        mood={avatarMood(display.state, agent.stopRequested)}
+        mood={avatarMood(display.state, agent)}
         className="mr-1 self-start"
       />
       <div className="min-w-0 flex-1">
@@ -200,21 +186,19 @@ export function AgentRow({
         />
         {agent.hibernationTimeoutMin === 0 && <AlwaysOnTag />}
         {}
-        <span onClick={(e) => e.stopPropagation()}>
-          <AgentActionsMenu
-            agent={agent}
-            display={display}
-            deletePending={deletePending}
-            configureLabel={configureLabel}
-            onConfigure={onConfigure}
-            onWake={onWake}
-            onRestart={onRestart}
-            onSleep={onSleep}
-            onDelete={onDelete}
-            onAddToChannel={onAddToChannel}
-            messengers={messengers}
-          />
-        </span>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={configureLabel}
+          tooltip={configureLabel}
+          className="shrink-0 text-muted-foreground"
+          onClick={(e) => {
+            e.stopPropagation();
+            onConfigure();
+          }}
+        >
+          <Tools size={16} />
+        </Button>
       </div>
     </Card>
   );

@@ -31,6 +31,7 @@ import {
 import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
 import {
+  isAgentStoppedError,
   isAgentWakeTimeoutError,
   wakeFailureReasonToken,
 } from "../../agents/index.js";
@@ -588,6 +589,10 @@ export function createTelegramWorker(deps: {
         await thread.post(wakeFailureUserCopy(err.failure)).catch(() => {});
       } else if (err instanceof AcpTurnAbandonedError) {
         await thread.post(turnFailureUserCopy(err)).catch(() => {});
+      } else if (isAgentStoppedError(err) && err.disabled) {
+        await thread
+          .post("This agent is disabled by its owner — ask them to enable it.")
+          .catch(() => {});
       }
     } finally {
       releaseAttendance();

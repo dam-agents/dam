@@ -114,6 +114,7 @@ import { ProcessesPanel } from "../../processes/components/processes-panel.js";
 import { useProcessesEnabled } from "../../processes/hooks/use-processes-enabled.js";
 import { useProcessesLiveUpdates } from "../../processes/hooks/use-processes-live-updates.js";
 import { ProviderSettingsModal } from "../../providers/components/provider-settings-modal.js";
+import { AgentUsageActions } from "../../sandboxes/components/agent-usage-actions.js";
 import { KitUpdateBar } from "../../starter-kits/components/kit-update-bar.js";
 import { OnboardingBar } from "../../starter-kits/components/onboarding-bar.js";
 import { useTurns } from "../../telemetry/api/queries.js";
@@ -132,7 +133,6 @@ import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
 import { ChatMessage } from "../components/chat-message.js";
 import { ModelIndicator } from "../components/model-indicator.js";
-import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
 import { QueuedPrompts } from "../components/queued-prompts.js";
 import {
@@ -224,7 +224,7 @@ export function ChatView() {
   const agentView = agents.find((a) => a.id === selectedAgent) ?? null;
   const runtimeOutdated = agentView?.features.liveUpdates === false;
   const agentDisplay = agentView
-    ? resolveAgentDisplay(agentView, restartingIds, undefined, slowStartIds)
+    ? resolveAgentDisplay(agentView, restartingIds, slowStartIds)
     : null;
   const selectedAgentName = agentView?.name ?? selectedAgent;
   const agentStarting =
@@ -566,12 +566,14 @@ export function ChatView() {
     (s) => s.setPendingResumeSessionId,
   );
   const pendingResumeSessionMode = useStore((s) => s.pendingResumeSessionMode);
+  const pendingResumeFresh = useStore((s) => s.pendingResumeFresh);
   useEffect(() => {
     if (!selectedAgent || !pendingResumeSessionId) return;
     const sid = pendingResumeSessionId;
     const mode = pendingResumeSessionMode;
     setPendingResumeSessionId(null);
     if (mode === SessionMode.Terminal) {
+      terminalFreshRef.current = pendingResumeFresh;
       setSessionMode(mode);
       setSessionId(sid);
       return;
@@ -581,6 +583,7 @@ export function ChatView() {
     selectedAgent,
     pendingResumeSessionId,
     pendingResumeSessionMode,
+    pendingResumeFresh,
     setPendingResumeSessionId,
     setSessionMode,
     setSessionId,
@@ -748,7 +751,7 @@ export function ChatView() {
               <EditableAgentIdentity
                 agent={agentView}
                 avatarSize={32}
-                mood={avatarMood(agentDisplay?.state, agentView.stopRequested)}
+                mood={avatarMood(agentDisplay?.state, agentView)}
                 avatarClassName="@max-[149px]:hidden"
                 nameClassName="text-sm font-bold text-foreground"
               />
@@ -960,12 +963,14 @@ export function ChatView() {
                           <p className="text-sm text-muted-foreground">
                             Send a message to begin or open a new session in:
                           </p>
-                          {selectedAgent && (
-                            <NewSessionLauncher
-                              agentId={selectedAgent}
-                              agentName={selectedAgentName ?? ""}
-                              onNewTerminal={handleNewTerminal}
-                            />
+                          {agentView && (
+                            <div className="mt-5 w-full max-w-[640px] text-left">
+                              <AgentUsageActions
+                                agent={agentView}
+                                showChat={false}
+                                onNewTerminal={handleNewTerminal}
+                              />
+                            </div>
                           )}
                           {startNotice && (
                             <div className="mt-6">{startNotice}</div>

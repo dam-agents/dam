@@ -149,19 +149,22 @@ export function useProviderConnections(agentId: string | null): {
   granted: ProviderConnectionRef[];
   owned: ProviderConnectionRef[];
   loaded: boolean;
+  failed: boolean;
 } {
-  const { data: grants } = useAgentConnections(agentId);
-  const { data: connections } = useAppConnections();
+  const { data: grants, isError: grantsFailed } = useAgentConnections(agentId);
+  const { data: connections, isError: connectionsFailed } = useAppConnections();
   return {
     ...grantedProviderRefs(
       (grants?.connections ?? []).map((g) => g.connectionId),
       connections ?? [],
     ),
     loaded: grants !== undefined && connections !== undefined,
+    failed: grantsFailed || connectionsFailed,
   };
 }
 
 export function useGrantProvider(agentId: string | null) {
+  const showConfirm = useStore((s) => s.showConfirm);
   const update = useMutation({
     mutationFn: (change: { grant?: string[]; revoke?: string[] }) =>
       api.connections.updateAgentConnections.mutate({
@@ -187,6 +190,21 @@ export function useGrantProvider(agentId: string | null) {
       () => false,
     );
   return {
+    attach: async (connection: { id: string; name: string }) => {
+      if (
+        !(await showConfirm(
+          `This agent gets ${connection.name}'s credentials and can use them in its sessions, schedules and channels.`,
+          `Attach ${connection.name} to this agent?`,
+          { confirmLabel: "Attach" },
+        )) ||
+        !(await settle({ grant: [connection.id] }))
+      )
+        return false;
+      await queryClient.invalidateQueries({
+        queryKey: trpc.connections.getAgentConnections.queryKey(),
+      });
+      return true;
+    },
     grant: (connectionId: string) => settle({ grant: [connectionId] }),
     revoke: (connectionId: string) => settle({ revoke: [connectionId] }),
     pending: update.isPending,
