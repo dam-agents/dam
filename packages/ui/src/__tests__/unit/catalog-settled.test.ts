@@ -4,6 +4,7 @@ import type {
 } from "agent-runtime-api";
 import { describe, expect, it } from "vitest";
 
+import { settingsForModel } from "../../modules/sessions/components/session-settings-controls.js";
 import {
   catalogSettled,
   type ModelGroup,
@@ -31,6 +32,16 @@ const provider = (
   listedAt: null,
   native: false,
   models: [],
+});
+const modelOf = (name: string) => ({
+  name,
+  upstreamId: name.slice(name.indexOf("/") + 1),
+  contextWindow: null,
+  maxOutputTokens: null,
+  reasoning: null,
+  vision: null,
+  prices: null,
+  source: { limits: "none" as const, prices: "none" as const },
 });
 const catalog = (...providers: CatalogProviderView[]): HarnessCatalogView => ({
   harness: "bob",
@@ -130,6 +141,68 @@ describe("sameSideGroups", () => {
     expect(ids("bedrock/sonnet")).toEqual(["conn-bed"]);
     expect(ids("ibm/gpt-5.5")).toEqual(["conn-ibm"]);
     expect(ids(null)).toEqual(["conn-ibm"]);
+  });
+});
+
+describe("settingsForModel", () => {
+  const capability = {
+    name: "claude-code",
+    harnessConfig: true,
+    sessionModel: true,
+    sessionSettings: ["effort", "subagentModel"],
+    harnessConfigCatalog: {
+      options: [
+        {
+          id: "effort",
+          name: "Effort",
+          category: "other",
+          choices: [{ value: "high", name: "High" }],
+        },
+        {
+          id: "subagentModel",
+          name: "Subagent model",
+          category: "model",
+          choices: [],
+        },
+      ],
+      modelConstraints: { haiku: { effort: [] } },
+    },
+  };
+  const groups = [
+    {
+      ...modelGroups(catalog(provider("conn-ibm", "listed")))[0]!,
+      native: false,
+      models: [modelOf("ibm/claude-haiku-4-5"), modelOf("ibm/gpt-5.5")],
+    },
+    {
+      ...modelGroups(catalog(provider("conn-bed", "listed")))[0]!,
+      native: true,
+      models: [modelOf("bedrock/sonnet")],
+    },
+  ];
+
+  /** TEST_SCENARIO: Picking a new model keeps only the settings the runtime
+   * would take with it: Haiku takes no effort, and a subagent model on the
+   * other side of the router/native split is dropped; a value the catalog
+   * does not list stays, since nothing can judge it. */
+  it("drops what the new model cannot take and keeps the rest", () => {
+    const settings = { effort: "high", subagentModel: "bedrock/sonnet" };
+    expect(
+      settingsForModel(capability, groups, "ibm/claude-haiku-4-5", settings),
+    ).toEqual({});
+    expect(
+      settingsForModel(capability, groups, "ibm/gpt-5.5", settings),
+    ).toEqual({
+      effort: "high",
+    });
+    expect(
+      settingsForModel(capability, groups, "bedrock/sonnet", settings),
+    ).toEqual(settings);
+    expect(
+      settingsForModel(capability, groups, "ibm/gpt-5.5", {
+        subagentModel: "cb/unlisted",
+      }),
+    ).toEqual({ subagentModel: "cb/unlisted" });
   });
 });
 

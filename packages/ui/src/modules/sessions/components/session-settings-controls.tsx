@@ -9,6 +9,12 @@ import { DisclosureToggle } from "@/components/ui/disclosure";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
+import {
+  findModel,
+  type ModelGroup,
+  sameSideGroups,
+} from "../lib/catalog-groups.js";
+
 export function sessionSettingOptions(
   capability: HarnessCapability | undefined,
 ) {
@@ -39,6 +45,35 @@ export function settingDefaults(
 
 const isModelOption = (o: { category: string; choices: readonly unknown[] }) =>
   o.category === "model" && o.choices.length === 0;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the settings a newly picked model keeps. A value
+ * the model's constraints exclude (Haiku takes no effort) and a subagent
+ * model on the other side of the router/native split are dropped, since the
+ * runtime refuses either; a value it cannot judge stays.
+ */
+export function settingsForModel(
+  capability: HarnessCapability | undefined,
+  groups: readonly ModelGroup[],
+  model: string | null,
+  settings: Readonly<Record<string, string>>,
+): Record<string, string> {
+  const allowed = modelConstraintsFor(capability?.harnessConfigCatalog, model);
+  const side = sameSideGroups(groups, model);
+  return Object.fromEntries(
+    Object.entries(settings).filter(([id, value]) => {
+      const option = capability?.harnessConfigCatalog?.options.find(
+        (o) => o.id === id,
+      );
+      if (option && isModelOption(option)) {
+        const hit = findModel(groups, value);
+        return !hit || side.includes(hit.group);
+      }
+      const only = allowed?.[id];
+      return !only || only.includes(value);
+    }),
+  );
+}
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a model-valued setting picks the model for the

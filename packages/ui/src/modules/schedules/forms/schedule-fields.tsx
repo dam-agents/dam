@@ -34,6 +34,7 @@ import {
 import {
   SessionSettingsControls,
   settingDefaults,
+  settingsForModel,
 } from "../../sessions/components/session-settings-controls.js";
 import {
   findModel,
@@ -638,7 +639,18 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
               ? `Today: ${todayModel}`
               : "Follows the agent's default model for the harness"
           }
-          onSelect={(id) => modelField.onChange(id ?? "")}
+          onSelect={(id) => {
+            modelField.onChange(id ?? "");
+            const current = settingsValue ?? {};
+            const kept = settingsForModel(
+              capability,
+              groups,
+              id || fallback?.model || null,
+              current,
+            );
+            if (Object.keys(kept).length !== Object.keys(current).length)
+              settingsField.onChange(kept);
+          }}
         />
       </FormField>
       {capability?.sessionSettings && capability.sessionSettings.length > 0 && (

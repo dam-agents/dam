@@ -53,6 +53,7 @@ import { SessionPairTrigger } from "./session-pair-trigger.js";
 import {
   SessionSettingsControls,
   settingDefaults,
+  settingsForModel,
 } from "./session-settings-controls.js";
 
 interface Props {
@@ -234,15 +235,20 @@ export function SessionPairPicker({
                 operable={catalogModels.operable}
                 starting={answerableSoon}
                 onRetry={() => void catalogModels.refetch()}
-                onChoose={(model, group) =>
-                  choose(
-                    withSettings({
-                      harness,
-                      provider: group.connectionId,
-                      model,
-                    }),
-                  )
-                }
+                onChoose={(model, group) => {
+                  const kept = settingsForModel(
+                    capability,
+                    groups,
+                    model,
+                    settings,
+                  );
+                  choose({
+                    harness,
+                    provider: group.connectionId,
+                    model,
+                    ...(Object.keys(kept).length > 0 && { settings: kept }),
+                  });
+                }}
                 onDisconnect={(group) =>
                   confirmDisconnect(group.displayName, group.connectionId)
                 }
