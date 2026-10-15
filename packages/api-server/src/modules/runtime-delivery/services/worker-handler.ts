@@ -4,8 +4,9 @@ import type {
 } from "../infrastructure/outbox-repo.js";
 import type { AgentRuntimeClient } from "../infrastructure/agent-runtime-client.js";
 import type { StateBuilder } from "./state-builder.js";
+import { deliveryCapabilities } from "../domain/capability-filter.js";
 import type { HarnessConfigSnapshotWriter } from "./snapshot-writer.js";
-import type { DriverFailure } from "api-server-api";
+import type { DriverFailure, HelloInput } from "api-server-api";
 import {
   isWorkspaceMutationEventKind,
   type HarnessConfigCurrent,
@@ -93,18 +94,12 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
       return;
     }
 
-    const capabilities = runtimeState.runtimeCapabilities as {
-      contributions: never;
-      events: never;
-      harnesses?: { name: string }[];
-    };
-    const payload = await deps.stateBuilder.build(agentId, {
-      contributions: capabilities.contributions,
-      events: capabilities.events,
-      ...(capabilities.harnesses && {
-        harnesses: capabilities.harnesses.map((h) => h.name),
-      }),
-    });
+    const payload = await deps.stateBuilder.build(
+      agentId,
+      deliveryCapabilities(
+        runtimeState.runtimeCapabilities as HelloInput["capabilities"],
+      ),
+    );
 
     if (payload.droppedContributionKinds.length > 0) {
       deps.log(

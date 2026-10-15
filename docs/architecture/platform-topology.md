@@ -134,7 +134,7 @@ Its responsibilities are:
   The SSH wire is opaque here — this is `dam ssh`'s transport.
   Available only on images that ship `sshd`.
 - Run the browser panel's display stack and its browser: the `browser` tRPC procedures keep agent-browser's browser running and run the panel's toolbar and tab bar, and the stream socket relayed from the api-server on `/api/browser/display` it hands to the display's stream server ([browser-panel](browser-panel.md)).
-- Hold the agent side of the runtime channel: call the api-server's `hello` on boot and reconnect, accept `applyState` deliveries over its tRPC surface, apply declarative state contributions under the agent's HOME, and dispatch runtime events (schedule triggers, workspace seeding) to in-pod handlers.
+- Hold the agent side of the runtime channel: call the api-server's `hello` on boot and on wake, accept `applyState` deliveries over its tRPC surface, apply declarative state contributions under the agent's HOME, and dispatch runtime events (schedule triggers, workspace seeding) to in-pod handlers.
   See [runtime delivery](runtime-delivery.md).
 - On a shared knowledge base, own share freshness: watch the share roots, persist a dirty marker on the agent volume, and after a quiet period initiate the publish handshake against the api-server — plan locally, upload to presigned URLs, report completion.
   A scheduled or running flush reports the pod busy so hibernation waits ([knowledge bases](knowledge-bases.md)).

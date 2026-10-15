@@ -1250,32 +1250,3 @@ index e2159a6c..2d99a40c 100644
 +        assert_eq!(proxy.status, ProxyStatus::Closed);
 +    }
 +}
-diff --git i/src/vmm/src/builder.rs w/src/vmm/src/builder.rs
-index b4061684..336a78b8 100644
---- i/src/vmm/src/builder.rs
-+++ w/src/vmm/src/builder.rs
-@@ -2293,10 +2293,12 @@ fn advise_huge_pages(_memory: &GuestMemoryMmap) {}
- /// even where the host backs it with a huge page. Over-map by 2 MiB and trim
- /// both ends, as QEMU does.
- ///
--/// No `MADV_HUGEPAGE`: with the common `defrag=madvise` setting an advised
--/// fault compacts host memory synchronously, which made a guest's first touch
--/// of 3 GiB 4-7x slower on a host with a busy page cache. Hosts with THP set to
--/// `always` (RHEL and its rebuilds) back aligned RAM with huge pages anyway.
-+/// Upstream leaves out `MADV_HUGEPAGE`: with `defrag=madvise` an advised fault
-+/// compacts host memory synchronously, which made a guest's first touch 4-7x
-+/// slower on a bare-metal host with a busy page cache. Under nested KVM the
-+/// trade reverses: compaction (~1-2 ms per 2 MiB) is cheaper than a guest page
-+/// faulting 4 KiB at a time through both hypervisors (~10 ms per 2 MiB); on a
-+/// busy dam-cl node a guest filled 4 GiB in 4.1 s with the call, 8.3 s without.
- #[cfg(target_os = "linux")]
- pub(crate) fn map_aligned_guest_ram(
-     gpa: GuestAddress,
-@@ -2326,6 +2328,7 @@ pub(crate) fn map_aligned_guest_ram(
-         if base + span > end {
-             libc::munmap(end as *mut libc::c_void, base + span - end);
-         }
-+        libc::madvise(start as *mut libc::c_void, size, libc::MADV_HUGEPAGE);
-     }
-     // Safety: `start..start + size` is a live anonymous mapping created above,
-     // owned by nothing else from here on.

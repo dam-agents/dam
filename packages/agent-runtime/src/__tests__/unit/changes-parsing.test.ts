@@ -8,6 +8,16 @@ import {
   splitPatch,
 } from "../../modules/changes/domain/git-output.js";
 import { createToolActivityReader } from "../../modules/changes/domain/tool-activity.js";
+import {
+  completeLinesOf,
+  pushedRefOf,
+  pushEntriesIn,
+} from "../../modules/changes/domain/push-log.js";
+import {
+  createToolCallWindows,
+  SETTLED_KEPT_MS,
+  WINDOW_SLACK_MS,
+} from "../../modules/changes/domain/tool-call-windows.js";
 import { INERT_GITHUB_TOKEN } from "../../modules/skills/infrastructure/github-token.js";
 import { createPullRequestFinder } from "../../modules/changes/infrastructure/pull-requests.js";
 
@@ -163,7 +173,9 @@ describe("tool activity", () => {
 
     expect(toolActivityIn(frame)).toEqual({
       sessionId: "s1",
+      toolCallId: null,
       editedPaths: ["/tmp/tmp.abc/x.md"],
+      started: true,
       settled: false,
     });
   });
@@ -184,7 +196,9 @@ describe("tool activity", () => {
 
     expect(toolActivityIn(update("completed"))).toEqual({
       sessionId: "s1",
+      toolCallId: null,
       editedPaths: [],
+      started: false,
       settled: true,
     });
     expect(toolActivityIn(update("in_progress"))).toBeNull();
@@ -198,7 +212,8 @@ describe("tool activity", () => {
   /**
    * TEST_SCENARIO: A streamed Write opens as an edit with no locations, before
    * its input arrives; the update that names the file carries no kind. The
-   * path still counts as edited, and the call settles once.
+   * call reports its start, the path still counts as edited, and the call
+   * settles once.
    */
   it("should read the path a streamed edit names in a later update", () => {
     const toolActivityIn = createToolActivityReader();
@@ -207,7 +222,13 @@ describe("tool activity", () => {
       toolActivityIn(
         frameOf({ sessionUpdate: "tool_call", kind: "edit", locations: [] }),
       ),
-    ).toBeNull();
+    ).toEqual({
+      sessionId: "s1",
+      toolCallId: "t1",
+      editedPaths: [],
+      started: true,
+      settled: false,
+    });
     expect(
       toolActivityIn(
         frameOf({
@@ -215,12 +236,24 @@ describe("tool activity", () => {
           locations: [{ path: "/repo/a.ts" }],
         }),
       ),
-    ).toEqual({ sessionId: "s1", editedPaths: ["/repo/a.ts"], settled: false });
+    ).toEqual({
+      sessionId: "s1",
+      toolCallId: "t1",
+      editedPaths: ["/repo/a.ts"],
+      started: false,
+      settled: false,
+    });
     expect(
       toolActivityIn(
         frameOf({ sessionUpdate: "tool_call_update", status: "completed" }),
       ),
-    ).toEqual({ sessionId: "s1", editedPaths: [], settled: true });
+    ).toEqual({
+      sessionId: "s1",
+      toolCallId: "t1",
+      editedPaths: [],
+      started: false,
+      settled: true,
+    });
   });
 
   /**
@@ -262,6 +295,92 @@ describe("tool activity", () => {
         },
       }),
     ).toBeNull();
+  });
+});
+
+describe("push log", () => {
+  const sha = (c: string) => c.repeat(40);
+
+  /**
+   * TEST_SCENARIO: A remote-tracking ref's reflog holds pushes and fetches;
+   * only the pushes count, each at its time in milliseconds.
+   */
+  it("should read only the pushes of a remote-tracking reflog", () => {
+    const log = [
+      `${sha("0")} ${sha("a")} Bench <b@example.com> 1760533942 +0200\tupdate by push`,
+      `${sha("a")} ${sha("b")} Bench <b@example.com> 1760533950 +0000\tfetch: fast-forward`,
+      `${sha("b")} ${sha("c")} Bench <b@example.com> 1760533960 -0700\tupdate by push`,
+      "",
+    ].join("\n");
+
+    expect(pushEntriesIn(log)).toEqual([
+      { sha: sha("a"), at: 1_760_533_942_000 },
+      { sha: sha("c"), at: 1_760_533_960_000 },
+    ]);
+  });
+
+  /**
+   * TEST_SCENARIO: A read can end in the middle of a line git is still
+   * writing; only the complete lines are read, so the rest is read next time.
+   */
+  it("should keep only the complete lines of a read", () => {
+    expect(completeLinesOf("one\ntwo\nthr")).toBe("one\ntwo\n");
+    expect(completeLinesOf("partial")).toBe("");
+  });
+
+  /**
+   * TEST_SCENARIO: A reflog's path under logs/refs/remotes names the remote
+   * and the branch, which may hold slashes; the remote's HEAD is not a push.
+   */
+  it("should name the remote and branch of a reflog path", () => {
+    expect(pushedRefOf("origin/fix/5052-split")).toEqual({
+      remote: "origin",
+      branch: "fix/5052-split",
+    });
+    expect(pushedRefOf("origin/HEAD")).toBeNull();
+    expect(pushedRefOf("origin")).toBeNull();
+  });
+});
+
+describe("tool call windows", () => {
+  /**
+   * TEST_SCENARIO: A push lands while one session's tool call runs; that
+   * session is the one running then, and a moment of slack covers git's
+   * whole-second timestamps.
+   */
+  it("should name the sessions running a tool call at a time", () => {
+    let at = 1_000_000;
+    const windows = createToolCallWindows(() => at);
+    windows.started("s1", "t1");
+    at += 5_000;
+    windows.started("s2", "t2");
+    at += 5_000;
+    windows.settled("s1", "t1");
+
+    expect(windows.sessionsAt(1_002_000)).toEqual(["s1"]);
+    expect(windows.sessionsAt(1_007_000)).toEqual(["s2", "s1"]);
+    expect(windows.sessionsAt(1_010_000 + WINDOW_SLACK_MS)).toEqual([
+      "s2",
+      "s1",
+    ]);
+    expect(windows.sessionsAt(1_000_000 - WINDOW_SLACK_MS - 1)).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: A settled tool call is kept a while for a push the watcher
+   * reads late, then forgotten; a tool call that never started settles
+   * nothing.
+   */
+  it("should forget a settled tool call after a while", () => {
+    let at = 1_000_000;
+    const windows = createToolCallWindows(() => at);
+    windows.started("s1", "t1");
+    windows.settled("s1", "t1");
+    windows.settled("s1", "unknown");
+
+    expect(windows.sessionsAt(1_000_000)).toEqual(["s1"]);
+    at += SETTLED_KEPT_MS + 1;
+    expect(windows.sessionsAt(1_000_000)).toEqual([]);
   });
 });
 
