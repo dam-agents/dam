@@ -120,6 +120,7 @@ export interface TerminalHarness {
   name: string;
   displayName: string;
   provider: string | null;
+  attach: ProviderConnectionRef | null;
   unavailable: string | null;
 }
 
@@ -128,7 +129,7 @@ export type TerminalHarnessChoice =
   | { kind: "fallback" }
   | { kind: "harnesses"; harnesses: TerminalHarness[] };
 
-// UNIT_BOUNDARY_DESCRIPTION: what a new web terminal can start with. Nothing shows while the agent's harnesses, the catalog or the provider grants still load. A failed load, or an agent that names no harnesses, falls back to one plain terminal on the default pair. Otherwise each harness carries the first granted provider that fits it, or the reason it cannot start.
+// UNIT_BOUNDARY_DESCRIPTION: what a new web terminal can start with. Nothing shows while the agent's harnesses, the catalog or the provider grants still load. A failed load, or an agent that names no harnesses, falls back to one plain terminal on the default pair. Otherwise each harness carries the first granted provider that fits it, else a provider its owner holds that the agent could be granted, else the reason it cannot start.
 export function terminalHarnessChoice(input: {
   loading: boolean;
   failed: boolean;
@@ -146,16 +147,16 @@ export function terminalHarnessChoice(input: {
       const fit = providerOptions(name, catalog, granted, owned);
       const displayName = harnessDisplayName(name, catalog) ?? name;
       const provider = fit.granted[0]?.id ?? null;
+      const attach = provider === null ? (fit.addable[0] ?? null) : null;
       return {
         name,
         displayName,
         provider,
+        attach,
         unavailable:
-          provider !== null
-            ? null
-            : fit.addable.length === 0
-              ? `${displayName} does not support any of the LLM providers you have configured.`
-              : `Grant this agent a provider ${displayName} supports on its Providers page.`,
+          provider === null && attach === null
+            ? `${displayName} does not support any of the LLM providers you have configured.`
+            : null,
       };
     }),
   };
