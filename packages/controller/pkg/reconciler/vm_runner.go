@@ -852,7 +852,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 							fmt.Sprintf("--boot-mib=%d", spec.BootMiB),
 							"--tls-cert=/etc/vm-runner/tls.crt",
 							"--tls-key=/etc/vm-runner/tls.key",
-						}, append(nestedRunnerArgs(spec), storageRunnerArgs(spec)...)...),
+						}, nestedRunnerArgs(spec)...),
 						Env: env,
 						Ports: []corev1.ContainerPort{
 							{Name: "machine-api", ContainerPort: vmRunnerPort},
@@ -1036,16 +1036,4 @@ func nestedRunnerArgs(spec config.VMRunnerSpec) []string {
 		return nil
 	}
 	return []string{"--nested-virtualization"}
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the args that have a runner make new machines' storage disks btrfs (virtualization.runner.storageFilesystem) and its guests swap to zram (virtualization.runner.zramSwap). An install that sets neither gets no extra args, so its runner pods stay as they were.
-func storageRunnerArgs(spec config.VMRunnerSpec) []string {
-	var args []string
-	if spec.StorageFilesystem == "btrfs" {
-		args = append(args, "--storage-filesystem=btrfs")
-	}
-	if spec.ZramSwap {
-		args = append(args, "--zram-swap")
-	}
-	return args
 }

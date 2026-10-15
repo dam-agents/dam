@@ -576,7 +576,6 @@ mod tests {
                 runtime: None,
                 cgroup_dir: None,
                 measure_storage: Arc::new(|| None),
-                zram_swap: false,
             },
             runtime,
         )

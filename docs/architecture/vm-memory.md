@@ -79,8 +79,8 @@ A refused start's reclaim and the pass do run side by side, so each reads its ne
 
 **Guests give back cold memory.** A guest keeps the files it read cached until something needs the memory, and the host counts that cache as the machine's.
 Every minute platform-init hands the cache on the kernel's inactive list to cgroup v2 proactive reclaim, and the freed pages return to the host within seconds.
-An install that sets `virtualization.runner.zramSwap` has its guests swap to zram, which platform-init sets up at boot at twice the RAM the guest boots with, compressed with zstd, so the same pass also hands over the inactive anonymous memory: what the agent's processes hold but have not touched lately is kept compressed, and the pages it filled return to the host.
-Without it, or on a guest kernel without zram, guests have no swap, and only file pages go.
+Guests swap to zram, which platform-init sets up at boot at twice the RAM the guest boots with, compressed with zstd, so the same pass also hands over the inactive anonymous memory: what the agent's processes hold but have not touched lately is kept compressed, and the pages it filled return to the host.
+A guest kernel without zram has no swap, and then only file pages go.
 A V8 heap is cold only between collections: Node's idle memory reducer walks the whole heap a couple of times after it stops growing, which reads every page back from zram once, and the next pass compresses it again.
 Free-page reporting returns only whole 2 MiB blocks, so memory a program frees between pages the guest still uses stays counted; when the free memory in smaller blocks rises by 128 MiB, the same pass reclaims that much cold cache and slab and compacts the guest's memory, so the freed pages merge into blocks the host takes back.
 

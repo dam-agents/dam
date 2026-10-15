@@ -72,12 +72,6 @@ struct Args {
     // UNIT_BOUNDARY_DESCRIPTION: whether the install lets machines run KVM themselves. The runner nests a guest only when this is set and the node's KVM allows it. Nesting is the kernel's default on Intel and AMD, and turning it off on a node takes a module reload, so the node alone is no choice at all: the install makes it, and only one that sets `virtualization.runner.nestedVirtualization` passes this flag.
     #[arg(long = "nested-virtualization")]
     nested_virtualization: bool,
-    // UNIT_BOUNDARY_DESCRIPTION: the filesystem a new machine's storage disk is made with. btrfs is made from the template beside the smolvm release (BTRFS_TEMPLATE) and mounted compressed with zstd level 1, which stores a home of build output and toolchains in a half to a third of the claim ext4 needs. A disk keeps the filesystem it was made with: this flag never touches an existing disk.
-    #[arg(long = "storage-filesystem", default_value = "ext4", value_parser = ["ext4", "btrfs"])]
-    storage_filesystem: String,
-    // UNIT_BOUNDARY_DESCRIPTION: whether every machine's guest swaps to zram, compressed with zstd, so memory its processes hold but no longer touch is kept compressed and the rest goes back to the host. Only an install that sets `virtualization.runner.zramSwap` passes it.
-    #[arg(long = "zram-swap")]
-    zram_swap: bool,
     #[arg(long = "token-file", default_value = "/etc/vm-runner/token")]
     token_file: PathBuf,
     // UNIT_BOUNDARY_DESCRIPTION: the serving certificate and key cert-manager issues for the runner's Service host. The machine API carries the runner's token, so it is served over TLS only.
@@ -279,8 +273,7 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_default();
-    let btrfs = (args.storage_filesystem == "btrfs")
-        .then(|| install.join(vm_runner::embedded::BTRFS_TEMPLATE));
+    let btrfs = install.join(vm_runner::embedded::BTRFS_TEMPLATE);
     let runtime = Arc::new(
         tokio::task::spawn_blocking(move || Smolvm::open(nested, tools.as_deref(), btrfs))
             .await??,
@@ -309,7 +302,6 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
                 let claim = args.state_dir.clone();
                 Arc::new(move || vm_runner::storage::measure(&claim))
             },
-            zram_swap: args.zram_swap,
         },
         runtime,
     )?;
@@ -604,14 +596,6 @@ mod tests {
     fn pod_argv() -> Vec<String> {
         let mut argv = base_argv();
         argv.extend(nested_args());
-        argv.extend(contract_args(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/contract/runner-args-btrfs.json"
-        )));
-        argv.extend(contract_args(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/contract/runner-args-zram.json"
-        )));
         argv
     }
 
@@ -623,8 +607,6 @@ mod tests {
             .unwrap_or_else(|e| panic!("the pod's arguments {argv:?} are rejected: {e}"));
         assert!(args.memory_mib > 0 && args.port_min <= args.port_max);
         assert!(args.nested_virtualization);
-        assert_eq!(args.storage_filesystem, "btrfs");
-        assert!(args.zram_swap);
     }
 
     // TEST_SCENARIO: an install that does not set `virtualization.runner.nestedVirtualization` renders the runner without the nesting args. The runner must still start from that argv, and must then not nest, whatever the node allows: nesting is the kernel's default, so a runner that nested on its own would expose every guest on a stock node to the host's nested-virtualization code.

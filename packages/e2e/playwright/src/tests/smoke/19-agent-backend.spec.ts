@@ -89,7 +89,7 @@ test("grows its machine past the boot RAM", async () => {
     .toBe(true);
 });
 
-// TEST_SCENARIO: the vm lane installs btrfs disks and zram swap, so its machines run on the guest kernel, guest agent and runner this platform patches for them. HOME is on btrfs, mounted compressed with zstd level 1, under a UUID of the disk's own rather than the template's (the template's stays as its metadata UUID), and the guest swaps to zram compressed with zstd. An unpatched kernel has neither, and an unpatched agent or runner would mount ext4 or format over the disk.
+// TEST_SCENARIO: every vm machine runs on the guest kernel, guest agent and runner this platform patches for them. HOME is on btrfs, mounted compressed with zstd level 1, under a UUID of the disk's own rather than the template's (the template's stays as its metadata UUID), and the guest swaps to zram compressed with zstd. An unpatched kernel has neither, and an unpatched agent or runner would mount ext4 or format over the disk.
 test("keeps HOME on compressed btrfs with its own UUID, and swaps to zram", async () => {
   test.skip(
     laneBackend !== "vm",

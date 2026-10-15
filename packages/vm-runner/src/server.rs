@@ -91,8 +91,6 @@ pub struct Config {
     pub cgroup_dir: Option<PathBuf>,
     // UNIT_BOUNDARY_DESCRIPTION: how full the owner's claim is now (see storage::StorageUse), or nothing when it cannot be told, which guards nothing. A function rather than a path, so a test can stand a full claim in for a real one.
     pub measure_storage: Arc<dyn Fn() -> Option<StorageUse> + Send + Sync>,
-    // UNIT_BOUNDARY_DESCRIPTION: whether every machine's guest swaps to zram (guest::ZRAM_SWAP_PATH), marked in its share at each boot.
-    pub zram_swap: bool,
 }
 
 #[derive(Clone)]
@@ -1300,9 +1298,7 @@ impl Server {
         let target = id.to_string();
         let size = spec.memory_mib;
         let own = self.config.runtime.clone().unwrap_or_default();
-        let dir = state::require_machine_dir(&self.config.state_dir, id)?;
-        share::mark_zram_swap(&dir.join(SHARE_DIR), self.config.zram_swap)?;
-        let marker = dir.join(BOOT_WHOLE_FILE);
+        let marker = state::require_machine_dir(&self.config.state_dir, id)?.join(BOOT_WHOLE_FILE);
         let whole = fs::read_to_string(&marker).is_ok_and(|runtime| runtime == own);
         let boot = if self.config.boot_mib > 0 && !whole {
             size.min(self.config.boot_mib)

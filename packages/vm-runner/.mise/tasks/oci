@@ -150,8 +150,8 @@ install -m 755 "$lk_so" "$b/opt/smolvm/lib/libkrun.so"
 
 # The guest kernel is the release's own libkrunfw, rebuilt from the commit
 # smolvm.pin names with libkrunfw.patch applied: the release's kernel has no
-# btrfs, which a storage disk made with --storage-filesystem=btrfs needs, nor
-# swap and zram, which --zram-swap needs. The
+# btrfs, which every storage disk is, nor swap and zram, which every guest
+# swaps to. The
 # build takes minutes, so the library is kept in the cache under the commit and
 # the patch it was built from, and only a moved pin or a changed patch builds it
 # again. One whose kernel is not the release's version is refused. Drop this

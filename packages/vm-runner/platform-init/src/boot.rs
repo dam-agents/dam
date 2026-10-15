@@ -207,16 +207,12 @@ fn stat_bytes(stat: &str, key: &str) -> Option<u64> {
         .ok()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: makes zram swap when the runner marks the share for it (guest::ZRAM_SWAP_PATH): memory the guest's processes hold but no longer touch is kept compressed in RAM rather than whole, so a machine of the same size holds about half to a quarter as much of it on the host. The guest boots below its size and grows once it is up, so the device takes ZRAM_BOOT_RAM_MULTIPLE times the RAM it boots with in uncompressed pages, a quarter to the whole of the machine's size; an unused device costs only its table. Pages are compressed with zstd: on an idle V8 heap it stored 1.5 GB in 163 MB where lz4 needed about 420 MB, and reading the heap back took 1.0 s against 0.86 s, and compression runs in the reclaim pass, off any request; swappiness 100 weighs a page in zram like a page of file cache, since reading one back costs about as little, and page-cluster 0 reads back one page at a time, as zram has no seek to amortise. The container's /sys is read-only and its /dev has no zram node, so the device is set up through a sysfs of platform-init's own, mounted at ZRAM_SYSFS and detached again, and its node is made from the numbers sysfs gives. A kernel without zram, or a device that will not set up, leaves the guest without swap, as before. True when swap is on.
+// UNIT_BOUNDARY_DESCRIPTION: makes zram swap: memory the guest's processes hold but no longer touch is kept compressed in RAM rather than whole, so a machine of the same size holds about half to a quarter as much of it on the host. The guest boots below its size and grows once it is up, so the device takes ZRAM_BOOT_RAM_MULTIPLE times the RAM it boots with in uncompressed pages, a quarter to the whole of the machine's size; an unused device costs only its table. Pages are compressed with zstd: on an idle V8 heap it stored 1.5 GB in 163 MB where lz4 needed about 420 MB, and reading the heap back took 1.0 s against 0.86 s, and compression runs in the reclaim pass, off any request; swappiness 100 weighs a page in zram like a page of file cache, since reading one back costs about as little, and page-cluster 0 reads back one page at a time, as zram has no seek to amortise. The container's /sys is read-only and its /dev has no zram node, so the device is set up through a sysfs of platform-init's own, mounted at ZRAM_SYSFS and detached again, and its node is made from the numbers sysfs gives. A kernel without zram, or a device that will not set up, leaves the guest without swap, as before. True when swap is on.
 const ZRAM_BOOT_RAM_MULTIPLE: u64 = 2;
 const ZRAM_SYSFS: &str = "/run/platform-zram-sysfs";
 
 fn compressed_swap() -> bool {
-    if !Path::new(guest::ZRAM_SWAP_PATH).exists() {
-        return false;
-    }
     let Ok(numbers) = fs::read_to_string("/sys/block/zram0/dev") else {
-        logf!("WARNING: the runner asks for zram swap, but this guest kernel has no zram; the guest runs without swap");
         return false;
     };
     // SAFETY: sysconf has no preconditions.
