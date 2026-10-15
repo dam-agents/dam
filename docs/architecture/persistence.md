@@ -240,8 +240,7 @@ The old upper is renamed aside with the record of its image and deleted in the b
 smolvm keeps a root of its own and binds the whole disk into it; platform-init leaves both behind, and fails the boot rather than run on them.
 Temporary folders are kept off that root instead: `/tmp` and `/var/tmp` are directories of the disk bound in place, empty on every boot, and `HOME`'s `.cache` and `.npm` are ordinary directories of the home.
 `/var/cache` stays part of the root, because an image ships its font, package and linker caches there, and an empty folder over them had every boot rebuild them.
-They share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their least recently used entries, never anything outside them.
-A folder that is itself a symlink, such as a `~/.cache` an agent pointed at its work, is skipped, since what it points at is not scratch; a pass works through the folders it opened, so one swapped for a link meanwhile is not followed either.
+They share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their least recently used entries, never anything outside them, and never through a link: a folder that is one, such as a `~/.cache` an agent pointed at its work, is skipped.
 An entry is one name directly in such a folder, such as `~/.cache/go-build` or `/tmp/pr-body.md`, and it goes whole or not at all, because a tool that keeps part of its cache takes it for complete and fails on it.
 Use is the newest modification or change time anywhere in the entry, since the disk is mounted `relatime` and a read often leaves access times alone.
 An entry used in the last ten minutes stays, and so does one a process holds a BSD lock on, the way `systemd-tmpfiles` leaves it.
