@@ -8,6 +8,7 @@ import {
   aliasForProviderType,
   type ProviderAliasConflict,
   providerAliasConflict,
+  PROVIDERS,
   templateIdsForAlias,
 } from "api-server-api";
 
@@ -18,6 +19,7 @@ export interface ModelGroup {
   alias: string;
   displayName: string;
   status: CatalogProviderView["status"];
+  listedAt: string | null;
   native: boolean;
   models: CatalogModelView[];
 }
@@ -25,19 +27,39 @@ export interface ModelGroup {
 /**
  * UNIT_BOUNDARY_DESCRIPTION: every provider the harness accepts, in the
  * catalog's order, each with its listing state, so a provider that failed to
- * list shows as such rather than vanishing.
+ * list shows as such rather than vanishing. A granted provider the pod has
+ * not received yet follows them, never listed, so an attach never makes it
+ * disappear.
  */
 export function modelGroups(
   catalog: HarnessCatalogView | undefined,
+  granted: readonly ProviderConnectionRef[] = [],
 ): ModelGroup[] {
-  return (catalog?.providers ?? []).map((p) => ({
+  const groups = (catalog?.providers ?? []).map((p) => ({
     connectionId: p.connectionId,
     alias: p.alias,
     displayName: p.displayName,
     status: p.status,
+    listedAt: p.listedAt,
     native: p.native,
     models: p.models,
   }));
+  if (!catalog) return groups;
+  const held = new Set(groups.map((g) => g.connectionId));
+  return [
+    ...groups,
+    ...granted
+      .filter((c) => !held.has(c.id))
+      .map((c) => ({
+        connectionId: c.id,
+        alias: aliasForProviderType(c.type),
+        displayName: PROVIDERS[c.type].displayName,
+        status: "unavailable" as const,
+        listedAt: null,
+        native: false,
+        models: [],
+      })),
+  ];
 }
 
 /**

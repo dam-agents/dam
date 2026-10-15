@@ -11,7 +11,7 @@
  * natively sees that Connection's models as its own names, which the router
  * never routes.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createModelCatalog,
   lookupPrice,
@@ -113,6 +113,7 @@ function catalogWith(
   listing: Listing,
   providers: RuntimeEnvState["providers"],
   ready = true,
+  retryMs?: { initial: number; max: number },
 ) {
   let state: RuntimeEnvState = { env: {}, providers, harnesses: [] };
   const discover = discoveryFor(listing);
@@ -123,6 +124,7 @@ function catalogWith(
     harnesses: HARNESSES,
     table: VENDORED_PRICE_TABLE,
     log: () => {},
+    ...(retryMs && { retryMs }),
   });
   return {
     catalog,
@@ -359,7 +361,7 @@ describe("the model catalog", () => {
    * and no provider is asked. Once it is, a granted provider is known from
    * its env layer before its first listing, as unavailable with no models,
    * so a harness process spawned on a fresh pod is still pointed at the
-   * router. */
+   * router, and the picker's view shows it rather than nothing. */
   it("knows a granted provider before its first listing, nothing before the env", async () => {
     const { catalog, discover } = catalogWith(BOTH, [ibmLayer], false);
     await catalog.refresh();
@@ -375,8 +377,38 @@ describe("the model catalog", () => {
         entries: [],
       },
     ]);
+    expect(ready.catalog.view("pi").providers).toMatchObject([
+      { connectionId: "conn-ibm", status: "unavailable", listedAt: null },
+    ]);
     await ready.catalog.refresh();
     expect(ready.catalog.providers()[0]?.status).toBe("listed");
+  });
+
+  /** TEST_SCENARIO: A grant restarts the agent's egress gateway, so the
+   * listings right after it fail. Failures retry on a doubling delay, and a
+   * refresh from an env change starts the delay over, so a provider lists
+   * soon after the gateway is back rather than after a long backoff. */
+  it("retries a failed listing from the shortest delay after every env change", async () => {
+    vi.useFakeTimers();
+    try {
+      const { catalog, discover } = catalogWith(
+        { "https://ibm.example": "down" },
+        [ibmLayer],
+        true,
+        { initial: 1_000, max: 60_000 },
+      );
+      catalog.start();
+      await catalog.refresh();
+      await vi.advanceTimersByTimeAsync(1_000);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(discover.calls).toHaveLength(3);
+      await catalog.refresh();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(discover.calls).toHaveLength(5);
+      catalog.stop();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

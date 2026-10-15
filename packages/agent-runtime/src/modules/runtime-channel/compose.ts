@@ -207,6 +207,9 @@ export async function composeRuntimeChannel(
       }),
     );
   }
+  opts.catalog?.onChange(() => {
+    for (const watcher of listingWatchers) watcher();
+  });
   const harnessConfigPlugin = harnessConfigs.get(defaultHarness);
   const harnessConfigFor = (harness: string | undefined) =>
     harnessConfigs.get(harness ?? defaultHarness);

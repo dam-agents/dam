@@ -131,7 +131,9 @@ export function SessionPairPicker({
     harness,
   );
   const answerableSoon = useIsAgentAnswerableSoon(routed ? agentId : null);
-  const groups = routed ? modelGroups(catalogModels.data) : [];
+  const groups = routed
+    ? modelGroups(catalogModels.data, catalogModels.granted)
+    : [];
   const addable = routed
     ? addableProviders(providers.granted, providers.owned, (c) =>
         offered.addable.some((p) => p.id === c.id),
@@ -227,6 +229,7 @@ export function SessionPairPicker({
                 harnessName={harnessName(harness)}
                 current={pair?.model ?? null}
                 loading={catalogModels.isLoading}
+                waiting={catalogModels.waiting}
                 failed={catalogModels.isError}
                 operable={catalogModels.operable}
                 starting={answerableSoon}

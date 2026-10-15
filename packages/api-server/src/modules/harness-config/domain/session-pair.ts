@@ -65,10 +65,7 @@ export function legacyModelName(
  * the provider spells its ids as it likes, so two spellings of one model
  * match without regard to case.
  */
-export function sameModelName(
-  listed: string | null,
-  model: string,
-): boolean {
+export function sameModelName(listed: string | null, model: string): boolean {
   const a = qualifiedPairModel(listed);
   return a !== null && a.toLowerCase() === model.toLowerCase();
 }

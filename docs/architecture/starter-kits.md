@@ -93,7 +93,7 @@ flowchart LR
   A channel never blocks apply; the apply form offers the Slack picker, other messengers are a note onboarding repeats.
 - **Provider compatibility** — a kit never states a provider as a Connection Requirement: it lists the provider presets it supports in `providers` (a kit with its own image states them on the image instead).
   The requirement list is for the connections the *job* needs; a kit from an external catalog that still declares a provider under `accepts` is read as its provider list and kept out of the Connections section.
-  The apply form asks for no provider: on the default Template a kit starts on the first harness it lists, and the platform grants the creating user's default provider Connection for that harness, and each session picks its model from the providers the Agent holds ([agent-lifecycle](agent-lifecycle.md#create)).
+  The apply form asks for no provider: on the default Template a kit starts on the first harness it lists, and the platform grants every provider Connection of the creating user's that the harness runs on, and each session picks its model from the providers the Agent holds ([agent-lifecycle](agent-lifecycle.md#create)).
 - **Harnesses** — a kit without its own image may name the harness families it runs on (`harnesses: [claude-code, bob]`); the apply form says so when none is installed.
   The default Template carries every harness and its sessions choose one, so it fits any such list.
   Helm declares only harness images (`harnessTemplates`), never workloads.

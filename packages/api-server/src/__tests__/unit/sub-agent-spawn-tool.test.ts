@@ -153,7 +153,9 @@ describe("spawn_subagent harness config", () => {
       async () => "claude/anthropic/claude-sonnet-5-5",
       async (h) => (h === "codex" ? listed : null),
     );
-    const refusedByBinding = (await bound.spawn({ model: "ibm/azure/gpt-5.3-codex" })) as {
+    const refusedByBinding = (await bound.spawn({
+      model: "ibm/azure/gpt-5.3-codex",
+    })) as {
       content: { text: string }[];
     };
     expect(refusedByBinding.content[0]!.text).toMatch(

@@ -1,5 +1,5 @@
 import { skipToken, useMutation, useQuery } from "@tanstack/react-query";
-import { routesSessionPairs } from "agent-runtime-api";
+import { type HarnessCatalogView, routesSessionPairs } from "agent-runtime-api";
 import type {
   ConnectionView,
   HarnessConfigStatus,
@@ -85,8 +85,9 @@ export function useProviderModels(
  * UNIT_BOUNDARY_DESCRIPTION: keyed by the agent's granted providers, so a
  * grant or revoke asks again at once, and polled until the catalog has caught
  * up with them, since a grant reaches the pod a few seconds after it is
- * saved. A provider still unavailable after a minute, or a failing read,
- * stops the poll.
+ * saved and its first listings wait for the restarted egress gateway. A
+ * provider still unavailable after a minute, or a failing read, stops the
+ * poll; `waiting` says the poll is still running.
  */
 const CATALOG_POLL_MS = 5_000;
 const CATALOG_POLL_LIMIT = 12;
@@ -95,26 +96,41 @@ export function useHarnessCatalogModels(
   harness: string | null,
 ) {
   const operable = useIsAgentOperable(agentId);
-  const grantedIds = useProviderConnections(agentId)
-    .granted.map((p) => p.id)
-    .sort();
+  const { granted } = useProviderConnections(agentId);
+  const grantedIds = granted.map((p) => p.id).sort();
+  const polling = (state: {
+    status: string;
+    dataUpdateCount: number;
+    data: HarnessCatalogView | undefined;
+  }) =>
+    state.status !== "error" &&
+    state.dataUpdateCount < CATALOG_POLL_LIMIT &&
+    !catalogSettled(state.data, grantedIds);
+  const queryKey = ["harness-catalog-models", agentId, harness, grantedIds];
   const query = useQuery({
-    queryKey: ["harness-catalog-models", agentId, harness, grantedIds],
+    queryKey,
     queryFn:
       agentId && harness && operable
         ? () => agentTrpc(agentId).harnessConfig.catalog.query({ harness })
         : skipToken,
     staleTime: 60_000,
-    refetchInterval: (q) =>
-      q.state.status === "error" ||
-      q.state.dataUpdateCount >= CATALOG_POLL_LIMIT ||
-      catalogSettled(q.state.data, grantedIds)
-        ? false
-        : CATALOG_POLL_MS,
+    refetchInterval: (q) => (polling(q.state) ? CATALOG_POLL_MS : false),
     retry: 5,
     retryDelay: 2_000,
   });
-  return { ...query, operable };
+  return {
+    ...query,
+    operable,
+    granted,
+    waiting:
+      operable &&
+      polling({
+        status: query.status,
+        dataUpdateCount:
+          queryClient.getQueryState(queryKey)?.dataUpdateCount ?? 0,
+        data: query.data,
+      }),
+  };
 }
 
 export function useHarnessConfigured(agentId: string, harness: string) {

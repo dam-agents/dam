@@ -18,6 +18,7 @@ interface Props {
   groups: readonly ModelGroup[];
   current: string | null;
   loading: boolean;
+  waiting?: boolean;
   failed: boolean;
   operable: boolean;
   starting?: boolean;
@@ -29,6 +30,14 @@ interface Props {
 }
 
 /**
+ * UNIT_BOUNDARY_DESCRIPTION: a provider never listed while the catalog is
+ * still being polled is waiting for its first listing, which follows a grant
+ * by a gateway restart, not failing.
+ */
+const firstListing = (group: ModelGroup, waiting: boolean) =>
+  waiting && group.status === "unavailable" && group.listedAt === null;
+
+/**
  * UNIT_BOUNDARY_DESCRIPTION: every provider the harness accepts, with its
  * listing state said in place rather than a provider silently missing.
  */
@@ -36,6 +45,7 @@ export function SessionModelList({
   groups,
   current,
   loading,
+  waiting = false,
   failed,
   operable,
   starting = false,
@@ -142,23 +152,29 @@ export function SessionModelList({
             ))}
             {group.models.length === 0 && (
               <li className="px-2 py-1 text-muted-foreground">
-                {group.status === "unsupported"
-                  ? `Not compatible with ${harnessName ?? "this harness"}.`
-                  : group.status === "unavailable"
-                    ? "Couldn't list this provider's models."
-                    : loading
-                      ? "Loading models…"
-                      : "No models listed."}
-                {group.status === "unavailable" && (
-                  <Button
-                    variant="link"
-                    size="inline"
-                    className="ml-1"
-                    onClick={onRetry}
-                  >
-                    Retry
-                  </Button>
+                {group.status === "unsupported" ? (
+                  `Not compatible with ${harnessName ?? "this harness"}.`
+                ) : loading || firstListing(group, waiting) ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Spinner size={12} className="text-muted-foreground" />
+                    Loading models…
+                  </span>
+                ) : group.status === "unavailable" ? (
+                  "Couldn't list this provider's models."
+                ) : (
+                  "No models listed."
                 )}
+                {group.status === "unavailable" &&
+                  !firstListing(group, waiting) && (
+                    <Button
+                      variant="link"
+                      size="inline"
+                      className="ml-1"
+                      onClick={onRetry}
+                    >
+                      Retry
+                    </Button>
+                  )}
               </li>
             )}
           </ul>

@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   catalogSettled,
   type ModelGroup,
+  modelGroups,
   modelIndicatorLabel,
   sameModel,
 } from "../../modules/sessions/lib/catalog-groups.js";
@@ -72,6 +73,31 @@ describe("catalogSettled", () => {
   });
 });
 
+describe("modelGroups", () => {
+  /** TEST_SCENARIO: A provider just attached is granted before the pod has
+   * it, so the catalog does not name it yet; the picker shows it after the
+   * catalog's providers, never listed, rather than dropping it until the
+   * pod catches up. Before the first catalog read there is nothing to show. */
+  it("keeps a granted provider the catalog does not name yet", () => {
+    const granted = [
+      { id: "conn-oai", name: "My OpenAI", type: "openai" as const },
+    ];
+    expect(
+      modelGroups(catalog(provider("conn-ibm", "listed")), granted),
+    ).toMatchObject([
+      { connectionId: "conn-ibm", status: "listed" },
+      {
+        connectionId: "conn-oai",
+        alias: "openai",
+        status: "unavailable",
+        listedAt: null,
+        models: [],
+      },
+    ]);
+    expect(modelGroups(undefined, granted)).toEqual([]);
+  });
+});
+
 describe("modelIndicatorLabel", () => {
   /** TEST_SCENARIO: Claude Code's catalog names models as it sees them
    * (`claude/ibm/aws/…`, lowercased) while the session stores the plain
@@ -84,6 +110,7 @@ describe("modelIndicatorLabel", () => {
         alias: "ibm",
         displayName: "IBM ETE LiteLLM Proxy",
         status: "listed" as const,
+        listedAt: null,
         native: false,
         models: [
           {

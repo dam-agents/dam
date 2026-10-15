@@ -47,8 +47,12 @@ describe("ownedApiRequests", () => {
     const sql = ownedApiRequests({ hours: 24 });
     const key =
       "(ResourceAttributes['platform.agent.id'], ResourceAttributes['platform.invocation.id'])";
-    expect(sql).toContain(`OR ${key} NOT IN (SELECT DISTINCT ${key} FROM otel_logs`);
-    expect(sql).toContain("OR Timestamp < (SELECT min(Timestamp) FROM otel_logs");
+    expect(sql).toContain(
+      `OR ${key} NOT IN (SELECT DISTINCT ${key} FROM otel_logs`,
+    );
+    expect(sql).toContain(
+      "OR Timestamp < (SELECT min(Timestamp) FROM otel_logs",
+    );
     expect(sql).toContain(
       "(Body = 'claude_code.api_request' AND LogAttributes['model'] NOT LIKE 'claude/%')",
     );

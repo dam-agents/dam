@@ -25,7 +25,7 @@ import {
 import { forHarness, renderName, servesHarness } from "../domain/render.js";
 
 const REFRESH_MS = 30 * 60_000;
-const RETRY_INITIAL_MS = 30_000;
+const RETRY_INITIAL_MS = 2_000;
 const RETRY_MAX_MS = 5 * 60_000;
 
 export interface ModelCatalog {
@@ -209,13 +209,23 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
     }
     retry = setTimeout(() => {
       retry = null;
-      void refresh();
+      void run();
     }, retryDelay);
     retry.unref?.();
     retryDelay = Math.min(retryDelay * 2, retryMs.max);
   };
 
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a refresh asked from outside follows a change
+   * (a grant reaching the pod, which also restarts the agent's egress
+   * gateway), so its failures retry from the shortest delay again.
+   */
   const refresh = (): Promise<void> => {
+    retryDelay = retryMs.initial;
+    return run();
+  };
+
+  const run = (): Promise<void> => {
     if (inFlight) {
       again = true;
       return inFlight;
@@ -269,16 +279,18 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
     source: { limits: "none", prices: "none" },
   });
 
+  const withPending = (): CatalogProvider[] => {
+    if (!deps.envReady()) return providers;
+    const known = new Set(providers.map((p) => p.connectionId));
+    const pending = deps
+      .envState()
+      .providers.filter((l) => !known.has(l.id))
+      .map(unlisted);
+    return pending.length > 0 ? [...providers, ...pending] : providers;
+  };
+
   return {
-    providers: () => {
-      if (!deps.envReady()) return providers;
-      const known = new Set(providers.map((p) => p.connectionId));
-      const pending = deps
-        .envState()
-        .providers.filter((l) => !known.has(l.id))
-        .map(unlisted);
-      return pending.length > 0 ? [...providers, ...pending] : providers;
-    },
+    providers: withPending,
     listed: () => firstListing,
     entries,
     forHarness: (harness) =>
@@ -306,7 +318,7 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
       return {
         harness,
         routed: binding !== undefined,
-        providers: providers.map((p): CatalogProviderView => {
+        providers: withPending().map((p): CatalogProviderView => {
           const native = binding?.native?.templates.includes(p.template)
             ? binding.native.models
             : null;
@@ -336,7 +348,7 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
     },
     start: () => {
       if (timer) return;
-      timer = setInterval(() => void refresh(), deps.refreshMs ?? REFRESH_MS);
+      timer = setInterval(() => void run(), deps.refreshMs ?? REFRESH_MS);
       timer.unref?.();
       scheduleRetry();
     },

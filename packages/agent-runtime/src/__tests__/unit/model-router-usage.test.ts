@@ -192,7 +192,10 @@ describe("the stream rewrite", () => {
     ];
     const out: Buffer[] = [];
     for await (const c of Readable.from(pieces).pipe(
-      createSseModelRewrite("anthropic-messages", "claude/ibm/aws/claude-sonnet-5"),
+      createSseModelRewrite(
+        "anthropic-messages",
+        "claude/ibm/aws/claude-sonnet-5",
+      ),
     ))
       out.push(c as Buffer);
     expect(Buffer.concat(out).toString()).toBe(

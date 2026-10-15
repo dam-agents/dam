@@ -20,6 +20,7 @@ import {
   preferenceGroupOf,
   signingTargetOf,
   unaddressableRivalHost,
+  aliasForProviderType,
   orderByAlias,
   providerAliasConflict,
 } from "api-server-api";
@@ -833,7 +834,7 @@ export function createConnectionsService(deps: {
       }
     },
 
-    async defaultProviderConnection(fits) {
+    async defaultProviderConnections(fits) {
       const usable = (
         await deps.repo.listByOwnerOldestFirst(deps.ownerId)
       ).flatMap((c) => {
@@ -844,7 +845,13 @@ export function createConnectionsService(deps: {
           ? [{ id: c.id, type }]
           : [];
       });
-      return orderByAlias(usable)[0]?.id ?? null;
+      const aliases = new Set<string>();
+      return orderByAlias(usable).flatMap((c) => {
+        const alias = aliasForProviderType(c.type);
+        if (aliases.has(alias)) return [];
+        aliases.add(alias);
+        return [c.id];
+      });
     },
 
     async getProviderBalance(id: string): Promise<ProviderBalance | null> {

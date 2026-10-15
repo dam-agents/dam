@@ -569,10 +569,10 @@ export function createAgentsService(deps: {
       connectionIds: string[];
       providerConnectionId?: string;
     }): Promise<{ grantedConnectionIds: string[] }>;
-    defaultProvider(
+    defaultProviders(
       connectionIds: string[],
       template: { harness?: string; providers?: readonly string[] },
-    ): Promise<string | null>;
+    ): Promise<string[]>;
     applyAfterCreate(
       agentId: string,
       sel: { connectionIds: string[] },
@@ -1122,10 +1122,12 @@ export function createAgentsService(deps: {
       if (input.requireConnectionAddress !== false)
         spec.requireConnectionAddress = true;
 
-      const providerConnectionId =
-        input.providerConnectionId ??
-        (templateId !== undefined && !input.noDefaultProvider
-          ? await deps.grantProvisioner?.defaultProvider(
+      const providerConnectionId = input.providerConnectionId;
+      const defaultProviders =
+        providerConnectionId === undefined &&
+        templateId !== undefined &&
+        !input.noDefaultProvider
+          ? ((await deps.grantProvisioner?.defaultProviders(
               input.connectionIds ?? [],
               {
                 ...(typeof spec.harness === "string" && {
@@ -1133,14 +1135,14 @@ export function createAgentsService(deps: {
                 }),
                 ...(templateProviders && { providers: templateProviders }),
               },
-            )
-          : undefined) ??
-        undefined;
+            )) ?? [])
+          : [];
       const grantSel = {
         connectionIds: Array.from(
           new Set([
             ...(input.connectionIds ?? []),
             ...(providerConnectionId ? [providerConnectionId] : []),
+            ...defaultProviders,
           ]),
         ),
         providerConnectionId,

@@ -103,7 +103,9 @@ export function ModelIndicator({
     routed ? agentId : null,
     harness,
   );
-  const groups = routed ? modelGroups(catalogModels.data) : [];
+  const groups = routed
+    ? modelGroups(catalogModels.data, catalogModels.granted)
+    : [];
   const harnessName = harnessDisplayName(harness, catalog?.harnesses);
   const models = removed
     ? []
@@ -225,6 +227,7 @@ export function ModelIndicator({
               harnessName={harnessName}
               current={model}
               loading={catalogModels.isLoading}
+              waiting={catalogModels.waiting}
               failed={catalogModels.isError}
               operable={catalogModels.operable}
               starting={answerableSoon}
