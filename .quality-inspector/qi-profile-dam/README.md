@@ -16,8 +16,9 @@ A change that alters what a fresh install needs — a new prerequisite, a rename
 
 ## Delivery
 
-The inspector's operator adds this repository as a skill source with path `qa` and assigns `qi-profile-dam`; the platform fetches only this directory, and the inspector's egress allows only `GET /repos/dam-agents/dam/contents/qa/*` and `GET /repos/dam-agents/dam/contents/qa?*`.
-Keep `qa/` free of symlinks: the Contents API answers a symlink to a file with that file's content.
+The inspector's operator adds this repository as a skill source with path `.quality-inspector` and assigns `qi-profile-dam`; the platform fetches only this directory.
+The inspector's kit (quality-inspector 3.0.0 or later) opens `GET /repos/*/*/contents/.quality-inspector/*` and `GET /repos/*/*/contents/.quality-inspector?*` for every repository and nothing else of it, so this directory needs no egress rule of its own.
+Keep `.quality-inspector/` free of symlinks and submodules: the Contents API answers a symlink to a file with that file's content, and the inspector's gate fails on one.
 
 ## Config (`work/CONFIG.md` of the inspector)
 
