@@ -117,19 +117,40 @@ function agentTrpcUrl(agentId: string, procedure: string): string {
   return `${baseUrl}/api/agents/${encodeURIComponent(agentId)}/trpc/${procedure}`;
 }
 
+export async function mutateAgentFiles(
+  token: () => Promise<string>,
+  agentId: string,
+  procedure: string,
+  input: unknown,
+  { timeoutMs = 60_000 }: { timeoutMs?: number } = {},
+): Promise<Response> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const res = await fetch(agentTrpcUrl(agentId, `files.${procedure}`), {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${await token()}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(input),
+    });
+    if (res.status !== 502 || Date.now() > deadline) return res;
+    console.log(
+      `[e2e] files.${procedure} on ${agentId} answered 502, retrying: ${(await res.text()).slice(0, 200)}`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+  }
+}
+
 export async function writeHomeFile(
   token: () => Promise<string>,
   agentId: string,
   path: string,
   content: string,
 ): Promise<void> {
-  const res = await fetch(agentTrpcUrl(agentId, "files.write"), {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${await token()}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ path, content }),
+  const res = await mutateAgentFiles(token, agentId, "write", {
+    path,
+    content,
   });
   if (res.status !== 200)
     throw new Error(
