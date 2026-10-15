@@ -36,6 +36,34 @@ pub fn home_full(tail: &str) -> bool {
 
 const ENTRYPOINT_EXITED: &str = "platform-init: the image entrypoint ";
 
+// UNIT_BOUNDARY_DESCRIPTION: the guest agent's check of the disk before its first mount (smolvm.patch, storage_filesystem_checked) says what it did as a boot log line: a JSON object whose message starts with FSCK, names a repair with FSCK_REPAIRED followed by e2fsck's own output, and ends a check that left the disk damaged, or could not run, with FSCK_REFUSED.
+const FSCK: &str = "storage: e2fsck ";
+const FSCK_REPAIRED: &str = "repaired the filesystem";
+const FSCK_REFUSED: &str = "refusing to mount";
+
+// UNIT_BOUNDARY_DESCRIPTION: how much of the check's account a repair keeps. It becomes an Agent condition's message, which shares the status's 32 KiB with the rest, and e2fsck's own output can run long on a badly damaged disk.
+const REPAIRED_BYTES: usize = 1024;
+
+// UNIT_BOUNDARY_DESCRIPTION: the check's account of the repair it made in this boot's console, or nothing when it repaired nothing. The tail can hold the line twice, from the guest agent's stderr and, after a prefix, its kernel log, so the line is read from its first brace and the last account is taken.
+pub fn home_repaired(tail: &str) -> Option<String> {
+    let message = tail.lines().rev().find_map(|line| {
+        let logged: serde_json::Value = serde_json::from_str(&line[line.find('{')?..]).ok()?;
+        let message = logged.get("message")?.as_str()?;
+        (message.starts_with(FSCK) && message.contains(FSCK_REPAIRED)).then(|| message.to_string())
+    })?;
+    let mut end = message.len().min(REPAIRED_BYTES);
+    while !message.is_char_boundary(end) {
+        end -= 1;
+    }
+    Some(message[..end].to_string())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the check refused to mount the disk in this boot's console, because the filesystem stayed damaged after every repair or e2fsck failed.
+pub fn home_damaged(tail: &str) -> bool {
+    tail.lines()
+        .any(|line| line.contains(FSCK) && line.contains(FSCK_REFUSED))
+}
+
 pub fn with_console(message: &str, tail: &str) -> String {
     if tail.is_empty() {
         return message.to_string();
@@ -251,6 +279,29 @@ mod tests {
         assert!(!home_full(
             "[ 1.0] platform-init: handing off to the image entrypoint [/entry]"
         ));
+    }
+
+    // TEST_SCENARIO: the disk check at boot says what it repaired in a boot log line, which the kernel log repeats after a prefix of its own; the runner reads the repair out of either, and tells a disk the check refused to mount apart from one it repaired or found clean.
+    #[test]
+    fn the_disk_check_is_read_from_its_boot_log_lines() {
+        let repaired = r#"{"level":"WARN","message":"storage: e2fsck -f -y repaired the filesystem: /dev/vda: ***** FILE SYSTEM WAS MODIFIED *****\n/dev/vda: 12/65536 files","target":"smolvm_agent::boot"}"#;
+        let tail = format!("[ 0.9] smolvm-agent: {repaired}\n{repaired}\n[ 1.2] platform-init: handing off to the image entrypoint [/entry]");
+        assert_eq!(
+            home_repaired(&tail).as_deref(),
+            Some("storage: e2fsck -f -y repaired the filesystem: /dev/vda: ***** FILE SYSTEM WAS MODIFIED *****\n/dev/vda: 12/65536 files")
+        );
+        assert!(!home_damaged(&tail));
+        let left = r#"{"level":"WARN","message":"storage: e2fsck -p left errors (UNEXPECTED INCONSISTENCY); trying a fuller repair","target":"smolvm_agent::boot"}"#;
+        assert_eq!(home_repaired(left), None);
+        let refused = format!(
+            "{left}\n{}",
+            r#"{"level":"ERROR","message":"storage: e2fsck -f -y -D Damaged (exit Some(4)): errors left; refusing to mount, and the disk is kept as it is","target":"smolvm_agent::boot"}"#
+        );
+        assert!(home_damaged(&refused));
+        assert_eq!(
+            home_repaired("[ 1.0] storage: e2fsck repaired the filesystem, said a guest program"),
+            None
+        );
     }
 
     // TEST_SCENARIO: a guest can print anything to its console, and the tail goes into a Kubernetes condition that an operator reads. Colour codes and cursor moves are dropped whole, other control characters are dropped, and the text between them is kept as it was.

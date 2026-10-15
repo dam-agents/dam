@@ -62,6 +62,8 @@ export function terminationNotice(
     return "Your VM agents ran out of memory together, so this agent restarted. Put agents you aren't using to sleep to free memory.";
   if (code === TerminationCode.MachineStorageFull)
     return `${subject} can't start: your VM agents' storage is full. ${sentence}`;
+  if (code === TerminationCode.MachineHomeDamaged)
+    return `${subject} can't start: its disk has file system errors that the check at start could not repair, and its files are kept as they are. Start it again: if the errors came from storage that was full or a passing disk error, the next start can repair them. If it keeps failing, ask an admin to check the agent's disk, or delete the agent and create it again, which gives it an empty disk and loses its files.`;
   if (code === TerminationCode.HomeVolumeFull)
     return vm
       ? `${subject} can't start: its storage is full. Free space by deleting files from another running agent or deleting an agent you no longer need, or request more storage.`

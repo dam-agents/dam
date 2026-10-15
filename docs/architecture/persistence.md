@@ -265,6 +265,10 @@ The runner formats every new disk itself, with a journal and at its full size, b
 A runner without `mkfs.ext4`, or whose format fails, leaves that format to smolvm, which can write no journal, and so did every disk made before the runner formatted its own; on those an unclean stop — a killed runner — is what brings that repair on.
 The loss is refused, not prevented.
 
+**What the disk check at boot finds is on the Agent.** The guest's check of its disk before the first mount is a line on the machine's console, which the runner reads.
+When a boot the guest then answered from repaired the filesystem, the runner keeps what the check said beside the machine's spec and reports it in the machine's status until a later boot answers from a clean disk; the controller puts it on the Agent as the `HomeRepaired` condition, and the agent's page tells the owner that files in the damaged folders may be missing.
+When the check refused to mount a disk it could not repair, the runner reports the failed boot as `MachineHomeDamaged`, which the api-server reads as a failed start, with the ways out: start the agent again, since a cause that has passed — storage that was full, a passing disk error — lets the next boot's check repair it; if it keeps failing, have an admin check the disk, which stays as it is, or delete the agent and create it again, which gives it an empty disk and loses its files.
+
 **The claim those disks sit on is the owner's pool.** One claim per owner holds every machine disk they have, their bookkeeping, a [runtime migration](vm-runtime-migration.md)'s seed while it waits, and the image cache when the cache lives there, and every disk may grow to the pool, so the claim is created at the pool; the controller refuses an install whose image cache budget would take the whole of it.
 The runtime's disk templates live there too, sparse enough to need no share of it.
 It grows in place when the pool rises and is never shrunk, so a lowered pool only stops its growth.

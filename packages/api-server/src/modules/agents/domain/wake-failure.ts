@@ -37,6 +37,7 @@ export const POD_FAILURE_REASONS: ReadonlySet<string> = new Set([
   TerminationCode.MachineRunnerUnschedulable,
   TerminationCode.RunnerOutOfMemory,
   TerminationCode.MachineStorageFull,
+  TerminationCode.MachineHomeDamaged,
 ]);
 
 export const GATEWAY_FAILURE_REASONS = new Set([
@@ -147,6 +148,8 @@ export function describeWakeFailure(c: WakeFailureCause): string {
           return "its owner's VM agents ran out of memory together and all restarted — putting agents that aren't in use to sleep frees memory";
         case "MachineStorageFull":
           return storageFullMessage();
+        case "MachineHomeDamaged":
+          return "its disk has file system errors the check at start could not repair — starting it again may repair them, and its owner can find what else to do on the agent's page";
         default:
           return "the agent crashed while starting";
       }
