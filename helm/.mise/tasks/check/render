@@ -87,7 +87,7 @@ done
 # still mean no filter rather than the default.
 helm template platform . "${COMMON[@]}" "${VM[@]}" \
   --set virtualization.imageCache.hostPath=/var/lib/platform-images \
-  --set virtualization.runner.seccomp=false | grep -q '\\"seccomp\\":\\"off\\"' ||
+  --set virtualization.runner.seccomp=false | grep '\\"seccomp\\":\\"off\\"' >/dev/null ||
   { echo "a render with seccomp=false did not give the runners seccomp off" >&2; exit 1; }
 # A runner on the node cache resolves nothing, so it needs no resolver named.
 helm template platform . "${COMMON[@]}" "${VM[@]}" \
