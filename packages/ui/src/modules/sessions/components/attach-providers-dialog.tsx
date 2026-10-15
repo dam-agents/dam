@@ -33,7 +33,8 @@ export function useAttachProvidersDialog(agentId: string): {
   dialog: ReactNode;
 } {
   const [request, setRequest] = useState<Request | null>(null);
-  const { attachAll, pending } = useGrantProvider(agentId);
+  const { attachAll } = useGrantProvider(agentId);
+  const [attaching, setAttaching] = useState(false);
   const open = useRef<Request | null>(null);
   open.current = request;
   useEffect(() => () => open.current?.resolve(null), []);
@@ -48,14 +49,19 @@ export function useAttachProvidersDialog(agentId: string): {
       new Promise((resolve) =>
         setRequest({ harness, providers, selected, resolve }),
       ),
-    pending: pending || request !== null,
+    pending: request !== null,
     dialog: request && (
       <AttachProvidersDialog
         key={request.harness}
         request={request}
-        pending={pending}
+        pending={attaching}
         onCancel={() => close(null)}
-        onAttach={async (ids) => close((await attachAll(ids)) ? ids : null)}
+        onAttach={async (ids) => {
+          setAttaching(true);
+          const attached = await attachAll(ids);
+          setAttaching(false);
+          close(attached ? ids : null);
+        }}
       />
     ),
   };
