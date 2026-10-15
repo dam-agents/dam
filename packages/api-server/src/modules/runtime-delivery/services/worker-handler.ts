@@ -6,7 +6,7 @@ import type { AgentRuntimeClient } from "../infrastructure/agent-runtime-client.
 import type { StateBuilder } from "./state-builder.js";
 import { deliveryCapabilities } from "../domain/capability-filter.js";
 import type { HarnessConfigSnapshotWriter } from "./snapshot-writer.js";
-import type { DriverFailure } from "api-server-api";
+import type { DriverFailure, HelloInput } from "api-server-api";
 import {
   isWorkspaceMutationEventKind,
   type HarnessConfigCurrent,
@@ -96,7 +96,9 @@ export function createWorkerHandler(deps: WorkerHandlerDeps): WorkerHandler {
 
     const payload = await deps.stateBuilder.build(
       agentId,
-      deliveryCapabilities(runtimeState.runtimeCapabilities),
+      deliveryCapabilities(
+        runtimeState.runtimeCapabilities as HelloInput["capabilities"],
+      ),
     );
 
     if (payload.droppedContributionKinds.length > 0) {

@@ -13,7 +13,6 @@ import type {
 import type { StateQueue } from "../../modules/runtime-delivery/infrastructure/state-queue.js";
 import type { HarnessConfigSnapshotWriter } from "../../modules/runtime-delivery/services/snapshot-writer.js";
 import type { StateBuilder } from "../../modules/runtime-delivery/services/state-builder.js";
-import type { DriverFailure } from "api-server-api";
 import type { Tx } from "../../core/unit-of-work.js";
 import { outboxRow } from "../helpers/outbox-row.js";
 
@@ -26,11 +25,7 @@ async function runHello(
   previous: unknown,
   reported: unknown,
   cursor: number,
-  drift: {
-    applied?: string;
-    built?: string;
-    failures?: DriverFailure[];
-  } = {},
+  drift: { applied?: string; built?: string } = {},
 ): Promise<{
   enqueued: { agentId: string; retryUntilReady?: boolean }[];
   bumped: boolean;
@@ -39,12 +34,7 @@ async function runHello(
   let bumped = false;
   const hello = createHelloHandler({
     outboxRepo: {
-      getRow: async () =>
-        outboxRow({
-          agentId: AGENT,
-          version: SETTLED,
-          applyFailures: drift.failures ?? [],
-        }),
+      getRow: async () => outboxRow({ agentId: AGENT, version: SETTLED }),
       bumpVersion: async () => {
         bumped = true;
         return SETTLED + 1;
@@ -86,7 +76,7 @@ describe("runtime capability gap", () => {
    *  clean, so after an agent update only the capability change can re-send
    *  the refused parts — and it must raise the version, not just enqueue, or a
    *  lost job strands the gap with nothing left to detect it. An unchanged
-   *  reconnect must stay quiet; hello fires on every reconnect. */
+   *  start must stay quiet; hello fires on every start. */
   it.each([
     [
       "widened kinds bump and re-deliver",
@@ -123,28 +113,33 @@ describe("runtime capability gap", () => {
 
 describe("runtime state drift", () => {
   /** TEST_SCENARIO: a deploy changes the state built for an agent without
-   *  raising its version, as when provider env gained its template. A
-   *  caught-up agent whose applied hash no longer matches the state built now
-   *  is re-delivered through a version bump; a matching hash, an agent that
-   *  reports no hash, and one with failures the retries own stay quiet. */
+   *  raising its version, as when provider env gained its template. An agent
+   *  whose cursor is at the version but whose applied hash no longer matches
+   *  the state built now is re-delivered through a version bump; a matching
+   *  hash, an agent that reports no hash, and a cursor ahead of the version
+   *  stay quiet. */
   it.each([
-    ["a stale applied hash bumps and re-delivers", { applied: "old" }, true],
+    [
+      "a stale applied hash bumps and re-delivers",
+      SETTLED,
+      { applied: "old" },
+      true,
+    ],
     [
       "a matching applied hash does nothing",
+      SETTLED,
       { applied: "built", built: "built" },
       false,
     ],
-    ["no reported hash does nothing", {}, false],
+    ["no reported hash does nothing", SETTLED, {}, false],
     [
-      "failures on record leave it to their retries",
-      {
-        applied: "old",
-        failures: [{ kind: "env", message: "boom" }] as DriverFailure[],
-      },
+      "a cursor ahead of the version does nothing",
+      SETTLED + 5,
+      { applied: "old" },
       false,
     ],
-  ])("%s", async (_case, drift, redelivers) => {
-    const { bumped, enqueued } = await runHello(ENV, ENV, SETTLED, drift);
+  ])("%s", async (_case, cursor, drift, redelivers) => {
+    const { bumped, enqueued } = await runHello(ENV, ENV, cursor, drift);
     expect(bumped).toBe(redelivers);
     expect(enqueued).toEqual(
       redelivers ? [{ agentId: AGENT, retryUntilReady: true }] : [],

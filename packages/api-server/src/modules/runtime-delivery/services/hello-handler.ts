@@ -35,22 +35,11 @@ export function createHelloHandler(deps: {
   eventOutcomeHandler?: (kind: string) => EventOutcomeHandler | undefined;
   log: (msg: string) => void;
 }): RuntimeDeliveryService {
-  /**
-   * UNIT_BOUNDARY_DESCRIPTION: a deploy can change the state the api-server
-   * builds for an agent (a new field on a contribution) without a grant or
-   * any other write raising the agent's version, so a caught-up agent would
-   * keep what an older api-server sent it. A hash the agent applied that no
-   * longer matches the state built now is that drift. An agent with failures
-   * on record is left to the retries that already own it, and a build that
-   * fails leaves the hello as it was.
-   */
   async function stateDrifted(
     agentId: string,
     input: HelloInput,
-    row: { applyFailures: readonly unknown[] },
   ): Promise<boolean> {
-    if (input.lastAppliedHash === undefined || row.applyFailures.length > 0)
-      return false;
+    if (input.lastAppliedHash === undefined) return false;
     try {
       const { hash } = await deps.stateBuilder.build(
         agentId,
@@ -140,8 +129,8 @@ export function createHelloHandler(deps: {
       if (desiredVersion === undefined) return { events: [] };
       if (
         row &&
-        desiredVersion <= (input.lastAppliedVersion ?? 0) &&
-        (await stateDrifted(agentId, input, row))
+        desiredVersion === input.lastAppliedVersion &&
+        (await stateDrifted(agentId, input))
       ) {
         desiredVersion = await deps.outboxRepo.bumpVersion(agentId);
         deps.log(
