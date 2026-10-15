@@ -4,14 +4,13 @@ import type { CSSProperties, Ref } from "react";
 import { type AgentReach, useAgentReach } from "../../agents/api/queries.js";
 import { SidebarSection } from "../../sessions/components/sidebar-section.js";
 import { useProcesses } from "../api/queries.js";
-import { PROCESSES_SECTION_ID } from "../hooks/use-open-processes-section.js";
 import { ProcessList } from "./process-list.js";
 
 interface Props {
   agentId: string | null;
   alwaysOn: boolean;
   open: boolean;
-  onToggle: () => void;
+  onToggle?: () => void;
   className?: string;
   style?: CSSProperties;
   ref?: Ref<HTMLDivElement>;
@@ -34,7 +33,6 @@ export function ProcessesPanel({
 
   return (
     <SidebarSection
-      id={PROCESSES_SECTION_ID}
       title="Processes"
       open={open}
       onToggle={onToggle}
