@@ -32,20 +32,31 @@ export function toActivitySessions(
     });
 }
 
+export interface FilterableSession {
+  session: Parameters<typeof channelTypeOfSession>[0];
+  working: boolean;
+  unread: boolean;
+}
+
+export function matchesActivityFilters(
+  item: FilterableSession,
+  filters: ActivityFilters,
+): boolean {
+  if (!filters.channelTypes.has(channelTypeOfSession(item.session)))
+    return false;
+  switch (filters.state) {
+    case "in-progress":
+      return item.working;
+    case "unread":
+      return item.unread;
+    case "any":
+      return true;
+  }
+}
+
 export function filterActivitySessions<T extends ActivitySession>(
   items: readonly T[],
   filters: ActivityFilters,
 ): T[] {
-  return items.filter((item) => {
-    if (!filters.channelTypes.has(channelTypeOfSession(item.session)))
-      return false;
-    switch (filters.state) {
-      case "in-progress":
-        return item.working;
-      case "unread":
-        return item.unread;
-      case "any":
-        return true;
-    }
-  });
+  return items.filter((item) => matchesActivityFilters(item, filters));
 }

@@ -1,21 +1,40 @@
 import { Add, NewTab, Tools } from "@carbon/icons-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useMemo } from "react";
 
-import { Collapse } from "@/components/ui/collapse";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Tooltip } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import { SessionFilterMenu } from "../../sessions/components/session-filter-menu.js";
+import { ActivityFilterMenu } from "../../home/components/activity-filter-menu.js";
+import { useActivityConversations } from "../../home/hooks/use-activity-conversations.js";
+import { useActivitySessions } from "../../home/hooks/use-activity-sessions.js";
 import { SidebarAgentSessions } from "../../sessions/components/sidebar-agent-sessions.js";
 import { useStartSession } from "../../sessions/hooks/use-start-session.js";
+import { useAgentsList } from "../api/queries.js";
 import { useCreateDefaultAgent } from "../hooks/use-create-default-agent.js";
 import { useSidebarAgents } from "../hooks/use-sidebar-agents.js";
 import { SidebarAgentRow } from "./sidebar-agent-row.js";
 
-export function SidebarAgents({ onNavigate }: { onNavigate?: () => void }) {
-  const { active, folded, openAgentId, unreadAgentIds } = useSidebarAgents();
+export function SidebarAgents({
+  stickyHeaderClassName,
+  onNavigate,
+}: {
+  stickyHeaderClassName: string;
+  onNavigate?: () => void;
+}) {
+  const { active, folded, openAgentId, unreadAgentIds, sessionsOf } =
+    useSidebarAgents();
+  const activity = useActivitySessions();
+  const agents = useAgentsList();
+  const attention = useMemo(
+    () => activity.items.map((item) => item.session),
+    [activity.items],
+  );
+  const conversationOf = useActivityConversations(attention, agents);
+  const filters = useStore((s) => s.sidebarActivityFilters);
+  const setFilters = useStore((s) => s.setSidebarActivityFilters);
   const selectAgent = useStore((s) => s.selectAgent);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const showFolded = useStore((s) => s.sidebarShowHibernating);
@@ -46,7 +65,6 @@ export function SidebarAgents({ onNavigate }: { onNavigate?: () => void }) {
             >
               <NewTab size={14} />
             </RowIconButton>
-            {open && <SessionFilterMenu />}
             <RowIconButton
               label="Configure agent"
               onClick={navigate(() => navigateToSandboxHome(agent.id))}
@@ -56,18 +74,31 @@ export function SidebarAgents({ onNavigate }: { onNavigate?: () => void }) {
           </>
         }
       >
-        <Collapse open={open}>
-          <SidebarAgentSessions agentId={agent.id} onNavigate={onNavigate} />
-        </Collapse>
+        <SidebarAgentSessions
+          agentId={agent.id}
+          open={open}
+          preview={sessionsOf(agent.id)}
+          conversationOf={conversationOf}
+          stickyClassName={stickyHeaderClassName}
+          onNavigate={onNavigate}
+        />
       </SidebarAgentRow>
     );
   };
 
   return (
     <section aria-label="Agents" data-testid="sidebar-agents">
-      <div className="flex items-center justify-between py-1 pl-2.5">
+      <div
+        className={cn(
+          "sticky top-0 z-raised flex items-center justify-between py-1 pl-2.5",
+          stickyHeaderClassName,
+        )}
+      >
         <SectionLabel>Agents</SectionLabel>
-        <CreateAgentButton onCreate={onNavigate} />
+        <div className="flex items-center gap-1">
+          <ActivityFilterMenu filters={filters} onChange={setFilters} />
+          <CreateAgentButton onCreate={onNavigate} />
+        </div>
       </div>
       <ul className="flex flex-col gap-px">
         {active.map(row)}
