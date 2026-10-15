@@ -64,8 +64,8 @@ async function resolveTarget(
       unit: "usd",
       refusal: null,
       setText: (amount) =>
-        `Your own daily Spend Limit for all your Agents is now ${amount} per UTC day.`,
-      clearText: "You have no own daily Spend Limit now.",
+        `Your spend limit (all Agents) is now ${amount} a day. It counts paid API spend only.`,
+      clearText: "Your spend limit (all Agents) is removed.",
     };
   }
   if (ref === undefined) fail("name an Agent, or pass --me");
@@ -80,8 +80,8 @@ async function resolveTarget(
       unit: "usd",
       refusal: null,
       setText: (amount) =>
-        `The daily Spend Limit of ${agent.name} is now ${amount} per UTC day.`,
-      clearText: `${agent.name} has no daily Spend Limit now.`,
+        `The Agent spend limit of ${agent.name} is now ${amount} a day. It counts paid API spend only: the Claude subscription and Bob need a Connection limit (--connection).`,
+      clearText: `${agent.name} has no Agent spend limit now.`,
     };
   }
   const connections = await deps.createConnectionService(host).list();
@@ -104,8 +104,8 @@ async function resolveTarget(
     unit: rule.limitable ? rule.unit : "usd",
     refusal: rule.limitable ? null : connectionLimitRefusal(rule),
     setText: (amount) =>
-      `The daily Spend Limit of ${agent.name} on ${connection.name} is now ${amount} per UTC day.`,
-    clearText: `${agent.name} has no daily Spend Limit on ${connection.name} now.`,
+      `The ${connection.name} spend limit of ${agent.name} is now ${amount} a day.`,
+    clearText: `${agent.name} has no ${connection.name} spend limit now.`,
   };
 }
 
@@ -136,7 +136,7 @@ function parseAmount(flag: string, text: string): number {
 function buildSetCommand(deps: LimitDeps): Command {
   return new Command("set")
     .description(
-      "Set a daily Spend Limit: for one Agent or all your Agents in US dollars, or for one Agent's Connection in that Connection's unit",
+      "Set a daily spend limit: for one Agent or for all your Agents (--me), in US dollars of paid API spend; or for one Agent's Connection (--connection), in that Connection's unit. The Claude subscription and Bob count only in a Connection limit.",
     )
     .argument("[agent]", "Agent Ref — name or 'agent-…' ID")
     .option("--me", "set your own limit for all your Agents together")
@@ -147,7 +147,7 @@ function buildSetCommand(deps: LimitDeps): Command {
     .option("--usd <amount>", "dollars per UTC day, e.g. 10 or 0.25")
     .option(
       "--amount <amount>",
-      "with --connection: the limit in the Connection's unit (dollars, list-price dollars or Bobcoins)",
+      "with --connection: the limit in the Connection's unit (US dollars, subscription value in US dollars, or Bobcoins)",
     )
     .option(
       "--server <url>",
@@ -196,7 +196,7 @@ function buildSetCommand(deps: LimitDeps): Command {
 function buildClearCommand(deps: LimitDeps): Command {
   return new Command("clear")
     .description(
-      "Remove a daily Spend Limit: an Agent's, your own, or an Agent's limit on one Connection",
+      "Remove a daily spend limit: an Agent's, yours for all your Agents (--me), or an Agent's limit on one Connection (--connection)",
     )
     .argument("[agent]", "Agent Ref — name or 'agent-…' ID")
     .option("--me", "remove your own limit for all your Agents together")

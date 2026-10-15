@@ -96,7 +96,7 @@ export type SpendHoldGate = (input: {
 
 const SPEND_HOLD_MESSAGE: Record<SpendHoldReason, string> = {
   limit:
-    "the agent reached its spend limit for today, so no sub-agent starts until its owner approves more or the UTC day ends",
+    "the agent reached its spend limit for today, so no sub-agent starts until its owner continues the limit or the day ends at midnight UTC",
   ceiling:
     "the agent's owner reached the spend ceiling for today, so no sub-agent starts until the UTC day ends; the platform operator can raise the ceiling",
 };

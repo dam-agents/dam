@@ -1,8 +1,10 @@
 import { Command } from "commander";
 import {
+  formatLocalResetTime,
   formatSpendAmount,
   type SpendCeilingSource,
   type SpendCeilingView,
+  type SpendLimitState,
   type SpendLimitView,
   type SpendStatus,
 } from "api-server-api";
@@ -19,8 +21,17 @@ import type { SpendService } from "../services/spend-service.js";
 
 const CEILING_SOURCES: Readonly<Record<SpendCeilingSource, string>> = {
   default: "the platform default",
-  UserSpendLimit: "your UserSpendLimit",
+  UserSpendLimit: "set for you by your operator",
 };
+
+const STATE_LABELS: Readonly<Record<SpendLimitState, string>> = {
+  ok: "ok",
+  warn: "80% or more used",
+  reached: "reached",
+};
+
+const UNITS_NOTE =
+  "The Agent spend limit, your spend limit (all Agents) and the spend ceiling count paid API spend in US dollars only. The Claude subscription and Bob count only in their Connection limits.";
 
 function limitName(
   limit: SpendLimitView,
@@ -29,11 +40,11 @@ function limitName(
   const scope = limit.scope;
   switch (scope.kind) {
     case "agent":
-      return "agent";
+      return "Agent spend limit";
     case "owner":
-      return "own (all Agents)";
+      return "Your spend limit (all Agents)";
     case "connection":
-      return `connection ${connectionNames.get(scope.connectionId) ?? scope.connectionId}`;
+      return `${connectionNames.get(scope.connectionId) ?? scope.connectionId} spend limit`;
   }
 }
 
@@ -49,15 +60,15 @@ function limitRow(
     money(limit.effectiveMicros),
     money(limit.spentMicros),
     money(limit.leftMicros),
-    limit.state,
+    STATE_LABELS[limit.state],
   ];
 }
 
 function ceilingLine(ceiling: SpendCeilingView | null): string {
-  if (ceiling === null) return "Spend Ceiling: off.";
+  if (ceiling === null) return "Spend ceiling: none.";
   return (
-    `Spend Ceiling: ${formatSpendAmount(ceiling.amountMicros, "usd")} per UTC day, from ${CEILING_SOURCES[ceiling.source]}. ` +
-    `Spent ${formatSpendAmount(ceiling.spentMicros, "usd")}, ${ceiling.state}.`
+    `Spend ceiling (${CEILING_SOURCES[ceiling.source]}): ${formatSpendAmount(ceiling.spentMicros, "usd")} of ` +
+    `${formatSpendAmount(ceiling.amountMicros, "usd")} today, ${STATE_LABELS[ceiling.state]}.`
   );
 }
 
@@ -67,13 +78,13 @@ function renderStatus(
   connectionNames: ReadonlyMap<string, string>,
 ): string {
   const lines = [
-    `${subject} on ${status.day} (UTC). The day resets at ${status.resetsAt}.`,
+    `${subject} on ${status.day} (UTC). The day resets at ${formatLocalResetTime(status.resetsAt)}.`,
     "",
   ];
   lines.push(
     status.spent.length === 0
-      ? "Metered Spend today: none."
-      : `Metered Spend today: ${status.spent
+      ? "Spend today: none."
+      : `Spend today: ${status.spent
           .map(
             (total) =>
               `${formatSpendAmount(total.costMicros, total.unit)}` +
@@ -86,16 +97,25 @@ function renderStatus(
     "",
   );
   if (status.limits.length === 0) {
-    lines.push("No spend limit is set.");
+    lines.push("No spend limit is set.", "", UNITS_NOTE);
     return `${lines.join("\n")}\n`;
   }
   return (
     lines.join("\n") +
     "\n" +
     renderTable([
-      ["LIMIT", "AMOUNT", "EXTENSIONS", "EFFECTIVE", "SPENT", "LEFT", "STATE"],
+      [
+        "LIMIT",
+        "AMOUNT",
+        "CONTINUED",
+        "TODAY'S LIMIT",
+        "SPENT",
+        "LEFT",
+        "STATE",
+      ],
       ...status.limits.map((limit) => limitRow(limit, connectionNames)),
-    ])
+    ]) +
+    `\n${UNITS_NOTE}\n`
   );
 }
 
@@ -121,7 +141,7 @@ export function buildStatusCommand(deps: {
 }): Command {
   return new Command("status")
     .description(
-      "Show today's Metered Spend, the Spend Limits and the Spend Ceiling, for one Agent or for you",
+      "Show today's spend that the platform measured, the spend limits and the spend ceiling, for one Agent or for you",
     )
     .argument("[agent]", "Agent Ref — name or 'agent-…' ID (optional)")
     .option("--me", "show your own limit and your ceiling (the default)")

@@ -64,7 +64,7 @@ const SECTIONS: SectionEntry[] = [
     section: "usage",
     title: "Usage",
     description:
-      "LLM spend for this agent, including work it delegated to other agents.",
+      "What this agent spends on models, including the sub-agents it started, and its spend limit.",
   },
 ];
 

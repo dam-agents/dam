@@ -74,10 +74,21 @@ A limit field is a one-field inline edit, so controlled `useState` is enough (no
    One line says that its spend counts for the limits of its root driver, with the root driver's name.
 8. **Brand.**
    All copy uses `getBrand()` (`packages/ui/src/brand.ts`) where it names the product.
-9. **Docs** (same commit):
-   - `docs/architecture/spend-limits.md`: a short "Screens" section (where each limit is set, the 80% colour, the metered number on Home and on the agent).
-   - `docs/architecture/home-feed.md`: the feed also shows spend-limit questions, with "Continue" and "Stop for today".
-   - Bump `Last verified:`, and run `mise run fix:markdown`.
+9. **Wording pass** (after Petr's review, decided 2026-10-15).
+   One set of names on every surface (UI, CLI, Slack and Telegram notices, agent tool): Agent spend limit, Your spend limit (all agents), ‹Connection› spend limit, Your spend ceiling (set by your operator).
+   "list $" becomes "subscription value", explained where a Connection limit is set.
+   The agent page says which providers the agent limit does not count; an agent with only the Claude subscription or Bob shows no agent limit field unless one is set.
+   The chat error leads with "Spend limit reached" and the local reset time, with the harness's text below as detail.
+   The gateway refusal text does not change.
+   In the UI, a model Connection is a "provider", as in the Providers section; the CLI keeps "Connection".
+   Unit definitions (subscription value, Bobcoins) sit in help tooltips; the rule "only this limit stops calls on this provider" stays visible.
+   Settings › Usage shows the Home spend view (period total and top agents) above the spend limits, so Home and Settings show the same numbers; the widget moved to the spend module.
+   The rest of the Usage pages stays on harness telemetry; that move has its own issue.
+10. **Docs** (same commit):
+
+- `docs/architecture/spend-limits.md`: a short "Screens" section (where each limit is set, the 80% colour, the metered number on Home and on the agent).
+- `docs/architecture/home-feed.md`: the feed also shows spend-limit questions, with "Continue" and "Stop for today".
+- Bump `Last verified:`, and run `mise run fix:markdown`.
 
 ## Acceptance criteria
 

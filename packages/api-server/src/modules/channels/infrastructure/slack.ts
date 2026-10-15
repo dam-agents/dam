@@ -99,7 +99,11 @@ import {
   type PodRestartState,
 } from "../../agents/index.js";
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
-import { spendHoldUserCopy, type ChannelSpendHold } from "./spend-hold-copy.js";
+import {
+  slackResetTime,
+  spendHoldUserCopy,
+  type ChannelSpendHold,
+} from "./spend-hold-copy.js";
 import { runWhileAgentStarts, type WakeWaitOptions } from "./wake-wait.js";
 import { FileTooLargeError } from "./slack-gateway.js";
 import type {
@@ -5145,6 +5149,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         held,
         `\`${await resolveAgentName(args.instanceName)}\``,
         brand.name,
+        slackResetTime(new Date()),
       );
       if (args.slackUserId)
         await gateway.postEphemeral({

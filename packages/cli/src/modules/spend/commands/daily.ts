@@ -19,7 +19,7 @@ const DEFAULT_DAYS = 7;
 
 const SPEND_TEXT: Readonly<Record<SpendUnit, (amount: number) => string>> = {
   usd: (amount) => `$${amount.toFixed(4)}`,
-  usd_list: (amount) => `$${amount.toFixed(4)} list`,
+  usd_list: (amount) => `$${amount.toFixed(4)} subscription value`,
   bobcoin: (amount) => `${amount.toFixed(6)} Bobcoins`,
   free: () => "free",
 };
@@ -42,7 +42,7 @@ export function buildDailyCommand(deps: {
 }): Command {
   return new Command("daily")
     .description(
-      "Show the Metered Spend per UTC day, for one Agent or for all your Agents",
+      "Show the spend that the platform measured, per UTC day, for one Agent or for all your Agents",
     )
     .argument("[agent]", "Agent Ref — name or 'agent-…' ID (optional)")
     .option(
@@ -99,7 +99,7 @@ export function buildDailyCommand(deps: {
         }
         if (result.value.length === 0) {
           process.stderr.write(
-            `No Metered Spend ${agent ? `for ${agent.name} ` : ""}in the last ${days} UTC day(s).\n`,
+            `No measured spend ${agent ? `for ${agent.name} ` : ""}in the last ${days} UTC day(s).\n`,
           );
           process.exit(EXIT_SUCCESS);
         }

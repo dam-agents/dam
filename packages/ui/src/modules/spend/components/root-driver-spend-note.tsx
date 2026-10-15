@@ -10,7 +10,7 @@ export function RootDriverSpendNote({
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   return (
     <p className="text-sm text-muted-foreground">
-      Its spend counts for the limits of{" "}
+      This agent was started by{" "}
       <Button
         variant="link"
         size="inline"
@@ -18,7 +18,8 @@ export function RootDriverSpendNote({
       >
         {root.name}
       </Button>
-      , the agent that started it.
+      . Its spend counts toward the spend limits of that agent, so it has no
+      limits of its own.
     </p>
   );
 }

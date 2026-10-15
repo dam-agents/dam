@@ -244,6 +244,7 @@ A channel thread whose session runs on another pair is still checked against the
 - **Sub-agents:** a spawn is refused before anything is created ([invocations](invocations.md#spawning)).
 - **Channels:** a turn does not start, and the agent does not wake.
   Whoever waits for an answer is told why none comes: a person gets a notice that only they see in Slack, or a chat post in Telegram; an app or another agent that mentioned the agent gets one notice in the thread; an agent that hands a turn over gets the reason as an error.
+  A notice names the time when the agent answers again, and Slack and Telegram show that time in each reader's own time zone.
   Ambient reading waits for nobody, so it skips the agent silently ([channels](channels.md)).
 
 At a soft limit, a hold also asks the owner whether to continue, so the owner is asked even when the call that reached the limit was the last one of its turn.
@@ -256,15 +257,21 @@ It has no tool to set, clear or continue a limit.
 
 The owner sets each limit where the work happens, and each limit shows its metered spend, what is left, and a meter:
 
-- **The agent's page:** the Usage section sets the agent limit and shows today's Metered Spend and when the day resets.
+- **The agent's page:** the Usage section sets the agent limit and shows today's Metered Spend and when the day resets, in the user's own time.
   When the own limit or the ceiling stops the agent first, it says so.
-  The agent's summary shows today's spend and the limit.
+  It tells the user which of the agent's providers the agent limit does not count, and an agent with only the Claude subscription or Bob gets no agent limit field, only a pointer to its Providers section.
+  The agent's summary shows today's spend in each unit and the limit.
 - **The agent's Providers section:** each granted Connection that takes a limit sets its Connection limit there, in the Connection's unit, next to today's spend on that Connection.
-- **Settings, Usage tab:** the own limit, and the ceiling with its state when one applies.
+  It explains the subscription value and Bobcoins, and that only this limit stops calls on such a Connection; a Connection that takes no limit says why.
+- **Settings, Usage tab:** the same spend view as on Home, the own limit, and the ceiling with its state when one applies.
 - **Home:** the spend widget shows the dollar Metered Spend of today or of the last 7, 30 or 365 UTC days, the top agents, and today's own limit when one is set.
   It does not need the telemetry store.
 
 A meter takes the warning colour at 80% of its limit and the danger colour when the limit is reached.
 A sub-agent's page sets no limit: its spend counts for its root driver, so the page names the root driver instead.
-A spend-limit question shows on Home with "Continue" and "Stop for today".
+A spend-limit question shows on Home with "Continue" and "Stop for today"; Home's "Deny all" leaves it out, because a deny there stops the agent for the day.
+Every surface uses the same names: the agent spend limit, the user's spend limit for all agents, a Connection's spend limit, and the spend ceiling that the operator sets.
+The Claude subscription's unit shows as "subscription value", in dollars.
+In the chat, a refused call shows as "Spend limit reached" or "Spend ceiling reached" with what to do and the local reset time; the harness's own error text stays below it as detail.
+Every text that a person reads gives the reset in that person's own time, on the screens, in the CLI and in the channel notices; texts for agents give it in UTC.
 The rest of the Usage pages still shows the spend that the harnesses report ([metrics](metrics.md)).

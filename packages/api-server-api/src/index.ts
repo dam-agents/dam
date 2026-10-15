@@ -161,7 +161,11 @@ export {
   spendStatusInputSchema,
   spendUnitSchema,
 } from "./modules/spend/schemas.js";
-export { formatSpendAmount } from "./modules/spend/format.js";
+export {
+  formatLocalResetTime,
+  formatSpendAmount,
+  nextUtcMidnight,
+} from "./modules/spend/format.js";
 export {
   connectionLimitRefusal,
   connectionLimitRule,

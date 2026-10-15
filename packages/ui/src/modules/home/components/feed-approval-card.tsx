@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { useApprovalActions } from "../../approvals/hooks/use-approval-actions.js";
+import { useAppConnections } from "../../connections/api/queries.js";
 import {
   approvalDetail,
   approvalHeadline,
@@ -47,6 +48,9 @@ export function FeedApprovalCard({
     expiredNote,
     openSettings,
   } = useApprovalActions(approval);
+  const { data: connections } = useAppConnections();
+  const connectionName = (id: string) =>
+    connections?.find((connection) => connection.id === id)?.name;
   const [ownResolved, setOwnResolved] = useState<string | null>(null);
   const resolved = resolvedLabel ?? ownResolved;
 
@@ -96,7 +100,7 @@ export function FeedApprovalCard({
             approval.type !== "spend_limit" && "truncate",
           )}
         >
-          {approvalDetail(approval)}
+          {approvalDetail(approval, connectionName)}
         </span>
       </div>
 

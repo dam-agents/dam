@@ -3,11 +3,12 @@ import type { SpendLimitState, SpendUnit } from "api-server-api";
 import { cn } from "@/lib/utils";
 
 import { SpendBarTrack } from "../../metrics/components/spend-bar.js";
-import { formatSpend } from "../lib/format.js";
+import { formatSpend, formatSpendOf } from "../lib/format.js";
 import { LIMIT_STATE_FILL, LIMIT_STATE_TEXT } from "../lib/state-colors.js";
 
 interface Props {
   label: string;
+  showLabel?: boolean;
   unit: SpendUnit;
   spentMicros: number;
   limitMicros: number;
@@ -24,6 +25,7 @@ function continuedNote(extensions: number): string | null {
 
 export function SpendLimitMeter({
   label,
+  showLabel = false,
   unit,
   spentMicros,
   limitMicros,
@@ -37,10 +39,10 @@ export function SpendLimitMeter({
 
   return (
     <div className="flex flex-col gap-1.5">
+      {showLabel && <p className="text-sm text-muted-foreground">{label}</p>}
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm">
         <span className={cn("font-mono tabular-nums", LIMIT_STATE_TEXT[state])}>
-          {formatSpend(spentMicros, unit)} of {formatSpend(limitMicros, unit)}{" "}
-          today
+          {formatSpendOf(spentMicros, limitMicros, unit)} today
         </span>
         <span className="font-mono text-xs tabular-nums text-muted-foreground">
           {[`${formatSpend(left, unit)} left`, note]

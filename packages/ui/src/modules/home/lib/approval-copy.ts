@@ -5,13 +5,12 @@ import type {
 } from "api-server-api";
 import { match } from "ts-pattern";
 
-import { formatSpend } from "../../spend/lib/format.js";
-
-const SPEND_LIMIT_NAMES: Record<SpendLimitScope["kind"], string> = {
-  agent: "Agent limit",
-  owner: "Limit for all your agents",
-  connection: "Connection limit",
-};
+import {
+  AGENT_LIMIT_NAME,
+  connectionLimitName,
+  OWN_LIMIT_NAME,
+} from "../../spend/lib/copy.js";
+import { formatSpendOf } from "../../spend/lib/format.js";
 
 export function approvalHeadline(approval: ApprovalView): string {
   return match(approval.payload)
@@ -21,18 +20,39 @@ export function approvalHeadline(approval: ApprovalView): string {
     .exhaustive();
 }
 
-function spendLimitDetail(payload: SpendLimitPayload): string {
-  const reached = formatSpend(
-    payload.amountMicros * (payload.extensions + 1),
-    payload.unit,
-  );
-  const step = formatSpend(payload.amountMicros, payload.unit);
-  return `${SPEND_LIMIT_NAMES[payload.scope.kind]}: ${reached} of ${reached} today. Continue adds ${step} for today.`;
+function spendLimitName(
+  scope: SpendLimitScope,
+  connectionName: (id: string) => string | undefined,
+): string {
+  return match(scope)
+    .with({ kind: "agent" }, () => AGENT_LIMIT_NAME)
+    .with({ kind: "owner" }, () => OWN_LIMIT_NAME)
+    .with({ kind: "connection" }, ({ connectionId }) =>
+      connectionLimitName(connectionName(connectionId) ?? "Provider"),
+    )
+    .exhaustive();
 }
 
-export function approvalDetail(approval: ApprovalView): string {
+function spendLimitDetail(
+  payload: SpendLimitPayload,
+  connectionName: (id: string) => string | undefined,
+): string {
+  const reached = payload.amountMicros * (payload.extensions + 1);
+  const stopped = match(payload.scope)
+    .with({ kind: "agent" }, () => "Its paid model calls stop")
+    .with({ kind: "owner" }, () => "Paid model calls of all your agents stop")
+    .with({ kind: "connection" }, () => "Its calls on this provider stop")
+    .exhaustive();
+  return `${spendLimitName(payload.scope, connectionName)}: ${formatSpendOf(reached, reached, payload.unit)} today. ${stopped} until you continue or the day ends.`;
+}
+
+export function approvalDetail(
+  approval: ApprovalView,
+  connectionName: (id: string) => string | undefined = () => undefined,
+): string {
   const payload = approval.payload;
-  if (payload.kind === "spend_limit") return spendLimitDetail(payload);
+  if (payload.kind === "spend_limit")
+    return spendLimitDetail(payload, connectionName);
   if (payload.kind !== "ext_authz") return payload.toolName;
   const target =
     payload.path === "*"

@@ -37,7 +37,11 @@ import {
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
 import { OUTBOUND_TOOL_PREFIX } from "../../../core/platform-mcp.js";
 import { channelNetworkAccessGuidance } from "./network-access-copy.js";
-import { spendHoldUserCopy, type ChannelSpendHold } from "./spend-hold-copy.js";
+import {
+  spendHoldUserCopy,
+  telegramResetTime,
+  type ChannelSpendHold,
+} from "./spend-hold-copy.js";
 import {
   createConversationQueue,
   type ConversationQueue,
@@ -192,7 +196,7 @@ async function publishTelegramCommands(botToken: string): Promise<void> {
 export interface ThreadLike {
   id: string;
   isDM: boolean;
-  post(message: string | CardElement): Promise<unknown>;
+  post(message: string | CardElement | { markdown: string }): Promise<unknown>;
   subscribe(): Promise<unknown>;
 }
 
@@ -375,7 +379,14 @@ export function createTelegramMessageHandler(deps: {
     }
     const held = await deps.spendHold?.(binding.agentId);
     if (held) {
-      await thread.post(spendHoldUserCopy(held, "This agent", deps.brandName));
+      await thread.post({
+        markdown: spendHoldUserCopy(
+          held,
+          "This agent",
+          deps.brandName,
+          telegramResetTime(new Date()),
+        ),
+      });
       return;
     }
     if (subscribe) await thread.subscribe();

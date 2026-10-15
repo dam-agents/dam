@@ -27,9 +27,9 @@ import { emit, EventType } from "../../../events.js";
 const RUN_NOW_REFUSAL: Record<Exclude<RunNowResult, "started">, string> = {
   "onboarding-pending": "the agent has not finished onboarding yet",
   "spend-limit":
-    "the agent reached its spend limit for today; the owner can approve more",
+    "the agent reached its spend limit for today. Continue the limit, or wait until midnight UTC",
   "spend-ceiling":
-    "the agent's owner reached the spend ceiling for today; the platform operator can raise it",
+    "the agent's owner reached the spend ceiling for today. The platform operator can raise it; otherwise wait until midnight UTC",
 };
 
 export interface AgentOnceLimits {

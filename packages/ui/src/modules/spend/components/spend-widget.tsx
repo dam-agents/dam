@@ -10,15 +10,17 @@ import type { AgentView } from "../../../types.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { NEUTRAL_FILL } from "../../budgets/lib/pool-colors.js";
-import { useOwnerSpendStatus, useSpendDaily } from "../../spend/api/queries.js";
-import { SpendLimitMeter } from "../../spend/components/spend-limit-meter.js";
-import { microsToUsd } from "../../spend/lib/format.js";
+import { useOwnerSpendStatus, useSpendDaily } from "../api/queries.js";
+import { apiSpendHelp, OWN_LIMIT_NAME } from "../lib/copy.js";
+import { microsToUsd } from "../lib/format.js";
 import {
   SPEND_PERIODS,
   spendDays,
   type SpendPeriod,
 } from "../lib/spend-period.js";
 import { AnimatedUsd } from "./animated-usd.js";
+import { HelpTip } from "./help-tip.js";
+import { SpendLimitMeter } from "./spend-limit-meter.js";
 
 const TOP_SPENDERS = 3;
 const ROUNDS_TO_A_VISIBLE_CENT_USD = 0.005;
@@ -54,7 +56,11 @@ function usdSpend(
   };
 }
 
-export function SpendWidget() {
+export function SpendWidget({
+  showOwnLimit = true,
+}: {
+  showOwnLimit?: boolean;
+}) {
   const [period, setPeriod] = useState<SpendPeriod>("1m");
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -80,7 +86,8 @@ export function SpendWidget() {
       <div className="flex flex-col rounded-lg border border-border bg-card p-6">
         <div className="mb-1 flex min-h-[32px] items-center justify-between">
           <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            Spend
+            API spend
+            <HelpTip content={apiSpendHelp()} />
             {query.isFetching && (
               <Spinner
                 size={12}
@@ -119,10 +126,11 @@ export function SpendWidget() {
           )}
         </p>
 
-        {ownLimit && (
+        {showOwnLimit && ownLimit && (
           <div className="mb-5">
             <SpendLimitMeter
-              label="Limit for all your agents"
+              label={OWN_LIMIT_NAME}
+              showLabel
               unit="usd"
               spentMicros={ownLimit.spentMicros}
               limitMicros={ownLimit.effectiveMicros}
@@ -178,7 +186,7 @@ export function SpendWidget() {
                     exit={ROW_HIDDEN}
                     className="text-sm text-muted-foreground"
                   >
-                    No spend in this period.
+                    No API spend in this period.
                   </motion.p>
                 )}
               </AnimatePresence>

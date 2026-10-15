@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { formatLocalResetTime, nextUtcMidnight } from "api-server-api";
 import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
@@ -42,8 +43,7 @@ export function buildDenyCommand(deps: {
         printOutcomeAndExit(result.value, opts, {
           pastTense: "Denied",
           onceLine: "Denied this call only — re-prompts next time.",
-          spendLimitLine:
-            "Stopped for today — the spend limit stays reached, and no new question comes until the next UTC day.",
+          spendLimitLine: `Stopped for today — the spend limit stays reached, and you get no new question until ${formatLocalResetTime(nextUtcMidnight())}.`,
           expiredEffect: "future requests of this shape are blocked.",
         });
       },

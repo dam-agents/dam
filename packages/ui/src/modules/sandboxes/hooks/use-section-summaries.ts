@@ -39,7 +39,8 @@ import { useSchedules } from "../../schedules/api/queries.js";
 import { isUpcoming } from "../../schedules/lib/once-schedule.js";
 import { useProviderConnections } from "../../sessions/api/session-pair.js";
 import { useAgentSpendStatus } from "../../spend/api/queries.js";
-import { formatSpend } from "../../spend/lib/format.js";
+import { agentLimitCoverage } from "../../spend/lib/coverage.js";
+import { formatSpend, formatSpendOf } from "../../spend/lib/format.js";
 import { useTelegramChats } from "../../telegram/api/queries.js";
 
 type SectionSummaries = Partial<Record<SandboxSection, string>>;
@@ -197,6 +198,9 @@ export function useSectionSummaries(agent: AgentView | null): {
       : providers.granted.map((p) => p.name).join(", ")
     : undefined;
 
+  const limitCoverage = agentLimitCoverage(
+    providers.granted.map((p) => p.templateId),
+  );
   const agentList = useAgentsList();
   const rootName = agentId
     ? (rootDriverOf(agentId, agentList)?.name ?? null)
@@ -205,22 +209,34 @@ export function useSectionSummaries(agent: AgentView | null): {
     agentId && rootName === null ? agentId : null,
   );
   const usageSummary = useMemo(() => {
-    if (rootName !== null) return `Counts for ${rootName}`;
+    if (rootName !== null) return `Counts toward ${rootName}`;
     if (spendUnavailable) return "Not available";
     if (!spendStatus || !agentId) return undefined;
-    const spent = formatSpend(
-      spendStatus.spent.find((total) => total.unit === "usd")?.costMicros ?? 0,
-      "usd",
-    );
+    const usdMicros =
+      spendStatus.spent.find((total) => total.unit === "usd")?.costMicros ?? 0;
     const limit = spendStatus.limits.find(
       (view) => view.scope.kind === "agent" && view.scope.agentId === agentId,
     );
-    if (limit)
-      return `${spent} of ${formatSpend(limit.effectiveMicros, "usd")} today`;
-    return spendStatus.spent.some((total) => total.costMicros > 0)
-      ? `${spent} today`
-      : "No spend today";
-  }, [rootName, spendUnavailable, spendStatus, agentId]);
+    const paid = !providers.loaded || limitCoverage.paid;
+    const parts = [
+      ...(limit && paid
+        ? [formatSpendOf(usdMicros, limit.effectiveMicros, "usd")]
+        : usdMicros > 0
+          ? [formatSpend(usdMicros, "usd")]
+          : []),
+      ...spendStatus.spent
+        .filter((total) => total.unit !== "usd" && total.costMicros > 0)
+        .map((total) => formatSpend(total.costMicros, total.unit)),
+    ];
+    return parts.length > 0 ? `${parts.join(" · ")} today` : "No spend today";
+  }, [
+    rootName,
+    spendUnavailable,
+    spendStatus,
+    agentId,
+    providers.loaded,
+    limitCoverage.paid,
+  ]);
 
   return {
     summaries: {

@@ -63,7 +63,7 @@ export function buildApproveCommand(deps: {
           onceLine:
             "Approved this call only — the same request shape will re-prompt next time.",
           spendLimitLine:
-            "Continued — the spend limit is one limit amount higher for today, and no egress rule was written.",
+            "Continued — the spend limit is raised by its daily amount for today, so the agent's model calls work again.",
           expiredEffect: "the next request of this shape passes.",
         });
       },

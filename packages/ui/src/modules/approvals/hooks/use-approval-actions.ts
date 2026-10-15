@@ -9,6 +9,8 @@ import {
 import type { ApprovalView } from "api-server-api";
 
 import { useStore } from "../../../store.js";
+import { continueLabel } from "../../spend/lib/copy.js";
+import { localResetTime } from "../../spend/lib/format.js";
 import {
   useApproveHost,
   useApproveOnce,
@@ -85,14 +87,21 @@ export function useApprovalActions(row: ApprovalView): ApprovalActions {
     }
   };
 
+  const continueText =
+    row.payload.kind === "spend_limit"
+      ? continueLabel(row.payload.amountMicros, row.payload.unit)
+      : "Continue";
+
   const spendLimitActions: ApprovalAction[] = [
     {
       id: "allow-once",
-      label: "Continue",
+      label: continueText,
       icon: Checkmark,
       danger: false,
       disabled: inflight || !live,
-      tooltip: live ? undefined : "The question expired at midnight UTC",
+      tooltip: live
+        ? undefined
+        : `The question expired at ${localResetTime(row.expiresAt)} your time`,
       resolvedLabel: "Continued",
       run: () => direct(() => approveOnce.mutateAsync({ id: row.id })),
     },
@@ -181,7 +190,7 @@ export function useApprovalActions(row: ApprovalView): ApprovalActions {
 
   return {
     actions: spendLimit ? spendLimitActions : egressActions,
-    primaryLabel: spendLimit ? "Continue" : "Allow",
+    primaryLabel: spendLimit ? continueText : "Allow",
     inflight,
     hostLabel,
     expiredNote:

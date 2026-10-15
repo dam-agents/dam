@@ -9,7 +9,7 @@ import {
 } from "api-server-api";
 import { z } from "zod";
 
-import { getBrand } from "../../brand.js";
+import { localResetTime, nextUtcMidnight } from "../spend/lib/format.js";
 import { connectionWentAway } from "./close-race.js";
 
 export function describeJsonRpcError(
@@ -64,6 +64,7 @@ export function isQueueFullError(e: unknown): boolean {
 }
 
 interface SendErrorDescription {
+  title?: string;
   message: string;
   hint?: string;
 }
@@ -83,11 +84,20 @@ const SEND_ERROR_HINTS: ReadonlyArray<[RegExp, string]> = [
   ],
 ];
 
-function spendQuotaHint(raw: string): string | null {
+function describeSpendRefusal(raw: string): SendErrorDescription | null {
   if (!/spend quota exceeded/i.test(raw)) return null;
+  const reset = localResetTime(nextUtcMidnight());
   return /platform operator/i.test(raw)
-    ? "You reached your spend ceiling for today. Ask the platform operator for a higher ceiling, or wait for the next UTC day."
-    : `This Agent reached a spend limit for today. Its owner can continue in ${getBrand().name}, or the limit starts again at the next UTC day.`;
+    ? {
+        title: "Spend ceiling reached:",
+        message: `You reached the daily spend ceiling that your operator set, so paid model calls stop. Ask your operator for a higher ceiling, or wait until ${reset} your time.`,
+        hint: `Details: ${raw}`,
+      }
+    : {
+        title: "Spend limit reached:",
+        message: `This agent reached a daily spend limit, so its model calls stop. Continue it on Home, or wait until ${reset} your time.`,
+        hint: `Details: ${raw}`,
+      };
 }
 
 export function describeSendError(raw: string): SendErrorDescription {
@@ -96,8 +106,8 @@ export function describeSendError(raw: string): SendErrorDescription {
     raw.startsWith(PROMPT_QUEUE_FULL_MESSAGE)
   )
     return QUEUE_FULL_DESCRIPTION;
-  const spendHint = spendQuotaHint(raw);
-  if (spendHint) return { message: raw, hint: spendHint };
+  const spendRefusal = describeSpendRefusal(raw);
+  if (spendRefusal) return spendRefusal;
   for (const [pattern, hint] of SEND_ERROR_HINTS) {
     if (!pattern.test(raw)) continue;
     if (/credential secret/i.test(raw)) return { message: raw };

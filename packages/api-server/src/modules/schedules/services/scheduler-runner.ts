@@ -88,12 +88,12 @@ export interface SchedulerRunnerDeps {
 const SPEND_HOLD = {
   limit: {
     holdReason: "spend_limit",
-    result: "held: spend limit reached",
+    result: "held: spend limit reached for today",
     runNow: "spend-limit",
   },
   ceiling: {
     holdReason: "spend_ceiling",
-    result: "held: spend ceiling reached",
+    result: "held: spend ceiling reached for today",
     runNow: "spend-ceiling",
   },
 } as const satisfies Record<

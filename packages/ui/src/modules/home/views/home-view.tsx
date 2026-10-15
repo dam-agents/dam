@@ -8,10 +8,10 @@ import { useAgentRows } from "../../agents/hooks/use-agent-rows.js";
 import { useSandboxRowActions } from "../../agents/hooks/use-sandbox-row-actions.js";
 import { splitTemporarySandboxes } from "../../agents/utils/temporary-sandboxes.js";
 import { ResourcesCard } from "../../budgets/components/resources-card.js";
+import { SpendWidget } from "../../spend/components/spend-widget.js";
 import { useFeed } from "../api/queries.js";
 import { ApprovalsBanner } from "../components/approvals-banner.js";
 import { WidgetSkeleton } from "../components/home-skeletons.js";
-import { SpendWidget } from "../components/spend-widget.js";
 
 export function HomeView() {
   const { agentsData, initialLoaded, rowProps, deleteAgent } = useAgentRows();

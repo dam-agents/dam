@@ -11,16 +11,24 @@ import { RemoveButton } from "@/components/ui/remove-button";
 import { cn } from "@/lib/utils";
 
 import { useSetSpendLimit } from "../api/mutations.js";
-import { amountText, formatSpend, UNIT_NAMES } from "../lib/format.js";
+import { amountText, formatDailyAmount, UNIT_NAMES } from "../lib/format.js";
+import { HelpTip } from "./help-tip.js";
 
 interface Props {
   label: string;
+  help?: string | null;
   scope: SpendLimitScope;
   unit: SpendUnit;
   amountMicros: number | null;
 }
 
-export function SpendLimitField({ label, scope, unit, amountMicros }: Props) {
+export function SpendLimitField({
+  label,
+  help,
+  scope,
+  unit,
+  amountMicros,
+}: Props) {
   const setLimit = useSetSpendLimit();
   const [draft, setDraft] = useState<string | null>(null);
   const save = (next: number | null) =>
@@ -33,6 +41,7 @@ export function SpendLimitField({ label, scope, unit, amountMicros }: Props) {
     return (
       <SpendLimitEditor
         label={label}
+        help={help}
         unit={unit}
         draft={draft}
         pending={setLimit.isPending}
@@ -45,14 +54,19 @@ export function SpendLimitField({ label, scope, unit, amountMicros }: Props) {
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-      <span className="text-sm text-foreground">{label}</span>
+      <span className="flex items-center gap-1.5 text-sm text-foreground">
+        {label}
+        {help && <HelpTip content={help} />}
+      </span>
       <span
         className={cn(
           "font-mono text-sm tabular-nums",
           amountMicros === null ? "text-muted-foreground" : "text-foreground",
         )}
       >
-        {amountMicros === null ? "No limit" : formatSpend(amountMicros, unit)}
+        {amountMicros === null
+          ? "No limit"
+          : formatDailyAmount(amountMicros, unit)}
       </span>
       <div className="ml-auto flex items-center gap-1">
         <Button
@@ -79,6 +93,7 @@ export function SpendLimitField({ label, scope, unit, amountMicros }: Props) {
 
 function SpendLimitEditor({
   label,
+  help,
   unit,
   draft,
   pending,
@@ -87,6 +102,7 @@ function SpendLimitEditor({
   onCancel,
 }: {
   label: string;
+  help?: string | null;
   unit: SpendUnit;
   draft: string;
   pending: boolean;
@@ -99,7 +115,7 @@ function SpendLimitEditor({
   const error =
     draft.trim() === "" || parsed.success
       ? undefined
-      : parsed.error.issues[0]?.message;
+      : "Enter an amount like 10 or 0.25.";
 
   return (
     <form
@@ -110,9 +126,10 @@ function SpendLimitEditor({
       }}
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <label htmlFor={id} className="text-sm text-foreground">
-          {label}
-        </label>
+        <span className="flex items-center gap-1.5 text-sm text-foreground">
+          <label htmlFor={id}>{label}</label>
+          {help && <HelpTip content={help} />}
+        </span>
         <div className="ml-auto flex items-center gap-2">
           <Input
             id={id}
