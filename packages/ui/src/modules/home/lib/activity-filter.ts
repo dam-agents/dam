@@ -1,6 +1,4 @@
-import { SessionMode, SessionType } from "api-server-api";
-
-import type { FeedItem } from "./feed-item.js";
+import { type AttentionItem, SessionMode, SessionType } from "api-server-api";
 
 export type ChannelType =
   "chat" | "slack" | "telegram" | "schedule" | "terminal";
@@ -21,18 +19,16 @@ export const CHANNEL_TYPE_LABELS: Record<ChannelType, string> = {
   terminal: "Terminal",
 };
 
-export type StateFilter = "any" | "attention" | "in-progress" | "unread";
+export type StateFilter = "any" | "in-progress" | "unread";
 
 export const STATE_FILTERS: readonly StateFilter[] = [
   "any",
-  "attention",
   "in-progress",
   "unread",
 ];
 
 export const STATE_FILTER_LABELS: Record<StateFilter, string> = {
   any: "All",
-  attention: "Approvals",
   "in-progress": "In progress",
   unread: "Unread",
 };
@@ -52,9 +48,7 @@ export function isFiltered(filters: ActivityFilters): boolean {
   );
 }
 
-export function channelTypeFor(item: FeedItem): ChannelType {
-  if (item.kind === "approval") return "chat";
-  const { session } = item;
+export function channelTypeOfSession(session: AttentionItem): ChannelType {
   if (
     session.scheduleId ||
     session.type === SessionType.ScheduleCron ||
@@ -65,28 +59,4 @@ export function channelTypeFor(item: FeedItem): ChannelType {
   if (session.type === SessionType.ChannelSlack) return "slack";
   if (session.type === SessionType.ChannelTelegram) return "telegram";
   return "chat";
-}
-
-function matchesState(item: FeedItem, state: StateFilter): boolean {
-  switch (state) {
-    case "any":
-      return true;
-    case "attention":
-      return item.kind === "approval";
-    case "in-progress":
-      return item.kind === "in-progress";
-    case "unread":
-      return item.kind === "unread";
-  }
-}
-
-export function applyActivityFilters(
-  items: readonly FeedItem[],
-  filters: ActivityFilters,
-): FeedItem[] {
-  return items.filter(
-    (item) =>
-      filters.channelTypes.has(channelTypeFor(item)) &&
-      matchesState(item, filters.state),
-  );
 }

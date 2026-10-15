@@ -5,7 +5,7 @@ import { useWaitingApprovals } from "../hooks/use-waiting-approvals.js";
 import { approvalsBannerCopy } from "../lib/approval-copy.js";
 
 export function ApprovalsBanner() {
-  const setActivityView = useStore((s) => s.setActivityView);
+  const setApprovalsOpen = useStore((s) => s.setApprovalsOpen);
   const approvals = useWaitingApprovals();
   if (approvals.length === 0) return null;
   const { title, detail } = approvalsBannerCopy(approvals);
@@ -13,7 +13,7 @@ export function ApprovalsBanner() {
   return (
     <button
       type="button"
-      onClick={() => setActivityView("feed")}
+      onClick={() => setApprovalsOpen(true)}
       data-testid="approvals-banner"
       className="mb-6 flex w-full items-center gap-3 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-left transition-colors hover:bg-warning/10 dark:border-warning/20 dark:bg-warning/10 dark:hover:bg-warning/15"
     >
