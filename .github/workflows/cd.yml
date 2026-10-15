@@ -673,9 +673,9 @@ jobs:
       # this lane. A PR that changes no mock source pulls main's mock and
       # skips the restore, a gigabyte and about 25 s.
       - id: mock-changed
-        if: github.event_name == 'pull_request'
+        if: env.VERIFY == 'true'
         run: |
-          if git diff --quiet HEAD^1 HEAD -- $(.mise/tasks/image/resolve paths mock); then
+          if git diff --quiet "$DIFF_BASE" HEAD -- $(.mise/tasks/image/resolve paths mock); then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
