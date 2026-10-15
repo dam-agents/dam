@@ -1,4 +1,4 @@
-import { Close, Globe } from "@carbon/icons-react";
+import { Close } from "@carbon/icons-react";
 import type { TabState } from "agent-runtime-api";
 import type { CSSProperties, KeyboardEvent, Ref } from "react";
 
@@ -67,13 +67,9 @@ export function BrowserTab({
           onClick={onSelect}
           onAuxClick={(e) => e.button === 1 && onClose()}
           onKeyDown={onKeyDown}
-          className="flex min-w-0 flex-1 items-center justify-center gap-1.5 self-stretch rounded-md px-6 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          className="flex min-w-0 flex-1 items-center justify-center gap-1.5 self-stretch rounded-md px-2 group-focus-within:px-6 group-hover:px-6 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         >
-          {tab.loading ? (
-            <Spinner size={12} label="Loading" />
-          ) : (
-            <Globe size={12} aria-hidden className="shrink-0" />
-          )}
+          {tab.loading && <Spinner size={12} label="Loading" />}
           <span className="truncate">{label}</span>
         </button>
       </Tooltip>
