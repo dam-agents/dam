@@ -68,7 +68,7 @@ test("boots and holds a chat turn", async ({ page }) => {
   await chatTurn(page, "hello-backend", "backend-reply-first-boot");
 });
 
-// TEST_SCENARIO: on the vm Backend a machine boots with the install's boot estimate and the runner grows it to its size once the guest is up. A grow that fails boots the machine again whole, so the agent still answers and nothing else in the suite would notice; the runner's log of a successful grow is the evidence that the guest put the added RAM online.
+// TEST_SCENARIO: on the vm Backend a machine boots with the install's boot estimate, 1 GiB in this lane, and the runner grows it to its size, half the runner's pool, once the guest is up. A grow that fails boots the machine again whole, so the agent still answers and nothing else in the suite would notice; the runner logs a grow as done only once the guest's virtio-mem driver plugged all the added RAM and its agent put it online. A guest that adds more than 1 GiB must not stall: smolvm before 1.28.1 plugged no more once 1 GiB waited offline (smol-machines/smolvm#1745), so the grow must add at least 3 GiB, and the lane's sizes cannot shrink below the bug unnoticed.
 test("grows its machine past the boot RAM", async () => {
   test.skip(laneBackend !== "vm", "only a vm machine boots small and grows");
   test.setTimeout(120_000);
@@ -76,12 +76,13 @@ test("grows its machine past the boot RAM", async () => {
     .poll(
       () =>
         runnerGrows(agentId).some(
-          (grow) => grow.message !== "machine operation failed",
+          (grow) => grow.memory_mib - grow.boot_mib >= 3072,
         ),
       {
         timeout: 60_000,
         intervals: [3_000],
-        message: "the runner logged no successful grow",
+        message:
+          "the runner logged no done grow of this agent's machine that added at least 3 GiB",
       },
     )
     .toBe(true);
