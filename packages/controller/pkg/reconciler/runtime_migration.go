@@ -42,6 +42,8 @@ const (
 	annRuntimeMigrationSource   = "agent-platform.ai/runtime-migration-source"
 	annRuntimeMigrationSeed     = "agent-platform.ai/runtime-migration-seed"
 	annRuntimeMigrationEmpty    = "agent-platform.ai/runtime-migration-nothing-to-copy"
+	// UNIT_BOUNDARY_DESCRIPTION: an aborted migration's machine that the abort could not delete, because the runner could not be reached. An Agent that carries it no longer claims a machine of its name, so the orphan sweep collects it; a new migration removes it first, so its machine starts on a fresh disk.
+	annRuntimeMigrationMachineLeft = "agent-platform.ai/runtime-migration-machine-left"
 
 	runtimeMigrationRequested = "requested"
 	runtimeMigrationCopying   = "copying"
@@ -139,19 +141,14 @@ func (m runtimeMigration) vmSideRuns() bool {
 	return m.phase == apiv1.ReasonRuntimeMigrationBooting || m.phase == apiv1.ReasonRuntimeMigrationVerified
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the migration itself keeps the Agent up, whatever its activity says. A boot is proven only by a guest that answers, so from `Booting` with its seed recorded until that answer, neither the idle timeout nor a reclaim may stop it; a stop the user asks for still wins. A boot with nothing to copy is held to no seed and counts as recorded.
+// UNIT_BOUNDARY_DESCRIPTION: whether the migration itself keeps the Agent up, whatever its activity says. A boot is proven only by a guest that answers, so from `Booting` with its seed recorded until that answer, neither the idle timeout, a reclaim nor a stop may stop it. A boot with nothing to copy is held to no seed and counts as recorded.
 func (m runtimeMigration) keepsUp() bool {
 	return m.phase == apiv1.ReasonRuntimeMigrationBooting && m.seeded
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the user's stop holds the Agent down while its migration runs. The plan promised a stopped Agent one start to finish the move, so a stop stamped before the migration began lets its boot through; a stop asked for since holds it, and once the guest has answered the old stop holds again, so the Agent goes back to stopped. A stamp that does not parse as a time holds.
+// UNIT_BOUNDARY_DESCRIPTION: whether the user's stop holds the Agent down while its migration runs. No stop holds a boot: every wake is refused while the move runs, so a boot held by a stop could never be released, and the plan promised a stopped Agent one start to finish the move. Once the guest has answered the stop holds again, so the Agent goes back to stopped.
 func (m runtimeMigration) stopHolds(annotations map[string]string) bool {
-	stamp := annotations[annStopRequested]
-	if stamp == "" {
-		return false
-	}
-	t, err := time.Parse(time.RFC3339, stamp)
-	return !m.keepsUp() || err != nil || !t.Before(m.since)
+	return annotations[annStopRequested] != "" && !m.keepsUp()
 }
 
 func (m runtimeMigration) containerDown() bool {
@@ -357,6 +354,14 @@ func (r *AgentReconciler) reconcileMigrationMachine(ctx context.Context, agent *
 	if err != nil {
 		return vmrunner.MachineStatus{}, false, err
 	}
+	if agent.Annotations[annRuntimeMigrationMachineLeft] != "" {
+		if err := r.deleteMachine(ctx, agent.Name, agent.Labels[envoyOwnerLabel]); err != nil {
+			return vmrunner.MachineStatus{}, false, fmt.Errorf("removing the machine an aborted move left: %w", err)
+		}
+		if err := patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, agent.Name, map[string]*string{annRuntimeMigrationMachineLeft: nil}); err != nil {
+			return vmrunner.MachineStatus{}, false, err
+		}
+	}
 	return r.reconcileVMAgent(ctx, target, ownerRef, gatewayIP, running, publish)
 }
 
@@ -507,7 +512,7 @@ func (r *AgentReconciler) runtimeMigrationWithNothingToCopy(ctx context.Context,
 	return r.runtimeMigrationPhase(ctx, agent, m, apiv1.ReasonRuntimeMigrationBooting, runtimeMigrationNothingToCopy)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: removes what the vm side made — the copy Job, the machine with its disk and its seed, and the record of which volumes were copied — and then the condition, so a crash anywhere in between is finished by the next reconcile. The old volumes are not touched: they never lost their labels, so the container resumes on them. For an abort the condition goes; for a retry the migration starts over from the preflight with a fresh machine, because a machine whose boot failed may have seeded part of its disk.
+// UNIT_BOUNDARY_DESCRIPTION: removes what the vm side made — the copy Job, the machine with its disk and its seed, and the record of which volumes were copied — and then the condition, so a crash anywhere in between is finished by the next reconcile. The old volumes are not touched: they never lost their labels, so the container resumes on them. For an abort the condition goes; for a retry the migration starts over from the preflight with a fresh machine, because a machine whose boot failed may have seeded part of its disk. An abort does not wait on a runner that cannot be reached, since that is when a user most needs the container back: the machine it could not delete is marked as left on the Agent, and the orphan sweep removes it once the runner answers.
 func (r *AgentReconciler) clearRuntimeMigration(ctx context.Context, agent *apiv1.Agent, retry bool) error {
 	name := agent.Name
 	prop := metav1.DeletePropagationBackground
@@ -523,15 +528,20 @@ func (r *AgentReconciler) clearRuntimeMigration(ctx context.Context, agent *apiv
 	if err := r.deleteRuntimeMigrationClones(ctx, name); err != nil {
 		return err
 	}
-	if err := r.deleteMachine(ctx, name, agent.Labels[envoyOwnerLabel]); err != nil {
-		return err
-	}
-	if err := patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, name, map[string]*string{
+	cleared := map[string]*string{
 		annRuntimeMigrationSource:  nil,
 		annRuntimeMigrationSeed:    nil,
 		annRuntimeMigrationEmpty:   nil,
 		annRuntimeMigrationMessage: nil,
-	}); err != nil {
+	}
+	if err := r.deleteMachine(ctx, name, agent.Labels[envoyOwnerLabel]); err != nil {
+		if retry {
+			return err
+		}
+		slog.Warn("runtime migration: the aborted move's machine could not be removed; the container comes back and the orphan sweep removes the machine once the runner answers", "agent", name, "error", err)
+		cleared[annRuntimeMigrationMachineLeft] = new("true")
+	}
+	if err := patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, name, cleared); err != nil {
 		return err
 	}
 	if retry {
@@ -554,7 +564,7 @@ func runtimeMigrationBootVerified(machine vmrunner.MachineStatus, expected vmrun
 	return machine.Ready && machine.HomeSeededFrom == expected.SHA256
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: `Verified` is written only while the request still stands, in the same compare-and-swap as the status update: an abort that lands between the read and the write makes the write conflict, and the retry sees the request gone. The api-server's abort checks for `Verified` the same way, so exactly one of the two wins. Until the guest answers, whatever keeps it from booting — a stop the user asked for, an owner budget with no room, or what the runner reports — is the phase's message.
+// UNIT_BOUNDARY_DESCRIPTION: `Verified` is written only while the request still stands, in the same compare-and-swap as the status update: an abort that lands between the read and the write makes the write conflict, and the retry sees the request gone. The api-server's abort checks for `Verified` the same way, so exactly one of the two wins. Until the guest answers, whatever keeps it from booting — an owner budget with no room, or what the runner reports — is the phase's message.
 func (r *AgentReconciler) bootRuntimeMigration(ctx context.Context, agent *apiv1.Agent, m *runtimeMigration, machine vmrunner.MachineStatus, runnerReached bool, vmErr error) error {
 	if !runnerReached {
 		return r.setRuntimeMigrationNote(ctx, agent, m, firstNote(m.held, vmSideProblem(machine, runnerReached, vmErr)))
@@ -1311,18 +1321,12 @@ func vmSideProblem(machine vmrunner.MachineStatus, runnerReached bool, vmErr err
 	return fmt.Sprintf("the new machine is %s: %s", machine.State, msg)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what makes a booting migration's machine stay down before its first answer, said on the Agent: a stop the user asked for, which is honoured and resumed from on the next start, or an owner budget with no room for the machine.
-func runtimeMigrationBootHeld(m runtimeMigration, hardStop bool, overBudget string) string {
-	if m.phase != apiv1.ReasonRuntimeMigrationBooting {
+// UNIT_BOUNDARY_DESCRIPTION: what makes a booting migration's machine stay down before its first answer, said on the Agent: an owner budget with no room for the machine.
+func runtimeMigrationBootHeld(m runtimeMigration, overBudget string) string {
+	if m.phase != apiv1.ReasonRuntimeMigrationBooting || overBudget == "" {
 		return ""
 	}
-	switch {
-	case hardStop:
-		return "the agent was stopped before its new machine first answered; the move goes on when it next starts"
-	case overBudget != "":
-		return "the new machine is waiting for room in the owner's budget to boot: " + overBudget
-	}
-	return ""
+	return "the new machine is waiting for room in the owner's budget to boot: " + overBudget
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the address the copy Job reaches the runner at. The runner's Service is headless, so its name resolves to this very pod address; writing it into the Job's hosts file under the Service's name keeps the name the runner's certificate is issued for while the Job needs no resolver. A runner pod replaced mid-copy fails the upload either way, and the retry pins the new pod.

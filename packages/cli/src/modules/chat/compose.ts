@@ -3,6 +3,7 @@ import { Command } from "commander";
 import type { CompatService, ConfigService } from "../cli/index.js";
 import type { TokenProvider } from "../auth/index.js";
 import type { AgentService } from "../agent/index.js";
+import { startFailure } from "../agent/commands/wait-or-exit.js";
 import { buildChatCommand } from "./commands/chat.js";
 import { buildRunCommand, trackStdout } from "./commands/run.js";
 import { buildSessionListCommand } from "./commands/session-list.js";
@@ -66,6 +67,8 @@ export function composeChatModule({
       process.once("SIGINT", handler);
       return () => process.removeListener("SIGINT", handler);
     },
+    whyNotStarted: (ctx) =>
+      startFailure(createAgentService(ctx.host), ctx.agentId),
   });
 
   const sessionParent = new Command("session").description(

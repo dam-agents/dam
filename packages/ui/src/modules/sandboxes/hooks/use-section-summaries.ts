@@ -95,8 +95,11 @@ export function useSectionSummaries(agent: AgentView | null): {
   );
 
   const { data: budget } = useBudgetReserved();
-  const setup =
-    agent && !agent.vm && budget
+  const setup = agent?.vm
+    ? agent.requireConnectionAddress
+      ? "Credentials: addressed only"
+      : "Credentials: every request"
+    : agent && budget
       ? formatSizeLabel(sizeInMi(agent.size), slotUnitOf(budget))
       : undefined;
 

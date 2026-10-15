@@ -34,11 +34,14 @@ export async function requiresConnectionAddress(
 /**
  * UNIT_BOUNDARY_DESCRIPTION: relays the browser panel's stream socket — the
  * one Selkies' web client opens beside its page — to `upstreamPath` on the
- * agent the route named, untouched in both directions. It wakes a hibernated
- * agent and holds the agent awake while open, like any panel; the stream's
- * own traffic, which acknowledges frames many times a second, never counts
- * as activity. What the client sends before the agent answers is held, up to
- * a cap.
+ * agent the route named, untouched in both directions. The web client opens
+ * it again by itself whenever it closes, so it never wakes a hibernated
+ * agent: it waits out a wake something deliberate asked for, and is refused
+ * otherwise, or a panel left open would wake an agent its user just put to
+ * sleep. It holds the agent awake like any panel, but only once the agent's
+ * end is open, since the hold alone would wake it. The stream's own traffic,
+ * which acknowledges frames many times a second, never counts as activity.
+ * What the client sends before the agent answers is held, up to a cap.
  */
 export function createBrowserStreamRelay(
   namespace: string,
@@ -67,7 +70,7 @@ export function createBrowserStreamRelay(
   ) {
     wss.handleUpgrade(req, socket, head, async (client) => {
       client.on("error", () => client.terminate());
-      const release = presence.acquire(agentId);
+      let release = () => {};
 
       let alive = true;
       client.on("pong", () => {
@@ -112,7 +115,7 @@ export function createBrowserStreamRelay(
         await readyOrAnswering(
           repo,
           agentId,
-          repo.ensureReady(agentId),
+          repo.ensureReady(agentId, { waitOnly: true }),
           `${upstreamBase(agentId).replace(/^ws/, "http")}/healthz`,
           () => clientGone,
         );
@@ -129,6 +132,7 @@ export function createBrowserStreamRelay(
       const us = upstream;
       us.on("open", () => {
         if (clientGone || overflow) return closeWs(us);
+        release = presence.acquire(agentId);
         actor.attached();
         client.off("message", buffer);
         for (const [d, b] of pending) us.send(d, { binary: b });
