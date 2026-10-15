@@ -52,6 +52,7 @@ Networked verbs opt into the gate; `dam version` is the un-gated informational c
 The realm advertises a public `platform-cli` client (device grant only, no secret); the CLI discovers its id from the server rather than hardcoding it, then drives the standard device flow — print (and optionally open) a verification URL, poll the token endpoint — and on success persists a per-host credential record under `$XDG_STATE_HOME/dam/` with restrictive permissions and an atomic write.
 
 Credentials are keyed by host URL, so switching between deployments never clobbers state.
+A host that moved redirects its `/api/auth/config` to the new host; login follows that redirect, keys the credential under the new host, and saves the new host as the active one.
 `dam auth status` lists each host, credential source, and token expiry, and never prints tokens.
 `dam auth logout` best-effort revokes the refresh token ([RFC 7009](https://datatracker.ietf.org/doc/html/rfc7009)) and removes the local entry; the local clear always proceeds even when revocation fails.
 Logout is deliberately not RP-Initiated Logout — the CLI must not kill SSO sessions belonging to the web UI or federated apps.
@@ -63,6 +64,7 @@ A refresh that fails with an invalid grant clears the entry and surfaces a sessi
 Those are the client-side signals.
 The server can also reject a request that looked valid locally, and the CLI surfaces that distinctly rather than as a transport failure: it maps the api-server's raw 401/403 (alongside the existing 412 Terms gate) to typed errors.
 A 401 becomes session-expired — with a hint that switches to "check `DAM_TOKEN`" when that variable is set, because a bearer supplied that way lives outside the credential store and re-login can't fix it.
+A 401 that answers after a redirect to another host names the move instead, because `fetch` drops the bearer on a cross-origin redirect; the CLI never resends the bearer to the redirect target, since that host was never logged in to.
 A 403 becomes access-denied with no login hint: the caller is authenticated but not authorized (e.g. an account without the install's required realm role), so the remedy is an admin, not re-authentication.
 Any other reached-but-rejected request surfaces the server's own reason; "cannot reach server" is reserved for genuine connectivity failures.
 An error answer that is not JSON — a gateway's HTML page — names the HTTP status it came with, never a parse error.
