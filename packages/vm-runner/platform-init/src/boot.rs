@@ -107,6 +107,7 @@ pub fn run(command: Vec<OsString>) -> ! {
     );
     mount_scratch(&root);
     let trust = offer_trust_cache(&root);
+    let guard = pool_guard(&root);
     leave_disk(&root);
     share_mounts();
     enter_workdir(&workdir);
@@ -121,6 +122,9 @@ pub fn run(command: Vec<OsString>) -> ! {
     std::thread::spawn(reclaim_cold_cache);
     std::thread::spawn(evict_scratch);
     std::thread::spawn(trim_freed_blocks);
+    if let Some(guard) = guard {
+        std::thread::spawn(move || guard_pool(guard));
+    }
     supervise(&binary, &command, trust.as_deref())
 }
 
@@ -1261,6 +1265,128 @@ fn eviction_pass(
     })
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a guest's disk is a sparse file sized at the owner's whole claim, which every other disk of the owner shares, so the guest sees room the claim no longer has, and a write past the claim's last block fails as a broken disk would, for every agent of the owner at once. So platform-init holds the guest to the room the runner grants it (guest::STORAGE_ROOM_PATH): every POOL_GUARD_INTERVAL it sizes a file it preallocates on the disk so that what the guest can still write is the grant, less what the guest wrote since the grant came, and never less than POOL_GUARD_FLOOR. A write past it then fails inside the guest with "no space left on device", which the agent and its tools handle and the runner reports as a full home, and the claim stays writable for the other agents. Preallocated blocks are only marked in the guest's filesystem and never written, so the file takes nothing from the claim. It is an unnamed temporary file: no older platform-init, no image and no agent can find it, and the guest's filesystem frees it whenever the guest stops, however it stops. The floor keeps room for SSH keys, a shell and the agent's own state while every agent of an owner is held near zero, so with N agents running the claim can pass the runner's level by N times the floor.
+const POOL_GUARD_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+const POOL_GUARD_FLOOR: u64 = 256 << 20;
+const POOL_GUARD_STEP: u64 = 16 << 20;
+
+static POOL_GUARD_HELD: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn pool_guard(root: &Path) -> Option<File> {
+    let dir = root.join(guest::SYSTEM_DIR);
+    match OpenOptions::new()
+        .read(true)
+        .write(true)
+        .custom_flags(libc::O_TMPFILE)
+        .mode(0o600)
+        .open(&dir)
+    {
+        Ok(file) => Some(file),
+        Err(e) => {
+            logf!("WARNING: making the guard file in {} ({e}); this agent's writes are not held to the owner's storage", dir.display());
+            None
+        }
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the room the runner granted, as its id and bytes, and what the guest had written when it first read that grant.
+struct Grant {
+    id: String,
+    bytes: u64,
+    used_at: u64,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how large the guard file is to be, given the guest could still write `avail` bytes without it and has written `used` bytes of its own: what is left of the grant counts down by what the guest wrote since, the floor stays, and the file takes the rest. No grant holds nothing back.
+fn guard_size(grant: Option<&Grant>, avail: u64, used: u64) -> u64 {
+    grant.map_or(0, |grant| {
+        let left = grant
+            .bytes
+            .saturating_sub(used.saturating_sub(grant.used_at));
+        avail.saturating_sub(left.max(POOL_GUARD_FLOOR))
+    })
+}
+
+fn read_grant(text: &str) -> Option<(String, u64)> {
+    let mut words = text.split_whitespace();
+    let id = words.next()?.to_string();
+    Some((id, words.next()?.parse().ok()?))
+}
+
+fn guard_pool(guard: File) {
+    let home = Path::new(guest::AGENT_HOME);
+    let mut grant: Option<Grant> = None;
+    let mut held = 0u64;
+    loop {
+        std::thread::sleep(POOL_GUARD_INTERVAL);
+        let Some(stat) = statvfs(home) else {
+            continue;
+        };
+        #[allow(clippy::unnecessary_cast)]
+        let (size, blocks, free, avail) = (
+            stat.f_frsize as u64,
+            stat.f_blocks as u64,
+            stat.f_bfree as u64,
+            stat.f_bavail as u64,
+        );
+        let used = blocks
+            .saturating_sub(free)
+            .saturating_mul(size)
+            .saturating_sub(held);
+        let avail = avail.saturating_mul(size).saturating_add(held);
+        match fs::read_to_string(guest::STORAGE_ROOM_PATH)
+            .ok()
+            .as_deref()
+            .and_then(read_grant)
+        {
+            None => grant = None,
+            Some((id, bytes)) if grant.as_ref().is_none_or(|grant| grant.id != id) => {
+                grant = Some(Grant {
+                    id,
+                    bytes,
+                    used_at: used,
+                });
+            }
+            Some(_) => {}
+        }
+        let want = guard_size(grant.as_ref(), avail, used);
+        if want.abs_diff(held) < POOL_GUARD_STEP && !(want == 0 && held > 0) {
+            continue;
+        }
+        let Ok(length) = libc::off_t::try_from(want) else {
+            continue;
+        };
+        // SAFETY: the descriptor is open for the call, and neither call takes a pointer.
+        let rc = unsafe {
+            if want > held {
+                libc::fallocate(guard.as_raw_fd(), 0, 0, length)
+            } else {
+                libc::ftruncate(guard.as_raw_fd(), length)
+            }
+        };
+        let was = held;
+        held = match guard.metadata() {
+            Ok(info) => info.blocks() * 512,
+            Err(_) if rc == 0 => want,
+            Err(_) => held,
+        };
+        POOL_GUARD_HELD.store(held, std::sync::atomic::Ordering::Relaxed);
+        if rc != 0 {
+            logf!(
+                "WARNING: sizing the storage guard to {want} bytes: {}",
+                io::Error::last_os_error()
+            );
+        }
+        if (was < POOL_GUARD_FLOOR) != (held < POOL_GUARD_FLOOR) {
+            announce(&if held < POOL_GUARD_FLOOR {
+                "the owner's storage has room again: this agent's writes are no longer held back"
+                    .to_string()
+            } else {
+                format!("the owner's storage is nearly full: this agent may write {} more bytes before its writes fail with no space left", avail.saturating_sub(held))
+            });
+        }
+    }
+}
+
 fn statvfs(path: &Path) -> Option<libc::statvfs> {
     let path = cstring(path.as_os_str()).ok()?;
     // SAFETY: statvfs is plain old data, and all-zero bytes are a valid value of it.
@@ -1271,8 +1397,14 @@ fn statvfs(path: &Path) -> Option<libc::statvfs> {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the smaller of the disk's free share of blocks and of inodes. A disk gets one inode per 16 KiB, so a home of many small files (dependency trees, checkouts) runs out of inodes with most of its space free, and a write then fails with "no space left on device" all the same.
+// UNIT_BOUNDARY_DESCRIPTION: the storage guard's blocks count as free here: they hold the guest to the owner's storage, which the runner's claim requests already shed for, so they must not have the disk read as its own disk short and evict every few minutes.
 fn free_percent(path: &Path) -> Option<u64> {
-    free_share(&statvfs(path)?)
+    let mut stat = statvfs(path)?;
+    let held = POOL_GUARD_HELD.load(std::sync::atomic::Ordering::Relaxed);
+    #[allow(clippy::unnecessary_cast)]
+    let held_blocks = (held / (stat.f_frsize as u64).max(1)) as libc::fsblkcnt_t;
+    stat.f_bavail = stat.f_bavail.saturating_add(held_blocks);
+    free_share(&stat)
 }
 
 #[allow(clippy::unnecessary_cast)]
@@ -2233,6 +2365,44 @@ mod tests {
     // TEST_OVERVIEW: platform-init is what makes a machine's persistence the platform's promise rather than the image's behaviour. The mounting itself needs a guest, but everything that decides what ends up on the disk — seeding the home from the image exactly once, never leaving a half-copy behind, keeping the boot log readable, which mounts follow the image onto its root and when that root is kept, which cache folders are cleared from the home, resolving the entrypoint it hands off to — is ordinary file or table work and is covered here.
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    // TEST_SCENARIO: the guard file leaves the guest what is left of its grant: the grant less what the guest wrote since it came, never less than the floor, and nothing held back without a grant or when the disk has less free than the grant anyway. A new grant counts from what the guest had written when it came.
+    #[test]
+    fn the_storage_guard_leaves_the_guest_its_grant() {
+        let gib = 1u64 << 30;
+        let grant = Grant {
+            id: "1".into(),
+            bytes: 10 * gib,
+            used_at: 5 * gib,
+        };
+        assert_eq!(guard_size(None, 90 * gib, 5 * gib), 0);
+        assert_eq!(guard_size(Some(&grant), 90 * gib, 5 * gib), 80 * gib);
+        assert_eq!(guard_size(Some(&grant), 86 * gib, 9 * gib), 80 * gib);
+        assert_eq!(
+            guard_size(Some(&grant), 80 * gib, 20 * gib),
+            80 * gib - POOL_GUARD_FLOOR
+        );
+        assert_eq!(guard_size(Some(&grant), 8 * gib, 5 * gib), 0);
+        assert_eq!(read_grant("7 1024\n"), Some(("7".into(), 1024)));
+        assert_eq!(read_grant("7"), None);
+        assert_eq!(read_grant(""), None);
+    }
+
+    // TEST_SCENARIO: the guard file has no name, so no older platform-init, image or agent can find it, and the filesystem frees it once the guest stops; a disk where it cannot be made boots without it.
+    #[test]
+    fn the_storage_guard_is_an_unnamed_file_on_the_disk() {
+        let disk = TempDir::new("guard");
+        assert!(pool_guard(disk.path()).is_none());
+        fs::create_dir_all(disk.path().join(guest::SYSTEM_DIR)).unwrap();
+        let guard = pool_guard(disk.path()).expect("an unnamed file on the disk");
+        assert_eq!(guard.metadata().unwrap().nlink(), 0);
+        assert_eq!(
+            fs::read_dir(disk.path().join(guest::SYSTEM_DIR))
+                .unwrap()
+                .count(),
+            0
+        );
+    }
 
     // TEST_SCENARIO: a disk of many small files runs out of inodes with most of its space free, and a write then fails as on a full disk, so the free share is the smaller of blocks and inodes; a filesystem that counts no inodes is judged by its blocks.
     #[test]

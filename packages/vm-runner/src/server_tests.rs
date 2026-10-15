@@ -2670,6 +2670,32 @@ async fn a_short_claim_marks_every_share_until_it_has_room_again() {
     }
 }
 
+// TEST_SCENARIO: a guest's disk is sized at the whole claim, so the runner grants every machine's guest, at each look, its part of what is left below 95% of the claim, with an id new at every look so the guest counts its writes from the latest grant; a claim that cannot be measured grants nothing, so no guest is held to a grant nobody renews.
+#[tokio::test(flavor = "multi_thread")]
+async fn every_look_grants_each_guest_its_room_on_the_claim() {
+    let (h, claim) = with_claim("storage-room");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let grant = h
+        .dir
+        .join("machines/m1")
+        .join(SHARE_DIR)
+        .join(share::STORAGE_ROOM_FILE);
+    *locked(&claim) = filled(55);
+    h.server.check_storage();
+    let first = std::fs::read_to_string(&grant).unwrap();
+    assert_eq!(
+        first.split_whitespace().nth(1),
+        Some((40u64 << 30).to_string().as_str()),
+        "{first}"
+    );
+    h.server.check_storage();
+    assert_ne!(std::fs::read_to_string(&grant).unwrap(), first);
+    *locked(&claim) = None;
+    h.server.check_storage();
+    assert!(!grant.exists());
+}
+
 // TEST_SCENARIO: a guest serves each request to give back scratch once, so the runner keeps the same request while the claim stays short at about the same use, and sends a new one, with a new id and its part of the new shortage, only once the claim has filled RESHED_STEP_PERCENT further; a claim that has room again clears it, and the next shortage is a new request.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_short_claim_asks_again_only_when_it_fills_further() {

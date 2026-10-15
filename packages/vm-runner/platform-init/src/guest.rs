@@ -23,6 +23,9 @@ pub const IMAGE_PATH: &str = "/platform/image";
 // UNIT_BOUNDARY_DESCRIPTION: the runner keeps this file in the share while the owner's claim, which holds every machine disk of the owner, is short of room. A guest sees its own disk as free while the claim under it fills, so this is how it learns to give back what it keeps only as scratch; the runner removes it once the claim has room again.
 pub const STORAGE_SHORT_PATH: &str = "/platform/storage-short";
 
+// UNIT_BOUNDARY_DESCRIPTION: the runner keeps this file in the share with the bytes this machine's guest may still add to the owner's claim: one line, an id that changes with every look at the claim, and the bytes. A guest's disk is sized at the whole claim and sparse, so without it the guest sees its disk free while the claim under it fills, and once the claim has no block left its writes fail as a broken disk would, under every other agent of the owner too. A share without it, from an older runner, holds the guest to nothing.
+pub const STORAGE_ROOM_PATH: &str = "/platform/storage-room";
+
 // UNIT_BOUNDARY_DESCRIPTION: the words platform-init adds to its console line for an entrypoint that exited with the agent's home nearly full, and to a boot it stops because the disk had no space or inode left, which is how the runner, reading the console from the host, tells a full home from any other crash. Nearly full is less than HOME_FULL_BYTES free, the agent runtime's own threshold for exiting on a full home, or fewer than HOME_FULL_INODES inodes.
 pub const HOME_FULL: &str = "the agent's home is full";
 pub const HOME_FULL_BYTES: u64 = 64 << 20;
