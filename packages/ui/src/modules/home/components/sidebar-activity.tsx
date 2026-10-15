@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { SectionLabel } from "@/components/ui/section-label";
+import { useNow } from "@/hooks/use-now";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
@@ -12,6 +13,7 @@ import { ActivityFilterMenu } from "./activity-filter-menu.js";
 import { SidebarActivityRow } from "./sidebar-activity-row.js";
 
 const PAGE = 20;
+const MINUTE_MS = 60_000;
 
 interface Props {
   stickyHeaderClassName?: string;
@@ -24,6 +26,7 @@ export function SidebarActivity({ stickyHeaderClassName, onNavigate }: Props) {
   const setFilters = useStore((s) => s.setSidebarActivityFilters);
   const openSession = useOpenSession();
   const [shown, setShown] = useState(PAGE);
+  const now = useNow(MINUTE_MS);
 
   const matching = filterActivitySessions(items, filters);
   const visible = matching.slice(0, shown);
@@ -40,7 +43,13 @@ export function SidebarActivity({ stickyHeaderClassName, onNavigate }: Props) {
         )}
       >
         <SectionLabel>Activity</SectionLabel>
-        <ActivityFilterMenu filters={filters} onChange={setFilters} />
+        <ActivityFilterMenu
+          filters={filters}
+          onChange={(next) => {
+            setFilters(next);
+            setShown(PAGE);
+          }}
+        />
       </div>
       {!loading && visible.length === 0 && (
         <p className="px-2.5 py-1.5 text-xs text-muted-foreground">
@@ -57,6 +66,7 @@ export function SidebarActivity({ stickyHeaderClassName, onNavigate }: Props) {
             key={item.id}
             item={item}
             selected={item.id === openSessionKey}
+            now={now}
             onOpen={() => {
               openSession(
                 item.session.agentId,

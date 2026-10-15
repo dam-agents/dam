@@ -65,7 +65,7 @@ export function SideDrawer({
         role="dialog"
         aria-label={label}
         onKeyDown={(event) => {
-          if (event.key === "Escape") onClose();
+          if (event.key === "Escape" && !event.defaultPrevented) onClose();
         }}
         className={cn(
           "relative flex h-full w-full flex-col bg-background shadow-xl transition-transform duration-150 motion-reduce:transition-none",

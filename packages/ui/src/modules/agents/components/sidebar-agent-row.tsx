@@ -74,7 +74,9 @@ export function SidebarAgentRow({
         <div
           className={cn(
             "absolute right-1 flex items-center gap-0.5 transition-opacity focus-within:opacity-100 group-hover/agent:opacity-100 has-[[data-state=open]]:opacity-100",
-            selected ? "opacity-100" : "opacity-0",
+            selected
+              ? "opacity-100"
+              : "pointer-events-none opacity-0 focus-within:pointer-events-auto group-hover/agent:pointer-events-auto has-[[data-state=open]]:pointer-events-auto",
           )}
         >
           {actions}

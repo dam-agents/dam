@@ -16,10 +16,12 @@ const MESSENGERS: Partial<Record<SessionType, { slug: string; alt: string }>> =
 export function SidebarActivityRow({
   item,
   selected,
+  now,
   onOpen,
 }: {
   item: AgentActivitySession;
   selected: boolean;
+  now: Date;
   onOpen: () => void;
 }) {
   const { session, agent, at, working, unread } = item;
@@ -64,7 +66,7 @@ export function SidebarActivityRow({
           <span className="truncate">{agent.name}</span>
           <span aria-hidden>·</span>
           <span className="shrink-0" title={formatTimestamp(at)}>
-            {timeAgo(at)}
+            {timeAgo(at, now)}
           </span>
           {messenger && (
             <ConnectionIcon

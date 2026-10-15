@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -17,15 +17,21 @@ export function Collapse({
 }) {
   const [mounted, setMounted] = useState(open);
   const [expanded, setExpanded] = useState(false);
+  const expandedRef = useRef(false);
 
   useEffect(() => {
     if (!open) {
+      const animatesClosed = expandedRef.current && !prefersReducedMotion();
+      expandedRef.current = false;
       setExpanded(false);
-      if (prefersReducedMotion()) setMounted(false);
+      if (!animatesClosed) setMounted(false);
       return;
     }
     setMounted(true);
-    const frame = requestAnimationFrame(() => setExpanded(true));
+    const frame = requestAnimationFrame(() => {
+      expandedRef.current = true;
+      setExpanded(true);
+    });
     return () => cancelAnimationFrame(frame);
   }, [open]);
 

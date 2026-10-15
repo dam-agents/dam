@@ -53,7 +53,9 @@ export function SidebarAgents({ onNavigate }: { onNavigate?: () => void }) {
         selected={open}
         unread={unreadAgentIds.has(agent.id)}
         working={workingByAgent.get(agent.id) ?? false}
-        onSelect={() => selectAgent(agent.id)}
+        onSelect={() => {
+          if (!open) selectAgent(agent.id);
+        }}
         actions={
           <>
             <RowIconButton

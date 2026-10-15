@@ -32,14 +32,3 @@ export function isFeedableAttention(
 export function isUnreadAttention(session: AttentionItem): boolean {
   return laterThanSeen(session.activityAt, session.seenAt);
 }
-
-export function isUnreadItem(item: {
-  kind: string;
-  session?: AttentionItem;
-}): boolean {
-  return (
-    item.kind === "unread" &&
-    item.session !== undefined &&
-    isUnreadAttention(item.session)
-  );
-}
