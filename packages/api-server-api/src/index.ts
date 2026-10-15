@@ -98,6 +98,7 @@ export type {
 export {
   AGENT_ID_RE,
   agentCreateInputSchema,
+  avatarSchema,
   agentKindSchema,
   agentUpdateInputSchema,
 } from "./modules/agents/schemas.js";
@@ -417,6 +418,7 @@ export type {
   SpendCategory,
   SessionRuntime,
   CallContext,
+  SubAgentSpend,
 } from "./modules/metrics/types.js";
 
 export type {
@@ -559,6 +561,7 @@ export {
   formatEgressRuleInline,
   formatEgressRuleSource,
 } from "./modules/egress-rules/format.js";
+export { canonicalEgressHost } from "./modules/egress-rules/host.js";
 export type {
   GatewayRestartImpact,
   PromotionRule,

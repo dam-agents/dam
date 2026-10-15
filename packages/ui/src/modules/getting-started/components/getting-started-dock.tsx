@@ -31,7 +31,8 @@ interface Props {
  * right corner. It lists the tasks that unlock the avatar characters, plays
  * the celebration for each new unlock, and collapses to a pill. Dismissing it
  * hides it until the next unlock or until the avatar picker asks for it; it
- * is gone for good once every character is unlocked. While a celebration
+ * is gone once every character is unlocked, until the user resets their
+ * onboarding progress. While a celebration
  * plays, the checklist shows as the pill, so both fit on a short screen. On a
  * page it is fixed to
  * the window, above the mobile navigation bar. In the chat it sits inside the

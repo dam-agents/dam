@@ -22,13 +22,9 @@ import { AgentActionsMenu } from "./agent-actions-menu.js";
 import { SidebarAgentRow } from "./sidebar-agent-row.js";
 
 export function SidebarAgents({ onNavigate }: { onNavigate?: () => void }) {
-  const { active, folded, openAgentId, unreadAgentIds, workingByAgent } =
-    useSidebarAgents();
-  const { agentsData, rowProps, deleteAgent, suspend } = useAgentRows();
-  const { stopSandbox, deleteSandbox } = useSandboxRowActions({
-    deleteAgent,
-    suspend,
-  });
+  const { active, folded, openAgentId, unreadAgentIds } = useSidebarAgents();
+  const { agentsData, rowProps, deleteAgent } = useAgentRows();
+  const { deleteSandbox } = useSandboxRowActions({ deleteAgent });
   const selectAgent = useStore((s) => s.selectAgent);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const showFolded = useStore((s) => s.sidebarShowHibernating);
@@ -52,7 +48,6 @@ export function SidebarAgents({ onNavigate }: { onNavigate?: () => void }) {
         agent={agent}
         selected={open}
         unread={unreadAgentIds.has(agent.id)}
-        working={workingByAgent.get(agent.id) ?? false}
         onSelect={() => {
           if (!open) selectAgent(agent.id);
         }}
@@ -70,7 +65,6 @@ export function SidebarAgents({ onNavigate }: { onNavigate?: () => void }) {
               dense
               configureLabel="Configure agent"
               onConfigure={navigate(() => navigateToSandboxHome(agent.id))}
-              onStop={() => void stopSandbox(agent)}
               onDelete={() => void deleteSandbox(agent)}
               onAddToChannel={setBindMessenger}
               messengers={messengers}

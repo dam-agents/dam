@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { SectionLabel } from "@/components/ui/section-label";
 import { useNow } from "@/hooks/use-now";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
+import { useAgentsList } from "../../agents/api/queries.js";
 import { useOpenSession } from "../../sessions/hooks/use-open-session.js";
+import { useActivityConversations } from "../hooks/use-activity-conversations.js";
 import { useActivitySessions } from "../hooks/use-activity-sessions.js";
 import { isFiltered } from "../lib/activity-filter.js";
 import { filterActivitySessions } from "../lib/activity-sessions.js";
@@ -27,6 +29,9 @@ export function SidebarActivity({ stickyHeaderClassName, onNavigate }: Props) {
   const openSession = useOpenSession();
   const [shown, setShown] = useState(PAGE);
   const now = useNow(MINUTE_MS);
+  const agents = useAgentsList();
+  const sessions = useMemo(() => items.map((item) => item.session), [items]);
+  const conversationOf = useActivityConversations(sessions, agents);
 
   const matching = filterActivitySessions(items, filters);
   const visible = matching.slice(0, shown);
@@ -67,6 +72,7 @@ export function SidebarActivity({ stickyHeaderClassName, onNavigate }: Props) {
             item={item}
             selected={item.id === openSessionKey}
             now={now}
+            conversation={conversationOf(item.session)}
             onOpen={() => {
               openSession(
                 item.session.agentId,

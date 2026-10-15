@@ -62,7 +62,7 @@ export interface AgentsRepository {
   restart(id: string, owner?: string): Promise<boolean>;
   wake(id: string): Promise<InfraAgent | null>;
   requestStop(id: string): Promise<InfraAgent | null>;
-  requestPause(id: string): Promise<InfraAgent | null>;
+  requestSleep(id: string): Promise<InfraAgent | null>;
   isOwnedBy(id: string, owner: string): Promise<boolean>;
   getOwner(id: string): Promise<string | null>;
   resolveIdentity(
@@ -272,14 +272,14 @@ export function createAgentsRepository(
       return reread ? parseInfraAgent(reread) : null;
     },
 
-    async requestPause(id) {
+    async requestSleep(id) {
       const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
       if (!obj) return null;
-      const pauseStamp = new Date().toISOString();
+      const sleepStamp = new Date().toISOString();
       await k8s.patchCustomObject(AGENTS_PLURAL, id, {
         metadata: {
           annotations: {
-            [STOP_REQUESTED_KEY]: pauseStamp,
+            [STOP_REQUESTED_KEY]: sleepStamp,
             [ACTIVE_SESSION_KEY]: "",
             [INVOCATIONS_ACTIVE_KEY]: "",
             [LAST_ACTIVITY_KEY]: STALE_ACTIVITY,
@@ -302,25 +302,25 @@ export function createAgentsRepository(
         if (!settled) {
           getLogger().warn(
             { agentId: id },
-            "agent.pause.settle-timeout — leaving hard stop in place",
+            "agent.sleep.settle-timeout — leaving the stop stamp in place",
           );
           return;
         }
         const current = await k8s.getCustomObject(AGENTS_PLURAL, id);
         const standing = current?.metadata?.annotations?.[STOP_REQUESTED_KEY];
-        if (standing !== pauseStamp) {
+        if (standing !== sleepStamp) {
           getLogger().info(
             { agentId: id },
-            "agent.pause.superseded — leaving the newer stop in place",
+            "agent.sleep.superseded — leaving the newer stop stamp in place",
           );
           return;
         }
         await repo.patchAnnotation(id, STOP_REQUESTED_KEY, "");
-        getLogger().info({ agentId: id }, "agent.pause.settled");
+        getLogger().info({ agentId: id }, "agent.sleep.settled");
       })().catch((err) => {
         getLogger().warn(
           { agentId: id, error: (err as Error).message },
-          "agent.pause.settle-failed — leaving hard stop in place",
+          "agent.sleep.settle-failed — leaving the stop stamp in place",
         );
       });
       return infra;

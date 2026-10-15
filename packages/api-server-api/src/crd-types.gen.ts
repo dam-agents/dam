@@ -18,7 +18,7 @@ export interface AgentSpecCR {
    */
   agentHome?: string;
   /**
-   * Avatar is the agent's chosen avatar character; unset means one picked from its owner and name.
+   * Avatar is the agent's chosen avatar: a character name, "emoji:<emoji>" or "image:<sha256>"; unset means a character picked from its owner and name.
    */
   avatar?: string;
   /**
@@ -210,4 +210,8 @@ export interface AgentSpecCR {
    * does not drive; it is service-only input, like the pre-minted id.
    */
   telemetryAttributionId?: string;
+  /**
+   * WhispersOff stops people in the conversations the agent is connected to from whispering to it privately; unset means whispers are on.
+   */
+  whispersOff?: boolean;
 }

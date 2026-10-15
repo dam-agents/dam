@@ -61,8 +61,7 @@ interface Props {
   configureLabel: string;
   onWake: () => void;
   onRestart: () => void;
-  onPause: () => void;
-  onStop: () => void;
+  onSleep: () => void;
   onDelete: () => void;
   onAddToChannel?: (messenger: "slack" | "telegram") => void;
   messengers?: { slack?: boolean; telegram?: boolean };
@@ -89,8 +88,7 @@ export function AgentRow({
   configureLabel,
   onWake,
   onRestart,
-  onPause,
-  onStop,
+  onSleep,
   onDelete,
   onAddToChannel,
   messengers = {},
@@ -111,7 +109,7 @@ export function AgentRow({
         name={agent.name}
         avatar={agent.avatar}
         size={64}
-        mood={avatarMood(display.state, agent.stopRequested, working ?? false)}
+        mood={avatarMood(display.state, agent.stopRequested)}
         className="mr-1 self-start"
       />
       <div className="min-w-0 flex-1">
@@ -211,8 +209,7 @@ export function AgentRow({
             onConfigure={onConfigure}
             onWake={onWake}
             onRestart={onRestart}
-            onPause={onPause}
-            onStop={onStop}
+            onSleep={onSleep}
             onDelete={onDelete}
             onAddToChannel={onAddToChannel}
             messengers={messengers}

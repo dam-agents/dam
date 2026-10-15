@@ -112,7 +112,7 @@ struct Seen {
     error: Option<String>,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `seeding` is set while a seed is uploaded into the machine's share, and no worker starts while it is. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change. `cancel` is the machine's own child of the runner's lifetime, cancelled by a delete so the action in flight stops waiting on its fetch. `acting_mib` is the memory of the spec the action in flight runs with, which a newer spec stored behind it does not change. `resident_mib` is what the prober last measured the running machine's VMM holding, kept beside `seen` rather than in it, so a figure that moves at every probe does not move the status version and wake every waiting read. `deletes` counts the delete calls in progress, and `deleting` stays set after one gave up waiting, so the worker still takes no further action. `gave_up` is when the runner last restarted the machine for going quiet, which holds its next such restart back.
+// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `seeding` is set while a seed is uploaded into the machine's share, and no worker starts while it is. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change. `cancel` is the machine's own child of the runner's lifetime, cancelled by a delete so the action in flight stops waiting on its fetch. `acting_mib` is the memory of the spec the action in flight runs with, which a newer spec stored behind it does not change. `resident_mib` is what the prober last measured the running machine's VMM holding, kept beside `seen` rather than in it, so a figure that moves at every probe does not move the status version and wake every waiting read. `warming_since` is when the machine's last boot began, which admission counts it at the warm-up floor for WARMUP after. `deletes` counts the delete calls in progress, and `deleting` stays set after one gave up waiting, so the worker still takes no further action. `gave_up` is when the runner last restarted the machine for going quiet, which holds its next such restart back.
 #[derive(Default)]
 struct MachineEntry {
     desired: Option<MachineSpec>,
@@ -134,10 +134,18 @@ struct MachineEntry {
     version: u64,
     acting_mib: i32,
     resident_mib: Option<i32>,
+    warming_since: Option<Instant>,
     cpu: Option<(Instant, u64)>,
     cpu_milli: u64,
     cancel: Option<CancellationToken>,
     deletes: u32,
+}
+
+impl MachineEntry {
+    fn warming(&self) -> bool {
+        self.warming_since
+            .is_some_and(|at| at.elapsed() < crate::capacity::WARMUP)
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how often the prober asks about this machine, or None when nothing but an action can change what it would hear.
@@ -482,6 +490,8 @@ impl Server {
             let _ = tokio::task::spawn_blocking(move || server.stop_running(stopping)).await;
         }
         self.forwarder.unpublish_all();
+        let images = self.images.clone();
+        let _ = tokio::task::spawn_blocking(move || images.flush()).await;
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: stops every machine the runtime reports running, each on a thread of its own so one slow guest does not spend the others' time, and returns once all have answered or `within` has passed. A machine whose worker is still in a runtime call is left alone: the call holds the machine, and a stop beside it would only queue behind it.
@@ -1045,6 +1055,9 @@ impl Server {
             self.config.runc.as_deref(),
         )?;
         let applied = read_spec(&self.config.state_dir, id);
+        if spec.running {
+            self.hold_images();
+        }
         let image = match &applied {
             Some(applied) if applied.image == spec.image && self.runtime.image_present(id)? => None,
             _ => Some(self.resolve(id, spec, auths)?),
@@ -1204,6 +1217,7 @@ impl Server {
 
     fn start_machine(&self, id: &str, action: Action, spec: &MachineSpec) -> anyhow::Result<()> {
         if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
+            entry.warming_since = Some(Instant::now());
             entry.boot = Some(Boot {
                 at: Instant::now(),
                 action,
@@ -1215,24 +1229,33 @@ impl Server {
         let runtime = self.runtime.clone();
         let target = id.to_string();
         let size = spec.memory_mib;
-        let boot = if self.config.boot_mib > 0 {
+        let own = self.config.runtime.clone().unwrap_or_default();
+        let marker = state::require_machine_dir(&self.config.state_dir, id)?.join(BOOT_WHOLE_FILE);
+        let whole = fs::read_to_string(&marker).is_ok_and(|runtime| runtime == own);
+        let boot = if self.config.boot_mib > 0 && !whole {
             size.min(self.config.boot_mib)
         } else {
             size
         };
+        let port = state::port(&self.config.state_dir, id);
         let result = bounded(
             "the runtime's start",
             Some(RUNTIME_CALL_LIMIT),
             None,
             None,
-            move || boot_and_grow(&*runtime, &target, boot, size),
+            move || boot_and_grow(&*runtime, &target, boot, size, || healthy(port)),
         );
         self.metrics
             .start(action, started.elapsed(), result.is_ok());
-        if let (Ok(()), Some(own)) = (&result, &self.config.runtime) {
+        if let Ok(true) = result {
+            if let Err(e) = crate::files::write(&marker, own.as_bytes(), state::PORT_MODE) {
+                tracing::warn!(machine = %id, error = %format!("{e:#}"), "could not record that the machine cannot grow");
+            }
+        }
+        if let (Ok(_), Some(own)) = (&result, &self.config.runtime) {
             state::write_runtime(&self.config.state_dir, id, own)?;
         }
-        result
+        result.map(|_| ())
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: a stop ends whatever boot the machine was waited on for. Without this a machine stopped before its guest ever answered would keep its stuck-boot note for as long as it stayed stopped.
@@ -1342,6 +1365,7 @@ impl Server {
                 &self.committing(),
                 &|other| self.known_running(other),
                 &|other| self.resident(other),
+                &|other| self.warming(other),
             )
             .ok();
         let cgroup = self.config.cgroup_dir.as_deref();
@@ -1375,6 +1399,7 @@ impl Server {
             &self.committing(),
             &|other| self.known_running(other),
             &|other| self.resident(other),
+            &|other| self.warming(other),
         )?;
         let storage = (self.config.measure_storage)().unwrap_or(StorageUse { used: 0, usable: 0 });
         let machines = self
@@ -1548,9 +1573,21 @@ impl Server {
             .collect()
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: holds every digest this runner's machines boot, so the cache's eviction spares their trees. It runs at start, after a machine records a new digest, and every HOLD_REFRESH. A hold that fails is reported and not returned: the machines keep running, and the next refresh tries again inside the lease.
+    // UNIT_BOUNDARY_DESCRIPTION: holds the digest of every machine that runs or is asked to, so the cache's eviction spares their trees. A stopped machine holds nothing: a hibernated agent would otherwise keep each image a deploy retires on the cache, and its start fetches the tree again when it is gone. A machine counts while either its stored spec or the one the controller last sent runs it, so a stop in flight still holds the tree its guest reads and a wake holds it before the start checks it is there. It runs at start, after a machine records a new digest, before a start, and every HOLD_REFRESH. A hold that fails is reported and not returned: the machines keep running, and the next refresh tries again inside the lease.
     pub fn hold_images(&self) {
-        let held = self.held_digests();
+        let held: BTreeSet<String> = state::machine_ids(&self.config.state_dir)
+            .unwrap_or_default()
+            .iter()
+            .filter(|id| {
+                locked(&self.machines)
+                    .entries
+                    .get(*id)
+                    .and_then(|e| e.desired.as_ref())
+                    .is_some_and(|d| d.running)
+                    || read_spec(&self.config.state_dir, id).is_some_and(|s| s.running)
+            })
+            .filter_map(|id| self.recorded_digest(id))
+            .collect();
         if held.is_empty() {
             return;
         }
@@ -1576,6 +1613,13 @@ impl Server {
             headroom_mib: self.config.headroom_mib,
             boot_mib: self.config.boot_mib,
         }
+    }
+
+    fn warming(&self, id: &str) -> bool {
+        locked(&self.machines)
+            .entries
+            .get(id)
+            .is_some_and(MachineEntry::warming)
     }
 
     fn resident(&self, id: &str) -> Option<i32> {
@@ -1625,14 +1669,22 @@ impl Server {
             &self.committing(),
             &|other| self.known_running(other),
             &|other| self.resident(other),
+            &|other| self.warming(other),
         )
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: whether the machine has been quiet past its limit. A guest that answered is remembered in this process's memory and also in the share's seeded record, which outlives the process. After a hand-off, a runner restart or a crash the memory is empty, so the record is what lets the new runner restart a guest that answered before and went quiet before or during the change.
     fn dead_for_long(&self, id: &str) -> bool {
         let foreign = self.foreign(id);
+        let seeded = machine_dir(&self.config.state_dir, id)
+            .is_some_and(|dir| share::seeded(&dir.join(SHARE_DIR)));
         locked(&self.machines).entries.get(id).is_some_and(|e| {
             let limit = quiet_limit(foreign, e.boot.is_none(), e.gave_up.map(|at| at.elapsed()));
-            e.health.quiet_beyond(SystemTime::now(), limit)
+            let health = Health {
+                ever_ready: e.health.ever_ready || seeded,
+                ..e.health
+            };
+            health.quiet_beyond(SystemTime::now(), limit)
         })
     }
 
@@ -1685,6 +1737,17 @@ impl Server {
 
     // UNIT_BOUNDARY_DESCRIPTION: stores what was seen, and moves the status version only when the status it reports changes. A machine the runner has no entry for is remembered only once it exists, so asking about names that are not machines here leaves nothing behind, and a probe answering after its machine was deleted puts no entry back. The first answer from the guest ends the boot the runner was waiting on and is timed under the action that started it, before the status moves, so a reader that sees the machine ready also sees how long it took.
     fn record(&self, id: &str, seen: Seen, guard: Option<u64>) {
+        // UNIT_BOUNDARY_DESCRIPTION: written before the lock is taken, so a stalled disk holds up only this machine, and before the answer marks it ready, so a status that reads ready reads the record.
+        if seen.ready {
+            let ending = locked(&self.machines)
+                .entries
+                .get(id)
+                .filter(|e| guard.is_none_or(|looked| looked == e.looked))
+                .and_then(|e| e.boot.as_ref().map(|boot| boot.seed.clone()));
+            if let Some(seed) = ending {
+                self.record_seeded(id, seed.as_deref());
+            }
+        }
         let mut machines = locked(&self.machines);
         let known = machines.entries.get(id).map(|e| e.looked);
         if guard.is_some_and(|looked| looked != known.unwrap_or(0)) {
@@ -1697,7 +1760,6 @@ impl Server {
         let answered = if seen.ready { entry.boot.take() } else { None };
         if let Some(boot) = &answered {
             self.metrics.became_ready(boot.action, boot.at.elapsed());
-            self.record_seeded(id, boot.seed.as_deref());
         }
         let mut seen = seen;
         let now = SystemTime::now();
@@ -1823,21 +1885,13 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the machine's state as last recorded, looked at now only when nothing has been recorded yet.
-    fn known_state(&self, id: &str) -> anyhow::Result<State> {
+    // UNIT_BOUNDARY_DESCRIPTION: whether the machine runs, as last recorded, or as the runtime says when nothing has been recorded yet. The guest is never asked: admission asks this of every machine under its lock, and a silent guest would hold every start for its health timeout.
+    fn known_running(&self, id: &str) -> bool {
         let recorded = locked(&self.machines)
             .entries
             .get(id)
-            .and_then(|e| e.seen.clone());
-        let seen = recorded.unwrap_or_else(|| self.observe(id, true));
-        match seen.error {
-            Some(error) => Err(anyhow::anyhow!(error)),
-            None => Ok(seen.state),
-        }
-    }
-
-    fn known_running(&self, id: &str) -> bool {
-        matches!(self.known_state(id), Ok(State::Running))
+            .and_then(|e| e.seen.as_ref().map(|seen| seen.state));
+        recorded.or_else(|| self.runtime.state(id).ok()) == Some(State::Running)
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: what the controller is told about a machine, built from what the runner has recorded: no runtime call and no probe, except for a machine nothing has been recorded about yet. An action in flight is reported as the machine's state. A guest that answers its health endpoint is ready even before the start call that booted it returns — but only on the way up.
@@ -1854,10 +1908,6 @@ impl Server {
         let port = state::port(&self.config.state_dir, id);
         let applied = read_spec(&self.config.state_dir, id);
         let machines = locked(&self.machines);
-        // UNIT_BOUNDARY_DESCRIPTION: read under the lock that records a guest's first answer, which writes the seeded record before it marks the machine ready, so a status that reads ready never reads the record from before that answer.
-        let seeded_from = machine_dir(&self.config.state_dir, id)
-            .map(|dir| share::seeded_from(&dir.join(SHARE_DIR)))
-            .unwrap_or_default();
         let entry = machines.entries.get(id);
         let action = entry.and_then(|e| e.action);
         let seen = entry.and_then(|e| e.seen.clone()).or(looked);
@@ -1882,7 +1932,6 @@ impl Server {
             version: entry.map_or(0, |e| e.version),
             ..MachineStatus::default()
         };
-        status.home_seeded_from = seeded_from;
         if let Some(spec) = applied {
             status.cpus = spec.cpus;
             status.memory_mib = spec.memory_mib;
@@ -1891,6 +1940,7 @@ impl Server {
                 .and_then(|e| e.resident_mib)
                 .filter(|_| state == State::Running)
                 .unwrap_or(0);
+            status.warming = state == State::Running && entry.is_some_and(MachineEntry::warming);
             status.nested = spec.nested_virtualization && self.runtime.nests();
         }
         if state == State::Unknown && status.message.is_empty() {
@@ -1910,22 +1960,41 @@ impl Server {
                 format!("{}; {note}", status.message)
             };
         }
+        drop(machines);
+        // UNIT_BOUNDARY_DESCRIPTION: read after the lock is let go, so a stalled disk holds up only this read. A guest's first answer writes the seeded record before it marks the machine ready, so a status that read ready above reads the record from that answer.
+        status.home_seeded_from = machine_dir(&self.config.state_dir, id)
+            .map(|dir| share::seeded_from(&dir.join(SHARE_DIR)))
+            .unwrap_or_default();
         (state, status)
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: boots a machine with `boot` MiB of guest RAM and then grows it to its `size`. A guest's kernel writes a page descriptor for every page of its RAM before it runs anything, and under nested virtualization that costs 65 to 85 ms per GiB, so a 12 GiB machine booted whole spends most of a second on RAM it does not need yet. The grow runs as soon as the start returns, while the workload is starting, and readiness does not wait for it: the prober reports the guest ready when it answers. A machine that cannot grow is booted again at its full size, so a running machine always has the size its spec names.
-fn boot_and_grow(runtime: &dyn Runtime, id: &str, boot: i32, size: i32) -> anyhow::Result<()> {
+// UNIT_BOUNDARY_DESCRIPTION: the VM runtime that could not grow the machine, kept beside its spec. While it names this runner's runtime, the machine boots whole: a guest that cannot grow would otherwise pay a small boot and a failed grow on every start. A runner release with another runtime tries the grow again. It goes with the machine on delete.
+pub const BOOT_WHOLE_FILE: &str = "boot-whole";
+
+// UNIT_BOUNDARY_DESCRIPTION: boots a machine with `boot` MiB of guest RAM and then grows it to its `size`, and answers whether the grow failed. A guest's kernel writes a page descriptor for every page of its RAM before it runs anything, and under nested virtualization that costs 65 to 85 ms per GiB, so a 12 GiB machine booted whole spends most of a second on RAM it does not need yet. The grow runs as soon as the start returns, while the workload is starting, and readiness does not wait for it: the prober reports the guest ready when it answers. A machine that cannot grow and whose guest has not answered yet is booted again at its full size. A guest that already answered is left running at its boot size, because the agent reads ready by then, and a reboot would drop a prompt sent to it; its next start boots it whole.
+fn boot_and_grow(
+    runtime: &dyn Runtime,
+    id: &str,
+    boot: i32,
+    size: i32,
+    answered: impl Fn() -> bool,
+) -> anyhow::Result<bool> {
     runtime.start(id, boot)?;
     if boot == size {
-        return Ok(());
+        return Ok(false);
     }
     let Err(e) = runtime.grow(id, size) else {
-        return Ok(());
+        return Ok(false);
     };
+    if answered() {
+        tracing::warn!(machine = id, error = %format!("{e:#}"), boot_mib = boot, memory_mib = size, "the guest could not grow to its size and already answered; it runs at its boot size until its next start");
+        return Ok(true);
+    }
     tracing::warn!(machine = id, error = %format!("{e:#}"), boot_mib = boot, memory_mib = size, "the guest could not grow to its size; booting it again whole");
     runtime.stop(id)?;
-    runtime.start(id, size)
+    runtime.start(id, size)?;
+    Ok(true)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what a seed capability may seed, beyond the machine it is signed for. The machine must be marked as created for a migration in the latest spec the runner holds for it, so a capability never reaches a machine that is not being migrated. Its disk must hold no home yet — no guest has answered from it — so a capability never replaces a home. A seed already stored but not yet booted from may be replaced: an attempt can store its seed and still fail, its answer lost, and only the next Job's fresh capability can then finish the copy, since the controller removes a seed only once the guest has booted from it. The controller moves past the copy only after a Job succeeds, and drops the migration mark then, so no capability reaches a seed it has accepted. And the capability must not have been spent: each one seeds once, recorded on the runner's claim beside the machine, where it outlives a runner restart.

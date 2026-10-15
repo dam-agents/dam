@@ -5,7 +5,7 @@ It may be stopped and restarted during periods of inactivity.
 What survives a restart depends on where you run:
 
 - in a container, only `/home/agent`; the rest of the filesystem is lost.
-- in a VM, `/home/agent` and the rest of the root too, such as packages you installed, until a new image starts the root afresh; `/tmp`, `/var/tmp` and `/var/cache` are emptied on every boot.
+- in a VM, `/home/agent` and the rest of the root too, such as packages you installed, until a new image starts the root afresh; `/tmp` and `/var/tmp` are emptied on every boot.
   What must outlast an image update belongs under `/home/agent`.
 
 Caches in the home that no tool here reads are removed at boot: a Go module cache (no Go is shipped) and pnpm's own store layouts (`pnpm` is aube).
@@ -36,5 +36,5 @@ A background task your harness runs for you is kept already and needs no mark.
 Kept work holds the agent awake until it exits, and the user sees it and can stop it.
 Never keep helper daemons (servers, watchers, bridges); plain `nohup … &` is right for those.
 
-Delegation: your harness's own subagent does work in this sandbox.
+Delegation: your harness's own subagent, if it has one, does work in this sandbox.
 The platform's `spawn_subagent` tool starts a separate agent in a new sandbox; use it only when the task needs another harness, its own setup, more resources, isolation from this workspace, or a schema-checked result.

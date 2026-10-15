@@ -1,3 +1,5 @@
+import { Play, Restart, Tools, TrashCan } from "@carbon/icons-react";
+
 import {
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -7,7 +9,7 @@ import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import type { AgentView } from "../../../types.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import type { AgentDisplay } from "../utils/agent-resolver.js";
-import { FreeUpComputeItems } from "./power-menu-items.js";
+import { SleepMenuItem } from "./power-menu-items.js";
 
 interface Props {
   agent: AgentView;
@@ -17,8 +19,7 @@ interface Props {
   onConfigure: () => void;
   onWake: () => void;
   onRestart: () => void;
-  onPause: () => void;
-  onStop: () => void;
+  onSleep: () => void;
   onDelete: () => void;
   onAddToChannel?: (messenger: "slack" | "telegram") => void;
   messengers?: { slack?: boolean; telegram?: boolean };
@@ -34,8 +35,7 @@ export function AgentActionsMenu({
   onConfigure,
   onWake,
   onRestart,
-  onPause,
-  onStop,
+  onSleep,
   onDelete,
   onAddToChannel,
   messengers = {},
@@ -50,6 +50,7 @@ export function AgentActionsMenu({
       stopPropagation
     >
       <DropdownMenuItem onSelect={onConfigure}>
+        <Tools />
         {configureLabel}
       </DropdownMenuItem>
       {onAddToChannel && (messengers.slack || messengers.telegram) && (
@@ -71,10 +72,11 @@ export function AgentActionsMenu({
       )}
       <DropdownMenuSeparator />
       {display.state === "running" && (
-        <FreeUpComputeItems agent={agent} onPause={onPause} onStop={onStop} />
+        <SleepMenuItem agent={agent} onSleep={onSleep} />
       )}
       {display.powerAction === "start" ? (
         <DropdownMenuItem onSelect={onWake}>
+          <Play />
           {display.state === "over_budget" ? "Start" : "Wake"}
         </DropdownMenuItem>
       ) : (
@@ -82,6 +84,7 @@ export function AgentActionsMenu({
           disabled={display.powerAction === null}
           onSelect={onRestart}
         >
+          <Restart />
           Restart
         </DropdownMenuItem>
       )}
@@ -91,6 +94,7 @@ export function AgentActionsMenu({
         disabled={deletePending}
         onSelect={onDelete}
       >
+        <TrashCan />
         Delete agent
       </DropdownMenuItem>
     </RowActionsMenu>

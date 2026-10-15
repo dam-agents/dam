@@ -12,6 +12,7 @@ use crate::api::{
 };
 use crate::cache::{archive_path, digest_path, staged_path, PARTIAL_PREFIX};
 use crate::cacheapi;
+use crate::forward::HEALTH_TIMEOUT;
 use crate::imagecache::{CacheConfig, ImageCache};
 use crate::launch::{ImageLaunch, LAUNCH_FILE};
 use crate::plan::{READY_GRACE, STALLED_RESTART, UNHEALTHY_RESTART};
@@ -181,6 +182,7 @@ fi
 d=$(mktemp -d); echo rootfs > "$d/hello"; tar -cf - -C "$d" .; rm -rf "$d"
 "#;
 
+// UNIT_BOUNDARY_DESCRIPTION: one server on a fake runtime, in a directory of its own. The name is short for the same reason as testdir's: the node cache's socket sits in it.
 struct Harness {
     dir: PathBuf,
     fake: Arc<Fake>,
@@ -194,8 +196,7 @@ impl Harness {
     }
 
     fn with(name: &str, tune: impl FnOnce(&mut Config)) -> Self {
-        let dir =
-            std::env::temp_dir().join(format!("vm-runner-server-{}-{name}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("vmr-{}-{name}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let crane = dir.join("crane");
@@ -501,7 +502,7 @@ async fn a_machine_within_the_boot_estimate_boots_whole() {
     }
 }
 
-// TEST_SCENARIO: a guest that cannot grow would run with a fraction of the memory its spec and its agent count on. So the machine is stopped and booted again whole, in the same start, and reads running with no failure: the grow is an optimisation, never a reason for the agent not to run.
+// TEST_SCENARIO: a guest that cannot grow would run with a fraction of the memory its spec and its agent count on. So a machine whose guest has not answered yet is stopped and booted again whole, in the same start, and reads running with no failure: the grow is an optimisation, never a reason for the agent not to run. The runner remembers that the machine cannot grow, so its next start boots it whole and does not pay for a small boot and a failed grow again.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_machine_that_cannot_grow_is_booted_again_whole() {
     let h = Harness::with("grow-failed", |c| c.boot_mib = 1024);
@@ -510,6 +511,10 @@ async fn a_machine_that_cannot_grow_is_booted_again_whole() {
     let status = h.settle("m1").await;
     assert_eq!(status.state, STATE_RUNNING);
     assert!(status.reason.is_empty(), "{status:?}");
+    h.server.put("m1", spec(false)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_STOPPED);
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
     assert_eq!(
         h.fake.calls(),
         vec![
@@ -517,9 +522,31 @@ async fn a_machine_that_cannot_grow_is_booted_again_whole() {
             "start m1",
             "grow m1 2048",
             "stop m1",
+            "start m1",
+            "stop m1",
+            "update m1",
             "start m1"
         ]
     );
+    assert_eq!(*locked(&h.fake.booted_mib), vec![1024, 2048, 2048]);
+}
+
+// TEST_SCENARIO: readiness does not wait for the grow, so a guest can answer, and the agent read ready, before its grow fails. A reboot then would make the agent flap and lose a prompt sent to it. So the guest is left running at its boot size, and its next start boots it whole.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_guest_that_answered_is_not_rebooted_when_it_cannot_grow() {
+    let h = Harness::with("grow-failed-answered", |c| c.boot_mib = 1024);
+    *locked(&h.fake.fail_grow_once) = Some("the VMM did not add the RAM".into());
+    let _guest = guest(h.base);
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    assert_eq!(
+        h.fake.calls(),
+        vec!["create m1", "start m1", "grow m1 2048"]
+    );
+    h.server.put("m1", spec(false)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_STOPPED);
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
     assert_eq!(*locked(&h.fake.booted_mib), vec![1024, 2048]);
 }
 
@@ -2011,11 +2038,14 @@ async fn node_service(h: &Harness, lease: Duration) -> (Arc<ImageCache>, Cancell
     }));
     let socket = h.dir.join("images/.cache.sock");
     let stop = CancellationToken::new();
-    tokio::spawn({
+    let served = tokio::spawn({
         let (cache, stop, socket) = (cache.clone(), stop.clone(), socket.clone());
         async move { cacheapi::serve(&socket, cache, async move { stop.cancelled().await }).await }
     });
     while !socket.exists() {
+        if served.is_finished() {
+            panic!("the node's service did not start: {:?}", served.await);
+        }
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
     (cache, stop)
@@ -2049,6 +2079,33 @@ async fn a_machine_on_a_node_cache_boots_the_tree_the_service_unpacked() {
         h.entry("m1").exists(),
         "the service evicted a tree the runner holds"
     );
+}
+
+// TEST_SCENARIO: a hibernated agent's machine must not keep its tree on the node cache, or every deploy would leave one retired image per stopped machine held until the service refuses every fetch. Once the machine is stopped the runner holds nothing for it, the service evicts the tree, and the next start fetches it again and boots.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stopped_machine_holds_nothing_and_fetches_its_tree_again_on_start() {
+    let h = Harness::with("nc-stop", on_node_cache);
+    let (service, _stop) = node_service(&h, Duration::from_millis(300)).await;
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    h.server.put("m1", spec(false)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_STOPPED);
+
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let server = h.server.clone();
+    tokio::task::spawn_blocking(move || server.hold_images())
+        .await
+        .unwrap();
+    service.evict(None);
+    assert!(
+        !h.entry("m1").exists(),
+        "a stopped machine kept its tree held"
+    );
+
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    assert!(h.entry("m1").join(ROOTFS_DIR).join("hello").exists());
+    assert_eq!(h.crane_log("export"), 2, "the start fetched the tree again");
 }
 
 // TEST_SCENARIO: with the node's service down, a new image cannot be resolved, checked or fetched, so a machine of it is refused as an image problem that says why, and nothing is booted straight from the registry. A machine of an image another of this runner's machines already boots still starts, from the tree that machine holds, which is only read.
@@ -2266,6 +2323,57 @@ async fn a_hand_off_leaves_every_machine_running_for_the_next_runner() {
     .unwrap();
     assert!(next.forwarder.is_published("m1"));
     next.close().await;
+}
+
+// TEST_SCENARIO: whether a guest has answered is held in the runner's memory, which a hand-off, a runner restart or a crash empties. A guest that answered before the hand-off and then stopped answering must still be restarted by the next runner once it is quiet past its limit, from the seeded record its first answer left in the share; without that it read as running and not ready forever.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_guest_quiet_across_a_hand_off_is_restarted_by_the_next_runner() {
+    let h = Harness::new("hand-off-quiet");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let up = guest(h.base);
+    h.until("m1", "ready", |s| s.ready).await;
+    up.store(false, Ordering::SeqCst);
+    h.server.hand_off().await;
+
+    let next = Harness {
+        dir: h.dir.clone(),
+        fake: h.fake.clone(),
+        server: Server::start(
+            Config {
+                state_dir: h.dir.join("machines"),
+                image_dir: h.dir.join("images"),
+                image_cache_socket: None,
+                image_budget: 1 << 40,
+                crane: h.dir.join("crane").to_string_lossy().into_owned(),
+                init: Some(h.dir.join("platform-init")),
+                runc: None,
+                ports: h.base..=h.base + 1,
+                memory_mib: 1 << 20,
+                reserve_mib: 0,
+                headroom_mib: 0,
+                boot_mib: 0,
+                listen: Some(retrying_listen()),
+                runtime: None,
+                cgroup_dir: None,
+                measure_storage: Arc::new(|| None),
+            },
+            h.fake.clone(),
+        )
+        .unwrap(),
+        base: h.base,
+    };
+    next.server.put("m1", spec(true)).unwrap();
+    next.settle("m1").await;
+    next.server.probe("m1");
+    stall(&next, "m1");
+    next.server.put("m1", spec(true)).unwrap();
+    let status = next.settle("m1").await;
+    assert_eq!(status.restarts, 1, "{status:?}");
+    assert_eq!(
+        h.fake.calls(),
+        vec!["create m1", "start m1", "stop m1", "update m1", "start m1"]
+    );
 }
 
 // TEST_SCENARIO: a runner release may bring another VM runtime than the one that booted a machine it adopts, and manages that machine assuming the two are compatible. A runtime error on such a machine is taken as the sign they are not: the machine is rebooted at once onto the runner's own runtime, and its record then names that runtime. A machine this runner's own runtime booted is left as it is through the same error, as before.
@@ -2585,4 +2693,97 @@ async fn a_stopped_machine_reports_no_cpu() {
     h.server.put("m1", spec(false)).unwrap();
     h.settle("m1").await;
     assert_eq!(cpu(&h), Some(0), "a stopped machine reports none");
+}
+
+// TEST_SCENARIO: a status read reads the machine's seeded record off its share, and a disk that stalls holds that read for as long as it stalls. It must hold up only the read of that machine: one held under the machine lock would freeze every ensure, status, probe and delete on the runner.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stalled_share_holds_up_only_the_status_of_its_machine() {
+    let h = Harness::new("stalled-share");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let stalled = h
+        .dir
+        .join("machines/m1")
+        .join(SHARE_DIR)
+        .join(share::SEEDED_FILE);
+    let _ = fs::remove_file(&stalled);
+    assert!(std::process::Command::new("mkfifo")
+        .arg(&stalled)
+        .status()
+        .unwrap()
+        .success());
+    let server = h.server.clone();
+    let stuck = std::thread::spawn(move || server.status("m1"));
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let server = h.server.clone();
+    let (sent, other) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sent.send(server.status("m2"));
+    });
+    let answered = other.recv_timeout(Duration::from_secs(1));
+    let _ = fs::OpenOptions::new().write(true).open(&stalled);
+    stuck.join().unwrap();
+    assert!(
+        answered.is_ok(),
+        "one machine's stalled share held up another machine's status"
+    );
+}
+
+// TEST_SCENARIO: a runner handed its machines by another release has recorded nothing about them, and admission counts each one it finds running. It must ask the runtime whether a machine runs and never its guest: a silent guest costs its health timeout, and paid once per machine under the admission lock it would hold every start behind it.
+#[tokio::test(flavor = "multi_thread")]
+async fn admission_after_a_hand_off_does_not_wait_on_silent_guests() {
+    let h = Harness::new("hand-off-admission");
+    let _silent = TcpListener::bind(("127.0.0.1", h.base + LOOPBACK_OFFSET)).unwrap();
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.server.hand_off().await;
+    let next = Server::start(
+        Config {
+            state_dir: h.dir.join("machines"),
+            image_dir: h.dir.join("images"),
+            image_cache_socket: None,
+            image_budget: 1 << 40,
+            crane: h.dir.join("crane").to_string_lossy().into_owned(),
+            init: Some(h.dir.join("platform-init")),
+            runc: None,
+            ports: h.base..=h.base + 1,
+            memory_mib: 1 << 20,
+            reserve_mib: 0,
+            headroom_mib: 0,
+            boot_mib: 0,
+            listen: Some(retrying_listen()),
+            runtime: None,
+            cgroup_dir: None,
+            measure_storage: Arc::new(|| None),
+        },
+        h.fake.clone(),
+    )
+    .unwrap();
+    let started = Instant::now();
+    let server = next.clone();
+    tokio::task::spawn_blocking(move || server.put("m2", spec(true)).unwrap())
+        .await
+        .unwrap();
+    assert!(
+        started.elapsed() < HEALTH_TIMEOUT / 2,
+        "the first ensure after a hand-off waited {:?} on a silent guest",
+        started.elapsed()
+    );
+    next.close().await;
+}
+
+// TEST_SCENARIO: a machine just booted reports itself warming up, which is what the controller counts it at the warm-up floor by, as admission here does; a machine that is not running reports no warm-up.
+#[tokio::test]
+async fn a_booted_machine_reports_its_warm_up() {
+    let h = Harness::new("warming");
+    h.server.put("m1", spec(true)).unwrap();
+    assert!(
+        h.settle("m1").await.warming,
+        "a machine just booted was not warming up"
+    );
+    h.server.put("m1", spec(false)).unwrap();
+    assert!(
+        !h.settle("m1").await.warming,
+        "a stopped machine reported a warm-up"
+    );
 }

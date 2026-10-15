@@ -19,7 +19,7 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
       return "This agent is moving to the new runtime — try again in a few minutes.";
     case "migration-failed":
       return (
-        "This agent's move to the new runtime failed, and it stays stopped " +
+        "This agent's move to the new runtime failed, and it stays asleep " +
         "until its owner retries or aborts the move. Contact its owner."
       );
     case "agent-pod-failed":
@@ -64,8 +64,8 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
         case "RunnerOutOfMemory":
           return (
             "This agent restarted: its owner's agents ran out of memory " +
-            "together. Contact its owner — pausing agents that aren't in " +
-            "use frees memory."
+            "together. Contact its owner — putting agents that aren't in " +
+            "use to sleep frees memory."
           );
         default:
           return (

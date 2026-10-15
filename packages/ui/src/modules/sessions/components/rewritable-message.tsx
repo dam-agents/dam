@@ -23,10 +23,12 @@ const EDITOR_COPY: Record<RewriteMode, { label: string; save: string }> = {
 
 export function RewritableMessage({
   message,
+  enabled,
   onRewrite,
   children,
 }: {
   message: Message;
+  enabled: boolean;
   onRewrite: (mode: RewriteMode, text: string) => Promise<void>;
   children: ReactNode;
 }) {
@@ -56,6 +58,7 @@ export function RewritableMessage({
         <MessageEditor
           initial={textOf(message)}
           pending={pending}
+          canSave={enabled}
           saveLabel={EDITOR_COPY[mode].save}
           saveVariant={mode === "rewind" ? "destructive" : "default"}
           onSave={(text) => void save(text)}
@@ -68,7 +71,7 @@ export function RewritableMessage({
   return (
     <div className="group relative flex flex-col items-end gap-1">
       {children}
-      {rewriting === null && (
+      {enabled && rewriting === null && (
         <div className="flex gap-1 transition-opacity md:absolute md:right-0 md:top-full md:z-10 md:pt-0.5 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
           <Button
             variant="ghost"

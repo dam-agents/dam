@@ -6,6 +6,7 @@ import type {
   MetricsService,
   SpendByAgent,
   SpendByDay,
+  SubAgentSpend,
   TokenSpendByModel,
 } from "api-server-api";
 
@@ -86,6 +87,11 @@ export interface MetricsReader {
     window: MetricsWindow,
     limit: number,
   ): Promise<TraceSpan[]>;
+  spendBySubAgent(
+    agentIds: readonly string[],
+    window: MetricsWindow,
+    limit: number,
+  ): Promise<SubAgentSpend[]>;
 }
 
 export interface OwnedAgent {

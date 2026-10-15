@@ -53,7 +53,7 @@ export function classifyWakeFailure(
       kind: "over-budget",
       message:
         s.overBudgetMessage ||
-        "starting this agent would exceed your compute budget — pause agents you aren't using to free room",
+        "starting this agent would exceed your compute budget — put agents you aren't using to sleep to free room",
     };
   if (s.hibernated) return { kind: "hibernated-not-scaled" };
   if (s.error !== undefined) {
@@ -124,7 +124,7 @@ export function describeWakeFailure(c: WakeFailureCause): string {
     case "migrating":
       return "the agent is moving to the new runtime";
     case "migration-failed":
-      return "the agent's move to the new runtime failed, and it stays stopped until its owner retries or aborts the move";
+      return "the agent's move to the new runtime failed, and it stays asleep until its owner retries or aborts the move";
     case "hibernated-not-scaled":
       return "the platform didn't start it";
     case "agent-pod-failed":
@@ -144,7 +144,7 @@ export function describeWakeFailure(c: WakeFailureCause): string {
         case "MachineRunnerUnschedulable":
           return "no server can run it right now — tell an admin";
         case "RunnerOutOfMemory":
-          return "its owner's VM agents ran out of memory together and all restarted — pausing agents that aren't in use frees memory";
+          return "its owner's VM agents ran out of memory together and all restarted — putting agents that aren't in use to sleep frees memory";
         case "MachineStorageFull":
           return storageFullMessage();
         default:

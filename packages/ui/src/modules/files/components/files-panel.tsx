@@ -50,16 +50,18 @@ export function FilesPanel({
 
   const headerActions = (
     <div className="flex items-center gap-1">
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        aria-label={hiddenFilesLabel}
-        aria-pressed={showHiddenFiles}
-        tooltip={hiddenFilesLabel}
-        onClick={() => setShowHiddenFiles(!showHiddenFiles)}
-      >
-        {showHiddenFiles ? <View size={14} /> : <ViewOff size={14} />}
-      </Button>
+      {open && (
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={hiddenFilesLabel}
+          aria-pressed={showHiddenFiles}
+          tooltip={hiddenFilesLabel}
+          onClick={() => setShowHiddenFiles(!showHiddenFiles)}
+        >
+          {showHiddenFiles ? <View size={14} /> : <ViewOff size={14} />}
+        </Button>
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button

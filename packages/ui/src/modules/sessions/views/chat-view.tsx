@@ -400,10 +400,8 @@ export function ChatView() {
   const harnessForks = useStore((s) => s.harnessForks);
   const queueEmpty = useStore((s) => s.queuedPrompts.length === 0);
   const { data: sessionView } = useAgentSession(selectedAgent, sessionId);
-  const rewritable =
+  const canRewrite =
     harnessForks &&
-    queueEmpty &&
-    !busy &&
     sessionView?.mode === SessionMode.Chat &&
     sessionView.type === SessionType.Regular &&
     !sessionView.threadTs &&
@@ -707,11 +705,7 @@ export function ChatView() {
               <EditableAgentIdentity
                 agent={agentView}
                 avatarSize={32}
-                mood={avatarMood(
-                  agentDisplay?.state,
-                  agentView.stopRequested,
-                  busy,
-                )}
+                mood={avatarMood(agentDisplay?.state, agentView.stopRequested)}
                 avatarClassName="@max-[149px]:hidden"
                 nameClassName="text-sm font-bold text-foreground"
               />
@@ -986,9 +980,10 @@ export function ChatView() {
                           rewriteIndex !== -1 &&
                           item.index > rewriteIndex;
                         const content =
-                          rewritable && rewritePoints.has(item.message.id) ? (
+                          canRewrite && rewritePoints.has(item.message.id) ? (
                             <RewritableMessage
                               message={runMessage}
+                              enabled={queueEmpty && !busy}
                               onRewrite={(mode, text) =>
                                 rewriteFrom({
                                   messageId: item.message.id,
@@ -1163,10 +1158,7 @@ export function ChatView() {
               <ResizeHandle
                 side="right"
                 onResize={(d) => {
-                  const max = Math.min(
-                    960,
-                    sidePanelMaxW ?? window.innerWidth - 500,
-                  );
+                  const max = sidePanelMaxW ?? window.innerWidth - 500;
                   const base = Math.min(
                     rightWRef.current ?? filePanelRef.current?.offsetWidth ?? 0,
                     max,
@@ -1301,7 +1293,7 @@ const RESUME_FAILURE_COPY: Record<
   },
   connection: {
     title: "Can't reach the agent",
-    body: "The agent didn't answer. It may be waking up or hibernating — try again in a moment.",
+    body: "The agent didn't answer. It may be waking up or falling asleep — try again in a moment.",
   },
   other: {
     title: "Can't open this conversation",

@@ -46,7 +46,7 @@ import { useStarterKit } from "../api/queries.js";
 import { ClampedText } from "../components/clamped-text.js";
 import { KitCategoryTag } from "../components/kit-category-tag.js";
 import { KitChannelsSection } from "../components/kit-channels-section.js";
-import { KitRequirementsCard } from "../components/kit-requirements-card.js";
+import { KitRequirementsList } from "../components/kit-requirements-list.js";
 import { KitScheduleCard } from "../components/kit-schedule-card.js";
 import {
   EGRESS_PRESET_DETAIL,
@@ -455,7 +455,7 @@ function KitDetail({
                 onRename={(name) => update({ name })}
                 onAvatarChange={(next) => update({ avatar: next })}
                 avatarSize={36}
-                mood="idle"
+                mood="awake"
                 nameClassName="text-base font-semibold text-foreground"
                 nameTag="h2"
               />
@@ -590,7 +590,7 @@ function KitDetail({
           {connectionRequirements(kit).length > 0 && (
             <section className="mb-6">
               <SectionLabel spaced>Connections</SectionLabel>
-              <KitRequirementsCard
+              <KitRequirementsList
                 kit={kit}
                 granted={owned.filter((c) => grantedIds.has(c.id))}
                 templateById={templateById}

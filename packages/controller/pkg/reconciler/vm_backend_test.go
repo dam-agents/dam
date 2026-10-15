@@ -57,6 +57,10 @@ type fakeNode struct {
 	release  vmrunner.RunnerRelease
 	usage    vmrunner.RunnerUsage
 	onPut    func(vmrunner.MachineSpec)
+	// UNIT_BOUNDARY_DESCRIPTION: every ensure is refused with a 500, as a runner release that runs but cannot manage machines refuses them.
+	refusesEnsures bool
+	// UNIT_BOUNDARY_DESCRIPTION: a stop answers stopping, as the real runner's does, and the machine stays so until a test sets it stopped. Without it a stop takes effect at once.
+	stopsSlowly bool
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long the fake holds a waiting status read before answering with no change. It is far below the real runner's wait, so a test's server closes promptly under a watch that is still reading.
@@ -95,6 +99,10 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 		}
 		switch r.Method {
 		case http.MethodPut:
+			if n.refusesEnsures {
+				http.Error(w, "the release cannot manage this machine", http.StatusInternalServerError)
+				return
+			}
 			var spec vmrunner.MachineSpec
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&spec))
 			n.specs[id] = spec
@@ -106,6 +114,14 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 			if !ok {
 				n.version++
 				st = vmrunner.MachineStatus{State: vmrunner.StateCreating, Port: 31000, Version: n.version}
+				n.statuses[id] = st
+			}
+			if ok && !spec.Running && !machineStopped(st) && st.State != vmrunner.StateStopping {
+				n.version++
+				st.State, st.Ready, st.Version = vmrunner.StateStopped, false, n.version
+				if n.stopsSlowly {
+					st.State = vmrunner.StateStopping
+				}
 				n.statuses[id] = st
 			}
 			require.NoError(t, json.NewEncoder(w).Encode(st))
@@ -655,7 +671,7 @@ func TestAMachineComingUpIsWatchedAndAChangeRequeuesTheAgent(t *testing.T) {
 	assert.Eventually(t, func() bool { return !r.watchingMachine("my-agent") }, 5*time.Second, time.Millisecond)
 }
 
-// TEST_SCENARIO: a watch belongs to a machine on its way up and ends with it. Hibernating the Agent or deleting it ends the watch without a requeue, since whatever did that reconciles the Agent itself; a machine that failed is not watched, and waits for the health poll.
+// TEST_SCENARIO: a watch belongs to a machine on its way up and ends with it. Hibernating the Agent once its machine has stopped, or deleting it, ends the watch without a requeue, since whatever did that reconciles the Agent itself; a machine that failed is not watched, and waits for the health poll.
 func TestAMachineWatchEndsWhenTheAgentStopsOrGoes(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, requeued := setupVMReconciler(t, agent)
@@ -886,6 +902,65 @@ func TestADeleteWithNoOwnerReachesEveryRunner(t *testing.T) {
 	r.Delete(context.Background(), "my-agent", "")
 	assert.Equal(t, []string{"my-agent"}, node.deleted)
 	assert.Equal(t, []string{"my-agent"}, other.deleted)
+}
+
+// TEST_SCENARIO: the controller reconciles different owners' agents on different workers at once. A runner that hangs but keeps its listener holds its owner's reconcile for the runner client's timeout, and nothing the reconciler shares across owners may be held across that call, or another owner's wake waits on it anyway.
+func TestAHungRunnerHoldsUpNoOtherOwnersReconcile(t *testing.T) {
+	ctx := context.Background()
+	stuck := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, stuck)
+	addRunner(t, r, "owner-b")
+	woken := vmAgentCR()
+	woken.Name = "woken-agent"
+	woken.Labels = map[string]string{envoyOwnerLabel: "owner-b"}
+	u, err := agentToUnstructured(woken)
+	require.NoError(t, err)
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Create(ctx, u, metav1.CreateOptions{})
+	require.NoError(t, err)
+	leaf := leafSecret()
+	leaf.Name = EnvoyLeafSecretName(woken.Name)
+	_, err = r.client.CoreV1().Secrets("test-agents").Create(ctx, leaf, metav1.CreateOptions{})
+	require.NoError(t, err)
+	pod := readyRunnerPod()
+	pod.Name, pod.Labels = r.runnerName("owner-b")+"-pinned", vmRunnerSelector("owner-b")
+	_, err = r.client.CoreV1().Pods("test-agents").Create(ctx, pod, metav1.CreateOptions{})
+	require.NoError(t, err)
+	require.NoError(t, r.Reconcile(ctx, woken))
+
+	entered, release := make(chan struct{}, 1), make(chan struct{})
+	hung := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		<-release
+	}))
+	t.Cleanup(hung.Close)
+	reachable := r.runnerEndpoint
+	r.runnerEndpoint = func(owner string) string {
+		if owner == testOwner {
+			return hung.URL
+		}
+		return reachable(owner)
+	}
+	done := make(chan struct{})
+	go func() {
+		_ = r.Reconcile(ctx, stuck)
+		close(done)
+	}()
+	t.Cleanup(func() {
+		close(release)
+		<-done
+	})
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the stuck owner's reconcile never called its runner")
+	}
+
+	start := time.Now()
+	require.NoError(t, r.Reconcile(ctx, woken))
+	assert.Less(t, time.Since(start), 2*time.Second, "another owner's reconcile waited on the hung runner")
 }
 
 // TEST_SCENARIO: the sweep needs every runner's token and CA, and runs every ten minutes over every owner. Both of a runner's Secrets carry the component label — the token by the controller, the TLS Secret by cert-manager from the Certificate's template — so one List serves them all and no Secret is read by name.
@@ -1350,7 +1425,7 @@ func TestRunnerOwnershipFollowsARecreatedServiceAccount(t *testing.T) {
 		"a stale UID here is collected by the garbage collector the moment a runner object is written")
 }
 
-// TEST_SCENARIO: Helm never sees a runner — the controller creates it — so nothing would remove one on uninstall, on rollback, or when virtualization is switched off. Every object it creates is owned by the ServiceAccount the chart does render, which sits in the same namespace because an owner reference may not cross one; a single object missing the reference strands a running VM and its disk.
+// TEST_SCENARIO: Helm never sees a runner — the controller creates it — so nothing would remove one on uninstall, on rollback, or when virtualization is switched off. Every object it creates is owned by the ServiceAccount the chart does render, which sits in the same namespace because an owner reference may not cross one; a single object missing the reference strands a running VM. The claim is the exception: it holds every machine disk of the owner, so one deletion of the account must not collect it.
 func TestRunnerObjectsAreOwnedByTheRunnerServiceAccount(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -1376,7 +1451,7 @@ func TestRunnerObjectsAreOwnedByTheRunnerServiceAccount(t *testing.T) {
 	owners["certificate"] = cert.GetOwnerReferences()
 	pvc, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, name, metav1.GetOptions{})
 	require.NoError(t, err)
-	owners["pvc"] = pvc.OwnerReferences
+	assert.Empty(t, pvc.OwnerReferences, "a claim owned by the account loses every disk on it when the account is recreated")
 	svc, err := r.client.CoreV1().Services("test-agents").Get(ctx, name, metav1.GetOptions{})
 	require.NoError(t, err)
 	owners["service"] = svc.OwnerReferences
@@ -1436,7 +1511,7 @@ func TestARefusedMachineParksAndReleasesTheOwnersBudget(t *testing.T) {
 	require.NotNil(t, cond)
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
 	assert.Regexp(t, `^Your VM agents are using [0-9.]+ of 8\.0 GiB of memory, and starting this agent needs about [1-9][0-9.]* GiB more`, cond.Message, "the user reads the pool out of the total Home shows, and the room the start itself needs")
-	assert.Contains(t, cond.Message, "pause one yourself", "the user reads what frees it")
+	assert.Contains(t, cond.Message, "put one to sleep yourself", "the user reads what frees it")
 	assert.NotContains(t, cond.Message, "MiB", "the runner's accounting stays out of the user's copy")
 }
 
@@ -1788,6 +1863,26 @@ func TestAParkedAgentDoesNotBringItsGatewayUpFirst(t *testing.T) {
 	_, queued := r.parkedRetry["my-agent"]
 	r.budgetMu.Unlock()
 	assert.True(t, queued, "and the agent is queued to try again when room frees")
+}
+
+// TEST_SCENARIO: a runner roll, a controller restart or a schedule retry brings an owner's agents back with no fresh activity bump, and the runner refuses the ones that do not fit while the others warm up. Nobody presses Start again for those, so the refusal is not remembered against the wake: the retry tick reconciles the agent under the same activity, and it starts once room has freed.
+func TestASweepWakeRefusedForMemoryStartsOnTheRetryTick(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateCreating, Reason: vmrunner.ReasonOutOfCapacity, Message: "does not fit"}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.Contains(t, r.ParkedForRetry(), "my-agent", "the refused wake is queued for the retry tick")
+
+	node.mu.Lock()
+	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateStopped}
+	node.puts = nil
+	node.mu.Unlock()
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	assert.True(t, node.spec("my-agent").Running, "the retry under the same activity asked the runner to start the machine")
+	assert.NotContains(t, r.ParkedForRetry(), "my-agent", "and the agent left the retry queue")
 }
 
 // TEST_SCENARIO: a runner that caches images on its own claim unpacks them itself, and tar restores each file's owner and then sets a mode on a file it no longer owns, keeping a setgid bit only with FSETID — so that runner holds CHOWN, FOWNER and FSETID. A runner on the node cache or on staged archives unpacks nothing, so it holds neither. Every runner holds DAC_OVERRIDE for its VMMs, which read the image tree with the runner's own credentials to serve it to the guest, including files the image keeps from root.

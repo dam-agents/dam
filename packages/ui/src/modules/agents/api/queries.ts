@@ -85,7 +85,7 @@ function reachIn(
     agentId === null ||
     runState !== "running" ||
     s.restartingAgents.has(agentId) ||
-    s.pausingAgents.has(agentId)
+    s.fallingAsleepAgents.has(agentId)
   )
     return "inoperable";
   return s.unreachableAgents.has(agentId) ? "unreachable" : "operable";

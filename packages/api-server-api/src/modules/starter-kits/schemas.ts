@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { AVATAR_CHARACTERS } from "../agents/avatar/svg.js";
-import { agentNameSchema } from "../agents/schemas.js";
+import { agentNameSchema, avatarSchema } from "../agents/schemas.js";
 import {
   agentSetupEnvVarSchema,
   agentSetupInstallSchema,
@@ -48,6 +47,7 @@ export const starterKitChannelSchema = z.object({
 const scheduleCommon = {
   name: z.string().min(1),
   task: z.string().min(1),
+  description: z.string().min(1).optional(),
   enabled: z.boolean().default(true),
   sessionMode: z.enum(["continuous", "fresh"]).optional(),
   precheck: precheckSchema.optional(),
@@ -208,7 +208,7 @@ export const starterKitApplyInputSchema = z.object({
   catalog: starterKitCatalogNameSchema,
   kitId: starterKitIdSchema,
   name: agentNameSchema,
-  avatar: z.enum(AVATAR_CHARACTERS).optional(),
+  avatar: avatarSchema.optional(),
   templateId: z.string().min(1).optional(),
   connectionIds: z.array(z.string().min(1)).default([]),
   slackChannelId: z.string().min(1).optional(),

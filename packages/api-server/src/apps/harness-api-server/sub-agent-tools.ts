@@ -20,11 +20,15 @@ export const SUB_AGENT_WAIT_MS = 240_000;
 
 const POLL_MS = 2_000;
 
+const PROGRESS_INTERVAL_MS = 20_000;
+
+const AWAIT_AGAIN_GRACE_MS = 60_000;
+
 const LEASE_POLLS = 4;
 
 const MAX_AWAIT_IDS = 50;
 
-const SPAWN_DESCRIPTION = `Spawn a platform sub-agent: a separate agent in its own new sandbox. This is not your harness's own subagent, which runs here, starts in seconds and costs no extra compute: prefer that whenever it can do the job. A platform sub-agent takes tens of seconds to minutes to start and its compute counts against the budget, so spawn one only when the task needs something only a separate sandbox gives, and name it in needs:
+const SPAWN_DESCRIPTION = `Spawn a platform sub-agent: a separate agent in its own new sandbox. This is not your harness's own subagent: if your harness has one, it runs here, starts in seconds and costs no extra compute, so prefer it whenever it can do the job. A platform sub-agent takes tens of seconds to minutes to start and its compute counts against the budget, so spawn one only when the task needs something only a separate sandbox gives, and name it in needs:
 - different-harness: it must run on another harness (see list_harnesses);
 - own-setup: it needs its own repository (seed), install command, env or skills;
 - more-resources: more CPU, memory or disk than this sandbox, or a microVM (backend "vm") for a container runtime or a cluster;
@@ -35,7 +39,7 @@ A need the request does not bear out is refused: different-harness on your own h
 
 The sub-agent runs one prompt to completion unattended, reports one result matching the JSON Schema you give, and is then removed. It cannot ask you anything, so the prompt must let it finish on its own. It runs on your model provider; connections you pass must be your own grants (see list_connections). A setup step that fails fails the sub-agent at once with the reason. Returns the sub-agent id at once; call await_subagents with it to get the result. Do not retry this call blindly after an error: a duplicate call is a second sub-agent.`;
 
-const AWAIT_DESCRIPTION = `Wait for sub-agents you started with spawn_subagent. Returns as soon as any of them finishes, or after about four minutes, listing which are done (with their result), which failed (with the reason), and which are still running. Call it again with the still-running ids to keep waiting, or end your turn: a sub-agent that finishes while nothing waits on it is delivered to you as a new turn. An id that is not one of your sub-agents comes back under unknown.`;
+const AWAIT_DESCRIPTION = `Wait for sub-agents you started with spawn_subagent. Returns as soon as any of them finishes, or after about four minutes, listing which are done (with their result), which failed (with the reason), and which are still running. Call it again with the still-running ids to keep waiting, or end your turn: a sub-agent that finishes while nothing waits on it is delivered to you as a new turn. An id that is not one of your sub-agents comes back under unknown. If the call itself fails with a connection or transport error, the sub-agents keep running: call it again with the same ids.`;
 
 const spawnShape = spawnInvocationRequestSchema.shape;
 
@@ -52,7 +56,7 @@ export type SpawnNeed = (typeof SPAWN_NEEDS)[number];
 const needsInput = z
   .array(z.enum(SPAWN_NEEDS))
   .min(1)
-  .describe("Why your harness's own subagent cannot do this.");
+  .describe("Why this needs a separate sandbox instead of this one.");
 
 const spawnInput = {
   needs: needsInput,
@@ -114,6 +118,15 @@ const spawnInput = {
       "Harness config options as {name: value}: effort on claude-code (low to xhigh; haiku takes none) and codex (minimal to xhigh), approvals on bob. A setting the harness cannot apply fails the sub-agent as soon as it boots.",
     ),
 };
+
+function schemaFromText(schema: unknown): unknown {
+  if (typeof schema !== "string") return schema;
+  try {
+    return JSON.parse(schema) as unknown;
+  } catch {
+    return schema;
+  }
+}
 
 function withHarnessConfig<T extends object>(
   rest: T & {
@@ -226,11 +239,12 @@ export function registerSubAgentTools(
   deps: {
     ops: DriverOps;
     awaits: SubAgentAwaitMarks;
+    requestSignal?: AbortSignal;
     waitMs?: number;
     pollMs?: number;
   },
 ): void {
-  const { ops, awaits } = deps;
+  const { ops, awaits, requestSignal } = deps;
   const waitMs = deps.waitMs ?? SUB_AGENT_WAIT_MS;
   const pollMs = deps.pollMs ?? POLL_MS;
 
@@ -238,7 +252,7 @@ export function registerSubAgentTools(
     run(async () => {
       const { needs, ...rest } = args;
       const parsed = spawnInvocationRequestSchema.safeParse(
-        withHarnessConfig(rest),
+        withHarnessConfig({ ...rest, schema: schemaFromText(rest.schema) }),
       );
       if (!parsed.success) {
         return errorResult(
@@ -249,7 +263,7 @@ export function registerSubAgentTools(
       const unmet = unmetNeed(needs, body, await ops.harness());
       if (unmet) {
         return errorResult(
-          `spawn_subagent refused: ${unmet}. Use your harness's own subagent, or state a need the request bears out.`,
+          `spawn_subagent refused: ${unmet}. Do the work in this sandbox, with your harness's own subagent if it has one, or state a need the request bears out.`,
         );
       }
       const outcome = await ops.spawn(body, "tool");
@@ -284,32 +298,65 @@ export function registerSubAgentTools(
       run(async () => {
         const unique = [...new Set(ids)];
         const deadline = Date.now() + waitMs;
+        const signal = requestSignal
+          ? AbortSignal.any([extra.signal, requestSignal])
+          : extra.signal;
         const lease = () =>
           awaits.markAwaited(
             unique,
             new Date(Date.now() + pollMs * LEASE_POLLS),
           );
+        const progressToken = extra._meta?.progressToken;
+        let beats = 0;
+        let lastBeat = Date.now();
+        const heartbeat = async (settled: Settled[]) => {
+          if (
+            progressToken === undefined ||
+            Date.now() - lastBeat < PROGRESS_INTERVAL_MS
+          )
+            return;
+          lastBeat = Date.now();
+          beats += 1;
+          const running = settled.filter((s) => s.status === "running").length;
+          await extra
+            .sendNotification({
+              method: "notifications/progress",
+              params: {
+                progressToken,
+                progress: beats,
+                message: `Still waiting: ${running} running`,
+              },
+            })
+            .catch(() => {});
+        };
         await lease();
         let settled = await readAll(ops, unique);
         while (
           !settled.some((s) => s.status === "done" || s.status === "failed") &&
           settled.some((s) => s.status === "running") &&
           Date.now() < deadline &&
-          !extra.signal.aborted
+          !signal.aborted
         ) {
           await sleep(
             Math.min(pollMs, Math.max(deadline - Date.now(), 0)),
-            extra.signal,
+            signal,
           );
           await lease();
           settled = await readAll(ops, unique);
+          await heartbeat(settled);
         }
         const summary = summarize(settled);
-        if (!extra.signal.aborted)
+        if (!signal.aborted) {
           await awaits.markCollected([
             ...summary.done.map((d) => d.id),
             ...summary.failed.map((f) => f.id),
           ]);
+          if (summary.running.length > 0)
+            await awaits.markAwaited(
+              summary.running,
+              new Date(Date.now() + AWAIT_AGAIN_GRACE_MS),
+            );
+        }
         return json(summary);
       }),
   );

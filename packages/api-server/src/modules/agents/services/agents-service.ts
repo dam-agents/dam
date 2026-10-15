@@ -1263,6 +1263,8 @@ export function createAgentsService(deps: {
             : minutesToDuration(input.hibernationTimeoutMin);
       if (input.requireConnectionAddress !== undefined)
         patch.requireConnectionAddress = input.requireConnectionAddress || null;
+      if (input.whisper !== undefined)
+        patch.whispersOff = input.whisper ? null : true;
       let gateLiveResize:
         | ((
             apply: () => Promise<InfraAgent | null>,
@@ -1326,7 +1328,8 @@ export function createAgentsService(deps: {
       if (
         input.env !== undefined ||
         input.secretRef !== undefined ||
-        input.requireConnectionAddress !== undefined
+        input.requireConnectionAddress !== undefined ||
+        input.whisper !== undefined
       ) {
         securityLog("info", "agent.update", {
           category: "resource",
@@ -1336,6 +1339,7 @@ export function createAgentsService(deps: {
           result: "success",
           detail: {
             secretRefChanged: input.secretRef !== undefined,
+            ...(input.whisper !== undefined ? { whisper: input.whisper } : {}),
             ...(input.requireConnectionAddress !== undefined
               ? { requireConnectionAddress: input.requireConnectionAddress }
               : {}),
@@ -1435,22 +1439,8 @@ export function createAgentsService(deps: {
       return project((await deps.repo.get(id)) ?? infra);
     },
 
-    async stop(id) {
-      if (!(await ownsOrDeny(id, "agent.stop"))) return null;
-      const infra = await deps.repo.requestStop(id);
-      if (!infra) return null;
-      securityLog("info", "agent.stop", {
-        category: "privileged",
-        actor: deps.owner ?? null,
-        actorKind: "user",
-        agentId: id,
-        result: "success",
-      });
-      return project(infra);
-    },
-
-    async pause(id) {
-      if (!(await ownsOrDeny(id, "agent.pause"))) return null;
+    async sleep(id) {
+      if (!(await ownsOrDeny(id, "agent.sleep"))) return null;
       const current = await deps.repo.get(id, deps.owner);
       if (!current) return null;
       const effectiveTimeout = resolveEffectiveHibernationTimeoutMin(
@@ -1461,9 +1451,9 @@ export function createAgentsService(deps: {
       const infra =
         effectiveTimeout === 0
           ? await deps.repo.requestStop(id)
-          : await deps.repo.requestPause(id);
+          : await deps.repo.requestSleep(id);
       if (!infra) return null;
-      securityLog("info", "agent.pause", {
+      securityLog("info", "agent.sleep", {
         category: "privileged",
         actor: deps.owner ?? null,
         actorKind: "user",

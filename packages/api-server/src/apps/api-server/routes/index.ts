@@ -11,7 +11,11 @@ import type { ApiServerDeps, ApiVariables } from "../deps.js";
 import { createOAuthRoutes } from "../../../modules/connections/index.js";
 import { createBrandRoutes } from "./brand.js";
 import { mountBrowserStreamPage } from "./browser-stream.js";
-import { createPublicAgentRoutes } from "../../../modules/agents/index.js";
+import {
+  createAvatarImageRoutes,
+  createAvatarImagesRepository,
+  createPublicAgentRoutes,
+} from "../../../modules/agents/index.js";
 
 type App = Hono<{ Variables: ApiVariables }>;
 
@@ -44,6 +48,11 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
   );
   app.get("/api/terms", (c) => c.json(terms.document()));
   app.route("/api/brand", createBrandRoutes(config.brand));
+  const avatarImages = createAvatarImageRoutes(
+    createAvatarImagesRepository(boot.db),
+  );
+  app.route("/api/public/avatars", avatarImages.serve);
+  app.route("/api/avatars", avatarImages.upload);
   app.route(
     "/api/public",
     createPublicAgentRoutes({ service: boot.publicAgentPageService }),

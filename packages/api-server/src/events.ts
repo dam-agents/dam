@@ -67,6 +67,7 @@ export enum EventType {
   IdentityLinked = "IdentityLinked",
   AgentOutOfMemory = "AgentOutOfMemory",
   AvatarUnlocked = "AvatarUnlocked",
+  GettingStartedReset = "GettingStartedReset",
 }
 
 export type UserAuthenticated = {
@@ -466,6 +467,11 @@ export type AvatarUnlocked = {
   character: AvatarCharacter;
 };
 
+export type GettingStartedReset = {
+  type: EventType.GettingStartedReset;
+  ownerSub: string;
+};
+
 export type DomainEvent =
   | UserAuthenticated
   | AgentCreated
@@ -519,7 +525,8 @@ export type DomainEvent =
   | StarterKitOnboarded
   | IdentityLinked
   | AgentOutOfMemory
-  | AvatarUnlocked;
+  | AvatarUnlocked
+  | GettingStartedReset;
 
 const bus$ = new Subject<DomainEvent>();
 

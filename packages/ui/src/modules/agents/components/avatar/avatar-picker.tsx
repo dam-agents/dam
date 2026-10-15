@@ -1,10 +1,9 @@
 import { Edit } from "@carbon/icons-react";
-import {
-  AVATAR_CHARACTERS,
-  type AvatarCharacter,
-} from "api-server-api/avatar/svg";
+import { AVATAR_CHARACTERS, AVATAR_EMOJI_RE } from "api-server-api/avatar/svg";
 import { useEffect, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Popover,
   PopoverContent,
@@ -12,6 +11,9 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
+import { authFetch } from "../../../../auth.js";
+import { emitToast } from "../../../../lib/toast.js";
+import { useFeatures } from "../../../features/api/queries.js";
 import { useMarkAvatarPicked } from "../../../getting-started/api/mutations.js";
 import { AvatarEgg } from "../../../getting-started/components/avatar-egg.js";
 import { useOpenChecklist } from "../../../getting-started/hooks/use-open-checklist.js";
@@ -33,8 +35,8 @@ export function AvatarPicker({
   onChange,
   disabled = false,
 }: {
-  value: AvatarCharacter;
-  onChange: (character: AvatarCharacter) => void;
+  value: string;
+  onChange: (avatar: string) => void;
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -81,10 +83,11 @@ export function AvatarGrid({
   onPick,
   onLeave,
 }: {
-  value: AvatarCharacter;
-  onPick: (character: AvatarCharacter) => void;
+  value: string;
+  onPick: (avatar: string) => void;
   onLeave: () => void;
 }) {
+  const custom = useFeatures().data?.["custom-avatars"] ?? false;
   const unlocked = useUnlockedAvatars();
   const freshOnOpen = useFreshAvatars();
   const [fresh] = useState(freshOnOpen);
@@ -134,6 +137,7 @@ export function AvatarGrid({
           </span>
         ))}
       </div>
+      {custom && <CustomAvatarInputs onPick={onPick} />}
       {locked.length > 0 && (
         <button
           type="button"
@@ -146,6 +150,84 @@ export function AvatarGrid({
           See how to unlock the rest
         </button>
       )}
+    </div>
+  );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The experimental custom avatars: one emoji typed
+ * or pasted, or an uploaded JPG or PNG that the api-server crops to a square.
+ */
+function CustomAvatarInputs({ onPick }: { onPick: (avatar: string) => void }) {
+  const [emoji, setEmoji] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const validEmoji = AVATAR_EMOJI_RE.test(`emoji:${emoji.trim()}`);
+  const upload = async (file: File) => {
+    setUploading(true);
+    try {
+      const res = await authFetch("/api/avatars", {
+        method: "POST",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        avatar?: string;
+        error?: string;
+      };
+      if (!res.ok || !body.avatar)
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      onPick(body.avatar);
+    } catch (err) {
+      emitToast({
+        kind: "error",
+        message: `Couldn't upload the avatar: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    } finally {
+      setUploading(false);
+    }
+  };
+  return (
+    <div className="flex items-center gap-2 border-t border-border pt-3">
+      <form
+        className="flex items-center gap-1"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (validEmoji) onPick(`emoji:${emoji.trim()}`);
+        }}
+      >
+        <Input
+          size="sm"
+          aria-label="Emoji avatar"
+          placeholder="Emoji"
+          value={emoji}
+          onChange={(e) => setEmoji(e.target.value)}
+          className="w-20 text-center"
+        />
+        <Button
+          type="submit"
+          size="sm"
+          variant="outline"
+          disabled={!validEmoji}
+        >
+          Use
+        </Button>
+      </form>
+      <Button asChild size="sm" variant="outline" disabled={uploading}>
+        <label>
+          {uploading ? "Uploading…" : "Upload image"}
+          <input
+            type="file"
+            accept="image/png,image/jpeg"
+            className="sr-only"
+            disabled={uploading}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) void upload(file);
+            }}
+          />
+        </label>
+      </Button>
     </div>
   );
 }

@@ -9,7 +9,6 @@ interface Props {
   agent: AgentView;
   selected: boolean;
   unread: boolean;
-  working: boolean;
   onSelect: () => void;
   actions: ReactNode;
   children?: ReactNode;
@@ -19,12 +18,11 @@ export function SidebarAgentRow({
   agent,
   selected,
   unread,
-  working,
   onSelect,
   actions,
   children,
 }: Props) {
-  const mood = avatarMood(agent.state, agent.stopRequested, working);
+  const mood = avatarMood(agent.state, agent.stopRequested);
   return (
     <li>
       <div

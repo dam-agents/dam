@@ -17,11 +17,13 @@ export function SidebarActivityRow({
   item,
   selected,
   now,
+  conversation,
   onOpen,
 }: {
   item: AgentActivitySession;
   selected: boolean;
   now: Date;
+  conversation: string | undefined;
   onOpen: () => void;
 }) {
   const { session, agent, at, working, unread } = item;
@@ -75,6 +77,15 @@ export function SidebarActivityRow({
               size={12}
               className="ml-0.5 shrink-0"
             />
+          )}
+          {conversation && (
+            <span
+              data-testid="sidebar-activity-conversation"
+              title={conversation}
+              className="max-w-[60%] truncate"
+            >
+              {conversation}
+            </span>
           )}
         </span>
       </button>
