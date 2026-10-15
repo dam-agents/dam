@@ -1,10 +1,12 @@
 import { TRPCError } from "@trpc/server";
 import { t } from "../../trpc.js";
 import {
+  browserActionInputSchema,
   browserNavigateInputSchema,
+  browserTabInputSchema,
   browserTestingModeInputSchema,
 } from "./schemas.js";
-import type { BrowserAction, BrowserDomainError } from "./types.js";
+import type { BrowserAction, BrowserDomainError, TabAction } from "./types.js";
 
 function toTrpcError(error: BrowserDomainError): TRPCError {
   switch (error.kind) {
@@ -25,6 +27,11 @@ function toTrpcError(error: BrowserDomainError): TRPCError {
         code: "BAD_REQUEST",
         message: "Only http and https addresses open",
       });
+    case "TabGone":
+      return new TRPCError({
+        code: "NOT_FOUND",
+        message: "That tab is closed",
+      });
     case "Failed":
       return new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
@@ -39,6 +46,14 @@ const action = (name: BrowserAction) =>
     if (!result.ok) throw toTrpcError(result.error);
   });
 
+const tabAction = (name: TabAction) =>
+  t.procedure
+    .input(browserActionInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const result = await ctx.browser.act(name, input?.tab);
+      if (!result.ok) throw toTrpcError(result.error);
+    });
+
 export const browserRouter = t.router({
   watch: t.procedure.subscription(async function* ({ ctx, signal }) {
     const result = ctx.browser.watch(signal);
@@ -48,13 +63,29 @@ export const browserRouter = t.router({
   navigate: t.procedure
     .input(browserNavigateInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const result = await ctx.browser.navigate(input.url);
+      const result = await ctx.browser.navigate(input.url, input.tab);
       if (!result.ok) throw toTrpcError(result.error);
     }),
-  reload: action("reload"),
-  stop: action("stop"),
-  back: action("back"),
-  forward: action("forward"),
+  reload: tabAction("reload"),
+  stop: tabAction("stop"),
+  back: tabAction("back"),
+  forward: tabAction("forward"),
+  selectTab: t.procedure
+    .input(browserTabInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const result = await ctx.browser.selectTab(input.tab);
+      if (!result.ok) throw toTrpcError(result.error);
+    }),
+  newTab: t.procedure.mutation(async ({ ctx }) => {
+    const result = await ctx.browser.newTab();
+    if (!result.ok) throw toTrpcError(result.error);
+  }),
+  closeTab: t.procedure
+    .input(browserTabInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const result = await ctx.browser.closeTab(input.tab);
+      if (!result.ok) throw toTrpcError(result.error);
+    }),
   restart: action("restart"),
   clearData: action("clearData"),
   setTestingMode: t.procedure
