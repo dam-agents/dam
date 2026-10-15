@@ -1,17 +1,12 @@
-// TEST_OVERVIEW: the browser panel shows every tab of the agent's one browser and keeps the user and the agent on the same tab. The spec boots its own container agent, opens its panel, and drives the browser from both sides: agent-browser in the agent's pod, as the agent's own commands do, and the panel's tab bar, as the user does. After each step the tab the panel marks active — the one on the user's screen — is the tab agent-browser reports as its own, compared by CDP target id, never by position.
+// TEST_OVERVIEW: the browser panel shows every tab of the agent's one browser and keeps the user and the agent on the same tab. The spec boots its own container agent on the default Template, whose browser and agent-browser come from the node's harness tools — the mock agents of the rest of the suite carry neither — so only the vm lane, which installs both, runs it. It opens the agent's panel and drives the browser from both sides: agent-browser in the agent's pod, as the agent's own commands do, and the panel's tab bar, as the user does. After each step the tab the panel marks active — the one on the user's screen — is the tab agent-browser reports as its own, compared by CDP target id, never by position.
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
 import { baseUrl } from "../../config.js";
 import { deleteAgentIfPresent } from "../../lib/agents.js";
 import { type ApiClient, createApiClient } from "../../lib/api-client.js";
 import { acceptTerms, getAccessToken } from "../../lib/auth.js";
-import {
-  createAgentOn,
-  laneBackend,
-  waitAgentState,
-} from "../../lib/backend.js";
+import { createAgentOn, waitAgentState } from "../../lib/backend.js";
 import { AGENT_NS, kubectl } from "../../lib/cluster.js";
-import { harnessName } from "../../lib/fixtures.js";
 
 test.describe.configure({ mode: "serial" });
 
@@ -86,15 +81,21 @@ async function openPanel(page: Page) {
 }
 
 test.beforeAll(async () => {
-  test.setTimeout(600_000);
-  test.skip(
-    laneBackend === "vm",
-    "the spec runs agent-browser through kubectl exec, which reaches a container agent's pod only",
-  );
+  test.setTimeout(900_000);
   api = createApiClient(await getAccessToken());
   await acceptTerms(api);
   await deleteAgentIfPresent(api, AGENT);
-  agentId = await createAgentOn(api, "container", AGENT, harnessName);
+  kubectl(
+    "-n",
+    AGENT_NS,
+    "wait",
+    "pod",
+    "-l",
+    "app.kubernetes.io/component=harness-tools",
+    "--for=condition=Ready",
+    "--timeout=600s",
+  );
+  agentId = await createAgentOn(api, "container", AGENT, "default");
   await waitAgentState(api, agentId, "running");
 });
 

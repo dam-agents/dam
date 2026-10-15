@@ -54,7 +54,7 @@ Every tab is known by its **target id**, Chromium's own id for it, which agent-b
 The toolbar names the tab the panel shows, so a tab the agent brings to the front meanwhile does not redirect the user's reload or address, and an action on a tab that has closed — also between the panel's list and Chromium's answer — is refused as a closed tab rather than run on another one.
 
 The user and the agent share the active tab both ways.
-A tab the agent brings to the front — `agent-browser tab`, `tab new`, a page's popup — comes on screen, and Chromium sends no event for that, so the runtime asks each tab whether it is visible once a second while a panel watches; a tab that has just turned visible becomes the active tab.
+A tab the agent brings to the front — `agent-browser tab`, `tab new`, a page's popup — comes on screen, and Chromium sends no event for that, nor for a script that renames a page, so the runtime asks each tab for its visibility and title once a second while a panel watches; a tab that has just turned visible becomes the active tab.
 A tab the user selects comes to the front at once, and the runtime then selects it in agent-browser too (`agent-browser tab <target id>`, in agent-browser's queue), so the agent's next command acts on the page the user sees.
 agent-browser does not list the browser's own pages, such as the new tab page a keyboard shortcut opens; the panel shows them and brings them to the front, but the agent stays on its last tab.
 What the agent only reads — a snapshot, a screenshot, a script — changes neither.

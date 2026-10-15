@@ -80,8 +80,9 @@ interface CdpMessage {
  * target id — and reports each one's address, title and loading the moment
  * Chromium does. It follows the one on screen: the tab whose document is
  * visible, as the kiosk window shows only the active one. Chromium reports no
- * event when another tab comes to the front, so it asks every tab on a short
- * interval, and a tab that has just turned visible wins; a tab the panel
+ * event when another tab comes to the front, nor when a script renames a page,
+ * so it asks every tab for its visibility and title on a short interval, and a
+ * tab that has just turned visible wins; a tab the panel
  * selects is on screen at once, and answers already on their way do not take
  * it back. It runs the toolbar's navigation and the tab bar's select, open and
  * close directly, so none waits behind the agent's commands in agent-browser's
@@ -270,12 +271,17 @@ export const watchPages: WatchPages = ({
         [...pages].map(async ([targetId, page]) => {
           const r = await call(
             "Runtime.evaluate",
-            { expression: "document.visibilityState", returnByValue: true },
+            {
+              expression: "[document.visibilityState, document.title]",
+              returnByValue: true,
+            },
             page.sessionId,
             VISIBILITY_TIMEOUT_MS,
           ).catch(() => null);
           const value = (r?.result as { value?: unknown } | undefined)?.value;
-          if (value === "visible") visible.push(targetId);
+          const [visibility, title] = Array.isArray(value) ? value : [];
+          if (visibility === "visible") visible.push(targetId);
+          if (typeof title === "string" && title) page.title = title;
         }),
       );
       if (selectionsBefore !== selections) return;

@@ -57,8 +57,8 @@ const suite: NamedProject[] = [
     name: "own-agents",
     testMatch:
       laneBackend === "vm"
-        ? /\/(17|18|20|22)-.*\.spec\.ts$/
-        : /\/(17|18|19|23)-.*\.spec\.ts$/,
+        ? /\/(17|18|20|22|23)-.*\.spec\.ts$/
+        : /\/(17|18|19)-.*\.spec\.ts$/,
     dependencies: ["agent"],
     workers: 1,
     use: { ...devices["Desktop Chrome"], storageState },

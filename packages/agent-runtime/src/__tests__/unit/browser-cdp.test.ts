@@ -118,10 +118,8 @@ async function fakeChrome(tabs: FakeTab[]) {
         result = {
           result: {
             value:
-              params.expression === "document.visibilityState"
-                ? tab?.visible
-                  ? "visible"
-                  : "hidden"
+              params.expression === "[document.visibilityState, document.title]"
+                ? [tab?.visible ? "visible" : "hidden", tab?.title ?? ""]
                 : 1,
           },
         };
@@ -324,6 +322,18 @@ describe("watchPages", () => {
     b.visible = true;
     await until(() => page.state().activeTab === "B");
     expect(page.state().page?.url).toBe("http://b/");
+  });
+
+  // TEST_SCENARIO: a script renames a page — an app showing its unread count, the agent setting document.title — and Chromium reports no target change for it; the tab bar still shows the new title within the short interval, for a tab not on screen too.
+  it("follows a page renamed by a script", async () => {
+    const a = tab("A", "http://a/", true);
+    const b = tab("B", "http://b/", false);
+    const chrome = await fakeChrome([a, b]);
+    const { page } = await watching(chrome.url);
+    b.title = "Renamed";
+    await until(() => page.state().tabs[1]?.title === "Renamed");
+    a.title = "Inbox (3)";
+    await until(() => page.state().page?.title === "Inbox (3)");
   });
 
   // TEST_SCENARIO: the panel selects a tab: it comes to the front by its target id and is the active tab at once, before any visibility answer; an answer that was already on its way, saying the old tab is on screen, does not take it back.
