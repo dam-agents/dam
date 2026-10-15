@@ -8,6 +8,7 @@ export interface AgentView {
   description?: string;
   env?: EnvVar[];
   state: AgentState;
+  disabled?: boolean;
   error?: string;
   overBudgetMessage?: string;
   podTerminationReason?: string;
