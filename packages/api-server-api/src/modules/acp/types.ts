@@ -10,6 +10,8 @@ export const PROMPT_NOT_QUEUED_MESSAGE = "prompt is no longer queued";
 
 export const REWRITE_REFUSED_CODE = "REWRITE_REFUSED";
 
+export const REWRITE_BUSY_CODE = "REWRITE_BUSY";
+
 export const STEER_METHOD = "_session/steering";
 
 export const steerResponseSchema = z.object({
@@ -316,15 +318,19 @@ export type PlatformSteerQueuedParams = z.infer<
   typeof platformSteerQueuedParamsSchema
 >;
 
-export const platformRewriteFromParamsSchema = z.object({
-  sessionId: z.string().min(1),
-  mode: z.enum(["rewind", "fork"]),
-  messageId: z.string().min(1),
-  upToMessageId: z.string().min(1).nullable().optional(),
-  prompt: z.array(promptBlockSchema).min(1),
-  promptId: z.string().min(1),
-  title: z.string().min(1).optional(),
-});
+export const platformRewriteFromParamsSchema = z
+  .object({
+    sessionId: z.string().min(1),
+    mode: z.enum(["rewind", "fork"]),
+    messageId: z.string().min(1),
+    upToMessageId: z.string().min(1).nullable().optional(),
+    prompt: z.array(promptBlockSchema).min(1).optional(),
+    promptId: z.string().min(1).optional(),
+    title: z.string().min(1).optional(),
+  })
+  .refine((p) => (p.prompt === undefined) === (p.promptId === undefined), {
+    message: "prompt and promptId come together",
+  });
 export type PlatformRewriteFromParams = z.infer<
   typeof platformRewriteFromParamsSchema
 >;

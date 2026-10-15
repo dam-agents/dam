@@ -145,6 +145,7 @@ import {
   type SidebarPanelStack,
   useSidebarPanels,
 } from "../hooks/use-sidebar-panels.js";
+import { useTakeBack } from "../hooks/use-take-back.js";
 import { draftKey } from "../lib/draft-key.js";
 import { newLiveArrivals, noteArrivals } from "../lib/live-arrivals.js";
 import type { SidebarPanelId } from "../lib/sidebar-panels.js";
@@ -311,6 +312,7 @@ export function ChatView() {
     loadOlderMessages,
     sendPrompt,
     rewriteFrom,
+    takeBackPrompt,
     stopAgent,
     chooseSessionModel,
     configureSession,
@@ -401,20 +403,31 @@ export function ChatView() {
   }, [sessionTurns.data, messages]);
 
   const harnessForks = useStore((s) => s.harnessForks);
-  const queueEmpty = useStore((s) => s.queuedPrompts.length === 0);
+  const queuedPrompts = useStore((s) => s.queuedPrompts);
+  const queueEmpty = queuedPrompts.length === 0;
   const { data: sessionView } = useAgentSession(selectedAgent, sessionId);
-  const canRewrite =
-    harnessForks &&
+  const rewritable =
     sessionView?.mode === SessionMode.Chat &&
     sessionView.type === SessionType.Regular &&
     !sessionView.threadTs &&
     !sessionView.scheduleId &&
     !sessionView.initialization;
+  const canRewrite = harnessForks && rewritable;
   const arrivalsRef = useRef(newLiveArrivals(sessionId));
   if (arrivalsRef.current.sessionId !== sessionId)
     arrivalsRef.current = newLiveArrivals(sessionId);
   const arrived = noteArrivals(arrivalsRef.current, shown, loadingSession);
   const rewritePoints = useMemo(() => rewritePointsOf(shown), [shown]);
+  const takeBack = useTakeBack({
+    shown,
+    rewritePoints,
+    sessionId,
+    rewritable: rewritable === true,
+    harnessForks,
+    queuedPrompts,
+    title: sessionView?.title ?? null,
+    takeBackPrompt,
+  });
   const rewriting = useStore((s) => s.rewriting);
   const rewriteIndex = rewriting
     ? shown.findIndex((m) => m.id === rewriting.messageId)
@@ -1069,6 +1082,7 @@ export function ChatView() {
                   loadingSession={loadingSession}
                   onSend={sendAndFollow}
                   onStop={stopAgent}
+                  onTakeBack={takeBack}
                   blockedReason={
                     noGrantedProvider
                       ? "No LLM provider connected to this agent."
