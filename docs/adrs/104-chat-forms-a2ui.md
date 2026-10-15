@@ -1,15 +1,16 @@
 ---
+id: 104
 title: Chat forms — agents write A2UI v1.0 into their replies
-status: proposed
+status: accepted
 subsystem: chat-forms
 tags: [ui, chat, a2ui, starter-kits]
-summary: Agents put interactive UI into the web chat as A2UI v1.0 blocks in their reply text, rendered with the app's own components behind the experimental chat-forms flag; the chat answers in A2UI renderer messages inside the user's next prompt.
+summary: Agents put interactive UI into the web chat as A2UI v1.0 blocks in their reply text, rendered with the app's own components behind the experimental chat-forms flag; a check tool validates a form before it is sent, and the chat answers in A2UI renderer messages inside the user's next prompt.
 ---
 
 # ADR: Chat forms — agents write A2UI v1.0 into their replies
 
 **Date:** 2026-10-12
-**Status:** Proposed
+**Status:** Accepted
 **Owner:** @xjacka
 
 ## Context
