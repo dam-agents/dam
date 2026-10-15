@@ -58,7 +58,7 @@ pub const STOP_ON_CLOSE: Duration = Duration::from_secs(40);
 // UNIT_BOUNDARY_DESCRIPTION: how long a delete waits for the action in flight on its machine. The delete cancels that action's fetch first, so the wait covers only a VMM call. It stays under the controller's twenty-second request timeout: a delete still waiting then answers 503, and the controller asks again on its next reconcile.
 pub const DELETE_WAIT: Duration = Duration::from_secs(15);
 
-// UNIT_BOUNDARY_DESCRIPTION: the longest the runner waits on one start, stop or delete call into the runtime. None of them can be interrupted, and a VMM stuck in the kernel can hold one forever, which would hold the machine's worker, and every delete of it, with it. Past this the call is reported failed and left to finish on its own thread; the runtime's own lock on the machine keeps the next call from running beside it. A start includes the guest pulling a staged archive, which is the longest of them.
+// UNIT_BOUNDARY_DESCRIPTION: the longest the runner waits on one start, stop or delete call into the runtime. None of them can be interrupted, and a VMM stuck in the kernel can hold one forever, which would hold the machine's worker, and every delete of it, with it. Past this the call is reported failed and left to finish on its own thread; the runtime's own lock on the machine keeps the next call from running beside it, and a delete waits for it only DELETE_WAIT, as for any call in flight, rather than queue behind it on that lock. A start includes the guest pulling a staged archive, which is the longest of them.
 pub const RUNTIME_CALL_LIMIT: Duration = Duration::from_secs(15 * 60);
 
 // UNIT_BOUNDARY_DESCRIPTION: how often the runner names the digests its machines boot to the image cache again. Well inside HOLD_LEASE, so one missed refresh never lets a hold lapse.
@@ -112,7 +112,7 @@ struct Seen {
     error: Option<String>,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `seeding` is set while a seed is uploaded into the machine's share, and no worker starts while it is. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change. `cancel` is the machine's own child of the runner's lifetime, cancelled by a delete so the action in flight stops waiting on its fetch. `acting_mib` is the memory of the spec the action in flight runs with, which a newer spec stored behind it does not change. `resident_mib` is what the prober last measured the running machine's VMM holding, kept beside `seen` rather than in it, so a figure that moves at every probe does not move the status version and wake every waiting read. `warming_since` is when the machine's last boot began, which admission counts it at the warm-up floor for WARMUP after. `deletes` counts the delete calls in progress, and `deleting` stays set after one gave up waiting, so the worker still takes no further action. `gave_up` is when the runner last restarted the machine for going quiet, which holds its next such restart back. `restarts` counts those restarts since the controller last asked the machine stopped: the controller publishes no count for a hibernated Agent, so one kept across the stop would read after the wake as a crash the user never had.
+// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `seeding` is set while a seed is uploaded into the machine's share, and no worker starts while it is. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change. `cancel` is the machine's own child of the runner's lifetime, cancelled by a delete so the action in flight stops waiting on its fetch. `acting_mib` is the memory of the spec the action in flight runs with, which a newer spec stored behind it does not change. `resident_mib` is what the prober last measured the running machine's VMM holding, kept beside `seen` rather than in it, so a figure that moves at every probe does not move the status version and wake every waiting read. `warming_since` is when the machine's last boot began, which admission counts it at the warm-up floor for WARMUP after. `deletes` counts the delete calls in progress, and `deleting` stays set after one gave up waiting, and while any runtime call it waited on still runs, so the worker still takes no further action and no ensure clears it. `calls` is held by every start, stop or delete call into the runtime until that call returns, also after the runner gave up waiting for it, so it counts one more holder per call still running. `gave_up` is when the runner last restarted the machine for going quiet, which holds its next such restart back. `restarts` counts those restarts since the controller last asked the machine stopped: the controller publishes no count for a hibernated Agent, so one kept across the stop would read after the wake as a crash the user never had.
 #[derive(Default)]
 struct MachineEntry {
     desired: Option<MachineSpec>,
@@ -139,6 +139,7 @@ struct MachineEntry {
     cpu_milli: u64,
     cancel: Option<CancellationToken>,
     deletes: u32,
+    calls: Arc<()>,
 }
 
 impl MachineEntry {
@@ -648,7 +649,7 @@ impl Server {
             }
             let entry = machines.entries.entry(id.to_string()).or_default();
             if entry.deleting {
-                if entry.converging || entry.deletes > 0 {
+                if entry.converging || entry.deletes > 0 || Arc::strong_count(&entry.calls) > 1 {
                     return Ok(status);
                 }
                 entry.deleting = false;
@@ -744,7 +745,7 @@ impl Server {
         self.bump(entry);
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: removes a machine, its disks and its state, and answers only once they are gone. It marks the machine as being deleted, so its worker takes no further action and any spec stored behind the current one is dropped, cancels the machine's token so an action waiting on a fetch returns now, then waits up to DELETE_WAIT for the action in flight to return. An action still running then is answered with a 503 and nothing removed; the mark stays, so the worker ends when its call returns, and the controller's next delete finds it gone.
+    // UNIT_BOUNDARY_DESCRIPTION: removes a machine, its disks and its state, and answers only once they are gone. It marks the machine as being deleted, so its worker takes no further action and any spec stored behind the current one is dropped, cancels the machine's token so an action waiting on a fetch returns now, then waits up to DELETE_WAIT for the action in flight to return. The same wait, polled since such a call returns on a thread that cannot signal it, covers a runtime call the worker gave up on at RUNTIME_CALL_LIMIT, which still holds the runtime's lock on the machine, and the runtime's own delete, which gets only what is left of DELETE_WAIT. A call still running then is answered with a 503, and the delete starts no runtime call of its own behind it, so a VMM stuck for good costs one blocked thread rather than one per retry; the mark stays, so the worker ends when its call returns, and the controller's next delete finds it gone.
     pub fn delete(&self, id: &str) -> Result<(), Rejected> {
         self.delete_within(id, DELETE_WAIT)
     }
@@ -764,26 +765,26 @@ impl Server {
             while let Some(action) = machines
                 .entries
                 .get(id)
-                .filter(|e| e.converging)
-                .map(|e| e.action)
+                .filter(|e| e.converging || Arc::strong_count(&e.calls) > 1)
+                .map(|e| e.action.filter(|_| e.converging))
             {
                 let left = deadline.saturating_duration_since(Instant::now());
                 if left.is_zero() {
                     if let Some(entry) = machines.entries.get_mut(id) {
                         entry.deletes -= 1;
                     }
-                    let doing = action.map_or("working on it", Action::label);
+                    let doing = action.map_or("in a runtime call", Action::label);
                     return Err(Rejected::unavailable(format!(
                         "the machine is still {doing}; it is deleted once that returns, so ask again"
                     )));
                 }
-                machines = match self.settled.wait_timeout(machines, left) {
+                machines = match self.settled.wait_timeout(machines, left.min(BOUNDED_TICK)) {
                     Ok((guard, _)) => guard,
                     Err(e) => e.into_inner().0,
                 };
             }
         }
-        let removed = self.remove(id);
+        let removed = self.remove(id, deadline);
         {
             let mut machines = locked(&self.machines);
             if removed.is_ok() {
@@ -791,7 +792,7 @@ impl Server {
                 self.changed.notify_all();
             } else if let Some(entry) = machines.entries.get_mut(id) {
                 entry.deletes -= 1;
-                if entry.deletes == 0 {
+                if entry.deletes == 0 && Arc::strong_count(&entry.calls) == 1 {
                     entry.deleting = false;
                     entry.cancel = None;
                 }
@@ -802,18 +803,24 @@ impl Server {
         Ok(())
     }
 
-    fn remove(&self, id: &str) -> Result<(), Rejected> {
-        let internal = |e: anyhow::Error| Rejected::internal(format!("{e:#}"));
+    fn remove(&self, id: &str, deadline: Instant) -> Result<(), Rejected> {
         let runtime = self.runtime.clone();
         let target = id.to_string();
-        bounded(
+        self.runtime_call(
+            id,
             "the runtime's delete",
-            Some(RUNTIME_CALL_LIMIT),
-            None,
-            None,
+            deadline.saturating_duration_since(Instant::now()),
             move || runtime.delete(&target),
         )
-        .map_err(internal)?;
+        .map_err(|e| {
+            if self.runtime_calls(id) > 0 {
+                Rejected::unavailable(format!(
+                    "{e:#}; the machine is deleted once it returns, so ask again"
+                ))
+            } else {
+                Rejected::internal(format!("{e:#}"))
+            }
+        })?;
         let dir = machine_dir(&self.config.state_dir, id)
             .ok_or_else(|| Rejected::bad_request("invalid machine id"))?;
         match fs::remove_dir_all(&dir) {
@@ -904,6 +911,33 @@ impl Server {
         share::remove_seed(&share)
             .and_then(|()| share::forget_seed_digest(&dir))
             .map_err(|e| Rejected::internal(e.to_string()))
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: runs one start, stop or delete call into the runtime through `bounded`, holding the machine's `calls` until the call itself returns rather than until the runner stops waiting for it.
+    fn runtime_call<T: Send + 'static>(
+        &self,
+        id: &str,
+        what: &str,
+        limit: Duration,
+        work: impl FnOnce() -> anyhow::Result<T> + Send + 'static,
+    ) -> anyhow::Result<T> {
+        let held = locked(&self.machines)
+            .entries
+            .entry(id.to_string())
+            .or_default()
+            .calls
+            .clone();
+        bounded(what, Some(limit), None, None, move || {
+            let _held = held;
+            work()
+        })
+    }
+
+    fn runtime_calls(&self, id: &str) -> usize {
+        locked(&self.machines)
+            .entries
+            .get(id)
+            .map_or(0, |e| Arc::strong_count(&e.calls) - 1)
     }
 
     fn converging(&self, id: &str) -> bool {
@@ -1269,13 +1303,9 @@ impl Server {
             size
         };
         let port = state::port(&self.config.state_dir, id);
-        let result = bounded(
-            "the runtime's start",
-            Some(RUNTIME_CALL_LIMIT),
-            None,
-            None,
-            move || boot_and_grow(&*runtime, &target, boot, size, || healthy(port)),
-        );
+        let result = self.runtime_call(id, "the runtime's start", RUNTIME_CALL_LIMIT, move || {
+            boot_and_grow(&*runtime, &target, boot, size, || healthy(port))
+        });
         self.metrics
             .start(action, started.elapsed(), result.is_ok());
         if let Ok(true) = result {
@@ -1298,13 +1328,9 @@ impl Server {
         }
         let runtime = self.runtime.clone();
         let target = id.to_string();
-        bounded(
-            "the runtime's stop",
-            Some(RUNTIME_CALL_LIMIT),
-            None,
-            None,
-            move || runtime.stop(&target),
-        )
+        self.runtime_call(id, "the runtime's stop", RUNTIME_CALL_LIMIT, move || {
+            runtime.stop(&target)
+        })
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: the machine's token, made on first use as a child of the runner's lifetime, so closing the runner cancels it as a delete does.
