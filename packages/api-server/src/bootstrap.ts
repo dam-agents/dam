@@ -1276,6 +1276,7 @@ export async function bootstrap() {
       getCapabilities: async (agentId) =>
         (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
           ?.runtimeCapabilities ?? null,
+      firePair,
     }),
     bullConnection,
     runtimeMutator: runtimeDelivery.runtimeMutator,

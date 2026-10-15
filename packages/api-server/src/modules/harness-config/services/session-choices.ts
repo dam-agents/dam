@@ -36,6 +36,10 @@ export function createSessionChoicesValidator(deps: {
   pairRepo: Pick<SessionPairRepo, "grantedProviders" | "read">;
   snapshotRepo: Pick<HarnessConfigSnapshotRepo, "read">;
   getCapabilities: (agentId: string) => Promise<unknown>;
+  firePair: (
+    agentId: string,
+    preferred: { harness?: string; model?: string },
+  ) => Promise<{ harness: string; model: string | null } | null | undefined>;
 }): SessionChoicesValidator {
   /**
    * UNIT_BOUNDARY_DESCRIPTION: Old runtime path: remove when agents.runtimeFleet.outdated is empty on prod.
@@ -66,16 +70,23 @@ export function createSessionChoicesValidator(deps: {
    * UNIT_BOUNDARY_DESCRIPTION: one harness process reaches either the Model
    * Router or a provider it runs natively (Bedrock), so a model-valued
    * setting (the subagent model) must be on the side of the model the fire
-   * runs: the schedule's own, else the saved default for that harness, else
-   * the router's default. A runtime that names no native templates splits
-   * nothing.
+   * runs, resolved as the fire resolves it (the schedule's own, else the
+   * saved default while its provider is granted, else the default
+   * provider's first listed model, else the router's default). As in the
+   * runtime, a model is native only on a granted provider the harness runs
+   * natively. A runtime that names no native templates splits nothing.
    */
   const crossedSubagentModel = async (
     agentId: string,
-    harness: string,
-    capability: HarnessCapability | undefined,
+    carried: readonly HarnessCapability[],
     choices: SessionChoices,
   ): Promise<string | undefined> => {
+    const fire = await deps.firePair(agentId, {
+      ...(choices.harness !== undefined && { harness: choices.harness }),
+      ...(choices.model !== undefined && { model: choices.model }),
+    });
+    if (!fire) return undefined;
+    const capability = carried.find((h) => h.name === fire.harness);
     const nativeTemplates = capability?.nativeTemplates ?? [];
     if (nativeTemplates.length === 0 || !choices.settings) return undefined;
     const modelSettings = new Set(
@@ -92,13 +103,12 @@ export function createSessionChoicesValidator(deps: {
       const provider = granted.find(
         (p) => aliasForProviderType(p.type) === alias,
       );
-      return provider
-        ? nativeTemplates.includes(provider.templateId ?? provider.type)
-        : undefined;
+      return (
+        provider !== undefined &&
+        nativeTemplates.includes(provider.templateId ?? provider.type)
+      );
     };
-    const saved = await deps.pairRepo.read(agentId);
-    const fireModel =
-      choices.model ?? (saved?.harness === harness ? saved.model : null);
+    const fireModel = fire.model;
     const side = nativeOf(fireModel);
     if (side === undefined) return undefined;
     const crossed = Object.entries(choices.settings).find(([id, value]) => {
@@ -159,12 +169,7 @@ export function createSessionChoicesValidator(deps: {
         choices.model ? qualifiedPairModel(choices.model) : null,
       );
       if (invalid) return invalid;
-      const crossed = await crossedSubagentModel(
-        agentId,
-        harness,
-        harnessCapability,
-        choices,
-      );
+      const crossed = await crossedSubagentModel(agentId, carried, choices);
       if (crossed) return crossed;
     }
     return undefined;

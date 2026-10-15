@@ -42,12 +42,14 @@ export function composeSessionChoicesValidator(deps: {
   db: Db;
   catalog: HarnessCatalog;
   getCapabilities: (agentId: string) => Promise<unknown>;
+  firePair: FirePair;
 }): SessionChoicesValidator {
   return createSessionChoicesValidator({
     catalog: deps.catalog,
     pairRepo: createSessionPairRepo(deps.db),
     snapshotRepo: createHarnessConfigSnapshotRepo(deps.db),
     getCapabilities: deps.getCapabilities,
+    firePair: deps.firePair,
   });
 }
 

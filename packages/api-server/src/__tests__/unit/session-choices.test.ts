@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { HarnessCatalog } from "api-server-api";
+import type { SessionPair } from "api-server-api";
+import { resolveFirePair } from "../../modules/harness-config/services/harness-config-service.js";
 import { createSessionChoicesValidator } from "../../modules/harness-config/services/session-choices.js";
 
 /**
@@ -80,6 +82,7 @@ function validator(over?: {
       },
     },
     getCapabilities: async () => over?.capabilities ?? ROUTED,
+    firePair: async () => undefined,
   });
 }
 
@@ -225,35 +228,58 @@ describe("a subagent model beside a natively run provider", () => {
       },
     ],
   };
-  const check = createSessionChoicesValidator({
-    catalog: {
-      ...CATALOG,
-      harnesses: [
-        {
-          ...CATALOG.harnesses[0]!,
-          providers: ["ibm-litellm", "anthropic", "bedrock"],
-        },
-      ],
-    },
-    pairRepo: {
-      read: async () => null,
-      grantedProviders: async () => [
-        { id: "lite", type: "ibm-litellm", templateId: "ibm-litellm" },
-        { id: "bed", type: "bedrock", templateId: "bedrock" },
-      ],
-    },
-    snapshotRepo: { read: async () => null },
-    getCapabilities: async () => capabilities,
-  });
+  const catalog = {
+    ...CATALOG,
+    harnesses: [
+      {
+        ...CATALOG.harnesses[0]!,
+        providers: ["ibm-litellm", "anthropic", "bedrock"],
+      },
+    ],
+  } as HarnessCatalog;
+  const IBM = { id: "lite", type: "ibm-litellm", templateId: "ibm-litellm" };
+  const BEDROCK = { id: "bed", type: "bedrock", templateId: "bedrock" };
+  const LISTED = ["ibm/gpt-5.5", "bedrock/sonnet", "bedrock/haiku"];
+  const checkFor = (
+    granted: (typeof IBM)[],
+    saved: SessionPair | null = null,
+  ) => {
+    const pairRepo = {
+      read: async () => saved,
+      write: async () => {},
+      grantedProviders: async () => granted as never,
+    };
+    return createSessionChoicesValidator({
+      catalog,
+      pairRepo,
+      snapshotRepo: { read: async () => null },
+      getCapabilities: async () => capabilities,
+      firePair: (agentId, preferred) =>
+        resolveFirePair(
+          {
+            catalog,
+            pairRepo,
+            getCapabilities: async () => capabilities,
+            specHarness: async () => undefined,
+            availableModels: async () => LISTED,
+          },
+          agentId,
+          preferred,
+        ),
+    });
+  };
 
   /** TEST_SCENARIO: One Claude Code process reaches either the Model Router
-   * or Bedrock, so a schedule whose model and subagent model sit on different
-   * sides is refused at save, not on every fire; a schedule with no model
-   * runs on the router's default, so a Bedrock subagent model is refused
-   * there too, and a pair on one side passes. */
-  it("refuses a subagent model on the other side of the fire's model", async () => {
+   * or Bedrock, so a schedule whose fire model and subagent model sit on
+   * different sides is refused at save, not on every fire. With no model the
+   * fire runs the default provider's first listed model: IBM's on an agent
+   * that holds IBM, so a Bedrock subagent model is refused, and Bedrock's on
+   * an agent that holds only Bedrock, so a Bedrock one passes there and a
+   * routed one is refused. */
+  it("refuses a subagent model on the other side of the model the fire runs", async () => {
+    const both = checkFor([IBM, BEDROCK]);
     expect(
-      await check("a", {
+      await both("a", {
         model: "ibm/gpt-5.5",
         settings: { subagentModel: "bedrock/opus" },
       }),
@@ -261,16 +287,37 @@ describe("a subagent model beside a natively run provider", () => {
       /subagentModel setting bedrock\/opus cannot run beside ibm\/gpt-5\.5/,
     );
     expect(
-      await check("a", { settings: { subagentModel: "bedrock/haiku" } }),
-    ).toMatch(/cannot run beside the default model/);
+      await both("a", { settings: { subagentModel: "bedrock/haiku" } }),
+    ).toMatch(/cannot run beside ibm\/gpt-5\.5/);
     expect(
-      await check("a", {
+      await both("a", {
         model: "bedrock/sonnet",
         settings: { subagentModel: "bedrock/haiku" },
       }),
     ).toBeUndefined();
+
+    const bedrockOnly = checkFor([BEDROCK]);
+    expect(
+      await bedrockOnly("a", { settings: { subagentModel: "bedrock/haiku" } }),
+    ).toBeUndefined();
+    expect(
+      await bedrockOnly("a", {
+        settings: { subagentModel: "claude/ibm/gpt-5.5" },
+      }),
+    ).toMatch(/cannot run beside bedrock\/sonnet/);
+  });
+
+  /** TEST_SCENARIO: The saved default names a model on a provider since
+   * revoked, so the fire falls back to the default provider (here Bedrock)
+   * and the check takes that side, not the stale model's. */
+  it("takes the side of the fallback when the saved model's provider is gone", async () => {
+    const check = checkFor([BEDROCK], {
+      harness: "claude-code",
+      provider: "gone",
+      model: "anthropic/claude-sonnet-5-5",
+    });
     expect(
       await check("a", { settings: { subagentModel: "claude/ibm/gpt-5.5" } }),
-    ).toBeUndefined();
+    ).toMatch(/cannot run beside bedrock\/sonnet/);
   });
 });
