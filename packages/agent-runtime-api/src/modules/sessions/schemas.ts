@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { sessionRepositorySchema } from "../changes/schemas.js";
 import { sessionSettingsSchema } from "../harness-config/session-settings.js";
 
 export const podSessionModeSchema = z.enum(["chat", "terminal"]);
@@ -37,6 +38,7 @@ export const podSessionSchema = z.object({
   model: z.string().optional(),
   settings: sessionSettingsSchema.optional(),
   spend: sessionSpendSchema.optional(),
+  repositories: z.array(sessionRepositorySchema).optional(),
 });
 
 export const SESSION_CATEGORIES = [

@@ -2,6 +2,7 @@ import type {
   SessionHistory,
   SessionListQuery,
   SessionPage,
+  SessionRepository,
   SessionsService,
 } from "agent-runtime-api";
 
@@ -95,6 +96,7 @@ export function createSessionsService(deps: {
   historyProvider?: HistoryProvider;
   spendProvider?: SpendProvider;
   terminalSessionPins?: () => PlatformSessionOf;
+  sessionRepositories?: (sessionId: string) => SessionRepository[];
   log: (msg: string) => void;
   now?: () => number;
 }): SessionsService {
@@ -163,6 +165,18 @@ export function createSessionsService(deps: {
     return { listed: lastListed, complete: false };
   }
 
+  function withRepositories(page: SessionPage): SessionPage {
+    const repositoriesOf = deps.sessionRepositories;
+    if (!repositoriesOf) return page;
+    return {
+      ...page,
+      sessions: page.sessions.map((session) => {
+        const repositories = repositoriesOf(session.sessionId);
+        return repositories.length > 0 ? { ...session, repositories } : session;
+      }),
+    };
+  }
+
   return {
     async list(query?: SessionListQuery): Promise<SessionPage> {
       const platformSessionOf = deps.terminalSessionPins?.();
@@ -176,7 +190,7 @@ export function createSessionsService(deps: {
         isRunning: deps.isRunning,
         platformSessionOf,
       });
-      const paged = pageSessions(composed, query);
+      const paged = withRepositories(pageSessions(composed, query));
       const page: SessionPage = complete
         ? paged
         : { ...paged, incomplete: true };

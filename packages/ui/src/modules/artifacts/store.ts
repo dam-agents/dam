@@ -52,6 +52,7 @@ export const createArtifactsSlice: StateCreator<
             openDelegation: null,
             openBrowserAgentId: null,
             openProcessOutputKey: null,
+            openChangesAgentId: null,
           }
         : {
             openArtifactId: id,

@@ -63,6 +63,7 @@ import {
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
 import { prepareProcesses } from "./modules/processes/index.js";
+import { composeChanges } from "./modules/changes/index.js";
 import { recoverInterruptedTurns } from "./modules/acp/services/interrupted-turn-recovery.js";
 import { sessionDirectoryEntries } from "./modules/acp/index.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
@@ -161,6 +162,12 @@ const setupGitCredentialHelper = createGitCredentialHelperSetup(
   envStore,
   (msg) => process.stderr.write(`[git] ${msg}\n`),
 );
+const changes = composeChanges({
+  roots: [workDir, homeDir],
+  stateBackend,
+  githubToken: () => resolveGitHubToken(envStore.current(), homeDir),
+  log: (msg) => process.stderr.write(`[changes] ${msg}\n`),
+});
 const skillsLog = (msg: string) => process.stderr.write(`[skills] ${msg}\n`);
 const { service: skillsService, reconciler: imageSkillReconciler } =
   composeSkills({
@@ -255,6 +262,8 @@ const {
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
   keepPolicy: processes.keepPolicy,
   onArtifactTouch: artifactTouchReporter.report,
+  onToolActivity: changes.onToolActivity,
+  sessionRepositories: changes.repositoriesOf,
   onPrompt: startDisplay,
   beforeSpawn: () => {
     if (seedHarnessModel) return seedHarnessModel();
@@ -354,6 +363,7 @@ const TRPC_MAX_BODY_SIZE = 70 * 1024 * 1024;
 const createTrpcContext = (): AgentRuntimeContext => ({
   artifactApi,
   browser: browserPreview,
+  changes,
   files: filesService,
   kbPublish: kbPublish.service,
   sessions: sessionsService,
