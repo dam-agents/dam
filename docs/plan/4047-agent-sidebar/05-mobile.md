@@ -10,8 +10,12 @@ On mobile the rail is a bottom bar today, with no agents or activity, so until t
 
 ## Implementation plan
 
-1. Design first with `/frontend-design:frontend-design`: how Agents and Activity reach a phone (for example a drawer opened from the bottom bar), shown to the user in an artifact for approval.
-2. Build the approved design with `/react-ui-engineering`, reusing the sections from 01–03.
+1. Design first with `/frontend-design:frontend-design`, shown to the user in an artifact for approval. Approved (artifact "#4047 · Mobile navigation", version 3): the drawer, with no bottom bar.
+2. Build it with `/react-ui-engineering`, reusing the sections from 01–03:
+   - Remove the mobile bottom bar.
+   - Every page below `md` gets one top bar: Menu (opens the drawer), the page or agent name, the approvals bell.
+   - The drawer holds the expanded sidebar's content unchanged: nav, Agents with the open agent's sessions, Activity, Documentation, Settings. Picking an agent keeps it open; opening a session or a destination closes it.
+   - Chat on a phone opens on the chat itself. Menu replaces the back arrow; a files button opens the Files / Artifacts / Processes column as its own screen, with a back arrow to the chat. The Configure button hides below `md`; the agent's ⋮ menu has Configure.
 
 ## Acceptance criteria
 

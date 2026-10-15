@@ -12,7 +12,6 @@ import { useStore } from "../../../store.js";
 
 export interface SidebarDestination {
   label: string;
-  shortLabel?: string;
   icon: CarbonIconType;
   active: boolean;
   navigate: () => void;
@@ -39,7 +38,6 @@ export function useSidebarDestinations() {
   };
   const starterKits: SidebarDestination = {
     label: "Starter kits",
-    shortLabel: "Kits",
     icon: Box,
     active: view === "starter-kit" || kitBrowserOpen,
     navigate: () => setKitBrowserOpen(true),

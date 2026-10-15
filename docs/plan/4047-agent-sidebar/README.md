@@ -38,7 +38,7 @@ UI only (`packages/ui`); every server procedure already exists.
 | 02  | Agent sessions in the sidebar | The open agent expands to its sessions with new-session, filter and ⋮; chat view loses its Sessions list | 01         | ✅   |
 | 03  | Activity in the sidebar       | Cross-agent sessions, newest first, 20 + 20, existing filter; collapsed rail flyout                      | 01         | ✅   |
 | 04  | Approvals bell                | Top-right button becomes a bell listing approvals only                                                   | 03         | ✅   |
-| 05  | Mobile navigation             | Design with `/frontend-design`, then build; required, as 02 removes the phone's session list             | 01, 02, 03 |      |
+| 05  | Mobile navigation             | Design with `/frontend-design`, then build; required, as 02 removes the phone's session list             | 01, 02, 03 | ✅   |
 
 ## Conventions & glossary
 
@@ -56,7 +56,7 @@ UI only (`packages/ui`); every server procedure already exists.
 - "See all (N hibernating)" unfolds the hibernating agents inline; the choice is remembered in local storage.
 - The agent whose chat is open always shows among the active agents, whatever its state, so its sessions (02) have a row to drop under.
 - The sidebar keeps its persisted expanded state and default.
-- Mobile keeps today's bottom bar until slice 05. Slice 02 removes the chat view's Sessions list everywhere, so phones cannot switch sessions until 05 lands; 05 is required.
+- Mobile: slice 02 removes the chat view's Sessions list everywhere, so 05 is required. Approved design: no bottom bar; every page has one top bar (Menu, title, bell); Menu opens the sidebar as a left drawer; in chat a files button opens the existing Files / Artifacts / Processes column as its own screen, and Configure lives in the agent's ⋮ menu.
 
 ## Action items
 

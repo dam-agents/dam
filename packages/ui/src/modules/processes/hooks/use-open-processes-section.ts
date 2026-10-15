@@ -11,7 +11,7 @@ export function useOpenProcessesSection() {
 
   return useCallback(() => {
     setSectionOpen(true);
-    if (isMobile()) setMobileScreen("sessions");
+    if (isMobile()) setMobileScreen("files");
     requestAnimationFrame(() =>
       document
         .getElementById(PROCESSES_SECTION_ID)

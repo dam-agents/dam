@@ -18,7 +18,7 @@ import { ChecklistPill } from "./checklist-pill.js";
 import { UnlockCelebration } from "./unlock-celebration.js";
 
 const PLACEMENT = {
-  page: "fixed right-4 bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:bottom-4",
+  page: "fixed right-4 bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] md:bottom-4",
   chat: "absolute right-3 bottom-14 md:bottom-3",
 } as const;
 

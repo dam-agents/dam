@@ -12,6 +12,8 @@ import { ApprovalsPanel } from "./modules/home/components/approvals-panel.js";
 import { useApprovalToasts } from "./modules/home/hooks/use-approval-toasts.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
+import { AppTopBar } from "./modules/platform/components/sidebar/app-top-bar.js";
+import { MobileNavDrawer } from "./modules/platform/components/sidebar/mobile-nav-drawer.js";
 import { Sidebar } from "./modules/platform/components/sidebar/sidebar.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
 import { parseRoute } from "./modules/platform/lib/routes.js";
@@ -102,9 +104,9 @@ function MainApp() {
     return (
       <>
         <div className="flex h-dvh bg-background overflow-hidden">
-          <Sidebar hideMobileBar />
+          <Sidebar />
           <div className="relative z-content flex-1 min-w-0">
-            <div className="pointer-events-none absolute top-0 right-0 z-raised px-4 pt-3 md:px-6">
+            <div className="pointer-events-none absolute top-0 right-0 z-raised px-4 pt-2.5 md:px-6 md:pt-3">
               <div className="pointer-events-auto">
                 <ApprovalsButton onOpen={() => setApprovalsOpen(true)} />
               </div>
@@ -116,6 +118,7 @@ function MainApp() {
           <ApprovalsPanel onClose={() => setApprovalsOpen(false)} />
         )}
         {kitBrowserOpen && <BrowseKitsModal />}
+        <MobileNavDrawer />
         <DialogOverlay />
         <ConnectionBanner />
       </>
@@ -126,14 +129,12 @@ function MainApp() {
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <Sidebar />
         <main className="relative z-content flex flex-1 flex-col overflow-y-auto">
-          <div className="pointer-events-none sticky top-0 z-raised flex justify-end px-4 pt-3 md:px-6">
-            <div className="pointer-events-auto">
-              <ApprovalsButton onOpen={() => setApprovalsOpen(true)} />
-            </div>
-          </div>
+          <AppTopBar
+            actions={<ApprovalsButton onOpen={() => setApprovalsOpen(true)} />}
+          />
           <div
             className={cn(
-              "mx-auto w-full flex-1 px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10",
+              "mx-auto w-full flex-1 px-4 md:px-[5%] py-6 md:py-10",
               view === "home" || view === "starter-kit"
                 ? "max-w-[1200px]"
                 : view === "settings" || view === "sandbox-home"
@@ -162,6 +163,7 @@ function MainApp() {
         <ApprovalsPanel onClose={() => setApprovalsOpen(false)} />
       )}
       {kitBrowserOpen && <BrowseKitsModal />}
+      <MobileNavDrawer />
       <DialogOverlay />
       <ConnectionBanner />
       <GettingStartedDock placement="page" />

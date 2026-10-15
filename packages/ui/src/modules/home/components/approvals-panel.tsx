@@ -1,12 +1,10 @@
 import { Close } from "@carbon/icons-react";
-import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { SideDrawer } from "@/components/ui/side-drawer";
 import { useNow } from "@/hooks/use-now";
-import { cn } from "@/lib/utils";
 
-import { useBodyScrollLock, useFocusTrap } from "../../../components/modal.js";
 import { timeAgo } from "../../../lib/format-time.js";
 import { useDenyApprovals } from "../../approvals/hooks/use-deny-approvals.js";
 import { useFeed } from "../api/queries.js";
@@ -37,7 +35,14 @@ export function ApprovalsPanel({ onClose }: { onClose: () => void }) {
   const agentOf = (agentId: string) => agents.find((a) => a.id === agentId);
 
   return (
-    <Drawer closing={closing} onClose={requestClose} onClosed={onClose}>
+    <SideDrawer
+      side="right"
+      label="Approvals"
+      closing={closing}
+      onClose={requestClose}
+      onClosed={onClose}
+      className="max-w-[520px]"
+    >
       <div className="flex items-center justify-between border-b border-border px-5 py-4">
         <h2 className="text-base font-semibold text-foreground">Approvals</h2>
         <div className="flex items-center gap-3">
@@ -96,62 +101,6 @@ export function ApprovalsPanel({ onClose }: { onClose: () => void }) {
           </div>
         )}
       </div>
-    </Drawer>
-  );
-}
-
-const DRAWER_TRANSITION_MS = 150;
-
-function Drawer({
-  closing,
-  onClose,
-  onClosed,
-  children,
-}: {
-  closing: boolean;
-  onClose: () => void;
-  onClosed: () => void;
-  children: React.ReactNode;
-}) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  useFocusTrap(panelRef);
-  useBodyScrollLock();
-  const [shown, setShown] = useState(false);
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => setShown(true));
-    return () => cancelAnimationFrame(frame);
-  }, []);
-  const onClosedRef = useRef(onClosed);
-  onClosedRef.current = onClosed;
-  useEffect(() => {
-    if (!closing) return;
-    const timer = setTimeout(() => onClosedRef.current(), DRAWER_TRANSITION_MS);
-    return () => clearTimeout(timer);
-  }, [closing]);
-  const open = shown && !closing;
-  return createPortal(
-    <div className="fixed inset-0 z-overlay flex justify-end">
-      <button
-        type="button"
-        aria-label="Close approvals"
-        onClick={onClose}
-        className={cn(
-          "absolute inset-0 bg-black/30 transition-opacity duration-150",
-          open ? "opacity-100" : "opacity-0",
-        )}
-      />
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-label="Approvals"
-        className={cn(
-          "relative flex h-full w-full max-w-[520px] flex-col border-l border-border bg-background shadow-xl transition-transform duration-150",
-          open ? "translate-x-0" : "translate-x-full",
-        )}
-      >
-        {children}
-      </div>
-    </div>,
-    document.body,
+    </SideDrawer>
   );
 }
