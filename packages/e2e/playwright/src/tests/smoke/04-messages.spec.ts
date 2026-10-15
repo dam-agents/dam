@@ -30,6 +30,20 @@ test("exchange messages with the agent", async ({ page }) => {
     await openAgentChat(page, agentName, agentId);
   });
 
+  await test.step("the chat view has no top bar: the icon bar reaches the top edge and holds the bell", async () => {
+    const bar = page.getByTestId("side-panel-bar");
+    await expect(bar.getByTestId("open-approvals")).toBeVisible();
+    expect((await bar.boundingBox())?.y).toBe(0);
+  });
+
+  await test.step("the configure button sits right after the agent name", async () => {
+    const name = await page.getByTitle(`Rename ${agentName}`).boundingBox();
+    const configure = await page.getByTestId("configure-agent").boundingBox();
+    expect(name).not.toBeNull();
+    expect(configure).not.toBeNull();
+    expect(configure!.x - (name!.x + name!.width)).toBeLessThan(16);
+  });
+
   await test.step("send a message and receive the scripted reply", async () => {
     await sendMessageToAgent(page, userPrompt);
 

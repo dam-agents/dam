@@ -99,6 +99,7 @@ import { HomeVolumeBar } from "../../files/components/home-volume-bar.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import { GettingStartedDock } from "../../getting-started/components/getting-started-dock.js";
+import { ApprovalsButton } from "../../home/components/approvals-button.js";
 import {
   DelegationOwnersProvider,
   useDelegationOwners,
@@ -268,6 +269,7 @@ export function ChatView() {
   const hasPendingPermission = useHasPendingPermission();
   const mobileScreen = useStore((s) => s.mobileScreen);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
+  const setApprovalsOpen = useStore((s) => s.setApprovalsOpen);
   const terminalPaused = useStore((s) => s.terminalPaused);
   const setTerminalPaused = useStore((s) => s.setTerminalPaused);
 
@@ -700,6 +702,11 @@ export function ChatView() {
     navigateToSandboxHome(selectedAgent);
   }, [selectedAgent, navigateToSandboxHome]);
 
+  const openApprovals = useCallback(
+    () => setApprovalsOpen(true),
+    [setApprovalsOpen],
+  );
+
   const handleBack = useCallback(() => {
     resetSession();
     goBack();
@@ -722,42 +729,65 @@ export function ChatView() {
           onClose={() => setProvidersModal(false)}
         />
       )}
-      <header
-        className={`${mobileOnPanel ? "hidden md:flex" : "flex"} items-stretch h-[70px] max-md:h-[52px] max-md:border-b border-border shrink-0 relative z-content`}
-      >
-        <div className="@container flex min-w-0 flex-1 items-center gap-3 overflow-hidden px-4 md:max-w-[400px]">
-          <MobileMenuButton />
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <span
-              aria-hidden
-              className={cn(
-                "h-2 w-2 shrink-0 rounded-full",
-                agentView && "hidden @max-[149px]:block",
-                dotColor,
-              )}
-            />
-            {agentView ? (
-              <EditableAgentIdentity
-                agent={agentView}
-                avatarSize={32}
-                mood={avatarMood(agentDisplay?.state, agentView)}
-                avatarClassName="@max-[149px]:hidden"
-                nameClassName="text-sm font-bold text-foreground"
+      {}
+      <div ref={setColumnsEl} className="flex flex-1 min-h-0">
+        {}
+        <div
+          className={`@container/chat relative flex flex-1 flex-col min-w-0 ${mobileOnPanel ? "hidden md:flex" : "flex"} ${sidePanelFills ? "md:!hidden" : ""}`}
+        >
+          <header className="@container relative z-raised flex shrink-0 items-center gap-2 px-4 max-md:h-[52px] max-md:border-b max-md:border-border md:pointer-events-none md:absolute md:inset-x-0 md:top-0 md:h-[70px]">
+            <div className="flex min-w-0 items-center gap-3 max-md:flex-1 md:pointer-events-auto">
+              <MobileMenuButton />
+              <span
+                aria-hidden
+                className={cn(
+                  "h-2 w-2 shrink-0 rounded-full",
+                  agentView && "hidden @max-[149px]:block",
+                  dotColor,
+                )}
               />
-            ) : (
-              <h1 className="text-sm font-bold text-foreground truncate">
-                {selectedAgentName}
-              </h1>
-            )}
-            {agentView && (
-              <span className="flex shrink-0 empty:hidden @max-[119px]:hidden">
-                <VmRuntimeBadge
+              {agentView ? (
+                <EditableAgentIdentity
                   agent={agentView}
-                  labelClassName="@max-[279px]:sr-only"
+                  avatarSize={32}
+                  mood={avatarMood(agentDisplay?.state, agentView)}
+                  avatarClassName="@max-[149px]:hidden"
+                  nameClassName="text-sm font-bold text-foreground"
                 />
-              </span>
-            )}
-            <div className="ml-auto flex shrink-0">
+              ) : (
+                <h1 className="text-sm font-bold text-foreground truncate">
+                  {selectedAgentName}
+                </h1>
+              )}
+              {agentView && (
+                <span className="flex shrink-0 empty:hidden @max-[119px]:hidden">
+                  <VmRuntimeBadge
+                    agent={agentView}
+                    labelClassName="@max-[279px]:sr-only"
+                  />
+                </span>
+              )}
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Configure agent"
+                tooltip="Configure agent"
+                data-testid="configure-agent"
+                className="-ml-2 shrink-0 max-md:hidden"
+                onClick={handleConfigureSandbox}
+              >
+                <Tools size={16} />
+              </Button>
+            </div>
+            <div className="flex shrink-0 items-center gap-2 md:pointer-events-auto">
+              <ChatHeaderStatus
+                selectedAgent={selectedAgent}
+                agents={agents}
+                busy={busy}
+                connectionState={connectionState}
+                sessionId={sessionId}
+                processesEnabled={processesEnabled}
+              />
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -771,73 +801,55 @@ export function ChatView() {
               >
                 <Document size={16} />
               </Button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Configure agent"
-                tooltip="Configure agent"
-                className="max-md:hidden"
-                onClick={handleConfigureSandbox}
-              >
-                <Tools size={16} />
-              </Button>
+              <div className="md:hidden">
+                <ApprovalsButton onOpen={openApprovals} />
+              </div>
             </div>
+          </header>
+          <div className="peer/notices empty:hidden md:pt-[70px]">
+            {runtimeOutdated && (
+              <RuntimeOutdatedNotice agentId={selectedAgent} />
+            )}
+            <ContributionGapNotice agentId={selectedAgent} />
+            <WorkspaceFailureNotice agentId={selectedAgent} />
           </div>
-        </div>
-        <div className="ml-auto flex items-center gap-2 pl-2 pr-12 md:pl-6 md:pr-16">
-          <ChatHeaderStatus
-            selectedAgent={selectedAgent}
-            agents={agents}
-            busy={busy}
-            connectionState={connectionState}
-            sessionId={sessionId}
-            processesEnabled={processesEnabled}
-          />
-        </div>
-      </header>
-
-      {}
-      <div ref={setColumnsEl} className="flex flex-1 min-h-0">
-        {}
-        <div
-          className={`@container/chat relative flex flex-1 flex-col min-w-0 ${mobileOnPanel ? "hidden md:flex" : "flex"} ${sidePanelFills ? "md:!hidden" : ""}`}
-        >
-          {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
-          <ContributionGapNotice agentId={selectedAgent} />
-          <WorkspaceFailureNotice agentId={selectedAgent} />
           {}
           {sessionMode === SessionMode.Terminal &&
           selectedAgent &&
           sessionId ? (
-            <Terminal
-              key={sessionId}
-              agentId={selectedAgent}
-              sessionId={sessionId}
-              fresh={terminalFreshRef.current}
-              autoConnect={!terminalPaused && agentOperable}
-              onConnected={() => {
-                terminalFreshRef.current = false;
-                setTerminalPaused(false);
-              }}
-              onFirstSubmit={() => {
-                optimisticInsertSession(
-                  selectedAgent,
-                  sessionId,
-                  SessionMode.Terminal,
-                  true,
-                );
-                queryClient.invalidateQueries({
-                  queryKey: acpSessionsKeys.agent(selectedAgent),
-                });
-              }}
-              onSubmit={() => setSessionRunning(selectedAgent, sessionId, true)}
-              onSessionMoved={setSessionId}
-            />
+            <div className="flex min-h-0 flex-1 flex-col md:peer-empty/notices:pt-[70px]">
+              <Terminal
+                key={sessionId}
+                agentId={selectedAgent}
+                sessionId={sessionId}
+                fresh={terminalFreshRef.current}
+                autoConnect={!terminalPaused && agentOperable}
+                onConnected={() => {
+                  terminalFreshRef.current = false;
+                  setTerminalPaused(false);
+                }}
+                onFirstSubmit={() => {
+                  optimisticInsertSession(
+                    selectedAgent,
+                    sessionId,
+                    SessionMode.Terminal,
+                    true,
+                  );
+                  queryClient.invalidateQueries({
+                    queryKey: acpSessionsKeys.agent(selectedAgent),
+                  });
+                }}
+                onSubmit={() =>
+                  setSessionRunning(selectedAgent, sessionId, true)
+                }
+                onSessionMoved={setSessionId}
+              />
+            </div>
           ) : (
             <>
-              <div className="@container relative flex flex-1 flex-col min-h-0">
+              <div className="@container relative flex flex-1 flex-col min-h-0 md:peer-empty/notices:[--chat-top:70px]">
                 <div ref={messagesRef} className="flex-1 overflow-y-auto">
-                  <ChatColumn className="px-2 @xs/chat:px-4 @xl/chat:px-8 py-8 flex flex-col gap-8 min-h-full">
+                  <ChatColumn className="px-2 @xs/chat:px-4 @xl/chat:px-8 py-8 md:pt-[max(2rem,var(--chat-top,0px))] flex flex-col gap-8 min-h-full">
                     {!historyShown && (
                       <div className="py-20 flex items-center justify-center gap-3 text-sm text-muted-foreground">
                         <Spinner size={20} />
@@ -1271,6 +1283,7 @@ export function ChatView() {
             active={activeTab}
             hidden={hiddenTabs}
             onSelect={onSidePanelTab}
+            footer={<ApprovalsButton onOpen={openApprovals} />}
           />
         </div>
       </div>

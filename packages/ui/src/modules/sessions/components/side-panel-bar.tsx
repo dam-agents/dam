@@ -6,6 +6,7 @@ import {
   Folders,
   Globe,
 } from "@carbon/icons-react";
+import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -29,11 +30,13 @@ export function SidePanelBar({
   active,
   hidden,
   onSelect,
+  footer,
   className,
 }: {
   active: SidePanelTab | null;
   hidden: ReadonlySet<SidePanelTab>;
   onSelect: (tab: SidePanelTab) => void;
+  footer?: ReactNode;
   className?: string;
 }) {
   return (
@@ -65,6 +68,7 @@ export function SidePanelBar({
           </Tooltip>
         ),
       )}
+      {footer && <div className="mt-auto">{footer}</div>}
     </nav>
   );
 }
