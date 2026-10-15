@@ -1,6 +1,6 @@
 # Home feed
 
-Last verified: 2026-09-16
+Last verified: 2026-10-22
 
 Home answers one question: what has happened since you last looked, and what still needs you. It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
 
@@ -24,7 +24,7 @@ That boundary is what makes the record safe to rebuild or discard. Dropping it c
 
 One lease-elected watcher writes the record. It holds a session watch on every awake Agent in the install — not only the ones whose owner happens to have a browser tab open — and captures what it reads.
 
-The notices it acts on carry no state. A notice means "this Agent's session list changed, re-read it", the same contract every pod-sourced watch in the system uses (see [platform-topology](platform-topology.md#api-server)). The watcher pulls the list, compares it against what it last wrote, and writes only rows that actually differ. The comparison runs both ways: a session the Agent no longer lists has its row removed, along with any dismissal recorded against it. That is what keeps the Agent authoritative for existence in practice and not just in principle — a deleted session stops being mentioned rather than lingering as a card nothing stands behind. A backstop reconcile bounds the loss if a notice is missed, and Agents whose runtime image predates the watch surface are polled instead. When it does write, it emits the same per-owner invalidation hint every other domain emits, so open tabs re-read over the query path rather than being pushed rows.
+The notices it acts on carry no state. A notice means "this Agent's session list changed, re-read it", the same contract every pod-sourced watch in the system uses (see [platform-topology](platform-topology.md#api-server)). The watcher pulls the list, compares it against what it last wrote, and writes only rows that actually differ. The comparison runs both ways: a session the Agent no longer lists has its row removed, along with any dismissal recorded against it. That is what keeps the Agent authoritative for existence in practice and not just in principle — a deleted session stops being mentioned rather than lingering as a card nothing stands behind. A backstop reconcile bounds the loss if a notice is missed, and Agents whose runtime image predates the watch surface are polled instead. An Agent that has not yet reported its runtime features is polled too, so a poll often targets a pod that is still starting or will never start. Each poll read is bounded in time and ends when the Agent leaves the watcher's list, so an Agent deleted before its pod answered does not leave a socket that retries until the replica restarts. When it does write, it emits the same per-owner invalidation hint every other domain emits, so open tabs re-read over the query path rather than being pushed rows.
 
 Two consequences are worth stating plainly, because both are costs. A busy Agent now reports whether or not a human is looking — the watch is no longer scoped to who has a tab open. And the comparison state is in memory, held by whichever replica holds the lease: a row the retention trim removes is not known to be gone, so it is re-created on the next hold rather than staying deleted. That is harmless — the row is a fresh capture of live state — but it means retention trims history, not the present.
 
