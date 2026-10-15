@@ -51,7 +51,7 @@ export function ChatArtifactsPanel({
 }: {
   agentId: string | null;
   open: boolean;
-  onToggle: () => void;
+  onToggle?: () => void;
   className?: string;
   style?: CSSProperties;
   ref?: Ref<HTMLDivElement>;
