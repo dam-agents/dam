@@ -592,6 +592,19 @@ describe("requestSleep settle", () => {
     expect(store.get("a1")?.metadata?.annotations?.[PIN_KEY]).toBe("");
   });
 
+  // TEST_SCENARIO: a sleep stales last activity behind any reclaim mark an earlier reclaim left, which would make the agent read as put to sleep automatically to free memory. The user put it to sleep, so the sleep removes the mark.
+  it("removes an earlier reclaim mark", async () => {
+    const { repo, store } = harness([agentObj("a1", READY)]);
+    store.get("a1")!.metadata!.annotations!["agent-platform.ai/reclaimed-at"] =
+      "2026-10-14T23:39:22Z";
+    await repo.requestSleep("a1");
+    expect(
+      store.get("a1")?.metadata?.annotations?.[
+        "agent-platform.ai/reclaimed-at"
+      ],
+    ).toBe("");
+  });
+
   it("leaves a stop stamped during the settle window in place", async () => {
     const { repo, store } = harness([agentObj("a1", READY)]);
     await repo.requestSleep("a1");
