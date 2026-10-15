@@ -26,10 +26,12 @@ export function TerminalHarnessButtons({
   className?: string;
 }) {
   const setNextSessionPair = useStore((s) => s.setNextSessionPair);
-  const harnesses = useHarnessConfigStatus(agentId).data?.harnesses ?? [];
+  const status = useHarnessConfigStatus(agentId);
   const catalog = useHarnessCatalog().data?.harnesses;
-  const { granted, owned } = useProviderConnections(agentId);
+  const { granted, owned, loaded } = useProviderConnections(agentId);
+  const harnesses = status.data?.harnesses ?? [];
 
+  if (status.isPending || !catalog || !loaded) return null;
   if (harnesses.length === 0)
     return (
       <Button
@@ -45,20 +47,20 @@ export function TerminalHarnessButtons({
   return (
     <span className={cn("flex items-center gap-1", className)}>
       {harnesses.map(({ name }) => {
-        const fit = providerOptions(name, catalog ?? [], granted, owned);
+        const fit = providerOptions(name, catalog, granted, owned);
         const provider = fit.granted[0]?.id;
         const displayName = harnessDisplayName(name, catalog) ?? name;
         const unavailable =
           provider !== undefined
             ? null
             : fit.addable.length === 0
-              ? "This harness does not support any of the LLM providers you have configured."
-              : "Grant this agent a provider this harness supports on its Providers page.";
+              ? `${displayName} does not support any of the LLM providers you have configured.`
+              : `Grant this agent a provider ${displayName} supports on its Providers page.`;
         return (
           <Button
             key={name}
             variant="ghost"
-            size="icon-sm"
+            size="icon"
             aria-label={
               unavailable
                 ? `${displayName}: ${unavailable}`
@@ -66,7 +68,10 @@ export function TerminalHarnessButtons({
             }
             aria-disabled={unavailable !== null}
             tooltip={unavailable ?? displayName}
-            className={cn(unavailable && "cursor-default opacity-40")}
+            className={cn(
+              "size-9 [&_[role=img]]:size-5",
+              unavailable && "cursor-default opacity-25",
+            )}
             onClick={() => {
               if (provider === undefined) return;
               setNextSessionPair(agentId, {

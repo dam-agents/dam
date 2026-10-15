@@ -82,6 +82,6 @@ Free-page reporting returns only whole 2 MiB blocks, so memory a program frees b
 
 **What can still go wrong.** A harness that grows past the warm-up floor while it warms up, or past its headroom between two probes after, and the seconds a hibernation takes can still take the runner over its limit, and the kernel then kills the runner with every machine of its owner.
 The pressure signal makes that rarer; it cannot rule it out.
-When it happens, each agent that was ready before the kill says that its owner's memory ran out, read off the runner pod's last termination, through the runner's restart and its machine's boot, until it is ready again or a more specific reason, such as a failed boot, replaces it; the owner sees one notice naming every agent that restarted, which asks them to put agents they are not using to sleep.
+When it happens, each agent that was ready before the kill says that its owner's memory ran out, read off the runner pod's last termination, through the runner's restart and its machine's boot, until it is ready again or a more specific reason, such as a failed boot, replaces it; the owner sees one notice naming every agent that restarted, which asks them to disable agents they are not using.
 An agent woken after the kill carries nothing, and nothing on the agents records the kill once they are ready.
 The owner also gets one Slack direct message naming the agents that restarted, the [resource alert](budgets.md#resource-alerts) for the kill.

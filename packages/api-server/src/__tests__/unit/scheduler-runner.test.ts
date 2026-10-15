@@ -226,9 +226,7 @@ function makeDeps(opts?: {
     ...(opts?.runtimeMigrating !== undefined
       ? { runtimeMigrating: async () => opts.runtimeMigrating === true }
       : {}),
-    ...(opts?.agentDisabled !== undefined
-      ? { agentDisabled: async () => opts.agentDisabled === true }
-      : {}),
+    agentDisabled: async () => opts?.agentDisabled === true,
     log: () => {},
     now: () => new Date("2026-06-12T10:30:00Z"),
   });

@@ -208,7 +208,9 @@ export function SessionPairPicker({
                     {h.displayName}
                   </button>
                   {unsupported(h.name) && (
-                    <Tooltip content="This harness does not support any of the LLM providers you have configured.">
+                    <Tooltip
+                      content={`${h.displayName} does not support any of the LLM providers you have configured.`}
+                    >
                       <span
                         tabIndex={0}
                         aria-label={`Why ${h.displayName} is unavailable`}
