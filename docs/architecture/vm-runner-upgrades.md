@@ -1,6 +1,6 @@
 # VM runner upgrades
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 How a change to the [runner](vm-runner.md) reaches owners whose machines are running: as a **roll** of the runner pod, which reboots the owner's machines, or, for a new runner release only, as a **hand-off** inside the pod, which reboots none.
 
@@ -37,11 +37,10 @@ A cluster admin can instead have the nodes create and label the directory themse
 **A runner release** is the runner with the two guest binaries it copies into every machine's share, platform-init and platform-runc, so the side that writes a share and the side that reads it stay one version.
 Each release also records the **runtime** it was built against: the smolvm release with its guest agent, the guest kernel and the libkrun the platform patches, the image tooling, and the base image's libc.
 The runner is itself the VMM of every machine it starts, and loads its runtime's libraries and guest agent, so the runtime travels with the release.
-Its guest kernel is not the smolvm release's own but an older release's, Linux 6.12, which the same pin names.
-From 6.15 on, FUSE DAX corrupts a mapped file that another process opens, and a guest of 6 GiB or more dies of SIGBUS ([smol-machines/smolvm#1741](https://github.com/smol-machines/smolvm/issues/1741)).
-Linux 6.18 also stalls a guest whose mapped working set outgrows the DAX window, until [smol-machines/libkrunfw#31](https://github.com/smol-machines/libkrunfw/pull/31).
-The vm e2e lane boots a 6 GiB guest with the runner's kernel and checks both, so a kernel that passes them can replace the pinned one with no change to the lane.
-The Mac's host runner keeps the release's own kernel, and its guests have no FUSE DAX.
+Its guest kernel is the smolvm release's own, Linux 6.18 with [smol-machines/libkrunfw#31](https://github.com/smol-machines/libkrunfw/pull/31).
+Without that fix, from 6.15 on, FUSE DAX corrupts a mapped file that another process opens, and a guest of 6 GiB or more dies of SIGBUS ([smol-machines/smolvm#1741](https://github.com/smol-machines/smolvm/issues/1741)); 6.18 also stalls a guest whose mapped working set outgrows the DAX window.
+The vm e2e lane boots a 6 GiB guest with the runner's kernel and checks both, so a smolvm release whose kernel fails them fails the lane.
+The Mac's host runner has the same kernel, and its guests have no FUSE DAX.
 The pod's libc does not: a release whose runner does not load in the pod can take it over only as a new pod.
 
 **The stager** is a DaemonSet on the runners' nodes, and the only writer of the release directory.

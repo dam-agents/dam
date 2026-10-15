@@ -1,6 +1,6 @@
 # VM memory
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 An owner's machines share the memory of their [runner](vm-runner.md), and it is counted by what they use rather than by their sizes.
 That memory is the owner's whole pool for vm agents, which have no size of their own and stand outside the [budget](budgets.md)'s Ceiling.
@@ -22,7 +22,7 @@ A machine's size is the most its guest can see; the host commits only the pages 
 
 **A machine boots small and grows.** A guest's kernel writes a page descriptor for every page of its RAM before it runs anything, and under nested virtualization that costs 65 to 85 ms per GiB: most of a second for a 12 GiB machine.
 So the runner boots each machine with the warm-up floor below (`virtualization.runner.bootMiB`), or its size when that is smaller, and grows it to its size as soon as the start returns, through the virtio-mem area smolvm gives every guest.
-The guest kernel leaves added RAM offline unless told otherwise, and its virtio-mem driver adds no more once 1 GiB of it waits offline, so the runner first has the guest kernel online each block as it adds it; the VMM then maps the added RAM, and the start ends once the guest has plugged it all and the guest agent confirms it is online.
+The VMM maps the added RAM, the guest agent puts each memory block online as the guest's virtio-mem driver adds it (the driver adds no more once 1 GiB of it waits offline), and the start ends once the guest has plugged it all.
 Every boot does this again, since each boots from the floor, except a machine the runner has recorded as unable to grow (below).
 Readiness does not wait for the grow, which runs while the workload starts, because waiting would put the same page work back on the path; a guest that allocates past the floor before the grow ends meets its own OOM killer.
 A machine that cannot grow is stopped and booted again whole within the same start, unless its guest has already answered: the agent reads ready by then, and a reboot would drop a prompt sent to it, so that guest runs at the floor until its next start.
@@ -32,7 +32,7 @@ Free-page reporting returns the added RAM's freed pages as it does the boot RAM'
 
 **Guest RAM and the guest kernel are mapped for huge pages.** KVM maps guest memory in 2 MiB pages only where the host address agrees with the guest address modulo 2 MiB, and an ordinary allocation almost never does.
 Under nested virtualization each guest page the guest touches first then costs a fault through both hypervisors, about 20 µs for each 4 KiB.
-On a Linux runner the platform's libkrun patch therefore places the boot RAM, the RAM a grow adds, and a copy of the guest kernel at host addresses that agree, and asks the host for transparent huge pages there.
+On a Linux runner libkrun therefore places the boot RAM, the RAM a grow adds, and a copy of the guest kernel at host addresses that agree, and the platform's libkrun patch asks the host for transparent huge pages there, which upstream libkrun does not.
 The request matters on a nested host whose huge-page defrag is `madvise`: a fallback to 4 KiB pages costs about 10 ms per 2 MiB, compaction about 2.
 The added RAM is anonymous memory rather than libkrun's shared-memory file, which a host whose shared-memory huge pages are off (as on RHEL by default) backs with 4 KiB pages whatever its placement; only a branchable machine, which no runner starts, keeps the file.
 The guest writes the page descriptors of added RAM into that RAM itself, so huge pages also make the grow about five times faster.
