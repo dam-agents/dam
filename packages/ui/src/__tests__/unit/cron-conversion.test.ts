@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { convertCron } from "../../modules/schedules/lib/cron-conversion.js";
 import { nextRRuleRuns } from "../../modules/schedules/lib/rrule-runs.js";
+import { TIMEZONE_OPTIONS } from "../../modules/schedules/lib/schedule-form-options.js";
 
 const NOW = new Date("2026-10-15T08:17:00Z");
 const RUNS = 40;
@@ -112,5 +113,10 @@ describe("converting a cron expression", () => {
     const conversion = convertCron(cron, NOW);
     expect(conversion.kind).toBe("inexact");
     expect(conversion.kind === "inexact" && conversion.reason).toMatch(reason);
+  });
+
+  // TEST_SCENARIO: UTC is the conversion's default timezone, and the runtime's own zone list does not name it, so the picker must offer it or it shows no selection.
+  it("offers UTC in the timezone picker", () => {
+    expect(TIMEZONE_OPTIONS.map((o) => o.value)).toContain("UTC");
   });
 });

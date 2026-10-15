@@ -46,12 +46,16 @@ function offsetLabel(zone: string): string {
   }
 }
 
-export const TIMEZONE_OPTIONS: { value: string; label: string }[] = (
-  (Intl as IntlWithSupported).supportedValuesOf?.("timeZone") ?? []
-).map((zone) => {
-  const offset = offsetLabel(zone);
-  return { value: zone, label: offset ? `${zone} (${offset})` : zone };
-});
+const SUPPORTED_ZONES =
+  (Intl as IntlWithSupported).supportedValuesOf?.("timeZone") ?? [];
+
+export const TIMEZONE_OPTIONS: { value: string; label: string }[] = [
+  ...(SUPPORTED_ZONES.includes("UTC") ? [] : [{ value: "UTC", label: "UTC" }]),
+  ...SUPPORTED_ZONES.map((zone) => {
+    const offset = offsetLabel(zone);
+    return { value: zone, label: offset ? `${zone} (${offset})` : zone };
+  }),
+];
 
 export const DAYS_ISO: { iso: number; label: string }[] = [
   { iso: 1, label: "Mon" },
