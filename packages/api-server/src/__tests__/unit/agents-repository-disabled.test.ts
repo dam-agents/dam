@@ -41,7 +41,10 @@ describe("a disabled agent", () => {
     expect(stamp).toBeTruthy();
     expect(annotations()["agent-platform.ai/reclaimed-at"]).toBe("");
 
-    expect(await repo.wake("a1")).toBe("disabled");
+    expect(await repo.wake("a1")).toEqual({
+      ok: false,
+      error: { type: "AgentDisabled" },
+    });
     expect(await repo.wakeIfHibernated("a1")).toBeNull();
     await expect(repo.ensureReady("a1")).rejects.toMatchObject({
       name: "AgentStoppedError",
@@ -67,7 +70,10 @@ describe("a disabled agent", () => {
     expect(enabled).toMatchObject({ disabled: false, stopRequested: false });
     expect(annotations()[ACTIVITY]).toBe("1970-01-01T00:00:00Z");
 
-    expect(await repo.wake("a1")).toMatchObject({ disabled: false });
+    expect(await repo.wake("a1")).toMatchObject({
+      ok: true,
+      value: { disabled: false },
+    });
     expect(annotations()[DISABLED]).toBe("");
     expect(annotations()[ACTIVITY]).not.toBe("1970-01-01T00:00:00Z");
   });

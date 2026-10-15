@@ -1,3 +1,4 @@
+import { err, ok, type Result } from "../../../core/result.js";
 import { isConflict, isNotFound, type K8sClient } from "./k8s.js";
 import type { AgentStateCache } from "./agent-state-cache.js";
 import {
@@ -63,7 +64,11 @@ export interface AgentsRepository {
   ): Promise<RuntimeMigrationWriteResult>;
   delete(id: string, owner?: string): Promise<boolean>;
   restart(id: string, owner?: string): Promise<boolean>;
-  wake(id: string): Promise<InfraAgent | "disabled" | null>;
+  wake(
+    id: string,
+  ): Promise<
+    Result<InfraAgent, { type: "AgentNotFound" } | { type: "AgentDisabled" }>
+  >;
   setDisabled(id: string, disabled: boolean): Promise<InfraAgent | null>;
   requestStop(id: string): Promise<InfraAgent | null>;
   requestSleep(id: string): Promise<InfraAgent | null>;
@@ -272,9 +277,11 @@ export function createAgentsRepository(
         [LAST_ACTIVITY_KEY]: new Date().toISOString(),
         [STOP_REQUESTED_KEY]: "",
       });
-      if (woke === null || woke === "disabled") return woke;
-      const reread = await k8s.getCustomObject(AGENTS_PLURAL, id);
-      return reread ? parseInfraAgent(reread) : null;
+      if (woke === "disabled") return err({ type: "AgentDisabled" });
+      const reread = woke && (await k8s.getCustomObject(AGENTS_PLURAL, id));
+      return reread
+        ? ok(parseInfraAgent(reread))
+        : err({ type: "AgentNotFound" });
     },
 
     async setDisabled(id, disabled) {

@@ -28,7 +28,10 @@ function setup(hold: InfraAgent["runtimeMigrationHold"]) {
     }),
     runtimeMigrationHold: hold,
   };
-  const wake = vi.fn(async () => null);
+  const wake = vi.fn(async () => ({
+    ok: false as const,
+    error: { type: "AgentNotFound" as const },
+  }));
   const requestSleep = vi.fn(async () => null);
   const setDisabled = vi.fn(async () => null);
   const agents = createAgentsService({

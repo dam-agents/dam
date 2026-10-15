@@ -1457,9 +1457,9 @@ export function createAgentsService(deps: {
       const hold = (await deps.repo.get(id))?.runtimeMigrationHold ?? "none";
       if (hold !== "none")
         return err({ type: "RuntimeMigrating", failed: hold === "failed" });
-      const infra = await deps.repo.wake(id);
-      if (!infra) return err({ type: "AgentNotFound" });
-      if (infra === "disabled") return err({ type: "AgentDisabled" });
+      const woke = await deps.repo.wake(id);
+      if (!woke.ok) return err(woke.error);
+      const infra = woke.value;
       securityLog("info", "agent.wake", {
         category: "privileged",
         actor: deps.owner ?? null,
