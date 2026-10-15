@@ -22,7 +22,7 @@ interface Request {
   resolve: (attached: string[] | null) => void;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: asks which of the owner's providers to attach to an agent before a harness can run on it, listing only providers that harness accepts, each as the row the agent's Providers page shows. Nothing is attached until the owner turns at least one on and confirms; Two providers of one kind cannot both be attached, so switching one on locks the others of its kind. ask() resolves to the attached ids, or null when the owner cancels, the grant fails or the host goes away.
+// UNIT_BOUNDARY_DESCRIPTION: asks which of the owner's providers to attach to an agent before a harness can run on it, listing only providers that harness accepts, each as the row the agent's Providers page shows. Nothing is attached until the owner turns at least one on and confirms. Two providers of one kind cannot both be attached, so switching one on locks the others of its kind. While the grant runs the dialog cannot be dismissed, so a confirmed attach always reaches its caller. ask() resolves to the attached ids, or null when the owner cancels, the grant fails or the host goes away.
 export function useAttachProvidersDialog(agentId: string): {
   ask: (
     harness: string,
@@ -83,12 +83,14 @@ function AttachProvidersDialog({
   const harnessName =
     catalog?.find((h) => h.name === request.harness)?.displayName ??
     request.harness;
+  const dismiss = pending ? undefined : onCancel;
   return (
-    <Modal onClose={onCancel} size="sm">
+    <Modal onClose={dismiss} size="sm">
       <DialogHeader
         title={`Attach a provider for ${harnessName}`}
         subtitle={`${harnessName} runs on a provider this agent does not use yet. The agent gets the credentials of each one you attach, for its sessions, schedules and channels.`}
         onClose={onCancel}
+        closeDisabled={pending}
       />
       <DialogBody className="flex flex-col gap-3">
         {request.providers.map((p) => (
@@ -108,6 +110,7 @@ function AttachProvidersDialog({
       </DialogBody>
       <DialogActions
         onCancel={onCancel}
+        cancelDisabled={pending}
         label="Attach"
         pendingLabel="Attaching…"
         pending={pending}

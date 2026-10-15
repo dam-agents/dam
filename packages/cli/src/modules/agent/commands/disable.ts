@@ -47,10 +47,7 @@ export function buildDisableCommand(
           process.stderr.write(`error: no agent with id \`${agent.id}\`\n`);
           process.exit(EXIT_AGENT_NOT_RESOLVED);
         }
-        if (
-          result.error.kind === "transport" &&
-          result.error.serverCode === "CONFLICT"
-        ) {
+        if (result.error.kind === "runtime-migrating") {
           process.stderr.write(
             `error: agent "${agent.name}" is moving to the new runtime; abort the move to ${verb} it\n`,
           );
@@ -60,11 +57,18 @@ export function buildDisableCommand(
         process.exit(EXIT_RUNTIME_FAILURE);
       }
 
+      const listed = disabled && !opts.json ? await svc.list() : null;
+      const enableRef =
+        PLAIN_NAME.test(agent.name) &&
+        listed?.ok &&
+        listed.value.filter((a) => a.name === agent.name).length === 1
+          ? agent.name
+          : agent.id;
       process.stdout.write(
         opts.json
           ? `${JSON.stringify(result.value)}\n`
           : disabled
-            ? `✓ Disabled agent "${agent.name}". Nothing wakes it until you run \`dam agent enable ${PLAIN_NAME.test(agent.name) ? agent.name : agent.id}\`.\n`
+            ? `✓ Disabled agent "${agent.name}". Nothing wakes it until you run \`dam agent enable ${enableRef}\`.\n`
             : `✓ Enabled agent "${agent.name}". It wakes on its next use.\n`,
       );
       process.exit(EXIT_SUCCESS);
