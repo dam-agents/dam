@@ -37,7 +37,7 @@ export function renderAssistantBlocks(
 ): SlackBlock[] {
   const markdown = text
     .replace(/^([ \t]*```)(?!`|[a-z0-9+#-]*[ \t]*$)/gm, "$1\n")
-    .replace(/(?<=[^\s`])```[ \t]*$/gm, "\n```");
+    .replace(/(?<!^[ \t>]*)(?<=[^\s`][ \t]*)```[ \t]*$/gm, "\n```");
   return [
     { type: "markdown", text: markdown || "(no response)" },
     agentContextBlock(footer),

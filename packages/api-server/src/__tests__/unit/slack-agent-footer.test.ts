@@ -270,6 +270,11 @@ describe("renderAssistantBlocks", () => {
     ],
     ["a one-line compact block", "```pwd```", "```\npwd\n```"],
     [
+      "a compact closing fence after a space",
+      "```First line.\nSecond line. ```\nAfter.",
+      "```\nFirst line.\nSecond line. \n```\nAfter.",
+    ],
+    [
       "a compact opening fence",
       "```First line.\nSecond line.\n```",
       "```\nFirst line.\nSecond line.\n```",
