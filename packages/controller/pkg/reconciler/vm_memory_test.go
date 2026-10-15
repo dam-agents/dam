@@ -296,3 +296,36 @@ func TestAPressureSignalRightAfterAReclaimHibernatesNothingMore(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, peer.GetAnnotations()[annReclaimedAt], "a signal inside the cooldown hibernated another agent")
 }
+
+// TEST_SCENARIO: a peer woken long ago whose cold boot is still in progress has an old last activity, but hibernating it for another start loses the start it is waiting for, so a start's reclaim passes it over. Once its boot is done it is reclaimable as before, and the runner's pressure signal may still take it, as the OOM kill would stop it too.
+func TestAPeerStillBootingIsNotReclaimedForAnotherStart(t *testing.T) {
+	ctx := context.Background()
+	booting := `[{"type":"` + apiv1.ConditionAgentPodReady + `","status":"False","reason":"` + vmrunner.ReasonNotReady + `"},{"type":"` + apiv1.ConditionReady + `","status":"False","reason":"PodsNotReady"}]`
+	ready := `[{"type":"` + apiv1.ConditionAgentPodReady + `","status":"True","reason":"PodReady"},{"type":"` + apiv1.ConditionReady + `","status":"True","reason":"AllPodsReady","lastTransitionTime":"` + time.Now().UTC().Add(-time.Minute).Format(time.RFC3339) + `"}]`
+	for _, tc := range []struct {
+		name       string
+		conditions string
+		partial    bool
+		hibernated bool
+	}{
+		{"booting", booting, false, false},
+		{"booting under pressure", booting, true, true},
+		{"booted", ready, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			agent := vmAgentCR()
+			r, _, _ := setupVMReconciler(t, agent)
+			r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
+			peerVMAgent(t, r, "peer", "4Gi", "20Gi", true)
+			_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, "peer", "application/merge-patch+json",
+				[]byte(`{"metadata":{"annotations":{"`+annLastActivity+`":"`+time.Now().UTC().Add(-10*time.Minute).Format(time.RFC3339)+`"}},"status":{"conditions":`+tc.conditions+`}}`),
+				metav1.PatchOptions{})
+			require.NoError(t, err)
+			r.noteMachineUse("peer", measured(700))
+
+			freed, err := r.reclaimRunnerMemory(ctx, testOwner, agent.Name, 800, tc.partial)
+			require.NoError(t, err)
+			assert.Equal(t, tc.hibernated, freed)
+		})
+	}
+}
