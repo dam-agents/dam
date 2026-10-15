@@ -57,7 +57,7 @@ A chart upgrade rolls the stager, which stages the new release.
 **The loader** is the runner pod's entrypoint.
 It supervises one runner process and runs the release the controller names in a ConfigMap per runner, which the runner's Deployment owns.
 The pod's own image is always available as a release.
-A staged one is used once the stager has reached the pod's node, and the loader first copies it, and its runtime, into the pod: the stager may remove them from the node while a runner still copies its guest binaries from one or a VMM still serves its guest agent from the other.
+A staged one is used once the stager has reached the pod's node, and the loader first copies it, and its runtime, into the pod: the stager may remove them from the node while a runner still copies its guest binaries from one or a VMM still serves its agent rootfs from the other.
 Before a hand-off the loader checks that the release's runner loads in the pod at all.
 The loader restarts a runner that exits, with a backoff, and passes a stop of the pod to the runner, which then stops every machine as the [runner](vm-runner.md) page describes.
 A stop that arrives while no runner can take it — the old one closing for a hand-off, a release being copied in, a backoff — is kept: a hand-off not yet begun is dropped, a backoff is cut short, and the stop goes to the next runner once that runner has set up its own stop, since one killed before that leaves its machines to be powered off with the pod.

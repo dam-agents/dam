@@ -76,9 +76,12 @@ fn console_line(message: &str) -> String {
     line
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: ends platform-init, and with it the machine's workload. A thread of this process writes the boot log, so the log is flushed and the thread waited for first. Without that, the line that explains the exit is the one that never reaches the disk.
+// UNIT_BOUNDARY_DESCRIPTION: ends platform-init, and with it the machine's workload. A thread of this process writes the boot log, so the log is flushed and the thread waited for first. Without that, the line that explains the exit is the one that never reaches the disk. As the guest's PID 1, its exit panics the kernel, which resets the VM before the console has passed on its last lines, the one that explains the exit among them, so it gives the console a second first.
 fn exit(code: i32) -> ! {
     close_boot_log();
+    if std::process::id() == 1 {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
     std::process::exit(code)
 }
 
@@ -87,6 +90,11 @@ mod vm;
 pub use vm::stage0;
 
 pub fn run() -> ! {
+    // UNIT_BOUNDARY_DESCRIPTION: a panic of the guest's init ends the guest, and its message would go only to the boot log, which a thread may not have written out yet; it goes to the console too, where the runner reads why a boot ended, with the second the console needs before the reset (see exit).
+    std::panic::set_hook(Box::new(|info| {
+        announce(&format!("FATAL: {info}"));
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }));
     block_signals();
     stop_propagation();
     let machine = vm::prepare();
