@@ -83,6 +83,7 @@ import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-
 import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
 import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
 import { DockedChangesPanel } from "../../changes/components/docked-changes-panel.js";
+import { SessionPullRequests } from "../../changes/components/session-pull-requests.js";
 import { useToggleChanges } from "../../changes/hooks/use-toggle-changes.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
@@ -1130,19 +1131,24 @@ export function ChatView() {
                       {selectedAgent && pairOutdated ? (
                         <SessionPairOutdatedNotice agentId={selectedAgent} />
                       ) : selectedAgent && currentSession?.harness ? (
-                        <ModelIndicator
-                          agentId={selectedAgent}
-                          harness={currentSession.harness}
-                          provider={currentSession.provider ?? null}
-                          model={currentSession.model ?? null}
-                          settings={currentSession.settings}
-                          carried={harnessStatus?.harnesses ?? []}
-                          onChoose={(value) => void chooseSessionModel(value)}
-                          onConfigure={(change) =>
-                            void configureSession(change)
-                          }
-                          onNewSession={() => handleNewSession(true)}
-                        />
+                        <div className="flex min-w-0 items-center justify-between gap-3">
+                          <ModelIndicator
+                            agentId={selectedAgent}
+                            harness={currentSession.harness}
+                            provider={currentSession.provider ?? null}
+                            model={currentSession.model ?? null}
+                            settings={currentSession.settings}
+                            carried={harnessStatus?.harnesses ?? []}
+                            onChoose={(value) => void chooseSessionModel(value)}
+                            onConfigure={(change) =>
+                              void configureSession(change)
+                            }
+                            onNewSession={() => handleNewSession(true)}
+                          />
+                          <SessionPullRequests
+                            repositories={currentSession.repositories}
+                          />
+                        </div>
                       ) : selectedAgent ? (
                         <Button
                           variant="link"
