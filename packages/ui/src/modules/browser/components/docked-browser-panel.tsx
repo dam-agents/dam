@@ -52,6 +52,9 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
     readPersistedFlag(SIGN_IN_NOTICE_KEY, false),
   );
 
+  const launchUnsupported =
+    stream.connection === "live" && stream.testingMode === undefined;
+
   const shownUrl = stream.page.url === "about:blank" ? "" : stream.page.url;
   useEffect(() => {
     if (!editing) setAddress(shownUrl);
@@ -166,14 +169,14 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
           <DropdownMenuSeparator />
           <DropdownMenuSwitchItem
             checked={stream.testingMode ?? true}
-            disabled={stream.testingMode === undefined}
+            disabled={launchUnsupported || stream.connection !== "live"}
             onCheckedChange={stream.setTestingMode}
             data-testid="browser-testing-mode"
           >
             <span className="flex min-w-0 max-w-64 flex-col gap-0.5 whitespace-normal">
               <span>Browser testing mode</span>
               <span className="text-2xs text-muted-foreground">
-                {stream.testingMode === undefined
+                {launchUnsupported
                   ? "This agent's image cannot change how its browser starts."
                   : "Choose how the browser starts. Turning testing mode off does not disable agent control. Switching restarts the browser and keeps sign-ins and the open page."}
               </span>
