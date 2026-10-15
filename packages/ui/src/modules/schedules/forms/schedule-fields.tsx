@@ -641,6 +641,7 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
           }
           onSelect={(id) => {
             modelField.onChange(id ?? "");
+            if (!id && fallback === undefined) return;
             const current = settingsValue ?? {};
             const kept = settingsForModel(
               capability,
