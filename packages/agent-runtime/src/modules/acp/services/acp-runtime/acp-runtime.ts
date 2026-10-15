@@ -36,7 +36,10 @@ import {
   subAgentSpawnIn,
   type SubAgentSpawn,
 } from "../../infrastructure/sub-agent-spawn.js";
-import { toolActivityIn, type ToolActivity } from "../../../changes/index.js";
+import {
+  createToolActivityReader,
+  type ToolActivity,
+} from "../../../changes/index.js";
 import { frameDirectTurn, isDirectSurface } from "../../domain/direct-turn.js";
 import {
   isNonNullObject,
@@ -394,6 +397,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   let nextOutboundId = 1;
 
+  const toolActivityIn = createToolActivityReader();
   const bootstrap = createSessionBootstrap({
     transcript,
     turnInFlight(sessionId) {

@@ -7,7 +7,7 @@ import {
   repositoryNameOf,
   splitPatch,
 } from "../../modules/changes/domain/git-output.js";
-import { toolActivityIn } from "../../modules/changes/domain/tool-activity.js";
+import { createToolActivityReader } from "../../modules/changes/domain/tool-activity.js";
 import { INERT_GITHUB_TOKEN } from "../../modules/skills/infrastructure/github-token.js";
 import { createPullRequestFinder } from "../../modules/changes/infrastructure/pull-requests.js";
 
@@ -146,6 +146,7 @@ describe("tool activity", () => {
    * locations and its raw input; both give the edited path once.
    */
   it("should read the paths an edit tool call touches", () => {
+    const toolActivityIn = createToolActivityReader();
     const frame = {
       method: "session/update",
       params: {
@@ -173,6 +174,7 @@ describe("tool activity", () => {
    * an unfinished non-edit tool call is nothing.
    */
   it("should report a settled tool call without paths", () => {
+    const toolActivityIn = createToolActivityReader();
     const update = (status: string) => ({
       params: {
         sessionId: "s1",
@@ -186,6 +188,80 @@ describe("tool activity", () => {
       settled: true,
     });
     expect(toolActivityIn(update("in_progress"))).toBeNull();
+  });
+
+  const frameOf = (update: Record<string, unknown>) => ({
+    method: "session/update",
+    params: { sessionId: "s1", update: { toolCallId: "t1", ...update } },
+  });
+
+  /**
+   * TEST_SCENARIO: A streamed Write opens as an edit with no locations, before
+   * its input arrives; the update that names the file carries no kind. The
+   * path still counts as edited, and the call settles once.
+   */
+  it("should read the path a streamed edit names in a later update", () => {
+    const toolActivityIn = createToolActivityReader();
+
+    expect(
+      toolActivityIn(
+        frameOf({ sessionUpdate: "tool_call", kind: "edit", locations: [] }),
+      ),
+    ).toBeNull();
+    expect(
+      toolActivityIn(
+        frameOf({
+          sessionUpdate: "tool_call_update",
+          locations: [{ path: "/repo/a.ts" }],
+        }),
+      ),
+    ).toEqual({ sessionId: "s1", editedPaths: ["/repo/a.ts"], settled: false });
+    expect(
+      toolActivityIn(
+        frameOf({ sessionUpdate: "tool_call_update", status: "completed" }),
+      ),
+    ).toEqual({ sessionId: "s1", editedPaths: [], settled: true });
+  });
+
+  /**
+   * TEST_SCENARIO: A Read names the file it reads in a later update too; a
+   * tool call that opened as another kind edits nothing, and neither does a
+   * call of the same id in another session.
+   */
+  it("should not count the locations of a tool call that is not an edit", () => {
+    const toolActivityIn = createToolActivityReader();
+    toolActivityIn(frameOf({ sessionUpdate: "tool_call", kind: "edit" }));
+    toolActivityIn({
+      params: {
+        sessionId: "s2",
+        update: { sessionUpdate: "tool_call", toolCallId: "t2", kind: "read" },
+      },
+    });
+
+    expect(
+      toolActivityIn({
+        params: {
+          sessionId: "s2",
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId: "t2",
+            locations: [{ path: "/repo/a.ts" }],
+          },
+        },
+      }),
+    ).toBeNull();
+    expect(
+      toolActivityIn({
+        params: {
+          sessionId: "s2",
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId: "t1",
+            locations: [{ path: "/repo/a.ts" }],
+          },
+        },
+      }),
+    ).toBeNull();
   });
 });
 
