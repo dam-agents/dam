@@ -1071,6 +1071,7 @@ function gracefulShutdown(signal: string): void {
   for (const sid of [...ptySlots.keys()]) killPtySlot(sid);
   browserPreview.close();
   browserDisplay?.stop();
+  activeTurns.markStopped();
   acpRuntime.shutdown();
   setTimeout(() => process.exit(0), 3_000).unref();
 }

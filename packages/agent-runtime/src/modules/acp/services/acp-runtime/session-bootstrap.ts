@@ -68,7 +68,9 @@ export interface SessionBootstrapDeps {
   onProviderServed(sessionId: string): void;
   harnessLoadOrphaned(sessionId: string): boolean;
   turnInFlight(sessionId: string): boolean;
-  interruptedAt(sessionId: string): string | undefined;
+  interruption(
+    sessionId: string,
+  ): { startedAt: string; stopped?: true } | undefined;
   undeliveredFor(sessionId: string): PlatformUndeliveredPrompt[];
   settleUnstored(sessionId: string): PlatformUndeliveredPrompt[] | null;
   queueOf(sessionId: string): QueuedPrompt[];
@@ -159,6 +161,14 @@ export function createSessionBootstrap(
     };
   }
 
+  function turnMetaOf(sessionId: string): PlatformReplayTurnMeta {
+    const interruption = deps.interruption(sessionId);
+    return {
+      inFlight: deps.turnInFlight(sessionId),
+      ...(interruption && { interruptedAt: interruption.startedAt }),
+      ...(interruption?.stopped && { interruptedByStop: true }),
+    };
+  }
   function respondFromLog(
     kind: WaiterKind,
     channel: ClientChannel,
@@ -195,14 +205,7 @@ export function createSessionBootstrap(
       result: withReplayMeta(
         metadata.value,
         clip,
-        kind === "load"
-          ? {
-              inFlight: deps.turnInFlight(sessionId),
-              ...(deps.interruptedAt(sessionId) !== undefined && {
-                interruptedAt: deps.interruptedAt(sessionId),
-              }),
-            }
-          : null,
+        kind === "load" ? turnMetaOf(sessionId) : null,
         kind === "load" ? deps.undeliveredFor(sessionId) : [],
         kind === "load" ? deps.supersededFor(sessionId) : [],
         kind === "load" ? deps.runStartsOf(sessionId) : [],
