@@ -19,6 +19,35 @@ if [ "$uid" = 0 ]; then
 		sed -i 's/^agent:x:65532:0:/agent:x:0:0:/' /etc/passwd
 	fi
 	install -d -m 0755 /run/sshd
+	# OpenSSH takes the home from the user database, not HOME, and uid 0 is
+	# `root` there, so root's home is the agent's: its keys and known hosts stay
+	# on the disk, and a moved agent's ~/.ssh is read. What an older boot left
+	# in /root/.ssh moves in, a known_hosts appended to the home's, and a name
+	# the home already holds stays behind rather than overwriting it.
+	if [ "$home" != /root ]; then
+		if grep -q '^root:[^:]*:0:0:[^:]*:/root:' /etc/passwd; then
+			sed -i "s|^\(root:[^:]*:0:0:[^:]*:\)/root:|\1$home:|" /etc/passwd
+		fi
+		if [ -d /root/.ssh ] && [ ! -L /root/.ssh ]; then
+			install -d -m 0700 "$home/.ssh" || :
+			for f in /root/.ssh/* /root/.ssh/.[!.]*; do
+				[ -e "$f" ] || [ -L "$f" ] || continue
+				to="$home/.ssh/${f##*/}"
+				if [ ! -e "$to" ] && [ ! -L "$to" ]; then
+					mv "$f" "$to" || :
+				elif [ "${f##*/}" = known_hosts ] && [ -f "$f" ] && [ -f "$to" ]; then
+					{ cat "$f" >>"$to" && rm -f "$f"; } || :
+				fi
+			done
+			rmdir /root/.ssh 2>/dev/null ||
+				echo "agent-entrypoint: WARNING: /root/.ssh keeps files it could not move to ~/.ssh; they are lost at the next root generation" >&2
+		fi
+		# ssh refuses a config another uid owns, and a moved agent's home keeps
+		# the container's uid.
+		if [ -f "$home/.ssh/config" ]; then
+			find "$home/.ssh/config" ! -user 0 -exec chown 0:0 {} + || :
+		fi
+	fi
 fi
 
 # Every certificate under /etc/platform/ca is trusted: the gateway's MITM CA,

@@ -110,3 +110,36 @@ describe("acp-runtime: interrupted-turn recovery across boots", () => {
     expect(promptTextsOf(resumedAgain.harness())).toHaveLength(1);
   });
 });
+
+describe("acp-runtime: interrupted-turn recovery with nobody watching", () => {
+  /**
+   * TEST_SCENARIO: the image serves Session history, so recovery's resume is
+   * answered from that history before the harness holds the Session, and
+   * recovery's own connection is gone by the time the harness loads it. A
+   * Sleep and wake leaves exactly this: nobody has the chat open. The notice
+   * still reaches the harness, and is not written down as undelivered once
+   * the queue's park window passes.
+   */
+  it("resumes a session the harness loads after recovery has hung up", async () => {
+    const activeTurns = createActiveTurnStore(disk);
+    const world = createWorld({
+      activeTurns,
+      sessionMetadata,
+      queueParkMs: 20,
+      historyProvider: { fetch: () => Promise.resolve([]) },
+    });
+    const recovery = recoverInterruptedTurns({
+      store: activeTurns,
+      sessionMetadata,
+      triggerDriver: createTriggerSessionDriver({ acpRuntime: world.runtime }),
+      log: () => {},
+    });
+    await vi.waitFor(() => world.harness().replyTo("initialize"));
+    await recovery;
+    await vi.waitFor(() => world.harness().replyTo("session/load"));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(promptTextsOf(world.harness())).toHaveLength(1);
+    expect(activeTurns.leftovers()).toEqual([]);
+  });
+});

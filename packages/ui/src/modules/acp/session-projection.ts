@@ -7,6 +7,7 @@ import type {
 } from "@agentclientprotocol/sdk";
 import { resultObjectTexts, terminalOutputPart } from "agent-runtime-api";
 import type {
+  PlatformReplayTurnMeta,
   PlatformUndeliveredPrompt,
   PromptBlock,
   QueuedPrompt,
@@ -573,12 +574,14 @@ export function settleReplay(
 
 export function appendInterruptedNotice(
   messages: Message[],
-  interruptedAt: string | undefined,
+  turn: PlatformReplayTurnMeta | undefined,
 ): Message[] {
-  if (interruptedAt === undefined) return messages;
+  if (turn?.interruptedAt === undefined || turn.inFlight) return messages;
   return appendNotice(
     messages,
-    "This conversation was interrupted by an unexpected restart (often out of memory) and is resuming automatically — the agent will pick the task back up.",
+    turn.interruptedByStop
+      ? "This conversation was interrupted when the agent was stopped (put to sleep, restarted or moved) and is resuming automatically — the agent will pick the task back up."
+      : "This conversation was interrupted by an unexpected restart (often out of memory) and is resuming automatically — the agent will pick the task back up.",
   );
 }
 

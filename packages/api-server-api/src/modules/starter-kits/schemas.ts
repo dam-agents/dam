@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { agentNameSchema, avatarSchema } from "../agents/schemas.js";
+import { AVATAR_CHARACTERS, AVATAR_EMOJI_RE } from "../agents/avatar/svg.js";
 import {
   agentSetupEnvVarSchema,
   agentSetupInstallSchema,
@@ -109,6 +110,15 @@ export const starterKitResourcesSchema = agentSetupResourcesSchema.extend({
   note: z.string().min(1).optional(),
 });
 
+export const starterKitAvatarSchema = z.union([
+  z.enum(AVATAR_CHARACTERS),
+  z
+    .string()
+    .regex(AVATAR_EMOJI_RE)
+    .meta({ pattern: "^emoji:.+$", description: "`emoji:` and one RGI emoji" }),
+  z.object({ path: z.string().min(1) }),
+]);
+
 const harnessCommandNameSchema = z
   .string()
   .regex(/^[a-z0-9][a-z0-9:_-]*$/, "a command name without the leading slash");
@@ -121,6 +131,7 @@ export const starterKitSchema = z.object({
   tagline: z.string().min(1).optional(),
   category: starterKitCategorySchema,
   icon: z.string().min(1).optional(),
+  avatar: starterKitAvatarSchema.optional(),
   video: z.url().optional(),
   docsUrl: z.url().optional(),
   image: starterKitImageSchema.optional(),
