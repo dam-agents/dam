@@ -19,7 +19,7 @@ import {
 } from "./agent-mappers.js";
 import {
   pollUntilReady,
-  OVER_BUDGET_FAIL_FAST_GRACE_MS,
+  REFUSAL_FAIL_FAST_GRACE_MS,
   PAUSE_SETTLE_POLL_MS,
   PAUSE_SETTLE_TIMEOUT_MS,
   WAKE_POLL_INITIAL_MS,
@@ -29,6 +29,7 @@ import {
 import {
   AgentWakeTimeoutError,
   classifyWakeFailure,
+  REFUSED_START_REASONS,
   wakeFailureReasonToken,
 } from "../domain/wake-failure.js";
 import { AgentStoppedError } from "../domain/agent-stopped.js";
@@ -504,7 +505,7 @@ export function createAgentsRepository(
           }
           throw e;
         }
-        let sawNotOverBudget = false;
+        let sawNotRefused = false;
         const ready = await pollUntilReady(
           async () => {
             const obj = await cache.get(id);
@@ -522,12 +523,19 @@ export function createAgentsRepository(
                 failure: classifyWakeFailure(infra),
               });
             }
-            if (infra.overBudget) {
+            if (
+              infra.overBudget ||
+              (!infra.hibernated &&
+                REFUSED_START_REASONS.has(infra.agentPodNotReadyReason ?? ""))
+            ) {
               const graceOver =
-                Date.now() - startedAt >= OVER_BUDGET_FAIL_FAST_GRACE_MS;
-              if (sawNotOverBudget || graceOver) {
+                Date.now() - startedAt >= REFUSAL_FAIL_FAST_GRACE_MS;
+              if (sawNotRefused || graceOver) {
                 getLogger().warn(
-                  { agentId: id, cause: "wake-rejected:over-budget" },
+                  {
+                    agentId: id,
+                    cause: wakeFailureReasonToken(classifyWakeFailure(infra)),
+                  },
                   "agent.wake.rejected",
                 );
                 throw new AgentWakeTimeoutError({
@@ -539,7 +547,7 @@ export function createAgentsRepository(
               }
               return false;
             }
-            sawNotOverBudget = true;
+            sawNotRefused = true;
             return infra.ready;
           },
           {
