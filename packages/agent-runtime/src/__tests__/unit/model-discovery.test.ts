@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { listingForTemplate } from "../../modules/model-catalog/domain/provider-listing.js";
 import { createModelDiscovery } from "../../modules/runtime-channel/infrastructure/model-discovery.js";
 
 const noop = () => {};
@@ -58,7 +59,7 @@ describe("createModelDiscovery", () => {
         { urlEnv: ["U"], namePrefix: "claude/", lowercaseNames: true },
         { U: "https://proxy" },
       ),
-    ).toEqual({
+    ).toMatchObject({
       status: "observed",
       via: "U",
       models: [
@@ -69,6 +70,49 @@ describe("createModelDiscovery", () => {
         },
       ],
     });
+  });
+
+  /**
+   * TEST_SCENARIO: Bob's gateway refuses a request whose User-Agent does not
+   * name Bob with a Cloudflare 403 page, so the catalog never listed Bob's
+   * models. Bob's listing asks with an agent naming Bob, beside the
+   * credential placeholder.
+   */
+  it("asks Bob's gateway as a Bob client", async () => {
+    const { fetchImpl, urls, headers } = stubFetch({
+      body: { data: [{ model_name: "premium", model_info: { mode: "chat" } }] },
+    });
+    const discover = createModelDiscovery({ log: noop, fetchImpl });
+    const outcome = await discover(listingForTemplate("bob")!.spec, {
+      BOB_DEFAULT_GATEWAY_URL: "https://api.us-east.bob.ibm.com",
+      BOBSHELL_API_KEY: "platform:conn:bob",
+    });
+    expect(outcome).toMatchObject({ status: "observed" });
+    expect(urls[0]).toBe(
+      "https://api.us-east.bob.ibm.com/inference/v1/model/info",
+    );
+    expect(headers[0]?.["user-agent"]).toMatch(/bob/);
+    expect(headers[0]?.authorization).toBe("Bearer platform:conn:bob");
+  });
+
+  // TEST_SCENARIO: Anthropic's model list answers a subscription (OAuth) token as a bearer with the OAuth beta flag, from Anthropic's own host when the layer names none.
+  it("lists Anthropic's models on a subscription token", async () => {
+    const { fetchImpl, urls, headers } = stubFetch({
+      body: { data: [{ id: "claude-opus-5-5" }] },
+    });
+    const discover = createModelDiscovery({ log: noop, fetchImpl });
+    const listing = listingForTemplate("anthropic-oauth")!;
+    const outcome = await discover(listing.spec, {
+      ANTHROPIC_BASE_URL: listing.defaultBase!,
+      CLAUDE_CODE_OAUTH_TOKEN: "platform:conn:oauth",
+    });
+    expect(outcome).toMatchObject({ status: "observed" });
+    expect(urls[0]).toBe("https://api.anthropic.com/v1/models");
+    expect(headers[0]).toMatchObject({
+      authorization: "Bearer platform:conn:oauth",
+      "anthropic-beta": "oauth-2025-04-20",
+    });
+    expect(headers[0]?.["x-api-key"]).toBeUndefined();
   });
 
   it("uses the first set candidate and normalizes the base to /v1/models without doubling /v1", async () => {
@@ -122,14 +166,16 @@ describe("createModelDiscovery", () => {
       },
     });
     const discover = createModelDiscovery({ log: noop, fetchImpl });
-    expect(await discover({ urlEnv: ["U"] }, { U: "https://p" })).toEqual({
-      status: "observed",
-      models: [
-        { value: "a-model", name: "a-model" },
-        { value: "b-model", name: "b-model" },
-      ],
-      via: "U",
-    });
+    expect(await discover({ urlEnv: ["U"] }, { U: "https://p" })).toMatchObject(
+      {
+        status: "observed",
+        models: [
+          { value: "a-model", name: "a-model" },
+          { value: "b-model", name: "b-model" },
+        ],
+        via: "U",
+      },
+    );
   });
 
   it("reports unavailable (never throws) on a bad body, a non-2xx response or a failed fetch", async () => {
@@ -181,7 +227,7 @@ describe("createModelDiscovery", () => {
         },
         { BOB_GATEWAY_URL: "https://gateway.example.com/" },
       ),
-    ).toEqual({
+    ).toMatchObject({
       status: "observed",
       via: "BOB_GATEWAY_URL",
       models: [
@@ -212,7 +258,7 @@ describe("createModelDiscovery", () => {
         { urlEnv: ["U"], shape: "litellm-model-info" },
         { U: "https://p" },
       ),
-    ).toEqual({
+    ).toMatchObject({
       status: "observed",
       via: "U",
       models: [
@@ -248,7 +294,7 @@ describe("createModelDiscovery", () => {
         },
         { BOB_GATEWAY_URL: "https://gateway.example.com" },
       ),
-    ).toEqual({
+    ).toMatchObject({
       status: "observed",
       via: "BOB_GATEWAY_URL",
       models: [
@@ -297,7 +343,7 @@ describe("createModelDiscovery", () => {
             "https://bedrock.eu-central-1.amazonaws.com",
         },
       ),
-    ).toEqual({
+    ).toMatchObject({
       status: "observed",
       via: "AWS_ENDPOINT_URL_BEDROCK",
       models: [

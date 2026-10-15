@@ -51,6 +51,13 @@ terms:
   # judgment — whitespace edits don't bump this.
   version: ""
 
+# -- Whether new users can start. `open` lets anyone who can sign in accept
+# the Terms of Use and use the platform. `closed` is the kill switch for
+# runaway growth: a user who has never accepted any Terms version is turned
+# away at the Terms page with a message that sign-ups are closed, while every
+# user who accepted before keeps working, including through a Terms re-accept.
+signUps: open
+
 # -- Outbound links surfaced in the UI, changeable per install without a
 # rebuild (the api-server serves them over `links.all`).
 links:
@@ -647,6 +654,26 @@ postgres:
       cpu: 500m
       memory: 512Mi
 
+  # -- Timing of the `pg_isready` health checks (gated by top-level
+  # `probes.enabled`). A Postgres that is only slow under load — a rollout
+  # of the api-server opening its pool, say — must not be killed for it:
+  # a restart turns a short slowdown into a longer outage, and Keycloak
+  # loses its database with it. So liveness gives each check 10s and kills
+  # only after 6 misses in a row (90s at the 15s period); readiness takes
+  # the pod out of the Service sooner, which is safe to do. The check
+  # command itself is fixed: it targets the `postgres` database so it does
+  # not log a FATAL error on every run.
+  livenessProbe:
+    initialDelaySeconds: 15
+    periodSeconds: 15
+    timeoutSeconds: 10
+    failureThreshold: 6
+  readinessProbe:
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 5
+    failureThreshold: 10
+
   # -- Event logging. Authentication events (connect, disconnect, failed
   # auth) and admin events (DDL — CREATE/ALTER/DROP, GRANT/REVOKE, ROLE
   # changes) are surfaced on the pod's stderr so the external log
@@ -914,11 +941,9 @@ keycloak:
   # SSO is the expected sign-in path; it falls back to the password form
   # when no identity provider is configured on the realm. The default keeps
   # the username/password form, with any identity-provider buttons offered
-  # below it. `requestAccessUrl` renders a "Request access" link on the
-  # login page when set.
+  # below it.
   login:
     allowPassword: true
-    requestAccessUrl: ""
 
   # -- Event logging. Login + admin events are emitted to stdout via the
   # built-in `jboss-logging` event listener so they ride the cluster log

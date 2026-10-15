@@ -17,7 +17,7 @@ export function useFileTree(selectedAgent: string | null) {
 
   const revealFiles = useCallback(() => {
     setFilesSectionOpen(true);
-    setMobileScreen("sessions");
+    setMobileScreen("files");
   }, [setFilesSectionOpen, setMobileScreen]);
 
   const openFileHandler = useCallback(

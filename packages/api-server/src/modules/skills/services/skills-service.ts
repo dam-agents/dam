@@ -263,8 +263,15 @@ function pickSource(
 
 function installPath(
   sources: SkillSource[],
+  installed: SkillRef[],
   entry: { source: string; name: string; path?: string },
 ): string | undefined {
+  if (entry.path === undefined) {
+    const current = installed.find(
+      (r) => r.source === entry.source && r.name === entry.name,
+    );
+    if (current) return canonicalPath(current.path);
+  }
   const picked = pickSource(sources, entry.source, entry.path);
   if (picked === "ambiguous") {
     throw new TRPCError({
@@ -534,8 +541,9 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
 
     await ensureAgentReachable(deps.agentsRepo, agentId, deps.owner);
     const sources = knownSources ?? (await connectedSources(deps, agentId));
+    const installed = await deps.agentSkillsRepo.listSkills(agentId);
     const paths = new Map(
-      install.map((entry) => [entry, installPath(sources, entry)]),
+      install.map((entry) => [entry, installPath(sources, installed, entry)]),
     );
     for (const entry of install) {
       await planFetchOrThrow(deps, agentId, {
@@ -880,6 +888,7 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
 
       const path = installPath(
         await connectedSources(deps, input.agentId),
+        await deps.agentSkillsRepo.listSkills(input.agentId),
         input,
       );
       await planFetchOrThrow(deps, input.agentId, {

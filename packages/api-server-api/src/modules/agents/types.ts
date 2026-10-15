@@ -27,6 +27,7 @@ export const TerminationCode = {
   RunnerOutOfMemory: "RunnerOutOfMemory",
   HomeVolumeFull: "HomeVolumeFull",
   MachineStorageFull: "MachineStorageFull",
+  MachineHomeDamaged: "MachineHomeDamaged",
   MachineImageUnavailable: "MachineImageUnavailable",
   MachineBootFailed: "MachineBootFailed",
   MachineRunnerUnschedulable: "MachineRunnerUnschedulable",
@@ -38,6 +39,7 @@ export const TerminationCode = {
 // UNIT_BOUNDARY_DESCRIPTION: termination codes that mean the agent was refused a start rather than crashed, so every client says it "can't start" for the same codes.
 const START_REFUSAL_CODES: ReadonlySet<string> = new Set([
   TerminationCode.MachineStorageFull,
+  TerminationCode.MachineHomeDamaged,
   TerminationCode.HomeVolumeFull,
   TerminationCode.MachineImageUnavailable,
   TerminationCode.MachineBootFailed,
@@ -151,6 +153,7 @@ export interface Agent {
   notReadyMessage?: string;
   podRestarts: number;
   podRestartReason?: string;
+  homeRepaired?: string;
   gatewayFailure?: string;
   contributionFailures: { kind: string; message: string }[];
   unsupportedContributionKinds: string[];
@@ -311,8 +314,22 @@ export type UnbindTelegramChatError =
 export type UnbindTelegramChatResult =
   { ok: true; value: null } | { ok: false; error: UnbindTelegramChatError };
 
+export interface RuntimeFleetAgent {
+  agentId: string;
+  name: string;
+  image: string;
+  templateImage: string;
+  lastHello: string | null;
+}
+
+export interface RuntimeFleet {
+  onCurrent: number;
+  outdated: RuntimeFleetAgent[];
+}
+
 export interface AgentsService {
   list: () => Promise<Agent[]>;
+  runtimeFleet: (agentIds?: readonly string[]) => Promise<RuntimeFleet>;
   get: (id: string) => Promise<Agent | null>;
   backgroundWork: (id: string) => Promise<AgentBackgroundWork | null>;
   create: (input: AgentCreateInput) => Promise<Agent>;

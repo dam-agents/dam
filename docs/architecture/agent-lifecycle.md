@@ -68,11 +68,12 @@ The **Agent Kind** marker survives only on agents stamped before kits: a knowled
 A kit apply is the plain create with the kit's grants, followed by the kit's schedules and channel binding, compensated by delete on failure.
 A new agent takes its template's size and the trusted egress preset — or, for a kit that declares either, the kit's — both editable afterwards, plus a Backend the template has no say in: a container, or a microVM, which has no size and shares its owner's [memory pool](vm-memory.md) instead.
 The caller picks the Backend, except on an install that pins the new sandbox runtime on, where every create is a microVM ([features](features.md)).
-A plain create names neither a harness nor a provider, since each session picks both ([below](#session-inside-the-pod)): it boots the default Template on the install's default harness and grants the caller's IBM LiteLLM provider Connection, else their earliest-created one, that the harness runs on.
+A plain create names neither a harness nor a provider, since each session picks both ([below](#session-inside-the-pod)): it boots the default Template on the install's default harness and grants every provider Connection of the caller's that the harness runs on, the oldest one per provider alias.
 A custom-image Template names the harness it wraps, if any, and may list its providers.
-Only a template create gets a default provider; a bare image and a [sub-agent](invocations.md) hold only what they name.
-A first agent is often created before its owner has any provider, so connecting a provider gives it to each of the owner's agents that holds none and whose default it would be.
-An agent that holds none while an older provider would be its default was detached on purpose, and stays so.
+A create that names a provider gets that one alone.
+Only a template create gets default providers; a bare image and a [sub-agent](invocations.md) hold only what they name.
+A first agent is often created before its owner has any provider, so connecting a provider gives it to each of the owner's agents that holds none, when it is the owner's first provider that agent's harness runs on.
+An agent that holds none while an older such provider exists was detached on purpose, and stays so.
 A create may also name a repository to seed into the work directory before the first session; it rides the runtime channel rather than the pod spec ([runtime delivery](runtime-delivery.md#event)).
 See [knowledge-bases](knowledge-bases.md) for what a knowledge base adds on top of what follows.
 

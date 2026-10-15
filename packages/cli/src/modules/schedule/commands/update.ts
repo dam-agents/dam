@@ -25,6 +25,7 @@ import {
   parseAtFlag,
   recurringFlagsGiven,
 } from "../domain/once-flags.js";
+import { parseSettingFlags } from "../domain/setting-flags.js";
 import type {
   ScheduleService,
   ScheduleView,
@@ -32,8 +33,12 @@ import type {
 
 interface UpdateOpts {
   at?: string;
+  harness?: string;
+  harnessDefault?: boolean;
   model?: string;
   modelDefault?: boolean;
+  setting: string[];
+  settingsDefault?: boolean;
   name?: string;
   task?: string;
   daily?: string;
@@ -65,11 +70,23 @@ export function buildUpdateCommand(deps: {
       "--at <YYYY-MM-DD HH:MM>",
       "one-time schedules only: new local time to run at",
     )
-    .option("--model <model>", "one-time schedules only: model to run on")
     .option(
-      "--model-default",
-      "one-time schedules only: run on the default model",
+      "--harness <name>",
+      "harness its sessions run on, one the agent carries",
     )
+    .option("--harness-default", "run on the agent's default harness")
+    .option(
+      "--model <model>",
+      "model its sessions run on, as <provider>/<model id>",
+    )
+    .option("--model-default", "run on the agent's default model")
+    .option(
+      "--setting <id=value>",
+      "a per-session setting of the harness, e.g. effort=high (repeatable; replaces the stored settings)",
+      (v: string, acc: string[]) => [...acc, v],
+      [] as string[],
+    )
+    .option("--settings-default", "drop the schedule's per-session settings")
     .option("--daily <HH:MM>", "rebuild recurrence: daily at HH:MM")
     .option("--every <interval>", "rebuild recurrence: every Nm/Nh")
     .option("--rrule <body>", "rebuild recurrence: raw RFC 5545 RRULE body")
@@ -121,8 +138,7 @@ export function buildUpdateCommand(deps: {
         opts.precheck !== undefined ||
         opts.precheckNone === true ||
         opts.at !== undefined ||
-        opts.model !== undefined ||
-        opts.modelDefault === true ||
+        choicesGiven(opts) ||
         recurrenceGiven ||
         quietGiven;
       if (!anyFlag) {
@@ -154,13 +170,9 @@ export function buildUpdateCommand(deps: {
       if (view.type === "once") {
         await updateOnce(svc, host, view, opts);
       }
-      if (
-        opts.at !== undefined ||
-        opts.model !== undefined ||
-        opts.modelDefault === true
-      ) {
+      if (opts.at !== undefined) {
         process.stderr.write(
-          "error: --at and --model only apply to one-time schedules\n",
+          "error: --at only applies to one-time schedules\n",
         );
         process.exit(EXIT_INVALID_INPUT);
       }
@@ -224,6 +236,7 @@ export function buildUpdateCommand(deps: {
         task: opts.task ?? view.task ?? "",
         ...(sessionMode ? { sessionMode } : {}),
         precheck: opts.precheckNone ? null : (opts.precheck ?? view.precheck),
+        ...choicesOrExit(opts, view, true),
       });
       if (!result.ok) {
         if (result.error.kind === "schedule-not-found") {
@@ -279,7 +292,7 @@ async function updateOnce(
     task: opts.task ?? view.task ?? "",
     at,
     timezone,
-    ...optionalModel(opts, view),
+    ...choicesOrExit(opts, view, false),
   });
   if (!result.ok) {
     if (result.error.kind === "schedule-not-found") {
@@ -303,11 +316,66 @@ async function updateOnce(
   process.exit(EXIT_SUCCESS);
 }
 
-function optionalModel(
+function choicesGiven(opts: UpdateOpts): boolean {
+  return (
+    opts.harness !== undefined ||
+    opts.harnessDefault === true ||
+    opts.model !== undefined ||
+    opts.modelDefault === true ||
+    opts.setting.length > 0 ||
+    opts.settingsDefault === true
+  );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a flag replaces the stored choice, its
+ * `-default` twin clears it, and silence keeps it. The recurring update
+ * sends null for a cleared choice, the one-time update omits it, as their
+ * inputs differ.
+ */
+interface NullableChoices {
+  harness?: string | null;
+  model?: string | null;
+  settings?: Record<string, string> | null;
+}
+interface PresentChoices {
+  harness?: string;
+  model?: string;
+  settings?: Record<string, string>;
+}
+function choicesOrExit(
   opts: UpdateOpts,
   view: ScheduleView,
-): { model?: string } {
-  if (opts.modelDefault) return {};
-  const model = opts.model ?? view.model;
-  return model ? { model } : {};
+  nullable: true,
+): NullableChoices;
+function choicesOrExit(
+  opts: UpdateOpts,
+  view: ScheduleView,
+  nullable: false,
+): PresentChoices;
+function choicesOrExit(
+  opts: UpdateOpts,
+  view: ScheduleView,
+  nullable: boolean,
+): NullableChoices {
+  let given: Record<string, string> | undefined;
+  try {
+    given = parseSettingFlags(opts.setting);
+  } catch (e) {
+    process.stderr.write(`error: ${(e as Error).message}\n`);
+    process.exit(EXIT_INVALID_INPUT);
+  }
+  const harness = opts.harnessDefault ? null : (opts.harness ?? view.harness);
+  const model = opts.modelDefault ? null : (opts.model ?? view.model);
+  const settings = opts.settingsDefault ? null : (given ?? view.settings);
+  const keep = <T>(key: string, value: T | null) =>
+    value !== null ? { [key]: value } : nullable ? { [key]: null } : {};
+  return {
+    ...keep("harness", harness),
+    ...keep("model", model),
+    ...keep(
+      "settings",
+      settings && Object.keys(settings).length ? settings : null,
+    ),
+  };
 }

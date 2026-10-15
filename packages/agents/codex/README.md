@@ -21,35 +21,27 @@ Create a **generic secret** on the platform with:
 - `hostPattern`: `api.openai.com`
 - env-mapping: `OPENAI_API_KEY`
 
-The launch scripts set `OPENAI_API_KEY=dummy-placeholder` only when no provider sets it, so the CLI's startup check passes before a real credential is attached.
-A provider's own placeholder, which names its connection, always reaches Codex.
+The runtime sets `OPENAI_API_KEY` to the router's placeholder, which satisfies the CLI's startup check; the router drops it and owns the upstream credential.
+The launch scripts fall back to `dummy-placeholder` only when nothing sets it.
 
-### Custom OpenAI-compatible endpoints
+### The Model Router
 
-To point Codex at an OpenAI-compatible proxy or self-hosted endpoint, add `OPENAI_BASE_URL` to the secret's env-mappings:
+Every call Codex makes goes to the agent-runtime [Model Router](../../../docs/architecture/harness-config.md#the-model-router) on the pod's loopback: [`config.toml`](rootfs/etc/codex/config.toml) fixes the `openai-platform` provider's `base_url` there (the id stays, since rollouts record it), speaks the Responses API only (`wire_api = "responses"`), names the harness with `http_headers`, and reads its model catalog from the router's `model_catalog_url`.
+The router routes each call by its provider-qualified model name (`ibm/gpt-5.5`, `cb/rits/zai-org/glm-5-3`) to that Connection's host with the Connection's placeholder, so one Codex process serves every granted provider and no `-c base_url` override is needed on any thread, the title thread included.
+A session's subagent model (`subagentModel`) is the router's: Codex's subagent threads carry their own `thread-id` beside the session's, and the router sends their calls to that model, whatever the thread asked for; a platform sub-agent spawned from the session runs on it too, whatever model the spawn names.
 
-```json
-[
-  { "envName": "OPENAI_API_KEY", "placeholder": "dummy-placeholder" },
-  { "envName": "OPENAI_BASE_URL", "placeholder": "https://my-proxy.example.com/v1" }
-]
-```
-
-The harness scripts point the `openai-platform` provider's `base_url` at `OPENAI_BASE_URL` with a `-c` override.
-In chat mode, codex-acp starts `codex app-server` through [`codex-app-server`](rootfs/usr/local/bin/codex-app-server), which adds the override.
-The override must apply to the app-server process and not only to codex-acp's `CODEX_CONFIG`: codex-acp starts some threads without `CODEX_CONFIG`, for example the thread that makes a session's title.
-Without the override, these threads send the user's first message to `api.openai.com`.
-Update the secret's `hostPattern` to match the proxy host so the Envoy sidecar injects the credential on the right outbound requests.
+Codex fetches `model_catalog_url` only with `[features] api_key_model_discovery = true`, an under-development flag that is off by default; a pin bump must re-check it in `codex-rs/core/src/features.rs`.
+With it, Codex's `/model` picker and codex-acp's `model/list` hold exactly the served catalog: the models of every granted provider the agent can reach, never the built-in OpenAI slugs.
+Codex's deserializer drops a catalog whose entries carry no `model_messages.instructions_template`, and it refuses a catalog response over its body limit, which the full instructions on every model exceed once an agent holds an OpenAI key (over seventy models).
+So each entry carries a one-line template, and [`config.toml`](rootfs/etc/codex/config.toml) sets `model_instructions_file` to [`model-instructions.md`](rootfs/etc/codex/model-instructions.md), which wins over any entry's template: Codex's own instructions, copied verbatim from the pinned release's bundled `gpt-5.5` entry (`codex-rs/core/models.json`), which a pin bump re-copies.
+[`image.toml`](image.toml) pins codex-acp 2.1.1 and the Codex it bundles.
 
 ### Model selection
 
-The chat's session picker lists the models the granted endpoint serves (`<OPENAI_BASE_URL>/models`, with `/v1` added when the base URL carries no version segment).
-Codex cannot switch a live session's model, so the platform runs one Codex process per picked model and passes it as `PLATFORM_MODEL`, which the harness scripts put first.
-Codex's own `/model` picker still shows its built-in OpenAI catalog, which an OpenAI-compatible endpoint need not serve.
-
-With no session pick, a `model` set in `~/.codex/config.toml` wins over the provider's `OPENAI_MODEL` pin.
-It can come from `/model` or a hand-edit.
-The harness scripts pass the pin only when the file sets none.
+The model is a per-turn choice.
+The platform sends it over ACP (`session/set_config_option`) before each prompt and again after a cold load; codex-acp accepts any slug the served catalog lists, so a running thread switches providers between turns with no process restart.
+No model is written into `~/.codex/config.toml` and the harness scripts pin none; the terminal TUI starts on the session's model through `-c model=`.
+After the first turn codex-acp makes a title with a hard-coded bare `gpt-5.6-luna`; the router puts that call, like every bare name Codex sends (`bareNamesFromSession`), on the session's model.
 
 ## The platform writes `~/.codex/config.toml`
 
@@ -58,6 +50,7 @@ Codex reads MCP servers only from `[mcp_servers.*]` in its own config file, so t
 - **MCP servers.** The runtime channel adds, updates and removes the `[mcp_servers.*]` entries it placed there, one per granted MCP connection plus the platform's own.
   Servers you add by hand are kept.
 - **Effort.** The Config panel writes `model_reasoning_effort`.
+  The model itself is never written: it is a per-turn choice sent over ACP.
 
 Each of these writes re-serializes the whole file.
 Every key and value you set survives, but comments and blank lines are dropped, so keep notes elsewhere.
@@ -102,7 +95,8 @@ The platform's collector therefore reshapes every `codex.*` log record:
 - It sets the body to the event name and `session.id` to `conversation.id`, the Codex thread id that codex-acp uses as the session id.
 - It renames the per-call usage record (`codex.sse_event` of kind `response.completed` with token counts) to `codex.response_completed`, with `input_tokens` (net of cache reads), `output_tokens`, `cache_read_tokens` and `cache_creation_tokens`.
 
-Codex reports no per-call cost, so Codex spend shows as tokens at zero cost.
+Codex reports no per-call cost.
+The Model Router prices every Codex call in a `platform.model_call` record of its own, and the Usage reads take the router's record where there is one, so Codex's own usage records count, as tokens at zero cost, only where no router record reached the store.
 Session titles run on a Codex thread of their own, so their calls count for the agent but not for the chat session.
 
 With the log exporter on, the chat app-server also starts Codex's turn-cost poller.
@@ -112,10 +106,10 @@ After a `codex login` in the terminal, it polls `chatgpt.com`, which the gateway
 
 ## Harness scripts
 
-| Script                                                      | Runs                              | Purpose                                                                                        |
-| ----------------------------------------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------- |
-| [`harness-chat`](rootfs/usr/local/bin/harness-chat)         | `codex-acp`                       | ACP subprocess for chat-mode sessions (UI); runs `codex app-server` through `codex-app-server` |
-| [`harness-terminal`](rootfs/usr/local/bin/harness-terminal) | `codex` / `codex resume <thread>` | Interactive TUI for terminal-mode sessions                                                     |
+| Script                                                      | Runs                              | Purpose                                                                                                                                 |
+| ----------------------------------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| [`harness-chat`](rootfs/usr/local/bin/harness-chat)         | `codex-acp`                       | ACP subprocess for chat-mode sessions (UI); runs `codex app-server` through [`codex-app-server`](rootfs/usr/local/bin/codex-app-server) |
+| [`harness-terminal`](rootfs/usr/local/bin/harness-terminal) | `codex` / `codex resume <thread>` | Interactive TUI for terminal-mode sessions                                                                                              |
 
 Both modes run without approvals or Codex's own sandbox, since the pod itself is the sandbox (network isolation + Envoy credential injection): terminal sessions pass `--dangerously-bypass-approvals-and-sandbox`, and chat sessions start in codex-acp's `agent-full-access` mode, which it sends with every turn and which therefore outranks `/etc/codex/config.toml`.
 

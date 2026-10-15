@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 ## Overview
 
@@ -72,9 +72,15 @@ The agent pod has no service account token (`automountServiceAccountToken: false
 It runs in-cluster as a Helm subchart and is the OIDC provider for every authenticated surface.
 
 Keycloak's branded login page ships two presentation variants selected per deployment: password-first (the default — username/password form, with any identity-provider buttons offered below it) and SSO-first (identity-provider CTAs only, for deployments where corporate SSO is the expected sign-in path; the page falls back to the password form when the realm has no identity provider configured).
-The chart's `keycloak.login` values ([`helm/values.yaml`](../../helm/values.yaml)) select the variant and an optional "Request access" link; they reach the theme as container environment variables resolved through the theme's `theme.properties` placeholders, so switching variants is a values change and a pod roll — no theme rebuild, no realm change.
+The chart's `keycloak.login` values ([`helm/values.yaml`](../../helm/values.yaml)) select the variant; they reach the theme as container environment variables resolved through the theme's `theme.properties` placeholders, so switching variants is a values change and a pod roll — no theme rebuild, no realm change.
 The same page also knows which client started the sign-in: when it is the artifact share host's client, the heading and lead paragraph tell the visitor they need to sign in to view a shared artifact instead of the general product pitch.
 Upstream identity providers themselves (e.g. w3id) are realm configuration managed outside the chart.
+
+Anyone the realm lets sign in can start: there is no approval step, and a first sign-in goes through the Terms-of-Use gate straight to the agent list.
+The chart's `signUps` value is the kill switch for growth the install cannot absorb.
+Set to `closed`, the api-server refuses the Terms acceptance of a user who has never accepted any Terms version, and the Terms page shows that sign-ups are closed.
+"New user" means exactly that — no acceptance on record — because the Terms gate already stands before every authenticated route, so a user who never accepted holds nothing to lose.
+Every user who accepted before keeps working, including through the re-accept a Terms version bump asks for.
 
 The user agent flow:
 

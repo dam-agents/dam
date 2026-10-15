@@ -33,7 +33,6 @@ export default function Login(
   const isSsoOnly =
     kcContext.properties.PLATFORM_ALLOW_PASSWORD === "false" &&
     providers.length > 0;
-  const requestAccessUrl = kcContext.properties.PLATFORM_REQUEST_ACCESS_URL;
   const isShareSignIn =
     kcContext.client.clientId === kcContext.properties.PLATFORM_SHARE_CLIENT_ID;
   const brand = realm.displayName || BRAND_FALLBACK;
@@ -166,17 +165,6 @@ export default function Login(
             <div className="space-y-2">{providerButtons}</div>
           </div>
         )
-      )}
-
-      {requestAccessUrl && (
-        <p className="mt-20">
-          <a
-            href={requestAccessUrl}
-            className="text-base text-accent hover:underline md:text-xl"
-          >
-            Request access
-          </a>
-        </p>
       )}
     </Template>
   );

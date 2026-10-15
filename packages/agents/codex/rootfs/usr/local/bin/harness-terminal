@@ -3,14 +3,10 @@
 : "${OPENAI_API_KEY:=dummy-placeholder}"
 export OPENAI_API_KEY
 set -- --dangerously-bypass-approvals-and-sandbox -c 'model_provider="openai-platform"'
-if [ -n "$OPENAI_BASE_URL" ]; then
-  set -- "$@" -c "model_providers.openai-platform.base_url=\"$OPENAI_BASE_URL\""
-fi
-# the provider's pin yields to a model chosen in config.toml (/model, hand-edit); the session's own choice outranks both
+# The TUI starts on the session's model (a catalog name the Model Router routes);
+# /model then offers the router's catalog.
 if [ -n "$PLATFORM_MODEL" ]; then
   set -- "$@" -c "model=\"$PLATFORM_MODEL\""
-elif [ -n "$OPENAI_MODEL" ] && ! codex-config-sets-model; then
-  set -- "$@" -c "model=\"$OPENAI_MODEL\""
 fi
 . /usr/local/lib/codex-otel.sh
 

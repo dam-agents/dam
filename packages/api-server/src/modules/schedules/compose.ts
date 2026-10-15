@@ -2,6 +2,7 @@ import type { ConnectionOptions } from "bullmq";
 import type { Db } from "db";
 import type { Redis } from "ioredis";
 import type { SchedulesService } from "api-server-api";
+import type { SessionChoicesValidator } from "../harness-config/index.js";
 import { OnceResult } from "api-server-api";
 import { emit, EventType } from "../../events.js";
 import type { AgentOnceLimits } from "./services/schedules-service.js";
@@ -39,7 +40,7 @@ export interface SchedulesBoot {
   runner: SchedulerRunner;
   worker: RunningWorker;
   agentOnceLimits: AgentOnceLimits;
-  sessionModelChoices?: (agentId: string) => Promise<string[] | null>;
+  validateSessionChoices?: SessionChoicesValidator;
   retentionTick(): Promise<void>;
   close(): Promise<void>;
 }
@@ -48,7 +49,7 @@ export interface ComposeSchedulesAtBootOpts {
   db: Db;
   firePair?: FirePair;
   agentOnceLimits?: AgentOnceLimits;
-  sessionModelChoices?: (agentId: string) => Promise<string[] | null>;
+  validateSessionChoices?: SessionChoicesValidator;
   bullConnection: ConnectionOptions;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<AgentActivityStamp | null>;
@@ -85,6 +86,9 @@ export function composeSchedulesAtBoot(
     ...(opts.runtimeMigrating
       ? { runtimeMigrating: opts.runtimeMigrating }
       : {}),
+    ...(opts.validateSessionChoices
+      ? { validateSessionChoices: opts.validateSessionChoices }
+      : {}),
     log,
   });
   const worker = startScheduleWorker({
@@ -98,8 +102,8 @@ export function composeSchedulesAtBoot(
     runner,
     worker,
     agentOnceLimits: opts.agentOnceLimits ?? DEFAULT_AGENT_ONCE_LIMITS,
-    ...(opts.sessionModelChoices
-      ? { sessionModelChoices: opts.sessionModelChoices }
+    ...(opts.validateSessionChoices
+      ? { validateSessionChoices: opts.validateSessionChoices }
       : {}),
     async retentionTick() {
       const pruned = await repo.deleteFinishedOnceOlderThan(
@@ -154,8 +158,8 @@ export function composeSchedulesForOwner(opts: ComposeSchedulesForOwnerOpts): {
       owner,
       agentBinding: opts.agentBinding,
       agentOnceLimits: boot.agentOnceLimits,
-      ...(boot.sessionModelChoices
-        ? { sessionModelChoices: boot.sessionModelChoices }
+      ...(boot.validateSessionChoices
+        ? { validateSessionChoices: boot.validateSessionChoices }
         : {}),
       ...(opts.agentExists ? { agentExists: opts.agentExists } : {}),
     }),

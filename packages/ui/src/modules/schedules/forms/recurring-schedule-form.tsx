@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { type ReactNode, useEffect } from "react";
-import { Controller, useForm } from "react-hook-form";
+import { useForm } from "react-hook-form";
 
 import { FormField } from "@/components/form-field";
 import { DialogActions, DialogBody, DialogHeader } from "@/components/modal";
@@ -18,7 +18,7 @@ import {
 } from "../api/mutations.js";
 import { QuietHoursEditor } from "./quiet-hours-editor.js";
 import {
-  ScheduleModelField,
+  ScheduleChoicesField,
   SchedulePrecheckField,
   ScheduleRecurrenceFields,
   ScheduleSessionTitleField,
@@ -89,7 +89,12 @@ export function RecurringScheduleForm({
 
   const onSubmit = handleSubmit((v) => {
     const precheck = v.precheck.trim();
+    const harness = v.harness.trim();
     const model = v.model.trim();
+    const settings = Object.fromEntries(
+      Object.entries(v.settings).filter(([, value]) => value !== ""),
+    );
+    const hasSettings = Object.keys(settings).length > 0;
     const sessionTitle = v.sessionTitle.trim();
     const common = {
       name: v.name,
@@ -114,7 +119,9 @@ export function RecurringScheduleForm({
           id: existing.id,
           ...common,
           precheck: precheck || null,
+          harness: harness || null,
           model: model || null,
+          settings: hasSettings ? settings : null,
           sessionTitle: sessionTitle || null,
         },
         { onSuccess },
@@ -125,7 +132,9 @@ export function RecurringScheduleForm({
           agentId,
           ...common,
           ...(precheck ? { precheck } : {}),
+          ...(harness ? { harness } : {}),
           ...(model ? { model } : {}),
+          ...(hasSettings ? { settings } : {}),
           ...(sessionTitle ? { sessionTitle } : {}),
         },
         { onSuccess },
@@ -174,16 +183,10 @@ export function RecurringScheduleForm({
           />
         </FormField>
 
-        <Controller
+        <ScheduleChoicesField
+          agentId={agentId}
           control={control}
-          name="model"
-          render={({ field }) => (
-            <ScheduleModelField
-              agentId={agentId}
-              value={field.value}
-              onChange={field.onChange}
-            />
-          )}
+          migrationNote={existing?.migrationNote ?? null}
         />
 
         <SchedulePrecheckField

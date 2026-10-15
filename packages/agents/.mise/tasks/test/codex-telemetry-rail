@@ -45,10 +45,9 @@ const contentOff = ["-c", "otel.log_user_prompt=false", "-c", "otel.log_agent_re
 
 try {
   // TEST_SCENARIO: with the rail on, every chat thread's app-server gets both exporters and the content switches pinned off, ahead of the subcommand.
-  assert.deepEqual(run(appServer, ["app-server"], { ...rail, OPENAI_BASE_URL: "https://llm.example/v1" }), [
+  assert.deepEqual(run(appServer, ["app-server"], rail), [
     "-c", logs, ...contentOff,
     "-c", traces,
-    "-c", 'model_providers.openai-platform.base_url="https://llm.example/v1"',
     "app-server",
   ]);
 

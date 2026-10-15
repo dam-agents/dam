@@ -31,21 +31,15 @@
         "crds": ["gatewayclasses.gateway.networking.k8s.io", "gateways.gateway.networking.k8s.io", "grpcroutes.gateway.networking.k8s.io",
                  "httproutes.gateway.networking.k8s.io", "referencegrants.gateway.networking.k8s.io"] },
       { "kind": "helm", "name": "istio-base", "repo": "https://istio-release.storage.googleapis.com/charts", "chart": "base",
-        "version": "{{config:istio_version}}", "namespace": "istio-system" },
-      { "kind": "helm", "name": "istiod", "repo": "https://istio-release.storage.googleapis.com/charts", "chart": "istiod",
-        "version": "{{config:istio_version}}", "namespace": "istio-system",
-        "set": { "profile": "ambient", "pilot.env.DEFAULT_WORKLOAD_CERT_TTL": "720h" } },
-      { "kind": "helm", "name": "istio-cni", "repo": "https://istio-release.storage.googleapis.com/charts", "chart": "cni",
-        "version": "{{config:istio_version}}", "namespace": "istio-system",
-        "set": { "profile": "ambient", "cni.cniBinDir": "/var/lib/rancher/k3s/data/cni", "cni.cniConfDir": "/var/lib/rancher/k3s/agent/etc/cni/net.d" } },
-      { "kind": "helm", "name": "ztunnel", "repo": "https://istio-release.storage.googleapis.com/charts", "chart": "ztunnel",
-        "version": "{{config:istio_version}}", "namespace": "istio-system", "wait": { "namespace": "istio-system", "rollout": "ds/ztunnel" } }
+        "version": "{{config:istio_version}}", "namespace": "istio-system", "set": { "defaultRevision": "" } },
+      { "kind": "manifest", "name": "no-mesh-marker", "file": "no-mesh-marker.yaml" }
     ],
     "values": {
       "domain": "localhost",
       "port": "{{app_port}}",
       "scheme": "http",
       "ingress": { "catchAllAppHost": true },
+      "istio": { "enforce": false },
       "terms": { "version": "qa", "text": "Nested QA environment." },
       "keycloak": {
         "admin": { "password": "{{secret:keycloak_admin}}" },
@@ -73,7 +67,7 @@
   "config": {
     "chart_ref": { "default": "oci://quay.io/dam-agents/charts/platform", "about": "OCI chart the builds come from" },
     "mock_image": { "default": "", "about": "image of a mock harness template so nested agents answer without a model; empty = none", "ask": true },
-    "istio_version": { "default": "1.29.1", "about": "Istio ambient, installed once in the nested cluster" },
+    "istio_version": { "default": "1.29.1", "about": "Istio CRDs only (istio-base), installed once in the nested cluster" },
     "cert_manager_version": { "default": "v1.21.2", "about": "cert-manager, installed once" },
     "gateway_api_version": { "default": "v1.2.0", "about": "Gateway API CRDs, installed once" },
     "helm_version": { "default": "v3.19.0", "about": "helm downloaded into the home" }

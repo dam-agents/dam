@@ -7,17 +7,20 @@ const BACKOFF_INITIAL_MS = 1_000;
 const BACKOFF_MAX_MS = 30_000;
 const HEALTHY_RUN_MS = 60_000;
 
-export interface PodServiceSupervisor {
-  refreshEnv(): void;
+export interface ProviderEnvSnapshot {
+  write(): void;
 }
 
-export function createPodServiceSupervisor(opts: {
-  command: string;
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the Model Router keeps provider env out of every
+ * harness process, so this file in the agent's home is the one place an
+ * image's own scripts learn which providers the agent holds.
+ */
+export function createProviderEnvSnapshot(opts: {
   stateBackend: DocumentStoreBackend;
   envReader: LeaseEnvReader;
-  log: (msg: string) => void;
-}): PodServiceSupervisor {
-  const { command, envReader, log } = opts;
+}): ProviderEnvSnapshot {
+  const { envReader } = opts;
   const snapshot = opts.stateBackend.open("pod-service-env", {
     schema: z.object({
       env: z.record(z.string(), z.string().optional()),
@@ -27,6 +30,33 @@ export function createPodServiceSupervisor(opts: {
     }),
     initial: () => ({ env: {} }),
   });
+  return {
+    write() {
+      snapshot.write({
+        env: mergedSpawnEnv(envReader),
+        providers: Object.fromEntries(
+          envReader
+            .providers()
+            .map((provider) => [
+              provider,
+              envReader.forLease({ harness: "", provider }),
+            ]),
+        ),
+      });
+    },
+  };
+}
+
+export interface PodServiceSupervisor {
+  refreshEnv(): void;
+}
+
+export function createPodServiceSupervisor(opts: {
+  command: string;
+  envReader: LeaseEnvReader;
+  log: (msg: string) => void;
+}): PodServiceSupervisor {
+  const { command, envReader, log } = opts;
 
   let child: ReturnType<typeof spawn> | null = null;
   let restartTimer: ReturnType<typeof setTimeout> | null = null;
@@ -85,17 +115,6 @@ export function createPodServiceSupervisor(opts: {
       if (restartTimer) clearTimeout(restartTimer);
       restartTimer = null;
       backoffMs = BACKOFF_INITIAL_MS;
-      snapshot.write({
-        env: mergedSpawnEnv(envReader),
-        providers: Object.fromEntries(
-          envReader
-            .providers()
-            .map((provider) => [
-              provider,
-              envReader.forLease({ harness: "", provider }),
-            ]),
-        ),
-      });
       if (child) child.kill("SIGHUP");
       else start();
     },

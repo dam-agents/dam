@@ -240,10 +240,10 @@ The old upper is renamed aside with the record of its image and deleted in the b
 smolvm keeps a root of its own and binds the whole disk into it; platform-init leaves both behind, and fails the boot rather than run on them.
 Temporary folders are kept off that root instead: `/tmp` and `/var/tmp` are directories of the disk bound in place, empty on every boot, and `HOME`'s `.cache` and `.npm` are ordinary directories of the home.
 `/var/cache` stays part of the root, because an image ships its font, package and linker caches there, and an empty folder over them had every boot rebuild them.
-They share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their least recently used entries, never anything outside them.
+They share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their least recently used entries, never anything outside them, and never through a link or a mount: a folder that is a link, such as a `~/.cache` an agent pointed at its work, or a mount it was not at boot, is skipped, an entry holding a mount stays whole, and no delete goes into a mount.
 An entry is one name directly in such a folder, such as `~/.cache/go-build` or `/tmp/pr-body.md`, and it goes whole or not at all, because a tool that keeps part of its cache takes it for complete and fails on it.
 Use is the newest modification or change time anywhere in the entry, since the disk is mounted `relatime` and a read often leaves access times alone.
-An entry used in the last ten minutes stays, and so does one a process holds a BSD lock on, the way `systemd-tmpfiles` leaves it.
+An entry used in the last ten minutes stays, and so does one that is or holds a file a process has locked, by any kind of lock, the way `systemd-tmpfiles` leaves a locked entry.
 A short claim is mostly the agents' homes, which no eviction touches, so it does not bring that ten-minute rule on: each request the runner sends is served once, by one pass that keeps whatever was used in the last hour and stops at the bytes the runner asked of that machine.
 A cache tagged with `CACHEDIR.TAG` goes before an untagged entry of the same age, since its tool can rebuild it and an untagged one may be the agent's work in progress.
 Each eviction, and a disk still short once nothing is left to evict, is a line on the machine's console, which the runner reads.
@@ -268,6 +268,9 @@ The runner image ships that agent rebuilt with a patch that refuses the format w
 The same agent checks the disk's filesystem before its first mount at every boot, since a write that failed, a full claim's among them, leaves it marked with errors that a mount alone keeps and lets grow.
 `e2fsck -p` returns at once on a clean filesystem and preens one marked with errors; what that cannot fix gets a full repair, and then one that also rebuilds directories.
 A repair is a line on the machine's console; a filesystem still damaged after all three, or an `e2fsck` that failed or was killed, fails the boot with the reason there, and the disk is not formatted; a disk with no filesystem yet is not checked.
+The runner reads those lines, so the result is on the Agent.
+A repair shows, until a later boot finds the disk clean, as a notice that files in the damaged folders may be missing.
+A refusal is a failed start with the ways out: start again, since a cause that has passed lets the next check repair it; if it keeps failing, have an admin check the disk, which stays as it is, or delete and recreate the agent, which loses its files.
 A Mac host runner runs its installed smolvm's own agent, which still formats.
 
 **A disk that has lost its home fails the boot.** A disk that was formatted anyway looks exactly like one never seeded.

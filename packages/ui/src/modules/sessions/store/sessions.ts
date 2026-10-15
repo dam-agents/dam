@@ -29,10 +29,13 @@ import {
   rememberUndelivered,
 } from "../lib/undelivered-store.js";
 
-const SESSIONS_SECTION_OPEN_STORAGE_KEY = "platform-sessions-open";
 const TOOL_ACTIVITY_EXPANDED_STORAGE_KEY = "platform-tool-activity-expanded";
 
 export type RewriteMode = "rewind" | "fork";
+
+export type ChatRequest =
+  | { kind: "open"; sessionId: string; mode: SessionMode | null }
+  | { kind: "new" };
 
 export interface Rewriting {
   messageId: string;
@@ -61,7 +64,7 @@ export interface SessionsSlice {
   terminalPaused: boolean;
   pendingResumeSessionId: string | null;
   pendingResumeSessionMode: SessionMode | null;
-  sessionsSectionOpen: boolean;
+  chatRequest: ChatRequest | null;
   toolActivityExpanded: boolean;
 
   setSessionId: (id: string | null) => void;
@@ -71,7 +74,7 @@ export interface SessionsSlice {
   ) => void;
   setSessionMode: (mode: SessionMode | null) => void;
   setTerminalPaused: (paused: boolean) => void;
-  setSessionsSectionOpen: (open: boolean) => void;
+  requestChat: (request: ChatRequest | null) => void;
   setToolActivityExpanded: (expanded: boolean) => void;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
   setRunStarts: (list: string[]) => void;
@@ -171,10 +174,7 @@ export const createSessionsSlice: StateCreator<
     terminalPaused: false,
     pendingResumeSessionId: null,
     pendingResumeSessionMode: null,
-    sessionsSectionOpen: readPersistedFlag(
-      SESSIONS_SECTION_OPEN_STORAGE_KEY,
-      true,
-    ),
+    chatRequest: null,
     toolActivityExpanded: readPersistedFlag(
       TOOL_ACTIVITY_EXPANDED_STORAGE_KEY,
       false,
@@ -185,10 +185,7 @@ export const createSessionsSlice: StateCreator<
       set({ pendingResumeSessionId: id, pendingResumeSessionMode: mode }),
     setSessionMode: (mode) => set({ sessionMode: mode }),
     setTerminalPaused: (paused) => set({ terminalPaused: paused }),
-    setSessionsSectionOpen: (open) => {
-      writePersistedFlag(SESSIONS_SECTION_OPEN_STORAGE_KEY, open);
-      set({ sessionsSectionOpen: open });
-    },
+    requestChat: (request) => set({ chatRequest: request }),
     setToolActivityExpanded: (expanded) => {
       writePersistedFlag(TOOL_ACTIVITY_EXPANDED_STORAGE_KEY, expanded);
       set({ toolActivityExpanded: expanded });
@@ -305,6 +302,7 @@ export const createSessionsSlice: StateCreator<
         openFileEdit: false,
         pendingPermissions: [],
         pendingResumeSessionId: null,
+        chatRequest: null,
       }),
 
     deleteSession: async (sessionId) => {

@@ -17,12 +17,26 @@ type MetricsSpendBreakdownQuery = z.infer<
 export interface TokenSpendByModel {
   model: string;
   calls: number;
+  uncountedCalls: number;
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
   costUsd: number;
   durationMs: number;
+}
+
+export interface TokenSpendByProvider {
+  provider: string;
+  connectionId: string;
+  connectionName: string | null;
+  calls: number;
+  uncountedCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  costUsd: number;
 }
 
 export interface SpendByAgent {
@@ -87,12 +101,14 @@ export interface SubAgentSpend {
 
 export interface MetricsOverview {
   tokenSpendByModel: TokenSpendByModel[];
+  tokenSpendByProvider: TokenSpendByProvider[];
   runtimeBySession: SessionRuntime[];
   contextPerCall: CallContext[];
 }
 
 interface SpendBreakdown {
   byModel: TokenSpendByModel[];
+  byProvider: TokenSpendByProvider[];
   byAgent: SpendByAgent[];
   byDay: SpendByDay[];
   bySessionType: SpendBySessionType[];

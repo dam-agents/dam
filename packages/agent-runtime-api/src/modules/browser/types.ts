@@ -22,7 +22,9 @@ export type BrowserAction =
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the browser panel's control of the agent's one
  * browser — the one agent-browser drives. Watching keeps it running and reports
- * its state and the page it shows; the actions are the panel's toolbar. Offered
+ * its state, the page it shows and whether it is in testing mode; the actions
+ * are the panel's toolbar, and the testing mode switch picks how it is
+ * launched, for every launch from then on. Offered
  * only on an agent that requires named connections, and only on an image with
  * the display stack; otherwise every call answers why, before anything starts.
  */
@@ -32,4 +34,5 @@ export interface BrowserService {
   ): Result<AsyncIterable<BrowserSnapshot>, BrowserDomainError>;
   navigate(url: string): Promise<Result<void, BrowserDomainError>>;
   act(action: BrowserAction): Promise<Result<void, BrowserDomainError>>;
+  setTestingMode(on: boolean): Promise<Result<void, BrowserDomainError>>;
 }

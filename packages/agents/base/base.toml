@@ -68,7 +68,9 @@ PLAYWRIGHT_BROWSERS_PATH = "/opt/ms-playwright"
 # push-messaging check-in point at a closed loopback port: the gateway would
 # hold each one for approval, though no page asked for it. The rest of its
 # background traffic is off by policy (/etc/opt/chrome_for_testing/policies).
-AGENT_BROWSER_EXECUTABLE_PATH = "/opt/ms-playwright/chromium"
+# It starts through platform-browser, which launches it the way the panel's
+# Browser testing mode switch chose, for every caller.
+AGENT_BROWSER_EXECUTABLE_PATH = "/usr/local/bin/platform-browser"
 AGENT_BROWSER_HEADED = "1"
 AGENT_BROWSER_NO_XVFB = "1"
 AGENT_BROWSER_PROFILE = "/home/agent/.local/share/platform/browser"

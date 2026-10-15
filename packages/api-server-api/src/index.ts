@@ -57,6 +57,19 @@ export {
   harnessConfigSnapshotSchema,
   sessionPairSchema,
 } from "./modules/harness-config/schemas.js";
+export {
+  CLAUDE_MODEL_NAME_PREFIX,
+  formatQualifiedModel,
+  isQualifiedModel,
+  parseQualifiedModel,
+  type QualifiedModel,
+} from "./modules/harness-config/model-name.js";
+export {
+  orderByAlias,
+  resolveDefaultProvider,
+  type ProviderChoice,
+  type SavedProviderChoice,
+} from "./modules/harness-config/default-provider.js";
 
 export type {
   Agent,
@@ -96,6 +109,8 @@ export type {
   SlackChannel,
   SlackConversationLabel,
   ChannelConfig,
+  RuntimeFleet,
+  RuntimeFleetAgent,
 } from "./modules/agents/types.js";
 export {
   AGENT_ID_RE,
@@ -142,7 +157,9 @@ export type {
 export {
   scheduleSpecSchema,
   precheckSchema,
+  scheduleHarnessSchema,
   scheduleModelSchema,
+  scheduleSettingsSchema,
   PRECHECK_MAX_LENGTH,
 } from "./modules/schedules/schemas.js";
 export type {
@@ -307,6 +324,9 @@ export type {
 
 export type {
   ProviderPresetType,
+  ProviderAlias,
+  ProviderAliasConflict,
+  AliasedConnection,
   EnvMapping,
   BobModelPins,
   BedrockPins,
@@ -341,6 +361,14 @@ export {
   S3_COMPATIBLE_TEMPLATE_ID,
   providerTypeForTemplateId,
   templateIdForProvider,
+  PROVIDER_ALIASES,
+  PROVIDER_ALIAS_RE,
+  aliasForProviderType,
+  aliasForTemplateId,
+  aliasOrder,
+  HARNESS_HOME_PROVIDERS,
+  templateIdsForAlias,
+  providerAliasConflict,
 } from "./modules/connections/providers.js";
 
 export {
@@ -416,6 +444,7 @@ export type {
   MetricsSessionCostsQuery,
   MetricsOverview,
   TokenSpendByModel,
+  TokenSpendByProvider,
   SpendByAgent,
   SpendByDay,
   SpendBySessionType,
@@ -647,7 +676,11 @@ export type {
   AcceptedAcceptance,
   TermsService,
 } from "./modules/terms/types.js";
-export { termsDocumentSchema } from "./modules/terms/schemas.js";
+export {
+  signUpsSchema,
+  termsDocumentSchema,
+  type SignUps,
+} from "./modules/terms/schemas.js";
 export { PRE_TERMS_PROCEDURES } from "./modules/terms/types.js";
 
 export type { EntryPointChoice, UsageService } from "./modules/usage/types.js";
