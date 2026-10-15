@@ -30,6 +30,7 @@ interface CheckboxItemProps extends Omit<
   "children"
 > {
   label: string;
+  labelSuffix?: React.ReactNode;
   labelClassName?: string;
   description?: string;
   descriptionClassName?: string;
@@ -38,6 +39,7 @@ interface CheckboxItemProps extends Omit<
 
 function CheckboxItem({
   label,
+  labelSuffix,
   labelClassName,
   description,
   descriptionClassName,
@@ -75,6 +77,7 @@ function CheckboxItem({
           className={cn("text-sm font-medium text-foreground", labelClassName)}
         >
           {label}
+          {labelSuffix}
         </span>
         {description && (
           <span
