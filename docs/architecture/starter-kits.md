@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 ## Overview
 
@@ -195,7 +195,7 @@ Apply — the `create` procedure of the starter-kits router, since tRPC reserves
    This step waits for the Agent to be reachable, like every skill install, so a kit with external skills returns once the Agent is up; its verdicts ride back on the apply result, and a failure here is reported, never compensated by deleting the Agent — the requirements that justify a refusal were all checked before create.
    The apply is recorded in the security log last, once the outcome including the skill verdicts is known, and recorded once more as usage activity naming the kit it applied, so which kits people take up and what they do with the Agent afterwards are answerable from one log ([usage tracking](usage-tracking.md)).
 
-The catalog lives in one place, the **Browse Kits modal**, opened from the rail's **Starter kits** entry and from Home's browse button.
+The catalog lives in one place, the **Browse Kits modal**, opened from the sidebar's **Starter kits** entry and from Home's browse button.
 Its first card, **Default**, is no kit: it creates a plain agent at once.
 A kit pick opens the **kit modal** at the kit's own URL over Home, which shows what the kit brings and takes the only input apply needs — the agent's name and avatar (generated, editable), the required connections, the schedules to adjust or skip, and the Slack channel — then applies without a further page.
 Every kit shows at one size.

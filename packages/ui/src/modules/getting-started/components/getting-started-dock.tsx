@@ -35,7 +35,7 @@ interface Props {
  * onboarding progress. While a celebration
  * plays, the checklist shows as the pill, so both fit on a short screen. On a
  * page it is fixed to
- * the window, above the mobile navigation bar. In the chat it sits inside the
+ * the lower right corner of the window. In the chat it sits inside the
  * message area, so it never covers the composer below it.
  */
 export function GettingStartedDock({ placement }: Props) {

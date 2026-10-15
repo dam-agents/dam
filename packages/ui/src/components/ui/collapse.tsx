@@ -2,6 +2,8 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
+const CLOSE_MS = 250;
+
 function prefersReducedMotion(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
@@ -24,8 +26,12 @@ export function Collapse({
       const animatesClosed = expandedRef.current && !prefersReducedMotion();
       expandedRef.current = false;
       setExpanded(false);
-      if (!animatesClosed) setMounted(false);
-      return;
+      if (!animatesClosed) {
+        setMounted(false);
+        return;
+      }
+      const timer = setTimeout(() => setMounted(false), CLOSE_MS);
+      return () => clearTimeout(timer);
     }
     setMounted(true);
     const frame = requestAnimationFrame(() => {
