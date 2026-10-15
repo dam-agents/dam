@@ -1,6 +1,13 @@
-import { Add, Checkmark, ChevronDown } from "@carbon/icons-react";
+import { Checkmark, ChevronDown } from "@carbon/icons-react";
 import type { TabState } from "agent-runtime-api";
-import { type KeyboardEvent, useEffect, useRef, type WheelEvent } from "react";
+import {
+  type KeyboardEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type WheelEvent,
+} from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -11,7 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip } from "@/components/ui/tooltip";
 
-import { tabLabel } from "../lib/tabs.js";
+import { tabLabel, tabWidths } from "../lib/tabs.js";
 import { BrowserTab } from "./browser-tab.js";
 
 interface Props {
@@ -19,36 +26,54 @@ interface Props {
   activeTab: string | null;
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
-  onNew: () => void;
 }
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the browser panel's tab bar: the tabs of the
  * agent's one browser, the one on screen marked, each selected and closed by
- * its target id. Tabs shrink to a minimum width, then scroll, keeping the
- * active one in view; the list button beside them reaches every tab when the
- * bar is too narrow to show them. Arrow keys, Home and End move between tabs
- * from the focused tab, as in any tab list; Delete closes the focused tab and
- * moves focus to its neighbour, and a middle click closes one too.
+ * its target id. As in Safari, the tabs share the bar's width evenly; when
+ * that is too narrow to read a title, the active tab keeps a readable width
+ * and the others shrink to share the rest, down to a minimum, then scroll,
+ * keeping the active one in view. The list button beside them reaches every
+ * tab when the bar is too narrow to show them. Arrow keys, Home and End move
+ * between tabs from the focused tab, as in any tab list; Delete closes the
+ * focused tab and moves focus to its neighbour, and a middle click closes one
+ * too.
  */
-export function BrowserTabBar({
-  tabs,
-  activeTab,
-  onSelect,
-  onClose,
-  onNew,
-}: Props) {
+export function BrowserTabBar({ tabs, activeTab, onSelect, onClose }: Props) {
   const triggers = useRef(new Map<string, HTMLButtonElement>());
+  const [list, setList] = useState<HTMLDivElement | null>(null);
+  const [listWidth, setListWidth] = useState<number | null>(null);
   const tabStop = tabs.some((t) => t.id === activeTab)
     ? activeTab
     : tabs[0]?.id;
 
-  useEffect(() => {
+  const revealActive = useCallback(() => {
     if (!activeTab) return;
     triggers.current
       .get(activeTab)
       ?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [activeTab, tabs.length]);
+  }, [activeTab]);
+
+  useEffect(revealActive, [revealActive, tabs.length]);
+
+  useEffect(() => {
+    if (!list) return;
+    const ro = new ResizeObserver(([entry]) =>
+      setListWidth(entry.contentRect.width),
+    );
+    ro.observe(list);
+    return () => ro.disconnect();
+  }, [list]);
+
+  const widths =
+    listWidth === null
+      ? undefined
+      : tabWidths(
+          listWidth,
+          tabs.length,
+          tabs.findIndex((t) => t.id === activeTab),
+        );
 
   function handleKeyDown(event: KeyboardEvent, focused: string) {
     const at = tabs.findIndex((t) => t.id === focused);
@@ -82,18 +107,21 @@ export function BrowserTabBar({
   return (
     <div
       data-testid="browser-tabs"
-      className="flex h-9 shrink-0 items-end gap-1 border-b border-border bg-muted/40 px-2"
+      className="flex h-9 shrink-0 items-center gap-1 border-b border-border bg-muted/40 px-2"
     >
       <div
+        ref={setList}
         role="tablist"
         aria-label="Tabs in the agent's browser"
         onWheel={handleWheel}
-        className="flex min-w-0 flex-1 items-end gap-0.5 overflow-x-auto [scrollbar-width:none]"
+        onTransitionEnd={(e) => e.propertyName === "width" && revealActive()}
+        className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]"
       >
-        {tabs.map((tab) => (
+        {tabs.map((tab, i) => (
           <BrowserTab
             key={tab.id}
             tab={tab}
+            width={widths?.[i]}
             active={tab.id === activeTab}
             focusable={tab.id === tabStop}
             triggerRef={(node) => {
@@ -106,16 +134,7 @@ export function BrowserTabBar({
           />
         ))}
       </div>
-      <div className="flex shrink-0 items-center self-center">
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label="New tab"
-          tooltip="New tab"
-          onClick={onNew}
-        >
-          <Add size={16} />
-        </Button>
+      <div className="flex shrink-0 items-center">
         <DropdownMenu>
           <Tooltip content="All tabs">
             <DropdownMenuTrigger asChild>
