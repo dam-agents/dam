@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-10-15
+Last verified: 2026-10-16
 
 ## Overview
 
@@ -293,6 +293,20 @@ The endpoint's model list names models but does not describe them, so the Connec
 Pi also needs the reasoning capability and OpenAI-style reasoning effort: the endpoint ignores the switch GLM's own vendor API uses, so Pi's built-in description would be wrong here.
 Pi applies these hints to every listed model.
 Its stream can carry the end of thinking and the start of the answer in one piece, so the image's Pi extension preserves thinking-before-answer order.
+
+### Built-in preset: platform LLM
+
+A model server the operator hosts in the cluster, offered as a provider that needs no key.
+The chart's `apiServer.platformProvider` names its root URL and model; without a root URL the template does not exist and the `platform-provider` [feature](features.md) is off for everyone.
+The user never connects it: the feature flag owns the Connection.
+Turning the flag on gives the user one Connection from the `platform-llm` template, named after the brand; turning it off removes it, which revokes it from every Agent holding it.
+With the install's mode `on` there is no flag change to react to, so the first listing of the user's Connections provisions it, and a listing with the flag off removes a leftover one.
+The user's own create and delete refuse the template, so the Connection cannot be duplicated or dropped while the flag says it should exist.
+It is created like any provider Connection, so the [first-provider grant](agent-lifecycle.md#create) attaches it to Agents that hold no provider; otherwise a user grants it per Agent.
+The Connection stores no credential.
+It contributes the base URLs and inert key placeholders each harness reads (the OpenAI route under `/v1`, the Anthropic route at the root), the model pin, and an `egress-allow` rule for the server's host and port over plain HTTP.
+The server is in the cluster, so the gateway also needs a network path to it, which the chart opens per peer.
+Calls on it are free: the server is self-hosted, so the Connection takes no spend limit.
 
 ### App preset: AWS Bedrock
 

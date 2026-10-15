@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import {
   parseKbShareString,
+  PLATFORM_LLM_TEMPLATE_ID,
   PROVIDER_TEMPLATE_IDS,
   providerTypeForTemplateId,
   type ConnectionStatus,
@@ -128,6 +129,10 @@ function assertNoUnaddressableRival(
   }
 }
 
+export interface PlatformLlmConnections {
+  reconcilePlatformConnection(): Promise<void>;
+}
+
 export function createConnectionsService(deps: {
   ownerId: string;
   templates: ConnectionTemplateRegistry;
@@ -153,7 +158,8 @@ export function createConnectionsService(deps: {
     reachable: boolean;
   } | null>;
   maxSharedKbConnections?: number;
-}): ConnectionsService {
+  platformProviderEnabled?: () => Promise<boolean>;
+}): ConnectionsService & PlatformLlmConnections {
   const maxSharedKbConnections =
     deps.maxSharedKbConnections ?? MAX_SHARED_KB_CONNECTIONS_PER_OWNER;
   function toView(conn: Connection): ConnectionView {
@@ -761,7 +767,7 @@ export function createConnectionsService(deps: {
     });
   }
 
-  return {
+  const service: ConnectionsService = {
     async listTemplates(): Promise<ConnectionTemplateView[]> {
       const templates = deps.templates.list();
       const family = templates.some(inheritsFamily)
@@ -1552,6 +1558,76 @@ export function createConnectionsService(deps: {
         },
       });
     },
+  };
+
+  const platformConnections = async () =>
+    (await deps.repo.listByOwner(deps.ownerId)).filter(
+      (c) => c.templateId === PLATFORM_LLM_TEMPLATE_ID,
+    );
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: the built-in provider is one Connection per
+   * user, which the feature flag owns: it exists while the flag is on and is
+   * removed once it is off, and never through the user's own create or
+   * delete. The flag is read rather than taken from the change event, because
+   * a user can record a flag that the install's mode overrides. A flag change
+   * and a listing can both reconcile at once, so each re-checks under one
+   * per-owner lock and the user never ends up with two.
+   */
+  async function reconcilePlatformConnection(): Promise<void> {
+    if (!deps.platformProviderEnabled) return;
+    const enabled = await deps.platformProviderEnabled();
+    if (enabled && !deps.templates.get(PLATFORM_LLM_TEMPLATE_ID)) return;
+    if ((await platformConnections()).length > 0 === enabled) return;
+    await deps.connectionLock(`platform-llm:${deps.ownerId}`, async () => {
+      const held = await platformConnections();
+      if (!enabled) {
+        for (const conn of held) await service.deleteConnection(conn.id);
+      } else if (held.length === 0) {
+        await service.createFromTemplate({
+          templateId: PLATFORM_LLM_TEMPLATE_ID,
+          name: deps.brandName,
+          authKind: "none",
+        });
+      }
+    });
+  }
+
+  const refuseUserManaged = () =>
+    new TRPCError({
+      code: "FORBIDDEN",
+      message:
+        "The built-in provider is managed by its feature. Turn the feature on or off in Settings instead.",
+    });
+
+  return {
+    ...service,
+    async listConnections() {
+      await reconcilePlatformConnection().catch((err: unknown) =>
+        securityLog("warn", "connection.platform_provider_reconcile_failed", {
+          category: "credential",
+          actor: deps.ownerId,
+          actorKind: "user",
+          result: "failure",
+          reason: err instanceof Error ? err.message : "unknown",
+        }),
+      );
+      return service.listConnections();
+    },
+    async createFromTemplate(input) {
+      if (input.templateId === PLATFORM_LLM_TEMPLATE_ID) {
+        throw refuseUserManaged();
+      }
+      return service.createFromTemplate(input);
+    },
+    async deleteConnection(id) {
+      const conn = await deps.repo.get(id, deps.ownerId);
+      if (conn?.templateId === PLATFORM_LLM_TEMPLATE_ID) {
+        throw refuseUserManaged();
+      }
+      return service.deleteConnection(id);
+    },
+    reconcilePlatformConnection,
   };
 }
 

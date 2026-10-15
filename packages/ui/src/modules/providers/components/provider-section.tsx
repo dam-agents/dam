@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useStore } from "../../../store.js";
 import type { ProviderPresetType } from "../../../types.js";
 import { useDeleteConnection } from "../../connections/api/mutations.js";
+import { useFeatures } from "../../features/api/queries.js";
 import { useHarnessCatalog } from "../../sessions/api/session-pair.js";
 import { useProviderItems } from "../hooks/use-provider-items.js";
 import { PROVIDER_ROWS } from "../lib/provider-rows.js";
@@ -19,6 +20,10 @@ export function ProviderSection({
 } = {}) {
   const { itemByType, isPending } = useProviderItems();
   const { data: catalog, isPending: catalogPending } = useHarnessCatalog();
+  const { data: flags } = useFeatures();
+  const rows = PROVIDER_ROWS.filter(
+    (row) => row.type !== "platform" || flags?.["platform-provider"],
+  );
   const showConfirm = useStore((s) => s.showConfirm);
   const deleteConnection = useDeleteConnection();
   const [dialog, setDialog] = useState<{
@@ -43,14 +48,15 @@ export function ProviderSection({
     <>
       <div className="flex flex-col gap-3">
         {isPending || catalogPending
-          ? PROVIDER_ROWS.map((row) => <ProviderRow.Skeleton key={row.type} />)
-          : PROVIDER_ROWS.map((row) => {
+          ? rows.map((row) => <ProviderRow.Skeleton key={row.type} />)
+          : rows.map((row) => {
               const item = itemByType.get(row.type);
+              const builtIn = row.type === "platform";
               return (
                 <ProviderRow
                   key={row.type}
                   type={row.type}
-                  connected={!!item}
+                  connected={builtIn || !!item}
                   harnesses={catalog?.harnesses
                     .filter((h) =>
                       harnessFits(
@@ -68,10 +74,13 @@ export function ProviderSection({
                     )
                   }
                   connectedAction={onConnected && "Use"}
-                  onOpen={() =>
-                    item && onConnected
-                      ? onConnected(item.id)
-                      : setDialog({ provider: row.type, item })
+                  onOpen={
+                    builtIn
+                      ? item && onConnected && (() => onConnected(item.id))
+                      : () =>
+                          item && onConnected
+                            ? onConnected(item.id)
+                            : setDialog({ provider: row.type, item })
                   }
                 />
               );

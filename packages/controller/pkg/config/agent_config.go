@@ -126,10 +126,17 @@ type VMRunnerClusterDNS struct {
 	Ports     []int32           `json:"ports,omitempty"`
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: where a gateway may go inside the network, beyond the public internet and the platform's own pods. ExtraCIDRs are private ranges an install opens for its own enterprise services; the cloud metadata endpoints stay closed inside them. ClusterDNS selects the cluster DNS pods the gateway resolves upstream names through.
+// UNIT_BOUNDARY_DESCRIPTION: where a gateway may go inside the network, beyond the public internet and the platform's own pods. ExtraCIDRs are private ranges an install opens for its own enterprise services; the cloud metadata endpoints stay closed inside them. ClusterDNS selects the cluster DNS pods the gateway resolves upstream names through. Peers are in-cluster services an install opens to every gateway, such as a self-hosted model server, each on its own TCP ports.
 type GatewayEgress struct {
-	ExtraCIDRs []string           `json:"extraCidrs,omitempty"`
-	ClusterDNS VMRunnerClusterDNS `json:"clusterDns,omitempty"`
+	ExtraCIDRs []string            `json:"extraCidrs,omitempty"`
+	ClusterDNS VMRunnerClusterDNS  `json:"clusterDns,omitempty"`
+	Peers      []GatewayEgressPeer `json:"peers,omitempty"`
+}
+
+type GatewayEgressPeer struct {
+	Namespace string            `json:"namespace"`
+	PodLabels map[string]string `json:"podLabels,omitempty"`
+	Ports     []int32           `json:"ports"`
 }
 
 type VMRunnerRollout struct {

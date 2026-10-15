@@ -1,0 +1,90 @@
+// TEST_OVERVIEW: the built-in provider row in Settings / Providers shows only while the platform-provider feature is on, carries the brand name, always reads Connected, and offers nothing to open, so no connect form and no Disconnect action can reach it.
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { ProviderSection } from "../../modules/providers/components/provider-section.js";
+
+const state = vi.hoisted(() => ({
+  flags: {} as Record<string, boolean>,
+  items: new Map<string, { id: string; conn: { templateId: string } }>(),
+}));
+
+vi.mock("../../brand.js", () => ({ getBrand: () => ({ name: "Acme" }) }));
+vi.mock("../../store.js", () => ({
+  useStore: (select: (s: { showConfirm: () => void }) => unknown) =>
+    select({ showConfirm: vi.fn() }),
+}));
+vi.mock("../../modules/features/api/queries.js", () => ({
+  useFeatures: () => ({ data: state.flags }),
+}));
+vi.mock("../../modules/connections/api/mutations.js", () => ({
+  useDeleteConnection: () => ({ mutate: vi.fn() }),
+}));
+vi.mock("../../modules/sessions/api/session-pair.js", () => ({
+  useHarnessCatalog: () => ({ data: { harnesses: [] }, isPending: false }),
+}));
+vi.mock("../../modules/providers/components/provider-balance.js", () => ({
+  ProviderBalance: () => null,
+}));
+vi.mock(
+  "../../modules/providers/components/provider-connect-dialog.js",
+  () => ({
+    ProviderConnectDialog: () => null,
+  }),
+);
+vi.mock("../../modules/providers/hooks/use-provider-items.js", () => ({
+  useProviderItems: () => ({ itemByType: state.items, isPending: false }),
+}));
+
+const render = (onConnected?: (id: string) => void) =>
+  renderToStaticMarkup(
+    createElement<NonNullable<Parameters<typeof ProviderSection>[0]>>(
+      ProviderSection,
+      {
+        onConnected,
+      },
+    ),
+  );
+
+const platformRow = (html: string) =>
+  html
+    .split(/(?=<(?:button|div class="rounded-lg)[^>]*>)/)
+    .find((part) => part.includes('title="Acme"'));
+
+describe("built-in provider row", () => {
+  beforeEach(() => {
+    state.flags = {};
+    state.items = new Map();
+  });
+
+  // TEST_SCENARIO: with the feature off, no row carries the brand name.
+  it("is hidden while the feature is off", () => {
+    expect(render()).not.toContain("Acme");
+  });
+
+  // TEST_SCENARIO: with the feature on and no connection listed yet, the row is titled with the brand, reads Connected, and is not a button that opens a form or a Disconnect action.
+  it("is a static, connected row titled with the brand", () => {
+    state.flags = { "platform-provider": true };
+    const html = render();
+    const row = platformRow(html);
+    expect(row).toBeDefined();
+    expect(row).toContain(">Acme</p>");
+    expect(row).toContain("Connected");
+    expect(row).not.toContain("Not connected");
+    expect(row?.startsWith("<button")).toBe(false);
+    expect(html).not.toMatch(/(Edit|Connect) Acme/);
+    expect(html).not.toContain("Disconnect");
+  });
+
+  // TEST_SCENARIO: in the picker, the connected built-in row is a Use button, the only action it ever offers.
+  it("offers Use in the picker once its connection exists", () => {
+    state.flags = { "platform-provider": true };
+    state.items = new Map([
+      ["platform", { id: "c1", conn: { templateId: "platform-llm" } }],
+    ]);
+    const html = render(() => {});
+    expect(html).toContain('aria-label="Use Acme"');
+    expect(html).not.toContain("Disconnect");
+  });
+});

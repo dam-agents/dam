@@ -21,8 +21,15 @@ import { createProviderKeyProbe } from "./infrastructure/provider-key-probe.js";
 import { createAcceptingProviderKeyProbe } from "./infrastructure/accepting-provider-key-probe.js";
 import type { ProviderKeyProbe } from "./domain/provider-key-probe.js";
 import { createConnectionTemplateRegistry } from "./domain/connection-template.js";
-import { buildCatalog, type OperatorCredentials } from "./domain/catalog.js";
-import { createConnectionsService } from "./services/connections-service.js";
+import {
+  buildCatalog,
+  type OperatorCredentials,
+  type PlatformProviderEndpoint,
+} from "./domain/catalog.js";
+import {
+  createConnectionsService,
+  type PlatformLlmConnections,
+} from "./services/connections-service.js";
 import {
   createContributionFanOut,
   type FanOutPort,
@@ -57,6 +64,7 @@ export interface ComposeConnectionsAtBootOpts {
   pendingFlowStore: TtlStore<PendingFlow>;
   operatorCredentials?: OperatorCredentials;
   shareBaseUrl?: string;
+  platformProvider?: PlatformProviderEndpoint | null;
   e2eEnabled?: boolean;
 }
 
@@ -66,6 +74,7 @@ export function composeConnectionsAtBoot(
   const templates = createConnectionTemplateRegistry(
     buildCatalog(opts.operatorCredentials, {
       ...(opts.shareBaseUrl ? { shareBaseUrl: opts.shareBaseUrl } : {}),
+      platformProvider: opts.platformProvider ?? null,
     }),
   );
 
@@ -143,7 +152,8 @@ export function composeConnectionsForOwner(opts: {
   oauthCallbackUrl: string;
   brandName: string;
   maxSharedKbConnections?: number;
-}): ConnectionsService {
+  platformProviderEnabled: () => Promise<boolean>;
+}): ConnectionsService & PlatformLlmConnections {
   const repo = createConnectionsRepository(opts.db);
   const connectionLock = createXactLock(opts.db);
 
@@ -192,6 +202,7 @@ export function composeConnectionsForOwner(opts: {
     connectionLock,
     isOwnedAgent: (agentId) => opts.agentsRepo.isOwnedBy(agentId, opts.ownerId),
     resolveKbShare: createKbShareResolver(opts.db),
+    platformProviderEnabled: opts.platformProviderEnabled,
     ...(opts.maxSharedKbConnections !== undefined
       ? { maxSharedKbConnections: opts.maxSharedKbConnections }
       : {}),

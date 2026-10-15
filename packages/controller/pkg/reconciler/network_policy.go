@@ -101,7 +101,7 @@ func BuildGatewayIngressNetworkPolicy(pairKey, owner string, vm bool, cfg *confi
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: ext_authz decides on the host name an agent asks for, and Envoy then resolves that name and dials whatever address comes back, so an approved name that resolves to a private address — by its owner's DNS record or by rebinding after approval — would carry the agent into the cluster, the node, or the cloud metadata endpoint. The kernel closes that path whatever a name resolves to: the gateway reaches the public internet, minus the private, loopback, link-local, CGNAT and this-network ranges. Inside the network it reaches only what its own clusters dial: the cluster DNS pods, the api-server on ext-authz and harness, the harness waypoint, the object store and the telemetry collector, each on its own port and on HBONE 15008, because the gateway is in the ambient mesh and ztunnel carries its in-mesh hops there. The ranges an install opens for its enterprise services come on top, with the metadata endpoints excepted inside them.
+// UNIT_BOUNDARY_DESCRIPTION: ext_authz decides on the host name an agent asks for, and Envoy then resolves that name and dials whatever address comes back, so an approved name that resolves to a private address — by its owner's DNS record or by rebinding after approval — would carry the agent into the cluster, the node, or the cloud metadata endpoint. The kernel closes that path whatever a name resolves to: the gateway reaches the public internet, minus the private, loopback, link-local, CGNAT and this-network ranges. Inside the network it reaches only what its own clusters dial: the cluster DNS pods, the api-server on ext-authz and harness, the harness waypoint, the object store and the telemetry collector, each on its own port and on HBONE 15008, because the gateway is in the ambient mesh and ztunnel carries its in-mesh hops there. The in-cluster peers and the ranges an install opens for its enterprise services come on top, each peer on its own ports and on HBONE, with the metadata endpoints excepted inside the ranges.
 func BuildGatewayEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerRef metav1.OwnerReference) *networkingv1.NetworkPolicy {
 	tcp := corev1.ProtocolTCP
 	tcpPorts := func(ports ...int) []networkingv1.NetworkPolicyPort {
@@ -154,6 +154,19 @@ func BuildGatewayEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerRe
 			rule.Ports = append(rule.Ports, networkingv1.NetworkPolicyPort{Protocol: &udp, Port: &port}, networkingv1.NetworkPolicyPort{Protocol: &tcp, Port: &port})
 		}
 		egress = append(egress, rule)
+	}
+	for _, peer := range cfg.GatewayEgress.Peers {
+		ports := []int{hbonePort}
+		for _, p := range peer.Ports {
+			ports = append(ports, int(p))
+		}
+		egress = append(egress, networkingv1.NetworkPolicyEgressRule{
+			To: []networkingv1.NetworkPolicyPeer{{
+				NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": peer.Namespace}},
+				PodSelector:       &metav1.LabelSelector{MatchLabels: peer.PodLabels},
+			}},
+			Ports: tcpPorts(ports...),
+		})
 	}
 	for _, cidr := range cfg.GatewayEgress.ExtraCIDRs {
 		except, metadata := exceptMetadata(cidr, nil, gatewayMetadataCIDRs)

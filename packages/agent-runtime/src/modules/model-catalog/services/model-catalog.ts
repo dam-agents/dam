@@ -149,7 +149,9 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
         ...(base.harnesses && { harnesses: base.harnesses }),
         metadata: layerMetadata({
           upstreamId: m.id,
-          provider: m.info ?? null,
+          provider: listing.prices
+            ? { ...m.info, prices: listing.prices }
+            : (m.info ?? null),
           table: deps.table,
           presetEnv: layer.env,
         }),

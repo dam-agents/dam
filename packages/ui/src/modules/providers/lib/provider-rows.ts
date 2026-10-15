@@ -1,4 +1,5 @@
-import type { ProviderPresetType } from "../../../types.js";
+import { getBrand } from "../../../brand.js";
+import { type ProviderPresetType, PROVIDERS } from "../../../types.js";
 
 interface ProviderRowDef {
   type: ProviderPresetType;
@@ -11,7 +12,15 @@ export const IBM_LITELLM_DESCRIPTION =
 export const CURVE_BENDER_DESCRIPTION =
   "GLM 5.3 on RITS via LiteLLM. Nemotron is reserved for Claude's auto-permission classifier.";
 
+export function providerName(type: ProviderPresetType): string {
+  return type === "platform" ? getBrand().name : PROVIDERS[type].displayName;
+}
+
 export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
+  {
+    type: "platform",
+    description: "Models this install serves itself, with no API key.",
+  },
   {
     type: "ibm-litellm",
     description: IBM_LITELLM_DESCRIPTION,

@@ -8,6 +8,10 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+
+	"github.com/dam-agents/dam/packages/controller/pkg/config"
 )
 
 func TestBuildAgentEgressNetworkPolicy_LongLivedPair(t *testing.T) {
@@ -170,6 +174,23 @@ func TestGatewayEgressAdmitsThePlatformPodsItDialsOnTheirPortsOnly(t *testing.T)
 		"default/map[app.kubernetes.io/component:clickstack-collector app.kubernetes.io/instance:platform]": {4318, 15008},
 		"kube-system/map[k8s-app:kube-dns]":                                                                 {53, 53},
 	}, ports)
+}
+
+func TestGatewayEgressAdmitsOperatorPeersOnTheirPortsOnly(t *testing.T) {
+	cfg := *testConfig
+	cfg.GatewayEgress.Peers = []config.GatewayEgressPeer{{Namespace: "gpu", PodLabels: map[string]string{"app": "llm"}, Ports: []int32{8000}}}
+	np := BuildGatewayEgressNetworkPolicy("my-instance", &cfg, configMapOwnerRef(testOwnerCM))
+	tcp := corev1.ProtocolTCP
+	port, hbone := intstr.FromInt(8000), intstr.FromInt(hbonePort)
+	assert.Contains(t, np.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
+		To: []networkingv1.NetworkPolicyPeer{{
+			NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": "gpu"}},
+			PodSelector:       &metav1.LabelSelector{MatchLabels: map[string]string{"app": "llm"}},
+		}},
+		Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &hbone}, {Protocol: &tcp, Port: &port}},
+	})
+	cfg.GatewayEgress.Peers = nil
+	assert.Len(t, BuildGatewayEgressNetworkPolicy("my-instance", &cfg, configMapOwnerRef(testOwnerCM)).Spec.Egress, len(np.Spec.Egress)-1, "no peer adds no rule")
 }
 
 func TestGatewayEgressOpensOperatorRangesButNeverTheMetadataEndpoint(t *testing.T) {

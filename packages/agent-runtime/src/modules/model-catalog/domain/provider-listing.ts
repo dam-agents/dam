@@ -1,6 +1,6 @@
 import type { ProviderAlias } from "api-server-api";
 import type { ModelDiscoverySpec } from "../../runtime-channel/manifest.js";
-import type { ModelDialect } from "./catalog-entry.js";
+import type { ModelDialect, ModelPrices } from "./catalog-entry.js";
 
 const ALL_DIALECTS: readonly ModelDialect[] = [
   "anthropic-messages",
@@ -22,6 +22,7 @@ export const PROVIDER_DIALECTS: Record<ProviderAlias, readonly ModelDialect[]> =
     openai: ["openai-chat", "openai-responses"],
     bedrock: [],
     bob: ["openai-chat"],
+    platform: ALL_DIALECTS,
   };
 
 export interface ProviderListing {
@@ -29,7 +30,15 @@ export interface ProviderListing {
   defaultBase?: string;
   keep?: (upstreamId: string) => boolean;
   harnesses?: readonly string[];
+  prices?: ModelPrices;
 }
+
+const FREE: ModelPrices = {
+  inputPerToken: 0,
+  outputPerToken: 0,
+  cacheReadPerToken: 0,
+  cacheWritePerToken: 0,
+};
 
 export const ANTHROPIC_OAUTH_TEMPLATE = "anthropic-oauth";
 /**
@@ -56,7 +65,9 @@ export const BOB_LISTING_USER_AGENT = "platform-bob-catalog/1";
  * its Connection's env layer. IBM's virtual keys get 403 on every model-info
  * route, so the LiteLLM proxies are read through `/v1/models` and take their
  * metadata from the price table; Bob's gateway is the one provider-sourced
- * listing. Null for a template the router does not serve (Bedrock).
+ * listing. The platform's self-hosted vLLM is listed without a key, and its
+ * models cost nothing. Null for a template the router does not serve
+ * (Bedrock).
  */
 export function listingForTemplate(templateId: string): ProviderListing | null {
   switch (templateId) {
@@ -68,6 +79,14 @@ export function listingForTemplate(templateId: string): ProviderListing | null {
           tokenEnv: ["OPENAI_API_KEY", "ANTHROPIC_AUTH_TOKEN"],
           shape: "openai-models",
         },
+      };
+    case "platform-llm":
+      return {
+        spec: {
+          urlEnv: ["PLATFORM_LLM_BASE_URL", "OPENAI_BASE_URL"],
+          shape: "openai-models",
+        },
+        prices: FREE,
       };
     case "anthropic":
       return {

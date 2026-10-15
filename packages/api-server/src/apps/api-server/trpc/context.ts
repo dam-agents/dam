@@ -117,6 +117,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       connectionRulesSync: createConnectionRulesSyncAdapter(db),
       oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
       brandName: config.brand.name,
+      platformProviderEnabled: async () =>
+        (await features.flags())["platform-provider"],
     });
     const { budgets, resizeGate, storageGate } = composeBudgetsModule({
       k8s: k8sClient,
