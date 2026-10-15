@@ -33,10 +33,7 @@ import {
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
 import { askAgainWhenReady } from "../../agents/lib/agent-start.js";
-import {
-  findAgentSession,
-  removeQueuedPrompt,
-} from "../api/acp-session-ops.js";
+import { findAgentSession } from "../api/acp-session-ops.js";
 import { acpSessionsKeys } from "../api/keys.js";
 import {
   fetchSessionHistory,
@@ -46,17 +43,13 @@ import {
 } from "../api/queries.js";
 import { draftKey } from "../lib/draft-key.js";
 import { createPromptDelivery } from "../lib/prompt-delivery.js";
-import {
-  isRewriteBusy,
-  isRewriteRefused,
-  messageText,
-} from "../lib/unanswered-prompt.js";
 import { readUndelivered } from "../lib/undelivered-store.js";
 import type { RewriteMode } from "../store/sessions.js";
 import { useAcpConnection } from "./use-acp-connection.js";
 import { type SendPromptOptions, useAcpPrompt } from "./use-acp-prompt.js";
 import { useAcpSessionEngagement } from "./use-acp-session-engagement.js";
 import { useAcpUpdateHandler } from "./use-acp-update-handler.js";
+import { useTakeBackPrompt } from "./use-take-back-prompt.js";
 
 async function classifyResumeFailure(
   agentId: string,
@@ -405,97 +398,12 @@ export function useAcpSession(
     [selectedAgent, ensureLive, bindEngagement, setSessionId, setMessages],
   );
 
-  const takeBackPrompt = useCallback(
-    async (take: {
-      messageId: string;
-      upToMessageId: string | null | undefined;
-      title: string | null;
-    }): Promise<void> => {
-      const state = useStore.getState();
-      const sid = state.sessionId;
-      const at = state.messages.findIndex((m) => m.id === take.messageId);
-      if (!selectedAgent || !sid || at === -1) return;
-      const text = messageText(state.messages[at]);
-      const promptId = state.messages[at + 1]?.promptId;
-      const restoreText = (sessionId: string) => {
-        const key = draftKey(selectedAgent, sessionId);
-        const typed = useStore.getState().drafts[key]?.text ?? "";
-        useStore.getState().setDraft(key, {
-          text: typed.length > 0 ? `${text}\n\n${typed}` : text,
-        });
-      };
-      try {
-        const unqueued =
-          promptId !== undefined &&
-          state.queuedPrompts.some((q) => q.promptId === promptId) &&
-          (await removeQueuedPrompt(selectedAgent, sid, promptId).then(
-            () => true,
-            () => false,
-          ));
-        if (!unqueued) await stopAgent();
-        if (take.upToMessageId === null) {
-          await state.discardSessionToDraft(sid, text);
-          return;
-        }
-        if (unqueued) {
-          setMessages((prev) => prev.slice(0, at));
-          restoreText(sid);
-          return;
-        }
-        const live = await ensureLive();
-        if (!live) throw new Error("the agent is not connected");
-        const params = {
-          sessionId: sid,
-          mode: "rewind",
-          messageId: take.messageId,
-          ...(take.upToMessageId !== undefined && {
-            upToMessageId: take.upToMessageId,
-          }),
-          ...(take.title ? { title: take.title } : {}),
-        };
-        const result = await retryWhileRewriteBusy(
-          () =>
-            live.connection.agent.notify("session/cancel", { sessionId: sid }),
-          () =>
-            live.connection.agent.request(
-              "platform/rewriteFrom",
-              params,
-            ) as Promise<{ sessionId: string }>,
-        );
-        setMessages((prev) => prev.slice(0, at));
-        if (result.sessionId === sid) {
-          restoreText(sid);
-          return;
-        }
-        bindEngagement(result.sessionId);
-        setSessionId(result.sessionId);
-        useStore
-          .getState()
-          .migrateDraft(
-            draftKey(selectedAgent, sid),
-            draftKey(selectedAgent, result.sessionId),
-          );
-        restoreText(result.sessionId);
-        void queryClient.invalidateQueries({
-          queryKey: acpSessionsKeys.agent(selectedAgent),
-        });
-      } catch (err) {
-        if (isRewriteRefused(err)) return;
-        emitToast({
-          kind: "error",
-          message: `Couldn't take the message back: ${extractErrorMessage(err)}`,
-        });
-      }
-    },
-    [
-      selectedAgent,
-      stopAgent,
-      ensureLive,
-      bindEngagement,
-      setSessionId,
-      setMessages,
-    ],
-  );
+  const takeBackPrompt = useTakeBackPrompt({
+    selectedAgent,
+    stopAgent,
+    ensureLive,
+    bindEngagement,
+  });
 
   const sendPrompt = useCallback(
     (
@@ -533,22 +441,4 @@ function promptBlocksOf(parts: MessagePart[]): PromptBlock[] {
         ? [{ type: "text", text: p.text }]
         : [],
   );
-}
-
-const REWRITE_BUSY_RETRY_MS = 250;
-const REWRITE_BUSY_ATTEMPTS = 40;
-
-async function retryWhileRewriteBusy<T>(
-  stopTurn: () => Promise<void>,
-  ask: () => Promise<T>,
-): Promise<T> {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      return await ask();
-    } catch (err) {
-      if (!isRewriteBusy(err) || attempt >= REWRITE_BUSY_ATTEMPTS) throw err;
-      await stopTurn().catch(() => {});
-      await new Promise((r) => setTimeout(r, REWRITE_BUSY_RETRY_MS));
-    }
-  }
 }
