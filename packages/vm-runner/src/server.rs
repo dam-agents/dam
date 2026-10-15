@@ -485,12 +485,22 @@ impl Server {
         self.close_within(CLOSE_GRACE, None).await;
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: closes the runner after its machine API failed to serve. A runner its pod's loader supervises leaves every machine running, as a hand-off does: the loader goes back to the release this one replaced, or starts this one again, and that runner adopts them without a reboot. A runner with no loader is the pod's last process, so it stops them cleanly before the pod's end powers them off.
-    pub async fn close_failed(self: &Arc<Self>, supervised: bool) {
-        if supervised {
-            self.hand_off().await;
-        } else {
-            self.close().await;
+    // UNIT_BOUNDARY_DESCRIPTION: closes the runner after its machine API failed to serve. A runner its pod's loader supervises leaves every machine running, as a hand-off does: the loader goes back to the release this one replaced, or starts this one again, and that runner adopts them without a reboot. A pod stop that arrives during that close, through `stopped`, is the loader passing the pod's end on, so the machines are then stopped cleanly after all. A runner with no loader is the pod's last process, so it stops them before the pod's end powers them off.
+    pub async fn close_failed(
+        self: &Arc<Self>,
+        supervised: bool,
+        stopped: impl std::future::Future<Output = ()>,
+    ) {
+        if !supervised {
+            return self.close().await;
+        }
+        tokio::select! {
+            biased;
+            () = stopped => {
+                tracing::info!("vm runner: the pod stops while the runner closes after a failure; stopping its machines");
+                self.close().await;
+            }
+            () = self.hand_off() => {}
         }
     }
     async fn close_within(self: &Arc<Self>, grace: Duration, stopping: Option<Duration>) {

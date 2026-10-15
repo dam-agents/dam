@@ -232,7 +232,7 @@ pub fn copy_tree(from: &Path, dest: &Path) -> anyhow::Result<()> {
         .with_context(|| format!("moving the copy to {}", dest.display()))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a VMM running under `proc` boots from the runtime in `dir`. smolvm runs every VMM as `_boot-vm <boot-config>`, and the config names the guest agent's root the VMM serves, which the runner takes from the runtime it boots on. A VMM makes itself non-dumpable, so its maps and exe are shut to the loader, but its command line and its config are not. A VMM whose config cannot be read keeps every runtime: nothing else says which one it needs.
+// UNIT_BOUNDARY_DESCRIPTION: whether a VMM running under `proc` boots from the runtime in `dir`. smolvm runs every VMM as `_boot-vm <boot-config>`, and beside that config the runner records the guest agent root the VMM serves, which lies in the runtime it booted on; smolvm deletes the config itself once the VMM has read it, while the record stays. A VMM makes itself non-dumpable, so its maps and exe are shut to the loader, but its command line and that record are not. A VMM with no readable record, one an older release started, keeps every runtime: nothing else says which one it needs.
 pub fn booted_from(proc: &Path, dir: &Path) -> bool {
     std::fs::read_dir(proc)
         .into_iter()
@@ -247,11 +247,9 @@ pub fn booted_from(proc: &Path, dir: &Path) -> bool {
             ))
         })
         .any(|config| {
-            std::fs::read(&config)
+            std::fs::read_to_string(config.with_file_name(crate::runtime::AGENT_ROOTFS_FILE))
                 .ok()
-                .and_then(|body| serde_json::from_slice::<serde_json::Value>(&body).ok())
-                .and_then(|config| config["rootfs_path"].as_str().map(PathBuf::from))
-                .is_none_or(|rootfs| rootfs.starts_with(dir))
+                .is_none_or(|rootfs| Path::new(rootfs.trim()).starts_with(dir))
         })
 }
 
@@ -517,23 +515,25 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: a runtime stays in the pod while any VMM boots from it, which is how a machine booted before a hand-off keeps the runtime it booted. A VMM is non-dumpable, so it shows the loader no maps: the loader finds it by its `_boot-vm` command line and reads the guest agent root its config names. A VMM whose config is gone keeps every runtime.
+    // TEST_SCENARIO: a runtime stays in the pod while any VMM boots from it, which is how a machine booted before a hand-off keeps the runtime it booted. A VMM is non-dumpable, so it shows the loader no maps, and smolvm has deleted its boot config: the loader finds it by its `_boot-vm` command line and reads the guest agent root the runner recorded beside that config. A VMM with no record keeps every runtime.
     #[test]
     fn a_runtime_a_vmm_boots_from_is_in_use() {
         let dir = TempDir::new("release-booted");
         let proc = dir.path().join("proc");
-        let vmm = |pid: &str, config: &Path| {
+        let vmm = |pid: &str, vm: &str| {
             std::fs::create_dir_all(proc.join(pid)).unwrap();
+            let config = dir.path().join(vm).join("boot-config.json");
             let cmdline = format!("/proc/self/exe\0_boot-vm\0{}\0", config.display());
             std::fs::write(proc.join(pid).join("cmdline"), cmdline).unwrap();
+            dir.path().join(vm)
         };
-        let config = dir.path().join("boot-config.json");
+        let booted = vmm("42", "vm-a");
+        std::fs::create_dir_all(&booted).unwrap();
         std::fs::write(
-            &config,
-            r#"{"rootfs_path":"/pod/runtimes/a/agent-rootfs","mounts":[]}"#,
+            booted.join(crate::runtime::AGENT_ROOTFS_FILE),
+            "/pod/runtimes/a/agent-rootfs",
         )
         .unwrap();
-        vmm("42", &config);
         std::fs::create_dir_all(proc.join("7")).unwrap();
         std::fs::write(
             proc.join("7/cmdline"),
@@ -544,7 +544,7 @@ mod tests {
         assert!(!booted_from(&proc, Path::new("/pod/runtimes/ab")));
         assert!(!booted_from(&proc, Path::new("/pod/runtimes/b")));
 
-        vmm("43", &dir.path().join("gone/boot-config.json"));
+        vmm("43", "vm-older");
         assert!(booted_from(&proc, Path::new("/pod/runtimes/b")));
     }
 
