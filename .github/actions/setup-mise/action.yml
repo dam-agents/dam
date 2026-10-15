@@ -29,8 +29,9 @@ runs:
     - shell: bash
       run: |
         [ -n "${SOURCE_DATE_EPOCH:-}" ] || echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
-    # A PR never saves the tool cache: a branch must not write an entry main
-    # then restores. mise-action keys the cache by the tools a job names, so
+    # A PR or a merge group never saves the tool cache: a branch must not
+    # write an entry main then restores. mise-action keys the cache by the
+    # tools a job names, so
     # each install_args was its own entry, all of them rotating with every
     # mise.lock change and evicting the build caches from the repo's 10 GB.
     # Only the full install is cached, on x64 alone: a subset installs in
@@ -41,7 +42,7 @@ runs:
         version: "2026.10.4"
         install_args: ${{ inputs.install_args }}
         cache: ${{ inputs.cache == 'true' && inputs.install_args == '' && runner.arch == 'X64' }}
-        cache_save: ${{ github.event_name != 'pull_request' }}
+        cache_save: ${{ github.event_name != 'pull_request' && github.event_name != 'merge_group' }}
     - if: inputs.quay-username != ''
       shell: bash
       env:
