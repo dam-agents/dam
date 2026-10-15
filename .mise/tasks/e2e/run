@@ -132,7 +132,8 @@ for i in $(seq 1 "${E2E_MIGRATION_REPEAT:-10}"); do
     fail=$((fail + 1)); echo "=== migration iteration $i FAILED ==="
   fi
   kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.name}{" SMOLVM_SECCOMP="}{.spec.containers[*].env[?(@.name=="SMOLVM_SECCOMP")].value}{"\n"}{end}' | grep "SMOLVM_SECCOMP=[a-z]" || true
-  sudo dmesg | grep -c 'type=1326' || true
+  echo "processes by comm, seccomp mode, filter count (2+ filters = smolvm's on top of runtime/default):"
+  sudo sh -c 'for p in /proc/[0-9]*; do printf "%s %s %s\n" "$(cat $p/comm)" "$(awk "/^Seccomp:/{print \$2}" $p/status)" "$(awk "/^Seccomp_filters:/{print \$2}" $p/status)"; done 2>/dev/null' | awk '$3 >= 2' | sort | uniq -c || true
 done
 echo "migration iterations (SMOLVM_SECCOMP=${E2E_SECCOMP:-audit}): $pass passed, $fail failed" | tee -a "${GITHUB_STEP_SUMMARY:-/dev/null}"
 [ "$fail" = 0 ] || suite_rc=1
