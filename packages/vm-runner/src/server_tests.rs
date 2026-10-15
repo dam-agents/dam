@@ -282,14 +282,14 @@ impl Harness {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: waits on the machine's status version, as the controller does, until the status satisfies `done`.
+    // UNIT_BOUNDARY_DESCRIPTION: waits on the machine's status version, as the controller does, until the status satisfies `done`. The deadline is long because a boot runs the fake crane several times, and on a loaded Mac each run of a fresh script takes up to a second; only a failing test waits it out.
     async fn until(
         &self,
         id: &str,
         what: &str,
         done: impl Fn(&MachineStatus) -> bool,
     ) -> MachineStatus {
-        let deadline = Instant::now() + Duration::from_secs(10);
+        let deadline = Instant::now() + Duration::from_secs(30);
         let mut status = self.server.status(id);
         while !done(&status) {
             assert!(
@@ -309,9 +309,9 @@ impl Harness {
             .unwrap()
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: waits until the runtime has been called with `call`, so a test can act while that call is still running.
+    // UNIT_BOUNDARY_DESCRIPTION: waits until the runtime has been called with `call`, so a test can act while that call is still running. Its deadline is as long as `until`'s, for the same reason.
     async fn wait_for_call(&self, call: &str) {
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + Duration::from_secs(30);
         while !self.fake.calls().iter().any(|c| c == call) {
             assert!(
                 Instant::now() < deadline,
