@@ -28,13 +28,12 @@ if [ ! -x "$release/smolvm-bin" ]; then
   mv "$release.new" "$release"
 fi
 # platform-init and platform-runc run inside the guest, so they are the static
-# Linux binaries from the runner image, not anything built for this Mac, as
-# are the guest agent smolvm.patch rebuilds (it knows btrfs disks) and
-# the btrfs disk template. The image is rebuilt unless the
-# caller just did (SKIP_IMAGE_BUILD), so they match the runner built above.
+# Linux binaries from the runner image, not anything built for this Mac, as is
+# the btrfs disk template. The image is rebuilt unless the caller just did
+# (SKIP_IMAGE_BUILD), so they match the runner built above.
 image="$pkg/dist/oci/vm-runner.tar"
 [ -n "${SKIP_IMAGE_BUILD:-}" ] && [ -f "$image" ] || mise run //packages/vm-runner:oci
-for path in usr/local/libexec/vm-runner/platform-init usr/local/libexec/vm-runner/platform-runc opt/smolvm/agent-rootfs/usr/local/bin/smolvm-agent opt/smolvm/storage-template.btrfs.zst; do
+for path in usr/local/libexec/vm-runner/platform-init usr/local/libexec/vm-runner/platform-runc opt/smolvm/storage-template.btrfs.zst; do
   bin="${path##*/}"
   for blob in $(tar -tf "$image" | grep '^blobs/sha256/.'); do
     tar -xOf "$image" "$blob" | gzip -cdf | tar -xOf - "$path" > "$R/$bin.new" 2>/dev/null || true
@@ -86,7 +85,9 @@ mv "$R/vm-runner.new" "$R/vm-runner"
 mv "$R/platform-init.new" "$R/platform-init"
 mv "$R/platform-runc.new" "$R/platform-runc"
 mv "$R/storage-template.btrfs.zst.new" "$release/storage-template.btrfs.zst"
-mv "$R/smolvm-agent.new" "$release/agent-rootfs/usr/local/bin/smolvm-agent"
+# The guest's init, as in the runner image (see oci): platform-init, whose
+# first stage executes the release's copy from the share.
+install -m 755 "$R/platform-init" "$release/agent-rootfs/sbin/platform-init"
 mem_mib="${PLATFORM_VM_RUNNER_MEMORY_MIB:-$(( $(sysctl -n hw.memsize) / 1048576 / 3 ))}"
 (
   cd "$R"
