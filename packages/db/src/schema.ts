@@ -202,9 +202,10 @@ export const skillSources = pgTable(
       .notNull(),
   },
   (table) => [
-    uniqueIndex("skill_sources_owner_git_url_idx").on(
+    uniqueIndex("skill_sources_owner_git_url_path_idx").on(
       table.owner,
       table.gitUrl,
+      sql`coalesce(${table.path}, '')`,
     ),
     index("skill_sources_owner_idx").on(table.owner),
   ],

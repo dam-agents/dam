@@ -14,6 +14,8 @@ import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
 import { useToggleSet } from "@/hooks/use-toggle-set";
 
+import { withSourcePath } from "../../lib/skill-identity.js";
+
 export interface SaveSetGroup {
   source: SkillSource;
   skills: Skill[];
@@ -81,7 +83,7 @@ export function SaveSkillSetModal({
     const skills = snapshot.groups.flatMap((g) =>
       g.skills
         .filter((s) => marked.has(skillKey(s)))
-        .map((s) => ({ source: s.source, name: s.name })),
+        .map((s) => ({ source: s.source, name: s.name, ...withSourcePath(s) })),
     );
     const ok = await onCreate({ name: trimmed, skills });
     setSubmitting(false);

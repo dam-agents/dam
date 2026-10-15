@@ -18,6 +18,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { gitCompareUrl, repoSlug } from "@/lib/git-source";
 
+import type { SkillIdentity } from "../../lib/skill-identity.js";
 import { isDrifted } from "./skill-drift.js";
 import { SkillRow } from "./skill-row.js";
 import { SourceError } from "./skill-source-error.js";
@@ -93,7 +94,7 @@ export function SkillSourceCard({
   error: ScanFailure | null;
   scannedAt?: string;
   visibility?: "public" | "private";
-  installedRef: (source: string, name: string) => SkillRef | undefined;
+  installedRef: (skill: SkillIdentity) => SkillRef | undefined;
   busyKey: string | null;
   disabled: boolean;
   stateLoaded: boolean;
@@ -111,12 +112,8 @@ export function SkillSourceCard({
 }) {
   const loaded = skills !== undefined;
   const list = (skills ?? []).filter((s) => !suppressedNames?.has(s.name));
-  const enabled = list.filter(
-    (s) => installedRef(s.source, s.name) !== undefined,
-  );
-  const available = list.filter(
-    (s) => installedRef(s.source, s.name) === undefined,
-  );
+  const enabled = list.filter((s) => installedRef(s) !== undefined);
+  const available = list.filter((s) => installedRef(s) === undefined);
   const sorted = [...enabled, ...available];
   const collapsible = enabled.length > 0 && available.length > 0;
 
@@ -140,8 +137,7 @@ export function SkillSourceCard({
 
   const bulkList = filtering ? visible : list;
   const bulkAllOn =
-    bulkList.length > 0 &&
-    bulkList.every((s) => installedRef(s.source, s.name) !== undefined);
+    bulkList.length > 0 && bulkList.every((s) => installedRef(s) !== undefined);
 
   const canRemove = !source.system && !source.fromTemplate;
 
@@ -243,7 +239,7 @@ export function SkillSourceCard({
       )}
       {loaded &&
         visible.map((skill) => {
-          const ref = installedRef(skill.source, skill.name);
+          const ref = installedRef(skill);
           const hasDrift = isDrifted(ref, skill);
           return (
             <SkillRow

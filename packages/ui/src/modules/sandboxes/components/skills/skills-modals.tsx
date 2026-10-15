@@ -90,9 +90,7 @@ export function SkillsModals({
         <SaveSkillSetModal
           groups={derived.setGroups}
           omitted={derived.saveOmitted}
-          isOn={(skill) =>
-            surface.installedRef(skill.source, skill.name) !== undefined
-          }
+          isOn={(skill) => surface.installedRef(skill) !== undefined}
           existingNames={derived.existingSetNames}
           onCreate={surface.createSet}
           onClose={onClose}
@@ -110,7 +108,7 @@ export function SkillsModals({
       );
 
     case "render": {
-      const ref = surface.installedRef(open.skill.source, open.skill.name);
+      const ref = surface.installedRef(open.skill);
       return (
         <SkillRenderModal
           source={open.source}

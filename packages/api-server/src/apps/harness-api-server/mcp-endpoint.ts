@@ -799,11 +799,24 @@ export function createMcpSession(
       source: z.string().url(),
       name: z.string().min(1),
       version: z.string().min(1),
+      path: z
+        .string()
+        .optional()
+        .describe(
+          "The path of the source the skill was listed from, when the repository is connected with several paths.",
+        ),
     },
-    ({ source, name, version }) =>
+    ({ source, name, version, path }) =>
       textTool(
         "Failed to install skill",
-        () => deps.skills.install({ agentId, source, name, version }),
+        () =>
+          deps.skills.install({
+            agentId,
+            source,
+            name,
+            version,
+            ...(path !== undefined ? { path } : {}),
+          }),
         (installed) =>
           `Installed ${name} @ ${version.slice(0, 8)}. Agent now has ${installed.length} skill(s).`,
       ),

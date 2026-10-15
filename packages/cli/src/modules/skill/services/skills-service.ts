@@ -81,6 +81,7 @@ export interface SkillsService {
     name: string;
     version: string;
     contentHash?: string;
+    path?: string;
   }): Promise<
     Result<
       readonly SkillRef[],

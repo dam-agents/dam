@@ -17,6 +17,7 @@ export const agentSetupResourcesSchema = agentSizeSchema.extend({
 export const agentSetupSkillSchema = z.object({
   source: z.url(),
   name: z.string().min(1),
+  path: z.string().optional(),
 });
 
 export const agentSetupSeedSchema = z.object({

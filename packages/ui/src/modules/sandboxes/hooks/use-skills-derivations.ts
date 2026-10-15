@@ -12,6 +12,7 @@ import {
 import { publishedDuplicatesBySource } from "../components/skills/published-duplicates.js";
 import type { SaveSetGroup } from "../components/skills/save-skill-set-modal.js";
 import { isDrifted } from "../components/skills/skill-drift.js";
+import { sameSourcePath } from "../lib/skill-identity.js";
 import type { SkillsSurface } from "./use-skills-surface.js";
 
 function filterByQuery<T extends { name: string; description: string }>(
@@ -127,9 +128,7 @@ export function useSkillsDerivations(
     let on = 0;
     for (const list of listBySource.values()) {
       skills += list.length;
-      on += list.filter(
-        (s) => installedRef(s.source, s.name) !== undefined,
-      ).length;
+      on += list.filter((s) => installedRef(s) !== undefined).length;
     }
     return { skills, sources: sources.length, on };
   }, [
@@ -209,7 +208,9 @@ export function useSkillsDerivations(
     const out: { source: SkillSource; count: number }[] = [];
     for (const src of sources) {
       if (!errorBySource[src.id]) continue;
-      const count = installed.filter((r) => r.source === src.gitUrl).length;
+      const count = installed.filter(
+        (r) => r.source === src.gitUrl && sameSourcePath(r.path, src.path),
+      ).length;
       if (count > 0) out.push({ source: src, count });
     }
     return out;
@@ -221,7 +222,7 @@ export function useSkillsDerivations(
     const out: Skill[] = [];
     for (const list of listBySource.values()) {
       for (const skill of list) {
-        if (isDrifted(installedRef(skill.source, skill.name), skill)) {
+        if (isDrifted(installedRef(skill), skill)) {
           out.push(skill);
         }
       }
@@ -249,16 +250,23 @@ export function useSkillsDerivations(
           : {}),
       });
     }
+    const unclaimed = [...installed];
+    for (const src of sources) {
+      const names: string[] = [];
+      for (let i = unclaimed.length - 1; i >= 0; i--) {
+        const ref = unclaimed[i];
+        if (ref.source !== src.gitUrl || !sameSourcePath(ref.path, src.path))
+          continue;
+        names.unshift(ref.name);
+        unclaimed.splice(i, 1);
+      }
+      if (names.length > 0) rows.push({ label: src.name, names });
+    }
     const byUrl = new Map<string, string[]>();
-    for (const ref of installed) {
+    for (const ref of unclaimed) {
       const names = byUrl.get(ref.source);
       if (names) names.push(ref.name);
       else byUrl.set(ref.source, [ref.name]);
-    }
-    for (const src of sources) {
-      const names = byUrl.get(src.gitUrl);
-      if (names && names.length > 0) rows.push({ label: src.name, names });
-      byUrl.delete(src.gitUrl);
     }
     for (const [gitUrl, names] of byUrl) {
       rows.push({ label: repoSlug(gitUrl), names });

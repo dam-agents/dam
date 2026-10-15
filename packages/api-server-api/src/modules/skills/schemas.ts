@@ -32,6 +32,7 @@ export const skillSchema = z.object({
   version: z.string(),
   contentHash: z.string(),
   dir: z.string().optional(),
+  path: z.string().optional(),
 });
 
 export const skillListResultSchema = z.object({
@@ -149,6 +150,7 @@ export const skillInstallInputSchema = z.object({
   name: z.string().min(1),
   version: z.string().min(1),
   contentHash: z.string().optional(),
+  path: z.string().optional(),
 });
 
 export const skillUninstallInputSchema = z.object({
@@ -160,6 +162,7 @@ export const skillUninstallInputSchema = z.object({
 export const skillSetEntrySchema = z.object({
   source: z.string().url(),
   name: z.string().min(1),
+  path: z.string().optional(),
 });
 
 export const skillKey = (e: { source: string; name: string }) =>
@@ -212,6 +215,7 @@ export const skillApplyBatchInputSchema = z
           name: z.string().min(1),
           version: z.string().min(1),
           contentHash: z.string().optional(),
+          path: z.string().optional(),
         }),
       )
       .max(MAX_SKILL_BATCH_ENTRIES)
