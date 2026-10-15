@@ -716,6 +716,36 @@ func TestAHungRunnerDuringAReleaseHoldsUpNoOtherOwner(t *testing.T) {
 	}
 }
 
+// TEST_SCENARIO: a new runner release reaches an install where most owners have nothing running, so no agent of theirs reconciles. One sweep takes it to each of them in turn, waiting only for each runner to take it, rather than one owner per sweep. An owner with a ready machine still holds the place until its agents settle the hand-off, so the owners after it wait.
+func TestOneSweepTakesAReleaseToEveryOwnerWithNothingRunning(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t)
+	r.config.VM.Runner.ReleaseHostPath = "/var/lib/platform-runner-releases"
+	owners := []string{testOwner, "owner-a", "owner-b", "owner-c", "owner-d"}
+	sort.Slice(owners, func(i, j int) bool { return r.runnerName(owners[i]) < r.runnerName(owners[j]) })
+	for _, owner := range owners {
+		if owner != testOwner {
+			createRolloutRunner(t, r, owner)
+		}
+		require.NoError(t, r.applyRunnerDeployment(ctx, owner, r.runnerOwnerRef(ctx), true))
+		settleRunnerPod(t, r, owner)
+		nodes[owner].release = vmrunner.RunnerRelease{Running: runnerV2, Target: runnerV2}
+	}
+	busy := owners[3]
+	nodes[busy].specs["my-agent"] = vmrunner.MachineSpec{Running: true}
+	nodes[busy].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	r.config.VM.Runner.Image = runnerV2
+
+	r.ReconcileRunnerRollout(ctx)
+	for i, owner := range owners {
+		want := runnerV1
+		if i <= 3 {
+			want = runnerV2
+		}
+		assert.Equal(t, want, namedRelease(t, r, owner), "runner %d in name order", i)
+	}
+}
+
 // TEST_SCENARIO: a release that changes the pod and the image puts one runner mid-roll and mid-hand-off at once. Its hand-off settles while the rolled pod's machine is not back yet. The runner still holds its place by the roll, so another owner's turn, reading the kept view, does not take a second place.
 func TestASettledHandOffKeepsARunnerThatIsStillMidRoll(t *testing.T) {
 	ctx := context.Background()

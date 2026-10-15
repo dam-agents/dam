@@ -80,6 +80,9 @@ So a hand-off holds a place in the same roll as a pod roll, and a new release is
 It ends no turn, so it does not wait for idle agents.
 A runner is mid-hand-off from the moment its release is named until it reports the release running, every machine that was ready before is ready again, stopped, or gone with its agent, and no ensure of that owner's machines was refused since.
 As with a roll, the runner is asked on its own owner's turn, so a hand-off settles, or is found in trouble, when an agent of that owner reconciles or the sweep reaches them.
+An owner with no ready machine has no agent to settle their hand-off, so the sweep, on its turn for them, waits until their runner has taken the release, the hand-off stalls, or the settle timeout passes, and then goes on to the next runner in the same pass.
+One sweep so takes a release to every owner with nothing running, about a minute each, the time the kubelet takes to refresh the mounted ConfigMap, while owners with running machines still take it a few at a time.
+The rollout sweep runs apart from the orphan sweep, so a long pass delays no cleanup.
 A runner with ready machines stays mid-hand-off for at least two health polls, so each running agent has had an ensure against the new release before the next owner is named it.
 A hand-off is in trouble when the runner holds the release as failed, when the runner refuses an ensure, or when it has not settled within the settle timeout; a runner that cannot be reached, or answers that it is shutting down, is the hand-off itself and does not count.
 A hand-off in trouble is marked stalled on the runner's ConfigMap, reported as an error and counted, and keeps its place, so the release goes no further, as with a pod that is never ready.

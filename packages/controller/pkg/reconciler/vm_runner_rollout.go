@@ -500,5 +500,8 @@ func (r *AgentReconciler) ReconcileRunnerRollout(ctx context.Context) {
 		if err != nil && !errors.Is(err, errRunnerTerminating) {
 			slog.Warn("vm runner rollout: applying a runner failed", "owner", owner, "error", err)
 		}
+		if r.config.VM.Runner.ReleaseHostPath != "" {
+			r.followIdleRunnerHandoff(ctx, owner)
+		}
 	}
 }

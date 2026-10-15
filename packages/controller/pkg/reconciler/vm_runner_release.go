@@ -38,6 +38,9 @@ const (
 	annRunnerHandoffAt       = "agent-platform.ai/runner-handoff-at"
 	annRunnerHandoffAwaiting = "agent-platform.ai/runner-handoff-awaiting"
 	annRunnerHandoffStalled  = "agent-platform.ai/runner-handoff-stalled"
+
+	// UNIT_BOUNDARY_DESCRIPTION: how often the sweep asks a runner with nothing running whether it took its release yet. The loader reads the release it is named every five seconds.
+	runnerHandoffFollowPoll = 5 * time.Second
 )
 
 // UNIT_BOUNDARY_DESCRIPTION: names the runner release an owner's runner pod should run: the runner image this controller is configured with. The pod's loader reads it from the mounted ConfigMap and hands the machines to that release once the node's stager has staged it, so a new runner image reaches an owner without a pod restart. A hand-off reboots nothing, but a release that runs and then refuses the machines' ensures would still break every owner it reaches, so a new release is named only while fewer than `rollout.maxConcurrent` runners are mid-roll or mid-hand-off, the same width as a pod roll. A hand-off ends no turn, so it does not wait for idle agents. A ConfigMap that names the pod's own image needs no hand-off and is written at once. The ConfigMap is owned by the runner's Deployment, so it goes wherever the Deployment goes.
@@ -149,6 +152,29 @@ func (r *AgentReconciler) settleRunnerHandoff(ctx context.Context, cm *corev1.Co
 	}
 	if trouble != "" {
 		r.stallRunnerHandoff(ctx, cm, trouble)
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an owner with no ready machine has no agent reconcile to settle their hand-off, so it would hold its place until the next sweep, ten minutes on, and a release would reach one such owner per sweep. The sweep instead waits here, on its turn for the owner, until the runner has taken the release, the hand-off stalls, or it is over the settle timeout, then offers the next runner its turn in the same pass. A hand-off with ready machines is left to the owner's agents, so those owners still get a release a few at a time. The pass waits for one owner at a time, and each costs about the minute the kubelet takes to refresh the mounted ConfigMap; a wider width for owners with nothing running would cut that.
+func (r *AgentReconciler) followIdleRunnerHandoff(ctx context.Context, owner string) {
+	lock := r.ownerLock(owner)
+	for {
+		lock.Lock()
+		cm, err := r.client.CoreV1().ConfigMaps(r.config.Namespace).Get(ctx, r.runnerReleaseName(owner), metav1.GetOptions{})
+		following := err == nil && cm.Annotations[annRunnerHandoffAt] != "" && cm.Annotations[annRunnerHandoffAwaiting] == "" && cm.Annotations[annRunnerHandoffStalled] == ""
+		if following {
+			r.settleRunnerHandoff(ctx, cm)
+			following = cm.Annotations[annRunnerHandoffAt] != ""
+		}
+		lock.Unlock()
+		if !following {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(runnerHandoffFollowPoll):
+		}
 	}
 }
 
