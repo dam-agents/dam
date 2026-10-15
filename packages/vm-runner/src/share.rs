@@ -39,6 +39,17 @@ pub const IMAGE_FILE: &str = "image";
 // UNIT_BOUNDARY_DESCRIPTION: the share's mark that the owner's claim is short of room, which platform-init reads at guest::STORAGE_SHORT_PATH: one line, the id of the runner's request to give back scratch and the bytes asked of this machine. write_share leaves it alone: the runner's storage check owns it, and sets, replaces or clears it in every machine's share at each look.
 pub const STORAGE_SHORT_FILE: &str = "storage-short";
 
+// UNIT_BOUNDARY_DESCRIPTION: the share's grant of the bytes this machine's guest may still add to the owner's claim, which platform-init reads at guest::STORAGE_ROOM_PATH: one line, an id new at every look and the bytes. The runner's storage check owns it and rewrites it at each look, and removes it when the claim cannot be measured, so a guest is never held to a grant nobody renews.
+pub const STORAGE_ROOM_FILE: &str = "storage-room";
+
+pub fn grant_storage_room(share: &Path, grant: Option<&str>) -> io::Result<()> {
+    let file = share.join(STORAGE_ROOM_FILE);
+    match grant {
+        None => remove_if_present(&file),
+        Some(grant) => files::write(&file, grant.as_bytes(), CA_MODE),
+    }
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: the machine directory's record of the seed now in the share, as its upload was answered: the runner's own bookkeeping, outside the share the guest reads. It is what a start compares with the seed the spec expects, so the seed is checked without reading many GiB again on every start. It is removed before a new seed is renamed into the share and written after, so it never names a seed that is not there.
 pub const SEED_DIGEST_FILE: &str = "seed-digest";
 
@@ -301,6 +312,11 @@ mod tests {
             guest::STORAGE_SHORT_PATH,
             format!("{}/{STORAGE_SHORT_FILE}", guest::SHARE_PATH),
             "the guest looks for the storage mark where the runner does not set it"
+        );
+        assert_eq!(
+            guest::STORAGE_ROOM_PATH,
+            format!("{}/{STORAGE_ROOM_FILE}", guest::SHARE_PATH),
+            "the guest looks for its storage grant where the runner does not write it"
         );
     }
 

@@ -11,6 +11,8 @@ pub struct StorageUse {
 pub const SHORT_PERCENT: u64 = 75;
 pub const SHORT_UNTIL_PERCENT: u64 = 70;
 pub const RESHED_STEP_PERCENT: u64 = 5;
+// UNIT_BOUNDARY_DESCRIPTION: the use up to which running guests may write into the claim (guest::STORAGE_ROOM_PATH). It sits below START_LIMIT_PERCENT and the level where writes start to fail, so what a guest writes between two looks, and the floor every guest keeps, still fit.
+pub const GUEST_ROOM_PERCENT: u64 = 95;
 pub const CRITICAL_PERCENT: u64 = 90;
 pub const START_LIMIT_PERCENT: u64 = 97;
 const WRITES_FAILING_PERCENT: u64 = 98;
@@ -55,6 +57,13 @@ impl StorageUse {
                 gib(self.usable)
             )
         })
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the bytes each of `running` guests may still add to the claim before it reaches GUEST_ROOM_PERCENT, an even part of what is left. The guests share the claim and write at once, so a grant of the whole room to each could add up past it; a grant of a part is renewed at every look, so one guest that writes alone still reaches the level within a few looks. No running guest reads as one.
+    pub fn guest_room(&self, running: usize) -> u64 {
+        let limit = u64::try_from(u128::from(self.usable) * u128::from(GUEST_ROOM_PERCENT) / 100)
+            .unwrap_or(u64::MAX);
+        limit.saturating_sub(self.used) / u64::try_from(running.max(1)).unwrap_or(1)
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: what the owner is told when the runner refuses a machine for want of storage, word for word the api-server's storage-full message: what is refused at this level, that a sleeping VM agent can still be opened to clean up below START_LIMIT_PERCENT, and the ways to free space.
@@ -140,6 +149,14 @@ mod tests {
         assert!(refusal.contains("twice the home's size"), "{refusal}");
         assert!(refusal.contains("more than 40.0 GiB"), "{refusal}");
         assert!(refusal.contains("50.0 of 100.0 GiB free"), "{refusal}");
+    }
+
+    // TEST_SCENARIO: each running guest may add its even part of what is left below 95%, and nothing once the claim is there.
+    #[test]
+    fn each_running_guest_may_add_its_part_of_the_room() {
+        assert_eq!(at(55).guest_room(2), 20);
+        assert_eq!(at(55).guest_room(0), 40);
+        assert_eq!(at(96).guest_room(1), 0);
     }
 
     // TEST_SCENARIO: what the runner asks each guest to give back is its even part of what brings the claim back under 70%, and nothing once it is there; no machine at all reads as one.
