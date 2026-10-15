@@ -8,7 +8,7 @@ export function useLiveEvents(): void {
   useEffect(() => {
     return watchWithRetry((onError) =>
       api.events.owner.subscribe(undefined, {
-        onData: invalidateForLiveEvent,
+        onData: (event) => void invalidateForLiveEvent(event),
         onError,
       }),
     );

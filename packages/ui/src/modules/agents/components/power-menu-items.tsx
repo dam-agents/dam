@@ -1,80 +1,50 @@
+import { LetterZz } from "@carbon/icons-react";
+
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 
 import type { AgentView } from "../../../types.js";
+import { SLEEP_HINT, SLEEP_UNAVAILABLE_REASON } from "../lib/sleep-copy.js";
 
-export function FreeUpComputeItems({
+export function SleepMenuItem({
   agent,
-  onPause,
-  onStop,
+  onSleep,
 }: {
   agent: AgentView;
-  onPause: () => void;
-  onStop: () => void;
+  onSleep: () => void;
 }) {
-  const neverHibernates = agent.hibernationTimeoutMin === 0;
-  const pauseUnavailableReason =
-    "This agent is set to never hibernate, so pausing it would wake itself. Change its idle timeout in Sandbox settings.";
+  const neverSleeps = agent.hibernationTimeoutMin === 0;
   return (
     <>
-      <DropdownMenuLabel>Free up compute</DropdownMenuLabel>
-      <DropdownMenuItem
-        className="h-auto py-2"
-        onSelect={onStop}
-        data-testid="agent-stop"
-      >
-        <MenuItemBody
-          title="Stop"
-          description="Wakes only when a schedule fires or you start it"
-        />
-      </DropdownMenuItem>
       <DropdownMenuItem
         className="h-auto py-2 data-[disabled]:pointer-events-auto"
-        disabled={neverHibernates}
-        onSelect={onPause}
-        data-testid="agent-pause"
-        title={neverHibernates ? pauseUnavailableReason : undefined}
+        disabled={neverSleeps}
+        onSelect={onSleep}
+        data-testid="agent-sleep"
+        title={neverSleeps ? SLEEP_UNAVAILABLE_REASON : undefined}
       >
-        <MenuItemBody
-          title="Pause"
-          tag={neverHibernates ? "Unavailable" : undefined}
-          description="Wakes on any action (a schedule firing, a message arriving, or you opening a chat)"
-        />
-        {neverHibernates && (
-          <span className="sr-only">{pauseUnavailableReason}</span>
+        <LetterZz />
+        <span className="flex max-w-72 flex-col gap-0.5">
+          <span className="flex items-center gap-2">
+            Sleep
+            {neverSleeps && (
+              <Badge variant="muted" size="sm">
+                Unavailable
+              </Badge>
+            )}
+          </span>
+          <span className="whitespace-normal text-xs text-muted-foreground">
+            {SLEEP_HINT}
+          </span>
+        </span>
+        {neverSleeps && (
+          <span className="sr-only">{SLEEP_UNAVAILABLE_REASON}</span>
         )}
       </DropdownMenuItem>
       <DropdownMenuSeparator />
     </>
-  );
-}
-
-function MenuItemBody({
-  title,
-  tag,
-  description,
-}: {
-  title: string;
-  tag?: string;
-  description: string;
-}) {
-  return (
-    <span className="flex max-w-72 flex-col gap-0.5">
-      <span className="flex items-center gap-2">
-        {title}
-        {tag && (
-          <Badge variant="muted" size="sm">
-            {tag}
-          </Badge>
-        )}
-      </span>
-      <span className="whitespace-normal text-xs text-muted-foreground">
-        {description}
-      </span>
-    </span>
   );
 }

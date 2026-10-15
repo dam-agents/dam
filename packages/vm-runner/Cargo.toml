@@ -69,6 +69,8 @@ futures-util = { version = "0.3", default-features = false }
 tower = { version = "0.5", features = ["util"] }
 # Backdating a file is how eviction's oldest-write-first order is tested.
 filetime = "0.2"
+# Paused time, so a test of a five-second watch does not wait it out.
+tokio = { version = "1", features = ["test-util"] }
 # The address a guest reaches its host at, read from smolvm's own network
 # defaults so the controller's copy in contract/guest.json cannot drift from it.
 # In the lock by way of smolvm, so this adds an edge and no crate.
@@ -76,3 +78,14 @@ smolvm-network = { path = ".smolvm/crates/smolvm-network" }
 
 [lints.clippy]
 all = "deny"
+
+# Full debug info is most of a dev build's disk, multiplied by every test
+# binary. Line tables keep a backtrace's file:line for the workspace's own
+# frames; dependency frames keep only their function names. For a debugger
+# session, build with CARGO_PROFILE_DEV_DEBUG=full and, for dependency frames,
+# --config 'profile.dev.package."*".debug="full"'.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

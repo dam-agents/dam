@@ -10,12 +10,16 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
         "Try again; if this keeps happening, contact an admin."
       );
     case "over-budget":
-      return `This agent can't start right now: ${c.message}.`;
+      return (
+        "This agent can't start right now: its owner's agents are using all " +
+        "the room they have. It may start by itself once room frees up; if it " +
+        "doesn't, contact its owner."
+      );
     case "migrating":
       return "This agent is moving to the new runtime — try again in a few minutes.";
     case "migration-failed":
       return (
-        "This agent's move to the new runtime failed, and it stays stopped " +
+        "This agent's move to the new runtime failed, and it stays asleep " +
         "until its owner retries or aborts the move. Contact its owner."
       );
     case "agent-pod-failed":
@@ -32,20 +36,36 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
             "This agent failed to start: it ran out of memory. " +
             "Check the agent's page or contact its owner."
           );
+        case "HomeVolumeFull":
+          return (
+            "This agent failed to start: its storage is full. " +
+            "Contact its owner — it needs files deleted or more storage."
+          );
         case "MachineImageUnavailable":
           return (
-            "This agent failed to start: its image isn't available to the " +
-            "VM runner. Check the agent's page or contact its owner."
+            "This agent failed to start: its image isn't available. " +
+            "Check the agent's page or contact its owner."
           );
         case "MachineBootFailed":
           return (
-            "This agent failed to start: its sandbox VM didn't boot. " +
+            "This agent failed to start: its VM didn't boot. " +
             "Check the agent's page or contact its owner."
+          );
+        case "MachineStorageFull":
+          return (
+            "This agent can't start right now: its owner's agents have run " +
+            "out of storage. Contact its owner."
           );
         case "MachineRunnerUnschedulable":
           return (
-            "This agent failed to start: the cluster has no node that can " +
-            "run its sandbox VMs right now. Tell an admin."
+            "This agent failed to start: no server can run it right now. " +
+            "Tell an admin."
+          );
+        case "RunnerOutOfMemory":
+          return (
+            "This agent restarted: its owner's agents ran out of memory " +
+            "together. Contact its owner — putting agents that aren't in " +
+            "use to sleep frees memory."
           );
         default:
           return (

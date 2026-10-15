@@ -41,7 +41,7 @@ export function FilesPanel({
   ref?: Ref<HTMLDivElement>;
   onOpenFile: (path: string, opts?: { edit?: boolean }) => void;
 }) {
-  const controller = useFilesPanelController({ onOpenFile });
+  const controller = useFilesPanelController({ open, onOpenFile });
   const showHiddenFiles = useStore((s) => s.showHiddenFiles);
   const setShowHiddenFiles = useStore((s) => s.setShowHiddenFiles);
   const hiddenFilesLabel = showHiddenFiles
@@ -50,16 +50,18 @@ export function FilesPanel({
 
   const headerActions = (
     <div className="flex items-center gap-1">
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        aria-label={hiddenFilesLabel}
-        aria-pressed={showHiddenFiles}
-        tooltip={hiddenFilesLabel}
-        onClick={() => setShowHiddenFiles(!showHiddenFiles)}
-      >
-        {showHiddenFiles ? <View size={14} /> : <ViewOff size={14} />}
-      </Button>
+      {open && (
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={hiddenFilesLabel}
+          aria-pressed={showHiddenFiles}
+          tooltip={hiddenFilesLabel}
+          onClick={() => setShowHiddenFiles(!showHiddenFiles)}
+        >
+          {showHiddenFiles ? <View size={14} /> : <ViewOff size={14} />}
+        </Button>
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -125,7 +127,7 @@ export function FilesPanel({
         onDragLeave={controller.handlePanelDragLeave}
         onDrop={controller.handlePanelDrop}
       >
-        {controller.ctxValue && (
+        {open && controller.ctxValue && (
           <FilesPanelContext.Provider value={controller.ctxValue}>
             {controller.pendingNew && controller.pendingNew.dir === "" && (
               <InlineNameRow
@@ -140,6 +142,7 @@ export function FilesPanel({
                 onCancel={controller.handleCancelNew}
               />
             )}
+            {controller.rootLoading && <FileListSkeleton />}
             {controller.rootIsLoadedEmpty && (
               <p className="px-4 py-5 text-xs text-muted-foreground">
                 No files yet
@@ -157,5 +160,19 @@ export function FilesPanel({
         )}
       </div>
     </SidebarSection>
+  );
+}
+
+function FileListSkeleton() {
+  return (
+    <div aria-hidden className="animate-pulse">
+      {["w-1/3", "w-1/2", "w-2/5"].map((width) => (
+        <div key={width} className="px-4 py-1.5 text-sm">
+          <span
+            className={`inline-block h-[0.7em] ${width} rounded bg-muted align-middle`}
+          />
+        </div>
+      ))}
+    </div>
   );
 }

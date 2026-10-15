@@ -11,8 +11,12 @@ import {
   detectGithubOwnerRepo,
   type GitHubRestClient,
 } from "../infrastructure/github-rest-client.js";
+import { fetchGithubPath, isGithubNotFound } from "./fetch-github-path.js";
 import type { GitProtocolClient } from "../../git/protocol-client.js";
-import type { LocalSkillRepository } from "../infrastructure/local-skill-repository.js";
+import {
+  subPathEscapes,
+  type LocalSkillRepository,
+} from "../infrastructure/local-skill-repository.js";
 
 export interface InstallDeps {
   github: GitHubRestClient;
@@ -27,12 +31,7 @@ export async function runInstall(
   input: SkillInstallInput,
 ): Promise<Result<SkillInstallResult, SkillsDomainError>> {
   return deps.repo.withTempDir("platform-skill-", async (tmp) => {
-    const fetched = await fetchSourceAtVersion(
-      deps,
-      input.sourceUrl,
-      input.version,
-      tmp,
-    );
+    const fetched = await fetchSourceAtVersion(deps, input, name, tmp);
     if (!fetched.ok) return fetched;
 
     const srcDirRes = await deps.repo.resolveSkillDirInClone(
@@ -59,11 +58,24 @@ export async function runInstall(
 
 async function fetchSourceAtVersion(
   deps: InstallDeps,
-  source: string,
-  version: string,
+  input: SkillInstallInput,
+  name: SkillName,
   dest: string,
 ): Promise<Result<void, SkillsDomainError>> {
+  const { sourceUrl: source, version, path: subPath } = input;
   const host = detectGithubOwnerRepo(source);
+  if (input.fetch === "directory" && host && subPath) {
+    if (subPathEscapes(subPath)) return ok(undefined);
+    const byDirectory = await fetchGithubPath(
+      deps,
+      host,
+      version,
+      subPath,
+      dest,
+      name,
+    );
+    return isGithubNotFound(byDirectory) ? ok(undefined) : byDirectory;
+  }
   if (host) {
     let bytes = await deps.github.fetchTarball(host, version, {
       withAuth: false,

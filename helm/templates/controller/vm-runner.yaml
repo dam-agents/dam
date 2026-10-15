@@ -11,7 +11,9 @@ This identity also owns them. A runner belongs to an owner rather than to any
 one Agent, so no Agent can own it; an owner reference may not cross a
 namespace, so the ServiceAccount is rendered beside the runners in the agent
 namespace. Removing it — uninstall, rollback, or virtualization.enabled going
-false — collects every runner, disk and credential with it.
+false — collects every runner and credential with it. The disk claims are
+left unowned, so recreating this account never takes users' disks; after an
+uninstall an operator deletes them by label (docs/architecture/vm-runner.md).
 */}}
 {{- $name := include "platform.vmRunner.serviceAccountName" . }}
 apiVersion: v1

@@ -25,6 +25,7 @@ interface Props {
   onResolved: (item: FeedItem, label: string) => void;
   resolvedLabelFor: (id: string) => string | null;
   artifactsFor: (item: FeedItem) => readonly ArtifactTouched[];
+  conversationFor: (item: FeedItem) => string | undefined;
   onOpenArtifact: (artifactId: string) => void;
 }
 
@@ -44,6 +45,7 @@ export function FeedList({
   onResolved,
   resolvedLabelFor,
   artifactsFor,
+  conversationFor,
   onOpenArtifact,
 }: Props) {
   const tick = tickFor(items, Date.now());
@@ -79,6 +81,7 @@ export function FeedList({
             agents={agents}
             agentName={nameOf(item.agentId)}
             avatarName={avatarNameOf(item.agentId)}
+            conversation={conversationFor(item)}
             meta={meta}
             artifacts={artifactsFor(item)}
             onOpen={() =>

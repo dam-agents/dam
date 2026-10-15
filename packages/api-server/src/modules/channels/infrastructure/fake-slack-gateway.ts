@@ -10,6 +10,7 @@ import type {
   SlackMentionEvent,
   SlackMessage,
   SlackMessageReaction,
+  SlackFileInfo,
   SlackSlashCommand,
   SlackUserInfo,
   SlackWorkspace,
@@ -65,6 +66,7 @@ export interface FakeSlackGateway extends SlackGateway {
   setGrantedScopes(scopes: string[] | null): void;
   setBotUserId(id: string | null): void;
   setFileBytes(urlPrivate: string, bytes: Buffer): void;
+  setFileInfo(info: SlackFileInfo): void;
   setMessageReactions(
     channel: string,
     ts: string,
@@ -182,6 +184,7 @@ export function createFakeSlackGateway(): FakeSlackGateway {
   const messageReactions = new Map<string, SlackMessageReaction[]>();
   const messagesByRef = new Map<string, SlackMessage & { ts: string }>();
   const fileBytes = new Map<string, Buffer>();
+  const fileInfos = new Map<string, SlackFileInfo>();
 
   function requireHandlers(): SlackGatewayHandlers {
     if (!handlers) {
@@ -374,6 +377,14 @@ export function createFakeSlackGateway(): FakeSlackGateway {
 
     setFileBytes(urlPrivate, bytes) {
       fileBytes.set(urlPrivate, bytes);
+    },
+
+    async getFileInfo(fileId) {
+      return fileInfos.get(fileId) ?? null;
+    },
+
+    setFileInfo(info) {
+      fileInfos.set(info.file.id, info);
     },
 
     async listBotChannels(teamId) {

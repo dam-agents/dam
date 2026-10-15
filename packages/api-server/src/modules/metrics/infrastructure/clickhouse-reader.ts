@@ -4,6 +4,7 @@ import type {
   SessionRuntime,
   SpendByAgent,
   SpendByDay,
+  SubAgentSpend,
   TokenSpendByModel,
 } from "api-server-api";
 import type {
@@ -17,7 +18,7 @@ import type {
 const AGENT_GATE =
   "ResourceAttributes['platform.agent.id'] IN {agentIds:Array(String)}";
 
-const API_REQUEST = "Body = 'claude_code.api_request'";
+const API_REQUEST = "Body IN ('claude_code.api_request', 'pi.api_request')";
 
 const timeBounds = (w: MetricsWindow): string[] => [
   ...(w.hours === undefined
@@ -88,6 +89,8 @@ const windowParams = (agentIds: readonly string[], w: MetricsWindow) => ({
   ...(w.sessionIds === undefined ? {} : { sessionIds: w.sessionIds }),
 });
 
+const INVOCATION_ID = "ResourceAttributes['platform.invocation.id']";
+
 const IN = (a: string) => `toInt64OrZero(LogAttributes[${a}])`;
 const TOK_IN = IN("'input_tokens'");
 const TOK_CACHE_R = IN("'cache_read_tokens'");
@@ -155,7 +158,7 @@ export function createClickhouseReader(
       const r = await rows(
         `SELECT
            ResourceAttributes['platform.agent.id'] AS agentId,
-           argMaxIf(ResourceAttributes['platform.agent.name'], Timestamp, ResourceAttributes['platform.invocation.id'] = '') AS agentName,
+           argMaxIf(ResourceAttributes['platform.agent.name'], Timestamp, ${INVOCATION_ID} = '') AS agentName,
            sum(${COST_USD}) AS costUsd
          FROM otel_logs
          WHERE ${ownedApiRequests(window)}
@@ -336,6 +339,47 @@ export function createClickhouseReader(
         costUsd: n(x.costUsd),
         durationMs: n(x.durationMs),
       })) satisfies CallContext[];
+    },
+
+    async spendBySubAgent(agentIds, window, limit) {
+      const r = await rows(
+        `SELECT
+           ${INVOCATION_ID} AS subAgentId,
+           groupUniqArray(LogAttributes['model']) AS models,
+           count() AS calls,
+           sum(${IN("'duration_ms'")}) AS totalDurationMs,
+           sum(${TOK_IN}) AS inputTokens,
+           sum(${IN("'output_tokens'")}) AS outputTokens,
+           sum(${TOK_CACHE_R}) AS cacheReadTokens,
+           sum(${TOK_CACHE_C}) AS cacheCreationTokens,
+           sum(${COST_USD}) AS costUsd,
+           min(Timestamp) AS firstAt,
+           max(Timestamp) AS lastAt
+         FROM otel_logs
+         WHERE ${ownedApiRequests(window)} AND ${INVOCATION_ID} != ''
+         GROUP BY subAgentId
+         ORDER BY lastAt DESC
+         LIMIT {limit:UInt32}`,
+        { ...windowParams(agentIds, window), limit },
+      );
+      return r.map((x) => ({
+        subAgentId: String(x.subAgentId ?? ""),
+        models: Array.isArray(x.models)
+          ? x.models
+              .map(String)
+              .filter((m) => m !== "")
+              .sort()
+          : [],
+        calls: n(x.calls),
+        totalDurationMs: n(x.totalDurationMs),
+        inputTokens: n(x.inputTokens),
+        outputTokens: n(x.outputTokens),
+        cacheReadTokens: n(x.cacheReadTokens),
+        cacheCreationTokens: n(x.cacheCreationTokens),
+        costUsd: n(x.costUsd),
+        firstAt: String(x.firstAt ?? ""),
+        lastAt: String(x.lastAt ?? ""),
+      })) satisfies SubAgentSpend[];
     },
 
     async telemetryEvents(agentIds, window, limit) {

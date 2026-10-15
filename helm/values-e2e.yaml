@@ -55,3 +55,18 @@ virtualization:
     resources:
       requests:
         cpu: 50m
+
+# Keycloak's first boot is the longest step of the e2e install: the chart's
+# realm import hook, and so the install, waits for it. On a CI run at the
+# chart's 1-CPU limit the JVM took 25 s to start and the schema creation on the
+# empty database 28 s more, with Postgres at 500m. Both are CPU-bound, and the
+# runner's cores are mostly idle while they run. Only the limits rise: the
+# requests stay, so nothing else loses room on the single node.
+keycloak:
+  resources:
+    limits:
+      cpu: "2"
+postgres:
+  resources:
+    limits:
+      cpu: "1"

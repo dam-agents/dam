@@ -12,10 +12,10 @@ else
 		_i=0
 		_gateway_env=""
 		_gateway_up=false
-		while [ "$_i" -lt 30 ]; do
+		while [ "$_i" -lt 120 ]; do
 			_gateway_env=$(curl --noproxy '*' -fsS --max-time 2 \
 				"$_GATEWAY_BASE/env.sh" 2>/dev/null) && _gateway_up=true && break
-			sleep 1
+			sleep 0.25
 			_i=$((_i + 1))
 		done
 		if [ "$_gateway_up" = true ]; then
@@ -24,9 +24,6 @@ else
 			export no_proxy="127.0.0.1,localhost,::1${no_proxy:+,$no_proxy}"
 			export CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1
 			eval "$_gateway_env"
-			if [ -z "$_gateway_env" ]; then
-				echo "model-gateway: WARNING — gateway up but no models discovered yet (upstream unreachable or rejecting credentials; diagnostics: pod logs, [pod-service] lines)" >&2
-			fi
 		else
 			echo "model-gateway: WARNING — gateway not ready; using upstream directly (diagnostics: pod logs, [pod-service] lines)" >&2
 		fi

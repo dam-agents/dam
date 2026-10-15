@@ -14,12 +14,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
-	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
 // UNIT_BOUNDARY_DESCRIPTION: the refusal a person reads, or empty when the start is admitted — the message is the verdict, so there is no second flag to disagree with it.
 func (r *AgentReconciler) budgetAllows(ctx context.Context, agent *apiv1.Agent, owner string) (string, error) {
-	if owner == "" {
+	if owner == "" || agent.Spec.IsVM() {
 		return "", nil
 	}
 	up, err := r.agentDesiredUp(ctx, agent.Name, agent.Spec.IsVM())
@@ -50,66 +49,44 @@ func (r *AgentReconciler) budgetAllows(ctx context.Context, agent *apiv1.Agent, 
 	totalMem.Add(candMem)
 	if totalCPU.Cmp(ceilCPU) > 0 || totalMem.Cmp(ceilMem) > 0 {
 		return fmt.Sprintf(
-			"starting this agent would take your running agents to %s/%s CPU and %s/%s memory — stop a running agent to free room",
+			"starting this agent would take your running agents to %s/%s CPU and %s/%s memory — put agents you aren't using to sleep to free room",
 			totalCPU.String(), ceilCPU.String(), totalMem.String(), ceilMem.String()), nil
 	}
 	return "", nil
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: this gate exists to stop a running machine growing past its owner's ceiling, so an unreachable runner means there is no such machine to protect — and refusing here would wedge the reconcile that creates the runner in the first place.
-func (r *AgentReconciler) runnerMachine(ctx context.Context, owner, name string) (vmrunner.MachineStatus, error) {
-	client, err := r.runnerFor(ctx, owner)
-	if err != nil {
-		return vmrunner.MachineStatus{}, err
-	}
-	return client.Status(ctx, name)
-}
-
 func (r *AgentReconciler) resizeAllows(ctx context.Context, agent *apiv1.Agent, owner string) (string, error) {
-	if owner == "" {
+	if owner == "" || agent.Spec.IsVM() {
 		return "", nil
 	}
 	newCPU, newMem := r.limitsOf(&agent.Spec)
-	if agent.Spec.IsVM() {
-		if !r.config.VM.Enabled {
+	ns := r.config.Namespace
+	existing, err := r.client.AppsV1().StatefulSets(ns).Get(ctx, agent.Name, metav1.GetOptions{})
+	if err != nil {
+		if errors.IsNotFound(err) {
 			return "", nil
 		}
-		st, err := r.runnerMachine(ctx, owner, agent.Name)
-		if err != nil {
-			slog.Warn("resize budget check: reading vm machine", "agent", agent.Name, "error", err)
-			return "", nil
+		return "", fmt.Errorf("reading agent statefulset: %w", err)
+	}
+	if existing.Spec.Replicas == nil || *existing.Spec.Replicas < 1 {
+		return "", nil
+	}
+	var oldCPU, oldMem resource.Quantity
+	found := false
+	for i := range existing.Spec.Template.Spec.Containers {
+		c := &existing.Spec.Template.Spec.Containers[i]
+		if c.Name == AgentContainerName {
+			oldCPU = c.Resources.Limits[corev1.ResourceCPU]
+			oldMem = c.Resources.Limits[corev1.ResourceMemory]
+			found = true
 		}
-		if st.State != vmrunner.StateRunning || (newCPU.MilliValue() <= int64(st.CPUs)*1000 && newMem.Value() <= int64(st.MemoryMiB)<<20) {
-			return "", nil
-		}
-	} else {
-		ns := r.config.Namespace
-		existing, err := r.client.AppsV1().StatefulSets(ns).Get(ctx, agent.Name, metav1.GetOptions{})
-		if err != nil {
-			if errors.IsNotFound(err) {
-				return "", nil
-			}
-			return "", fmt.Errorf("reading agent statefulset: %w", err)
-		}
-		if existing.Spec.Replicas == nil || *existing.Spec.Replicas < 1 {
-			return "", nil
-		}
-		var oldCPU, oldMem resource.Quantity
-		found := false
-		for i := range existing.Spec.Template.Spec.Containers {
-			c := &existing.Spec.Template.Spec.Containers[i]
-			if c.Name == AgentContainerName {
-				oldCPU = c.Resources.Limits[corev1.ResourceCPU]
-				oldMem = c.Resources.Limits[corev1.ResourceMemory]
-				found = true
-			}
-		}
-		if !found {
-			return "", nil
-		}
-		if newCPU.Cmp(oldCPU) <= 0 && newMem.Cmp(oldMem) <= 0 {
-			return "", nil
-		}
+	}
+	if !found {
+		return "", nil
+	}
+	if newCPU.Cmp(oldCPU) <= 0 && newMem.Cmp(oldMem) <= 0 {
+		return "", nil
 	}
 
 	lock := r.ownerLock(owner)
@@ -167,11 +144,7 @@ func (r *AgentReconciler) reservedByOwner(ctx context.Context, owner, self strin
 		if err != nil {
 			return cpu, mem, fmt.Errorf("decoding agent %s: %w", item.GetName(), err)
 		}
-		workload := item.GetName()
-		if a.Spec.IsVM() {
-			workload = GatewayName(workload)
-		}
-		if !up[workload] {
+		if a.Spec.IsVM() || !up[item.GetName()] {
 			continue
 		}
 		c, m := r.limitsOf(&a.Spec)
@@ -255,7 +228,14 @@ func (r *AgentReconciler) ceilingFor(ctx context.Context, owner string) (resourc
 	if err != nil {
 		return resource.Quantity{}, resource.Quantity{}, fmt.Errorf("decoding userbudget %s: %w", obj.GetName(), err)
 	}
-	return b.Spec.CPU, b.Spec.Memory, nil
+	cpu, mem := r.config.DefaultUserCPUBudget, r.config.DefaultUserMemoryBudget
+	if b.Spec.CPU != nil {
+		cpu = *b.Spec.CPU
+	}
+	if b.Spec.Memory != nil {
+		mem = *b.Spec.Memory
+	}
+	return cpu, mem, nil
 }
 
 func (r *AgentReconciler) wakeAlreadyDenied(name, lastActivity string) bool {

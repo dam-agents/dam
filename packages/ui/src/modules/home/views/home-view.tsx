@@ -2,30 +2,24 @@ import { PageHeader } from "@/components/ui/page-header";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { EntryPointButtons } from "../../agents/components/entry-point-buttons.js";
-import { OutdatedTemplatesBanner } from "../../agents/components/outdated-templates-banner.js";
 import { SandboxList } from "../../agents/components/sandbox-list.js";
 import { WelcomeEntryPoints } from "../../agents/components/welcome-entry-points.js";
 import { useAgentRows } from "../../agents/hooks/use-agent-rows.js";
 import { useSandboxRowActions } from "../../agents/hooks/use-sandbox-row-actions.js";
 import { splitTemporarySandboxes } from "../../agents/utils/temporary-sandboxes.js";
-import { ComputeUsage } from "../../budgets/components/compute-usage.js";
+import { ResourcesCard } from "../../budgets/components/resources-card.js";
 import { useFeed } from "../api/queries.js";
 import { ApprovalsBanner } from "../components/approvals-banner.js";
 import { WidgetSkeleton } from "../components/home-skeletons.js";
 import { SpendWidget } from "../components/spend-widget.js";
 
 export function HomeView() {
-  const { agentsData, initialLoaded, rowProps, deleteAgent, suspend } =
-    useAgentRows();
+  const { agentsData, initialLoaded, rowProps, deleteAgent } = useAgentRows();
   const { workingAgentIds, workingByAgent } = useFeed();
-  const { stopSandbox, deleteSandbox } = useSandboxRowActions({
-    deleteAgent,
-    suspend,
-  });
+  const { deleteSandbox } = useSandboxRowActions({ deleteAgent });
 
-  const { visible, drawByDriver } = splitTemporarySandboxes(
-    agentsData?.list ?? [],
-  );
+  const allAgents = agentsData?.list ?? [];
+  const { visible, drawByDriver } = splitTemporarySandboxes(allAgents);
 
   if (!initialLoaded) {
     return (
@@ -51,18 +45,11 @@ export function HomeView() {
 
   return (
     <div>
-      <PageHeader
-        title="Home"
-        actions={<EntryPointButtons surface="home" primary="agent" />}
-      />
-      <OutdatedTemplatesBanner agents={visible} />
+      <PageHeader title="Home" actions={<EntryPointButtons />} />
       <ApprovalsBanner />
       <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="rounded-lg border border-border bg-card p-6">
-          <ComputeUsage
-            agents={agentsData?.list ?? []}
-            workingAgentIds={workingAgentIds}
-          />
+          <ResourcesCard agents={allAgents} workingAgentIds={workingAgentIds} />
         </div>
         <SpendWidget />
       </div>
@@ -71,7 +58,6 @@ export function HomeView() {
         drawByDriver={drawByDriver}
         rowProps={rowProps}
         workingByAgent={workingByAgent}
-        onStop={(agent) => void stopSandbox(agent)}
         onDelete={(agent) => void deleteSandbox(agent)}
       />
     </div>

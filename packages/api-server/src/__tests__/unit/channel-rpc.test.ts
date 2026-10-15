@@ -52,6 +52,13 @@ function fakeSlackWorker(): SlackWorker {
       threadTs: "1.1",
       hasMore: false,
     })),
+    fetchAttachment: vi.fn(async () => ({
+      path: "/home/agent/.uploads/C1/a-table.png",
+      name: "table.png",
+      size: 1,
+      conversationId: "C1",
+    })),
+    notifyPerson: vi.fn(async () => ({ sent: 1 })),
   };
 }
 
@@ -456,5 +463,36 @@ describe("asking Slack which workspace sees a conversation", () => {
 
     await leader.stopAll();
     await follower.stopAll();
+  });
+});
+
+describe("platform notices across replicas", () => {
+  // TEST_SCENARIO: Only the channel leader holds the Slack worker, so a notice raised on another replica must reach the leader's worker and return its count.
+  it("a follower's notifyPerson runs on the leader's worker", async () => {
+    const bus = fakeBus();
+    const leaderWorker = fakeSlackWorker();
+    const followerWorker = fakeSlackWorker();
+    const rpc = () =>
+      createBusRpc<ChannelRpcRequest, unknown>({ bus, service: "channels" });
+    const leader = createChannelManager({
+      slackWorker: leaderWorker,
+      rpc: rpc(),
+      isLeader: () => true,
+    });
+    const follower = createChannelManager({
+      slackWorker: followerWorker,
+      rpc: rpc(),
+      isLeader: () => false,
+    });
+    await leader.bootstrap(new Map());
+
+    expect(await follower.notifyPerson("kc|a", "storage is full")).toEqual({
+      sent: 1,
+    });
+    expect(leaderWorker.notifyPerson).toHaveBeenCalledWith(
+      "kc|a",
+      "storage is full",
+    );
+    expect(followerWorker.notifyPerson).not.toHaveBeenCalled();
   });
 });

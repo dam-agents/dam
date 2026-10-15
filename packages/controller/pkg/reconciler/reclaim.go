@@ -75,7 +75,10 @@ func (r *AgentReconciler) pickReclaimCandidates(ctx context.Context, agent *apiv
 		if needCPU.Sign() <= 0 && needMem.Sign() <= 0 {
 			break
 		}
-		if r.busyProbe(ctx, c.name) {
+		if c.vmMiB > 0 {
+			continue
+		}
+		if idle, _ := r.podStatus(ctx, c.name); !idle {
 			continue
 		}
 		needCPU.Sub(c.cpu)
@@ -108,7 +111,7 @@ func (r *AgentReconciler) reclaimableAgents(ctx context.Context, self, owner str
 			return nil, fmt.Errorf("decoding agent %s: %w", item.GetName(), err)
 		}
 		idleSince, ok := reclaimEligible(peer.Annotations,
-			effectiveIdleTimeout(peer.Spec.HibernationTimeout, r.config.AgentBase.IdleTimeout.AsDuration()), now)
+			effectiveIdleTimeout(peer.Spec.HibernationTimeout, peer.Spec.IsVM(), r.config.AgentBase), now)
 		if !ok {
 			continue
 		}
@@ -122,7 +125,7 @@ func (r *AgentReconciler) reclaimableAgents(ctx context.Context, self, owner str
 		cpu, mem := r.limitsOf(&peer.Spec)
 		c := reclaimCandidate{name: peer.Name, idleSince: idleSince, cpu: cpu, mem: mem}
 		if peer.Spec.IsVM() {
-			c.vmMiB = r.accountedMemoryMiB(peer.Name, &peer.Spec)
+			c.vmMiB = r.accountedMemoryMiB(ctx, owner, peer.Name, &peer.Spec)
 		}
 		out = append(out, c)
 	}

@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
+import { ResetOnboardingCard } from "../../getting-started/components/reset-onboarding-card.js";
 import {
   useFeatures,
   useInstallCapabilities,
@@ -20,12 +21,6 @@ interface FeatureRow {
 }
 
 const FEATURE_ROWS: FeatureRow[] = [
-  {
-    id: "strict-connection-addressing",
-    label: "Addressed credential injection",
-    description:
-      "Shows a switch on the create page and in agent settings that makes the agent's gateway inject a connection's credential only into requests that name that connection. For agents whose tools, like Docker containers, call the same services with their own credentials or none. Starter kits can set it whatever this switch says.",
-  },
   {
     id: "interactive-artifacts",
     label: "Interactive artifacts",
@@ -69,6 +64,12 @@ const FEATURE_ROWS: FeatureRow[] = [
     label: "Processes panel",
     description:
       "See what runs in your agent, what keeps it awake, and what finished while you were away.",
+  },
+  {
+    id: "custom-avatars",
+    label: "Custom avatars",
+    description:
+      "Give an agent an emoji or an uploaded JPG or PNG as its avatar, in the UI and in Slack.",
   },
 ];
 
@@ -126,6 +127,7 @@ export function FeaturesTab() {
             />
           ),
         )}
+        <ResetOnboardingCard />
       </div>
     </div>
   );

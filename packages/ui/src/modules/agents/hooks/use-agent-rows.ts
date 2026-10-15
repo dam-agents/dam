@@ -1,45 +1,38 @@
 import { useMemo } from "react";
 
 import { useStore } from "../../../store.js";
-import type { AgentView, TemplateView } from "../../../types.js";
+import type { AgentView } from "../../../types.js";
 import { useBudgetReserved } from "../../budgets/api/queries.js";
 import { slotUnitOf } from "../../budgets/lib/slots.js";
-import { useAppConnections } from "../../connections/api/queries.js";
-import { useTemplates } from "../../templates/api/queries.js";
 import { useDeleteAgent } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
 import { resolveAgentDisplay } from "../utils/agent-resolver.js";
-import {
-  sandboxSubtitle,
-  type SandboxSubtitleLookup,
-} from "../utils/sandbox-subtitle.js";
+import { agentUsage, sandboxSubtitle } from "../utils/sandbox-subtitle.js";
 import { useMigrateRuntime } from "./use-migrate-runtime.js";
 import {
   useRestartAgent,
   useSyncRestartingAgents,
 } from "./use-restart-agent.js";
 import { useRuntimeMigrationControls } from "./use-runtime-migration-controls.js";
+import {
+  useSleepAgent,
+  useSyncFallingAsleepAgents,
+} from "./use-sleep-agent.js";
 import { useSlowStartIds } from "./use-slow-start.js";
-import { useSuspendAgent, useSyncPausingAgents } from "./use-suspend-agent.js";
 import { useUpdateSandbox } from "./use-update-sandbox.js";
 import { useWakeAgent } from "./use-wake-agent.js";
 
-const NO_TEMPLATES: TemplateView[] = [];
-
 export function useAgentRows() {
-  const { data: templatesData } = useTemplates();
-  const templates = templatesData ?? NO_TEMPLATES;
   const { data: agentsData } = useAgents();
-  const connections = useAppConnections();
   const { data: budget } = useBudgetReserved();
   const restartingAgents = useStore((s) => s.restartingAgents);
   useSyncRestartingAgents();
-  const pausingAgents = useStore((s) => s.pausingAgents);
-  useSyncPausingAgents();
+  const fallingAsleepAgents = useStore((s) => s.fallingAsleepAgents);
+  useSyncFallingAsleepAgents();
   const slowStartIds = useSlowStartIds();
 
   const deleteAgent = useDeleteAgent();
-  const suspend = useSuspendAgent();
+  const sleep = useSleepAgent();
   const { restart: restartAgent } = useRestartAgent();
   const wakeAgent = useWakeAgent();
   const update = useUpdateSandbox();
@@ -50,35 +43,27 @@ export function useAgentRows() {
     () => new Set(restartingAgents.keys()),
     [restartingAgents],
   );
-  const pausingIds = useMemo(
-    () => new Set(pausingAgents.keys()),
-    [pausingAgents],
+  const fallingAsleepIds = useMemo(
+    () => new Set(fallingAsleepAgents.keys()),
+    [fallingAsleepAgents],
   );
 
-  const subtitleLookup = useMemo<SandboxSubtitleLookup>(
-    () => ({
-      templates,
-      connectionTemplateIdById: new Map(
-        (connections.data ?? []).map((c) => [c.id, c.templateId]),
-      ),
-      slotUnit: budget ? slotUnitOf(budget) : null,
-    }),
-    [templates, connections.data, budget],
-  );
+  const slotUnit = budget ? slotUnitOf(budget) : null;
 
   const rowProps = (agent: AgentView) => ({
     agent,
     display: resolveAgentDisplay(
       agent,
       restartingIds,
-      pausingIds,
+      fallingAsleepIds,
       slowStartIds,
     ),
-    subtitle: sandboxSubtitle(agent, subtitleLookup),
+    subtitle: sandboxSubtitle(agent, slotUnit),
+    usage: agentUsage(agent, budget?.vm),
     deletePending:
       deleteAgent.isPending && deleteAgent.variables?.id === agent.id,
     updatePending: update.updatingId === agent.id,
-    updateBusy: update.updatingId !== null || update.updatingAll,
+    updateBusy: update.updatingId !== null,
     onUpdate: () => void update.updateOne(agent),
     migratePending: migrate.isMigrating(agent.id),
     onMigrate: () => void migrate.migrateOne(agent),
@@ -87,8 +72,7 @@ export function useAgentRows() {
     onRetryMigration: () => void migrationControls.retryOne(agent),
     onWake: () => wakeAgent.wake(agent.id),
     onRestart: () => restartAgent(agent.id),
-    onPause: () => suspend.pause(agent.id),
-    onStop: () => suspend.stop(agent.id),
+    onSleep: () => sleep(agent.id),
   });
 
   return {
@@ -96,7 +80,6 @@ export function useAgentRows() {
     initialLoaded: agentsData !== undefined,
     rowProps,
     deleteAgent,
-    suspend,
     update,
   };
 }

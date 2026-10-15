@@ -1,280 +1,144 @@
 # Artifact library
 
-Last verified: 2026-10-11
+Last verified: 2026-10-13
 
 ## Overview
 
-The **Artifact Library** is where agents and users publish work products —
-HTML pages, React/JSX components, markdown, code, plain text, and binary
-files — organize them into **Folders**, and share them with people outside
-the platform. An **Artifact** is owner-scoped like every other resource, is
-attributed to the Agent it came from — the Agent that published it, or the
-sandbox's Agent when a person promotes a workspace file (or to the user, for
-manual uploads) — and outlives both the sandbox and the agent that produced
-it.
-Publishing a new revision keeps the same identity and share link and appends
-to a per-artifact **version history** the owner can flip through in the app;
-the share link itself only ever serves the current version
-([sharing model](#sharing-model)). The history
-holds every version including the current one — creation writes the first row,
-each revision writes its own — and a version records the session that
-produced it when one is known, which is how the Home feed shows an artifact on
-the card of the session that made it. The session becomes known after the
-fact: the platform's artifact tools mark their results, the agent-runtime
-spots the marker in the session's ACP stream — frames it already proxies,
-each carrying its session id — and reports the touch over its runtime
-channel. The write is scoped to the calling agent's own artifacts and never
-overwrites another session's attribution, so a failure anywhere leaves a
-version unattributed rather than misattributed. Terminal sessions bypass ACP
-and stay unattributed.
+The **Artifact Library** is where agents and users publish work products — HTML pages, React/JSX components, markdown, code, plain text, and binary files — organize them into **Folders**, and share them with people outside the platform.
+An **Artifact** is owner-scoped like every other resource, is attributed to the Agent it came from — the Agent that published it, or the sandbox's Agent when a person promotes a workspace file (or to the user, for manual uploads) — and outlives both the sandbox and the agent that produced it.
+Publishing a new revision keeps the same identity and share link and appends to a per-artifact **version history** the owner can flip through in the app; the share link itself only ever serves the current version ([sharing model](#sharing-model)).
+The history holds every version including the current one — creation writes the first row, each revision writes its own — and a version records the session that produced it when one is known, which is how the Home feed shows an artifact on the card of the session that made it.
+The session becomes known after the fact: the platform's artifact tools mark their results, the agent-runtime spots the marker in the session's ACP stream — frames it already proxies, each carrying its session id — and reports the touch over its runtime channel.
+The write is scoped to the calling agent's own artifacts and never overwrites another session's attribution, so a failure anywhere leaves a version unattributed rather than misattributed.
+Terminal sessions bypass ACP and stay unattributed.
 
-A version also records **who wrote it** — the owner, when a person edited it
-in the app, or the publishing agent. Every writer states this, and the writes
-the platform makes for its own bookkeeping name the agent they were made for,
-so a single artifact's history never mixes a named author with a blank one.
-Only versions from before the platform tracked authorship name nobody, rather
-than attributing a write to whoever happens to own the library.
+A version also records **who wrote it** — the owner, when a person edited it in the app, or the publishing agent.
+Every writer states this, and the writes the platform makes for its own bookkeeping name the agent they were made for, so a single artifact's history never mixes a named author with a blank one.
+Only versions from before the platform tracked authorship name nobody, rather than attributing a write to whoever happens to own the library.
 
-Agent attribution is also what lets a person **continue** an artifact. From
-any surface that shows one, the user starts a new session on the Agent that
-published it, with the artifact's internal reference — the name the artifact
-tools take — already in the composer and nothing sent. The user reads that
-line, edits it, and decides whether to send, so no revision starts without a
-prompt the user wrote. An upload has no publishing Agent, so it offers no
-continuation.
+Agent attribution is also what lets a person **continue** an artifact.
+From any surface that shows one, the user starts a new session on the Agent that published it, with the artifact's internal reference — the name the artifact tools take — already in the composer and nothing sent.
+The user reads that line, edits it, and decides whether to send, so no revision starts without a prompt the user wrote.
+An upload has no publishing Agent, so it offers no continuation.
 
-Concurrent revision publishes are detected — one wins, the other is refused
-with a conflict and leaves no partial version behind. An **interactive edit**
-is guarded further: it states the version it changed and is refused when the
-head has already moved on, so an owner editing in the app never silently
-replaces a newer agent revision. The owner is told instead, and may then
-overwrite deliberately. An agent's publish always appends and is never
-refused on these grounds — only a surface that can hold stale text on a
-screen claims a version.
+Concurrent revision publishes are detected — one wins, the other is refused with a conflict and leaves no partial version behind.
+An **interactive edit** is guarded further: it states the version it changed and is refused when the head has already moved on, so an owner editing in the app never silently replaces a newer agent revision.
+The owner is told instead, and may then overwrite deliberately.
+An agent's publish always appends and is never refused on these grounds — only a surface that can hold stale text on a screen claims a version.
 
-An artifact's **kind is settled when it is created** and no revision can move
-it — neither by declaring one nor by renaming into another extension. The
-share link outlives every revision, so a mutable kind would let a URL vetted
-while it served inert text later serve executing HTML or JSX to the same
-audience; publishing executable content is fine, silently changing what an
-already-shared link *does* is not. It also keeps a version history coherent,
-since every version renders through the artifact's one kind. Title and file
-name stay editable, and both describe the whole artifact rather than one
-revision: the history snapshots bytes, so a past version downloads under the
-artifact's current name.
+An artifact's **kind is settled when it is created** and no revision can move it — neither by declaring one nor by renaming into another extension.
+The share link outlives every revision, so a mutable kind would let a URL vetted while it served inert text later serve executing HTML or JSX to the same audience; publishing executable content is fine, silently changing what an already-shared link *does* is not.
+It also keeps a version history coherent, since every version renders through the artifact's one kind.
+Title and file name stay editable, and both describe the whole artifact rather than one revision: the history snapshots bytes, so a past version downloads under the artifact's current name.
 
-The design is a port of a proven external tool (the "slop" artifact vault)
-onto platform rails: content bytes live in the S3-compatible object store
-([persistence](persistence.md)), metadata lives in Postgres, the agent-facing
-surface is the per-agent platform MCP server, and by-link serving happens on
-two dedicated hosts — a **share host** for the pages and a **content host** for
-the framed artifact itself.
+The design is a port of a proven external tool (the "slop" artifact vault) onto platform rails: content bytes live in the S3-compatible object store ([persistence](persistence.md)), metadata lives in Postgres, the agent-facing surface is the per-agent platform MCP server, and by-link serving happens on two dedicated hosts — a **share host** for the pages and a **content host** for the framed artifact itself.
 
 ## Interactive pages
 
 An HTML artifact can be declared **interactive** at creation and stays private.
-With the interactive-artifacts feature enabled, a button in its latest version
-can send a prompt into an existing open chat with its publishing Agent. The app
-checks the sending frame and the preview's agent before submitting through the
-normal chat path. If the Agent is unavailable, the conversation is missing or
-loading, the Session is a terminal, or the user has switched conversations, the
-app refuses the prompt and shows a notification explaining how to try again.
-Accepted prompts use the normal chat reporting for replies, queued turns and
-delivery errors; the page receives no separate answer. Publishing an updated
-artifact uses the normal version flow.
+With the interactive-artifacts feature enabled, a button in its latest version can send a prompt into an existing open chat with its publishing Agent.
+The app checks the sending frame and the preview's agent before submitting through the normal chat path.
+If the Agent is unavailable, the conversation is missing or loading, the Session is a terminal, or the user has switched conversations, the app refuses the prompt and shows a notification explaining how to try again.
+Accepted prompts use the normal chat reporting for replies, queued turns and delivery errors; the page receives no separate answer.
+Publishing an updated artifact uses the normal version flow.
 
-The same page can also **share state with its Agent** through the **Artifact
-API**, an HTTP server the publishing Agent runs inside its own sandbox on the
-fixed Artifact API Port, bound to loopback. The state lives with the Agent, so
-both the page and the Agent read and change it, unlike the page's own browser
-storage, which the Agent never sees. Unlike a prompt, this is request and
-response. One request travels four hops: the page posts it to the host app; the
-app checks the frame and the same gate as for prompts, then calls the api-server
-with the owner's own session; the api-server checks the artifact and wakes its
-Agent through the reachability primitive ([agent-lifecycle](agent-lifecycle.md#wake));
-agent-runtime relays it over loopback to the Agent's server, and the answer comes
-back the same way. The call names an artifact, never an Agent: the api-server
-reads the publishing Agent from the artifact, so a page can only reach the Agent
-that published it, and uploaded artifacts (no publishing Agent) get no access. It
-serves only artifacts that are owned by the caller, HTML, interactive and
-private, whatever the feature flag says. Any HTTP status the server returns is a
-normal answer; a typed failure reason reports only what the platform could not
-deliver, such as nothing listening on the port, a timeout, a body over the size
-cap or too many requests in flight from one frame. The bridge also rejects any
-request the host has not answered within three minutes, longer than a wake plus
-the relay timeout, so every call settles even when the host drops it. Bodies are text only and
-capped both ways, and only the content type crosses in either direction. The
-Agent starts and keeps its server alive itself; the platform never starts,
-supervises or restarts it, so after hibernation the page reports nothing
-listening until the Agent starts it again. The contract is in
-[`packages/api-server-api/`](../../packages/api-server-api/) and
-[`packages/agent-runtime-api/`](../../packages/agent-runtime-api/).
+The same page can also **share state with its Agent** through the **Artifact API**, an HTTP server the publishing Agent runs inside its own sandbox on the fixed Artifact API Port, bound to loopback.
+The state lives with the Agent, so both the page and the Agent read and change it, unlike the page's own browser storage, which the Agent never sees.
+Unlike a prompt, this is request and response.
+One request travels four hops: the page posts it to the host app; the app checks the frame and the same gate as for prompts, then calls the api-server with the owner's own session; the api-server checks the artifact and wakes its Agent through the reachability primitive ([agent-lifecycle](agent-lifecycle.md#wake)); agent-runtime relays it over loopback to the Agent's server, and the answer comes back the same way.
+The call names an artifact, never an Agent: the api-server reads the publishing Agent from the artifact, so a page can only reach the Agent that published it, and uploaded artifacts (no publishing Agent) get no access.
+It serves only artifacts that are owned by the caller, HTML, interactive and private, whatever the feature flag says.
+Any HTTP status the server returns is a normal answer; a typed failure reason reports only what the platform could not deliver, such as nothing listening on the port, a timeout, a body over the size cap or too many requests in flight from one frame.
+The bridge also rejects any request the host has not answered within three minutes, longer than a wake plus the relay timeout, so every call settles even when the host drops it.
+Bodies are text only and capped both ways, and only the content type crosses in either direction.
+The Agent starts and keeps its server alive itself; the platform never starts, supervises or restarts it, so after hibernation the page reports nothing listening until the Agent starts it again.
+The contract is in [`packages/api-server-api/`](../../packages/api-server-api/) and [`packages/agent-runtime-api/`](../../packages/agent-runtime-api/).
 
-The renderer injects a platform-owned bridge (`sendPrompt` and `request`)
-without changing the stored HTML. It sends requests to the host over
-`window.postMessage`; the in-app sandbox retains an opaque origin and receives
-no app credentials. The host
-validates both the message payload and the sending window against its preview
-frame: the injected API is an authoring convenience, not an authorization gate.
-The page still never holds a credential for either call. The frame is sandboxed
-without modals, so browser dialogs are blocked.
+The renderer injects a platform-owned bridge (`sendPrompt` and `request`) without changing the stored HTML.
+It sends requests to the host over `window.postMessage`; the in-app sandbox retains an opaque origin and receives no app credentials.
+The host validates both the message payload and the sending window against its preview frame: the injected API is an authoring convenience, not an authorization gate.
+The page still never holds a credential for either call.
+The frame is sandboxed without modals, so browser dialogs are blocked.
 
-Callbacks are available only in the chat's docked preview, including fullscreen,
-and work in a newly started conversation without reloading the page.
-Library previews and historical versions cannot send prompts or requests, and
-disabling the feature disconnects both. There is no permanent Session binding: the
-currently open conversation is the destination. Interactive pages cannot be shared,
-including with named viewers; that restriction is enforced with the sharing write.
+Callbacks are available only in the chat's docked preview, including fullscreen, and work in a newly started conversation without reloading the page.
+Library previews and historical versions cannot send prompts or requests, and disabling the feature disconnects both.
+There is no permanent Session binding: the currently open conversation is the destination.
+Interactive pages cannot be shared, including with named viewers; that restriction is enforced with the sharing write.
 Retention remains available, and a separate static copy can be shared.
 
 ## Sharing model
 
-**Visibility** is one field with three values, and the share link — a URL on
-the share host keyed by an unguessable random **slug** — is the same for the
-two that have one, so switching between them never changes the link.
+**Visibility** is one field with three values, and the share link — a URL on the share host keyed by an unguessable random **slug** — is the same for the two that have one, so switching between them never changes the link.
 
 - An artifact is **private** by default: visible in-app only, no link.
-- **Restricted** opens the link to a named group. The owner keeps a **viewer
-  allowlist** of email addresses — emails, not user ids, because a listed
-  person may exist only in the identity provider and never have signed in to
-  the platform. Viewers need an account admitted by that identity provider;
-  an email address alone does not create one. An empty list leaves the link
-  accessible only to the owner. A visitor signs in with that provider; the artifact renders when the verified email from that sign-in
-  matches a listed one (normalised once, at the boundary: trimmed and
-  lowercased), or when the visitor is the owner. Anyone else lands on a plain
-  no-access page naming the email they signed in with and offering to switch
-  account; it shows neither the title nor the owner. Here the slug only
-  *locates* the artifact — the share session authorizes. Only a person sets
-  restricted, in the Share dialog: agent tools offer private and public, and
-  refuse any sharing change on an artifact that is already restricted, so an
-  agent can neither widen a restricted link nor edit who is on it. Agent
-  responses omit the viewer allowlist.
-- **Public** opens the link to anyone. For a public artifact the slug is the
-  *entire* access control: there is no account, token, or password on the
-  public side — whoever holds the link may view, and guarding the link is the
-  sharer's responsibility (deliberately: a second factor sent alongside a
-  leaked link leaks with it).
-- An optional **retention** date bounds the *artifact's* lifetime — it schedules
-  permanent deletion, not link expiry, and applies regardless of visibility (a
-  private artifact is deleted the same way; storage lifecycle is a separate
-  concern from sharing). On the public side, a past-due link answers "gone"
-  (with a distinct "scheduled for deletion" page during a grace window in which
-  the owner can still restore it by choosing a new date); once the grace window
-  passes, a background sweep hard-deletes the content.
-- A folder has a public page of its own, listing only the *public* artifacts
-  inside it — restricted ones never appear there, since the page itself has no
-  viewer; a folder with nothing public is indistinguishable from a nonexistent
-  one.
-- A share link serves **only the current version** — the page, the framed
-  content and the source download alike, for public and restricted links.
-  The page offers no version navigation and frames the current version
-  whatever a visitor asks for; a frame or byte address naming any other
-  version answers "not found". A share link is a publishing surface, not a
-  revision log: an owner who removes something in a revision has removed it
-  from everyone holding the link. The history stays with the owner, in the
-  app.
-- Each successful share-page render increments a per-artifact **view count**,
-  surfaced in-app as a cheap reach signal.
+- **Restricted** opens the link to a named group.
+  The owner keeps a **viewer allowlist** of email addresses — emails, not user ids, because a listed person may exist only in the identity provider and never have signed in to the platform.
+  Viewers need an account admitted by that identity provider; an email address alone does not create one.
+  An empty list leaves the link accessible only to the owner.
+  A visitor signs in with that provider; the artifact renders when the verified email from that sign-in matches a listed one (normalised once, at the boundary: trimmed and lowercased), or when the visitor is the owner.
+  Anyone else lands on a plain no-access page naming the email they signed in with and offering to switch account; it shows neither the title nor the owner.
+  Here the slug only *locates* the artifact — the share session authorizes.
+  Only a person sets restricted, in the Share dialog: agent tools offer private and public, and refuse any sharing change on an artifact that is already restricted, so an agent can neither widen a restricted link nor edit who is on it.
+  Agent responses omit the viewer allowlist.
+  An artifact an agent creates is private unless the agent passes public, and the agent tools tell it to do that only when the user asks for a public link.
+- **Public** opens the link to anyone.
+  For a public artifact the slug is the *entire* access control: there is no account, token, or password on the public side — whoever holds the link may view, and guarding the link is the sharer's responsibility (deliberately: a second factor sent alongside a leaked link leaks with it).
+- An optional **retention** date bounds the *artifact's* lifetime — it schedules permanent deletion, not link expiry, and applies regardless of visibility (a private artifact is deleted the same way; storage lifecycle is a separate concern from sharing).
+  On the public side, a past-due link answers "gone" (with a distinct "scheduled for deletion" page during a grace window in which the owner can still restore it by choosing a new date); once the grace window passes, a background sweep hard-deletes the content.
+- A folder has a public page of its own, listing only the *public* artifacts inside it — restricted ones never appear there, since the page itself has no viewer; a folder with nothing public is indistinguishable from a nonexistent one.
+- A share link serves **only the current version** — the page, the framed content and the source download alike, for public and restricted links.
+  The page offers no version navigation and frames the current version whatever a visitor asks for; a frame or byte address naming any other version answers "not found".
+  A share link is a publishing surface, not a revision log: an owner who removes something in a revision has removed it from everyone holding the link.
+  The history stays with the owner, in the app.
+- Each successful share-page render increments a per-artifact **view count**, surfaced in-app as a cheap reach signal.
 
-A sharing change — visibility, retention date, and the viewer allowlist — is
-one transaction: the artifact row is locked, every part of the new sharing
-state lands together or not at all, and the share event is judged against the
-state the change replaced, so no failure can leave a restricted link with a
-stale allowlist or fire a share for a transition that never committed.
+A sharing change — visibility, retention date, and the viewer allowlist — is one transaction: the artifact row is locked, every part of the new sharing state lands together or not at all, and the share event is judged against the state the change replaced, so no failure can leave a restricted link with a stale allowlist or fire a share for a transition that never committed.
 
 ## The share host — trust boundary
 
-User-generated content is never served from the app origin. Two dedicated
-by-link hosts (separate subdomains, both mandatory, wired through the cluster
-ingress and configured via Helm) carry it:
+User-generated content is never served from the app origin.
+Two dedicated by-link hosts (separate subdomains, both mandatory, wired through the cluster ingress and configured via Helm) carry it:
 
-- The **share host** serves *only* the by-link surfaces — share pages and
-  their source download, folder pages, the share sign-in routes, and the
-  read-only knowledge-base MCP endpoint — never an app route.
-- The **content host** serves *only* the framed artifact document and its raw
-  bytes. It has no cookie, no sign-in, and no page of its own, so there is
-  nothing on that origin for artifact code to act as.
+- The **share host** serves *only* the by-link surfaces — share pages and their source download, folder pages, the share sign-in routes, and the read-only knowledge-base MCP endpoint — never an app route.
+- The **content host** serves *only* the framed artifact document and its raw bytes.
+  It has no cookie, no sign-in, and no page of its own, so there is nothing on that origin for artifact code to act as.
 
-The api-server host-gates every request before any app route or auth
-middleware: requests for the share host go to a self-contained share-host app
-— the artifact viewer, share sign-in, plus the read-only
-[knowledge-base MCP endpoint](knowledge-bases.md#sharing) under `/mcp/kb` —
-requests for the content host go to the content app, and everything else
-falls through to the platform surface. The app origin shares nothing with
-either by-link origin — no cookie, no token — so a malicious artifact cannot
-reach Keycloak tokens, the tRPC surface, or app cookies, because none of them
-exist on its origin.
+The api-server host-gates every request before any app route or auth middleware: requests for the share host go to a self-contained share-host app — the artifact viewer, share sign-in, plus the read-only [knowledge-base MCP endpoint](knowledge-bases.md#sharing) under `/mcp/kb` — requests for the content host go to the content app, and everything else falls through to the platform surface.
+The app origin shares nothing with either by-link origin — no cookie, no token — so a malicious artifact cannot reach Keycloak tokens, the tRPC surface, or app cookies, because none of them exist on its origin.
 
-**Share session.** A restricted artifact needs a viewer identity on the share
-host, and that identity is deliberately not the app's. The share host signs
-the visitor in through a dedicated public Keycloak client
-(authorization code with PKCE, asking for OpenID identity and email, see
-[identity](security-and-credentials.md#identity)). Its redirect is pinned to
-the share host's callback and its tokens carry no api audience, so a token
-minted for it is useless against the api-server. The code is redeemed
-server-side and no token ever reaches the browser: the browser holds an opaque
-session id in an `HttpOnly` cookie scoped to the share origin, pointing at a
-Redis-held session that carries the subject, the email and whether the
-provider verified it, and a fixed lifetime. Signing out ends both that session
-and the identity provider's, so "switch account" on the no-access page really
-switches. Every restricted response is marked private and uncacheable so no
-shared cache replays it to the next visitor.
+**Share session.** A restricted artifact needs a viewer identity on the share host, and that identity is deliberately not the app's.
+The share host signs the visitor in through a dedicated public Keycloak client (authorization code with PKCE, asking for OpenID identity and email, see [identity](security-and-credentials.md#identity)).
+Its redirect is pinned to the share host's callback and its tokens carry no api audience, so a token minted for it is useless against the api-server.
+The code is redeemed server-side and no token ever reaches the browser: the browser holds an opaque session id in an `HttpOnly` cookie scoped to the share origin, pointing at a Redis-held session that carries the subject, the email and whether the provider verified it, and a fixed lifetime.
+Signing out ends both that session and the identity provider's, so "switch account" on the no-access page really switches.
+Every restricted response is marked private and uncacheable so no shared cache replays it to the next visitor.
 
-**The artifact frame.** A share page is two documents from two origins. The
-outer page, on the share host, is platform chrome (title banner and source
-download); the inner document is the user content, loaded
-from the content host in an iframe. The browser's same-origin rule is the
-boundary: artifact code runs as the content origin, so it can neither read the
-share session cookie nor call the share host as the signed-in viewer. The
-sandbox blocks top-level navigation and forms, but permits scripts,
-same-origin access and unsandboxed popups: it does not provide an independent
-origin boundary. The content host agrees to be framed only by the share origin, and
-serves raw bytes under a sandbox directive so a document opened directly
-cannot run either.
+**The artifact frame.** A share page is two documents from two origins.
+The outer page, on the share host, is platform chrome (title banner and source download); the inner document is the user content, loaded from the content host in an iframe.
+The browser's same-origin rule is the boundary: artifact code runs as the content origin, so it can neither read the share session cookie nor call the share host as the signed-in viewer.
+The sandbox blocks top-level navigation and forms, but permits scripts, same-origin access and unsandboxed popups: it does not provide an independent origin boundary.
+The content host agrees to be framed only by the share origin, and serves raw bytes under a sandbox directive so a document opened directly cannot run either.
 
-The content host cannot see the share session, so a restricted frame carries
-a **render token**: minted by the share page for exactly one artifact and its
-current version after the viewer passed, with a short expiry, redeemed by the
-content host on the document and on its raw bytes. It is a short-lived,
-single-purpose bearer grant — not a session and not an identity; anyone
-holding it can replay it until expiry, after which a pasted frame address
-answers unauthorized. A public frame needs no token, and
-the source download on the share host never does: it is gated by the share
-session like the page itself.
+The content host cannot see the share session, so a restricted frame carries a **render token**: minted by the share page for exactly one artifact and its current version after the viewer passed, with a short expiry, redeemed by the content host on the document and on its raw bytes.
+It is a short-lived, single-purpose bearer grant — not a session and not an identity; anyone holding it can replay it until expiry, after which a pasted frame address answers unauthorized.
+A public frame needs no token, and the source download on the share host never does: it is gated by the share session like the page itself.
 
-Rendering is entirely client-side — the server never compiles or sanitizes
-user content, it only wraps it:
+Rendering is entirely client-side — the server never compiles or sanitizes user content, it only wraps it:
 
 - **HTML** renders as authored (links retargeted to open new tabs).
-- **JSX** is transformed in the visitor's browser (babel-standalone) with
-  dependencies resolved from public CDNs via an import map pinned to the
-  versions Claude-style artifacts expect (react, recharts, d3, three, …).
-- **Markdown** renders client-side through a sanitizer; **code and text**
-  render as highlighted source.
-- **Images** preview inline; other binaries get a download page. Raw bytes
-  are served inline only for images — everything else is download-only, so
-  no user-controlled document can execute on either by-link origin *outside*
-  the frame.
+- **JSX** is transformed in the visitor's browser (babel-standalone) with dependencies resolved from public CDNs via an import map pinned to the versions Claude-style artifacts expect (react, recharts, d3, three, …).
+- **Markdown** renders client-side through a sanitizer; **code and text** render as highlighted source.
+- **Images** preview inline; other binaries get a download page.
+  Raw bytes are served inline only for images — everything else is download-only, so no user-controlled document can execute on either by-link origin *outside* the frame.
 
-The viewer sends conservative headers (no-referrer, nosniff, framing pinned
-to the share origin) but deliberately no restrictive content CSP: the
-dedicated content origin provides origin isolation; the sandbox restricts
-specific browser capabilities.
+The viewer sends conservative headers (no-referrer, nosniff, framing pinned to the share origin) but deliberately no restrictive content CSP: the dedicated content origin provides origin isolation; the sandbox restricts specific browser capabilities.
 
-Blob bytes relay through the api-server with constant memory: raw views
-stream store → response without ever buffering the object (the store is
-deliberately never exposed to the public side — no presigned links leave
-this origin), page renders buffer only size-capped text sources (anything
-bigger falls back to the download card), and the public folder listing is
-bounded. What remains on the api-server per public view is bounded work: a
-small HTML wrapper, an indexed slug lookup, and pass-through bandwidth.
+Blob bytes relay through the api-server with constant memory: raw views stream store → response without ever buffering the object (the store is deliberately never exposed to the public side — no presigned links leave this origin), page renders buffer only size-capped text sources (anything bigger falls back to the download card), and the public folder listing is bounded.
+What remains on the api-server per public view is bounded work: a small HTML wrapper, an indexed slug lookup, and pass-through bandwidth.
 
-The viewer runs inside the api-server process — a deliberate, accepted
-trade-off for now rather than an oversight: origin isolation is real, but
-the event loop and DB pool are shared with the control plane. The viewer
-keeps its dependency surface minimal (metadata reads, blob reads) exactly
-so it can move into its own deployment when sustained public traffic
-warrants it. Interactive callbacks use the existing chat relay in the app.
+The viewer runs inside the api-server process — a deliberate, accepted trade-off for now rather than an oversight: origin isolation is real, but the event loop and DB pool are shared with the control plane.
+The viewer keeps its dependency surface minimal (metadata reads, blob reads) exactly so it can move into its own deployment when sustained public traffic warrants it.
+Interactive callbacks use the existing chat relay in the app.
 
 ## Publishing and download paths
 
@@ -289,141 +153,68 @@ flowchart LR
   visitor -->|restricted: sign in| keycloak[keycloak]
 ```
 
-- **Agents** publish through artifact tools on the per-agent platform MCP
-  server (the same in-pod outbound surface as channels, skills, and
-  schedules). Small text content travels inline; anything bigger takes
-  the **direct-transfer** path: the tool
-  mints a short-lived presigned upload link, the harness PUTs bytes straight
-  to the store through its paired gateway, and the create call references the
-  completed upload. The platform verifies the upload (existence, size cap)
-  before the artifact row lands, and an upload reference outside the caller's
-  own staging namespace reads as unknown. Attribution is the mesh-verified
-  agent identity — a harness cannot publish as another agent, and the
-  owner-scoped service means it can only ever touch its owner's library.
-  Reads mirror this: small text content returns inline, and a download tool
-  mints a short-lived presigned link — signed for the same agent-dialed
-  store authority — that the harness GETs straight into its sandbox (any
-  kind or size, current or a past version), so work products published from
-  one sandbox are consumable in another without transiting the conversation.
-- **Users** publish from the Artifacts page in the UI: bytes go through an
-  authenticated upload route on the app origin (avoiding browser↔store CORS),
-  then the same create call. Downloads answer with a presigned direct link
-  when the store has a browser-reachable endpoint, a relayed blob otherwise.
-- **Workspace files** promote into artifacts from the chat file panel: the
-  browser already holds the file's text, so publishing is the ordinary user
-  create/update call (with the upload route for content over the inline cap)
-  plus two extra facts — the create attributes the artifact to the sandbox's
-  agent (validated against the owner's agents), and both calls record the
-  file's workspace-relative path on the artifact as its source path. The path
-  is a plain label: the server never dereferences or validates it, and the UI
-  uses it only to decide between creating a new artifact and publishing a new
-  version of an existing one (among the agent's artifacts with a matching
-  path, the most recently updated wins). The same label is settable through
-  the MCP artifact tools.
+- **Agents** publish through artifact tools on the per-agent platform MCP server (the same in-pod outbound surface as channels, skills, and schedules).
+  Small text content travels inline; anything bigger takes the **direct-transfer** path: the tool mints a short-lived presigned upload link, the harness PUTs bytes straight to the store through its paired gateway, and the create call references the completed upload.
+  The platform verifies the upload (existence, size cap) before the artifact row lands, and an upload reference outside the caller's own staging namespace reads as unknown.
+  Attribution is the mesh-verified agent identity — a harness cannot publish as another agent, and the owner-scoped service means it can only ever touch its owner's library.
+  Reads mirror this: small text content returns inline, and a download tool mints a short-lived presigned link — signed for the same agent-dialed store authority — that the harness GETs straight into its sandbox (any kind or size, current or a past version), so work products published from one sandbox are consumable in another without transiting the conversation.
+- **Users** publish from the Artifacts page in the UI: bytes go through an authenticated upload route on the app origin (avoiding browser↔store CORS), then the same create call.
+  Downloads answer with a presigned direct link when the store has a browser-reachable endpoint, a relayed blob otherwise.
+- **Workspace files** promote into artifacts from the chat file panel: the browser already holds the file's text, so publishing is the ordinary user create/update call (with the upload route for content over the inline cap) plus two extra facts — the create attributes the artifact to the sandbox's agent (validated against the owner's agents), and both calls record the file's workspace-relative path on the artifact as its source path.
+  The path is a plain label: the server never dereferences or validates it, and the UI uses it only to decide between creating a new artifact and publishing a new version of an existing one (among the agent's artifacts with a matching path, the most recently updated wins).
+  The same label is settable through the MCP artifact tools.
 
 ## UI surfaces
 
-- **Artifacts** is a top-level destination in the navigation rail: the whole
-  library grouped by folder, with search, upload, folder management, sharing
-  controls, a separate delete-after (retention) control, and in-app previews
-  that reuse the chat file-viewer stack (markdown prose, highlighted code,
-  inline images). An owner can **change a text artifact's content** from the
-  preview they read it in, which publishes a version like any other revision,
-  so the artifact keeps its identity, its link and every earlier version. Only
-  the current version is editable; a past one is read-only. Editing is bounded
-  further by what the platform accepts in one inline write, which is less than
-  it hands back to read — a document past that bound stays readable but offers
-  no Edit, so no surface advertises an action the save would refuse. The version
-  history is readable rather than merely steppable — each version says when it
-  was written and who wrote it. Retention is reached from the artifact's own
-  menu rather than the sharing dialog, and stays available whatever the
-  artifact's visibility — it governs deletion, not the link. An artifact's
-  visibility badge is also the control that opens the sharing dialog, so the
-  state and the means to change it sit in one place; the library's artifact
-  rows therefore show their share actions at rest, while every other row —
-  folders here, and artifacts in the chat side panel — keeps its actions
-  behind a hover reveal. The in-app preview and the chat panel's docked artifact
-  view carry the same entry point — badge, a copy-link control once a share
-  link exists, and an always-present Share button — so opening an artifact is
-  a place to start sharing it rather than a dead end.
-  Folder membership is mutable and advisory: any artifact can be filed into
-  any folder, moved to another, or taken out again from the library itself, so
-  organising a library is not tied to the moment each artifact was published.
-  Filing works from the artifact's menu or by dragging it onto a folder; a
-  drag held near the top or bottom edge of the list scrolls it, so a folder
-  off screen can still take the drop.
+- **Artifacts** is a top-level destination in the navigation rail: the whole library grouped by folder, with search, upload, folder management, sharing controls, a separate delete-after (retention) control, and in-app previews that reuse the chat file-viewer stack (markdown prose, highlighted code, inline images).
+  An owner can **change a text artifact's content** from the preview they read it in, which publishes a version like any other revision, so the artifact keeps its identity, its link and every earlier version.
+  Only the current version is editable; a past one is read-only.
+  Editing is bounded further by what the platform accepts in one inline write, which is less than it hands back to read — a document past that bound stays readable but offers no Edit, so no surface advertises an action the save would refuse.
+  The version history is readable rather than merely steppable — each version says when it was written and who wrote it.
+  Retention is reached from the artifact's own menu rather than the sharing dialog, and stays available whatever the artifact's visibility — it governs deletion, not the link.
+  An artifact's visibility badge is also the control that opens the sharing dialog, so the state and the means to change it sit in one place; the library's artifact rows therefore show their share actions at rest, while every other row — folders here, and artifacts in the chat side panel — keeps its actions behind a hover reveal.
+  The in-app preview and the chat panel's docked artifact view carry the same entry point — badge, a copy-link control once a share link exists, and an always-present Share button — so opening an artifact is a place to start sharing it rather than a dead end.
+  Folder membership is mutable and advisory: any artifact can be filed into any folder, moved to another, or taken out again from the library itself, so organising a library is not tied to the moment each artifact was published.
+  Filing works from the artifact's menu or by dragging it onto a folder; a drag held near the top or bottom edge of the list scrolls it, so a folder off screen can still take the drop.
   Nothing reads membership as a claim about provenance.
-- The Home feed's session cards carry **artifact chips** — what the session
-  touched since the card was last dismissed, opening the preview dialog in
-  place.
-- The chat file panel's toolbar carries a **Create artifact / Sync to
-  artifact** action that publishes the open file as above and switches the
-  dock to the resulting artifact; binary and oversized files are excluded.
-- The chat view carries the same library twice over: an **Artifacts section**
-  in the session sidebar, scoped to the sandbox's agent, grouped by folder and
-  offering the same per-artifact actions plus drag-to-folder filing, and a
-  **docked preview** beside the conversation that renders the selected
-  artifact, hosts the same editor, and follows new versions as they are
-  published. That preview shares one slot with the sandbox file viewer, so
-  opening either evicts the other; both ask before they displace an unsaved
-  edit, and so does every dismissal of a surface holding one. Deleting the
-  artifact a preview is showing closes that preview.
-- On the agent-scoped chat surface a folder shows only that agent's artifacts,
-  and a folder that holds none of them is not listed, so the agent's artifacts
-  stay in view. **Move to folder…** still offers every user folder as a filing
-  target, and a moved artifact makes its folder appear. The library itself
-  lists every folder unconditionally.
+- The Home feed's session cards carry **artifact chips** — what the session touched since the card was last dismissed, opening the preview dialog in place.
+- The chat file panel's toolbar carries a **Create artifact / Sync to artifact** action that publishes the open file as above and switches the dock to the resulting artifact; binary and oversized files are excluded.
+- The chat view carries the same library twice over: an **Artifacts section** in the session sidebar, scoped to the sandbox's agent, grouped by folder and offering the same per-artifact actions plus drag-to-folder filing, and a **docked preview** beside the conversation that renders the selected artifact, hosts the same editor, and follows new versions as they are published.
+  That preview shares one slot with the sandbox file viewer, so opening either evicts the other; both ask before they displace an unsaved edit, and so does every dismissal of a surface holding one.
+  Deleting the artifact a preview is showing closes that preview.
+- On the agent-scoped chat surface a folder shows only that agent's artifacts, and a folder that holds none of them is not listed, so the agent's artifacts stay in view.
+  **Move to folder…** still offers every user folder as a filing target, and a moved artifact makes its folder appear.
+  The library itself lists every folder unconditionally.
 
 ## Lifecycle and cleanup
 
-Deleting an artifact removes the metadata row and all version rows in one
-transaction, then deletes the blobs best-effort — a failed blob delete can
-leave an orphaned (unreachable) object in the store, never a dangling row.
-The database enforces the composition with foreign keys: version rows cascade
-with their artifact, and folder deletion detaches its artifacts. Deleting a
-folder ungroups its artifacts (their share state is untouched).
-The **retention sweep** runs as a scheduled platform periodic job (its own
-queue and worker lane) — one execution per period across replicas, with the
-tick itself idempotent —
-and permanently removes artifacts — private ones included — whose retention
-date passed more than the grace window ago. Agent deletion does
-**not** touch artifacts — attribution simply points at a name that no longer
-resolves.
+Deleting an artifact removes the metadata row and all version rows in one transaction, then deletes the blobs best-effort — a failed blob delete can leave an orphaned (unreachable) object in the store, never a dangling row.
+The database enforces the composition with foreign keys: version rows cascade with their artifact, and folder deletion detaches its artifacts.
+Deleting a folder ungroups its artifacts (their share state is untouched).
+The **retention sweep** runs as a scheduled platform periodic job (its own queue and worker lane) — one execution per period across replicas, with the tick itself idempotent — and permanently removes artifacts — private ones included — whose retention date passed more than the grace window ago.
+Agent deletion does **not** touch artifacts — attribution simply points at a name that no longer resolves.
 
 ## Domain events
 
-Every mutation raises a domain event on the in-process bus. They are advisory
-and non-durable: nothing here is the system of record, and no artifact event
-reaches the security audit trail.
+Every mutation raises a domain event on the in-process bus.
+They are advisory and non-durable: nothing here is the system of record, and no artifact event reaches the security audit trail.
 
-Two different consumers read them, and the split matters because the same
-moment can produce both:
+Two different consumers read them, and the split matters because the same moment can produce both:
 
-- **Live updates.** Create, update, delete, and folder changes exist so an open
-  browser refreshes without polling. They fire on every mutation, including
-  ones no person asked for — the retention sweep deletes artifacts on a timer
-  and raises a delete like any other.
-- **Usage.** Publish, share, view, and delete are recorded as
-  [Activity Events](usage-tracking.md). Share is raised only on the transition
-  *out of* private — into public or restricted alike — so neither extending
-  retention, moving between the two shared states, nor revoking a link counts
-  as sharing. A view is what places an opening in time — the artifact's own
-  counter is a lifetime total that cannot say when, or whether the link was
-  opened at all after some date.
+- **Live updates.** Create, update, delete, and folder changes exist so an open browser refreshes without polling.
+  They fire on every mutation, including ones no person asked for — the retention sweep deletes artifacts on a timer and raises a delete like any other.
 
-  Only the person-driven ones are recorded. An event carries an actor exactly
-  when a person caused it, and the usage subscriber ignores anything without
-  one, so the timer sweep's deletes never reach the activity log even though
-  they raise the same event. That rule is what keeps machine activity out of
-  every number on this page.
+- **Usage.** Publish, share, view, and delete are recorded as [Activity Events](usage-tracking.md).
+  Share is raised only on the transition *out of* private — into public or restricted alike — so neither extending retention, moving between the two shared states, nor revoking a link counts as sharing.
+  A view is what places an opening in time — the artifact's own counter is a lifetime total that cannot say when, or whether the link was opened at all after some date.
 
-A publish carries the agent it is attributed to and the surface it came
-through, and the two answer different questions. Attribution says whose
-library section the artifact lands in — a person promoting a workspace file
-publishes with the sandbox's agent attached. The surface says who filed it:
-agent publishes arrive over the per-agent MCP server, person-driven ones over
-the browser's tRPC surface, so the person-or-agent question is asked of the
-surface, never of the attribution.
+  Only the person-driven ones are recorded.
+  An event carries an actor exactly when a person caused it, and the usage subscriber ignores anything without one, so the timer sweep's deletes never reach the activity log even though they raise the same event.
+  That rule is what keeps machine activity out of every number on this page.
+
+A publish carries the agent it is attributed to and the surface it came through, and the two answer different questions.
+Attribution says whose library section the artifact lands in — a person promoting a workspace file publishes with the sandbox's agent attached.
+The surface says who filed it: agent publishes arrive over the per-agent MCP server, person-driven ones over the browser's tRPC surface, so the person-or-agent question is asked of the surface, never of the attribution.
 
 ## Where the code lives
 

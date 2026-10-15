@@ -1,35 +1,9 @@
-import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { delimiter, dirname, join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
-
-function adapterDir() {
-  if (process.env.CLAUDE_AGENT_ACP_DIR) return process.env.CLAUDE_AGENT_ACP_DIR;
-  const bin = (process.env.PATH ?? "")
-    .split(delimiter)
-    .map((dir) => join(dir, "claude-agent-acp"))
-    .find((candidate) => existsSync(candidate));
-  if (!bin) throw new Error("claude-agent-acp not found on PATH");
-  const shim = readFileSync(bin, "utf8").match(/^# aube-bin-shim v\d+ target=(\S+)$/m);
-  return dirname(dirname(shim ? resolve(dirname(bin), shim[1]) : realpathSync(bin)));
-}
-
-let modulesPromise;
-
-async function loadModules() {
-  const adapter = adapterDir();
-  const agent = await import(
-    pathToFileURL(`${adapter}/dist/acp-agent.js`).href
-  );
-  const sdkPath = [
-    `${adapter}/node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs`,
-    `${adapter}/../../@anthropic-ai/claude-agent-sdk/sdk.mjs`,
-  ].find((candidate) => existsSync(candidate));
-  if (!sdkPath) {
-    throw new Error("claude-agent-sdk not found next to the adapter");
-  }
-  const sdk = await import(pathToFileURL(sdkPath).href);
-  return { agent, sdk };
-}
+const adapter = "/usr/local/lib/harness/claude-code/adapter";
+const modulesPromise = Promise.all([
+  import(`${adapter}/acp-agent.js`),
+  import(`${adapter}/claude-agent-sdk.js`),
+]).then(([agent, sdk]) => ({ agent, sdk }));
+modulesPromise.catch(() => {});
 
 function parentToolUseIdOf(message) {
   const id = message.parent_tool_use_id;
@@ -52,6 +26,14 @@ function stampOf(message) {
   return typeof timestamp === "string" && Number.isFinite(Date.parse(timestamp))
     ? timestamp
     : null;
+}
+
+function isUserText(notification) {
+  const update = notification?.update;
+  return (
+    update?.sessionUpdate === "user_message_chunk" &&
+    update.content?.type === "text"
+  );
 }
 
 function objectOr(value) {
@@ -79,9 +61,7 @@ function modelOf(message, parentToolUseId) {
     : null;
 }
 
-function withStamp(notification, at, telemetryPromptId, model) {
-  if (at === null && telemetryPromptId === null && model === null)
-    return notification;
+function withStamp(notification, entry, block, at, telemetryPromptId, model) {
   const meta = objectOr(notification._meta);
   return {
     ...notification,
@@ -89,6 +69,8 @@ function withStamp(notification, at, telemetryPromptId, model) {
       ...meta,
       platform: {
         ...objectOr(meta.platform),
+        ...(entry ? { entry } : {}),
+        ...(block > 0 ? { block } : {}),
         ...(at !== null ? { at } : {}),
         ...(telemetryPromptId !== null ? { telemetryPromptId } : {}),
         ...(model !== null ? { model } : {}),
@@ -108,7 +90,6 @@ const noopLogger = {
 const noopClient = { sessionUpdate: async () => {} };
 
 export async function loadHistory(sessionId) {
-  modulesPromise ??= loadModules();
   const { agent, sdk } = await modulesPromise;
 
   const info = await sdk.getSessionInfo(sessionId).catch(() => undefined);
@@ -145,6 +126,7 @@ export async function loadHistory(sessionId) {
       content = agent.stripLocalCommandMetadata(content);
       if (content === null) continue;
     }
+    let userTextBlock = 0;
     for (const notification of agent.toAcpNotifications(
       content,
       message.message.role,
@@ -166,6 +148,8 @@ export async function loadHistory(sessionId) {
           method: "session/update",
           params: withStamp(
             notification,
+            messageId,
+            isUserText(notification) ? userTextBlock++ : 0,
             at,
             telemetryPromptId,
             modelOf(message, parentToolUseId),

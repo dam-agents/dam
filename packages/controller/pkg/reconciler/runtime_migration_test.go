@@ -4,6 +4,7 @@ package reconciler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	k8stesting "k8s.io/client-go/testing"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
@@ -172,7 +174,7 @@ func createAll(t *testing.T, r *AgentReconciler, objs ...any) {
 	}
 }
 
-// TEST_SCENARIO: a migration walks every phase. While the preflight makes the owner's runner and the machine, stopped, the container keeps running and keeps its Service. Only once the machine exists is the container scaled down and its home volume recorded; the Job streams that volume to the runner once the pod is gone, and only then may the machine boot. A guest that answers makes the migration Verified, and that alone changes nothing: the spec is still the container's and the old volume is still its own, until the api-server switches the Backend. Then the StatefulSet and headless Service go, the seed is removed, and the old volume is retained rather than deleted.
+// TEST_SCENARIO: a migration walks every phase. While the preflight makes the owner's runner and the machine, stopped, the container keeps running and keeps its Service. Only once the machine exists is the container scaled down and its home volume recorded; the Job streams that volume to the runner once the pod is gone, and only then may the machine boot. A guest that answers makes the migration Verified, and that alone changes nothing: the spec is still the container's and the old volume is still its own, until the api-server switches the Backend. Then the StatefulSet goes, the seed is removed, and the old volume is retained rather than deleted.
 func TestARuntimeMigrationPreparesTheMachineBeforeTheContainerStopsAndSwitchesOnlyAfterABoot(t *testing.T) {
 	ctx := context.Background()
 	agent := migratingAgentCR()
@@ -285,7 +287,7 @@ func TestThePreflightMachineTakesTheTargetShapeAndReportsWhyItIsNotReady(t *test
 	c := requirePhase(t, agent, apiv1.ReasonRuntimeMigrationRequested)
 	assert.Equal(t, "pulling ghcr.io/myorg/agent:latest was denied", c.Message)
 	assert.Equal(t, "ghcr.io/myorg/agent:latest", node.spec("my-agent").Image)
-	assert.Equal(t, 25, node.spec("my-agent").StorageGiB)
+	assert.Equal(t, 100, node.spec("my-agent").StorageGiB, "a new machine is created at the owner's pool, which holds the 25Gi copied volume")
 	assert.Equal(t, int32(1), agentReplicas(t, r), "a preflight that cannot pass leaves the container serving")
 }
 
@@ -768,6 +770,34 @@ func bootingAgentCR(t *testing.T) *apiv1.Agent {
 	return agent
 }
 
+// TEST_SCENARIO: from the boot on the container is down, so the Agent's Service routes to the machine rather than to nothing: the api-server pushes the env the copy left behind as soon as the guest is verified, without waiting for the Backend to switch. An abort before the verified boot gives the container its headless Service back.
+func TestABootingMigrationRoutesTheAgentServiceToTheMachineUntilAnAbort(t *testing.T) {
+	ctx := context.Background()
+	agent := bootingAgentCR(t)
+	r, node, _ := setupVMReconciler(t, agent)
+	createAll(t, r, homePVC("home-agent-my-agent-0"))
+	_, err := r.client.CoreV1().Services("test-agents").Create(ctx, BuildAgentService("my-agent", r.config, metav1.OwnerReference{}), metav1.CreateOptions{})
+	require.NoError(t, err)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000})
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationBooting)
+	svc, err := r.client.CoreV1().Services("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.NotEqual(t, corev1.ClusterIPNone, svc.Spec.ClusterIP, "a headless Service cannot remap the port the machine publishes")
+	assert.Equal(t, vmRunnerSelector(testOwner), svc.Spec.Selector)
+	assert.Equal(t, 31000, svc.Spec.Ports[0].TargetPort.IntValue())
+
+	agent = editStoredAgent(t, r, agent, withoutAnnotations(annRuntimeMigration, annRuntimeMigrationTarget))
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.NoError(t, r.Reconcile(ctx, reloaded(t, r, agent)))
+	svc, err = r.client.CoreV1().Services("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, corev1.ClusterIPNone, svc.Spec.ClusterIP, "the container is reached through its headless Service again")
+	assert.Equal(t, BuildAgentService("my-agent", r.config, metav1.OwnerReference{}).Spec.Selector, svc.Spec.Selector)
+}
+
 // TEST_SCENARIO: the seed can go missing between the copy and the boot — a lost runner claim, a crash, an operator — and the runner then refuses to start the machine rather than boot the image's home. The controller does not wait on a boot that cannot succeed: it deletes the machine and goes back to copying, which is safe because the old volume keeps its labels until the switch, and it says why.
 func TestABootWhoseSeedTheRunnerLostCopiesTheHomeAgain(t *testing.T) {
 	ctx := context.Background()
@@ -855,6 +885,56 @@ func TestACopyThatDoesNotSayWhichSeedItStoredIsMadeAgain(t *testing.T) {
 		assert.True(t, k8serrors.IsNotFound(err), "the copy is made again")
 		assert.False(t, node.spec("my-agent").Running)
 	}
+}
+
+// TEST_SCENARIO: the copy Job is the only record of the seed it stored, so a copy that landed must survive a controller that fails or restarts around it. The Job has no time to live; a write of the seed that fails leaves the Job to read again; and a migration still copying with its seed recorded and no Job left goes on to the boot. None of them spends another attempt.
+func TestACopyThatLandedIsNotLostToTheController(t *testing.T) {
+	ctx := context.Background()
+	agent := migratingAgentIn(apiv1.ReasonRuntimeMigrationCopying, time.Now())
+	agent.Annotations[annRuntimeMigrationSource] = "home-agent-my-agent-0"
+	r, node, _ := setupVMReconciler(t, agent)
+	createAll(t, r, homePVC("home-agent-my-agent-0"))
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	job, err := r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Nil(t, job.Spec.TTLSecondsAfterFinished, "a finished Job waits for the controller however late it comes")
+	completeCopy(t, r, testSeedAnnotation(t))
+
+	refused := false
+	r.dynamic.(interface {
+		PrependReactor(verb, resource string, reaction k8stesting.ReactionFunc)
+	}).PrependReactor("patch", "agents", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		if refused || !strings.Contains(string(action.(k8stesting.PatchAction).GetPatch()), annRuntimeMigrationSeed) {
+			return false, nil, nil
+		}
+		refused = true
+		return true, nil, errors.New("the controller stopped")
+	})
+	_ = r.Reconcile(ctx, agent)
+	require.True(t, refused)
+	agent = reloaded(t, r, agent)
+	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationCopying)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationBooting)
+	assert.Equal(t, int32(1), agent.Status.RuntimeMigrationAttempts)
+	assert.JSONEq(t, testSeedAnnotation(t), agent.Annotations[annRuntimeMigrationSeed])
+
+	agent = migratingAgentIn(apiv1.ReasonRuntimeMigrationCopying, time.Now())
+	agent.Annotations[annRuntimeMigrationSource] = "home-agent-my-agent-0"
+	agent.Annotations[annRuntimeMigrationSeed] = testSeedAnnotation(t)
+	agent.Status.RuntimeMigrationAttempts = 1
+	r, node, _ = setupVMReconciler(t, agent)
+	createAll(t, r, homePVC("home-agent-my-agent-0"))
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationBooting)
+	assert.Equal(t, int32(1), agent.Status.RuntimeMigrationAttempts, "the copy that landed is not made again")
+	_, err = r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err))
 }
 
 // TEST_SCENARIO: an abort drops the record of the seed with the rest of the migration, so a later request never holds a boot to a copy from before.

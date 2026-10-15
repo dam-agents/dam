@@ -32,19 +32,13 @@ function stubFetch(opts: {
 }
 
 describe("createModelDiscovery", () => {
-  it("reports not-configured when no spec is declared", async () => {
+  // TEST_SCENARIO: no spec, or no granted connection naming the endpoint, means there is no list to keep; reporting not-configured clears the one a previous provider left behind.
+  it("reports not-configured without a spec or a set candidate env var (no fetch)", async () => {
     const { fetchImpl, urls } = stubFetch({ body: { data: [{ id: "m" }] } });
     const discover = createModelDiscovery({ log: noop, fetchImpl });
     expect(
       await discover(undefined, { OPENAI_PROXY_URL: "https://x" }),
     ).toEqual({ status: "not-configured" });
-    expect(urls).toEqual([]);
-  });
-
-  // TEST_SCENARIO: no granted connection names the endpoint, so there is no list to keep; reporting not-configured clears the one a previous provider left behind.
-  it("reports not-configured when no candidate env var is set (no fetch)", async () => {
-    const { fetchImpl, urls } = stubFetch({ body: { data: [{ id: "m" }] } });
-    const discover = createModelDiscovery({ log: noop, fetchImpl });
     expect(
       await discover({ urlEnv: ["OPENAI_PROXY_URL", "RITS_URL"] }, {}),
     ).toEqual({ status: "not-configured" });
@@ -77,23 +71,31 @@ describe("createModelDiscovery", () => {
     });
   });
 
-  it("uses the first set candidate and normalizes the base to /v1/models", async () => {
+  it("uses the first set candidate and normalizes the base to /v1/models without doubling /v1", async () => {
     const { fetchImpl, urls } = stubFetch({ body: { data: [{ id: "gpt" }] } });
     const discover = createModelDiscovery({ log: noop, fetchImpl });
     await discover(
       { urlEnv: ["MISSING", "OPENAI_PROXY_URL"] },
       { OPENAI_PROXY_URL: "https://proxy.example.com/" },
     );
-    expect(urls).toEqual(["https://proxy.example.com/v1/models"]);
+    await discover({ urlEnv: ["U"] }, { U: "https://proxy/v1" });
+    expect(urls).toEqual([
+      "https://proxy.example.com/v1/models",
+      "https://proxy/v1/models",
+    ]);
   });
 
   // TEST_SCENARIO: a gateway that injects only addressed requests reads the connection from the placeholder; without it the listing goes out bare and the provider answers 401.
-  it("sends the first set tokenEnv value as the credential", async () => {
+  it("sends the first set tokenEnv value as the credential, and none when unset", async () => {
     const { fetchImpl, headers } = stubFetch({ body: { data: [{ id: "m" }] } });
     const discover = createModelDiscovery({ log: noop, fetchImpl });
     await discover(
       { urlEnv: ["U"], tokenEnv: ["MISSING", "TOKEN"] },
       { U: "https://proxy", TOKEN: "sk-platform:conn:c1" },
+    );
+    await discover(
+      { urlEnv: ["U"], tokenEnv: ["TOKEN"] },
+      { U: "https://proxy" },
     );
     expect(headers).toEqual([
       {
@@ -101,24 +103,8 @@ describe("createModelDiscovery", () => {
         authorization: "Bearer sk-platform:conn:c1",
         "x-api-key": "sk-platform:conn:c1",
       },
+      { accept: "application/json" },
     ]);
-  });
-
-  it("sends no credential when no tokenEnv value is set", async () => {
-    const { fetchImpl, headers } = stubFetch({ body: { data: [{ id: "m" }] } });
-    const discover = createModelDiscovery({ log: noop, fetchImpl });
-    await discover(
-      { urlEnv: ["U"], tokenEnv: ["TOKEN"] },
-      { U: "https://proxy" },
-    );
-    expect(headers).toEqual([{ accept: "application/json" }]);
-  });
-
-  it("does not double-append /v1 when the base already has a version segment", async () => {
-    const { fetchImpl, urls } = stubFetch({ body: { data: [{ id: "gpt" }] } });
-    const discover = createModelDiscovery({ log: noop, fetchImpl });
-    await discover({ urlEnv: ["U"] }, { U: "https://proxy/v1" });
-    expect(urls).toEqual(["https://proxy/v1/models"]);
   });
 
   it("maps ids to choices, filters embeddings, dedups and sorts", async () => {
@@ -146,12 +132,18 @@ describe("createModelDiscovery", () => {
     });
   });
 
-  it("reports unavailable when the body's data is not an array", async () => {
-    const { fetchImpl } = stubFetch({ body: { data: "nope" } });
-    const discover = createModelDiscovery({ log: noop, fetchImpl });
-    expect(await discover({ urlEnv: ["U"] }, { U: "https://p" })).toEqual({
-      status: "unavailable",
-    });
+  it("reports unavailable (never throws) on a bad body, a non-2xx response or a failed fetch", async () => {
+    for (const opts of [
+      { body: { data: "nope" } },
+      { ok: false, status: 502, body: {} },
+      { throws: true },
+    ]) {
+      const { fetchImpl } = stubFetch(opts);
+      const discover = createModelDiscovery({ log: noop, fetchImpl });
+      await expect(
+        discover({ urlEnv: ["U"] }, { U: "https://p" }),
+      ).resolves.toEqual({ status: "unavailable" });
+    }
   });
 
   // TEST_SCENARIO: a listing with nothing usable in it is reported as unavailable, not as an empty list, so a provider having a bad moment leaves the last known models in place instead of erasing them.
@@ -230,14 +222,6 @@ describe("createModelDiscovery", () => {
     });
   });
 
-  it("reports unavailable on a non-2xx response", async () => {
-    const { fetchImpl } = stubFetch({ ok: false, status: 502, body: {} });
-    const discover = createModelDiscovery({ log: noop, fetchImpl });
-    expect(await discover({ urlEnv: ["U"] }, { U: "https://p" })).toEqual({
-      status: "unavailable",
-    });
-  });
-
   // TEST_SCENARIO: a LiteLLM key can be refused the model-information route while still allowed the OpenAI listing, so a refused primary listing must fall back to the declared one on the same endpoint.
   it("asks the fallback listing when the primary one is refused", async () => {
     const urls: string[] = [];
@@ -276,14 +260,6 @@ describe("createModelDiscovery", () => {
       "https://gateway.example.com/inference/v1/model/info",
       "https://gateway.example.com/inference/v1/models",
     ]);
-  });
-
-  it("reports unavailable (never throws) when fetch fails", async () => {
-    const { fetchImpl } = stubFetch({ throws: true });
-    const discover = createModelDiscovery({ log: noop, fetchImpl });
-    await expect(
-      discover({ urlEnv: ["U"] }, { U: "https://p" }),
-    ).resolves.toEqual({ status: "unavailable" });
   });
 
   /**

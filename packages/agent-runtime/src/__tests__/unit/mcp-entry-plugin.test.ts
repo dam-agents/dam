@@ -79,6 +79,9 @@ describe("mcp-entry plugin", () => {
     expect(() =>
       bind({ urlKey: "httpUrl", extraFields: { httpUrl: "x" } }),
     ).toThrow(/cannot be set/);
+    expect(() =>
+      bind({ headersKey: "http_headers", extraFields: { http_headers: "" } }),
+    ).toThrow(/cannot be set/);
   });
 
   it("reserves only what the active branch builds", async () => {
@@ -202,11 +205,5 @@ describe("mcp-entry plugin", () => {
       handler([entry("platform-outbound", "http://hs/mcp")], ctx),
     ).rejects.toThrow(/unparseable/);
     expect(readFileSync(target, "utf8")).toBe(broken);
-  });
-
-  it("rejects an `extraFields` key that names the configured headers key", () => {
-    expect(() =>
-      bind({ headersKey: "http_headers", extraFields: { http_headers: "" } }),
-    ).toThrow(/cannot be set/);
   });
 });

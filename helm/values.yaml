@@ -66,13 +66,14 @@ links:
 # -- Experimental features, one mode each: `experimental` leaves the per-user
 # switch in the hidden settings tab; `on` or `off` hides the switch and decides
 # for every user, whatever they stored. An omitted feature is `experimental`.
-# `vm-sandboxes` also needs `virtualization.enabled`.
+# `vm-sandboxes` also needs `virtualization.enabled`; pinned `on`, it makes
+# every new agent a microVM, starter kits and API creates included.
 features:
   advanced-connections: experimental
   vm-sandboxes: experimental
   interactive-artifacts: experimental
   agent-telemetry: experimental
-  strict-connection-addressing: experimental
+  custom-avatars: experimental
 
 # -- Base domain for the app. UI and API share this host; the ingress
 # splits `/api/*` to the api-server and everything else to the UI. Keycloak
@@ -172,12 +173,13 @@ istio:
 # persistent microVM (smolvm) instead of as a pod, hosted by the **VM
 # runner** — one pod per owner, created by the controller, that holds /dev/kvm
 # and runs the platform's
-# vm-runner agent plus smolvm. A machine persists the agent's home and nothing
-# else, bind-mounted from its one storage disk by platform-init, which the
-# runner runs as every machine's entrypoint; the rest of the guest is a root
-# overlay the machine discards each time it stops, so anything installed
-# outside HOME is gone on the next boot. An Agent whose mounts ask to persist
-# a path outside HOME is refused rather than silently losing it. The controller drives its machine API over TLS
+# vm-runner agent plus smolvm. A machine persists the agent's home,
+# bind-mounted from its one storage disk by platform-init, which the runner
+# runs as every machine's entrypoint; the rest of the guest is a root overlay
+# whose upper layer is on that disk too, kept across stops until an image of
+# another root generation boots, with /tmp, /var/tmp and /var/cache emptied on
+# every boot. An Agent whose mounts ask to persist a path outside HOME is
+# refused rather than silently losing it. The controller drives its machine API over TLS
 # and a bearer token: the controller mints the token, and cert-manager issues
 # the runner's certificate from the runners' own CA (`runnerCA` below), so
 # virtualization needs cert-manager; the agent Service resolves to the
@@ -235,20 +237,18 @@ virtualization:
     # The claim outlives a pod restart and a chart upgrade, but not its owner:
     # the sweep removes a runner once that owner has no vm agents left, and
     # takes the claim with it, so the next one re-fetches the image.
-    # `storage` is the CEILING of one owner's claim, not its size. The claim
-    # is sized from demand: the sum of that owner's machine disks, 1Gi of
-    # headroom per machine for its root overlay and bookkeeping, and
-    # `imageCache.budget` when the cache lives on this claim (no `hostPath`
-    # and no `imageArchiveHostPath`). The controller grows the claim in place
-    # as the owner adds agents, up to this value and no further, so an
-    # owner's disks past it do not fit. Growing needs a class that allows
-    # volume expansion; on a class that does not, or one the controller
-    # cannot read, the claim is created at this value instead, because it
-    # could not grow later. A refused resize costs a warning
-    # in the controller log and leaves that runner at the size it has, rather
-    # than failing its reconcile.
-    # Kubernetes never shrinks a claim: lowering this, or removing agents,
-    # changes no claim that exists.
+    # `storage` is each owner's storage pool, and the size of their claim; an
+    # owner's UserBudget `storage` replaces it for that owner. Every machine
+    # disk is sparse and may grow to the whole pool, so what counts is what
+    # the owner's agents write: the runner sheds cached images and guest
+    # scratch at 75% and refuses new disks, starts and growth at 90%, and the
+    # api-server refuses a new vm agent there. The claim also holds the
+    # bookkeeping and, when the cache lives on it (no `hostPath` and no
+    # `imageArchiveHostPath`), `imageCache.budget`, which must be smaller.
+    # Raising the pool grows existing claims in place, which needs a class
+    # that allows volume expansion; a refused resize costs a warning in the
+    # controller log and leaves that runner at the size it has. Kubernetes
+    # never shrinks a claim: lowering this changes no claim that exists.
     storage: 100Gi
     storageClass: ""
     # Placement: a node with KVM (e.g. KubeVirt's virt nodes and their
@@ -258,7 +258,14 @@ virtualization:
     # REQUIRED when virtualization.enabled — the install fails without
     # limits.memory. Machines are processes of this pod, so that limit is also
     # what the runner admits them against (it refuses one that does not fit,
-    # keeping `reserveMiB` for itself). A running machine counts at what its
+    # keeping `reserveMiB` for itself). It is the owner's whole memory pool,
+    # unless their UserBudget sets `memory` (and `cpu`, which caps the CPU
+    # limit below); the controller then resizes that owner's pod in place:
+    # vm agents have no size of their own and do not count toward the user's
+    # budget; every machine may grow to half of the limit less `reserveMiB`,
+    # so one agent can use most of the pool while a runaway guest hits its
+    # own OOM killer before it takes the runner, and every machine with it.
+    # A running machine counts at what its
     # guest measurably uses plus `headroomMiB`, never above its size, so an
     # owner can run more machines than their sizes add up to; near the limit
     # the controller hibernates the owner's idle agents. `requests.memory` is
@@ -269,14 +276,33 @@ virtualization:
     # It needs in-place pod resize (the `pods/resize` subresource,
     # Kubernetes 1.33+); on an older cluster the request stays where it is
     # set, and the controller logs that once. A node with no room defers or
-    # refuses the resize, which the controller reports too. Leave the CPU
-    # limit unset: it would throttle every guest at once.
+    # refuses the resize, which the controller reports too. The controller
+    # also sets the running pod's CPU limit in place, to `machineCPUs` for
+    # every machine that should run plus one more for the runner, so one
+    # owner's runaway VMM cannot take the node. A `limits.cpu` here caps that
+    # limit: below the machines' vCPUs it throttles every guest at once.
     resources: {}
     # Memory the runner keeps for itself rather than committing to machines.
     reserveMiB: 512
     # Memory each running machine is counted at beyond what it was last
     # measured using, for its guest to grow into before the controller acts.
     headroomMiB: 256
+    # The warm-up floor: what a machine is counted at, at least, until the
+    # runner has measured it and for two minutes after its boot began,
+    # never above its size. The agent's harness starts only once the guest
+    # answers and grows to 2 to 3 GiB within the next minute, so a machine
+    # measured right after its boot holds little of what it will hold.
+    # Counting a boot at its full size, half the pool, would let only two
+    # machines boot at once; at the floor, pool / floor machines warm up
+    # together, and a start refused for that is retried every 30 s. Each
+    # machine also boots with this much RAM, or its size when that is less,
+    # and is grown to its size once the guest is up: a boot costs time for
+    # every GiB it starts with.
+    bootMiB: 3072
+    # vCPUs every machine gets. They are threads of the runner, so an idle
+    # machine costs nothing; the runner's CPU limit covers these vCPUs for
+    # every machine that should run (see `resources`).
+    machineCPUs: 4
     # true = runners may give the node's virtualization extensions to the
     # machines whose Agent asks for them (spec.backend.vm.nestedVirtualization,
     # or controller.agent.templateDefaults.nestedVirtualization for all),
@@ -301,9 +327,19 @@ virtualization:
     # A pass visits each runner about once a minute while its agents run, and
     # on the controller's ten-minute sweep otherwise, so a full roll takes
     # roughly owners / maxConcurrent × (runner restart + machine boot).
+    # A runner whose owner has an agent in the middle of a turn does not take
+    # a free place in the roll: it is offered again on the next pass, and
+    # other owners roll meanwhile. `idleWait` bounds that wait; past it, the
+    # runner rolls even with an agent busy.
+    # With `releaseHostPath` set, a new runner image is handed to each pod in
+    # place instead, and each hand-off takes a place in the same width until
+    # the runner runs the release and its machines answer again; a hand-off
+    # that fails, sees an ensure refused, or outlasts `settleTimeout` halts
+    # the release.
     rollout:
       maxConcurrent: 1
       settleTimeout: 10m
+      idleWait: 1h
     # A directory on the node holding pre-flattened image trees (each with
     # its launch record; `mise run image:stage-vm` makes one) or `docker save`
     # archives, named after the image reference and mounted read-only into
@@ -323,8 +359,9 @@ virtualization:
     # hand-off boot the new one. Only a release that cannot load in the pod
     # (a newer base image's libc) still rolls the pods, through `rollout`, as
     # every runner image does when this is empty. The stager is the only
-    # writer; runners mount it read-only. Not supported on OpenShift yet: the
-    # directory would need an SELinux label the confined runners can read.
+    # writer; runners mount it read-only. On OpenShift it needs `scc`, as
+    # `imageCache.hostPath` does: the stager labels the directory for
+    # containers, as spc_t, so the confined runners can read it.
     releaseHostPath: ""
     # Roll the pods for every release built against another VM runtime, rather
     # than letting a new runtime manage machines an older one started. The
@@ -516,7 +553,7 @@ virtualization:
   # total leaves the cache permanently over it and saying so in its log.
   imageCache:
     hostPath: ""
-    budget: 50Gi
+    budget: 20Gi
     preloadInterval: 5m
     # Unpacking is I/O rather than CPU, and the tree is streamed rather than
     # held, so this is small on purpose. Leave the CPU limit unset: a
@@ -692,6 +729,28 @@ seaweedfs:
     limits:
       cpu: 500m
       memory: 1Gi
+
+# Alert rules for operators on the users' VM pools and on what the cluster
+# holds for them. Needs clickstack.enabled: the platform collector exports the
+# pool series in Prometheus form on port 9464, and a ServiceMonitor and a
+# PrometheusRule render when the cluster serves monitoring.coreos.com/v1
+# (prometheus-operator, OpenShift user-workload monitoring); without that API
+# nothing renders. No series names a user; the alerts point at the Warning
+# Events on the user's vm Agents for that.
+monitoring:
+  enabled: false
+  # Extra labels on the ServiceMonitor and PrometheusRule, for a Prometheus
+  # whose rule or monitor selector needs them.
+  labels: {}
+  thresholds:
+    # Share of a user's pool (memory committed, claim used).
+    warning: 0.75
+    critical: 0.9
+    # Share of scheduler periods the runner's CPU limit throttled.
+    throttled: 0.2
+    # The users' pools against what the nodes (memory) or the storage driver
+    # (storage) hold.
+    overcommit: 1.5
 
 # -- Agent-telemetry backend (ClickStack). Off by default. Requires the ClickHouse and MongoDB
 # operator charts installed out-of-band first (the cluster:install task). See docs/architecture/observability.md.
@@ -1512,6 +1571,9 @@ controller:
 
       # Lifecycle
       idleTimeout: "1h" # hibernate idle agents; "0s" disables
+      # vm agents start fast, so they always take this and ignore their own
+      # hibernationTimeout
+      vmIdleTimeout: "5m"
       terminationGracePeriod: 5 # gateway pods have a hardcoded drain
 
       # Pod metadata + scheduling
@@ -1977,7 +2039,7 @@ harnessTemplates:
 # session has no harness of its own yet, and seeds the harness of new agents.
 # `providers` lists the model-provider connection types the harness can run on;
 # the session picker offers only their models. `telemetry` names the export
-# rail the harness reads (claude-code or bob, see
+# rail the harness reads (claude-code, bob or pi, see
 # docs/architecture/observability.md); it applies only with clickstack.enabled.
 harnesses:
   default: claude-code
@@ -2002,6 +2064,9 @@ harnesses:
       displayName: "Pi"
       description: "Pi coding agent with multi-LLM support"
       providers: [ibm-litellm, curve-bender, anthropic, openai, bedrock]
+      # Pi has no exporter of its own; the image's extension writes the
+      # per-call log records on this rail.
+      telemetry: pi
       tags: ["Any provider"]
     bob:
       enabled: true
@@ -2052,6 +2117,9 @@ harnessTools:
   nodeSelector: {}
   tolerations: []
   scc: ""
+  # A GitHub token for the installer's API lookups, which otherwise share the
+  # node address's anonymous limit. Any token works; it needs no scope.
+  githubToken: ""
   # The installer's; the idling container that keeps the pod scheduled asks
   # for almost nothing.
   resources:
@@ -2127,8 +2195,10 @@ starterKits:
       adaevolve: { enabled: true }
       evox: { enabled: false }
       k-search: { enabled: true }
+      spotlights: { enabled: true }
       software-developer: { enabled: false }
       micro-manager: { enabled: true }
+      quality-assurance: { enabled: true }
   # External catalogs, read in order after the built-in one. Each names a
   # public repository holding catalog.yaml, with `ref` to pin a branch, tag or
   # commit and `dir` to read a subdirectory. A version is never written into
@@ -2142,10 +2212,6 @@ starterKits:
       url: https://github.com/dam-agents/dam-starter-kits
       # ref: v1.4.0          # pin a branch, tag or commit
       # dir: catalogs/public # read catalog.yaml from a subdirectory
-  # The kit that leads the All view of the Starter kits page as a large card,
-  # as `<catalog>/<kit>`. A pin naming a kit no catalog serves, or "", shows
-  # every card at the same size. Rendered as STARTER_KITS_PINNED.
-  pinned: curated/code-guardian
 
 # -- Platform-wide skill sources (shared catalog visible to all users).
 # Rendered into the api-server pod as SKILL_SOURCES_SEED. The same

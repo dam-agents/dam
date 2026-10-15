@@ -13,6 +13,7 @@ import {
   useFocusTrap,
 } from "../../../components/modal.js";
 import { useStore } from "../../../store.js";
+import { useDenyApprovals } from "../../approvals/hooks/use-deny-approvals.js";
 import { useArtifact } from "../../artifacts/api/queries.js";
 import { ArtifactPreviewDialog } from "../../artifacts/components/artifact-preview-dialog.js";
 import {
@@ -21,6 +22,7 @@ import {
   useFeedArtifacts,
 } from "../api/queries.js";
 import { useDismissals } from "../hooks/use-dismissals.js";
+import { useFeedConversations } from "../hooks/use-feed-conversations.js";
 import { useStickyResolved } from "../hooks/use-sticky-resolved.js";
 import { useWaitingApprovals } from "../hooks/use-waiting-approvals.js";
 import {
@@ -46,6 +48,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
   const { isDismissed, dismiss, dismissedAt } = useDismissals();
   const sticky = useStickyResolved();
   const artifacts = useFeedArtifacts(items);
+  const conversationFor = useFeedConversations(items, agents);
   const [previewArtifactId, setPreviewArtifactId] = useState<string | null>(
     null,
   );
@@ -82,6 +85,12 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
         filters,
       )
     : visible;
+  const { denyAll, denying } = useDenyApprovals();
+  const shownApprovals = shown.flatMap((item) =>
+    item.kind === "approval" && sticky.labelFor(item.id) === null
+      ? [item.approval]
+      : [],
+  );
 
   const toggleChannelType = (type: ChannelType) =>
     setFilters((prev) => {
@@ -152,6 +161,19 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
               Clear all
             </Button>
           )}
+          {needsYou && shownApprovals.length > 0 && (
+            <Button
+              variant="link"
+              size="inline"
+              disabled={denying}
+              onClick={() => void denyAll(shownApprovals)}
+              title="Denies every approval shown here, once each. Nothing is remembered, so an agent asks again if it tries again."
+              data-testid="deny-all-approvals"
+              className="ml-auto shrink-0 text-sm"
+            >
+              Deny all
+            </Button>
+          )}
         </div>
 
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-4">
@@ -202,6 +224,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
                 onResolved={(item, label) => sticky.keep(item, label)}
                 resolvedLabelFor={sticky.labelFor}
                 artifactsFor={artifactsFor}
+                conversationFor={conversationFor}
                 onOpenArtifact={setPreviewArtifactId}
               />
             </>

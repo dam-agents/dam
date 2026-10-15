@@ -22,7 +22,10 @@ import {
   type WeeklySeries,
 } from "./analytics-report.js";
 import { parseCpuMilli, parseMemoryBytes } from "../../../core/quantities.js";
-import { resolveEffectiveHibernationTimeoutMin } from "../../agents/domain/spec-assembly.js";
+import {
+  type IdleTimeoutMinutes,
+  resolveEffectiveHibernationTimeoutMin,
+} from "../../agents/domain/spec-assembly.js";
 
 const TREND_WINDOWS = 8;
 const TREND_WEEKS = 8;
@@ -516,10 +519,16 @@ function sizeOf(
 }
 
 function neverHibernates(
-  timeout: string | undefined,
-  idleTimeoutMin: number,
+  agent: LiveAgentFact,
+  idle: IdleTimeoutMinutes,
 ): boolean {
-  return resolveEffectiveHibernationTimeoutMin(timeout, idleTimeoutMin) === 0;
+  return (
+    resolveEffectiveHibernationTimeoutMin(
+      agent.hibernationTimeout,
+      agent.vm,
+      idle,
+    ) === 0
+  );
 }
 
 function buildAgentsNow(facts: AnalyticsFacts): AnalyticsReport["agentsNow"] {
@@ -541,8 +550,7 @@ function buildAgentsNow(facts: AnalyticsFacts): AnalyticsReport["agentsNow"] {
   for (const a of agents) {
     const row = rowOf(a);
     row.agents++;
-    if (neverHibernates(a.hibernationTimeout, facts.sizing.idleTimeoutMin))
-      row.alwaysOn++;
+    if (neverHibernates(a, facts.sizing.idleTimeoutMinutes)) row.alwaysOn++;
   }
   const live = new Set(agents.map((a) => a.id));
   const agentsBySize = new Map<SizeRow, Set<string>>();
@@ -560,11 +568,13 @@ function buildAgentsNow(facts: AnalyticsFacts): AnalyticsReport["agentsNow"] {
     total: agents.length,
     sizes,
     disk: bucketCounts(
-      agents.map((a) =>
-        Math.round(
-          parseMemoryBytes(a.storageSize || facts.sizing.defaultStorage) / gi,
+      agents
+        .filter((a) => !a.vm)
+        .map((a) =>
+          Math.round(
+            parseMemoryBytes(a.storageSize || facts.sizing.defaultStorage) / gi,
+          ),
         ),
-      ),
       [
         { label: "≤ 4 Gi", max: 4 },
         { label: "5 Gi", max: 5 },

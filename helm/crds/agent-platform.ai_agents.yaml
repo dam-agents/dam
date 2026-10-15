@@ -4,7 +4,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    agent-platform.ai/crd-schema-generation: "18"
+    agent-platform.ai/crd-schema-generation: "19"
     controller-gen.kubebuilder.io/version: v0.22.0
     helm.sh/resource-policy: keep
   name: agents.agent-platform.ai
@@ -75,8 +75,9 @@ spec:
                   time, so the controller never sees $HOME.
                 type: string
               avatar:
-                description: Avatar is the agent's chosen avatar character; unset
-                  means one picked from its owner and name.
+                description: 'Avatar is the agent''s chosen avatar: a character name,
+                  "emoji:<emoji>" or "image:<sha256>"; unset means a character picked
+                  from its owner and name.'
                 type: string
               backend:
                 description: |-
@@ -155,6 +156,7 @@ spec:
               hibernationTimeout:
                 description: 'HibernationTimeout overrides the chart-wide idle timeout
                   for this Agent: "0s" never hibernates, omitted inherits the default.
+                  A vm Agent ignores it and always takes the chart-wide vm idle timeout.
                   The UI writes it (presented in minutes); the controller and api-server
                   resolve the effective value.'
                 type: string
@@ -293,6 +295,11 @@ spec:
                   a user-supplied value would forge attribution onto an agent the caller
                   does not drive; it is service-only input, like the pre-minted id.
                 type: string
+              whispersOff:
+                description: WhispersOff stops people in the conversations the agent
+                  is connected to from whispering to it privately; unset means whispers
+                  are on.
+                type: boolean
             required:
             - image
             type: object

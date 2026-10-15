@@ -8,12 +8,10 @@ import {
   routeToPath,
   type SandboxSection,
   type SettingsTab,
-  type StarterKitCategory,
   type View,
 } from "../lib/routes.js";
 
-type ParameterlessView =
-  "home" | "terms" | "artifacts" | "analytics" | "agent-new" | "starter-kits";
+type ParameterlessView = "home" | "terms" | "artifacts" | "analytics";
 
 export interface NavigationSlice {
   view: View;
@@ -22,15 +20,14 @@ export interface NavigationSlice {
   sandboxSection: SandboxSection;
   starterKitCatalog: string | null;
   starterKitId: string | null;
-  starterKitCategory: StarterKitCategory | null;
+  kitBrowserOpen: boolean;
   hydrateRoute: () => void;
   setView: (v: ParameterlessView) => void;
   navigateBack: () => void;
   navigateToSettings: (tab?: SettingsTab) => void;
   navigateToSandboxHome: (agentId: string, section?: SandboxSection) => void;
   navigateToStarterKit: (catalog: string, kitId: string) => void;
-  navigateToStarterKitSetup: (catalog: string, kitId: string) => void;
-  navigateToStarterKits: (category?: StarterKitCategory) => void;
+  setKitBrowserOpen: (open: boolean) => void;
   mobileScreen: "sessions" | "chat";
   setMobileScreen: (screen: "sessions" | "chat") => void;
 }
@@ -67,6 +64,7 @@ export const createNavigationSlice: StateCreator<
   NavigationSlice
 > = (set, get) => ({
   ...routeToNavigationState(parseRoute(initialPath())),
+  kitBrowserOpen: false,
   hydrateRoute: () =>
     set(routeToNavigationState(parseRoute(window.location.pathname))),
   setView: (v) => {
@@ -103,27 +101,7 @@ export const createNavigationSlice: StateCreator<
       agentId: null,
     });
   },
-  navigateToStarterKitSetup: (catalog, kitId) => {
-    history.pushState(
-      null,
-      "",
-      routeToPath({ view: "starter-kit-new", catalog, kit: kitId }),
-    );
-    set({
-      view: "starter-kit-new",
-      starterKitCatalog: catalog,
-      starterKitId: kitId,
-      agentId: null,
-    });
-  },
-  navigateToStarterKits: (category) => {
-    const route = {
-      view: "starter-kits" as const,
-      ...(category ? { category } : {}),
-    };
-    history.pushState(null, "", routeToPath(route));
-    set(routeToNavigationState(route));
-  },
+  setKitBrowserOpen: (open) => set({ kitBrowserOpen: open }),
   mobileScreen: "sessions",
   setMobileScreen: (screen) => set({ mobileScreen: screen }),
 });

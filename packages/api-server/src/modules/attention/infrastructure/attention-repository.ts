@@ -23,6 +23,11 @@ type RawState = typeof attentionState.$inferSelect;
 export interface AttentionRepository {
   listForAgent(agentId: string): Promise<AttentionRecordRow[]>;
   listForOwner(ownerSub: string, limit: number): Promise<AttentionRecordRow[]>;
+  listForOwnerAgent(
+    ownerSub: string,
+    agentId: string,
+    limit: number,
+  ): Promise<AttentionRecordRow[]>;
   upsertRecord(row: AttentionRecordRow): Promise<void>;
   listDismissals(userSub: string): Promise<DismissalRow[]>;
   ownedSessionKeys(ownerSub: string): Promise<Set<string>>;
@@ -46,6 +51,7 @@ function toRecord(row: RawRecord): AttentionRecordRow {
     type: row.type,
     title: row.title,
     scheduleId: row.scheduleId,
+    threadTs: row.threadTs,
     createdAt: row.createdAt,
     activityAt: row.activityAt,
     seenAt: row.seenAt,
@@ -96,6 +102,25 @@ export function createAttentionRepository(db: Db): AttentionRepository {
       return rows.map(toRecord);
     },
 
+    async listForOwnerAgent(ownerSub, agentId, limit) {
+      const rows = await db
+        .select()
+        .from(attentionRecords)
+        .where(
+          and(
+            eq(attentionRecords.ownerSub, ownerSub),
+            eq(attentionRecords.agentId, agentId),
+          ),
+        )
+        .orderBy(
+          desc(
+            sql`coalesce(${attentionRecords.activityAt}, ${attentionRecords.createdAt})`,
+          ),
+        )
+        .limit(limit);
+      return rows.map(toRecord);
+    },
+
     async upsertRecord(row) {
       await db
         .insert(attentionRecords)
@@ -108,6 +133,7 @@ export function createAttentionRepository(db: Db): AttentionRepository {
             type: row.type,
             title: row.title,
             scheduleId: row.scheduleId,
+            threadTs: row.threadTs,
             createdAt: row.createdAt,
             activityAt: row.activityAt,
             seenAt: row.seenAt,

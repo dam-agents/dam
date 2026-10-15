@@ -71,6 +71,9 @@ export function hintFor(
         ownerSub: event.ownerSub,
         hint: { topic: "kbShares", agentId: event.agentId },
       };
+    case EventType.AvatarUnlocked:
+    case EventType.GettingStartedReset:
+      return { ownerSub: event.ownerSub, hint: { topic: "gettingStarted" } };
     case EventType.UserAuthenticated:
     case EventType.AgentRestarted:
     case EventType.AgentWoken:

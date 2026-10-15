@@ -16,7 +16,6 @@ interface Props {
   drawByDriver: TemporarySandboxSplit["drawByDriver"];
   rowProps: ReturnType<typeof useAgentRows>["rowProps"];
   workingByAgent?: ReadonlyMap<string, boolean>;
-  onStop: (agent: AgentView) => void;
   onDelete: (agent: AgentView) => void;
 }
 
@@ -25,7 +24,6 @@ export function SandboxList({
   drawByDriver,
   rowProps,
   workingByAgent,
-  onStop,
   onDelete,
 }: Props) {
   const selectAgent = useStore((s) => s.selectAgent);
@@ -45,9 +43,7 @@ export function SandboxList({
           temporaryDraw={drawByDriver.get(agent.id)}
           onSelect={() => selectAgent(agent.id)}
           onConfigure={() => navigateToSandboxHome(agent.id)}
-          onShare={() => navigateToSandboxHome(agent.id, "knowledge")}
           configureLabel="Configure agent"
-          onStop={() => onStop(agent)}
           onDelete={() => onDelete(agent)}
           messengers={messengers}
           onAddToChannel={setBindMessenger}

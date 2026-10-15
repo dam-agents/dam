@@ -10,6 +10,7 @@ import type {
   SessionDirectoryEntry,
 } from "agent-runtime-api";
 import type { DocumentStoreBackend } from "../../core/document-store.js";
+import { noticeStream } from "../../core/notice-stream.js";
 import type { LeaseEnvReader } from "../../core/runtime-env.js";
 import {
   contributionDrivers,
@@ -151,15 +152,16 @@ export async function composeRuntimeChannel(
   };
   const registry = createPluginRegistry();
   for (const plugin of opts.plugins) registry.register(plugin);
+  const harnessDefault = async (): Promise<string | null> =>
+    harnessConfigPlugin?.supported
+      ? ((await harnessConfigPlugin.readCurrent({ discover: false }))
+          .defaultModel ?? null)
+      : null;
   registry.register(
     createTriggerPlugin({
       driver: opts.triggerDriver,
       stateStore: triggerStateStore,
-      harnessDefault: async () =>
-        harnessConfigPlugin?.supported
-          ? ((await harnessConfigPlugin.readCurrent({ discover: false }))
-              .defaultModel ?? null)
-          : null,
+      harnessDefault,
       runPrecheck: createPrecheckRunner({
         workDir: opts.workDir,
         envReader: opts.envReader,
@@ -188,6 +190,7 @@ export async function composeRuntimeChannel(
 
   const discoverModels = createModelDiscovery({ log });
   const harnessConfigs = new Map<string, HarnessConfigPlugin>();
+  const listingWatchers = new Set<() => void>();
   for (const { harness, resolved: own } of resolvedByHarness) {
     const raw = own["harness-config"];
     if (!raw) continue;
@@ -196,6 +199,9 @@ export async function composeRuntimeChannel(
       createHarnessConfigPlugin({
         harness,
         onApplied: () => opts.onHarnessConfigApplied(harness),
+        onListingChanged: () => {
+          for (const watcher of listingWatchers) watcher();
+        },
         binding: harnessConfigBinding.parse(raw),
         agentHome: opts.agentHome,
         envReader: opts.envReader,
@@ -294,6 +300,15 @@ export async function composeRuntimeChannel(
       },
       models: async ({ harness, provider }) =>
         await harnessConfigFor(harness)?.models(provider),
+      watch: (signal) =>
+        noticeStream(
+          { topic: "models" } as const,
+          (onChange) => {
+            listingWatchers.add(onChange);
+            return { close: () => listingWatchers.delete(onChange) };
+          },
+          signal,
+        ),
     },
     seedHarnessModel: async () =>
       (await harnessConfigPlugin?.seedModel()) ?? false,

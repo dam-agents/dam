@@ -177,7 +177,7 @@ func (m runtimeMigration) machineMayRun() bool {
 	return !m.active() || m.vmSideRuns()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the shape the machine takes, recorded by the api-server with the request: the disk's size when HOME asked for more than the Agent does. The rest of the spec is the Agent's own, so an image changed meanwhile is the image the machine runs.
+// UNIT_BOUNDARY_DESCRIPTION: the shape the machine takes, recorded by the api-server with the request: the disk's size when HOME asked for more than the Agent does, raised by the preflight to the home volume's capacity when that is larger. The rest of the spec is the Agent's own, so an image changed meanwhile is the image the machine runs.
 type runtimeMigrationTarget struct {
 	StorageSize string `json:"storageSize,omitempty"`
 }
@@ -349,7 +349,7 @@ func (r *AgentReconciler) prepareRuntimeMigration(ctx context.Context, agent *ap
 const runtimeMigrationPoll = 5 * time.Second
 
 // UNIT_BOUNDARY_DESCRIPTION: the machine a container Agent's migration builds beside it, in the shape the request recorded. A wait on the runner or its certificate, or a refusal, is returned for the migration to show rather than failing the reconcile of a container that is still serving.
-func (r *AgentReconciler) reconcileMigrationMachine(ctx context.Context, agent *apiv1.Agent, ownerRef metav1.OwnerReference, gatewayIP string, running bool) (vmrunner.MachineStatus, bool, error) {
+func (r *AgentReconciler) reconcileMigrationMachine(ctx context.Context, agent *apiv1.Agent, ownerRef metav1.OwnerReference, gatewayIP string, running, publish bool) (vmrunner.MachineStatus, bool, error) {
 	if !r.config.VM.Enabled {
 		return vmrunner.MachineStatus{}, false, errors.New("virtualization is disabled in this install (virtualization.enabled)")
 	}
@@ -357,7 +357,16 @@ func (r *AgentReconciler) reconcileMigrationMachine(ctx context.Context, agent *
 	if err != nil {
 		return vmrunner.MachineStatus{}, false, err
 	}
-	return r.reconcileVMAgent(ctx, target, ownerRef, gatewayIP, running, false)
+	return r.reconcileVMAgent(ctx, target, ownerRef, gatewayIP, running, publish)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what a volume can hold: its capacity when the backend gave it more than it asked for.
+func pvcSize(pvc *corev1.PersistentVolumeClaim) resource.Quantity {
+	size := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
+	if capacity, ok := pvc.Status.Capacity[corev1.ResourceStorage]; ok && capacity.Cmp(size) > 0 {
+		return capacity
+	}
+	return size
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: advances the migration by at most one phase, from what the runner said about the machine this reconcile. `vmErr` is why the vm side could not be ensured, shown on the phase that waits for it rather than failing the container's reconcile.
@@ -623,7 +632,7 @@ func (r *AgentReconciler) runtimeMigrationVolume(ctx context.Context, agent *api
 	return "", fmt.Errorf("%d volumes are labelled as this agent's %s and its statefulset mounts none of them", len(list.Items), path)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the `Copying` phase. A copy waits for the machine to exist and be stopped — the runner refuses a seed otherwise. Each Job is an attempt, counted just before it is created, so a controller that restarts mid-way counts one too many rather than one too few, and a copy that waits for a slot, or a Job left by an earlier Agent of the same name, counts nothing; once the attempts are spent the migration is Failed with the last attempt's error, and an attempt that vm-seed says no fresh one can change fails it at once, with what the user can do. On success it moves to `Booting` with a fresh activity stamp, so the machine boots once even for an agent that was asleep: the copy is only proven by a guest that seeded from it.
+// UNIT_BOUNDARY_DESCRIPTION: the `Copying` phase. A copy waits for the machine to exist and be stopped — the runner refuses a seed otherwise. Each Job is an attempt, counted just before it is created, so a controller that restarts mid-way counts one too many rather than one too few, and a copy that waits for a slot, or a Job left by an earlier Agent of the same name, counts nothing; once the attempts are spent the migration is Failed with the last attempt's error, and an attempt that vm-seed says no fresh one can change fails it at once, with what the user can do. On success it moves to `Booting` with a fresh activity stamp, so the machine boots once even for an agent that was asleep: the copy is only proven by a guest that seeded from it. The Job is the only record of the seed it stored, so it has no time to live and the seed goes on the Agent before the Job is deleted; a migration still `Copying` with its seed recorded and no Job left moves on to `Booting`, so a copy that landed is never lost however late the controller gets to it.
 func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *apiv1.Agent, m *runtimeMigration) error {
 	name := agent.Name
 	owner := agent.Labels[envoyOwnerLabel]
@@ -642,6 +651,12 @@ func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *ap
 		return r.setRuntimeMigrationNote(ctx, agent, m, "a copy job left by an earlier agent of the same name was removed; the copy starts again")
 	}
 	if k8serrors.IsNotFound(err) {
+		if m.seeded {
+			if err := r.dropRuntimeMigrationCopy(ctx, name); err != nil {
+				return err
+			}
+			return r.runtimeMigrationPhase(ctx, agent, m, apiv1.ReasonRuntimeMigrationBooting, "")
+		}
 		if m.attempts >= runtimeMigrationMaxAttempts {
 			return r.failRuntimeMigration(ctx, agent, m, fmt.Sprintf("copying the home directory failed %d times: %s", m.attempts, m.message))
 		}
@@ -659,19 +674,10 @@ func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *ap
 		if err != nil {
 			return err
 		}
-		if err := jobs.Delete(ctx, job.Name, metav1.DeleteOptions{PropagationPolicy: &prop}); err != nil && !k8serrors.IsNotFound(err) {
-			return fmt.Errorf("deleting the home copy job: %w", err)
-		}
-		if err := r.deleteRuntimeMigrationNetworkPolicy(ctx, name); err != nil {
-			return err
-		}
-		if err := r.deleteSeedCapability(ctx, name); err != nil {
-			return err
-		}
-		if err := r.deleteRuntimeMigrationClones(ctx, name); err != nil {
-			return err
-		}
 		if why != "" {
+			if err := r.dropRuntimeMigrationCopy(ctx, name); err != nil {
+				return err
+			}
 			msg := fmt.Sprintf("the home was copied, but %s; copying it again", why)
 			r.migrationEvent(ctx, agent, corev1.EventTypeWarning, "RuntimeMigrationCopyFailed", msg)
 			return r.setRuntimeMigrationNote(ctx, agent, m, msg)
@@ -685,6 +691,9 @@ func (r *AgentReconciler) runRuntimeMigrationCopy(ctx context.Context, agent *ap
 			annRuntimeMigrationSeed: new(string(encoded)),
 			annLastActivity:         new(time.Now().UTC().Format(time.RFC3339)),
 		}); err != nil {
+			return err
+		}
+		if err := r.dropRuntimeMigrationCopy(ctx, name); err != nil {
 			return err
 		}
 		return r.runtimeMigrationPhase(ctx, agent, m, apiv1.ReasonRuntimeMigrationBooting, "")
@@ -804,10 +813,7 @@ func (r *AgentReconciler) runtimeMigrationCopySource(ctx context.Context, agent 
 	if pv.Spec.CSI == nil {
 		return source, nil
 	}
-	size := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
-	if capacity, ok := pvc.Status.Capacity[corev1.ResourceStorage]; ok && capacity.Cmp(size) > 0 {
-		size = capacity
-	}
+	size := pvcSize(pvc)
 	clone := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            runtimeMigrationCloneName(agent.Name, attempt),
@@ -991,7 +997,7 @@ func (r *AgentReconciler) startRuntimeMigrationCopy(ctx context.Context, agent *
 	return r.setRuntimeMigrationNote(ctx, agent, m, "")
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: why the copy Job's last attempt failed, in vm-seed's own words: the error it exits with and every cause under it, which the container's termination message carries. A failure that is only ever reported as "failed" cannot be told apart from the next one, and the Job's pods are gone once its time to live runs out. An attempt that never ran — a volume that would not attach, a pod that could not be placed — left no message, so the last warning its pod was given says why instead. Empty when neither is there. The flag says the attempt exited as vm-seed does for a home a fresh attempt cannot copy either.
+// UNIT_BOUNDARY_DESCRIPTION: why the copy Job's last attempt failed, in vm-seed's own words: the error it exits with and every cause under it, which the container's termination message carries. A failure that is only ever reported as "failed" cannot be told apart from the next one, and the Job's pods are gone once it is deleted for the next attempt. An attempt that never ran — a volume that would not attach, a pod that could not be placed — left no message, so the last warning its pod was given says why instead. Empty when neither is there. The flag says the attempt exited as vm-seed does for a home a fresh attempt cannot copy either.
 func (r *AgentReconciler) copyJobFailure(ctx context.Context, job *batchv1.Job) (string, bool) {
 	pods, err := r.client.CoreV1().Pods(job.Namespace).List(ctx, metav1.ListOptions{LabelSelector: batchv1.JobNameLabel + "=" + job.Name})
 	if err != nil {
@@ -1121,7 +1127,7 @@ func (r *AgentReconciler) finishRuntimeMigration(ctx context.Context, agent *api
 	return nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the Job reads the old home volume read-only, as the identity the volume calls for. It runs confined: the runtime's default seccomp profile, no capability beyond the one reading may need, no privilege escalation and a read-only root, under the agent pods' own RuntimeClass, since it only reads. It reaches only the owner's runner, pinned by the runner pod's address in its hosts file so it needs no DNS, with the seed capability minted for it and the CA that signed the runner's serving certificate. It never mounts the runner's token: the Job parses what an agent wrote, and the token would let a Job that did so badly drive every machine of the owner. It runs where the agent's pods run, since that is where its volume attaches.
+// UNIT_BOUNDARY_DESCRIPTION: the Job reads the old home volume read-only, as the identity the volume calls for. It runs confined: the runtime's default seccomp profile, no capability beyond the one reading may need, no privilege escalation and a read-only root. It runs under the cluster's default runtime, not the agent pods' RuntimeClass: a Kata pod's memory cgroup holds the whole VM but is sized from the container's limit plus a fixed overhead, far below the guest's RAM, so reading a home of a few hundred MiB fills the guest page cache, the kernel kills the VMM, and the pod is left running with nothing able to stop it. The pod runs only platform tooling over the agent's data, never agent code, as the storage migration's copy does. It reaches only the owner's runner, pinned by the runner pod's address in its hosts file so it needs no DNS, with the seed capability minted for it and the CA that signed the runner's serving certificate. It never mounts the runner's token: the Job parses what an agent wrote, and the token would let a Job that did so badly drive every machine of the owner. It runs where the agent's pods run, since that is where its volume attaches.
 func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, source, runnerIP string, reader runtimeMigrationIdentity) (*batchv1.Job, error) {
 	name := agent.Name
 	cfg := r.config
@@ -1142,7 +1148,6 @@ func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, so
 	// UNIT_BOUNDARY_DESCRIPTION: failed Job is recreated with a fresh one, and
 	// UNIT_BOUNDARY_DESCRIPTION: each Job is one of the migration's attempts.
 	backoff := int32(0)
-	ttl := int32(600)
 	deadline := int64(migrationJobDeadline.Seconds())
 	uid, gid := reader.uid, reader.gid
 	nonRoot := uid != 0
@@ -1181,9 +1186,8 @@ func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, so
 			Labels:          labels,
 		},
 		Spec: batchv1.JobSpec{
-			BackoffLimit:            &backoff,
-			TTLSecondsAfterFinished: &ttl,
-			ActiveDeadlineSeconds:   &deadline,
+			BackoffLimit:          &backoff,
+			ActiveDeadlineSeconds: &deadline,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: podLabels},
 				Spec: corev1.PodSpec{
@@ -1234,9 +1238,7 @@ func (r *AgentReconciler) buildRuntimeMigrationJob(agent *apiv1.Agent, owner, so
 		},
 	}
 	applyAgentBaseScheduling(&job.Spec.Template.Spec, cfg.AgentBase)
-	if rc := agent.Spec.RuntimeClassName; rc != "" {
-		job.Spec.Template.Spec.RuntimeClassName = &rc
-	}
+	job.Spec.Template.Spec.RuntimeClassName = nil
 	return job, nil
 }
 
@@ -1491,6 +1493,10 @@ func sanitizeMigrationMessage(msg, runnerHost string) string {
 // UNIT_BOUNDARY_DESCRIPTION: each migration step the controller takes is also an Event on the Agent, and counted, so an operator can follow a migration in `kubectl get events` and across the fleet without reading annotations. An Event that cannot be written is logged and never fails the step.
 func (r *AgentReconciler) migrationEvent(ctx context.Context, agent *apiv1.Agent, eventType, reason, message string) {
 	telemetry.RuntimeMigrationEvent(ctx, reason)
+	r.agentEvent(ctx, agent, eventType, reason, message)
+}
+
+func (r *AgentReconciler) agentEvent(ctx context.Context, agent *apiv1.Agent, eventType, reason, message string) {
 	now := metav1.Now()
 	event := &corev1.Event{
 		ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("%s.%x", agent.Name, now.UnixNano()), Namespace: r.config.Namespace},
@@ -1510,7 +1516,7 @@ func (r *AgentReconciler) migrationEvent(ctx context.Context, agent *apiv1.Agent
 		Count:          1,
 	}
 	if _, err := r.client.CoreV1().Events(r.config.Namespace).Create(ctx, event, metav1.CreateOptions{}); err != nil {
-		slog.Warn("runtime migration: writing an event on the agent failed", "agent", agent.Name, "reason", reason, "error", err)
+		slog.Warn("writing an event on the agent failed", "agent", agent.Name, "reason", reason, "error", err)
 	}
 }
 
@@ -1590,23 +1596,4 @@ func migrationAgentIdentity(cfg *config.Config) (int64, int64) {
 		}
 	}
 	return uid, gid
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the seed sits on the owner's runner claim from the moment the copy starts until the guest has booted from it, beside the disk it is restored into, so the claim needs room for both at once. The seed is never larger than the home volume it was read from, so that volume's requested size bounds it.
-func (r *AgentReconciler) runtimeMigrationSeedBytes(ctx context.Context, agent *apiv1.Agent) int64 {
-	switch runtimeMigrationOf(agent.Annotations, agent.Status).phase {
-	case apiv1.ReasonRuntimeMigrationCopying, apiv1.ReasonRuntimeMigrationBooting:
-	default:
-		return 0
-	}
-	source := agent.Annotations[annRuntimeMigrationSource]
-	if source == "" {
-		return 0
-	}
-	pvc, err := r.client.CoreV1().PersistentVolumeClaims(r.config.Namespace).Get(ctx, source, metav1.GetOptions{})
-	if err != nil {
-		return 0
-	}
-	size := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
-	return size.Value()
 }

@@ -5,7 +5,10 @@ import { Button } from "@/components/ui/button";
 
 import { ListSkeleton } from "../../../../components/list-skeleton.js";
 import type { AgentView } from "../../../../types.js";
+import { SharedChannelsNotice } from "../../../connections/components/shared-channels-notice.js";
+import type { SharedChannel } from "../../../sandboxes/lib/shared-channels.js";
 import { useActiveScheduleCounts } from "../../hooks/use-active-schedule-counts.js";
+import { useBindSharingConfirm } from "../../hooks/use-bind-sharing-confirm.js";
 import { useInlineAgentCreate } from "../../hooks/use-inline-agent-create.js";
 import { CreateAgentInline } from "../create-agent-inline.js";
 import { type BindMessenger, BindPage } from "./bind-page.js";
@@ -21,6 +24,7 @@ export interface BindPickerCopy {
   emptySubtitle: string;
   consent: string;
   action: string;
+  audience: SharedChannel | null;
 }
 
 interface Props {
@@ -56,6 +60,16 @@ export function AgentBindPicker({
   );
   const selectedId = pickedId ?? justCreatedId;
   const selected = displayedAgents.find((a) => a.id === selectedId) ?? null;
+  const bindConfirm = useBindSharingConfirm(selected);
+  const whisper = copy.messenger === "slack" && selected?.whisper === true;
+  const sharing = bindConfirm.body(copy.audience, whisper);
+
+  const confirmPick = async () => {
+    if (!selected) return;
+    if (!(await bindConfirm.confirm(copy.audience, copy.action, whisper)))
+      return;
+    onPick(selected);
+  };
 
   const handleCreated = (agent: AgentView) => {
     markCreated(agent);
@@ -100,10 +114,18 @@ export function AgentBindPicker({
       footer={
         <PickerFooter
           consent={copy.consent}
+          notice={
+            bindConfirm.dismissed &&
+            sharing && (
+              <SharedChannelsNotice className="mb-4">
+                {sharing}
+              </SharedChannelsNotice>
+            )
+          }
           action={copy.action}
           enabled={selected !== null}
           pending={pending}
-          onConfirm={() => selected && onPick(selected)}
+          onConfirm={() => void confirmPick()}
         />
       }
     >

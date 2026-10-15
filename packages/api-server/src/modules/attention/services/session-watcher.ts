@@ -5,7 +5,10 @@ import type { InfraAgent } from "../../agents/infrastructure/agent-mappers.js";
 import { agentStreamable } from "../../agents/index.js";
 import { sameRecord, type AttentionRecordRow } from "../domain/types.js";
 import type { AttentionRepository } from "../infrastructure/attention-repository.js";
-import type { PodSessionClient } from "../infrastructure/pod-session-watch.js";
+import type {
+  PodSessionClient,
+  PodSessionList,
+} from "../infrastructure/pod-session-watch.js";
 
 const RECONCILE_BACKSTOP_MS = 60_000;
 const CAPTURE_DEBOUNCE_MS = 250;
@@ -21,7 +24,7 @@ export interface SessionWatcher {
 interface Held {
   ownerSub: string;
   close(): void;
-  read(): Promise<PodSession[]>;
+  read(): Promise<PodSessionList>;
   poll: ReturnType<typeof setInterval> | null;
   debounce: ReturnType<typeof setTimeout> | null;
   /**
@@ -69,6 +72,7 @@ function toRow(
     type: session.type,
     title: session.title,
     scheduleId: session.scheduleId,
+    threadTs: session.threadTs ?? null,
     createdAt: toDate(session.createdAt) ?? new Date(),
     activityAt: toDate(session.updatedAt),
     seenAt: toDate(session.seenAt),
@@ -118,7 +122,7 @@ export function createSessionWatcher(deps: {
   }
 
   async function captureOnce(agentId: string, entry: Held): Promise<void> {
-    const sessions = await entry.read();
+    const { sessions, incomplete } = await entry.read();
     if (held.get(agentId) !== entry) return;
 
     let wrote = false;
@@ -141,9 +145,9 @@ export function createSessionWatcher(deps: {
       }
 
       const listed = new Set(sessions.map((session) => session.sessionId));
-      const gone = [...entry.known.keys()].filter(
-        (sessionId) => !listed.has(sessionId),
-      );
+      const gone = incomplete
+        ? []
+        : [...entry.known.keys()].filter((sessionId) => !listed.has(sessionId));
       if (gone.length > 0) {
         await deps.repo.deleteSessions(agentId, gone);
         for (const sessionId of gone) entry.known.delete(sessionId);

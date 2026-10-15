@@ -5,14 +5,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// UserBudgetSpec is one user's Ceiling override: the maximum CPU and memory
-// that user's scaled-up Agents may use concurrently, as the sum of their
-// Sizes — `spec.resources.limits` (#1900), which hard-cap consumption. The
-// uniform per-agent gateway overhead is deliberately excluded from the sum;
-// per-command Run pods are not counted. Users without a UserBudget get the
-// chart-wide default ceiling (`controller.userBudgets`). Operators write
-// these; the controller enforces them at the 0→1 scale transition and the
-// api-server reads them for display.
+// UserBudgetSpec is one user's override of their compute: the Ceiling on
+// their container Agents — the sum of their Sizes, `spec.resources.limits`
+// (#1900), which hard-cap consumption — and the pool their vm Agents share on
+// their VM runner. The uniform per-agent gateway overhead is deliberately
+// excluded from the Ceiling; per-command Run pods are not counted. Each field
+// is optional and falls back on its own: the container Ceiling to the
+// chart-wide `controller.userBudgets`, the VM pool to
+// `virtualization.runner`. Operators write these; the controller enforces
+// them and the api-server reads them for display.
 type UserBudgetSpec struct {
 	// Owner is the exact plaintext Keycloak subject the
 	// `agent-platform.ai/owner` label carries on the user's Agents. The
@@ -24,17 +25,28 @@ type UserBudgetSpec struct {
 	// +kubebuilder:validation:MaxLength=246
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`
 	Owner string `json:"owner"`
-	// CPU is the ceiling on summed CPU limits (e.g. "8" or "8000m").
-	// Must be positive: a zero or negative ceiling would permanently park
-	// every start, which is what deleting the UserBudget plus a low chart
-	// default is for — refuse it at admission rather than enforce it.
-	// (isGreaterThan, not sign(): sign() fails CEL compilation on the API
-	// servers we target — verified live on k3s v1.36.)
+	// CPU is the ceiling on summed CPU limits (e.g. "8" or "8000m"), and the
+	// most CPU the user's VM runner may be given. Must be positive: a zero or
+	// negative ceiling would permanently park every start, which is what
+	// deleting the UserBudget plus a low chart default is for — refuse it at
+	// admission rather than enforce it. (isGreaterThan, not sign(): sign()
+	// fails CEL compilation on the API servers we target — verified live on
+	// k3s v1.36.)
+	// +optional
 	// +kubebuilder:validation:XValidation:rule="type(self) == int ? self > 0 : quantity(string(self)).isGreaterThan(quantity('0'))",message="cpu must be a positive quantity"
-	CPU resource.Quantity `json:"cpu"`
-	// Memory is the ceiling on summed memory limits (e.g. "16Gi").
+	CPU *resource.Quantity `json:"cpu,omitempty"`
+	// Memory is the ceiling on summed memory limits (e.g. "16Gi"), and the
+	// memory limit of the user's VM runner: the pool every vm Agent of theirs
+	// is admitted against.
+	// +optional
 	// +kubebuilder:validation:XValidation:rule="type(self) == int ? self > 0 : quantity(string(self)).isGreaterThan(quantity('0'))",message="memory must be a positive quantity"
-	Memory resource.Quantity `json:"memory"`
+	Memory *resource.Quantity `json:"memory,omitempty"`
+	// Storage is the most the claim of the user's VM runner may grow to: the
+	// disks of every vm Agent of theirs, and the image cache when it lives
+	// there. A claim never shrinks, so a lower value only stops its growth.
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="type(self) == int ? self > 0 : quantity(string(self)).isGreaterThan(quantity('0'))",message="storage must be a positive quantity"
+	Storage *resource.Quantity `json:"storage,omitempty"`
 }
 
 // UserBudgetStatus is reserved for controller-written conditions; the
@@ -51,15 +63,16 @@ type UserBudgetStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=1
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=2
 // +kubebuilder:printcolumn:name="Owner",type=string,JSONPath=`.spec.owner`
 // +kubebuilder:printcolumn:name="CPU",type=string,JSONPath=`.spec.cpu`
 // +kubebuilder:printcolumn:name="Memory",type=string,JSONPath=`.spec.memory`
+// +kubebuilder:printcolumn:name="Storage",type=string,JSONPath=`.spec.storage`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:validation:XValidation:rule="self.metadata.name == 'budget-' + self.spec.owner",message="metadata.name must be 'budget-<spec.owner>' — one UserBudget per user"
 
 // UserBudget grants one user a raised (or lowered) concurrent-compute
-// Ceiling. The name is pinned to `budget-<spec.owner>` at admission, so at
+// Ceiling and VM pool. The name is pinned to `budget-<spec.owner>` at admission, so at
 // most one UserBudget can exist per user by construction.
 type UserBudget struct {
 	metav1.TypeMeta   `json:",inline"`

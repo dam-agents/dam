@@ -1,17 +1,11 @@
-import {
-  ArrowLeft,
-  Launch,
-  Meter,
-  PlayFilledAlt,
-  Time,
-} from "@carbon/icons-react";
+import { ArrowLeft, Launch, Meter, PlayFilledAlt } from "@carbon/icons-react";
 import {
   type ConnectionTemplateView,
   formatEgressRuleInline,
   requirementAccepts,
   type StarterKitView,
 } from "api-server-api";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   DialogBody,
@@ -26,29 +20,50 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { TextSkeleton } from "@/components/ui/text-skeleton";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
+import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
+import { useAgents } from "../../agents/api/queries.js";
+import { EditableIdentity } from "../../agents/components/editable-agent-identity.js";
+import { defaultAvatar } from "../../agents/lib/default-avatar.js";
 import { useBudgetReserved } from "../../budgets/api/queries.js";
 import {
   formatSizeLabel,
   sizeInMi,
   slotUnitOf,
 } from "../../budgets/lib/slots.js";
-import { useConnectionTemplates } from "../../connections/api/queries.js";
+import {
+  useAppConnections,
+  useConnectionTemplates,
+} from "../../connections/api/queries.js";
+import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
+import { useVmForced } from "../../features/hooks/use-vm-forced.js";
+import { useUnlockedAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
+import { routeToPath } from "../../platform/lib/routes.js";
+import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
+import { useApplyStarterKit } from "../api/mutations.js";
 import { useStarterKit } from "../api/queries.js";
 import { ClampedText } from "../components/clamped-text.js";
 import { KitCategoryTag } from "../components/kit-category-tag.js";
+import { KitChannelsSection } from "../components/kit-channels-section.js";
+import { KitRequirementsList } from "../components/kit-requirements-list.js";
+import { KitScheduleCard } from "../components/kit-schedule-card.js";
 import {
   EGRESS_PRESET_DETAIL,
   EGRESS_PRESET_LABEL,
   kitEgressPreset,
+  kitRunsOnVm,
   VM_BACKEND_LABEL,
 } from "../lib/catalog-cards.js";
 import {
+  buildStarterKitApplyInput,
+  connectionRequirements,
   describeAccepts,
-  harnessesLine,
-  kitScheduleCadence,
+  isStarterKitSetupComplete,
+  preselectedGrants,
   shortKitVersion,
+  toggleSkipped,
+  withOverride,
 } from "../lib/setup.js";
 
 const KIT_MODAL_HEIGHT = "h-[85dvh] md:h-[85vh]";
@@ -62,19 +77,6 @@ function acceptedTemplates(
   return templates.filter((t) =>
     requirementAccepts({ accepts }, t.id, t.family?.id),
   );
-}
-
-function requirementIconSlug(
-  accepts: readonly string[],
-  templates: readonly ConnectionTemplateView[],
-): string | undefined {
-  for (const accepted of accepts) {
-    const match = acceptedTemplates([accepted], templates).find(
-      (t) => t.iconSlug !== undefined,
-    );
-    if (match) return match.iconSlug;
-  }
-  return undefined;
 }
 
 interface FamilyTag {
@@ -168,20 +170,29 @@ export function StarterKitDetailView() {
   const kitId = useStore((s) => s.starterKitId);
   const kit = useStarterKit(catalog, kitId);
   const setView = useStore((s) => s.setView);
-  const close = () => setView("starter-kits");
+  const setKitBrowserOpen = useStore((s) => s.setKitBrowserOpen);
+  const close = () => setView("home");
+  const back = () => {
+    close();
+    setKitBrowserOpen(true);
+  };
 
   if (!kit.isPending && (kit.isError || kit.data === undefined)) {
     return (
-      <KitLoadErrorModal onRetry={() => void kit.refetch()} onClose={close} />
+      <KitLoadErrorModal
+        onRetry={() => void kit.refetch()}
+        onClose={close}
+        onBack={back}
+      />
     );
   }
 
   return (
     <Modal size="xl" heightClass={KIT_MODAL_HEIGHT} onClose={close}>
       {kit.data === undefined ? (
-        <KitDetailSkeleton onClose={close} />
+        <KitDetailSkeleton onClose={close} onBack={back} />
       ) : (
-        <KitDetail kit={kit.data} onClose={close} />
+        <KitDetail kit={kit.data} onClose={close} onBack={back} />
       )}
     </Modal>
   );
@@ -190,9 +201,11 @@ export function StarterKitDetailView() {
 function KitLoadErrorModal({
   onRetry,
   onClose,
+  onBack,
 }: {
   onRetry: () => void;
   onClose: () => void;
+  onBack: () => void;
 }) {
   return (
     <Modal size="md" onClose={onClose}>
@@ -207,7 +220,7 @@ function KitLoadErrorModal({
             <Button variant="outline" size="sm" onClick={onRetry}>
               Retry
             </Button>
-            <Button variant="ghost" size="sm" onClick={onClose}>
+            <Button variant="ghost" size="sm" onClick={onBack}>
               All kits
             </Button>
           </div>
@@ -217,7 +230,13 @@ function KitLoadErrorModal({
   );
 }
 
-function KitDetailSkeleton({ onClose }: { onClose: () => void }) {
+function KitDetailSkeleton({
+  onClose,
+  onBack,
+}: {
+  onClose: () => void;
+  onBack: () => void;
+}) {
   return (
     <div className="flex min-h-0 flex-1">
       <div className="flex min-h-0 flex-1 flex-col">
@@ -236,7 +255,7 @@ function KitDetailSkeleton({ onClose }: { onClose: () => void }) {
           <ListSkeleton rows={4} rowHeight={72} />
         </DialogBody>
         <DialogFooter className="justify-between">
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" onClick={onBack}>
             <ArrowLeft size={16} /> Back
           </Button>
           <TextSkeleton width={260} className="h-10" />
@@ -273,29 +292,114 @@ function KitVideoPanel({ video }: { video: string | undefined }) {
 function KitDetail({
   kit,
   onClose,
+  onBack,
 }: {
   kit: StarterKitView;
   onClose: () => void;
+  onBack: () => void;
 }) {
-  const setView = useStore((s) => s.setView);
-  const navigateToStarterKitSetup = useStore(
-    (s) => s.navigateToStarterKitSetup,
-  );
+  const selectAgent = useStore((s) => s.selectAgent);
   const templates = useConnectionTemplates();
   const budget = useBudgetReserved();
+  const vmForced = useVmForced();
+  const vm = kitRunsOnVm(kit, vmForced);
+  const connections = useAppConnections();
+  const agents = useAgents().data?.list;
+  const apply = useApplyStarterKit();
+  const returnPath = routeToPath({
+    view: "starter-kit",
+    catalog: kit.catalog,
+    kit: kit.id,
+  });
+  const { form, update, toggleConnection, reset } = useSetupForm(
+    "starter-kit",
+    {
+      namePrefix: kit.id,
+      returnPath,
+      scope: `${kit.catalog}/${kit.id}`,
+    },
+  );
+  const [invalidSchedules, setInvalidSchedules] = useState<readonly string[]>(
+    [],
+  );
+  const [connectAccepts, setConnectAccepts] = useState<
+    readonly string[] | null
+  >(null);
 
   const templateById: TemplateIndex = useMemo(
     () => new Map((templates.data ?? []).map((t) => [t.id, t])),
     [templates.data],
   );
+  const owned = useMemo(() => connections.data ?? [], [connections.data]);
+  const grantedIds = useMemo(
+    () => new Set(form.connectionIds),
+    [form.connectionIds],
+  );
+
+  const preselected = useRef(false);
+  useEffect(() => {
+    if (preselected.current) return;
+    if (connections.data === undefined || templates.data === undefined) return;
+    preselected.current = true;
+    for (const id of preselectedGrants(
+      kit,
+      connections.data,
+      form.connectionIds,
+      templateById,
+    ))
+      toggleConnection(id, true);
+  }, [
+    kit,
+    connections.data,
+    templates.data,
+    templateById,
+    form.connectionIds,
+    toggleConnection,
+  ]);
+
+  const canCreate =
+    agents !== undefined &&
+    !apply.isPending &&
+    !invalidSchedules.some((n) => !form.skippedSchedules.includes(n)) &&
+    isStarterKitSetupComplete(kit, form, owned, templateById);
+
+  const unlocked = useUnlockedAvatars();
+  const avatar = useMemo(
+    () => form.avatar ?? defaultAvatar(form.name, unlocked, agents ?? []),
+    [form.avatar, form.name, unlocked, agents],
+  );
+
+  const create = async () => {
+    if (!canCreate) return;
+    try {
+      const result = await apply.mutateAsync({
+        ...buildStarterKitApplyInput(kit, form, owned, templateById),
+        avatar,
+      });
+      reset();
+      const skipped = result.skills?.skipped.length ?? 0;
+      if (result.skillsError) {
+        emitToast({
+          kind: "error",
+          message: `Agent created, but its external skills could not be installed: ${result.skillsError}`,
+        });
+      } else if (skipped > 0) {
+        emitToast({
+          kind: "warning",
+          message: `Agent created; ${skipped} external skill${skipped === 1 ? "" : "s"} could not be installed — see the Skills panel.`,
+        });
+      }
+      selectAgent(result.agent.id);
+    } catch {}
+  };
 
   const size = useMemo(() => {
-    if (!kit.resources || !budget.data) return null;
+    if (!kit.resources || !budget.data || vm !== false) return null;
     const unit = slotUnitOf(budget.data);
     const mi = sizeInMi(kit.resources);
     if (mi.cpuMilli === 0 && mi.memoryMi === 0) return null;
     return { label: formatSizeLabel(mi, unit) };
-  }, [kit.resources, budget.data]);
+  }, [kit.resources, vm, budget.data]);
 
   const skillCount = kit.skillsInKit.length + kit.skills.length;
   const kbSeed = kit.knowledgeBase ? kit.seed : undefined;
@@ -331,7 +435,7 @@ function KitDetail({
                 {skillCount} {skillCount === 1 ? "skill" : "skills"}
               </Badge>
             )}
-            {kit.backend === "vm" && (
+            {vm === true && (
               <Badge variant="muted" size="sm">
                 {VM_BACKEND_LABEL}
               </Badge>
@@ -340,9 +444,23 @@ function KitDetail({
         </DialogHeader>
 
         <DialogBody>
-          <h2 className="mb-3 text-base font-semibold text-foreground">
-            Included
-          </h2>
+          {form.name && (
+            <div
+              className="mb-8 flex min-w-0 items-center gap-3"
+              data-testid="kit-agent-identity"
+            >
+              <EditableIdentity
+                name={form.name}
+                avatar={avatar}
+                onRename={(name) => update({ name })}
+                onAvatarChange={(next) => update({ avatar: next })}
+                avatarSize={36}
+                mood="awake"
+                nameClassName="text-base font-semibold text-foreground"
+                nameTag="h2"
+              />
+            </div>
+          )}
           {kbSeed && (
             <Section label="Knowledge base">
               <Row
@@ -398,36 +516,6 @@ function KitDetail({
                   </Badge>
                 }
               />
-            </Section>
-          )}
-
-          {kit.schedules.length > 0 && (
-            <Section label="Schedules">
-              {kit.schedules.map((schedule) => (
-                <Row
-                  key={schedule.name}
-                  icon={<Time size={16} className="text-kit" />}
-                  title={schedule.name}
-                  detail={kitScheduleCadence(schedule)}
-                  tag={
-                    <Badge
-                      variant={schedule.enabled ? "template" : "muted"}
-                      size="sm"
-                    >
-                      {schedule.enabled
-                        ? "runs by default"
-                        : "optional, starts off"}
-                    </Badge>
-                  }
-                />
-              ))}
-              <li className="text-sm text-muted-foreground">
-                {kit.onboarding === false
-                  ? "Created on the new agent."
-                  : "Created on the new agent. They stay held until onboarding is finished, so nothing runs against a half-configured agent."}{" "}
-                You can switch any of them on or off, or skip one, before you
-                create the agent.
-              </li>
             </Section>
           )}
 
@@ -491,77 +579,105 @@ function KitDetail({
             </Section>
           )}
 
-          <h2 className="mb-3 mt-8 text-base font-semibold text-foreground">
-            You&apos;ll set up
-          </h2>
+          {(connectionRequirements(kit).length > 0 ||
+            kit.schedules.length > 0 ||
+            kit.channels.length > 0) && (
+            <h2 className="mb-3 mt-8 text-base font-semibold text-foreground">
+              You&apos;ll set up
+            </h2>
+          )}
 
-          {kit.connections.length > 0 && (
-            <Section label="Connections">
-              {kit.connections.map((req) => (
-                <Row
-                  key={req.accepts.join("|")}
-                  iconSlug={requirementIconSlug(
-                    req.accepts,
-                    templates.data ?? [],
-                  )}
-                  title={describeAccepts(req.accepts, templateById)}
-                  detail={req.note}
-                  tag={
-                    <Badge
-                      variant={req.required ? "template" : "muted"}
-                      size="sm"
-                    >
-                      {req.required ? "required" : "optional"}
-                    </Badge>
-                  }
-                />
-              ))}
-            </Section>
+          {connectionRequirements(kit).length > 0 && (
+            <section className="mb-6">
+              <SectionLabel spaced>Connections</SectionLabel>
+              <KitRequirementsList
+                kit={kit}
+                granted={owned.filter((c) => grantedIds.has(c.id))}
+                templateById={templateById}
+                templates={templates.data ?? []}
+                onRevoke={(id) => toggleConnection(id, false)}
+                onConnect={setConnectAccepts}
+              />
+            </section>
+          )}
+
+          {kit.schedules.length > 0 && (
+            <section className="mb-6">
+              <SectionLabel spaced>Schedules</SectionLabel>
+              <ul className="flex flex-col gap-3">
+                {kit.schedules.map((schedule) => (
+                  <KitScheduleCard
+                    key={schedule.name}
+                    schedule={schedule}
+                    override={form.scheduleOverrides.find(
+                      (o) => o.name === schedule.name,
+                    )}
+                    skipped={form.skippedSchedules.includes(schedule.name)}
+                    onChange={(patch) =>
+                      update({
+                        scheduleOverrides: withOverride(
+                          form.scheduleOverrides,
+                          schedule.name,
+                          patch,
+                        ),
+                      })
+                    }
+                    onInvalid={(invalid) =>
+                      setInvalidSchedules((prev) =>
+                        invalid
+                          ? [...new Set([...prev, schedule.name])]
+                          : prev.filter((n) => n !== schedule.name),
+                      )
+                    }
+                    onToggleSkipped={() =>
+                      update({
+                        skippedSchedules: toggleSkipped(
+                          form.skippedSchedules,
+                          schedule.name,
+                        ),
+                      })
+                    }
+                  />
+                ))}
+              </ul>
+              <p className="mt-3 text-sm text-muted-foreground">
+                {kit.onboarding === false
+                  ? "Created with the kit author's defaults."
+                  : "Created with the kit author's defaults and held until onboarding finishes."}{" "}
+                Adjust any of them, or skip what you do not want.
+              </p>
+            </section>
           )}
 
           {kit.channels.length > 0 && (
-            <Section label="Channels">
-              {kit.channels.map((channel) => (
-                <Row
-                  key={channel.type}
-                  iconSlug={channel.type}
-                  title={channel.type === "slack" ? "Slack" : "Telegram"}
-                  detail={channel.note}
-                  tag={
-                    <Badge variant="muted" size="sm">
-                      optional
-                    </Badge>
-                  }
-                />
-              ))}
-            </Section>
-          )}
-
-          {!kit.image && (
-            <Section label="Harness">
-              <Row
-                title={harnessesLine(kit)}
-                detail="Chosen on the next step, from the harnesses installed here."
-              />
-            </Section>
+            <KitChannelsSection
+              kit={kit}
+              slackChannelId={form.slackChannelId}
+              onSlackChannelIdChange={(slackChannelId) =>
+                update({ slackChannelId })
+              }
+            />
           )}
         </DialogBody>
 
         <DialogFooter className="justify-between">
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" onClick={onBack}>
             <ArrowLeft size={16} /> Back
           </Button>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => setView("agent-new")}>
-              Start from scratch instead
-            </Button>
-            <Button
-              onClick={() => navigateToStarterKitSetup(kit.catalog, kit.id)}
-            >
-              Use this starter kit
-            </Button>
-          </div>
+          <Button onClick={() => void create()} disabled={!canCreate}>
+            {apply.isPending ? "Creating…" : "Use this starter kit"}
+          </Button>
         </DialogFooter>
+        {connectAccepts && (
+          <ConnectionCatalogModal
+            accepts={connectAccepts}
+            title={`Connect ${describeAccepts(connectAccepts, templateById)}`}
+            subtitle="Pick one of your connections, or add a new one."
+            onClose={() => setConnectAccepts(null)}
+            sandbox={{ grantedIds, onToggleGrant: toggleConnection }}
+            oauthReturnView={returnPath}
+          />
+        )}
       </div>
       <KitVideoPanel video={kit.video} />
     </div>

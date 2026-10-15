@@ -48,6 +48,12 @@ export {
   sessionCategoryOf,
   sessionMatchesQuery,
 } from "./modules/sessions/session-query.js";
+export {
+  resultObjectTexts,
+  terminalOutputPart,
+  toolNameOf,
+  toolOutputTexts,
+} from "./modules/sessions/tool-output.js";
 
 export { ok, err } from "./result.js";
 export type {
@@ -57,6 +63,7 @@ export type {
   FileWriteOk,
   FilesDomainError,
   FilesService,
+  HomeVolume,
 } from "./modules/files/types.js";
 export type {
   GitHubErrorBody,
@@ -96,6 +103,15 @@ export {
   normalizeGitUrl,
   parseGithubRepo,
 } from "./modules/skills/git-url.js";
+export {
+  SOURCE_FETCH_MODES,
+  planSourceFetch,
+} from "./modules/skills/source-fetch.js";
+export type {
+  EgressDenies,
+  SourceFetchMode,
+  SourceFetchPlan,
+} from "./modules/skills/source-fetch.js";
 export { AGENT_HOME_DIR, AGENT_WORK_DIR } from "./modules/workspace/paths.js";
 
 export type {
@@ -103,13 +119,19 @@ export type {
   SourceLocation,
 } from "./modules/skills/git-url.js";
 export type { SshService } from "./modules/ssh/types.js";
-export type { HarnessConfigService } from "./modules/harness-config/types.js";
 export type {
+  HarnessConfigNotice,
+  HarnessConfigService,
+} from "./modules/harness-config/types.js";
+export { harnessConfigNoticeSchema } from "./modules/harness-config/schemas.js";
+export type {
+  ContainerEngine,
   FinishedRow,
   KeepMarkRequest,
   KeepSource,
   NothingPending,
   PendingRestart,
+  ProcessContainer,
   ProcessesDomainError,
   ProcessesService,
   ProcessKind,
@@ -122,6 +144,7 @@ export {
   finishedRowSchema,
   keepMarkRequestSchema,
   PROCESS_OUTPUT_MAX_BYTES,
+  processContainerSchema,
   processListSchema,
   processNoticeSchema,
   processOutputSchema,
@@ -150,6 +173,7 @@ export {
   harnessConfigCurrent,
   harnessConfigCurrentByHarness,
   harnessCapability,
+  routesSessionPairs,
   fileFormat,
   mergeMode,
   eventReportInput,

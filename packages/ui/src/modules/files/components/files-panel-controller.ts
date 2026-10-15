@@ -78,8 +78,10 @@ function hasDirectoryItem(items: DataTransferItemList): boolean {
 }
 
 export function useFilesPanelController({
+  open,
   onOpenFile,
 }: {
+  open: boolean;
   onOpenFile: (path: string, opts?: { edit?: boolean }) => void;
 }) {
   const selectedAgent = useStore((s) => s.selectedAgent);
@@ -94,7 +96,7 @@ export function useFilesPanelController({
       : DEFAULT_EXPANDED_DIRS,
   );
 
-  const rootSnapshot = useDirSnapshot(selectedAgent, "");
+  const rootSnapshot = useDirSnapshot(selectedAgent, "", open);
 
   const {
     createEntry,
@@ -368,6 +370,7 @@ export function useFilesPanelController({
       handleAction,
       handleRowDragEnter,
       handleRowDragLeave,
+      handleRowDragEnd,
       handleRowDrop,
       handleRowMove,
     ],
@@ -378,6 +381,8 @@ export function useFilesPanelController({
     rootSnapshot.data.entries.length === 0 &&
     !pendingNew;
 
+  const rootLoading = rootSnapshot.isPending;
+
   const showPanelOverlay = panelDragActive && dragTargetPath === null;
 
   return {
@@ -385,6 +390,7 @@ export function useFilesPanelController({
     openFile,
     pendingNew,
     rootIsLoadedEmpty,
+    rootLoading,
     showPanelOverlay,
     isUploading,
     fileInputRef,

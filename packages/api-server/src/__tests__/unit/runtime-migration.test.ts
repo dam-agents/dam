@@ -355,18 +355,18 @@ describe("runtime migration request", () => {
       paths: [
         {
           path: "/data",
-          reason: "the new runtime keeps only the home directory",
+          reason: "a move carries only the home directory",
         },
         {
           path: "/home/agent/cache",
-          reason: "the new runtime keeps only the home directory",
+          reason: "a move carries only the home directory",
         },
       ],
     });
     if (res.error.type !== "PersistsUnmovablePaths") return;
     expect(runtimeMigrationRefusalReasons(res.error)).toEqual([
-      "/data cannot be moved: the new runtime keeps only the home directory",
-      "/home/agent/cache cannot be moved: the new runtime keeps only the home directory",
+      "/data cannot be moved: a move carries only the home directory",
+      "/home/agent/cache cannot be moved: a move carries only the home directory",
     ]);
     expect(h.writeMigration).not.toHaveBeenCalled();
   });
@@ -597,7 +597,7 @@ function viewOf(
     infra,
     [],
     [],
-    60,
+    { container: 60, vm: 5 },
     false,
     undefined,
     runtimeFeaturesOf(null),

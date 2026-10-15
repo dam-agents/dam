@@ -1,5 +1,5 @@
 import { CONFIGURE_SESSION_METHOD, PIN_MODEL_METHOD } from "agent-runtime-api";
-import { SessionMode } from "api-server-api";
+import { type PromptBlock, SessionMode } from "api-server-api";
 import {
   useCallback,
   useEffect,
@@ -11,7 +11,8 @@ import {
 import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
-import type { Attachment } from "../../../types.js";
+import type { Attachment, MessagePart } from "../../../types.js";
+import { connectionWentAway } from "../../acp/close-race.js";
 import {
   classifyResumeError,
   extractErrorMessage,
@@ -19,21 +20,30 @@ import {
   type SessionFailureKind,
   type SessionListing,
 } from "../../acp/errors.js";
+import { framesToMessages } from "../../acp/frames-to-messages.js";
 import {
   appendUndelivered,
   finalizeAllStreaming,
   hasStreamingAssistant,
 } from "../../acp/session-projection.js";
 import {
+  untilAgentOperable,
   useAgentRunState,
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
+import { askAgainWhenReady } from "../../agents/lib/agent-start.js";
 import { findAgentSession } from "../api/acp-session-ops.js";
 import { acpSessionsKeys } from "../api/keys.js";
-import { setSessionRunning } from "../api/queries.js";
+import {
+  fetchSessionHistory,
+  listedSessionRunning,
+  SESSION_HISTORY_TAIL,
+  setSessionRunning,
+} from "../api/queries.js";
 import { draftKey } from "../lib/draft-key.js";
 import { createPromptDelivery } from "../lib/prompt-delivery.js";
 import { readUndelivered } from "../lib/undelivered-store.js";
+import type { RewriteMode } from "../store/sessions.js";
 import { useAcpConnection } from "./use-acp-connection.js";
 import { type SendPromptOptions, useAcpPrompt } from "./use-acp-prompt.js";
 import { useAcpSessionEngagement } from "./use-acp-session-engagement.js";
@@ -53,6 +63,24 @@ async function classifyResumeFailure(
   return resumeFailureKind(kind, listing);
 }
 
+const GONE_AWAY_RETRY_DELAYS_MS = [500, 1_000, 2_000];
+
+async function retryWhileGoneAway<T>(
+  load: () => Promise<T>,
+  wanted: () => boolean,
+): Promise<T> {
+  for (const delay of GONE_AWAY_RETRY_DELAYS_MS) {
+    try {
+      return await load();
+    } catch (e) {
+      if (!connectionWentAway(e)) throw e;
+      await new Promise((r) => setTimeout(r, delay));
+      if (!wanted()) throw e;
+    }
+  }
+  return load();
+}
+
 export function useAcpSession(
   selectedAgent: string | null,
   textareaRef: React.RefObject<HTMLTextAreaElement | null>,
@@ -60,13 +88,15 @@ export function useAcpSession(
   const sessionId = useStore((s) => s.sessionId);
   const sessionMode = useStore((s) => s.sessionMode);
   const messages = useStore((s) => s.messages);
+  const queueWaiting = useStore((s) => s.queuedPrompts.length > 0);
   const setSessionId = useStore((s) => s.setSessionId);
   const setMessages = useStore((s) => s.setMessages);
   const setBusy = useStore((s) => s.setBusy);
   const [loadingSession, setLoadingSession] = useState(false);
 
   const busy =
-    sessionMode !== SessionMode.Terminal && hasStreamingAssistant(messages);
+    sessionMode !== SessionMode.Terminal &&
+    (hasStreamingAssistant(messages) || queueWaiting);
   useEffect(() => {
     setBusy(busy);
   }, [busy, setBusy]);
@@ -147,12 +177,38 @@ export function useAcpSession(
       resetConnection();
       setLoadingSession(true);
       setMessages([]);
+      useStore.getState().setRewriting(null);
       useStore.getState().setRunStarts([]);
       useStore.getState().setSessionError(null);
       setSessionId(sid);
 
+      let loaded = false;
+      const hold = agentOperable ? null : untilAgentOperable(selectedAgent);
+      hold?.catch(() => {});
+      if (agentOperable || hold) {
+        askAgainWhenReady(
+          async () => (loaded ? null : fetchSessionHistory(selectedAgent, sid)),
+          () => hold,
+        )
+          .then((frames) => {
+            if (!frames || loaded || useStore.getState().sessionId !== sid)
+              return;
+            const preview = framesToMessages(frames, {
+              tail: SESSION_HISTORY_TAIL,
+              turnInFlight: listedSessionRunning(selectedAgent, sid),
+            });
+            if (preview.length > 0) setMessages(preview);
+          })
+          .catch(() => {});
+      }
+
       try {
-        const fresh = await loadSessionHistory(sid);
+        const fresh = await retryWhileGoneAway(
+          () => loadSessionHistory(sid),
+          () => useStore.getState().sessionId === sid,
+        ).finally(() => {
+          loaded = true;
+        });
         if (useStore.getState().sessionId !== sid) return;
         setMessages(fresh);
 
@@ -164,6 +220,7 @@ export function useAcpSession(
         } catch {}
       } catch (e) {
         if (useStore.getState().sessionId !== sid) return;
+        setMessages([]);
         const kind = await classifyResumeFailure(selectedAgent, sid, e);
         if (useStore.getState().sessionId !== sid) return;
         useStore.getState().setSessionError({ sessionId: sid, kind });
@@ -173,6 +230,7 @@ export function useAcpSession(
     },
     [
       selectedAgent,
+      agentOperable,
       loadSessionHistory,
       resetConnection,
       setMessages,
@@ -265,6 +323,73 @@ export function useAcpSession(
     [connectionRef, ensureLive, selectedAgent],
   );
 
+  const rewriteFrom = useCallback(
+    async (rewrite: {
+      messageId: string;
+      upToMessageId: string | null | undefined;
+      mode: RewriteMode;
+      text: string;
+      title: string | null;
+    }): Promise<void> => {
+      if (!selectedAgent) return;
+      const live = await ensureLive();
+      if (!live) throw new Error("the agent is not connected");
+      const all = useStore.getState().messages;
+      const at = all.findIndex((m) => m.id === rewrite.messageId);
+      if (at === -1) return;
+      const parts = [
+        ...all[at].parts.filter((p) => p.kind === "image"),
+        { kind: "text" as const, text: rewrite.text },
+      ];
+      const promptId = crypto.randomUUID();
+      const result = (await live.connection.agent.request(
+        "platform/rewriteFrom",
+        {
+          sessionId: live.sessionId,
+          mode: rewrite.mode,
+          messageId: rewrite.messageId,
+          ...(rewrite.upToMessageId !== undefined && {
+            upToMessageId: rewrite.upToMessageId,
+          }),
+          prompt: promptBlocksOf(parts),
+          promptId,
+          ...(rewrite.title
+            ? {
+                title:
+                  rewrite.mode === "fork"
+                    ? `${rewrite.title} (fork)`
+                    : rewrite.title,
+              }
+            : {}),
+        },
+      )) as { sessionId: string };
+      bindEngagement(result.sessionId);
+      setSessionId(result.sessionId);
+      setMessages((prev) => [
+        ...prev.slice(0, at),
+        {
+          id: promptId,
+          role: "user",
+          parts,
+          streaming: false,
+          at: new Date().toISOString(),
+        },
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          parts: [],
+          streaming: true,
+          promptId,
+        },
+      ]);
+      useStore.getState().setRewriting(null);
+      void queryClient.invalidateQueries({
+        queryKey: acpSessionsKeys.agent(selectedAgent),
+      });
+    },
+    [selectedAgent, ensureLive, bindEngagement, setSessionId, setMessages],
+  );
+
   const sendPrompt = useCallback(
     (
       text: string,
@@ -282,6 +407,7 @@ export function useAcpSession(
     resumeSession,
     loadOlderMessages,
     sendPrompt,
+    rewriteFrom,
     stopAgent,
     chooseSessionModel,
     configureSession,
@@ -289,4 +415,14 @@ export function useAcpSession(
     loadingSession,
     connectionState,
   };
+}
+
+function promptBlocksOf(parts: MessagePart[]): PromptBlock[] {
+  return parts.flatMap((p): PromptBlock[] =>
+    p.kind === "image"
+      ? [{ type: "image", data: p.data, mimeType: p.mimeType }]
+      : p.kind === "text"
+        ? [{ type: "text", text: p.text }]
+        : [],
+  );
 }

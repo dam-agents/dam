@@ -2,9 +2,14 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"hash/fnv"
 	"log/slog"
+	"maps"
 	"os"
 	"os/signal"
+	"slices"
+	"sync"
 	"syscall"
 	"time"
 
@@ -12,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/informers"
@@ -61,7 +67,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// UNIT_BOUNDARY_DESCRIPTION: a reconcile spends almost all of its time waiting for this limiter rather than for the API server. Measured on a 80-agent install: each reconcile issues around thirty calls, every one of them answered in single-digit milliseconds and then followed by a wait until the next token — twenty milliseconds apart at fifty a second, which is where a 700 ms reconcile goes. The drift sweep hands the queue every agent at once, so the fleet costs thirty calls times its size, and an agent created during that window waits behind all of it. Raising the ceiling is what shortens that wait: a second worker would only queue for the same tokens, since the limiter is shared and the API server was never the thing saying no.
+	// UNIT_BOUNDARY_DESCRIPTION: a reconcile spends almost all of its time waiting for this limiter rather than for the API server. Measured on a 80-agent install: each reconcile issues around thirty calls, every one of them answered in single-digit milliseconds and then followed by a wait until the next token — twenty milliseconds apart at fifty a second, which is where a 700 ms reconcile goes. The drift sweep hands the queue every agent at once, so the fleet costs thirty calls times its size, and an agent created during that window waits behind all of it. Raising the ceiling is what shortens that wait: the agent workers all queue for the same tokens, since the limiter is shared, so more workers buy no throughput, and the API server was never the thing saying no.
 	if restCfg.QPS == 0 {
 		restCfg.QPS = 200
 		restCfg.Burst = 400
@@ -138,8 +144,37 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		}),
 	)
 	podInformer := podFactory.Core().V1().Pods()
+	stripManagedFields := informers.WithTransform(func(obj interface{}) (interface{}, error) {
+		if m, err := meta.Accessor(obj); err == nil {
+			m.SetManagedFields(nil)
+		}
+		return obj, nil
+	})
+	statefulSetInformer := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
+		informers.WithNamespace(cfg.Namespace),
+		informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
+			opts.LabelSelector = reconciler.LabelAgent
+		}),
+		stripManagedFields,
+	).Apps().V1().StatefulSets().Informer()
 
-	agentReconciler := reconciler.NewAgentReconciler(client, dynClient, cfg).WithAgentCache(agentInformer.Lister())
+	agentReconciler := reconciler.NewAgentReconciler(client, dynClient, cfg).WithAgentCache(agentInformer.Lister()).WithPodCache(podInformer.Lister()).WithStatefulSetCache(statefulSetInformer)
+
+	var runnerFactory informers.SharedInformerFactory
+	var runnerInformer, runnerPodInformer cache.SharedIndexInformer
+	if cfg.VM.Enabled {
+		runnerFactory = informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
+			informers.WithNamespace(cfg.Namespace),
+			informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
+				opts.LabelSelector = "app.kubernetes.io/component=vm-runner"
+			}),
+			stripManagedFields,
+		)
+		runnerInformer = runnerFactory.Apps().V1().Deployments().Informer()
+		runnerPods := runnerFactory.Core().V1().Pods()
+		runnerPodInformer = runnerPods.Informer()
+		agentReconciler.WithRunnerCaches(runnerInformer, runnerPods.Lister())
+	}
 
 	idleChecker := reconciler.NewIdleChecker(client, dynClient, cfg)
 	if cfg.VM.Enabled {
@@ -171,23 +206,34 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		every(ctx, 10*time.Minute, orphanSweep)
 	}()
 
-	agentQueue := workqueue.NewTypedRateLimitingQueueWithConfig(workqueue.DefaultTypedControllerRateLimiter[string](),
-		workqueue.TypedRateLimitingQueueConfig[string]{Name: "agent"})
+	agentQueue := newShardedAgentQueue(agentInformer.Lister().ByNamespace(cfg.Namespace))
 	defer agentQueue.ShutDown()
-	agentReconciler.WithRequeue(ctx, agentQueue.AddAfter)
+	agentReconciler.WithRequeue(ctx, func(name string, after time.Duration) {
+		if after == 0 {
+			agentQueue.AddUrgent(name)
+			return
+		}
+		agentQueue.AddAfter(name, after)
+	})
 
 	deleteQueue := workqueue.NewTypedRateLimitingQueueWithConfig(
 		workqueue.NewTypedItemExponentialFailureRateLimiter[deletedAgent](time.Second, 5*time.Minute),
 		workqueue.TypedRateLimitingQueueConfig[deletedAgent]{Name: "agent-delete"})
 	defer deleteQueue.ShutDown()
 
-	agentInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) { enqueueObjectName(obj, agentQueue) },
+	agentInformer.Informer().AddEventHandler(cache.ResourceEventHandlerDetailedFuncs{
+		AddFunc: func(obj interface{}, isInInitialList bool) {
+			if u := unstructuredFrom(obj); u != nil {
+				agentQueue.add(isInInitialList, u.GetName())
+			}
+		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			if !resourceVersionChanged(oldObj, newObj) {
 				return
 			}
-			enqueueObjectName(newObj, agentQueue)
+			if u := unstructuredFrom(newObj); u != nil {
+				agentQueue.add(!specOrAnnotationsChanged(unstructuredFrom(oldObj), u), u.GetName())
+			}
 		},
 		DeleteFunc: func(obj interface{}) {
 			if u := unstructuredFrom(obj); u != nil {
@@ -197,34 +243,26 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	})
 	go runDeleteWorker(ctx, agentReconciler, deleteQueue)
 
-	var runnerInformer cache.SharedIndexInformer
 	if cfg.VM.Enabled {
-		runnerFactory := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
-			informers.WithNamespace(cfg.Namespace),
-			informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
-				opts.LabelSelector = "app.kubernetes.io/component=vm-runner"
-			}),
-		)
-		runnerInformer = runnerFactory.Apps().V1().Deployments().Informer()
-		requeueOwner := func(obj interface{}) {
+		requeueOwner := func(obj interface{}, isInInitialList bool) {
 			if m, err := meta.Accessor(obj); err == nil {
 				for _, name := range agentReconciler.OwnerVMAgents(reconciler.AgentOwner(m.GetLabels())) {
-					agentQueue.Add(name)
+					agentQueue.add(isInInitialList, name)
 				}
 			}
 		}
-		if _, err := runnerInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		if _, err := runnerInformer.AddEventHandler(cache.ResourceEventHandlerDetailedFuncs{
 			AddFunc: requeueOwner,
 			UpdateFunc: func(oldObj, newObj interface{}) {
 				if resourceVersionChanged(oldObj, newObj) {
-					requeueOwner(newObj)
+					requeueOwner(newObj, false)
 				}
 			},
 			DeleteFunc: func(obj interface{}) {
 				if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
 					obj = tombstone.Obj
 				}
-				requeueOwner(obj)
+				requeueOwner(obj, false)
 			},
 		}); err != nil {
 			slog.Error("watching VM runner deployments", "error", err)
@@ -233,26 +271,54 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		runnerFactory.Start(ctx.Done())
 	}
 
-	podInformer.TypedInformer().AddTypedEventHandler(coreinformers.PodHandlerFuncs{
-		AddFunc: func(pod *corev1.Pod) { enqueuePodOwner(pod, agentQueue) },
+	podInformer.TypedInformer().AddTypedEventHandler(cache.TypedResourceEventHandlerDetailedFuncs[*corev1.Pod]{
+		AddFunc: func(pod *corev1.Pod, isInInitialList bool) {
+			agentQueue.add(isInInitialList, pod.Labels[reconciler.LabelAgent])
+		},
 		UpdateFunc: func(oldPod, newPod *corev1.Pod) {
 			if oldPod.ResourceVersion == newPod.ResourceVersion {
 				return
 			}
-			enqueuePodOwner(newPod, agentQueue)
+			agentQueue.add(false, newPod.Labels[reconciler.LabelAgent])
 		},
 		DeleteFunc: func(deleted coreinformers.DeletedPod) {
 			if deleted.OptionalObj != nil {
-				enqueuePodOwner(deleted.OptionalObj, agentQueue)
+				agentQueue.add(false, deleted.OptionalObj.Labels[reconciler.LabelAgent])
+			}
+		},
+	})
+
+	secretFactory := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
+		informers.WithNamespace(cfg.Namespace),
+		informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
+			opts.LabelSelector = reconciler.CredentialSecretSelector
+		}),
+		informers.WithTransform(func(obj interface{}) (interface{}, error) {
+			if s, ok := obj.(*corev1.Secret); ok {
+				s.Data, s.StringData = nil, nil
+			}
+			return obj, nil
+		}),
+	)
+	secretInformer := secretFactory.Core().V1().Secrets()
+	secretInformer.TypedInformer().AddTypedEventHandler(cache.TypedResourceEventHandlerDetailedFuncs[*corev1.Secret]{
+		UpdateFunc: func(oldSecret, newSecret *corev1.Secret) {
+			if oldSecret.ResourceVersion == newSecret.ResourceVersion {
+				return
+			}
+			for _, a := range agentReconciler.OwnerAgents(reconciler.AgentOwner(newSecret.Labels)) {
+				agentQueue.add(false, a.GetName())
 			}
 		},
 	})
 
 	dynFactory.Start(ctx.Done())
 	podFactory.Start(ctx.Done())
-	synced := []cache.InformerSynced{agentInformer.Informer().HasSynced, podInformer.Informer().HasSynced}
+	secretFactory.Start(ctx.Done())
+	go statefulSetInformer.RunWithContext(ctx)
+	synced := []cache.InformerSynced{agentInformer.Informer().HasSynced, podInformer.Informer().HasSynced, secretInformer.Informer().HasSynced, statefulSetInformer.HasSynced}
 	if runnerInformer != nil {
-		synced = append(synced, runnerInformer.HasSynced)
+		synced = append(synced, runnerInformer.HasSynced, runnerPodInformer.HasSynced)
 	}
 	if !cache.WaitForCacheSync(ctx.Done(), synced...) {
 		slog.Error("failed to sync informer caches")
@@ -279,19 +345,28 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		for _, name := range agentReconciler.MemoryPass(ctx) {
 			agentQueue.Add(name)
 		}
+		for _, name := range agentReconciler.PoolPass(ctx) {
+			agentQueue.Add(name)
+		}
 	})
 
-	runAgentWorker(ctx, agentReconciler, agentInformer.Lister().ByNamespace(cfg.Namespace), agentQueue)
+	agentQueue.run(ctx, agentReconciler, agentInformer.Lister().ByNamespace(cfg.Namespace))
 }
 
 const maxReconcileRetries = 15
 
-func runAgentWorker(ctx context.Context, r *reconciler.AgentReconciler, agents cache.GenericNamespaceLister, queue workqueue.TypedRateLimitingInterface[string]) {
+type agentReconcile interface {
+	Reconcile(ctx context.Context, agent *apiv1.Agent) error
+	SetBackoffExceeded(ctx context.Context, name string, attempts int, cause error)
+}
+
+func runAgentWorker(ctx context.Context, r agentReconcile, agents cache.GenericNamespaceLister, queue agentQueue) {
 	for {
 		name, shutdown := queue.Get()
 		if shutdown {
 			return
 		}
+		urgent := queue.lanes.poppedUrgent()
 		slog.DebugContext(ctx, "agent reconcile dequeued", "name", name, "queueDepth", queue.Len())
 		func() {
 			defer queue.Done(name)
@@ -307,6 +382,9 @@ func runAgentWorker(ctx context.Context, r *reconciler.AgentReconciler, agents c
 				return
 			}
 			if err := r.Reconcile(rctx, agent); err != nil {
+				if urgent {
+					queue.lanes.promote(name)
+				}
 				queue.AddRateLimited(name)
 				requeues := queue.NumRequeues(name)
 				telemetry.SetRequeues(rctx, requeues)
@@ -326,6 +404,175 @@ func runAgentWorker(ctx context.Context, r *reconciler.AgentReconciler, agents c
 			finish(telemetry.OutcomeSuccess, nil)
 		}()
 	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how many workers reconcile agents. A reconcile can wait on its owner's VM runner for the runner client's whole timeout, under the owner's lock, and one worker for the install put every other owner's wake behind that wait. The workers share nothing a reconcile waits on but the Kubernetes client's rate limiter, so more of them only lower the share of owners one hung runner holds up, while queueing more calls for the same tokens.
+const agentWorkers = 8
+
+// UNIT_BOUNDARY_DESCRIPTION: the agent work queues, one per worker. An agent's owner label picks its queue, so every agent of one owner is reconciled by one worker, one at a time: the budget's read-decide-scale and the runner calls of two agents of one owner never interleave, while a runner that hangs holds up only the owners that share its worker. A name the agent cache does not hold is dropped rather than guessed at, because a guess could put one agent on two workers at once; the reconcile would only have found it missing, and the informer's add for it queues it when it lands. An Agent's owner label is set when it is created and never changes, so its queue never changes either.
+type shardedAgentQueue struct {
+	shards []agentQueue
+	agents cache.GenericNamespaceLister
+}
+
+func newShardedAgentQueue(agents cache.GenericNamespaceLister) shardedAgentQueue {
+	q := shardedAgentQueue{shards: make([]agentQueue, agentWorkers), agents: agents}
+	for i := range q.shards {
+		q.shards[i] = newAgentQueue(fmt.Sprintf("agent-%d", i))
+	}
+	return q
+}
+
+func (q shardedAgentQueue) shard(name string) (agentQueue, bool) {
+	obj, err := q.agents.Get(name)
+	if err != nil {
+		return agentQueue{}, false
+	}
+	m, err := meta.Accessor(obj)
+	if err != nil {
+		return agentQueue{}, false
+	}
+	h := fnv.New32a()
+	h.Write([]byte(reconciler.AgentOwner(m.GetLabels())))
+	return q.shards[h.Sum32()%uint32(len(q.shards))], true
+}
+
+func (q shardedAgentQueue) Add(name string) {
+	if s, ok := q.shard(name); ok {
+		s.Add(name)
+	}
+}
+
+func (q shardedAgentQueue) AddAfter(name string, after time.Duration) {
+	if s, ok := q.shard(name); ok {
+		s.AddAfter(name, after)
+	}
+}
+
+func (q shardedAgentQueue) AddUrgent(name string) {
+	if s, ok := q.shard(name); ok {
+		s.AddUrgent(name)
+	}
+}
+
+func (q shardedAgentQueue) add(background bool, name string) {
+	if s, ok := q.shard(name); ok {
+		s.add(background, name)
+	}
+}
+
+func (q shardedAgentQueue) ShutDown() {
+	for _, s := range q.shards {
+		s.ShutDown()
+	}
+}
+
+func (q shardedAgentQueue) run(ctx context.Context, r agentReconcile, agents cache.GenericNamespaceLister) {
+	var wg sync.WaitGroup
+	for _, s := range q.shards {
+		wg.Go(func() { runAgentWorker(ctx, r, agents, s) })
+	}
+	wg.Wait()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: one worker's agent queue, in two lanes. A change a person is waiting on — a wake bumping last-activity, a new Agent, a spec or annotation edit, a pod or machine moving — goes in the urgent lane; the startup list, the drift sweep, the retry and memory ticks and the controller's own status echoes go in the background lane. The worker always takes the urgent lane first, so a wake waits behind at most the one reconcile its worker is already running, not behind the fleet a restart enqueues. It is still a client-go queue with its dedupe, rate limiting and metrics: only the order of the items waiting changes.
+type agentQueue struct {
+	workqueue.TypedRateLimitingInterface[string]
+	lanes *agentLanes
+}
+
+func newAgentQueue(name string) agentQueue {
+	lanes := &agentLanes{promoted: sets.New[string]()}
+	base := workqueue.NewTypedWithConfig(workqueue.TypedQueueConfig[string]{Name: name, Queue: lanes})
+	delaying := workqueue.NewTypedDelayingQueueWithConfig(workqueue.TypedDelayingQueueConfig[string]{Name: name, Queue: base})
+	return agentQueue{
+		TypedRateLimitingInterface: workqueue.NewTypedRateLimitingQueueWithConfig(workqueue.DefaultTypedControllerRateLimiter[string](),
+			workqueue.TypedRateLimitingQueueConfig[string]{Name: name, DelayingQueue: delaying}),
+		lanes: lanes,
+	}
+}
+
+func (q agentQueue) AddUrgent(name string) {
+	q.lanes.promote(name)
+	q.Add(name)
+}
+
+func (q agentQueue) add(background bool, name string) {
+	switch {
+	case name == "":
+	case background:
+		q.Add(name)
+	default:
+		q.AddUrgent(name)
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the storage under the agent queue. The queue calls it under its own lock, but a promotion comes from informer and watch goroutines, so it has a lock of its own. A promotion waits until the queue pushes or touches the name: an agent already waiting moves to the urgent lane, and one being reconciled goes there when the queue pushes it again after Done. Removing a name from the background lane is a linear scan, which a few hundred agents do not feel.
+type agentLanes struct {
+	mu                 sync.Mutex
+	urgent, background []string
+	promoted           sets.Set[string]
+	lastPopUrgent      bool
+}
+
+func (l *agentLanes) promote(name string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.promoted.Insert(name)
+}
+
+func (l *agentLanes) poppedUrgent() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.lastPopUrgent
+}
+
+func (l *agentLanes) Touch(name string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.promoted.Has(name) {
+		return
+	}
+	l.promoted.Delete(name)
+	if i := slices.Index(l.background, name); i >= 0 {
+		l.background = slices.Delete(l.background, i, i+1)
+		l.urgent = append(l.urgent, name)
+	}
+}
+
+func (l *agentLanes) Push(name string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.promoted.Has(name) {
+		l.promoted.Delete(name)
+		l.urgent = append(l.urgent, name)
+		return
+	}
+	l.background = append(l.background, name)
+}
+
+func (l *agentLanes) Len() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.urgent) + len(l.background)
+}
+
+func (l *agentLanes) Pop() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	lane := &l.background
+	l.lastPopUrgent = len(l.urgent) > 0
+	if l.lastPopUrgent {
+		lane = &l.urgent
+	}
+	name := (*lane)[0]
+	*lane = (*lane)[1:]
+	return name
+}
+
+func specOrAnnotationsChanged(oldAgent, newAgent *unstructured.Unstructured) bool {
+	return oldAgent == nil || oldAgent.GetGeneration() != newAgent.GetGeneration() ||
+		!maps.Equal(oldAgent.GetAnnotations(), newAgent.GetAnnotations())
 }
 
 type deletedAgent struct {
@@ -360,12 +607,6 @@ func runDeleteWorker(ctx context.Context, r *reconciler.AgentReconciler, queue w
 	}
 }
 
-func enqueueObjectName(obj interface{}, queue workqueue.TypedRateLimitingInterface[string]) {
-	if u := unstructuredFrom(obj); u != nil {
-		queue.Add(u.GetName())
-	}
-}
-
 func resourceVersionChanged(oldObj, newObj interface{}) bool {
 	oldMeta, err := meta.Accessor(oldObj)
 	if err != nil {
@@ -378,8 +619,8 @@ func resourceVersionChanged(oldObj, newObj interface{}) bool {
 	return oldMeta.GetResourceVersion() != newMeta.GetResourceVersion()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the sweep re-checks every agent there is, and handing them to the single worker at once is what makes an agent someone is waiting for queue behind the whole fleet — measured at forty seconds of a saturated worker on an eighty-agent install, and it grows with the fleet. Spread across the interval instead, each agent is re-checked exactly as often as before and the queue is never more than a reconcile or two deep, so a create arriving mid-sweep is answered rather than parked. The cost is that an agent's first check after startup can land up to one interval later than it used to; nothing waits on a drift check, and a real change arrives through the informer rather than through this.
-func spreadStoreObjects(store cache.Store, queue workqueue.TypedRateLimitingInterface[string], over time.Duration) int {
+// UNIT_BOUNDARY_DESCRIPTION: the sweep re-checks every agent there is, and handing them to the workers at once is what makes an agent someone is waiting for queue behind the whole fleet — measured at forty seconds of a saturated worker on an eighty-agent install, and it grows with the fleet. Spread across the interval instead, each agent is re-checked exactly as often as before and the queue is never more than a reconcile or two deep, so a create arriving mid-sweep is answered rather than parked. The cost is that an agent's first check after startup can land up to one interval later than it used to; nothing waits on a drift check, and a real change arrives through the informer rather than through this.
+func spreadStoreObjects(store cache.Store, queue interface{ AddAfter(string, time.Duration) }, over time.Duration) int {
 	items := store.List()
 	for i, obj := range items {
 		u := unstructuredFrom(obj)
@@ -401,12 +642,6 @@ func every(ctx context.Context, interval time.Duration, fn func()) {
 		case <-t.C:
 			fn()
 		}
-	}
-}
-
-func enqueuePodOwner(pod *corev1.Pod, queue workqueue.TypedRateLimitingInterface[string]) {
-	if name := pod.Labels[reconciler.LabelAgent]; name != "" {
-		queue.Add(name)
 	}
 }
 

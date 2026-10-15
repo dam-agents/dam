@@ -115,3 +115,17 @@ export function CodexIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+export function CurveBenderIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="4 20 512 512"
+      fill="currentColor"
+      xmlns="http://www.w3.org/2000/svg"
+      {...props}
+    >
+      <polygon points="24,476 239.2,80.7 299.5,187.7 142.5,476" />
+      <polygon points="246.9,76 360,76 497,322 384.5,322 305.9,180.8" />
+    </svg>
+  );
+}

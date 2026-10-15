@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { parseRoute, routeToPath } from "../../modules/platform/lib/routes.js";
 import {
   bindErrorCopy,
   callbackErrorCopy,
-  readCallbackErrorFromSearch,
   readFlowIdFromSearch,
 } from "../../modules/slack/lib/bind-flow.js";
 
@@ -17,11 +15,6 @@ describe("slack bind flow helpers", () => {
     expect(readFlowIdFromSearch("?x=1")).toBe(null);
     expect(readFlowIdFromSearch("?flow=")).toBe(null);
     expect(readFlowIdFromSearch("")).toBe(null);
-  });
-
-  it("reads the callback error", () => {
-    expect(readCallbackErrorFromSearch("?error=expired")).toBe("expired");
-    expect(readCallbackErrorFromSearch("?flow=abc")).toBe(null);
   });
 
   it("maps bind mutation error codes to brand-aware copy", () => {
@@ -45,12 +38,5 @@ describe("slack bind flow helpers", () => {
       expect(copy.terminal).toBe(true);
       expect(copy.hint).toContain(`/${BRAND} bind`);
     }
-  });
-});
-
-describe("slack bind route", () => {
-  it("round-trips /slack/bind", () => {
-    expect(parseRoute("/slack/bind")).toEqual({ view: "slack-bind" });
-    expect(routeToPath({ view: "slack-bind" })).toBe("/slack/bind");
   });
 });

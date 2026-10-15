@@ -148,6 +148,7 @@ function harness(
     } as never,
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    agentsFor: () => ({}) as never,
     ignoredApps,
     setSlackDefault: async () => true,
     brand: { name: "DAM", short: "dam" },
@@ -162,7 +163,7 @@ function harness(
   });
 
   async function settle() {
-    for (let i = 0; i < 200; i++) await new Promise((r) => setTimeout(r, 0));
+    for (let i = 0; i < 30; i++) await new Promise((r) => setTimeout(r, 0));
   }
 
   return {

@@ -25,6 +25,7 @@ import type {
 import type { KbSharesService } from "./modules/kb-shares/types.js";
 import type { Links } from "./modules/links/types.js";
 import type { FilesService } from "./modules/files/router.js";
+import type { GettingStartedService } from "./modules/getting-started/types.js";
 import type { HarnessConfigService } from "./modules/harness-config/types.js";
 import type { SchedulesService } from "./modules/schedules/types.js";
 import type { SkillsService } from "./modules/skills/types.js";
@@ -66,6 +67,7 @@ export interface ApiContext {
   artifactLibrary: ArtifactLibraryService;
   caseStudies: CaseStudiesService;
   features: FeaturesService;
+  gettingStarted: GettingStartedService;
   files: FilesService;
   harnessConfig: HarnessConfigService;
   links: Links;
@@ -82,5 +84,6 @@ export interface ApiContext {
   user: UserIdentity;
   e2eEnabled: boolean;
   virtualizationEnabled: boolean;
+  vmForced: boolean;
   featureModes: FeatureModes;
 }

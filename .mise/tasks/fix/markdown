@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+#MISE description="Format Markdown with one sentence per line; `-- --check` only reports the files it would change"
+#USAGE flag "--check"
+# Config in panache.toml. Skips symlinks, accepted ADRs (bodies are immutable),
+# vendored upstream skills (changed upstream only) and the generated files
+# panache.toml excludes.
+set -euo pipefail
+vendored=$(jq -r '.skills | keys[] | ".agents/skills/\(.)/"' .agents/upstream-skills.json)
+git ls-files -s '*.md' | awk '$1 != 120000 { print $4 }' | grep -vF "$vendored" |
+  while read -r f; do [[ $f != docs/adrs/* ]] || grep -qiE '^status: *propos' "$f" && echo "$f"; done |
+  xargs panache format --force-exclude $([ "${usage_check:-false}" = true ] && echo --check)

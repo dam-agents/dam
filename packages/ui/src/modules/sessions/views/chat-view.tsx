@@ -7,7 +7,12 @@ import {
   TrashCan,
   Warning,
 } from "@carbon/icons-react";
-import { SessionMode, TELEMETRY_MAX_SINCE_HOURS } from "api-server-api";
+import { routesSessionPairs } from "agent-runtime-api";
+import {
+  SessionMode,
+  SessionType,
+  TELEMETRY_MAX_SINCE_HOURS,
+} from "api-server-api";
 import {
   type CSSProperties,
   Fragment,
@@ -35,7 +40,8 @@ import {
 } from "../../../lib/persisted-prefs.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
-import type { AgentView } from "../../../types.js";
+import type { AgentView, Message } from "../../../types.js";
+import { isQueuedSend, rewritePointsOf } from "../../acp/session-projection.js";
 import {
   useHarnessConfigCurrent,
   useHarnessConfigStatus,
@@ -46,6 +52,10 @@ import {
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
 import { AgentInaccessibleOverlay } from "../../agents/components/agent-inaccessible-overlay.js";
+import {
+  AgentStartNotice,
+  hasStartNotice,
+} from "../../agents/components/agent-start-notice.js";
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
 import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
 import {
@@ -61,9 +71,11 @@ import { VmRuntimeBadge } from "../../agents/components/vm-runtime-badge.js";
 import { WorkspaceFailureNotice } from "../../agents/components/workspace-failure-notice.js";
 import { useAgentReachability } from "../../agents/hooks/use-agent-reachability.js";
 import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
+import { useHarnessConfigWatch } from "../../agents/hooks/use-harness-config-watch.js";
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
 import { useSyncRestartingAgents } from "../../agents/hooks/use-restart-agent.js";
 import { useSlowStartIds } from "../../agents/hooks/use-slow-start.js";
+import { startsInChat } from "../../agents/lib/agent-start.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
@@ -72,8 +84,10 @@ import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
+import { HomeVolumeBar } from "../../files/components/home-volume-bar.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
+import { GettingStartedDock } from "../../getting-started/components/getting-started-dock.js";
 import {
   DelegationOwnersProvider,
   useDelegationOwners,
@@ -85,6 +99,7 @@ import { ProcessesIndicator } from "../../processes/components/processes-indicat
 import { ProcessesPanel } from "../../processes/components/processes-panel.js";
 import { useProcessesEnabled } from "../../processes/hooks/use-processes-enabled.js";
 import { useProcessesLiveUpdates } from "../../processes/hooks/use-processes-live-updates.js";
+import { ProviderSettingsModal } from "../../providers/components/provider-settings-modal.js";
 import { KitUpdateBar } from "../../starter-kits/components/kit-update-bar.js";
 import { OnboardingBar } from "../../starter-kits/components/onboarding-bar.js";
 import { useTurns } from "../../telemetry/api/queries.js";
@@ -105,7 +120,14 @@ import { ChatMessage } from "../components/chat-message.js";
 import { ModelIndicator } from "../components/model-indicator.js";
 import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
+import { QueuedPrompts } from "../components/queued-prompts.js";
+import {
+  RewritableMessage,
+  RewriteMarker,
+} from "../components/rewritable-message.js";
+import { SessionPairOutdatedNotice } from "../components/session-pair-outdated-notice.js";
 import { SessionPairPicker } from "../components/session-pair-picker.js";
+import { SessionPairPlaceholder } from "../components/session-pair-placeholder.js";
 import { SessionsSidebar } from "../components/sessions-sidebar.js";
 import { Terminal } from "../components/terminal.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
@@ -124,8 +146,14 @@ import {
   useSidebarPanels,
 } from "../hooks/use-sidebar-panels.js";
 import { draftKey } from "../lib/draft-key.js";
+import { newLiveArrivals, noteArrivals } from "../lib/live-arrivals.js";
 import type { SidebarPanelId } from "../lib/sidebar-panels.js";
-import { dividerLabel, threadItems, timeProps } from "../lib/thread-items.js";
+import {
+  dividerLabel,
+  threadItems,
+  timeProps,
+  userRunsOf,
+} from "../lib/thread-items.js";
 import { clearUndelivered } from "../lib/undelivered-store.js";
 import type { SessionError } from "../store/sessions.js";
 
@@ -172,6 +200,7 @@ export function ChatView() {
   const slowStartIds = useSlowStartIds();
   useAgentReachability(selectedAgent);
   useSessionWatch(selectedAgent);
+  useHarnessConfigWatch(selectedAgent);
   useAutoWakeOnOpen(selectedAgent);
   const restartingAgents = useStore((s) => s.restartingAgents);
   const restartingIds = useMemo(
@@ -184,17 +213,31 @@ export function ChatView() {
     ? resolveAgentDisplay(agentView, restartingIds, undefined, slowStartIds)
     : null;
   const selectedAgentName = agentView?.name ?? selectedAgent;
+  const agentStarting =
+    agentDisplay?.state === "starting" ||
+    agentDisplay?.state === "preparing_workspace";
+  const startNotice = agentStarting &&
+    agentView &&
+    agentDisplay &&
+    hasStartNotice(agentView, agentDisplay) && (
+      <AgentStartNotice agent={agentView} display={agentDisplay} />
+    );
   const sessionId = useStore((s) => s.sessionId);
   const sessionMode = useStore((s) => s.sessionMode);
   const setSessionMode = useStore((s) => s.setSessionMode);
   const setSessionId = useStore((s) => s.setSessionId);
   const messages = useStore((s) => s.messages);
+  const shown = useMemo(
+    () => messages.filter((m) => !isQueuedSend(m)),
+    [messages],
+  );
   const now = useNow(60_000);
   const runStarts = useStore((s) => s.runStarts);
   const items = useMemo(
-    () => threadItems(messages, runStarts),
-    [messages, runStarts],
+    () => threadItems(shown, runStarts),
+    [shown, runStarts],
   );
+  const userRuns = useMemo(() => userRunsOf(items), [items]);
   const deleteMessage = useDeleteUndelivered(selectedAgent, sessionId);
   const sessionError = useStore((s) => s.sessionError);
   const setSessionError = useStore((s) => s.setSessionError);
@@ -267,6 +310,7 @@ export function ChatView() {
     resumeSession,
     loadOlderMessages,
     sendPrompt,
+    rewriteFrom,
     stopAgent,
     chooseSessionModel,
     configureSession,
@@ -286,24 +330,38 @@ export function ChatView() {
 
   const { openFileHandler } = useFileTree(selectedAgent);
   const { data: harnessCurrent } = useHarnessConfigCurrent(selectedAgent);
-  const { data: harnessStatus } = useHarnessConfigStatus(selectedAgent);
+  const harnessStatusQuery = useHarnessConfigStatus(selectedAgent);
+  const harnessStatus = harnessStatusQuery.data;
   const { data: currentSession } = useAgentSession(selectedAgent, sessionId);
+  const carried = (selectedAgent && harnessStatus?.harnesses) || [];
+  const pairOutdated = carried.length > 0 && !routesSessionPairs(carried);
+  const harnessesPending =
+    !harnessStatus?.harnesses &&
+    !harnessStatus?.catalog &&
+    (harnessStatusQuery.isPending || !agentOperable);
+  const newSessionAgent =
+    !sessionId && (carried.length > 0 || harnessesPending)
+      ? selectedAgent
+      : null;
+  const pendingPairAgent = harnessesPending ? newSessionAgent : null;
   const pickable =
-    !sessionId && selectedAgent && harnessStatus?.harnesses?.length
+    newSessionAgent && carried.length > 0 && !pairOutdated
       ? {
-          agentId: selectedAgent,
-          carried: harnessStatus.harnesses,
-          defaultHarness:
-            harnessStatus.defaultHarness ?? harnessStatus.harnesses[0]!.name,
+          agentId: newSessionAgent,
+          carried,
+          defaultHarness: harnessStatus?.defaultHarness ?? carried[0]!.name,
         }
       : null;
-  const providerConnections = useProviderConnections(
-    pickable ? selectedAgent : null,
-  );
+  const providerConnections = useProviderConnections(newSessionAgent);
   const noProviders =
-    !!pickable &&
+    !!newSessionAgent &&
     providerConnections.loaded &&
     providerConnections.owned.length === 0;
+  const noGrantedProvider =
+    !!newSessionAgent &&
+    providerConnections.loaded &&
+    providerConnections.granted.length === 0;
+  const [providersModal, setProvidersModal] = useState<boolean | null>(null);
 
   const view = useStore((s) => s.view);
   const chatIdle = !sessionId && messages.length === 0;
@@ -341,6 +399,26 @@ export function ChatView() {
       sessionTurns.data?.available === true ? sessionTurns.data.turns : [];
     return matchTurnsToReplies(rows, messages);
   }, [sessionTurns.data, messages]);
+
+  const harnessForks = useStore((s) => s.harnessForks);
+  const queueEmpty = useStore((s) => s.queuedPrompts.length === 0);
+  const { data: sessionView } = useAgentSession(selectedAgent, sessionId);
+  const canRewrite =
+    harnessForks &&
+    sessionView?.mode === SessionMode.Chat &&
+    sessionView.type === SessionType.Regular &&
+    !sessionView.threadTs &&
+    !sessionView.scheduleId &&
+    !sessionView.initialization;
+  const arrivalsRef = useRef(newLiveArrivals(sessionId));
+  if (arrivalsRef.current.sessionId !== sessionId)
+    arrivalsRef.current = newLiveArrivals(sessionId);
+  const arrived = noteArrivals(arrivalsRef.current, shown, loadingSession);
+  const rewritePoints = useMemo(() => rewritePointsOf(shown), [shown]);
+  const rewriting = useStore((s) => s.rewriting);
+  const rewriteIndex = rewriting
+    ? shown.findIndex((m) => m.id === rewriting.messageId)
+    : -1;
 
   const scrollToBottom = useCallback(() => {
     const el = messagesRef.current;
@@ -434,14 +512,15 @@ export function ChatView() {
     }
   }, [messages.length]);
 
+  const historyShown = !loadingSession || messages.length > 0;
   useLayoutEffect(() => {
-    if (loadingSession) return;
+    if (!historyShown) return;
     const el = messagesRef.current;
     if (!el) return;
     stickRef.current = true;
     setShowJump(false);
     el.scrollTop = el.scrollHeight;
-  }, [loadingSession, sessionId]);
+  }, [historyShown, sessionId]);
 
   const pendingResumeSessionId = useStore((s) => s.pendingResumeSessionId);
   const setPendingResumeSessionId = useStore(
@@ -510,29 +589,38 @@ export function ChatView() {
     ],
   );
 
-  const handleNewSession = useCallback(() => {
-    const focusComposer = () =>
-      requestAnimationFrame(() => textareaRef.current?.focus());
-    if (selectedAgent) clearUndelivered(draftKey(selectedAgent, null));
-    if (!sessionId && messages.length === 0) {
+  const [pairPickerOpen, setPairPickerOpen] = useState(false);
+  useEffect(() => {
+    if (sessionId) setPairPickerOpen(false);
+  }, [sessionId]);
+  const handleNewSession = useCallback(
+    (pickPair = false) => {
+      const afterReset = () =>
+        pickPair
+          ? setPairPickerOpen(true)
+          : requestAnimationFrame(() => textareaRef.current?.focus());
+      if (selectedAgent) clearUndelivered(draftKey(selectedAgent, null));
+      if (!sessionId && messages.length === 0) {
+        setMobileScreen("chat");
+        afterReset();
+        return;
+      }
+      pushSessionUrl(null, null);
+      setSessionMode(SessionMode.Chat);
+      resetSession();
       setMobileScreen("chat");
-      focusComposer();
-      return;
-    }
-    pushSessionUrl(null, null);
-    setSessionMode(SessionMode.Chat);
-    resetSession();
-    setMobileScreen("chat");
-    focusComposer();
-  }, [
-    selectedAgent,
-    sessionId,
-    messages.length,
-    resetSession,
-    setMobileScreen,
-    setSessionMode,
-    pushSessionUrl,
-  ]);
+      afterReset();
+    },
+    [
+      selectedAgent,
+      sessionId,
+      messages.length,
+      resetSession,
+      setMobileScreen,
+      setSessionMode,
+      pushSessionUrl,
+    ],
+  );
 
   const handleNewTerminal = useCallback(() => {
     resetSession();
@@ -543,9 +631,7 @@ export function ChatView() {
     setMobileScreen("chat");
   }, [resetSession, setSessionId, setSessionMode, setMobileScreen]);
 
-  const canOpenBrowser =
-    features?.["strict-connection-addressing"] === true &&
-    agentView?.requireConnectionAddress === true;
+  const canOpenBrowser = agentView?.requireConnectionAddress === true;
   const browserFills =
     browserMaximized && openBrowserAgentId !== null && canOpenBrowser;
   const sidePanelOpen =
@@ -583,13 +669,19 @@ export function ChatView() {
     ? stateDotClass[agentDisplay.state]
     : "bg-warning";
 
-  const lastMessage = messages[messages.length - 1];
+  const lastMessage = shown[shown.length - 1];
   const statusLineInThread =
     lastMessage?.role === "assistant" && !lastMessage.notice;
 
   return (
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       {}
+      {(providersModal ?? noProviders) && (
+        <ProviderSettingsModal
+          agentId={newSessionAgent}
+          onClose={() => setProvidersModal(false)}
+        />
+      )}
       <header
         className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-stretch h-[70px] max-md:border-b border-border shrink-0 relative z-content`}
       >
@@ -619,11 +711,7 @@ export function ChatView() {
               <EditableAgentIdentity
                 agent={agentView}
                 avatarSize={32}
-                mood={avatarMood(
-                  agentDisplay?.state,
-                  agentView.stopRequested,
-                  busy,
-                )}
+                mood={avatarMood(agentDisplay?.state, agentView.stopRequested)}
                 avatarClassName="@max-[149px]:hidden"
                 nameClassName="text-sm font-bold text-foreground"
               />
@@ -773,11 +861,14 @@ export function ChatView() {
               <div className="@container relative flex flex-1 flex-col min-h-0">
                 <div ref={messagesRef} className="flex-1 overflow-y-auto">
                   <ChatColumn className="px-2 @xs/chat:px-4 @xl/chat:px-8 py-8 flex flex-col gap-8 min-h-full">
-                    {loadingSession && (
+                    {!historyShown && (
                       <div className="py-20 flex items-center justify-center gap-3 text-sm text-muted-foreground">
                         <Spinner size={20} />
                         Loading session…
                       </div>
+                    )}
+                    {loadingSession && startNotice && (
+                      <div className="flex justify-center">{startNotice}</div>
                     )}
                     {!loadingSession && sessionError && (
                       <SessionErrorCard
@@ -808,6 +899,9 @@ export function ChatView() {
                               onNewTerminal={handleNewTerminal}
                             />
                           )}
+                          {startNotice && (
+                            <div className="mt-6">{startNotice}</div>
+                          )}
                         </div>
                       )}
                     <DelegationOwnersProvider value={delegationOwners}>
@@ -826,21 +920,91 @@ export function ChatView() {
                             </div>
                           );
                         }
+                        if (userRuns.inner.has(item.message.id)) return null;
                         const turn = turnForMessage.get(item.message.id);
+                        const members = userRuns.runs.get(item.message.id) ?? [
+                          item.message,
+                        ];
+                        const lastIndex = item.index + members.length - 1;
+                        const bubbles = members.map((m, k) => (
+                          <ChatMessage
+                            key={m.id}
+                            message={m}
+                            continued={k > 0}
+                            arriving={arrived.has(m.id)}
+                            avatarAgent={agentView ?? undefined}
+                            isLast={item.index + k === shown.length - 1}
+                            showModel={runStarts.length > 0}
+                            {...timeProps(m.at, now)}
+                            hasPendingPermission={hasPendingPermission}
+                            pendingNotice={
+                              item.index + k === shown.length - 1
+                                ? startNotice
+                                : undefined
+                            }
+                            onRetry={sendPrompt}
+                            onFileClick={openFileHandler}
+                            onDelete={deleteMessage}
+                            onLoadOlder={loadOlderKeepingScroll}
+                          />
+                        ));
+                        const chatMessage =
+                          members.length === 1 ? (
+                            bubbles[0]
+                          ) : (
+                            <div className="flex flex-col gap-2">{bubbles}</div>
+                          );
+                        const runMessage: Message =
+                          members.length === 1
+                            ? item.message
+                            : {
+                                ...item.message,
+                                parts: members.flatMap((m) =>
+                                  m.parts.filter((p) => p.kind === "text"),
+                                ),
+                              };
+                        const upTo = rewritePoints.get(item.message.id);
+                        const editingHere =
+                          rewriting?.messageId === item.message.id;
+                        const doomed =
+                          rewriting?.mode === "rewind" &&
+                          rewriteIndex !== -1 &&
+                          item.index > rewriteIndex;
+                        const content =
+                          canRewrite && rewritePoints.has(item.message.id) ? (
+                            <RewritableMessage
+                              message={runMessage}
+                              enabled={queueEmpty && !busy}
+                              onRewrite={(mode, text) =>
+                                rewriteFrom({
+                                  messageId: item.message.id,
+                                  upToMessageId: upTo,
+                                  mode,
+                                  text,
+                                  title: sessionView?.title ?? null,
+                                })
+                              }
+                            >
+                              {chatMessage}
+                            </RewritableMessage>
+                          ) : (
+                            chatMessage
+                          );
                         return (
                           <Fragment key={item.message.id}>
-                            <ChatMessage
-                              message={item.message}
-                              avatarAgent={agentView ?? undefined}
-                              isLast={item.index === messages.length - 1}
-                              showModel={runStarts.length > 0}
-                              {...timeProps(item.message.at, now)}
-                              hasPendingPermission={hasPendingPermission}
-                              onRetry={sendPrompt}
-                              onFileClick={openFileHandler}
-                              onDelete={deleteMessage}
-                              onLoadOlder={loadOlderKeepingScroll}
-                            />
+                            {doomed ? (
+                              <div className="opacity-30 grayscale">
+                                {content}
+                              </div>
+                            ) : (
+                              content
+                            )}
+                            {editingHere && rewriting && (
+                              <RewriteMarker
+                                mode={rewriting.mode}
+                                following={shown.length - 1 - lastIndex}
+                              />
+                            )}
                             {selectedAgent && sessionId && turn && (
                               <TurnTelemetry
                                 agentId={selectedAgent}
@@ -859,6 +1023,7 @@ export function ChatView() {
                         claimed={delegationOwners}
                       />
                     )}
+                    <QueuedPrompts onFileClick={openFileHandler} />
                     {telemetryEnabled && sessionTurns.isError && (
                       <p className="py-1 text-2xs text-muted-foreground/70">
                         Telemetry for this session could not be read.
@@ -879,6 +1044,7 @@ export function ChatView() {
                   </ChatColumn>
                 </div>
 
+                <GettingStartedDock placement="chat" />
                 {showJump && (
                   <button
                     onClick={scrollToBottom}
@@ -896,6 +1062,7 @@ export function ChatView() {
                   agentId={selectedAgent}
                 />
                 <KitUpdateBar agentId={selectedAgent} />
+                <HomeVolumeBar agentId={selectedAgent} />
                 <ChatInputArea
                   textareaRef={textareaRef}
                   busy={busy}
@@ -903,20 +1070,42 @@ export function ChatView() {
                   onSend={sendAndFollow}
                   onStop={stopAgent}
                   blockedReason={
-                    noProviders ? "No LLM providers connected." : null
+                    noGrantedProvider
+                      ? "No LLM provider connected to this agent."
+                      : null
                   }
                 />
                 {!hasPendingPermission && pickable && (
                   <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
                     <ChatColumn>
-                      <SessionPairPicker {...pickable} />
+                      <SessionPairPicker
+                        {...pickable}
+                        open={pairPickerOpen}
+                        onOpenChange={setPairPickerOpen}
+                        onConnectProviders={() => setProvidersModal(true)}
+                      />
                     </ChatColumn>
                   </div>
                 )}
-                {!hasPendingPermission && !pickable && (
+                {!hasPendingPermission && pendingPairAgent && (
                   <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
                     <ChatColumn>
-                      {selectedAgent && currentSession?.harness ? (
+                      <SessionPairPlaceholder
+                        agentId={pendingPairAgent}
+                        agentHarness={agentView?.harness}
+                        open={pairPickerOpen}
+                        onOpenChange={setPairPickerOpen}
+                        onConnectProviders={() => setProvidersModal(true)}
+                      />
+                    </ChatColumn>
+                  </div>
+                )}
+                {!hasPendingPermission && !pickable && !pendingPairAgent && (
+                  <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
+                    <ChatColumn>
+                      {selectedAgent && pairOutdated ? (
+                        <SessionPairOutdatedNotice agentId={selectedAgent} />
+                      ) : selectedAgent && currentSession?.harness ? (
                         <ModelIndicator
                           agentId={selectedAgent}
                           harness={currentSession.harness}
@@ -928,7 +1117,7 @@ export function ChatView() {
                           onConfigure={(change) =>
                             void configureSession(change)
                           }
-                          onNewSession={handleNewSession}
+                          onNewSession={() => handleNewSession(true)}
                         />
                       ) : selectedAgent ? (
                         <Button
@@ -960,10 +1149,7 @@ export function ChatView() {
               <ResizeHandle
                 side="right"
                 onResize={(d) => {
-                  const max = Math.min(
-                    960,
-                    sidePanelMaxW ?? window.innerWidth - 500,
-                  );
+                  const max = sidePanelMaxW ?? window.innerWidth - 500;
                   const base = Math.min(
                     rightWRef.current ?? filePanelRef.current?.offsetWidth ?? 0,
                     max,
@@ -1026,7 +1212,14 @@ export function ChatView() {
 
       {leavingForPublicPage ? (
         <AgentInaccessibleOverlay onLeave={goBack} />
-      ) : selectedAgent && !agentInaccessible && !agentOperable ? (
+      ) : selectedAgent &&
+        !agentInaccessible &&
+        !agentOperable &&
+        !(
+          agentView &&
+          agentDisplay &&
+          startsInChat(agentView, agentDisplay.state)
+        ) ? (
         <AgentUnavailableOverlay
           agent={agentView}
           display={agentDisplay}
@@ -1091,7 +1284,7 @@ const RESUME_FAILURE_COPY: Record<
   },
   connection: {
     title: "Can't reach the agent",
-    body: "The agent didn't answer. It may be waking up or hibernating — try again in a moment.",
+    body: "The agent didn't answer. It may be waking up or falling asleep — try again in a moment.",
   },
   other: {
     title: "Can't open this conversation",

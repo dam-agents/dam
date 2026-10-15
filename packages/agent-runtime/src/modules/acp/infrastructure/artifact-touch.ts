@@ -1,3 +1,4 @@
+import { toolOutputTexts } from "agent-runtime-api";
 import { artifactTouchPayloadSchema } from "api-server-api";
 
 export interface ArtifactTouch {
@@ -9,17 +10,6 @@ export interface ArtifactTouch {
 interface ToolCallUpdate {
   sessionUpdate?: unknown;
   status?: unknown;
-  rawOutput?: unknown;
-}
-
-function textBlocks(rawOutput: unknown): string[] {
-  if (typeof rawOutput === "string") return [rawOutput];
-  if (!Array.isArray(rawOutput)) return [];
-  return rawOutput.flatMap((block) => {
-    if (typeof block === "string") return [block];
-    const text = (block as { text?: unknown } | null)?.text;
-    return typeof text === "string" ? [text] : [];
-  });
 }
 
 function markerIn(
@@ -46,7 +36,7 @@ export function artifactTouchIn(frame: unknown): ArtifactTouch | null {
   if (update?.sessionUpdate !== "tool_call_update") return null;
   if (update.status !== "completed") return null;
 
-  for (const text of textBlocks(update.rawOutput)) {
+  for (const text of toolOutputTexts(update)) {
     const marker = markerIn(text);
     if (marker) return { sessionId, ...marker };
   }

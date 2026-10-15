@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { sessionSettingsSchema } from "../harness-config/session-settings.js";
+import { SOURCE_FETCH_MODES } from "../skills/source-fetch.js";
 
 export const contributionKind = z.enum([
   "env",
@@ -127,6 +128,7 @@ export const skillRefContribution = z.object({
   name: z.string().min(1),
   version: z.string().min(1),
   path: z.string().optional(),
+  fetch: z.enum(SOURCE_FETCH_MODES).optional(),
 });
 
 export const contribution = z.discriminatedUnion("kind", [
@@ -241,6 +243,10 @@ export const workspaceCommandEvent = z.object({
 
 export const initializationEventPayload = z.object({
   task: z.string().min(1),
+  harness: z.string().min(1).optional(),
+  provider: z.string().min(1).optional(),
+  model: z.string().min(1).optional(),
+  settings: sessionSettingsSchema.optional(),
 });
 
 export const initializationEvent = z.object({
@@ -360,6 +366,14 @@ export const harnessCapability = z.object({
   sessionSettings: z.array(z.string().min(1)).optional(),
 });
 export type HarnessCapability = z.infer<typeof harnessCapability>;
+export function routesSessionPairs(
+  carried: readonly Pick<
+    HarnessCapability,
+    "harnessConfig" | "sessionSettings"
+  >[],
+): boolean {
+  return !carried.some((h) => h.harnessConfig && !h.sessionSettings);
+}
 
 function advertisedKinds<T extends string>(known: readonly T[]) {
   const recognised = new Set<string>(known);

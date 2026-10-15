@@ -9,6 +9,7 @@ export interface AttentionItem {
   type: SessionType;
   title: string | null;
   scheduleId: string | null;
+  threadTs: string | null;
   createdAt: string;
   activityAt: string | null;
   seenAt: string | null;
@@ -33,5 +34,6 @@ export interface AttentionDismissal {
 
 export interface AttentionService {
   listForOwner(): Promise<AttentionList>;
+  sessionsForAgent(agentId: string): Promise<AttentionItem[]>;
   dismiss(input: { items: readonly AttentionDismissal[] }): Promise<void>;
 }

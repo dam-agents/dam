@@ -1,4 +1,5 @@
 import { Queue, Worker, type ConnectionOptions } from "bullmq";
+import { inBackgroundSpan } from "../../../core/background-span.js";
 
 const SCHEDULES_QUEUE = "schedules";
 
@@ -94,12 +95,22 @@ export function startScheduleWorker(
 ): RunningWorker {
   const worker = new Worker<ScheduleJob>(
     SCHEDULES_QUEUE,
-    async (job) =>
-      opts.handler(
-        job.data.scheduleId,
-        new Date(job.data.fireAtMs ?? job.timestamp),
-        job.attemptsStarted >= (job.opts.attempts ?? 1),
-      ),
+    async (job) => {
+      const finalAttempt = job.attemptsStarted >= (job.opts.attempts ?? 1);
+      return inBackgroundSpan(
+        "schedule.fire",
+        {
+          "platform.schedule.attempt": job.attemptsStarted,
+          "platform.schedule.final_attempt": finalAttempt,
+        },
+        () =>
+          opts.handler(
+            job.data.scheduleId,
+            new Date(job.data.fireAtMs ?? job.timestamp),
+            finalAttempt,
+          ),
+      );
+    },
     {
       connection: opts.connection,
       concurrency: 16,

@@ -11,7 +11,7 @@ export interface DisplaySupervisor {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: runs platform-display, the browser panel's
- * display stack, for the life of the runtime. It exits as soon as any part of
+ * display stack, from its first use for the life of the runtime. It exits as soon as any part of
  * the stack dies and is started again, with a backoff while it keeps failing.
  * It runs in a process group of its own, killed whole when it exits or stops,
  * since what it started would otherwise outlive it and hold the display the

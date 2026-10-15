@@ -33,6 +33,7 @@ function fakeRuntime(): { runtime: AcpRuntime; sent: any[] } {
         }
       });
     },
+    prestart() {},
     isSessionRunning: () => false,
     sessionFrames: () => ({ frames: [], truncated: false }),
     status: () => ({

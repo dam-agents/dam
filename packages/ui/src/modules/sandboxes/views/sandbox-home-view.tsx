@@ -5,10 +5,10 @@ import { Button } from "@/components/ui/button";
 import { useStore } from "../../../store.js";
 import { useAgents, useIsAgentInaccessible } from "../../agents/api/queries.js";
 import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
+import { useHarnessConfigWatch } from "../../agents/hooks/use-harness-config-watch.js";
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
 import { useResolvedAgentDisplay } from "../../agents/hooks/use-resolved-agent-display.js";
 import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
-import { KnowledgeSection } from "../../knowledge-bases/components/knowledge-section.js";
 import { SandboxUsageSection } from "../../metrics/components/sandbox-usage-section.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { useProcesses } from "../../processes/api/queries.js";
@@ -20,6 +20,7 @@ import {
   SandboxHomeHeader,
   SandboxIdentity,
 } from "../components/sandbox-home-header.js";
+import { SandboxProvidersSection } from "../components/sandbox-providers-section.js";
 import {
   SandboxSectionNav,
   SECTIONS,
@@ -30,7 +31,7 @@ import { useSectionSummaries } from "../hooks/use-section-summaries.js";
 
 export function SandboxHomeView() {
   const agentId = useStore((s) => s.agentId);
-  const section = useStore((s) => s.sandboxSection);
+  const storedSection = useStore((s) => s.sandboxSection);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const openAgentSession = useStore((s) => s.openAgentSession);
   const agentsQuery = useAgents();
@@ -42,9 +43,16 @@ export function SandboxHomeView() {
   usePublicAgentFallback(agentId, agentInaccessible);
 
   const display = useResolvedAgentDisplay(agent);
+  useHarnessConfigWatch(agentId);
 
   const { summaries, warnings } = useSectionSummaries(agent);
-  const sectionEntry = SECTIONS.find((e) => e.section === section);
+  // UNIT_BOUNDARY_DESCRIPTION: vm agents have no setup settings, so links to "setup" land on the first section they do have.
+  const sections = agent?.vm
+    ? SECTIONS.filter((e) => e.section !== "setup")
+    : SECTIONS;
+  const section =
+    storedSection === "setup" && agent?.vm ? "providers" : storedSection;
+  const sectionEntry = sections.find((e) => e.section === section);
 
   if (!agent || !display) {
     return (
@@ -63,6 +71,7 @@ export function SandboxHomeView() {
     <>
       <div className="flex flex-col gap-6 md:flex-row md:gap-10">
         <SandboxSectionNav
+          sections={sections}
           header={<SandboxIdentity agent={agent} display={display} />}
           active={section}
           onNavigate={(s) => navigateToSandboxHome(agent.id, s)}
@@ -78,8 +87,8 @@ export function SandboxHomeView() {
           />
           {section === "setup" ? (
             <SandboxSetupSection agent={agent} />
-          ) : section === "knowledge" ? (
-            <KnowledgeSection agent={agent} />
+          ) : section === "providers" ? (
+            <SandboxProvidersSection agentId={agent.id} />
           ) : section === "network" ? (
             <AgentEgressEditor agentId={agent.id} />
           ) : section === "environment" ? (

@@ -1,0 +1,171 @@
+diff --git i/crates/smolvm-network/src/stack.rs w/crates/smolvm-network/src/stack.rs
+index 29ad5bc..15d51e2 100644
+--- i/crates/smolvm-network/src/stack.rs
++++ w/crates/smolvm-network/src/stack.rs
+@@ -830,7 +830,7 @@ fn relay_accepted_tcp_connection(
+                 Ok(connection) => {
+                     let guest_destination =
+                         SocketAddr::new(std::net::IpAddr::V4(guest_ipv4), connection.guest_port);
+-                    virtio_net_log!(
++                    tracing::debug!(
+                         "virtio-net: accepted published TCP connection peer={} host_port={} guest_destination={}",
+                         connection.peer_addr,
+                         connection.host_port,
+diff --git i/crates/smolvm-network/src/tcp_relay.rs w/crates/smolvm-network/src/tcp_relay.rs
+index 76b1368..dad5d21 100644
+--- i/crates/smolvm-network/src/tcp_relay.rs
++++ w/crates/smolvm-network/src/tcp_relay.rs
+@@ -867,7 +867,7 @@ pub fn spawn_tcp_relay(
+     exit_state: RelayExitState,
+ ) -> io::Result<()> {
+     let thread_name = format!("smolvm-tcp-{}", destination.port());
+-    virtio_net_log!(
++    tracing::debug!(
+         "virtio-net: host TCP relay thread spawn attempt destination={} thread={}",
+         destination,
+         thread_name
+@@ -929,7 +929,7 @@ fn run_tcp_relay(
+ ) {
+     // The relay thread is intentionally isolated from smoltcp internals. Its
+     // contract is just channels in, channels out, and an exit code back.
+-    virtio_net_log!(
++    tracing::debug!(
+         "virtio-net: host TCP relay thread started destination={}",
+         destination
+     );
+@@ -943,7 +943,7 @@ fn run_tcp_relay(
+         &exit_state,
+     ) {
+         Ok(mode) => {
+-            virtio_net_log!(
++            tracing::debug!(
+                 "virtio-net: host TCP relay thread exited destination={} mode={:?}",
+                 destination,
+                 mode
+@@ -984,12 +984,12 @@ fn tcp_relay_loop(
+     let mut pending_guest_data: Option<(Vec<u8>, usize)> = None;
+     let stream = match relay_target {
+         RelayTarget::Connect(destination) => {
+-            virtio_net_log!(
++            tracing::debug!(
+                 "virtio-net: connecting host TCP relay socket destination={}",
+                 destination
+             );
+             let stream = TcpStream::connect(destination)?;
+-            virtio_net_log!(
++            tracing::debug!(
+                 "virtio-net: host TCP relay socket connected destination={}",
+                 destination
+             );
+@@ -999,7 +999,7 @@ fn tcp_relay_loop(
+             TcpStream::connect_timeout(&destination, INTERCEPT_VERDICT_TIMEOUT)?
+         }
+         RelayTarget::Attached(stream) => {
+-            virtio_net_log!(
++            tracing::debug!(
+                 "virtio-net: using accepted host TCP socket for published port guest_destination={} peer_addr={:?} local_addr={:?}",
+                 destination,
+                 stream.peer_addr().ok(),
+@@ -1345,6 +1345,22 @@ fn relay_stream(
+             poller.modify(stream, interest)?;
+             events.clear();
+             poller.wait(&mut events, Some(RELAY_WAIT_BACKSTOP))?;
++            if host_read_closed && pending_guest_data.is_none() {
++                // Nothing reads or writes the host socket from here on, so
++                // nothing would notice it failing. epoll reports EPOLLERR and
++                // EPOLLHUP whatever the interest, so once the host resets, every
++                // wait returns at once and this loop spins until the guest
++                // closes. kqueue reports nothing, so the error is read as well.
++                if let Some(err) = stream.take_error()? {
++                    return Err(err);
++                }
++                if events.iter().any(|event| event.key == HOST_STREAM_KEY) {
++                    return Err(io::Error::new(
++                        io::ErrorKind::ConnectionReset,
++                        "host TCP socket hung up",
++                    ));
++                }
++            }
+         } else {
+             last_activity = Instant::now();
+         }
+@@ -1650,6 +1666,79 @@ mod tests {
+         }
+     }
+ 
++    /// A host server for one connection that half-closes, then hands the
++    /// accepted socket to `then`.
++    fn half_closing_server(then: impl FnOnce(TcpStream) + Send + 'static) -> SocketAddr {
++        let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
++        let address = listener.local_addr().unwrap();
++        thread::spawn(move || {
++            let (stream, _) = listener.accept().unwrap();
++            stream.shutdown(Shutdown::Write).unwrap();
++            then(stream);
++        });
++        address
++    }
++
++    fn wait_for_exit_mode(exit_state: &RelayExitState, mode: RelayExitMode, within: Duration) {
++        let started = Instant::now();
++        while exit_state.load() != mode {
++            assert!(
++                started.elapsed() < within,
++                "relay is {:?} after {:?}, expected {mode:?}",
++                exit_state.load(),
++                started.elapsed()
++            );
++            thread::sleep(Duration::from_millis(1));
++        }
++    }
++
++    #[test]
++    fn a_host_reset_after_its_half_close_ends_a_relay_whose_guest_is_silent() {
++        let (reset_tx, reset_rx) = mpsc::channel::<()>();
++        let destination = half_closing_server(move |stream| {
++            reset_rx.recv().unwrap();
++            socket2::SockRef::from(&stream)
++                .set_linger(Some(Duration::ZERO))
++                .unwrap();
++        });
++        // The guest side stays open and sends nothing.
++        let (_to_proxy, _from_proxy, exit_state) = spawn_test_relay(destination);
++        wait_for_exit_mode(
++            &exit_state,
++            RelayExitMode::HalfClosed,
++            Duration::from_secs(2),
++        );
++        reset_tx.send(()).unwrap();
++        // On epoll the relay used to spin here until the guest closed.
++        wait_for_exit_mode(&exit_state, RelayExitMode::Abort, RELAY_WAIT_BACKSTOP * 5);
++    }
++
++    #[test]
++    fn a_host_half_close_keeps_relaying_guest_bytes() {
++        let (received_tx, received_rx) = mpsc::channel();
++        let destination = half_closing_server(move |mut stream| {
++            let mut buffer = [0u8; 4];
++            stream.read_exact(&mut buffer).unwrap();
++            received_tx.send(buffer).unwrap();
++            // Keep the socket open until the relay is checked.
++            thread::sleep(Duration::from_secs(1));
++        });
++        let (to_proxy, _from_proxy, exit_state) = spawn_test_relay(destination);
++        wait_for_exit_mode(
++            &exit_state,
++            RelayExitMode::HalfClosed,
++            Duration::from_secs(2),
++        );
++        // Idle for a few backstop waits before the guest sends.
++        thread::sleep(RELAY_WAIT_BACKSTOP * 3);
++        to_proxy.try_send(b"ping".to_vec()).unwrap();
++        assert_eq!(
++            received_rx.recv_timeout(Duration::from_secs(2)).unwrap(),
++            *b"ping"
++        );
++        assert_eq!(exit_state.load(), RelayExitMode::HalfClosed);
++    }
++
+     #[test]
+     fn guest_payload_is_buffered_when_relay_channel_is_full() {
+         let (to_proxy, from_smoltcp) = mpsc::sync_channel(1);

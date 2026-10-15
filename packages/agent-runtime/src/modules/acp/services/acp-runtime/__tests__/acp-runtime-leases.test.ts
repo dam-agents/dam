@@ -190,6 +190,22 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
     });
   });
 
+  /** TEST_SCENARIO: A prestart starts only the default pair's process, which
+   * every client's initialize reaches, so the first client finds it running
+   * and no other process is started before a session asks for one. */
+  it("prestarts the default pair's process only", () => {
+    const world = createLeaseWorld({ providers: ["conn-a", "conn-b"] });
+    world.router.prestart();
+    expect(world.harnessCount("claude-code/conn-a")).toBe(1);
+    expect(world.harnessCount("claude-code/conn-b")).toBe(0);
+
+    world.connect().send(frames.initialize(1));
+    expect(world.harnessCount("claude-code/conn-a")).toBe(1);
+    expect(world.harness("claude-code/conn-a").receivedMethods()).toEqual([
+      "initialize",
+    ]);
+  });
+
   /** TEST_SCENARIO: The second process is told about the client the same way
    * the first was, so it answers with the same client capabilities, and its
    * own initialize answer never reaches the client a second time. */
@@ -295,10 +311,12 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
     expect(after.id).not.toEqual(before.id);
   });
 
-  /** TEST_SCENARIO: Taking provider B away recycles B's process and leaves
-   * A's running. Reopening B's session starts no process on credentials B no
-   * longer has, and prompting it fails naming the provider. */
-  it("recycles only the removed provider's process and refuses its sessions", () => {
+  /** TEST_SCENARIO: Taking provider B away shuts B's process down rather than
+   * restarting it without a credential, leaves A's running, and closes the
+   * client that used B, so a turn it still shows as running ends. Reopening
+   * B's session starts no process on credentials B no longer has, and
+   * prompting it fails naming the provider. */
+  it("shuts down only the removed provider's process and refuses its sessions", () => {
     const world = createLeaseWorld({ providers: ["conn-a", "conn-b"] });
     const client = world.connect();
     startSession(world, client, "claude-code/conn-a", "s-a", 1, {});
@@ -309,6 +327,8 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
     world.revoke("conn-b");
     expect(world.harness("claude-code/conn-b").killed()).toBe(true);
     expect(world.harness("claude-code/conn-a").killed()).toBe(false);
+    expect(client.isOpen()).toBe(false);
+    expect(world.router.leases().map((l) => l.provider)).toEqual(["conn-a"]);
 
     const fresh = world.connect();
     fresh.send({
@@ -447,6 +467,40 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
     expect(onB.isOpen()).toBe(true);
   });
 
+  /** TEST_SCENARIO: A connection that never opened a session, such as one
+   * that only makes control calls, keeps its connection when an env change
+   * restarts the default process. The restart waits a bounded time for a
+   * request in flight; a request the harness never answers is then answered
+   * with the restart reason, so the caller does not wait forever. Its next
+   * request reaches a new process. */
+  it("answers a sessionless request cut off by a restart, and serves the next one", () => {
+    vi.useFakeTimers();
+    const world = createLeaseWorld({ providers: ["conn-a"] });
+    const client = world.connect();
+    client.send(frames.initialize(1));
+    world.harness("claude-code/conn-a").replyTo("initialize", {});
+    const control = (id: number) => ({
+      jsonrpc: "2.0",
+      id,
+      method: "control/getEnv",
+      params: {},
+    });
+    client.send(control(2));
+
+    world.router.refreshEnv({ force: false });
+    expect(client.reply(2)).toBeUndefined();
+    vi.advanceTimersByTime(10_000);
+
+    expect(client.reply(2)).toMatchObject({
+      error: { message: "agent recycled for env change" },
+    });
+    expect(client.isOpen()).toBe(true);
+    client.send(control(3));
+    expect(world.harnessCount("claude-code/conn-a")).toBe(2);
+    expect(
+      world.harness("claude-code/conn-a").received("control/getEnv"),
+    ).toHaveLength(1);
+  });
   /** TEST_SCENARIO: A model that a harness chose from the provider's env is
    * stale once that env changes, so an idle process holding such a model is
    * shut down, and the next session opens a fresh one. */
@@ -624,22 +678,6 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
     expect(client.reply(4)?.result).toEqual({ model: "opus" });
   });
 
-  /** TEST_SCENARIO: A process whose provider was taken away holds no
-   * credential the agent may still use, so it is shut down rather than
-   * restarted without one, and a client that used it is told, so a turn it
-   * still shows as running ends. */
-  it("shuts down the process of a removed provider", () => {
-    const world = createLeaseWorld({ providers: ["conn-a", "conn-b"] });
-    const client = world.connect();
-    startSession(world, client, "claude-code/conn-b", "s-b", 1, {
-      provider: "conn-b",
-    });
-    world.revoke("conn-b");
-    expect(world.harness("claude-code/conn-b").killed()).toBe(true);
-    expect(world.harnessCount("claude-code/conn-b")).toBe(1);
-    expect(client.isOpen()).toBe(false);
-    expect(world.router.leases().map((l) => l.provider)).toEqual(["conn-a"]);
-  });
   /** TEST_SCENARIO: A mode picked during a turn belongs to the session's next
    * turn: it reaches the harness only once the running turn ends, and the
    * prompt sent after it waits for the harness to take the mode first. Another

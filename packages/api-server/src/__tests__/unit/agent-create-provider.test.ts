@@ -11,7 +11,10 @@ import { markTermsProven } from "api-server-api/trpc";
 import { createAgentsService } from "../../modules/agents/services/agents-service.js";
 import { parseInfraAgent } from "../../modules/agents/infrastructure/agent-mappers.js";
 import { createConnectionsService } from "../../modules/connections/services/connections-service.js";
-import { connectionGrantProvisioner } from "../../modules/agents/compose.js";
+import {
+  attachProviderToBareAgents,
+  connectionGrantProvisioner,
+} from "../../modules/agents/compose.js";
 
 type AgentsDeps = Parameters<typeof createAgentsService>[0];
 type ConnectionsDeps = Parameters<typeof createConnectionsService>[0];
@@ -108,7 +111,7 @@ function setup(
     secretRefs: unused(),
     agentDefaultLimits: { cpu: "1", memory: "1Gi" },
     agentDefaultMounts: [],
-    agentIdleTimeoutMinutes: 30,
+    agentIdleTimeoutMinutes: { container: 30, vm: 5 },
     cleanupHooks: [],
     readTemplateSpec: async (id) =>
       templates[id] ? { spec: templates[id] as TemplateSpec } : null,
@@ -409,5 +412,49 @@ describe("the default provider's fit", () => {
         providers: ["openai"],
       }),
     ).toBe("conn-openai");
+  });
+});
+
+describe("attachProviderToBareAgents", () => {
+  /** TEST_SCENARIO: A user's first agent is created before they connect a
+   * provider, so it holds none. Connecting one gives it to that agent, so its
+   * first message has a model key. An agent that already holds a provider, or
+   * one whose default is an older provider it was detached from on purpose,
+   * is left as it is. */
+  it("gives a new provider only to agents whose default it is", async () => {
+    const old = { ...provider, id: "old" };
+    const fresh = { ...provider, id: "fresh" };
+    const { connections } = setup([old, fresh]);
+    const grants: Record<string, string[]> = {
+      bare: [],
+      held: ["old"],
+    };
+    const granted: string[] = [];
+    const agents = [{ id: "bare" }, { id: "held" }].map((a) => ({
+      ...a,
+      spec: {},
+    }));
+    const deps = {
+      ...connections,
+      listConnections: async () => [old, fresh],
+      getAgentConnections: async (agentId: string) => ({
+        agentId,
+        connections: grants[agentId]!.map((connectionId) => ({
+          connectionId,
+          grantedAt: "",
+          preferred: false,
+        })),
+      }),
+      updateAgentConnections: async (agentId: string) => {
+        granted.push(agentId);
+      },
+    } as unknown as Parameters<typeof attachProviderToBareAgents>[0];
+
+    await attachProviderToBareAgents(deps, { harnesses: [] }, agents, "old");
+    expect(granted).toEqual(["bare"]);
+
+    granted.length = 0;
+    await attachProviderToBareAgents(deps, { harnesses: [] }, agents, "fresh");
+    expect(granted).toEqual([]);
   });
 });

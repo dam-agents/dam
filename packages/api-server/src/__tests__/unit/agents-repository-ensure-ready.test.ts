@@ -398,7 +398,7 @@ describe("releaseInvocationPin", () => {
     expect(await repo.readInvocationPin("a1")).toBe("7");
   });
 
-  // TEST_SCENARIO: a pause cleared the pin after the reconcile listed this Driver from the cache; the read reports it unpinned so its stale clock is left alone.
+  // TEST_SCENARIO: a sleep cleared the pin after the reconcile listed this Driver from the cache; the read reports it unpinned so its stale clock is left alone.
   it("reads no version once the pin is gone", async () => {
     const { repo, patches } = pinnedHarness("");
 
@@ -446,7 +446,7 @@ describe("setInvocationPin", () => {
     return { repo, store, patches };
   }
 
-  // TEST_SCENARIO: a spawn pins its Driver with a write conditional on the object it read, so a pause landing in between makes the write fail rather than pin a paused Driver.
+  // TEST_SCENARIO: a spawn pins its Driver with a write conditional on the object it read, so a sleep landing in between makes the write fail rather than pin a paused Driver.
   it("pins a running Driver in one conditional write", async () => {
     const { repo, store, patches } = recordingHarness("");
 
@@ -460,8 +460,8 @@ describe("setInvocationPin", () => {
     ]);
   });
 
-  // TEST_SCENARIO: a Driver spawns inside the settle window of a pause; the pin would revive it once the pause settles, so the spawn leaves it unpinned.
-  it("writes nothing while a stop or pause stands", async () => {
+  // TEST_SCENARIO: a Driver spawns inside the settle window of a sleep; the pin would revive it once the sleep settles, so the spawn leaves it unpinned.
+  it("writes nothing while a sleep stands", async () => {
     const { repo, store, patches } = recordingHarness(
       "2026-09-28T09:00:00.000Z",
     );
@@ -525,12 +525,55 @@ describe("setInvocationPin", () => {
   });
 });
 
-describe("requestPause settle", () => {
+describe("ensureReady waitOnly", () => {
+  const STARTING: Condition[] = [
+    { type: "Ready", status: "False", reason: "PodsNotReady" },
+  ];
+  const activity = (store: Map<string, KubeObject>) =>
+    store.get("a1")?.metadata?.annotations?.["agent-platform.ai/last-activity"];
+
+  // TEST_SCENARIO: the tRPC relay waits this way on a reconnect from an open tab, so a new activity stamp would read as a new wake and keep an idle agent up.
+  it("waits for a starting agent without stamping activity", async () => {
+    const { repo, store } = harness([agentObj("a1", STARTING)]);
+    const p = repo.ensureReady("a1", { waitOnly: true });
+    await vi.advanceTimersByTimeAsync(5_000);
+    store.set("a1", agentObj("a1", READY));
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(p).resolves.toBeUndefined();
+    expect(activity(store)).toBeUndefined();
+  });
+
+  it("stamps nothing on a ready agent", async () => {
+    const { repo, store } = harness([agentObj("a1", READY)]);
+    await repo.ensureReady("a1", { waitOnly: true });
+    expect(activity(store)).toBeUndefined();
+  });
+
+  it("gives up at once when the agent settles hibernated with no wake asked for", async () => {
+    const { repo, store } = harness([agentObj("a1", STARTING)]);
+    const p = repo.ensureReady("a1", { waitOnly: true });
+    p.catch(() => {});
+    await vi.advanceTimersByTimeAsync(0);
+    store.set("a1", agentObj("a1", HIBERNATED));
+    await vi.advanceTimersByTimeAsync(5_000);
+    const err = await p.then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(isAgentWakeTimeoutError(err)).toBe(true);
+    if (isAgentWakeTimeoutError(err)) {
+      expect(err.failure.kind).toBe("hibernated-not-scaled");
+      expect(err.durationMs).toBeLessThan(120_000);
+    }
+    expect(activity(store)).toBeUndefined();
+  });
+});
+describe("requestSleep settle", () => {
   const STOP_KEY = "agent-platform.ai/stop-requested";
 
   it("clears its own stop once the controller reports Hibernated", async () => {
     const { repo, store } = harness([agentObj("a1", READY)]);
-    const infra = await repo.requestPause("a1");
+    const infra = await repo.requestSleep("a1");
     expect(infra).not.toBeNull();
     const ann = () => store.get("a1")?.metadata?.annotations ?? {};
     expect(ann()[STOP_KEY]).toBeTruthy();
@@ -541,17 +584,17 @@ describe("requestPause settle", () => {
     expect(ann()[STOP_KEY]).toBe("");
   });
 
-  // TEST_SCENARIO: a pause must win over running sub-agents; it clears the Invocation Pin along with the session pin, so nothing restarts the Driver once the pause settles.
+  // TEST_SCENARIO: a sleep must win over running sub-agents; it clears the Invocation Pin along with the session pin, so nothing restarts the Driver once the sleep settles.
   it("clears the Invocation Pin", async () => {
     const { repo, store } = harness([agentObj("a1", READY)]);
     store.get("a1")!.metadata!.annotations![PIN_KEY] = "true";
-    await repo.requestPause("a1");
+    await repo.requestSleep("a1");
     expect(store.get("a1")?.metadata?.annotations?.[PIN_KEY]).toBe("");
   });
 
   it("leaves a stop stamped during the settle window in place", async () => {
     const { repo, store } = harness([agentObj("a1", READY)]);
-    await repo.requestPause("a1");
+    await repo.requestSleep("a1");
     const obj = store.get("a1");
     obj!.metadata!.annotations![STOP_KEY] = "9999-01-01T00:00:00Z";
     (obj as { status?: unknown }).status = { conditions: HIBERNATED };

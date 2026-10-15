@@ -1,4 +1,4 @@
-import { addUpgradeSecurityHeaders } from "./upgrade.js";
+import { addUpgradeSecurityHeaders, type RelayActor } from "./upgrade.js";
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
@@ -6,6 +6,7 @@ import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
 import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
 import { createActivityStamper } from "./activity-stamper.js";
+import { readyOrAnswering } from "./ready-or-answering.js";
 import type { SessionPresence } from "./session-presence.js";
 
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
@@ -17,6 +18,7 @@ export interface SshRelay {
     socket: Duplex,
     head: Buffer,
     agentId: string,
+    actor: RelayActor,
   ): void;
   close(): void;
 }
@@ -41,6 +43,7 @@ export function createSshRelay(
     socket: Duplex,
     head: Buffer,
     agentId: string,
+    actor: RelayActor,
   ) {
     wss.handleUpgrade(req, socket, head, async (client) => {
       client.on("error", () => client.terminate());
@@ -95,7 +98,13 @@ export function createSshRelay(
       client.on("message", buffer);
 
       try {
-        await repo.ensureReady(agentId);
+        await readyOrAnswering(
+          repo,
+          agentId,
+          repo.ensureReady(agentId),
+          `http://${podBaseUrl(agentId, namespace)}/healthz`,
+          () => clientGone,
+        );
       } catch (err) {
         const reason = isAgentWakeTimeoutError(err)
           ? `agent not ready: ${err.failure.kind}`
@@ -111,6 +120,7 @@ export function createSshRelay(
       const us = upstream;
       us.on("open", () => {
         if (clientGone || overflow) return closeWs(us);
+        actor.attached();
         client.off("message", buffer);
         for (const [d, b] of pending) us.send(d, { binary: b });
         client.on("message", (d, isBinary) => {

@@ -1,8 +1,12 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it, expect } from "vitest";
 import {
   createExecHistoryProvider,
   createWorkerHistoryProvider,
 } from "../history-provider.js";
+import { prestartHistoryWorkers } from "../history-worker.js";
 
 /**
  * TEST_OVERVIEW: the session-history providers turn a harness image's
@@ -57,6 +61,85 @@ describe("worker history provider", () => {
     expect(first).toHaveLength(1);
     expect(first![0]).toContain("load-1");
     expect(second![0]).toContain("load-2");
+  });
+
+  /**
+   * TEST_SCENARIO: Warming imports the module before any fetch, so the first
+   * load after boot does not pay the import.
+   */
+  it("should import the module on warm, ahead of the first fetch", async () => {
+    const source = `
+      const importedAt = Date.now();
+      new BroadcastChannel("history-warm").postMessage("imported");
+      export function loadHistory(sessionId) {
+        return [${JSON.stringify(frameLine("SID", "T"))}.replace('"SID"', JSON.stringify(sessionId)).replace('"T"', JSON.stringify(String(importedAt)))];
+      }
+    `;
+    const provider = createWorkerHistoryProvider({
+      modulePath: dataModule(source),
+      log: () => {},
+    });
+    const warmed = new BroadcastChannel("history-warm");
+    const imported = new Promise((resolve) => (warmed.onmessage = resolve));
+    provider.warm?.();
+    await imported;
+    warmed.close();
+    const fetchedAt = Date.now();
+    const lines = await provider.fetch("sess-a");
+    const importedAt = Number(
+      (
+        JSON.parse(lines![0]!) as {
+          params: { update: { content: { text: string } } };
+        }
+      ).params.update.content.text,
+    );
+    expect(importedAt).toBeLessThanOrEqual(fetchedAt);
+  });
+
+  /**
+   * TEST_SCENARIO: The runtime's entry point starts the worker of each module
+   * a runtime manifest declares before the server composes its providers, and
+   * the provider of that module serves from that worker, so the module is
+   * imported once and before the provider exists. A manifest that does not
+   * parse starts nothing and does not stop the others.
+   */
+  it("should serve from the worker started for a manifest's module", async () => {
+    const source = `
+      const worker = String(Math.random());
+      new BroadcastChannel("history-prestart").postMessage(worker);
+      export function loadHistory(sessionId) {
+        return [${JSON.stringify(frameLine("SID", "W"))}.replace('"SID"', JSON.stringify(sessionId)).replace('"W"', JSON.stringify(worker))];
+      }
+    `;
+    const modulePath = dataModule(source);
+    const dir = mkdtempSync(join(tmpdir(), "history-prestart-"));
+    const channel = new BroadcastChannel("history-prestart");
+    const prestarted = new Promise<string>((resolve) => {
+      channel.onmessage = (msg: MessageEvent<string>) => resolve(msg.data);
+    });
+    try {
+      writeFileSync(join(dir, "broken.yaml"), "sessionHistory: [");
+      writeFileSync(
+        join(dir, "harness.yaml"),
+        `sessionHistory:\n  module: "${modulePath}"\n  exportName: loadHistory\n`,
+      );
+      prestartHistoryWorkers(
+        [join(dir, "broken.yaml"), join(dir, "harness.yaml")],
+        () => {},
+      );
+      const worker = await prestarted;
+      const provider = createWorkerHistoryProvider({
+        modulePath,
+        exportName: "loadHistory",
+        log: () => {},
+      });
+      const lines = await provider.fetch("sess-a");
+      expect(lines).toHaveLength(1);
+      expect(lines![0]).toContain(JSON.stringify(worker));
+    } finally {
+      channel.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   /**

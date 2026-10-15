@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: an agent is an agent like any other to its user, whichever Backend runs it. Both CI lanes run this spec, each on its own Backend: on the container lane the agent is a pod, on the vm lane a microVM on its owner's VM runner. On each, the agent boots, holds a chat turn, keeps a file written through the files API in HOME, takes a scheduled fire, and keeps that file across every way its sandbox goes down and comes back — hibernate and wake, the restart verb, and the pod that hosts it being deleted (the agent pod, or the owner's whole VM runner). HOME is the one path both Backends persist, so it is what each of those must keep. On the vm lane the runner it deletes also runs every other machine of the e2e user, so the Playwright config runs this spec there only after the rest of the suite has finished; on the container lane it runs after the agent project, whose provider connection the chat input needs.
+// TEST_OVERVIEW: an agent is an agent like any other to its user, whichever Backend runs it. Both CI lanes run this spec, each on its own Backend: on the container lane the agent is a pod, on the vm lane a microVM on its owner's VM runner. On each, the agent boots, holds a chat turn, keeps a file written through the files API in HOME, takes a scheduled fire, and keeps that file across every way its sandbox goes down and comes back — hibernate and wake, the restart verb, and the pod that hosts it being deleted (the agent pod, or the owner's whole VM runner). HOME is the one path both Backends persist, so it is what each of those must keep. On the vm lane the runner it deletes also runs every other machine of the e2e user, so the Playwright config runs this spec there only after the rest of the suite has finished; on the container lane it runs after the agent project, whose provider connection the chat input needs, beside the specs that drive the shared e2e-agent and one at a time with the other specs that boot their own agent.
 import { expect, test, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
@@ -19,6 +19,7 @@ import {
   laneBackend,
   refreshingToken,
   requireBackend,
+  runnerGrows,
   waitAgentState,
   writeHomeFile,
 } from "../../lib/backend.js";
@@ -67,6 +68,41 @@ test("boots and holds a chat turn", async ({ page }) => {
   await chatTurn(page, "hello-backend", "backend-reply-first-boot");
 });
 
+// TEST_SCENARIO: on the vm Backend a machine boots with the install's boot estimate and the runner grows it to its size once the guest is up. A grow that fails boots the machine again whole, so the agent still answers and nothing else in the suite would notice; the runner's log of a successful grow is the evidence that the guest put the added RAM online.
+test("grows its machine past the boot RAM", async () => {
+  test.skip(laneBackend !== "vm", "only a vm machine boots small and grows");
+  test.setTimeout(120_000);
+  await expect
+    .poll(
+      () =>
+        runnerGrows(agentId).some(
+          (grow) => grow.message !== "machine operation failed",
+        ),
+      {
+        timeout: 60_000,
+        intervals: [3_000],
+        message: "the runner logged no successful grow",
+      },
+    )
+    .toBe(true);
+});
+
+// TEST_SCENARIO: on the vm Backend the home dashboard shows the owner's memory and storage pools as meters read from the owner's runner, with this agent's own share in each.
+test("shows its owner's pools on the home dashboard", async ({ page }) => {
+  test.skip(laneBackend !== "vm", "only vm agents draw on a per-user pool");
+  test.setTimeout(120_000);
+  await page.goto("/");
+  for (const pool of ["Memory", "Storage"])
+    await expect(page.getByRole("meter", { name: pool })).toBeVisible({
+      timeout: 60_000,
+    });
+  await expect(
+    page
+      .getByRole("group", { name: "Memory by agent" })
+      .getByRole("button", { name: new RegExp(`^${agentName} · `) }),
+  ).toBeVisible({ timeout: 60_000 });
+});
+
 // TEST_SCENARIO: the files API writes into the agent's HOME and reads the same bytes back. Every later scenario reads this file again, so it is the evidence that HOME survived.
 test("keeps a file written to HOME", async () => {
   test.setTimeout(300_000);
@@ -76,7 +112,7 @@ test("keeps a file written to HOME", async () => {
   });
 });
 
-// TEST_SCENARIO: a cron schedule's fire reaches the harness. The api-server delivers it over the runtime channel, the same path on both Backends, so a fire that never lands names the Backend's runtime channel as the broken part.
+// TEST_SCENARIO: a cron schedule's fire reaches the harness. The api-server delivers it over the runtime channel, the same path on both Backends, so a fire that never lands names the Backend's runtime channel as the broken part. The vm lane runs this spec alone at the end of the suite, so there it fires the schedule with run-now, which commits and delivers the same trigger, rather than wait up to a minute for the cron. The container lane runs it beside the rest of the suite and waits for the cron itself, so the scheduler's own fire stays covered.
 test("takes a scheduled fire", async () => {
   test.setTimeout(300_000);
   const task = `e2e-backend-schedule-${randomUUID()}`;
@@ -88,6 +124,8 @@ test("takes a scheduled fire", async () => {
     sessionMode: "fresh",
   });
   try {
+    if (laneBackend === "vm")
+      await api.schedules.runNow.mutate({ id: schedule.id });
     await expect
       .poll(
         async () => {
@@ -110,10 +148,10 @@ test("takes a scheduled fire", async () => {
   }
 });
 
-// TEST_SCENARIO: stop hibernates the agent, and wake brings it back. On the vm Backend that is a stop and a boot of the same machine, and HOME is its disk, so the marker must read back and the chat must answer after the boot.
+// TEST_SCENARIO: sleep hibernates the agent, and wake brings it back. On the vm Backend that is a stop and a boot of the same machine, and HOME is its disk, so the marker must read back and the chat must answer after the boot.
 test("hibernates and wakes with HOME intact", async ({ page }) => {
   test.setTimeout(900_000);
-  await api.agents.stop.mutate({ id: agentId });
+  await api.agents.sleep.mutate({ id: agentId });
   await waitAgentState(api, agentId, "hibernated");
   await api.agents.wake.mutate({ id: agentId });
   await waitAgentState(api, agentId, "running");

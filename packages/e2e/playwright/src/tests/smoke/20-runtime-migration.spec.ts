@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the runtime migration moves one container Agent onto the vm Backend, at its user's request, and the Agent keeps what it had: its id, its HOME and the Sessions stored there. Only the vm lane runs this spec, because its install is the only one with both Backends, and the Playwright config runs it there after every other spec: it turns the e2e user's vm-sandboxes experiment off and on again, which changes the Backend of any agent the UI creates meanwhile. The UI offers the migration only to a user who opted into the new runtime, so the spec first checks that the Migrate button is absent with the experiment off, then turns it on and migrates through that button. HOME is the only path this spec carries across, and the volume it was copied from is checked to be retained after the move and deleted with the Agent.
+// TEST_OVERVIEW: the runtime migration moves one container Agent onto the vm Backend, at its user's request, and the Agent keeps what it had: its id, its HOME and the Sessions stored there. Only the vm lane runs this spec, because its install is the only one with both Backends, and the Playwright config runs it there after the agent spec, the only one that creates an agent through the UI, beside the specs that drive the shared e2e-agent, which create none, and one at a time with the other specs that boot their own agent: it turns the e2e user's vm-sandboxes experiment off and on again, which changes the Backend of any agent the UI creates meanwhile. It runs before the agent-backend spec, which deletes the VM runner the migrated machine runs on. The UI offers the migration only to a user who opted into the new runtime, so the spec first checks that the Migrate button is absent with the experiment off, then turns it on and migrates through that button. HOME is the only path this spec carries across, and the volume it was copied from is checked to be retained after the move and deleted with the Agent.
 import { expect, test, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
@@ -81,7 +81,7 @@ test.afterAll(async () => {
   await setVmSandboxes(api, true);
 });
 
-// TEST_SCENARIO: the Agent to migrate. It is a container Agent that can be migrated, it holds a file in HOME written through the files API, and it holds a Session from one chat turn. The later scenarios check each of these again on the vm Backend.
+// TEST_SCENARIO: the Agent to migrate. It is a container Agent that can be migrated, it holds a file in HOME written through the files API, and it holds a Session from one chat turn. The later scenarios check each of these again on the vm Backend. The write waits until the agent answers a read, as the UI's own retried reads do before a user can write: for about a second after the pod turns Ready, the mesh may not route to it yet. The proxy retries a read then, but a write whose connection was reset may have reached the agent, so the proxy answers it 502.
 test("a container agent holds a HOME file and a session", async ({ page }) => {
   test.setTimeout(900_000);
   await waitAgentState(api, agentId, "running");
@@ -94,6 +94,16 @@ test("a container agent holds a HOME file and a session", async ({ page }) => {
     "the mock agent persists nothing outside HOME, so it can be migrated",
   ).toBe(true);
 
+  await expect
+    .poll(
+      () =>
+        listSessionIds(token, agentId).then(
+          () => "answered",
+          (e: unknown) => String(e),
+        ),
+      { timeout: 60_000, message: "the running agent never answered a read" },
+    )
+    .toBe("answered");
   await writeHomeFile(token, agentId, markerPath, marker);
   await expectHomeFile(token, agentId, markerPath, marker, {
     timeoutMs: 60_000,
@@ -129,9 +139,7 @@ test("offers no Migrate button with the experiment off", async ({ page }) => {
   ).toBeVisible({ timeout: 30_000 });
   const row = agentRow(page, agentName);
   await expect(row).toBeVisible();
-  await expect(
-    row.getByRole("button", { name: "Migrate", exact: true }),
-  ).toHaveCount(0);
+  await expect(row.getByRole("button", { name: /^Migrate/ })).toHaveCount(0);
 });
 
 // TEST_SCENARIO: the user opts in and migrates through the Migrate button and its confirm dialog, which shows the plan, retention window included. The request switches nothing: the Agent keeps reading as a container Agent with a migration under way, which can still be aborted, while the controller prepares the machine beside it. It is settled once the controller has copied HOME and booted the machine from the copy, the api-server has switched the Backend, the migration's state is cleared, and the machine is running.
@@ -140,10 +148,16 @@ test("migrates to the vm Backend from the Migrate button", async ({ page }) => {
   await setVmSandboxes(api, true);
   await page.goto(baseUrl);
   const row = agentRow(page, agentName);
-  await expect(row.getByText("Old runtime", { exact: true })).toBeVisible({
-    timeout: 30_000,
+  const migrate = row.getByRole("button", {
+    name: "Migrate to the new runtime",
+    exact: true,
   });
-  await row.getByRole("button", { name: "Migrate", exact: true }).click();
+  await expect(migrate).toBeVisible({ timeout: 30_000 });
+  await expect(migrate).toHaveAccessibleDescription(
+    "This agent runs on the old container runtime.",
+  );
+  await expect(row.getByText("Old runtime", { exact: true })).toHaveCount(0);
+  await migrate.click();
   await expect(page.getByRole("alertdialog")).toContainText(
     "The old volumes are kept for",
   );

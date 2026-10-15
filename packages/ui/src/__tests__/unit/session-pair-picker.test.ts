@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ModelIndicator } from "../../modules/sessions/components/model-indicator.js";
 import { SessionPairPicker } from "../../modules/sessions/components/session-pair-picker.js";
+import { SessionPairPlaceholder } from "../../modules/sessions/components/session-pair-placeholder.js";
 
 const carried: HarnessCapability[] = [
   {
@@ -43,6 +44,7 @@ const state = vi.hoisted(() => ({
   loading: false,
   fetching: false,
   operable: true,
+  answerable: undefined as boolean | undefined,
   refetch: vi.fn(),
   providersAsked: [] as string[],
   owned: [] as { id: string; name: string; type: string }[],
@@ -55,11 +57,12 @@ const state = vi.hoisted(() => ({
   } | null,
   configured: undefined as
     { mode: string | null; configOptions: Record<string, string> } | undefined,
-  navigateToSettings: vi.fn(),
   showConfirm: vi.fn(),
   revoke: vi.fn(),
   buttons: {} as Record<string, () => void>,
   newSession: vi.fn(),
+  connectProviders: vi.fn(),
+  catalogLoaded: true,
 }));
 
 vi.mock("../../store.js", () => ({
@@ -67,7 +70,7 @@ vi.mock("../../store.js", () => ({
     select({
       nextSessionPair: state.chosen ? { agent: state.chosen } : {},
       setNextSessionPair: vi.fn(),
-      navigateToSettings: state.navigateToSettings,
+      navigateToSandboxHome: vi.fn(),
       showConfirm: state.showConfirm,
     }),
 }));
@@ -97,13 +100,14 @@ vi.mock("@/components/ui/tooltip", () => ({
 
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   useHarnessCatalog: () => ({
-    data: {
+    data: state.catalogLoaded && {
       harnesses: [
         {
           name: "pi",
           displayName: "Pi",
           providers: ["ibm-litellm", "curve-bender"],
         },
+        { name: "codex", displayName: "Codex", providers: ["openai"] },
       ],
     },
   }),
@@ -140,6 +144,7 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
       isFetching: state.loading || state.fetching,
       isError: false,
       operable: state.operable,
+      answerable: state.answerable ?? state.operable,
       refetch: state.refetch,
     };
   },
@@ -151,6 +156,7 @@ function renderPicker() {
       agentId: "agent",
       defaultHarness: "pi",
       carried,
+      onConnectProviders: state.connectProviders,
     }),
   );
 }
@@ -161,11 +167,13 @@ describe("session pair model choices", () => {
     state.loading = false;
     state.fetching = false;
     state.operable = true;
+    state.answerable = undefined;
     state.providersAsked = [];
     state.owned = [];
     state.noProviders = false;
     state.configured = undefined;
     state.chosen = null;
+    state.catalogLoaded = true;
   });
 
   it("lists each provider's models without a default-model choice", () => {
@@ -183,27 +191,30 @@ describe("session pair model choices", () => {
     expect(html).not.toContain("Static model");
     expect(html).not.toContain("New session runs on");
     expect(html).not.toContain('aria-label="Close"');
-    expect(html).toContain("Connect providers");
-    expect(html).toMatch(/disabled=""[^>]*>Default<\/button>/);
-    expect(html).not.toContain("Configure defaults");
+    expect(html).toContain("Configure providers and defaults");
+    expect(html).not.toContain("Set as default");
     expect(html).toContain('aria-label="Disconnect IBM"');
     expect(html).toContain('aria-label="Session settings"');
     expect(html).not.toContain("Harness default");
     expect(html).toContain('<option value="low" selected="">Low</option>');
   });
 
-  it("offers Set as default when a picked setting differs from a remembered pair saved without settings", () => {
-    state.chosen = {
-      harness: "pi",
-      provider: "ibm",
-      model: null,
-      settings: { mode: "high" },
-    };
-    const html = renderPicker();
-    expect(html).toContain('<option value="high" selected="">High</option>');
-    expect(html).toContain(">Set as default</button>");
-    state.chosen = { ...state.chosen, settings: { mode: "low" } };
-    expect(renderPicker()).toMatch(/disabled=""[^>]*>Default<\/button>/);
+  // TEST_SCENARIO: A harness that none of the person's providers can run stays listed but cannot be picked, and says why.
+  it("grays out a harness no configured provider supports", () => {
+    const html = renderToStaticMarkup(
+      createElement(SessionPairPicker, {
+        agentId: "agent",
+        defaultHarness: "pi",
+        carried: [
+          ...carried,
+          { name: "codex", harnessConfig: true, sessionModel: true },
+        ],
+        onConnectProviders: state.connectProviders,
+      }),
+    );
+    expect(html).toMatch(/<button type="button" disabled=""[^>]*>.*?Codex/);
+    expect(html).not.toMatch(/<button type="button" disabled=""[^>]*>.*?Pi</);
+    expect(html).toContain('aria-label="Why Codex is unavailable"');
   });
 
   it("starts a setting on the harness's configured value over the catalog default", () => {
@@ -226,15 +237,15 @@ describe("session pair model choices", () => {
     expect(state.revoke).not.toHaveBeenCalled();
     state.showConfirm.mockResolvedValueOnce(true);
     state.buttons["Disconnect IBM"]!();
-    await vi.waitFor(() => expect(state.revoke).toHaveBeenCalledWith("ibm"));
+    await Promise.resolve();
+    expect(state.revoke).toHaveBeenCalledWith("ibm");
   });
 
-  // TEST_SCENARIO: With no provider connection at all there is nothing to pick, so the picker says so and links to the Providers settings instead of offering an empty menu.
-  it("points to the Providers settings when no provider is connected", () => {
+  // TEST_SCENARIO: With no provider connection at all there is nothing to pick, so the picker warns in its place and opens the provider modal instead of offering an empty menu.
+  it("warns in place of the picker when no provider is connected", () => {
     state.noProviders = true;
     const html = renderPicker();
-    expect(html).toContain("No LLM providers connected.");
-    expect(html).toContain("Connect one in Settings");
+    expect(html).toContain("Connect an LLM provider</span> first.");
     expect(html).not.toContain('data-testid="session-pair-picker"');
   });
 
@@ -258,11 +269,99 @@ describe("session pair model choices", () => {
 
   it("shows loading and stopped states without selectable placeholders", () => {
     state.loading = true;
-    expect(renderPicker()).toContain("Loading models…");
+    const loading = renderPicker();
+    expect(loading).toContain("Loading models…");
+    expect(loading).toContain("animate-spin");
     state.operable = false;
     expect(renderPicker()).toContain(
       "Start the agent to list this provider&#x27;s models.",
     );
+  });
+
+  // TEST_SCENARIO: A waking agent lists its models once it answers, so the picker shows them loading rather than asking for a start that is already under way.
+  it("shows a waking agent's models as loading", () => {
+    state.operable = false;
+    state.answerable = true;
+    const html = renderPicker();
+    expect(html).toContain("Loading models…");
+    expect(html).not.toContain("Start the agent");
+  });
+
+  // TEST_SCENARIO: Before the agent reports the harnesses it carries, the composer shows the pair a new session would run on, and the popover a loader.
+  it("shows the expected pair and a loader before the agent answers", () => {
+    const html = renderToStaticMarkup(
+      createElement(SessionPairPlaceholder, {
+        agentId: "agent",
+        agentHarness: "pi",
+        onConnectProviders: state.connectProviders,
+      }),
+    );
+    expect(html).toContain(">Pi · IBM</button>");
+    expect(html).toContain("Loading models…");
+    expect(html).not.toContain("Configure");
+    expect(html).not.toContain("Connect an LLM provider");
+  });
+
+  // TEST_SCENARIO: The harness catalog loads after the agent view, so until it does the label waits on a loader instead of showing the raw harness id.
+  it("shows a loader, not the harness id, until the harness catalog loads", () => {
+    state.catalogLoaded = false;
+    const trigger = (html: string) =>
+      /data-testid="session-(pair|model)-picker"[^>]*>(.*?)<\/button>/.exec(
+        html,
+      )?.[0];
+    const triggers = [
+      renderToStaticMarkup(
+        createElement(SessionPairPlaceholder, {
+          agentId: "agent",
+          agentHarness: "pi",
+          onConnectProviders: state.connectProviders,
+        }),
+      ),
+      renderPicker(),
+      renderToStaticMarkup(
+        createElement(ModelIndicator, {
+          agentId: "agent",
+          harness: "pi",
+          provider: "ibm",
+          model: null,
+          carried,
+          onChoose: vi.fn(),
+          onConfigure: vi.fn(),
+          onNewSession: state.newSession,
+        }),
+      ),
+    ].map(trigger);
+    for (const html of triggers) {
+      expect(html).toContain('aria-label="Loading harness and model"');
+      expect(html).toContain("animate-spin");
+      expect(html).not.toMatch(/>pi|Choose/);
+    }
+  });
+
+  // TEST_SCENARIO: The new session runs on the pair the person picked, so the placeholder label shows that pair over the remembered one.
+  it("labels the placeholder with the picked pair", () => {
+    state.chosen = { harness: "pi", provider: "curve", model: "glm" };
+    const html = renderToStaticMarkup(
+      createElement(SessionPairPlaceholder, {
+        agentId: "agent",
+        agentHarness: "pi",
+        onConnectProviders: state.connectProviders,
+      }),
+    );
+    expect(html).toContain(">glm · Pi · Curve</button>");
+  });
+
+  it("warns before the agent answers when no provider is connected", () => {
+    state.noProviders = true;
+    const html = renderToStaticMarkup(
+      createElement(SessionPairPlaceholder, {
+        agentId: "agent",
+        agentHarness: "pi",
+        onConnectProviders: state.connectProviders,
+      }),
+    );
+    expect(html).toContain("Connect an LLM provider</span> first.");
+    expect(html).not.toContain("Loading models…");
   });
 
   it("keeps failure, empty state and Retry visible during background polls", () => {
@@ -308,13 +407,38 @@ describe("session pair model choices", () => {
       expect(html).not.toContain("Connect providers");
       expect(html).not.toContain('aria-label="Close"');
       expect(html).not.toContain("Other harnesses and models need a");
-      expect(html).toContain('aria-label="About changing the harness"');
-      expect(html).toContain("To use a model from a different provider,");
-      expect(html).toContain("start a new session</button>");
+      expect(html).toContain(">Change</button>");
+      expect(html).not.toContain("start a new session");
       expect(html).toContain(">Pi</span>");
       if (availableModels !== null) expect(html).not.toContain("Static model");
     },
   );
+
+  // TEST_SCENARIO: The provider no longer lists the session's model, as when it retired the model after the session picked it, so the label says so instead of showing the pick as if it still ran.
+  it("marks a session model the provider no longer lists", () => {
+    state.models = {
+      curve: { availableModels: [{ value: "glm-5-4", name: "GLM 5.4" }] },
+    };
+    const label = (model: string) =>
+      /data-testid="session-model-picker"[^>]*>(.*?)<\/button>/.exec(
+        renderToStaticMarkup(
+          createElement(ModelIndicator, {
+            agentId: "agent",
+            harness: "pi",
+            provider: "curve",
+            model,
+            carried,
+            onChoose: vi.fn(),
+            onConfigure: vi.fn(),
+            onNewSession: state.newSession,
+          }),
+        ),
+      )?.[0];
+    expect(label("glm-5-3")).toContain(
+      "glm-5-3 · Pi · Curve · Model not offered",
+    );
+    expect(label("glm-5-4")).not.toContain("Model not offered");
+  });
 
   it("uses a harness catalog only when discovery is explicitly not configured", () => {
     state.models = { ibm: { availableModels: null } };

@@ -113,7 +113,6 @@ function makeHarness(
     preferred: boolean;
   }[] = [],
   virtualizationEnabled = true,
-  pinnedKit = "",
 ) {
   const calls = {
     created: [] as AgentCreateInput[],
@@ -247,6 +246,7 @@ function makeHarness(
     },
     kitUpstream: NO_UPSTREAM,
     kitUpdateMarks: NO_MARKS,
+    sessionPair: async () => undefined,
     runtimeMutator: {
       async bump(agentId, events) {
         calls.bumped.push({ agentId, events });
@@ -257,7 +257,6 @@ function makeHarness(
       },
     },
     virtualizationEnabled,
-    pinnedKit,
   });
   return { service, calls };
 }
@@ -485,18 +484,18 @@ describe("starter kits: apply", () => {
     expect(calls.created).toEqual([]);
   });
 
-  it("requires a harness when the kit brings no image, and uses the image when it does", async () => {
-    const { service } = makeHarness(LOADED);
-    await expect(
-      service.apply({
-        catalog: "platform",
-        kitId: "code-reviewer",
-        name: "r",
-        connectionIds: ["c-gh"],
-        skipSchedules: [],
-        scheduleOverrides: [],
-      }),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  it("leaves the template to create's default when the kit brings no image, and uses the image when it does", async () => {
+    const { service, calls } = makeHarness(LOADED);
+    await service.apply({
+      catalog: "platform",
+      kitId: "code-reviewer",
+      name: "r",
+      connectionIds: ["c-gh"],
+      skipSchedules: [],
+      scheduleOverrides: [],
+    });
+    expect(calls.created[0].templateId).toBeUndefined();
+    expect(calls.created[0].image).toBeUndefined();
 
     const pinned = makeHarness({
       ...LOADED,
@@ -689,6 +688,7 @@ describe("starter kits: apply", () => {
       egressRules: { seed: async () => {} },
       kitUpstream: NO_UPSTREAM,
       kitUpdateMarks: NO_MARKS,
+      sessionPair: async () => undefined,
       runtimeMutator: {
         bump: async () => 1,
         enqueueAfterCommit: async () => {},
@@ -807,6 +807,7 @@ describe("starter kits: apply", () => {
       egressRules: { seed: async () => {} },
       kitUpstream: NO_UPSTREAM,
       kitUpdateMarks: NO_MARKS,
+      sessionPair: async () => undefined,
       runtimeMutator: {
         bump: async () => 1,
         enqueueAfterCommit: async () => {},
@@ -908,6 +909,7 @@ describe("starter kits: onboarding turn", () => {
       egressRules: { seed: async () => {} },
       kitUpstream: NO_UPSTREAM,
       kitUpdateMarks: NO_MARKS,
+      sessionPair: async () => undefined,
       runtimeMutator: {
         bump: async () => {
           throw new Error("outbox down");
@@ -1130,17 +1132,23 @@ describe("starter kits: domain helpers", () => {
 });
 
 describe("starter kits: connection addressing", () => {
-  // TEST_SCENARIO: a kit can ask for an agent whose gateway injects only addressed requests, whatever the creating user's own feature flags say, and a kit that does not ask leaves the create untouched.
-  it("passes the kit's choice to the create only when it asks for it", async () => {
-    const strict = makeHarness({
-      ...LOADED,
-      kit: kit({ requireConnectionAddress: true }),
-    });
-    await strict.service.apply(APPLY);
-    expect(strict.calls.created[0]).toMatchObject({
-      requireConnectionAddress: true,
-    });
+  // TEST_SCENARIO: a kit can turn named connections on or off for its agent, and a kit that says nothing leaves the create to its own default.
+  it.each([true, false])(
+    "passes the kit's choice %s to the create",
+    async (value) => {
+      const set = makeHarness({
+        ...LOADED,
+        kit: kit({ requireConnectionAddress: value }),
+      });
+      await set.service.apply(APPLY);
+      expect(set.calls.created[0]).toMatchObject({
+        requireConnectionAddress: value,
+      });
+    },
+  );
 
+  // TEST_SCENARIO: a kit that does not name the field leaves it out of the create, so the create's default decides.
+  it("leaves the create untouched when the kit says nothing", async () => {
     const plain = makeHarness(LOADED);
     await plain.service.apply(APPLY);
     expect(plain.calls.created[0]).not.toHaveProperty(
@@ -1183,23 +1191,6 @@ describe("starter kits: egress preset", () => {
     expect(calls.egressRules).toEqual([
       { agentId: "agent-1", hosts: ["api.example.com"] },
     ]);
-  });
-});
-
-describe("starter kits: pinned kit", () => {
-  // TEST_SCENARIO: the pin names a kit as <catalog>/<kit>, so the same id in another catalog is not pinned.
-  it("flags only the kit the install pins", async () => {
-    const pinned = makeHarness(
-      LOADED,
-      null,
-      [],
-      true,
-      "platform/code-reviewer",
-    );
-    expect((await pinned.service.list())[0]?.pinned).toBe(true);
-
-    const other = makeHarness(LOADED, null, [], true, "curated/code-reviewer");
-    expect((await other.service.list())[0]?.pinned).toBe(false);
   });
 });
 

@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -7,6 +7,7 @@ use tokio_util::sync::CancellationToken;
 use vm_runner::cacheapi;
 use vm_runner::imagecache::{node_fetch_ceiling, CacheConfig, ImageCache, HOLD_LEASE, REF_FRESH};
 use vm_runner::preload::{self, parse_duration, parse_quantity};
+use vm_runner::release::relabel;
 
 // UNIT_BOUNDARY_DESCRIPTION: the flags the chart's DaemonSet sets: where the node's cache directory is mounted and the socket in it runners reach this service on, the budget, the harness images to preload and how often, and the directory the install's default pull Secrets are mounted in when it names any.
 #[derive(Parser, Debug)]
@@ -31,35 +32,6 @@ struct Args {
     // UNIT_BOUNDARY_DESCRIPTION: the SELinux context to put on the cache directory before anything is written there, on a host that confines its containers: the directory the kubelet creates for a hostPath carries the host's own label, which a confined runner may not read, and every tree unpacked below it inherits the label this sets. Empty leaves the label alone.
     #[arg(long = "selinux-label", default_value = "")]
     selinux_label: String,
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: sets a directory's SELinux context, as chcon would. Only Linux has one, and this binary serves only from the runner image.
-fn relabel(dir: &Path, context: &str) -> std::io::Result<()> {
-    #[cfg(target_os = "linux")]
-    {
-        use std::os::unix::ffi::OsStrExt;
-        let path = std::ffi::CString::new(dir.as_os_str().as_bytes())?;
-        // SAFETY: both names are NUL-terminated and live for the call, and the value pointer and length describe one live byte slice.
-        let rc = unsafe {
-            libc::setxattr(
-                path.as_ptr(),
-                c"security.selinux".as_ptr(),
-                context.as_ptr().cast(),
-                context.len(),
-                0,
-            )
-        };
-        if rc == 0 {
-            Ok(())
-        } else {
-            Err(std::io::Error::last_os_error())
-        }
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = (dir, context);
-        Err(std::io::ErrorKind::Unsupported.into())
-    }
 }
 
 fn main() -> anyhow::Result<()> {
@@ -124,6 +96,7 @@ fn main() -> anyhow::Result<()> {
             let stop = lifetime.clone();
             let serving = tokio::spawn({
                 let socket = args.socket.clone();
+                let cache = cache.clone();
                 async move {
                     cacheapi::serve(&socket, cache, async move { stop.cancelled().await }).await
                 }
@@ -136,7 +109,9 @@ fn main() -> anyhow::Result<()> {
             }
             lifetime.cancel();
             let _ = preloading.await;
-            serving.await??;
+            let served = serving.await?;
+            tokio::task::spawn_blocking(move || cache.flush()).await?;
+            served?;
             anyhow::Ok(())
         })
 }

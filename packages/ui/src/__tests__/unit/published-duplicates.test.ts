@@ -1,4 +1,9 @@
-import type { LocalSkill, Skill, SkillPublishRecord } from "api-server-api";
+import type {
+  LocalSkill,
+  Skill,
+  SkillPublishRecord,
+  SkillSource,
+} from "api-server-api";
 import { describe, expect, it } from "vitest";
 
 import { publishedDuplicatesBySource } from "../../modules/sandboxes/components/skills/published-duplicates.js";
@@ -18,6 +23,16 @@ const scanned = (name: string, contentHash: string): Skill => ({
   contentHash,
 });
 
+const source = (
+  id: string,
+  gitUrl = "https://github.com/acme/skills",
+): SkillSource => ({ id, name: id, gitUrl });
+
+const sources = [
+  source("src-1"),
+  source("src-2", "https://github.com/acme/other"),
+];
+
 const publish = (
   skillName: string,
   sourceId: string,
@@ -34,19 +49,11 @@ const publish = (
 });
 
 describe("publishedDuplicatesBySource (#3019)", () => {
-  it("suppresses the source row when the publish record and the hash both match", () => {
+  it("suppresses the source row when the publish record and the hash both match, even with an unresolved prState", () => {
     const out = publishedDuplicatesBySource(
       [local("websearch", "h1")],
       [publish("websearch", "src-1")],
-      { "src-1": [scanned("websearch", "h1")] },
-    );
-    expect(out.get("src-1")).toEqual(new Set(["websearch"]));
-  });
-
-  it("does not gate on prState — an unresolved record still suppresses on hash proof", () => {
-    const out = publishedDuplicatesBySource(
-      [local("websearch", "h1")],
-      [publish("websearch", "src-1", null)],
+      sources,
       { "src-1": [scanned("websearch", "h1")] },
     );
     expect(out.get("src-1")).toEqual(new Set(["websearch"]));
@@ -56,6 +63,7 @@ describe("publishedDuplicatesBySource (#3019)", () => {
     const out = publishedDuplicatesBySource(
       [local("websearch")],
       [publish("websearch", "src-1", "merged")],
+      sources,
       { "src-1": [scanned("websearch", "h1")] },
     );
     expect(out.size).toBe(0);
@@ -65,6 +73,7 @@ describe("publishedDuplicatesBySource (#3019)", () => {
     const out = publishedDuplicatesBySource(
       [local("websearch", "h-edited")],
       [publish("websearch", "src-1", "merged")],
+      sources,
       { "src-1": [scanned("websearch", "h1")] },
     );
     expect(out.size).toBe(0);
@@ -74,6 +83,7 @@ describe("publishedDuplicatesBySource (#3019)", () => {
     const out = publishedDuplicatesBySource(
       [local("websearch", "h1")],
       [publish("websearch", "src-1")],
+      sources,
       {
         "src-1": [scanned("websearch", "h1")],
         "src-2": [scanned("websearch", "h1")],
@@ -87,6 +97,7 @@ describe("publishedDuplicatesBySource (#3019)", () => {
     const out = publishedDuplicatesBySource(
       [local("websearch", "h1")],
       [publish("websearch", "src-1"), publish("websearch", "src-2")],
+      sources,
       {
         "src-1": [scanned("websearch", "h1")],
         "src-2": [scanned("websearch", "h-old")],
@@ -94,5 +105,15 @@ describe("publishedDuplicatesBySource (#3019)", () => {
     );
     expect(out.get("src-1")).toEqual(new Set(["websearch"]));
     expect(out.has("src-2")).toBe(false);
+  });
+
+  it("suppresses in a re-added source of the same repository after the original source was removed (#4030)", () => {
+    const out = publishedDuplicatesBySource(
+      [local("websearch", "h1")],
+      [publish("websearch", "src-gone")],
+      [source("src-new")],
+      { "src-new": [scanned("websearch", "h1")] },
+    );
+    expect(out.get("src-new")).toEqual(new Set(["websearch"]));
   });
 });

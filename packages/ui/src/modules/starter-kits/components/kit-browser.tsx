@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs } from "@/components/ui/tabs";
 
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
+import { useVmForced } from "../../features/hooks/use-vm-forced.js";
 import {
   categoriesPresent,
   CATEGORY_LABEL,
@@ -17,9 +18,9 @@ import {
 } from "../lib/catalog-cards.js";
 import { KitCategoryTag } from "./kit-category-tag.js";
 
-export type Filter = StarterKitView["category"] | "all";
+type Filter = StarterKitView["category"] | "all";
 
-export function KitBadges({
+function KitBadges({
   kit,
   templates,
   templateById,
@@ -28,9 +29,10 @@ export function KitBadges({
   templates: readonly ConnectionTemplateView[];
   templateById: ReadonlyMap<string, ConnectionTemplateView>;
 }) {
+  const vmForced = useVmForced();
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {kitBadges(kit, templates, templateById).map((badge) => (
+      {kitBadges(kit, templates, templateById, vmForced).map((badge) => (
         <Badge key={badge.key} variant="muted" size="sm">
           <span className="flex items-center gap-1.5">
             {badge.iconSlug && (
@@ -82,15 +84,9 @@ export function KitCard({
   );
 }
 
-export function useKitFilter(
-  kits: readonly StarterKitView[],
-  initial: Filter = "all",
-  onFilterChange?: (filter: Filter) => void,
-) {
+export function useKitFilter(kits: readonly StarterKitView[]) {
   const [query, setQuery] = useState("");
-  const [localFilter, setLocalFilter] = useState<Filter>(initial);
-  const filter = onFilterChange ? initial : localFilter;
-  const setFilter = onFilterChange ?? setLocalFilter;
+  const [filter, setFilter] = useState<Filter>("all");
 
   const shown = useMemo(
     () =>

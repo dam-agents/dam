@@ -1,11 +1,16 @@
-import { addUpgradeSecurityHeaders } from "./upgrade.js";
+import { addUpgradeSecurityHeaders, type RelayActor } from "./upgrade.js";
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { podBaseUrl } from "../../../modules/agents/infrastructure/k8s.js";
 import type { AgentsRepository } from "../../../modules/agents/infrastructure/agents-repository.js";
-import { agentStreamable } from "../../../modules/agents/index.js";
+import {
+  agentStreamable,
+  isAgentStoppedError,
+  isAgentWakeTimeoutError,
+} from "../../../modules/agents/index.js";
 import { createActivityStamper } from "./activity-stamper.js";
+import { readyOrAnswering } from "./ready-or-answering.js";
 
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
 const ACTIVITY_INTERVAL_MS = 30_000;
@@ -17,12 +22,30 @@ export interface AgentTrpcRelay {
     socket: Duplex,
     head: Buffer,
     agentId: string,
+    actor: RelayActor,
   ): void;
+  close(): void;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the tRPC client's keep-alive ping. While the relay holds a socket for a waking agent it answers the ping itself, so the client does not drop and redial a socket that is only waiting.
+const KEEPALIVE_PING = "PING";
+const KEEPALIVE_PONG = "PONG";
+
+function wakeFailureReason(err: unknown): string {
+  if (isAgentWakeTimeoutError(err))
+    return `agent not ready: ${err.failure.kind}`;
+  if (isAgentStoppedError(err)) return "agent not ready";
+  return "agent unavailable";
 }
 
 export function createAgentTrpcRelay(
   namespace: string,
-  repo: AgentsRepository,
+  repo: Pick<
+    AgentsRepository,
+    "get" | "ensureReady" | "patchAnnotation" | "peekCached"
+  >,
+  upstreamBase: (agentId: string) => string = (agentId) =>
+    `ws://${podBaseUrl(agentId, namespace)}`,
 ): AgentTrpcRelay {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
   addUpgradeSecurityHeaders(wss);
@@ -49,6 +72,7 @@ export function createAgentTrpcRelay(
     socket: Duplex,
     head: Buffer,
     agentId: string,
+    actor: RelayActor,
   ) {
     wss.handleUpgrade(req, socket, head, async (client) => {
       client.on("error", () => client.terminate());
@@ -92,6 +116,10 @@ export function createAgentTrpcRelay(
       let overflow = false;
       const buffer = (d: Buffer, b: boolean) => {
         if (overflow) return;
+        if (!b && d.toString() === KEEPALIVE_PING) {
+          client.send(KEEPALIVE_PONG);
+          return;
+        }
         pendingBytes += d.byteLength;
         if (pendingBytes > PENDING_BUFFER_MAX_BYTES) {
           overflow = true;
@@ -107,23 +135,31 @@ export function createAgentTrpcRelay(
       client.on("message", buffer);
 
       try {
-        if (!agentStreamable(await repo.get(agentId))) {
+        const agent = await repo.get(agentId);
+        if (!agent || (agent.hibernated && !agent.wakeRequested)) {
           client.close(1011, "agent not ready");
           return;
         }
-      } catch {
-        client.close(1011, "agent unavailable");
+        await readyOrAnswering(
+          repo,
+          agentId,
+          repo.ensureReady(agentId, { waitOnly: true }),
+          `${upstreamBase(agentId).replace(/^ws/, "http")}/healthz`,
+          () => clientGone,
+        );
+      } catch (err) {
+        if (client.readyState === WebSocket.OPEN)
+          client.close(1011, wakeFailureReason(err));
         return;
       }
       if (clientGone || overflow) return;
       stamper.stamp(agentId);
 
-      upstream = new WebSocket(
-        `ws://${podBaseUrl(agentId, namespace)}/api/trpc-ws`,
-      );
+      upstream = new WebSocket(`${upstreamBase(agentId)}/api/trpc-ws`);
       const us = upstream;
       us.on("open", () => {
         if (clientGone || overflow) return closeWs(us);
+        actor.attached();
         client.off("message", buffer);
         for (const [d, b] of pending) us.send(d, { binary: b });
         client.on("message", (d, isBinary) => {
@@ -141,5 +177,16 @@ export function createAgentTrpcRelay(
     });
   }
 
-  return { handleUpgrade };
+  return {
+    handleUpgrade,
+    close() {
+      for (const client of wss.clients) {
+        try {
+          client.close(1001, "server shutting down");
+        } catch {
+          client.terminate();
+        }
+      }
+    },
+  };
 }

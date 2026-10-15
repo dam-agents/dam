@@ -7,6 +7,7 @@ import {
   type FakeSlackChannel,
 } from "../../modules/channels/infrastructure/fake-slack-gateway.js";
 import type { AcpClient, AcpSessionInfo } from "../../core/acp-client.js";
+import type { AgentWorkspaceFilesFactory } from "../../modules/channels/infrastructure/agent-workspace-files.js";
 import { stubTurnAttendance } from "./turn-attendance.js";
 import { stubWorkspaceFiles } from "./workspace-files.js";
 
@@ -25,6 +26,7 @@ export function slackWorkerHarness(
     ambient?: boolean;
     settleMs?: number;
     makeAcp?: (base: AcpClient) => AcpClient;
+    workspaceFiles?: AgentWorkspaceFilesFactory;
   } = {},
 ) {
   const boundChannelId = opts.boundChannelId ?? "C1";
@@ -79,6 +81,7 @@ export function slackWorkerHarness(
     } as never,
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    agentsFor: () => ({}) as never,
     ignoredApps: {
       list: async () => [],
       ignore: async () => true,
@@ -89,7 +92,7 @@ export function slackWorkerHarness(
     isTermsAccepted: async () => true,
     uiBaseUrl: "http://ui",
     attendance: stubTurnAttendance(),
-    workspaceFiles: stubWorkspaceFiles(),
+    workspaceFiles: opts.workspaceFiles ?? stubWorkspaceFiles(),
     listWorkspaces: async () => [],
     emit: () => {},
     settleMs: opts.settleMs ?? 0,

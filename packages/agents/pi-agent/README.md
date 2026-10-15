@@ -6,14 +6,17 @@ The harness ships in the default image every harness Template boots, built by `/
 
 ## Stack
 
-| Component | Package | Purpose |
-|---|---|---|
-| Harness | `@earendil-works/pi-coding-agent` + `pi-acp` | pi runtime fork + ACP bridge to Platform UI |
-| Memory | `@zhafron/pi-memory` | git-free file-based memory, auto-injected at session start; a tool of the image, loaded by `pi-platform` |
+| Component | Package                                      | Purpose                                                                                                  |
+| --------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Harness   | `@earendil-works/pi-coding-agent` + `pi-acp` | pi runtime fork + ACP bridge to Platform UI                                                              |
+| Memory    | `@zhafron/pi-memory`                         | git-free file-based memory, auto-injected at session start; a tool of the image, loaded by `pi-platform` |
 
-The image sets `PI_OFFLINE=1`, so Pi makes no network call at startup: no model-catalog fetch from `pi.dev` (which the egress gateway would hold for approval on every new Pi process), no version check, no install telemetry, and no install or update of the packages in `settings.json`. That last one is why pi-memory is a tool of the image: `pi-platform` loads it with `-e`. A home seeded before the change keeps the npm copy it installed at first boot, and `pi-platform` then does not add the image's copy, so it never loads twice.
+The image sets `PI_OFFLINE=1`, so Pi makes no network call at startup: no model-catalog fetch from `pi.dev` (which the egress gateway would hold for approval on every new Pi process), no version check, no install telemetry, and no install or update of the packages in `settings.json`.
+That last one is why pi-memory is a tool of the image: `pi-platform` loads it with `-e`.
+A home seeded before the change keeps the npm copy it installed at first boot, and `pi-platform` then does not add the image's copy, so it never loads twice.
 
-Default model: `openai / gpt-5.4-mini`. Change in [`app/working-dir/.pi/agent/settings.json`](rootfs/app/working-dir/.pi/agent/settings.json).
+Default model: `openai / gpt-5.4-mini`.
+Change in [`app/working-dir/.pi/agent/settings.json`](rootfs/app/working-dir/.pi/agent/settings.json).
 
 ## File layout
 
@@ -26,6 +29,8 @@ usr/local/share/pi-platform/
   pi-acp-patch.mjs       ← temporary pi-acp fix, loaded by harness-chat (see "pi-acp patch")
   extensions/pi-dynamic-providers/
     index.ts             ← loaded with -e on every start; registers any of {rits, openai-proxy, amazon-bedrock} whose env vars are set
+  extensions/pi-platform-telemetry/
+    index.ts             ← loaded with -e on every start; exports per-call cost as OTLP log records (see "Session cost")
 app/
   runtime-manifest.yaml  ← runtime driver config; the platform writes ~/.pi/agent/mcp.json at runtime (not seeded)
   working-dir/           ← seeds /home/agent/ on first boot
@@ -37,28 +42,32 @@ app/
 
 ## MCP servers
 
-MCP servers arrive the platform way, as runtime-channel contributions written to `~/.pi/agent/mcp.json` (see [`runtime-manifest.yaml`](rootfs/app/runtime-manifest.yaml)), not through `session/new.mcpServers`: pi-acp advertises no MCP capabilities, so the file is the only path. Every entry carries `"exposure": "direct"`, so Pi declares its tools to the model like a built-in tool instead of hiding them behind codemode. Pi names them `mcp__<server>__<tool>` with `-` replaced by `_`, e.g. `mcp__platform_outbound__report_result`. `pi mcp list` in the terminal connects to each server and lists its tools.
+MCP servers arrive the platform way, as runtime-channel contributions written to `~/.pi/agent/mcp.json` (see [`runtime-manifest.yaml`](rootfs/app/runtime-manifest.yaml)), not through `session/new.mcpServers`: pi-acp advertises no MCP capabilities, so the file is the only path.
+Every entry carries `"exposure": "direct"`, so Pi declares its tools to the model like a built-in tool instead of hiding them behind codemode.
+Pi names them `mcp__<server>__<tool>` with `-` replaced by `_`, e.g. `mcp__platform_outbound__report_result`.
+`pi mcp list` in the terminal connects to each server and lists its tools.
 
 ## Providers and models
 
-Pi natively supports a long list of API-key providers (OpenAI, Mistral, Groq, DeepSeek, Cerebras, xAI, OpenRouter, Gemini, Fireworks, Hugging Face, ZAI, MiniMax, …) plus any OpenAI-Completions / OpenAI-Responses / Anthropic-Messages / Google-Generative-AI compatible endpoint via [`models.json`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md) or [extensions](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/extensions.md). Authoritative reference: [pi providers](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/providers.md) for env-var names, auth-file shape, and resolution order; [pi models](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md) for the `models.json` schema and `compat` flags.
+Pi natively supports a long list of API-key providers (OpenAI, Mistral, Groq, DeepSeek, Cerebras, xAI, OpenRouter, Gemini, Fireworks, Hugging Face, ZAI, MiniMax, …) plus any OpenAI-Completions / OpenAI-Responses / Anthropic-Messages / Google-Generative-AI compatible endpoint via [`models.json`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md) or [extensions](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/extensions.md).
+Authoritative reference: [pi providers](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/providers.md) for env-var names, auth-file shape, and resolution order; [pi models](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md) for the `models.json` schema and `compat` flags.
 
-On the platform the actual credential never lives in pod env. The pod carries a placeholder; the in-pod Envoy sidecar terminates outbound TLS and rewrites the auth header using a [generic secret](../../../docs/architecture/security-and-credentials.md) ([ADR-033](../../../docs/adrs/033-envoy-credential-gateway.md)) scoped to the provider's host. The flow is the same for every provider — only the host pattern and (occasionally) the injection header change.
+On the platform the actual credential never lives in pod env.
+The pod carries a placeholder; the in-pod Envoy sidecar terminates outbound TLS and rewrites the auth header using a [generic secret](../../../docs/architecture/security-and-credentials.md) scoped to the provider's host.
+The flow is the same for every provider — only the host pattern and (occasionally) the injection header change.
 
 ### Built-in API-key providers
 
 Three steps to enable any pi built-in provider:
 
-1. **Set the provider's env var to a non-empty placeholder** so pi's [credential resolution](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/providers.md#resolution-order) recognizes the provider. Add to the harness config (`[oci.env]` in [`image.toml`](image.toml)), the agent template, or per-instance via the Configure Agent UI:
-
-   ```toml
-   [oci.env]
-   OPENAI_API_KEY = "dummy-placeholder"
-   ```
-
+1. **Set the provider's env var to a non-empty placeholder** so pi's [credential resolution](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/providers.md#resolution-order) recognizes the provider.
+   Set it as the connection's env mapping (for example `OPENAI_API_KEY` with the placeholder `dummy-placeholder`), not in the image env or the agent's env.
+   The platform rewrites the connection's placeholder to name the connection, which an agent that requires named connections needs, and an env var set elsewhere overrides it.
    The literal value pi sends on the wire is rewritten by the Envoy sidecar before the request leaves the pod.
 
-2. **Create a generic secret on the platform** scoped to the provider's host. The default injection (`Authorization: Bearer {value}`) is correct for almost every provider in the table below. Override `injectionConfig.headerName` (and optionally `valueFormat`) only for providers that deviate (`x-api-key`, `RITS_API_KEY`, `Token {value}`, …).
+2. **Create a generic secret on the platform** scoped to the provider's host.
+   The default injection (`Authorization: Bearer {value}`) is correct for almost every provider in the table below.
+   Override `injectionConfig.headerName` (and optionally `valueFormat`) only for providers that deviate (`x-api-key`, `RITS_API_KEY`, `Token {value}`, …).
 
 3. **Select the model** in [`settings.json`](rootfs/app/working-dir/.pi/agent/settings.json) (`defaultProvider` / `defaultModel`) or via `/model` at session start.
 
@@ -66,47 +75,52 @@ Three steps to enable any pi built-in provider:
 
 Sourced from pi-mono [`env-api-keys.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/ai/src/env-api-keys.ts) and [`models.generated.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/ai/src/models.generated.ts) — pi's resolution order is documented in [providers.md](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/providers.md#resolution-order).
 
-| Provider | pi `provider` id | Env var(s) (placeholder in pod, real value in K8s Secret mounted into the Envoy sidecar) | Host pattern |
-|---|---|---|---|
-| Anthropic | `anthropic` | `ANTHROPIC_API_KEY` (or `ANTHROPIC_OAUTH_TOKEN`) | `api.anthropic.com` |
-| OpenAI | `openai` | `OPENAI_API_KEY` | `api.openai.com` |
-| DeepSeek | `deepseek` | `DEEPSEEK_API_KEY` | `api.deepseek.com` |
-| Mistral | `mistral` | `MISTRAL_API_KEY` | `api.mistral.ai` |
-| Groq | `groq` | `GROQ_API_KEY` | `api.groq.com` |
-| Cerebras | `cerebras` | `CEREBRAS_API_KEY` | `api.cerebras.ai` |
-| xAI | `xai` | `XAI_API_KEY` | `api.x.ai` |
-| OpenRouter | `openrouter` | `OPENROUTER_API_KEY` | `openrouter.ai` |
-| Vercel AI Gateway | `vercel-ai-gateway` | `AI_GATEWAY_API_KEY` | `ai-gateway.vercel.sh` |
-| ZAI | `zai` | `ZAI_API_KEY` | `api.z.ai` |
-| Google Gemini (AI Studio) | `google` | `GEMINI_API_KEY` | `generativelanguage.googleapis.com` |
-| Hugging Face | `huggingface` | `HF_TOKEN` | `router.huggingface.co` |
-| Fireworks | `fireworks` | `FIREWORKS_API_KEY` | `api.fireworks.ai` |
-| OpenCode Zen | `opencode` | `OPENCODE_API_KEY` | `opencode.ai` (path `/zen/`) |
-| OpenCode Go | `opencode-go` | `OPENCODE_API_KEY` | `opencode.ai` (path `/zen/go/`) |
-| Kimi For Coding | `kimi-coding` | `KIMI_API_KEY` | `api.kimi.com` (path `/coding/`) |
-| MiniMax | `minimax` | `MINIMAX_API_KEY` | `api.minimax.io` |
-| MiniMax (China) | `minimax-cn` | `MINIMAX_CN_API_KEY` | `api.minimaxi.com` |
+| Provider                  | pi `provider` id    | Env var(s) (placeholder in pod, real value in K8s Secret mounted into the Envoy sidecar) | Host pattern                        |
+| ------------------------- | ------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------- |
+| Anthropic                 | `anthropic`         | `ANTHROPIC_API_KEY` (or `ANTHROPIC_OAUTH_TOKEN`)                                         | `api.anthropic.com`                 |
+| OpenAI                    | `openai`            | `OPENAI_API_KEY`                                                                         | `api.openai.com`                    |
+| DeepSeek                  | `deepseek`          | `DEEPSEEK_API_KEY`                                                                       | `api.deepseek.com`                  |
+| Mistral                   | `mistral`           | `MISTRAL_API_KEY`                                                                        | `api.mistral.ai`                    |
+| Groq                      | `groq`              | `GROQ_API_KEY`                                                                           | `api.groq.com`                      |
+| Cerebras                  | `cerebras`          | `CEREBRAS_API_KEY`                                                                       | `api.cerebras.ai`                   |
+| xAI                       | `xai`               | `XAI_API_KEY`                                                                            | `api.x.ai`                          |
+| OpenRouter                | `openrouter`        | `OPENROUTER_API_KEY`                                                                     | `openrouter.ai`                     |
+| Vercel AI Gateway         | `vercel-ai-gateway` | `AI_GATEWAY_API_KEY`                                                                     | `ai-gateway.vercel.sh`              |
+| ZAI                       | `zai`               | `ZAI_API_KEY`                                                                            | `api.z.ai`                          |
+| Google Gemini (AI Studio) | `google`            | `GEMINI_API_KEY`                                                                         | `generativelanguage.googleapis.com` |
+| Hugging Face              | `huggingface`       | `HF_TOKEN`                                                                               | `router.huggingface.co`             |
+| Fireworks                 | `fireworks`         | `FIREWORKS_API_KEY`                                                                      | `api.fireworks.ai`                  |
+| OpenCode Zen              | `opencode`          | `OPENCODE_API_KEY`                                                                       | `opencode.ai` (path `/zen/`)        |
+| OpenCode Go               | `opencode-go`       | `OPENCODE_API_KEY`                                                                       | `opencode.ai` (path `/zen/go/`)     |
+| Kimi For Coding           | `kimi-coding`       | `KIMI_API_KEY`                                                                           | `api.kimi.com` (path `/coding/`)    |
+| MiniMax                   | `minimax`           | `MINIMAX_API_KEY`                                                                        | `api.minimax.io`                    |
+| MiniMax (China)           | `minimax-cn`        | `MINIMAX_CN_API_KEY`                                                                     | `api.minimaxi.com`                  |
 
-> **Anthropic — prefer the dedicated provider.** Platform ships a first-class Anthropic provider that handles the OAuth-vs-API-key shape and is wired into the Configure Agent UI as the *Anthropic secret* type. The plain env-var path above does work, but the dedicated provider is the recommended way and the tRPC router rejects `hostPattern` / `pathPattern` / `injectionConfig` on Anthropic secrets to keep the two paths from drifting.
+> **Anthropic — prefer the dedicated provider.** Platform ships a first-class Anthropic provider that handles the OAuth-vs-API-key shape and is wired into the Configure Agent UI as the *Anthropic secret* type.
+> The plain env-var path above does work, but the dedicated provider is the recommended way and the tRPC router rejects `hostPattern` / `pathPattern` / `injectionConfig` on Anthropic secrets to keep the two paths from drifting.
 
-> When two providers share a host (OpenCode Zen vs Go) or a single host serves several pi providers, scope the secret with `pathPattern` ([ADR-028](../../../docs/adrs/028-generic-secret-injection-config.md)) so each credential matches only its own sub-path.
+> When two providers share a host (OpenCode Zen vs Go) or a single host serves several pi providers, scope the secret with `pathPattern` so each credential matches only its own sub-path.
 
 #### Provider errors in the chat
 
-pi-acp ends a turn whose model request failed as a clean, empty `end_turn` and drops Pi's error (upstream [svkozak/pi-acp#135](https://github.com/svkozak/pi-acp/issues/135)), so a refused model, an expired key or a throttled request would read as silence. pi-acp does forward extension notifications into the chat, so `pi-dynamic-providers` reports a run that ends in error as `Model request failed: <error>` through one — after Pi's own retries, so a call that recovers stays quiet. Only chat sessions get it (`harness-chat` sets `PI_PLATFORM_REPORT_ERRORS=1`); the terminal shows Pi's own error. Drop that handler once pi-acp propagates the error itself.
+pi-acp ends a turn whose model request failed as a clean, empty `end_turn` and drops Pi's error (upstream [svkozak/pi-acp#135](https://github.com/svkozak/pi-acp/issues/135)), so a refused model, an expired key or a throttled request would read as silence.
+pi-acp does forward extension notifications into the chat, so `pi-dynamic-providers` reports a run that ends in error as `Model request failed: <error>` through one — after Pi's own retries, so a call that recovers stays quiet.
+Only chat sessions get it (`harness-chat` sets `PI_PLATFORM_REPORT_ERRORS=1`); the terminal shows Pi's own error.
+Drop that handler once pi-acp propagates the error itself.
 
 #### Other providers (env vars from pi-mono; Platform integration not validated end-to-end)
 
-These providers have additional configuration shapes (per-resource URLs, AWS credential chain, OAuth, SA-key files). The env vars below are what pi-mono reads; whether they compose cleanly with the Envoy sidecar's wire-level header rewrite hasn't been verified for each — confirm before relying on them in production.
+These providers have additional configuration shapes (per-resource URLs, AWS credential chain, OAuth, SA-key files).
+The env vars below are what pi-mono reads; whether they compose cleanly with the Envoy sidecar's wire-level header rewrite hasn't been verified for each — confirm before relying on them in production.
 
-| Provider | pi `provider` id | Auth env vars | Notes |
-|---|---|---|---|
-| Azure OpenAI | `azure` | `AZURE_OPENAI_API_KEY` plus `AZURE_OPENAI_BASE_URL` (or `AZURE_OPENAI_RESOURCE_NAME`), optional `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT_NAME_MAP` | Host is your Azure resource (e.g. `<resource>.openai.azure.com`). Should work with the placeholder-env + generic-secret pattern, but not validated. |
-| Amazon Bedrock | `amazon-bedrock` | One of: `AWS_PROFILE`; `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`; `AWS_BEARER_TOKEN_BEDROCK`; `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI` / `_FULL_URI`; `AWS_WEB_IDENTITY_TOKEN_FILE`. Optional: `AWS_REGION`, `AWS_BEDROCK_FORCE_CACHE`, `AWS_ENDPOINT_URL_BEDROCK_RUNTIME`, `AWS_BEDROCK_SKIP_AUTH`, `AWS_BEDROCK_FORCE_HTTP1` | Host: `bedrock-runtime.<region>.amazonaws.com`. Supported through the platform's **AWS Bedrock** provider with a Bedrock API key: the gateway injects it as `Authorization: Bearer`, and the agent holds only a placeholder `AWS_BEARER_TOKEN_BEDROCK`. The `pi-dynamic-providers` extension selects `amazon-bedrock` and the connection's model pin, adding the pin to `models.json` only when Pi's built-in list lacks it, and narrows Pi's model list to the region's active inference profiles, listed through the same gateway (`AWS_ENDPOINT_URL_BEDROCK`). IAM access keys and assumed roles (SigV4, computed in-pod against the secret) are not supported. |
-| Google Vertex AI | `google-vertex` | `GOOGLE_CLOUD_API_KEY` **or** `GOOGLE_APPLICATION_CREDENTIALS` (SA key file) **or** ADC + `GOOGLE_CLOUD_PROJECT` + `GOOGLE_CLOUD_LOCATION` | Host: `<location>-aiplatform.googleapis.com`. The API-key path may work with a generic secret; SA-key / ADC paths require a file mount and aren't a generic-secret shape. Untested. |
-| GitHub Copilot | `github-copilot` | `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, or `GITHUB_TOKEN` | Host: `api.individual.githubcopilot.com`. pi's documented path is OAuth via `/login`, with tokens stored in `~/.pi/agent/auth.json`. Untested with a generic secret. |
-| OpenAI Codex (ChatGPT) | (Codex Responses) | OAuth via `/login` — no env var | Host: `chatgpt.com/backend-api`. ChatGPT subscription only; not appropriate for production. |
-| Google Gemini CLI / Antigravity | `google-gemini-cli` | OAuth via `/login`, optional `GOOGLE_CLOUD_PROJECT` for paid Cloud Code Assist | Hosts: `cloudcode-pa.googleapis.com`, `daily-cloudcode-pa.sandbox.googleapis.com`. Untested. |
+| Provider                        | pi `provider` id    | Auth env vars                                                                                                                                                                                                                                                                                                                      | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Azure OpenAI                    | `azure`             | `AZURE_OPENAI_API_KEY` plus `AZURE_OPENAI_BASE_URL` (or `AZURE_OPENAI_RESOURCE_NAME`), optional `AZURE_OPENAI_API_VERSION`, `AZURE_OPENAI_DEPLOYMENT_NAME_MAP`                                                                                                                                                                     | Host is your Azure resource (e.g. `<resource>.openai.azure.com`). Should work with the placeholder-env + generic-secret pattern, but not validated.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Amazon Bedrock                  | `amazon-bedrock`    | One of: `AWS_PROFILE`; `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`; `AWS_BEARER_TOKEN_BEDROCK`; `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI` / `_FULL_URI`; `AWS_WEB_IDENTITY_TOKEN_FILE`. Optional: `AWS_REGION`, `AWS_BEDROCK_FORCE_CACHE`, `AWS_ENDPOINT_URL_BEDROCK_RUNTIME`, `AWS_BEDROCK_SKIP_AUTH`, `AWS_BEDROCK_FORCE_HTTP1` | Host: `bedrock-runtime.<region>.amazonaws.com`. Supported through the platform's **AWS Bedrock** provider with a Bedrock API key: the gateway injects it as `Authorization: Bearer`, and the agent holds only a placeholder `AWS_BEARER_TOKEN_BEDROCK`. The `pi-dynamic-providers` extension selects `amazon-bedrock` and the connection's model pin, adding the pin to `models.json` only when Pi's built-in list lacks it, and narrows Pi's model list to the region's active inference profiles, listed through the same gateway (`AWS_ENDPOINT_URL_BEDROCK`). IAM access keys and assumed roles (SigV4, computed in-pod against the secret) are not supported. |
+| Google Vertex AI                | `google-vertex`     | `GOOGLE_CLOUD_API_KEY` **or** `GOOGLE_APPLICATION_CREDENTIALS` (SA key file) **or** ADC + `GOOGLE_CLOUD_PROJECT` + `GOOGLE_CLOUD_LOCATION`                                                                                                                                                                                         | Host: `<location>-aiplatform.googleapis.com`. The API-key path may work with a generic secret; SA-key / ADC paths require a file mount and aren't a generic-secret shape. Untested.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| GitHub Copilot                  | `github-copilot`    | `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, or `GITHUB_TOKEN`                                                                                                                                                                                                                                                                              | Host: `api.individual.githubcopilot.com`. pi's documented path is OAuth via `/login`, with tokens stored in `~/.pi/agent/auth.json`. Untested with a generic secret.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| OpenAI Codex (ChatGPT)          | (Codex Responses)   | OAuth via `/login` — no env var                                                                                                                                                                                                                                                                                                    | Host: `chatgpt.com/backend-api`. ChatGPT subscription only; not appropriate for production.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Google Gemini CLI / Antigravity | `google-gemini-cli` | OAuth via `/login`, optional `GOOGLE_CLOUD_PROJECT` for paid Cloud Code Assist                                                                                                                                                                                                                                                     | Hosts: `cloudcode-pa.googleapis.com`, `daily-cloudcode-pa.sandbox.googleapis.com`. Untested.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 ### Custom OpenAI-compatible servers (models.json)
 
@@ -126,33 +140,54 @@ For self-hosted vLLM / Ollama / LM Studio / internal proxies that aren't in pi's
 }
 ```
 
-Then create a generic secret on the platform with `hostPattern: vllm.internal.example.com` and the default Bearer injection. The literal `apiKey` is a placeholder satisfying [pi-acp's per-session auth gate](#pi-acp-auth-gate); the Envoy sidecar rewrites the header on the wire. The full `models.json` schema (`compat`, `reasoning`, `contextWindow`, `thinkingFormat`, `headers`, `modelOverrides`) is in [pi models.md](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md).
+Then create a generic secret on the platform with `hostPattern: vllm.internal.example.com` and the default Bearer injection.
+The literal `apiKey` is a placeholder satisfying [pi-acp's per-session auth gate](#pi-acp-auth-gate); the Envoy sidecar rewrites the header on the wire.
+The full `models.json` schema (`compat`, `reasoning`, `contextWindow`, `thinkingFormat`, `headers`, `modelOverrides`) is in [pi models.md](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/models.md).
 
 For non-Bearer auth, override `injectionConfig` on the secret instead of changing `models.json`:
 
-| Provider style | `injectionConfig.headerName` | `injectionConfig.valueFormat` |
-|---|---|---|
-| OpenAI-compatible (default) | `Authorization` (default) | `Bearer {value}` (default) |
-| Anthropic-compatible proxy | `x-api-key` | `{value}` |
-| Portkey | `x-portkey-api-key` | `{value}` |
-| RITS | `RITS_API_KEY` | `{value}` |
+| Provider style              | `injectionConfig.headerName` | `injectionConfig.valueFormat` |
+| --------------------------- | ---------------------------- | ----------------------------- |
+| OpenAI-compatible (default) | `Authorization` (default)    | `Bearer {value}` (default)    |
+| Anthropic-compatible proxy  | `x-api-key`                  | `{value}`                     |
+| Portkey                     | `x-portkey-api-key`          | `{value}`                     |
+| RITS                        | `RITS_API_KEY`               | `{value}`                     |
 
 ### RITS (custom provider via extension)
 
-The `pi-platform` launcher passes the lease's provider and explicit model through Pi's command-line options. Pi reads saved defaults before loading extensions, so an extension writing new defaults cannot select the first turn's model by itself. This also keeps a saved Anthropic default from redirecting a LiteLLM session. OpenAI-named models on the proxy use Responses, which supports GPT tools together with reasoning. Opaque aliases still use Chat Completions until discovery supplies API metadata.
+The `pi-platform` launcher passes the lease's provider and explicit model through Pi's command-line options.
+Pi refuses a provider without a model, so a lease that names no model (the agent's default lease) runs on the model saved in Pi's settings, else the provider's pin.
+Pi reads saved defaults before loading extensions, so an extension writing new defaults cannot select the first turn's model by itself.
+This also keeps a saved Anthropic default from redirecting a LiteLLM session.
+The launcher also unsets `ANTHROPIC_AUTH_TOKEN`: LiteLLM connections set it as a placeholder for Claude Code, and Pi would count it as an Anthropic key, so a session with no model would go to api.anthropic.com and fail with `invalid x-api-key`.
+An Anthropic API-key connection sets `ANTHROPIC_API_KEY`, which Pi still reads.
+OpenAI-named models on the proxy use Responses, which supports GPT tools together with reasoning.
+Opaque aliases still use Chat Completions until discovery supplies API metadata.
 
-The [`pi-dynamic-providers`](rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts) extension ships in the image, not the home seed: the home is seeded once, so an extension copied there would never pick up a later image's fix. `pi-platform` loads it with `-e` on every start (pi-acp runs pi through it via `PI_ACP_PI_COMMAND`, and the terminal entrypoint calls it directly), and removes the copy that homes seeded before the move still carry, so it never loads twice. It registers a `rits` provider (tuned for vLLM, what RITS runs) and/or an `openai-proxy` provider — each activates only when its env vars are set — and mirrors the resulting config into `~/.pi/agent/models.json` and `~/.pi/agent/auth.json`. Both providers stream through pi-ai's Chat Completions or Responses implementation with a `fetch` of the extension's own, which hands pi-ai a chunk's reasoning before the content that shares it. The extension takes both implementations from `@earendil-works/pi-ai/compat`: Pi resolves an extension's `@earendil-works/pi-ai` imports only for the root, `compat`, `oauth` and `providers/all`, so a deeper subpath fails to load and the provider runs without that `fetch`. On Chat Completions, `openai-proxy` sends the output limit as `max_completion_tokens`, which every model behind the IBM LiteLLM proxy honors (some refuse `max_tokens`), and asks for streamed token counts, so each reply reports its real usage. Pi reads a reply that stopped at the output limit with an output below that limit as a full context and drops it from the conversation; without counts every output is 0. Some models report a few tokens less than the limit when cut (Gemini on IBM LiteLLM: 4), so the extension reports the output of a Chat Completions reply that ends with `length` as the request's limit. `rits` keeps `max_tokens` and does not ask for counts (vLLM direct, untested). Use an extension instead of a static `models.json` entry when provider knobs need to be derived from env vars at pod start.
+The [`pi-dynamic-providers`](rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts) extension ships in the image, not the home seed: the home is seeded once, so an extension copied there would never pick up a later image's fix.
+`pi-platform` loads it with `-e` on every start (pi-acp runs pi through it via `PI_ACP_PI_COMMAND`, and the terminal entrypoint calls it directly), and removes the copy that homes seeded before the move still carry, so it never loads twice.
+It registers a `rits` provider (tuned for vLLM, what RITS runs) and/or an `openai-proxy` provider — each activates only when its env vars are set — and mirrors the resulting config into `~/.pi/agent/models.json` and `~/.pi/agent/auth.json`.
+Both providers stream through pi-ai's Chat Completions or Responses implementation with a `fetch` of the extension's own, which hands pi-ai a chunk's reasoning before the content that shares it.
+The extension takes both implementations from `@earendil-works/pi-ai/compat`: Pi resolves an extension's `@earendil-works/pi-ai` imports only for the root, `compat`, `oauth` and `providers/all`, so a deeper subpath fails to load and the provider runs without that `fetch`.
+On Chat Completions, `openai-proxy` sends the output limit as `max_completion_tokens`, which every model behind the IBM LiteLLM proxy honors (some refuse `max_tokens`), and asks for streamed token counts, so each reply reports its real usage.
+Pi reads a reply that stopped at the output limit with an output below that limit as a full context and drops it from the conversation; without counts every output is 0.
+Some models report a few tokens less than the limit when cut (Gemini on IBM LiteLLM: 4), so the extension reports the output of a Chat Completions reply that ends with `length` as the request's limit.
+Requests to Claude models on `openai-proxy` carry Anthropic cache markers, because the proxy caches a Claude prompt only when the request marks it; GPT models cache on their own.
+`rits` keeps `max_tokens` and does not ask for counts (vLLM direct, untested).
+Use an extension instead of a static `models.json` entry when provider knobs need to be derived from env vars at pod start.
 
-| Env var | Required | Default | Purpose |
-|---|---|---|---|
-| `RITS_URL` | yes | — | Endpoint URL; `/v1` is appended if missing. |
-| `RITS_MODEL` | yes | — | Model identifier. |
-| `RITS_REASONING` | no | `false` | Enable pi's thinking UI for reasoning-capable models. |
-| `RITS_CONTEXT_WINDOW` | no | `128000` | Context window in tokens. |
-| `RITS_MAX_TOKENS` | no | `16384` | Max output tokens. |
-| `RITS_THINKING_FORMAT` | no | — | `qwen`, `qwen-chat-template`, `zai`, `reasoning_effort`, or `openrouter` — request-body hint for servers with a matching reasoning parser. |
+| Env var                | Required | Default  | Purpose                                                                                                                                    |
+| ---------------------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `RITS_URL`             | yes      | —        | Endpoint URL; `/v1` is appended if missing.                                                                                                |
+| `RITS_MODEL`           | yes      | —        | Model identifier.                                                                                                                          |
+| `RITS_REASONING`       | no       | `false`  | Enable pi's thinking UI for reasoning-capable models.                                                                                      |
+| `RITS_CONTEXT_WINDOW`  | no       | `128000` | Context window in tokens.                                                                                                                  |
+| `RITS_MAX_TOKENS`      | no       | `16384`  | Max output tokens.                                                                                                                         |
+| `RITS_THINKING_FORMAT` | no       | —        | `qwen`, `qwen-chat-template`, `zai`, `reasoning_effort`, or `openrouter` — request-body hint for servers with a matching reasoning parser. |
 
-The API key is **not** a pod env var. Configure it as a generic secret on the platform with `injectionConfig.headerName: RITS_API_KEY`, `injectionConfig.valueFormat: {value}`, and a host pattern matching your RITS deployment. The Envoy sidecar injects the header on outbound traffic at the proxy layer.
+The API key is **not** a pod env var.
+Configure it as a generic secret on the platform with `injectionConfig.headerName: RITS_API_KEY`, `injectionConfig.valueFormat: {value}`, and a host pattern matching your RITS deployment.
+The Envoy sidecar injects the header on outbound traffic at the proxy layer.
 
 To make RITS the default model, edit `settings.json`:
 
@@ -163,62 +198,88 @@ To make RITS the default model, edit `settings.json`:
 
 ### pi-acp auth gate
 
-`pi-acp` treats a new session as unauthenticated when `pi` reports no available models, and mid-session it turns provider errors mentioning API keys, `401`, or `403` into ACP auth-required errors. Both are satisfied without a real credential because every provider carries a *placeholder* key: the seeded `auth.json` entry, the placeholder env var for built-in providers, a placeholder `apiKey` in `models.json` for custom OpenAI-compatible servers, or the extension mirroring its `registerProvider` config to `models.json` on load. The real credential is sidecar-injected on the wire, so a `401` from the provider means the generic secret's host pattern did not match the request — not that the placeholder is wrong.
+`pi-acp` treats a new session as unauthenticated when `pi` reports no available models, and mid-session it turns provider errors mentioning API keys, `401`, or `403` into ACP auth-required errors.
+Both are satisfied without a real credential because every provider carries a *placeholder* key: the seeded `auth.json` entry, the placeholder env var for built-in providers, a placeholder `apiKey` in `models.json` for custom OpenAI-compatible servers, or the extension mirroring its `registerProvider` config to `models.json` on load.
+The real credential is sidecar-injected on the wire, so a `401` from the provider means the generic secret's host pattern did not match the request — not that the placeholder is wrong.
 
 Pi system prompt conventions:
 
-| File | Scope | Behaviour |
-|---|---|---|
-| `~/.pi/agent/SYSTEM.md` | global | replaces the default system prompt |
-| `.pi/SYSTEM.md` | project (cwd) | replaces the default system prompt |
-| `~/.pi/agent/APPEND_SYSTEM.md` | global | appended to the system prompt |
-| `.pi/APPEND_SYSTEM.md` | project (cwd) | appended to the system prompt |
+| File                           | Scope         | Behaviour                          |
+| ------------------------------ | ------------- | ---------------------------------- |
+| `~/.pi/agent/SYSTEM.md`        | global        | replaces the default system prompt |
+| `.pi/SYSTEM.md`                | project (cwd) | replaces the default system prompt |
+| `~/.pi/agent/APPEND_SYSTEM.md` | global        | appended to the system prompt      |
+| `.pi/APPEND_SYSTEM.md`         | project (cwd) | appended to the system prompt      |
 
-> **`app/working-dir/`** seeds `/home/agent/` on first boot.  
-> Nothing seeds `/home/agent/work/`, the cwd where pi-acp spawns: a Starter Kit clones its repository there, and the seed refuses a non-empty directory.  
+> **`app/working-dir/`** seeds `/home/agent/` on first boot.\
+> Nothing seeds `/home/agent/work/`, the cwd where pi-acp spawns: a Starter Kit clones its repository there, and the seed refuses a non-empty directory.\
 > **`app/working-dir/.pi/agent/`** seeds `~/.pi/agent/` — pi's global config directory.
 
 ## pi-acp patch
 
-pi-acp 0.0.34 keeps one live pi process per connection: every `session/new` and `session/load` kills the pi of every other session, and a turn already running there never gets its `session/prompt` answer, because pi-acp ends a turn only on pi's `agent_settled` event (upstream [svkozak/pi-acp#152](https://github.com/svkozak/pi-acp/issues/152)). The agent-runtime runs every session of an Agent through one pi-acp, so a schedule firing, a new chat, a Slack turn, a sub-agent or opening an old session froze whatever turn was running, and the platform kept showing it as running. Stop did not help: pi-acp had already forgotten the session.
+pi-acp 0.0.34 keeps one live pi process per connection: every `session/new` and `session/load` kills the pi of every other session, and a turn already running there never gets its `session/prompt` answer, because pi-acp ends a turn only on pi's `agent_settled` event (upstream [svkozak/pi-acp#152](https://github.com/svkozak/pi-acp/issues/152)).
+The agent-runtime runs every session of an Agent through one pi-acp, so a schedule firing, a new chat, a Slack turn, a sub-agent or opening an old session froze whatever turn was running, and the platform kept showing it as running.
+Stop did not help: pi-acp had already forgotten the session.
 
 pi-acp also ends every turn with `end_turn`, even when the reply stopped at the output limit, and the replay of a reopened chat carries no stop reason, so the chat cannot mark a cut reply.
 
-Until upstream fixes these, [`pi-acp-patch.mjs`](rootfs/usr/local/share/pi-platform/pi-acp-patch.mjs) edits pi-acp's bundle in memory as it loads. `harness-chat` adds it to `NODE_OPTIONS` with `--import`, and the hook removes itself from `NODE_OPTIONS` so pi and its tools do not inherit it. It patches seven things:
+Until upstream fixes these, [`pi-acp-patch.mjs`](rootfs/usr/local/share/pi-platform/pi-acp-patch.mjs) edits pi-acp's bundle in memory as it loads.
+`harness-chat` adds it to `NODE_OPTIONS` with `--import`, and the hook removes itself from `NODE_OPTIONS` so pi and its tools do not inherit it.
+It patches seven things:
 
 - `session/new` and `session/load` no longer close other sessions.
 - pi-acp advertises `session/close`, so the agent-runtime closes idle sessions and their pi processes instead of letting them pile up.
 - A pi process that exits fails its running and queued turns with an error instead of leaving them unanswered.
 - The next prompt to a session whose pi died starts a new pi on the same session file.
-- pi-acp does not run `npm view @earendil-works/pi-coding-agent` at each new session, so no "New version available" notice starts the first reply (upstream [svkozak/pi-acp#72](https://github.com/svkozak/pi-acp/issues/72): no setting turns it off). The platform pins the Pi version, so the user cannot act on that notice.
+- pi-acp does not run `npm view @earendil-works/pi-coding-agent` at each new session, so no "New version available" notice starts the first reply (upstream [svkozak/pi-acp#72](https://github.com/svkozak/pi-acp/issues/72): no setting turns it off).
+  The platform pins the Pi version, so the user cannot act on that notice.
 - A turn whose last reply stopped at the output limit (Pi's `length`) ends with `max_tokens`.
 - On `session/load`, the replayed text of such a reply carries `_meta.platform.stopReason: "max_tokens"`, so a reopened chat still marks the cut.
 
-The hook patches only pi-acp 0.0.34 and only when every edit matches the bundle exactly. Otherwise it loads pi-acp unchanged and prints `pi-acp-patch: not applied …` to the pod log. **To remove it** once a pi-acp release fixes #152 and #72 and reports `max_tokens`: bump `npm:pi-acp` in [`image.toml`](image.toml), delete `pi-acp-patch.mjs` and its check ([`check/pi-acp-patch`](../.mise/tasks/check/pi-acp-patch)), and drop the `NODE_OPTIONS` line from `harness-chat`. A release that fixes only some of the three lets you drop just their edits. That check fails on any pi-acp bump while the patch is still in place, so a bump is the moment to decide.
+The hook patches only pi-acp 0.0.34 and only when every edit matches the bundle exactly.
+Otherwise it loads pi-acp unchanged and prints `pi-acp-patch: not applied …` to the pod log.
+**To remove it** once a pi-acp release fixes #152 and #72 and reports `max_tokens`: bump `npm:pi-acp` in [`image.toml`](image.toml), delete `pi-acp-patch.mjs` and its check ([`check/pi-acp-patch`](../.mise/tasks/check/pi-acp-patch)), and drop the `NODE_OPTIONS` line from `harness-chat`.
+A release that fixes only some of the three lets you drop just their edits.
+That check fails on any pi-acp bump while the patch is still in place, so a bump is the moment to decide.
+
+## Session cost
+
+Pi prices every model call itself, at the per-token rates of the model it registered.
+A model behind an OpenAI-compatible proxy (`openai-proxy`, `rits`) comes with no rates, so `pi-dynamic-providers` gives it the list price of the same model at its vendor in Pi's built-in catalog, matched by the id without its routing prefix (`aws/claude-opus-4-8` costs what `anthropic`'s `claude-opus-4-8` costs).
+Only vendors count (Anthropic, OpenAI, Google, Mistral, DeepSeek, xAI), not resellers such as Bedrock that list the same model at a markup; a model no vendor lists stays free.
+
+Pi has no OpenTelemetry exporter, so the `pi-platform-telemetry` extension posts one OTLP/HTTP JSON log record per model call (`pi.api_request`, with the token counters, `cost_usd_micros`, `session.id` and `prompt.id`) and one per prompt (`pi.user_prompt`) to `$OTEL_EXPORTER_OTLP_ENDPOINT/v1/logs`.
+It stays off unless `OTEL_LOGS_EXPORTER=otlp`, which the harness catalog's `pi` telemetry rail sets when the telemetry backend is on.
+The platform reads those records like Claude Code's, so the session list and Usage show a Pi session's cost (see [observability](../../../docs/architecture/observability.md#agent-export)).
+No prompt text or reply leaves the agent.
 
 ## Memory scopes
 
-Memory lives on the PVC (`/home/agent/` is the persistent mount), so everything survives restarts. The two scopes:
+Memory lives on the PVC (`/home/agent/` is the persistent mount), so everything survives restarts.
+The two scopes:
 
-| Scope | Path | What goes here |
-|---|---|---|
+| Scope                 | Path                  | What goes here                                                                  |
+| --------------------- | --------------------- | ------------------------------------------------------------------------------- |
 | **Personal** (global) | `~/.pi/agent/memory/` | Identity, user profile, preferences — facts about the user, not about a project |
-| **Project** (future) | `work/memory/` | Per-workspace context: tech stack, architecture decisions, repo-specific facts |
+| **Project** (future)  | `work/memory/`        | Per-workspace context: tech stack, architecture decisions, repo-specific facts  |
 
-`@zhafron/pi-memory` uses the personal scope by default (`memoryDir: ~/.pi/agent/memory`). Project-scope memory is not yet implemented.
+`@zhafron/pi-memory` uses the personal scope by default (`memoryDir: ~/.pi/agent/memory`).
+Project-scope memory is not yet implemented.
 
 ### Memory files (personal scope)
 
-| File | Auto-injected | Purpose |
-|---|---|---|
-| `MEMORY.md` | yes | Durable facts, decisions, preferences |
-| `IDENTITY.md` | yes | Agent name, persona, behavioral rules |
-| `USER.md` | yes | User profile (name, role, preferences) |
-| `daily/YYYY-MM-DD.md` | no | Daily activity log (read via `memory` tool) |
+| File                  | Auto-injected | Purpose                                     |
+| --------------------- | ------------- | ------------------------------------------- |
+| `MEMORY.md`           | yes           | Durable facts, decisions, preferences       |
+| `IDENTITY.md`         | yes           | Agent name, persona, behavioral rules       |
+| `USER.md`             | yes           | User profile (name, role, preferences)      |
+| `daily/YYYY-MM-DD.md` | no            | Daily activity log (read via `memory` tool) |
 
 ### First-run bootstrap
 
-On first session, `@zhafron/pi-memory` seeds all four files with empty templates and a `BOOTSTRAP.md` interview script. The agent asks the user questions, overwrites the templates with real content, then deletes `BOOTSTRAP.md`. Normal memory injection resumes from the next session onward.
+On first session, `@zhafron/pi-memory` seeds all four files with empty templates and a `BOOTSTRAP.md` interview script.
+The agent asks the user questions, overwrites the templates with real content, then deletes `BOOTSTRAP.md`.
+Normal memory injection resumes from the next session onward.
 
 ### Memory tool
 
@@ -240,7 +301,9 @@ Create an agent from the **pi-agent** template in the Platform UI, open a sessio
 
 ## Upgrading existing instances
 
-The init seeder runs once (guarded by `/home/agent/.initialized`). After an image rebuild, existing instances won't pick up `app/working-dir/` changes automatically. Options:
+The init seeder runs once (guarded by `/home/agent/.initialized`).
+After an image rebuild, existing instances won't pick up `app/working-dir/` changes automatically.
+Options:
 
 - Create a fresh instance (gets the new seed)
 - Delete `.initialized` on the pod and restart: `mise run cluster:shell -- rm /home/agent/.initialized`

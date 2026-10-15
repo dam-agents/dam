@@ -20,6 +20,7 @@ import type {
 import type { TtlStore } from "../../../core/ttl-store.js";
 import type { FirePair } from "../../harness-config/index.js";
 import { emit, EventType } from "../../../events.js";
+import { annotateSpan } from "../../../core/background-span.js";
 
 const TRIGGER_TTL_SECONDS = 3600;
 
@@ -218,6 +219,19 @@ export function createSchedulerRunner(
         );
   }
 
+  function noteFire(
+    outcome: "success" | "failure" | "held" | "dropped" | "missed",
+    detail: { stage?: "commit" | "poke"; holdReason?: string } = {},
+  ): void {
+    annotateSpan({
+      "platform.schedule.outcome": outcome,
+      ...(detail.stage && { "platform.schedule.failure_stage": detail.stage }),
+      ...(detail.holdReason && {
+        "platform.schedule.hold_reason": detail.holdReason,
+      }),
+    });
+  }
+
   async function fireOnce(
     sched: Schedule,
     spec: ScheduleSpecOnce,
@@ -227,10 +241,12 @@ export function createSchedulerRunner(
     const action = onceFireAction(spec, sched.status, now());
     if (action.kind === "drop") {
       log(`fire: one-time schedule ${sched.id} already fired; dropping`);
+      noteFire("dropped");
       return;
     }
     if (action.kind === "missed") {
       log(`fire: one-time schedule ${sched.id} is past its window; missed`);
+      noteFire("missed");
       await deps.repo.recordFire(sched.id, OnceResult.Missed, null);
       await emitChanged(sched.agentId, sched.id);
       return;
@@ -249,6 +265,7 @@ export function createSchedulerRunner(
       } catch (err) {
         const reason = (err as Error).message ?? String(err);
         log(`fire: one-time schedule ${sched.id} failed: ${reason}`);
+        noteFire("failure", { stage: "commit" });
         if (lastAttempt) {
           await deps.repo.recordFire(sched.id, reason, null).catch(() => {});
           await emitFired(sched, "failure");
@@ -262,9 +279,11 @@ export function createSchedulerRunner(
       log(
         `fire: one-time schedule ${sched.id} is committed but the poke failed: ${(err as Error).message}; it stays delivering`,
       );
+      noteFire("failure", { stage: "poke" });
       if (lastAttempt) await emitFired(sched, "failure");
       throw err;
     }
+    noteFire("success");
     await emitFired(sched, "success");
   }
 
@@ -276,10 +295,17 @@ export function createSchedulerRunner(
     const sched = await deps.repo.getById(scheduleId);
     if (!sched) {
       log(`fire: schedule ${scheduleId} not found; dropping`);
+      noteFire("dropped");
       return;
     }
+    annotateSpan({
+      "platform.schedule.type": sched.spec.type,
+      "platform.schedule.mode": sched.spec.sessionMode ?? "fresh",
+      "platform.schedule.precheck": Boolean(sched.spec.precheck),
+    });
     if (!sched.spec.enabled) {
       log(`fire: schedule ${scheduleId} disabled; dropping`);
+      noteFire("dropped");
       return;
     }
     const spec = sched.spec;
@@ -291,11 +317,13 @@ export function createSchedulerRunner(
     };
     if (await deps.onboardingPending?.(sched.agentId)) {
       log(`fire: agent ${sched.agentId} has not finished onboarding; holding`);
+      noteFire("held", { holdReason: "onboarding" });
       await hold("held: onboarding not complete");
       return;
     }
     if (await deps.runtimeMigrating?.(sched.agentId)) {
       log(`fire: agent ${sched.agentId} is moving to the new runtime; holding`);
+      noteFire("held", { holdReason: "runtime_migration" });
       await hold("held: moving to the new runtime");
       return;
     }
@@ -308,6 +336,7 @@ export function createSchedulerRunner(
       TRIGGER_TTL_SECONDS,
     );
 
+    let stage: "commit" | "poke" = "commit";
     try {
       await commitTrigger(
         sched,
@@ -315,10 +344,12 @@ export function createSchedulerRunner(
         await triggerPayload(sched, fireAt),
         expiresAt,
       );
+      stage = "poke";
       await pokeAgent(sched, eventId);
     } catch (err) {
       const result = (err as Error).message ?? String(err);
       log(`fire: schedule ${scheduleId} failed: ${result}`);
+      noteFire("failure", { stage });
       const after = lastAttempt ? nextFireAt(spec, now()) : fireAt;
       await deps.repo.recordFire(scheduleId, result, after).catch(() => {});
       if (lastAttempt) {
@@ -332,6 +363,7 @@ export function createSchedulerRunner(
     if (spec.precheck) await deps.repo.setNextRun(scheduleId, next);
     else await deps.repo.recordFire(scheduleId, "success", next);
     if (next) await deps.queue.enqueue(scheduleId, next, now());
+    noteFire("success");
     await emitFired(sched, "success");
   }
 

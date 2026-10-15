@@ -58,6 +58,7 @@ export {
 
 export type {
   Agent,
+  AgentReclaim,
   WorkspaceFailure,
   WorkspaceMutationKind,
   AgentKind,
@@ -97,6 +98,7 @@ export type {
 export {
   AGENT_ID_RE,
   agentCreateInputSchema,
+  avatarSchema,
   agentKindSchema,
   agentUpdateInputSchema,
 } from "./modules/agents/schemas.js";
@@ -105,14 +107,25 @@ export type {
   AgentSetupResources,
   AgentSetupSeed,
 } from "./modules/agents/setup.js";
-export { isProtectedAgentEnvName } from "./modules/agents/types.js";
+export {
+  AGENT_UNREACHABLE,
+  type AgentUnreachableBody,
+  isProtectedAgentEnvName,
+  isStartRefusal,
+  TerminationCode,
+} from "./modules/agents/types.js";
 export {
   runtimeMigrationRefusalReasons,
   toAgentView,
   toRuntimeMigrationPlanView,
 } from "./modules/agents/view.js";
+export { storageFullSchema } from "./modules/budgets/schemas.js";
 export type {
   BudgetReserved,
+  BudgetStorageFull,
+  BudgetVmUsage,
+  PoolLevel,
+  CpuCongestion,
   BudgetsService,
 } from "./modules/budgets/types.js";
 export type { AgentSpecCR } from "./crd-types.gen.js";
@@ -256,6 +269,16 @@ export {
   featureIdSchema,
   featureModeSchema,
 } from "./modules/features/schemas.js";
+export type {
+  AvatarUnlock,
+  GettingStartedProgress,
+  GettingStartedService,
+  GettingStartedTask,
+} from "./modules/getting-started/types.js";
+export {
+  GETTING_STARTED_TASKS,
+  gettingStartedTaskSchema,
+} from "./modules/getting-started/schemas.js";
 export { quietWindowSchema } from "./modules/schedules/schemas.js";
 export {
   ONCE_DELIVERY_WINDOW_MS,
@@ -395,6 +418,7 @@ export type {
   SpendCategory,
   SessionRuntime,
   CallContext,
+  SubAgentSpend,
 } from "./modules/metrics/types.js";
 
 export type {
@@ -518,6 +542,7 @@ export type {
   ApprovalsService,
   ApprovalListOptions,
   ApprovalActionOutcome,
+  ApprovalDismissManyOutcome,
 } from "./modules/approvals/types.js";
 export { describeApprovalPayload } from "./modules/approvals/format.js";
 export { acpNativeRowId } from "./modules/approvals/format.js";
@@ -536,6 +561,7 @@ export {
   formatEgressRuleInline,
   formatEgressRuleSource,
 } from "./modules/egress-rules/format.js";
+export { canonicalEgressHost } from "./modules/egress-rules/host.js";
 export type {
   GatewayRestartImpact,
   PromotionRule,
@@ -566,8 +592,22 @@ export {
   platformUndeliveredMetaSchema,
   platformSupersededMetaSchema,
   capInlineImages,
+  queuedPromptSchema,
+  platformQueueMetaSchema,
+  platformQueueChangedParamsSchema,
+  buildPlatformQueueChangedNotification,
+  platformUpdateQueuedParamsSchema,
+  platformRemoveQueuedParamsSchema,
+  platformSteerQueuedParamsSchema,
+  PROMPT_NOT_QUEUED_CODE,
+  PROMPT_NOT_QUEUED_MESSAGE,
   PROMPT_QUEUE_FULL_CODE,
   PROMPT_QUEUE_FULL_MESSAGE,
+  REWRITE_REFUSED_CODE,
+  platformRewriteFromParamsSchema,
+  STEER_METHOD,
+  steerResponseSchema,
+  steeringSupported,
 } from "./modules/acp/types.js";
 export type {
   PlatformTurnEndedParams,
@@ -578,6 +618,11 @@ export type {
   PlatformReplayTurnMeta,
   PlatformUndeliveredPrompt,
   PromptBlock,
+  QueuedPrompt,
+  PlatformQueueChangedParams,
+  PlatformUpdateQueuedParams,
+  PlatformRemoveQueuedParams,
+  PlatformRewriteFromParams,
 } from "./modules/acp/types.js";
 
 export { brandSchema } from "./modules/brand/types.js";

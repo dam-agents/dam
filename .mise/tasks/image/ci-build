@@ -66,6 +66,10 @@ push_layout() {
 build_mise() {
   local c=$1 kind=$2 layout="$AGENT_OCI_OUT/$1"
   packages/agents/.mise/tasks/oci --build $([ "$kind" = load ] || echo --no-tar) "$c" || return 1
+  # Each plain layer's digest, so two runs' logs show which layers a change
+  # rewrote and which a rebuild kept.
+  jq -r '.manifests[0].digest | sub(":"; "/")' "$layout/index.json" |
+    xargs -I{} jq -r '.layers[] | "\(.digest) \(.size)"' "$layout/blobs/{}" | sed "s|^|$c layer: |"
   push_layout "$c" "$kind" "$layout" || return 1
   rm -rf "$layout"
 }

@@ -3,7 +3,7 @@ import { getBrand } from "../../brand.js";
 export function startupTips(sandbox: string): readonly string[] {
   const { name, short } = getBrand();
   return [
-    "Idle agents hibernate to save resources, then wake the instant you or a schedule ping them.",
+    "Idle agents sleep to save resources, then wake the instant you or a schedule ping them.",
     "Your workspace survives between runs. Pick up exactly where the agent left off.",
     `Open a local terminal with the ${name} CLI: \`${short} chat ${sandbox}\``,
     "Approvals are enforced outside the sandbox, so a compromised agent cannot approve itself.",
@@ -14,7 +14,6 @@ export function startupTips(sandbox: string): readonly string[] {
     "Bring your local CLAUDE.md, .claude/, and skills straight into a cloud sandbox.",
     "You do not have to wait your turn. Type while the agent works and your message queues.",
     "File paths the agent writes in chat are clickable. They open the file beside the conversation.",
-    "Set the hibernation timeout to 0 to stop an agent sleeping, for background work with no open session.",
     "Drop a .md file on the Skills page to turn it into a skill.",
     "Drop a whole folder into Files to upload it. node_modules and .venv are skipped for you.",
     "Publish a skill you wrote here as a pull request, then track it to get later updates back.",

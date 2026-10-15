@@ -26,6 +26,16 @@ pub const TRIM_EVERY: Duration = Duration::from_secs(10);
 
 const CONSOLE_ENDS: &str = "\nthe guest console ends:\n";
 
+// UNIT_BOUNDARY_DESCRIPTION: whether the guest's last entrypoint exit in a console tail was with the agent's home full, as platform-init marks it (guest::HOME_FULL). Only the last exit counts, so a home freed since, whose entrypoint then exited for another reason, is not reported full.
+pub fn home_full(tail: &str) -> bool {
+    tail.lines()
+        .rev()
+        .find(|line| line.contains(ENTRYPOINT_EXITED))
+        .is_some_and(|line| line.contains(crate::guest::HOME_FULL))
+}
+
+const ENTRYPOINT_EXITED: &str = "platform-init: the image entrypoint ";
+
 pub fn with_console(message: &str, tail: &str) -> String {
     if tail.is_empty() {
         return message.to_string();
@@ -45,7 +55,7 @@ pub fn machine_tail(dir: &Path) -> String {
     .join("\n")
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the last `limit` bytes of the kernel's lines in the VMM log, as printable text. The VMM logs every health probe as well, so the kernel's few lines are searched for through the whole file: a window of its end holds only probes once a boot has been stuck for a while. The read grows with how long the boot has run — a guest that never answers is probed twice a second, which adds a few megabytes an hour — and a runner that must read less would keep an offset per machine.
+// UNIT_BOUNDARY_DESCRIPTION: the last `limit` bytes of the kernel's lines in the VMM log, as printable text. The VMM writes lines of its own as well, so the kernel's few lines are searched for through the whole file: a window of its end may hold none of them once a guest has run for a while. The read grows with the file, which the trim keeps under LOG_CAP_BYTES, and a runner that must read less would keep an offset per machine.
 fn kernel_tail(path: &Path, limit: u64) -> String {
     let Ok(file) = fs::File::open(path) else {
         return String::new();
@@ -71,7 +81,7 @@ fn find(line: &[u8], needle: &[u8]) -> Option<usize> {
     line.windows(needle.len()).position(|w| w == needle)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the last `limit` bytes of the console, from the first whole line in them, as printable text. smolvm's agent logs every connection it accepts, and the runner opens one per health probe, so within a minute those lines are all the tail would hold; they say nothing about the guest and are dropped, from a window sixteen times the limit, so the guest's own last lines stay in view.
+// UNIT_BOUNDARY_DESCRIPTION: the last `limit` bytes of the console, from the first whole line in them, as printable text. smolvm's agent logs every connection it accepts, one for each command the runner runs in the guest, and enough of them are all the tail would hold; they say nothing about the guest and are dropped, from a window sixteen times the limit, so the guest's own last lines stay in view.
 pub fn tail_of(path: &Path, limit: u64) -> String {
     let Ok(mut file) = fs::File::open(path) else {
         return String::new();
@@ -229,6 +239,20 @@ mod tests {
     use super::*;
     use crate::testdir::TempDir;
 
+    // TEST_SCENARIO: a full home inside a guest makes its agent exit as it starts, and platform-init marks that exit on the console. The runner names the home full only while the guest's last exit carries the mark, so a home freed since, whose entrypoint then exited for another reason, is not reported full; the hand-off line, which also names the entrypoint, is not an exit.
+    #[test]
+    fn a_full_home_is_read_from_the_last_exit_only() {
+        let full = "[ 1.0] platform-init: handing off to the image entrypoint [/entry]\n[ 2.0] platform-init: the image entrypoint exited with status 1 after 1s; the agent's home is full\n[ 3.0] platform-init: starting the image entrypoint again in 1s\n[ 4.0] platform-init: handing off to the image entrypoint [/entry]";
+        assert!(home_full(full));
+        let freed = format!(
+            "{full}\n[ 9.0] platform-init: the image entrypoint exited with status 2 after 30s"
+        );
+        assert!(!home_full(&freed));
+        assert!(!home_full(
+            "[ 1.0] platform-init: handing off to the image entrypoint [/entry]"
+        ));
+    }
+
     // TEST_SCENARIO: a guest can print anything to its console, and the tail goes into a Kubernetes condition that an operator reads. Colour codes and cursor moves are dropped whole, other control characters are dropped, and the text between them is kept as it was.
     #[test]
     fn a_console_tail_is_only_printable_text() {
@@ -252,22 +276,22 @@ mod tests {
         assert_eq!(tail_of(&dir.path().join("missing"), 1000), "");
     }
 
-    // TEST_SCENARIO: the runner probes the guest's health once a second and smolvm's agent logs each accepted connection to the console, so within a minute those lines are all a 4 KiB tail would hold. They say nothing about the guest, so the tail drops them and shows what the guest itself printed before them; the agent's other lines, which do say what it is doing, stay.
+    // TEST_SCENARIO: smolvm's agent logs each accepted connection to the console, and enough of those lines are all a 4 KiB tail would hold. They say nothing about the guest, so the tail drops them and shows what the guest itself printed before them; the agent's other lines, which do say what it is doing, stay.
     #[test]
-    fn probe_lines_do_not_crowd_the_guest_out_of_the_tail() {
-        let dir = TempDir::new("console-probes");
+    fn accepted_connection_lines_do_not_crowd_the_guest_out_of_the_tail() {
+        let dir = TempDir::new("console-accepted");
         let log = dir.path().join(CONSOLE_LOG);
-        let probe = "{\"timestamp\":\"t\",\"level\":\"INFO\",\"fields\":{\"message\":\"accepted connection\"},\"target\":\"smolvm_agent\"}\n";
+        let accepted = "{\"timestamp\":\"t\",\"level\":\"INFO\",\"fields\":{\"message\":\"accepted connection\"},\"target\":\"smolvm_agent\"}\n";
         let flatten = "{\"timestamp\":\"t\",\"level\":\"INFO\",\"fields\":{\"message\":\"flattening local image archive\"},\"target\":\"smolvm_agent::storage\"}";
         let mut text = format!("kernel panic\n{flatten}\n");
         for _ in 0..200 {
-            text.push_str(probe);
+            text.push_str(accepted);
         }
         fs::write(&log, &text).unwrap();
         assert_eq!(tail_of(&log, 4096), format!("kernel panic\n{flatten}"));
     }
 
-    // TEST_SCENARIO: platform-init refused the boot, and said why as a kernel line. The guest kernel's console is not the console file, so its lines reach only the VMM's log, among the lines the VMM writes for every health probe. The tail finds the refusal there after hours of probes, shows it first and without the VMM's own prefix, and then the guest agent's lines from the console file.
+    // TEST_SCENARIO: platform-init refused the boot, and said why as a kernel line. The guest kernel's console is not the console file, so its lines reach only the VMM's log, among the VMM's own lines. The tail finds the refusal there after hours of them, shows it first and without the VMM's own prefix, and then the guest agent's lines from the console file.
     #[test]
     fn a_refusal_the_kernel_printed_reaches_the_tail() {
         let dir = TempDir::new("console-kernel");

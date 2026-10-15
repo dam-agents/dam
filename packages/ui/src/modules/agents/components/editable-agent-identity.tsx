@@ -10,9 +10,11 @@ import {
 import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../types.js";
+import { useFreshAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
 import { useUpdateAgent } from "../api/mutations.js";
 import { AgentAvatar, resolveCharacter } from "./avatar/agent-avatar.js";
 import { AvatarGrid } from "./avatar/avatar-picker.js";
+import { NewAvatarDot } from "./avatar/new-avatar-dot.js";
 
 const PENCIL_BADGE =
   "flex shrink-0 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:text-foreground";
@@ -26,31 +28,73 @@ const REVEAL_ON_HOVER =
  */
 export function EditableAgentIdentity({
   agent,
-  avatarSize,
-  mood,
-  avatarClassName,
-  nameClassName,
-  nameTag: NameTag = "h1",
+  ...display
 }: {
   agent: AgentView;
-  avatarSize: number;
-  mood: AvatarMood;
-  avatarClassName?: string;
-  nameClassName?: string;
-  nameTag?: "h1" | "h2";
-}) {
+} & IdentityDisplay) {
   const rename = useUpdateAgent();
   const changeAvatar = useUpdateAgent();
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [draft, setDraft] = useState<string | null>(null);
-  const editEnded = useRef(false);
   const name =
     (rename.isPending ? rename.variables.name : undefined) ?? agent.name;
   const avatar =
     (changeAvatar.isPending ? changeAvatar.variables.avatar : undefined) ??
     (rename.isPending ? rename.variables.avatar : undefined) ??
     agent.avatar;
-  const character = resolveCharacter(name, avatar);
+  return (
+    <EditableIdentity
+      {...display}
+      name={name}
+      avatar={avatar}
+      onRename={(next) => {
+        if (next === agent.name) return;
+        const keepNameDerivedAvatar = agent.avatar
+          ? {}
+          : { avatar: resolveCharacter(name, avatar) };
+        rename.mutate({ id: agent.id, name: next, ...keepNameDerivedAvatar });
+      }}
+      onAvatarChange={(next) =>
+        changeAvatar.mutate({ id: agent.id, avatar: next })
+      }
+    />
+  );
+}
+
+interface IdentityDisplay {
+  avatarSize: number;
+  mood: AvatarMood;
+  avatarClassName?: string;
+  nameClassName?: string;
+  nameTag?: "h1" | "h2";
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: An avatar and a name, each editable in place and
+ * reported on confirm, for an agent that exists or one about to be created.
+ */
+export function EditableIdentity({
+  name,
+  avatar,
+  onRename,
+  onAvatarChange,
+  avatarSize,
+  mood,
+  avatarClassName,
+  nameClassName,
+  nameTag: NameTag = "h1",
+}: {
+  name: string;
+  avatar: string | null | undefined;
+  onRename: (name: string) => void;
+  onAvatarChange: (avatar: string) => void;
+} & IdentityDisplay) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const hasNewAvatar = useFreshAvatars().length > 0;
+  const [draft, setDraft] = useState<string | null>(null);
+  const editEnded = useRef(false);
+  const current =
+    avatar?.startsWith("emoji:") || avatar?.startsWith("image:")
+      ? avatar
+      : resolveCharacter(name, avatar);
 
   const startEdit = () => {
     editEnded.current = false;
@@ -65,9 +109,7 @@ export function EditableAgentIdentity({
     editEnded.current = true;
     const next = draft?.trim();
     setDraft(null);
-    if (!next || next === agent.name) return;
-    const keepNameDerivedAvatar = agent.avatar ? {} : { avatar: character };
-    rename.mutate({ id: agent.id, name: next, ...keepNameDerivedAvatar });
+    if (next) onRename(next);
   };
 
   return (
@@ -75,7 +117,7 @@ export function EditableAgentIdentity({
       <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
         <PopoverTrigger
           type="button"
-          aria-label={`Avatar: ${character}. Choose an avatar`}
+          aria-label={`Avatar: ${current}. Choose an avatar`}
           className={cn("group relative shrink-0 rounded-md", avatarClassName)}
         >
           <AgentAvatar
@@ -93,15 +135,16 @@ export function EditableAgentIdentity({
           >
             <Edit size={10} />
           </span>
+          {hasNewAvatar && <NewAvatarDot className="-top-1 -right-1" />}
         </PopoverTrigger>
         <PopoverContent align="start" className="w-auto p-3">
           <AvatarGrid
-            value={character}
+            value={current}
             onPick={(next) => {
               setPickerOpen(false);
-              if (next !== character)
-                changeAvatar.mutate({ id: agent.id, avatar: next });
+              if (next !== current) onAvatarChange(next);
             }}
+            onLeave={() => setPickerOpen(false)}
           />
         </PopoverContent>
       </Popover>

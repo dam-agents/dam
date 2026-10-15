@@ -59,11 +59,22 @@ describe("provider harness compatibility", () => {
             { id: "oauth", type: "anthropic", templateId: "anthropic-oauth" },
           ],
         },
+        specHarness: async () => undefined,
         getCapabilities: async () => ({
           defaultHarness: "pi",
           harnesses: [
-            { name: "pi", harnessConfig: true, sessionModel: true },
-            { name: "claude-code", harnessConfig: true, sessionModel: true },
+            {
+              name: "pi",
+              harnessConfig: true,
+              sessionModel: true,
+              sessionSettings: ["mode"],
+            },
+            {
+              name: "claude-code",
+              harnessConfig: true,
+              sessionModel: true,
+              sessionSettings: ["mode"],
+            },
           ],
         }),
       },

@@ -1,4 +1,12 @@
-import { Book, Box, Chemistry } from "@carbon/icons-react";
+import {
+  Box,
+  Chemistry,
+  Play,
+  Restart,
+  Tools,
+  TrashCan,
+} from "@carbon/icons-react";
+import { isStartRefusal } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -8,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { clickableProps } from "@/lib/clickable";
+import { cn } from "@/lib/utils";
 
 import {
   AlwaysOnTag,
@@ -19,12 +28,11 @@ import { AgentChannelChips } from "../../sandboxes/components/channels/agent-cha
 import { useKeptWorkCount } from "../../sessions/api/background-work.js";
 import { KitUpdateTag } from "../../starter-kits/components/kit-update-tag.js";
 import { OnboardingTag } from "../../starter-kits/components/onboarding-tag.js";
-import {
-  agentKindBadge,
-  knowledgeBadge,
-  starterKitBadge,
-} from "../utils/agent-kind.js";
+import { reclaimSentence } from "../lib/reclaim-notices.js";
+import { statusTone } from "../lib/status-tone.js";
+import { agentKindBadge, starterKitBadge } from "../utils/agent-kind.js";
 import type { AgentDisplay } from "../utils/agent-resolver.js";
+import type { AgentUsage } from "../utils/sandbox-subtitle.js";
 import {
   formatTemporaryDraw,
   type TemporaryDraw,
@@ -36,16 +44,21 @@ import {
 } from "./contribution-failures-badge.js";
 import { GatewayFailureBadge } from "./gateway-failure-badge.js";
 import { MigrateRuntimeAction } from "./migrate-runtime-action.js";
-import { FreeUpComputeItems } from "./power-menu-items.js";
+import { SleepMenuItem } from "./power-menu-items.js";
 import { UnsupportedContributionsBadge } from "./unsupported-contributions-badge.js";
 import { UpdateAvailableAction } from "./update-available-action.js";
+import { UsagePairs } from "./usage-pairs.js";
 import { VmRuntimeBadge } from "./vm-runtime-badge.js";
+
+const SECOND_LINE_ITEM =
+  "rounded-none border-0 bg-transparent p-0 text-sm tracking-normal text-muted-foreground dark:text-muted-foreground";
 
 interface Props {
   agent: AgentView;
   display: AgentDisplay;
   working?: boolean;
-  subtitle: string;
+  subtitle: string | null;
+  usage: AgentUsage | null;
   temporaryDraw?: TemporaryDraw;
   deletePending: boolean;
   updatePending: boolean;
@@ -59,11 +72,9 @@ interface Props {
   onRetryMigration: () => void;
   onConfigure: () => void;
   configureLabel: string;
-  onShare?: () => void;
   onWake: () => void;
   onRestart: () => void;
-  onPause: () => void;
-  onStop: () => void;
+  onSleep: () => void;
   onDelete: () => void;
   onAddToChannel?: (messenger: "slack" | "telegram") => void;
   messengers?: { slack?: boolean; telegram?: boolean };
@@ -74,6 +85,7 @@ export function AgentRow({
   display,
   working,
   subtitle,
+  usage,
   temporaryDraw,
   deletePending,
   updatePending,
@@ -87,20 +99,19 @@ export function AgentRow({
   onRetryMigration,
   onConfigure,
   configureLabel,
-  onShare,
   onWake,
   onRestart,
-  onPause,
-  onStop,
+  onSleep,
   onDelete,
   onAddToChannel,
   messengers = {},
 }: Props) {
   const kindBadge = agentKindBadge(agent);
   const kitBadge = starterKitBadge(agent);
-  const knowledge = knowledgeBadge(agent);
   const keptWork = useKeptWorkCount(agent.id);
-  const onShareKnowledge = knowledge ? onShare : undefined;
+  const statusNote =
+    agent.overBudgetMessage ??
+    (display.state === "hibernated" ? reclaimSentence(agent) : undefined);
   return (
     <Card
       data-testid="agent-row"
@@ -111,7 +122,7 @@ export function AgentRow({
         name={agent.name}
         avatar={agent.avatar}
         size={64}
-        mood={avatarMood(display.state, agent.stopRequested, working ?? false)}
+        mood={avatarMood(display.state, agent.stopRequested)}
         className="mr-1 self-start"
       />
       <div className="min-w-0 flex-1">
@@ -126,40 +137,48 @@ export function AgentRow({
             </Badge>
           )}
           <VmRuntimeBadge agent={agent} />
-          {kitBadge && (
-            <Badge
-              variant={kitBadge.variant}
-              className="shrink-0"
-              title={kitBadge.title}
-              aria-label={`From the ${kitBadge.label} starter kit`}
-            >
-              <span className="flex items-center gap-1.5">
-                <Box size={12} aria-hidden />
-                {kitBadge.label}
-              </span>
-            </Badge>
-          )}
-          {knowledge && (
-            <Badge
-              variant={knowledge.variant}
-              className="shrink-0"
-              title={knowledge.title}
-            >
-              <span className="flex items-center gap-1.5">
-                <Book size={12} aria-hidden />
-                {knowledge.label}
-              </span>
-            </Badge>
-          )}
-          <OnboardingTag agent={agent} />
           <KitUpdateTag agentId={agent.id} />
           <ContributionFailuresBadge failures={agentFailures(agent)} />
           <GatewayFailureBadge agent={agent} />
           <UnsupportedContributionsBadge agent={agent} />
         </div>
-        <p className="mt-1 truncate text-sm text-muted-foreground">
-          {subtitle}
-        </p>
+        <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 text-sm text-muted-foreground [&>*+*]:before:mr-1.5 [&>*+*]:before:content-['·'_/_'']">
+          <span
+            title={statusNote}
+            {...(statusNote
+              ? {
+                  tabIndex: 0,
+                  role: "note",
+                  "aria-label": statusNote,
+                }
+              : {})}
+          >
+            <StatusBadge
+              state={display.state}
+              working={working}
+              keptWork={keptWork}
+              vm={agent.vm}
+              refused={isStartRefusal(agent.podTerminationCode)}
+              className={cn(
+                SECOND_LINE_ITEM,
+                statusTone(display.state, working, keptWork),
+              )}
+            />
+          </span>
+          <OnboardingTag agent={agent} className={SECOND_LINE_ITEM} />
+          {kitBadge && (
+            <span
+              className="flex min-w-0 items-center gap-1"
+              title={kitBadge.title}
+              aria-label={`From the ${kitBadge.label} starter kit`}
+            >
+              <Box size={14} className="shrink-0" aria-hidden />
+              <span className="truncate">{kitBadge.label}</span>
+            </span>
+          )}
+          {subtitle && <span className="truncate">{subtitle}</span>}
+          {usage && <UsagePairs usage={usage} />}
+        </div>
         <AgentChannelChips agent={agent} className="mt-2" />
         {temporaryDraw && temporaryDraw.count > 0 && (
           <p className="mt-2 flex items-center gap-1.5 border-t border-border pt-2 text-xs text-muted-foreground">
@@ -193,33 +212,13 @@ export function AgentRow({
           onRetry={onRetryMigration}
         />
         {agent.hibernationTimeoutMin === 0 && <AlwaysOnTag />}
-        <span
-          title={agent.overBudgetMessage ?? undefined}
-          {...(agent.overBudgetMessage
-            ? {
-                tabIndex: 0,
-                role: "note",
-                "aria-label": agent.overBudgetMessage,
-              }
-            : {})}
-        >
-          <StatusBadge
-            state={display.state}
-            working={working}
-            keptWork={keptWork}
-          />
-        </span>
         {}
         <span onClick={(e) => e.stopPropagation()}>
           <RowActionsMenu label="Agent actions">
             <DropdownMenuItem onSelect={onConfigure}>
+              <Tools />
               {configureLabel}
             </DropdownMenuItem>
-            {onShareKnowledge && (
-              <DropdownMenuItem onSelect={onShareKnowledge}>
-                Share knowledge base
-              </DropdownMenuItem>
-            )}
             {onAddToChannel && (messengers.slack || messengers.telegram) && (
               <>
                 <DropdownMenuSeparator />
@@ -239,15 +238,11 @@ export function AgentRow({
             )}
             <DropdownMenuSeparator />
             {display.state === "running" && (
-              <FreeUpComputeItems
-                agent={agent}
-                onPause={onPause}
-                onStop={onStop}
-              />
+              <SleepMenuItem agent={agent} onSleep={onSleep} />
             )}
             {display.powerAction === "start" ? (
               <DropdownMenuItem onSelect={onWake}>
-                {}
+                <Play />
                 {display.state === "over_budget" ? "Start" : "Wake"}
               </DropdownMenuItem>
             ) : (
@@ -255,6 +250,7 @@ export function AgentRow({
                 disabled={display.powerAction === null}
                 onSelect={onRestart}
               >
+                <Restart />
                 Restart
               </DropdownMenuItem>
             )}
@@ -264,6 +260,7 @@ export function AgentRow({
               disabled={deletePending}
               onSelect={onDelete}
             >
+              <TrashCan />
               Delete agent
             </DropdownMenuItem>
           </RowActionsMenu>

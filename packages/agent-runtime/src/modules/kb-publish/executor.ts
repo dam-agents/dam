@@ -17,6 +17,7 @@ import {
 import { readTextFile } from "./read-text.js";
 
 const UPLOAD_RETRY_DELAY_MS = 250;
+const UPLOAD_ATTEMPT_TIMEOUT_MS = 60_000;
 
 export type KbPublishWork = Omit<KbPublishWorkOrder, "ticket">;
 
@@ -24,13 +25,16 @@ export type KbPublishWork = Omit<KbPublishWorkOrder, "ticket">;
  * UNIT_BOUNDARY_DESCRIPTION: uploads one object to a server-minted presigned
  * URL using the global fetch — agent pods run with NODE_USE_ENV_PROXY=1, so
  * fetch already rides HTTP(S)_PROXY through the paired gateway, the pod's
- * only network exit. One retry on network errors and 5xx; a 4xx is final
- * (typically an expired link — the server re-mints on the next request).
+ * only network exit. One retry on network errors, 5xx and an attempt that
+ * outlives its timeout; a 4xx is final (typically an expired link — the
+ * server re-mints on the next request). The timeout bounds a PUT the store
+ * never answers: without it the flush, and the share's publish claim, hang.
  */
 async function putObject(
   url: string,
   body: Buffer | string,
   contentType: string,
+  timeoutMs: number,
 ): Promise<string | null> {
   let lastFailure = "unknown";
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -39,6 +43,7 @@ async function putObject(
         method: "PUT",
         body: typeof body === "string" ? body : new Uint8Array(body),
         headers: { "content-type": contentType },
+        signal: AbortSignal.timeout(timeoutMs),
       });
       await res.text().catch(() => "");
       if (res.ok) return null;
@@ -56,8 +61,10 @@ export async function executeWork(opts: {
   workDir: string;
   work: KbPublishWork;
   log: (msg: string) => void;
+  uploadTimeoutMs?: number;
 }): Promise<Result<KbPublishExecuteReport, KbPublishFailure>> {
   const { work } = opts;
+  const uploadTimeoutMs = opts.uploadTimeoutMs ?? UPLOAD_ATTEMPT_TIMEOUT_MS;
   const drifted = new Set<string>();
 
   const readVerified = async (
@@ -83,6 +90,7 @@ export async function executeWork(opts: {
       blob.putUrl,
       buf,
       "text/plain; charset=utf-8",
+      uploadTimeoutMs,
     );
     if (failure !== null) {
       return err({ code: "upload-failed", detail: `${blob.path}: ${failure}` });
@@ -107,7 +115,12 @@ export async function executeWork(opts: {
     if (segmentDrifted) continue;
     const built = buildSegment(sources);
     const body = JSON.stringify(built);
-    const failure = await putObject(spec.putUrl, body, "application/json");
+    const failure = await putObject(
+      spec.putUrl,
+      body,
+      "application/json",
+      uploadTimeoutMs,
+    );
     if (failure !== null) {
       return err({
         code: "upload-failed",

@@ -1,4 +1,5 @@
 import {
+  type QueuedPrompt,
   SESSION_CATEGORIES,
   type SessionCategory,
   type SessionMode,
@@ -23,6 +24,14 @@ import { draftKey, EMPTY_DRAFT, type SessionDraft } from "../lib/draft-key.js";
 import { draftWriter, loadDraftSnapshot } from "../lib/draft-snapshot.js";
 
 const SESSIONS_SECTION_OPEN_STORAGE_KEY = "platform-sessions-open";
+const TOOL_ACTIVITY_EXPANDED_STORAGE_KEY = "platform-tool-activity-expanded";
+
+export type RewriteMode = "rewind" | "fork";
+
+export interface Rewriting {
+  messageId: string;
+  mode: RewriteMode;
+}
 
 export interface SessionError {
   sessionId: string;
@@ -34,6 +43,10 @@ export interface SessionsSlice {
   sessionMode: SessionMode | null;
   messages: Message[];
   runStarts: string[];
+  queuedPrompts: QueuedPrompt[];
+  harnessForks: boolean;
+  harnessSteers: boolean;
+  rewriting: Rewriting | null;
   nextSessionPair: Record<string, SessionPair>;
   sessionError: SessionError | null;
   sessionFilter: SessionCategory[];
@@ -43,6 +56,7 @@ export interface SessionsSlice {
   pendingResumeSessionId: string | null;
   pendingResumeSessionMode: SessionMode | null;
   sessionsSectionOpen: boolean;
+  toolActivityExpanded: boolean;
 
   setSessionId: (id: string | null) => void;
   setPendingResumeSessionId: (
@@ -52,8 +66,13 @@ export interface SessionsSlice {
   setSessionMode: (mode: SessionMode | null) => void;
   setTerminalPaused: (paused: boolean) => void;
   setSessionsSectionOpen: (open: boolean) => void;
+  setToolActivityExpanded: (expanded: boolean) => void;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
   setRunStarts: (list: string[]) => void;
+  setQueuedPrompts: (items: QueuedPrompt[]) => void;
+  setHarnessForks: (forks: boolean) => void;
+  setHarnessSteers: (steers: boolean) => void;
+  setRewriting: (rewriting: Rewriting | null) => void;
   addRunStart: (at: string) => void;
   setNextSessionPair: (agentId: string, pair: SessionPair) => void;
   setSessionError: (e: SessionError | null) => void;
@@ -116,6 +135,10 @@ export const createSessionsSlice: StateCreator<
   return {
     sessionId: null,
     runStarts: [],
+    queuedPrompts: [],
+    harnessForks: false,
+    harnessSteers: false,
+    rewriting: null,
     nextSessionPair: {},
     sessionMode: null,
     messages: [],
@@ -130,6 +153,10 @@ export const createSessionsSlice: StateCreator<
       SESSIONS_SECTION_OPEN_STORAGE_KEY,
       true,
     ),
+    toolActivityExpanded: readPersistedFlag(
+      TOOL_ACTIVITY_EXPANDED_STORAGE_KEY,
+      false,
+    ),
 
     setSessionId: (id) => set({ sessionId: id }),
     setPendingResumeSessionId: (id, mode = null) =>
@@ -140,11 +167,19 @@ export const createSessionsSlice: StateCreator<
       writePersistedFlag(SESSIONS_SECTION_OPEN_STORAGE_KEY, open);
       set({ sessionsSectionOpen: open });
     },
+    setToolActivityExpanded: (expanded) => {
+      writePersistedFlag(TOOL_ACTIVITY_EXPANDED_STORAGE_KEY, expanded);
+      set({ toolActivityExpanded: expanded });
+    },
     setMessages: (updater) =>
       set((s) => ({
         messages: typeof updater === "function" ? updater(s.messages) : updater,
       })),
     setRunStarts: (list) => set({ runStarts: list }),
+    setQueuedPrompts: (items) => set({ queuedPrompts: items }),
+    setHarnessForks: (forks) => set({ harnessForks: forks }),
+    setHarnessSteers: (steers) => set({ harnessSteers: steers }),
+    setRewriting: (rewriting) => set({ rewriting }),
     setNextSessionPair: (agentId, pair) =>
       set((state) => ({
         nextSessionPair: { ...state.nextSessionPair, [agentId]: pair },
@@ -233,6 +268,8 @@ export const createSessionsSlice: StateCreator<
         sessionMode: null,
         messages: [],
         runStarts: [],
+        queuedPrompts: [],
+        rewriting: null,
         sessionError: null,
         terminalPaused: false,
         openFilePath: null,

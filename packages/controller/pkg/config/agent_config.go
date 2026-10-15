@@ -35,6 +35,7 @@ type AgentBase struct {
 	AccessMode       string   `json:"accessMode,omitempty"`
 
 	IdleTimeout            Duration `json:"idleTimeout,omitempty"`
+	VMIdleTimeout          Duration `json:"vmIdleTimeout,omitempty"`
 	TerminationGracePeriod int64    `json:"terminationGracePeriod,omitempty"`
 
 	ExtraLabels      map[string]string `json:"extraLabels,omitempty"`
@@ -94,6 +95,8 @@ type VMRunnerSpec struct {
 	Devices              map[string]string             `json:"devices,omitempty"`
 	ReserveMiB           int                           `json:"reserveMiB,omitempty"`
 	HeadroomMiB          int                           `json:"headroomMiB,omitempty"`
+	BootMiB              int                           `json:"bootMiB,omitempty"`
+	MachineCPUs          int                           `json:"machineCPUs,omitempty"`
 	NestedVirtualization bool                          `json:"nestedVirtualization,omitempty"`
 	EgressCIDRs          []string                      `json:"egressCidrs,omitempty"`
 	EgressExceptCIDRs    []string                      `json:"egressExceptCidrs,omitempty"`
@@ -130,6 +133,7 @@ type GatewayEgress struct {
 type VMRunnerRollout struct {
 	MaxConcurrent int      `json:"maxConcurrent,omitempty"`
 	SettleTimeout Duration `json:"settleTimeout,omitempty"`
+	IdleWait      Duration `json:"idleWait,omitempty"`
 }
 
 type AgentProbes struct {

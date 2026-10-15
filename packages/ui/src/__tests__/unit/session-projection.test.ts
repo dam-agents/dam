@@ -130,15 +130,6 @@ describe("applyUpdate — agent content", () => {
     ]);
   });
 
-  test("agent_thought_chunk produces a thought part distinct from text", () => {
-    const out = applyUpdate([], {
-      sessionUpdate: "agent_thought_chunk",
-      content: { type: "text", text: "thinking" },
-    });
-    expect(out[0].role).toBe("assistant");
-    expect(out[0].parts).toEqual([{ kind: "thought", text: "thinking" }]);
-  });
-
   test("consecutive thought chunks merge into one part", () => {
     let messages: Message[] = [];
     messages = applyUpdate(messages, {
@@ -180,18 +171,6 @@ describe("applyUpdate — agent content", () => {
 });
 
 describe("applyUpdate — turn boundaries", () => {
-  test("platform_turn_ended closes the active assistant", () => {
-    const start: Message[] = [
-      userMsg("u1", "hi"),
-      assistantMsg("a1", "hello", true),
-    ];
-    const out = applyUpdate(start, {
-      sessionUpdate: "platform_turn_ended",
-      sessionId: "test-sid",
-    });
-    expect(out[1].streaming).toBe(false);
-  });
-
   test("platform_turn_ended closes the active bubble and leaves queued ones alone", () => {
     const start: Message[] = [
       userMsg("u1", "first"),
@@ -208,24 +187,17 @@ describe("applyUpdate — turn boundaries", () => {
     expect(out[3].queued).toBe(true);
   });
 
-  test("platform_turn_ended skips queued-only states (no active to close)", () => {
+  test("platform_turn_ended is a no-op with no active bubble to close", () => {
+    const ended = {
+      sessionUpdate: "platform_turn_ended",
+      sessionId: "test-sid",
+    } as const;
     const start: Message[] = [
       userMsg("u1", "first"),
       assistantMsg("a1", "", true, true),
     ];
-    const out = applyUpdate(start, {
-      sessionUpdate: "platform_turn_ended",
-      sessionId: "test-sid",
-    });
-    expect(out).toEqual(start);
-  });
-
-  test("platform_turn_ended on empty state is a no-op", () => {
-    const out = applyUpdate([], {
-      sessionUpdate: "platform_turn_ended",
-      sessionId: "test-sid",
-    });
-    expect(out).toEqual([]);
+    expect(applyUpdate(start, ended)).toEqual(start);
+    expect(applyUpdate([], ended)).toEqual([]);
   });
 
   test("user_message_chunk closes the previous assistant and opens a user message", () => {
@@ -463,6 +435,48 @@ describe("applyUpdate — tool calls", () => {
     });
     expect((out[0].parts[0] as ToolChip).status).toBe("completed");
     expect(out[2].parts).toHaveLength(0);
+  });
+
+  test("tool_call keeps a diff's path and old and new text on the chip", () => {
+    const out = applyUpdate([assistantMsg("a1", "", true)], {
+      sessionUpdate: "tool_call",
+      toolCallId: "t1",
+      title: "Edit src/a.ts",
+      kind: "edit",
+      status: "pending",
+      content: [
+        { type: "diff", path: "/w/src/a.ts", oldText: "a", newText: "b" },
+        { type: "diff", path: "/w/new.ts", newText: "x" },
+      ],
+    });
+    expect((out[0].parts[0] as ToolChip).content).toEqual([
+      { type: "diff", path: "/w/src/a.ts", oldText: "a", newText: "b" },
+      { type: "diff", path: "/w/new.ts", oldText: null, newText: "x" },
+    ]);
+  });
+
+  test("tool_call_update with a diff replaces the chip's content", () => {
+    const start: Message[] = [
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          { kind: "tool", toolCallId: "t1", title: "Write", status: "pending" },
+        ],
+        streaming: true,
+      },
+    ];
+    const out = applyUpdate(start, {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "t1",
+      status: "completed",
+      content: [
+        { type: "diff", path: "/w/f.md", oldText: null, newText: "hi" },
+      ],
+    });
+    expect((out[0].parts[0] as ToolChip).content).toEqual([
+      { type: "diff", path: "/w/f.md", oldText: null, newText: "hi" },
+    ]);
   });
 
   test("tool_call_update for unknown chip is a no-op", () => {

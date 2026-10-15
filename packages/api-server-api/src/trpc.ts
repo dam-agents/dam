@@ -1,5 +1,7 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import type { ApiContext } from "./context.js";
+import { storageFullSchema } from "./modules/budgets/schemas.js";
+import type { BudgetStorageFull } from "./modules/budgets/types.js";
 import { scanFailureSchema } from "./modules/skills/schemas.js";
 import { PRE_TERMS_PROCEDURES } from "./modules/terms/types.js";
 import { withTrpcTelemetry } from "./trpc-telemetry.js";
@@ -8,6 +10,14 @@ function extractScanFailure(cause: unknown): unknown {
   if (!cause || typeof cause !== "object" || !("scanFailure" in cause)) return;
   const parsed = scanFailureSchema.safeParse(
     (cause as { scanFailure: unknown }).scanFailure,
+  );
+  return parsed.success ? parsed.data : undefined;
+}
+
+function extractStorageFull(cause: unknown): BudgetStorageFull | undefined {
+  if (!cause || typeof cause !== "object" || !("storageFull" in cause)) return;
+  const parsed = storageFullSchema.safeParse(
+    (cause as { storageFull: unknown }).storageFull,
   );
   return parsed.success ? parsed.data : undefined;
 }
@@ -59,6 +69,7 @@ const REDACTED_MESSAGES: Partial<Record<TRPCError["code"], string>> = {
 const tBase = initTRPC.context<ApiContext>().create({
   errorFormatter: ({ shape, error }) => {
     const scanFailure = extractScanFailure(error.cause);
+    const storageFull = extractStorageFull(error.cause);
     return {
       ...shape,
       message: REDACTED_MESSAGES[error.code] ?? shape.message,
@@ -66,6 +77,7 @@ const tBase = initTRPC.context<ApiContext>().create({
         ...shape.data,
         stack: undefined,
         ...(scanFailure ? { scanFailure } : {}),
+        ...(storageFull ? { storageFull } : {}),
         ...(isTermsStaleCause(error.cause)
           ? { termsStale: true as const }
           : {}),

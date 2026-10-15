@@ -1,6 +1,7 @@
 export {
   composeAgentsModule,
   composePublicAgentPage,
+  attachProviderToBareAgents,
   connectionGrantProvisioner,
 } from "./compose.js";
 export type {
@@ -18,12 +19,20 @@ export {
 } from "./infrastructure/agents-repository.js";
 export { createAgentEnvRepository } from "./infrastructure/agent-env-repository.js";
 export { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-secret-port.js";
+export {
+  createAvatarImageRoutes,
+  createAvatarImagesRepository,
+  sweepAvatarImages,
+} from "./infrastructure/avatar-image-routes.js";
 export { createKeycloakUserDirectory } from "./infrastructure/keycloak-user-directory.js";
 export type { InfraAgent } from "./infrastructure/agent-mappers.js";
 export { createAgentSweep } from "./services/agent-sweep.js";
 export { createRuntimeMigrationSwitch } from "./services/runtime-migration.js";
+export { createImageUpdate } from "./services/image-update.js";
+export { podIsIdle } from "./infrastructure/pod-status-client.js";
 export {
   AgentWakeTimeoutError,
+  describeWakeFailure,
   isAgentWakeTimeoutError,
   isTransientWakeFailure,
   wakeFailureReasonToken,
@@ -35,7 +44,6 @@ export {
   type PodRestartState,
 } from "./domain/out-of-memory.js";
 export type { AgentsInstallSettings } from "./compose.js";
-export { buildAppendAgentsMdCommand } from "./domain/agents-md.js";
 export { createInputFromSetup } from "./domain/agent-setup.js";
 export { agentStreamable } from "./domain/streamable.js";
 export { type PublicAgentPageService } from "./services/public-agent-page-service.js";

@@ -1,4 +1,5 @@
 import { skipToken, useMutation, useQuery } from "@tanstack/react-query";
+import { routesSessionPairs } from "agent-runtime-api";
 import type {
   ConnectionView,
   HarnessConfigStatus,
@@ -15,6 +16,7 @@ import { trpc } from "../../../trpc.js";
 import { agentTrpc } from "../../agents/agent-trpc.js";
 import {
   useAgentConnections,
+  useIsAgentAnswerableSoon,
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
 import { useAppConnections } from "../../connections/api/queries.js";
@@ -50,19 +52,28 @@ export function useProviderModels(
   provider: string | null,
 ) {
   const operable = useIsAgentOperable(agentId);
+  const answerable = useIsAgentAnswerableSoon(agentId);
   const query = useQuery({
     queryKey: ["provider-models", agentId, harness, provider],
     queryFn:
       agentId && harness && operable
-        ? () =>
-            agentTrpc(agentId).harnessConfig.models.query({ harness, provider })
+        ? async () => {
+            const result = await agentTrpc(agentId).harnessConfig.models.query({
+              harness,
+              provider,
+            });
+            if (result.availableModels === undefined)
+              throw new Error("Model discovery failed");
+            return result;
+          }
         : skipToken,
     staleTime: 60_000,
     refetchInterval: (q) =>
       q.state.data?.availableModels?.length ? false : 5_000,
-    retry: false,
+    retry: 5,
+    retryDelay: 2_000,
   });
-  return { ...query, operable };
+  return { ...query, operable, answerable };
 }
 
 export function useHarnessConfigured(agentId: string, harness: string) {
@@ -131,7 +142,9 @@ export function readNextSessionPair(
   const status = queryClient.getQueryData<HarnessConfigStatus>(
     trpc.harnessConfig.status.queryKey({ agentId }),
   );
-  const carried = status?.harnesses?.map((h) => h.name) ?? [];
+  const carried = routesSessionPairs(status?.harnesses ?? [])
+    ? (status?.harnesses?.map((h) => h.name) ?? [])
+    : [];
   const chosen = useStore.getState().nextSessionPair[agentId] ?? null;
   const remembered =
     queryClient.getQueryData<SessionPair | null>(
@@ -157,8 +170,22 @@ export function readNextSessionPair(
     remembered,
     carried,
     fittingProviders(catalog, granted),
+    status?.defaultHarness,
   );
   return pair ? { pair } : null;
+}
+
+export async function settledNextSessionPair(
+  agentId: string,
+): Promise<{ pair: SessionPair } | null> {
+  const status = trpc.harnessConfig.status.queryKey({ agentId });
+  if (!queryClient.getQueryData<HarnessConfigStatus>(status)?.harnesses)
+    await Promise.all(
+      [status, trpc.harnessConfig.sessionPair.queryKey({ agentId })].map(
+        (queryKey) => queryClient.refetchQueries({ queryKey }),
+      ),
+    );
+  return readNextSessionPair(agentId);
 }
 
 export function rememberSessionPair(agentId: string, pair: SessionPair): void {

@@ -6,9 +6,11 @@ import {
 } from "@tanstack/react-query";
 import type { SessionListCursor, SessionListQuery } from "agent-runtime-api";
 import {
+  type AttentionItem,
   SESSION_CATEGORIES,
   type SessionCategory,
-  type SessionMode,
+  SessionMode,
+  type SessionPair,
   SessionType,
   type SessionView,
 } from "api-server-api";
@@ -16,15 +18,23 @@ import { useMemo } from "react";
 
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
-import { useAgentLacksLiveUpdates } from "../../agents/api/queries.js";
+import { trpc } from "../../../trpc.js";
+import {
+  untilAgentOperable,
+  useAgentLacksLiveUpdates,
+} from "../../agents/api/queries.js";
+import { askAgainWhenReady } from "../../agents/lib/agent-start.js";
 import {
   findAgentSession,
   listAgentSessionPage,
+  readSessionHistory,
   type SessionViewPage,
 } from "./acp-session-ops.js";
 import { acpSessionsKeys } from "./keys.js";
 
 const SESSION_PAGE_SIZE = 50;
+const SESSION_HISTORY_STALE_MS = 5_000;
+export const SESSION_HISTORY_TAIL = 200;
 
 type SessionPages = InfiniteData<SessionViewPage, SessionListCursor | null>;
 
@@ -45,13 +55,24 @@ function updateListedSessions(
   );
 }
 
-export function optimisticInsertSession(
+export function seedEmptySessionList(
+  agentId: string,
+  categories: readonly SessionCategory[],
+): void {
+  queryClient.setQueryData<SessionPages>(
+    acpSessionsKeys.pagesOf(agentId, categories),
+    { pages: [{ sessions: [], nextCursor: null }], pageParams: [null] },
+    { updatedAt: 0 },
+  );
+}
+
+function sessionStub(
   agentId: string,
   sessionId: string,
   mode: SessionMode,
-  running = false,
-): void {
-  const stub: SessionView = {
+  running: boolean,
+): SessionView {
+  return {
     sessionId,
     agentId,
     type: SessionType.Regular,
@@ -62,6 +83,36 @@ export function optimisticInsertSession(
     updatedAt: null,
     running,
   };
+}
+
+export function seedStartedSession(
+  agentId: string,
+  sessionId: string,
+  pair: SessionPair | null,
+): void {
+  queryClient.setQueryData<SessionView | null>(
+    acpSessionsKeys.session(agentId, sessionId),
+    (cached) =>
+      cached ?? {
+        ...sessionStub(agentId, sessionId, SessionMode.Chat, false),
+        ...(pair && {
+          harness: pair.harness,
+          provider: pair.provider,
+          model: pair.model,
+          ...(pair.settings && { settings: pair.settings }),
+        }),
+      },
+    { updatedAt: 0 },
+  );
+}
+
+export function optimisticInsertSession(
+  agentId: string,
+  sessionId: string,
+  mode: SessionMode,
+  running = false,
+): void {
+  const stub = sessionStub(agentId, sessionId, mode, running);
   queryClient.setQueriesData<SessionPages>(
     { queryKey: acpSessionsKeys.pages(agentId) },
     (prev) => {
@@ -150,11 +201,15 @@ export function useSessionPages(
     queryKey,
     queryFn: live
       ? async ({ pageParam }) => {
-          const page = await listAgentSessionPage(agentId, {
-            categories: [...categories],
-            ...(pageParam && { after: pageParam }),
-            limit: SESSION_PAGE_SIZE,
-          });
+          const page = await askAgainWhenReady(
+            () =>
+              listAgentSessionPage(agentId, {
+                categories: [...categories],
+                ...(pageParam && { after: pageParam }),
+                limit: SESSION_PAGE_SIZE,
+              }),
+            () => untilAgentOperable(agentId),
+          );
           if (pageParam) return page;
           const coversAll =
             categories.length === SESSION_CATEGORIES.length &&
@@ -216,4 +271,73 @@ export function useAgentSession(
         : skipToken,
     staleTime: 5_000,
   });
+}
+
+function sessionHistoryQuery(agentId: string, sessionId: string) {
+  return {
+    queryKey: acpSessionsKeys.history(agentId, sessionId),
+    queryFn: () => readSessionHistory(agentId, sessionId, SESSION_HISTORY_TAIL),
+    staleTime: SESSION_HISTORY_STALE_MS,
+    retry: false,
+  };
+}
+
+export function fetchSessionHistory(
+  agentId: string,
+  sessionId: string,
+): Promise<readonly string[]> {
+  return queryClient.fetchQuery(sessionHistoryQuery(agentId, sessionId));
+}
+
+export function prefetchSessionHistory(
+  agentId: string,
+  sessionId: string,
+): void {
+  void queryClient.prefetchQuery(sessionHistoryQuery(agentId, sessionId));
+}
+
+export function listedSessionRunning(
+  agentId: string,
+  sessionId: string,
+): boolean {
+  return queryClient
+    .getQueriesData<SessionPages>({ queryKey: acpSessionsKeys.pages(agentId) })
+    .some(([, data]) =>
+      data?.pages.some((p) =>
+        p.sessions.some((s) => s.sessionId === sessionId && s.running),
+      ),
+    );
+}
+
+export function provisionalSessionView(item: AttentionItem): SessionView {
+  return {
+    sessionId: item.sessionId,
+    agentId: item.agentId,
+    type: item.type,
+    mode: item.mode,
+    createdAt: item.createdAt,
+    scheduleId: item.scheduleId,
+    title: item.title,
+    threadTs: item.threadTs,
+    updatedAt: item.activityAt,
+    running: item.working,
+    seenAt: item.seenAt,
+  };
+}
+
+export function useProvisionalSessions(
+  agentId: string | null,
+  enabled: boolean,
+): SessionView[] | undefined {
+  const { data } = useQuery({
+    ...trpc.attention.sessionsForAgent.queryOptions(
+      agentId && enabled ? { agentId } : skipToken,
+    ),
+    staleTime: 5_000,
+    retry: false,
+  });
+  return useMemo(
+    () => (enabled ? data?.map(provisionalSessionView) : undefined),
+    [data, enabled],
+  );
 }

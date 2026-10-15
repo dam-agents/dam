@@ -151,6 +151,7 @@ export interface McpSessionDeps {
   invocations: InvocationsService;
   driverOps: DriverOps;
   subAgentAwaits: SubAgentAwaitMarks;
+  requestSignal?: AbortSignal;
   kbShares: KbShareAgentOps | null;
   agentHome: string;
   caseStudySubmissions: CaseStudySubmissionsService;
@@ -178,7 +179,7 @@ export function createMcpSession(
     deps.kbShares
       ? {
           instructions:
-            "This agent is a knowledge base. You can publish it as a read-only endpoint teammates query without copying it: call share_knowledge_base to start sharing (idempotent), refresh_knowledge_base_share after substantial edits, and get_share_status to check. Sharing is read-only — curation stays with you — and the share link itself is only revealed to the owner in the UI, never to you.",
+            "This agent is a knowledge base. Knowledge base sharing is paused while it is redesigned: do not offer to share this knowledge base and do not start a new share. If it is already shared, call refresh_knowledge_base_share after substantial edits and get_share_status to check it. The share link is never available to you.",
         }
       : undefined,
   );
@@ -513,6 +514,48 @@ export function createMcpSession(
           messages: result.messages.length,
           hasMore: result.hasMore,
           ...(cursor !== undefined ? { cursor } : {}),
+        },
+      });
+      return textResult(JSON.stringify(result));
+    },
+  );
+
+  server.tool(
+    "fetch_message_attachment",
+    "Fetch a file or image attached to an earlier message. Attachments on the message you are answering are handed to you with it, but those on earlier messages are not: in your conversation history, and in what read_thread returns, such a message carries an [attachment: ...] tag naming the file, its type and size, and its fileId. Pass that fileId and the file is written into your workspace. Returns { path, name, size, contentType, conversationId }; open the file at path with your own tools — an image too, so read it to see it. A file is fetched only while it is shared in a conversation connected to this agent; any other id is refused. Fetch an attachment when the request depends on it, rather than guessing at what it shows. Slack only.",
+    {
+      channel: z.enum([ChannelType.Slack, ChannelType.Telegram]),
+      fileId: z
+        .string()
+        .min(1)
+        .describe(
+          "File to fetch: the fileId from an [attachment: ...] tag in your conversation history.",
+        ),
+    },
+    async ({ channel, fileId }) => {
+      const result = await deps.channelManager.fetchAttachment(
+        agentId,
+        channel,
+        { fileId },
+      );
+      const audit = channelAudit(channel);
+      if ("error" in result) {
+        securityLog("warn", "channel.attachment_fetch", {
+          ...audit,
+          result: "failure",
+          reason: result.error,
+          detail: { fileId },
+        });
+        return errorResult(result.error);
+      }
+      securityLog("info", "channel.attachment_fetch", {
+        ...audit,
+        result: "success",
+        target: result.path,
+        detail: {
+          conversationId: result.conversationId,
+          fileId,
+          bytes: result.size,
         },
       });
       return textResult(JSON.stringify(result));
@@ -878,7 +921,7 @@ export function createMcpSession(
 
   server.tool(
     "list_schedules",
-    'List all platform schedules registered for this agent. These are persistent schedules visible in the host UI (not in-session or in-process cron tools). A one-time schedule (`spec.type` "once") also carries its `state`: pending, delivering, completed, missed or failed.',
+    'List all platform schedules registered for this agent. These are persistent schedules visible in the host UI (not in-session or in-process cron tools). A one-time schedule (`spec.type` "once") also carries its `state`: pending, delivering, completed, missed or failed. Find the id of a schedule the user names here.',
     {},
     async () =>
       json(
@@ -1140,7 +1183,7 @@ export function createMcpSession(
 
   server.tool(
     "toggle_schedule",
-    "Enable or disable a platform schedule by id. Pass `enabled` to set the state, so a retried call cannot undo itself; without it the state flips. Only affects schedules belonging to this agent.",
+    "Enable or disable a platform schedule by id. Pass `enabled` to set the state, so a retried call cannot undo itself; without it the state flips. Only affects schedules belonging to this agent. When you tell the user about a schedule, call it by its name, which is what the host UI shows; to act on a schedule the user names, find its id with `list_schedules`.",
     { id: z.string().min(1), enabled: z.boolean().optional() },
     async ({ id, enabled }) => {
       const existing = await schedules.get(id);
@@ -1149,13 +1192,17 @@ export function createMcpSession(
       }
       const updated = await schedules.toggle(id, enabled);
       if (!updated) return errorResult(`schedule ${id} not found`);
-      return json({ id: updated.id, enabled: updated.spec.enabled });
+      return json({
+        id: updated.id,
+        name: updated.name,
+        enabled: updated.spec.enabled,
+      });
     },
   );
 
   server.tool(
     "delete_schedule",
-    "Delete a platform schedule by id. Only affects schedules belonging to this agent.",
+    "Delete a platform schedule by id. Only affects schedules belonging to this agent. When you tell the user about a schedule, call it by its name, which is what the host UI shows; to act on a schedule the user names, find its id with `list_schedules`.",
     { id: z.string().min(1) },
     async ({ id }) => {
       const existing = await schedules.get(id);
@@ -1163,7 +1210,7 @@ export function createMcpSession(
         return errorResult(`schedule ${id} not found on this agent`);
       }
       await schedules.delete(id);
-      return textResult(`deleted ${id}`);
+      return json({ id, name: existing.name, deleted: true });
     },
   );
 
@@ -1217,6 +1264,7 @@ export function createMcpSession(
   registerSubAgentTools(server, {
     ops: deps.driverOps,
     awaits: deps.subAgentAwaits,
+    requestSignal: deps.requestSignal,
   });
 
   if (deps.satellites)
@@ -1334,6 +1382,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
       invocations,
       driverOps: deps.driverOpsFor({ id: agentId, owner: verified.owner }),
       subAgentAwaits: deps.subAgentAwaitsFor(agentId),
+      requestSignal: c.req.raw.signal,
       kbShares: verified.kbShareRoots
         ? deps.kbShareOpsFor(verified.owner)
         : null,

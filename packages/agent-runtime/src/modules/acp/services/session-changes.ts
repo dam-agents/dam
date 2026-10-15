@@ -4,6 +4,7 @@ const COALESCE_MS = 250;
 
 export interface SessionChanges {
   notify(): void;
+  announce(): void;
   subscribe(listener: () => void): () => void;
   watch(listener: () => void): () => void;
   onDemand(hooks: { start: () => void; stop: () => void }): void;
@@ -13,16 +14,32 @@ export function createSessionChanges(coalesceMs = COALESCE_MS): SessionChanges {
   const listeners = new Set<() => void>();
   const watchers = new Set<() => void>();
   let pending: ReturnType<typeof setTimeout> | undefined;
+  let pendingWatchers = false;
   let hooks: { start: () => void; stop: () => void } | undefined;
+
+  const fire = (withWatchers: boolean) => {
+    pendingWatchers ||= withWatchers;
+    if ((listeners.size === 0 && !pendingWatchers) || pending) return;
+    pending = setTimeout(() => {
+      pending = undefined;
+      const all = pendingWatchers
+        ? [...listeners, ...watchers]
+        : [...listeners];
+      pendingWatchers = false;
+      for (const listener of all) listener();
+    }, coalesceMs);
+    pending.unref?.();
+  };
 
   return {
     notify() {
-      if ((listeners.size === 0 && watchers.size === 0) || pending) return;
-      pending = setTimeout(() => {
-        pending = undefined;
-        for (const listener of [...listeners, ...watchers]) listener();
-      }, coalesceMs);
-      pending.unref?.();
+      if (listeners.size === 0 && watchers.size === 0) return;
+      fire(true);
+    },
+
+    // UNIT_BOUNDARY_DESCRIPTION: tells subscribers to re-read the list without telling watchers that a session changed, so a reader whose answer was incomplete can say the rest has arrived without dropping the listing it just read.
+    announce() {
+      fire(false);
     },
 
     watch(listener) {
@@ -80,6 +97,10 @@ export function notifyingSessionMetadataStore(
     },
     finishRun(sessionId) {
       store.finishRun(sessionId);
+      changes.notify();
+    },
+    adopt(sessionId, fromSessionId, meta) {
+      store.adopt(sessionId, fromSessionId, meta);
       changes.notify();
     },
     tombstone(sessionId) {

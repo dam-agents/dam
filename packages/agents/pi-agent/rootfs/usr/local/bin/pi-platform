@@ -3,6 +3,9 @@
 # start in a directory of its own, so two leases on different providers never
 # overwrite each other's; everything else stays shared through links.
 shared="$HOME/.pi/agent"
+# LiteLLM connections set this placeholder for Claude Code. Pi would count it as
+# an Anthropic key and fall back to api.anthropic.com when no model resolves.
+unset ANTHROPIC_AUTH_TOKEN
 if [ -n "$PLATFORM_PROVIDER" ]; then
   lease="$HOME/.pi/leases/$PLATFORM_PROVIDER"
   mkdir -p "$lease" "$shared/sessions" "$shared/npm"
@@ -29,14 +32,24 @@ rm -rf "${PI_CODING_AGENT_DIR:-$shared}/extensions/pi-dynamic-providers"
 mem="$(mise where npm:@zhafron/pi-memory 2>/dev/null)/node_modules/@zhafron/pi-memory"
 [ -d "$shared/npm/node_modules/@zhafron/pi-memory" ] || [ ! -d "$mem" ] ||
   set -- -e "$mem" "$@"
+provider= pin=
 if [ -n "$AWS_BEARER_TOKEN_BEDROCK" ]; then
-  set -- "$@" --provider amazon-bedrock
+  provider=amazon-bedrock pin=$AWS_BEDROCK_MODEL
 elif [ -n "$OPENAI_PROXY_URL" ]; then
-  set -- "$@" --provider openai-proxy
+  provider=openai-proxy pin=$OPENAI_PROXY_MODEL
 elif [ -n "$RITS_URL" ]; then
-  set -- "$@" --provider rits
+  provider=rits pin=$RITS_MODEL
 elif [ -n "$OPENAI_BASE_URL" ]; then
-  set -- "$@" --provider openai
+  provider=openai pin=$OPENAI_MODEL
 fi
-[ -z "$PLATFORM_MODEL" ] || set -- "$@" --model "$PLATFORM_MODEL"
-exec pi -e /usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts "$@"
+# Pi refuses --provider without --model. The agent's default lease names no
+# model, so it runs on the saved default, else the provider's pin.
+model=$PLATFORM_MODEL
+if [ -n "$provider" ] && [ -z "$model" ]; then
+  model=$(jq -r '.defaultModel // empty' "$shared/settings.json" 2>/dev/null)
+  model=${model:-$pin}
+fi
+[ -z "$provider" ] || [ -z "$model" ] || set -- "$@" --provider "$provider"
+[ -z "$model" ] || set -- "$@" --model "$model"
+extensions=/usr/local/share/pi-platform/extensions
+exec pi -e "$extensions/pi-dynamic-providers/index.ts" -e "$extensions/pi-platform-telemetry/index.ts" "$@"

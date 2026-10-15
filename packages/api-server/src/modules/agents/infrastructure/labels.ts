@@ -17,6 +17,7 @@ export const ACTIVE_SESSION_KEY = "agent-platform.ai/active-session";
 export const INVOCATIONS_ACTIVE_KEY = "agent-platform.ai/invocations-active";
 
 export const STOP_REQUESTED_KEY = "agent-platform.ai/stop-requested";
+export const RECLAIMED_AT_KEY = "agent-platform.ai/reclaimed-at";
 export const RUNTIME_MIGRATION_KEY = "agent-platform.ai/runtime-migration";
 export const RUNTIME_MIGRATION_MESSAGE_KEY =
   "agent-platform.ai/runtime-migration-message";
@@ -47,6 +48,10 @@ export const ANN_KIT_UPDATE_PENDING = "agent-platform.ai/kit-update-pending";
 export const ANN_KIT_UPDATE_SKIPPED = "agent-platform.ai/kit-update-skipped";
 
 export const ANN_ROLL_REV = "agent-platform.ai/roll-rev";
+export const ANN_IMAGE_UPDATE_FROM = "agent-platform.ai/image-update-from";
+export const ANN_IMAGE_UPDATE_REFUSED =
+  "agent-platform.ai/image-update-refused";
 
 export const READY_REASON_HIBERNATED = "Hibernated";
 export const READY_REASON_OVER_BUDGET = "OverBudget";
+export const AGENT_POD_REASON_MACHINE_STOPPING = "MachineStopping";

@@ -36,6 +36,7 @@ export interface KubeObject {
     name?: string;
     uid?: string;
     resourceVersion?: string;
+    generation?: number;
     labels?: Record<string, string>;
     annotations?: Record<string, string>;
   };
@@ -219,17 +220,26 @@ export const createLeaseApi = () =>
 export type AgentInformer = k8s.Informer<KubeObject> &
   k8s.ObjectCache<KubeObject>;
 
+// UNIT_BOUNDARY_DESCRIPTION: client-node ends every watch after 30 s, and its informer then waits before it watches again: 1 s, then twice as long each time no agent changed, up to 30 s. In that wait the agent cache misses every write, so an agent created a moment ago reads as not found. A watch that ends on time is not a failure, so the informer watches again at once. A real failure still reaches the cache's error handler, which restarts with its own backoff.
 export function createAgentInformer(namespace: string): AgentInformer {
   const kc = loadKubeConfig();
   const co = kc.makeApiClient(k8s.CustomObjectsApi);
   const path = `/apis/${GROUP}/${VERSION}/namespaces/${namespace}/${AGENTS_PLURAL}`;
-  return k8s.makeInformer<KubeObject>(kc, path, async () => {
-    const res = (await co.listNamespacedCustomObject({
-      group: GROUP,
-      version: VERSION,
-      namespace,
-      plural: AGENTS_PLURAL,
-    })) as k8s.KubernetesListObject<KubeObject>;
-    return res;
-  });
+  return new k8s.ListWatch<KubeObject>(
+    path,
+    new k8s.Watch(kc),
+    async () => {
+      const res = (await co.listNamespacedCustomObject({
+        group: GROUP,
+        version: VERSION,
+        namespace,
+        plural: AGENTS_PLURAL,
+      })) as k8s.KubernetesListObject<KubeObject>;
+      return res;
+    },
+    false,
+    undefined,
+    undefined,
+    { delayFn: async () => {} },
+  );
 }

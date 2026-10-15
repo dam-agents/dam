@@ -14,22 +14,24 @@ const NO_IDS: ReadonlySet<string> = new Set();
 export function resolveAgentDisplay(
   agent: AgentView,
   restartingAgentIds: ReadonlySet<string>,
-  pausingAgentIds: ReadonlySet<string> = NO_IDS,
+  fallingAsleepAgentIds: ReadonlySet<string> = NO_IDS,
   slowStartIds: ReadonlySet<string> = NO_IDS,
 ): AgentDisplay {
   const restarting = restartingAgentIds.has(agent.id);
-  const pausing =
-    !restarting && agent.state === "running" && pausingAgentIds.has(agent.id);
+  const fallingAsleep =
+    !restarting &&
+    agent.state === "running" &&
+    fallingAsleepAgentIds.has(agent.id);
   const state: AgentDisplayState = restarting
     ? "starting"
-    : pausing
+    : fallingAsleep
       ? "hibernating"
       : agent.overBudget
         ? "over_budget"
         : agent.state;
   const clickable =
     !restarting &&
-    !pausing &&
+    !fallingAsleep &&
     (agent.state === "running" || agent.state === "hibernated");
   const slowStart =
     !restarting &&
@@ -37,7 +39,7 @@ export function resolveAgentDisplay(
     !agent.overBudget &&
     (slowStartIds.has(agent.id) || !!agent.podTerminationReason);
   const powerAction: AgentDisplay["powerAction"] =
-    restarting || pausing
+    restarting || fallingAsleep
       ? null
       : agent.state === "hibernated" || agent.overBudget
         ? "start"

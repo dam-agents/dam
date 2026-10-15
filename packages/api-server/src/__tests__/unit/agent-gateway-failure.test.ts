@@ -41,7 +41,7 @@ describe("gatewayFailure", () => {
         infra,
         [],
         [],
-        60,
+        { container: 60, vm: 5 },
         false,
         undefined,
         {} as RuntimeFeatures,

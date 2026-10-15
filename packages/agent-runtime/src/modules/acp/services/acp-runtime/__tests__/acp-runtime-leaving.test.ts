@@ -190,55 +190,19 @@ describe("acp-runtime: leaving", () => {
 
   /**
    * TEST_SCENARIO: The last person closes the tab on a finished conversation. Every open
-   * session pins a CLI subprocess of roughly 300MB inside the harness, so a
-   * sandbox that kept every visited conversation live would bloat until the
-   * pod died — and the harness will not save itself, because it has no idea
-   * whether anyone is reading. Counting readers is the runtime's job, and
-   * zero readers with nothing running means letting the session go.
+   * session pins a CLI subprocess of roughly 300MB inside the harness, and
+   * the harness has no idea whether anyone is reading, so zero readers with
+   * nothing running means the runtime lets the session go.
    *
    * Not on the spot, though: the release waits out a short quiescence
-   * window first, so a turn's trailing work can finish and a tab that
-   * reopens right away finds its subprocess still warm. "Released" is
-   * proven by what the harness received; the window is the production
-   * value, and how the runtime keeps it (per-session timers today, one
-   * loop after #3108) is deliberately not pinned.
+   * window, so a tab that reopens moments later — a reload, laptop sleep, a
+   * flaky proxy — finds its subprocess still warm and the conversation
+   * answered from memory. Only once the window passes with nobody back is
+   * the session released, without restarting the harness. The window is
+   * the production value; how the runtime keeps it is deliberately not
+   * pinned.
    */
-  it("should release the session's resources when the last client leaves and nothing is running", () => {
-    vi.useFakeTimers();
-    const world = createWorld();
-
-    const alice = world.connect();
-    alice.send(frames.newSession(1));
-    world.harness().replyTo("session/new", { sessionId: SESSION });
-    alice.send(frames.prompt(2, SESSION, "tidy the README"));
-    world.harness().emit(frames.agentMessage(SESSION, "done"));
-    world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
-
-    expect(world.harness().received("session/close")).toEqual([]);
-
-    alice.disconnect();
-    expect(world.harness().received("session/close")).toEqual([]);
-
-    vi.advanceTimersByTime(IDLE_REAP_DELAY_MS);
-    expect(
-      world
-        .harness()
-        .received("session/close")
-        .map((frame) => frame.params),
-    ).toEqual([{ sessionId: SESSION }]);
-    expect(world.harness().killed()).toBe(false);
-  });
-
-  /**
-   * TEST_SCENARIO: The other half of the quiescence window: someone closes the tab and
-   * reopens it moments later. Reloads, laptop sleep, a flaky proxy — brief
-   * disconnects are everyday events, and paying a full subprocess teardown
-   * and cold respawn for each one is exactly what the window exists to
-   * avoid. A departure followed by a quick return must leave no trace: the
-   * session is never released, and the conversation answers from memory as
-   * if the tab had never closed.
-   */
-  it("should keep the session warm when the last client comes right back", () => {
+  it("should keep the session warm for a quick return and release it once the last client stays gone", () => {
     vi.useFakeTimers();
     const world = createWorld();
 
@@ -249,6 +213,7 @@ describe("acp-runtime: leaving", () => {
     world.harness().emit(frames.agentMessage(SESSION, "done"));
     world.harness().replyTo("session/prompt", { stopReason: "end_turn" });
     alice.disconnect();
+    expect(world.harness().received("session/close")).toEqual([]);
 
     const aliceAgain = world.connect();
     aliceAgain.send(frames.loadSession(1, SESSION));
@@ -269,6 +234,7 @@ describe("acp-runtime: leaving", () => {
         .received("session/close")
         .map((frame) => frame.params),
     ).toEqual([{ sessionId: SESSION }]);
+    expect(world.harness().killed()).toBe(false);
   });
 
   /**
@@ -280,7 +246,9 @@ describe("acp-runtime: leaving", () => {
    * and was never told the reader dropped — nothing will make it repeat
    * itself. Only the runtime kept the conversation while nobody was
    * listening, and only it knows where the returning client's copy ends, so
-   * handing back precisely the missed span — once — is its job.
+   * handing back precisely the missed span — once — is its job. The person's
+   * own message never echoes to the connection that sent it, which rendered it
+   * already, but the reconnect is a new page and must get it back.
    */
   it("should show a client that drops and comes back what was said while it was gone", () => {
     const world = createWorld();
@@ -290,6 +258,7 @@ describe("acp-runtime: leaving", () => {
     world.harness().replyTo("session/new", { sessionId: SESSION });
     alice.send(frames.prompt(2, SESSION, "run the whole test suite"));
     world.harness().emit(frames.agentMessage(SESSION, "starting the suite"));
+    expect(transcriptOf(alice)).toEqual([`${SESSION}: starting the suite`]);
 
     alice.disconnect();
     world.harness().emit(frames.agentMessage(SESSION, "unit tests passed"));

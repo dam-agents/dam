@@ -5,8 +5,8 @@ export const featureIdSchema = z.enum([
   "vm-sandboxes",
   "interactive-artifacts",
   "agent-telemetry",
-  "strict-connection-addressing",
   "processes",
+  "custom-avatars",
 ]);
 
 export const featureModeSchema = z.enum(["off", "experimental", "on"]);

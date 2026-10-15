@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { createServer, type Server } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 import {
@@ -14,7 +14,10 @@ import {
 import type { AgentsRepository } from "../../modules/agents/infrastructure/agents-repository.js";
 import type { SessionPresence } from "../../apps/api-server/agent-proxies/session-presence.js";
 
-// TEST_OVERVIEW: The browser panel's stream page opens a socket beside itself, /api/public/browser-stream/<agent>/api/websockets, which the api-server relays to the agent's display stream. It reaches only an agent the caller owns, only one that requires named connections, keeps the agent awake while open like any panel, and its traffic never counts as activity.
+const securityLog = vi.hoisted(() => vi.fn());
+vi.mock("../../core/security-log.js", () => ({ securityLog }));
+
+// TEST_OVERVIEW: The browser panel's stream page opens a socket beside itself, /api/public/browser-stream/<agent>/api/websockets, which the api-server relays to the agent's display stream. It reaches only an agent the caller owns, only one that requires named connections, keeps the agent awake while open like any panel, and its traffic never counts as activity. It opens the agent's end once the agent is ready, or, on a wake from hibernation, once the agent answers its health check while its gateway is ready.
 
 const STREAM_ROUTE = "/api/public/browser-stream/:id/api/websockets";
 const UPSTREAM_PATH = "/api/browser/display";
@@ -32,9 +35,17 @@ async function listen(server: Server) {
 }
 
 async function fakeAgent() {
-  const wss = new WebSocketServer({ port: 0 });
-  await new Promise<void>((r) => wss.once("listening", () => r()));
-  closers.push(() => new Promise<void>((r) => wss.close(() => r())));
+  const state = { healthy: false };
+  const http = createServer((req, res) => {
+    res.writeHead(req.url === "/healthz" && state.healthy ? 200 : 503);
+    res.end();
+  });
+  const wss = new WebSocketServer({ server: http });
+  await new Promise<void>((r) => http.listen(0, "127.0.0.1", r));
+  closers.push(() => {
+    http.closeAllConnections();
+    return new Promise<void>((r) => wss.close(() => http.close(() => r())));
+  });
   const paths: string[] = [];
   const received: string[] = [];
   const sockets: WebSocket[] = [];
@@ -44,10 +55,11 @@ async function fakeAgent() {
     ws.on("message", (d) => received.push(d.toString()));
   });
   return {
-    base: `ws://127.0.0.1:${(wss.address() as { port: number }).port}`,
+    base: `ws://127.0.0.1:${(http.address() as { port: number }).port}`,
     paths,
     received,
     sockets,
+    state,
   };
 }
 
@@ -97,37 +109,41 @@ describe("requiresConnectionAddress", () => {
   });
 });
 
-describe("who reaches an agent's browser stream", () => {
-  const owned = "agent-mine";
-  const users: Record<string, { sub: string; agentIds: string[] | "*" }> = {
-    alice: { sub: "alice", agentIds: "*" },
-    "alice-key-for-other": { sub: "alice", agentIds: ["agent-other"] },
-  };
+const owned = "agent-mine";
+const users: Record<string, { sub: string; agentIds: string[] | "*" }> = {
+  alice: { sub: "alice", agentIds: "*" },
+  "alice-key-for-other": { sub: "alice", agentIds: ["agent-other"] },
+};
 
+function aliceAdmission() {
+  return createRelayAdmission({
+    authenticate: async (token) => {
+      const u = token ? users[token] : undefined;
+      if (!u) return { ok: false, kind: "unauthorized" };
+      return {
+        ok: true,
+        principal: {
+          user: {
+            sub: u.sub,
+            preferredUsername: u.sub,
+            scopes: ["agents:operate"],
+            agentIds: u.agentIds,
+          },
+          azp: "platform-ui",
+          roles: [],
+        },
+      } as never;
+    },
+    verifyOwner: async (agentId, sub) => sub === "alice" && agentId === owned,
+    isTermsAccepted: async () => true,
+    surfaceAttribution: { uiClientId: "platform-ui", cliClientId: "cli" },
+  });
+}
+
+describe("who reaches an agent's browser stream", () => {
   async function harness() {
     const relayed: string[] = [];
-    const admission = createRelayAdmission({
-      authenticate: async (token) => {
-        const u = token ? users[token] : undefined;
-        if (!u) return { ok: false, kind: "unauthorized" };
-        return {
-          ok: true,
-          principal: {
-            user: {
-              sub: u.sub,
-              preferredUsername: u.sub,
-              scopes: ["agents:operate"],
-              agentIds: u.agentIds,
-            },
-            azp: "platform-ui",
-            roles: [],
-          },
-        } as never;
-      },
-      verifyOwner: async (agentId, sub) => sub === "alice" && agentId === owned,
-      isTermsAccepted: async () => true,
-      surfaceAttribution: { uiClientId: "platform-ui", cliClientId: "cli" },
-    });
+    const admission = aliceAdmission();
     const handler = createUpgradeHandler({
       [STREAM_ROUTE]: relayRoute(
         admission,
@@ -185,6 +201,7 @@ describe("browser stream relay", () => {
       ok: true,
       user: { sub: "u" } as never,
       surface: "web",
+      attached: () => {},
       watchKey: () => () => {},
     });
     let relayed = false;
@@ -220,7 +237,8 @@ describe("browser stream relay", () => {
       ensureReady: async () => {
         ensured++;
       },
-    } as unknown as Pick<AgentsRepository, "ensureReady">;
+      peekCached: () => null,
+    } as unknown as Pick<AgentsRepository, "ensureReady" | "peekCached">;
     const presence = {
       acquire: () => {
         held++;
@@ -239,7 +257,11 @@ describe("browser stream relay", () => {
     closers.push(() => relay.close());
     const server = createServer();
     server.on("upgrade", (req, socket, head) =>
-      relay.handleUpgrade(req, socket, head, "agent-1"),
+      relay.handleUpgrade(req, socket, head, "agent-1", {
+        sub: "u",
+        surface: "web",
+        attached: () => {},
+      }),
     );
     const port = await listen(server);
 
@@ -258,5 +280,95 @@ describe("browser stream relay", () => {
 
     ws.close();
     await until(() => held === 0);
+  });
+
+  // TEST_SCENARIO: The relay.attach security log marks the moment the agent's end opens, not the moment the browser connects, so on a wake it reads the wake's real length. Nothing is logged while the agent wakes; once its stream opens, one attach is logged with the time since the browser connected.
+  it("logs the attach once the agent's end opens", async () => {
+    const agent = await fakeAgent();
+    let wake!: () => void;
+    const repo = {
+      ensureReady: () => new Promise<void>((r) => (wake = r)),
+      peekCached: () => null,
+    } as unknown as Pick<AgentsRepository, "ensureReady" | "peekCached">;
+    const presence = {
+      acquire: () => () => {},
+    } as unknown as SessionPresence;
+    const relay = createBrowserStreamRelay(
+      "ns",
+      repo,
+      presence,
+      UPSTREAM_PATH,
+      () => agent.base,
+    );
+    closers.push(() => relay.close());
+    const handler = createUpgradeHandler({
+      [STREAM_ROUTE]: relayRoute(
+        aliceAdmission(),
+        relay,
+        "browser",
+        async () => true,
+      ),
+    });
+    const server = createServer();
+    server.on(
+      "upgrade",
+      (req, socket, head) => void handler(req, socket, head),
+    );
+    const port = await listen(server);
+    const attaches = () =>
+      securityLog.mock.calls.filter(([, event]) => event === "relay.attach");
+    securityLog.mockClear();
+
+    await open(
+      `ws://127.0.0.1:${port}/api/public/browser-stream/${owned}/api/websockets?token=alice`,
+    );
+    await until(() => wake !== undefined);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(attaches()).toEqual([]);
+
+    wake();
+    await until(() => attaches().length === 1);
+    expect(agent.sockets).toHaveLength(1);
+    expect(attaches()[0]![2]).toMatchObject({
+      actor: "alice",
+      agentId: owned,
+      result: "success",
+      detail: { relay: "browser", sinceConnectMs: expect.any(Number) },
+    });
+  });
+
+  // TEST_SCENARIO: Ready reaches the api-server only after a full controller reconcile, about half a second after the guest answers. On a wake from hibernation, the stream opens its upstream as soon as the agent answers its health check while its gateway is ready, without waiting for Ready.
+  it("opens the stream on a wake from hibernation once the agent answers its health check with its gateway ready", async () => {
+    const agent = await fakeAgent();
+    const repo = {
+      ensureReady: () => new Promise<void>(() => {}),
+      peekCached: () => ({ hibernated: true, gatewayPodReady: true }),
+    } as unknown as Pick<AgentsRepository, "ensureReady" | "peekCached">;
+    const relay = createBrowserStreamRelay(
+      "ns",
+      repo,
+      { acquire: () => () => {} } as unknown as SessionPresence,
+      UPSTREAM_PATH,
+      () => agent.base,
+    );
+    closers.push(() => relay.close());
+    const server = createServer();
+    server.on("upgrade", (req, socket, head) =>
+      relay.handleUpgrade(req, socket, head, "agent-1", {
+        sub: "u",
+        surface: "web",
+        attached: () => {},
+      }),
+    );
+    const port = await listen(server);
+
+    const { ws } = await open(
+      `ws://127.0.0.1:${port}/api/public/browser-stream/agent-1/api/websockets`,
+    );
+    ws.send("first");
+    await new Promise((r) => setTimeout(r, 250));
+    expect(agent.sockets).toHaveLength(0);
+    agent.state.healthy = true;
+    await until(() => agent.received.includes("first"));
   });
 });

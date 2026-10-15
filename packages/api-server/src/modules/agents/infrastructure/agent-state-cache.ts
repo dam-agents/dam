@@ -12,6 +12,7 @@ export interface AgentStateCache {
   peekCached(id: string): KubeObject | null;
   list(owner?: string): Promise<KubeObject[]>;
   whenChanged(id: string): AgentChangeSubscription;
+  awaitObserved(id: string, resourceVersion: string): Promise<void>;
 }
 
 export interface RunningAgentStateCache extends AgentStateCache {
@@ -20,6 +21,7 @@ export interface RunningAgentStateCache extends AgentStateCache {
 
 const RESTART_DELAY_MS = 5_000;
 const MAX_RESTART_DELAY_MS = 60_000;
+const OBSERVE_TIMEOUT_MS = 2_000;
 
 type LiveReads = Pick<K8sClient, "getCustomObject" | "listCustomObjects">;
 
@@ -37,7 +39,18 @@ export function createLiveAgentStateCache(live: LiveReads): AgentStateCache {
       changed: new Promise<void>(() => {}),
       cancel: () => {},
     }),
+    awaitObserved: async () => {},
   };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the cache holds a write or a later one. A later controller status write replaces the version the api-server wrote, so equality alone would wait out the whole bound. The API server's resource versions compare as integers; a version that does not parse counts only when it is equal.
+function atLeast(seen: string | undefined, target: string): boolean {
+  if (seen === target) return true;
+  try {
+    return seen !== undefined && BigInt(seen) >= BigInt(target);
+  } catch {
+    return false;
+  }
 }
 
 export function startAgentStateCache(deps: {
@@ -115,6 +128,25 @@ export function startAgentStateCache(deps: {
     abandon(`agent cache desynced: ${String(err)}`);
   });
 
+  function whenChanged(id: string): AgentChangeSubscription {
+    let resolve!: () => void;
+    const changed = new Promise<void>((r) => {
+      resolve = r;
+    });
+    const pending = waiters.get(id) ?? new Set<() => void>();
+    pending.add(resolve);
+    waiters.set(id, pending);
+    return {
+      changed,
+      cancel() {
+        const current = waiters.get(id);
+        if (!current) return;
+        current.delete(resolve);
+        if (current.size === 0) waiters.delete(id);
+      },
+    };
+  }
+
   void connect();
 
   return {
@@ -133,23 +165,30 @@ export function startAgentStateCache(deps: {
       const all = deps.informer.list(deps.namespace);
       return owner ? all.filter((obj) => agentIsOwnedBy(obj, owner)) : [...all];
     },
-    whenChanged(id) {
-      let resolve!: () => void;
-      const changed = new Promise<void>((r) => {
-        resolve = r;
-      });
-      const pending = waiters.get(id) ?? new Set<() => void>();
-      pending.add(resolve);
-      waiters.set(id, pending);
-      return {
-        changed,
-        cancel() {
-          const current = waiters.get(id);
-          if (!current) return;
-          current.delete(resolve);
-          if (current.size === 0) waiters.delete(id);
-        },
-      };
+    whenChanged,
+    async awaitObserved(id, resourceVersion) {
+      const deadline = Date.now() + OBSERVE_TIMEOUT_MS;
+      while (synced) {
+        const sub = whenChanged(id);
+        const cached = deps.informer.get(id, deps.namespace);
+        const left = deadline - Date.now();
+        if (
+          atLeast(cached?.metadata?.resourceVersion, resourceVersion) ||
+          left <= 0
+        ) {
+          sub.cancel();
+          return;
+        }
+        let timer: NodeJS.Timeout | undefined;
+        await Promise.race([
+          sub.changed,
+          new Promise<void>((r) => {
+            timer = setTimeout(r, left);
+          }),
+        ]);
+        clearTimeout(timer);
+        sub.cancel();
+      }
     },
     async stop() {
       stopped = true;

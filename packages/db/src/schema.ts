@@ -13,7 +13,10 @@ import {
   bigint,
   integer,
   doublePrecision,
+  customType,
 } from "drizzle-orm/pg-core";
+
+const bytea = customType<{ data: Buffer }>({ dataType: () => "bytea" });
 
 export const activityOutcomeEnum = pgEnum("activity_outcome", [
   "success",
@@ -57,6 +60,7 @@ export const identityLinks = pgTable(
     provider: text("provider").notNull(),
     externalUserId: text("external_user_id").notNull(),
     keycloakSub: text("keycloak_sub").notNull(),
+    teamId: text("team_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -99,6 +103,14 @@ export const slackIgnoredApps = pgTable(
   },
   (table) => [primaryKey({ columns: [table.channelId, table.botId] })],
 );
+
+export const publicImageUrls = pgTable("public_image_urls", {
+  sha256: text("sha256").primaryKey(),
+  url: text("url").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
 
 export const telegramConversations = pgTable(
   "telegram_conversations",
@@ -679,6 +691,39 @@ export const userFeatures = pgTable(
   (table) => [primaryKey({ columns: [table.owner, table.feature] })],
 );
 
+export const gettingStartedChecklists = pgTable("getting_started_checklists", {
+  owner: text("owner").primaryKey(),
+  dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+export const avatarUnlocks = pgTable(
+  "avatar_unlocks",
+  {
+    owner: text("owner")
+      .notNull()
+      .references(() => gettingStartedChecklists.owner, {
+        onDelete: "cascade",
+      }),
+    task: text("task").notNull(),
+    character: text("character").notNull(),
+    unlockedAt: timestamp("unlocked_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    seenAt: timestamp("seen_at", { withTimezone: true }),
+    pickedAt: timestamp("picked_at", { withTimezone: true }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.owner, table.task] }),
+    uniqueIndex("avatar_unlocks_owner_character_idx").on(
+      table.owner,
+      table.character,
+    ),
+  ],
+);
+
 export const artifactFolders = pgTable(
   "artifact_folders",
   {
@@ -919,6 +964,7 @@ export const attentionRecords = pgTable(
     type: text("type").notNull(),
     title: text("title"),
     scheduleId: text("schedule_id"),
+    threadTs: text("thread_ts"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
     activityAt: timestamp("activity_at", { withTimezone: true }),
     seenAt: timestamp("seen_at", { withTimezone: true }),
@@ -953,3 +999,28 @@ export const attentionState = pgTable(
     index("attention_state_user_idx").on(table.userSub),
   ],
 );
+
+export const resourceAlerts = pgTable(
+  "resource_alerts",
+  {
+    ownerSub: text("owner_sub").notNull(),
+    kind: text("kind").notNull(),
+    level: text("level").notNull(),
+    notifiedLevel: text("notified_level"),
+    notifiedAt: timestamp("notified_at", { withTimezone: true }),
+    version: integer("version").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.ownerSub, table.kind] })],
+);
+
+export const avatarImages = pgTable("avatar_images", {
+  id: text("id").primaryKey(),
+  png: bytea("png").notNull(),
+  ownerSub: text("owner_sub").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});

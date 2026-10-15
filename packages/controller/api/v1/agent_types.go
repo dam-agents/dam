@@ -24,9 +24,12 @@ type AgentSpec struct {
 	// Description is an optional human-readable description.
 	// +optional
 	Description string `json:"description,omitempty"`
-	// Avatar is the agent's chosen avatar character; unset means one picked from its owner and name.
+	// Avatar is the agent's chosen avatar: a character name, "emoji:<emoji>" or "image:<sha256>"; unset means a character picked from its owner and name.
 	// +optional
 	Avatar string `json:"avatar,omitempty"`
+	// WhispersOff stops people in the conversations the agent is connected to from whispering to it privately; unset means whispers are on.
+	// +optional
+	WhispersOff bool `json:"whispersOff,omitempty"`
 	// Init is an optional one-shot init script run before the agent starts.
 	// +optional
 	Init string `json:"init,omitempty"`
@@ -40,7 +43,7 @@ type AgentSpec struct {
 	// +optional
 	Resources ResourceSpec `json:"resources,omitempty"`
 
-	// HibernationTimeout overrides the chart-wide idle timeout for this Agent: "0s" never hibernates, omitted inherits the default. The UI writes it (presented in minutes); the controller and api-server resolve the effective value.
+	// HibernationTimeout overrides the chart-wide idle timeout for this Agent: "0s" never hibernates, omitted inherits the default. A vm Agent ignores it and always takes the chart-wide vm idle timeout. The UI writes it (presented in minutes); the controller and api-server resolve the effective value.
 	// +optional
 	HibernationTimeout *metav1.Duration `json:"hibernationTimeout,omitempty"`
 
@@ -211,6 +214,41 @@ const (
 	// ConditionNestedVirtualization is present only on an Agent that asks for
 	// spec.backend.vm.nestedVirtualization, and says whether its machine got it.
 	ConditionNestedVirtualization = "NestedVirtualization"
+	// ConditionStartFailed is present only while the pod or machine that runs
+	// the spec its observedGeneration names keeps failing after it started:
+	// its container keeps exiting (ReasonCrashLoop), or it runs without
+	// becoming ready (ReasonNeverReady); or while admission refuses the agent
+	// StatefulSet that spec's image (ReasonAdmissionDenied). AgentPodReady's
+	// termination cause can come from the pod a roll replaces; this condition
+	// never does, so the api-server can roll an image update back on it.
+	ConditionStartFailed = "StartFailed"
+	// ConditionRunnerCapacity is present only on a vm agent whose owner's
+	// runner pod the node cannot give what the owner's pool asks of it: an
+	// in-place resize it deferred (ReasonRunnerResizeDeferred) or found
+	// infeasible (ReasonRunnerResizeInfeasible). Status False, the kubelet's
+	// account in the message. The machine keeps running at what the pod has,
+	// so readiness does not follow it; it is for operators.
+	ConditionRunnerCapacity = "RunnerCapacity"
+)
+
+// Reasons on ConditionRunnerCapacity.
+const (
+	ReasonRunnerResizeDeferred   = "RunnerResizeDeferred"
+	ReasonRunnerResizeInfeasible = "RunnerResizeInfeasible"
+)
+
+// Reasons on ConditionStartFailed.
+const (
+	// ReasonCrashLoop: the current pod's agent container, or the machine's
+	// guest, was restarted at least three times on this spec, and is not
+	// ready now.
+	ReasonCrashLoop = "CrashLoop"
+	// ReasonNeverReady: the current pod's agent container, or the machine,
+	// has run for ten minutes on this spec without becoming ready.
+	ReasonNeverReady = "NeverReady"
+	// ReasonAdmissionDenied: an admission webhook or policy refused the agent
+	// StatefulSet with this spec's image, so the old pod keeps running.
+	ReasonAdmissionDenied = "AdmissionDenied"
 )
 
 // Reasons on ConditionRuntimeMigrating. Until Verified the container spec is
@@ -240,6 +278,12 @@ const (
 // scaled down) from one still starting — both report Ready=False.
 const ReasonHibernated = "Hibernated"
 
+// ReasonMachineStopping is stamped on AgentPodReady of a vm agent whose
+// hibernation has begun but whose machine the runner is still stopping. The
+// runner answers a stop before the guest has powered off, so the agent is not
+// yet Hibernated; the api-server reads it as hibernating, not as starting.
+const ReasonMachineStopping = "MachineStopping"
+
 // ReasonOverBudget is stamped on Ready when the agent wants to run but its
 // start would push the owner's summed Sizes (`spec.resources.limits`) past
 // their Ceiling (#1900). The pods stay at zero; the message carries the
@@ -259,6 +303,19 @@ const ReasonStuckOnSupersededRevision = "StuckOnSupersededRevision"
 // it is not part of the machine API's vocabulary. The message carries the
 // scheduler's own account.
 const ReasonMachineRunnerUnschedulable = "MachineRunnerUnschedulable"
+
+// ReasonRunnerOutOfMemory is stamped on AgentPodReady of each vm agent the
+// kernel took down when it OOM-killed the owner's VM runner, from the
+// runner pod's last termination, until the agent is ready again. Every
+// machine of the owner is a process of that pod, so they all restart at
+// once. Not a Machine* reason: the agent is starting again, not failed.
+const ReasonRunnerOutOfMemory = "RunnerOutOfMemory"
+
+// ReasonHomeVolumeFull is stamped on AgentPodReady when the agent container
+// exited because its home volume ran out of space. agent-runtime reports it as
+// the container's termination message, since the exit code alone cannot tell
+// it apart from any other crash.
+const ReasonHomeVolumeFull = "HomeVolumeFull"
 
 // AgentStatus is the observed state of an Agent. The controller is the sole
 // writer, via the status subresource.
@@ -333,7 +390,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=18
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=19
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

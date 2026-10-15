@@ -4,11 +4,15 @@ package reconciler
 import (
 	"context"
 	"errors"
+	"net"
+	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -18,6 +22,7 @@ import (
 	"strings"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
+	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
 // TEST_SCENARIO: an Agent is deleted while its owner's runner is restarting. The machine cannot be removed yet, so the cleanup says so — the delete queue retries it — and a later attempt, with the runner back, removes it.
@@ -98,19 +103,97 @@ func TestARunnerChangeWakesOnlyItsOwnersVMAgents(t *testing.T) {
 	assert.Empty(t, r.OwnerVMAgents(""))
 }
 
-// TEST_SCENARIO: an idle vm agent is hibernated while its owner's runner cannot be reached. The machine cannot be stopped yet, but that is no reason to keep its gateway up and the agent reported as running: the gateway is scaled down and the agent reads hibernated, and the agent's next reconcile stops the machine.
-func TestHibernatingWhileTheRunnerIsUnreachableStillScalesTheGatewayDown(t *testing.T) {
+// TEST_SCENARIO: an idle vm agent is hibernated while its owner's runner cannot be reached. The machine cannot be stopped yet, but that is no reason to keep its gateway up or the agent reported ready: the gateway is scaled down and readiness goes down. The agent must not read hibernated while its machine may still run, because the api-server trusts a health check answer on a wake from hibernation, and an old guest still running would answer it.
+func TestHibernatingWhileTheRunnerIsUnreachableScalesDownButDoesNotPublishHibernation(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
 	require.NoError(t, r.Reconcile(ctx, agent))
+	require.NoError(t, updateAgentStatus(ctx, r.dynamic, "test-agents", "my-agent", func(s *apiv1.AgentStatus) {
+		setStatusCondition(s, apiv1.ConditionReady, true, "AllPodsReady", "", "", 0)
+	}))
 	unreachable := func(context.Context, string, string) error { return errors.New("the VM runner could not be reached") }
 
-	require.NoError(t, hibernateAgentPair(ctx, r.client, r.dynamic, unreachable, testOwner, "test-agents", "my-agent"))
+	require.Error(t, hibernateAgentPair(ctx, r.client, r.dynamic, unreachable, testOwner, "test-agents", "my-agent"))
 
 	assert.Equal(t, int32(0), agentSSReplicas(t, r, GatewayName("my-agent")))
-	reason, _ := agentPodReadyMessage(t, r, "my-agent")
-	assert.Equal(t, apiv1.ReasonHibernated, reason)
+	ready := readyCondition(t, r, "my-agent")
+	assert.Equal(t, metav1.ConditionFalse, ready.Status)
+	assert.NotEqual(t, apiv1.ReasonHibernated, ready.Reason)
+	reason, msg := agentPodReadyMessage(t, r, "my-agent")
+	assert.NotEqual(t, apiv1.ReasonHibernated, reason)
+	assert.Contains(t, msg, "the machine has not stopped yet")
+}
+
+// TEST_SCENARIO: the idle checker could not stop an idle vm agent's machine because its runner was unreachable. That must not wedge the agent short of hibernation: the next sweep tries again, and once the runner answers, the machine stops and hibernation is published.
+func TestTheIdleCheckerRetriesAHibernationWhoseMachineDidNotStop(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.True(t, node.spec("my-agent").Running)
+	stored, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	stored.SetAnnotations(map[string]string{annLastActivity: time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339)})
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Update(ctx, stored, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	reachable := false
+	checker := NewIdleChecker(r.client, r.dynamic, r.config).WithMachineHalt(func(ctx context.Context, owner, name string) error {
+		if !reachable {
+			return errors.New("the VM runner could not be reached")
+		}
+		return r.HaltMachine(ctx, owner, name)
+	})
+	checker.busyProbe = func(context.Context, string) bool { return false }
+
+	checker.check(ctx)
+	assert.NotEqual(t, apiv1.ReasonHibernated, readyCondition(t, r, "my-agent").Reason)
+	assert.True(t, node.spec("my-agent").Running)
+
+	reachable = true
+	checker.check(ctx)
+	assert.Equal(t, apiv1.ReasonHibernated, readyCondition(t, r, "my-agent").Reason)
+	assert.False(t, node.spec("my-agent").Running)
+}
+
+// TEST_SCENARIO: the runner answers a stop at once, while the guest is still being signalled, quiesced and powered off. A wake in those seconds would trust the first health check answer if the agent read hibernated, and the guest about to power off would give it. So the agent reads hibernated only once the runner reports the machine stopped, reads as stopping until then, and its reconcile watches the machine.
+func TestAnAgentReadsHibernatedOnlyOnceItsMachineHasStopped(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent.Annotations[annLastActivity] = time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339)
+	stored, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	stored.SetAnnotations(agent.Annotations)
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Update(ctx, stored, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	node.mu.Lock()
+	node.stopsSlowly = true
+	node.mu.Unlock()
+	checker := NewIdleChecker(r.client, r.dynamic, r.config).WithMachineHalt(r.HaltMachine)
+	checker.busyProbe = func(context.Context, string) bool { return false }
+
+	checker.check(ctx)
+	require.False(t, node.spec("my-agent").Running)
+	assert.Equal(t, int32(0), agentSSReplicas(t, r, GatewayName("my-agent")))
+	assert.NotEqual(t, apiv1.ReasonHibernated, readyCondition(t, r, "my-agent").Reason)
+	stored, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	stopping, err := FromCacheObject[apiv1.Agent](stored)
+	require.NoError(t, err)
+	assert.Equal(t, apiv1.ReasonMachineStopping, apimeta.FindStatusCondition(stopping.Status.Conditions, apiv1.ConditionAgentPodReady).Reason, "the agent reads as stopping, not as starting")
+	assert.True(t, r.watchingMachine("my-agent"), "the stopping machine is watched")
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.NotEqual(t, apiv1.ReasonHibernated, readyCondition(t, r, "my-agent").Reason)
+	assert.True(t, r.watchingMachine("my-agent"))
+
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, apiv1.ReasonHibernated, readyCondition(t, r, "my-agent").Reason)
+	assert.False(t, r.watchingMachine("my-agent"))
 }
 
 // TEST_SCENARIO: cert-manager cannot issue the owner's runner certificate — its issuer is missing. The agent cannot start until it does, and cert-manager says why only on the Certificate, so the Agent's readiness carries that account instead of a status that never moves.
@@ -167,17 +250,22 @@ func TestAFailedEnsureTakesReadinessDown(t *testing.T) {
 	assert.NotContains(t, msg, strings.TrimPrefix(gone.URL, "http://"))
 }
 
-// TEST_SCENARIO: an owner's disks outgrow runner.storage. The claim is capped at the ceiling — the install's choice — and that is said once for the owner, not on every reconcile of every agent they have.
-func TestACappedClaimIsReportedOncePerOwner(t *testing.T) {
+// TEST_SCENARIO: an owner's first vm agent dials a runner that has just become ready, before its headless Service's name resolves. The agent waits on the runner as one still starting, with no reconcile error, so it is not shown as failed, and is looked at again after three seconds.
+func TestARunnerWhoseAddressDoesNotResolveYetIsStillStarting(t *testing.T) {
+	ctx := context.Background()
 	agent := vmAgentCR()
-	r, _, _ := setupVMReconciler(t, agent)
-	big := runnerDemand{diskGiB: 500, machines: 5}
-	for range 3 {
-		size, ceiling, err := r.runnerClaimSize(testOwner, big)
-		require.NoError(t, err)
-		assert.Equal(t, 0, size.Cmp(ceiling))
-	}
-	notices := 0
-	r.claimCapNotices.Range(func(any, any) bool { notices++; return true })
-	assert.Equal(t, 1, notices)
+	r, _, requeued := setupVMReconciler(t, agent)
+	runner, err := r.runnerFor(ctx, testOwner)
+	require.NoError(t, err)
+	runner.HTTP.Transport = &http.Transport{DialContext: func(context.Context, string, string) (net.Conn, error) {
+		return nil, &net.DNSError{Err: "no such host", Name: r.runnerHost(testOwner), IsNotFound: true}
+	}}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	reconciled, _ := agentCondition(t, r, "my-agent", apiv1.ConditionReconciled)
+	assert.NotEqual(t, "False", reconciled)
+	_, msg := agentPodReadyMessage(t, r, "my-agent")
+	assert.Equal(t, "the owner's VM runner is still starting: its address does not resolve yet", msg)
+	assert.Equal(t, "3s", requeued.last().String())
 }

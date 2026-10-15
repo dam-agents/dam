@@ -43,6 +43,7 @@ function scripted(updates: PromptUpdate[], response: string): SendPromptFn {
 }
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
+const signed = (t: string) => `:robot_face: *agent-1*\n\n${t}`;
 
 function harness(opts: {
   sendPrompt?: SendPromptFn;
@@ -108,6 +109,7 @@ function harness(opts: {
     } as never,
     unbindSlackChannel: async () => {},
     setSlackChannelAmbient: async () => {},
+    agentsFor: () => ({}) as never,
     ignoredApps: {
       list: async () => [],
       ignore: async () => true,
@@ -221,35 +223,6 @@ describe("slack turn presentation — owner turns", () => {
     expect(h.turnEvents()[0]!.outcome).toBe("failure");
     expect(h.turnEvents()[0]!.reason).toBe("acp-error");
   });
-
-  it("posts a still-starting note across a transient wake retry", async () => {
-    let ready = 0;
-    const h = harness({
-      ensureReady: async (_id, o) => {
-        ready += 1;
-        o?.onWaking?.();
-        if (ready === 1) {
-          throw new AgentWakeTimeoutError({
-            agentId: "agent-1",
-            timeoutMs: 120_000,
-            durationMs: 120_100,
-            failure: { kind: "agent-pod-not-ready" },
-          });
-        }
-      },
-    });
-    await h.mention();
-    await tick();
-
-    expect(ready).toBe(2);
-    const recs = h.records();
-    expect(
-      recs.some(
-        (r) => r.kind === "message" && r.text.includes("still starting"),
-      ),
-    ).toBe(true);
-    expect(h.turnEvents()[0]!.outcome).toBe("success");
-  });
 });
 
 describe("slack reply / react tools", () => {
@@ -267,7 +240,7 @@ describe("slack reply / react tools", () => {
     expect(msgs[0]).toMatchObject({
       channel: "C1",
       threadTs: "1.1",
-      text: "here you go",
+      text: signed("here you go"),
     });
   });
 
@@ -312,7 +285,7 @@ describe("slack reply / react tools", () => {
     expect(msgs[0]).toMatchObject({
       channel: "C1",
       threadTs: "7.7",
-      text: "speaking order",
+      text: signed("speaking order"),
       replyBroadcast: true,
     });
   });
@@ -333,7 +306,7 @@ describe("slack reply / react tools", () => {
     expect(msgs).toMatchObject([
       {
         channel: "C1",
-        text: "no preview cards",
+        text: signed("no preview cards"),
         unfurlLinks: false,
         unfurlMedia: false,
       },
@@ -639,7 +612,10 @@ describe("slack reply / react tools — concurrent turns (#2952)", () => {
     expect(ok).toEqual({ ok: true });
     const msgs = h.records().filter((r) => r.kind === "message");
     expect(msgs).toHaveLength(1);
-    expect(msgs[0]).toMatchObject({ threadTs: "100.1", text: "for thread A" });
+    expect(msgs[0]).toMatchObject({
+      threadTs: "100.1",
+      text: signed("for thread A"),
+    });
 
     h.release();
     await tick();
@@ -1278,7 +1254,7 @@ describe("slack turn — network-access framing and attendance", () => {
     expect(turns).toBe(2);
     const msgs = h.records().filter((r) => r.kind === "message");
     expect(msgs).toHaveLength(1);
-    expect(msgs[0]).toMatchObject({ text: "the late answer" });
+    expect(msgs[0]).toMatchObject({ text: signed("the late answer") });
   });
 
   /**
@@ -1360,7 +1336,7 @@ describe("slack turn — network-access framing and attendance", () => {
 
       const msgs = h.records().filter((r) => r.kind === "message");
       expect(msgs).toHaveLength(1);
-      expect(msgs[0]).toMatchObject({ text: "half an answer" });
+      expect(msgs[0]).toMatchObject({ text: signed("half an answer") });
     } finally {
       vi.useRealTimers();
     }
@@ -1547,7 +1523,7 @@ describe("slack turn — network-access framing and attendance", () => {
     expect(turns).toBe(1);
     const msgs = h.records().filter((r) => r.kind === "message");
     expect(msgs).toHaveLength(1);
-    expect(msgs[0]).toMatchObject({ text: "answered" });
+    expect(msgs[0]).toMatchObject({ text: signed("answered") });
   });
 
   /**

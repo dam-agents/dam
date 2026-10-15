@@ -1,9 +1,4 @@
-import {
-  Chemistry,
-  ContainerRuntime,
-  Migrate,
-  WarningAlt,
-} from "@carbon/icons-react";
+import { Chemistry, Migrate, WarningAlt } from "@carbon/icons-react";
 import { match } from "ts-pattern";
 
 import { Badge } from "@/components/ui/badge";
@@ -23,10 +18,9 @@ export function VmRuntimeBadge({
   if (!badge) return null;
   const { Icon, variant } = match(badge.kind)
     .with("new", () => ({ Icon: Chemistry, variant: "template" as const }))
-    .with("old", () => ({ Icon: ContainerRuntime, variant: "muted" as const }))
     .with("migrating", () => ({ Icon: Migrate, variant: "info" as const }))
     .with("failed", () => ({ Icon: WarningAlt, variant: "danger" as const }))
-    .exhaustive(() => ({ Icon: ContainerRuntime, variant: "muted" as const }));
+    .exhaustive(() => ({ Icon: Chemistry, variant: "template" as const }));
   return (
     <Badge variant={variant} className="shrink-0 gap-1" title={badge.title}>
       <Icon size={12} aria-hidden />

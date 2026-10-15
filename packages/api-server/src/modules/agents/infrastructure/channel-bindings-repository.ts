@@ -322,7 +322,14 @@ export function setSlackChannelDefault(db: Db) {
 export interface SlackBoundConversation {
   id: string;
   teamId: string;
+  customEmoji?: string[] | null;
 }
+
+type SlackBoundConversationConfig = {
+  slackChannelId: string;
+  teamId?: string;
+  customEmoji?: string[] | null;
+};
 
 export function findSlackChannelsByAgent(db: Db) {
   return async (agentId: string): Promise<SlackBoundConversation[]> => {
@@ -337,12 +344,13 @@ export function findSlackChannelsByAgent(db: Db) {
       )
       .orderBy(sql`${channels.config}->>'slackChannelId'`);
     return rows
-      .map((r) => r.config as { slackChannelId?: string; teamId?: string })
-      .filter(
-        (c): c is { slackChannelId: string; teamId?: string } =>
-          !!c.slackChannelId,
-      )
-      .map((c) => ({ id: c.slackChannelId, teamId: c.teamId ?? "" }));
+      .map((r) => r.config as Partial<SlackBoundConversationConfig>)
+      .filter((c): c is SlackBoundConversationConfig => !!c.slackChannelId)
+      .map((c) => ({
+        id: c.slackChannelId,
+        teamId: c.teamId ?? "",
+        ...(c.customEmoji ? { customEmoji: c.customEmoji } : {}),
+      }));
   };
 }
 

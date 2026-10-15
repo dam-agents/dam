@@ -92,7 +92,7 @@ function formatMultiplier(size: SizeMi, unit: SlotUnit): string {
 export function formatCpuMemory(size: SizeMi): string {
   return `${formatCores(size.cpuMilli)} CPU · ${formatGi(
     size.memoryMi * BYTES_PER_MI,
-  )} Gi`;
+  )} GiB`;
 }
 
 export function formatSizeLabel(size: SizeMi, unit: SlotUnit): string {
@@ -132,7 +132,7 @@ export function computeView(
 ): ComputeView {
   const unit = slotUnitOf(budget);
   const scaledUp = agents.filter(
-    (agent) => agent.state !== "hibernated" && !agent.overBudget,
+    (agent) => agent.state !== "hibernated" && !agent.overBudget && !agent.vm,
   );
   const held = scaledUp.map((agent) => {
     const size = sizeInMi(agent.size);

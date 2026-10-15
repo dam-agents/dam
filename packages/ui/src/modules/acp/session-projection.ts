@@ -5,7 +5,12 @@ import type {
   ToolCallContent,
   ToolCallUpdate,
 } from "@agentclientprotocol/sdk";
-import type { PlatformUndeliveredPrompt } from "api-server-api";
+import { resultObjectTexts, terminalOutputPart } from "agent-runtime-api";
+import type {
+  PlatformUndeliveredPrompt,
+  PromptBlock,
+  QueuedPrompt,
+} from "api-server-api";
 
 import type {
   Message,
@@ -53,16 +58,47 @@ const INTERRUPT_MARKER_RE = /^\[Request interrupted by user[^\]]*\]$/;
 function mapToolContent(
   content: ToolCallContent[] | undefined | null,
 ): ToolContent[] | undefined {
-  return content
-    ?.map<ToolContent>((c) => {
-      if (c.type === "content")
-        return {
-          type: c.type,
-          text: c.content.type === "text" ? c.content.text : "",
-        };
-      return { type: c.type, text: "" };
-    })
-    .filter((c) => c.text);
+  return content?.flatMap((c): ToolContent[] => {
+    if (c.type === "diff")
+      return [
+        {
+          type: "diff",
+          path: c.path,
+          oldText: c.oldText ?? null,
+          newText: c.newText,
+        },
+      ];
+    if (c.type === "content" && c.content.type === "text" && c.content.text)
+      return [{ type: "content", text: c.content.text }];
+    return [];
+  });
+}
+
+const TERMINAL_TEXT_LIMIT = 50 * 1024;
+
+function withTerminalPart(
+  previous: ToolContent[] | undefined,
+  part: string,
+): ToolContent[] {
+  const blocks = previous ?? [];
+  const last = blocks[blocks.length - 1];
+  const kept = last?.type === "terminal" ? blocks.slice(0, -1) : blocks;
+  const text = `${last?.type === "terminal" ? last.text : ""}${part}`;
+  return [
+    ...kept,
+    { type: "terminal", text: text.slice(-TERMINAL_TEXT_LIMIT) },
+  ];
+}
+
+function adapterOutput(
+  u: ToolCall | ToolCallUpdate,
+  previous: ToolContent[] | undefined,
+): ToolContent[] | undefined {
+  const results = resultObjectTexts(u);
+  if (results.length > 0)
+    return results.map((text) => ({ type: "content", text }));
+  const part = terminalOutputPart(u);
+  return part === null ? undefined : withTerminalPart(previous, part);
 }
 
 const EMBEDDED_RE =
@@ -139,7 +175,7 @@ export function applyUpdate(
 function applyUpdateOf(
   messages: Message[],
   update: AcpUpdate,
-  { at, telemetryPromptId, turnId }: FrameMeta,
+  { at, telemetryPromptId, turnId, block }: FrameMeta,
 ): Message[] {
   switch (update.sessionUpdate) {
     case "platform_turn_ended": {
@@ -159,18 +195,24 @@ function applyUpdateOf(
     }
 
     case "platform_prompt_accepted":
-      return update.queued && waitsBehindAnotherReply(messages, update.promptId)
+      if (update.steered) return withSteeredSend(messages, update.promptId);
+      if (!update.queued)
+        return setQueuedByPromptId(messages, update.promptId, false);
+      return waitsBehindAnotherReply(messages, update.promptId)
         ? setQueuedByPromptId(messages, update.promptId, true)
         : messages;
 
     case "platform_prompt_started":
-      return setQueuedByPromptId(messages, update.promptId, false);
+      return withReplyPlaceholder(
+        setQueuedByPromptId(messages, update.promptId, false),
+        update.promptId,
+      );
 
     case "platform_clipped_replay":
       return appendClippedMarker(messages, update.older);
 
     case "user_message_chunk":
-      return handleUserChunk(messages, update, at);
+      return handleUserChunk(messages, update, at, block);
 
     case "agent_message_chunk":
       return handleAgentChunk(messages, update, "text", at, turnId);
@@ -203,11 +245,150 @@ function setQueuedByPromptId(
   promptId: string,
   queued: boolean,
 ): Message[] {
-  return messages.map((m) =>
-    m.promptId === promptId && m.streaming && m.parts.length === 0
-      ? { ...m, queued }
-      : m,
+  return messages.map((m) => {
+    if (m.promptId === promptId && m.streaming && m.parts.length === 0)
+      return { ...m, queued };
+    if (m.role === "user" && m.id === promptId && m.queued !== queued)
+      return { ...m, queued };
+    return m;
+  });
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A steered prompt joins the running turn where it
+ * was injected and opens no reply of its own: the sent message drops its
+ * placeholder, and the turn continues below it.
+ */
+function withSteeredSend(messages: Message[], promptId: string): Message[] {
+  const marked = messages.flatMap((m): Message[] => {
+    if (m.role === "user" && m.id === promptId)
+      return [{ ...m, steered: true, queued: false }];
+    return isPlaceholder(m) && m.promptId === promptId ? [] : [m];
+  });
+  return continueTurnBelow(marked, promptId) ?? marked;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Once a message is steered into a running turn,
+ * the agent reads it before anything it writes next, so the turn continues
+ * below it: the reply above it ends (or goes, while still empty) and an empty
+ * reply of the same turn opens right after the message, where the working
+ * indicator now shows and the turn's next output lands. A reply that has no
+ * output yet is known by its prompt's id, which names its turn. Null when no
+ * running reply above the message belongs to a known turn.
+ */
+function continueTurnBelow(
+  messages: Message[],
+  messageId: string,
+): Message[] | null {
+  const at = messages.findIndex((m) => m.role === "user" && m.id === messageId);
+  const running = lastIndexOf(
+    messages.slice(0, Math.max(at, 0)),
+    (m) =>
+      m.role === "assistant" &&
+      m.streaming &&
+      !m.queued &&
+      (m.turnId ?? m.promptId) !== undefined,
   );
+  if (at === -1 || running === -1) return null;
+  const reply = messages[running]!;
+  const continued: Message = {
+    id: crypto.randomUUID(),
+    role: "assistant",
+    parts: [],
+    streaming: true,
+    turnId: reply.turnId ?? reply.promptId,
+  };
+  return messages.flatMap((m, i): Message[] => {
+    if (i === running)
+      return hasAgentContent(m) ? [{ ...m, streaming: false }] : [];
+    return i === at ? [m, continued] : [m];
+  });
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The sender's own bubbles for a prompt the runtime
+ * queued give way to the queue, which renders it for every viewer alike.
+ */
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A message sent while the agent answers is shown
+ * in the queue below the conversation, not in it, until it starts: the user
+ * message and its empty reply placeholder are queued sends.
+ */
+export function isQueuedSend(m: Message): boolean {
+  if (m.queued !== true) return false;
+  return m.role === "user" || (m.streaming && m.parts.length === 0);
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Whether a message sent now must wait in the
+ * queue. Only when the chat is sure the session is idle — no reply streaming,
+ * nothing in the runtime's queue, no earlier send still waiting — does a sent
+ * message show as sent at once; otherwise it joins the queue first and moves
+ * into the conversation when the runtime starts or steers it.
+ */
+export function sendWaits(
+  messages: Message[],
+  queue: readonly QueuedPrompt[],
+): boolean {
+  return (
+    queue.length > 0 ||
+    messages.some(
+      (m) => isQueuedSend(m) || (m.role === "assistant" && m.streaming),
+    )
+  );
+}
+
+export function withoutQueuedSends(
+  messages: Message[],
+  items: QueuedPrompt[],
+): Message[] {
+  const idsOf = (starting: boolean) =>
+    new Set(
+      items.flatMap((item) =>
+        item.promptId === null || (item.starting === true) !== starting
+          ? []
+          : [item.promptId],
+      ),
+    );
+  const queued = idsOf(false);
+  const starting = idsOf(true);
+  if (queued.size === 0 && starting.size === 0) return messages;
+  return messages
+    .filter(
+      (m) =>
+        !(m.role === "user" && queued.has(m.id)) &&
+        !(
+          m.role === "assistant" &&
+          m.promptId !== undefined &&
+          queued.has(m.promptId) &&
+          m.parts.length === 0
+        ),
+    )
+    .map((m) =>
+      m.queued === true &&
+      (starting.has(m.id) ||
+        (m.promptId !== undefined && starting.has(m.promptId)))
+        ? { ...m, queued: false }
+        : m,
+    );
+}
+
+function withReplyPlaceholder(
+  messages: Message[],
+  promptId: string,
+): Message[] {
+  if (messages.some((m) => m.promptId === promptId)) return messages;
+  return [
+    ...messages,
+    {
+      id: crypto.randomUUID(),
+      role: "assistant",
+      parts: [],
+      streaming: true,
+      promptId,
+    },
+  ];
 }
 
 function appendNotice(messages: Message[], text: string): Message[] {
@@ -247,10 +428,14 @@ export function finalizeAllStreaming(messages: Message[]): Message[] {
   return messages.map(finalizeStreaming);
 }
 
+export function finalizeRunningReply(messages: Message[]): Message[] {
+  return messages.map((m) => (m.queued ? m : finalizeStreaming(m)));
+}
+
 const UNDELIVERED_MESSAGE = "Not delivered — this never reached the agent.";
 
-function textOf(record: PlatformUndeliveredPrompt): string {
-  return record.blocks
+function textOf({ blocks }: { blocks: PromptBlock[] }): string {
+  return blocks
     .flatMap((b) => (b.type === "text" ? [b.text] : []))
     .join("\n\n");
 }
@@ -268,7 +453,7 @@ export function fileChipOf(link: {
   };
 }
 
-function partsOf(record: PlatformUndeliveredPrompt): MessagePart[] {
+export function partsOf(record: { blocks: PromptBlock[] }): MessagePart[] {
   const parts: MessagePart[] = [];
   for (const block of record.blocks) {
     if (block.type === "image")
@@ -441,8 +626,10 @@ function handleUserChunk(
   messages: Message[],
   u: ContentChunk,
   at?: string,
+  block?: number,
 ): Message[] {
   const queued = u._meta?.queued === true;
+  const steered = u._meta?.steered === true;
   const mid = u.messageId ?? null;
 
   let bubbles: MessagePart[][] | null = null;
@@ -464,9 +651,26 @@ function handleUserChunk(
 
   if (queued) return appendQueuedUser(messages, mid, bubbles.flat(), at);
 
+  if (block !== undefined && mid !== null && messages.some((m) => m.id === mid))
+    return withBatchBubble(messages, mid, bubbles.flat(), at, steered);
+
+  if (steered && mid !== null) {
+    if (messages.some((m) => m.id === mid))
+      return appendOrExtendUser(messages, mid, bubbles.flat(), at, true);
+    const echoed = appendOrExtendUser(messages, mid, bubbles.flat(), at, true);
+    const continued = continueTurnBelow(echoed, mid);
+    if (continued !== null) return continued;
+  }
+
   return bubbles.reduce(
     (acc, parts, i) =>
-      appendOrExtendUser(acc, i === 0 ? mid : mid && `${mid}:${i}`, parts, at),
+      appendOrExtendUser(
+        acc,
+        i === 0 ? mid : mid && `${mid}:${i}`,
+        parts,
+        at,
+        steered,
+      ),
     closeActiveAssistant(messages),
   );
 }
@@ -478,6 +682,7 @@ function handleAgentChunk(
   at?: string,
   turnId?: string,
 ): Message[] {
+  const messageId = kind === "text" ? (u.messageId ?? undefined) : undefined;
   if (u.content.type === "text") {
     const txt = u.content.text;
     if (!txt) return messages;
@@ -486,6 +691,7 @@ function handleAgentChunk(
       [{ kind, text: txt, ...(u.messageId && { messageId: u.messageId }) }],
       at,
       turnId,
+      messageId,
     );
   }
   if (u.content.type === "image") {
@@ -494,6 +700,7 @@ function handleAgentChunk(
       [{ kind: "image", data: u.content.data, mimeType: u.content.mimeType }],
       at,
       turnId,
+      messageId,
     );
   }
   return messages;
@@ -507,12 +714,17 @@ function handleToolCall(
 ): Message[] {
   const existingIdx = findToolIdx(messages, u.toolCallId);
   if (existingIdx !== null) return patchToolChip(messages, existingIdx, u, at);
+  const content = mapToolContent(u.content);
   const chip: ToolChip = {
     kind: "tool",
     toolCallId: u.toolCallId,
     title: u.title,
     status: u.status ?? "pending",
-    content: mapToolContent(u.content),
+    content: content?.length
+      ? content
+      : (adapterOutput(u, undefined) ?? content),
+    toolKind: u.kind,
+    description: toolDescription(u.rawInput),
   };
   return appendAgentParts(messages, [chip], at, turnId);
 }
@@ -543,6 +755,14 @@ function findToolIdx(
   return null;
 }
 
+function toolDescription(rawInput: unknown): string | undefined {
+  if (typeof rawInput !== "object" || rawInput === null) return undefined;
+  const description = (rawInput as { description?: unknown }).description;
+  return typeof description === "string" && description.trim()
+    ? description.trim()
+    : undefined;
+}
+
 function patchToolChip(
   messages: Message[],
   idx: number,
@@ -562,7 +782,11 @@ function patchToolChip(
                   ...p,
                   status: u.status ?? p.status,
                   title: u.title ?? p.title,
-                  content: content?.length ? content : p.content,
+                  content: content?.length
+                    ? content
+                    : (adapterOutput(u, p.content) ?? p.content),
+                  toolKind: u.kind ?? p.toolKind,
+                  description: toolDescription(u.rawInput) ?? p.description,
                 }
               : p,
           ),
@@ -575,10 +799,11 @@ function appendAgentParts(
   newParts: MessagePart[],
   at: string | undefined,
   turnId: string | undefined,
+  messageId?: string,
 ): Message[] {
   return turnId === undefined
-    ? appendToActive(messages, newParts, at)
-    : appendToTurn(messages, newParts, at, turnId);
+    ? appendToActive(messages, newParts, at, messageId)
+    : appendToTurn(messages, newParts, at, turnId, messageId);
 }
 
 function lastIndexOf(
@@ -635,6 +860,7 @@ function appendToTurn(
   newParts: MessagePart[],
   at: string | undefined,
   turnId: string,
+  messageId?: string,
 ): Message[] {
   const fill = (i: number) =>
     messages.map((m, j) =>
@@ -642,6 +868,7 @@ function appendToTurn(
         ? {
             ...m,
             ...(at !== undefined && { at }),
+            ...(messageId !== undefined && { lastMessageId: messageId }),
             parts: mergeParts(m.parts, newParts),
             streaming: true,
             queued: false,
@@ -667,6 +894,7 @@ function appendToTurn(
     streaming: true,
     turnId,
     ...(at !== undefined && { at }),
+    ...(messageId !== undefined && { lastMessageId: messageId }),
   };
   const insertAt = pendingTailStart(settled);
   return [...settled.slice(0, insertAt), fresh, ...settled.slice(insertAt)];
@@ -731,6 +959,7 @@ function appendToActive(
   messages: Message[],
   newParts: MessagePart[],
   at?: string,
+  messageId?: string,
 ): Message[] {
   const target = findActiveAssistant(messages);
   if (target === null) {
@@ -740,6 +969,7 @@ function appendToActive(
       parts: mergeParts([], newParts),
       streaming: true,
       ...(at !== undefined && { at }),
+      ...(messageId !== undefined && { lastMessageId: messageId }),
     };
     return [...messages, newMsg];
   }
@@ -748,6 +978,7 @@ function appendToActive(
     return {
       ...m,
       ...(at !== undefined && { at }),
+      ...(messageId !== undefined && { lastMessageId: messageId }),
       parts: mergeParts(m.parts, newParts),
       streaming: true,
       queued: target.promote ? false : m.queued,
@@ -872,18 +1103,50 @@ function stampActiveReply<K extends ReplyStampKey>(
   return messages.map((x, j) => (j === i ? { ...x, [key]: value } : x));
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Messages the agent took as one batch come back
+ * from the harness's history as one user message with a text block each.
+ * Each block is its own bubble, right after the batch's earlier ones, with an
+ * id derived from the message's own.
+ */
+function withBatchBubble(
+  messages: Message[],
+  mid: string,
+  parts: MessagePart[],
+  at: string | undefined,
+  steered: boolean,
+): Message[] {
+  const members = messages.flatMap((m, i) =>
+    m.id === mid || m.id.startsWith(`${mid}:`) ? [i] : [],
+  );
+  const after = members[members.length - 1]! + 1;
+  const bubble: Message = {
+    id: `${mid}:${String(members.length)}`,
+    role: "user",
+    parts,
+    streaming: false,
+    ...(at !== undefined && { at }),
+    ...(steered && { steered: true }),
+  };
+  return [...messages.slice(0, after), bubble, ...messages.slice(after)];
+}
+
 function appendOrExtendUser(
   messages: Message[],
   mid: string | null,
   parts: MessagePart[],
   at?: string,
+  steered = false,
 ): Message[] {
   if (mid) {
     const idx = messages.findIndex((m) => m.id === mid);
     if (idx !== -1) {
-      return messages.map((m, i) =>
-        i !== idx ? m : { ...m, parts: mergeParts(m.parts, parts) },
-      );
+      return messages.map((m, i) => {
+        if (i !== idx) return m;
+        return m.sentHere
+          ? { ...m, parts, sentHere: false }
+          : { ...m, parts: mergeParts(m.parts, parts) };
+      });
     }
   }
   const newMsg: Message = {
@@ -892,6 +1155,7 @@ function appendOrExtendUser(
     parts,
     streaming: false,
     ...(at !== undefined && { at }),
+    ...(steered && { steered: true }),
   };
   return [...messages, newMsg];
 }
@@ -943,4 +1207,39 @@ function appendQueuedUser(
         ]
       : messages;
   return [...parked, userMsg, pending];
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Which user messages a conversation can be
+ * rewound or forked from, and the cut each one would take if the agent cannot
+ * find it in its own history. Every sent message counts, a steered one too: a
+ * rewrite keeps exactly what shows above the message. The fallback cut is the
+ * reply just above it (its last harness message id), null for a message with
+ * nothing above it, and undefined when what is above is not a reply with an id
+ * — another message, or older history that is not loaded.
+ */
+export function rewritePointsOf(
+  messages: Message[],
+): Map<string, string | null | undefined> {
+  const points = new Map<string, string | null | undefined>();
+  let above: Message | null = null;
+  let olderHidden = false;
+  for (const m of messages) {
+    if (m.notice) {
+      olderHidden = true;
+      continue;
+    }
+    if (m.role === "user" && !m.queued && m.error === undefined)
+      points.set(m.id, fallbackCutBelow(above, olderHidden));
+    above = m;
+  }
+  return points;
+}
+
+function fallbackCutBelow(
+  above: Message | null,
+  olderHidden: boolean,
+): string | null | undefined {
+  if (above === null) return olderHidden ? undefined : null;
+  return above.role === "assistant" ? above.lastMessageId : undefined;
 }

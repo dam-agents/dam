@@ -129,3 +129,35 @@ export function timeProps(at: string | undefined, now: Date): MessageTime {
     timeTitle: `${dayLabel(at, now)} ${clockLabel(at)}`,
   };
 }
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Groups user messages with nothing between them —
+ * a batch the agent took as one message — so the chat draws them under one
+ * header and rewinds or forks them as one. `runs` maps each run's first
+ * message id to its messages; `inner` holds the ids drawn inside a run.
+ */
+export interface UserRuns {
+  runs: Map<string, Message[]>;
+  inner: Set<string>;
+}
+
+export function userRunsOf(items: readonly ThreadItem[]): UserRuns {
+  const runs = new Map<string, Message[]>();
+  const inner = new Set<string>();
+  let run: Message[] | null = null;
+  for (const item of items) {
+    const message = item.kind === "message" ? item.message : null;
+    if (message?.role !== "user" || message.notice) {
+      run = null;
+      continue;
+    }
+    if (run === null) {
+      run = [message];
+      runs.set(message.id, run);
+      continue;
+    }
+    run.push(message);
+    inner.add(message.id);
+  }
+  return { runs, inner };
+}

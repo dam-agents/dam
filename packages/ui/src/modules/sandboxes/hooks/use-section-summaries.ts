@@ -2,7 +2,6 @@ import {
   type EgressPreset,
   isProtectedAgentEnvName,
   providerTypeForTemplateId,
-  SHARED_KB_TEMPLATE_ID,
 } from "api-server-api";
 import { useMemo } from "react";
 
@@ -35,6 +34,7 @@ import type { SandboxSection } from "../../platform/lib/routes.js";
 import { NO_SATELLITES, useSatellites } from "../../satellites/api/queries.js";
 import { useSchedules } from "../../schedules/api/queries.js";
 import { isUpcoming } from "../../schedules/lib/once-schedule.js";
+import { useProviderConnections } from "../../sessions/api/session-pair.js";
 import { useTelegramChats } from "../../telegram/api/queries.js";
 
 type SectionSummaries = Partial<Record<SandboxSection, string>>;
@@ -96,7 +96,7 @@ export function useSectionSummaries(agent: AgentView | null): {
 
   const { data: budget } = useBudgetReserved();
   const setup =
-    agent && budget
+    agent && !agent.vm && budget
       ? formatSizeLabel(sizeInMi(agent.size), slotUnitOf(budget))
       : undefined;
 
@@ -182,16 +182,12 @@ export function useSectionSummaries(agent: AgentView | null): {
     return `${plural(running, "schedule")} running`;
   }, [agent, schedules]);
 
-  const knowledgeSummary = useMemo(() => {
-    if (!appsLoaded || !connectionsQuery.data) return undefined;
-    const granted = new Set(
-      connectionsQuery.data.connections.map((c) => c.connectionId),
-    );
-    const count = apps.filter(
-      (a) => a.templateId === SHARED_KB_TEMPLATE_ID && granted.has(a.id),
-    ).length;
-    return count === 0 ? "No knowledge bases" : plural(count, "knowledge base");
-  }, [apps, appsLoaded, connectionsQuery.data]);
+  const providers = useProviderConnections(agent?.id ?? null);
+  const providersSummary = providers.loaded
+    ? providers.granted.length === 0
+      ? "None attached"
+      : providers.granted.map((p) => p.name).join(", ")
+    : undefined;
 
   const { data: monthSpend, isError: spendUnavailable } = useAgentMonthSpend(
     agent?.id ?? null,
@@ -207,6 +203,7 @@ export function useSectionSummaries(agent: AgentView | null): {
   return {
     summaries: {
       setup,
+      providers: providersSummary,
       connections,
       network,
       environment,
@@ -214,11 +211,10 @@ export function useSectionSummaries(agent: AgentView | null): {
       skills,
       schedules: schedulesSummary,
       usage: usageSummary,
-      knowledge: knowledgeSummary,
     },
     warnings:
       missingProvider && !configStatus?.harnesses
-        ? { setup: NO_PROVIDER_WARNING }
+        ? { providers: NO_PROVIDER_WARNING }
         : staleModel.stale && !configStatus?.harnesses
           ? { setup: STALE_MODEL_WARNING }
           : {},

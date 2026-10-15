@@ -47,23 +47,15 @@ describe("resolveSkillDirInClone with symlinked source roots", () => {
     await fs.rm(tmp, { recursive: true, force: true });
   });
 
-  it("resolves through the symlinked root to the real directory", async () => {
+  it("resolves through the symlinked root and materializes a real directory, not a symlink into the clone", async () => {
     const name = makeSkillName("grill-me");
     if (!name.ok) throw new Error("invalid name");
     const resolved = await repo.resolveSkillDirInClone(clone, name.value);
     expect(resolved.ok).toBe(true);
     if (!resolved.ok) return;
-    const st = await fs.lstat(resolved.value);
-    expect(st.isSymbolicLink()).toBe(false);
-    expect(st.isDirectory()).toBe(true);
-  });
-
-  it("materializes a real directory, not a symlink into the clone", async () => {
-    const name = makeSkillName("grill-me");
-    if (!name.ok) throw new Error("invalid name");
-    const resolved = await repo.resolveSkillDirInClone(clone, name.value);
-    expect(resolved.ok).toBe(true);
-    if (!resolved.ok) return;
+    const resolvedStat = await fs.lstat(resolved.value);
+    expect(resolvedStat.isSymbolicLink()).toBe(false);
+    expect(resolvedStat.isDirectory()).toBe(true);
     await repo.writeFromDir(name.value, [target], resolved.value);
     const published = path.join(target, "grill-me");
     const st = await fs.lstat(published);

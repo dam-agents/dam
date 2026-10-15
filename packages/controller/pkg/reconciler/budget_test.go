@@ -44,8 +44,8 @@ func userBudgetCR(cpu, memory string) *unstructured.Unstructured {
 		ObjectMeta: metav1.ObjectMeta{Name: "budget-" + budgetOwner, Namespace: "test-agents"},
 		Spec: apiv1.UserBudgetSpec{
 			Owner:  budgetOwner,
-			CPU:    resource.MustParse(cpu),
-			Memory: resource.MustParse(memory),
+			CPU:    new(resource.MustParse(cpu)),
+			Memory: new(resource.MustParse(memory)),
 		},
 	}
 	raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(b)
@@ -105,7 +105,7 @@ func TestBudgetOverCeilingParksWithFigures(t *testing.T) {
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
 	assert.Equal(t, apiv1.ReasonOverBudget, cond.Reason)
 	assert.Contains(t, cond.Message, "CPU")
-	assert.Contains(t, cond.Message, "stop a running agent")
+	assert.Contains(t, cond.Message, "put agents you aren't using to sleep")
 }
 
 func TestBudgetDeniesOnMemoryDimensionAlone(t *testing.T) {
@@ -613,8 +613,8 @@ func TestBudgetMemoParkedAgentIsNotTrackedForRetry(t *testing.T) {
 	assert.Empty(t, r.ParkedForRetry())
 }
 
-// TEST_SCENARIO: a peer on the vm backend holds compute while it runs, and it has no agent StatefulSet — only the paired gateway — so the ceiling has to count it from that gateway or an owner could start past their budget by using vm agents.
-func TestBudgetCountsAVMPeerByItsGateway(t *testing.T) {
+// TEST_SCENARIO: vm agents share their owner's runner rather than the budget, so a running vm peer, whatever size its spec still carries, takes nothing from the ceiling a container agent starts under.
+func TestBudgetDoesNotCountAVMPeer(t *testing.T) {
 	peer, gatewaySS := runningPeer("peer", "3900m", "7Gi")
 	peer.Spec.Backend = &apiv1.Backend{Type: "vm"}
 	gatewaySS.Name = GatewayName("peer")
@@ -627,7 +627,18 @@ func TestBudgetCountsAVMPeerByItsGateway(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, r.Reconcile(context.Background(), agent))
-	assert.Equal(t, int32(0), agentSSReplicas(t, r, "my-agent"), "the vm peer's size counts, so this start is over budget and parks")
+	assert.Equal(t, int32(1), agentSSReplicas(t, r, "my-agent"), "the vm peer's size was counted against the budget")
+}
+
+// TEST_SCENARIO: a vm agent has no size of its own to hold to the budget — its runner admits it against the owner's pool — so one whose spec still names a size past the ceiling starts.
+func TestAVMAgentStartsWhateverSizeItsSpecNames(t *testing.T) {
+	agent := vmAgentCR()
+	agent.Spec.Resources.Limits = map[string]string{"cpu": "64", "memory": "256Gi"}
+	r, node, _ := setupVMReconciler(t, agent)
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	assert.True(t, node.spec("my-agent").Running, "the vm agent was held to the budget")
 }
 
 // TEST_SCENARIO: a container peer is counted by its own StatefulSet, never by its gateway — the gateway exists for a moment before the agent StatefulSet does, and a peer must not read as holding compute in that window.

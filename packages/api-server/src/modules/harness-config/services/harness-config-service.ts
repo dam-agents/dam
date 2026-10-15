@@ -3,6 +3,7 @@ import { emit, EventType } from "../../../events.js";
 import {
   harnessCapability,
   harnessConfigCatalog,
+  routesSessionPairs,
   sessionSettingsError,
   type HarnessCapability,
   type HarnessConfigCatalog,
@@ -34,6 +35,7 @@ export function createHarnessConfigService(deps: {
   ownerSub: string;
   isOwnedAgent: (agentId: string) => Promise<boolean>;
   getCapabilities: (agentId: string) => Promise<unknown>;
+  specHarness: (agentId: string) => Promise<string | undefined>;
   isSettled: (agentId: string) => Promise<boolean>;
   now?: () => number;
 }): HarnessConfigService {
@@ -246,6 +248,7 @@ export interface PairResolverDeps {
   pairRepo: SessionPairRepo;
   catalog: HarnessCatalog;
   getCapabilities: (agentId: string) => Promise<unknown>;
+  specHarness: (agentId: string) => Promise<string | undefined>;
 }
 
 export async function resolveRememberedPair(
@@ -273,8 +276,13 @@ export async function resolveFirePair(
     deps.pairRepo.grantedProviders(agentId),
     deps.getCapabilities(agentId),
   ]);
-  if (requireLeases && !harnessesOf(capabilities)) return undefined;
-  const agentHarness = defaultHarnessOf(capabilities) ?? deps.catalog.default;
+  const harnesses = harnessesOf(capabilities);
+  if (requireLeases && !(harnesses && routesSessionPairs(harnesses)))
+    return undefined;
+  const agentHarness =
+    defaultHarnessOf(capabilities) ??
+    (await deps.specHarness(agentId)) ??
+    deps.catalog.default;
   if (!deps.catalog.harnesses.some((h) => h.name === agentHarness))
     return undefined;
   const remembered: SessionPair | null =

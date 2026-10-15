@@ -82,7 +82,18 @@ type MachineStatus struct {
 	// UNIT_BOUNDARY_DESCRIPTION: the host memory the running machine's VMM
 	// UNIT_BOUNDARY_DESCRIPTION: holds, as the runner last measured it. Zero
 	// UNIT_BOUNDARY_DESCRIPTION: until measured, which counts as MemoryMiB.
-	UsedMiB int    `json:"usedMiB,omitempty"`
+	UsedMiB int `json:"usedMiB,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: whether the running machine is still within
+	// UNIT_BOUNDARY_DESCRIPTION: its warm-up after its boot, when it counts at
+	// UNIT_BOUNDARY_DESCRIPTION: least at the warm-up floor however little it
+	// UNIT_BOUNDARY_DESCRIPTION: was measured at: its harness is still growing.
+	Warming bool `json:"warming,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: the disk the machine's last start asked for,
+	// UNIT_BOUNDARY_DESCRIPTION: in GiB. Only a runner that grows a disk at
+	// UNIT_BOUNDARY_DESCRIPTION: the next start rather than restarting for it
+	// UNIT_BOUNDARY_DESCRIPTION: reports it, so zero on a running machine is
+	// UNIT_BOUNDARY_DESCRIPTION: an older runner a larger disk would reboot.
+	DiskGiB int    `json:"diskGiB,omitempty"`
 	Message string `json:"message,omitempty"`
 	// UNIT_BOUNDARY_DESCRIPTION: changes whenever anything else in this
 	// UNIT_BOUNDARY_DESCRIPTION: status changes. WaitStatus hands it back as
@@ -119,6 +130,8 @@ const (
 	ReasonImageUnavailable = "MachineImageUnavailable"
 	ReasonBootFailed       = "MachineBootFailed"
 	ReasonSeedMissing      = "MachineSeedMissing"
+	ReasonStorageFull      = "MachineStorageFull"
+	ReasonHomeFull         = "MachineHomeFull"
 )
 
 // UNIT_BOUNDARY_DESCRIPTION: which runner release a runner pod runs, as its loader last wrote it: the one running, the one the controller asked for, and, when the two differ, why the loader holds on to the one running.
@@ -127,6 +140,26 @@ type RunnerRelease struct {
 	Target  string `json:"target,omitempty"`
 	Held    string `json:"held,omitempty"`
 	Message string `json:"message,omitempty"`
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how close the runner's own memory is to its limit: the working set the kernel kills the runner by, read off its cgroup, and whether it is past the pressure threshold. Version moves when pressure starts or ends and again while it lasts.
+type RunnerPressure struct {
+	Version       uint64 `json:"version,omitempty"`
+	Pressured     bool   `json:"pressured"`
+	LimitMiB      int    `json:"limitMiB,omitempty"`
+	WorkingSetMiB int    `json:"workingSetMiB,omitempty"`
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the runner's usage read, as far as the controller reads it: the owner's claim and the memory admission counts against the limit. The read also lists each machine, which the api-server shows and the controller does not need.
+type RunnerUsage struct {
+	Storage struct {
+		UsedBytes   int64 `json:"usedBytes"`
+		UsableBytes int64 `json:"usableBytes"`
+	} `json:"storage"`
+	Memory struct {
+		LimitMiB     int64 `json:"limitMiB"`
+		CommittedMiB int64 `json:"committedMiB"`
+	} `json:"memory"`
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Unstaged passes once the node's stager copies the release; the other two never pass in that pod, so only a new pod takes the release.

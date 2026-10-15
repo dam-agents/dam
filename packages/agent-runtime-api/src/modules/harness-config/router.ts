@@ -15,4 +15,7 @@ export const harnessConfigRouter = t.router({
     .query(async ({ ctx, input }) => ({
       availableModels: await ctx.harnessConfig.models(input),
     })),
+  watch: t.procedure.subscription(async function* ({ ctx, signal }) {
+    for await (const notice of ctx.harnessConfig.watch(signal)) yield notice;
+  }),
 });

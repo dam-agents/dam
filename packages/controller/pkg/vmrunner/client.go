@@ -20,6 +20,12 @@ import (
 
 var ErrUnauthorized = errors.New("the VM runner refused the controller's token")
 
+// UNIT_BOUNDARY_DESCRIPTION: a 404: the machine is not on the runner, or the runner's release does not serve the route at all, as a runner from before the pressure read does not.
+var ErrNotServed = errors.New("404 Not Found")
+
+// UNIT_BOUNDARY_DESCRIPTION: a 503: the runner is closing, as it does for a stop or a hand-off, and did not store the spec.
+var ErrUnavailable = errors.New("503 Service Unavailable")
+
 type Client struct {
 	URL  string
 	HTTP *http.Client
@@ -29,7 +35,7 @@ type Client struct {
 	reload func(context.Context) (string, error)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a runner that is merely busy may take seconds to answer — a put may probe the guest's agent, and a delete waits out the operation in flight — but one that is unreachable must fail fast, because a single reconcile worker serves every agent in the install and would otherwise spend the whole request timeout on each attempt.
+// UNIT_BOUNDARY_DESCRIPTION: a runner that is merely busy may take seconds to answer — a put may probe the guest's agent, and a delete waits out the operation in flight — but one that is unreachable must fail fast, because the reconcile worker that calls it serves many owners' agents and would otherwise spend the whole request timeout on each attempt.
 func NewClient(url, token, caPEM string) (*Client, error) {
 	c := &Client{URL: url, token: token, HTTP: &http.Client{Timeout: 20 * time.Second}}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
@@ -70,6 +76,29 @@ func (c *Client) WaitStatus(ctx context.Context, id string, since uint64, wait t
 	return c.machine(ctx, &hc, http.MethodGet, id, "?"+query.Encode(), nil)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the runner's memory pressure, as a long-poll on its pressure version as WaitStatus is on a machine's.
+func (c *Client) WaitPressure(ctx context.Context, since uint64, wait time.Duration) (RunnerPressure, error) {
+	hc := *c.HTTP
+	hc.Timeout += wait
+	query := url.Values{
+		"wait":  {strconv.FormatInt(max(int64(wait/time.Second), 1), 10)},
+		"since": {strconv.FormatUint(since, 10)},
+	}
+	var pressure RunnerPressure
+	raw, err := c.call(ctx, &hc, http.MethodGet, "/pressure?"+query.Encode(), nil)
+	if err != nil {
+		return pressure, fmt.Errorf("VM runner: pressure: %w", err)
+	}
+	return pressure, json.Unmarshal(raw, &pressure)
+}
+func (c *Client) Usage(ctx context.Context) (RunnerUsage, error) {
+	var usage RunnerUsage
+	raw, err := c.call(ctx, c.HTTP, http.MethodGet, "/usage", nil)
+	if err != nil {
+		return usage, fmt.Errorf("VM runner: usage: %w", err)
+	}
+	return usage, json.Unmarshal(raw, &usage)
+}
 func (c *Client) List(ctx context.Context) ([]string, error) {
 	raw, err := c.call(ctx, c.HTTP, http.MethodGet, "/machines", nil)
 	if err != nil {
@@ -123,6 +152,9 @@ func (c *Client) machine(ctx context.Context, hc *http.Client, method, id, query
 	return st, nil
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: an error body only ever becomes a message, and a proxy in front of the runner can answer with a page of any size, so no more of it is read.
+const errorBodyMax = 4096
+
 // UNIT_BOUNDARY_DESCRIPTION: one call, retried once with a re-read token if the runner refuses the one held. The body is kept as bytes so the retry sends it again.
 func (c *Client) call(ctx context.Context, hc *http.Client, method, path string, body []byte) ([]byte, error) {
 	for retried := false; ; retried = true {
@@ -139,13 +171,21 @@ func (c *Client) call(ctx context.Context, hc *http.Client, method, path string,
 		if err != nil {
 			return nil, &UnreachableError{cause: err}
 		}
-		raw, _ := io.ReadAll(resp.Body)
+		var body io.Reader = resp.Body
+		if resp.StatusCode >= 300 {
+			body = io.LimitReader(resp.Body, errorBodyMax)
+		}
+		raw, _ := io.ReadAll(body)
 		_ = resp.Body.Close()
 		switch {
 		case resp.StatusCode == http.StatusUnauthorized:
 			if retried || !c.refreshToken(ctx, token) {
 				return nil, ErrUnauthorized
 			}
+		case resp.StatusCode == http.StatusNotFound:
+			return nil, fmt.Errorf("%w: %s", ErrNotServed, bytes.TrimSpace(raw))
+		case resp.StatusCode == http.StatusServiceUnavailable:
+			return nil, fmt.Errorf("%w: %s", ErrUnavailable, bytes.TrimSpace(raw))
 		case resp.StatusCode >= 300:
 			return nil, fmt.Errorf("%s: %s", resp.Status, bytes.TrimSpace(raw))
 		default:

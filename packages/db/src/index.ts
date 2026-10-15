@@ -5,6 +5,7 @@ export {
   identityLinks,
   slackInstalls,
   slackIgnoredApps,
+  publicImageUrls,
   telegramConversations,
   skillSources,
   skillSets,
@@ -27,6 +28,8 @@ export {
   termsAcceptances,
   apiKeys,
   userFeatures,
+  gettingStartedChecklists,
+  avatarUnlocks,
   artifactFolders,
   libraryArtifacts,
   libraryArtifactVersions,
@@ -40,6 +43,8 @@ export {
   satellites,
   satelliteGrants,
   satelliteJobs,
+  resourceAlerts,
+  avatarImages,
 } from "./schema.js";
 export {
   eq,

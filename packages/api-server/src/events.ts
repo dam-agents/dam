@@ -1,9 +1,17 @@
-import type { ChannelType, EntryPointChoice } from "api-server-api";
+import type {
+  ApprovalVerdict,
+  ChannelType,
+  EntryPointChoice,
+  GettingStartedTask,
+} from "api-server-api";
+import type { AvatarCharacter } from "api-server-api/avatar/svg";
 import { Subject, type Observable } from "rxjs";
 import { filter } from "rxjs/operators";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
 
 export type TurnOutcome = "success" | "failure";
+
+export type ApprovalResolution = ApprovalVerdict | "expired" | "superseded";
 
 export enum EventType {
   UserAuthenticated = "UserAuthenticated",
@@ -58,6 +66,8 @@ export enum EventType {
   StarterKitOnboarded = "StarterKitOnboarded",
   IdentityLinked = "IdentityLinked",
   AgentOutOfMemory = "AgentOutOfMemory",
+  AvatarUnlocked = "AvatarUnlocked",
+  GettingStartedReset = "GettingStartedReset",
 }
 
 export type UserAuthenticated = {
@@ -71,6 +81,7 @@ export type AgentCreated = {
   type: EventType.AgentCreated;
   agentId: string;
   ownerSub: string;
+  character: AvatarCharacter;
 };
 
 export type AgentUpdated = {
@@ -216,6 +227,7 @@ export type ApprovalResolved = {
   approvalId: string;
   agentId: string;
   ownerSub: string;
+  resolution: ApprovalResolution;
 };
 
 export type ScheduleCreated = {
@@ -448,6 +460,18 @@ export type AgentOutOfMemory = {
   memory?: string;
 };
 
+export type AvatarUnlocked = {
+  type: EventType.AvatarUnlocked;
+  ownerSub: string;
+  task: GettingStartedTask;
+  character: AvatarCharacter;
+};
+
+export type GettingStartedReset = {
+  type: EventType.GettingStartedReset;
+  ownerSub: string;
+};
+
 export type DomainEvent =
   | UserAuthenticated
   | AgentCreated
@@ -500,7 +524,9 @@ export type DomainEvent =
   | KbSharePublishFailed
   | StarterKitOnboarded
   | IdentityLinked
-  | AgentOutOfMemory;
+  | AgentOutOfMemory
+  | AvatarUnlocked
+  | GettingStartedReset;
 
 const bus$ = new Subject<DomainEvent>();
 

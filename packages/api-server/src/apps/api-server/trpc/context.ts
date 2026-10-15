@@ -9,6 +9,7 @@ import { createKitUpdateMarks } from "../../../modules/agents/infrastructure/kit
 import { composeHarnessConfigModule } from "../../../modules/harness-config/index.js";
 import { agentsInstallSettings } from "../../../config.js";
 import { composeBudgetsModule } from "../../../modules/budgets/index.js";
+import { findExternalUsersByIdentity } from "../../../modules/channels/infrastructure/identity-links-repository.js";
 import {
   createDisabledMetricsService,
   createMetricsService,
@@ -67,6 +68,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     runtimeMutator,
     contributionsProgress,
     onboardingChecklists,
+    gettingStarted,
     getAgentCapabilities,
     schedulesBoot,
     listRegisteredAgentIds,
@@ -83,6 +85,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     harnessCatalog: harnesses,
     starterKitsRepo,
     kitUpstream,
+    firePair,
     reposService,
     connectionsBoot,
     apiKeysModule,
@@ -114,7 +117,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
       brandName: config.brand.name,
     });
-    const { budgets, resizeGate } = composeBudgetsModule({
+    const { budgets, resizeGate, storageGate } = composeBudgetsModule({
       k8s: k8sClient,
       owner: user.sub,
       listAgents: () => agentsRepo.list(user.sub),
@@ -123,6 +126,10 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         memory: config.defaultUserMemoryBudget,
       },
       slotSize: defaultLimits,
+      isSlackUnlinked: async () =>
+        channelManager.availableChannels()[ChannelType.Slack] === true &&
+        (await findExternalUsersByIdentity(db)(ChannelType.Slack, user.sub))
+          .length === 0,
     });
     const { agents, isOwnedAgent } = composeAgentsModule({
       api,
@@ -133,6 +140,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       agentDefaultLimits: defaultLimits,
       install: agentsInstallSettings(config),
       resizeGate,
+      storageGate,
       owner: user.sub,
       db,
       telegramBinding: telegramBindFlows
@@ -241,11 +249,11 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       markAgentOnboarded: (agentId, at) =>
         agentsRepo.patchAnnotation(agentId, ANN_STARTER_KIT_ONBOARDED, at),
       runtimeMutator,
+      sessionPair: (agentId) => firePair(agentId, {}),
       egressRules: createKitRulesSeederAdapter(db, l7Hosts),
       kitUpstream,
       kitUpdateMarks: createKitUpdateMarks(agentsRepo),
       virtualizationEnabled: config.virtualizationEnabled,
-      pinnedKit: config.starterKitsPinned,
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agentExists(agentId)) && ownerSub === user.sub;
@@ -272,6 +280,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       ownsApproval: async (approvalId) =>
         (await createApprovalsRepository(db).getPending(approvalId))
           ?.ownerSub === user.sub,
+      ownsAgent: (agentId) => agentsRepo.isOwnedBy(agentId, user.sub),
     });
     const files = composeFilesModule(
       agentsRepo,
@@ -292,6 +301,8 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       runtimeMutator,
       isOwnedAgent,
       getCapabilities: getAgentCapabilities,
+      specHarness: async (agentId) =>
+        (await agentsRepo.get(agentId))?.spec.harness,
       isSettled: (agentId) =>
         contributionsProgress.progress(agentId).then((p) => p.settled),
     });
@@ -359,6 +370,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       artifactLibrary,
       caseStudies,
       features,
+      gettingStarted: gettingStarted.forOwner(user.sub),
       files,
       harnessConfig,
       links: config.links,
@@ -375,6 +387,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       user,
       e2eEnabled: config.e2eEnabled,
       virtualizationEnabled: config.virtualizationEnabled,
+      vmForced: agentsInstallSettings(config).vmForced,
       featureModes: config.featureModes,
     };
   };

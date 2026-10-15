@@ -82,6 +82,8 @@ func TestTheWireTypesWriteAndReadWhatTheContractSays(t *testing.T) {
 		CPUs:      2,
 		MemoryMiB: 2048,
 		UsedMiB:   640,
+		Warming:   true,
+		DiskGiB:   20,
 		Message:   "up",
 		Version:   1,
 
@@ -94,10 +96,26 @@ func TestTheWireTypesWriteAndReadWhatTheContractSays(t *testing.T) {
 		Held:    HeldRuntime,
 		Message: "built against another runtime",
 	})
+	matchesTheContract(t, "runner-pressure", RunnerPressure{
+		Version:       7,
+		Pressured:     true,
+		LimitMiB:      12288,
+		WorkingSetMiB: 11800,
+	})
 	matchesTheContract(t, "seed-result", SeedResult{
 		Bytes:  1234,
 		SHA256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
 	})
+}
+
+// TEST_SCENARIO: the controller reads only the claim and the memory of the usage read, so the read's fixture decodes into those and the per-machine list the api-server reads is left aside rather than refused.
+func TestTheUsageReadDecodesTheClaimAndTheMemory(t *testing.T) {
+	var usage RunnerUsage
+	require.NoError(t, json.Unmarshal(contractFixture(t, "runner-usage.json"), &usage))
+	assert.Equal(t, int64(32212254720), usage.Storage.UsedBytes)
+	assert.Equal(t, int64(107374182400), usage.Storage.UsableBytes)
+	assert.Equal(t, int64(12288), usage.Memory.LimitMiB)
+	assert.Equal(t, int64(3072), usage.Memory.CommittedMiB)
 }
 
 // TEST_SCENARIO: the states and reasons are the vocabulary the controller matches on. A value that differs by a character is not a compile error on either side — it is a controller that never recognises the state its runner is reporting, so the Agent sits in a condition nothing clears.
@@ -114,7 +132,7 @@ func TestTheStatesAndReasonsAreTheOnesTheRunnerReports(t *testing.T) {
 		StateRestarting, StateRunning, StateStopping, StateStopped,
 	}, vocabulary.States)
 	assert.Equal(t, []string{
-		ReasonNotReady, ReasonOutOfCapacity, ReasonImageUnavailable, ReasonBootFailed, ReasonSeedMissing,
+		ReasonNotReady, ReasonOutOfCapacity, ReasonImageUnavailable, ReasonBootFailed, ReasonSeedMissing, ReasonStorageFull, ReasonHomeFull,
 	}, vocabulary.Reasons)
 	assert.Equal(t, int32(SeedExitPermanent), vocabulary.SeedExitPermanent)
 	assert.Equal(t, []string{HeldUnstaged, HeldRuntime, HeldFailed}, vocabulary.ReleaseHolds)

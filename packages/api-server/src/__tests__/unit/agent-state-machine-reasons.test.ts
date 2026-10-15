@@ -34,8 +34,20 @@ describe("computeAgentState with a machine reason", () => {
     );
   });
 
+  it("reads a machine refused for its owner's full storage as an error", () => {
+    expect(computeAgentState(notReady("MachineStorageFull"))).toBe("error");
+  });
+
   it("leaves a machine that is merely coming up as starting", () => {
     expect(computeAgentState(notReady("MachineNotReady"))).toBe("starting");
     expect(computeAgentState(notReady())).toBe("starting");
+  });
+
+  it("leaves a machine rebooting after its runner's OOM kill as starting", () => {
+    expect(computeAgentState(notReady("RunnerOutOfMemory"))).toBe("starting");
+  });
+
+  it("reads a machine its hibernation is still stopping as hibernating, not as starting", () => {
+    expect(computeAgentState(notReady("MachineStopping"))).toBe("hibernating");
   });
 });

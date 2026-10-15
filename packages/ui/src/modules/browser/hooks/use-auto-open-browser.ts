@@ -3,7 +3,6 @@ import { useCallback, useEffect } from "react";
 import { useDockDraftGuard } from "../../../hooks/use-dock-draft-guard.js";
 import { useStore } from "../../../store.js";
 import { useAgentsList } from "../../agents/api/queries.js";
-import { useFeatures } from "../../features/api/queries.js";
 import { type BrowserLink, mayAutoOpen } from "../lib/browser-link.js";
 
 const opened = new Set<string>();
@@ -14,9 +13,7 @@ export function useBrowserAvailable(): {
 } {
   const agentId = useStore((s) => s.selectedAgent);
   const agents = useAgentsList();
-  const flagged = useFeatures().data?.["strict-connection-addressing"] === true;
   const available =
-    flagged &&
     agentId !== null &&
     agents.find((a) => a.id === agentId)?.requireConnectionAddress === true;
   return { agentId, available };

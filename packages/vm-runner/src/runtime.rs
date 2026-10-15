@@ -16,7 +16,12 @@ pub trait Runtime: Send + Sync {
     fn state(&self, id: &str) -> anyhow::Result<State>;
     fn create(&self, id: &str, machine: &Machine<'_>) -> anyhow::Result<()>;
     fn update(&self, id: &str, update: &Update<'_>) -> anyhow::Result<()>;
-    fn start(&self, id: &str) -> anyhow::Result<()>;
+    // UNIT_BOUNDARY_DESCRIPTION: boots a stopped machine with `boot_mib` of guest RAM, which may be less than its size; `grow` adds the rest once the guest is up.
+    fn start(&self, id: &str, boot_mib: i32) -> anyhow::Result<()>;
+    // UNIT_BOUNDARY_DESCRIPTION: adds guest RAM to a running machine until it has `memory_mib`, and has the guest put it to use. A runtime that cannot grow a machine fails, and the machine boots at its size from then on.
+    fn grow(&self, _id: &str, _memory_mib: i32) -> anyhow::Result<()> {
+        anyhow::bail!("this runtime cannot grow a running machine")
+    }
     fn stop(&self, id: &str) -> anyhow::Result<()>;
     fn delete(&self, id: &str) -> anyhow::Result<()>;
     // UNIT_BOUNDARY_DESCRIPTION: whether what the machine's record names to boot is still on the host. The record holds a path when the machine boots a cache tree or a staged archive, and the hypervisor reads that path at every start, so a tree evicted or relaid under a stopped machine fails every start until the record is rewritten. A registry reference is not a path and is always present.
@@ -27,6 +32,14 @@ pub trait Runtime: Send + Sync {
     }
     // UNIT_BOUNDARY_DESCRIPTION: how much host memory the machine's VMM holds now, or nothing when no VMM runs or the runtime cannot tell. Guests hand freed memory back to the host, so this is what the machine uses, well below its size, and what admission and the runner's memory request count it at.
     fn resident_mib(&self, _id: &str) -> Option<i32> {
+        None
+    }
+    // UNIT_BOUNDARY_DESCRIPTION: the CPU time the machine's VMM has used since it started, in microseconds, or nothing when no VMM runs or the runtime cannot tell. Two readings a probe apart give the machine's share of the runner's CPU.
+    fn cpu_usec(&self, _id: &str) -> Option<u64> {
+        None
+    }
+    // UNIT_BOUNDARY_DESCRIPTION: the bytes the machine's files take on the runner's claim, by the blocks allocated rather than their length: every disk is sparse and as large as the owner's whole pool, so only what was written is the machine's share of it. Nothing when the runtime cannot tell.
+    fn disk_used_bytes(&self, _id: &str) -> Option<u64> {
         None
     }
     // UNIT_BOUNDARY_DESCRIPTION: whether this runner gives the machines that ask for it the node's virtualization extensions: its install lets it, and the node's KVM allows it. A runtime that cannot nest says no, and a machine that asks boots without them.
@@ -186,6 +199,9 @@ pub fn orphan_pids(proc_root: &Path, vm_dir: &Path) -> Vec<i32> {
     }
     let needle = format!("{dir}/");
     let Ok(entries) = fs::read_dir(proc_root) else {
+        #[cfg(target_os = "macos")]
+        return darwin::pids_with_arg(&needle);
+        #[cfg(not(target_os = "macos"))]
         return Vec::new();
     };
     let mut pids: Vec<i32> = entries
@@ -219,6 +235,10 @@ pub fn vmms_left(proc_root: &Path, vm_dir: &Path, mut seen: Vec<i32>, limit: Dur
 
 // UNIT_BOUNDARY_DESCRIPTION: a process has let go of everything once it is gone, or is a zombie with no thread left beside it. A zombie main thread alone is not enough: the threads it leaves share its open files and close them only when the last one exits.
 fn exited(proc_root: &Path, pid: i32) -> bool {
+    #[cfg(target_os = "macos")]
+    if !proc_root.is_dir() {
+        return darwin::exited(pid);
+    }
     let dir = proc_root.join(pid.to_string());
     let zombie = fs::read_to_string(dir.join("stat")).is_ok_and(|stat| {
         matches!(
@@ -229,6 +249,135 @@ fn exited(proc_root: &Path, pid: i32) -> bool {
     });
     !dir.exists()
         || (zombie && fs::read_dir(dir.join("task")).is_ok_and(|tasks| tasks.count() <= 1))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the host runner's process table. A Mac has no /proc, so the VMMs holding a machine's directory are found through the kernel's process list and each process's arguments, as `/proc/<pid>/cmdline` finds them on Linux.
+#[cfg(target_os = "macos")]
+pub(crate) mod darwin {
+    use std::ffi::c_void;
+    use std::mem;
+
+    pub fn pids_with_arg(needle: &str) -> Vec<i32> {
+        // SAFETY: a null buffer asks only for the number of pids.
+        let count = unsafe { libc::proc_listallpids(std::ptr::null_mut(), 0) };
+        let Ok(count) = usize::try_from(count) else {
+            return Vec::new();
+        };
+        let mut pids = vec![0i32; count + 64];
+        let bytes = i32::try_from(pids.len() * mem::size_of::<i32>()).unwrap_or(i32::MAX);
+        // SAFETY: the buffer holds `bytes` bytes of pids.
+        let listed = unsafe { libc::proc_listallpids(pids.as_mut_ptr().cast::<c_void>(), bytes) };
+        pids.truncate(usize::try_from(listed).unwrap_or(0));
+        let mut found: Vec<i32> = pids
+            .into_iter()
+            .filter(|&pid| pid > 0 && args(pid).iter().any(|arg| arg.contains(needle)))
+            .collect();
+        found.sort_unstable();
+        found
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: a process's arguments, without its environment. KERN_PROCARGS2 answers argc, the executable path, padding, then the arguments and the environment, all NUL-separated.
+    fn args(pid: i32) -> Vec<String> {
+        let mut mib = [libc::CTL_KERN, libc::KERN_PROCARGS2, pid];
+        let mut size: libc::size_t = 0;
+        // SAFETY: a null buffer asks only for the size; `mib` names three levels.
+        if unsafe {
+            libc::sysctl(
+                mib.as_mut_ptr(),
+                3,
+                std::ptr::null_mut(),
+                &raw mut size,
+                std::ptr::null_mut(),
+                0,
+            )
+        } != 0
+        {
+            return Vec::new();
+        }
+        let mut buf = vec![0u8; size];
+        // SAFETY: the buffer holds `size` bytes, and the kernel writes at most that many.
+        if unsafe {
+            libc::sysctl(
+                mib.as_mut_ptr(),
+                3,
+                buf.as_mut_ptr().cast::<c_void>(),
+                &raw mut size,
+                std::ptr::null_mut(),
+                0,
+            )
+        } != 0
+        {
+            return Vec::new();
+        }
+        buf.truncate(size);
+        let Some((argc, rest)) = buf.split_first_chunk::<4>() else {
+            return Vec::new();
+        };
+        let argc = usize::try_from(i32::from_ne_bytes(*argc)).unwrap_or(0);
+        rest.split(|&b| b == 0)
+            .skip(1)
+            .filter(|field| !field.is_empty())
+            .take(argc)
+            .map(|field| String::from_utf8_lossy(field).into_owned())
+            .collect()
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: a process's resident memory in bytes and its user plus system CPU time in microseconds, which Linux reads from /proc. The kernel counts CPU in Mach time units, nanoseconds on Intel and timebase ticks on Apple silicon, so it is scaled by the timebase.
+    pub fn task_usage(pid: i32) -> Option<(u64, u64)> {
+        // SAFETY: proc_taskinfo is plain data, and the call writes at most its size.
+        let mut info: libc::proc_taskinfo = unsafe { mem::zeroed() };
+        let size = i32::try_from(mem::size_of::<libc::proc_taskinfo>()).ok()?;
+        // SAFETY: `info` is a valid proc_taskinfo of `size` bytes.
+        let read = unsafe {
+            libc::proc_pidinfo(
+                pid,
+                libc::PROC_PIDTASKINFO,
+                0,
+                (&raw mut info).cast::<c_void>(),
+                size,
+            )
+        };
+        if read != size {
+            return None;
+        }
+        #[allow(deprecated)]
+        let (numer, denom) = {
+            let mut base = libc::mach_timebase_info { numer: 0, denom: 0 };
+            // SAFETY: `base` is a valid mach_timebase_info the call fills in.
+            if unsafe { libc::mach_timebase_info(&raw mut base) } != 0 || base.denom == 0 {
+                return None;
+            }
+            (u128::from(base.numer), u128::from(base.denom))
+        };
+        let nanos = u128::from(info.pti_total_user + info.pti_total_system) * numer / denom;
+        Some((info.pti_resident_size, u64::try_from(nanos / 1000).ok()?))
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: a process is gone, or a zombie, which on a Mac has already released its threads and with them every file and port. A process that is the runner's own child and has exited is reaped here first: smolvm on a Mac reads any pid that still answers a signal as a live VMM, so an unreaped one would fail the stop that follows its kill. The kernel answers no process info for a zombie, so a reap is also how a child zombie is told apart from a live child.
+    pub fn exited(pid: i32) -> bool {
+        // SAFETY: WNOHANG never blocks; a live child returns 0, and a pid that is not our child returns ECHILD.
+        if unsafe { libc::waitpid(pid, std::ptr::null_mut(), libc::WNOHANG) } == pid {
+            return true;
+        }
+        // SAFETY: kill(2) with signal 0 only checks for the process.
+        if unsafe { libc::kill(pid, 0) } != 0 {
+            return std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH);
+        }
+        // SAFETY: proc_bsdinfo is plain data, and the call writes at most its size.
+        let mut info: libc::proc_bsdinfo = unsafe { mem::zeroed() };
+        let size = i32::try_from(mem::size_of::<libc::proc_bsdinfo>()).unwrap_or(i32::MAX);
+        // SAFETY: `info` is a valid proc_bsdinfo of `size` bytes.
+        let read = unsafe {
+            libc::proc_pidinfo(
+                pid,
+                libc::PROC_PIDTBSDINFO,
+                0,
+                (&raw mut info).cast::<c_void>(),
+                size,
+            )
+        };
+        read == size && info.pbi_status == libc::SZOMB
+    }
 }
 
 pub fn kill_orphans(proc_root: &Path, vm_dir: &Path) {
@@ -361,6 +510,31 @@ mod tests {
     use super::*;
     use crate::testdir::TempDir;
     use std::path::PathBuf;
+
+    // TEST_SCENARIO: a VMM is found by the machine directory on its command line, and taken down, on the host's own process table: /proc on Linux, the kernel's process list on a Mac, which has no /proc. A machine whose directory only prefixes the VMM's is not matched.
+    #[test]
+    fn a_vmm_holding_the_machine_directory_is_found_and_ended_on_this_host() {
+        let dir = TempDir::new("vmm-scan");
+        let vm_dir = dir.path().join("m1");
+        let mut vmm = std::process::Command::new("sh")
+            .args(["-c", "sleep 60; true", "_boot-vm"])
+            .arg(format!("{}/", vm_dir.display()))
+            .spawn()
+            .unwrap();
+        let pid = i32::try_from(vmm.id()).unwrap();
+        let proc_root = Path::new("/proc");
+        // UNIT_BOUNDARY_DESCRIPTION: spawn returns once the exec has begun, and Linux shows the new command line only a moment later, so the first scan can miss a process that has just started.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while orphan_pids(proc_root, &vm_dir).is_empty() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(orphan_pids(proc_root, &vm_dir), vec![pid]);
+        assert!(orphan_pids(proc_root, &dir.path().join("m")).is_empty());
+
+        kill_orphans(proc_root, &vm_dir);
+        vmm.wait().unwrap();
+        assert!(vmms_left(proc_root, &vm_dir, vec![pid], Duration::from_secs(5)).is_empty());
+    }
 
     fn spec_with_env(env: &[(&str, &str)]) -> MachineSpec {
         MachineSpec {

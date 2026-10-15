@@ -1,6 +1,10 @@
 import { harnessFamilySchema } from "../templates/schemas.js";
 import { z } from "zod";
-import { AVATAR_CHARACTERS } from "./avatar/svg.js";
+import {
+  AVATAR_CHARACTERS,
+  AVATAR_EMOJI_RE,
+  AVATAR_IMAGE_RE,
+} from "./avatar/svg.js";
 import { egressPresetSchema } from "../egress-rules/schemas.js";
 import { envVarSchema } from "../shared.js";
 
@@ -45,12 +49,11 @@ export const agentBackgroundWorkInputSchema = idSchema;
 export const agentDeleteInputSchema = idSchema;
 export const agentRestartInputSchema = idSchema;
 export const agentWakeInputSchema = idSchema;
-export const agentStopInputSchema = idSchema;
 export const agentRetryWorkspaceInputSchema = z.object({
   id: z.string().min(1),
   kind: z.enum(["workspace-seed", "workspace-command"]),
 });
-export const agentPauseInputSchema = idSchema;
+export const agentSleepInputSchema = idSchema;
 export const agentUpgradeInputSchema = idSchema.extend({
   expectedToImage: z.string().min(1).optional(),
 });
@@ -61,6 +64,12 @@ export const agentRetryRuntimeMigrationInputSchema = idSchema;
 export const agentDisconnectSlackInputSchema = idSchema.extend({
   slackChannelId: z.string().min(1).optional(),
 });
+
+export const avatarSchema = z.union([
+  z.enum(AVATAR_CHARACTERS),
+  z.string().regex(AVATAR_EMOJI_RE),
+  z.string().regex(AVATAR_IMAGE_RE),
+]);
 
 export const agentKindSchema = z.enum(["knowledge-base"]);
 
@@ -80,7 +89,7 @@ export const agentCreateInputSchema = z.object({
   image: z.string().optional(),
   harness: harnessFamilySchema.optional(),
   description: z.string().optional(),
-  avatar: z.enum(AVATAR_CHARACTERS).optional(),
+  avatar: avatarSchema.optional(),
   env: z.array(envVarSchema).max(64).optional(),
   secretRef: z.string().optional(),
   registryCredential: z
@@ -114,18 +123,31 @@ export const agentUpdateInputSchema = z.object({
   id: z.string().min(1),
   name: agentNameSchema.max(255).optional(),
   description: z.string().optional(),
-  avatar: z.enum(AVATAR_CHARACTERS).optional(),
+  avatar: avatarSchema.optional(),
   env: z.array(envVarSchema).max(64).optional(),
   secretRef: z.string().optional(),
   hibernationTimeoutMin: z.number().int().min(0).nullable().optional(),
   size: agentSizeSchema.optional(),
   requireConnectionAddress: z.boolean().optional(),
+  whisper: z.boolean().optional(),
 });
 
 export const agentConnectSlackInputSchema = z.object({
   id: z.string().min(1),
   slackChannelId: z.string().min(1),
   ambient: z.boolean().optional(),
+  customEmoji: z
+    .array(
+      z
+        .string()
+        .regex(
+          /^[a-z0-9_'+-]{1,100}$/,
+          "Use lowercase letters, digits, - _ + or ' (no colons).",
+        ),
+    )
+    .length(8)
+    .nullable()
+    .optional(),
 });
 
 export const agentListTelegramChatsInputSchema = z.object({

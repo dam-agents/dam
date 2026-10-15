@@ -7,6 +7,8 @@ export type RelayKind =
 
 export type ConnectionChangeAction = "added" | "removed";
 
+export type SkillSetChangeAction = "saved" | "deleted";
+
 const OTHER = "other";
 
 const SURFACES = new Map<string, UsageSurface>([

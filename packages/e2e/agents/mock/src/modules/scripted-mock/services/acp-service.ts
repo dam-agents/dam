@@ -15,7 +15,7 @@ import type {
   WorkspaceWriter,
 } from "./ports.js";
 
-const FETCH_DIRECTIVE = /__FETCH__\s+(\S+)/;
+const FETCH_DIRECTIVE = /__FETCH__\s+(\S+)(?:\s+([^\s:]+):(\S+))?/;
 const SLACK_THREAD_DIRECTIVE = /threadTs="([^"]+)"/;
 const PYRUN_DIRECTIVE = /__PYRUN__\s+(\S+)/;
 const ASK_DIRECTIVE = /__ASK__\s+(\S+)(?:\s+(\S+))?/;
@@ -120,9 +120,13 @@ export function startAcpService(deps: AcpServiceDeps): void {
     const promptStr = promptText(promptPayload);
     const slackThreadTs = SLACK_THREAD_DIRECTIVE.exec(promptStr)?.[1];
 
-    const fetchUrl = FETCH_DIRECTIVE.exec(promptStr)?.[1];
+    const fetched = FETCH_DIRECTIVE.exec(promptStr);
+    const fetchUrl = fetched?.[1];
     if (fetchUrl) {
-      const text = await replyWithFetch(sid, fetchUrl);
+      const headerName = fetched?.[2];
+      const headers =
+        headerName && fetched?.[3] ? { [headerName]: fetched[3] } : undefined;
+      const text = await replyWithFetch(sid, fetchUrl, headers);
       await maybeSlackReply(text, slackThreadTs);
       respond(id, { stopReason: "end_turn" });
       return;
@@ -227,10 +231,14 @@ export function startAcpService(deps: AcpServiceDeps): void {
     });
   }
 
-  async function replyWithFetch(sid: string, url: string): Promise<string> {
+  async function replyWithFetch(
+    sid: string,
+    url: string,
+    headers?: Record<string, string>,
+  ): Promise<string> {
     let text: string;
     try {
-      const { status, body } = await deps.proxyFetch({ url });
+      const { status, body } = await deps.proxyFetch({ url, headers });
       text = `[fetch ${status}] ${body}`;
     } catch (err) {
       text = `[fetch error] ${err instanceof Error ? err.message : String(err)}`;

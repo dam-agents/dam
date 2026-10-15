@@ -1,15 +1,20 @@
 import { expect, test } from "@playwright/test";
 
 import { baseUrl } from "../../config.js";
-import { waitForAgentRunning } from "../../lib/agents.js";
+import {
+  waitForAgentIdRunning,
+  waitForAgentRunning,
+} from "../../lib/agents.js";
 import { createApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
-import { bootTimeoutMs } from "../../lib/backend.js";
+import { bootTimeoutMs, onLaneBackend } from "../../lib/backend.js";
 import { getConnectionId } from "../../lib/connections.js";
 import { agentName, connectionName, harnessName } from "../../lib/fixtures.js";
 
-test("create a mock agent with the connection attached", async ({ page }) => {
-  test.setTimeout(bootTimeoutMs(60_000));
+test("one-click create from the Generalist kit, then the mock agent with the connection and default provider", async ({
+  page,
+}) => {
+  test.setTimeout(bootTimeoutMs(300_000));
 
   const token = await getAccessToken();
   const api = createApiClient(token);
@@ -48,39 +53,66 @@ test("create a mock agent with the connection attached", async ({ page }) => {
     });
   });
 
-  await test.step("open the coding agent setup page", async () => {
-    await page.goto(`${baseUrl}/agents/new`);
-    await expect(page.getByPlaceholder("my-agent")).toBeVisible();
+  await test.step("create an agent in one click from the Generalist kit", async () => {
+    await page
+      .getByTestId("app-sidebar")
+      .getByRole("button", { name: "Starter kits" })
+      .click();
+    await page.getByTestId("default-agent-card").click();
+    await expect(page).toHaveURL(/\/chat\//);
   });
 
-  await test.step("pick the mock image", async () => {
-    await page.getByTestId(`template-card-${harnessName}`).click();
+  await test.step("the one-click agent boots with a generated avatar", async () => {
+    const agent = (await api.agents.list.query()).find((a) =>
+      /^agent(-\d+)?$/.test(a.name),
+    );
+    expect(agent?.avatar).toBeTruthy();
+    await waitForAgentIdRunning(api, agent!.id);
   });
 
-  await test.step("name the sandbox", async () => {
-    await page.getByPlaceholder("my-agent").fill(agentName);
+  await test.step("delete the one-click agent from its card menu on a short screen", async () => {
+    const agent = (await api.agents.list.query()).find((a) =>
+      /^agent(-\d+)?$/.test(a.name),
+    );
+    const viewport = { width: 1280, height: 240 };
+    await page.setViewportSize(viewport);
+    await page.goto(baseUrl);
+    await page
+      .getByTestId("agent-row")
+      .filter({
+        has: page.getByRole("heading", { name: agent!.name, exact: true }),
+      })
+      .getByRole("button", { name: "Agent actions" })
+      .click();
+    await expect
+      .poll(async () => {
+        const menu = await page.getByRole("menu").boundingBox();
+        return menu && menu.y >= 0 && menu.y + menu.height <= viewport.height;
+      })
+      .toBe(true);
+    await page.getByRole("menuitem", { name: "Delete agent" }).click();
+    await page
+      .getByRole("alertdialog")
+      .getByRole("button", { name: "Delete agent" })
+      .click();
+    await expect
+      .poll(
+        async () =>
+          (await api.agents.list.query()).some((a) => a.id === agent!.id),
+        { timeout: 120_000, intervals: [2_000] },
+      )
+      .toBe(false);
+    await page.setViewportSize({ width: 1280, height: 720 });
   });
 
-  await test.step("grant the connection and create", async () => {
-    const connectionId = await getConnectionId(api, connectionName);
-
-    await page.getByTestId("open-connection-catalog").click();
-    await page.getByTestId("catalog-tab-custom-headers").click();
-    await page.getByTestId(`catalog-add-${connectionId}`).click();
-    await expect(
-      page
-        .getByTestId(`catalog-connection-${connectionId}`)
-        .getByText("In this agent"),
-    ).toBeVisible();
-    await page.getByTestId("catalog-close").click();
-    await expect(
-      page.getByTestId(`catalog-connection-${connectionId}`),
-    ).toBeVisible();
-
-    await page.getByRole("button", { name: /create agent/i }).click();
-  });
-
-  await test.step("agent reaches running", async () => {
+  await test.step("create the suite's mock agent with the connection", async () => {
+    await api.agents.create.mutate(
+      onLaneBackend({
+        name: agentName,
+        templateId: harnessName,
+        connectionIds: [await getConnectionId(api, connectionName)],
+      }),
+    );
     await waitForAgentRunning(api, agentName);
   });
 

@@ -4,13 +4,15 @@
 
 ## Principles
 
-**[CRITICAL] Types are contracts at boundaries, not obstacles inside.** Type props, API responses, hook returns and store state tightly; inside a function, trust inference and don't annotate what TypeScript already knows.
+**\[CRITICAL\] Types are contracts at boundaries, not obstacles inside.** Type props, API responses, hook returns and store state tightly; inside a function, trust inference and don't annotate what TypeScript already knows.
 
-**[CRITICAL] `any` is a bug.** One `any` at a boundary deletes type safety for everything touching it. Use `unknown` and narrow, define the type, or infer it from Zod.
+**\[CRITICAL\] `any` is a bug.** One `any` at a boundary deletes type safety for everything touching it.
+Use `unknown` and narrow, define the type, or infer it from Zod.
 
 ## `type` vs `interface`
 
-**[MODERATE]** `interface` for object shapes that might be extended (props, context values, module augmentation; errors show the interface name). `type` for everything else: unions, intersections, tuples, mapped/conditional types, records, function types.
+**\[MODERATE\]** `interface` for object shapes that might be extended (props, context values, module augmentation; errors show the interface name).
+`type` for everything else: unions, intersections, tuples, mapped/conditional types, records, function types.
 
 ```ts
 ✅ interface AgentCardProps { agent: Agent; onSelect?: (id: string) => void }
@@ -20,7 +22,7 @@
 
 ## Props
 
-**[HIGH] No `React.FC<>`**; plain function declarations with a `Props` parameter (`references/components.md`).
+**\[HIGH\] No `React.FC<>`**; plain function declarations with a `Props` parameter (`references/components.md`).
 
 ```tsx
 interface Props {
@@ -36,7 +38,7 @@ Children are typed explicitly as `ReactNode` (not `PropsWithChildren`, whose ind
 
 ## Zod-inferred types
 
-**[CRITICAL]** Shapes to/from the server are Zod schemas with inferred types: one source of truth, runtime validation matching compile-time types, schema changes propagating automatically.
+**\[CRITICAL\]** Shapes to/from the server are Zod schemas with inferred types: one source of truth, runtime validation matching compile-time types, schema changes propagating automatically.
 
 ```ts
 export const agentSchema = z.object({
@@ -48,7 +50,7 @@ export const agentSchema = z.object({
 export type Agent = z.infer<typeof agentSchema>;
 ```
 
-**[HIGH] Export the schema *and* the type**: validators import the schema, everyone else the type.
+**\[HIGH\] Export the schema *and* the type**: validators import the schema, everyone else the type.
 
 ## `unknown` over `any`
 
@@ -64,7 +66,7 @@ export type Agent = z.infer<typeof agentSchema>;
 
 ## `as`: last resort
 
-**[HIGH]** In order of preference: type guards (`isAgent(x): x is Agent`); Zod parsing at boundaries; discriminated unions matched on a tag; only then `as`, isolated in a well-named helper so the name says why.
+**\[HIGH\]** In order of preference: type guards (`isAgent(x): x is Agent`); Zod parsing at boundaries; discriminated unions matched on a tag; only then `as`, isolated in a well-named helper so the name says why.
 
 Allowed: `as const`; `as CSSProperties` where React's `style` type rejects CSS custom properties; narrowing after an `if` TS can't express, inside a named type guard.
 
@@ -79,7 +81,7 @@ Casting to narrow after a conditional (`colors[state as Status]`) is the common 
 
 ## Discriminated unions + `ts-pattern`
 
-**[HIGH]** Model tagged variants as discriminated unions and match exhaustively; `.exhaustive()` fails to type-check when a new variant goes unhandled.
+**\[HIGH\]** Model tagged variants as discriminated unions and match exhaustively; `.exhaustive()` fails to type-check when a new variant goes unhandled.
 
 ```ts
 type FormField =
@@ -107,7 +109,8 @@ Use them only when the function truly parameterizes over its input; no `<T>` for
 
 ## Hook return types
 
-**[MODERATE]** Let inference type hook returns. Annotate only to hide implementation detail (a narrower interface) or ugly internal types (a giant `QueryObserverResult<A, B, C>`).
+**\[MODERATE\]** Let inference type hook returns.
+Annotate only to hide implementation detail (a narrower interface) or ugly internal types (a giant `QueryObserverResult<A, B, C>`).
 
 ```ts
 ✅ export function useAgents() { return useQuery(trpc.agents.list.queryOptions()); }
@@ -115,11 +118,14 @@ Use them only when the function truly parameterizes over its input; no `<T>` for
 
 ## Errors
 
-**[HIGH]** Use a typed error hierarchy (`class ApiError extends Error { status; body }`, `class ValidationError extends Error`) so `instanceof` narrows in `catch` blocks and toast/logging code. No duck-typing (`"status" in err`) when a class exists. End-to-end contract: `references/api-layer.md`.
+**\[HIGH\]** Use a typed error hierarchy (`class ApiError extends Error { status; body }`, `class ValidationError extends Error`) so `instanceof` narrows in `catch` blocks and toast/logging code.
+No duck-typing (`"status" in err`) when a class exists.
+End-to-end contract: `references/api-layer.md`.
 
 ## Constants & literals
 
-**[HIGH] No magic strings/numbers.** Name a literal when it carries meaning beyond its value or appears more than once, i.e. when a reader would have to read surrounding code to understand `3000` or `"idle"`. Single-use, self-explanatory values stay inline.
+**\[HIGH\] No magic strings/numbers.** Name a literal when it carries meaning beyond its value or appears more than once, i.e. when a reader would have to read surrounding code to understand `3000` or `"idle"`.
+Single-use, self-explanatory values stay inline.
 
 ```ts
 ❌ if (agent.status === "running" && Date.now() - agent.startedAt > 30_000) { ... }
@@ -135,11 +141,13 @@ Where they live: domain-scoped → `modules/{domain}/constants.ts`; app-wide (AP
 
 Inline is fine when self-explanatory (`arr.slice(0, 1)`, `disabled={count === 0}`, `flex: 1`, `opacity-0`), for math whose meaning is the literal (`width / 2`), and in test fixtures.
 
-Repeated Tailwind arbitrary values → theme token (`references/styling.md`). Query keys → `queryKey()` or the domain factory (`references/async-data.md`).
+Repeated Tailwind arbitrary values → theme token (`references/styling.md`).
+Query keys → `queryKey()` or the domain factory (`references/async-data.md`).
 
 ### Union literals, never TS `enum`
 
-`enum` emits a runtime object, doesn't tree-shake, doesn't compose with Zod and has surprising numeric semantics. The source of truth is a Zod enum or an `as const` tuple:
+`enum` emits a runtime object, doesn't tree-shake, doesn't compose with Zod and has surprising numeric semantics.
+The source of truth is a Zod enum or an `as const` tuple:
 
 ```ts
 ✅ export const agentStatusSchema = z.enum(["idle", "running", "failed"]);

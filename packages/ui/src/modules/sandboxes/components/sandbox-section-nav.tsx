@@ -20,16 +20,16 @@ export const SECTIONS: SectionEntry[] = [
       "How long this agent stays awake and how much compute it gets.",
   },
   {
+    section: "providers",
+    title: "Providers",
+    description:
+      "Choose which of your connected LLM providers this agent can use.",
+  },
+  {
     section: "connections",
     title: "Connections",
     description:
       "Connections let your agent talk to MCP servers and external services like GitHub.",
-  },
-  {
-    section: "knowledge",
-    title: "Knowledge",
-    description:
-      "Give this agent read-only access to other knowledge bases: it can list, search and read their content.",
   },
   {
     section: "network",
@@ -69,6 +69,7 @@ export const SECTIONS: SectionEntry[] = [
 ];
 
 interface Props {
+  sections: SectionEntry[];
   header?: ReactNode;
   active: SandboxSection;
   onNavigate: (section: SandboxSection) => void;
@@ -77,6 +78,7 @@ interface Props {
 }
 
 export function SandboxSectionNav({
+  sections,
   header,
   active,
   onNavigate,
@@ -89,7 +91,7 @@ export function SandboxSectionNav({
       className="flex shrink-0 flex-col gap-1 md:sticky md:top-12 md:w-[245px] md:self-start"
     >
       {header}
-      {SECTIONS.map((entry) => (
+      {sections.map((entry) => (
         <SectionNavItem
           key={entry.section}
           title={entry.title}

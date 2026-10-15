@@ -134,6 +134,48 @@ else
       && pass "kit precheck script exists: $s" \
       || fail "kit.yaml declares a precheck running $s, which this repo does not contain"
   done
+  if grep -qE 'precheck\.sh"?[[:space:]]+monitor' kit.yaml && [ ! -f scripts/monitor.sh ]; then
+    fail "kit.yaml gates a schedule with 'precheck.sh monitor' but scripts/monitor.sh is missing"
+  fi
+
+  # The kit repeats ONBOARDING's schedules verbatim for a new instance (the platform
+  # reads YAML and cannot follow a link); ONBOARDING stays the source of truth, this
+  # keeps the copy equal to it: every kit schedule name is in the runbook, and every kit
+  # task text equals one of its `> ` blockquotes, whitespace-normalized.
+  if [ -f ONBOARDING.md ]; then
+    # a run whose cadence the operator picks is named `<prefix>-<cadence-shorthand>`
+    # in the runbook, so its kit default matches on the prefix
+    for n in $(sed -n '/^schedules:/,/^[a-z]/p' kit.yaml \
+               | sed -nE 's/^[[:space:]]+-[[:space:]]*name:[[:space:]]*//p' | tr -d '"'"'"); do
+      if grep -qF -- "$n" ONBOARDING.md || grep -qF -- "${n%-*}-<" ONBOARDING.md; then
+        pass "ONBOARDING.md names kit schedule $n"
+      else
+        fail "kit.yaml schedule '$n' is never named in ONBOARDING.md — the runbook's reconcile would create a second one"
+      fi
+    done
+    onb_quotes="$(awk '
+      /^> / { sub(/^> ?/, ""); q = q (q == "" ? "" : " ") $0; next }
+      { if (q != "") print q; q = "" }
+      END { if (q != "") print q }' ONBOARDING.md | tr -s ' ')"
+    kit_tasks="$(awk '
+      /^[[:space:]]*task:[[:space:]]*>-?[[:space:]]*$/ { match($0, /^[[:space:]]*/); ind = RLENGTH; t = ""; intask = 1; next }
+      intask {
+        match($0, /^[[:space:]]*/)
+        if (RLENGTH > ind && $0 !~ /^[[:space:]]*$/) { sub(/^[[:space:]]+/, ""); t = t (t == "" ? "" : " ") $0; next }
+        print t; intask = 0
+      }
+      END { if (intask) print t }' kit.yaml | tr -s ' ')"
+    while IFS= read -r t; do
+      [ -n "$t" ] || continue
+      if printf '%s\n' "$onb_quotes" | grep -qxF -- "$t"; then
+        pass "kit task text has its ONBOARDING blockquote: ${t:0:48}…"
+      else
+        fail "kit.yaml task text has no identical '> ' blockquote in ONBOARDING.md (the runbook is the source of truth): ${t:0:72}…"
+      fi
+    done <<EOF
+$kit_tasks
+EOF
+  fi
 fi
 
 # ---------------------------------------------------- version & changelog ----

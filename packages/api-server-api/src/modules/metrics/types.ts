@@ -71,6 +71,20 @@ export interface CallContext {
   durationMs: number;
 }
 
+export interface SubAgentSpend {
+  subAgentId: string;
+  models: string[];
+  calls: number;
+  totalDurationMs: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  costUsd: number;
+  firstAt: string;
+  lastAt: string;
+}
+
 export interface MetricsOverview {
   tokenSpendByModel: TokenSpendByModel[];
   runtimeBySession: SessionRuntime[];

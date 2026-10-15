@@ -2,7 +2,6 @@ import { useCallback, useState } from "react";
 
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
-import { trpc } from "../../../trpc.js";
 import type { AgentView } from "../../../types.js";
 import {
   useAbortRuntimeMigrationMutation,
@@ -11,10 +10,7 @@ import {
 import { agentsKeys } from "../api/queries.js";
 import { type InFlightIds, whileInFlight } from "../utils/runtime-migration.js";
 
-const AGENT_LISTS = [
-  agentsKeys.listWithChannels(),
-  trpc.agents.list.queryKey(),
-];
+const AGENT_LISTS = [agentsKeys.listWithChannels()];
 
 // UNIT_BOUNDARY_DESCRIPTION: the buttons read the migration from the agents list, so a row stays busy until that list has refetched: released earlier, it would offer Abort or Retry again over the state from before the request. The refetch joins the one the mutation's invalidation began rather than starting another.
 function refetchAgentLists(): Promise<unknown> {

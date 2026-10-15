@@ -33,6 +33,12 @@ cleanup() {
       | while read -r ns name; do
           echo "### $ns/$name ###"
           kubectl describe pod -n "$ns" "$name" 2>&1 || true
+          # --all-containers below stops at a container still waiting, before a running or crashing init container.
+          for c in $(kubectl get pod -n "$ns" "$name" -o jsonpath='{.spec.initContainers[*].name}' 2>/dev/null); do
+            echo "### $ns/$name init container $c (current, then previous) ###"
+            kubectl logs -n "$ns" "$name" -c "$c" --tail=100 2>&1 || true
+            kubectl logs -n "$ns" "$name" -c "$c" --tail=100 --previous 2>&1 || true
+          done
           echo ""
         done
     echo ""

@@ -7,6 +7,7 @@ import {
   type BindPickerCopy,
 } from "../../agents/components/bind/agent-bind-picker.js";
 import { BindTerminalPage } from "../../agents/components/bind/bind-terminal-page.js";
+import { isSlackDirectMessageId } from "../../sandboxes/lib/shared-channels.js";
 import { useBindSlackChannel } from "../api/mutations.js";
 import { useSlackBindFlow } from "../api/queries.js";
 import {
@@ -76,9 +77,10 @@ export function SlackBindView() {
     );
   };
 
+  const copy = pickerCopy(flow.data);
   return (
     <AgentBindPicker
-      copy={pickerCopy(flow.data?.name)}
+      copy={copy}
       error={error}
       pending={bind.isPending}
       onPick={pick}
@@ -87,7 +89,10 @@ export function SlackBindView() {
   );
 }
 
-function pickerCopy(channelName: string | undefined): BindPickerCopy {
+function pickerCopy(
+  flow: { slackChannelId: string; name?: string } | null | undefined,
+): BindPickerCopy {
+  const channelName = flow?.name;
   return {
     messenger: "slack",
     title: channelName
@@ -100,6 +105,14 @@ function pickerCopy(channelName: string | undefined): BindPickerCopy {
     consent:
       "Everyone in the channel will be able to use the agent. Turns run under the agent's own connected accounts and API tokens, and your acceptance of the Terms of Use covers every turn.",
     action: "Add to channel",
+    audience: !flow
+      ? { kind: "unknown-conversation" }
+      : isSlackDirectMessageId(flow.slackChannelId)
+        ? null
+        : {
+            kind: "slack-channel",
+            name: channelName ? `#${channelName}` : null,
+          },
   };
 }
 

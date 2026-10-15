@@ -54,6 +54,7 @@ import {
 import { createEventOutcomeRegistry } from "./services/event-outcome-registry.js";
 import { emit, EventType } from "../../events.js";
 import { workspaceEvent } from "./domain/outbox-events.js";
+import { createEgressRuleMatchAdapter } from "../egress-rules/compose.js";
 
 export interface RuntimeDeliveryComposition {
   outboxRepo: OutboxRepo;
@@ -132,10 +133,14 @@ export function composeRuntimeDelivery(
     harnessServerUrl: opts.harnessServerUrl,
     telemetryEnv: opts.telemetryEnv,
   });
+  const egressRules = createEgressRuleMatchAdapter(opts.db);
   const stateBuilder = createStateBuilder({
     db: opts.db,
     outboxRepo,
     builtin,
+    egressDenies: (agentId) => async (host, method, path) =>
+      (await egressRules.match(agentId, host, 443, true, method, path))
+        ?.verdict === "deny",
   });
   const queue = createStateQueue(opts.bullConnection);
 

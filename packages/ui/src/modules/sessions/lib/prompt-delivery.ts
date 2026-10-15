@@ -70,7 +70,11 @@ export function createPromptDelivery(): PromptDelivery {
         record.recover?.();
       }
       if (kind === "platform_prompt_accepted") {
-        record.state = update.queued ? "queued" : "accepted";
+        record.state = update.steered
+          ? "started"
+          : update.queued
+            ? "queued"
+            : "accepted";
         return;
       }
       record.state = "started";

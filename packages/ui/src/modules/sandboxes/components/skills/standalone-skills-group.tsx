@@ -2,18 +2,12 @@ import type { LocalSkill, SkillPublishRecord } from "api-server-api";
 
 import { ListSection } from "@/components/ui/list-section";
 
+import {
+  latestPublishByName,
+  type ReadyTrackTarget,
+  type TrackTarget,
+} from "./publish-target.js";
 import { StandaloneSkillRow } from "./standalone-skill-row.js";
-
-function latestPublishByName(
-  publishes: SkillPublishRecord[],
-): Map<string, SkillPublishRecord> {
-  const map = new Map<string, SkillPublishRecord>();
-  for (const p of publishes) {
-    const cur = map.get(p.skillName);
-    if (!cur || p.publishedAt > cur.publishedAt) map.set(p.skillName, p);
-  }
-  return map;
-}
 
 export function StandaloneSkillsGroup({
   skills,
@@ -25,7 +19,7 @@ export function StandaloneSkillsGroup({
   onDelete,
   onTrack,
   onOpenSkill,
-  trackUnavailableNames,
+  trackTargets,
   onUpload,
 }: {
   skills: LocalSkill[];
@@ -35,9 +29,9 @@ export function StandaloneSkillsGroup({
   onPublish: (skill: LocalSkill) => void;
   onDownload: (skill: LocalSkill) => void;
   onDelete: (skill: LocalSkill, publish?: SkillPublishRecord) => void;
-  onTrack: (skill: LocalSkill, publish: SkillPublishRecord) => void;
+  onTrack: (skill: LocalSkill, target: ReadyTrackTarget) => void;
   onOpenSkill?: (skill: LocalSkill) => void;
-  trackUnavailableNames: ReadonlySet<string>;
+  trackTargets: ReadonlyMap<string, TrackTarget>;
   onUpload?: () => void;
 }) {
   const published = latestPublishByName(publishes);
@@ -64,9 +58,9 @@ export function StandaloneSkillsGroup({
             onPublish={() => onPublish(skill)}
             onDownload={() => onDownload(skill)}
             onDelete={() => onDelete(skill, pub)}
-            onTrack={pub ? () => onTrack(skill, pub) : undefined}
+            onTrack={(target) => onTrack(skill, target)}
             onOpen={onOpenSkill ? () => onOpenSkill(skill) : undefined}
-            trackUnavailable={trackUnavailableNames.has(skill.name)}
+            trackTarget={trackTargets.get(skill.name)}
           />
         );
       })}

@@ -1,13 +1,36 @@
 import http from "node:http";
-import { readFileSync } from "node:fs";
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { Readable } from "node:stream";
 
 const HOST = "127.0.0.1";
-const PORT = 24180;
+// UNIT_BOUNDARY_DESCRIPTION: the gateway listens on 24180, the port the image ABI fixes. MODEL_GATEWAY_PORT overrides it for tests, 0 meaning any free port, and the listening line names the port bound.
+const PORT = Number(process.env.MODEL_GATEWAY_PORT ?? 24180);
 const SNAPSHOT_FILE = `${process.env.HOME}/.platform/pod-service-env.json`;
+const CATALOG_FILE = `${process.env.HOME}/.platform/model-gateway-catalog.json`;
 const PREFIX = "claude/";
+const TIERS = ["fable", "opus", "sonnet", "haiku"];
 
 const log = (msg) => process.stderr.write(`model-gateway: ${msg}\n`);
+
+const catalogs = (() => {
+  try {
+    return JSON.parse(readFileSync(CATALOG_FILE, "utf8"));
+  } catch {
+    return {};
+  }
+})();
+
+function saveCatalog(upstream, ids) {
+  const entry = { base: upstream.base, ids };
+  if (JSON.stringify(catalogs[upstream.key]) === JSON.stringify(entry)) return;
+  catalogs[upstream.key] = entry;
+  try {
+    writeFileSync(`${CATALOG_FILE}.tmp`, JSON.stringify(catalogs));
+    renameSync(`${CATALOG_FILE}.tmp`, CATALOG_FILE);
+  } catch (err) {
+    log(`model list not kept for the next start (${err.message})`);
+  }
+}
 
 function customUpstream(raw) {
   const base = (raw ?? "").replace(/\/+$/, "");
@@ -17,6 +40,7 @@ function customUpstream(raw) {
 }
 
 const upstreams = new Map();
+const listings = new Map();
 
 function front(key, env) {
   const base = customUpstream(env.ANTHROPIC_BASE_URL);
@@ -24,7 +48,16 @@ function front(key, env) {
   const current = upstreams.get(key);
   if (!base) return upstreams.delete(key);
   if (current?.base === base && current.token === token) return false;
-  const next = { key, base, token, knownModels: new Map() };
+  const kept = catalogs[key];
+  const cached =
+    kept?.base === base && Array.isArray(kept.ids) ? kept.ids.map(String) : [];
+  const next = {
+    key,
+    base,
+    token,
+    knownModels: new Map(cached.map((id) => [publicName(id), id])),
+    publishedTiers: new Map(),
+  };
   upstreams.set(key, next);
   log(`fronting ${base}${key ? ` for provider ${key}` : ""}`);
   next.ready = refreshCatalog(next);
@@ -54,12 +87,10 @@ if (upstreams.size === 0) {
   process.exit(0);
 }
 
-const publicName = (id) => {
+function publicName(id) {
   const name = id.toLowerCase();
   return name.startsWith(PREFIX) ? name : PREFIX + name;
-};
-
-const TIERS = ["fable", "opus", "sonnet", "haiku"];
+}
 
 const resolveModel = (upstream, name) => {
   const known = upstream.knownModels.get(name);
@@ -69,7 +100,9 @@ const resolveModel = (upstream, name) => {
     : name;
   const models = [...upstream.knownModels.values()];
   if (!models.length || models.includes(bare)) return bare;
-  const tier = TIERS.find((t) => bare.toLowerCase().includes(t));
+  const tier =
+    upstream.publishedTiers.get(name) ??
+    TIERS.find((t) => bare.toLowerCase().includes(t));
   return tier ? tierModels(models)[tier] : bare;
 };
 
@@ -106,12 +139,20 @@ async function fetchCatalog(upstream) {
   }
 }
 
+function sharedListing(upstream) {
+  const key = `${upstream.base}\n${upstream.token}`;
+  if (!listings.has(key))
+    listings.set(key, fetchCatalog(upstream).finally(() => listings.delete(key)));
+  return listings.get(key);
+}
+
 async function refreshCatalog(upstream) {
-  const ids = await fetchCatalog(upstream);
+  const ids = await sharedListing(upstream);
   if (ids && upstreams.get(upstream.key) === upstream) {
     if (ids.join("\n") !== [...upstream.knownModels.values()].join("\n"))
       log(`serving ${ids.length} model(s)${upstream.key ? ` for provider ${upstream.key}` : ""}`);
     upstream.knownModels = new Map(ids.map((id) => [publicName(id), id]));
+    saveCatalog(upstream, ids);
   }
   return ids;
 }
@@ -156,9 +197,12 @@ function tierModels(models) {
 
 function envLines(upstream) {
   const models = [...upstream.knownModels.values()];
-  if (!models.length) return "";
-  return Object.entries(tierModels(models))
-    .map(([tier, model]) => [`ANTHROPIC_DEFAULT_${tier.toUpperCase()}_MODEL`, publicName(model)])
+  const tiers = models.length
+    ? Object.entries(tierModels(models)).map(([t, m]) => [t, publicName(m)])
+    : TIERS.map((t) => [t, PREFIX + t]);
+  for (const [tier, name] of tiers) upstream.publishedTiers.set(name, tier);
+  return tiers
+    .map(([tier, name]) => [`ANTHROPIC_DEFAULT_${tier.toUpperCase()}_MODEL`, name])
     .map(([k, v]) => `[ -n "\${${k}:-}" ] || export ${k}=${shQuote(v)}\n`)
     .join("");
 }
@@ -183,14 +227,12 @@ const RES_DROP = new Set([
   "connection",
 ]);
 
-function rewriteModel(upstream, body, contentType) {
+function rewriteModel(body, contentType, map) {
   if (!body.length || !(contentType ?? "").includes("json")) return body;
   try {
     const obj = JSON.parse(body.toString("utf8"));
     return typeof obj?.model === "string"
-      ? Buffer.from(
-          JSON.stringify({ ...obj, model: resolveModel(upstream, obj.model) }),
-        )
+      ? Buffer.from(JSON.stringify({ ...obj, model: map(obj.model) }))
       : body;
   } catch {
     return body;
@@ -202,13 +244,17 @@ const keepHeaders = (entries, drop) =>
     entries.filter(([k, v]) => !drop.has(k) && typeof v === "string"),
   );
 
-async function proxy(upstream, path, req, res) {
+async function listed(upstream) {
+  if (!upstream.knownModels.size) await upstream.ready;
   if (!upstream.knownModels.size) await refreshCatalog(upstream);
-  const body = rewriteModel(
-    upstream,
-    Buffer.concat(await Array.fromAsync(req)),
-    req.headers["content-type"],
-  );
+}
+
+async function proxy(upstream, path, req, res) {
+  await listed(upstream);
+  const raw = Buffer.concat(await Array.fromAsync(req));
+  const contentType = req.headers["content-type"];
+  let model;
+  const body = rewriteModel(raw, contentType, (name) => (model = resolveModel(upstream, name)));
   const headers = keepHeaders(Object.entries(req.headers), REQ_DROP);
 
   const ac = new AbortController();
@@ -216,14 +262,33 @@ async function proxy(upstream, path, req, res) {
     if (!res.writableEnded) ac.abort();
   });
 
-  let r;
-  try {
-    r = await fetch(upstream.base + path, {
+  const send = (body) =>
+    fetch(upstream.base + path, {
       method: req.method,
       headers,
       body: body.length ? body : undefined,
       signal: ac.signal,
     });
+  let r;
+  try {
+    r = await send(body);
+    // UNIT_BOUNDARY_DESCRIPTION: with no model list, a tier alias goes upstream bare and is refused. A provider attached moments ago can fail the first listing while its egress opens, yet answer by the time a request is refused, so the list is fetched again and the request resent once on the model it maps to.
+    if (r.status >= 400 && r.status < 500 && model !== undefined && !upstream.knownModels.size) {
+      await refreshCatalog(upstream);
+      if (upstream.knownModels.size) {
+        await r.body?.cancel();
+        r = await send(rewriteModel(raw, contentType, (name) => (model = resolveModel(upstream, name))));
+      }
+    }
+    const models = [...upstream.knownModels.values()];
+    if ([400, 404].includes(r.status) && models.length && model !== undefined && !models.includes(model)) {
+      const refusal = await r.text();
+      if (refusal.includes(model)) {
+        const standIn = tierModels(models).opus;
+        log(`${model} is not listed${upstream.key ? ` by provider ${upstream.key}` : ""} and was refused; sending ${standIn} instead`);
+        r = await send(rewriteModel(raw, contentType, () => standIn));
+      } else r = new Response(refusal, r);
+    }
   } catch (err) {
     if (!ac.signal.aborted) {
       const reason = err.cause?.message ?? err.message;
@@ -287,7 +352,7 @@ const server = http.createServer((req, res) => {
       void refreshCatalog(upstream);
       respond();
     } else {
-      void refreshCatalog(upstream).then(respond);
+      void listed(upstream).then(respond);
     }
     return;
   }
@@ -310,13 +375,6 @@ process.on("SIGHUP", () => {
   }
 });
 
-const discovered = await Promise.all(
-  [...upstreams.values()].map((u) => u.ready),
-);
-if (!discovered.some(Boolean))
-  log(
-    "no models discovered yet; passthrough only (built-in names still route)",
-  );
 server.listen(PORT, HOST, () =>
-  log(`listening on ${HOST}:${PORT}, fronting ${upstreams.size} upstream(s)`),
+  log(`listening on ${HOST}:${server.address().port}, fronting ${upstreams.size} upstream(s)`),
 );

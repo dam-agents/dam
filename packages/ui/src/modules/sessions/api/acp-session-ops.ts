@@ -7,6 +7,7 @@ import {
 } from "agent-runtime-api";
 import {
   type PlatformUndeliveredPrompt,
+  type PromptBlock,
   SessionMode,
   SessionType,
   type SessionView,
@@ -208,6 +209,41 @@ export async function deleteAgentSession(
   );
 }
 
+export async function updateQueuedPrompt(
+  agentId: string,
+  sessionId: string,
+  promptId: string,
+  prompt: PromptBlock[],
+): Promise<void> {
+  await withConnection(agentId, (conn) =>
+    conn.agent.request("platform/updateQueued", {
+      sessionId,
+      promptId,
+      prompt,
+    }),
+  );
+}
+
+export async function steerQueuedPrompt(
+  agentId: string,
+  sessionId: string,
+  promptId: string,
+): Promise<void> {
+  await withConnection(agentId, (conn) =>
+    conn.agent.request("platform/steerQueued", { sessionId, promptId }),
+  );
+}
+
+export async function removeQueuedPrompt(
+  agentId: string,
+  sessionId: string,
+  promptId: string,
+): Promise<void> {
+  await withConnection(agentId, (conn) =>
+    conn.agent.request("platform/removeQueued", { sessionId, promptId }),
+  );
+}
+
 export async function setAgentSessionTitle(
   agentId: string,
   sessionId: string,
@@ -250,4 +286,14 @@ export async function setSessionMode(
       _meta: { platform: { mode } },
     }),
   );
+}
+
+export async function readSessionHistory(
+  agentId: string,
+  sessionId: string,
+  tail: number,
+): Promise<readonly string[]> {
+  if (agentLacksLiveUpdates(agentId)) return [];
+  return (await agentTrpc(agentId).sessions.history.query({ sessionId, tail }))
+    .frames;
 }

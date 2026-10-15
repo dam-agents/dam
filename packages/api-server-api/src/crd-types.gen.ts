@@ -18,7 +18,7 @@ export interface AgentSpecCR {
    */
   agentHome?: string;
   /**
-   * Avatar is the agent's chosen avatar character; unset means one picked from its owner and name.
+   * Avatar is the agent's chosen avatar: a character name, "emoji:<emoji>" or "image:<sha256>"; unset means a character picked from its owner and name.
    */
   avatar?: string;
   /**
@@ -78,7 +78,7 @@ export interface AgentSpecCR {
    */
   harness?: string;
   /**
-   * HibernationTimeout overrides the chart-wide idle timeout for this Agent: "0s" never hibernates, omitted inherits the default. The UI writes it (presented in minutes); the controller and api-server resolve the effective value.
+   * HibernationTimeout overrides the chart-wide idle timeout for this Agent: "0s" never hibernates, omitted inherits the default. A vm Agent ignores it and always takes the chart-wide vm idle timeout. The UI writes it (presented in minutes); the controller and api-server resolve the effective value.
    */
   hibernationTimeout?: string;
   /**
@@ -210,4 +210,8 @@ export interface AgentSpecCR {
    * does not drive; it is service-only input, like the pre-minted id.
    */
   telemetryAttributionId?: string;
+  /**
+   * WhispersOff stops people in the conversations the agent is connected to from whispering to it privately; unset means whispers are on.
+   */
+  whispersOff?: boolean;
 }

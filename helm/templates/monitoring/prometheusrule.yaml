@@ -1,0 +1,132 @@
+{{- if and .Values.monitoring.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/PrometheusRule") }}
+{{- /*
+Alerts on the users' VM pools and on what the cluster holds for them. No series
+names a user: a runner alert names the runner's scrape address, and the Warning
+Events on the user's vm Agents name the user. See docs/architecture/observability.md.
+*/ -}}
+{{- $t := .Values.monitoring.thresholds }}
+{{- $events := printf "kubectl get events -n %s --field-selector reason=%%s finds the user's agents." .Values.agentNamespace }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "platform.fullname" . }}-vm-pool
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clickstack-collector
+    {{- with .Values.monitoring.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: platform-vm-pools
+      rules:
+        - alert: VMPoolMemoryCritical
+          expr: platform_vm_runner_memory_committed_mib / platform_vm_runner_memory_limit_mib >= {{ $t.critical }}
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: A user's VM memory pool is nearly full.
+            description: >-
+              The runner at {{ "{{ $labels.instance }}" }} has committed {{ "{{ $value | humanizePercentage }}" }} of its memory; that user's idle agents are put to sleep and new starts may be refused. {{ printf $events "VMPoolCritical" }}
+        - alert: VMPoolMemoryWarning
+          expr: platform_vm_runner_memory_committed_mib / platform_vm_runner_memory_limit_mib >= {{ $t.warning }}
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: A user's VM memory pool is getting full.
+            description: >-
+              The runner at {{ "{{ $labels.instance }}" }} has committed {{ "{{ $value | humanizePercentage }}" }} of its memory.
+        - alert: VMPoolStorageCritical
+          expr: platform_vm_runner_storage_used_bytes / platform_vm_runner_storage_usable_bytes >= {{ $t.critical }}
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: A user's VM storage pool is nearly full.
+            description: >-
+              The runner at {{ "{{ $labels.instance }}" }} has used {{ "{{ $value | humanizePercentage }}" }} of its claim; no machine of that user is created or grown, and from 97% none is started. {{ printf $events "VMPoolCritical" }}
+        - alert: VMPoolStorageWarning
+          expr: platform_vm_runner_storage_used_bytes / platform_vm_runner_storage_usable_bytes >= {{ $t.warning }}
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: A user's VM storage pool is getting full.
+            description: >-
+              The runner at {{ "{{ $labels.instance }}" }} has used {{ "{{ $value | humanizePercentage }}" }} of its claim.
+        - alert: VMPoolCPUThrottled
+          expr: rate(platform_vm_runner_cpu_throttled_periods_total[10m]) / rate(platform_vm_runner_cpu_periods_total[10m]) >= {{ $t.throttled }}
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: A user's VM agents are slowed down by their CPU limit.
+            description: >-
+              The runner at {{ "{{ $labels.instance }}" }} was throttled in {{ "{{ $value | humanizePercentage }}" }} of its scheduler periods.
+        - alert: VMRunnerMemoryPressure
+          expr: platform_vm_runner_memory_pressure == 1
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: A VM runner is close to the memory limit the kernel kills it at.
+            description: >-
+              The runner at {{ "{{ $labels.instance }}" }} has been past its pressure threshold for 5 minutes; if it is killed, every machine of its user restarts.
+        - alert: VMRunnerAdmissionRefusals
+          expr: increase(platform_vm_runner_machine_admission_refusals_total[15m]) > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: A VM runner keeps refusing machines for memory.
+            description: >-
+              The runner at {{ "{{ $labels.instance }}" }} refused machine starts throughout the last 15 minutes.
+        - alert: VMRunnerResizeInfeasible
+          expr: sum(platform_vm_runner_resize_pending{platform_vm_runner_resize_reason="infeasible"}) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: A node cannot give a user's VM runner what their pool asks.
+            description: >-
+              {{ "{{ $value }}" }} runner pods wait on a resize the node found infeasible; the scheduler does not account for that memory. {{ printf $events "RunnerResizeInfeasible" }}
+        - alert: VMRunnerResizeDeferred
+          expr: sum(platform_vm_runner_resize_pending{platform_vm_runner_resize_reason="deferred"}) > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: A node has deferred a user's VM runner resize.
+            description: >-
+              {{ "{{ $value }}" }} runner pods wait on a resize the node has deferred. {{ printf $events "RunnerResizeDeferred" }}
+        - alert: VMClusterMemoryOvercommitted
+          expr: sum by (platform_vm_pool_resource) (platform_vm_pool_committed{platform_vm_pool_resource="memory"}) / sum by (platform_vm_pool_resource) (platform_vm_pool_capacity{platform_vm_pool_resource="memory"}) > {{ $t.overcommit }}
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: The users' VM memory pools promise more than the nodes hold.
+            description: >-
+              The users' runner memory limits add up to {{ "{{ $value | humanize }}" }} times what the nodes that can run a runner hold.
+        - alert: VMClusterStorageOvercommitted
+          expr: sum by (platform_vm_pool_resource) (platform_vm_pool_committed{platform_vm_pool_resource="storage"}) / sum by (platform_vm_pool_resource) (platform_vm_pool_capacity{platform_vm_pool_resource="storage"}) > {{ $t.overcommit }}
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: The users' VM storage pools promise more than the storage holds.
+            description: >-
+              The users' runner claims add up to {{ "{{ $value | humanize }}" }} times the capacity their storage driver reports.
+        - alert: VMClusterReservedNearCapacity
+          expr: sum by (platform_vm_pool_resource) (platform_vm_pool_reserved) / sum by (platform_vm_pool_resource) (platform_vm_pool_capacity) >= {{ $t.critical }}
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: The nodes are nearly out of room for VM runners.
+            description: >-
+              The users' runners reserve {{ "{{ $value | humanizePercentage }}" }} of the {{ "{{ $labels.platform_vm_pool_resource }}" }} the nodes that can run a runner hold.
+{{- end }}

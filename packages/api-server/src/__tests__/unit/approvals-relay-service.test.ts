@@ -49,7 +49,9 @@ function makeRepo() {
     },
     expirePending: async (id) => {
       const row = rows.find((r) => r.id === id && r.status === "pending");
-      if (row) row.status = "expired";
+      if (!row) return false;
+      row.status = "expired";
+      return true;
     },
   } as Partial<ApprovalsRepository> as ApprovalsRepository;
   return { rows, repo };

@@ -1142,3 +1142,202 @@ index e2159a6..2d99a40 100644
 +        assert_eq!(proxy.status, ProxyStatus::Closed);
 +    }
 +}
+diff --git i/src/vmm/src/builder.rs w/src/vmm/src/builder.rs
+index 1c4bb62..5bbbd93 100644
+--- i/src/vmm/src/builder.rs
++++ w/src/vmm/src/builder.rs
+@@ -118,9 +118,9 @@ use vm_memory::Bytes;
+ use vm_memory::FileOffset;
+ #[cfg(not(feature = "aws-nitro"))]
+ use vm_memory::GuestMemory;
+-#[cfg(all(target_arch = "x86_64", not(feature = "tee")))]
++#[cfg(any(target_os = "linux", all(target_arch = "x86_64", not(feature = "tee"))))]
+ use vm_memory::GuestRegionMmap;
+-#[cfg(all(target_arch = "x86_64", not(feature = "tee")))]
++#[cfg(any(target_os = "linux", all(target_arch = "x86_64", not(feature = "tee"))))]
+ use vm_memory::mmap::MmapRegion;
+ use vm_memory::{FileOffset, GuestAddress, GuestMemoryMmap};
+ 
+@@ -2099,9 +2099,26 @@ fn load_payload(
+                 }
+                 region
+             } else {
++                // A huge-page-ready copy, so the kernel image the guest runs
++                // from is not mapped 4 KiB at a time; see map_aligned_guest_ram.
++                #[cfg(target_os = "linux")]
++                let region = {
++                    let region =
++                        map_aligned_guest_ram(GuestAddress(kernel_guest_addr), kernel_size)
++                            .map_err(StartMicrovmError::GuestMemoryMmap)?;
++                    // Safety: both are kernel_size bytes; the region is freshly mapped.
++                    unsafe {
++                        std::ptr::copy_nonoverlapping(
++                            kernel_host_addr as *const u8,
++                            region.as_ptr(),
++                            kernel_size,
++                        );
++                    }
++                    region
++                };
+                 // SAFETY: kernel_host_addr points to valid kernel data of size kernel_size.
+                 // The memory region is managed by the kernel bundle and remains valid.
+-                #[cfg(not(target_os = "windows"))]
++                #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+                 let region = unsafe {
+                     MmapRegion::build_raw(kernel_host_addr as *mut u8, kernel_size, 0, 0)
+                         .map_err(StartMicrovmError::InvalidKernelBundle)?
+@@ -2239,7 +2256,7 @@ pub struct PayloadConfig {
+ /// (for fast VM fork): a `memfd` on Linux, a regular temp file on macOS (which
+ /// has no `memfd`, but a file mmap'd `MAP_PRIVATE` gives the same cross-process
+ /// CoW — validated against HVF). Gated on the per-VM `SMOLVM_FORKABLE` opt-in.
+-fn memfd_backed_ram_enabled() -> bool {
++pub(crate) fn memfd_backed_ram_enabled() -> bool {
+     (cfg!(target_os = "linux") || cfg!(target_os = "macos") || cfg!(target_os = "windows"))
+         && std::env::var_os("SMOLVM_FORKABLE").is_some_and(|v| v == "1")
+ }
+@@ -2263,6 +2280,74 @@ fn advise_huge_pages(memory: &GuestMemoryMmap) {
+ #[cfg(not(target_os = "linux"))]
+ fn advise_huge_pages(_memory: &GuestMemoryMmap) {}
+ 
++/// Map an anonymous guest-RAM region whose host address is congruent to its
++/// guest address modulo 2 MiB, and ask for transparent huge pages on it.
++/// KVM maps a memslot with 2 MiB pages only when the two addresses agree in
++/// their low 21 bits. A plain `mmap` may land on any 4 KiB boundary (RHEL 9
++/// never THP-aligns an anonymous mapping, newer kernels only one whose length
++/// is a 2 MiB multiple), and a region that starts after a 64 KiB-aligned kernel
++/// is not 2 MiB-aligned in the guest anyway. Then the host backs the region
++/// with huge pages, but KVM still maps, and under nested virtualization
++/// faults, every guest page 4 KiB at a time.
++#[cfg(target_os = "linux")]
++pub(crate) fn map_aligned_guest_ram(
++    gpa: GuestAddress,
++    size: usize,
++) -> std::result::Result<MmapRegion, String> {
++    const HUGE: usize = 2 << 20;
++    let prot = libc::PROT_READ | libc::PROT_WRITE;
++    let flags = libc::MAP_PRIVATE | libc::MAP_ANONYMOUS | libc::MAP_NORESERVE;
++    let len = size.checked_add(HUGE).ok_or("guest RAM size overflow")?;
++    // Safety: a fresh anonymous mapping that nothing else refers to.
++    let base = unsafe { libc::mmap(std::ptr::null_mut(), len, prot, flags, -1, 0) };
++    if base == libc::MAP_FAILED {
++        return Err(format!("map guest RAM: {}", io::Error::last_os_error()));
++    }
++    let base = base as usize;
++    let start = base + (gpa.raw_value() as usize).wrapping_sub(base) % HUGE;
++    // Safety: both ranges lie inside the mapping made above and outside
++    // [start, start + size). An empty one fails with EINVAL and unmaps nothing.
++    unsafe {
++        libc::munmap(base as *mut libc::c_void, start - base);
++        libc::munmap(
++            (start + size) as *mut libc::c_void,
++            base + len - start - size,
++        );
++        // Keep this although upstream (libkrun#186) dropped it: on nested hosts
++        // with defrag=madvise, compaction (~1-2 ms per 2 MiB) is cheaper than
++        // falling back to 4 KiB pages (~10 ms per 2 MiB); measured on dam-cl,
++        // a busy node filled 4 GiB in 4.1 s with it and 8.3 s without.
++        libc::madvise(start as *mut libc::c_void, size, libc::MADV_HUGEPAGE);
++    }
++    // Safety: [start, start + size) is a live, page-aligned mapping made here,
++    // and the region becomes its only owner.
++    unsafe { MmapRegion::build_raw_owned(start as *mut u8, size, prot, flags) }
++        .map_err(|e| format!("map guest RAM: {e:?}"))
++}
++
++/// Anonymous guest memory for `ranges`: the first `ram_region_count` are RAM,
++/// mapped huge-page-ready by [`map_aligned_guest_ram`]; the rest are device
++/// SHM windows, mapped as before.
++#[cfg(target_os = "linux")]
++fn create_aligned_guest_memory(
++    ranges: &[(GuestAddress, usize)],
++    ram_region_count: usize,
++) -> std::result::Result<GuestMemoryMmap, String> {
++    let regions = ranges
++        .iter()
++        .enumerate()
++        .map(|(index, &(gpa, size))| {
++            if index < ram_region_count {
++                GuestRegionMmap::new(map_aligned_guest_ram(gpa, size)?, gpa)
++                    .ok_or_else(|| "guest RAM region overflows".into())
++            } else {
++                GuestRegionMmap::from_range(gpa, size, None).map_err(|e| format!("{e:?}"))
++            }
++        })
++        .collect::<std::result::Result<Vec<_>, _>>()?;
++    GuestMemoryMmap::from_regions(regions).map_err(|e| format!("{e:?}"))
++}
++
+ /// Create an anonymous, RAM-backed `memfd` of `size` bytes to back a guest-RAM
+ /// region. Being a real file object, it can later be CoW-cloned with
+ /// `mmap(MAP_PRIVATE)` for fast, dense VM fork.
+@@ -2664,8 +2749,11 @@ pub fn create_guest_memory(
+         advise_huge_pages(&memory);
+         memory
+     } else {
+-        GuestMemoryMmap::from_ranges(&arch_mem_regions)
+-            .map_err(|e| StartMicrovmError::GuestMemoryMmap(format!("{e:?}")))?
++        #[cfg(target_os = "linux")]
++        let memory = create_aligned_guest_memory(&arch_mem_regions, ram_region_count);
++        #[cfg(not(target_os = "linux"))]
++        let memory = GuestMemoryMmap::from_ranges(&arch_mem_regions);
++        memory.map_err(|e| StartMicrovmError::GuestMemoryMmap(format!("{e:?}")))?
+     };
+ 
+     let LoadedPayload {
+@@ -3912,6 +4000,36 @@ pub mod tests {
+     use super::*;
+     use crate::vmm_config::kernel_bundle::KernelBundle;
+ 
++    #[cfg(target_os = "linux")]
++    #[test]
++    fn guest_ram_host_addresses_are_congruent_mod_2mib() {
++        use vm_memory::{Bytes, GuestMemoryRegion};
++        const HUGE: u64 = 2 << 20;
++        // x86's split around a 64 KiB-aligned kernel, high RAM, then an SHM window.
++        let ranges = [
++            (GuestAddress(0), 16 << 20),
++            (GuestAddress((16 << 20) + 0x1f_0000), (6 << 20) + 0x3000),
++            (GuestAddress(1 << 32), 4 << 20),
++            (GuestAddress(0x5_0000_0000), 1 << 20),
++        ];
++        // Another mapping in between shifts where the kernel places the next.
++        let mut spacers = Vec::new();
++        for _ in 0..8 {
++            let memory = create_aligned_guest_memory(&ranges, 3).unwrap();
++            for region in memory.iter().take(3) {
++                let gpa = region.start_addr();
++                let host = memory.get_host_address(gpa).unwrap() as u64;
++                assert_eq!(host % HUGE, gpa.raw_value() % HUGE);
++                let last = gpa.unchecked_add(region.len() - 1);
++                memory.write_obj(0xa5u8, gpa).unwrap();
++                memory.write_obj(0x5au8, last).unwrap();
++                assert_eq!(memory.read_obj::<u8>(gpa).unwrap(), 0xa5);
++                assert_eq!(memory.read_obj::<u8>(last).unwrap(), 0x5a);
++            }
++            spacers.push(MmapRegion::<()>::new(0x5000).unwrap());
++        }
++    }
++
+     #[cfg(target_os = "macos")]
+     #[test]
+     fn reaps_dead_pid_guest_ram_keeps_live_and_legacy() {
+diff --git i/src/vmm/src/memory_growth.rs w/src/vmm/src/memory_growth.rs
+index ef2d6ee..24592f0 100644
+--- i/src/vmm/src/memory_growth.rs
++++ w/src/vmm/src/memory_growth.rs
+@@ -36,6 +36,15 @@ impl Vmm {
+                     .with_zero_region(base + mapped, size)
+                     .map_err(|error| format!("prepare added RAM generation: {error}"))?;
+                 (Some(next), region)
++            } else if !builder::memfd_backed_ram_enabled() {
++                // Anonymous and placed for huge pages like the boot RAM: a
++                // shared-memory file gets 4 KiB host pages wherever the host
++                // turns shmem huge pages off. Only a branchable machine needs
++                // a file its clones can map.
++                let gpa = GuestAddress(base + mapped);
++                let region = GuestRegionMmap::new(builder::map_aligned_guest_ram(gpa, size)?, gpa)
++                    .ok_or("added RAM region overflows")?;
++                (None, Arc::new(region))
+             } else {
+                 let backing = builder::create_guest_ram_memfd(size)?;
+                 let region = Arc::new(

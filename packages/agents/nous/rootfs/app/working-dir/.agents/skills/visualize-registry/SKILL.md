@@ -12,9 +12,11 @@ Render the cross-campaign knowledge graph from the Nous wiki registry.
 
    If missing, **STOP** and tell the user:
 
-   > "No registry found. Run `/post-campaign <path>` on at least one campaign first, then re-run `/visualize-registry`."
+   > "No registry found.
+   > Run `/post-campaign <path>` on at least one campaign first, then re-run `/visualize-registry`."
 
-   Do NOT proceed. Do NOT attempt to generate or fix any data yourself.
+   Do NOT proceed.
+   Do NOT attempt to generate or fix any data yourself.
 
 2. **Run the visualization script**:
    ```bash
@@ -39,6 +41,8 @@ Render the cross-campaign knowledge graph from the Nous wiki registry.
 ## Important
 
 - The ONLY file this skill writes is `~/.nous/wiki/viz/registry.html` (via the Python script).
-- Entity clusters are pre-computed at index time by `/index-wiki` and stored in `registry.json`. The script reads them directly.
-- No LLM calls are made. All scoring is heuristic (frontier count, interaction count, recency, dead-end density).
+- Entity clusters are pre-computed at index time by `/index-wiki` and stored in `registry.json`.
+  The script reads them directly.
+- No LLM calls are made.
+  All scoring is heuristic (frontier count, interaction count, recency, dead-end density).
 - If the script fails, report the error output verbatim.

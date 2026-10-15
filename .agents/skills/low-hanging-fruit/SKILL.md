@@ -28,14 +28,16 @@ Score each issue for simplicity:
 - **Clarity**: the issue states the fix, or the title makes it obvious.
 - **Skip**: architecture changes, multi-package coordination, features needing design, open questions.
 
-Select **at most 3**; fewer if the backlog has no easy wins. Present them, one-sentence rationale each, and ask which to work on (default: all):
+Select **at most 3**; fewer if the backlog has no easy wins.
+Present them, one-sentence rationale each, and ask which to work on (default: all):
 
-| # | Issue | Title | Why it's simple |
-|---|-------|-------|-----------------|
+| #   | Issue | Title | Why it's simple |
+| --- | ----- | ----- | --------------- |
 
 ## 2. Fix in parallel
 
-Spawn one Agent per confirmed issue with `isolation: "worktree"`, giving each enough context to work alone: number, title, body summary, likely files. Each agent:
+Spawn one Agent per confirmed issue with `isolation: "worktree"`, giving each enough context to work alone: number, title, body summary, likely files.
+Each agent:
 
 1. Reads the full issue (`gh issue view <number> --json body`) and the relevant code.
 2. Implements the fix on branch `fix/<slug>` or `chore/<slug>` (by issue type).
@@ -45,15 +47,15 @@ Spawn one Agent per confirmed issue with `isolation: "worktree"`, giving each en
 
 ## 3. Review, then push
 
-For each worktree with changes: show `git diff main...HEAD`, summarize what changed and why, and get explicit approval for that item. Only then push and open its PR with the `pr-open` skill, titled
-`<type>(scope): <summary>`, with `Closes #<issue-number>` in the body.
+For each worktree with changes: show `git diff main...HEAD`, summarize what changed and why, and get explicit approval for that item.
+Only then push and open its PR with the `pr-open` skill, titled `<type>(scope): <summary>`, with `Closes #<issue-number>` in the body.
 
 On rejection, ask what to change, or skip the item.
 
 ## 4. Summary
 
-| # | Issue | Title | Status | PR |
-|---|-------|-------|--------|----|
+| #   | Issue | Title | Status | PR  |
+| --- | ----- | ----- | ------ | --- |
 
 Status: PR opened, skipped, or user declined.
 

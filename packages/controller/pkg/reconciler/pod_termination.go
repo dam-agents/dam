@@ -2,8 +2,12 @@ package reconciler
 
 import (
 	"fmt"
+	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
+
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 )
 
 func isPodReady(pod corev1.Pod) bool {
@@ -62,6 +66,9 @@ func classifyTermination(t *corev1.ContainerStateTerminated) (reason, message st
 	if t.Reason == "OOMKilled" {
 		return "OutOfMemory", "out of memory (OOMKilled)", true
 	}
+	if t.ExitCode != 0 && strings.TrimSpace(t.Message) == apiv1.ReasonHomeVolumeFull {
+		return apiv1.ReasonHomeVolumeFull, "home volume is full (no space left on device)", true
+	}
 	if t.ExitCode != 0 {
 		msg := fmt.Sprintf("exited with code %d", t.ExitCode)
 		if t.Reason != "" {
@@ -80,4 +87,20 @@ func classifyWaiting(w *corev1.ContainerStateWaiting) (reason, message string, o
 		return "InvalidImageName", "invalid image name", true
 	}
 	return "", "", false
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: when the runner container of a runner pod was last OOM-killed: its current state while it has not restarted yet, else its last termination.
+func runnerOOMKilledAt(pod *corev1.Pod) time.Time {
+	var at time.Time
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.Name != vmRunnerComponent {
+			continue
+		}
+		for _, t := range []*corev1.ContainerStateTerminated{cs.State.Terminated, cs.LastTerminationState.Terminated} {
+			if t != nil && t.Reason == "OOMKilled" && t.FinishedAt.After(at) {
+				at = t.FinishedAt.Time
+			}
+		}
+	}
+	return at
 }

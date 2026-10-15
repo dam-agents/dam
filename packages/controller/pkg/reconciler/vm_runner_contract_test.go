@@ -84,7 +84,7 @@ func TestTheRunnerPublishesMachinesOnlyOnPortsItsPolicyOpens(t *testing.T) {
 	assert.Equal(t, flag(args, "port-max"), int(*published.EndPort))
 }
 
-// TEST_SCENARIO: two guest paths are named by the controller and laid out by platform-init: the agent home, which the controller sets as HOME and platform-init bind-mounts the disk onto, and the CA file, which the controller names in NODE_EXTRA_CA_CERTS and platform-init binds from the machine's share. Neither side can import the other's constant, so both are held to one fixture — a home nobody mounts loses the agent's work at the first stop, and a CA file that is not there fails every intercepted TLS call.
+// TEST_SCENARIO: two guest paths are named by the controller and laid out by platform-init: the agent home, which the controller sets as HOME and platform-init bind-mounts the disk onto, and the CA file, which the controller names in NODE_EXTRA_CA_CERTS, and whose directory it names in SSL_CERT_DIR, and platform-init binds from the machine's share. Neither side can import the other's constant, so both are held to one fixture — a home nobody mounts loses the agent's work at the first stop, and a CA file that is not there fails every intercepted TLS call.
 func TestTheAgentsGuestPathsAreTheOnesPlatformInitLaysOut(t *testing.T) {
 	var guest struct {
 		AgentHome      string `json:"agentHome"`
@@ -98,6 +98,7 @@ func TestTheAgentsGuestPathsAreTheOnesPlatformInitLaysOut(t *testing.T) {
 	assert.Equal(t, guest.AgentHome, agentHomeDir)
 	env := envToMap(agentPlatformEnv("my-agent", testConfig, agentHomeDir, "http://10.96.42.42:10000"))
 	assert.Equal(t, guest.CAFile, env["NODE_EXTRA_CA_CERTS"])
+	assert.Equal(t, filepath.Dir(guest.CAFile), env["SSL_CERT_DIR"])
 }
 
 // TEST_SCENARIO: an install that stages runner releases on the node gives each runner pod's loader its environment. A name the loader does not read is a pod that silently runs only the release its image carries, so the names rendered here are held to the fixture the loader's tests read, and an install that stages nothing renders none of them.

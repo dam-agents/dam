@@ -1,5 +1,13 @@
 import { StopFilledAlt } from "@carbon/icons-react";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import {
+  memo,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -7,8 +15,11 @@ import { cn } from "@/lib/utils";
 import type { Message } from "../../../types.js";
 import { hasAgentContent } from "../../acp/session-projection.js";
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
+import { useIsFanOutChip } from "../../invocations/components/delegation-owners.js";
+import { activityItems } from "../lib/activity-groups.js";
 import { modelDisplayName } from "../lib/model-name.js";
 import type { MessageTime } from "../lib/thread-items.js";
+import { ActivityGroup } from "./activity-group.js";
 import { ChatMessagePart } from "./chat-message-part.js";
 import { PermissionStatusLine } from "./permission-prompt.js";
 import { QuietNotice } from "./quiet-notice.js";
@@ -26,8 +37,11 @@ interface BaseProps {
   userLabel?: string;
   readOnly?: boolean;
   showModel?: boolean;
+  continued?: boolean;
+  arriving?: boolean;
   isLast: boolean;
   hasPendingPermission: boolean;
+  pendingNotice?: ReactNode;
   onRetry: OnRetry;
   onFileClick: (path: string) => void;
   onDelete: (id: string) => void;
@@ -92,15 +106,26 @@ export const ChatMessage = memo(function ChatMessage({
   userLabel = "You",
   readOnly = false,
   showModel = false,
+  continued = false,
+  arriving = false,
   isLast,
   timeLabel,
   timeTitle,
   hasPendingPermission,
+  pendingNotice,
   onRetry,
   onFileClick,
   onDelete,
   onLoadOlder,
 }: Props) {
+  const isFanOut = useIsFanOutChip();
+  const items = useMemo(
+    () =>
+      message.role === "assistant"
+        ? activityItems(message.parts, isFanOut)
+        : activityItems(message.parts, () => true),
+    [message.role, message.parts, isFanOut],
+  );
   if (message.notice) {
     if (message.loadOlderBefore !== undefined && onLoadOlder) {
       return (
@@ -122,6 +147,8 @@ export const ChatMessage = memo(function ChatMessage({
   const { role, parts, streaming, queued, error, stopped } = message;
   const isAssistant = role === "assistant";
   const undelivered = !isAssistant && error !== undefined;
+  if (isAssistant && streaming && queued && parts.length === 0) return null;
+  const working = isAssistant && streaming && !queued && !hasPendingPermission;
 
   return (
     <div
@@ -129,7 +156,7 @@ export const ChatMessage = memo(function ChatMessage({
       data-role={role}
       className={cn(
         "flex flex-col gap-1",
-        isLast && streaming && "anim-in",
+        ((isLast && streaming) || arriving) && "anim-in",
         isAssistant ? "items-start" : "items-end",
       )}
     >
@@ -137,6 +164,7 @@ export const ChatMessage = memo(function ChatMessage({
         className={cn(
           "flex gap-1.5 mb-0.5",
           avatarAgent === undefined ? "items-baseline" : "items-center",
+          continued && "hidden",
         )}
       >
         {isAssistant && avatarAgent !== undefined && (
@@ -166,31 +194,25 @@ export const ChatMessage = memo(function ChatMessage({
             !isAssistant && (undelivered ? "border-danger" : "border-border"),
           )}
         >
-          {parts.map((p, i) => (
-            <ChatMessagePart
-              key={i}
-              part={p}
-              role={role}
-              streaming={streaming}
-              isLast={i === parts.length - 1}
-              onFileClick={readOnly ? undefined : onFileClick}
-            />
-          ))}
-          {streaming && queued && parts.length === 0 && (
-            <span
-              data-testid="prompt-queued-indicator"
-              className="text-xs text-muted-foreground italic"
-            >
-              Waiting for previous prompt…
-            </span>
+          {items.map((item, i) =>
+            item.kind === "group" ? (
+              <ActivityGroup
+                key={item.index}
+                chips={item.chips}
+                streaming={streaming}
+              />
+            ) : (
+              <ChatMessagePart
+                key={item.index}
+                part={item.part}
+                role={role}
+                streaming={streaming}
+                isLast={i === items.length - 1}
+                onFileClick={readOnly ? undefined : onFileClick}
+              />
+            ),
           )}
           {isAssistant && isLast && !readOnly && <PermissionStatusLine />}
-          {isAssistant && streaming && !queued && !hasPendingPermission && (
-            <span role="status" className="inline-flex items-center py-1">
-              <WorkingDots size="md" className="text-accent" />
-              <span className="sr-only">Working</span>
-            </span>
-          )}
           {isAssistant && stopped && !streaming && (
             <p
               data-testid="reply-stopped-marker"
@@ -200,6 +222,20 @@ export const ChatMessage = memo(function ChatMessage({
               Stopped
             </p>
           )}
+          {isAssistant && (streaming || isLast) && (
+            <span
+              role={working ? "status" : undefined}
+              aria-hidden={!working}
+              className={cn(
+                "inline-flex items-center py-1",
+                !working && "invisible",
+              )}
+            >
+              <WorkingDots size="md" className="text-accent" />
+              {working && <span className="sr-only">Working</span>}
+            </span>
+          )}
+          {isAssistant && streaming && parts.length === 0 && pendingNotice}
           {undelivered && (
             <UndeliveredNotice
               message={message}

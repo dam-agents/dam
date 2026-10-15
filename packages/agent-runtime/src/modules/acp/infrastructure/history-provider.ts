@@ -1,9 +1,14 @@
-import { Worker } from "node:worker_threads";
-
 import { describeFailure, runOnce } from "../../../core/run-once.js";
+import {
+  DEFAULT_EXPORT_NAME,
+  startWorker,
+  takePrestartedWorker,
+  type StartedWorker,
+} from "./history-worker.js";
 
 export interface HistoryProvider {
   fetch(sessionId: string): Promise<string[] | null>;
+  warm?(): void;
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -84,33 +89,6 @@ export function createExecHistoryProvider(
   };
 }
 
-const WORKER_BOOTSTRAP = `
-const { parentPort, workerData } = require("node:worker_threads");
-(async () => {
-  const mod = await import(workerData.moduleUrl);
-  const fn = mod[workerData.exportName] ?? mod.default;
-  if (typeof fn !== "function") {
-    throw new Error("export " + workerData.exportName + " is not a function");
-  }
-  parentPort.on("message", async (msg) => {
-    try {
-      const lines = await fn(msg.sessionId);
-      parentPort.postMessage({ id: msg.id, lines });
-    } catch (error) {
-      parentPort.postMessage({
-        id: msg.id,
-        error: String((error && error.message) || error),
-      });
-    }
-  });
-  parentPort.postMessage({ ready: true });
-})().catch((error) => {
-  parentPort.postMessage({
-    fatal: String((error && error.message) || error),
-  });
-});
-`;
-
 export interface WorkerHistoryProviderDeps {
   modulePath: string;
   exportName?: string;
@@ -118,9 +96,7 @@ export interface WorkerHistoryProviderDeps {
   log: (msg: string) => void;
 }
 
-interface WorkerHandle {
-  worker: Worker;
-  ready: Promise<boolean>;
+interface WorkerHandle extends StartedWorker {
   inFlight: Map<number, (lines: string[] | null) => void>;
 }
 
@@ -130,56 +106,28 @@ interface WorkerHandle {
  * thread, so the module graph is compiled once instead of per load. The
  * module's exported function receives a session id and resolves to an array
  * of `session/update` JSON-RPC frame strings for that session. The worker is
- * spawned lazily, and any failure — spawn, import, per-request error, crash,
- * timeout, invalid frames — resolves that fetch to null so the caller falls
- * back to the harness `session/load`; a dead worker is respawned on the next
- * fetch.
+ * the one the runtime's entry point started for this module, or else spawned
+ * by `warm`, which the server calls once it listens, or by the first fetch.
+ * Any failure — spawn, import, per-request error, crash, timeout, invalid
+ * frames — resolves that fetch to null so the caller falls back to the
+ * harness `session/load`; a dead worker is respawned on the next fetch.
  */
 export function createWorkerHistoryProvider(
   deps: WorkerHistoryProviderDeps,
 ): HistoryProvider {
   const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const exportName = deps.exportName ?? "loadHistory";
+  const exportName = deps.exportName ?? DEFAULT_EXPORT_NAME;
   let handle: WorkerHandle | null = null;
   let nextId = 1;
 
   function ensureWorker(): WorkerHandle {
     if (handle) return handle;
-    const worker = new Worker(WORKER_BOOTSTRAP, {
-      eval: true,
-      workerData: {
-        moduleUrl: deps.modulePath.startsWith("data:")
-          ? deps.modulePath
-          : new URL(`file://${deps.modulePath}`).href,
-        exportName,
-      },
-    });
-    worker.unref();
+    const started =
+      takePrestartedWorker(deps.modulePath, exportName) ??
+      startWorker(deps.modulePath, exportName, deps.log);
+    const { worker } = started;
     const inFlight = new Map<number, (lines: string[] | null) => void>();
-    const created: WorkerHandle = {
-      worker,
-      inFlight,
-      ready: new Promise<boolean>((resolve) => {
-        const onFirst = (msg: { ready?: boolean; fatal?: string }): void => {
-          if (msg.ready === true) {
-            resolve(true);
-            return;
-          }
-          if (msg.fatal !== undefined) {
-            deps.log(`history provider module failed to load: ${msg.fatal}`);
-            resolve(false);
-            return;
-          }
-        };
-        worker.once("message", onFirst);
-        worker.once("error", (error) => {
-          deps.log(
-            `history provider worker error: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          resolve(false);
-        });
-      }),
-    };
+    const created: WorkerHandle = { ...started, inFlight };
     worker.on(
       "message",
       (msg: { id?: number; lines?: unknown; error?: string }) => {
@@ -209,6 +157,7 @@ export function createWorkerHistoryProvider(
   }
 
   return {
+    warm: () => void ensureWorker(),
     async fetch(sessionId) {
       const current = ensureWorker();
       const ok = await current.ready;

@@ -17,11 +17,13 @@ export function composeAttentionService(deps: {
   db: Db;
   ownerSub: string;
   ownsApproval: (approvalId: string) => Promise<boolean>;
+  ownsAgent: (agentId: string) => Promise<boolean>;
 }): AttentionService {
   return createAttentionService({
     repo: createAttentionRepository(deps.db),
     ownerSub: deps.ownerSub,
     ownsApproval: deps.ownsApproval,
+    ownsAgent: deps.ownsAgent,
   });
 }
 

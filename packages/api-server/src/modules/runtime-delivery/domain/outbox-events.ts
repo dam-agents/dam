@@ -1,4 +1,4 @@
-import type { AgentCreateInput } from "api-server-api";
+import type { AgentCreateInput, SessionPair } from "api-server-api";
 
 import type { RuntimeMutator } from "../services/runtime-mutator.js";
 
@@ -36,16 +36,44 @@ export const workspaceCommandEvent = (
 ): OutboxEvent =>
   workspaceEvent("workspace-command", idPrefix, agentId, { command }, at);
 
+function initializationPayload(
+  task: string,
+  pair: SessionPair | null | undefined,
+): OutboxEvent["payload"] {
+  if (!pair) return { task };
+  return {
+    task,
+    harness: pair.harness,
+    ...(pair.provider !== null && { provider: pair.provider }),
+    ...(pair.model !== null && { model: pair.model }),
+    ...(pair.settings && { settings: pair.settings }),
+  };
+}
+
 export const initializationEvent = (
   agentId: string,
   task: string,
   at: Date,
+  pair?: SessionPair | null,
 ): OutboxEvent =>
-  workspaceEvent("initialization", "initialization", agentId, { task }, at);
+  workspaceEvent(
+    "initialization",
+    "initialization",
+    agentId,
+    initializationPayload(task, pair),
+    at,
+  );
 
 export const kitUpdateEvent = (
   agentId: string,
   task: string,
   at: Date,
+  pair?: SessionPair | null,
 ): OutboxEvent =>
-  workspaceEvent("initialization", "kit-update", agentId, { task }, at);
+  workspaceEvent(
+    "initialization",
+    "kit-update",
+    agentId,
+    initializationPayload(task, pair),
+    at,
+  );

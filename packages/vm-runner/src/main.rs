@@ -67,6 +67,8 @@ struct Args {
     reserve_mib: i64,
     #[arg(long = "headroom-mib", default_value_t = 256)]
     headroom_mib: i64,
+    #[arg(long = "boot-mib", default_value_t = 0)]
+    boot_mib: i64,
     // UNIT_BOUNDARY_DESCRIPTION: whether the install lets machines run KVM themselves. The runner nests a guest only when this is set and the node's KVM allows it. Nesting is the kernel's default on Intel and AMD, and turning it off on a node takes a module reload, so the node alone is no choice at all: the install makes it, and only one that sets `virtualization.runner.nestedVirtualization` passes this flag.
     #[arg(long = "nested-virtualization")]
     nested_virtualization: bool,
@@ -102,7 +104,7 @@ fn gateway_host_port(boot_config: &Path) -> anyhow::Result<Option<u16>> {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: points the embedded runtime at the smolvm release the image installed, as the release's launcher script does for its own binary: libkrun and libkrunfw from its lib directory, the guest agent from its agent-rootfs. The environment is read by this process and inherited by every VMM it spawns, so it is set before any thread starts. The archive cap is the `--max-image-size` flag.
+// UNIT_BOUNDARY_DESCRIPTION: points the embedded runtime at the smolvm release the image installed, as the release's launcher script does for its own binary: libkrun and libkrunfw from its lib directory, the guest agent from its agent-rootfs. The environment is read by this process and inherited by every VMM it spawns, so it is set before any thread starts. The archive cap is the `--max-image-size` flag. SMOLVM_MOUNT_DAX gives every mount a machine boots with a 2 GiB DAX window, so the guest maps the host's page cache instead of copying each read through FUSE into its own: the harness tools, which every harness start reads `node` and its modules from, and the share. smolvm has no per-mount switch. Both mounts are read-only, and the runner replaces a share file by a rename and never writes one in place, so a mapped file is never truncated under the guest. The window costs the guest 32 MiB of RAM per mount for its page structs. smolvm ignores the variable on arm64, whose guest kernel has no FUSE DAX. DAX is safe only on the Linux 6.12 guest kernel smolvm.pin names: from 6.15 on, a process that runs a large binary from a DAX mount dies of SIGBUS once another process opens it (smol-machines/smolvm#1741), and the vm e2e lane holds the kernel to that. Setting it to 0 turns DAX off to compare.
 fn configure_smolvm(launcher: &Path) {
     let install = launcher.parent().unwrap_or(Path::new("/"));
     let lib = install.join("lib");
@@ -123,6 +125,9 @@ fn configure_smolvm(launcher: &Path) {
     }
     if std::env::var_os("SMOLVM_MAX_IMAGE_BYTES").is_none() {
         std::env::set_var("SMOLVM_MAX_IMAGE_BYTES", MAX_IMAGE_BYTES.to_string());
+    }
+    if std::env::var_os("SMOLVM_MOUNT_DAX").is_none() {
+        std::env::set_var("SMOLVM_MOUNT_DAX", "1");
     }
 }
 
@@ -197,6 +202,7 @@ fn main() -> anyhow::Result<()> {
     let token = http::Token::from_file(args.token_file.clone())?;
     configure_smolvm(&args.smolvm);
     prepare_host(&args)?;
+    let _claim = claim_state(&args.state_dir)?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
@@ -208,6 +214,21 @@ fn main() -> anyhow::Result<()> {
 // UNIT_BOUNDARY_DESCRIPTION: how long the process waits, once it has closed, for blocking work still running. Closing already waited its own bounded time for the machines; a runtime call past that is stuck, and a dropped tokio runtime would wait for it without end, past the pod's grace, into the SIGKILL.
 const RUNTIME_EXIT_WAIT: Duration = Duration::from_secs(1);
 
+// UNIT_BOUNDARY_DESCRIPTION: waits until no other runner process holds this state, then holds it until this one exits. A deleted runner pod is replaced at once, while the old pod still runs its close beside the new one on the same claim, and that close stops every machine its records say is running: by then those are the new runner's machines, reached through the guest sockets both pods share, so the agents the new runner has just booted go down under it. The lock is flock(2) on a file of the claim, which the kernel holds for both pods on one node; it goes with the process, a hand-off's exit and a kill included, and the VMMs this runner spawns do not inherit it.
+fn claim_state(dir: &Path) -> anyhow::Result<std::fs::File> {
+    let path = dir.join(".runner.lock");
+    let file = std::fs::File::create(&path)
+        .map_err(|e| anyhow::anyhow!("opening {}: {e}", path.display()))?;
+    match file.try_lock() {
+        Ok(()) => {}
+        Err(std::fs::TryLockError::WouldBlock) => {
+            tracing::info!(path = %path.display(), "another runner still holds this state; waiting for it to close");
+            file.lock()?;
+        }
+        Err(std::fs::TryLockError::Error(e)) => anyhow::bail!("locking {}: {e}", path.display()),
+    }
+    Ok(file)
+}
 // UNIT_BOUNDARY_DESCRIPTION: the port range as the runner can publish it. Each machine's guest port sits on loopback at its published port plus LOOPBACK_OFFSET, so a range whose top plus the offset passes 65535 would publish a machine on a port that does not exist, and the arithmetic would overflow at the first such machine instead of failing here at start.
 fn check_ports(min: u16, max: u16) -> anyhow::Result<()> {
     anyhow::ensure!(min <= max, "--port-min is above --port-max");
@@ -264,10 +285,16 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
             memory_mib: i32::try_from(args.memory_mib)?,
             reserve_mib: i32::try_from(args.reserve_mib)?,
             headroom_mib: i32::try_from(args.headroom_mib)?,
+            boot_mib: i32::try_from(args.boot_mib)?,
             listen: publisher(&args.publish_address)?,
             runtime: std::env::current_exe()
                 .ok()
                 .and_then(|exe| exe.parent().and_then(vm_runner::release::runtime_id)),
+            cgroup_dir: cfg!(target_os = "linux").then(|| PathBuf::from("/sys/fs/cgroup")),
+            measure_storage: {
+                let claim = args.state_dir.clone();
+                Arc::new(move || vm_runner::storage::measure(&claim))
+            },
         },
         runtime,
     )?;
@@ -429,6 +456,23 @@ mod tests {
         assert!(check_ports(args.port_min, args.port_max).is_ok());
     }
 
+    // TEST_SCENARIO: a runner started on state another runner process still holds waits for that one to let go, and takes the state the moment it does, so two runners never drive the same machines at once.
+    #[test]
+    fn a_runner_waits_for_the_one_still_holding_its_state() {
+        let dir = std::env::temp_dir().join(format!("vm-runner-claim-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let held = claim_state(&dir).unwrap();
+        let (claimed, waiting) = std::sync::mpsc::channel();
+        let second = dir.clone();
+        std::thread::spawn(move || claimed.send(claim_state(&second).map(|_| ())).unwrap());
+        assert!(waiting.recv_timeout(Duration::from_millis(300)).is_err());
+        drop(held);
+        waiting
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap()
+            .unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
     // TEST_SCENARIO: `:4600` is the flag's spelling of every interface on a port. It must bind, and a port that is not a number must be refused rather than read as some default.
     #[test]
     fn a_bare_port_binds_every_interface() {
@@ -443,7 +487,7 @@ mod tests {
             .is_loopback());
     }
 
-    // TEST_SCENARIO: the image's entrypoint names the smolvm release's launcher, and everything the VMM loads is found beside it — its libraries ahead of any already on the library path, and its guest agent's root filesystem — as the release's own launcher script finds them.
+    // TEST_SCENARIO: the image's entrypoint names the smolvm release's launcher, and everything the VMM loads is found beside it — its libraries ahead of any already on the library path, and its guest agent's root filesystem — as the release's own launcher script finds them. Its mounts are DAX-mapped by default.
     #[test]
     fn the_smolvm_release_is_found_beside_its_launcher() {
         let install =
@@ -451,6 +495,7 @@ mod tests {
         std::fs::create_dir_all(install.join("agent-rootfs")).unwrap();
         std::env::set_var("LD_LIBRARY_PATH", "/usr/lib/other");
         std::env::remove_var("SMOLVM_AGENT_ROOTFS");
+        std::env::remove_var("SMOLVM_MOUNT_DAX");
         configure_smolvm(&install.join("smolvm"));
         assert_eq!(
             std::env::var_os("SMOLVM_LIB_DIR"),
@@ -464,6 +509,7 @@ mod tests {
             std::env::var_os("SMOLVM_AGENT_ROOTFS"),
             Some(install.join("agent-rootfs").into_os_string())
         );
+        assert_eq!(std::env::var("SMOLVM_MOUNT_DAX").as_deref(), Ok("1"));
         let _ = std::fs::remove_dir_all(&install);
     }
 

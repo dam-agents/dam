@@ -15,6 +15,7 @@ import type {
   OnboardingStep,
   Agent,
   AgentKind,
+  AgentReclaim,
   AgentSpec,
   AgentSpecCR,
   AgentState,
@@ -37,7 +38,11 @@ import {
   KIND_AGENT,
   LABEL_OWNER,
   LABEL_TEMPLATE_REF,
+  ACTIVE_SESSION_KEY,
+  INVOCATIONS_ACTIVE_KEY,
   LAST_ACTIVITY_KEY,
+  RECLAIMED_AT_KEY,
+  AGENT_POD_REASON_MACHINE_STOPPING,
   READY_REASON_HIBERNATED,
   READY_REASON_OVER_BUDGET,
   RUNTIME_MIGRATING_CONDITION,
@@ -54,8 +59,13 @@ import {
   ANN_STARTER_KIT_SEED,
   ANN_KIT_UPDATE_PENDING,
   ANN_KIT_UPDATE_SKIPPED,
+  ANN_IMAGE_UPDATE_FROM,
+  ANN_IMAGE_UPDATE_REFUSED,
 } from "./labels.js";
-import { resolveEffectiveHibernationTimeoutMin } from "../domain/spec-assembly.js";
+import {
+  type IdleTimeoutMinutes,
+  resolveEffectiveHibernationTimeoutMin,
+} from "../domain/spec-assembly.js";
 import {
   runtimeMigrationHold,
   runtimeMigrationOf,
@@ -91,6 +101,7 @@ interface AgentStatusObject {
     reason?: string;
     message?: string;
     lastTransitionTime?: string;
+    observedGeneration?: number;
   }>;
   agentPodRestarts?: number;
   agentPodRestartReason?: string;
@@ -115,7 +126,14 @@ export interface InfraAgent {
   starterKitSeed?: SeedStamp;
   kitUpdatePending?: KitUpdatePending;
   kitUpdateSkipped?: string;
+  imageUpdateFrom?: string;
+  imageUpdateRefused?: string;
+  specStart?: "ready" | "failed";
+  readySince?: Date;
   hibernatedSince?: Date;
+  wakeRequested?: boolean;
+  reclaimed?: AgentReclaim;
+  quietSince?: Date;
   ready: boolean;
   hibernated: boolean;
   stopRequested: boolean;
@@ -129,6 +147,7 @@ export interface InfraAgent {
   error?: string;
   reconciledReason?: string;
   podTerminationReason?: string;
+  podTerminationCode?: string;
   notReadyMessage?: string;
   podRestarts: number;
   podRestartReason?: string;
@@ -138,6 +157,14 @@ export interface InfraAgent {
   gatewayPodNotReadyReason?: string;
   gatewayFailure?: string;
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: the start failures only a new image causes: it cannot be pulled or unpacked, or the machine cannot boot it. A full home volume, memory and runner placement fail on any image. A container exit on AgentPodReady is left out: that condition does not say which pod exited, and the pod a roll replaces exits on SIGTERM at the new generation. The controller's StartFailed condition says it of the current pod or machine instead.
+const IMAGE_START_FAILURES = new Set([
+  "ImagePullFailure",
+  "InvalidImageName",
+  "MachineBootFailed",
+  "MachineImageUnavailable",
+]);
 
 const TERMINAL_MACHINE_REASONS = new Set(
   [...POD_FAILURE_REASONS].filter((r) => r.startsWith("Machine")),
@@ -153,6 +180,8 @@ export function computeAgentState(
     return preparingWorkspace ? "preparing_workspace" : "running";
   if (infra.hibernated) return "hibernated";
   if (infra.overBudget) return "over_budget";
+  if (infra.agentPodNotReadyReason === AGENT_POD_REASON_MACHINE_STOPPING)
+    return "hibernating";
   if (infra.agentPodReady === true && infra.gatewayPodReady === false)
     return preparingWorkspace ? "preparing_workspace" : "running";
   if (
@@ -194,6 +223,11 @@ function createdAtOf(obj: KubeObject): string | undefined {
   return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
 }
 
+function validDate(raw: string | undefined): Date | undefined {
+  const d = raw ? new Date(raw) : undefined;
+  return d && !Number.isNaN(d.getTime()) ? d : undefined;
+}
+
 export function parseInfraAgent(obj: KubeObject): InfraAgent {
   const id = obj.metadata?.name ?? "";
   const crSpec = (obj.spec ?? {}) as AgentSpecCR;
@@ -219,9 +253,20 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
   const kbShareRoots = splitRoots(annotations[ANN_KB_SHARE_ROOTS]);
   const lifetimeMs = Number.parseInt(annotations[ANN_LIFETIME_MS] ?? "", 10);
   const kindParse = agentKindSchema.safeParse(annotations[ANN_AGENT_KIND]);
-  const hibernatedSince =
-    hibernated && ready?.lastTransitionTime
-      ? new Date(ready.lastTransitionTime)
+  const hibernatedSince = hibernated
+    ? validDate(ready?.lastTransitionTime)
+    : undefined;
+  const reclaimedAt = hibernated
+    ? validDate(annotations[RECLAIMED_AT_KEY])
+    : undefined;
+  const reclaimed: AgentReclaim | undefined =
+    reclaimedAt &&
+    (validDate(annotations[LAST_ACTIVITY_KEY])?.getTime() ?? 0) <=
+      reclaimedAt.getTime()
+      ? {
+          at: reclaimedAt.toISOString(),
+          for: crSpec.backend?.type === "vm" ? "memory" : "compute",
+        }
       : undefined;
   const createdAt = createdAtOf(obj);
   const migrating = status.conditions?.find(
@@ -235,6 +280,27 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     vm: crSpec.backend?.type === "vm",
   });
   const resourceVersion = obj.metadata?.resourceVersion;
+  const generation = obj.metadata?.generation;
+  const startFailed = status.conditions?.find((c) => c.type === "StartFailed");
+  const specStart =
+    generation === undefined
+      ? undefined
+      : (startFailed?.status === "True" &&
+            startFailed.observedGeneration === generation) ||
+          (agentPod?.status === "False" &&
+            agentPod.observedGeneration === generation &&
+            IMAGE_START_FAILURES.has(agentPod.reason ?? ""))
+        ? "failed"
+        : ready?.status === "True" && ready.observedGeneration === generation
+          ? "ready"
+          : undefined;
+  const readySince =
+    ready?.status === "True" ? validDate(ready.lastTransitionTime) : undefined;
+  const quietSince =
+    annotations[ACTIVE_SESSION_KEY] === "true" ||
+    annotations[INVOCATIONS_ACTIVE_KEY] === "true"
+      ? undefined
+      : validDate(annotations[LAST_ACTIVITY_KEY]);
   return {
     id,
     name: spec.name,
@@ -269,7 +335,20 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     ...(annotations[ANN_KIT_UPDATE_SKIPPED]
       ? { kitUpdateSkipped: annotations[ANN_KIT_UPDATE_SKIPPED] }
       : {}),
+    ...(annotations[ANN_IMAGE_UPDATE_FROM]
+      ? { imageUpdateFrom: annotations[ANN_IMAGE_UPDATE_FROM] }
+      : {}),
+    ...(annotations[ANN_IMAGE_UPDATE_REFUSED]
+      ? { imageUpdateRefused: annotations[ANN_IMAGE_UPDATE_REFUSED] }
+      : {}),
+    ...(specStart ? { specStart } : {}),
+    ...(readySince ? { readySince } : {}),
     ...(hibernatedSince ? { hibernatedSince } : {}),
+    ...(hibernatedSince &&
+      (validDate(annotations[LAST_ACTIVITY_KEY])?.getTime() ?? 0) >
+        hibernatedSince.getTime() && { wakeRequested: true }),
+    ...(quietSince ? { quietSince } : {}),
+    ...(reclaimed ? { reclaimed } : {}),
     ready: ready?.status === "True",
     hibernated,
     stopRequested: !!annotations[STOP_REQUESTED_KEY],
@@ -303,6 +382,12 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
       POD_FAILURE_REASONS.has(agentPod.reason)
         ? agentPod.message
         : undefined,
+    podTerminationCode:
+      agentPod?.status === "False" &&
+      agentPod.reason &&
+      POD_FAILURE_REASONS.has(agentPod.reason)
+        ? agentPod.reason
+        : undefined,
     notReadyMessage:
       agentPod?.status === "False" &&
       agentPod.message &&
@@ -334,7 +419,7 @@ export function assembleAgent(
   infra: InfraAgent,
   channels: ChannelConfig[],
   contributionFailures: DriverFailure[],
-  globalIdleTimeoutMin: number,
+  idleTimeoutMinutes: IdleTimeoutMinutes,
   preparingWorkspace: boolean,
   templateUpdate: TemplateUpdate | undefined,
   features: RuntimeFeatures,
@@ -358,13 +443,16 @@ export function assembleAgent(
     state: computeAgentState(infra, preparingWorkspace),
     effectiveHibernationTimeoutMin: resolveEffectiveHibernationTimeoutMin(
       infra.spec.hibernationTimeout,
-      globalIdleTimeoutMin,
+      infra.spec.backend?.type === "vm",
+      idleTimeoutMinutes,
     ),
     error: infra.error,
     stopRequested: infra.stopRequested,
     overBudget: infra.overBudget,
     overBudgetMessage: infra.overBudgetMessage,
+    ...(infra.reclaimed ? { reclaimed: infra.reclaimed } : {}),
     podTerminationReason: infra.podTerminationReason,
+    podTerminationCode: infra.podTerminationCode,
     notReadyMessage: infra.notReadyMessage,
     podRestarts: infra.podRestarts,
     podRestartReason: infra.podRestartReason,

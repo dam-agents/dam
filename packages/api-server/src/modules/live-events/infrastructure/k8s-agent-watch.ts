@@ -37,18 +37,22 @@ export function startAgentWatch(
   >();
   const fingerprints = new Map<
     string,
-    { fingerprint: string; ownerSub: string }
+    { fingerprint: string; ownerSub: string; ready?: string }
   >();
 
-  // UNIT_BOUNDARY_DESCRIPTION: the debounce is what stops a burst of writes becoming a burst of refetches, and a starting agent is exactly such a burst — the controller rewrites its status about once a second while it boots. Delaying every hint by the window costs that agent's reader the whole of it at the one moment that matters, when the last of those writes is the one saying it is ready. So the first hint of a quiet agent goes out at once and the window suppresses what follows, which still collapses the burst but no longer holds back its beginning; a change arriving inside the window is published when it closes, so the last state is never the one left unsent.
-  const publish = (agentId: string, ownerSub: string) => {
+  // UNIT_BOUNDARY_DESCRIPTION: the debounce is what stops a burst of writes becoming a burst of refetches, and a starting agent is exactly such a burst — the controller rewrites its status about once a second while it boots. Delaying every hint by the window costs that agent's reader the whole of it at the one moment that matters, when the last of those writes is the one saying it is ready. So the first hint of a quiet agent goes out at once and the window suppresses what follows, which still collapses the burst but no longer holds back its beginning; a change arriving inside the window is published when it closes, so the last state is never the one left unsent. A change of the Ready condition is `urgent` and goes out at once even inside the window: a vm agent's ready write often lands just after the boot's last progress write, and it is the hint the loading screen waits on. It happens once per wake or hibernation, so it adds no burst.
+  const publish = (agentId: string, ownerSub: string, urgent = false) => {
     const waiting = pending.get(agentId);
-    if (waiting) {
+    if (waiting && !urgent) {
       waiting.trailing = true;
       return;
     }
     bus.publish(ownerSub, { topic: "agents", agentId });
     opts.onAgentChanged(agentId);
+    if (waiting) {
+      waiting.trailing = false;
+      return;
+    }
     const entry: { timer: NodeJS.Timeout; trailing: boolean } = {
       trailing: false,
       timer: setTimeout(() => {
@@ -92,9 +96,18 @@ export function startAgentWatch(
       spec: resource.spec,
       status: resource.status,
     });
-    if (fingerprints.get(agentId)?.fingerprint === fingerprint) return;
-    fingerprints.set(agentId, { fingerprint, ownerSub });
-    publish(agentId, ownerSub);
+    const previous = fingerprints.get(agentId);
+    if (previous?.fingerprint === fingerprint) return;
+    const ready = (
+      resource.status as
+        { conditions?: { type?: string; status?: string }[] } | undefined
+    )?.conditions?.find((c) => c.type === "Ready")?.status;
+    fingerprints.set(agentId, { fingerprint, ownerSub, ready });
+    publish(
+      agentId,
+      ownerSub,
+      previous !== undefined && previous.ready !== ready,
+    );
   };
 
   const connect = () => {
@@ -119,8 +132,9 @@ export function startAgentWatch(
       connection = null;
       link.stop();
       if (stopped) return;
-      if (err) opts.log(`agent watch ended: ${String(err)}`);
-      retryTimer = setTimeout(connect, RECONNECT_MS);
+      const onTime = err instanceof Error && err.name === "TimeoutError";
+      if (err && !onTime) opts.log(`agent watch ended: ${String(err)}`);
+      retryTimer = setTimeout(connect, onTime ? 0 : RECONNECT_MS);
       retryTimer.unref();
     });
   };

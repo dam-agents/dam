@@ -16,7 +16,11 @@ import { createSessionWatcher } from "../../modules/attention/services/session-w
 const CAPTURE_RETRY_MS = 15_000;
 const CAPTURE_DEBOUNCE_MS = 250;
 
-function session(sessionId: string, updatedAt: string | null): PodSession {
+function session(
+  sessionId: string,
+  updatedAt: string | null,
+  threadTs: string | null = null,
+): PodSession {
   return {
     sessionId,
     mode: "chat",
@@ -25,7 +29,7 @@ function session(sessionId: string, updatedAt: string | null): PodSession {
     updatedAt,
     title: null,
     scheduleId: null,
-    threadTs: null,
+    threadTs,
     seenAt: null,
     runStartedAt: null,
     runTotalMs: null,
@@ -56,7 +60,7 @@ interface Harness {
   upserted: string[];
   deleted: string[][];
   reads: number;
-  setSessions: (sessions: PodSession[]) => void;
+  setSessions: (sessions: PodSession[], incomplete?: boolean) => void;
   failNextWrite: () => void;
   settleRead: () => void;
   holdReads: (held: boolean) => void;
@@ -64,6 +68,7 @@ interface Harness {
 
 function harness(): Harness {
   let listed: PodSession[] = [];
+  let incomplete = false;
   let onNotice: () => void = () => {};
   let failWrite = false;
   let holding = false;
@@ -79,6 +84,7 @@ function harness(): Harness {
   const repo: AttentionRepository = {
     listForAgent: async () => [...stored.values()],
     listForOwner: async () => [],
+    listForOwnerAgent: async () => [],
     upsertRecord: async (row) => {
       if (failWrite) {
         failWrite = false;
@@ -103,14 +109,14 @@ function harness(): Harness {
     deleteForAgent: async () => {},
   };
 
-  const read = async (): Promise<PodSession[]> => {
+  const read = async () => {
     state.reads = (state.reads ?? 0) + 1;
     if (holding) {
       await new Promise<void>((resolve) => {
         releaseRead = resolve;
       });
     }
-    return listed;
+    return { sessions: listed, incomplete };
   };
 
   const watcher = createSessionWatcher({
@@ -131,8 +137,9 @@ function harness(): Harness {
   return Object.assign(state, {
     watcher,
     notify: () => onNotice(),
-    setSessions: (sessions: PodSession[]) => {
+    setSessions: (sessions: PodSession[], partial = false) => {
       listed = sessions;
+      incomplete = partial;
     },
     failNextWrite: () => {
       failWrite = true;
@@ -216,6 +223,35 @@ describe("createSessionWatcher", () => {
   });
 
   /*
+   * TEST_SCENARIO: right after a wake the agent answers before its harness
+   * does and marks the list incomplete. A session missing from that answer is
+   * not gone, so its row (and the person's dismissal on it) must stay until a
+   * complete list leaves it out.
+   */
+  it("keeps rows a list marked incomplete leaves out", async () => {
+    const h = harness();
+    h.setSessions([
+      session("s1", "2026-09-10T00:00:00.000Z"),
+      session("s2", "2026-09-10T00:00:00.000Z"),
+    ]);
+
+    h.watcher.start();
+    await flush();
+
+    h.setSessions([session("s1", "2026-09-10T00:00:00.000Z")], true);
+    h.notify();
+    await vi.advanceTimersByTimeAsync(CAPTURE_DEBOUNCE_MS);
+    await flush();
+    expect(h.deleted ?? []).toEqual([]);
+
+    h.setSessions([session("s1", "2026-09-10T00:00:00.000Z")]);
+    h.notify();
+    await vi.advanceTimersByTimeAsync(CAPTURE_DEBOUNCE_MS);
+    await flush();
+    expect(h.deleted).toEqual([["s2"]]);
+    h.watcher.stop();
+  });
+  /*
    * TEST_SCENARIO: a write fails mid-pass. A watched agent is captured only
    * when its session list changes, so without a retry the removal waits for
    * a notice that a quiet agent never sends, and the stale card stays on the
@@ -241,6 +277,33 @@ describe("createSessionWatcher", () => {
     await vi.advanceTimersByTimeAsync(CAPTURE_RETRY_MS);
     await flush();
     expect(h.deleted).toEqual([["s2"]]);
+
+    h.watcher.stop();
+  });
+
+  /*
+   * TEST_SCENARIO: a session's thread key changes while nothing else about it
+   * moves. The feed names the channel from that key, so the comparison that
+   * skips unchanged rows must count it as a change and write the row again.
+   */
+  it("rewrites a row whose thread key changed", async () => {
+    const h = harness();
+    h.setSessions([session("s1", "2026-09-10T00:00:00.000Z", "C1:1.0")]);
+
+    h.watcher.start();
+    await flush();
+    expect(h.upserted).toEqual(["s1"]);
+
+    h.notify();
+    await vi.advanceTimersByTimeAsync(CAPTURE_DEBOUNCE_MS);
+    await flush();
+    expect(h.upserted).toEqual(["s1"]);
+
+    h.setSessions([session("s1", "2026-09-10T00:00:00.000Z", "C2:1.0")]);
+    h.notify();
+    await vi.advanceTimersByTimeAsync(CAPTURE_DEBOUNCE_MS);
+    await flush();
+    expect(h.upserted).toEqual(["s1", "s1"]);
 
     h.watcher.stop();
   });

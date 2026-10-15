@@ -4,6 +4,8 @@ import (
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/dam-agents/dam/packages/controller/pkg/config"
 )
 
 const (
@@ -55,9 +57,12 @@ func shouldRunMigrating(annotations map[string]string, m runtimeMigration, idleT
 	return shouldRun(annotations, idleTimeout, now)
 }
 
-func effectiveIdleTimeout(override *metav1.Duration, global time.Duration) time.Duration {
+func effectiveIdleTimeout(override *metav1.Duration, vm bool, base config.AgentBase) time.Duration {
+	if vm {
+		return base.VMIdleTimeout.AsDuration()
+	}
 	if override == nil {
-		return global
+		return base.IdleTimeout.AsDuration()
 	}
 	return override.Duration
 }

@@ -19,8 +19,7 @@ import {
   agentRestartInputSchema,
   agentPeekBindFlowInputSchema,
   agentUpdateInputSchema,
-  agentPauseInputSchema,
-  agentStopInputSchema,
+  agentSleepInputSchema,
   agentUpgradeInputSchema,
   agentMigrateRuntimeInputSchema,
   agentPlanRuntimeMigrationInputSchema,
@@ -116,14 +115,6 @@ export const agentsRouter = t.router({
       });
     }),
 
-  stop: manageAgentsProcedure
-    .input(agentStopInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const agent = await ctx.agents.stop(input.id);
-      if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
-      return toAgentView(agent);
-    }),
-
   retryWorkspace: manageAgentsProcedure
     .input(agentRetryWorkspaceInputSchema)
     .mutation(async ({ ctx, input }) => {
@@ -132,10 +123,10 @@ export const agentsRouter = t.router({
       return toAgentView(agent);
     }),
 
-  pause: manageAgentsProcedure
-    .input(agentPauseInputSchema)
+  sleep: manageAgentsProcedure
+    .input(agentSleepInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const agent = await ctx.agents.pause(input.id);
+      const agent = await ctx.agents.sleep(input.id);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
       return toAgentView(agent);
     }),
@@ -260,6 +251,7 @@ export const agentsRouter = t.router({
         input.id,
         input.slackChannelId,
         input.ambient,
+        input.customEmoji,
       );
       if (res.ok) return toAgentView(res.value);
       switch (res.error.type) {
