@@ -12,6 +12,8 @@ import type {
 } from "../../modules/runtime-delivery/infrastructure/outbox-repo.js";
 import type { StateQueue } from "../../modules/runtime-delivery/infrastructure/state-queue.js";
 import type { HarnessConfigSnapshotWriter } from "../../modules/runtime-delivery/services/snapshot-writer.js";
+import type { StateBuilder } from "../../modules/runtime-delivery/services/state-builder.js";
+import type { DriverFailure } from "api-server-api";
 import type { Tx } from "../../core/unit-of-work.js";
 import { outboxRow } from "../helpers/outbox-row.js";
 
@@ -24,6 +26,11 @@ async function runHello(
   previous: unknown,
   reported: unknown,
   cursor: number,
+  drift: {
+    applied?: string;
+    built?: string;
+    failures?: DriverFailure[];
+  } = {},
 ): Promise<{
   enqueued: { agentId: string; retryUntilReady?: boolean }[];
   bumped: boolean;
@@ -32,7 +39,12 @@ async function runHello(
   let bumped = false;
   const hello = createHelloHandler({
     outboxRepo: {
-      getRow: async () => outboxRow({ agentId: AGENT, version: SETTLED }),
+      getRow: async () =>
+        outboxRow({
+          agentId: AGENT,
+          version: SETTLED,
+          applyFailures: drift.failures ?? [],
+        }),
       bumpVersion: async () => {
         bumped = true;
         return SETTLED + 1;
@@ -44,6 +56,9 @@ async function runHello(
     snapshotWriter: {
       merge: async () => {},
     } as unknown as HarnessConfigSnapshotWriter,
+    stateBuilder: {
+      build: async () => ({ hash: drift.built ?? "built" }),
+    } as unknown as StateBuilder,
     queue: {
       enqueue: async (
         agentId: string,
@@ -58,6 +73,7 @@ async function runHello(
   });
   await hello.hello(AGENT, {
     lastAppliedVersion: cursor,
+    ...(drift.applied !== undefined && { lastAppliedHash: drift.applied }),
     protocolVersion: "v1",
     agentRuntimeVersion: "1.0.0",
     capabilities: reported,
@@ -99,6 +115,37 @@ describe("runtime capability gap", () => {
   ])("%s", async (_case, previous, reported, cursor, bumps, redelivers) => {
     const { bumped, enqueued } = await runHello(previous, reported, cursor);
     expect(bumped).toBe(bumps);
+    expect(enqueued).toEqual(
+      redelivers ? [{ agentId: AGENT, retryUntilReady: true }] : [],
+    );
+  });
+});
+
+describe("runtime state drift", () => {
+  /** TEST_SCENARIO: a deploy changes the state built for an agent without
+   *  raising its version, as when provider env gained its template. A
+   *  caught-up agent whose applied hash no longer matches the state built now
+   *  is re-delivered through a version bump; a matching hash, an agent that
+   *  reports no hash, and one with failures the retries own stay quiet. */
+  it.each([
+    ["a stale applied hash bumps and re-delivers", { applied: "old" }, true],
+    [
+      "a matching applied hash does nothing",
+      { applied: "built", built: "built" },
+      false,
+    ],
+    ["no reported hash does nothing", {}, false],
+    [
+      "failures on record leave it to their retries",
+      {
+        applied: "old",
+        failures: [{ kind: "env", message: "boom" }] as DriverFailure[],
+      },
+      false,
+    ],
+  ])("%s", async (_case, drift, redelivers) => {
+    const { bumped, enqueued } = await runHello(ENV, ENV, SETTLED, drift);
+    expect(bumped).toBe(redelivers);
     expect(enqueued).toEqual(
       redelivers ? [{ agentId: AGENT, retryUntilReady: true }] : [],
     );

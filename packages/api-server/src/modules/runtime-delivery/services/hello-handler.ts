@@ -11,8 +11,12 @@ import type {
 } from "../infrastructure/outbox-repo.js";
 import type { StateQueue } from "../infrastructure/state-queue.js";
 import type { HarnessConfigSnapshotWriter } from "./snapshot-writer.js";
+import type { StateBuilder } from "./state-builder.js";
 import { emit, EventType } from "../../../events.js";
-import { advertisedKindsChanged } from "../domain/capability-filter.js";
+import {
+  advertisedKindsChanged,
+  deliveryCapabilities,
+} from "../domain/capability-filter.js";
 import type { UnitOfWork } from "../../../core/unit-of-work.js";
 
 export type EventOutcomeHandler = (
@@ -24,12 +28,43 @@ export function createHelloHandler(deps: {
   outboxRepo: OutboxRepo;
   agentsRuntimeRepo: AgentsRuntimeRepo;
   snapshotWriter: HarnessConfigSnapshotWriter;
+  stateBuilder: StateBuilder;
   queue: StateQueue;
   uow: UnitOfWork;
   resolveOwner: (agentId: string) => Promise<string | null>;
   eventOutcomeHandler?: (kind: string) => EventOutcomeHandler | undefined;
   log: (msg: string) => void;
 }): RuntimeDeliveryService {
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a deploy can change the state the api-server
+   * builds for an agent (a new field on a contribution) without a grant or
+   * any other write raising the agent's version, so a caught-up agent would
+   * keep what an older api-server sent it. A hash the agent applied that no
+   * longer matches the state built now is that drift. An agent with failures
+   * on record is left to the retries that already own it, and a build that
+   * fails leaves the hello as it was.
+   */
+  async function stateDrifted(
+    agentId: string,
+    input: HelloInput,
+    row: { applyFailures: readonly unknown[] },
+  ): Promise<boolean> {
+    if (input.lastAppliedHash === undefined || row.applyFailures.length > 0)
+      return false;
+    try {
+      const { hash } = await deps.stateBuilder.build(
+        agentId,
+        deliveryCapabilities(input.capabilities),
+      );
+      return hash !== input.lastAppliedHash;
+    } catch (err) {
+      deps.log(
+        `[runtime-hello] ${agentId}: drift check failed: ${(err as Error).message}`,
+      );
+      return false;
+    }
+  }
+
   return {
     async reportEvent(agentId, input): Promise<void> {
       const event = await deps.outboxRepo.claimEventReport(
@@ -99,9 +134,20 @@ export function createHelloHandler(deps: {
           `[runtime-hello] ${agentId}: advertised kinds changed; desired version bumped to v${bumpedVersion} for re-delivery`,
         );
       }
-      const desiredVersion =
-        bumpedVersion ?? (await deps.outboxRepo.getRow(agentId))?.version;
+      const row =
+        bumpedVersion === null ? await deps.outboxRepo.getRow(agentId) : null;
+      let desiredVersion = bumpedVersion ?? row?.version;
       if (desiredVersion === undefined) return { events: [] };
+      if (
+        row &&
+        desiredVersion <= (input.lastAppliedVersion ?? 0) &&
+        (await stateDrifted(agentId, input, row))
+      ) {
+        desiredVersion = await deps.outboxRepo.bumpVersion(agentId);
+        deps.log(
+          `[runtime-hello] ${agentId}: applied state differs from the state built now; desired version bumped to v${desiredVersion} for re-delivery`,
+        );
+      }
 
       if (desiredVersion > (input.lastAppliedVersion ?? 0)) {
         await deps.queue.enqueue(agentId, { retryUntilReady: true });

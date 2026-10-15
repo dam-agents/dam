@@ -1,6 +1,6 @@
 # Runtime delivery and the runtime channel
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 ## Overview
 
@@ -151,6 +151,7 @@ A failed report is logged and retried on the next change or the next boot.
 Called on boot, on wake from hibernation, and on any agent-side reconnect.
 It never carries state itself — if the reported cursor is behind it enqueues a worker dispatch, and the catch-up arrives as an ordinary `applyState`.
 If the Contribution and Event kinds it advertises differ from the set on record, it first raises the desired version, which puts the row behind and so enqueues by the same rule.
+It raises the version the same way when the cursor is caught up but the hash the agent reports applying differs from the state built for it now, as after a deploy that changes what the api-server builds; an agent with apply failures on record is left to their retries.
 
 The call reports the agent's applied cursor, its protocol and runtime versions, and its capabilities: the contribution and event kinds it can apply, and the optional surfaces its image serves (harness configuration, the pod's live-updates watch surface, the in-pod Model Router as `modelRouter`).
 A surface the runtime does not claim is treated as absent, so an older image degrades to the polled path rather than to a broken one; before its first hello an agent is unknown, not outdated, and is polled.

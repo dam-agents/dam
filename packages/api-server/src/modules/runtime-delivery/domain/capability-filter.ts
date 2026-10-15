@@ -13,6 +13,26 @@ export interface AgentCapabilities {
   harnesses?: readonly string[];
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: what a state build reads from the capabilities
+ * an agent reported. The delivery and the hello's drift check build from
+ * this one shape, so the hash each computes for the same agent is the same.
+ */
+export function deliveryCapabilities(reported: unknown): AgentCapabilities {
+  const capabilities = reported as {
+    contributions: ContributionKind[];
+    events: RuntimeEventKind[];
+    harnesses?: { name: string }[];
+  };
+  return {
+    contributions: capabilities.contributions,
+    events: capabilities.events,
+    ...(capabilities.harnesses && {
+      harnesses: capabilities.harnesses.map((h) => h.name),
+    }),
+  };
+}
+
 export interface CapabilityFilterResult {
   contributions: Contribution[];
   events: Event[];
