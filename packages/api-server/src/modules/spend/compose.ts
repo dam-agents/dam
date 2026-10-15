@@ -33,6 +33,7 @@ import {
 } from "./services/spend-ingest.js";
 import {
   createSpendService,
+  type AgentPayers,
   type SpendQuestionCloser,
 } from "./services/spend-service.js";
 
@@ -61,6 +62,7 @@ export function composeSpendSystem(deps: {
   redis: Redis;
   priceOverrides: readonly OperatorPriceInput[];
   owners: AgentOwners;
+  payers: AgentPayers;
   questions: SpendQuestions & SpendQuestionCloser;
   connections: GrantedConnections;
   k8s: CustomObjectReader;
@@ -106,6 +108,7 @@ export function composeSpendSystem(deps: {
         totals,
         connections: deps.connections,
         questions: deps.questions,
+        payers: deps.payers,
         ...owner,
       }),
   };

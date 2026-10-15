@@ -1,4 +1,4 @@
-import { PLATFORM_REFUSAL_HEADER } from "api-server-api";
+import { nextUtcMidnight, PLATFORM_REFUSAL_HEADER } from "api-server-api";
 import { match } from "ts-pattern";
 import type { ApiDialect } from "./call.js";
 
@@ -9,11 +9,6 @@ export interface Refusal {
 }
 
 const MIN_RETRY_AFTER_SECONDS = 61;
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-export function nextUtcMidnight(now: Date): Date {
-  return new Date(Math.floor(now.getTime() / DAY_MS) * DAY_MS + DAY_MS);
-}
 
 export const CEILING_TEXT =
   "Spend quota exceeded for today. Ask the platform operator for a higher ceiling.";

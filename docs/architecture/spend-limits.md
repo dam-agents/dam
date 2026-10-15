@@ -145,6 +145,7 @@ DAM counts high and marks a call estimated when its usage is missing or unsure:
 The owner sets three kinds of daily limit.
 Each one counts the spend of the current UTC day.
 Only the owner sets or removes a limit, from an unrestricted login: an agent, and an API key bound to an agent, cannot change or continue it.
+A sub-agent takes no agent limit and no Connection limit, because its calls count for its root driver: the api-server refuses to set one.
 A limit of zero refuses every call that it counts.
 
 **Agent limit.** A dollar limit for one agent.

@@ -1,5 +1,5 @@
 import { match } from "ts-pattern";
-import { OnceResult } from "api-server-api";
+import { nextUtcMidnight, OnceResult } from "api-server-api";
 import type {
   EventOutcome,
   EventStage,
@@ -100,12 +100,6 @@ const SPEND_HOLD = {
   SpendHoldReason,
   { holdReason: string; result: string; runNow: RunNowResult }
 >;
-
-function nextUtcMidnight(at: Date): Date {
-  return new Date(
-    Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate() + 1),
-  );
-}
 
 const VERDICT: Record<EventOutcome, PrecheckVerdict> = {
   ok: "allowed",

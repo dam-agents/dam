@@ -1,5 +1,7 @@
 import type { SpendStatus } from "api-server-api";
 
+import { agentLimitOf } from "./agent-limit.js";
+
 export interface NearerLimit {
   kind: "owner" | "ceiling";
   leftMicros: number;
@@ -9,9 +11,7 @@ export function nearerOwnerWideLimit(
   status: SpendStatus,
   agentId: string,
 ): NearerLimit | null {
-  const agentLimit = status.limits.find(
-    (limit) => limit.scope.kind === "agent" && limit.scope.agentId === agentId,
-  );
+  const agentLimit = agentLimitOf(status, agentId);
   const ownLimit = status.limits.find((limit) => limit.scope.kind === "owner");
   const candidates: NearerLimit[] = [
     ...(status.ceiling

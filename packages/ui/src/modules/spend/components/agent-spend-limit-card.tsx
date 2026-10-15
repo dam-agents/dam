@@ -3,10 +3,10 @@ import type { SpendStatus, SpendUnit } from "api-server-api";
 import { Card } from "@/components/ui/card";
 import { TextSkeleton } from "@/components/ui/text-skeleton";
 
-import { useAgentsList } from "../../agents/api/queries.js";
-import { rootDriverOf } from "../../agents/lib/root-driver.js";
+import { useRootDriver } from "../../agents/hooks/use-root-driver.js";
 import { useProviderConnections } from "../../sessions/api/session-pair.js";
 import { useAgentSpendStatus } from "../api/queries.js";
+import { agentLimitOf } from "../lib/agent-limit.js";
 import {
   AGENT_LIMIT_NAME,
   CEILING_NAME,
@@ -68,8 +68,10 @@ function spendHelp(status: SpendStatus | undefined): string {
 }
 
 export function AgentSpendLimitCard({ agentId }: { agentId: string }) {
-  const root = rootDriverOf(agentId, useAgentsList());
-  const { data: status, isError } = useAgentSpendStatus(root ? null : agentId);
+  const root = useRootDriver(agentId);
+  const { data: status, isError } = useAgentSpendStatus(
+    root === null ? agentId : null,
+  );
 
   return (
     <Card className="mb-6 p-4">
@@ -105,9 +107,7 @@ function AgentSpendLimitBody({
     coverage.paid || !loaded ? "usd" : (coverage.uncountedUnits[0] ?? "usd");
   const primaryMicros =
     status.spent.find((total) => total.unit === primary)?.costMicros ?? 0;
-  const limit = status.limits.find(
-    (view) => view.scope.kind === "agent" && view.scope.agentId === agentId,
-  );
+  const limit = agentLimitOf(status, agentId);
   const showField = coverage.paid || limit !== undefined;
   const nearer = coverage.paid ? nearerOwnerWideLimit(status, agentId) : null;
 

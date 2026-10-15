@@ -80,9 +80,3 @@ export function localResetTime(resetsAt: string | Date): string {
     minute: "2-digit",
   });
 }
-
-export function nextUtcMidnight(now: Date = new Date()): Date {
-  return new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1),
-  );
-}

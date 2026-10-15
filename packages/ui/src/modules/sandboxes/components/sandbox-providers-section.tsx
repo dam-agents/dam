@@ -8,8 +8,7 @@ import { Switch } from "@/components/ui/switch";
 
 import { useStore } from "../../../store.js";
 import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
-import { useAgentsList } from "../../agents/api/queries.js";
-import { rootDriverOf } from "../../agents/lib/root-driver.js";
+import { useRootDriver } from "../../agents/hooks/use-root-driver.js";
 import { CardIcon } from "../../providers/components/card-icon.js";
 import {
   rememberSessionPair,
@@ -40,7 +39,7 @@ export function SandboxProvidersSection({ agentId }: { agentId: string }) {
   const showConfirm = useStore((s) => s.showConfirm);
   const { owned, granted, loaded } = useProviderConnections(agentId);
   const { grant, revoke, pending } = useGrantProvider(agentId);
-  const root = rootDriverOf(agentId, useAgentsList());
+  const root = useRootDriver(agentId);
 
   return (
     <div className="flex flex-col gap-3">
@@ -78,7 +77,7 @@ export function SandboxProvidersSection({ agentId }: { agentId: string }) {
                 }
               />
             </div>
-            {attached && !root && p.templateId && (
+            {attached && root === null && p.templateId && (
               <ConnectionSpendLimit
                 agentId={agentId}
                 connectionId={p.id}

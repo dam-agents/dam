@@ -11,16 +11,12 @@ import {
   useResolvedHarnessConfig,
   useStaleModel,
 } from "../../agents/api/harness-config.js";
-import {
-  useAgentConnections,
-  useAgents,
-  useAgentsList,
-} from "../../agents/api/queries.js";
+import { useAgentConnections, useAgents } from "../../agents/api/queries.js";
 import {
   useSkillSourceCount,
   useSkillsState,
 } from "../../agents/api/skills.js";
-import { rootDriverOf } from "../../agents/lib/root-driver.js";
+import { useRootDriver } from "../../agents/hooks/use-root-driver.js";
 import { useBudgetReserved } from "../../budgets/api/queries.js";
 import {
   formatSizeLabel,
@@ -39,6 +35,7 @@ import { useSchedules } from "../../schedules/api/queries.js";
 import { isUpcoming } from "../../schedules/lib/once-schedule.js";
 import { useProviderConnections } from "../../sessions/api/session-pair.js";
 import { useAgentSpendStatus } from "../../spend/api/queries.js";
+import { agentLimitOf } from "../../spend/lib/agent-limit.js";
 import { agentLimitCoverage } from "../../spend/lib/coverage.js";
 import { formatSpend, formatSpendOf } from "../../spend/lib/format.js";
 import { useTelegramChats } from "../../telegram/api/queries.js";
@@ -201,22 +198,18 @@ export function useSectionSummaries(agent: AgentView | null): {
   const limitCoverage = agentLimitCoverage(
     providers.granted.map((p) => p.templateId),
   );
-  const agentList = useAgentsList();
-  const rootName = agentId
-    ? (rootDriverOf(agentId, agentList)?.name ?? null)
-    : null;
+  const root = useRootDriver(agentId ?? null);
+  const rootName = root?.name;
   const { data: spendStatus, isError: spendUnavailable } = useAgentSpendStatus(
-    agentId && rootName === null ? agentId : null,
+    agentId && root === null ? agentId : null,
   );
   const usageSummary = useMemo(() => {
-    if (rootName !== null) return `Counts toward ${rootName}`;
+    if (rootName !== undefined) return `Counts toward ${rootName}`;
     if (spendUnavailable) return "Not available";
     if (!spendStatus || !agentId) return undefined;
     const usdMicros =
       spendStatus.spent.find((total) => total.unit === "usd")?.costMicros ?? 0;
-    const limit = spendStatus.limits.find(
-      (view) => view.scope.kind === "agent" && view.scope.agentId === agentId,
-    );
+    const limit = agentLimitOf(spendStatus, agentId);
     const paid = !providers.loaded || limitCoverage.paid;
     const parts = [
       ...(limit && paid

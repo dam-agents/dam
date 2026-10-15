@@ -1,10 +1,10 @@
-import { OnceResult, rruleToText } from "api-server-api";
+import { nextUtcMidnight, OnceResult, rruleToText } from "api-server-api";
 import cronstrue from "cronstrue";
 
 import { sameLocalDay } from "@/lib/format-time";
 
 import type { Schedule } from "../../../types.js";
-import { localResetTime, nextUtcMidnight } from "../../spend/lib/format.js";
+import { localResetTime } from "../../spend/lib/format.js";
 
 export function formatRunTime(iso: string, now: Date = new Date()): string {
   const date = new Date(iso);

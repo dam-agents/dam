@@ -1,5 +1,6 @@
 import {
   jsonRpcErrorDetails,
+  nextUtcMidnight,
   platformUndeliveredMetaSchema,
   type PlatformUndeliveredPrompt,
   PROMPT_NOT_QUEUED_CODE,
@@ -9,7 +10,7 @@ import {
 } from "api-server-api";
 import { z } from "zod";
 
-import { localResetTime, nextUtcMidnight } from "../spend/lib/format.js";
+import { localResetTime } from "../spend/lib/format.js";
 import { connectionWentAway } from "./close-race.js";
 
 export function describeJsonRpcError(

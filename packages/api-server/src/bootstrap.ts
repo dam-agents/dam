@@ -1035,6 +1035,8 @@ export async function bootstrap() {
     : undefined;
 
   const invocationDriverResolution = createDriverResolutionAdapter(db);
+  const payerOf = async (agentId: string) =>
+    (await invocationDriverResolution.resolveRoot(agentId)) ?? agentId;
 
   const spend = composeSpendSystem({
     db,
@@ -1044,6 +1046,7 @@ export async function bootstrap() {
       ownerOf: async (agentId) =>
         (await agentsRepo.resolveIdentity(agentId))?.owner ?? null,
     },
+    payers: { payerOf },
     questions: createSpendQuestionStore(db),
     connections: createGrantedConnectionTemplates(db),
     k8s: k8sClient,
@@ -1055,8 +1058,6 @@ export async function bootstrap() {
   );
 
   const spendQuestions = composeSpendLimitQuestions(db);
-  const payerOf = async (agentId: string) =>
-    (await invocationDriverResolution.resolveRoot(agentId)) ?? agentId;
   const spendHold = async ({
     agentId,
     connectionId,

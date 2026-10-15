@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import {
   connectionLimitRefusal,
   connectionLimitRule,
+  nextUtcMidnight,
   type SpendCeilingView,
   type SpendLimitScope,
   type SpendLimitView,
@@ -19,7 +20,6 @@ import {
   type SpendCeiling,
   type SpendLimit,
 } from "../domain/limits.js";
-import { nextUtcMidnight } from "../domain/refusal.js";
 import type { SpendUnit } from "../domain/units.js";
 import type { SpendLedger } from "../infrastructure/spend-ledger.js";
 import type { SpendLimits } from "../infrastructure/spend-limits.js";
@@ -30,6 +30,10 @@ export interface SpendQuestionCloser {
   closePending(input: { ownerSub: string; limitId: string }): Promise<void>;
 }
 
+export interface AgentPayers {
+  payerOf(agentId: string): Promise<string>;
+}
+
 export function createSpendService(deps: {
   ledger: SpendLedger;
   limits: SpendLimits;
@@ -37,6 +41,7 @@ export function createSpendService(deps: {
   totals: DayTotals;
   connections: GrantedConnections;
   questions: SpendQuestionCloser;
+  payers: AgentPayers;
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   ownerSub: string;
   agentBinding: readonly string[] | "*";
@@ -44,6 +49,16 @@ export function createSpendService(deps: {
   const requireOwned = async (agentId: string) => {
     if (!(await deps.isAgentOwnedBy(agentId, deps.ownerSub))) {
       throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
+    }
+  };
+
+  const requirePayer = async (agentId: string) => {
+    const payer = await deps.payers.payerOf(agentId);
+    if (payer !== agentId) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `this agent is a sub-agent of ${payer}: its spend counts toward the spend limits of that agent, so it has no limits of its own`,
+      });
     }
   };
 
@@ -171,7 +186,10 @@ export function createSpendService(deps: {
     },
 
     async setLimit({ scope, amountMicros }) {
-      if (scope.kind !== "owner") await requireOwned(scope.agentId);
+      if (scope.kind !== "owner") {
+        await requireOwned(scope.agentId);
+        if (amountMicros !== null) await requirePayer(scope.agentId);
+      }
       const limitId =
         amountMicros === null
           ? await deps.limits.clear(deps.ownerSub, scope)

@@ -10,7 +10,7 @@ import {
   connectionLimitName,
   OWN_LIMIT_NAME,
 } from "../../spend/lib/copy.js";
-import { formatSpendOf } from "../../spend/lib/format.js";
+import { formatSpendOf, localResetTime } from "../../spend/lib/format.js";
 
 export function approvalHeadline(approval: ApprovalView): string {
   return match(approval.payload)
@@ -63,7 +63,7 @@ export function approvalDetail(
 
 export function approvalHideHint(approval: ApprovalView): string {
   return approval.payload.kind === "spend_limit"
-    ? "Hides this from Home. The question stays open until midnight UTC."
+    ? `Hides this from Home. The question stays open until ${localResetTime(approval.expiresAt)} your time.`
     : "Hides this from Home. The request stays pending — resolve it in the session.";
 }
 
