@@ -13,6 +13,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import type { Message } from "../../../types.js";
+import { partKey } from "../../a2ui/lib/collect-blocks.js";
 import { hasAgentContent } from "../../acp/session-projection.js";
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { useIsFanOutChip } from "../../invocations/components/delegation-owners.js";
@@ -205,9 +206,11 @@ export const ChatMessage = memo(function ChatMessage({
               <ChatMessagePart
                 key={item.index}
                 part={item.part}
+                partKey={partKey(message.id, item.index)}
                 role={role}
                 streaming={streaming}
                 isLast={i === items.length - 1}
+                interactive={isAssistant && isLast && !readOnly && !streaming}
                 onFileClick={readOnly ? undefined : onFileClick}
               />
             ),

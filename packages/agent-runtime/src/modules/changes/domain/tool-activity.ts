@@ -1,6 +1,8 @@
 export interface ToolActivity {
   sessionId: string;
+  toolCallId: string | null;
   editedPaths: string[];
+  started: boolean;
   settled: boolean;
 }
 
@@ -72,14 +74,16 @@ export function createToolActivityReader(): ToolActivityReader {
       update?.sessionUpdate !== "tool_call_update"
     )
       return null;
-    const key =
+    const toolCallId =
       typeof update.toolCallId === "string" && update.toolCallId !== ""
-        ? `${sessionId}\n${update.toolCallId}`
+        ? update.toolCallId
         : null;
+    const key = toolCallId === null ? null : `${sessionId}\n${toolCallId}`;
+    const started = update.sessionUpdate === "tool_call";
     const settled = update.status === "completed" || update.status === "failed";
     const editedPaths = isEdit(key, update.kind) ? pathsOf(update) : [];
     if (settled && key !== null) openEdits.delete(key);
-    if (!settled && editedPaths.length === 0) return null;
-    return { sessionId, editedPaths, settled };
+    if (!started && !settled && editedPaths.length === 0) return null;
+    return { sessionId, toolCallId, editedPaths, started, settled };
   };
 }

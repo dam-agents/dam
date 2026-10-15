@@ -15,6 +15,7 @@ const touchedSchema = z.object({
   branch: z.string().nullable(),
   editedAt: z.string(),
   pullRequest: pullRequestLinkSchema.nullable(),
+  remote: z.string().nullable().optional(),
 });
 
 const documentSchema = z.object({
@@ -28,7 +29,12 @@ export interface TouchedRepositoryStore {
   record(
     sessionId: string,
     path: string,
-    touched: { name: string; branch: string | null; editedAt: string },
+    touched: {
+      name: string;
+      branch: string | null;
+      editedAt: string;
+      remote?: string | null;
+    },
   ): void;
   linkPullRequest(
     path: string,
@@ -38,6 +44,13 @@ export interface TouchedRepositoryStore {
   editedAtOf(sessionId: string): Map<string, string>;
   paths(): string[];
   repositoriesOf(sessionId: string): SessionRepository[];
+  pushesOf(sessionId: string): SessionPush[];
+}
+
+export interface SessionPush {
+  path: string;
+  branch: string;
+  remote: string;
 }
 
 function latest(entries: Record<string, Touched>): string {
@@ -75,14 +88,13 @@ export function createTouchedRepositoryStore(
       const { sessions } = store.read();
       const current = sessions[sessionId] ?? {};
       const previous = current[path];
+      const sameBranch = previous && previous.branch === touched.branch;
       const next = {
         ...current,
         [path]: {
           ...touched,
-          pullRequest:
-            previous && previous.branch === touched.branch
-              ? previous.pullRequest
-              : null,
+          pullRequest: sameBranch ? previous.pullRequest : null,
+          remote: touched.remote ?? (sameBranch ? previous.remote : null),
         },
       };
       const kept = Object.fromEntries(
@@ -124,6 +136,15 @@ export function createTouchedRepositoryStore(
           ),
         ),
       ];
+    },
+
+    pushesOf(sessionId) {
+      const entries = store.read().sessions[sessionId] ?? {};
+      return Object.entries(entries).flatMap(([path, entry]) =>
+        entry.remote && entry.branch
+          ? [{ path, branch: entry.branch, remote: entry.remote }]
+          : [],
+      );
     },
 
     repositoriesOf(sessionId) {

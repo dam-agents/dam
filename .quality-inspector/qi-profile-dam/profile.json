@@ -40,6 +40,7 @@
       "scheme": "http",
       "ingress": { "catchAllAppHost": true },
       "istio": { "enforce": false },
+      "harnessTools": { "hostPath": "" },
       "terms": { "version": "qa", "text": "Nested QA environment." },
       "keycloak": {
         "admin": { "password": "{{secret:keycloak_admin}}" },
@@ -57,6 +58,7 @@
     { "host": "quay.io", "method": "GET", "why": "chart and image pulls, tag listings" },
     { "host": "*.quay.io", "method": "GET", "why": "image layers" },
     { "host": "get.helm.sh", "method": "GET", "why": "the helm binary" },
+    { "host": "mirror.gcr.io", "method": "GET", "why": "SeaweedFS, Envoy, CoreDNS and job images (Docker Hub mirror; layers come from the same host)" },
     { "host": "istio-release.storage.googleapis.com", "method": "GET", "why": "Istio charts" },
     { "host": "github.com", "method": "GET", "path": "/cert-manager/cert-manager/releases/*", "why": "cert-manager manifest" },
     { "host": "github.com", "method": "GET", "path": "/kubernetes-sigs/gateway-api/releases/*", "why": "Gateway API CRDs" },

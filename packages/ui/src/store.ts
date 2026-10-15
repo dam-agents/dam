@@ -1,5 +1,6 @@
 import { create } from "zustand";
 
+import { type A2uiSlice, createA2uiSlice } from "./modules/a2ui/store.js";
 import { type AgentsSlice, createAgentsSlice } from "./modules/agents/store.js";
 import {
   type ArtifactsSlice,
@@ -62,6 +63,7 @@ import {
 } from "./modules/sessions/store/sessions.js";
 
 export type PlatformStore = DialogSlice &
+  A2uiSlice &
   ThemeSlice &
   NavigationSlice &
   SidebarSlice &
@@ -79,6 +81,7 @@ export type PlatformStore = DialogSlice &
 
 export const useStore = create<PlatformStore>()((...a) => ({
   ...createDialogSlice(...a),
+  ...createA2uiSlice(...a),
   ...createThemeSlice(...a),
   ...createNavigationSlice(...a),
   ...createSidebarSlice(...a),
