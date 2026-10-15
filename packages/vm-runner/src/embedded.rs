@@ -721,7 +721,7 @@ fn raw_storage_disk(id: &str, gib: u64, template: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the btrfs template, beside the smolvm release: an empty 256 MiB btrfs (single metadata, so a home of many small files does not pay twice for its metadata), compressed with zstd to a few KiB.
+// UNIT_BOUNDARY_DESCRIPTION: the btrfs template, beside the smolvm release: an empty 256 MiB btrfs with mixed block groups (see the image build: a guard file that preallocates the guest's room must not starve its metadata) and single profiles, compressed with zstd to a few KiB.
 pub const BTRFS_TEMPLATE: &str = "storage-template.btrfs.zst";
 
 // UNIT_BOUNDARY_DESCRIPTION: makes a fresh sparse disk btrfs by expanding the template over its first 256 MiB, sparse, so only the few MiB that hold data are written, puts the file back at its full size, and gives it a UUID of its own. The guest grows the filesystem to the disk while it mounts it. A format that succeeds writes smolvm's format marker, so smolvm never copies its ext4 template over the disk.
@@ -1614,7 +1614,16 @@ mod tests {
             .unwrap()
             .set_len(256 << 20)
             .unwrap();
-        let Ok(made) = run(&["mkfs.btrfs", "-q", "-m", "single", image.to_str().unwrap()]) else {
+        let Ok(made) = run(&[
+            "mkfs.btrfs",
+            "-q",
+            "-M",
+            "-d",
+            "single",
+            "-m",
+            "single",
+            image.to_str().unwrap(),
+        ]) else {
             eprintln!("skipping: no mkfs.btrfs on this host");
             return;
         };
