@@ -413,7 +413,6 @@
       }
     },
     "skills": {
-      "default": [],
       "type": "array",
       "items": {
         "type": "object",

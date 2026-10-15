@@ -76,7 +76,7 @@ export function SkillsModals({
           loadFailed={surface.setsFailed}
           available={derived.availableKeys}
           installedKeys={derived.installedKeys}
-          unreadableSources={derived.unreadableSources}
+          resolveSetEntry={derived.resolveSetEntry}
           ready={derived.previewReady}
           applying={surface.applyingSets}
           onApply={surface.applySets}
