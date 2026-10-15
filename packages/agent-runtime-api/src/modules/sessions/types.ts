@@ -14,6 +14,7 @@ import type {
   sessionListInputSchema,
   sessionSpendInputSchema,
   sessionSpendSchema,
+  sessionSettingsInputSchema,
   setSessionTitleInputSchema,
 } from "./schemas.js";
 
@@ -42,6 +43,7 @@ export interface SessionPage {
 }
 
 export type SetSessionTitleInput = z.infer<typeof setSessionTitleInputSchema>;
+export type SessionSettingsInput = z.infer<typeof sessionSettingsInputSchema>;
 
 export type SessionHistoryInput = z.infer<typeof sessionHistoryInputSchema>;
 export type SessionHistory = z.infer<typeof sessionHistorySchema>;
@@ -58,6 +60,8 @@ export interface SessionsService {
     opts?: Pick<SessionHistoryInput, "tail">,
   ): Promise<SessionHistory>;
   setTitle(input: SetSessionTitleInput): Promise<boolean>;
+  // UNIT_BOUNDARY_DESCRIPTION: null for a session the platform does not track; read by the api-server so a platform sub-agent spawned from the session defaults to its subagent model.
+  settings(input: SessionSettingsInput): Promise<Record<string, string> | null>;
   storeDelegationFrames(
     input: StoreDelegationFramesInput,
   ): Promise<{ truncated: boolean }>;

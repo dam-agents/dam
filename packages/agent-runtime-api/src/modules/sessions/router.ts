@@ -4,6 +4,7 @@ import {
   delegationFramesInputSchema,
   sessionHistoryInputSchema,
   sessionListInputSchema,
+  sessionSettingsInputSchema,
   sessionSpendInputSchema,
   setSessionTitleInputSchema,
   storeDelegationFramesInputSchema,
@@ -32,6 +33,15 @@ export const sessionsRouter = t.router({
     .mutation(async ({ ctx, input }) => {
       if (!(await ctx.sessions.setTitle(input)))
         throw new TRPCError({ code: "NOT_FOUND", message: "no such session" });
+    }),
+
+  settings: t.procedure
+    .input(sessionSettingsInputSchema)
+    .query(async ({ ctx, input }) => {
+      const settings = await ctx.sessions.settings(input);
+      if (settings === null)
+        throw new TRPCError({ code: "NOT_FOUND", message: "no such session" });
+      return { settings };
     }),
 
   storeDelegationFrames: t.procedure

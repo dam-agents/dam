@@ -16,7 +16,9 @@ interface CreateScheduleInput {
   task: string;
   sessionMode: "fresh" | "continuous";
   precheck?: string;
+  harness?: string;
   model?: string;
+  settings?: Record<string, string>;
   sessionTitle?: string;
 }
 
@@ -43,7 +45,9 @@ export interface UpdateCronScheduleInput {
   task: string;
   sessionMode: "fresh" | "continuous";
   precheck: string | null;
+  harness: string | null;
   model: string | null;
+  settings: Record<string, string> | null;
   sessionTitle: string | null;
 }
 
@@ -71,7 +75,9 @@ interface UpdateScheduleInput {
   task: string;
   sessionMode: "fresh" | "continuous";
   precheck: string | null;
+  harness: string | null;
   model: string | null;
+  settings: Record<string, string> | null;
   sessionTitle: string | null;
 }
 
@@ -96,7 +102,9 @@ export interface CreateOnceScheduleInput {
   task: string;
   timezone: string;
   at?: string;
+  harness?: string;
   model?: string;
+  settings?: Record<string, string>;
   sessionTitle?: string;
 }
 
@@ -117,7 +125,9 @@ export interface UpdateOnceScheduleInput {
   task: string;
   timezone: string;
   at: string;
+  harness?: string;
   model?: string;
+  settings?: Record<string, string>;
   sessionTitle?: string;
 }
 

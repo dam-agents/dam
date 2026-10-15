@@ -4,6 +4,23 @@
 # defaults of the base manifest.
 manifestVersion: 1
 
+# Bob has no per-session model switch, so the router sets each session's
+# model by Bob's X-Task-Id and maps the tier aliases its subagents ask for to
+# the session's subagent model. bobGateway: the runtime points
+# BOB_GATEWAY_URL, the variable Bob's own client reads, at the router.
+modelRouter:
+  dialects: [openai-chat]
+  modelFromSession: true
+  tierAliases: [premium-ide, explorer, fast, premium, ultra]
+  bobGateway: true
+
+# Declared so the runtime answers initialize before any harness process runs.
+# Re-captured from the image pin by test:harness-initialize-capabilities.
+initializeCapabilities:
+  agentCapabilities: {"loadSession": true, "sessionCapabilities": {"list": {}, "delete": {}, "resume": {}, "close": {}}, "promptCapabilities": {"embeddedContext": true, "image": true}, "mcpCapabilities": {"http": true, "sse": true}}
+  authMethods: [{"id": "sso", "name": "Log in with SSO", "description": "Opens your browser to authenticate with IBM SSO"}]
+  agentInfo: {"name": "bob-shell", "title": "Bob"}
+
 # Bob mints its own task id for a terminal session's conversation. A pin here,
 # named by the platform session id and holding the task id, lists that
 # conversation once, under the terminal session.
@@ -46,10 +63,13 @@ drivers:
   harness-config:
     file: "$HOME/.bob/settings/settings.json"
     # Bob switches a live session's mode; approvals are a flag of the process,
-    # so a session that picks them runs in a Bob process of its own.
+    # so a session that picks them runs in a Bob process of its own. The
+    # router reads the subagent model itself: Bob's subagent calls carry
+    # X-Parent-Task-Id.
     sessionSettings:
       mode: { mode: true }
       approvals: { env: [BOB_SESSION_APPROVALS] }
+      subagentModel: { router: true }
     keys:
       model: "platform.model"
       mode: "platform.mode"
@@ -60,6 +80,12 @@ drivers:
         - id: model
           name: Model
           description: Model Bob starts a session with
+          category: model
+          choices: []
+        # No fixed choices: the picker offers the catalog.
+        - id: subagentModel
+          name: Subagent model
+          description: Model Bob's subagents run on
           category: model
           choices: []
         - id: mode

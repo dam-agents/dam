@@ -264,6 +264,16 @@ export function createSessionsService(deps: {
       return true;
     },
 
+    async settings(input) {
+      const sessionId = deps.sessionMetadata.findByRef(input.ref);
+      if (
+        sessionId === undefined ||
+        deps.sessionMetadata.isTombstoned(sessionId)
+      )
+        return null;
+      return deps.sessionMetadata.get(sessionId)?.meta.settings ?? {};
+    },
+
     async storeDelegationFrames(input) {
       return deps.delegations.store(input);
     },

@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
-import { Controller, useForm } from "react-hook-form";
+import { useForm } from "react-hook-form";
 
 import { FormField } from "@/components/form-field";
 import { DialogActions, DialogBody, DialogHeader } from "@/components/modal";
@@ -26,7 +26,7 @@ import {
   type CronFormValues,
 } from "./cron-form-schema.js";
 import {
-  ScheduleModelField,
+  ScheduleChoicesField,
   SchedulePrecheckField,
   ScheduleSessionTitleField,
   ScheduleSessionTypeField,
@@ -75,16 +75,23 @@ export function CronScheduleForm({
   const cron = watch("cron").trim();
   const runs = errors.cron ? [] : nextCronRuns(cron, new Date(), PREVIEW_RUNS);
 
-  const draftOf = (v: CronFormValues): Schedule => ({
-    ...existing,
-    name: v.name,
-    cron: v.cron.trim(),
-    task: v.task,
-    precheck: v.precheck.trim() || null,
-    model: v.model.trim() || null,
-    sessionTitle: v.sessionTitle.trim() || null,
-    sessionMode: v.sessionMode,
-  });
+  const draftOf = (v: CronFormValues): Schedule => {
+    const settings = Object.fromEntries(
+      Object.entries(v.settings).filter(([, value]) => value !== ""),
+    );
+    return {
+      ...existing,
+      name: v.name,
+      cron: v.cron.trim(),
+      task: v.task,
+      precheck: v.precheck.trim() || null,
+      harness: v.harness.trim() || null,
+      model: v.model.trim() || null,
+      settings: Object.keys(settings).length > 0 ? settings : null,
+      sessionTitle: v.sessionTitle.trim() || null,
+      sessionMode: v.sessionMode,
+    };
+  };
 
   const handleConvert = async () => {
     if (!(await trigger())) return;
@@ -118,7 +125,9 @@ export function CronScheduleForm({
         task: draft.task ?? "",
         sessionMode: v.sessionMode,
         precheck: draft.precheck,
+        harness: draft.harness,
         model: draft.model,
+        settings: draft.settings,
         sessionTitle: draft.sessionTitle,
       },
       {
@@ -193,16 +202,10 @@ export function CronScheduleForm({
           />
         </FormField>
 
-        <Controller
+        <ScheduleChoicesField
+          agentId={agentId}
           control={control}
-          name="model"
-          render={({ field }) => (
-            <ScheduleModelField
-              agentId={agentId}
-              value={field.value}
-              onChange={field.onChange}
-            />
-          )}
+          migrationNote={existing.migrationNote}
         />
 
         <SchedulePrecheckField

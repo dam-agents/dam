@@ -9,8 +9,10 @@ import { totalCostUsd } from "../lib/totals.js";
 import { HarnessSpendCard } from "./harness-spend-card.js";
 import { ModelSpendBars } from "./model-spend-bars.js";
 import { MonthSwitcher } from "./month-switcher.js";
+import { ProviderSpendBars } from "./provider-spend-bars.js";
 import { CHART_HEIGHT_CLASS, SpendByDayChart } from "./spend-by-day-chart.js";
 import { SpendStatCards } from "./spend-stat-cards.js";
+import { UncountedCallsNote } from "./uncounted-calls-note.js";
 import {
   readFailureMessage,
   UsageNotice,
@@ -75,6 +77,7 @@ export function SandboxUsageSection({ agentId }: { agentId: string }) {
       {state === "ready" && data && (
         <div aria-busy={freshness === "updating"} className="space-y-6">
           <SpendStatCards {...sums} />
+          <UncountedCallsNote rows={data.byModel} />
           {data.byModel.length === 0 ? (
             <UsageNotice>{`No LLM calls in ${monthLabel(shownMonth)}.`}</UsageNotice>
           ) : (
@@ -85,6 +88,14 @@ export function SandboxUsageSection({ agentId }: { agentId: string }) {
                   <ModelSpendBars rows={data.byModel} />
                 </Card>
               </section>
+              {data.byProvider.length > 0 && (
+                <section>
+                  <SectionLabel spaced>Spend by provider</SectionLabel>
+                  <Card className="p-5">
+                    <ProviderSpendBars rows={data.byProvider} />
+                  </Card>
+                </section>
+              )}
               <section>
                 <SectionLabel spaced>Spend by day</SectionLabel>
                 <Card className="p-5">

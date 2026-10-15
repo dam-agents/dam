@@ -161,7 +161,11 @@ async function readGrantedContributions(
       if (!result.success) continue;
       parsed.push(
         provider && result.data.kind === "env"
-          ? { ...result.data, provider: row.id }
+          ? {
+              ...result.data,
+              provider: row.id,
+              providerTemplate: row.templateId,
+            }
           : result.data,
       );
     }

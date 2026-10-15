@@ -56,6 +56,14 @@ export interface SchedulerRunner {
 
 export interface SchedulerRunnerDeps {
   firePair?: FirePair;
+  validateSessionChoices?: (
+    agentId: string,
+    choices: {
+      harness?: string;
+      model?: string;
+      settings?: Record<string, string>;
+    },
+  ) => Promise<string | undefined>;
   repo: SchedulesRepository;
   queue: ScheduleQueue;
   runtimeMutator: RuntimeMutator;
@@ -139,9 +147,22 @@ export function createSchedulerRunner(
     if (sched.spec.sessionTitle) payload.sessionTitle = sched.spec.sessionTitle;
     const continues =
       sched.spec.type === "once" && sched.spec.origin?.mode === "continue";
+    const choices = {
+      ...(sched.spec.harness && { harness: sched.spec.harness }),
+      ...(sched.spec.model && { model: sched.spec.model }),
+      ...(sched.spec.settings && { settings: sched.spec.settings }),
+    };
+    if (!continues && Object.keys(choices).length > 0) {
+      const refusal = await deps.validateSessionChoices?.(
+        sched.agentId,
+        choices,
+      );
+      if (refusal) throw new Error(refusal);
+    }
     const pair = continues
       ? undefined
       : await deps.firePair?.(sched.agentId, {
+          ...(sched.spec.harness && { harness: sched.spec.harness }),
           ...(sched.spec.model && { model: sched.spec.model }),
         });
     if (pair === null)
@@ -156,6 +177,7 @@ export function createSchedulerRunner(
       else delete payload.model;
       if (pair.settings) payload.settings = pair.settings;
     }
+    if (sched.spec.settings) payload.settings = sched.spec.settings;
     if (sched.status?.lastRun) payload.lastRunAt = sched.status.lastRun;
     if (sched.spec.type === "once") {
       payload.once = true;

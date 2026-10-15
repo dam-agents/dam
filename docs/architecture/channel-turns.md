@@ -82,7 +82,7 @@ A few observations the diagram glosses over:
   System notices (wake failures, a still-starting note) are separate direct posts, not agent content.
 - **Resume vs. new is decided by the ACP session list.** The binding lives on the session itself: the worker lists an Agent's sessions over ACP and resumes the one whose thread key matches.
   A resume that fails (PVC lost, session expired) falls back to a fresh session with thread history injected from the messenger API — no regression, just a colder start.
-  A fresh session opens on the harness, provider and model a person last picked on the Agent, falling back as a [schedule fire](schedules.md#session-model) does; when no granted provider fits, the turn fails rather than running elsewhere.
+  A fresh session opens on the harness, provider and model a person last picked on the Agent, falling back as a [schedule fire](schedules.md#session-choices) does; when no granted provider fits, the turn fails rather than running elsewhere.
 - **A resumed conversation is caught up on what it missed, best-effort (Slack).** A session belongs to one Agent, so it sees a conversation's history only on its first turn there; a mention-only binding is never handed what does not tag it, and an Agent stopped or unreachable is handed nothing at all.
   A resuming turn therefore also carries what arrived after its own last turn, labelled as above and marked unseen: its own posts stay out, and nothing new means no block.
   Catch-up looks strictly backward from the turn's own messages — anything sent after them is already queued for a turn of its own and is never presented as missed.

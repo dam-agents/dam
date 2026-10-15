@@ -16,6 +16,7 @@ import {
   createAgentsRepository,
   type AgentsRepository,
 } from "./infrastructure/agents-repository.js";
+import { createAgentsRuntimeRepo } from "../runtime-delivery/infrastructure/outbox-repo.js";
 import { createAgentEnvRepository } from "./infrastructure/agent-env-repository.js";
 import {
   createAgentsService,
@@ -103,6 +104,7 @@ export function composeAgentsModule(deps: {
   const k8s = createK8sClient(deps.api, deps.namespace);
   const repo = createAgentsRepository(k8s, deps.agentStateCache);
   const agentEnvRepo = createAgentEnvRepository(deps.db);
+  const agentsRuntimeRepo = createAgentsRuntimeRepo(deps.db);
   const registrySecretPort = createAgentRegistrySecretPort(k8s);
   const owner = deps.owner ?? "";
   return {
@@ -123,6 +125,8 @@ export function composeAgentsModule(deps: {
       resizeLock: createXactLock(deps.db),
       owner: deps.owner,
       readTemplateSpec: deps.readTemplateSpec,
+      lastHelloAt: async (agentId) =>
+        (await agentsRuntimeRepo.get(agentId))?.runtimeLastHelloAt ?? null,
       presetSeeder: deps.presetSeeder,
       cleanupHooks: deps.cleanupHooks,
       registrySecretPort,
@@ -217,7 +221,7 @@ export function connectionGrantProvisioner(
     | "validateProviderConnection"
     | "validateGrantSet"
     | "setAgentConnections"
-    | "defaultProviderConnection"
+    | "defaultProviderConnections"
     | "listConnections"
   >,
   catalog: Pick<HarnessCatalog, "harnesses">,
@@ -231,14 +235,14 @@ export function connectionGrantProvisioner(
         grantedConnectionIds: Array.from(new Set(sel.connectionIds)),
       };
     },
-    async defaultProvider(connectionIds, { harness, providers }) {
+    async defaultProviders(connectionIds, { harness, providers }) {
       const chosen = new Set(connectionIds);
       const holdsProvider = (await connections.listConnections()).some(
         (c) => chosen.has(c.id) && PROVIDER_TEMPLATE_IDS.has(c.templateId),
       );
       return holdsProvider
-        ? null
-        : connections.defaultProviderConnection((type, templateId) =>
+        ? []
+        : connections.defaultProviderConnections((type, templateId) =>
             harness !== undefined &&
             catalog.harnesses.some((h) => h.name === harness)
               ? harnessFits(catalog, harness, type, templateId)
@@ -254,10 +258,11 @@ export function connectionGrantProvisioner(
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Gives a just-connected provider to each of the
- * owner's agents that holds none, when that agent's default would pick it —
- * the same choice a new agent's default makes. An agent whose default is an
- * older provider was detached on purpose and is left without one. One agent
- * failing does not keep the provider from the rest.
+ * owner's agents that holds none, when it is the only provider that agent's
+ * default would grant: the agent predates every provider its harness runs
+ * on. An agent whose default holds an older provider was detached on purpose
+ * and is left without one. One agent failing does not keep the provider from the
+ * rest.
  */
 export async function attachProviderToBareAgents(
   connections: Parameters<typeof connectionGrantProvisioner>[0] &
@@ -273,11 +278,11 @@ export async function attachProviderToBareAgents(
       const { connections: grants } = await connections.getAgentConnections(
         agent.id,
       );
-      const chosen = await provisioner.defaultProvider(
+      const chosen = await provisioner.defaultProviders(
         grants.map((g) => g.connectionId),
         agent.spec.harness ? { harness: agent.spec.harness } : {},
       );
-      if (chosen === connectionId)
+      if (chosen.length === 1 && chosen[0] === connectionId)
         await connections.updateAgentConnections(agent.id, {
           grant: [connectionId],
           revoke: [],

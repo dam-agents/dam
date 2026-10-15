@@ -14,10 +14,11 @@ import {
  * UNIT_BOUNDARY_DESCRIPTION: A user's first agent is usually created before
  * any provider exists, so it gets no default provider and its first message
  * runs with no model key. When a provider is connected, every agent of the
- * owner holding no provider gets it, by the same choice a new agent's default
- * makes — an agent that would pick an older provider was detached on purpose
- * and stays as it is. Events are handled one at a time, so two providers
- * connected together cannot both land on one agent.
+ * owner holding no provider gets it if it is the owner's first provider that
+ * agent's harness runs on; an agent holding none while an older such provider
+ * exists was detached on purpose and stays as it is.
+ * Events are handled one at a time, so two providers connected together
+ * cannot both land on one agent.
  */
 export function startAttachFirstProviderSaga(
   attach: (owner: string, connectionId: string) => Promise<void>,

@@ -9,7 +9,13 @@ const RUNTIME_ENV_NOTE =
 
 const envRecord = z.record(z.string(), z.string());
 const layers = z
-  .array(z.object({ id: z.string(), env: envRecord }))
+  .array(
+    z.object({
+      id: z.string(),
+      template: z.string().optional(),
+      env: envRecord,
+    }),
+  )
   .catch([])
   .default([]);
 
@@ -22,6 +28,7 @@ const runtimeEnvSchema = z.object({
 
 export interface EnvLayer {
   id: string;
+  template?: string;
   env: Record<string, string>;
 }
 
@@ -54,6 +61,18 @@ export function leaseEnvOf(
   };
 }
 
+export function layerEnvOf(
+  state: RuntimeEnvState,
+  lease: { harness: string | null; provider: string | null },
+): Record<string, string> {
+  const of = (list: EnvLayer[], id: string | null): Record<string, string> =>
+    list.find((l) => l.id === id)?.env ?? {};
+  return {
+    ...of(state.providers, lease.provider),
+    ...of(state.harnesses, lease.harness),
+  };
+}
+
 export function createEnvStateStore(
   agentHome: string,
   defaultHarness: string,
@@ -83,6 +102,7 @@ export function createEnvStateStore(
     },
     providers: () => state().providers.map((p) => p.id),
     forLease: (lease) => leaseEnvOf(state(), lease),
+    layerEnvFor: (lease) => layerEnvOf(state(), lease),
     write: (next) => doc.write({ _note: RUNTIME_ENV_NOTE, ...next }),
     ready: () => existsSync(path),
   };

@@ -30,6 +30,14 @@ pub trait Runtime: Send + Sync {
     fn console_tail(&self, _id: &str) -> String {
         String::new()
     }
+    // UNIT_BOUNDARY_DESCRIPTION: every line of the machine's console in this boot that holds `needle`, as printable text, unredacted. A line written early in a boot can be gone from the tail by the time the guest answers, and this reads the whole boot.
+    fn console_lines(&self, id: &str, needle: &str) -> String {
+        self.console_tail(id)
+            .lines()
+            .filter(|line| line.contains(needle))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
     // UNIT_BOUNDARY_DESCRIPTION: how much host memory the machine's VMM holds now, or nothing when no VMM runs or the runtime cannot tell. Guests hand freed memory back to the host, so this is what the machine uses, well below its size, and what admission and the runner's memory request count it at.
     fn resident_mib(&self, _id: &str) -> Option<i32> {
         None

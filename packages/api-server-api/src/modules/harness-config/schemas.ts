@@ -21,6 +21,11 @@ export const harnessConfigStatusInputSchema = z.object({
   agentId: z.string().min(1),
 });
 
+export const harnessConfigDefaultForInputSchema = z.object({
+  agentId: z.string().min(1),
+  harness: z.string().min(1).optional(),
+});
+
 export const harnessConfigSnapshotInputSchema = z.object({
   agentId: z.string().min(1),
   harness: z.string().min(1).optional(),
@@ -30,6 +35,7 @@ export const harnessConfigStatusSchema = z.object({
   supported: z.boolean(),
   catalog: harnessConfigCatalog.nullable(),
   sessionModel: z.boolean(),
+  modelRouter: z.boolean(),
   defaultHarness: z.string().nullable(),
   harnesses: z.array(harnessCapability).nullable(),
 });
