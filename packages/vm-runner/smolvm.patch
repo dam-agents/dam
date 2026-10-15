@@ -1,3 +1,16 @@
+diff --git i/Cargo.toml w/Cargo.toml
+index ed555c2..f429733 100644
+--- i/Cargo.toml
++++ w/Cargo.toml
+@@ -96,7 +96,7 @@ axum = { version = "0.8", features = ["macros", "ws"] }
+ # mTLS for the fleet serve API (control↔node). axum-server's rustls acceptor
+ # does the TLS handshake + client-cert verification; rustls-pemfile parses the
+ # CA/cert/key PEMs handed to us at enrollment.
+-axum-server = { version = "0.7", features = ["tls-rustls"] }
++axum-server = { version = "0.7", features = ["tls-rustls-no-provider"] }
+ # Wraps a response body so serve counts a request until it has been sent.
+ http-body = "1"
+ rustls = { version = "0.23.45", default-features = false, features = ["ring"] }
 diff --git i/crates/smolvm-network/src/stack.rs w/crates/smolvm-network/src/stack.rs
 index 29ad5bc..15d51e2 100644
 --- i/crates/smolvm-network/src/stack.rs
