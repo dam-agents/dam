@@ -23,7 +23,16 @@ const LOCKED_WITHOUT_BUTTON = block([
       metadata: {
         extensions: { [A2UI_CHAT_EXTENSION_ID]: { lockComposer: true } },
       },
-      components: [{ id: "root", component: "Text", text: "Hi" }],
+      components: [
+        { id: "root", component: "Text", text: "Hi" },
+        {
+          id: "orphan",
+          component: "Button",
+          child: "label",
+          action: { event: { name: "go" } },
+        },
+        { id: "label", component: "Text", text: "Go" },
+      ],
     },
   },
 ]);
@@ -43,12 +52,12 @@ function text(result: Awaited<ReturnType<Client["callTool"]>>): string {
 }
 
 describe("check_chat_form", () => {
-  // TEST_SCENARIO: a surface that locks the composer must offer a Button with an event, and an update to a surface an earlier reply created is checked without asking for createSurface.
-  it("reports a locked form without an answer button and accepts an update to an earlier surface", () => {
+  // TEST_SCENARIO: a surface that locks the composer must render a Button with an event from root, so one no component lists does not count, and an update to a surface an earlier reply created is checked without asking for createSurface.
+  it("reports a locked form whose answer button is not rendered and accepts an update to an earlier surface", () => {
     const locked = checkChatForm(LOCKED_WITHOUT_BUTTON);
     expect(locked.ok).toBe(false);
     expect(locked.problems.map((problem) => problem.message)).toEqual([
-      'Surface "pick" locks the composer but has no Button with an event action, so the user could not answer.',
+      'Surface "pick" locks the composer but renders no Button with an event action, so the user could not answer.',
     ]);
     const update = checkChatForm(
       JSON.stringify({

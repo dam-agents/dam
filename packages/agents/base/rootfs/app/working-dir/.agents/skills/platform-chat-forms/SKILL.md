@@ -170,7 +170,7 @@ Add this to `createSurface` to disable the chat's text input until the user answ
 
 - Lock only when the form covers every answer the user may want to give: a confirmation, a short closed question, or a choice with an "Other" option and a text field.
 - Do not lock a long form, a question the user may want to discuss, or a card that only shows a result.
-- The form needs a `Button` with an `event` action; without one the chat reports an error.
+- The form needs a `Button` with an `event` action in the tree under `root`; without one the chat reports an error.
 - The lock ends when the user sends the form or a newer reply arrives, and the chat never locks a form that has an error.
 
 ## Recommend where you can

@@ -453,11 +453,11 @@ function childIds(component: A2uiComponent): string[] {
     .exhaustive();
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: counts the nodes a surface renders from "root", template items included, and stops past the limit, so a shared child id or nested templates cannot make the count itself explode.
-export function renderedNodeCount(
+function walkRendered(
   surface: Pick<SurfaceState, "components">,
   dataModel: unknown,
   limit: number,
+  onNode: (component: A2uiComponent) => void,
 ): number {
   let count = 0;
   const visit = (id: string, depth: number, scope: string) => {
@@ -465,6 +465,7 @@ export function renderedNodeCount(
     const component = surface.components.get(id);
     if (!component) return;
     count += 1;
+    onNode(component);
     if ("children" in component && !Array.isArray(component.children)) {
       const listPath = absolutePath(component.children.path, scope);
       const items = getAt(dataModel, listPath);
@@ -482,6 +483,15 @@ export function renderedNodeCount(
   };
   visit("root", 0, "");
   return count;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: counts the nodes a surface renders from "root", template items included, and stops past the limit, so a shared child id or nested templates cannot make the count itself explode.
+export function renderedNodeCount(
+  surface: Pick<SurfaceState, "components">,
+  dataModel: unknown,
+  limit: number,
+): number {
+  return walkRendered(surface, dataModel, limit, () => {});
 }
 
 function structureErrors(surface: Draft): string[] {
@@ -544,11 +554,13 @@ export function resolvesInCatalog(
   );
 }
 
-function hasEventButton(surface: Draft): boolean {
-  return [...surface.components.values()].some(
-    (component) =>
-      component.component === "Button" && "event" in component.action,
-  );
+function rendersEventButton(surface: Draft): boolean {
+  let found = false;
+  walkRendered(surface, surface.dataModel, MAX_RENDERED_NODES, (component) => {
+    if (component.component === "Button" && "event" in component.action)
+      found = true;
+  });
+  return found;
 }
 
 function surfaceErrors(surface: Draft): RendererError[] {
@@ -564,9 +576,9 @@ function surfaceErrors(surface: Draft): RendererError[] {
   if (!surface.components.has("root"))
     add(`Surface "${surface.id}" has no component with id "root".`);
   for (const message of structureErrors(surface)) add(message);
-  if (surface.lockComposer && !hasEventButton(surface))
+  if (surface.lockComposer && !rendersEventButton(surface))
     add(
-      `Surface "${surface.id}" locks the composer but has no Button with an event action, so the user could not answer.`,
+      `Surface "${surface.id}" locks the composer but renders no Button with an event action, so the user could not answer.`,
     );
   for (const component of surface.components.values()) {
     const catalogId = componentCatalogId(component, surface);
