@@ -65,10 +65,7 @@ export function NewSessionLauncher({
         />
       )}
       {dialog === "ide" && (
-        <OpenInIdeDialog
-          agentId={agentId}
-          onClose={() => setDialog(null)}
-        />
+        <OpenInIdeDialog agentId={agentId} onClose={() => setDialog(null)} />
       )}
       {messenger && (
         <ChannelBindModal

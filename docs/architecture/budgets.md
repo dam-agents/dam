@@ -155,7 +155,7 @@ The exposure this adds is hibernation's existing blind spot (unreported work, wh
 
 ## Failure semantics upstream
 
-The api-server classifies the `OverBudget` condition reason into a typed wake-failure (non-transient, fail-fast — a denied wake errors in about a reconcile round-trip, not a wake-timeout), so the UI, relays and scheduler all inherit the same message — the figures plus "put agents you aren't using to sleep to free room" for a ceiling, and for a refused machine the controller's own sentence, giving in GiB how much of the pool is in use out of the same total Home shows and how much more the start needs, when the controller can read them, rather than the runner's accounting.
+The api-server classifies the `OverBudget` condition reason into a typed wake-failure (non-transient, fail-fast — a denied wake errors in about a reconcile round-trip, not a wake-timeout), so the UI, relays and scheduler all inherit the same message — the figures plus "disable agents you aren't using to free room" for a ceiling, and for a refused machine the controller's own sentence, giving in GiB how much of the pool is in use out of the same total Home shows and how much more the start needs, when the controller can read them, rather than the runner's accounting.
 A channel reply goes to whoever wrote in, who need not be the owner, so it says only that the owner's agents are using all their room, never the owner's figures or what the owner should do.
 A scheduled fire on an over-budget agent records a failed fire; the trigger event is already durably committed to the outbox, so it redelivers once room frees, or expires when the schedule's next occurrence supersedes it.
 
@@ -166,7 +166,7 @@ Deliberately local to the api-server: the alternative — echoing the denied act
 
 ## Freeing room
 
-Users free capacity by putting a running agent to sleep (see [agent-lifecycle](agent-lifecycle.md#hibernate) for the mechanics) or letting it hibernate — and, for a start they are blocked on, the gate frees it for them where it can ([above](#reclaiming-room-for-a-blocked-start)).
+Users free capacity by [disabling](agent-lifecycle.md#disable) an agent they aren't using or letting it hibernate — and, for a start they are blocked on, the gate frees it for them where it can ([above](#reclaiming-room-for-a-blocked-start)).
 Reserved is computed from live state and never persisted, so a hibernate or delete credits the budget back with nothing to reconcile.
 
 ## Resource alerts

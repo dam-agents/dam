@@ -70,7 +70,7 @@ export function createResizeGate(
           code: "FORBIDDEN",
           message:
             `This size would take your running agents to ${cores(totalCpu)}/${cores(ceilCpu)} ` +
-            `and ${gi(totalMemory)}/${gi(ceilMemory)} memory — put another agent to sleep or shrink it first.`,
+            `and ${gi(totalMemory)}/${gi(ceilMemory)} memory — disable another agent or shrink it first.`,
         });
       }
     },

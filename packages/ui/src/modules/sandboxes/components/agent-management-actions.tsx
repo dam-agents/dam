@@ -61,7 +61,7 @@ export function AgentManagementActions({
       title: agent.disabled ? "Enable agent" : "Disable agent",
       description: agent.disabled
         ? "The agent is disabled. Enable it to let messages, schedules and connections wake it again."
-        : "Stop the agent and keep it asleep: nothing wakes it until you enable it again.",
+        : "Stop the agent and keep it asleep.",
       button: {
         icon: <Power />,
         label: agent.disabled ? "Enable" : "Disable",

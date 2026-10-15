@@ -17,8 +17,7 @@ import { SlackInstallRequest } from "../../slack/components/slack-install-reques
 import { type Action, ActionList } from "./action-list.js";
 import { MessengerInstructions } from "./channels/channel-bind-modal.js";
 
-const VS_CODE_REMOTE_URL =
-  "https://code.visualstudio.com/docs/remote/ssh";
+const VS_CODE_REMOTE_URL = "https://code.visualstudio.com/docs/remote/ssh";
 const ZED_REMOTE_URL = "https://zed.dev/docs/remote-development";
 
 function DocLink({ href, children }: { href: string; children: ReactNode }) {
@@ -65,7 +64,10 @@ export function AgentUsageActions({ agent }: { agent: AgentView }) {
             )
           }
         >
-          <Button variant="outline" className="shrink-0 self-start sm:self-auto">
+          <Button
+            variant="outline"
+            className="shrink-0 self-start sm:self-auto"
+          >
             <Terminal />
             Open terminal
             <ChevronDown />
