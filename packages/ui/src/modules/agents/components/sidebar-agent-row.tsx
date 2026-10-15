@@ -27,7 +27,7 @@ export function SidebarAgentRow({
     <li>
       <div
         className={cn(
-          "group/agent relative flex items-center rounded-lg transition-colors",
+          "group group/agent relative flex items-center rounded-lg transition-colors",
           selected ? "bg-muted" : "hover:bg-muted",
         )}
       >
