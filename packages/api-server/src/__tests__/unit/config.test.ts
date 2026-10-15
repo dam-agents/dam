@@ -113,6 +113,7 @@ describe("agentsInstallSettings — what every agents module is built with", () 
     "AGENT_DEFAULT_STORAGE_SIZE",
     "VIRTUALIZATION_ENABLED",
     "FEATURE_MODES",
+    "FEATURE_DEFAULT_MODE",
     "AGENT_DEFAULT_MOUNTS",
     "HARNESSES",
   ];
@@ -162,6 +163,18 @@ describe("agentsInstallSettings — what every agents module is built with", () 
       "vm-sandboxes": "experimental",
     });
     expect(agentsInstallSettings(loadConfig()).vmForced).toBe(false);
+  });
+
+  // TEST_SCENARIO: an operator sets the install's default mode off and pins one feature on. Every feature the chart does not name takes the default; without a default each unnamed feature stays experimental.
+  it("reads every feature the chart does not name as the default mode", () => {
+    expect(loadConfig().featureModes["vm-sandboxes"]).toBe("experimental");
+    process.env.FEATURE_DEFAULT_MODE = "off";
+    process.env.FEATURE_MODES = JSON.stringify({ "vm-sandboxes": "on" });
+    expect(loadConfig().featureModes).toMatchObject({
+      "vm-sandboxes": "on",
+      "agent-telemetry": "off",
+      "custom-avatars": "off",
+    });
   });
 
   /** TEST_SCENARIO: The chart names the harness new agents start on, and any

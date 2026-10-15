@@ -1,5 +1,6 @@
 import {
   brandSchema,
+  featureIdSchema,
   featureModeSchema,
   harnessCatalogConfigSchema,
   linksSchema,
@@ -61,19 +62,28 @@ const defaultMountsSchema = z
     ),
   );
 
-// UNIT_BOUNDARY_DESCRIPTION: the chart's per-feature mode. An id the api-server no longer knows is ignored rather than refused, so values that still name a graduated feature keep the install starting.
+// UNIT_BOUNDARY_DESCRIPTION: the chart's per-feature mode, with every feature it does not name read as the chart's default mode. An id the api-server no longer knows is ignored rather than refused, so values that still name a graduated feature keep the install starting.
 const featureModesSchema = z
-  .string()
-  .default("{}")
-  .transform((raw, ctx) => {
-    try {
-      return JSON.parse(raw) as unknown;
-    } catch {
-      ctx.addIssue({ code: "custom", message: "must be a JSON object" });
-      return z.NEVER;
-    }
+  .object({
+    named: z
+      .string()
+      .default("{}")
+      .transform((raw, ctx) => {
+        try {
+          return JSON.parse(raw) as unknown;
+        } catch {
+          ctx.addIssue({ code: "custom", message: "must be a JSON object" });
+          return z.NEVER;
+        }
+      })
+      .pipe(z.record(z.string(), featureModeSchema)),
+    fallback: featureModeSchema.default("experimental"),
   })
-  .pipe(z.record(z.string(), featureModeSchema));
+  .transform(({ named, fallback }) =>
+    Object.fromEntries(
+      featureIdSchema.options.map((id) => [id, named[id] ?? fallback]),
+    ),
+  );
 
 // UNIT_BOUNDARY_DESCRIPTION: the chart's harness catalog. Without one (a dev run outside the chart) the default image's harness is Claude Code with nothing else on offer.
 const harnessesSchema = z
@@ -315,7 +325,10 @@ export function loadConfig(): Config {
     telegramBotUsername: process.env.TELEGRAM_BOT_USERNAME,
     e2eEnabled: process.env.E2E_ENABLED,
     virtualizationEnabled: process.env.VIRTUALIZATION_ENABLED,
-    featureModes: process.env.FEATURE_MODES,
+    featureModes: {
+      named: process.env.FEATURE_MODES,
+      fallback: process.env.FEATURE_DEFAULT_MODE,
+    },
     runtimeMigrationRetentionMs: process.env.RUNTIME_MIGRATION_RETENTION,
     activityTrackingEnabled: process.env.ACTIVITY_TRACKING_ENABLED,
     activityHmacKey: process.env.ACTIVITY_HMAC_KEY,
