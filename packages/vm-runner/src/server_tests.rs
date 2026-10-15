@@ -2670,12 +2670,14 @@ async fn a_short_claim_marks_every_share_until_it_has_room_again() {
     }
 }
 
-// TEST_SCENARIO: a guest serves each request to give back scratch once, so the runner keeps the same request while the claim stays short at about the same use, and sends a new one, with a new id and its part of the new shortage, only once the claim has filled RESHED_STEP_PERCENT further; a claim that has room again clears it, and the next shortage is a new request.
+// TEST_SCENARIO: a guest serves each request to give back scratch once, and only a running guest frees anything, so the shortage is split among the running machines alone. The runner keeps the same request while the claim stays short at about the same use, and sends a new one, with a new id and its part of the new shortage, only once the claim has filled RESHED_STEP_PERCENT further; a claim that has room again clears it, and the next shortage is a new request.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_short_claim_asks_again_only_when_it_fills_further() {
     let (h, claim) = with_claim("storage-reshed");
     h.server.put("m1", spec(true)).unwrap();
     h.settle("m1").await;
+    h.server.put("m2", spec(false)).unwrap();
+    h.settle("m2").await;
     let mark = h
         .dir
         .join("machines/m1")
@@ -2694,7 +2696,11 @@ async fn a_short_claim_asks_again_only_when_it_fills_further() {
             .parse::<u64>()
             .unwrap()
     };
-    assert!(bytes(&first) > 0, "{first}");
+    assert_eq!(
+        bytes(&first),
+        10 << 30,
+        "the running machine is asked for the whole shortage: {first}"
+    );
     assert_eq!(
         request(82).as_deref(),
         Some(first.as_str()),

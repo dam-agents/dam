@@ -1071,7 +1071,7 @@ fn evict_scratch() {
                 Err(e) => logf!("WARNING: evicting {} ({e})", entry.path.display()),
             }
         }
-        if let Some(request) = request {
+        if let Some(request) = request.filter(|_| pass.claim_only) {
             served = Some(request.id);
         }
         if !deleted.is_empty() {

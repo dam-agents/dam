@@ -280,7 +280,7 @@ It grows in place when the pool rises and is never shrunk, so a lowered pool onl
 A refused growth is reported and reconciliation continues: the runner still serves every agent at the size it has.
 
 **The runner guards the claim by its use.** The disks are sparse, so they can add up to more than the claim holds, and a guest sees its own disk as free while the claim under it fills; once the claim has no block left, a guest's write into its disk fails and its filesystem reports the loss.
-So the runner measures the claim itself: past 75% used it sheds what it can fetch again — every image tree no machine holds, when the cache is on the claim — and asks every machine's guest, through its share, to give back its even part of what would bring use back under 70%.
+So the runner measures the claim itself: past 75% used it sheds what it can fetch again — every image tree no machine holds, when the cache is on the claim — and asks every machine's guest, through its share, to give back scratch: each running one its even part of what would bring use back under 70%.
 It asks again only once the claim has filled five points further, and clears the request once use is back under 70%, so a claim the homes keep full does not have every guest delete its scratch again every minute.
 Past 90% it creates no machine, fetches no image onto the claim and takes no seed, and a machine it starts boots at the disk size it has; past 97% it starts and restarts no machine either, so between the two an owner whose agents are all asleep can still get into one to clean it up.
 It reports each refusal as `MachineStorageFull` with how full the storage is and how to free it, and never stops a running machine, which would free nothing and lose what the guest holds in memory.
