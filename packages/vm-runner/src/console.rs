@@ -38,7 +38,7 @@ const ENTRYPOINT_EXITED: &str = "platform-init: the image entrypoint ";
 const BOOT_REFUSED: &str = "platform-init: FATAL: ";
 
 // UNIT_BOUNDARY_DESCRIPTION: the guest agent's check of the disk before its first mount (smolvm.patch, storage_filesystem_checked) says what it did as a boot log line: a JSON object whose message starts with FSCK, names a repair with FSCK_REPAIRED followed by e2fsck's own output, and ends a check that left the disk damaged, or could not run, with FSCK_REFUSED.
-const FSCK: &str = "storage: e2fsck ";
+pub const FSCK: &str = "storage: e2fsck ";
 const FSCK_REPAIRED: &str = "repaired the filesystem";
 const FSCK_REFUSED: &str = "refusing to mount";
 
@@ -82,6 +82,18 @@ pub fn machine_tail(dir: &Path) -> String {
     .filter(|tail| !tail.is_empty())
     .collect::<Vec<_>>()
     .join("\n")
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: every line of the machine's console that holds `needle`, from both of its sources, as printable text. Both files hold one boot and the trim keeps them under LOG_CAP_BYTES, so the read is bounded.
+pub fn machine_lines(dir: &Path, needle: &str) -> String {
+    [VMM_LOG, CONSOLE_LOG]
+        .iter()
+        .filter_map(|name| fs::File::open(dir.join(name)).ok())
+        .flat_map(|file| BufReader::new(file).split(b'\n').map_while(Result::ok))
+        .map(|line| printable(&String::from_utf8_lossy(&line)))
+        .filter(|line| line.contains(needle))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the last `limit` bytes of the kernel's lines in the VMM log, as printable text. The VMM writes lines of its own as well, so the kernel's few lines are searched for through the whole file: a window of its end may hold none of them once a guest has run for a while. The read grows with the file, which the trim keeps under LOG_CAP_BYTES, and a runner that must read less would keep an offset per machine.
@@ -350,6 +362,29 @@ mod tests {
         }
         fs::write(&log, &text).unwrap();
         assert_eq!(tail_of(&log, 4096), format!("kernel panic\n{flatten}"));
+    }
+
+    // TEST_SCENARIO: the disk check runs first in a boot, and a guest can print much to its console before it answers, so the repair can be gone from the tail by then. The runner reads the check's lines from the whole boot instead.
+    #[test]
+    fn a_repair_early_in_a_long_boot_is_still_read() {
+        let dir = TempDir::new("console-fsck");
+        let repaired = r#"{"level":"WARN","message":"storage: e2fsck -p repaired the filesystem: /dev/vda: 12/65536 files","target":"smolvm_agent::boot"}"#;
+        let mut console = format!("{repaired}\n");
+        for i in 0..2_000 {
+            console.push_str(&format!(
+                "{{\"level\":\"INFO\",\"message\":\"line {i}\"}}\n"
+            ));
+        }
+        fs::write(dir.path().join(CONSOLE_LOG), console).unwrap();
+        assert_eq!(
+            home_repaired(&machine_tail(dir.path())),
+            None,
+            "the tail has lost it"
+        );
+        assert_eq!(
+            home_repaired(&machine_lines(dir.path(), FSCK)).as_deref(),
+            Some("storage: e2fsck -p repaired the filesystem: /dev/vda: 12/65536 files")
+        );
     }
 
     // TEST_SCENARIO: platform-init refused the boot, and said why as a kernel line. The guest kernel's console is not the console file, so its lines reach only the VMM's log, among the VMM's own lines. The tail finds the refusal there after hours of them, shows it first and without the VMM's own prefix, and then the guest agent's lines from the console file.

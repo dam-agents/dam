@@ -19,7 +19,7 @@ use crate::cacheapi::CacheClient;
 use crate::capability::Verified;
 use crate::capacity::Capacity;
 use crate::console::{
-    home_damaged, home_full, home_repaired, with_console, SLOW_BOOT, SLOW_BOOT_AFTER,
+    home_damaged, home_full, home_repaired, with_console, FSCK, SLOW_BOOT, SLOW_BOOT_AFTER,
 };
 use crate::fetch::{failure_reason, on_own_claim, seed_missing, unusable};
 use crate::forward::{healthy, Forwarder, Listen, LOOPBACK_OFFSET};
@@ -1350,6 +1350,10 @@ impl Server {
 
     // UNIT_BOUNDARY_DESCRIPTION: the machine's console, redacted with every env value this runner has been given for it and the ones its applied spec holds, the way a failed smolvm call's output is. A tail this runner cannot redact, because it holds no spec for the machine at all, is not shown.
     fn console_tail(&self, id: &str) -> String {
+        self.redacted(id, &self.runtime.console_tail(id))
+    }
+
+    fn redacted(&self, id: &str, console: &str) -> String {
         let remembered = locked(&self.machines)
             .entries
             .get(id)
@@ -1361,10 +1365,7 @@ impl Server {
         }
         let mut secrets = remembered.unwrap_or_default();
         secrets.extend(applied.into_iter().flat_map(|spec| spec.env.into_values()));
-        redact(
-            &self.runtime.console_tail(id),
-            secrets.iter().map(String::as_str),
-        )
+        redact(console, secrets.iter().map(String::as_str))
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: a guest that boots and never answers has no failure to report — its start call returned — so without this the Agent reads not ready for as long as it stays stuck, and why is only on the console. The prober writes the note once the boot is SLOW_BOOT_AFTER old and refreshes it no more often than that. A recorded failure carries its own tail and wins. An answer ends the boot: from then on a probe the guest misses is a health blip, not a boot still waited on, so the note does not come back for it.
@@ -1901,7 +1902,8 @@ impl Server {
         else {
             return;
         };
-        let written = match home_repaired(&self.console_tail(id)) {
+        let checked = self.redacted(id, &self.runtime.console_lines(id, FSCK));
+        let written = match home_repaired(&checked) {
             Some(repaired) => crate::files::write(&path, repaired.as_bytes(), 0o644),
             None => match fs::remove_file(&path) {
                 Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
