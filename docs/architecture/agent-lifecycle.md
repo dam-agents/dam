@@ -10,7 +10,7 @@ It is a custom resource whose `spec` the api-server owns and whose `status` the 
 The lifecycle is driven by three actors:
 
 - **Users** drive both management and sessions, but along different paths.
-  The **UI** is the only management surface — creating, configuring, hibernating, and deleting Agents all flow through tRPC on the api-server's public port, which is the sole writer of the Agent spec.
+  The **UI** is the only management surface — creating, configuring, disabling, and deleting Agents all flow through tRPC on the api-server's public port, which is the sole writer of the Agent spec.
   Sessions can be driven from the UI **or** from a connected channel (Slack, Telegram).
   Channels never hit management endpoints; they dial the api-server's ACP relay only, with identity scoped to the individual messenger user driving the session.
   Channel internals live on [channels](channels.md).
@@ -246,7 +246,7 @@ A **never-hibernate** Agent (effective timeout `0`) runs regardless of activity;
 ### Disable
 
 A **disabled** Agent is a sleeping Agent that nothing wakes until its owner enables it: no chat, terminal, SSH, Slack or Telegram message, schedule fire or Invocation outcome starts it.
-The owner disables and enables it from the Agent's *General* page.
+The owner disables and enables it from the Agent's *General* page, or with `dam agent disable` and `dam agent enable` ([CLI](cli.md#agent-lifecycle)).
 Disabling stamps `agent-platform.ai/disabled` together with the stop request, clears the session and Invocation pins, and stales `last-activity`, so the controller scales the pair to zero exactly as for a sleep; the controller never reads the disabled mark itself.
 The settle-watcher never runs, so the stop request stands for as long as the Agent is disabled.
 Every path that would clear the stop request — an explicit wake, a schedule poke, a workspace retry — first reads the disabled mark and writes nothing when it is set; the write names the version it read, so a disable landing in between makes it conflict and read again rather than undo the disable.

@@ -666,6 +666,22 @@ jobs:
       - &e2e-pnpm-install
         if: env.VERIFY == 'true'
         run: mise deps install --only pnpm
+      # A PR that changes the mock's source builds it here, onto a default
+      # image built here too, which installs every harness's tools. Main's
+      # agent-tools entry holds them, so a hit reaches none of their download
+      # hosts: Bob's, IBM Cloud Object Storage, stalled for minutes and failed
+      # this lane. A PR that changes no mock source pulls main's mock and
+      # skips the restore, a gigabyte and about 25 s.
+      - id: mock-changed
+        if: github.event_name == 'pull_request'
+        run: |
+          if git diff --quiet HEAD^1 HEAD -- $(.mise/tasks/image/resolve paths mock); then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.mock-changed.outputs.changed == 'true'
+        uses: ./.github/actions/agent-tools # zizmor: ignore[self-repository]
       - &e2e-ci-images
         name: Build or fetch this run's images in the background
         env:
