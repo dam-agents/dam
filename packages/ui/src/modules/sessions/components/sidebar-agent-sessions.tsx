@@ -235,6 +235,15 @@ function AgentSessionList({
           })}
         />
       ))}
+      {expanded && hasNextPage && fetchNextPageFailed && (
+        <button
+          type="button"
+          onClick={() => void fetchNextPage()}
+          className="flex h-[30px] items-center rounded-lg pl-9 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          Couldn't load the rest. Retry
+        </button>
+      )}
       {toggle && (
         <ToggleRow
           toggle={toggle}

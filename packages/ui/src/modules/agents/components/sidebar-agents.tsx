@@ -100,6 +100,11 @@ export function SidebarAgents({
           <CreateAgentButton onCreate={onNavigate} />
         </div>
       </div>
+      {activity.unreadable && (
+        <p className="px-2.5 py-1.5 text-xs text-muted-foreground">
+          Recent sessions can't be loaded right now.
+        </p>
+      )}
       <ul className="flex flex-col gap-px">
         {active.map(row)}
         {showFolded && folded.map(row)}
