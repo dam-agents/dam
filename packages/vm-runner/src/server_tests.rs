@@ -1512,6 +1512,26 @@ async fn a_guest_that_went_quiet_is_restarted_once_and_counted() {
     assert_eq!(h.settle("m1").await.restarts, 1);
     assert_eq!(h.fake.calls(), calls, "the restart earned another one");
 }
+// TEST_SCENARIO: a stop the controller asks for, as hibernation does, clears the count of restarts, so the wake after it does not read as a crash; a restart the runner chose for a quiet guest keeps it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_requested_stop_clears_the_restart_count() {
+    let h = Harness::new("stop-clears");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.machine("m1", |m| {
+        m.health = Health {
+            ever_ready: true,
+            quiet_since: Some(SystemTime::now() - UNHEALTHY_RESTART - Duration::from_secs(1)),
+        }
+    });
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.restarts, 1);
+
+    h.server.put("m1", spec(false)).unwrap();
+    assert_eq!(h.settle("m1").await.restarts, 0);
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.restarts, 0);
+}
 
 // UNIT_BOUNDARY_DESCRIPTION: marks the machine quiet for just longer than STALLED_RESTART, as a guest that stopped answering that long ago looks.
 fn stall(h: &Harness, id: &str) {
