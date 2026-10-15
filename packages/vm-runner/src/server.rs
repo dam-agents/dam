@@ -112,7 +112,7 @@ struct Seen {
     error: Option<String>,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `seeding` is set while a seed is uploaded into the machine's share, and no worker starts while it is. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change. `cancel` is the machine's own child of the runner's lifetime, cancelled by a delete so the action in flight stops waiting on its fetch. `acting_mib` is the memory of the spec the action in flight runs with, which a newer spec stored behind it does not change. `resident_mib` is what the prober last measured the running machine's VMM holding, kept beside `seen` rather than in it, so a figure that moves at every probe does not move the status version and wake every waiting read. `warming_since` is when the machine's last boot began, which admission counts it at the warm-up floor for WARMUP after. `deletes` counts the delete calls in progress, and `deleting` stays set after one gave up waiting, so the worker still takes no further action. `calls` is held by every start, stop or delete call into the runtime until that call returns, also after the runner gave up waiting for it, so it counts one more holder per call still running. `gave_up` is when the runner last restarted the machine for going quiet, which holds its next such restart back.
+// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `seeding` is set while a seed is uploaded into the machine's share, and no worker starts while it is. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change. `cancel` is the machine's own child of the runner's lifetime, cancelled by a delete so the action in flight stops waiting on its fetch. `acting_mib` is the memory of the spec the action in flight runs with, which a newer spec stored behind it does not change. `resident_mib` is what the prober last measured the running machine's VMM holding, kept beside `seen` rather than in it, so a figure that moves at every probe does not move the status version and wake every waiting read. `warming_since` is when the machine's last boot began, which admission counts it at the warm-up floor for WARMUP after. `deletes` counts the delete calls in progress, and `deleting` stays set after one gave up waiting, and while any runtime call it waited on still runs, so the worker still takes no further action and no ensure clears it. `calls` is held by every start, stop or delete call into the runtime until that call returns, also after the runner gave up waiting for it, so it counts one more holder per call still running. `gave_up` is when the runner last restarted the machine for going quiet, which holds its next such restart back.
 #[derive(Default)]
 struct MachineEntry {
     desired: Option<MachineSpec>,
@@ -616,7 +616,7 @@ impl Server {
             }
             let entry = machines.entries.entry(id.to_string()).or_default();
             if entry.deleting {
-                if entry.converging || entry.deletes > 0 {
+                if entry.converging || entry.deletes > 0 || Arc::strong_count(&entry.calls) > 1 {
                     return Ok(status);
                 }
                 entry.deleting = false;
@@ -759,7 +759,7 @@ impl Server {
                 self.changed.notify_all();
             } else if let Some(entry) = machines.entries.get_mut(id) {
                 entry.deletes -= 1;
-                if entry.deletes == 0 {
+                if entry.deletes == 0 && Arc::strong_count(&entry.calls) == 1 {
                     entry.deleting = false;
                     entry.cancel = None;
                 }

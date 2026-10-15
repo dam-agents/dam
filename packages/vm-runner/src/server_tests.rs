@@ -2319,7 +2319,7 @@ async fn a_delete_behind_a_runtime_call_given_up_on_answers_in_its_wait_every_ti
     assert_eq!(h.fake.calls(), ["create m1", "delete m1"]);
 }
 
-// TEST_SCENARIO: the runtime's own delete is stuck. The delete answers 503 within its wait rather than hang past the controller's timeout, and the retries behind it wait on that one call rather than each start another; the retry after it returns finds the machine gone and succeeds.
+// TEST_SCENARIO: the runtime's own delete is stuck. The delete answers 503 within its wait rather than hang past the controller's timeout, and the retries behind it wait on that one call rather than each start another, and the machine stays marked as being deleted meanwhile, so the prober never restarts it; the retry after it returns finds the machine gone and succeeds.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_stuck_runtime_delete_is_waited_on_once_and_not_repeated() {
     let h = Harness::new("stuck-delete");
@@ -2338,6 +2338,12 @@ async fn a_stuck_runtime_delete_is_waited_on_once_and_not_repeated() {
         .unwrap_err();
         assert_eq!(busy.status, 503, "{busy:?}");
         assert!(asked.elapsed() < Duration::from_secs(1));
+        assert!(
+            locked(&h.server.machines).entries["m1"].deleting,
+            "a delete still running lets the worker act again"
+        );
+        h.server.put("m1", spec(true)).unwrap();
+        assert!(locked(&h.server.machines).entries["m1"].deleting);
     }
     *locked(&h.fake.delete_delay) = Duration::ZERO;
     let server = h.server.clone();
