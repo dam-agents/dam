@@ -46,7 +46,7 @@ function renderAgent(agent: AgentView): string {
     ["ID", agent.id],
     ["TEMPLATE", agent.templateId ?? "<custom>"],
     ["IMAGE", agent.image],
-    ["STATE", agent.state],
+    ["STATE", agent.disabled ? "disabled" : agent.state],
   ];
   if (agent.description) entries.push(["DESCRIPTION", agent.description]);
   entries.push(["CHANNELS", renderChannels(agent.channels)]);

@@ -87,7 +87,7 @@ export function buildListCommand(deps: {
               a.name,
               a.id,
               a.templateId ?? "<custom>",
-              a.state,
+              a.disabled ? "disabled" : a.state,
             ]),
           ]),
           EXIT_SUCCESS,

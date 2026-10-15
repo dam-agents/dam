@@ -5,6 +5,7 @@ import type { TrpcClient } from "../shared/trpc/trpc-client.js";
 import { buildCreateCommand } from "./commands/create.js";
 import { buildCreateInteractiveCommand } from "./commands/create-interactive.js";
 import { buildDeleteCommand } from "./commands/delete.js";
+import { buildDisableCommand } from "./commands/disable.js";
 import { buildGetCommand } from "./commands/get.js";
 import { buildListCommand } from "./commands/list.js";
 import { buildRestartCommand } from "./commands/restart.js";
@@ -49,6 +50,8 @@ export function composeAgentModule(opts: AgentModuleOptions): AgentModule {
   parent.addCommand(buildCreateInteractiveCommand(createDeps));
   parent.addCommand(buildDeleteCommand(shared));
   parent.addCommand(buildRestartCommand(shared));
+  parent.addCommand(buildDisableCommand(shared, true));
+  parent.addCommand(buildDisableCommand(shared, false));
 
   return { commands: [parent], exports: { createService } };
 }
