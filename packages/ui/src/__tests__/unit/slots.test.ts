@@ -42,6 +42,7 @@ const agent = (
   grantedSecretIds: [],
   grantedConnectionIds: [],
   stopRequested: false,
+  disabled: false,
   overBudget: false,
   size,
   state,

@@ -1,5 +1,5 @@
-import { Add, NewTab } from "@carbon/icons-react";
-import { type ReactNode, useState } from "react";
+import { Add, NewTab, Tools } from "@carbon/icons-react";
+import type { ReactNode } from "react";
 
 import { Collapse } from "@/components/ui/collapse";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -7,33 +7,20 @@ import { Tooltip } from "@/components/ui/tooltip";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import {
-  type BindMessenger,
-  ChannelBindModal,
-} from "../../sandboxes/components/channels/channel-bind-modal.js";
 import { SessionFilterMenu } from "../../sessions/components/session-filter-menu.js";
 import { SidebarAgentSessions } from "../../sessions/components/sidebar-agent-sessions.js";
 import { useStartSession } from "../../sessions/hooks/use-start-session.js";
-import { useAgentRows } from "../hooks/use-agent-rows.js";
 import { useCreateDefaultAgent } from "../hooks/use-create-default-agent.js";
-import { useSandboxRowActions } from "../hooks/use-sandbox-row-actions.js";
 import { useSidebarAgents } from "../hooks/use-sidebar-agents.js";
-import { AgentActionsMenu } from "./agent-actions-menu.js";
 import { SidebarAgentRow } from "./sidebar-agent-row.js";
 
 export function SidebarAgents({ onNavigate }: { onNavigate?: () => void }) {
   const { active, folded, openAgentId, unreadAgentIds } = useSidebarAgents();
-  const { agentsData, rowProps, deleteAgent } = useAgentRows();
-  const { deleteSandbox } = useSandboxRowActions({ deleteAgent });
   const selectAgent = useStore((s) => s.selectAgent);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const showFolded = useStore((s) => s.sidebarShowHibernating);
   const setShowFolded = useStore((s) => s.setSidebarShowHibernating);
   const startSession = useStartSession();
-  const [bindMessenger, setBindMessenger] = useState<BindMessenger | null>(
-    null,
-  );
-  const messengers = agentsData?.availableChannels ?? {};
 
   const navigate = (go: () => void) => () => {
     go();
@@ -60,16 +47,12 @@ export function SidebarAgents({ onNavigate }: { onNavigate?: () => void }) {
               <NewTab size={14} />
             </RowIconButton>
             {open && <SessionFilterMenu />}
-            <AgentActionsMenu
-              {...rowProps(agent)}
-              dense
-              configureLabel="Configure agent"
-              onConfigure={navigate(() => navigateToSandboxHome(agent.id))}
-              onDelete={() => void deleteSandbox(agent)}
-              onAddToChannel={setBindMessenger}
-              messengers={messengers}
-              className="size-6 hover:bg-background"
-            />
+            <RowIconButton
+              label="Configure agent"
+              onClick={navigate(() => navigateToSandboxHome(agent.id))}
+            >
+              <Tools size={14} />
+            </RowIconButton>
           </>
         }
       >
@@ -99,12 +82,6 @@ export function SidebarAgents({ onNavigate }: { onNavigate?: () => void }) {
         >
           {showFolded ? "Show less" : `See all (${folded.length} hibernating)`}
         </button>
-      )}
-      {bindMessenger && (
-        <ChannelBindModal
-          messengers={[bindMessenger]}
-          onClose={() => setBindMessenger(null)}
-        />
       )}
     </section>
   );

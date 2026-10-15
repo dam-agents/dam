@@ -82,7 +82,7 @@ export function SessionPairPicker({
   const chosen = useStore((s) => s.nextSessionPair[agentId] ?? null);
   const setPair = useStore((s) => s.setNextSessionPair);
   const providers = useProviderConnections(agentId);
-  const { grant, revoke, pending } = useGrantProvider(agentId);
+  const { attach, revoke, pending } = useGrantProvider(agentId);
 
   const views = catalog?.harnesses ?? [];
   const harnessName = (name: string) => harnessDisplayName(name, views);
@@ -208,7 +208,9 @@ export function SessionPairPicker({
                     {h.displayName}
                   </button>
                   {unsupported(h.name) && (
-                    <Tooltip content="This harness does not support any of the LLM providers you have configured.">
+                    <Tooltip
+                      content={`${h.displayName} does not support any of the LLM providers you have configured.`}
+                    >
                       <span
                         tabIndex={0}
                         aria-label={`Why ${h.displayName} is unavailable`}
@@ -266,7 +268,7 @@ export function SessionPairPicker({
                       type="button"
                       disabled={pending || conflict !== null}
                       onClick={() =>
-                        void grant(connection.id).then(
+                        void attach(connection).then(
                           (ok) =>
                             ok &&
                             choose(
@@ -320,12 +322,16 @@ export function SessionPairPicker({
               pending={pending}
               harnessName={harnessName(harness)}
               onDisconnect={confirmDisconnect}
-              onAttach={(id) =>
-                void grant(id).then(
+              onAttach={(provider) =>
+                void attach(provider).then(
                   (ok) =>
                     ok &&
                     choose(
-                      withSettings({ harness, provider: id, model: null }),
+                      withSettings({
+                        harness,
+                        provider: provider.id,
+                        model: null,
+                      }),
                     ),
                 )
               }
@@ -484,7 +490,7 @@ function OldRuntimeProviderSections({
   pending: boolean;
   harnessName: string | undefined;
   onDisconnect: (name: string, id: string) => void;
-  onAttach: (id: string) => void;
+  onAttach: (provider: { id: string; name: string }) => void;
   onChoose: (id: string, model: string) => void;
 }) {
   return (
@@ -512,7 +518,7 @@ function OldRuntimeProviderSections({
             <button
               type="button"
               disabled={pending}
-              onClick={() => onAttach(p.id)}
+              onClick={() => onAttach(p)}
               className="inline-flex items-center gap-1.5 self-start py-1 text-muted-foreground hover:text-foreground hover:underline disabled:opacity-50"
             >
               <Add size={16} /> Attach this provider

@@ -5,18 +5,21 @@ import type { AgentDisplayState } from "../utils/agent-resolver.js";
 import { reclaimSentence } from "./reclaim-notices.js";
 import { workspaceFailureSentence } from "./workspace-failure.js";
 
+export const AGENT_ENABLE_ANCHOR = "enable-agent";
+
 const VM_MEMORY_FULL =
-  "Your VM agents' memory is full. It starts once room frees up — or put an agent you aren't using to sleep.";
+  "Your VM agents' memory is full. It starts once room frees up — or disable an agent you aren't using.";
 const OVERLAY_DESCRIPTION: Record<AgentDisplayState, string> = {
   running: "",
   starting: "",
   preparing_workspace: "Setting up the workspace. This finishes shortly.",
   hibernating: "The agent is falling asleep.",
   hibernated: "The agent is sleeping. Wake it to pick up where you left off.",
+  disabled: "",
   error: "The agent hit an error and isn't running.",
   over_budget:
-    "Starting this agent would exceed your compute budget. Put agents " +
-    "you aren't using to sleep to free room, then start this one again.",
+    "Starting this agent would exceed your compute budget. Disable agents " +
+    "you aren't using to free room, then start this one again.",
   migrating:
     "The agent is moving to the new sandbox runtime. It is back once its " +
     "data has been copied, which takes a few minutes.",

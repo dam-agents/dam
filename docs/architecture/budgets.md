@@ -107,7 +107,7 @@ First-time users with no agents see none of it.
 The card shows a vm user their pools in its place, and a user with both kinds switches between the two views, which the browser remembers: memory and storage as bars showing how much is used of how much, each agent's share a segment largest first, with what the pool counts beyond the agents' own shares — headroom for memory; for storage the image cache, the copies runtime migrations still hold, and logs and system — as the last.
 Once storage reaches the warning level, a list under its bar says what fills it, largest first: each agent's disk, which only deleting the agent or having it delete files frees and which leads to that agent, then the image cache, which the runner sheds once storage runs short, the migration copies, which go when each move ends or is cancelled, a failed one keeping its copy until a retry or an abort, and what is left.
 CPU's bar is its congestion, with its word beside it, not a use against a limit, because the limit moves with the machines running and reaching it fails nothing.
-The bar's colour and the meter's spoken value carry the level; at warning or critical a warning sign beside the pool's name says what to do — put agents to sleep, delete old ones or have them clean their disks, or, for CPU, which agents use the most — and at critical what the platform does: idle agents are put to sleep for memory, and new VM agents are refused for storage, plus, for a user who has not linked Slack where the install has it, how to link it to get these alerts there.
+The bar's colour and the meter's spoken value carry the level; at warning or critical a warning sign beside the pool's name says what to do — disable agents not in use, delete old ones or have them clean their disks, or, for CPU, which agents use the most — and at critical what the platform does: idle agents are put to sleep for memory, and new VM agents are refused for storage, plus, for a user who has not linked Slack where the install has it, how to link it to get these alerts there.
 Each vm agent's row carries its own memory and storage, and the dashboard reads the figures again every 15 s while it is open.
 
 **Resizing** changes an Agent's Size in the agent settings and always restarts the pod (the CR patch re-renders the pair — a "live" resize does not exist in Kubernetes terms).
@@ -150,12 +150,12 @@ Reclaiming is **announced, not asked**.
 The eligibility rules confine it to agents with no attached viewer, and the outcome — hibernated somewhat sooner than its own timer said — is one the agent's settings already sanction, so nobody is asked first.
 The victim lands in ordinary `Hibernated` state, but while its reclaim mark stands the api-server reads it off the Agent and the agent says it was put to sleep automatically — to make room for an agent its owner started, or, on the vm backend, to free memory for the owner's other agents ([vm-memory](vm-memory.md)) — in its unavailable view and its row, with a one-time notice in an open web app.
 A deliberate touch outdates the mark, and the message with it.
-A Sleep removes the mark, since it stales last activity behind it, so an agent its user put to sleep never reads as put to sleep automatically.
+A Sleep removes the mark, since it stales last activity behind it, so an agent its user put to sleep never reads as put to sleep automatically; disabling an agent clears the mark outright.
 The exposure this adds is hibernation's existing blind spot (unreported work, which no signal sees) arriving earlier than advertised; the floor bounds it and the escape is unchanged: disable hibernation on agents whose real work runs off-session.
 
 ## Failure semantics upstream
 
-The api-server classifies the `OverBudget` condition reason into a typed wake-failure (non-transient, fail-fast — a denied wake errors in about a reconcile round-trip, not a wake-timeout), so the UI, relays and scheduler all inherit the same message — the figures plus "put agents you aren't using to sleep to free room" for a ceiling, and for a refused machine the controller's own sentence, giving in GiB how much of the pool is in use out of the same total Home shows and how much more the start needs, when the controller can read them, rather than the runner's accounting.
+The api-server classifies the `OverBudget` condition reason into a typed wake-failure (non-transient, fail-fast — a denied wake errors in about a reconcile round-trip, not a wake-timeout), so the UI, relays and scheduler all inherit the same message — the figures plus "disable agents you aren't using to free room" for a ceiling, and for a refused machine the controller's own sentence, giving in GiB how much of the pool is in use out of the same total Home shows and how much more the start needs, when the controller can read them, rather than the runner's accounting.
 A channel reply goes to whoever wrote in, who need not be the owner, so it says only that the owner's agents are using all their room, never the owner's figures or what the owner should do.
 A scheduled fire on an over-budget agent records a failed fire; the trigger event is already durably committed to the outbox, so it redelivers once room frees, or expires when the schedule's next occurrence supersedes it.
 
@@ -166,7 +166,7 @@ Deliberately local to the api-server: the alternative — echoing the denied act
 
 ## Freeing room
 
-Users free capacity by putting a running agent to sleep (see [agent-lifecycle](agent-lifecycle.md#hibernate) for the mechanics) or letting it hibernate — and, for a start they are blocked on, the gate frees it for them where it can ([above](#reclaiming-room-for-a-blocked-start)).
+Users free capacity by [disabling](agent-lifecycle.md#disable) an agent they aren't using or letting it hibernate — and, for a start they are blocked on, the gate frees it for them where it can ([above](#reclaiming-room-for-a-blocked-start)).
 Reserved is computed from live state and never persisted, so a hibernate or delete credits the budget back with nothing to reconcile.
 
 ## Resource alerts

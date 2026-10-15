@@ -12,12 +12,11 @@ interface SectionEntry {
   description?: string;
 }
 
-const SECTIONS: SectionEntry[] = [
+export const SECTIONS: SectionEntry[] = [
   {
     section: "setup",
-    title: "Sandbox",
-    description:
-      "How long this agent stays awake and how much compute it gets.",
+    title: "General",
+    description: "Ways to use this agent, its settings, and managing it.",
   },
   {
     section: "providers",
@@ -67,20 +66,6 @@ const SECTIONS: SectionEntry[] = [
       "LLM spend for this agent, including work it delegated to other agents.",
   },
 ];
-
-export function sectionsFor(vm: boolean): SectionEntry[] {
-  return vm
-    ? SECTIONS.map((e) =>
-        e.section === "setup"
-          ? {
-              ...e,
-              description:
-                "How this agent's gateway adds credentials to its requests.",
-            }
-          : e,
-      )
-    : SECTIONS;
-}
 
 interface Props {
   sections: SectionEntry[];

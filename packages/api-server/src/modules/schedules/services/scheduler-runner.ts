@@ -72,6 +72,7 @@ export interface SchedulerRunnerDeps {
   activityStamps?: TtlStore<ActivityStamp>;
   onboardingPending?: (agentId: string) => Promise<boolean>;
   runtimeMigrating?: (agentId: string) => Promise<boolean>;
+  agentDisabled: (agentId: string) => Promise<boolean>;
   log?: (msg: string) => void;
   now?: () => Date;
 }
@@ -273,6 +274,13 @@ export function createSchedulerRunner(
       await emitChanged(sched.agentId, sched.id);
       return;
     }
+    if (action.kind !== "poke" && (await deps.agentDisabled(sched.agentId))) {
+      log(`fire: one-time schedule ${sched.id}'s agent is disabled; missed`);
+      noteFire("missed");
+      await deps.repo.recordFire(sched.id, OnceResult.Missed, null);
+      await emitChanged(sched.agentId, sched.id);
+      return;
+    }
     const eventId = `${sched.id}:${fireAt.getTime()}`;
     if (action.kind === "poke") {
       log(`fire: one-time schedule ${sched.id} is committed; poking again`);
@@ -347,6 +355,12 @@ export function createSchedulerRunner(
       log(`fire: agent ${sched.agentId} is moving to the new runtime; holding`);
       noteFire("held", { holdReason: "runtime_migration" });
       await hold("held: moving to the new runtime");
+      return;
+    }
+    if (await deps.agentDisabled(sched.agentId)) {
+      log(`fire: agent ${sched.agentId} is disabled; holding`);
+      noteFire("held", { holdReason: "agent_disabled" });
+      await hold("held: agent disabled");
       return;
     }
 

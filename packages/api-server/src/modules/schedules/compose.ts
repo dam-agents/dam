@@ -60,6 +60,7 @@ export interface ComposeSchedulesAtBootOpts {
   redis: Redis;
   onboardingPending?: (agentId: string) => Promise<boolean>;
   runtimeMigrating?: (agentId: string) => Promise<boolean>;
+  agentDisabled: (agentId: string) => Promise<boolean>;
 }
 
 export function composeSchedulesAtBoot(
@@ -89,6 +90,7 @@ export function composeSchedulesAtBoot(
     ...(opts.validateSessionChoices
       ? { validateSessionChoices: opts.validateSessionChoices }
       : {}),
+    agentDisabled: opts.agentDisabled,
     log,
   });
   const worker = startScheduleWorker({
