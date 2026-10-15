@@ -280,6 +280,39 @@ export function runnerGrows(
   });
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: runs a shell script as root inside a vm agent's guest, through the smolvm on its owner's runner pod, and returns its output.
+export function inGuest(agentId: string, script: string): string {
+  const pod = kubectl(
+    "-n",
+    AGENT_NS,
+    "get",
+    "pod",
+    "-l",
+    hostSelector(agentId, "vm"),
+    "-o",
+    "jsonpath={.items[0].metadata.name}",
+  );
+  return kubectl(
+    "-n",
+    AGENT_NS,
+    "exec",
+    pod,
+    "-c",
+    "vm-runner",
+    "--",
+    "/opt/smolvm/smolvm",
+    "machine",
+    "exec",
+    "--name",
+    agentId,
+    "-u",
+    "0",
+    "--",
+    "sh",
+    "-c",
+    script,
+  );
+}
 export async function deleteBackendHost(
   agentId: string,
   backend: Backend,

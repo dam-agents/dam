@@ -766,7 +766,10 @@ fn format_btrfs(disk: &Path, gib: u64, template: &Path) -> bool {
     };
     let failure = match expanded {
         Ok(out) if out.status.success() => {
-            match resized().and_then(|()| std::fs::write(disk.with_extension("formatted"), "1")) {
+            match resized()
+                .and_then(|()| give_unique_fsid(disk))
+                .and_then(|()| std::fs::write(disk.with_extension("formatted"), "1"))
+            {
                 Ok(()) => return true,
                 Err(e) => e.to_string(),
             }
@@ -786,6 +789,53 @@ fn format_btrfs(disk: &Path, gib: u64, template: &Path) -> bool {
         tracing::warn!(disk = %disk.display(), error = %e, "could not empty the storage disk after a failed btrfs format");
     }
     false
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: where a btrfs superblock copy sits that the template can hold: the primary at 64 KiB and the first mirror at 64 MiB. The second mirror, at 256 GiB, is past the template's end.
+const BTRFS_SUPERBLOCKS: [u64; 2] = [0x1_0000, 0x400_0000];
+const BTRFS_INCOMPAT_METADATA_UUID: u64 = 1 << 10;
+
+// UNIT_BOUNDARY_DESCRIPTION: gives a disk made from the btrfs template a filesystem UUID of its own, as `btrfstune -m` does: the superblocks take a random UUID, keep the template's as the metadata UUID (the METADATA_UUID incompat flag) so no tree block is rewritten, and get their crc32c again. Two disks from one template would otherwise share a UUID, and a guest or host that sees both would take them for one filesystem. A superblock copy that is not btrfs, or not checksummed with crc32c, fails the format.
+fn give_unique_fsid(disk: &Path) -> std::io::Result<()> {
+    use std::io::Read;
+    use std::os::unix::fs::FileExt;
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(disk)?;
+    let mut fsid = [0u8; 16];
+    std::fs::File::open("/dev/urandom")?.read_exact(&mut fsid)?;
+    fsid[6] = fsid[6] & 0x0f | 0x40;
+    fsid[8] = fsid[8] & 0x3f | 0x80;
+    for offset in BTRFS_SUPERBLOCKS {
+        let mut sb = [0u8; 4096];
+        file.read_exact_at(&mut sb, offset)?;
+        if &sb[64..72] != b"_BHRfS_M" || sb[196..198] != [0, 0] {
+            return Err(std::io::Error::other(format!(
+                "no crc32c btrfs superblock at {offset:#x}"
+            )));
+        }
+        let incompat = u64::from_le_bytes(sb[188..196].try_into().expect("8 bytes"));
+        if incompat & BTRFS_INCOMPAT_METADATA_UUID == 0 {
+            sb.copy_within(32..48, 571);
+            sb[188..196].copy_from_slice(&(incompat | BTRFS_INCOMPAT_METADATA_UUID).to_le_bytes());
+        }
+        sb[32..48].copy_from_slice(&fsid);
+        sb[..32].fill(0);
+        let crc = crc32c(&sb[32..]);
+        sb[..4].copy_from_slice(&crc.to_le_bytes());
+        file.write_all_at(&sb, offset)?;
+    }
+    file.sync_all()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: CRC-32C (Castagnoli, reflected 0x82F63B78), bit by bit: it runs over two 4 KiB superblocks once per new disk, so a table or a crate buys nothing.
+fn crc32c(data: &[u8]) -> u32 {
+    !data.iter().fold(!0u32, |crc, &byte| {
+        (0..8).fold(crc ^ u32::from(byte), |crc, _| {
+            (crc >> 1) ^ (0x82F6_3B78 & (crc & 1).wrapping_neg())
+        })
+    })
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: where mkfs.ext4 is: on the runner image's PATH, or Homebrew's e2fsprogs on a Mac host runner, which installs it outside PATH.
@@ -1569,7 +1619,10 @@ mod tests {
         let image = home.path.join("template");
         let file = fs::File::create(&image).unwrap();
         file.set_len(256 << 20).unwrap();
-        file.write_all_at(b"_BHRfS_M", 0x10040).unwrap();
+        for at in BTRFS_SUPERBLOCKS {
+            file.write_all_at(b"TEMPLATEFSIDXXXX", at + 32).unwrap();
+            file.write_all_at(b"_BHRfS_M", at + 64).unwrap();
+        }
         let template = home.path.join(BTRFS_TEMPLATE);
         assert!(std::process::Command::new("zstd")
             .args(["-q", "-o"])
@@ -1600,6 +1653,35 @@ mod tests {
             fs::metadata(&disk).unwrap().blocks() * 512 < 1 << 20,
             "expanding the template filled the sparse disk"
         );
+        let at = |disk: &Path, offset: u64| {
+            let mut read = [0; 16];
+            fs::File::open(disk)
+                .unwrap()
+                .read_exact_at(&mut read, offset)
+                .unwrap();
+            read
+        };
+        let fsid = at(&disk, 0x10000 + 32);
+        assert_ne!(
+            &fsid, b"TEMPLATEFSIDXXXX",
+            "the disk kept the template's UUID"
+        );
+        for sb in BTRFS_SUPERBLOCKS {
+            assert_eq!(at(&disk, sb + 32), fsid, "the superblock copies disagree");
+            assert_eq!(
+                &at(&disk, sb + 571),
+                b"TEMPLATEFSIDXXXX",
+                "the metadata UUID is not the template's"
+            );
+        }
+
+        fs::create_dir_all(vm_data_dir("m3")).unwrap();
+        raw_storage_disk("m3", 20, Some(&template)).unwrap();
+        assert_ne!(
+            at(&storage_disk_path("m3"), 0x10000 + 32),
+            fsid,
+            "two disks share a UUID"
+        );
 
         fs::create_dir_all(vm_data_dir("m2")).unwrap();
         raw_storage_disk("m2", 20, Some(&home.path.join("missing.zst"))).unwrap();
@@ -1608,6 +1690,56 @@ mod tests {
         assert_eq!(fs::metadata(&disk).unwrap().len(), 20 << 30);
         assert_eq!(disk.with_extension("formatted").exists(), mkfs_available());
     }
+    // TEST_SCENARIO: the kernel refuses a superblock whose crc32c is wrong, so the checksum is the standard CRC-32C, checked against its published check value.
+    #[test]
+    fn the_superblock_checksum_is_crc32c() {
+        assert_eq!(crc32c(b"123456789"), 0xE306_9283);
+    }
+
+    // TEST_SCENARIO: a disk the runner gave its own UUID must still be a btrfs filesystem that btrfs-progs checks clean, with the new UUID and the template's as its metadata UUID. Runs where mkfs.btrfs and btrfs are installed.
+    #[test]
+    fn a_disk_with_its_own_uuid_checks_clean() {
+        let dir = crate::testdir::TempDir::new("btrfs-uuid");
+        let image = dir.path().join("disk");
+        let run = |args: &[&str]| {
+            std::process::Command::new(args[0])
+                .args(&args[1..])
+                .output()
+        };
+        fs::File::create(&image)
+            .unwrap()
+            .set_len(256 << 20)
+            .unwrap();
+        let Ok(made) = run(&["mkfs.btrfs", "-q", "-m", "single", image.to_str().unwrap()]) else {
+            eprintln!("skipping: no mkfs.btrfs on this host");
+            return;
+        };
+        assert!(made.status.success(), "{made:?}");
+        let uuid = |field: &str| {
+            let out = run(&[
+                "btrfs",
+                "inspect-internal",
+                "dump-super",
+                image.to_str().unwrap(),
+            ])
+            .unwrap();
+            String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .find_map(|line| line.strip_prefix(field).map(|v| v.trim().to_string()))
+                .unwrap()
+        };
+        let before = uuid("fsid");
+        give_unique_fsid(&image).unwrap();
+        assert_ne!(uuid("fsid"), before);
+        assert_eq!(uuid("metadata_uuid"), before);
+        let checked = run(&["btrfs", "check", "--readonly", image.to_str().unwrap()]).unwrap();
+        assert!(
+            checked.status.success(),
+            "{}",
+            String::from_utf8_lossy(&checked.stderr)
+        );
+    }
+
     // TEST_SCENARIO: an update reshapes a stopped machine in place — size, env, and a disk that grows — so the agent keeps its disk across a resize.
     #[test]
     fn an_update_reshapes_the_stopped_machine_and_keeps_its_disk() {

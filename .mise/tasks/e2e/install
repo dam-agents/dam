@@ -43,6 +43,10 @@ INSTALL_ARGS=(
 # Templates keep a 1Gi Size for the container agents the lane still starts,
 # such as a runtime migration's source. The container lane keeps the defaults.
 #
+# Its machines get btrfs disks and zram swap, which are off by default, so the
+# lane runs the patched guest kernel and agent on them; smoke/19-agent-backend
+# checks both inside a guest.
+#
 # On a Mac the lane keeps the runner pods on nested virtualization rather than
 # the host runner cluster:install would pick: the suite restarts the runner by
 # deleting its pod, and the one host runner belongs to the dev cluster.
@@ -52,6 +56,8 @@ if [ -n "${E2E_VIRTUALIZATION:-}" ]; then
     --set=virtualization.enabled=true
     --set=virtualization.runner.machineCPUs=1
     --set=virtualization.runner.bootMiB=1024
+    --set=virtualization.runner.storageFilesystem=btrfs
+    --set=virtualization.runner.zramSwap=true
     --set=harnessTemplates.mock.resources.limits.cpu=1000m
     --set=harnessTemplates.mock.resources.limits.memory=1Gi
   )

@@ -42,7 +42,7 @@ The Mac's default filesystem folds names that differ only in case into one file,
 Trees are unpacked without privilege, so a guest sees every image file owned by the runner's user rather than by the image's owners.
 smolvm needs ext4 tools the Mac lacks, so the disk templates are expanded inside the cluster's VM and carried back sparse.
 The runner formats a new disk at its full size with `mkfs.ext4`, which a Mac has only from Homebrew's e2fsprogs; without it smolvm copies the template instead, so the disk has no journal and one asked for below the template's 20 GiB keeps the template's size, and `cluster:host-runner` says so.
-`PLATFORM_VM_STORAGE_FILESYSTEM=btrfs` makes new disks btrfs instead, from the runner image's template ([persistence](persistence.md)), and `PLATFORM_VM_ZRAM_SWAP=1` has guests swap to zram ([vm-memory](vm-memory.md)).
+`PLATFORM_VM_STORAGE_FILESYSTEM=btrfs` makes new disks btrfs instead, from the runner image's template ([vm-runner](vm-runner.md)), and `PLATFORM_VM_ZRAM_SWAP=1` has guests swap to zram ([vm-memory](vm-memory.md)).
 The guest agent and the guest kernel are the runner image's, so the Mac's guests mount btrfs as the pods' do: the image build in the cluster's VM leaves its kernel wrapped for macOS, and `cluster:host-runner` compiles that into the release's libkrunfw.
 
 **Lifecycle.** The runner is a process on the Mac, not a supervised service.
