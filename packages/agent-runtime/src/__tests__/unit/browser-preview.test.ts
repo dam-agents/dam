@@ -446,7 +446,7 @@ describe("tabs", () => {
     expect(fake.calls.filter((c) => c[0] === "tab")).toEqual([]);
   });
 
-  // TEST_SCENARIO: closing the tab on screen hands the screen to the tab the watcher picked, and agent-browser is told to select that one too rather than falling back to a tab of its own choosing; a new tab from the panel is selected for the agent the same way.
+  // TEST_SCENARIO: closing the tab on screen hands the screen to the tab the watcher picked, and agent-browser is told to select that one too rather than falling back to a tab of its own choosing; a new tab from the panel answers with its target id and is selected for the agent the same way.
   it("keeps the agent on the panel's tab after a close and a new tab", async () => {
     const fake = fakeBrowser();
     fake.browser.tabs = ["T1", "T2"];
@@ -460,11 +460,11 @@ describe("tabs", () => {
     await until(() => fake.calls.some((c) => c[0] === "tab"));
     expect(fake.calls).toContainEqual(["tab", "T2"]);
 
-    expect((await browser.newTab()).ok).toBe(true);
-    await until(() => panel.snapshots.at(-1)?.tabs?.length === 2);
-    const opened = panel.snapshots.at(-1)?.activeTab;
+    const opened = await browser.newTab();
+    if (!opened.ok) throw new Error(`new tab refused: ${opened.error.kind}`);
+    await until(() => panel.snapshots.at(-1)?.activeTab === opened.value);
     await until(() =>
-      fake.calls.some((c) => c[0] === "tab" && c[1] === opened),
+      fake.calls.some((c) => c[0] === "tab" && c[1] === opened.value),
     );
   });
 

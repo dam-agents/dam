@@ -28,7 +28,8 @@ interface Props {
  * its target id. Tabs shrink to a minimum width, then scroll, keeping the
  * active one in view; the list button beside them reaches every tab when the
  * bar is too narrow to show them. Arrow keys, Home and End move between tabs
- * as in any tab list; Delete or a middle click closes one.
+ * from the focused tab, as in any tab list; Delete closes the focused tab and
+ * moves focus to its neighbour, and a middle click closes one too.
  */
 export function BrowserTabBar({
   tabs,
@@ -49,13 +50,15 @@ export function BrowserTabBar({
       ?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [activeTab, tabs.length]);
 
-  function handleKeyDown(event: KeyboardEvent) {
-    if (event.key === "Delete" && tabStop) {
+  function handleKeyDown(event: KeyboardEvent, focused: string) {
+    const at = tabs.findIndex((t) => t.id === focused);
+    if (event.key === "Delete") {
       event.preventDefault();
-      onClose(tabStop);
+      const neighbour = tabs[at + 1] ?? tabs[at - 1];
+      onClose(focused);
+      if (neighbour) triggers.current.get(neighbour.id)?.focus();
       return;
     }
-    const at = tabs.findIndex((t) => t.id === tabStop);
     const step: Record<string, number | undefined> = {
       ArrowLeft: at - 1,
       ArrowRight: at + 1,
@@ -99,7 +102,7 @@ export function BrowserTabBar({
             }}
             onSelect={() => onSelect(tab.id)}
             onClose={() => onClose(tab.id)}
-            onKeyDown={handleKeyDown}
+            onKeyDown={(event) => handleKeyDown(event, tab.id)}
           />
         ))}
       </div>

@@ -72,7 +72,7 @@ describe("browser procedures", () => {
     }
   });
 
-  // TEST_SCENARIO: watching yields the browser's state as the service reports it, and each toolbar action, tab bar action and the testing mode switch reach the service as themselves, with the tab they name; a panel from before tabs names none.
+  // TEST_SCENARIO: watching yields the browser's state as the service reports it, and each toolbar action, tab bar action and the testing mode switch reach the service as themselves, with the tab they name; a panel from before tabs names none, and a new tab answers with its target id.
   it("streams state and runs each toolbar action", async () => {
     const acted: [BrowserAction, string | undefined][] = [];
     const tabbed: string[] = [];
@@ -95,7 +95,7 @@ describe("browser procedures", () => {
       },
       newTab: async () => {
         tabbed.push("new");
-        return ok(undefined);
+        return ok("T3");
       },
       closeTab: async (tab) => {
         tabbed.push(`close ${tab}`);
@@ -136,7 +136,7 @@ describe("browser procedures", () => {
       ["http://b/", "T2"],
     ]);
     await call.browser.selectTab({ tab: "T2" });
-    await call.browser.newTab();
+    expect(await call.browser.newTab()).toEqual({ tab: "T3" });
     await call.browser.closeTab({ tab: "T2" });
     expect(tabbed).toEqual(["select T2", "new", "close T2"]);
     await expect(call.browser.selectTab({ tab: "" })).rejects.toMatchObject({

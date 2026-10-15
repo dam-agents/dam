@@ -79,6 +79,7 @@ export const browserRouter = t.router({
   newTab: t.procedure.mutation(async ({ ctx }) => {
     const result = await ctx.browser.newTab();
     if (!result.ok) throw toTrpcError(result.error);
+    return { tab: result.value };
   }),
   closeTab: t.procedure
     .input(browserTabInputSchema)

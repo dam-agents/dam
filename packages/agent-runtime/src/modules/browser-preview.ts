@@ -592,10 +592,17 @@ export function createBrowserPreview(deps: {
       selectForAgent(tab);
     });
 
-  const newTab = () =>
-    onPage("new tab", async (target) => {
-      selectForAgent(await target.open());
+  async function newTab(): Promise<Result<string, BrowserDomainError>> {
+    let opened: string | null = null;
+    const done = await onPage("new tab", async (target) => {
+      opened = await target.open();
+      selectForAgent(opened);
     });
+    if (!done.ok) return done;
+    return opened
+      ? ok(opened)
+      : err({ kind: "Failed", detail: "The browser is still starting" });
+  }
 
   const closeTab = (tab: string) =>
     onPage("close tab", async (target) => {

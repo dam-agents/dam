@@ -59,7 +59,7 @@ A tab the user selects comes to the front at once, and the runtime then selects 
 agent-browser does not list the browser's own pages, such as the new tab page a keyboard shortcut opens; the panel shows them and brings them to the front, but the agent stays on its last tab.
 What the agent only reads — a snapshot, a screenshot, a script — changes neither.
 
-A new tab from the panel is blank (`about:blank`), so agent-browser takes it as its own tab; the address bar is focused for it.
+A new tab from the panel is blank (`about:blank`), so agent-browser takes it as its own tab; the address bar is focused for it, and what the user enters there opens in the new tab, even before the runtime reports it.
 Closing the active tab brings the tab after it in the bar to the front, else the one before.
 Closing the last tab opens a blank one first, as the browser would otherwise close its only window and exit.
 The tab list is the browser's, never the panel's: a panel that reconnects or opens again is sent the tabs and the active tab as they are.
