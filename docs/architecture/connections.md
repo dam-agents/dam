@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 ## Overview
 
@@ -356,7 +356,7 @@ The gateway picks the new file up without a roll and the agent's placeholders ar
 ## Built-in contributions
 
 Not every contribution comes from a grant: the runtime state builder also merges **built-ins** the platform itself contributes.
-Every agent gets the platform MCP entry; a sandbox holding at least one shared-knowledge-base grant additionally gets the aggregate `knowledge-bases` MCP entry pointing at the in-cluster harness route (`/api/agents/:id/kb`, alongside the platform MCP entry), appearing and disappearing with its first and last such grant.
+Every agent gets the platform MCP entry and its display name as the `PLATFORM_AGENT_NAME` env var, which a rename refreshes at the next harness spawn without a pod roll; a sandbox holding at least one shared-knowledge-base grant additionally gets the aggregate `knowledge-bases` MCP entry pointing at the in-cluster harness route (`/api/agents/:id/kb`, alongside the platform MCP entry), appearing and disappearing with its first and last such grant.
 
 ## Contribution fan-out
 
