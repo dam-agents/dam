@@ -36,6 +36,32 @@ export function useCreateSchedule() {
   });
 }
 
+export interface UpdateCronScheduleInput {
+  id: string;
+  name: string;
+  cron: string;
+  task: string;
+  sessionMode: "fresh" | "continuous";
+  precheck: string | null;
+  model: string | null;
+  sessionTitle: string | null;
+}
+
+export function useUpdateCronSchedule() {
+  return useMutation({
+    mutationFn: (input: UpdateCronScheduleInput) =>
+      api.schedules.updateCron.mutate({
+        ...input,
+        sessionMode:
+          input.sessionMode === "fresh" ? undefined : input.sessionMode,
+      }),
+    meta: {
+      ...invalidatesScheduleList,
+      errorToast: "Couldn't update schedule",
+    },
+  });
+}
+
 interface UpdateScheduleInput {
   id: string;
   name: string;

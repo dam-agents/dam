@@ -188,8 +188,8 @@ export function RecurringScheduleForm({
 
         <SchedulePrecheckField
           layout="stacked"
-          register={register}
-          errors={errors}
+          registration={register("precheck")}
+          error={errors.precheck?.message}
         />
 
         <ScheduleSessionTypeField layout="stacked" control={control} />

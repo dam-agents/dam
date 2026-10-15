@@ -34,31 +34,13 @@ export function scheduleLockNotice(
       ),
     };
   }
-  if (lock === "once-fired") {
-    return {
-      title: "This one-time task has already run",
-      body: (
-        <p>
-          A one-time task can be edited only before it runs. To run it again,
-          create a new one-time task.
-        </p>
-      ),
-    };
-  }
   return {
-    title: "This schedule uses the older cron format",
+    title: "This one-time task has already run",
     body: (
-      <div className="flex flex-col gap-3">
-        <p>
-          It runs on a cron expression in UTC. The editor works with the newer
-          format only, so it can&apos;t show this schedule&apos;s timing without
-          rewriting it.
-        </p>
-        <p>
-          To change when it runs, delete this schedule and create a new one. You
-          can pause it here anytime.
-        </p>
-      </div>
+      <p>
+        A one-time task can be edited only before it runs. To run it again,
+        create a new one-time task.
+      </p>
     ),
   };
 }

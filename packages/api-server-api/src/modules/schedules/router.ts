@@ -16,6 +16,7 @@ import {
   scheduleResetSessionInputSchema,
   scheduleRunNowInputSchema,
   scheduleToggleInputSchema,
+  scheduleUpdateCronInputSchema,
   scheduleUpdateOnceInputSchema,
   scheduleUpdateRRuleInputSchema,
 } from "./schemas.js";
@@ -104,6 +105,14 @@ export const schedulesRouter = t.router({
     .input(scheduleCreateCronInputSchema)
     .mutation(async ({ ctx, input }) => {
       const sched = await ctx.schedules.createCron(input);
+      return toView(sched);
+    }),
+
+  updateCron: manageAgentsProcedure
+    .input(scheduleUpdateCronInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const sched = await ctx.schedules.updateCron(input);
+      if (!sched) throw new TRPCError({ code: "NOT_FOUND" });
       return toView(sched);
     }),
 
