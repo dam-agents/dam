@@ -16,13 +16,19 @@ export interface PoolBarView {
 
 const MIN_SEGMENT_FRACTION = 0.02;
 
-// UNIT_BOUNDARY_DESCRIPTION: one pool as a bar: each agent's share largest first, the shares too thin to see folded into one "N more" segment, and what the pool counts beyond the agents' own shares as one last segment named `rest`.
+export interface PoolPart {
+  label: string;
+  bytes: number;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: one pool as a bar: each agent's share largest first, the shares too thin to see folded into one "N more" segment, the named `parts` the pool holds beside the agents' shares, and what it counts beyond all of them as one last segment named `rest`.
 function poolBar(
   shares: readonly { agent: AgentView; bytes: number }[],
   usedBytes: number,
   limitBytes: number,
   level: PoolLevel,
   rest: string,
+  parts: readonly PoolPart[] = [],
 ): PoolBarView {
   const of = (bytes: number) => (limitBytes > 0 ? bytes / limitBytes : 0);
   const sorted = shares
@@ -44,8 +50,19 @@ function poolBar(
       fraction: of(foldedBytes),
       filled: false,
     });
+  const named = parts.filter((part) => part.bytes > 0);
+  for (const part of named)
+    segments.push({
+      agentId: null,
+      label: `${part.label} · ${formatBytes(part.bytes)}`,
+      fraction: of(part.bytes),
+      filled: false,
+    });
   const restBytes =
-    usedBytes - shown.reduce((sum, s) => sum + s.bytes, 0) - foldedBytes;
+    usedBytes -
+    shown.reduce((sum, s) => sum + s.bytes, 0) -
+    foldedBytes -
+    named.reduce((sum, part) => sum + part.bytes, 0);
   if (restBytes > 0)
     segments.push({
       agentId: null,
@@ -82,6 +99,17 @@ export function memoryBar(
   );
 }
 
+export const STORAGE_PARTS = {
+  imageCache: "Image cache",
+  seeds: "Agents moving to VMs",
+  rest: "Logs and system",
+} as const;
+
+const storageParts = (usage: BudgetVmUsage): PoolPart[] => [
+  { label: STORAGE_PARTS.imageCache, bytes: usage.storage.imageCacheBytes },
+  { label: STORAGE_PARTS.seeds, bytes: usage.storage.seedBytes },
+];
+
 export function storageBar(
   usage: BudgetVmUsage,
   agents: readonly AgentView[],
@@ -91,8 +119,36 @@ export function storageBar(
     usage.storage.usedBytes,
     usage.storage.usableBytes,
     usage.storage.level,
-    "Caches and system",
+    STORAGE_PARTS.rest,
+    storageParts(usage),
   );
+}
+
+export interface StorageRow {
+  agent: AgentView | null;
+  label: string;
+  bytes: number;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what fills the owner's shared storage, largest first: each agent's disk, the image cache, the copies of homes that runtime migrations still hold, and the runner's own logs and records as what is left. A part that takes nothing is left out.
+export function storageRows(
+  usage: BudgetVmUsage,
+  agents: readonly AgentView[],
+): StorageRow[] {
+  const shares = vmShares(usage, agents, "storageUsedBytes", () => true);
+  const parts = storageParts(usage);
+  const counted = [...shares, ...parts].reduce((sum, s) => sum + s.bytes, 0);
+  return [
+    ...shares.map(({ agent, bytes }) => ({ agent, label: agent.name, bytes })),
+    ...parts.map((part) => ({ agent: null, ...part })),
+    {
+      agent: null,
+      label: STORAGE_PARTS.rest,
+      bytes: usage.storage.usedBytes - counted,
+    },
+  ]
+    .filter((row) => row.bytes > 0)
+    .sort((a, b) => b.bytes - a.bytes);
 }
 
 export function cpuBar(cpu: NonNullable<BudgetVmUsage["cpu"]>): PoolBarView {

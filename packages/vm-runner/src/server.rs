@@ -1426,8 +1426,13 @@ impl Server {
             &|other| self.warming(other),
         )?;
         let storage = (self.config.measure_storage)().unwrap_or(StorageUse { used: 0, usable: 0 });
-        let machines = self
-            .list()?
+        let ids = self.list()?;
+        let seed_bytes = ids
+            .iter()
+            .filter_map(|id| machine_dir(&self.config.state_dir, id))
+            .map(|dir| share::seed_bytes(&dir.join(SHARE_DIR)))
+            .sum();
+        let machines = ids
             .into_iter()
             .map(|id| {
                 let status = self.status(&id);
@@ -1465,6 +1470,8 @@ impl Server {
             storage: StorageUsage {
                 used_bytes: storage.used,
                 usable_bytes: storage.usable,
+                image_cache_bytes: self.images.claimed_bytes(),
+                seed_bytes,
             },
             memory: MemoryUsage {
                 limit_mib: self.memory_limit_mib(),

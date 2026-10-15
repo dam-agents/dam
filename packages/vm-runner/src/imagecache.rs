@@ -140,6 +140,10 @@ pub trait Images: Send + Sync {
     }
     // UNIT_BOUNDARY_DESCRIPTION: called as the runner closes, once nothing fetches any more. Only a writer has trees to flush.
     fn flush(&self) {}
+    // UNIT_BOUNDARY_DESCRIPTION: what the cache's trees weigh on the runner's claim. A node cache's disk is the node's, so a runner's client to it holds nothing there.
+    fn claimed_bytes(&self) -> u64 {
+        0
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what one eviction pass did: the size of each image it removed, and what the cache held after it, when it was weighed against a budget at all.
@@ -922,6 +926,10 @@ impl Images for ImageCache {
 
     fn flush(&self) {
         ImageCache::flush(self);
+    }
+
+    fn claimed_bytes(&self) -> u64 {
+        self.used()
     }
 }
 

@@ -1,6 +1,6 @@
 # Per-user resource budgets
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 ## Overview
 
@@ -104,7 +104,8 @@ Hovering a held slot names the agent behind it, its size and state, and offers a
 The multiples and copy live in the UI budgets module.
 A start the controller parks raises a dialog that names the cause and sends the user to the agent list on the home dashboard to free room; the settings picker warns inline when the chosen Size needs more free slots than remain.
 First-time users with no agents see none of it.
-The card shows a vm user their pools in its place, and a user with both kinds switches between the two views, which the browser remembers: memory and storage as bars showing how much is used of how much, each agent's share a segment largest first, with what the pool counts beyond the agents' own shares — headroom for memory, caches and system for storage — as the last.
+The card shows a vm user their pools in its place, and a user with both kinds switches between the two views, which the browser remembers: memory and storage as bars showing how much is used of how much, each agent's share a segment largest first, with what the pool counts beyond the agents' own shares — headroom for memory; for storage the image cache, the copies runtime migrations still hold, and logs and system — as the last.
+Once storage reaches the warning level, a list under its bar says what fills it, largest first: each agent's disk, which only deleting the agent or having it delete files frees and which leads to that agent, then the image cache and the migration copies, which the platform frees on its own, and what is left.
 CPU's bar is its congestion, with its word beside it, not a use against a limit, because the limit moves with the machines running and reaching it fails nothing.
 The bar's colour and the meter's spoken value carry the level; at warning or critical a warning sign beside the pool's name says what to do — put agents to sleep, delete old ones or have them clean their disks, or, for CPU, which agents use the most — and at critical what the platform does: idle agents are put to sleep for memory, and new VM agents are refused for storage, plus, for a user who has not linked Slack where the install has it, how to link it to get these alerts there.
 Each vm agent's row carries its own memory and storage, and the dashboard reads the figures again every 15 s while it is open.
