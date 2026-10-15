@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 ## Overview
 
@@ -235,6 +235,7 @@ The api-server clears the stamp itself once the Agent settles Hibernated (a sett
 The clear is a **compare-and-clear** of the exact stamp the sleep wrote: a second sleep issued during the settle window carries a newer stamp and is not erased by the first one's watcher.
 Staling the clock in the *initial* patch (never at settle time) is what keeps the watcher from ever clobbering a concurrent wake.
 A sleeping Agent is afterwards a plain hibernated Agent: its next deliberate use wakes it.
+A sleep is refused while a [runtime migration](vm-runtime-migration.md) holds the Agent, since every wake is refused then too.
 A **never-hibernate** Agent (effective timeout `0`) runs regardless of activity, so the UI does not offer it Sleep; a direct call still stamps it without the settle clear, the only stable sleep it can have.
 
 **Early reclaim for a blocked start.** The one scale-down neither the user nor the idle timeout asks for: when the [budget gate](budgets.md#reclaiming-room-for-a-blocked-start) refuses a start, it may hibernate that same owner's *unattended idle* Agents ahead of their timeout to admit it, longest-idle first and only when the freed Sizes provably cover the shortfall.

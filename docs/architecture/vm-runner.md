@@ -1,6 +1,6 @@
 # VM runner
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 The pods behind the `vm` Backend: **one runner per owner**, each a single-replica Deployment in the agent namespace running smolvm and the platform's **vm-runner** agent.
 A local cluster on a Mac runs one [host runner](vm-host-runner.md) outside the cluster instead.
@@ -99,7 +99,7 @@ So any connection lands on the gateway, which routes TLS by SNI and HTTP by Host
 ## Runner lifecycle
 
 **One lock per owner.** An agent's reconcile builds its owner's runner and ensures its machine under the owner's lock, and the orphan sweep takes the same lock before it looks at that runner, so the two never interleave.
-The sweep removes a machine no Agent of that owner names, and removes the runner itself — its claim, and so every disk on it, with it — only when a fresh List of the owner's Agents and the controller's cache both show no vm Agent and the runner lists no machine.
+The sweep removes a machine no Agent of that owner names, or one an aborted [runtime migration](vm-runtime-migration.md) marked as left, and removes the runner itself — its claim, and so every disk on it, with it — only when a fresh List of the owner's Agents and the controller's cache both show no vm Agent and the runner lists no machine.
 The Deployment is deleted only if it is still the one the sweep checked, by UID and version, and a refusal keeps everything else for the next sweep.
 A reconcile that finds any of the runner's objects still terminating from such a removal waits, and says so on the Agent, rather than building a runner on a claim that is going away.
 A runner that cannot be reached is kept while its owner has any Agent at all; once the owner has none for half an hour it is removed unseen, reported as an error.

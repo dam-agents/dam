@@ -340,20 +340,19 @@ func (r *AgentReconciler) sweepRunner(ctx context.Context, runner runnerRef) {
 		return
 	}
 	r.ownerless.Delete(owner)
-	claimed := map[string]bool{}
-	for i := range agents.Items {
-		claimed[agents.Items[i].GetName()] = true
-	}
+	claimed, abandoned := machineClaims(agents.Items)
 	for _, id := range ids {
 		if claimed[id] {
 			continue
 		}
 		if err := runner.client.Delete(ctx, id); err != nil {
 			slog.Warn("orphan machine GC: delete failed", "machine", id, "owner", owner, "error", err)
+			delete(abandoned, id)
 			continue
 		}
 		slog.Info("orphan machine GC: deleted machine for missing agent", "machine", id, "owner", owner)
 	}
+	r.forgetLeftMachines(ctx, abandoned)
 	if anyVMAgent(agents.Items) || r.cachedOwnerAgents(ctx, owner, true) > 0 {
 		return
 	}
@@ -405,19 +404,41 @@ func (r *AgentReconciler) sweepHostRunner(ctx context.Context) {
 		slog.Warn("orphan machine GC: listing agents failed", "error", err)
 		return
 	}
-	claimed := map[string]bool{}
-	for i := range agents.Items {
-		claimed[agents.Items[i].GetName()] = true
-	}
+	claimed, abandoned := machineClaims(agents.Items)
 	for _, id := range ids {
 		if claimed[id] {
 			continue
 		}
 		if err := runner.Delete(ctx, id); err != nil {
 			slog.Warn("orphan machine GC: delete failed", "machine", id, "error", err)
+			delete(abandoned, id)
 			continue
 		}
 		slog.Info("orphan machine GC: deleted machine for missing agent", "machine", id)
+	}
+	r.forgetLeftMachines(ctx, abandoned)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: which machine names the listed Agents claim, and which of them an aborted migration left behind. Such an Agent runs as a container again and no longer claims its machine, unless a new migration was requested since, which removes the machine itself before it builds a fresh one.
+func machineClaims(agents []unstructured.Unstructured) (claimed, left map[string]bool) {
+	claimed, left = map[string]bool{}, map[string]bool{}
+	for i := range agents {
+		ann := agents[i].GetAnnotations()
+		if ann[annRuntimeMigrationMachineLeft] != "" && ann[annRuntimeMigration] == "" {
+			left[agents[i].GetName()] = true
+			continue
+		}
+		claimed[agents[i].GetName()] = true
+	}
+	return claimed, left
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the runner no longer holds these machines, so the Agents that left them lose the mark. One whose delete failed stays marked for the next sweep.
+func (r *AgentReconciler) forgetLeftMachines(ctx context.Context, left map[string]bool) {
+	for id := range left {
+		if err := patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, id, map[string]*string{annRuntimeMigrationMachineLeft: nil}); err != nil {
+			slog.Warn("orphan machine GC: clearing the mark of a machine an aborted move left failed; the next sweep clears it", "agent", id, "error", err)
+		}
 	}
 }
 

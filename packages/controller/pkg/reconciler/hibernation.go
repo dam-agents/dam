@@ -46,7 +46,7 @@ func shouldRun(annotations map[string]string, idleTimeout time.Duration, now tim
 	return now.Sub(t) <= idleTimeout
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether an Agent should run, with its runtime migration taken into account: nothing runs while the migration holds it down, and a boot the migration waits on runs whatever the activity says, unless a stop the user asked for since it began holds it or a storage migration gates it.
+// UNIT_BOUNDARY_DESCRIPTION: whether an Agent should run, with its runtime migration taken into account: nothing runs while the migration holds it down, and a boot the migration waits on runs whatever the activity or a stop says, unless a storage migration gates it.
 func shouldRunMigrating(annotations map[string]string, m runtimeMigration, idleTimeout time.Duration, now time.Time) bool {
 	if m.holdsDown() {
 		return false
