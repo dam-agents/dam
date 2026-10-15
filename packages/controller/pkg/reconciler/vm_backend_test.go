@@ -2001,6 +2001,23 @@ func TestTheRunnerAuditsItsVMMsSyscalls(t *testing.T) {
 	assert.Equal(t, "audit", env["SMOLVM_SECCOMP"], "unset checks nothing, and enforce kills a VMM on a call outside the allowlist")
 }
 
+// TEST_SCENARIO: an install switches its VMMs' syscall filter to enforce, or back, through its values, without a release.
+func TestTheRunnerChecksItsVMMsSyscallsInTheInstallsMode(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Seccomp = "enforce"
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(
+		context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	env := map[string]string{}
+	for _, e := range dep.Spec.Template.Spec.Containers[0].Env {
+		env[e.Name] = e.Value
+	}
+	assert.Equal(t, "enforce", env["SMOLVM_SECCOMP"])
+}
+
 // TEST_SCENARIO: smolvm confines a VMM's filesystem only when its embedder asks, and the runner is the embedder. Unconfined, a guest writes through its root virtiofs export into the agent rootfs every sibling machine boots from.
 func TestTheRunnerConfinesItsVMMsFilesystem(t *testing.T) {
 	agent := vmAgentCR()

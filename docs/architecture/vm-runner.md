@@ -11,7 +11,10 @@ The controller strips the account's reference from a claim that still carries on
 A rollback to a controller older than this rule stamps the reference back on every claim, so the risk returns until the next upgrade strips it again.
 After an uninstall, or after turning virtualization off, an operator removes the disks that are left by label: `kubectl delete pvc -n <agent namespace> -l app.kubernetes.io/component=vm-runner,app.kubernetes.io/instance=<release>`.
 The boundary is per owner, not per agent: one owner's machines share their runner, its disk and its credentials, so a guest that escapes its hypervisor reaches that owner's other sandboxes ([security-and-credentials](security-and-credentials.md)).
-Every VMM runs as the runner's uid, but smolvm confines each with Landlock to its machine's files, audits its syscalls, and serves the agent rootfs and image tree read-only, so no guest changes what its siblings boot.
+Every VMM runs as the runner's uid, but smolvm confines each with Landlock to its machine's files, checks its syscalls against an allowlist, and serves the agent rootfs and image tree read-only, so no guest changes what its siblings boot.
+The install picks the allowlist's mode in `virtualization.runner.seccomp`: `audit`, the default, lets a call outside it through and logs it, `enforce` kills the VMM, and `off` installs no filter.
+An audit record is a kernel one (`type=1326`), so it is in the node's audit log, or its kernel log where no auditd runs, and never in the runner's own log.
+The chart refuses any other mode, since smolvm reads one as `off`.
 The runner is the one long-lived workload in the agent namespace that asks for capabilities at all.
 Every runner holds DAC_OVERRIDE, because its VMMs serve the image tree to their guests with the runner's own credentials and an image keeps some files from root.
 Only a runner that caches images on its own claim also holds CHOWN, FOWNER and FSETID, which unpacking an image faithfully costs: a rootfs carries the owners and modes its files were built with, so the runner restores each owner and then sets a mode, setgid bits included, on a file it no longer owns.
