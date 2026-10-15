@@ -31,7 +31,7 @@ export function FileDiffCard({ file, layout, anchor }: Props) {
   return (
     <section
       id={anchor}
-      className="scroll-mt-2 overflow-hidden rounded-md border border-border"
+      className="scroll-mt-2 overflow-hidden rounded-md border border-border [&_.diff-line-hunk-action]:static! [&_.diff-line-num]:static!"
     >
       <header className="sticky top-0 z-10 flex items-center gap-2 border-b border-border bg-muted px-3 py-1.5">
         <button
