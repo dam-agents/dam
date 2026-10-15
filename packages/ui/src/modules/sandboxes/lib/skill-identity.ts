@@ -20,3 +20,7 @@ export function withSourcePath(skill: { path?: string }): { path?: string } {
   const path = canonicalPath(skill.path);
   return path === undefined ? {} : { path };
 }
+
+export function selectionKey(skill: SkillIdentity): string {
+  return `${skill.source}::${canonicalPath(skill.path) ?? ""}::${skill.name}`;
+}

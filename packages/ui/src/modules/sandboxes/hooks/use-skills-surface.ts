@@ -10,7 +10,6 @@ import type {
   SkillSource,
   SkillsState,
 } from "api-server-api";
-import { skillKey } from "api-server-api";
 import { useCallback, useState } from "react";
 
 import { getErrorMessage } from "@/lib/errors";
@@ -25,6 +24,7 @@ import { useSkillSources, useSkillsState } from "../../agents/api/skills.js";
 import { saveSkillFiles } from "../lib/skill-download.js";
 import {
   sameSourcePath,
+  selectionKey,
   type SkillIdentity,
   withSourcePath,
 } from "../lib/skill-identity.js";
@@ -225,7 +225,7 @@ export function useSkillsSurface(
   const toggle = useCallback(
     async (skill: Skill) => {
       if (!agentId || isError || readOnly) return;
-      const key = skillKey(skill);
+      const key = selectionKey(skill);
       setBusyKey(key);
       const currentlyInstalled = !!installedRef(skill);
       const result = await runAction(
@@ -256,7 +256,7 @@ export function useSkillsSurface(
   const update = useCallback(
     async (skill: Skill) => {
       if (!agentId || isError || readOnly) return false;
-      const key = skillKey(skill);
+      const key = selectionKey(skill);
       setBusyKey(key);
       const result = await runAction(
         () =>

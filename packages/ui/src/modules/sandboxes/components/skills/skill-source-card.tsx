@@ -19,6 +19,7 @@ import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { gitCompareUrl, repoSlug } from "@/lib/git-source";
 
 import type { SkillIdentity } from "../../lib/skill-identity.js";
+import { selectionKey } from "../../lib/skill-identity.js";
 import { isDrifted } from "./skill-drift.js";
 import { SkillRow } from "./skill-row.js";
 import { SourceError } from "./skill-source-error.js";
@@ -246,7 +247,7 @@ export function SkillSourceCard({
               key={skillKey(skill)}
               skill={skill}
               installed={ref !== undefined}
-              busy={busyKey === skillKey(skill)}
+              busy={busyKey === selectionKey(skill)}
               disabled={disabled}
               hasDrift={hasDrift}
               compareUrl={

@@ -1,5 +1,5 @@
 import type { Skill, SkillSource } from "api-server-api";
-import { skillKey, skillSetNameSchema } from "api-server-api";
+import { skillSetNameSchema } from "api-server-api";
 import { useMemo, useState } from "react";
 
 import {
@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { SectionLabel } from "@/components/ui/section-label";
 import { useToggleSet } from "@/hooks/use-toggle-set";
 
-import { withSourcePath } from "../../lib/skill-identity.js";
+import { selectionKey, withSourcePath } from "../../lib/skill-identity.js";
 
 export interface SaveSetGroup {
   source: SkillSource;
@@ -44,7 +44,7 @@ export function SaveSkillSetModal({
     const on = new Set<string>();
     for (const group of groups) {
       for (const skill of group.skills) {
-        if (isOn(skill)) on.add(skillKey(skill));
+        if (isOn(skill)) on.add(selectionKey(skill));
       }
     }
     return { groups, on, omitted };
@@ -70,7 +70,7 @@ export function SaveSkillSetModal({
   }, [trimmed, existingNames]);
 
   const allKeys = useMemo(
-    () => snapshot.groups.flatMap((g) => g.skills.map((s) => skillKey(s))),
+    () => snapshot.groups.flatMap((g) => g.skills.map((s) => selectionKey(s))),
     [snapshot],
   );
 
@@ -82,7 +82,7 @@ export function SaveSkillSetModal({
     setSubmitting(true);
     const skills = snapshot.groups.flatMap((g) =>
       g.skills
-        .filter((s) => marked.has(skillKey(s)))
+        .filter((s) => marked.has(selectionKey(s)))
         .map((s) => ({ source: s.source, name: s.name, ...withSourcePath(s) })),
     );
     const ok = await onCreate({ name: trimmed, skills });
@@ -163,7 +163,7 @@ export function SaveSkillSetModal({
                   <SectionLabel>{group.source.name}</SectionLabel>
                 </div>
                 {group.skills.map((skill) => {
-                  const key = skillKey(skill);
+                  const key = selectionKey(skill);
                   return (
                     <div
                       key={key}

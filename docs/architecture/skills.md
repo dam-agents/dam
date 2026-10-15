@@ -103,8 +103,8 @@ A user creating a custom source for the same URL and path shadows the system ent
 A source may carry an optional repo-relative **path** — a subdirectory the scanner walks instead of the defaults.
 When set, that directory is scanned (and skills resolved) exclusively, bypassing the [Source Roots](#source-roots) union and top-level fallback — and failing by name when it resolves to nothing, whichever scanner answers: no such directory, or no skill under it; when absent, resolution is unchanged.
 A path that **is itself a skill directory** — the common case when someone shares a link to one skill's folder — contributes itself as a skill, alongside any skills one level below it, rather than resolving to nothing.
-Path is a property of the source, resolved server-side; it is denormalized onto each installed ref (`agent_skills`) so the apply path resolves the skill dir without re-reading the source.
-One path per `(owner, gitUrl)`; changing it is delete + re-add.
+Path is part of the source's identity; it is denormalized onto each installed ref (`agent_skills`) so the apply path resolves the skill dir without re-reading the source.
+Another path of the same repository is another source; changing a source's path is delete + re-add.
 
 ### Skill, Installed Skill Ref, Local Skill
 

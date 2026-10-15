@@ -12,6 +12,7 @@ import {
   type AppRouter,
 } from "agent-runtime-api";
 import type { SatelliteView } from "api-server-api";
+import { skillSourcePathSchema } from "api-server-api";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import {
@@ -799,8 +800,7 @@ export function createMcpSession(
       source: z.string().url(),
       name: z.string().min(1),
       version: z.string().min(1),
-      path: z
-        .string()
+      path: skillSourcePathSchema
         .optional()
         .describe(
           "The path of the source the skill was listed from, when the repository is connected with several paths.",

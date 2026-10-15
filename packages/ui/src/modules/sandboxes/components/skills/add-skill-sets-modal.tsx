@@ -1,5 +1,4 @@
 import type { SkillSet } from "api-server-api";
-import { skillKey } from "api-server-api";
 import { useMemo, useState } from "react";
 
 import {
@@ -12,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RemoveButton } from "@/components/ui/remove-button";
 import { useToggleSet } from "@/hooks/use-toggle-set";
+
+import { selectionKey } from "../../lib/skill-identity.js";
 
 interface SetPreview {
   set: SkillSet;
@@ -145,7 +146,7 @@ export function AddSkillSetsModal({
         let unavailable = 0;
         let unreadable = 0;
         for (const entry of set.skills) {
-          const key = skillKey(entry);
+          const key = selectionKey(entry);
           if (available.has(key)) {
             if (!installedKeys.has(key)) adds.push(key);
           } else if (unreadableSources.has(entry.source)) {

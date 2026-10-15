@@ -1,5 +1,5 @@
 import type { LocalSkill, Skill, SkillSource } from "api-server-api";
-import { platformSkillFeature, skillKey } from "api-server-api";
+import { platformSkillFeature } from "api-server-api";
 import { useMemo } from "react";
 
 import { repoSlug } from "@/lib/git-source";
@@ -12,7 +12,7 @@ import {
 import { publishedDuplicatesBySource } from "../components/skills/published-duplicates.js";
 import type { SaveSetGroup } from "../components/skills/save-skill-set-modal.js";
 import { isDrifted } from "../components/skills/skill-drift.js";
-import { sameSourcePath } from "../lib/skill-identity.js";
+import { sameSourcePath, selectionKey } from "../lib/skill-identity.js";
 import type { SkillsSurface } from "./use-skills-surface.js";
 
 function filterByQuery<T extends { name: string; description: string }>(
@@ -191,12 +191,12 @@ export function useSkillsDerivations(
   const availableKeys = useMemo(() => {
     const out = new Set<string>();
     for (const list of listBySource.values()) {
-      for (const skill of list) out.add(skillKey(skill));
+      for (const skill of list) out.add(selectionKey(skill));
     }
     return out;
   }, [listBySource]);
   const installedKeys = useMemo(
-    () => new Set(installed.map((r) => skillKey(r))),
+    () => new Set(installed.map((r) => selectionKey(r))),
     [installed],
   );
   const unreadableSources = useMemo(
