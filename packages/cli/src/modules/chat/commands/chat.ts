@@ -38,6 +38,8 @@ export function buildChatCommand(deps: { chatService: ChatService }): Command {
           serverFlag: opts.server,
           strategy,
           reset: opts.reset,
+          onAttach: (sessionId) =>
+            process.stderr.write(`${attachNotice(agentRef, sessionId)}\n`),
         });
 
         if (!result.ok) {
@@ -46,7 +48,7 @@ export function buildChatCommand(deps: { chatService: ChatService }): Command {
         }
 
         const { bridge, sessionId } = result.value;
-        const resume = `\x1b[32mdam chat ${agentRef} --resume ${sessionId}\x1b[0m`;
+        const resume = resumeCommand(agentRef, sessionId);
         const status =
           bridge.kind === "exited"
             ? `\x1b[33mSession ended\x1b[0m \x1b[2mProcess exited with code ${bridge.code}\x1b[0m`
@@ -57,6 +59,14 @@ export function buildChatCommand(deps: { chatService: ChatService }): Command {
         process.exit(bridge.kind === "exited" ? bridge.code : 1);
       },
     );
+}
+
+function resumeCommand(agentRef: string, sessionId: string): string {
+  return `\x1b[32mdam chat ${agentRef} --resume ${sessionId}\x1b[0m`;
+}
+
+export function attachNotice(agentRef: string, sessionId: string): string {
+  return `\x1b[2mTo leave, close this terminal — Ctrl+C goes to the agent and stops its work. Come back with:\x1b[0m ${resumeCommand(agentRef, sessionId)}`;
 }
 
 export function exitCodeFor(e: ChatError): number {

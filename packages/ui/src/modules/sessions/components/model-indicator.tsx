@@ -38,6 +38,7 @@ import { SessionPairTrigger } from "./session-pair-trigger.js";
 import {
   SessionSettingsControls,
   settingDefaults,
+  settingsForModel,
 } from "./session-settings-controls.js";
 
 interface Props {
@@ -271,7 +272,10 @@ export function ModelIndicator({
               harness,
               provider,
               model,
-              settings: { ...defaults, ...settings },
+              settings: settingsForModel(capability, groups, model, {
+                ...defaults,
+                ...settings,
+              }),
             }}
             defaults={defaults}
             remembered={remembered}

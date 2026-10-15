@@ -1,6 +1,6 @@
 # Metrics (spend read path)
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 ## Overview
 
@@ -8,7 +8,7 @@ The **metrics** subsystem is the user-facing read path over agent telemetry: it 
 It backs the two **Usage** surfaces — the Settings tab spanning every agent the user owns, and the per-agent section narrowed to one — with per-model token/cost aggregates, monthly spend per day, spend per session kind, and (unnarrowed) a per-agent spend breakdown, reading live from the columnar telemetry store that [observability](observability.md) fills.
 Home's spend widget reads the same unnarrowed breakdown over a period the user picks.
 It asks for a fresh window every 30 seconds and keeps the last breakdown it has for the period on screen while one loads, so a return to Home shows numbers at once.
-A separate **Session costs** read serves a different consumer — the chat sessions sidebar's cost-per-session line — not either Usage surface.
+A separate **Session costs** read serves a different consumer — the cost-per-session line in the sidebar's list of an Agent's Sessions — not either Usage surface.
 It is almost entirely a query surface: it mutates nothing and emits no events.
 Spend is the only question it answers; the raw traces and log records behind those numbers are read by [agent-telemetry](agent-telemetry.md), which opens its own connection to the same store and shares this subsystem's owner scoping but inverts its fail-closed posture on an empty result.
 The one thing it does own is a **session directory** — a projection of which kind each Session was, without which spend cannot be attributed to how the work was started (see [session directory](#session-directory)).
@@ -44,7 +44,7 @@ The field-level shapes live in the contract package [`packages/api-server-api/`]
   The root is resolved as the earliest session on a shared trace (the parent's turn calls the LLM before any child it spawns exists), independently of any session filter the caller applied, and always inside the caller's ownership scope; a session with no traced rows simply keeps its own id.
   It composes three independent filters — an optional lookback window (capped at 30 days), an optional exact session, and a row limit on the unaggregated per-call rows — plus an optional narrowing to a single owned agent.
   Omitting all filters means *all of the caller's agents, all time*.
-- **Session costs** — the sessions sidebar's read.
+- **Session costs** — the read behind the sidebar's per-Agent Session list.
   It takes one owned agent, a bounded list of Session ids and an optional lower time bound, and returns the per-session rollup of the Overview for those Sessions only, folded under the same trace-family root.
   The sidebar asks for one page of Sessions at a time, matching the pages it lists, and bounds each read by the earliest start among that page's Sessions, since a Session has no spend before it began.
   A page that holds a Session whose start the list does not know — a session only the harness knows, whose listed start is its last activity, or one just opened and not listed yet — is read with no bound, so its earlier calls are still counted.
@@ -66,7 +66,7 @@ The field-level shapes live in the contract package [`packages/api-server-api/`]
     The rollup additionally guarantees an **Invocation target never appears as a spend row**: a bucket with **no live agent** whose telemetry name is a minted target name (recognized by the invocations context) can only be a pre-cutover target whose Driver is unrecoverable — its records predate the durable delegation record — so the row is excluded from the per-agent breakdown rather than shown under a throwaway identity; its spend still counts in the per-model and per-day rollups.
     The live-agent gate keeps the guard off real agents: a live agent a user happened to name like a target keeps its row.
     The attribution itself is a **cutover, not a migration**: rows written before the change keep their old attribution and are not backfilled.
-  - The **per-session-kind** rollup answers *what started this work* — a person chatting, a Channel, a Schedule, a terminal — the same question the per-session cost beside each row of the sessions sidebar answers for one Session.
+  - The **per-session-kind** rollup answers *what started this work* — a person chatting, a Channel, a Schedule, a terminal — the same question the per-session cost beside each row of the sidebar's Session list answers for one Session.
     Telemetry cannot answer it alone: a call record names its Session but never what kind of Session that is, and the resource attributes that would carry it are stamped once per pod, while one pod serves Sessions of every kind at once.
     The rollup therefore joins per-Session cost against the session directory below.
     It reuses the same **trace-family root** the Overview's per-session rollup groups on, so a child harness run counts under the kind of the Session that spawned it rather than as a kind of its own.

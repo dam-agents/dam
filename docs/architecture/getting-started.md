@@ -1,6 +1,6 @@
 # Getting started
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 ## Overview
 
@@ -29,7 +29,7 @@ The Agent whose create is that first meeting does not count.
 ## In the browser
 
 The UI reads the user's progress and renders it as a dock in the lower right corner; it starts as a collapsed pill and opens once the first Agent's task is done.
-On a page the dock floats above the mobile navigation bar; in an Agent's chat it sits inside the message area, so it never covers the composer.
+On a page the dock floats in the lower right corner of the window; in an Agent's chat it sits inside the message area, so it never covers the composer.
 Each row opens the place where the task is done; tasks on an Agent open the newest one, and the chat tasks leave a starting line in its composer.
 Every unlock is pushed to the owner's open tabs as a [live hint](platform-topology.md), and the dock plays a short celebration for each unlock the user has not seen, one at a time, then records it as seen.
 

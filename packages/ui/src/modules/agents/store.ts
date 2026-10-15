@@ -91,7 +91,7 @@ export const createAgentsSlice: StateCreator<
     set({
       selectedAgent: id,
       view: "chat",
-      mobileScreen: "sessions",
+      mobileScreen: "chat",
     });
   },
 

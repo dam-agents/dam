@@ -63,7 +63,7 @@ A refresh that fails with an invalid grant clears the entry and surfaces a sessi
 Those are the client-side signals.
 The server can also reject a request that looked valid locally, and the CLI surfaces that distinctly rather than as a transport failure: it maps the api-server's raw 401/403 (alongside the existing 412 Terms gate) to typed errors.
 A 401 becomes session-expired — with a hint that switches to "check `DAM_TOKEN`" when that variable is set, because a bearer supplied that way lives outside the credential store and re-login can't fix it.
-A 403 becomes access-denied with no login hint: the caller is authenticated but not authorized (e.g. a pending-approval account), so the remedy is an admin, not re-authentication.
+A 403 becomes access-denied with no login hint: the caller is authenticated but not authorized (e.g. an account without the install's required realm role), so the remedy is an admin, not re-authentication.
 Any other reached-but-rejected request surfaces the server's own reason; "cannot reach server" is reserved for genuine connectivity failures.
 An error answer that is not JSON — a gateway's HTML page — names the HTTP status it came with, never a parse error.
 The 412 Terms gate's remedy is now `dam terms accept` (see the `terms` group), so a headless/CI caller can review and clear the gate entirely from the CLI with no browser.
@@ -161,6 +161,8 @@ The CLI presents Agents as single, atomic entities — one resource carrying bot
 
 `dam chat <agent>` connects the local terminal to a running agent's interactive TUI over a WebSocket, using the same binary terminal-frame protocol as the UI's terminal mode.
 It requires a TTY and puts stdin in raw mode so keystrokes — including Ctrl+C — pass through to the remote harness rather than being intercepted locally.
+There is no detach key: as in the UI, closing the terminal is how the user leaves, and Ctrl+C stays the harness's interrupt.
+Before it attaches, the CLI prints one line that says so, with the resume command to come back.
 
 Session strategy is resolved **client-side**: sessions are agent-owned, so the CLI lists them over its own ACP connection to the api-server relay and resolves locally — mint a fresh id (new, the default), match the single most-recent terminal session (continue), or target a specific id (resume, prompting before a chat→terminal mode switch) — then builds the terminal-relay URL itself.
 There is no server-side session endpoint.

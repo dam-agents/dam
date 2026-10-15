@@ -17,8 +17,6 @@
   <a href="https://ibm.biz/dam-docs"><strong>Documentation</strong></a>
   ·
   <a href="https://ibm.biz/dam-agents"><strong>Launch DAM</strong></a>
-  ·
-  <a href="https://ibm.biz/dam-waitlist"><strong>Join the Waitlist</strong></a>
 </p>
 
 <p align="center">
@@ -130,12 +128,12 @@ Before deploying to production, read [`docs/architecture.md`](docs/architecture.
 ## For IBMers
 
 IBM Research operates a hosted DAM deployment, so IBM employees do not need to run their own cluster.
+Sign in with your IBM login to start; there is no approval step.
 
-|                    |                                                      |
-| ------------------ | ---------------------------------------------------- |
-| **Launch DAM**     | [ibm.biz/dam-agents](https://ibm.biz/dam-agents)     |
-| **Documentation**  | [ibm.biz/dam-docs](https://ibm.biz/dam-docs)         |
-| **Request access** | [ibm.biz/dam-waitlist](https://ibm.biz/dam-waitlist) |
+|                   |                                                  |
+| ----------------- | ------------------------------------------------ |
+| **Launch DAM**    | [ibm.biz/dam-agents](https://ibm.biz/dam-agents) |
+| **Documentation** | [ibm.biz/dam-docs](https://ibm.biz/dam-docs)     |
 
 The hosted deployment provides IBM internal model endpoints and integrations that are not included in the open source deployment.
 
