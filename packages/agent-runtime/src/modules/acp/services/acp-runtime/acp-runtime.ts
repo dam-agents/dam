@@ -38,6 +38,12 @@ import {
 } from "../../infrastructure/sub-agent-spawn.js";
 import { frameDirectTurn, isDirectSurface } from "../../domain/direct-turn.js";
 import {
+  advertisesFormElicitation,
+  declinedElicitation,
+  ELICITATION_CREATE_METHOD,
+  withFormElicitation,
+} from "../../domain/elicitation.js";
+import {
   isNonNullObject,
   isRequest,
   isResponse,
@@ -230,6 +236,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     null;
   const engagedSessions = new Map<ClientChannel, Set<string>>();
   const nonViewerChannels = new Set<ClientChannel>();
+  const elicitingChannels = new WeakSet<ClientChannel>();
+  const turnAsksUser = new Map<string, boolean>();
   const outboundIdToClient = new Map<number, OutboundMapping>();
   let waitingAttaches = 0;
 
@@ -274,6 +282,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }) => {
       autonomousTurns.end(sessionId);
       generating.add(sessionId);
+      turnAsksUser.set(sessionId, elicitingChannels.has(channel));
       appendUserPromptToLog(
         sessionId,
         typed,
@@ -307,6 +316,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     },
     onQueueChanged: (sessionId) => announceQueue(sessionId),
     onTurnEnded: (sessionId) => {
+      turnAsksUser.delete(sessionId);
       if (shuttingDown) return;
       deps.sessionMetadata?.finishRun(sessionId);
       deps.activeTurns.remove(sessionId);
@@ -683,6 +693,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     runTextBuffers.clear();
     openToolCalls.clear();
     generating.clear();
+    turnAsksUser.clear();
     turnModels.clear();
     harnessColdSessions.clear();
     appliedSettings.clear();
@@ -1283,6 +1294,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     transcript.forget(sessionId);
     openToolCalls.delete(sessionId);
     generating.delete(sessionId);
+    turnAsksUser.delete(sessionId);
     supersededEchoes.delete(sessionId);
     promptScheduler.forget(sessionId);
     runTextBuffers.delete(sessionId);
@@ -1331,14 +1343,37 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     );
   }
 
+  function canAnswerElicitation(channel: ClientChannel): boolean {
+    return channel.isOpen() && elicitingChannels.has(channel);
+  }
+
+  function someoneCanAnswer(sessionId: string | null): boolean {
+    if (sessionId === null)
+      return [...engagedSessions.keys()].some(canAnswerElicitation);
+    return (
+      turnAsksUser.get(sessionId) ??
+      engagedChannelsFor(sessionId).some(canAnswerElicitation)
+    );
+  }
+
   function handleAgentLine(line: string): void {
     const frame = parseFrame(line);
 
     if (frame && isRequest(frame)) {
-      pendingRequests.onAgentRequest(
-        frame.id,
-        extractAgentRequestSessionId(frame),
-        line,
+      const sessionId = extractAgentRequestSessionId(frame);
+      if (frame.method !== ELICITATION_CREATE_METHOD) {
+        pendingRequests.onAgentRequest(frame.id, sessionId, line);
+        return;
+      }
+      if (!someoneCanAnswer(sessionId)) {
+        deps.log?.(
+          `declining elicitation ${String(frame.id)} for session ${sessionId ?? "-"}: nobody on this turn can answer it`,
+        );
+        lease.send(declinedElicitation(frame.id));
+        return;
+      }
+      pendingRequests.onAgentRequest(frame.id, sessionId, line, (channel) =>
+        elicitingChannels.has(channel),
       );
       return;
     }
@@ -1769,6 +1804,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         return;
       }
 
+      if (method === "initialize" && advertisesFormElicitation(frame))
+        elicitingChannels.add(channel);
       if (method === "initialize" && initializeAnswer !== null) {
         sendToChannel(
           channel,
@@ -1833,7 +1870,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
               strippedFrame,
               deps.sessionMcpServers?.(platformMeta.ref) ?? [],
             )
-          : strippedFrame;
+          : method === "initialize"
+            ? withFormElicitation(strippedFrame)
+            : strippedFrame;
 
       const rewritten =
         promptSessionId !== null

@@ -2,9 +2,13 @@ import { useCallback } from "react";
 
 import { useStore } from "../../../store.js";
 import type { Message, VerdictPart } from "../../../types.js";
-import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
+import {
+  useHasPendingPermission,
+  useHasPendingQuestion,
+} from "../hooks/use-pending-permissions.js";
 import { ChatInput, type ChatInputProps } from "./chat-input.js";
 import { EgressApprovalPrompt } from "./egress-approval-prompt.js";
+import { ElicitationPrompt } from "./elicitation-prompt.js";
 import {
   PermissionPrompt,
   type PermissionVerdict,
@@ -16,6 +20,7 @@ function ownsToolCall(m: Message, toolCallId: string): boolean {
 
 export function ChatInputArea(props: ChatInputProps) {
   const hasPending = useHasPendingPermission();
+  const hasQuestion = useHasPendingQuestion();
   const setMessages = useStore((s) => s.setMessages);
 
   const appendVerdict = useCallback(
@@ -42,6 +47,7 @@ export function ChatInputArea(props: ChatInputProps) {
   );
 
   if (hasPending) return <PermissionPrompt onResolved={appendVerdict} />;
+  if (hasQuestion) return <ElicitationPrompt />;
   return (
     <>
       <EgressApprovalPrompt />

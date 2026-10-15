@@ -223,7 +223,7 @@ describe("acp-runtime: one harness process per (harness, provider)", () => {
     const codex = world.harness("codex/conn-a/gpt-5");
     expect(codex.received("initialize")[0]?.params).toEqual({
       protocolVersion: 1,
-      clientCapabilities: { terminal: true },
+      clientCapabilities: { terminal: true, elicitation: { form: {} } },
     });
     codex.replyTo("initialize", {});
     expect(client.saw("initialize")).toEqual([]);

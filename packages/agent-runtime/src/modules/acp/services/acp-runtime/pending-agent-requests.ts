@@ -2,13 +2,23 @@ import type { JsonRpcId, JsonRpcResponse } from "../../domain/frames.js";
 import { rewriteAuthError } from "../../domain/mappers.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 
+type Audience = (channel: ClientChannel) => boolean;
+
 interface PendingRequest {
   sessionId: string | null;
   line: string;
+  reaches: Audience;
 }
 
+const EVERY_CHANNEL: Audience = () => true;
+
 export interface PendingAgentRequests {
-  onAgentRequest(id: JsonRpcId, sessionId: string | null, line: string): void;
+  onAgentRequest(
+    id: JsonRpcId,
+    sessionId: string | null,
+    line: string,
+    reaches?: Audience,
+  ): void;
   answer(frame: JsonRpcResponse): boolean;
   onEngaged(channel: ClientChannel, sessionId: string): void;
   reassess(sessionId: string): void;
@@ -34,7 +44,10 @@ export interface PendingAgentRequestsDeps {
  * session-scoped request with no engaged channel expires after a TTL,
  * answering the agent with a structured error so the tool call aborts
  * cleanly. A request with no session broadcasts to every channel and never
- * expires. Forgetting a session drops its requests the same way, because the
+ * expires. A request can be meant for some channels only (a form elicitation
+ * goes to the clients that can render one): it is sent to those alone, and
+ * counts as unattended while none of them is open. Forgetting a session drops
+ * its requests the same way, because the
  * session id is reused after a reset: a question left open must not follow
  * that id into the next conversation, and must not keep the runtime busy.
  */
@@ -44,9 +57,17 @@ export function createPendingAgentRequests(
   const pending = new Map<JsonRpcId, PendingRequest>();
   const expiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-  function hasOpenChannel(sessionId: string): boolean {
-    for (const channel of deps.channelsFor(sessionId)) {
-      if (channel.isOpen()) return true;
+  function isStranded(req: PendingRequest): boolean {
+    if (req.sessionId === null) return false;
+    for (const channel of deps.channelsFor(req.sessionId)) {
+      if (channel.isOpen() && req.reaches(channel)) return false;
+    }
+    return true;
+  }
+
+  function hasStranded(sessionId: string): boolean {
+    for (const req of pending.values()) {
+      if (req.sessionId === sessionId && isStranded(req)) return true;
     }
     return false;
   }
@@ -66,7 +87,7 @@ export function createPendingAgentRequests(
   }
 
   function updateExpiryTimer(sessionId: string): void {
-    const shouldRun = hasFor(sessionId) && !hasOpenChannel(sessionId);
+    const shouldRun = hasStranded(sessionId);
     if (shouldRun && !expiryTimers.get(sessionId)) {
       expiryTimers.set(
         sessionId,
@@ -77,10 +98,14 @@ export function createPendingAgentRequests(
     }
   }
 
-  function abortRequestsOf(sessionId: string, message: string): number {
+  function abortRequestsOf(
+    sessionId: string,
+    message: string,
+    which: (req: PendingRequest) => boolean = () => true,
+  ): number {
     const aborted: JsonRpcId[] = [];
     for (const [id, req] of pending) {
-      if (req.sessionId === sessionId) aborted.push(id);
+      if (req.sessionId === sessionId && which(req)) aborted.push(id);
     }
     for (const id of aborted) {
       pending.delete(id);
@@ -98,16 +123,17 @@ export function createPendingAgentRequests(
     const expired = abortRequestsOf(
       sessionId,
       "Permission request expired: no client connected",
+      isStranded,
     );
     if (expired > 0) deps.onExpired();
   }
 
   return {
-    onAgentRequest(id, sessionId, line) {
-      pending.set(id, { sessionId, line });
+    onAgentRequest(id, sessionId, line, reaches = EVERY_CHANNEL) {
+      pending.set(id, { sessionId, line, reaches });
       const out = rewriteAuthError(line);
       for (const channel of deps.channelsFor(sessionId)) {
-        if (channel.isOpen()) channel.send(out);
+        if (channel.isOpen() && reaches(channel)) channel.send(out);
       }
       if (sessionId !== null) updateExpiryTimer(sessionId);
     },
@@ -123,7 +149,11 @@ export function createPendingAgentRequests(
 
     onEngaged(channel, sessionId) {
       for (const req of pending.values()) {
-        if (req.sessionId === sessionId && channel.isOpen()) {
+        if (
+          req.sessionId === sessionId &&
+          channel.isOpen() &&
+          req.reaches(channel)
+        ) {
           channel.send(rewriteAuthError(req.line));
         }
       }

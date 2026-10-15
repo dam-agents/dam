@@ -135,7 +135,10 @@ import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useChatArtifactPrompt } from "../hooks/use-chat-artifact-prompt.js";
 import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
 import { useOpenInitializationSession } from "../hooks/use-open-initialization-session.js";
-import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
+import {
+  useHasPendingPermission,
+  useHasPendingQuestion,
+} from "../hooks/use-pending-permissions.js";
 import {
   pushSessionPath,
   useSessionUrlSync,
@@ -268,7 +271,8 @@ export function ChatView() {
   const setSessionsSectionOpen = useStore((s) => s.setSessionsSectionOpen);
   const filesSectionOpen = useStore((s) => s.filesSectionOpen);
   const setFilesSectionOpen = useStore((s) => s.setFilesSectionOpen);
-  const hasPendingPermission = useHasPendingPermission();
+  const hasPendingQuestion = useHasPendingQuestion();
+  const hasPendingPermission = useHasPendingPermission() || hasPendingQuestion;
   const mobileScreen = useStore((s) => s.mobileScreen);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const terminalPaused = useStore((s) => s.terminalPaused);

@@ -7,3 +7,11 @@ export function useHasPendingPermission(): boolean {
       : false,
   );
 }
+
+export function useHasPendingQuestion(): boolean {
+  return useStore((s) =>
+    s.sessionId
+      ? s.pendingElicitations.some((e) => e.sessionId === s.sessionId)
+      : false,
+  );
+}

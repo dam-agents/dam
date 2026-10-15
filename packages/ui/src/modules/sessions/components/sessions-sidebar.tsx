@@ -66,6 +66,7 @@ export function SessionsSidebar({
   const sessionId = useStore((s) => s.sessionId);
   const busy = useStore((s) => s.busy);
   const pendingPermissions = useStore((s) => s.pendingPermissions);
+  const pendingElicitations = useStore((s) => s.pendingElicitations);
   const sessionFilter = useStore((s) => s.sessionFilter);
   const toggleSessionFilter = useStore((s) => s.toggleSessionFilter);
   const deleteSession = useStore((s) => s.deleteSession);
@@ -146,7 +147,8 @@ export function SessionsSidebar({
           : !!s.running;
     const needsApproval =
       approvalSessions.has(s.sessionId) ||
-      pendingPermissions.some((p) => p.sessionId === s.sessionId);
+      pendingPermissions.some((p) => p.sessionId === s.sessionId) ||
+      pendingElicitations.some((e) => e.sessionId === s.sessionId);
     const unread = isUnreadSession(s, { open: isOpen });
     const draft =
       s.mode !== SessionMode.Terminal &&

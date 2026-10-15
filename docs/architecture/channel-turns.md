@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer.
 What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
@@ -62,6 +62,7 @@ A few observations the diagram glosses over:
   A harness that sends no such name, or names the platform's tools some other way, falls back to the refusal, and an asking mode there costs the Agent its reply tool: it goes silent holding an answer it had no way to deliver, a refusal it cannot even report, since reporting one is also a tool call.
   That makes an asking mode unusable for a channel-bound Agent on such a harness rather than merely strict, which is a property of the harness and belongs in its own configuration copy.
   Both answers are recorded in the security log ([logging](logging.md)), so a turn that quietly did less than it was asked stays diagnosable afterwards.
+- **A question the agent asks on a relayed turn is declined.** The relay cannot render a form, so it never says it can, and the runtime answers the harness's question with `decline` the moment it is asked; the agent is told the user skipped it and carries on ([sessions](sessions.md)).
 - **Wake is implicit.** The relay step is the same `ACP relay → wake-if-hibernated → forward` path used by the UI.
   Channels do not call lifecycle endpoints directly; routing an ACP frame is what wakes the pod ([agent-lifecycle](agent-lifecycle.md), §Wake).
 - **Wake failures are surfaced in human terms.** A cold start announces itself to the Slack sender (requester-only notice); a wake that misses its budget while the pods are still progressing posts a still-starting note once and keeps waiting while the cause stays transient, bounded by elapsed time, so a healthy-but-slow start never loses the turn.
