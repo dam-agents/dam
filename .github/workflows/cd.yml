@@ -13,6 +13,10 @@ name: CI/CD
 
 on:
   pull_request:
+  # The merge queue's gate: a merge group verifies like a PR and publishes
+  # nothing. The push to main that follows only builds and publishes; see e2e.
+  merge_group:
+    types: [checks_requested]
   push:
     branches: [main]
     tags: ["v*"]
@@ -30,6 +34,13 @@ concurrency:
 env:
   IMAGE_PREFIX: quay.io/dam-agents
   MISE_LOCKED: "1"
+  # A PR or a merge group: the runs that verify and publish nothing. Steps read
+  # it; a job's `if` cannot, so those spell both events out.
+  VERIFY: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
+  # What a verifying run's change detection diffs against. A PR's checkout is
+  # its merge commit, whose first parent is the base; in a merge group that
+  # batches PRs, the first parent is only the PR queued before this one.
+  DIFF_BASE: ${{ github.event.merge_group.base_sha || 'HEAD^1' }}
 
 jobs:
   check-test:
@@ -176,7 +187,7 @@ jobs:
   # took seconds.
   appversion:
     name: derive app version
-    if: ${{ github.event_name != 'pull_request' }}
+    if: ${{ github.event_name != 'pull_request' && github.event_name != 'merge_group' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -230,8 +241,9 @@ jobs:
         run: |
           set -euo pipefail
           # A tag, the nightly run and a dispatch publish every image afresh;
-          # a PR or a main push reuses what its source did not change.
-          [ "$EVENT" = pull_request ] || [ "$MAIN_PUSH" = true ] || export RESOLVE_NO_REUSE=1
+          # a PR, a merge group or a main push reuses what its source did not
+          # change.
+          [ "$EVENT" = pull_request ] || [ "$EVENT" = merge_group ] || [ "$MAIN_PUSH" = true ] || export RESOLVE_NO_REUSE=1
           # By path: mise here installs crane alone; the same file is the image:resolve task.
           out="$(.mise/tasks/image/resolve gha-outputs)"
           printf '%s\n' "$out" | tee -a "$GITHUB_OUTPUT"
@@ -240,14 +252,17 @@ jobs:
   build-images:
     # One job per arch builds the stale ones of the five images side by side;
     # see image:ci-build. merge-images tags the rest. A PR builds its images in
-    # e2e instead: see e2e:ci-images.
+    # e2e instead: see e2e:ci-images. A merge group builds them there too, and
+    # here on arm64 alone, without a push, so an arm64-only break never
+    # reaches main. A PR stays amd64-only: it runs on every push to its
+    # branch, the merge group once per merge.
     needs: [changes]
     if: ${{ github.event_name != 'pull_request' && needs.changes.outputs.images != '[]' }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 30
     strategy:
       matrix:
-        arch: ${{ fromJSON(needs.changes.outputs.archs) }}
+        arch: ${{ fromJSON(github.event_name == 'merge_group' && '["arm64"]' || needs.changes.outputs.archs) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -305,6 +320,7 @@ jobs:
           IMAGES: ${{ join(fromJSON(needs.changes.outputs.images), ' ') }}
         run: |
           read -r -a images <<< "$IMAGES"
+          [ "$VERIFY" != true ] || images=("${images[@]/%/:cacheonly}")
           .mise/tasks/image/ci-build "$ARCH" "${images[@]}"
       # Main writes it on a miss, once the build has compiled into it; a PR's
       # e2e-vm job reads the amd64 one.
@@ -321,7 +337,8 @@ jobs:
         with:
           path: *task-artifacts
           key: &keycloak-theme-key mise-task-artifacts-${{ runner.os }}-keycloak-theme-${{ github.sha }}
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - if: env.VERIFY != 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: digests-images-${{ matrix.arch }}
           path: /tmp/digests
@@ -333,7 +350,7 @@ jobs:
     needs: [changes, build-images, appversion, check-test]
     # build-images is skipped when every image is reused; then this job only
     # tags.
-    if: ${{ github.event_name != 'pull_request' && !cancelled() && !failure() }}
+    if: ${{ github.event_name != 'pull_request' && github.event_name != 'merge_group' && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -389,14 +406,14 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}
           AGENTS: ${{ join(fromJSON(needs.changes.outputs.agents), ' ') }}
-          PR: ${{ github.event_name == 'pull_request' }}
+          PR: ${{ env.VERIFY }}
         run: |
           set -euo pipefail
-          # A PR only proves its agents build.
+          # A PR or a merge group only proves its agents build.
           read -r -a agents <<< "$AGENTS"
           [ "$PR" != true ] || agents=("${agents[@]/%/:cacheonly}")
           .mise/tasks/image/ci-build --serial "$ARCH" "${agents[@]}"
-      - if: github.event_name != 'pull_request'
+      - if: env.VERIFY != 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: digests-agents-${{ matrix.arch }}
@@ -407,7 +424,7 @@ jobs:
   merge-agents:
     name: merge multi-arch agent manifests
     needs: [build-agents, appversion, changes, check-test]
-    if: ${{ github.event_name != 'pull_request' && needs.changes.outputs.agents != '[]' && !cancelled() && !failure() }}
+    if: ${{ github.event_name != 'pull_request' && github.event_name != 'merge_group' && needs.changes.outputs.agents != '[]' && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -440,7 +457,7 @@ jobs:
     # but merge-workloads then merges none. A PR builds none: image:resolve
     # lists no workload for it, and this job pushes, which a PR must not.
     needs: [changes]
-    if: ${{ github.event_name != 'pull_request' && needs.changes.outputs.workloads != '[]' && !cancelled() && !failure() }}
+    if: ${{ github.event_name != 'pull_request' && github.event_name != 'merge_group' && needs.changes.outputs.workloads != '[]' && !cancelled() && !failure() }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 45
     strategy:
@@ -476,7 +493,7 @@ jobs:
   merge-workloads:
     name: merge multi-arch workload manifests
     needs: [build-workloads, appversion, changes, check-test]
-    if: ${{ github.event_name != 'pull_request' && needs.changes.outputs.workloads != '[]' && !cancelled() && !failure() }}
+    if: ${{ github.event_name != 'pull_request' && github.event_name != 'merge_group' && needs.changes.outputs.workloads != '[]' && !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -507,7 +524,7 @@ jobs:
     needs: [changes]
     # On a PR, e2e builds the mock itself. Otherwise only a mock whose source
     # sha has no image builds; e2e pulls it by that tag.
-    if: ${{ github.event_name != 'pull_request' && !startsWith(github.ref, 'refs/tags/v') && needs.changes.outputs.mock == 'true' }}
+    if: ${{ github.event_name != 'pull_request' && github.event_name != 'merge_group' && !startsWith(github.ref, 'refs/tags/v') && needs.changes.outputs.mock == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -527,24 +544,25 @@ jobs:
 
   docs-only:
     name: detect docs-only change
-    # A PR that changes only docs/ and Markdown outside packages/ skips both
-    # e2e lanes. Markdown under packages/ ships in agent images, so it counts
-    # as code. The lanes run when it fails, so a broken detection never skips
-    # them.
+    # A PR or a merge group that changes only docs/ and Markdown outside
+    # packages/ skips both e2e lanes. Markdown under packages/ ships in agent
+    # images, so it counts as code. The lanes run when it fails, so a broken
+    # detection never skips them.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       docs: ${{ steps.d.outputs.docs }}
     steps:
-      - if: github.event_name == 'pull_request'
+      - if: env.VERIFY == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 2
+          # A merge group's base can be several commits back.
+          fetch-depth: ${{ github.event_name == 'merge_group' && '0' || '2' }}
       - id: d
-        if: github.event_name == 'pull_request'
+        if: env.VERIFY == 'true'
         run: |
-          if git diff --quiet HEAD^1 HEAD -- . ':!docs' ':!*.md' && git diff --quiet HEAD^1 HEAD -- 'packages/*.md'; then
+          if git diff --quiet "$DIFF_BASE" HEAD -- . ':!docs' ':!*.md' && git diff --quiet "$DIFF_BASE" HEAD -- 'packages/*.md'; then
             echo "docs=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -553,18 +571,21 @@ jobs:
     # The container lane: the smoke suite on an install without
     # virtualization, so every agent is a pod. e2e-vm is the vm lane, the same
     # suite with every agent on the vm Backend; the two run side by side on
-    # every run but a tag and a docs-only PR, each on its own runner, and the
-    # Playwright config picks each lane's specs from E2E_VIRTUALIZATION (see
-    # packages/e2e/playwright/src/lib/lane.ts).
+    # every run but a push and a docs-only change, each on its own runner, and
+    # the Playwright config picks each lane's specs from E2E_VIRTUALIZATION
+    # (see packages/e2e/playwright/src/lib/lane.ts).
+    # A push to main skips them: the merge group before it ran them on the
+    # same tree. The nightly run still runs them on main, and saves their
+    # caches there.
     # No `needs` on the builds: bringing the cluster up takes minutes and needs
     # no image, so it runs while they build. e2e:ci-images builds them here on
-    # a PR, or waits for this run's build jobs, in the background, and
-    # cluster:install waits for it at the image load. A failed build still
-    # fails this job, there.
+    # a PR or a merge group, or waits for this run's build jobs, in the
+    # background, and cluster:install waits for it at the image load. A
+    # failed build still fails this job, there.
     # The steps e2e-vm shares are anchored here (&e2e-*), so the two lanes
     # bring their clusters up the same way.
     needs: [docs-only]
-    if: ${{ !cancelled() && !startsWith(github.ref, 'refs/tags/v') && needs.docs-only.outputs.docs != 'true' }}
+    if: ${{ !cancelled() && github.event_name != 'push' && needs.docs-only.outputs.docs != 'true' }}
     runs-on: ubuntu-latest
     # The builds' own time now counts against this budget.
     timeout-minutes: 45
@@ -593,7 +614,7 @@ jobs:
             > /tmp/k3s-provision.log 2>&1 &
       # See build-images. Before setup-mise, like check-test's.
       - &e2e-keycloak-theme-cache
-        if: github.event_name == 'pull_request'
+        if: env.VERIFY == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: *task-artifacts
@@ -601,7 +622,7 @@ jobs:
           restore-keys: mise-task-artifacts-${{ runner.os }}-keycloak-theme-
       # check-test saves it, and the Go cache below.
       - &e2e-pnpm-cache
-        if: github.event_name == 'pull_request'
+        if: env.VERIFY == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: *pnpm-store
@@ -616,9 +637,9 @@ jobs:
       # pulls main's image.
       - &e2e-controller-changed
         id: controller-changed
-        if: github.event_name == 'pull_request'
+        if: env.VERIFY == 'true'
         run: |
-          if git diff --quiet HEAD^1 HEAD -- $(.mise/tasks/image/resolve paths controller); then
+          if git diff --quiet "$DIFF_BASE" HEAD -- $(.mise/tasks/image/resolve paths controller); then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -639,11 +660,11 @@ jobs:
       # background build starts, so it does not race e2e:install's own run of
       # the same task, which is then a cache hit.
       - &e2e-keycloak-theme
-        if: github.event_name == 'pull_request'
+        if: env.VERIFY == 'true'
         run: mise run //packages/keycloak-theme:build
       # Before the background build: its pnpm install would race e2e:install's.
       - &e2e-pnpm-install
-        if: github.event_name == 'pull_request'
+        if: env.VERIFY == 'true'
         run: mise deps install --only pnpm
       # A PR that changes the mock's source builds it here, onto a default
       # image built here too, which installs every harness's tools. Main's
@@ -652,9 +673,9 @@ jobs:
       # this lane. A PR that changes no mock source pulls main's mock and
       # skips the restore, a gigabyte and about 25 s.
       - id: mock-changed
-        if: github.event_name == 'pull_request'
+        if: env.VERIFY == 'true'
         run: |
-          if git diff --quiet HEAD^1 HEAD -- $(.mise/tasks/image/resolve paths mock); then
+          if git diff --quiet "$DIFF_BASE" HEAD -- $(.mise/tasks/image/resolve paths mock); then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -666,12 +687,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           # The jobs that make the images e2e loads; see e2e:ci-images.
-          CI_IMAGES_BUILD: ${{ github.event_name == 'pull_request' && '1' || '' }}
+          CI_IMAGES_BUILD: ${{ env.VERIFY == 'true' && '1' || '' }}
           CI_IMAGES_IMAGES_JOB: build-images (amd64)
           CI_IMAGES_MOCK_JOB: build mock (e2e fixture)
           CI_IMAGES_AGENTS_JOB: build-agents (amd64)
           # As the `changes` job sets it, so both resolve the same images stale.
-          RESOLVE_NO_REUSE: ${{ github.event_name != 'pull_request' && github.event_name != 'push' && '1' || '' }}
+          RESOLVE_NO_REUSE: ${{ env.VERIFY != 'true' && github.event_name != 'push' && '1' || '' }}
         run: nohup .mise/tasks/e2e/ci-images /tmp/ci-images.status > /tmp/ci-images.log 2>&1 &
       # Keyed by the Playwright the lockfile resolves, which fixes the browser
       # build it downloads: a lockfile change elsewhere keeps the entry.
@@ -710,7 +731,7 @@ jobs:
           # from the runner's shared address hit the 60-an-hour limit.
           HARNESS_TOOLS_GITHUB_TOKEN: ${{ github.token }}
       - &e2e-playwright-save
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.playwright-cache.outputs.cache-hit != 'true' }}
+        if: ${{ github.ref == 'refs/heads/main' && steps.playwright-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: *playwright-path
@@ -762,7 +783,7 @@ jobs:
     # The job summary carries the lane's per-phase timings (e2e:timings), from
     # the marks E2E_TIMINGS collects and the Playwright JSON report.
     needs: [docs-only]
-    if: ${{ !cancelled() && !startsWith(github.ref, 'refs/tags/v') && needs.docs-only.outputs.docs != 'true' }}
+    if: ${{ !cancelled() && github.event_name != 'push' && needs.docs-only.outputs.docs != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -797,10 +818,10 @@ jobs:
       # release-build cache (see build-images); one that does not pulls main's
       # image.
       - id: vm-runner-changed
-        if: github.event_name == 'pull_request'
+        if: env.VERIFY == 'true'
         run: |
           read -r -a paths <<< "$(.mise/tasks/image/resolve paths vm-runner)"
-          if git diff --quiet HEAD^1 HEAD -- "${paths[@]}"; then
+          if git diff --quiet "$DIFF_BASE" HEAD -- "${paths[@]}"; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -819,7 +840,7 @@ jobs:
       # The default image, which smoke/22-harness-tools boots, packages none of
       # its tools but is built against them: a PR builds it here, beside the
       # other images e2e:ci-images builds.
-      - if: github.event_name == 'pull_request'
+      - if: env.VERIFY == 'true'
         uses: ./.github/actions/agent-tools # zizmor: ignore[self-repository]
       - *e2e-ci-images
       - *e2e-playwright-version
@@ -855,9 +876,9 @@ jobs:
       # Only main writes it, and only once the suite passed, which waits for the
       # installer: an entry is a whole install of one lockfile. It is about the
       # size of the agent-tools entry, and a PR reads main's.
-      - if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.harness-tools-cache.outputs.cache-hit != 'true' }}
+      - if: ${{ success() && github.ref == 'refs/heads/main' && steps.harness-tools-cache.outputs.cache-hit != 'true' }}
         run: sudo chown -R "$USER" /var/lib/platform-harness-tools
-      - if: ${{ success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.harness-tools-cache.outputs.cache-hit != 'true' }}
+      - if: ${{ success() && github.ref == 'refs/heads/main' && steps.harness-tools-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /var/lib/platform-harness-tools
@@ -932,6 +953,23 @@ jobs:
           path: *e2e-report-paths
           retention-days: 7
           if-no-files-found: ignore
+  verify:
+    name: verify
+    # The one check the merge queue and PRs require. Required checks are
+    # matched by job name, and a matrix job that is skipped reports under its
+    # bare name, so `build-images (arm64)` would never report on a run that
+    # changes no agent and the queue would wait on it forever. A skipped job
+    # here is one this change does not need, as for a docs-only change.
+    needs: [check-test, changes, build-images, build-agents, docs-only, e2e, e2e-vm]
+    if: ${{ always() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "$RESULTS"
+          case " $RESULTS " in *" failure "* | *" cancelled "*) exit 1 ;; esac
   mirror-images:
     name: mirror third-party images
     if: >-
