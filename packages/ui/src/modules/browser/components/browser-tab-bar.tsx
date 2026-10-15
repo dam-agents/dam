@@ -2,6 +2,7 @@ import { Checkmark, ChevronDown } from "@carbon/icons-react";
 import type { TabState } from "agent-runtime-api";
 import {
   type KeyboardEvent,
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -34,9 +35,10 @@ interface Props {
  * that is too narrow to read a title, the active tab keeps a readable width
  * and the others shrink to share the rest, down to a minimum, then scroll,
  * keeping the active one in view. The list button beside them reaches every
- * tab when the bar is too narrow to show them. Arrow keys, Home and End move between tabs
- * from the focused tab, as in any tab list; Delete closes the focused tab and
- * moves focus to its neighbour, and a middle click closes one too.
+ * tab when the bar is too narrow to show them. Arrow keys, Home and End move
+ * between tabs from the focused tab, as in any tab list; Delete closes the
+ * focused tab and moves focus to its neighbour, and a middle click closes one
+ * too.
  */
 export function BrowserTabBar({ tabs, activeTab, onSelect, onClose }: Props) {
   const triggers = useRef(new Map<string, HTMLButtonElement>());
@@ -46,12 +48,14 @@ export function BrowserTabBar({ tabs, activeTab, onSelect, onClose }: Props) {
     ? activeTab
     : tabs[0]?.id;
 
-  useEffect(() => {
+  const revealActive = useCallback(() => {
     if (!activeTab) return;
     triggers.current
       .get(activeTab)
       ?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [activeTab, tabs.length]);
+  }, [activeTab]);
+
+  useEffect(revealActive, [revealActive, tabs.length]);
 
   useEffect(() => {
     if (!list) return;
@@ -110,6 +114,7 @@ export function BrowserTabBar({ tabs, activeTab, onSelect, onClose }: Props) {
         role="tablist"
         aria-label="Tabs in the agent's browser"
         onWheel={handleWheel}
+        onTransitionEnd={(e) => e.propertyName === "width" && revealActive()}
         className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]"
       >
         {tabs.map((tab, i) => (
