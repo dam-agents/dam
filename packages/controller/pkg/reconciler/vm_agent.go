@@ -633,6 +633,9 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 	return r.publishReadinessOf(ctx, agent, st.Ready, reason, msg, runnerReached, st.Restarts, restartReason,
 		func(s *apiv1.AgentStatus) {
 			nestingCondition(s, agent, st, r.config.AgentTemplateDefaults, r.config.VM.Runner.NestedVirtualization)
+			if runnerReached {
+				homeRepairedCondition(s, st, agent.Generation)
+			}
 			r.runnerCapacityCondition(s, agent)
 			if runnerReached {
 				setStartFailure(s, failure, agent.Generation)
@@ -653,6 +656,15 @@ func runnerOOMTookDown(prev *metav1.Condition, running, ready bool, killedAt fun
 	}
 	at := killedAt()
 	return !at.IsZero() && !prev.LastTransitionTime.After(at)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: tells the owner that the machine's last boot repaired the filesystem on its disk, from what the runner reports, and drops the condition once a boot finds the disk clean. A runner not reached leaves it as it was, since its silence says nothing about the disk.
+func homeRepairedCondition(s *apiv1.AgentStatus, st vmrunner.MachineStatus, generation int64) {
+	if st.HomeRepaired == "" {
+		apimeta.RemoveStatusCondition(&s.Conditions, apiv1.ConditionHomeRepaired)
+		return
+	}
+	setStatusCondition(s, apiv1.ConditionHomeRepaired, true, apiv1.ReasonHomeRepaired, "", st.HomeRepaired, generation)
 }
 
 func wantsNesting(agent *apiv1.Agent, defaults config.AgentTemplateDefaults) bool {

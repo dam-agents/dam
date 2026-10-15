@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -194,7 +194,7 @@ The differences are transport, identity model, and where the bot token comes fro
 
 ### Slack — platform channel
 
-- **Message formatting.** Agent posts use standard Markdown, with compact Slack-style code fences normalized within Slack's Markdown size limit by the shared [outbound renderer](channel-turns.md#outbound--agent-to-channel).
+- **Message formatting.** Agent posts use standard Markdown, with compact Slack-style code fences moved onto their own lines by the shared [outbound renderer](channel-turns.md#outbound--agent-to-channel).
 - **Transport.** Socket Mode, one workspace-level WebSocket to Slack, opened by the lease-holding replica at boot so slash commands, mentions and DMs work in chats that have no binding yet (mirroring the Telegram client).
   The api-server has no inbound network access requirement; events arrive over the socket the api-server itself opened.
   Slack caps Socket Mode at ten concurrent connections per app, which is the install-level scale ceiling for Slack.

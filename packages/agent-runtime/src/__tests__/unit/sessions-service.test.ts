@@ -211,6 +211,17 @@ describe("createSessionsService", () => {
     await service.setTitle({ sessionId: "s1", title: null });
     expect(entries.s1?.meta).toEqual({ mode: "chat", ref: "ref-1" });
     expect(await service.setTitle({ ref: "gone", title: "x" })).toBe(false);
+
+    // TEST_SCENARIO: the api-server reads a session's settings by its ref so a platform sub-agent spawned from it defaults to its subagent model; a session with none answers empty, an untracked ref null.
+    expect(await service.settings({ ref: "ref-1" })).toEqual({});
+    entries.s1 = {
+      ...entries.s1!,
+      meta: { ...entries.s1!.meta, settings: { subagentModel: "ibm/gpt-5.5" } },
+    };
+    expect(await service.settings({ ref: "ref-1" })).toEqual({
+      subagentModel: "ibm/gpt-5.5",
+    });
+    expect(await service.settings({ ref: "gone" })).toBeNull();
   });
 
   // TEST_SCENARIO: a session only the harness lists, such as one started from a shell in the pod, has no platform record yet; renaming it from the UI must work, so it gets a terminal record carrying the title, while an id the harness does not list stays refused.

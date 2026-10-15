@@ -62,6 +62,7 @@ function setup(connections: ConnectionView[] = [provider]) {
       get: getAgent,
       deleteAgent: vi.fn(),
       restart: vi.fn(),
+      runtimeFleet: vi.fn(),
     }),
     createTemplateService: () => ({
       list: async () => ({

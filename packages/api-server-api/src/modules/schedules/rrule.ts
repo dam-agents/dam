@@ -60,6 +60,8 @@ export function rruleToText(rruleBody: string): string {
 export function detectPreset(rruleBody: string): FrequencyPreset {
   try {
     const options = parseRRule(rruleBody).options();
+    if (hasPartNoPresetHolds(options))
+      return { kind: "custom", rrule: rruleBody };
     const days = byDayToIso(options.byDay) ?? [...ALL_DAYS];
     const interval = options.interval ?? 1;
     const hours = options.byHour ?? [];
@@ -88,6 +90,23 @@ export function detectPreset(rruleBody: string): FrequencyPreset {
     }
   } catch {}
   return { kind: "custom", rrule: rruleBody };
+}
+
+function hasPartNoPresetHolds(
+  options: ReturnType<RRuleTemporal["options"]>,
+): boolean {
+  return (
+    [
+      options.byMonth,
+      options.byMonthDay,
+      options.byYearDay,
+      options.byWeekNo,
+      options.bySetPos,
+    ].some((part) => part && part.length > 0) ||
+    options.until != null ||
+    ((options.freq === "DAILY" || options.freq === "WEEKLY") &&
+      (options.interval ?? 1) !== 1)
+  );
 }
 
 function byDayToIso(byDay: string[] | undefined): number[] | null {

@@ -63,7 +63,7 @@ A refresh that fails with an invalid grant clears the entry and surfaces a sessi
 Those are the client-side signals.
 The server can also reject a request that looked valid locally, and the CLI surfaces that distinctly rather than as a transport failure: it maps the api-server's raw 401/403 (alongside the existing 412 Terms gate) to typed errors.
 A 401 becomes session-expired — with a hint that switches to "check `DAM_TOKEN`" when that variable is set, because a bearer supplied that way lives outside the credential store and re-login can't fix it.
-A 403 becomes access-denied with no login hint: the caller is authenticated but not authorized (e.g. a pending-approval account), so the remedy is an admin, not re-authentication.
+A 403 becomes access-denied with no login hint: the caller is authenticated but not authorized (e.g. an account without the install's required realm role), so the remedy is an admin, not re-authentication.
 Any other reached-but-rejected request surfaces the server's own reason; "cannot reach server" is reserved for genuine connectivity failures.
 An error answer that is not JSON — a gateway's HTML page — names the HTTP status it came with, never a parse error.
 The 412 Terms gate's remedy is now `dam terms accept` (see the `terms` group), so a headless/CI caller can review and clear the gate entirely from the CLI with no browser.
@@ -144,7 +144,7 @@ The CLI presents Agents as single, atomic entities — one resource carrying bot
 - **Create** is one mutation; env vars and description attach to the payload and the merged Agent is provisioned atomically server-side.
   **Delete** cascades through Kubernetes ownership to the StatefulSet, Service, NetworkPolicy, and owned volumes — the same path the UI's delete uses.
   **Restart** deletes the agent's pod; the controller recreates it with the current spec and persistent volumes survive.
-- **Scripted create may name a model-provider Connection**, by id or unique name; without one the server grants the caller's default provider ([agent-lifecycle](agent-lifecycle.md#create)), and each session picks its harness and model.
+- **Scripted create may name a model-provider Connection**, by id or unique name; without one the server grants every provider of the caller's that the harness runs on ([agent-lifecycle](agent-lifecycle.md#create)), and each session picks its harness and model.
   An id goes directly to creation with agent-management permission; name lookup additionally needs credential-read permission and rejects ambiguous matches.
   Before creating the Agent, the server checks that a named Connection belongs to the caller and is an active model provider, then includes it in the initial grants; an invalid one fails with guidance to choose or reconnect a provider.
 - **`--wait`** on create and restart polls until the agent settles on running (success) or error (terminal), with a bounded timeout after which the agent is left as-is and the command exits non-zero.

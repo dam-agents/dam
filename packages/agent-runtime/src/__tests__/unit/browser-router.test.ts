@@ -37,6 +37,7 @@ describe("browser procedures", () => {
       caller({
         navigate: async () => err(error),
         act: async () => err(error),
+        setTestingMode: async () => err(error),
         watch: () => err(error),
       });
     for (const [error, code] of [
@@ -50,6 +51,9 @@ describe("browser procedures", () => {
       });
       await expect(call.browser.reload()).rejects.toMatchObject({ code });
       await expect(
+        call.browser.setTestingMode({ on: false }),
+      ).rejects.toMatchObject({ code });
+      await expect(
         (async () => {
           for await (const _ of await call.browser.watch()) break;
         })(),
@@ -57,9 +61,10 @@ describe("browser procedures", () => {
     }
   });
 
-  // TEST_SCENARIO: watching yields the browser's state as the service reports it, and each toolbar action reaches the service as itself.
+  // TEST_SCENARIO: watching yields the browser's state as the service reports it, and each toolbar action and the testing mode switch reach the service as themselves.
   it("streams state and runs each toolbar action", async () => {
     const acted: BrowserAction[] = [];
+    const modes: boolean[] = [];
     const call = caller({
       watch: () =>
         ok(
@@ -72,6 +77,10 @@ describe("browser procedures", () => {
         return ok(undefined);
       },
       navigate: async () => ok(undefined),
+      setTestingMode: async (on) => {
+        modes.push(on);
+        return ok(undefined);
+      },
     });
     const seen: BrowserSnapshot[] = [];
     for await (const s of await call.browser.watch()) seen.push(s);
@@ -83,6 +92,7 @@ describe("browser procedures", () => {
     await call.browser.forward();
     await call.browser.restart();
     await call.browser.clearData();
+    await call.browser.setTestingMode({ on: false });
     expect(acted).toEqual([
       "reload",
       "stop",
@@ -91,6 +101,7 @@ describe("browser procedures", () => {
       "restart",
       "clearData",
     ]);
+    expect(modes).toEqual([false]);
     await expect(call.browser.navigate({ url: "" })).rejects.toMatchObject({
       code: "BAD_REQUEST",
     });

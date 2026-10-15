@@ -544,6 +544,8 @@ spec:
               value: {{ .Values.terms.version | quote }}
             - name: TERMS_TEXT
               value: {{ .Values.terms.text | quote }}
+            - name: SIGN_UPS
+              value: {{ .Values.signUps | quote }}
             {{- if .Values.links.computeRequest }}
             - name: LINKS_COMPUTE_REQUEST
               value: {{ .Values.links.computeRequest | quote }}

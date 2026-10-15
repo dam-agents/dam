@@ -21,10 +21,13 @@ export interface AcceptedAcceptance {
   acceptedAt: Date;
 }
 
+export type AcceptTermsResult =
+  { ok: true; value: null } | { ok: false; error: { type: "SignUpsClosed" } };
+
 export interface TermsService {
   current(): TermsCurrent;
   document(): TermsDocument;
-  accept(sub: string, version: string): Promise<void>;
+  accept(sub: string, version: string): Promise<AcceptTermsResult>;
   latestAcceptance(sub: string): Promise<AcceptedAcceptance | null>;
   isAccepted(sub: string): Promise<boolean>;
 }

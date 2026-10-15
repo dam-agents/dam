@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-10-13
+Last verified: 2026-10-15
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer.
 What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
@@ -82,7 +82,7 @@ A few observations the diagram glosses over:
   System notices (wake failures, a still-starting note) are separate direct posts, not agent content.
 - **Resume vs. new is decided by the ACP session list.** The binding lives on the session itself: the worker lists an Agent's sessions over ACP and resumes the one whose thread key matches.
   A resume that fails (PVC lost, session expired) falls back to a fresh session with thread history injected from the messenger API — no regression, just a colder start.
-  A fresh session opens on the harness, provider and model a person last picked on the Agent, falling back as a [schedule fire](schedules.md#session-model) does; when no granted provider fits, the turn fails rather than running elsewhere.
+  A fresh session opens on the harness, provider and model a person last picked on the Agent, falling back as a [schedule fire](schedules.md#session-choices) does; when no granted provider fits, the turn fails rather than running elsewhere.
 - **A resumed conversation is caught up on what it missed, best-effort (Slack).** A session belongs to one Agent, so it sees a conversation's history only on its first turn there; a mention-only binding is never handed what does not tag it, and an Agent stopped or unreachable is handed nothing at all.
   A resuming turn therefore also carries what arrived after its own last turn, labelled as above and marked unseen: its own posts stay out, and nothing new means no block.
   Catch-up looks strictly backward from the turn's own messages — anything sent after them is already queued for a turn of its own and is never presented as missed.
@@ -174,9 +174,10 @@ Outbound is initiated by the agent process.
 The harness calls a tool on the api-server's per-Agent MCP endpoint, the endpoint authenticates the call, and the channel manager routes the message back through the right worker.
 
 Slack posts use standard Markdown.
-Replies, private whispers and top-level posts share one renderer, which normalizes compact Slack-style fences within Slack's Markdown size limit.
-Larger messages pass through unchanged to bound processing cost.
-Ambiguous standalone fences retain Markdown semantics; tools request separate fence lines.
+Replies, private whispers and top-level posts share one renderer, which moves compact Slack-style fences onto their own lines.
+A fence that ends a line moves to the next line.
+Text after an opening fence moves below it, unless the text is one lowercase language word.
+The renderer works line by line, so a fence pair inside one line of prose stays as it is; tools request separate fence lines.
 
 What the agent sees:
 

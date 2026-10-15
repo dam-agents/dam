@@ -51,6 +51,13 @@ terms:
   # judgment — whitespace edits don't bump this.
   version: ""
 
+# -- Whether new users can start. `open` lets anyone who can sign in accept
+# the Terms of Use and use the platform. `closed` is the kill switch for
+# runaway growth: a user who has never accepted any Terms version is turned
+# away at the Terms page with a message that sign-ups are closed, while every
+# user who accepted before keeps working, including through a Terms re-accept.
+signUps: open
+
 # -- Outbound links surfaced in the UI, changeable per install without a
 # rebuild (the api-server serves them over `links.all`).
 links:
@@ -927,11 +934,9 @@ keycloak:
   # SSO is the expected sign-in path; it falls back to the password form
   # when no identity provider is configured on the realm. The default keeps
   # the username/password form, with any identity-provider buttons offered
-  # below it. `requestAccessUrl` renders a "Request access" link on the
-  # login page when set.
+  # below it.
   login:
     allowPassword: true
-    requestAccessUrl: ""
 
   # -- Event logging. Login + admin events are emitted to stdout via the
   # built-in `jboss-logging` event listener so they ride the cluster log

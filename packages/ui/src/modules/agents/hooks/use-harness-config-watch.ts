@@ -21,7 +21,11 @@ export function useHarnessConfigWatch(agentId: string | null) {
       agentTrpc(agentId).harnessConfig.watch.subscribe(undefined, {
         onData: (notice) => {
           if (!harnessConfigNoticeSchema.safeParse(notice).success) return;
-          for (const key of ["provider-models", "harness-config-current"])
+          for (const key of [
+            "provider-models",
+            "harness-config-current",
+            "harness-catalog-models",
+          ])
             void queryClient.invalidateQueries({ queryKey: [key, agentId] });
         },
         onError: (error) => {

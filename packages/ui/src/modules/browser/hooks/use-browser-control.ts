@@ -36,8 +36,9 @@ type Client = ReturnType<typeof agentTrpc>;
  * UNIT_BOUNDARY_DESCRIPTION: the browser panel's control of the agent's
  * browser, over the agent's tRPC. Watching keeps the browser running while the
  * panel is open and reports its state and page; the toolbar's actions are
- * mutations. An address asked for before the watch is live is sent once it
- * is, as the agent may still be waking. `connects` counts each time the watch
+ * mutations, and so is the testing mode switch; a runtime too old to have it
+ * reports no mode. An address asked for before the watch is live is sent once
+ * it is, as the agent may still be waking. `connects` counts each time the watch
  * goes live, which the stream page uses to check its token. An agent that does
  * not offer the panel is told apart from one that cannot be reached, and is
  * not retried.
@@ -122,6 +123,7 @@ export function useBrowserControl(agentId: string) {
     connection,
     connects,
     browser: { state: snapshot.state, message: snapshot.message },
+    testingMode: snapshot.testingMode,
     page: snapshot.page ?? NO_PAGE,
     error,
     navigate,
@@ -131,6 +133,8 @@ export function useBrowserControl(agentId: string) {
     forward: () => run((client) => client.browser.forward.mutate()),
     clearData: () => run((client) => client.browser.clearData.mutate()),
     restartBrowser: () => run((client) => client.browser.restart.mutate()),
+    setTestingMode: (on: boolean) =>
+      run((client) => client.browser.setTestingMode.mutate({ on })),
     reconnect: () => setWatchKey((k) => k + 1),
   };
 }

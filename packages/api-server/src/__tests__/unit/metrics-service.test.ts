@@ -26,6 +26,7 @@ function spyReader(): {
     windows,
     reader: {
       tokenSpendByModel: (ids, w) => record(ids, w),
+      tokenSpendByProvider: (ids, w) => record(ids, w),
       spendByAgent: (ids, w) => record(ids, w),
       spendByDay: (ids, w) => record(ids, w),
       spendBySession: (ids, w) => record(ids, w),
@@ -58,7 +59,7 @@ describe("metrics ownership gate", () => {
       sessionTypeSpend: noSessionTypeSpend,
     });
     await svc.overview(query);
-    expect(calls).toEqual(Array(3).fill(["agent-a", "agent-b"]));
+    expect(calls).toEqual(Array(4).fill(["agent-a", "agent-b"]));
   });
 
   it("narrows to a single owned agent", async () => {
@@ -70,7 +71,7 @@ describe("metrics ownership gate", () => {
       sessionTypeSpend: noSessionTypeSpend,
     });
     await svc.overview({ ...query, agentId: "agent-a" });
-    expect(calls).toEqual(Array(3).fill(["agent-a"]));
+    expect(calls).toEqual(Array(4).fill(["agent-a"]));
   });
 
   it("returns nothing and never queries for an unowned agent", async () => {
@@ -87,6 +88,7 @@ describe("metrics ownership gate", () => {
     });
     expect(overview).toEqual({
       tokenSpendByModel: [],
+      tokenSpendByProvider: [],
       runtimeBySession: [],
       contextPerCall: [],
     });
@@ -102,7 +104,7 @@ describe("metrics ownership gate", () => {
       sessionTypeSpend: noSessionTypeSpend,
     });
     await svc.overview({ ...query, sessionId: "sess-1" });
-    expect(windows).toEqual(Array(3).fill({ hours: 24, sessionId: "sess-1" }));
+    expect(windows).toEqual(Array(4).fill({ hours: 24, sessionId: "sess-1" }));
   });
 
   it("returns nothing when the caller owns no agents", async () => {
@@ -135,9 +137,9 @@ describe("metrics ownership gate", () => {
       timeZone: "America/New_York",
     });
     expect(scopeResolutions).toBe(1);
-    expect(calls).toEqual(Array(3).fill(["agent-a", "agent-b"]));
+    expect(calls).toEqual(Array(4).fill(["agent-a", "agent-b"]));
     expect(windows).toEqual(
-      Array(3).fill({
+      Array(4).fill({
         fromIso: "2026-07-01T00:00:00.000Z",
         toIso: "2026-08-01T00:00:00.000Z",
       }),
@@ -158,7 +160,7 @@ describe("metrics ownership gate", () => {
       timeZone: "Europe/Prague",
       agentId: "agent-a",
     });
-    expect(calls).toEqual(Array(3).fill(["agent-a"]));
+    expect(calls).toEqual(Array(4).fill(["agent-a"]));
   });
 
   it("spendBreakdown forwards the timezone to the per-day reader", async () => {
@@ -166,6 +168,7 @@ describe("metrics ownership gate", () => {
     const svc = createMetricsService({
       reader: {
         tokenSpendByModel: async () => [],
+        tokenSpendByProvider: async () => [],
         spendByAgent: async () => [],
         spendByDay: async (_ids, _w, tz) => {
           zones.push(tz);
@@ -205,7 +208,13 @@ describe("metrics ownership gate", () => {
         to: "2026-08-01T00:00:00.000Z",
         timeZone: "America/New_York",
       }),
-    ).toEqual({ byModel: [], byAgent: [], byDay: [], bySessionType: [] });
+    ).toEqual({
+      byModel: [],
+      byProvider: [],
+      byAgent: [],
+      byDay: [],
+      bySessionType: [],
+    });
     expect(calls).toEqual([]);
   });
 
@@ -234,6 +243,7 @@ describe("spendBreakdown per-agent labels", () => {
   ): MetricsReader {
     return {
       tokenSpendByModel: async () => [],
+      tokenSpendByProvider: async () => [],
       spendByAgent: async () => rows,
       spendByDay: async () => [],
       spendBySession: async () => [],

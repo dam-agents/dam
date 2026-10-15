@@ -1,4 +1,4 @@
-import { sessionTitleSchema } from "agent-runtime-api";
+import { sessionSettingsSchema, sessionTitleSchema } from "agent-runtime-api";
 import { z } from "zod";
 
 const scheduleSessionModeSchema = z.enum(["continuous", "fresh"]);
@@ -31,6 +31,9 @@ export const precheckSchema = z.string().trim().min(1).max(PRECHECK_MAX_LENGTH);
 
 export const scheduleModelSchema = z.string().trim().min(1).max(200);
 
+export const scheduleHarnessSchema = z.string().trim().min(1).max(100);
+export const scheduleSettingsSchema = sessionSettingsSchema;
+
 export const scheduleCreateCronInputSchema = z.object({
   name: z.string().min(1),
   agentId: z.string().min(1),
@@ -38,8 +41,23 @@ export const scheduleCreateCronInputSchema = z.object({
   task: z.string().min(1),
   sessionMode: scheduleSessionModeSchema.optional(),
   precheck: precheckSchema.optional(),
+  harness: scheduleHarnessSchema.optional(),
   model: scheduleModelSchema.optional(),
+  settings: scheduleSettingsSchema.optional(),
   sessionTitle: sessionTitleSchema.optional(),
+});
+
+export const scheduleUpdateCronInputSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  cron: z.string().min(1),
+  task: z.string().min(1),
+  sessionMode: scheduleSessionModeSchema.optional(),
+  precheck: precheckSchema.nullable().optional(),
+  harness: scheduleHarnessSchema.nullable().optional(),
+  model: scheduleModelSchema.nullable().optional(),
+  settings: scheduleSettingsSchema.nullable().optional(),
+  sessionTitle: sessionTitleSchema.nullable().optional(),
 });
 
 export const scheduleCreateRRuleInputSchema = z.object({
@@ -51,7 +69,9 @@ export const scheduleCreateRRuleInputSchema = z.object({
   task: z.string().min(1),
   sessionMode: scheduleSessionModeSchema.optional(),
   precheck: precheckSchema.optional(),
+  harness: scheduleHarnessSchema.optional(),
   model: scheduleModelSchema.optional(),
+  settings: scheduleSettingsSchema.optional(),
   sessionTitle: sessionTitleSchema.optional(),
 });
 
@@ -64,7 +84,9 @@ export const scheduleUpdateRRuleInputSchema = z.object({
   task: z.string().min(1),
   sessionMode: scheduleSessionModeSchema.optional(),
   precheck: precheckSchema.nullable().optional(),
+  harness: scheduleHarnessSchema.nullable().optional(),
   model: scheduleModelSchema.nullable().optional(),
+  settings: scheduleSettingsSchema.nullable().optional(),
   sessionTitle: sessionTitleSchema.nullable().optional(),
 });
 
@@ -82,7 +104,9 @@ export const scheduleCreateOnceInputSchema = z
     at: localDateTimeSchema.optional(),
     timezone: z.string().min(1),
     task: z.string().min(1),
+    harness: scheduleHarnessSchema.optional(),
     model: z.string().min(1).optional(),
+    settings: scheduleSettingsSchema.optional(),
     sessionTitle: sessionTitleSchema.optional(),
   })
   .strict();
@@ -94,7 +118,9 @@ export const scheduleUpdateOnceInputSchema = z
     at: localDateTimeSchema,
     timezone: z.string().min(1),
     task: z.string().min(1),
+    harness: scheduleHarnessSchema.optional(),
     model: z.string().min(1).optional(),
+    settings: scheduleSettingsSchema.optional(),
     sessionTitle: sessionTitleSchema.optional(),
   })
   .strict();
@@ -131,7 +157,10 @@ const scheduleSpecCronSchema = z
     cron: z.string(),
     task: z.string().optional(),
     precheck: precheckSchema.optional(),
+    harness: scheduleHarnessSchema.optional(),
     model: scheduleModelSchema.optional(),
+    settings: scheduleSettingsSchema.optional(),
+    migrationNote: z.string().optional(),
     sessionTitle: sessionTitleSchema.optional(),
     enabled: z.boolean(),
     sessionMode: scheduleSessionModeSchema.optional(),
@@ -148,7 +177,10 @@ const scheduleSpecRRuleSchema = z
     quietHours: z.array(quietWindowConfigMapSchema).optional(),
     task: z.string().optional(),
     precheck: precheckSchema.optional(),
+    harness: scheduleHarnessSchema.optional(),
     model: scheduleModelSchema.optional(),
+    settings: scheduleSettingsSchema.optional(),
+    migrationNote: z.string().optional(),
     sessionTitle: sessionTitleSchema.optional(),
     enabled: z.boolean(),
     sessionMode: scheduleSessionModeSchema.optional(),
@@ -168,7 +200,10 @@ const scheduleSpecOnceSchema = z
         mode: z.enum(["continue", "report"]),
       })
       .optional(),
+    harness: scheduleHarnessSchema.optional(),
     model: z.string().optional(),
+    settings: scheduleSettingsSchema.optional(),
+    migrationNote: z.string().optional(),
     sessionTitle: sessionTitleSchema.optional(),
     task: z.string().optional(),
     enabled: z.boolean(),

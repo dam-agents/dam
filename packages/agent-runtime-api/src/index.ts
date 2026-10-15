@@ -29,6 +29,7 @@ export {
 } from "./modules/sessions/types.js";
 export {
   sessionSettingsSchema,
+  modelConstraintsFor,
   sessionSettingsError,
   type SessionSettings,
 } from "./modules/harness-config/session-settings.js";
@@ -120,6 +121,14 @@ export type {
 } from "./modules/skills/git-url.js";
 export type { SshService } from "./modules/ssh/types.js";
 export type {
+  HarnessCatalogView,
+  CatalogProviderView,
+  CatalogProviderStatus,
+  CatalogModelView,
+  CatalogModelPrices,
+  CatalogMetadataSource,
+} from "./modules/harness-config/types.js";
+export type {
   HarnessConfigNotice,
   HarnessConfigService,
 } from "./modules/harness-config/types.js";
@@ -199,6 +208,7 @@ export {
   harnessConfigCurrentByHarness,
   harnessCapability,
   routesSessionPairs,
+  routesByModelName,
   fileFormat,
   mergeMode,
   eventReportInput,

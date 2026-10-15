@@ -27,7 +27,7 @@ import {
   onceLocalMoment,
 } from "./once-form-schema.js";
 import {
-  ScheduleModelField,
+  ScheduleChoicesField,
   ScheduleSessionTitleField,
 } from "./schedule-fields.js";
 import type { ScheduleDraft } from "./schedule-kind-field.js";
@@ -96,11 +96,16 @@ export function OnceScheduleForm({
       });
       onClose();
     };
+    const settings = Object.fromEntries(
+      Object.entries(v.settings).filter(([, value]) => value !== ""),
+    );
     const fields = {
       name: v.name,
       task: v.task,
       timezone: v.timezone,
+      ...(v.harness ? { harness: v.harness } : {}),
       ...(v.model ? { model: v.model } : {}),
+      ...(Object.keys(settings).length > 0 ? { settings } : {}),
       ...(v.sessionTitle ? { sessionTitle: v.sessionTitle } : {}),
     };
     if (existing) {
@@ -202,16 +207,10 @@ export function OnceScheduleForm({
         </FormField>
 
         {existing?.inSession !== "continue" && (
-          <Controller
+          <ScheduleChoicesField
+            agentId={agentId}
             control={control}
-            name="model"
-            render={({ field }) => (
-              <ScheduleModelField
-                agentId={agentId}
-                value={field.value}
-                onChange={field.onChange}
-              />
-            )}
+            migrationNote={existing?.migrationNote ?? null}
           />
         )}
 

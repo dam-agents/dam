@@ -1,0 +1,12 @@
+#!/bin/sh
+# The agent's browser as agent-browser launches it (AGENT_BROWSER_EXECUTABLE_PATH):
+# Playwright's Chromium, launched the way the browser panel's "Browser testing
+# mode" switch chose. The agent runtime keeps that choice in the agent's home,
+# so every launch reads it: the panel's, the agent's own commands' and one
+# after any restart. Chromium reports itself automated (navigator.webdriver)
+# whenever its DevTools port is open, the port agent-browser drives it through;
+# with testing mode off that report is turned off and the port stays.
+if [ "$(cat "${HOME:-/home/agent}/.local/share/platform/browser-launch" 2>/dev/null)" = standard ]; then
+  set -- --disable-blink-features=AutomationControlled "$@"
+fi
+exec /opt/ms-playwright/chromium "$@"

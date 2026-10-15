@@ -19,6 +19,7 @@ export {
 export {
   AttenuationError,
   InvalidSchemaError,
+  ModelNameError,
   ProviderMismatchError,
   UnresolvableDriverError,
   type InvocationsService,

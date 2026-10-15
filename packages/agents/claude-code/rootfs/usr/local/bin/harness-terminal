@@ -6,6 +6,9 @@
 export CLAUDE_CODE_HARBOR_KITE=0
 node /usr/local/lib/sync-claude-settings.mjs || true
 CLAUDE_OPTS="--allow-dangerously-skip-permissions"
+# The session's model (a catalog name the Model Router routes) as the TUI's
+# start value; /model then offers the router's catalog.
+[ -z "${PLATFORM_MODEL:-}" ] || CLAUDE_OPTS="--model $PLATFORM_MODEL $CLAUDE_OPTS"
 grep -q '"defaultMode"' "$HOME/.claude/settings.json" 2>/dev/null || CLAUDE_OPTS="--permission-mode auto $CLAUDE_OPTS"
 if find "$HOME/.claude/projects" -name "$HARNESS_SESSION_ID.jsonl" -type f -print -quit 2>/dev/null | grep -q .; then
   exec claude $CLAUDE_OPTS --resume "$HARNESS_SESSION_ID" "$@"

@@ -39,25 +39,35 @@ function withContext(task: string, context: string | undefined): string {
   return context ? `${task}\n\n---\nPrecheck output:\n${context}` : task;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: how long a trigger waits for the model
+ * catalog's first listing on a fresh pod, where the env rail and the trigger
+ * arrive together: a harness process spawned before the listing gets no
+ * tier models. The wait is bounded so a provider outage never holds a run.
+ */
+const CATALOG_WAIT_MS = 10_000;
+
 export function createTriggerPlugin(deps: {
   driver: TriggerSessionDriver;
   stateStore: TriggerStateStore;
-  harnessDefault?: () => Promise<string | null>;
   runPrecheck: PrecheckRunner;
   log: (msg: string) => void;
   reporter: EventReporter;
   findSessionByRef?: (ref: string) => string | undefined;
+  catalogListed?: () => Promise<void>;
 }): Plugin {
   const startSession = async (
     payload: TriggerEventPayload,
     task: string,
   ): Promise<void> => {
-    const model =
-      payload.model ??
-      (payload.harness === undefined
-        ? await deps.harnessDefault?.()
-        : undefined) ??
-      undefined;
+    if (deps.catalogListed)
+      await Promise.race([
+        deps.catalogListed(),
+        new Promise<void>((resolve) => {
+          setTimeout(resolve, CATALOG_WAIT_MS).unref?.();
+        }),
+      ]);
+    const model = payload.model;
     const platformMeta = {
       type: payload.once ? SessionType.ScheduleOnce : SessionType.ScheduleCron,
       mode: SessionMode.Chat,

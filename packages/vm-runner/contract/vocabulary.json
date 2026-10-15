@@ -7,7 +7,8 @@
     "MachineBootFailed",
     "MachineSeedMissing",
     "MachineStorageFull",
-    "MachineHomeFull"
+    "MachineHomeFull",
+    "MachineHomeDamaged"
   ],
   "seedExitPermanent": 3,
   "releaseHolds": ["unstaged", "runtime", "failed"]
