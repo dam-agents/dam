@@ -319,13 +319,15 @@ virtualization:
     # kernel's nested-virtualization code, which has had guest-to-host
     # escapes. Changing this value rolls every runner, which reboots its
     # owner's machines; an Agent changing its ask restarts only its own.
-    nestedVirtualization: false    # The filesystem a new machine's storage disk is made with: `ext4`, or
+    nestedVirtualization: false
+    # The filesystem a new machine's storage disk is made with: `ext4`, or
     # `btrfs`, which the guest mounts compressed with zstd level 1 (build
     # output and toolchains take a half to a third of the room). A disk keeps the
     # filesystem it was made with, so changing this changes only disks made
     # after it. Changing it rolls every runner, which reboots its owner's
     # machines.
-    storageFilesystem: ext4    # true = every machine's guest swaps to zram, compressed with zstd: the
+    storageFilesystem: ext4
+    # true = every machine's guest swaps to zram, compressed with zstd: the
     # memory its processes hold but have not touched lately is kept
     # compressed, and the RAM it filled goes back to the host. It costs guest
     # CPU to compress and, when a page is touched again, to read it back; an

@@ -357,7 +357,8 @@ runner unconfined on purpose, and the controller warns about it at startup.
 {{- $seccomp := include "platform.vmRunner.seccomp" . -}}
 {{- if not (has $seccomp (list "audit" "enforce" "off")) -}}
 {{- fail (printf "virtualization.runner.seccomp %q is not a mode smolvm knows — use `audit`, `enforce` or `off`. smolvm reads any other value as `off`, so a typo would install no filter at all." (toString $seccomp)) -}}
-{{- end -}}{{- $fs := $v.runner.storageFilesystem | default "ext4" -}}
+{{- end -}}
+{{- $fs := $v.runner.storageFilesystem | default "ext4" -}}
 {{- if not (has $fs (list "ext4" "btrfs")) -}}
 {{- fail (printf "virtualization.runner.storageFilesystem %q is not one the runner makes disks with — use `ext4` or `btrfs`." (toString $fs)) -}}
 {{- end -}}
