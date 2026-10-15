@@ -95,6 +95,7 @@ A btrfs disk made before subvolumes moves to them at its next boot, inside the g
 The old directory layout is changed only once both subvolumes are complete, so a boot cut short keeps it and tries again; what the move set aside, smolvm's old guest-agent directories among it, is deleted in the background.
 A move that fails leaves the disk in the directory layout, which still boots, and the layout mark records which of the two a disk is in.
 An ext4 disk keeps the directory layout.
+A disk already in the subvolume layout that also holds `workspace/` was booted by a rolled-back platform-init, which made a fresh one; it is set aside and kept, never moved, and the home in the subvolume boots.
 A btrfs disk that does not mount fails the boot and stays as it is, since btrfs has no repair a boot may run unattended.
 A start never copies smolvm's template over a disk that already holds a filesystem — not even one whose first format stopped short of resizing it to the size asked for.
 A stop has platform-init send the workload SIGTERM and give it a few seconds, as a pod's container gets, then sync and freeze that disk, and a guest that does not confirm it did is powered off anyway, so a stop or a delete always ends the machine.

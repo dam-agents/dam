@@ -337,14 +337,7 @@ fn mount_storage(target: &Path) -> (PathBuf, u32) {
         if let Err(e) = grow_btrfs(target) {
             logf!("WARNING: growing btrfs to the disk ({e}); it keeps the size it had");
         }
-        if target.join(guest::DISK_ROOT_DIR).exists() {
-            match migrate_to_subvolumes(target) {
-                Ok(()) => announce("moved the storage disk to the subvolume layout"),
-                Err(e) => announce(&format!(
-                    "WARNING: moving the storage disk to the subvolume layout ({e}); it boots in the directory layout, and the next boot tries again"
-                )),
-            }
-        }
+        settle_directory_layout(target);
         if !target.join(guest::DISK_ROOT_DIR).exists() {
             delete_migrated(target);
             for name in [guest::AGENT_DIR, guest::SYSTEM_DIR] {
@@ -378,6 +371,32 @@ fn mount_storage(target: &Path) -> (PathBuf, u32) {
         fatal!("creating {}: {e}", root.display());
     }
     (root, guest::LAYOUT_DIRECTORY)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what a btrfs disk that holds DISK_ROOT_DIR at its top becomes. One already marked as in the subvolume layout was booted by a rolled-back platform-init, and its DISK_ROOT_DIR is set aside (ROLLED_BACK_INFIX); any other moves to the subvolume layout, or stays in the directory layout when the move fails.
+fn settle_directory_layout(target: &Path) {
+    if target.join(guest::DISK_ROOT_DIR).exists()
+        && guest::system_store(target, guest::LAYOUT_FILE).exists()
+    {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_secs());
+        let aside = format!("{}{ROLLED_BACK_INFIX}{stamp}", guest::DISK_ROOT_DIR);
+        match rename_noreplace(&target.join(guest::DISK_ROOT_DIR), &target.join(&aside)) {
+            Ok(()) => announce(&format!(
+                "WARNING: the disk is in the subvolume layout but also holds {}, which a rolled-back platform-init made; it is kept as {aside}, and the home in the subvolume boots",
+                guest::DISK_ROOT_DIR
+            )),
+            Err(e) => fatal!("setting aside the {} a rolled-back platform-init made: {e}", guest::DISK_ROOT_DIR),
+        }
+    } else if target.join(guest::DISK_ROOT_DIR).exists() {
+        match migrate_to_subvolumes(target) {
+            Ok(()) => announce("moved the storage disk to the subvolume layout"),
+            Err(e) => announce(&format!(
+                "WARNING: moving the storage disk to the subvolume layout ({e}); it boots in the directory layout, and the next boot tries again"
+            )),
+        }
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: struct btrfs_ioctl_vol_args, which the resize and the subvolume ioctls take: a NUL-terminated name in a fixed buffer.
@@ -436,6 +455,9 @@ fn snapshot(parent: &Path, name: &str) -> io::Result<()> {
 
 // UNIT_BOUNDARY_DESCRIPTION: where a migration puts the disk's directory layout, at the top of the disk and inside the system subvolume, until the background delete is through with it. Every boot in the subvolume layout deletes what is left of it, so a delete cut short by a stop goes on at the next boot.
 const MIGRATED: &str = "workspace.migrated";
+
+// UNIT_BOUNDARY_DESCRIPTION: a disk in the subvolume layout that also holds DISK_ROOT_DIR was booted by a platform-init from before subvolumes, which found no DISK_ROOT_DIR and made a fresh one. What that boot wrote there may be the agent's work, so it is renamed aside under this infix and kept, never migrated: a migration would delete the live subvolumes first.
+const ROLLED_BACK_INFIX: &str = ".rolled-back-";
 const MIGRATING: &str = ".migrating";
 
 // UNIT_BOUNDARY_DESCRIPTION: moves a btrfs disk from the directory layout, everything under DISK_ROOT_DIR, to the subvolume layout. What else is at the top of the disk is set aside first: a disk smolvm's guest agent once booted holds its image and container directories, which nothing uses since platform-init replaced it. Each subvolume starts as a snapshot of the whole disk, which copies nothing, and becomes its store by renames inside it: the store's entries move up to its root, which takes the store's owner and mode, the rest is set aside, and the empty directories a snapshot shows for the subvolumes beside its source go. Nothing of the old tree is changed until both subvolumes are complete and the system one is marked with its layout; moving DISK_ROOT_DIR aside is then the one step that switches the disk. A boot cut short before it finds the directory layout and starts again, deleting the subvolumes the last attempt left. The home's subvolume must not show the rest to the agent, so its share of it is deleted before the switch; the system's, a copy of the home, is deleted in the background afterwards. A home entry named MIGRATED fails the move, and the disk stays in the directory layout.
@@ -1095,7 +1117,7 @@ mod tests {
             .any(|c| c == smolvm_protocol::ONLINE_MEMORY_GROWTH_CAPABILITY));
     }
 
-    // TEST_SCENARIO: a btrfs disk in the directory layout moves to the subvolume layout at boot: the home becomes the root of its own subvolume with its owner, mode and every entry, one named like the old layout's directory included, the platform state keeps its kept root and is marked with the new layout, and the old tree is set aside for the background delete, with what smolvm's guest agent left at the top. What an attempt cut short left is deleted first. Needs root and mkfs.btrfs, for a loop-mounted filesystem: `sudo -E cargo test -p platform-init -- --ignored migrates`.
+    // TEST_SCENARIO: a btrfs disk in the directory layout moves to the subvolume layout at boot: the home becomes the root of its own subvolume with its owner, mode and every entry, one named like the old layout's directory included, the platform state keeps its kept root and is marked with the new layout, and the old tree is set aside for the background delete, with what smolvm's guest agent left at the top. What an attempt cut short left is deleted first. A DISK_ROOT_DIR a rolled-back platform-init then makes beside the subvolumes is set aside and kept, and the live home stays. Needs root and mkfs.btrfs, for a loop-mounted filesystem: `sudo -E cargo test -p platform-init -- --ignored migrates`.
     #[test]
     #[ignore = "needs root and mkfs.btrfs"]
     fn migrates_a_directory_layout_disk_to_subvolumes() {
@@ -1188,6 +1210,29 @@ mod tests {
                 .collect();
             names.sort();
             assert_eq!(names, [guest::AGENT_DIR, guest::SYSTEM_DIR, MIGRATED]);
+            mkdir_all(&guest::agent_store(&old)).unwrap();
+            fs::write(
+                guest::agent_store(&old).join("rolled-back"),
+                b"written while rolled back",
+            )
+            .unwrap();
+            settle_directory_layout(&top);
+            assert_eq!(
+                fs::read(agent.join(".cache/file")).unwrap(),
+                b"cache",
+                "the live home stays"
+            );
+            let aside: Vec<_> = fs::read_dir(&top)
+                .unwrap()
+                .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+                .filter(|name| name.contains(ROLLED_BACK_INFIX))
+                .collect();
+            assert_eq!(aside.len(), 1, "the rolled-back tree is set aside");
+            assert_eq!(
+                fs::read(guest::agent_store(&top.join(&aside[0])).join("rolled-back")).unwrap(),
+                b"written while rolled back"
+            );
+            assert!(!old.exists());
             Ok(())
         };
         let result = checks();
