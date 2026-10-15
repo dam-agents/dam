@@ -1,8 +1,9 @@
 // UNIT_BOUNDARY_DESCRIPTION: the entrypoint of every vm-backend machine. It claims the machine's storage disk, moves the image onto a root of its own that lasts as long as the image does, mounts the agent's home from the disk, puts the temporary folders on the disk, and starts the image's own entrypoint, which it then supervises. It exists so persistence is the platform's to guarantee rather than the image's to implement: the runner supplies this binary, so an image that has never heard of this platform still keeps its agent's home across a stop, and a machine that cannot mount its disk does not boot at all rather than losing its work at the first stop.
+use std::collections::HashSet;
 use std::ffi::{CString, OsStr, OsString};
 use std::fs::{self, DirBuilder, File, OpenOptions};
 use std::io::{self, Seek, SeekFrom, Write};
-use std::os::fd::{AsRawFd, IntoRawFd};
+use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
@@ -121,7 +122,8 @@ pub fn run(command: Vec<OsString>) -> ! {
     };
     let swapping = compressed_swap();
     std::thread::spawn(move || reclaim_cold_cache(swapping));
-    std::thread::spawn(evict_scratch);
+    let scratch = scratch_folders();
+    std::thread::spawn(move || evict_scratch(&scratch));
     std::thread::spawn(trim_freed_blocks);
     if let Some(guard) = guard {
         std::thread::spawn(move || guard_pool(guard));
@@ -1144,12 +1146,74 @@ const EVICTED_INFIX: &str = ".evicted.";
 
 struct ScratchEntry {
     path: PathBuf,
+    shown: PathBuf,
     used: u64,
     bytes: u64,
     rebuildable: bool,
 }
 
-fn evict_scratch() {
+// UNIT_BOUNDARY_DESCRIPTION: a scratch folder opened for one pass. The pass names everything in it through `dir`'s descriptor and never by `shown`, so a folder swapped for a symlink after it was opened is not followed either. `mount` is the id of the mount it is on: nothing on another mount is scratch.
+struct ScratchRoot {
+    dir: File,
+    shown: PathBuf,
+    mount: u64,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the scratch folders eviction serves, each with the mount it is on at boot, before the agent runs: /tmp's own bind, and a home cache's home, or the cache itself when it already exists. A folder whose mount cannot be read is not served.
+fn scratch_folders() -> Vec<(PathBuf, u64)> {
+    let home = Path::new(guest::AGENT_HOME);
+    SCRATCH_DIRS
+        .iter()
+        .map(|(dir, ..)| PathBuf::from(dir))
+        .chain(HOME_CACHES.iter().map(|name| home.join(name)))
+        .filter_map(|dir| {
+            match statx(libc::AT_FDCWD, &dir)
+                .or_else(|_| statx(libc::AT_FDCWD, dir.parent().unwrap_or(&dir)))
+            {
+                Ok(info) => Some((dir, info.stx_mnt_id)),
+                Err(e) => {
+                    logf!("WARNING: reading the mount of {} ({e}); it is not evicted when the disk runs short", dir.display());
+                    None
+                }
+            }
+        })
+        .collect()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: opens the scratch folders for a pass, without following a symlink. A folder that is one, such as a ~/.cache an agent pointed at its work, is skipped, since what it points at is not scratch, and so is one that is no longer on the mount it had at boot, such as a work directory bound onto it. A missing folder is skipped quietly.
+fn open_scratch_roots(dirs: &[(PathBuf, u64)]) -> Vec<ScratchRoot> {
+    dirs.iter()
+        .filter_map(|(shown, boot_mount)| {
+            match OpenOptions::new()
+                .read(true)
+                .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
+                .open(shown)
+                .and_then(|dir| Ok((statx(dir.as_raw_fd(), Path::new(""))?.stx_mnt_id, dir)))
+            {
+                Ok((mount, _)) if mount != *boot_mount => {
+                    logf!("WARNING: not evicting from {}, which is a mount it was not at boot: what is mounted there is not scratch", shown.display());
+                    None
+                }
+                Ok((mount, dir)) => Some(ScratchRoot {
+                    dir,
+                    shown: shown.clone(),
+                    mount,
+                }),
+                Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+                Err(_) if fs::symlink_metadata(shown).is_ok_and(|info| info.is_symlink()) => {
+                    logf!("WARNING: not evicting from {}, which is a symlink: what it points at is not scratch", shown.display());
+                    None
+                }
+                Err(e) => {
+                    logf!("WARNING: not evicting from {} ({e})", shown.display());
+                    None
+                }
+            }
+        })
+        .collect()
+}
+
+fn evict_scratch(dirs: &[(PathBuf, u64)]) {
     let home = Path::new(guest::AGENT_HOME);
     let disk = match fs::metadata(home) {
         Ok(info) => info.dev(),
@@ -1158,11 +1222,6 @@ fn evict_scratch() {
             return;
         }
     };
-    let dirs: Vec<PathBuf> = SCRATCH_DIRS
-        .iter()
-        .map(|(dir, ..)| PathBuf::from(dir))
-        .chain(HOME_CACHES.iter().map(|name| home.join(name)))
-        .collect();
     let (mut stuck, mut served) = (false, None::<String>);
     loop {
         std::thread::sleep(EVICT_INTERVAL);
@@ -1179,17 +1238,25 @@ fn evict_scratch() {
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |since| since.as_secs());
         let (mut freed, mut deleted) = (0, Vec::new());
-        for entry in scratch_entries(&dirs, disk, now, pass.youngest) {
+        let locked = match fs::read_to_string("/proc/locks") {
+            Ok(table) => locked_files(&table),
+            Err(e) => {
+                logf!("WARNING: reading /proc/locks ({e}); no scratch is evicted, since a file a tool has locked could not be told apart");
+                continue;
+            }
+        };
+        let roots = open_scratch_roots(dirs);
+        for entry in scratch_entries(&roots, disk, &locked, now, pass.youngest) {
             if !pass.continues(free_percent(home), freed) {
                 break;
             }
             match evict(&entry.path, now) {
                 Ok(true) => {
                     freed += entry.bytes;
-                    deleted.push(entry.path.display().to_string());
+                    deleted.push(entry.shown.display().to_string());
                 }
                 Ok(false) => {}
-                Err(e) => logf!("WARNING: evicting {} ({e})", entry.path.display()),
+                Err(e) => logf!("WARNING: evicting {} ({e})", entry.shown.display()),
             }
         }
         if let Some(request) = request.filter(|_| pass.claim_only) {
@@ -1217,16 +1284,29 @@ fn evict_scratch() {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: every entry of the scratch folders that may be evicted at `now`, in the order to evict them: by the first EVICT_AGES pass it is old enough for, then rebuildable before not, then oldest first. An entry is left out when it was used within `youngest` seconds, when it holds the image's trust cache, a socket or fifo a process may still listen on, or a mount, or when it cannot be read.
-fn scratch_entries(dirs: &[PathBuf], disk: u64, now: u64, youngest: u64) -> Vec<ScratchEntry> {
+// UNIT_BOUNDARY_DESCRIPTION: every entry of the scratch folders that may be evicted at `now`, in the order to evict them: by the first EVICT_AGES pass it is old enough for, then rebuildable before not, then oldest first. An entry is left out when it was used within `youngest` seconds, when it holds the image's trust cache, a socket or fifo a process may still listen on, a mount, or a file in `locked`, or when it cannot be read.
+fn scratch_entries(
+    roots: &[ScratchRoot],
+    disk: u64,
+    locked: &HashSet<(u32, u32, u64)>,
+    now: u64,
+    youngest: u64,
+) -> Vec<ScratchEntry> {
     let trust = Path::new(TRUST_CACHE_PATH);
-    let mut entries: Vec<(usize, ScratchEntry)> = dirs
+    let mut entries: Vec<(usize, ScratchEntry)> = roots
         .iter()
-        .filter_map(|dir| fs::read_dir(dir).ok())
-        .flat_map(|names| names.flatten().map(|name| name.path()))
-        .filter(|path| !trust.starts_with(path))
-        .filter_map(|path| {
-            let (used, bytes) = tree_use(&path, disk)?;
+        .filter_map(|root| {
+            let at = PathBuf::from(format!("/proc/self/fd/{}", root.dir.as_raw_fd()));
+            Some((root, fs::read_dir(&at).ok()?))
+        })
+        .flat_map(|(root, names)| {
+            names
+                .flatten()
+                .map(|name| (name.path(), root.shown.join(name.file_name()), root.mount))
+        })
+        .filter(|(_, shown, _)| !trust.starts_with(shown))
+        .filter_map(|(path, shown, mount)| {
+            let (used, bytes) = tree_use(&path, disk, mount, locked)?;
             let leftover = path
                 .file_name()
                 .is_some_and(|name| name.to_string_lossy().contains(EVICTED_INFIX));
@@ -1240,6 +1320,7 @@ fn scratch_entries(dirs: &[PathBuf], disk: u64, now: u64, youngest: u64) -> Vec<
                 pass,
                 ScratchEntry {
                     path,
+                    shown,
                     used,
                     bytes,
                     rebuildable,
@@ -1251,23 +1332,53 @@ fn scratch_entries(dirs: &[PathBuf], disk: u64, now: u64, youngest: u64) -> Vec<
     entries.into_iter().map(|(_, entry)| entry).collect()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the newest modification or change time anywhere under `path`, and the bytes it holds, without following a symlink. None when the tree cannot be evicted whole: it leaves the disk's device, holds a socket or fifo, or a directory in it cannot be read.
-fn tree_use(path: &Path, disk: u64) -> Option<(u64, u64)> {
-    let info = fs::symlink_metadata(path).ok()?;
-    let kind = info.file_type();
-    if info.dev() != disk || !(kind.is_dir() || kind.is_file() || kind.is_symlink()) {
+// UNIT_BOUNDARY_DESCRIPTION: the newest modification or change time anywhere under `path`, and the bytes it holds, without following a symlink. None when the tree cannot be evicted whole: it leaves the disk's device or the scratch folder's `mount` — a bind mount on the same disk has the device but not the mount, and what it shows is someone's work — holds a socket or fifo or a file in `locked`, or a directory in it cannot be read.
+fn tree_use(
+    path: &Path,
+    disk: u64,
+    mount: u64,
+    locked: &HashSet<(u32, u32, u64)>,
+) -> Option<(u64, u64)> {
+    let info = statx(libc::AT_FDCWD, path).ok()?;
+    let kind = u32::from(info.stx_mode) & libc::S_IFMT;
+    if libc::makedev(info.stx_dev_major, info.stx_dev_minor) != disk
+        || info.stx_mnt_id != mount
+        || ![libc::S_IFDIR, libc::S_IFREG, libc::S_IFLNK].contains(&kind)
+        || locked.contains(&(info.stx_dev_major, info.stx_dev_minor, info.stx_ino))
+    {
         return None;
     }
-    let mut used = u64::try_from(info.mtime().max(info.ctime())).unwrap_or(0);
-    let mut bytes = info.blocks() * 512;
-    if kind.is_dir() {
+    let mut used = u64::try_from(info.stx_mtime.tv_sec.max(info.stx_ctime.tv_sec)).unwrap_or(0);
+    let mut bytes = info.stx_blocks * 512;
+    if kind == libc::S_IFDIR {
         for child in fs::read_dir(path).ok()? {
-            let (child_used, child_bytes) = tree_use(&child.ok()?.path(), disk)?;
+            let (child_used, child_bytes) = tree_use(&child.ok()?.path(), disk, mount, locked)?;
             used = used.max(child_used);
             bytes += child_bytes;
         }
     }
     Some((used, bytes))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: every file a process holds a lock on — BSD flock, POSIX or open file description — as its device's major and minor and its inode, from the kernel's lock table (/proc/locks), which platform-init, as the guest's first process, sees whole. A lock is how a tool says it still needs a file, wherever the file sits in an entry, so eviction keeps the entry whole. Reading the table takes no lock, so no tool is held up, and a lock taken after it is read is seen only by the next pass. A file open for writing without a lock is not looked for: its time moves as it is written, which keeps its entry.
+fn locked_files(table: &str) -> HashSet<(u32, u32, u64)> {
+    table
+        .lines()
+        .filter_map(|line| {
+            line.split_whitespace().find_map(|field| {
+                let mut parts = field.split(':');
+                let (major, minor, inode) = (parts.next()?, parts.next()?, parts.next()?);
+                if parts.next().is_some() {
+                    return None;
+                }
+                Some((
+                    u32::from_str_radix(major, 16).ok()?,
+                    u32::from_str_radix(minor, 16).ok()?,
+                    inode.parse().ok()?,
+                ))
+            })
+        })
+        .collect()
 }
 
 fn cache_tagged(dir: &Path) -> bool {
@@ -2467,13 +2578,84 @@ fn mkdir_all(path: &Path) -> io::Result<()> {
     DirBuilder::new().recursive(true).mode(0o755).create(path)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: deletes `path` and everything under it, never through a symlink and never into a mount. A work directory bound into a cache is the work itself, on the same disk, so the delete stops with an error at the first mount it meets, and what is mounted there stays. Every name is reached through its parent's descriptor, so a directory swapped for a link or a mount meanwhile is not followed either.
 fn remove_all(path: &Path) -> io::Result<()> {
-    match fs::symlink_metadata(path) {
+    let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{} names no entry", path.display()),
+        ));
+    };
+    let parent = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY)
+        .open(parent)?;
+    let mount = statx(parent.as_raw_fd(), Path::new(""))?.stx_mnt_id;
+    match remove_at(&parent, name, mount) {
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(e),
-        Ok(info) if info.is_dir() => fs::remove_dir_all(path),
-        Ok(_) => fs::remove_file(path),
+        removed => removed,
     }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a name that is not a directory is unlinked at once, which a file or link bound in place refuses with EBUSY. Only a directory costs a look at its mount, so a purge of millions of files makes one call for each.
+fn remove_at(dir: &File, name: &OsStr, mount: u64) -> io::Result<()> {
+    let c_name = cstring(name)?;
+    // SAFETY: c_name is NUL-terminated and outlives the call.
+    if unsafe { libc::unlinkat(dir.as_raw_fd(), c_name.as_ptr(), 0) } == 0 {
+        return Ok(());
+    }
+    let e = io::Error::last_os_error();
+    if e.raw_os_error() != Some(libc::EISDIR) {
+        return Err(e);
+    }
+    // SAFETY: c_name is NUL-terminated and outlives the call.
+    let fd = unsafe {
+        libc::openat(
+            dir.as_raw_fd(),
+            c_name.as_ptr(),
+            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    succeeded(fd >= 0)?;
+    // SAFETY: openat returned a descriptor nothing else owns.
+    let child = unsafe { File::from_raw_fd(fd) };
+    if statx(fd, Path::new(""))?.stx_mnt_id != mount {
+        return Err(io::Error::other(format!(
+            "{} is a mount, kept with what it holds",
+            Path::new(name).display()
+        )));
+    }
+    for entry in fs::read_dir(format!("/proc/self/fd/{fd}"))? {
+        remove_at(&child, &entry?.file_name(), mount)?;
+    }
+    // SAFETY: c_name is NUL-terminated and outlives the call.
+    succeeded(unsafe { libc::unlinkat(dir.as_raw_fd(), c_name.as_ptr(), libc::AT_REMOVEDIR) } == 0)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: statx(2) of `path` relative to the descriptor `dir`, or of `dir` itself for an empty path, without following a final symlink, with the id of the mount the entry is on. A kernel that reports no mount id is an error, since eviction cannot then tell a bind mount from scratch.
+fn statx(dir: libc::c_int, path: &Path) -> io::Result<libc::statx> {
+    let path = cstring(path.as_os_str())?;
+    let mut info = std::mem::MaybeUninit::<libc::statx>::zeroed();
+    // SAFETY: path is NUL-terminated and outlives the call, and info is a statx buffer the call may write.
+    let rc = unsafe {
+        libc::statx(
+            dir,
+            path.as_ptr(),
+            libc::AT_SYMLINK_NOFOLLOW | libc::AT_EMPTY_PATH,
+            libc::STATX_BASIC_STATS | libc::STATX_MNT_ID,
+            info.as_mut_ptr(),
+        )
+    };
+    succeeded(rc == 0)?;
+    // SAFETY: the buffer was zeroed, and statx is plain data, so every bit pattern is a valid value.
+    let info = unsafe { info.assume_init() };
+    if info.stx_mask & libc::STATX_MNT_ID == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "the kernel reports no mount id",
+        ));
+    }
+    Ok(info)
 }
 
 fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
@@ -3551,9 +3733,9 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        let dirs = [s.to_path_buf()];
+        let dirs = open_scratch_roots(&[(s.to_path_buf(), mount_of(s))]);
         let names = |now, disk| -> Vec<String> {
-            scratch_entries(&dirs, disk, now, EVICT_AGES[3])
+            scratch_entries(&dirs, disk, &HashSet::new(), now, EVICT_AGES[3])
                 .iter()
                 .map(|entry| {
                     entry
@@ -3577,20 +3759,231 @@ mod tests {
         rest.sort();
         assert_eq!(rest, ["forged", "link", "pr-body.md"]);
         assert_eq!(
-            scratch_entries(&dirs, disk, now + 2 * EVICT_AGES[3], CLAIM_EVICT_AGE).len(),
+            scratch_entries(
+                &dirs,
+                disk,
+                &HashSet::new(),
+                now + 2 * EVICT_AGES[3],
+                CLAIM_EVICT_AGE
+            )
+            .len(),
             1,
             "a claim pass keeps what was used within the hour"
         );
-        assert!(
-            scratch_entries(&dirs, disk, now + 2 * EVICT_AGES[3], EVICT_AGES[3])
-                .iter()
-                .any(|entry| entry.path.ends_with("go-build") && entry.bytes >= 8192)
-        );
+        assert!(scratch_entries(
+            &dirs,
+            disk,
+            &HashSet::new(),
+            now + 2 * EVICT_AGES[3],
+            EVICT_AGES[3]
+        )
+        .iter()
+        .any(|entry| entry.path.ends_with("go-build") && entry.bytes >= 8192));
         assert!(
             names(now + 2 * EVICT_AGES[3], disk + 1).is_empty(),
             "another device is not walked"
         );
         drop(socket);
+    }
+
+    // TEST_SCENARIO: a scratch folder that is itself a symlink to the agent's work, such as a ~/.cache pointed at a work directory, is not scratch: a pass offers nothing from it, and the work's long-unused file stays. A folder swapped for such a link after the pass opened it is still evicted from where it was opened, and the link's target keeps its file of the same name.
+    #[test]
+    fn a_scratch_folder_that_is_a_symlink_is_not_followed() {
+        let home = TempDir::new("evict-linked-home");
+        let h = home.path();
+        fs::create_dir_all(h.join("work")).unwrap();
+        fs::write(h.join("work/main.rs"), b"fn main() {}").unwrap();
+        std::os::unix::fs::symlink("work", h.join(".cache")).unwrap();
+        fs::create_dir_all(h.join(".npm/_cacache")).unwrap();
+        fs::write(h.join(".npm/main.rs"), b"cache").unwrap();
+        let disk = fs::metadata(h).unwrap().dev();
+        let later = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 2 * EVICT_AGES[0];
+
+        let roots = open_scratch_roots(&[
+            (h.join(".cache"), mount_of(h)),
+            (h.join(".npm"), mount_of(h)),
+        ]);
+        let offered = scratch_entries(&roots, disk, &HashSet::new(), later, EVICT_AGES[3]);
+        let mut shown: Vec<_> = offered.iter().map(|entry| entry.shown.clone()).collect();
+        shown.sort();
+        assert_eq!(shown, [h.join(".npm/_cacache"), h.join(".npm/main.rs")]);
+
+        fs::rename(h.join(".npm"), h.join("npm-moved")).unwrap();
+        std::os::unix::fs::symlink("work", h.join(".npm")).unwrap();
+        for entry in &offered {
+            assert!(evict(&entry.path, 9).unwrap());
+        }
+        assert_eq!(fs::read(h.join("work/main.rs")).unwrap(), b"fn main() {}");
+        assert_eq!(fs::read_dir(h.join("npm-moved")).unwrap().count(), 0);
+    }
+
+    fn mount_of(path: &Path) -> u64 {
+        statx(libc::AT_FDCWD, path).unwrap().stx_mnt_id
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: runs the test `name` again in a child of the test binary with a mount namespace of its own, and a user namespace unless it runs as root, so it may bind mount without root and without touching the host's mounts, and returns false when this process is that child. A host that allows no such namespace skips the test, with a line saying so.
+    fn in_mount_namespace(name: &str) -> bool {
+        const INSIDE: &str = "PLATFORM_INIT_TEST_IN_MOUNT_NAMESPACE";
+        if std::env::var_os(INSIDE).is_some() {
+            return false;
+        }
+        let unshare = || {
+            let mut command = std::process::Command::new("unshare");
+            // SAFETY: geteuid(2) reads no memory of this process and cannot fail.
+            if unsafe { libc::geteuid() } != 0 {
+                command.args(["--user", "--map-root-user"]);
+            }
+            command.arg("--mount");
+            command
+        };
+        let probe = unshare().args(["mount", "--bind", "/tmp", "/tmp"]).output();
+        if !probe.is_ok_and(|probe| probe.status.success()) {
+            eprintln!(
+                "skipping {name}: this host allows no user and mount namespace to bind mount in"
+            );
+            return true;
+        }
+        let status = unshare()
+            .arg(std::env::current_exe().unwrap())
+            .args(["--exact", name, "--test-threads=1", "--nocapture"])
+            .env(INSIDE, "1")
+            .status()
+            .unwrap();
+        assert!(status.success(), "{name} failed in its mount namespace");
+        true
+    }
+
+    // TEST_SCENARIO: a work directory bound into a home cache on the same disk has the cache's device, so only its mount tells it apart from scratch. The entry holding it is kept whole and its own old files stay with it, a single file bound in place is kept, a cache folder the work is bound onto is skipped, and only the plain cache entry beside them goes. A delete that meets a mount anyway, such as one made after a pass looked, stops there with an error and the work it shows stays. Binding needs a mount namespace, so the test runs in one of its own (in_mount_namespace).
+    #[test]
+    fn eviction_never_deletes_through_a_mount() {
+        if in_mount_namespace("boot::tests::eviction_never_deletes_through_a_mount") {
+            return;
+        }
+        let home = TempDir::new("evict-mounts");
+        let h = home.path();
+        for dir in ["work", "notes", ".cache/tool/inner", ".cache/plain", ".npm"] {
+            fs::create_dir_all(h.join(dir)).unwrap();
+        }
+        fs::write(h.join("work/main.rs"), b"fn main() {}").unwrap();
+        fs::write(h.join("notes/todo.md"), b"ship it").unwrap();
+        fs::write(h.join(".cache/tool/old"), b"x").unwrap();
+        fs::write(h.join(".cache/plain/old"), b"x").unwrap();
+        fs::write(h.join(".cache/single"), b"").unwrap();
+        let boot = [
+            (h.join(".cache"), mount_of(h)),
+            (h.join(".npm"), mount_of(h)),
+        ];
+        mount(&h.join("work"), &h.join(".cache/tool/inner"), libc::MS_BIND).unwrap();
+        mount(
+            &h.join("notes/todo.md"),
+            &h.join(".cache/single"),
+            libc::MS_BIND,
+        )
+        .unwrap();
+        mount(&h.join("notes"), &h.join(".npm"), libc::MS_BIND).unwrap();
+        let disk = fs::metadata(h).unwrap().dev();
+        let later = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 2 * EVICT_AGES[0];
+
+        let roots = open_scratch_roots(&boot);
+        let offered = scratch_entries(&roots, disk, &HashSet::new(), later, EVICT_AGES[3]);
+        let shown: Vec<_> = offered.iter().map(|entry| entry.shown.clone()).collect();
+        assert_eq!(shown, [h.join(".cache/plain")]);
+        for entry in &offered {
+            assert!(evict(&entry.path, 9).unwrap());
+        }
+        assert!(remove_all(&h.join(".cache/tool")).is_err());
+        assert!(remove_all(&h.join(".npm")).is_err());
+
+        assert_eq!(fs::read(h.join("work/main.rs")).unwrap(), b"fn main() {}");
+        assert_eq!(fs::read(h.join("notes/todo.md")).unwrap(), b"ship it");
+        assert!(!h.join(".cache/plain").exists());
+        for point in [".cache/tool/inner", ".cache/single", ".npm"] {
+            // SAFETY: the path is NUL-terminated and outlives the call.
+            assert_eq!(
+                unsafe { libc::umount2(cstring(h.join(point).as_os_str()).unwrap().as_ptr(), 0) },
+                0
+            );
+        }
+    }
+
+    // TEST_SCENARIO: a tool that locks a file deep in its cache still needs it, so the whole entry holding it stays while the lock is held — a BSD lock or a POSIX one — however long the entry has gone unused, and an unlocked entry beside it goes. Once the lock is released, the entry is offered again. The lock table is the kernel's own, which this test process's locks are in.
+    #[test]
+    fn an_entry_holding_a_locked_file_is_kept_whole() {
+        let home = TempDir::new("evict-locked");
+        let h = home.path();
+        for dir in [".cache/tool/sub", ".cache/posix", ".cache/plain"] {
+            fs::create_dir_all(h.join(dir)).unwrap();
+        }
+        for file in [
+            ".cache/tool/sub/db",
+            ".cache/tool/other",
+            ".cache/posix/db",
+            ".cache/plain/old",
+        ] {
+            fs::write(h.join(file), b"x").unwrap();
+        }
+        let roots = open_scratch_roots(&[(h.join(".cache"), mount_of(h))]);
+        let disk = fs::metadata(h).unwrap().dev();
+        let later = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 2 * EVICT_AGES[0];
+        let offered = || {
+            let locked = locked_files(&fs::read_to_string("/proc/locks").unwrap());
+            let mut shown: Vec<_> = scratch_entries(&roots, disk, &locked, later, EVICT_AGES[3])
+                .into_iter()
+                .map(|entry| entry.shown)
+                .collect();
+            shown.sort();
+            shown
+        };
+
+        let bsd = File::open(h.join(".cache/tool/sub/db")).unwrap();
+        // SAFETY: the descriptor is open for the call and flock takes no pointer.
+        assert_eq!(unsafe { libc::flock(bsd.as_raw_fd(), libc::LOCK_EX) }, 0);
+        let posix = OpenOptions::new()
+            .write(true)
+            .open(h.join(".cache/posix/db"))
+            .unwrap();
+        // SAFETY: a zeroed flock is a valid value, and every field the call reads is set below.
+        let mut range: libc::flock = unsafe { std::mem::zeroed() };
+        range.l_type = libc::F_WRLCK as _;
+        range.l_whence = libc::SEEK_SET as _;
+        // SAFETY: range is a flock that outlives the call.
+        assert_eq!(
+            unsafe { libc::fcntl(posix.as_raw_fd(), libc::F_SETLK, &range) },
+            0
+        );
+        assert_eq!(offered(), [h.join(".cache/plain")]);
+
+        drop(bsd);
+        drop(posix);
+        assert_eq!(
+            offered(),
+            [
+                h.join(".cache/plain"),
+                h.join(".cache/posix"),
+                h.join(".cache/tool")
+            ]
+        );
+    }
+
+    // TEST_SCENARIO: the kernel's lock table names each locked file by device and inode, the device's numbers in hex, also on the lines of a process waiting for a lock.
+    #[test]
+    fn the_lock_table_is_read_for_device_and_inode() {
+        let table = "1: FLOCK  ADVISORY  WRITE 812 fd:01:1234 0 EOF\n1: -> FLOCK  ADVISORY  WRITE 813 fd:01:1234 0 EOF\n2: OFDLCK ADVISORY  READ  -1 00:1a:77 0 0\n";
+        let mut locked: Vec<_> = locked_files(table).into_iter().collect();
+        locked.sort();
+        assert_eq!(locked, [(0, 0x1a, 77), (0xfd, 1, 1234)]);
     }
 
     // TEST_SCENARIO: an evicted entry goes whole, and a link goes without its target. An entry a process holds a BSD lock on stays, the way systemd-tmpfiles leaves it, and goes once the lock is released. A leftover of a failed eviction is deleted where it is.

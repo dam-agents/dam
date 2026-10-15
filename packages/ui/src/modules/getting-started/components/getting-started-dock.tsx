@@ -18,7 +18,7 @@ import { ChecklistPill } from "./checklist-pill.js";
 import { UnlockCelebration } from "./unlock-celebration.js";
 
 const PLACEMENT = {
-  page: "fixed right-4 bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:bottom-4",
+  page: "fixed right-4 bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] md:bottom-4",
   chat: "absolute right-3 bottom-14 md:bottom-3",
 } as const;
 
@@ -35,7 +35,7 @@ interface Props {
  * onboarding progress. While a celebration
  * plays, the checklist shows as the pill, so both fit on a short screen. On a
  * page it is fixed to
- * the window, above the mobile navigation bar. In the chat it sits inside the
+ * the lower right corner of the window. In the chat it sits inside the
  * message area, so it never covers the composer below it.
  */
 export function GettingStartedDock({ placement }: Props) {

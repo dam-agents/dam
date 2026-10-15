@@ -1,5 +1,5 @@
 import { useQueries } from "@tanstack/react-query";
-import { ChannelType, SessionType } from "api-server-api";
+import { type AttentionItem, ChannelType, SessionType } from "api-server-api";
 import { useCallback, useMemo } from "react";
 
 import type { AgentView } from "../../../types.js";
@@ -10,9 +10,8 @@ import {
   type TelegramChatsPage,
   telegramChatsQueryOptions,
 } from "../../telegram/api/queries.js";
-import type { FeedItem } from "../lib/feed-item.js";
 
-type FeedConversationLabel = (item: FeedItem) => string | undefined;
+type ConversationLabel = (session: AttentionItem) => string | undefined;
 
 function combineTelegramChats(
   results: readonly { data?: TelegramChatsPage }[],
@@ -26,26 +25,25 @@ function combineTelegramChats(
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Names the channel each feed row came from. The
- * feed spans every Agent the user owns, so Slack names come from the channel
- * list every Agent already carries, and Telegram chat titles are fetched only
- * for the Agents that have a Telegram row on the feed.
+ * UNIT_BOUNDARY_DESCRIPTION: Names the channel each Activity session came
+ * from. Activity spans every Agent the user owns, so Slack names come from the
+ * channel list every Agent already carries, and Telegram chat titles are
+ * fetched only for the Agents that have a Telegram session in Activity.
  */
-export function useFeedConversations(
-  items: readonly FeedItem[],
+export function useActivityConversations(
+  sessions: readonly AttentionItem[],
   agents: readonly AgentView[],
-): FeedConversationLabel {
+): ConversationLabel {
   const telegramReady = useAgents().data?.availableChannels?.telegram === true;
 
   const telegramAgentIds = useMemo(() => {
     const ids = new Set<string>();
-    for (const item of items) {
-      if (item.kind === "approval") continue;
-      if (item.session.type === SessionType.ChannelTelegram)
-        ids.add(item.agentId);
+    for (const session of sessions) {
+      if (session.type === SessionType.ChannelTelegram)
+        ids.add(session.agentId);
     }
     return [...ids].sort();
-  }, [items]);
+  }, [sessions]);
 
   const slackByChannelId = useMemo(() => {
     const byId = new Map<string, string>();
@@ -67,13 +65,11 @@ export function useFeedConversations(
   });
 
   return useCallback(
-    (item: FeedItem) =>
-      item.kind === "approval"
-        ? undefined
-        : conversationLabel(item.session, {
-            slackByChannelId,
-            telegramByConversationId,
-          }),
+    (session: AttentionItem) =>
+      conversationLabel(session, {
+        slackByChannelId,
+        telegramByConversationId,
+      }),
     [slackByChannelId, telegramByConversationId],
   );
 }

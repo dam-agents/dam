@@ -32,8 +32,10 @@ Free-page reporting returns the added RAM's freed pages as it does the boot RAM'
 
 **Guest RAM and the guest kernel are mapped for huge pages.** KVM maps guest memory in 2 MiB pages only where the host address agrees with the guest address modulo 2 MiB, and an ordinary allocation almost never does.
 Under nested virtualization each guest page the guest touches first then costs a fault through both hypervisors, about 20 µs for each 4 KiB.
-On a Linux runner libkrun therefore places the boot RAM, the RAM a grow adds, and a copy of the guest kernel at host addresses that agree, and the platform's libkrun patch asks the host for transparent huge pages there, which upstream libkrun does not.
-The request matters on a nested host whose huge-page defrag is `madvise`: a fallback to 4 KiB pages costs about 10 ms per 2 MiB, compaction about 2.
+On a Linux runner libkrun therefore places the boot RAM, the RAM a grow adds, and a copy of the guest kernel at host addresses that agree, so a host whose transparent huge pages are `always` backs them with huge pages.
+The platform does not advise that RAM with `MADV_HUGEPAGE`, as upstream libkrun does not.
+On the nested dev hosts (huge pages `always`, defrag `madvise`) the advice made no difference under real conditions; it helped only when page cache had nearly exhausted host memory, a state the nodes did not reach.
+On bare metal an advised fault compacts host memory synchronously and was slower, which is why upstream leaves it out.
 The added RAM is anonymous memory rather than libkrun's shared-memory file, which a host whose shared-memory huge pages are off (as on RHEL by default) backs with 4 KiB pages whatever its placement; only a branchable machine, which no runner starts, keeps the file.
 The guest writes the page descriptors of added RAM into that RAM itself, so huge pages also make the grow about five times faster.
 

@@ -1,20 +1,8 @@
-import {
-  Box,
-  Chemistry,
-  Play,
-  Restart,
-  Tools,
-  TrashCan,
-} from "@carbon/icons-react";
+import { Box, Chemistry } from "@carbon/icons-react";
 import { isStartRefusal } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import {
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
-import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
@@ -23,7 +11,6 @@ import {
   StatusBadge,
 } from "../../../components/status-indicator.js";
 import type { AgentView } from "../../../types.js";
-import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { AgentChannelChips } from "../../sandboxes/components/channels/agent-channel-chips.js";
 import { useKeptWorkCount } from "../../sessions/api/background-work.js";
 import { KitUpdateTag } from "../../starter-kits/components/kit-update-tag.js";
@@ -37,6 +24,7 @@ import {
   formatTemporaryDraw,
   type TemporaryDraw,
 } from "../utils/temporary-sandboxes.js";
+import { AgentActionsMenu } from "./agent-actions-menu.js";
 import { AgentAvatar, avatarMood } from "./avatar/agent-avatar.js";
 import {
   agentFailures,
@@ -44,7 +32,6 @@ import {
 } from "./contribution-failures-badge.js";
 import { GatewayFailureBadge } from "./gateway-failure-badge.js";
 import { MigrateRuntimeAction } from "./migrate-runtime-action.js";
-import { SleepMenuItem } from "./power-menu-items.js";
 import { UnsupportedContributionsBadge } from "./unsupported-contributions-badge.js";
 import { UpdateAvailableAction } from "./update-available-action.js";
 import { UsagePairs } from "./usage-pairs.js";
@@ -214,56 +201,19 @@ export function AgentRow({
         {agent.hibernationTimeoutMin === 0 && <AlwaysOnTag />}
         {}
         <span onClick={(e) => e.stopPropagation()}>
-          <RowActionsMenu label="Agent actions">
-            <DropdownMenuItem onSelect={onConfigure}>
-              <Tools />
-              {configureLabel}
-            </DropdownMenuItem>
-            {onAddToChannel && (messengers.slack || messengers.telegram) && (
-              <>
-                <DropdownMenuSeparator />
-                {messengers.slack && (
-                  <DropdownMenuItem onSelect={() => onAddToChannel("slack")}>
-                    <ConnectionIcon iconSlug="slack" alt="" size={16} />
-                    Add to Slack channel
-                  </DropdownMenuItem>
-                )}
-                {messengers.telegram && (
-                  <DropdownMenuItem onSelect={() => onAddToChannel("telegram")}>
-                    <ConnectionIcon iconSlug="telegram" alt="" size={16} />
-                    Add to Telegram chat
-                  </DropdownMenuItem>
-                )}
-              </>
-            )}
-            <DropdownMenuSeparator />
-            {display.state === "running" && (
-              <SleepMenuItem agent={agent} onSleep={onSleep} />
-            )}
-            {display.powerAction === "start" ? (
-              <DropdownMenuItem onSelect={onWake}>
-                <Play />
-                {display.state === "over_budget" ? "Start" : "Wake"}
-              </DropdownMenuItem>
-            ) : (
-              <DropdownMenuItem
-                disabled={display.powerAction === null}
-                onSelect={onRestart}
-              >
-                <Restart />
-                Restart
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              tone="danger"
-              disabled={deletePending}
-              onSelect={onDelete}
-            >
-              <TrashCan />
-              Delete agent
-            </DropdownMenuItem>
-          </RowActionsMenu>
+          <AgentActionsMenu
+            agent={agent}
+            display={display}
+            deletePending={deletePending}
+            configureLabel={configureLabel}
+            onConfigure={onConfigure}
+            onWake={onWake}
+            onRestart={onRestart}
+            onSleep={onSleep}
+            onDelete={onDelete}
+            onAddToChannel={onAddToChannel}
+            messengers={messengers}
+          />
         </span>
       </div>
     </Card>

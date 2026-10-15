@@ -152,3 +152,18 @@ grep -q '^kind: PrometheusRule$' <<<"$rendered" && grep -q '^kind: ServiceMonito
 "${KUBECONFORM[@]:0:3}" -skip "${KUBECONFORM[4]},ServiceMonitor,PrometheusRule" "$@" <<<"$rendered"
 ! helm template platform . "${COMMON[@]}" "${MONITORING[@]}" | grep -Eq '^kind: (PrometheusRule|ServiceMonitor)$' \
   || { echo "monitoring.enabled without prometheus-operator's API rendered its kinds" >&2; exit 1; }
+# The Postgres health checks take their timing from values: by default liveness
+# waits 10s per check and kills only after 6 misses, and an override reaches the
+# pod. Both keep checking the postgres database.
+pg_probes() {
+  helm template platform . "${COMMON[@]}" --show-only templates/postgres.yaml "$@" |
+    yq -o=json 'select(.kind == "StatefulSet") | .spec.template.spec.containers[0] | {"liveness": .livenessProbe, "readiness": .readinessProbe}'
+}
+probes=$(pg_probes)
+jq -e '.liveness.timeoutSeconds == 10 and .liveness.failureThreshold == 6 and .liveness.periodSeconds == 15
+  and .readiness.timeoutSeconds == 5 and .readiness.failureThreshold == 10 and .readiness.periodSeconds == 5
+  and ([.liveness, .readiness] | all(.exec.command | index(["-d", "postgres"]) != null))' <<<"$probes" >/dev/null ||
+  { echo "the default Postgres health checks are not the tolerant ones: $probes" >&2; exit 1; }
+probes=$(pg_probes --set postgres.livenessProbe.timeoutSeconds=30 --set postgres.readinessProbe.failureThreshold=3)
+jq -e '.liveness.timeoutSeconds == 30 and .liveness.failureThreshold == 6 and .readiness.failureThreshold == 3' <<<"$probes" >/dev/null ||
+  { echo "postgres.livenessProbe / readinessProbe overrides did not reach the Postgres pod: $probes" >&2; exit 1; }
