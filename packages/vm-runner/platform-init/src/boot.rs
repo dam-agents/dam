@@ -1265,7 +1265,7 @@ fn eviction_pass(
     })
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a guest's disk is a sparse file sized at the owner's whole claim, which every other disk of the owner shares, so the guest sees room the claim no longer has, and a write past the claim's last block fails as a broken disk would, for every agent of the owner at once. So platform-init holds the guest to the room the runner grants it (guest::STORAGE_ROOM_PATH): every POOL_GUARD_INTERVAL it sizes a file it preallocates on the disk so that what the guest can still write is the grant, less what the guest wrote since the grant came, and never less than POOL_GUARD_FLOOR. A write past it then fails inside the guest with "no space left on device", which the agent and its tools handle and the runner reports as a full home, and the claim stays writable for the other agents. Preallocated blocks are only marked in the guest's filesystem and never written, so the file takes nothing from the claim. It is an unnamed temporary file: no older platform-init, no image and no agent can find it, and the guest's filesystem frees it whenever the guest stops, however it stops. The floor keeps room for SSH keys, a shell and the agent's own state while every agent of an owner is held near zero, so with N agents running the claim can pass the runner's level by N times the floor.
+// UNIT_BOUNDARY_DESCRIPTION: a guest's disk is a sparse file sized at the owner's whole claim, which every other disk of the owner shares, so the guest sees room the claim no longer has, and a write past the claim's last block fails as a broken disk would, for every agent of the owner at once. So platform-init holds the guest to the room the runner grants it (guest::STORAGE_ROOM_PATH): every POOL_GUARD_INTERVAL it sizes a file it preallocates on the disk so that what the guest can still write is the grant, less what the guest wrote since the grant came, or, once that is below POOL_GUARD_FLOOR, the floor once per shortage (PoolGuard). A write past it then fails inside the guest with "no space left on device", which the agent and its tools handle and the runner reports as a full home, and the claim stays writable for the other agents. Preallocated blocks are only marked in the guest's filesystem and never written, so the file takes nothing from the claim. It is an unnamed temporary file: no older platform-init, no image and no agent can find it, and the guest's filesystem frees it whenever the guest stops, however it stops. The floor keeps room for SSH keys, a shell and the agent's own state while every agent of an owner is held near zero, so with N agents running the claim can pass the runner's level by N times the floor.
 const POOL_GUARD_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
 const POOL_GUARD_FLOOR: u64 = 256 << 20;
 const POOL_GUARD_STEP: u64 = 16 << 20;
@@ -1289,21 +1289,41 @@ fn pool_guard(root: &Path) -> Option<File> {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the room the runner granted, as its id and bytes, and what the guest had written when it first read that grant.
-struct Grant {
-    id: String,
-    bytes: u64,
-    used_at: u64,
+// UNIT_BOUNDARY_DESCRIPTION: what the guard knows between two looks: the latest grant, as its id and bytes and what the guest had written when it came, and, once the guest is held below the floor, what it had written then. The floor is one allowance per shortage and not per look: it counts down from that point across every grant too small to hold it, and is given again only once a grant arrives that holds it, which means the claim has room again. So a guest past its grant adds at most the floor in all, however many grants of nothing the runner renews.
+#[derive(Default)]
+struct PoolGuard {
+    grant: Option<(String, u64, u64)>,
+    floor_from: Option<u64>,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how large the guard file is to be, given the guest could still write `avail` bytes without it and has written `used` bytes of its own: what is left of the grant counts down by what the guest wrote since, the floor stays, and the file takes the rest. No grant holds nothing back.
-fn guard_size(grant: Option<&Grant>, avail: u64, used: u64) -> u64 {
-    grant.map_or(0, |grant| {
-        let left = grant
-            .bytes
-            .saturating_sub(used.saturating_sub(grant.used_at));
-        avail.saturating_sub(left.max(POOL_GUARD_FLOOR))
-    })
+impl PoolGuard {
+    // UNIT_BOUNDARY_DESCRIPTION: takes one look's grant, and returns how large the guard file is to be, given the guest could still write `avail` bytes without it and has written `used` bytes of its own. No grant holds nothing back.
+    fn size(&mut self, grant: Option<(String, u64)>, avail: u64, used: u64) -> u64 {
+        match grant {
+            None => {
+                *self = PoolGuard::default();
+                return 0;
+            }
+            Some((id, bytes)) if self.grant.as_ref().is_none_or(|(held, ..)| *held != id) => {
+                if bytes >= POOL_GUARD_FLOOR {
+                    self.floor_from = None;
+                }
+                self.grant = Some((id, bytes, used));
+            }
+            Some(_) => {}
+        }
+        let Some((_, bytes, used_at)) = self.grant else {
+            return 0;
+        };
+        let left = bytes.saturating_sub(used.saturating_sub(used_at));
+        if left < POOL_GUARD_FLOOR && self.floor_from.is_none() {
+            self.floor_from = Some(used);
+        }
+        let floor = self.floor_from.map_or(POOL_GUARD_FLOOR, |from| {
+            POOL_GUARD_FLOOR.saturating_sub(used.saturating_sub(from))
+        });
+        avail.saturating_sub(left.max(floor))
+    }
 }
 
 fn read_grant(text: &str) -> Option<(String, u64)> {
@@ -1314,7 +1334,7 @@ fn read_grant(text: &str) -> Option<(String, u64)> {
 
 fn guard_pool(guard: File) {
     let home = Path::new(guest::AGENT_HOME);
-    let mut grant: Option<Grant> = None;
+    let mut state = PoolGuard::default();
     let mut held = 0u64;
     loop {
         std::thread::sleep(POOL_GUARD_INTERVAL);
@@ -1333,22 +1353,11 @@ fn guard_pool(guard: File) {
             .saturating_mul(size)
             .saturating_sub(held);
         let avail = avail.saturating_mul(size).saturating_add(held);
-        match fs::read_to_string(guest::STORAGE_ROOM_PATH)
+        let grant = fs::read_to_string(guest::STORAGE_ROOM_PATH)
             .ok()
             .as_deref()
-            .and_then(read_grant)
-        {
-            None => grant = None,
-            Some((id, bytes)) if grant.as_ref().is_none_or(|grant| grant.id != id) => {
-                grant = Some(Grant {
-                    id,
-                    bytes,
-                    used_at: used,
-                });
-            }
-            Some(_) => {}
-        }
-        let want = guard_size(grant.as_ref(), avail, used);
+            .and_then(read_grant);
+        let want = state.size(grant, avail, used);
         if want.abs_diff(held) < POOL_GUARD_STEP && !(want == 0 && held > 0) {
             continue;
         }
@@ -2370,22 +2379,45 @@ mod tests {
     #[test]
     fn the_storage_guard_leaves_the_guest_its_grant() {
         let gib = 1u64 << 30;
-        let grant = Grant {
-            id: "1".into(),
-            bytes: 10 * gib,
-            used_at: 5 * gib,
-        };
-        assert_eq!(guard_size(None, 90 * gib, 5 * gib), 0);
-        assert_eq!(guard_size(Some(&grant), 90 * gib, 5 * gib), 80 * gib);
-        assert_eq!(guard_size(Some(&grant), 86 * gib, 9 * gib), 80 * gib);
+        let grant = |id: &str, bytes| Some((id.to_string(), bytes));
+        assert_eq!(PoolGuard::default().size(None, 90 * gib, 5 * gib), 0);
+        let mut guard = PoolGuard::default();
         assert_eq!(
-            guard_size(Some(&grant), 80 * gib, 20 * gib),
-            80 * gib - POOL_GUARD_FLOOR
+            guard.size(grant("1", 10 * gib), 90 * gib, 5 * gib),
+            80 * gib
         );
-        assert_eq!(guard_size(Some(&grant), 8 * gib, 5 * gib), 0);
+        assert_eq!(
+            guard.size(grant("1", 10 * gib), 86 * gib, 9 * gib),
+            80 * gib
+        );
+        assert_eq!(
+            guard.size(grant("2", 10 * gib), 86 * gib, 9 * gib),
+            76 * gib
+        );
+        assert_eq!(guard.size(grant("3", 10 * gib), 8 * gib, 9 * gib), 0);
         assert_eq!(read_grant("7 1024\n"), Some(("7".into(), 1024)));
         assert_eq!(read_grant("7"), None);
         assert_eq!(read_grant(""), None);
+    }
+
+    // TEST_SCENARIO: a guest that writes without pause past a grant of nothing, which the runner renews at every look while the claim stays full, may add the floor once and then nothing more: the floor counts down across the renewed grants rather than coming back with each, which would let one writer fill the claim a floor at a time. A grant with room gives the floor back.
+    #[test]
+    fn a_writer_past_its_grant_adds_at_most_the_floor_across_looks() {
+        let (disk, start) = (100u64 << 30, 10u64 << 30);
+        let mut guard = PoolGuard::default();
+        let mut used = start;
+        for tick in 0..400u64 {
+            let room = Some(((tick / 15).to_string(), 0));
+            let want = guard.size(room, disk - used, used);
+            used += (disk - used).saturating_sub(want).min(100 << 20);
+        }
+        assert!(
+            used - start <= POOL_GUARD_FLOOR,
+            "wrote {} bytes past a grant of nothing",
+            used - start
+        );
+        let want = guard.size(Some(("room".into(), 1 << 30)), disk - used, used);
+        assert_eq!(disk - used - want, 1 << 30);
     }
 
     // TEST_SCENARIO: the guard file has no name, so no older platform-init, image or agent can find it, and the filesystem frees it once the guest stops; a disk where it cannot be made boots without it.
