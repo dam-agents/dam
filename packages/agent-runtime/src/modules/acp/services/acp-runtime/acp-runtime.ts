@@ -138,7 +138,7 @@ export interface AcpRuntime {
   pendingRestart(): PendingRestart | null;
   applyPendingRestart(): boolean;
   onPendingRestartChange(cb: () => void): void;
-  shutdown(): void;
+  shutdown(scope?: "process" | "lease"): void;
 }
 
 export interface RunningHarness {
@@ -251,6 +251,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   };
 
   let shuttingDown = false;
+  let processExiting = false;
 
   const autonomousTurns = createAutonomousTurns({
     onEnded: (sessionId, turnId) =>
@@ -271,16 +272,23 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       channel,
       promptId,
       queuedAt,
+      frame,
     }) => {
       autonomousTurns.end(sessionId);
       generating.add(sessionId);
+      const echoId = promptId ?? randomUUID();
       appendUserPromptToLog(
         sessionId,
         typed,
         queuedAt === undefined ? channel : null,
-        promptId ?? randomUUID(),
+        echoId,
       );
-      deps.activeTurns.record(sessionId);
+      deps.activeTurns.record(
+        sessionId,
+        deps.sessionMetadata?.get(sessionId)?.unstored === true
+          ? undeliveredOf(echoId, frame, new Date().toISOString())
+          : undefined,
+      );
       if (unattended === true) {
         const at = deps.sessionMetadata?.startRun(sessionId);
         if (at) announceRunStart(sessionId, at);
@@ -313,6 +321,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       checkPendingRestart();
     },
     onTurnInterrupted: (sessionId, turn) => {
+      const unstoredPrompt = processExiting
+        ? undefined
+        : deps.activeTurns.promptOf(sessionId);
+      if (unstoredPrompt)
+        deps.undeliveredPrompts.remember(sessionId, [unstoredPrompt]);
       if (!turn.runPrompt && !isRunSession(sessionId)) return;
       const buffer = runTextBuffers.get(sessionId);
       runTextBuffers.delete(sessionId);
@@ -391,6 +404,19 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     },
     undeliveredFor(sessionId) {
       return deps.undeliveredPrompts.readFor(sessionId);
+    },
+    settleUnstored(sessionId) {
+      if (deps.sessionMetadata?.get(sessionId)?.unstored !== true) return null;
+      if (promptScheduler.hasWork(sessionId)) return null;
+      const cut = deps.activeTurns
+        .leftovers()
+        .find((m) => m.sessionId === sessionId);
+      if (cut?.prompt)
+        deps.undeliveredPrompts.remember(sessionId, [cut.prompt]);
+      if (cut) deps.activeTurns.remove(sessionId);
+      const undelivered = deps.undeliveredPrompts.readFor(sessionId);
+      if (undelivered.length === 0) retireSession(sessionId);
+      return undelivered;
     },
     queueOf(sessionId) {
       return promptScheduler.snapshot(sessionId);
@@ -1396,6 +1422,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             deps.sessionMetadata
           ) {
             deps.sessionMetadata.set(sidFromResult, mapping.platformMeta ?? {});
+            deps.sessionMetadata.markUnstored(sidFromResult);
             syncSettings(sidFromResult);
           }
         }
@@ -1465,6 +1492,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           if (turnEnded) {
             openToolCalls.delete(sid);
             generating.delete(sid);
+            deps.sessionMetadata?.markStored(sid);
           }
           for (const follower of steered)
             answerSteered(follower, extractStopReason(frame));
@@ -2036,7 +2064,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       pendingRestartListeners.push(cb);
     },
 
-    shutdown() {
+    shutdown(scope = "process") {
+      processExiting = scope === "process";
       lease.shutdown();
     },
   };

@@ -85,7 +85,7 @@ describe("acp-runtime: env changes", () => {
       undelivered
         .readFor(SESSION)
         .flatMap((p) => p.blocks.map((b) => (b.type === "text" ? b.text : ""))),
-    ).toEqual(["then check the logs"]);
+    ).toEqual(["run the migration", "then check the logs"]);
   });
 
   /**
