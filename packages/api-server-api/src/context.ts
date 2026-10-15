@@ -10,6 +10,7 @@ import type {
 } from "./modules/satellites/types.js";
 import type { CaseStudiesService } from "./modules/case-studies/types.js";
 import type { ChannelsService } from "./modules/channels/types.js";
+import type { ChatFormPreferencesService } from "./modules/chat-forms/preferences.js";
 import type { ConnectionsService } from "./modules/connections/types.js";
 import type { E2eService } from "./modules/e2e/types.js";
 import type {
@@ -68,6 +69,7 @@ export interface ApiContext {
   artifactLibrary: ArtifactLibraryService;
   caseStudies: CaseStudiesService;
   features: FeaturesService;
+  chatFormPreferences: ChatFormPreferencesService;
   gettingStarted: GettingStartedService;
   files: FilesService;
   harnessConfig: HarnessConfigService;

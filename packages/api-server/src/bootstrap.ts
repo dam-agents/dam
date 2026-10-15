@@ -251,6 +251,7 @@ import {
   listPendingApprovalAgentIds,
 } from "./modules/approvals/compose.js";
 import { createWrapperFrameSender } from "./modules/approvals/infrastructure/wrapper-frame-sender.js";
+import { createChatFormPreferencesCleanup } from "./modules/chat-forms/index.js";
 import {
   composeSpendSystem,
   createSpendLimitsCleanupHook,
@@ -1439,6 +1440,10 @@ export async function bootstrap() {
       name: "satellite-grants",
       listAgentIds: () => satellitesBoot.listAgentIds(),
       cleanup: satellitesBoot.onAgentDeleted,
+    },
+    {
+      name: "chat-form-preferences",
+      ...createChatFormPreferencesCleanup(db),
     },
     {
       name: "agent-env",

@@ -30,6 +30,10 @@ import { composeStarterKitsForOwner } from "../../../modules/starter-kits/index.
 import { composeKbSharesForOwner } from "../../../modules/kb-shares/index.js";
 import { composeCaseStudiesForOwner } from "../../../modules/case-studies/index.js";
 import { composeFeaturesForOwner } from "../../../modules/features/index.js";
+import {
+  composeChatFormPreferencesForOwner,
+  createChatFormPreferencesReader,
+} from "../../../modules/chat-forms/index.js";
 import { composeSkillsModule } from "../../../modules/skills/compose.js";
 import { composeFilesModule } from "../../../modules/files/files-service.js";
 import { composeConnectionsForOwner } from "../../../modules/connections/compose.js";
@@ -100,6 +104,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     cpu: config.agentDefaultCpuLimit,
     memory: config.agentDefaultMemoryLimit,
   };
+  const readChatFormPreferences = createChatFormPreferencesReader(db);
 
   return (user: UserIdentity, surface: string): ApiContext => {
     const connections = composeConnectionsForOwner({
@@ -255,10 +260,19 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       kitUpstream,
       kitUpdateMarks: createKitUpdateMarks(agentsRepo),
       virtualizationEnabled: config.virtualizationEnabled,
-      chatFormsEnabled: async () => (await features.flags())["chat-forms"],
+      chatFormPreferences: (agentId) =>
+        readChatFormPreferences(
+          agentId,
+          async () => (await features.flags())["chat-forms"],
+        ),
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agentExists(agentId)) && ownerSub === user.sub;
+    const chatFormPreferences = composeChatFormPreferencesForOwner({
+      db,
+      ownerSub: user.sub,
+      isAgentOwnedBy,
+    });
     const { service: egressRules } = composeEgressRulesModule({
       db,
       ownerSub: user.sub,
@@ -376,6 +390,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       artifactLibrary,
       caseStudies,
       features,
+      chatFormPreferences,
       gettingStarted: gettingStarted.forOwner(user.sub),
       files,
       harnessConfig,

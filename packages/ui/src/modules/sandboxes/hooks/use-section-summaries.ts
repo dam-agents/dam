@@ -6,6 +6,8 @@ import {
 import { useMemo } from "react";
 
 import type { AgentView } from "../../../types.js";
+import { useChatFormPreferences } from "../../a2ui/api/queries.js";
+import { useChatFormsEnabled } from "../../a2ui/hooks/use-chat-forms-enabled.js";
 import {
   useHarnessConfigStatus,
   useResolvedHarnessConfig,
@@ -52,6 +54,12 @@ const PRESET_SUMMARY: Record<EgressPreset, string> = {
   none: "Default-deny",
   all: "Allow everything",
 };
+
+const CHAT_FORMS_SUMMARY = {
+  all: "Whenever they help",
+  input: "Only to ask for input",
+  off: "Off",
+} as const;
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
@@ -231,9 +239,23 @@ export function useSectionSummaries(agent: AgentView | null): {
     limitCoverage.paid,
   ]);
 
+  const chatFormsEnabled = useChatFormsEnabled();
+  const { data: chatForms } = useChatFormPreferences(
+    chatFormsEnabled ? (agentId ?? null) : null,
+  );
+  const chatFormsSummary = chatForms
+    ? [
+        CHAT_FORMS_SUMMARY[chatForms.forms],
+        ...(chatForms.forms !== "off" && chatForms.pacing === "one-at-a-time"
+          ? ["one at a time"]
+          : []),
+      ].join(" · ")
+    : undefined;
+
   return {
     summaries: {
       setup,
+      "chat-forms": chatFormsSummary,
       providers: providersSummary,
       connections,
       network,

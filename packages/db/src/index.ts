@@ -12,6 +12,7 @@ export {
   agentSkills,
   agentSkillPublishes,
   agentEnv,
+  agentChatFormPreferences,
   agentSessions,
   agentPublicProfiles,
   egressRules,

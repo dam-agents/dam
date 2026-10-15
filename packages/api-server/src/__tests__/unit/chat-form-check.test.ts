@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: check_chat_form validates an agent's chat form the way the web chat replays it, and after the third failed attempt tells the agent to ask in plain text.
+// TEST_OVERVIEW: check_chat_form validates an agent's chat form the way the web chat replays it, reports forms that go against the agent's chat form preferences, and after the third failed attempt tells the agent to ask in plain text.
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -7,6 +7,8 @@ import {
   A2UI_CHAT_EXTENSION_ID,
   A2UI_PLATFORM_CATALOG_ID,
   checkChatForm,
+  DEFAULT_CHAT_FORM_PREFERENCES,
+  type ChatFormPreferences,
 } from "api-server-api/chat-forms";
 import { registerChatFormTools } from "../../modules/chat-forms/index.js";
 
@@ -37,9 +39,41 @@ const LOCKED_WITHOUT_BUTTON = block([
   },
 ]);
 
-async function client() {
+const TWO_QUESTIONS_LOCKED = block([
+  {
+    version: "v1.0",
+    createSurface: {
+      surfaceId: "setup",
+      catalogId: A2UI_PLATFORM_CATALOG_ID,
+      metadata: {
+        extensions: { [A2UI_CHAT_EXTENSION_ID]: { lockComposer: true } },
+      },
+      components: [
+        { id: "root", component: "Column", children: ["cadence", "on", "go"] },
+        {
+          id: "cadence",
+          component: "ChoicePicker",
+          options: [{ label: "Weekly (Recommended)", value: "weekly" }],
+          value: { "@path": "/cadence" },
+        },
+        { id: "on", component: "Switch", label: "Notify", value: true },
+        {
+          id: "go",
+          component: "Button",
+          child: "label",
+          action: { event: { name: "save" } },
+        },
+        { id: "label", component: "Text", text: "Save" },
+      ],
+    },
+  },
+]);
+
+async function client(
+  preferences: ChatFormPreferences = DEFAULT_CHAT_FORM_PREFERENCES,
+) {
   const server = new McpServer({ name: "test", version: "1.0.0" });
-  registerChatFormTools(server);
+  registerChatFormTools(server, preferences);
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await server.connect(serverSide);
   const mcp = new Client({ name: "test", version: "1.0.0" });
@@ -73,6 +107,34 @@ describe("check_chat_form", () => {
       surfaces: [{ surfaceId: "earlier", created: false, lockComposer: false }],
       problems: [],
     });
+  });
+
+  // TEST_SCENARIO: with one question per form, no recommendations and no input lock, the tool reports each of them on a form the defaults accept.
+  it("reports a form that goes against the agent's chat form preferences", async () => {
+    expect(checkChatForm(TWO_QUESTIONS_LOCKED).ok).toBe(true);
+    const mcp = await client({
+      forms: "input",
+      pacing: "one-at-a-time",
+      recommend: "off",
+      lockComposer: false,
+    });
+    const result = await mcp.callTool({
+      name: "check_chat_form",
+      arguments: { reply: TWO_QUESTIONS_LOCKED, attempt: 1 },
+    });
+    const { ok, problems } = JSON.parse(text(result)) as {
+      ok: boolean;
+      problems: { code: string; message: string }[];
+    };
+    expect(ok).toBe(false);
+    expect(problems.map((problem) => problem.code)).toEqual([
+      "USER_PREFERENCE",
+      "USER_PREFERENCE",
+      "USER_PREFERENCE",
+    ]);
+    expect(problems.map((problem) => problem.message).join("\n")).toMatch(
+      /one question per form[\s\S]*recommendations[\s\S]*Remove lockComposer/,
+    );
   });
 
   // TEST_SCENARIO: the third failed check tells the agent to ask in plain text, and a fourth attempt is refused.

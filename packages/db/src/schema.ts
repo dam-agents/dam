@@ -398,6 +398,14 @@ export const agentEnv = pgTable(
   ],
 );
 
+export const agentChatFormPreferences = pgTable("agent_chat_form_preferences", {
+  agentId: text("agent_id").primaryKey(),
+  preferences: jsonb("preferences").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 export const agentPublicProfiles = pgTable("agent_public_profiles", {
   agentId: text("agent_id").primaryKey(),
   name: text("name").notNull(),
