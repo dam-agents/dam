@@ -1459,6 +1459,7 @@ export function createAgentsService(deps: {
         return err({ type: "RuntimeMigrating", failed: hold === "failed" });
       const infra = await deps.repo.wake(id);
       if (!infra) return err({ type: "AgentNotFound" });
+      if (infra === "disabled") return err({ type: "AgentDisabled" });
       securityLog("info", "agent.wake", {
         category: "privileged",
         actor: deps.owner ?? null,
@@ -1514,6 +1515,33 @@ export function createAgentsService(deps: {
         actorKind: "user",
         agentId: id,
         result: "success",
+      });
+      return project(infra);
+    },
+
+    async setDisabled(id, disabled) {
+      if (!(await ownsOrDeny(id, "agent.setDisabled"))) return null;
+      const current = await deps.repo.get(id, deps.owner);
+      if (!current) return null;
+      if ((current.runtimeMigrationHold ?? "none") !== "none")
+        throw new TRPCError({
+          code: "CONFLICT",
+          message:
+            "This agent is moving to the new runtime; abort the move to disable it",
+        });
+      const infra = await deps.repo.setDisabled(id, disabled);
+      if (!infra) return null;
+      securityLog("info", disabled ? "agent.disable" : "agent.enable", {
+        category: "privileged",
+        actor: deps.owner ?? null,
+        actorKind: "user",
+        agentId: id,
+        result: "success",
+      });
+      emit({
+        type: EventType.AgentUpdated,
+        agentId: id,
+        ...(deps.owner ? { ownerSub: deps.owner } : {}),
       });
       return project(infra);
     },

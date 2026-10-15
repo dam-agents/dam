@@ -214,7 +214,7 @@ export function ChatView() {
   const agentView = agents.find((a) => a.id === selectedAgent) ?? null;
   const runtimeOutdated = agentView?.features.liveUpdates === false;
   const agentDisplay = agentView
-    ? resolveAgentDisplay(agentView, restartingIds, undefined, slowStartIds)
+    ? resolveAgentDisplay(agentView, restartingIds, slowStartIds)
     : null;
   const selectedAgentName = agentView?.name ?? selectedAgent;
   const agentStarting =
@@ -721,7 +721,7 @@ export function ChatView() {
               <EditableAgentIdentity
                 agent={agentView}
                 avatarSize={32}
-                mood={avatarMood(agentDisplay?.state, agentView.stopRequested)}
+                mood={avatarMood(agentDisplay?.state, agentView)}
                 avatarClassName="@max-[149px]:hidden"
                 nameClassName="text-sm font-bold text-foreground"
               />

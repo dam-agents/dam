@@ -87,6 +87,7 @@ function makeDeps(opts?: {
   once?: boolean;
   onceResult?: string;
   runtimeMigrating?: boolean;
+  agentDisabled?: boolean;
   enabled?: boolean;
   firePair?: FirePair;
   choices?: {
@@ -224,6 +225,9 @@ function makeDeps(opts?: {
       : {}),
     ...(opts?.runtimeMigrating !== undefined
       ? { runtimeMigrating: async () => opts.runtimeMigrating === true }
+      : {}),
+    ...(opts?.agentDisabled !== undefined
+      ? { agentDisabled: async () => opts.agentDisabled === true }
       : {}),
     log: () => {},
     now: () => new Date("2026-06-12T10:30:00Z"),
@@ -366,6 +370,25 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
 });
 
 describe("scheduler-runner fire", () => {
+  // TEST_SCENARIO: a disabled agent does nothing, so a recurring fire neither commits a trigger nor wakes it; the occurrence is held with a reason the schedules page shows, and the next one is armed for when the agent is enabled again.
+  it("holds the occurrence while the agent is disabled", async () => {
+    const { runner, calls, fires, enqueued } = makeDeps({ agentDisabled: true });
+
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+
+    expect(calls).toEqual([]);
+    expect(fires).toEqual([
+      {
+        result: "held: agent disabled",
+        nextRun: new Date("2026-06-12T11:00:00Z"),
+      },
+    ]);
+    expect(enqueued).toEqual([new Date("2026-06-12T11:00:00Z")]);
+  });
+
   // TEST_SCENARIO: while an agent moves to the new runtime the controller holds it down, so a fire would only wait out the wake and read as a failed run. The occurrence is held with a reason the schedules page shows, and the next one is armed as usual.
   it("holds the occurrence while the agent is moving to the new runtime", async () => {
     const { runner, calls, fires, enqueued } = makeDeps({
@@ -453,6 +476,22 @@ describe("scheduler-runner fire", () => {
       `wake:${AGENT_ID}`,
     ]);
     expect(fires).toEqual([{ result: "delivering", nextRun: null }]);
+  });
+
+  // TEST_SCENARIO: a one-time task due while its agent is disabled is recorded missed, as a task past its window is, and neither commits a trigger nor wakes the agent.
+  it("misses a one-time fire while the agent is disabled", async () => {
+    const { runner, calls, fires } = makeDeps({
+      once: true,
+      agentDisabled: true,
+    });
+
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+
+    expect(calls).toEqual([]);
+    expect(fires).toEqual([{ result: "missed", nextRun: null }]);
   });
 
   // TEST_SCENARIO: once the event is committed the task will run when the Agent is Ready, so a poke that fails afterwards must not overwrite delivering with the error — the settle listener replaces delivering only, and a failed result would hide a task that ran.

@@ -1,11 +1,11 @@
 import { EdgeDevice, Time, Warning } from "@carbon/icons-react";
-import type { AvatarMood } from "api-server-api/avatar/svg";
 
 import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../types.js";
 import {
   AgentAvatar,
+  type AgentAvatarMood,
   avatarMood,
 } from "../../agents/components/avatar/agent-avatar.js";
 import type { ArtifactTouched } from "../api/queries.js";
@@ -72,7 +72,7 @@ function RowIdentity({
   kind: RowKind;
   avatarName: string | undefined;
   avatar: string | null | undefined;
-  mood: AvatarMood;
+  mood: AgentAvatarMood;
 }) {
   if (avatarName === undefined) {
     return (
@@ -154,7 +154,7 @@ export function NotificationRow({
           kind={kind}
           avatarName={avatars ? avatarName : undefined}
           avatar={agent?.avatar}
-          mood={avatarMood(agent?.state, agent?.stopRequested)}
+          mood={avatarMood(agent?.state, agent)}
         />
         {running && (
           <span

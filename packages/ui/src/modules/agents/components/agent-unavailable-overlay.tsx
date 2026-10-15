@@ -22,6 +22,7 @@ import { VmRuntimeBadge } from "./vm-runtime-badge.js";
 
 const OVERLAY_ICON: Partial<Record<AgentDisplayState, typeof Asleep>> = {
   hibernated: Asleep,
+  disabled: Asleep,
   error: Warning,
   over_budget: Warning,
   migrating: Migrate,

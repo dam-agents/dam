@@ -1294,6 +1294,8 @@ export async function bootstrap() {
     runtimeMigrating: async (agentId) =>
       ((await agentsRepo.get(agentId))?.runtimeMigrationHold ?? "none") !==
       "none",
+    agentDisabled: async (agentId) =>
+      (await agentsRepo.get(agentId))?.disabled === true,
   });
   runtimeDelivery.registerEventOutcomeHandler(
     "trigger",

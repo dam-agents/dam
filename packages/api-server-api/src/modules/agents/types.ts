@@ -145,6 +145,7 @@ export interface Agent {
   effectiveHibernationTimeoutMin: number;
   error?: string;
   stopRequested: boolean;
+  disabled: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
   reclaimed?: AgentReclaim;
@@ -241,7 +242,9 @@ export type MigrateRuntimeResult =
   { ok: true; value: Agent } | { ok: false; error: MigrateRuntimeError };
 
 export type WakeAgentError =
-  { type: "AgentNotFound" } | { type: "RuntimeMigrating"; failed: boolean };
+  | { type: "AgentNotFound" }
+  | { type: "AgentDisabled" }
+  | { type: "RuntimeMigrating"; failed: boolean };
 
 export type WakeAgentResult =
   { ok: true; value: Agent } | { ok: false; error: WakeAgentError };
@@ -342,6 +345,7 @@ export interface AgentsService {
     kind: WorkspaceMutationKind,
   ) => Promise<Agent | null>;
   sleep: (id: string) => Promise<Agent | null>;
+  setDisabled: (id: string, disabled: boolean) => Promise<Agent | null>;
   upgrade: (
     id: string,
     expectedToImage?: string,

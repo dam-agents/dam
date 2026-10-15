@@ -47,6 +47,7 @@ function agent(id: string, owner: string): InfraAgent {
     ready: true,
     hibernated: false,
     stopRequested: false,
+    disabled: false,
     overBudget: false,
     sweepable: false,
     lifetimeMs: 0,
