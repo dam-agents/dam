@@ -81,8 +81,10 @@ test("one-click create from the Generalist kit, then the mock agent with the con
         has: page.getByRole("heading", { name: agent!.name, exact: true }),
       })
       .getByRole("button", { name: "Configure agent" })
-      .click();
-    await page.getByRole("button", { name: "Delete", exact: true }).click();
+      .press("Enter");
+    await page
+      .getByRole("button", { name: "Delete", exact: true })
+      .press("Enter");
     await page
       .getByRole("alertdialog")
       .getByRole("button", { name: "Delete agent" })

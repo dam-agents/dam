@@ -44,6 +44,15 @@ describe("a disabled agent", () => {
     expect(annotations()[STOP]).toBe(stamp);
   });
 
+  // TEST_SCENARIO: a sleep asked of a disabled agent writes nothing, so no settle-watcher later clears the stop request that keeps it down.
+  it("ignores a sleep, which would otherwise clear its stop request", async () => {
+    const { repo, annotations } = setup();
+    await repo.setDisabled("a1", true);
+    const stamp = annotations()[STOP];
+    expect(await repo.requestSleep("a1")).toMatchObject({ disabled: true });
+    expect(annotations()[STOP]).toBe(stamp);
+  });
+
   // TEST_SCENARIO: enabling clears both marks with a stale activity clock, so the agent stays asleep; the next wake then goes through.
   it("stays asleep after it is enabled, until its next wake", async () => {
     const { repo, annotations } = setup();

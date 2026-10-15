@@ -19,11 +19,9 @@ import {
 export function TerminalHarnessButtons({
   agentId,
   onOpen,
-  className,
 }: {
   agentId: string;
   onOpen: () => void;
-  className?: string;
 }) {
   const setNextSessionPair = useStore((s) => s.setNextSessionPair);
   const status = useHarnessConfigStatus(agentId);
@@ -47,7 +45,7 @@ export function TerminalHarnessButtons({
       </Button>
     );
   return (
-    <span className={cn("flex items-center gap-1", className)}>
+    <span className="flex items-center gap-1">
       {harnesses.map(({ name }) => {
         const fit = providerOptions(name, catalog, granted, owned);
         const provider = fit.granted[0]?.id;

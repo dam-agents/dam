@@ -315,6 +315,8 @@ export function createAgentsRepository(
     async requestSleep(id) {
       const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
       if (!obj) return null;
+      if (obj.metadata?.annotations?.[DISABLED_KEY])
+        return parseInfraAgent(obj);
       const sleepStamp = new Date().toISOString();
       await k8s.patchCustomObject(AGENTS_PLURAL, id, {
         metadata: {
