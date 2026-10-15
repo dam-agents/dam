@@ -146,9 +146,15 @@ export const agentsRouter = t.router({
   setDisabled: manageAgentsProcedure
     .input(agentSetDisabledInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const agent = await ctx.agents.setDisabled(input.id, input.disabled);
-      if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
-      return toAgentView(agent);
+      const res = await ctx.agents.setDisabled(input.id, input.disabled);
+      if (res.ok) return toAgentView(res.value);
+      if (res.error.type === "AgentNotFound")
+        throw new TRPCError({ code: "NOT_FOUND" });
+      throw new TRPCError({
+        code: "CONFLICT",
+        message:
+          "This agent is moving to the new runtime; abort the move to disable it",
+      });
     }),
 
   upgrade: manageAgentsProcedure

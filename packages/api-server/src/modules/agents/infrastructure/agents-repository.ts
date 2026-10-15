@@ -289,6 +289,7 @@ export function createAgentsRepository(
             [ACTIVE_SESSION_KEY]: "",
             [INVOCATIONS_ACTIVE_KEY]: "",
             [LAST_ACTIVITY_KEY]: STALE_ACTIVITY,
+            [RECLAIMED_AT_KEY]: "",
           },
         },
       });

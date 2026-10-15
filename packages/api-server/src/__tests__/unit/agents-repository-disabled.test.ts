@@ -12,7 +12,12 @@ const ACTIVITY = "agent-platform.ai/last-activity";
 function setup() {
   const { client, store } = fakeK8s([
     {
-      metadata: { name: "a1", annotations: {} },
+      metadata: {
+        name: "a1",
+        annotations: {
+          "agent-platform.ai/reclaimed-at": "2026-10-15T10:00:00Z",
+        },
+      },
       spec: { name: "a1" },
       status: {
         conditions: [{ type: "Ready", status: "False", reason: "Hibernated" }],
@@ -28,12 +33,13 @@ function setup() {
 }
 
 describe("a disabled agent", () => {
-  // TEST_SCENARIO: once disabled, an explicit wake and a schedule poke leave the stop request standing, and a relay's ensureReady is refused as disabled.
+  // TEST_SCENARIO: once disabled, an explicit wake and a schedule poke leave the stop request standing, and a relay's ensureReady is refused as disabled. A reclaim mark goes, so the agent reads disabled rather than put to sleep automatically.
   it("refuses every wake while the disabled mark stands", async () => {
     const { repo, annotations } = setup();
     expect((await repo.setDisabled("a1", true))?.disabled).toBe(true);
     const stamp = annotations()[STOP];
     expect(stamp).toBeTruthy();
+    expect(annotations()["agent-platform.ai/reclaimed-at"]).toBe("");
 
     expect(await repo.wake("a1")).toBe("disabled");
     expect(await repo.wakeIfHibernated("a1")).toBeNull();

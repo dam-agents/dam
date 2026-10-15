@@ -56,6 +56,7 @@ export function AgentManagementActions({
   const actions: Action[] = [
     {
       id: AGENT_ENABLE_ANCHOR,
+      kind: "button",
       icon: <Power />,
       title: agent.disabled ? "Enable agent" : "Disable agent",
       description: agent.disabled
@@ -69,6 +70,7 @@ export function AgentManagementActions({
       },
     },
     {
+      kind: "button",
       icon: <Restart />,
       title: "Restart agent",
       description: "Interrupt in-flight work and start the agent fresh.",
@@ -79,6 +81,7 @@ export function AgentManagementActions({
       },
     },
     {
+      kind: "button",
       icon: <TrashCan />,
       title: "Delete agent",
       description:

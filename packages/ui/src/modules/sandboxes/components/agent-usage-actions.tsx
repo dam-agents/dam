@@ -52,6 +52,7 @@ export function AgentUsageActions({
       ? [
           {
             icon: <Chat />,
+            kind: "link" as const,
             title: "Chat",
             description: "Chat with the agent in this browser.",
             onClick: () => selectAgent(agent.id),
@@ -60,6 +61,7 @@ export function AgentUsageActions({
       : []),
     {
       icon: <Terminal />,
+      kind: "control",
       title: "Web terminal",
       description: "Open the harnesses' terminal UI in this browser.",
       control: (
@@ -80,6 +82,7 @@ export function AgentUsageActions({
     },
     {
       icon: <PromptIcon />,
+      kind: "expand",
       title: "CLI and SSH",
       description:
         "Use the agent from your own terminal, over SSH, or in your editor.",
@@ -110,6 +113,7 @@ export function AgentUsageActions({
       ? [
           {
             icon: <LogoSlack />,
+            kind: "expand" as const,
             title: "Slack",
             description: "Mention the agent in a Slack channel or DM it.",
             content: (
@@ -130,6 +134,7 @@ export function AgentUsageActions({
       ? [
           {
             icon: <TelegramIcon />,
+            kind: "expand" as const,
             title: "Telegram",
             description: "Message the agent from a Telegram chat.",
             content: <MessengerInstructions messenger="telegram" />,

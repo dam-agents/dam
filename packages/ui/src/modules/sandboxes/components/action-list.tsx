@@ -1,33 +1,41 @@
 import { ChevronDown, ChevronRight } from "@carbon/icons-react";
 import { type ReactNode, useId, useState } from "react";
+import { match } from "ts-pattern";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
-export interface Action {
+interface ActionText {
   id?: string;
   icon: ReactNode;
   title: string;
   description: string;
-  onClick?: () => void;
-  content?: ReactNode;
-  control?: ReactNode;
-  button?: {
-    label: string;
-    onClick: () => void;
-    disabled?: boolean;
-    danger?: boolean;
-    testId?: string;
-  };
 }
+
+export type Action = ActionText &
+  (
+    | { kind: "link"; onClick: () => void }
+    | { kind: "expand"; content: ReactNode }
+    | { kind: "control"; control: ReactNode }
+    | {
+        kind: "button";
+        button: {
+          label: string;
+          onClick: () => void;
+          disabled?: boolean;
+          danger?: boolean;
+          testId?: string;
+        };
+      }
+  );
 
 const ROW = "flex w-full items-center gap-3 px-4 py-3 text-left";
 const CLICKABLE =
   "transition-colors hover:bg-muted/40 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
 
-// UNIT_BOUNDARY_DESCRIPTION: a card of actions, one per row: what the action does on the left, how to take it on the right. A row that goes somewhere is one link with a chevron; a row with inline content, such as commands to copy, expands as a whole; other rows carry their own buttons.
+// UNIT_BOUNDARY_DESCRIPTION: a card of actions, one per row: what the action does on the left, how to take it on the right. A link row goes somewhere and is one button with a chevron; an expand row reveals inline content, such as commands to copy, on a click anywhere on it; a control or button row carries its own controls on the right.
 export function ActionList({
   label,
   actions,
@@ -39,27 +47,51 @@ export function ActionList({
     <section className="mb-8">
       {label && <SectionLabel spaced>{label}</SectionLabel>}
       <Card className="divide-y divide-border overflow-hidden">
-        {actions.map((action) => (
-          <ActionRow key={action.id ?? action.title} {...action} />
-        ))}
+        {actions.map((action) =>
+          match(action)
+            .with({ kind: "link" }, (a) => (
+              <button
+                key={a.id ?? a.title}
+                type="button"
+                id={a.id}
+                onClick={a.onClick}
+                className={cn(ROW, CLICKABLE)}
+              >
+                <RowText {...a} />
+                <RowChevron icon={ChevronRight} />
+              </button>
+            ))
+            .with({ kind: "expand" }, (a) => (
+              <ExpandRow key={a.id ?? a.title} {...a} />
+            ))
+            .with({ kind: "control" }, (a) => (
+              <StaticRow key={a.id ?? a.title} {...a}>
+                {a.control}
+              </StaticRow>
+            ))
+            .with({ kind: "button" }, (a) => (
+              <StaticRow key={a.id ?? a.title} {...a}>
+                <Button
+                  variant="outline"
+                  tone={a.button.danger ? "danger" : "default"}
+                  className={cn("shrink-0", a.button.danger && "text-danger")}
+                  disabled={a.button.disabled}
+                  onClick={a.button.onClick}
+                  data-testid={a.button.testId}
+                >
+                  {a.button.label}
+                </Button>
+              </StaticRow>
+            ))
+            .exhaustive(),
+        )}
       </Card>
     </section>
   );
 }
 
-function ActionRow({
-  id,
-  icon,
-  title,
-  description,
-  onClick,
-  content,
-  control,
-  button,
-}: Action) {
-  const [open, setOpen] = useState(false);
-  const contentId = useId();
-  const text = (
+function RowText({ icon, title, description }: ActionText) {
+  return (
     <>
       <span
         aria-hidden
@@ -77,63 +109,62 @@ function ActionRow({
       </span>
     </>
   );
-  const chevron = (Icon: typeof ChevronRight, className?: string) => (
+}
+
+function RowChevron({
+  icon: Icon,
+  className,
+}: {
+  icon: typeof ChevronRight;
+  className?: string;
+}) {
+  return (
     <span className="flex size-10 shrink-0 items-center justify-center text-muted-foreground">
       <Icon size={20} className={className} />
     </span>
   );
+}
 
-  if (onClick)
-    return (
+function ExpandRow({
+  id,
+  content,
+  ...text
+}: ActionText & { content: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const contentId = useId();
+  return (
+    <div id={id}>
       <button
         type="button"
-        id={id}
-        onClick={onClick}
+        aria-expanded={open}
+        aria-controls={contentId}
+        onClick={() => setOpen(!open)}
         className={cn(ROW, CLICKABLE)}
       >
-        {text}
-        {chevron(ChevronRight)}
+        <RowText {...text} />
+        <RowChevron
+          icon={ChevronDown}
+          className={cn("transition-transform", open && "rotate-180")}
+        />
       </button>
-    );
-  if (content)
-    return (
-      <div id={id}>
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-controls={contentId}
-          onClick={() => setOpen(!open)}
-          className={cn(ROW, CLICKABLE)}
-        >
-          {text}
-          {chevron(
-            ChevronDown,
-            cn("transition-transform", open && "rotate-180"),
-          )}
-        </button>
-        {open && (
-          <div id={contentId} className="px-4 pb-4 sm:pl-12">
-            {content}
-          </div>
-        )}
-      </div>
-    );
+      {open && (
+        <div id={contentId} className="px-4 pb-4 sm:pl-12">
+          {content}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StaticRow({
+  id,
+  children,
+  ...text
+}: ActionText & { children: ReactNode }) {
   return (
     <div id={id} className={cn(ROW, "scroll-mt-24 flex-wrap sm:flex-nowrap")}>
-      {text}
-      {control}
-      {button && (
-        <Button
-          variant="outline"
-          tone={button.danger ? "danger" : "default"}
-          className={cn("shrink-0", button.danger && "text-danger")}
-          disabled={button.disabled}
-          onClick={button.onClick}
-          data-testid={button.testId}
-        >
-          {button.label}
-        </Button>
-      )}
+      <RowText {...text} />
+      {children}
     </div>
   );
 }

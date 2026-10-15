@@ -115,3 +115,48 @@ export function fittingProviders(
   return (harness) =>
     providerOptions(harness, catalog, granted, []).granted.map((p) => p.id);
 }
+
+export interface TerminalHarness {
+  name: string;
+  displayName: string;
+  provider: string | null;
+  unavailable: string | null;
+}
+
+export type TerminalHarnessChoice =
+  | { kind: "loading" }
+  | { kind: "fallback" }
+  | { kind: "harnesses"; harnesses: TerminalHarness[] };
+
+// UNIT_BOUNDARY_DESCRIPTION: what a new web terminal can start with. Nothing shows while the agent's harnesses, the catalog or the provider grants still load. A failed load, or an agent that names no harnesses, falls back to one plain terminal on the default pair. Otherwise each harness carries the first granted provider that fits it, or the reason it cannot start.
+export function terminalHarnessChoice(input: {
+  loading: boolean;
+  failed: boolean;
+  carried: readonly string[];
+  catalog: readonly HarnessView[] | undefined;
+  granted: readonly ProviderConnectionRef[];
+  owned: readonly ProviderConnectionRef[];
+}): TerminalHarnessChoice {
+  const { loading, failed, carried, catalog, granted, owned } = input;
+  if (loading) return { kind: "loading" };
+  if (failed || !catalog || carried.length === 0) return { kind: "fallback" };
+  return {
+    kind: "harnesses",
+    harnesses: carried.map((name) => {
+      const fit = providerOptions(name, catalog, granted, owned);
+      const displayName = harnessDisplayName(name, catalog) ?? name;
+      const provider = fit.granted[0]?.id ?? null;
+      return {
+        name,
+        displayName,
+        provider,
+        unavailable:
+          provider !== null
+            ? null
+            : fit.addable.length === 0
+              ? `${displayName} does not support any of the LLM providers you have configured.`
+              : `Grant this agent a provider ${displayName} supports on its Providers page.`,
+      };
+    }),
+  };
+}

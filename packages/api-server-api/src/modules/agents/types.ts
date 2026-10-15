@@ -246,6 +246,12 @@ export type WakeAgentError =
   | { type: "AgentDisabled" }
   | { type: "RuntimeMigrating"; failed: boolean };
 
+export type SetAgentDisabledError =
+  { type: "AgentNotFound" } | { type: "RuntimeMigrating" };
+
+export type SetAgentDisabledResult =
+  { ok: true; value: Agent } | { ok: false; error: SetAgentDisabledError };
+
 export type WakeAgentResult =
   { ok: true; value: Agent } | { ok: false; error: WakeAgentError };
 
@@ -345,7 +351,10 @@ export interface AgentsService {
     kind: WorkspaceMutationKind,
   ) => Promise<Agent | null>;
   sleep: (id: string) => Promise<Agent | null>;
-  setDisabled: (id: string, disabled: boolean) => Promise<Agent | null>;
+  setDisabled: (
+    id: string,
+    disabled: boolean,
+  ) => Promise<SetAgentDisabledResult>;
   upgrade: (
     id: string,
     expectedToImage?: string,
