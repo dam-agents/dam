@@ -37,6 +37,7 @@ import type {
 import { resolveAgent } from "./agent-auth.js";
 import type { DriverOps, DriverOpsFor } from "./driver-ops.js";
 import { registerSubAgentTools } from "./sub-agent-tools.js";
+import { rejectOversizedArrays } from "../../core/mcp-input-bounds.js";
 import { securityLog } from "../../core/security-log.js";
 import { emit, EventType } from "../../events.js";
 import {
@@ -1415,6 +1416,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
           : null,
     });
     await session.server.connect(session.transport);
+    rejectOversizedArrays(session.transport);
 
     return session.transport.handleRequest(c.req.raw);
   });

@@ -278,6 +278,9 @@ See [`helm/`](../../helm/) for the install layout.
   Agent pods do not accept ACP connections from outside the cluster and the UI never dials pods directly.
 - **Two-port api-server.** The public port is user-authenticated; the harness port is cluster-internal and has no user authentication.
   They do not share routes.
+- **Bounded input arrays.** Every array in a request from outside the api-server — a user or agent tRPC call, the e2e test API, an MCP message on either MCP endpoint, an agent request body — holds at most 100 000 items.
+  The api-server checks the raw input before any schema parses it, so no schema parses the elements of an oversized array, and the e2e API refuses it before its access check.
+  The limit lives outside the input schemas, so no published JSON schema or MCP tool description shows it.
 - **Credential isolation.** Agent pods never hold real upstream credentials.
   The paired gateway pod intercepts agent TLS using a per-agent leaf cert and injects the credential header from a K8s Secret mounted only on the gateway — the agent pod has no path to TCP 80/443 except through the paired gateway.
   See [security-and-credentials](security-and-credentials.md).
