@@ -1,6 +1,6 @@
 # Agent changes
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 ## Overview
 
@@ -41,9 +41,15 @@ Notices are throttled; each one only tells the viewer to read the list again.
 
 ## Sessions and their repositories
 
-agent-runtime reads each edit tool call a Session makes as it passes through, and records the repository it touched, the branch at that moment and when.
+agent-runtime records the repositories a Session touched, from two signals.
+An edit tool call names its files: the runtime reads each one as it passes through, including a streamed edit whose file arrives in a later update, and records the repository, the branch at that moment and when.
+A push names no file and may come from any shell command, so the runtime reads it from git itself, for every harness.
+It watches each repository's remote-tracking reflogs, one recursive watch per repository whatever its worktrees, from the first tool call after a start, and looks for new repositories again at most every five minutes.
+A watch costs nothing until git writes a push, and only the lines appended since the last read are read.
+A push belongs to the Session whose tool call was running when it landed; when several were running, to the one that already worked in that repository; otherwise to nobody, logged rather than guessed.
+A push from a background job that outlives its tool call is not linked.
 That record is per Session and survives the panel being closed and the pod restarting; it is bounded per Session and in total.
-The open pull request of a recorded branch is attached to the record when the panel finds it, and when the Session's tool calls settle.
+The open pull request of a recorded branch is attached to the record when the panel finds it, when the Session's tool calls settle, and right after a push; a pushed branch is looked up on the remote it was pushed to, whatever its worktree has checked out since.
 A link once found is kept, so a Session still links its pull request after it is merged.
 
 The sessions list carries this record as badges of the repositories a Session touched, each with its pull request.

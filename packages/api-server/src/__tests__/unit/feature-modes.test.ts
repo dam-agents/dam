@@ -25,6 +25,7 @@ describe("feature modes", () => {
         "agent-telemetry": "experimental",
         "advanced-connections": "experimental",
         "vm-sandboxes": "experimental",
+        "chat-forms": "experimental",
         "custom-avatars": "experimental",
       },
     });

@@ -1,4 +1,5 @@
 import { Document } from "@carbon/icons-react";
+import { hasA2uiBlock } from "api-server-api/chat-forms";
 import { useState } from "react";
 
 import { formatBytes } from "@/lib/format-size";
@@ -9,6 +10,9 @@ import type {
   Role,
   ToolChip as ToolChipPart,
 } from "../../../types.js";
+import { A2uiAssistantText } from "../../a2ui/components/a2ui-assistant-text.js";
+import { A2uiUserText } from "../../a2ui/components/a2ui-user-text.js";
+import { hasRendererBlocks } from "../../a2ui/lib/prompts.js";
 import { DelegationBlock } from "../../invocations/components/delegation-block.js";
 import { useOwnedSpawns } from "../../invocations/components/delegation-owners.js";
 import {
@@ -41,32 +45,76 @@ function HistoryBlock({ text }: { text: string }) {
   );
 }
 
+interface TextPartProps {
+  text: string;
+  partKey: string;
+  role: Role;
+  interactive: boolean;
+  showCursor: boolean;
+  onFileClick?: (path: string) => void;
+}
+
+function TextPart({
+  text,
+  partKey,
+  role,
+  interactive,
+  showCursor,
+  onFileClick,
+}: TextPartProps) {
+  if (role === "assistant") {
+    if (hasA2uiBlock(text))
+      return (
+        <A2uiAssistantText
+          text={text}
+          partKey={partKey}
+          interactive={interactive}
+          onFileClick={onFileClick}
+        />
+      );
+    return <Markdown onFileClick={onFileClick}>{text}</Markdown>;
+  }
+  if (hasRendererBlocks(text)) return <A2uiUserText text={text} />;
+  return (
+    <span className="whitespace-pre-wrap break-words">
+      {text}
+      {showCursor && (
+        <span className="inline-block w-[7px] h-4 bg-accent ml-0.5 align-text-bottom anim-blink rounded-sm" />
+      )}
+    </span>
+  );
+}
+
 interface Props {
   part: MessagePart;
+  partKey: string;
   role: Role;
   streaming: boolean;
   isLast: boolean;
+  interactive: boolean;
   onFileClick?: (path: string) => void;
 }
 
 export function ChatMessagePart({
   part,
+  partKey,
   role,
   streaming,
   isLast,
+  interactive,
   onFileClick,
 }: Props) {
   switch (part.kind) {
     case "text":
-      if (role === "assistant")
-        return <Markdown onFileClick={onFileClick}>{part.text}</Markdown>;
       return (
-        <span className="whitespace-pre-wrap break-words">
-          {part.text}
-          {streaming && isLast && (
-            <span className="inline-block w-[7px] h-4 bg-accent ml-0.5 align-text-bottom anim-blink rounded-sm" />
-          )}
-        </span>
+        <TextPart
+          text={part.text}
+          partKey={partKey}
+          role={role}
+          interactive={interactive}
+          showCursor={streaming && isLast}
+          onFileClick={onFileClick}
+        />
       );
     case "thought":
       return <ThoughtBlock text={part.text} streaming={streaming} />;

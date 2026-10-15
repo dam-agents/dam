@@ -283,6 +283,7 @@ export type { ArtifactApiService } from "./modules/artifact-api/types.js";
 export {
   browserSnapshotSchema,
   pageStateSchema,
+  tabStateSchema,
 } from "./modules/browser/schemas.js";
 export type {
   BrowserAction,
@@ -291,4 +292,6 @@ export type {
   BrowserSnapshot,
   BrowserState,
   PageState,
+  TabAction,
+  TabState,
 } from "./modules/browser/types.js";

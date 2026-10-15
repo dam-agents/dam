@@ -60,6 +60,12 @@ const FEATURE_ROWS: FeatureRow[] = [
       "Shows what each turn of a conversation actually did — its spans, its records and what the call cost — under the reply itself, and adds a telemetry export to the session menu.",
   },
   {
+    id: "chat-forms",
+    label: "Chat forms",
+    description:
+      "Lets agents put forms, choices and cards into their replies in chat — during onboarding or a kit update, for example — and sends your answer back with one click.",
+  },
+  {
     id: "processes",
     label: "Processes panel",
     description:

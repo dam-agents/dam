@@ -92,6 +92,7 @@ Generated projection of the ADR log. Read this first when authoring a new decisi
 | 101 | [A reclaimed agent says it was put to sleep early](101-announce-reclaim.md) | 081 | budgets | The platform keeps hibernating an owner's unattended idle agents early to admit a blocked start or relieve VM memory pressure, under ADR-081's rules, but a reclaimed agent now tells its owner why it is asleep instead of passing for a lapsed timeout. |
 | 102 | [Agent reconciles run on eight owner-sharded workers](102-owner-sharded-agent-workers.md) |  | budgets | The controller reconciles agents on a fixed eight workers, each with its own queue, and an agent's owner picks its worker, so one owner's agents still reconcile one at a time while a hung VM runner delays only the owners on its worker. |
 | 103 | [A Skill Source is a repository and a path](103-skill-source-per-path.md) |  | skills | A Skill Source is identified by its repository and its path together, so one owner may register the same repository once per path; an installed skill keeps the path of the source it came from. |
+| 104 | [Chat forms — agents write A2UI v1.0 into their replies](104-chat-forms-a2ui.md) |  | chat-forms | Agents put interactive UI into the web chat as A2UI v1.0 blocks in their reply text, rendered with the app's own components behind the experimental chat-forms flag; a check tool validates a form before it is sent, and the chat answers in A2UI renderer messages inside the user's next prompt. |
 
 ## Superseded
 
