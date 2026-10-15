@@ -3,6 +3,7 @@ import { Command } from "commander";
 
 import { err, ok, type Result } from "../../../result.js";
 import {
+  EXIT_AGENT_NOT_REACHABLE,
   EXIT_INVALID_INPUT,
   EXIT_RUN_STOPPED,
   EXIT_RUN_TIMEOUT,
@@ -44,6 +45,17 @@ function fail(e: RunError): void {
     if (e.sessionId !== undefined)
       process.stderr.write(`session: ${e.sessionId}\n`);
     process.exitCode = EXIT_RUNTIME_FAILURE;
+    return;
+  }
+  if (e.kind === "agent-unreachable") {
+    process.stderr.write(
+      e.why === null
+        ? "error: could not connect to the agent\n"
+        : `error: the agent could not start: ${e.why}\n`,
+    );
+    if (e.sessionId !== undefined)
+      process.stderr.write(`session: ${e.sessionId}\n`);
+    process.exitCode = EXIT_AGENT_NOT_REACHABLE;
     return;
   }
   printError(e);
