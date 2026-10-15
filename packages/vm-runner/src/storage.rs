@@ -44,6 +44,19 @@ impl StorageUse {
         self.used.saturating_sub(target) / u64::try_from(machines.max(1)).unwrap_or(1)
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: why a seed upload that has written `seed` bytes onto this claim stops, or nothing while it may go on. The seed stays on the claim until the move finishes, and the guest's first boot restores as much again onto its disk on the same claim, so the move needs about twice the home: the upload stops once the claim, with the restore still to come, would pass CRITICAL_PERCENT, the level up to which the owner's other agents are protected.
+    pub fn seed_refusal(&self, seed: u64) -> Option<String> {
+        let after = u128::from(self.used) + u128::from(seed);
+        (after * 100 >= u128::from(self.usable) * u128::from(CRITICAL_PERCENT)).then(|| {
+            format!(
+                "This agent's home does not fit on its new runtime: moving it needs about twice the home's size on your VM agents' shared storage, one copy while it moves and one on its new disk. The home is more than {} GiB, and the storage has {} of {} GiB free, so the move stopped before it filled the storage your other VM agents use. To free space, delete a VM agent you no longer need or files from this agent's home, or request more storage.",
+                gib(seed),
+                gib(self.usable.saturating_sub(self.used)),
+                gib(self.usable)
+            )
+        })
+    }
+
     // UNIT_BOUNDARY_DESCRIPTION: what the owner is told when the runner refuses a machine for want of storage, word for word the api-server's storage-full message: what is refused at this level, that a sleeping VM agent can still be opened to clean up below START_LIMIT_PERCENT, and the ways to free space.
     pub fn refusal(&self) -> String {
         let percent = self.percent();
@@ -113,6 +126,20 @@ mod tests {
         assert!(!at(74).short(false) && at(75).short(false));
         assert!(at(71).short(true) && !at(69).short(true) && !at(71).short(false));
         assert_eq!(StorageUse { used: 0, usable: 0 }.percent(), 100);
+    }
+
+    // TEST_SCENARIO: a seed is restored onto the same claim it is stored on, so an upload stops once what it wrote, counted twice, would take the claim to the critical level, and says how much the move needs and how much is free.
+    #[test]
+    fn a_seed_stops_before_its_restore_would_fill_the_claim() {
+        let claim = StorageUse {
+            used: 50 << 30,
+            usable: 100 << 30,
+        };
+        assert_eq!(claim.seed_refusal(39 << 30), None);
+        let refusal = claim.seed_refusal(40 << 30).expect("90% after the restore");
+        assert!(refusal.contains("twice the home's size"), "{refusal}");
+        assert!(refusal.contains("more than 40.0 GiB"), "{refusal}");
+        assert!(refusal.contains("50.0 of 100.0 GiB free"), "{refusal}");
     }
 
     // TEST_SCENARIO: what the runner asks each guest to give back is its even part of what brings the claim back under 70%, and nothing once it is there; no machine at all reads as one.
