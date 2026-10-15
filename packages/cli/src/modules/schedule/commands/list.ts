@@ -8,6 +8,7 @@ import type { CompatService, ConfigService } from "../../cli/index.js";
 import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderTable } from "../../shared/render-table.js";
+import { writeStdoutAndExit } from "../../shared/stdout.js";
 import type {
   ScheduleService,
   ScheduleView,
@@ -60,8 +61,10 @@ export function buildListCommand(deps: {
       exitOnServiceError(result, host);
 
       if (opts.json) {
-        process.stdout.write(`${JSON.stringify(result.value)}\n`);
-        process.exit(EXIT_SUCCESS);
+        return writeStdoutAndExit(
+          `${JSON.stringify(result.value)}\n`,
+          EXIT_SUCCESS,
+        );
       }
 
       if (result.value.length === 0) {
@@ -71,7 +74,7 @@ export function buildListCommand(deps: {
         process.exit(EXIT_SUCCESS);
       }
 
-      process.stdout.write(
+      return writeStdoutAndExit(
         renderTable([
           [
             "ID",
@@ -92,7 +95,7 @@ export function buildListCommand(deps: {
             resultText(v),
           ]),
         ]),
+        EXIT_SUCCESS,
       );
-      process.exit(EXIT_SUCCESS);
     });
 }

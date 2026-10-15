@@ -16,26 +16,46 @@ tag=$(sed -n 's/^tag=//p' smolvm.pin)
 commit=$(sed -n 's/^commit=//p' smolvm.pin)
 [ -n "$tag" ] && [ -n "$commit" ] || { echo "smolvm.pin must set tag= and commit=" >&2; exit 1; }
 # The tree is the pinned commit with smolvm.patch applied, so a changed patch
-# re-clones it as a moved pin does.
-stamp="$commit $(git hash-object smolvm.patch)"
+# gets a tree of its own as a moved pin does.
+patch=$(git hash-object smolvm.patch)
+stamp="$commit $patch"
 
-if [ -f .smolvm/.pinned ] && [ "$(cat .smolvm/.pinned)" = "$stamp" ]; then
+if [ -L .smolvm ] && [ -f .smolvm/.pinned ] && [ "$(cat .smolvm/.pinned)" = "$stamp" ]; then
   exit 0
 fi
 
-rm -rf .smolvm
-git clone --quiet --depth 1 --branch "$tag" https://github.com/smol-machines/smolvm .smolvm
+# One tree per pin and patch, outside the checkout, so every worktree of every
+# checkout links the same one instead of cloning ~250 MB of its own. Cargo only
+# reads a path dependency's sources; its build output goes to each worktree's
+# own target. The store keeps the three trees cloned last: a worktree whose
+# tree was pruned finds its link dangling, and the provider clones it again.
+store="${XDG_CACHE_HOME:-$HOME/.cache}/platform-vm-runner/smolvm"
+tree="$store/$commit-$patch"
+if [ ! -f "$tree/.pinned" ]; then
+  mkdir -p "$store"
+  clone=$(mktemp -d "$store/.clone.XXXXXX")
+  trap 'rm -rf "$clone"' EXIT
+  git clone --quiet --depth 1 --branch "$tag" https://github.com/smol-machines/smolvm "$clone"
 
-# The tag is what we asked for; the commit is what we accept. A tag can be
-# moved, so the pin names both and the build refuses a tree that is not the one
-# the pin was written against.
-actual=$(git -C .smolvm rev-parse HEAD)
-if [ "$actual" != "$commit" ]; then
-  rm -rf .smolvm
-  echo "smolvm $tag is $actual, but smolvm.pin expects $commit" >&2
-  exit 1
+  # The tag is what we asked for; the commit is what we accept. A tag can be
+  # moved, so the pin names both and the build refuses a tree that is not the
+  # one the pin was written against.
+  actual=$(git -C "$clone" rev-parse HEAD)
+  if [ "$actual" != "$commit" ]; then
+    echo "smolvm $tag is $actual, but smolvm.pin expects $commit" >&2
+    exit 1
+  fi
+  # Fixes the release does not have yet. Drop the patch once a smolvm release
+  # ships them.
+  git -C "$clone" apply "$PWD/smolvm.patch"
+  echo "$stamp" > "$clone/.pinned"
+  # Two worktrees cloning one pin at once both get here; the later one keeps
+  # its own clone out of the way. Between the test and the rename the window
+  # is a few microseconds, and losing it nests a spare clone inside the tree,
+  # which nothing reads and which goes when that tree is pruned.
+  [ -e "$tree" ] || mv "$clone" "$tree"
+  ls -td "$store"/*/ | tail -n +4 | while IFS= read -r old; do rm -rf "$old"; done
 fi
-# Fixes the release does not have yet. Drop the patch once a smolvm release
-# ships them.
-git -C .smolvm apply ../smolvm.patch
-echo "$stamp" > .smolvm/.pinned
+
+rm -rf .smolvm
+ln -s "$tree" .smolvm
