@@ -231,7 +231,7 @@ jobs:
           set -euo pipefail
           # A tag, the nightly run and a dispatch publish every image afresh;
           # a PR or a main push reuses what its source did not change.
-          [ "$EVENT" = pull_request ] || [ "$MAIN_PUSH" = true ] || export RESOLVE_NO_REUSE=1
+          true # THROWAWAY (#4347): a dispatch reuses published images
           # By path: mise here installs crane alone; the same file is the image:resolve task.
           out="$(.mise/tasks/image/resolve gha-outputs)"
           printf '%s\n' "$out" | tee -a "$GITHUB_OUTPUT"
@@ -564,7 +564,7 @@ jobs:
     # The steps e2e-vm shares are anchored here (&e2e-*), so the two lanes
     # bring their clusters up the same way.
     needs: [docs-only]
-    if: ${{ !cancelled() && !startsWith(github.ref, 'refs/tags/v') && needs.docs-only.outputs.docs != 'true' }}
+    if: false
     runs-on: ubuntu-latest
     # The builds' own time now counts against this budget.
     timeout-minutes: 45
@@ -655,7 +655,7 @@ jobs:
           CI_IMAGES_MOCK_JOB: build mock (e2e fixture)
           CI_IMAGES_AGENTS_JOB: build-agents (amd64)
           # As the `changes` job sets it, so both resolve the same images stale.
-          RESOLVE_NO_REUSE: ${{ github.event_name != 'pull_request' && github.event_name != 'push' && '1' || '' }}
+          RESOLVE_NO_REUSE: ""
         run: nohup .mise/tasks/e2e/ci-images /tmp/ci-images.status > /tmp/ci-images.log 2>&1 &
       # Keyed by the Playwright the lockfile resolves, which fixes the browser
       # build it downloads: a lockfile change elsewhere keeps the entry.
@@ -723,7 +723,11 @@ jobs:
           if-no-files-found: ignore
 
   e2e-vm:
-    name: mise e2e (vm)
+    name: mise e2e (vm, ${{ matrix.seccomp }})
+    strategy:
+      fail-fast: false
+      matrix:
+        seccomp: [enforce, audit]
     # The vm lane: the same smoke suite on an install with virtualization
     # enabled, where every agent the suite creates is a vm Agent. The KVM
     # device plugin comes from cluster:install, the runner's egressCidrs and
@@ -755,11 +759,20 @@ jobs:
     env:
       IS_SANDBOX: "1"
       E2E_VIRTUALIZATION: "1"
+      E2E_SECCOMP: ${{ matrix.seccomp }}
+      E2E_MIGRATION_REPEAT: "10"
       E2E_TIMINGS: /tmp/e2e-timings
       E2E_REPORT_JSON: /tmp/playwright-report.json
     steps:
       - name: Record the job start
         run: printf '%s\tjob started\n' "$(date +%s)" >> "$E2E_TIMINGS"
+      # THROWAWAY (#4347): auditd keeps every seccomp record, where the kernel log rate-limits them.
+      - name: Install auditd
+        run: |
+          sudo apt-get update -q
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q auditd
+          sudo auditctl -r 0 -b 65536 || true
+          sudo auditctl -s
       - *e2e-checkout
       - *e2e-provision
       - name: Open /dev/kvm to the runner user
@@ -892,10 +905,10 @@ jobs:
           fi
           [ "$canary" != 0 ] || echo "::warning::the seccomp canary left no record, so the kernel log may not keep seccomp records here, and a low count proves nothing"
           grep -h 'kauditd_printk_skb: .* callbacks suppressed\|audit: rate limit exceeded\|audit: backlog limit exceeded' /tmp/kernel-log/kernel.log || true
-      - if: ${{ failure() }}
+      - if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: kernel-log-vm
+          name: kernel-log-vm-${{ matrix.seccomp }}
           path: /tmp/kernel-log/
           retention-days: 7
           if-no-files-found: ignore
@@ -912,7 +925,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: playwright-report-vm
+          name: playwright-report-vm-${{ matrix.seccomp }}
           path: *e2e-report-paths
           retention-days: 7
           if-no-files-found: ignore

@@ -52,6 +52,7 @@ if [ -n "${E2E_VIRTUALIZATION:-}" ]; then
     --set=virtualization.enabled=true
     --set=virtualization.runner.machineCPUs=1
     --set=virtualization.runner.bootMiB=1024
+    --set=virtualization.runner.seccomp=${E2E_SECCOMP:-audit}
     --set=harnessTemplates.mock.resources.limits.cpu=1000m
     --set=harnessTemplates.mock.resources.limits.memory=1Gi
   )

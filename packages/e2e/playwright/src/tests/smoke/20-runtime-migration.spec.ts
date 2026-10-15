@@ -29,7 +29,7 @@ import {
 import { retainedVolumes } from "../../lib/cluster.js";
 import { baseUrl } from "../../config.js";
 
-const agentName = "e2e-runtime-migration";
+const agentName = `e2e-runtime-migration-${randomUUID().slice(0, 6)}`;
 const markerPath = "e2e-migration-marker.txt";
 const marker = `home-migrates-${randomUUID()}`;
 
