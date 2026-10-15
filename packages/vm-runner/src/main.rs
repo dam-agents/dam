@@ -181,8 +181,46 @@ fn reload_tls(tls: axum_server::tls_rustls::RustlsConfig, cert: String, key: Str
     });
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: `vm-runner exec <machine> [--] <command>...` runs one command as root in a running machine's guest, through its init (platform-init's answer to smolvm's exec request), prints what it wrote and exits with its exit code. It finds the machine under HOME as the runner does, so it runs in the runner's pod or beside a host runner. smolvm's own `machine exec` reaches the container a guest agent ran, which these machines do not have.
+fn exec_args(mut args: impl Iterator<Item = std::ffi::OsString>) -> Option<(String, Vec<String>)> {
+    args.next();
+    if args.next().as_deref() != Some(std::ffi::OsStr::new("exec")) {
+        return None;
+    }
+    let id = args.next()?.into_string().ok()?;
+    let mut command: Vec<String> = args.filter_map(|arg| arg.into_string().ok()).collect();
+    if command.first().is_some_and(|arg| arg == "--") {
+        command.remove(0);
+    }
+    Some((id, command))
+}
+
+fn guest_exec(id: &str, command: Vec<String>) -> anyhow::Result<()> {
+    use std::io::Write;
+    anyhow::ensure!(
+        !command.is_empty(),
+        "usage: vm-runner exec <machine> [--] <command>..."
+    );
+    let manager = smolvm::agent::AgentManager::for_vm(id)?;
+    manager.detach();
+    let mut client = smolvm::agent::AgentClient::connect(manager.vsock_socket())?;
+    let (code, stdout, stderr) = client.vm_exec(
+        command,
+        Vec::new(),
+        None,
+        Some(std::time::Duration::from_secs(300)),
+        None,
+    )?;
+    std::io::stdout().write_all(&stdout)?;
+    std::io::stderr().write_all(&stderr)?;
+    std::process::exit(code)
+}
+
 fn main() -> anyhow::Result<()> {
     smolvm::internal_boot::GUEST_AGENT.store(false, std::sync::atomic::Ordering::Relaxed);
+    if let Some((id, command)) = exec_args(std::env::args_os()) {
+        return guest_exec(&id, command);
+    }
     if let Some(config) = boot_config(std::env::args_os()) {
         let config =
             config.ok_or_else(|| anyhow::anyhow!("_boot-vm requires a boot-config path"))?;
@@ -429,6 +467,27 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // TEST_SCENARIO: `exec` names a machine and the command to run in it, with an optional `--` before the command; anything else is the runner's own invocation and is left to flag parsing.
+    #[test]
+    fn an_exec_names_the_machine_and_the_command() {
+        let args = |words: &[&str]| {
+            words
+                .iter()
+                .map(std::ffi::OsString::from)
+                .collect::<Vec<_>>()
+                .into_iter()
+        };
+        assert_eq!(
+            exec_args(args(&["vm-runner", "exec", "m1", "--", "sh", "-c", "true"])),
+            Some(("m1".into(), vec!["sh".into(), "-c".into(), "true".into()]))
+        );
+        assert_eq!(
+            exec_args(args(&["vm-runner", "exec", "m1", "ls"])),
+            Some(("m1".into(), vec!["ls".into()]))
+        );
+        assert_eq!(exec_args(args(&["vm-runner", "--listen=:4600"])), None);
+    }
 
     // TEST_SCENARIO: smolvm spawns this binary as the VMM with `_boot-vm <config>`. That call must be recognised before flag parsing, which would refuse it, and nothing else may be mistaken for it — the runner's own invocation least of all.
     #[test]

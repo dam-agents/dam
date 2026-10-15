@@ -2374,7 +2374,11 @@ fn reap() -> (Vec<(libc::pid_t, libc::c_int)>, bool) {
         let pid = unsafe { libc::waitpid(-1, &mut status, libc::WNOHANG) };
         match pid {
             0 => return (exited, true),
-            pid if pid > 0 => exited.push((pid, status)),
+            pid if pid > 0 => {
+                if !vm::claim_exit(pid, status) {
+                    exited.push((pid, status));
+                }
+            }
             _ => return (exited, false),
         }
     }

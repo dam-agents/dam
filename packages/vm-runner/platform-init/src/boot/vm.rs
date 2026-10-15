@@ -53,12 +53,19 @@ pub fn boot_mounts() -> Vec<BootMount> {
         .collect()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: mounts a virtiofs share, with DAX where the VMM gave the share a window, so a large binary run from it is mapped from the host's page cache rather than copied into the guest. A share without a window refuses the option, and is mounted without it.
+// UNIT_BOUNDARY_DESCRIPTION: mounts a virtiofs share, with DAX where the VMM gave the share a window, so a large binary run from it is mapped from the host's page cache rather than copied into the guest. A share without a window refuses the option, and is mounted without it. Each mount is a console line, `virtiofs mount active: <tag> at <target>, dax=<bool>`, which is how a host tells whether its machines' mounts are DAX-mapped.
 fn mount_virtiofs(tag: &str, target: &Path, read_only: bool) -> io::Result<()> {
     mkdir_all(target)?;
     let flags = if read_only { libc::MS_RDONLY } else { 0 };
-    mount_typed(tag, target, "virtiofs", flags, "dax")
-        .or_else(|_| mount_typed(tag, target, "virtiofs", flags, ""))
+    let dax = mount_typed(tag, target, "virtiofs", flags, "dax").is_ok();
+    if !dax {
+        mount_typed(tag, target, "virtiofs", flags, "")?;
+    }
+    announce(&format!(
+        "virtiofs mount active: {tag} at {}, dax={dax}",
+        target.display()
+    ));
+    Ok(())
 }
 
 pub fn mount_typed(
@@ -533,6 +540,22 @@ fn respond(request: AgentRequest, conn: &mut File) -> AgentResponse {
                 error_codes::INTERNAL_ERROR,
             ),
         },
+        AgentRequest::VmExec {
+            command,
+            env,
+            workdir,
+            timeout_ms,
+            interactive: false,
+            tty: false,
+            background: false,
+            stdin_data,
+        } => exec(
+            &command,
+            &env,
+            workdir.as_deref(),
+            timeout_ms.map_or(EXEC_TIMEOUT, Duration::from_millis),
+            stdin_data,
+        ),
         AgentRequest::Shutdown {
             stop_timeout_secs, ..
         } => quiesce(
@@ -543,6 +566,133 @@ fn respond(request: AgentRequest, conn: &mut File) -> AgentResponse {
             format!("platform-init does not serve {other:?}"),
             error_codes::INVALID_REQUEST,
         ),
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the exit statuses of the commands the host runs through the protocol, by pid. The supervisor reaps every child of the init, these too, so its reaper hands a registered pid's status here rather than dropping it (claim_exit), and the command's thread reaps it itself while the supervisor is not reaping. A pid is registered before the lock that registers it is released, so no status is reaped before anyone waits for it.
+#[allow(clippy::type_complexity)]
+static EXECS: (
+    Mutex<std::collections::BTreeMap<libc::pid_t, Option<libc::c_int>>>,
+    Condvar,
+) = (
+    Mutex::new(std::collections::BTreeMap::new()),
+    Condvar::new(),
+);
+
+// UNIT_BOUNDARY_DESCRIPTION: records a reaped child's status when it is one of the protocol's commands, and says whether it was.
+pub fn claim_exit(pid: libc::pid_t, status: libc::c_int) -> bool {
+    let (lock, cvar) = &EXECS;
+    let mut execs = lock.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(slot) = execs.get_mut(&pid) else {
+        return false;
+    };
+    *slot = Some(status);
+    cvar.notify_all();
+    true
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how long a command the host runs may take when the host names no limit, and how much of its output is kept: the host reads a reply of at most smolvm_protocol::MAX_FRAME_SIZE, and both streams share it.
+const EXEC_TIMEOUT: Duration = Duration::from_secs(300);
+const EXEC_OUTPUT_MAX: usize = 8 << 20;
+
+// UNIT_BOUNDARY_DESCRIPTION: runs one command for the host, as root in the image's root, with the env it names on top of a default PATH and nothing of the init's own, and answers with its exit code and output once it ends, or once `timeout` has passed and it was killed. Only a non-interactive command is run: operators reach a guest this way (`vm-runner exec`), and nothing in the platform needs a shell into it.
+fn exec(
+    command: &[String],
+    env: &[(String, String)],
+    workdir: Option<&str>,
+    timeout: Duration,
+    stdin: Option<String>,
+) -> AgentResponse {
+    use std::process::Stdio;
+    let Some((program, args)) = command.split_first() else {
+        return AgentResponse::error("no command to run", error_codes::INVALID_REQUEST);
+    };
+    let (lock, cvar) = &EXECS;
+    let mut execs = lock.lock().unwrap_or_else(|e| e.into_inner());
+    let spawned = std::process::Command::new(program)
+        .args(args)
+        .env_clear()
+        .env("PATH", DEFAULT_PATH)
+        .envs(env.iter().map(|(key, value)| (key, value)))
+        .current_dir(workdir.unwrap_or("/"))
+        .process_group(0)
+        .stdin(if stdin.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn();
+    let mut child = match spawned {
+        Ok(child) => child,
+        Err(e) => {
+            return AgentResponse::error(
+                format!("starting {program}: {e}"),
+                error_codes::INVALID_REQUEST,
+            )
+        }
+    };
+    let pid = child.id() as libc::pid_t;
+    execs.insert(pid, None);
+    drop(execs);
+    if let (Some(mut pipe), Some(data)) = (child.stdin.take(), stdin) {
+        std::thread::spawn(move || pipe.write_all(data.as_bytes()));
+    }
+    let collect = |pipe: Option<Box<dyn Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut out = Vec::new();
+            if let Some(pipe) = pipe {
+                let _ = pipe.take(EXEC_OUTPUT_MAX as u64).read_to_end(&mut out);
+            }
+            out
+        })
+    };
+    let stdout = collect(
+        child
+            .stdout
+            .take()
+            .map(|p| Box::new(p) as Box<dyn Read + Send>),
+    );
+    let stderr = collect(
+        child
+            .stderr
+            .take()
+            .map(|p| Box::new(p) as Box<dyn Read + Send>),
+    );
+    let deadline = Instant::now() + timeout;
+    let mut killed = false;
+    let mut execs = lock.lock().unwrap_or_else(|e| e.into_inner());
+    let status = loop {
+        if let Some(Some(status)) = execs.get(&pid) {
+            break *status;
+        }
+        let mut status = 0;
+        // SAFETY: waitpid writes the wait status into the one integer it is given.
+        if unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) } == pid {
+            break status;
+        }
+        if !killed && Instant::now() >= deadline {
+            // SAFETY: kill(2) reads no memory; the pid is not reaped yet, so its group still names the command and what it started, which would otherwise hold the output pipes open.
+            unsafe { libc::kill(-pid, libc::SIGKILL) };
+            killed = true;
+        }
+        execs = cvar
+            .wait_timeout(execs, Duration::from_millis(20))
+            .unwrap_or_else(|e| e.into_inner())
+            .0;
+    };
+    execs.remove(&pid);
+    drop(execs);
+    let exit_code = if libc::WIFSIGNALED(status) {
+        128 + libc::WTERMSIG(status)
+    } else {
+        libc::WEXITSTATUS(status)
+    };
+    AgentResponse::Completed {
+        exit_code,
+        stdout: stdout.join().unwrap_or_default(),
+        stderr: stderr.join().unwrap_or_default(),
     }
 }
 
@@ -727,6 +877,46 @@ mod tests {
                 "{start} {length} {block}"
             );
         }
+    }
+
+    // TEST_SCENARIO: an operator's command runs to its end and answers with its exit code and both streams, with the env it was given and none of the init's; one that outlives its limit is killed and says so, rather than holding the protocol thread.
+    #[test]
+    fn an_exec_answers_with_what_the_command_did() {
+        let run = |script: &str, timeout_ms: u64| {
+            let mut conn = File::open("/dev/null").unwrap();
+            respond(
+                AgentRequest::VmExec {
+                    command: vec!["/bin/sh".into(), "-c".into(), script.into()],
+                    env: vec![("GIVEN".into(), "yes".into())],
+                    workdir: Some("/".into()),
+                    timeout_ms: Some(timeout_ms),
+                    interactive: false,
+                    tty: false,
+                    background: false,
+                    stdin_data: None,
+                },
+                &mut conn,
+            )
+        };
+        let AgentResponse::Completed {
+            exit_code,
+            stdout,
+            stderr,
+        } = run(
+            "echo \"$GIVEN ${CARGO:-clean} $(pwd)\"; echo err >&2; exit 3",
+            10_000,
+        )
+        else {
+            panic!("no completion");
+        };
+        assert_eq!(
+            (exit_code, stdout, stderr),
+            (3, b"yes clean /\n".to_vec(), b"err\n".to_vec())
+        );
+        let AgentResponse::Completed { exit_code, .. } = run("sleep 10", 100) else {
+            panic!("no completion");
+        };
+        assert_eq!(exit_code, 128 + libc::SIGKILL);
     }
 
     // TEST_SCENARIO: the host checks a ping's capabilities before it asks for a quiesced stop or for RAM to be onlined; without them it refuses the stop and leaves the VMM running, or never grows the machine.

@@ -39,7 +39,7 @@ The runner keeps only the latest ensure for each machine and one worker convergi
 A guest starting to answer changes nothing the cluster can watch, so the runner watches for it: a **health prober** asks each machine on its way up often, most in the first minute of its boot, and a steady one rarely, and a status is built from what it last heard rather than probing on the read.
 An ensure plans from that same record while it is no older than the prober's cadence for the machine, or is about a stopped or absent machine, which only an action changes; it looks again only at an older record, one holding a runtime error, or a machine being deleted.
 An ensure that reaches a runner already closing is refused, not stored.
-A live VMM reads as running, not stopped, whatever its guest is doing, and a probe never pings the guest agent, so only the prober's silence restarts it: the prober itself, within a minute after an answer, ten for slow boots and repeat stalls.
+A live VMM reads as running, not stopped, whatever its guest is doing, and a probe never pings the guest, so only the prober's silence restarts it: the prober itself, within a minute after an answer, ten for slow boots and repeat stalls.
 Its memory stays counted meanwhile.
 That a guest has answered is also read from its machine's share, where its first answer leaves a record, so a runner restarted or [handed off](vm-runner-upgrades.md) restarts a guest that answered before it and then went quiet, as its predecessor would have.
 A failure stays on the status until an action succeeds or a spec arrives that needs none.
@@ -82,13 +82,14 @@ A stop signal ends the supervision instead.
 platform-init's refusals to boot, each hand-off and each exit reach the console as kernel log lines, because its own log is on the disk the host never reads ([observability](observability.md#vm-runner)).
 A machine's egress allows one destination, the paired gateway, so the controller marks the address ranges a guest might itself hold — the private, carrier-grade-NAT and link-local ones — as local to it, and a client that honors that marking reaches them directly rather than through a gateway that could never route them.
 What a machine keeps across a stop is its storage disk on the runner's one PVC: `HOME`, and the upper layer of its root for as long as its images share a root generation ([persistence](persistence.md#per-agent-pvcs) owns the rule).
-It is the machine's one disk: smolvm's guest agent keeps its own root's changes in RAM, since nothing there outlives a boot.
+It is the machine's one disk.
+The guest's init is platform-init, not smolvm's guest agent: smolvm boots it from the agent root as PID 1, and it sets up the network, mounts the disk and the shares, boots the image on one overlay over the image tree, and answers the runner's host side (ping, quiesced stop, memory onlining, an operator's `vm-runner exec`), so no container runtime and no second root stand between the VM and the image.
 That disk is made once, by the runner when it creates the machine: btrfs from the runner image's template, at its full size, under a UUID of its own, which the guest mounts compressed with zstd.
 A create whose disk cannot be made fails and leaves no machine, since smolvm would make a disk of its own at the next start.
 Disks made before btrfs are ext4, and stay ext4.
 A btrfs disk that does not mount fails the boot and stays as it is, since btrfs has no repair a boot may run unattended.
 A start never copies smolvm's template over a disk that already holds a filesystem — not even one whose first format stopped short of resizing it to the size asked for.
-A stop first sends the workload SIGTERM through the guest agent and gives it a few seconds, as a pod's container gets, then has the guest quiesce that disk, and a guest that does not confirm it did is powered off anyway, so a stop or a delete always ends the machine.
+A stop has platform-init send the workload SIGTERM and give it a few seconds, as a pod's container gets, then sync and freeze that disk, and a guest that does not confirm it did is powered off anyway, so a stop or a delete always ends the machine.
 A start refuses a disk that a VMM which outlived even its kill still holds, since booting beside it would put two VMMs on one disk.
 smolvm forgets a machine before it removes the machine's directory, so a delete cut short between the two leaves the disk with no record.
 Every delete therefore asks the runtime, even about a machine it reads as absent, and removes a directory no record owns, and a create removes one before it makes the machine, so a machine created again under a name never boots on the home of the one deleted before it.

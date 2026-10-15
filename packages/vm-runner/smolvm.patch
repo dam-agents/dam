@@ -80,10 +80,22 @@ index 95b89bf..dad5d21 100644
                  destination,
                  stream.peer_addr().ok(),
 diff --git i/src/agent/launcher.rs w/src/agent/launcher.rs
-index 3f46386..896830c 100644
+index 3f46386..fdf61aa 100644
 --- i/src/agent/launcher.rs
 +++ w/src/agent/launcher.rs
-@@ -2379,6 +2379,10 @@ pub fn launch_agent_vm(config: &LaunchConfig<'_>) -> Result<()> {
+@@ -37,6 +37,11 @@ use std::path::{Path, PathBuf};
+ 
+ use super::{KrunFunctions, PortMapping, VmResources};
+ 
++/// The init a machine boots when the embedder cleared
++/// `internal_boot::GUEST_AGENT`: the embedder installs it in the agent rootfs
++/// beside smolvm's own /sbin/init, which machines smolvm itself starts keep.
++pub const EMBEDDER_INIT: &str = "/sbin/platform-init";
++
+ /// Maximum number of CIDR entries held in the live egress allow-list.
+ /// Protects the muxer's per-packet O(n) scan from unbounded growth when
+ /// a host resolves to many IPs across many refresh cycles.
+@@ -2379,13 +2384,22 @@ pub fn launch_agent_vm(config: &LaunchConfig<'_>) -> Result<()> {
          if packed_layers_dir.is_some_and(|d| d.exists()) {
              env_strings.push(cstr("SMOLVM_PACKED_LAYERS=smolvm_layers:/packed_layers"));
          }
@@ -94,6 +106,21 @@ index 3f46386..896830c 100644
  
          let mut envp: Vec<*const libc::c_char> = env_strings.iter().map(|s| s.as_ptr()).collect();
          envp.push(std::ptr::null());
+ 
+-        // Set exec command (/sbin/init)
+-        let exec_path = cstr("/sbin/init");
+-        let argv_strings = [cstr("/sbin/init")];
++        // Set exec command (/sbin/init, or the embedder's own init)
++        let init = if crate::internal_boot::GUEST_AGENT.load(std::sync::atomic::Ordering::Relaxed) {
++            "/sbin/init"
++        } else {
++            EMBEDDER_INIT
++        };
++        let exec_path = cstr(init);
++        let argv_strings = [cstr(init)];
+         let mut argv: Vec<*const libc::c_char> = argv_strings.iter().map(|s| s.as_ptr()).collect();
+         argv.push(std::ptr::null());
+ 
 diff --git i/src/agent/manager.rs w/src/agent/manager.rs
 index d80845f..ebeb6eb 100644
 --- i/src/agent/manager.rs
@@ -147,7 +174,7 @@ index 842a302..3654aa7 100644
          client.pull_with_registry_config(image)?;
          let mut env = record.env.clone();
 diff --git i/src/internal_boot.rs w/src/internal_boot.rs
-index 5347752..7763966 100644
+index 5347752..1c44eeb 100644
 --- i/src/internal_boot.rs
 +++ w/src/internal_boot.rs
 @@ -71,6 +71,14 @@ fn open_boot_disk<K: DiskType>(path: &Path, size_gb: u64) -> crate::Result<VmDis
@@ -155,7 +182,7 @@ index 5347752..7763966 100644
  }
  
 +/// Whether machines boot smolvm's guest agent. An embedder that ships its
-+/// own /sbin/init in the agent rootfs clears it, in its own process and
++/// own init in the agent rootfs (`launcher::EMBEDDER_INIT`) clears it, in its own process and
 +/// before `run` in the boot process: its machines get no overlay disk (the
 +/// disk is never made or opened), no image workload is pulled or run (the
 +/// record's image is still shared with the guest), and the init runs as PID 1.
