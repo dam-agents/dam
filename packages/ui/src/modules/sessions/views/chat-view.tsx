@@ -112,6 +112,7 @@ import { ProcessesIndicator } from "../../processes/components/processes-indicat
 import { ProcessesPanel } from "../../processes/components/processes-panel.js";
 import { useProcessesEnabled } from "../../processes/hooks/use-processes-enabled.js";
 import { useProcessesLiveUpdates } from "../../processes/hooks/use-processes-live-updates.js";
+import { useRunningProcesses } from "../../processes/hooks/use-running-processes.js";
 import { ProviderSettingsModal } from "../../providers/components/provider-settings-modal.js";
 import { AgentUsageActions } from "../../sandboxes/components/agent-usage-actions.js";
 import { KitUpdateBar } from "../../starter-kits/components/kit-update-bar.js";
@@ -261,6 +262,9 @@ export function ChatView() {
   const storedProcessOutputKey = useStore((s) => s.openProcessOutputKey);
   const openProcessOutputKey = processesEnabled ? storedProcessOutputKey : null;
   useProcessesLiveUpdates(selectedAgent, processesEnabled);
+  const runningProcesses = useRunningProcesses(
+    processesEnabled ? selectedAgent : null,
+  );
   const goBack = useStore((s) => s.goBack);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const sidePanelTab = useStore((s) => s.sidePanelTab);
@@ -1283,6 +1287,16 @@ export function ChatView() {
             active={activeTab}
             hidden={hiddenTabs}
             onSelect={onSidePanelTab}
+            badges={
+              runningProcesses
+                ? {
+                    processes: {
+                      count: runningProcesses.running,
+                      label: `Processes, ${String(runningProcesses.running)} running`,
+                    },
+                  }
+                : undefined
+            }
             footer={<ApprovalsButton onOpen={openApprovals} />}
           />
         </div>
@@ -1331,7 +1345,9 @@ function ChatHeaderStatus({
   return (
     <>
       {processesEnabled ? (
-        <ProcessesIndicator agentId={selectedAgent} />
+        <span className="md:hidden">
+          <ProcessesIndicator agentId={selectedAgent} />
+        </span>
       ) : (
         <BackgroundWorkIndicator items={backgroundWork} />
       )}
