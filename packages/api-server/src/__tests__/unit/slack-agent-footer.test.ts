@@ -290,6 +290,11 @@ describe("renderAssistantBlocks", () => {
       "Before ```pwd``` after.",
     ],
     [
+      "inline fences that end a line of prose",
+      "Run ```pwd```\nMore text.",
+      "Run ```pwd```\nMore text.",
+    ],
+    [
       "standard Markdown with a language",
       "Before\n```bash\necho hello\n```\nAfter.",
       "Before\n```bash\necho hello\n```\nAfter.",
