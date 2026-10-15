@@ -277,7 +277,7 @@ fn check_id(id: &str) -> Result<(), Rejected> {
 }
 
 impl Server {
-    // UNIT_BOUNDARY_DESCRIPTION: a runner over its state directory. It must be built inside the tokio runtime that will serve it, because every published port is a task on that runtime. Machines already on disk get their ports published again, since the listeners died with the previous process while the machines' ports did not.
+    // UNIT_BOUNDARY_DESCRIPTION: a runner over its state directory. It must be built inside the tokio runtime that will serve it, because every published port is a task on that runtime. Machines already on disk get their ports published again, since the listeners died with the previous process while the machines' ports did not. Each one the runtime finds running is measured before the runner admits anything, and the prober takes it from there: a runner that took the machines over in a hand-off or a restart would otherwise count each at the warm-up floor until the controller first asked about it, and admit a start into memory its running guests already hold.
     pub fn start(config: Config, runtime: Arc<dyn Runtime>) -> anyhow::Result<Arc<Self>> {
         let forwarder = Forwarder::new(tokio::runtime::Handle::current(), config.listen.clone());
         let lifetime = CancellationToken::new();
@@ -324,6 +324,14 @@ impl Server {
                 if let Err(e) = server.forwarder.publish(&id, port) {
                     tracing::warn!(machine = %id, error = %e, "republishing machine port");
                 }
+            }
+            if server.runtime.state(&id).ok() == Some(State::Running) {
+                let resident = server.runtime.resident_mib(&id);
+                locked(&server.machines)
+                    .entries
+                    .entry(id)
+                    .or_default()
+                    .resident_mib = resident;
             }
         }
         server.hold_images();

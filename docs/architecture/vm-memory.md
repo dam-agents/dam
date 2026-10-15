@@ -1,6 +1,6 @@
 # VM memory
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 An owner's machines share the memory of their [runner](vm-runner.md), and it is counted by what they use rather than by their sizes.
 That memory is the owner's whole pool for vm agents, which have no size of their own and stand outside the [budget](budgets.md)'s Ceiling.
@@ -47,6 +47,7 @@ A pressure read waits on a version of its own, which moves when pressure starts 
 A runner with no cgroup v2 to read — the host runner, a cgroup v1 node — never reports pressure.
 
 **A running machine is counted at its use plus headroom.** That is its measured use plus a per-machine headroom (`virtualization.runner.headroomMiB`), never more than its size.
+A runner measures every machine it finds running as it starts, before it admits anything, so after a hand-off or a restart the machines it took over count at what they hold rather than as machines not yet measured.
 **A machine warming up counts at least at the warm-up floor** (`virtualization.runner.bootMiB`), or its size when that is smaller: a machine not yet measured, every machine an action is bringing up, and a running machine for two minutes after its boot began, whatever it was measured at.
 The harness starts only once the guest answers, about a second after the boot, and grows to 2 to 3 GiB within the next minute, so a machine measured right after its boot holds little of what it will hold; the warm-up is a fixed time rather than one that ends at the guest's answer, since the answer is when the growth begins.
 The runner reports a machine warming up in its status, and the controller counts it the same way.

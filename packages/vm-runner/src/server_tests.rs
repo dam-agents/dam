@@ -2967,3 +2967,26 @@ async fn a_runner_that_fails_to_serve_leaves_its_machines_to_its_loader() {
         .await;
     assert_eq!(alone.fake.state("m1").unwrap(), State::Stopped);
 }
+
+// TEST_SCENARIO: a runner handed running machines by another release counts each at what it holds from its first admission on, not at the warm-up floor until the controller first asks about it. With one guest holding 7500 of 8192 MiB, the runner that booted it refuses a 2 GiB start, and so does the runner it hands off to, before any status read.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_hand_off_admits_no_start_into_memory_adopted_machines_hold() {
+    let tune = |c: &mut Config| {
+        c.memory_mib = 8192;
+        c.boot_mib = 1024;
+    };
+    let h = Harness::with("hand-off-memory", tune);
+    let mut big = spec(true);
+    big.memory_mib = 8000;
+    h.server.put("m1", big).unwrap();
+    h.settle("m1").await;
+    *locked(&h.fake.resident) = Some(7500);
+    h.server.probe("m1");
+    let refused = h.server.put("m2", spec(true)).unwrap();
+    assert_eq!(refused.reason, REASON_OUT_OF_CAPACITY, "{refused:?}");
+
+    let next = h.hand_off(tune).await;
+    let refused = next.server.put("m2", spec(true)).unwrap();
+    assert_eq!(refused.reason, REASON_OUT_OF_CAPACITY, "{refused:?}");
+    next.server.close().await;
+}
