@@ -12,7 +12,15 @@ import {
 const URL = "https://github.com/dam-agents/dam";
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 
-function service(sources: SkillSource[]) {
+function service(
+  sources: SkillSource[],
+  installed: {
+    source: string;
+    name: string;
+    version: string;
+    path?: string;
+  }[] = [],
+) {
   const upserts: { path?: string }[] = [];
   const removed: unknown[][] = [];
   const svc = createSkillsService({
@@ -30,7 +38,7 @@ function service(sources: SkillSource[]) {
       upsertSkill: async (_agentId: string, ref: { path?: string }) => {
         upserts.push(ref);
       },
-      listSkills: async () => [],
+      listSkills: async () => installed,
       removeBySource: async (...args: unknown[]) => {
         removed.push(args);
       },
@@ -77,6 +85,19 @@ describe("one repository connected with several paths", () => {
     ]);
     await expect(install(svc)).rejects.toThrow(/several paths/);
     expect(upserts).toEqual([]);
+  });
+
+  // TEST_SCENARIO: an update from a client that sends no path, such as an older CLI or the MCP tool, keeps the path the skill was installed from instead of being refused or moved to another source of the repository.
+  it("keeps the installed path when an update names no path", async () => {
+    const { svc, upserts } = service(
+      [
+        { id: "dev", name: "dev", gitUrl: URL, path: ".agents/skills" },
+        { id: "qa", name: "qa", gitUrl: URL, path: "qa" },
+      ],
+      [{ source: URL, name: "qi-profile-dam", version: "old", path: "qa" }],
+    );
+    await install(svc);
+    expect(upserts.map((r) => r.path)).toEqual(["qa"]);
   });
 
   // TEST_SCENARIO: deleting the qa source must not uninstall the skills installed from the repository's other source.
