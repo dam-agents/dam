@@ -168,3 +168,73 @@ describe("terminal relay during a wake", () => {
     wss.close();
   });
 });
+
+describe("terminal relay wake", () => {
+  // TEST_SCENARIO: the web app connects a terminal on its own with wake=0, as when the agent it shows comes back from a restart, and that connect must not wake an agent its user just put to sleep. It only waits out a wake asked for elsewhere, and takes the presence hold, which alone would wake the agent, only once the agent's end is open. A connect without wake=0, the user's or the CLI's, still wakes it.
+  it("wakes the agent only when the client asks, and holds presence once open", async () => {
+    const agent = createServer();
+    servers.push(agent);
+    const wss = new WebSocketServer({ server: agent });
+    await new Promise<void>((r) => agent.listen(0, "127.0.0.1", r));
+    const asked: unknown[] = [];
+    let wake!: () => void;
+    let held = 0;
+    const relay = createTerminalRelay(
+      "ns",
+      {
+        ...repo,
+        ensureReady: (_id: string, opts: unknown) => {
+          asked.push(opts);
+          return new Promise<void>((r) => (wake = r));
+        },
+      } as unknown as AgentsRepository,
+      {
+        acquire: () => {
+          held++;
+          return () => {
+            held--;
+          };
+        },
+      } as unknown as SessionPresence,
+      fakeBus(),
+      () => `ws://127.0.0.1:${(agent.address() as { port: number }).port}`,
+    );
+    const server = createServer();
+    servers.push(server);
+    server.on("upgrade", (req, socket, head) =>
+      relay.handleUpgrade(req, socket, head, "agent-1", {
+        sub: "u",
+        surface: "ui",
+        attached: () => {},
+      }),
+    );
+    await new Promise<void>((r) => server.listen(0, r));
+    const port = (server.address() as { port: number }).port;
+    const connect = async (query: string) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/?${query}`);
+      sockets.push(ws);
+      await new Promise<void>((r) => ws.once("open", () => r()));
+      return ws;
+    };
+    const until = async (check: () => boolean) => {
+      const start = Date.now();
+      while (!check()) {
+        if (Date.now() - start > 2_000) throw new Error("timed out");
+        await new Promise((r) => setTimeout(r, 10));
+      }
+    };
+
+    await connect("sessionId=s1&wake=0");
+    await until(() => asked.length === 1);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(held).toBe(0);
+    wake();
+    await until(() => held === 1);
+
+    await connect("sessionId=s2");
+    await until(() => asked.length === 2);
+    expect(asked).toEqual([{ waitOnly: true }, { waitOnly: false }]);
+    agent.closeAllConnections();
+    wss.close();
+  });
+});

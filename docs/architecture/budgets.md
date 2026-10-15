@@ -1,6 +1,6 @@
 # Per-user resource budgets
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 ## Overview
 
@@ -149,6 +149,7 @@ Reclaiming is **announced, not asked**.
 The eligibility rules confine it to agents with no attached viewer, and the outcome — hibernated somewhat sooner than its own timer said — is one the agent's settings already sanction, so nobody is asked first.
 The victim lands in ordinary `Hibernated` state, but while its reclaim mark stands the api-server reads it off the Agent and the agent says it was put to sleep automatically — to make room for an agent its owner started, or, on the vm backend, to free memory for the owner's other agents ([vm-memory](vm-memory.md)) — in its unavailable view and its row, with a one-time notice in an open web app.
 A deliberate touch outdates the mark, and the message with it.
+A Sleep removes the mark, since it stales last activity behind it, so an agent its user put to sleep never reads as put to sleep automatically.
 The exposure this adds is hibernation's existing blind spot (unreported work, which no signal sees) arriving earlier than advertised; the floor bounds it and the escape is unchanged: disable hibernation on agents whose real work runs off-session.
 
 ## Failure semantics upstream

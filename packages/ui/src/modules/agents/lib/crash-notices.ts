@@ -3,9 +3,11 @@ import { isStartRefusal, TerminationCode } from "api-server-api";
 import type { Toast } from "../../../lib/toast.js";
 import type { AgentView } from "../../../types.js";
 
+// UNIT_BOUNDARY_DESCRIPTION: a vm agent's restart count is the runner's, which a stop does not reset, while hibernation publishes zero, so the first count a vm agent reports after it slept is a baseline until it is running again, not a crash.
 export interface CrashMark {
   restarts: number;
   announced?: { reason: string; atRestarts: number };
+  asleep?: true;
 }
 
 type WatchedAgent = Pick<
@@ -102,7 +104,13 @@ export function nextCrashNotices(
       announced = { reason, atRestarts: agent.podRestarts };
     }
     const restarted =
-      before !== undefined && agent.podRestarts > before.restarts;
+      before !== undefined &&
+      !before.asleep &&
+      agent.podRestarts > before.restarts;
+    const asleep =
+      agent.vm &&
+      (agent.state === "hibernated" ||
+        (before?.asleep === true && agent.state !== "running"));
     const sameCrashRestarting =
       announced !== undefined && agent.podRestarts <= announced.atRestarts + 1;
     if (restarted && !sameCrashRestarting) {
@@ -113,6 +121,7 @@ export function nextCrashNotices(
     marks.set(agent.id, {
       restarts: agent.podRestarts,
       ...(announced ? { announced } : {}),
+      ...(asleep ? { asleep } : {}),
     });
   }
   if (outOfMemory.length > 0)

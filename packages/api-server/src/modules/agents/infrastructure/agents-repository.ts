@@ -6,6 +6,7 @@ import {
   ANN_ROLL_REV,
   INVOCATIONS_ACTIVE_KEY,
   LAST_ACTIVITY_KEY,
+  RECLAIMED_AT_KEY,
   STOP_REQUESTED_KEY,
 } from "./labels.js";
 import {
@@ -283,6 +284,7 @@ export function createAgentsRepository(
             [ACTIVE_SESSION_KEY]: "",
             [INVOCATIONS_ACTIVE_KEY]: "",
             [LAST_ACTIVITY_KEY]: STALE_ACTIVITY,
+            [RECLAIMED_AT_KEY]: "",
           },
         },
       });
