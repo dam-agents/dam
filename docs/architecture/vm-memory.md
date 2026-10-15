@@ -72,6 +72,7 @@ Its need is the larger of the counted and the measured overshoot of the 80% targ
 When no candidate says it is idle, this pass alone hibernates the candidates that did not answer, as a last resort, because the kill would stop them too; one that answered busy is never hibernated.
 The controller holds one watch on each owner's pressure, and a pass on it hibernates nothing more for fifteen seconds after one that did, because the machines it hibernated still count until they have stopped.
 The two passes never run together for one owner.
+A refused start's reclaim and the pass do run side by side, so each reads its need and hibernates the agents it chose under the owner's lock, and those agents stop counting at once: the reclaim that comes next sees the room already freed and does not choose or count them again.
 
 **Guests give back cold page cache.** A guest keeps the files it read cached until something needs the memory, and the host counts that cache as the machine's.
 Every minute platform-init hands the cache on the kernel's inactive list to cgroup v2 proactive reclaim, and the freed pages return to the host within seconds.
