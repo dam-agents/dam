@@ -42,7 +42,7 @@ type Client = ReturnType<typeof agentTrpc>;
  * on the tab the panel shows, named by its target id, so an agent bringing
  * another tab to the front meanwhile does not redirect it; a runtime too old
  * to report tabs reports none, and is sent no tab. A select or close shows at
- * once. An address asked for before the watch is live is sent once it is, as
+ * once, and one the runtime refuses falls back to the tabs it last reported. An address asked for before the watch is live is sent once it is, as
  * the agent may still be waking. `connects` counts each time the watch
  * goes live, which the stream page uses to check its token. An agent that does
  * not offer the panel is told apart from one that cannot be reached, and is
@@ -60,6 +60,7 @@ export function useBrowserControl(agentId: string) {
   const [connects, setConnects] = useState(0);
   const live = useRef(false);
   const pendingUrl = useRef<string | null>(null);
+  const reported = useRef<BrowserSnapshot | null>(null);
   const shownTab = useRef<string | undefined>(undefined);
   shownTab.current = (snapshot.tabs && snapshot.activeTab) || undefined;
 
@@ -93,6 +94,12 @@ export function useBrowserControl(agentId: string) {
     [run],
   );
 
+  const showReported = (e: unknown): never => {
+    const last = reported.current;
+    if (last) setSnapshot(last);
+    throw e;
+  };
+
   const onShownTab = (
     call: (client: Client, input: { tab: string } | undefined) => unknown,
   ) => {
@@ -118,6 +125,7 @@ export function useBrowserControl(agentId: string) {
             pendingUrl.current = null;
             if (url) run((client) => client.browser.navigate.mutate({ url }));
           }
+          reported.current = parsed.data;
           setSnapshot(parsed.data);
         },
         onError: (e) => {
@@ -150,11 +158,15 @@ export function useBrowserControl(agentId: string) {
     forward: () => onShownTab((client, i) => client.browser.forward.mutate(i)),
     selectTab: (tab: string) => {
       setSnapshot((s) => selectTabLocally(s, tab));
-      run((client) => client.browser.selectTab.mutate({ tab }));
+      run((client) =>
+        client.browser.selectTab.mutate({ tab }).catch(showReported),
+      );
     },
     closeTab: (tab: string) => {
       setSnapshot((s) => closeTabLocally(s, tab));
-      run((client) => client.browser.closeTab.mutate({ tab }));
+      run((client) =>
+        client.browser.closeTab.mutate({ tab }).catch(showReported),
+      );
     },
     newTab: () => run((client) => client.browser.newTab.mutate()),
     clearData: () => run((client) => client.browser.clearData.mutate()),
