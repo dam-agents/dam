@@ -513,7 +513,7 @@ fn embedded_spec(
     Ok((smolvm_spec, workload))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: writes the share's launch record (guest::Launch) for the boot about to run, from the machine's record, which every create and update keeps current: platform-init is the guest's init and reads what it runs from there. A machine an older runner created records platform-init in front of the image's command, as the workload smolvm ran in a container; that is dropped, or the init would start a second platform-init inside the image. It is written whole and renamed into place, so a guest never reads half of it, and is readable by the guest's root alone, since the env holds the agent's secrets.
+// UNIT_BOUNDARY_DESCRIPTION: writes the share's launch record (guest::Launch) for the boot about to run, from the machine's record, which every create and update keeps current: platform-init is the guest's init and reads what it runs from there. A machine an older runner created records platform-init in front of the image's command, as the workload smolvm ran in a container; that is dropped, or the init would start a second platform-init inside the image. It is written whole and renamed into place, so a guest never reads half of it, and is world-readable like every share file: each VMM drops to a uid of its own and opens the share as that uid, so a record only root may read fails the boot. Landlock keeps every VMM to its own machine's paths, and the env is the one the guest's entrypoint gets anyway.
 fn write_launch(record: &VmRecord) -> anyhow::Result<()> {
     let Some((share, _, _)) = record
         .mounts
@@ -535,7 +535,7 @@ fn write_launch(record: &VmRecord) -> anyhow::Result<()> {
         workdir: record.workdir.clone(),
     };
     let path = Path::new(share).join(crate::guest::LAUNCH_FILE);
-    crate::files::write(&path, &serde_json::to_vec(&launch)?, 0o600)
+    crate::files::write(&path, &serde_json::to_vec(&launch)?, 0o644)
         .with_context(|| format!("writing the launch record {}", path.display()))
 }
 
@@ -928,7 +928,7 @@ mod tests {
         );
         assert_eq!(
             fs::metadata(&launch).unwrap().permissions().mode() & 0o777,
-            0o600
+            0o644
         );
         let mut legacy = record.clone();
         legacy.cmd.insert(0, crate::guest::INIT_PATH.into());
