@@ -60,7 +60,9 @@ describe("the cron schedule editor", () => {
       cron: "30 7 * * 1-5",
       task: "Post the digest",
       precheck: "",
+      harness: "",
       model: "",
+      settings: {},
       sessionTitle: "",
       sessionMode: "continuous",
     });
