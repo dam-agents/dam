@@ -35,6 +35,7 @@ import {
 } from "../api/session-pair.js";
 import {
   addableProviders,
+  attachableProviders,
   modelGroups,
   modelIndicatorLabel,
   sameModel,
@@ -89,7 +90,9 @@ export function SessionPairPicker({
   const pending = revoking || attachDialog.pending;
   const attach = (connection: { id: string }) =>
     void attachDialog
-      .ask(harness, offered.addable, [connection.id])
+      .ask(harness, attachableProviders(providers.granted, offered.addable), [
+        connection.id,
+      ])
       .then((ids) => {
         const provider = ids?.includes(connection.id)
           ? connection.id

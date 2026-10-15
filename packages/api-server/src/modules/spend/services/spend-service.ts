@@ -1,0 +1,208 @@
+import { TRPCError } from "@trpc/server";
+import {
+  connectionLimitRefusal,
+  connectionLimitRule,
+  nextUtcMidnight,
+  type SpendCeilingView,
+  type SpendLimitScope,
+  type SpendLimitView,
+  type SpendService,
+  type SpendTotal,
+} from "api-server-api";
+import { match } from "ts-pattern";
+import { emit, EventType } from "../../../events.js";
+import { utcDay } from "../domain/ledger.js";
+import {
+  ceilingCounter,
+  limitCounter,
+  readCeiling,
+  readLimit,
+  type SpendCeiling,
+  type SpendLimit,
+} from "../domain/limits.js";
+import type { SpendUnit } from "../domain/units.js";
+import type { SpendLedger } from "../infrastructure/spend-ledger.js";
+import type { SpendLimits } from "../infrastructure/spend-limits.js";
+import type { SpendCeilings } from "../infrastructure/user-spend-ceilings.js";
+import type { DayTotals, GrantedConnections } from "./spend-check.js";
+
+export interface SpendQuestionCloser {
+  closePending(input: { ownerSub: string; limitId: string }): Promise<void>;
+}
+
+export interface AgentPayers {
+  payerOf(agentId: string): Promise<string>;
+}
+
+export function createSpendService(deps: {
+  ledger: SpendLedger;
+  limits: SpendLimits;
+  ceilings: SpendCeilings;
+  totals: DayTotals;
+  connections: GrantedConnections;
+  questions: SpendQuestionCloser;
+  payers: AgentPayers;
+  isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
+  ownerSub: string;
+  agentBinding: readonly string[] | "*";
+}): SpendService {
+  const requireOwned = async (agentId: string) => {
+    if (!(await deps.isAgentOwnedBy(agentId, deps.ownerSub))) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
+    }
+  };
+
+  const requirePayer = async (agentId: string) => {
+    const payer = await deps.payers.payerOf(agentId);
+    if (payer !== agentId) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `this agent is a sub-agent of ${payer}: its spend counts toward the spend limits of that agent, so it has no limits of its own`,
+      });
+    }
+  };
+
+  const limitView = async (
+    limit: SpendLimit,
+    day: string,
+  ): Promise<SpendLimitView> => {
+    const reading = readLimit(
+      limit,
+      await deps.totals.spentToday(limitCounter(limit, day)),
+    );
+    return {
+      id: limit.id,
+      scope: limit.scope,
+      unit: limit.unit,
+      amountMicros: limit.amountMicros,
+      extensions: limit.extensions,
+      effectiveMicros: reading.effectiveMicros,
+      spentMicros: reading.spentMicros,
+      leftMicros: reading.leftMicros,
+      state: reading.state,
+    };
+  };
+
+  const ceilingView = async (
+    ceiling: SpendCeiling,
+    day: string,
+  ): Promise<SpendCeilingView> => {
+    const reading = readCeiling(
+      ceiling,
+      await deps.totals.spentToday(ceilingCounter(deps.ownerSub, day)),
+    );
+    return {
+      amountMicros: ceiling.amountMicros,
+      spentMicros: reading.spentMicros,
+      state: reading.state,
+      source: ceiling.source,
+    };
+  };
+
+  const limitUnit = (scope: SpendLimitScope): Promise<SpendUnit> =>
+    match(scope)
+      .with({ kind: "agent" }, { kind: "owner" }, () =>
+        Promise.resolve<SpendUnit>("usd"),
+      )
+      .with({ kind: "connection" }, async ({ agentId, connectionId }) => {
+        const template = await deps.connections.templateOf(
+          agentId,
+          connectionId,
+        );
+        if (template === null) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "the Connection is not granted to this agent",
+          });
+        }
+        const rule = connectionLimitRule(template);
+        if (!rule.limitable) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: connectionLimitRefusal(rule),
+          });
+        }
+        return rule.unit;
+      })
+      .exhaustive();
+
+  const scopedAgents = (agentId: string | undefined) =>
+    agentId ? [agentId] : deps.agentBinding === "*" ? null : deps.agentBinding;
+
+  return {
+    async daily({ agentId, from, to }) {
+      return deps.ledger.daily({
+        ownerSub: deps.ownerSub,
+        agentIds: scopedAgents(agentId),
+        from,
+        to,
+      });
+    },
+
+    async status(input) {
+      const now = new Date();
+      const day = utcDay(now);
+      const agentId = input?.agentId;
+      if (agentId) await requireOwned(agentId);
+      const [limits, ceiling, rows, byConnection] = await Promise.all([
+        deps.limits.applying(
+          { agentId: agentId ?? null, ownerSub: deps.ownerSub },
+          day,
+        ),
+        deps.ceilings.forOwner(deps.ownerSub),
+        deps.ledger.daily({
+          ownerSub: deps.ownerSub,
+          agentIds: scopedAgents(agentId),
+          from: day,
+          to: day,
+        }),
+        agentId
+          ? deps.ledger.byConnection({
+              ownerSub: deps.ownerSub,
+              agentId,
+              day,
+            })
+          : [],
+      ]);
+      const spent = new Map<string, SpendTotal>();
+      for (const row of rows) {
+        const total = spent.get(row.unit) ?? {
+          unit: row.unit,
+          costMicros: 0,
+          estimatedCalls: 0,
+        };
+        total.costMicros += row.costMicros;
+        total.estimatedCalls += row.estimatedCalls;
+        spent.set(row.unit, total);
+      }
+      return {
+        day,
+        resetsAt: nextUtcMidnight(now).toISOString(),
+        limits: await Promise.all(limits.map((limit) => limitView(limit, day))),
+        ceiling: ceiling ? await ceilingView(ceiling, day) : null,
+        spent: [...spent.values()],
+        spentByConnection: byConnection,
+      };
+    },
+
+    async setLimit({ scope, amountMicros }) {
+      if (scope.kind !== "owner") {
+        await requireOwned(scope.agentId);
+        if (amountMicros !== null) await requirePayer(scope.agentId);
+      }
+      const limitId =
+        amountMicros === null
+          ? await deps.limits.clear(deps.ownerSub, scope)
+          : await deps.limits.set({
+              ownerSub: deps.ownerSub,
+              scope,
+              unit: await limitUnit(scope),
+              amountMicros,
+            });
+      if (limitId !== null) {
+        await deps.questions.closePending({ ownerSub: deps.ownerSub, limitId });
+      }
+      emit({ type: EventType.SpendLimitsChanged, ownerSub: deps.ownerSub });
+    },
+  };
+}

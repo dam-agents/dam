@@ -38,6 +38,7 @@ function makeService(rows: PendingApprovalRow[]) {
   const frames: string[] = [];
   const repo: ApprovalsRepository = {
     insertPending: async () => true,
+    insertIfAbsent: async () => true,
     getPending: async (id) => rows.find((r) => r.id === id) ?? null,
     findActivePendingExtAuthz: async () => null,
     listPendingForOwner: async () => rows,

@@ -1,6 +1,7 @@
 package reconciler
 
 import (
+	"cmp"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -325,8 +326,16 @@ func buildTerminatingChain(p bootstrapParams, c envoyHostChain) ev {
 	if p.OTel.Traces && !slices.ContainsFunc(c.Credentials, func(cred envoyCredential) bool { return cred.QueryParamName != "" }) {
 		hcm["tracing"] = otelTracing(p, 1)
 	}
+	var accessLogs []any
 	if p.OTel.AccessLogs {
-		hcm["access_log"] = hcmAccessLog(p, "terminate_"+c.ChainID, "terminate_"+c.ChainID, "chains")
+		accessLogs = hcmAccessLog(p, "terminate_"+c.ChainID, "terminate_"+c.ChainID, "chains")
+	}
+	if c.Metered() {
+		accessLogs = append(withoutPeriodicRecords(accessLogs), spendRecordAccessLog(p))
+		hcm["access_log_options"] = ev{"access_log_flush_interval": spendRecordFlushInterval}
+	}
+	if len(accessLogs) > 0 {
+		hcm["access_log"] = accessLogs
 	}
 
 	return ev{
@@ -348,7 +357,11 @@ func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 	if len(c.ConnectionIDs()) > 0 {
 		filters = append(filters, connectionAddressHTTPFilter(c))
 	}
-	filters = append(filters, extAuthzHTTPFilter(p))
+	if c.Metered() {
+		filters = append(filters, spendMeterHTTPFilter(p, c), withSpendMetadata(extAuthzHTTPFilter(p)))
+	} else {
+		filters = append(filters, extAuthzHTTPFilter(p))
+	}
 	for _, cred := range c.Credentials {
 		rivals := c.RivalsOf(cred)
 		gate := func(filter ev, innerName string) ev { return skippedForRivals(filter, innerName, rivals) }
@@ -643,14 +656,12 @@ func buildChainRouteAction(c envoyHostChain) ev {
 	return route
 }
 
+func (p bootstrapParams) PayerID() string { return cmp.Or(p.AttributionID, p.InstanceID) }
+
 func attributionHeaderMutations(p bootstrapParams) (add []any, remove []any) {
-	attributionID := p.AttributionID
-	if attributionID == "" {
-		attributionID = p.InstanceID
-	}
 	add = []any{
 		ev{
-			"header":        ev{"key": attributionAgentHeader, "value": attributionID},
+			"header":        ev{"key": attributionAgentHeader, "value": p.PayerID()},
 			"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
 		},
 	}

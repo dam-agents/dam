@@ -20,7 +20,8 @@ Before a session starts, the picker lists every provider the harness accepts in 
 It grays out a harness that no provider the owner holds accepts.
 A web terminal starts from a row of harness buttons on the agent's General page and on the empty chat: a button stores its harness, with the first attached provider it accepts, as the next session pair, and the terminal sends that pair when it connects.
 A harness that only providers the owner holds but has not attached accept opens the attach dialog, then opens on the provider attached; a harness no provider the owner holds accepts is grayed, and its tooltip names the harness and says why.
-The attach dialog, from the picker or a harness button, lists only the owner's unattached providers the harness accepts, each as the agent's Providers page shows it, with the harnesses it runs, switched off but for the one the owner clicked; nothing is attached until at least one is on and the owner confirms.
+The attach dialog, from the picker or a harness button, lists only the owner's unattached providers the harness accepts and the agent can take, leaving out one of a kind the agent already holds, each as the agent's Providers page shows it, with the harnesses it runs.
+Its rows start switched off, except the provider the owner clicked in the picker; nothing is attached until at least one is on and the owner confirms.
 The UI names a provider by its Settings name, such as Bob Shell, not the connection's own name.
 With no provider at all, the chat opens the provider list in a modal.
 While the agent holds no provider, the chat blocks sending, and the picker's place holds a link to that modal; a provider connected or picked there is attached to the agent.
@@ -127,6 +128,7 @@ The router **owns upstream auth**: the client's credential headers are dropped a
 It adds Anthropic's OAuth beta flag to a call bound for the subscription Connection, removes it from every other call, and passes the other `anthropic-beta` flags as sent, so one Claude Code process mixes the subscription with any routed provider.
 The body goes out with `model` rewritten to the upstream id; the response comes back with only its model field rewritten to the name the harness asked for, so transcripts record the provider.
 No retries: a second model call is a second bill.
+An upstream error keeps its status and headers, and its message gets a lead sentence that names the provider, the model, the API and the harness, so the harness shows where the call failed; a [spend refusal](spend-limits.md#refusal) passes unchanged.
 Each call is reported once with its Connection, upstream model, dialect, harness and session, the source of [spend](metrics.md).
 
 **Replay rules** apply by target, since the router cannot know which model wrote a history: for a Claude model, every assistant message but the last has its thinking blocks turned into `<thinking>…</thinking>` text; for a Responses target other than OpenAI, reasoning items and `client_metadata` are dropped and a tool-less request's tool items become text; for OpenAI only reasoning items with a non-empty `content` array are dropped; chat completions replay unchanged.

@@ -77,6 +77,7 @@ function matchesBinding(
 
 const NOT_ACTIONABLE: ApprovalActionOutcome = {
   outcome: "not_actionable",
+  type: null,
   rule: null,
 };
 
@@ -199,6 +200,9 @@ export function createApprovalsService(
 
     async approveOnce(id) {
       const row = await loadOwned(deps, id);
+      if (row?.type === "spend_limit") {
+        return answerSpendQuestion(deps, row, "allow");
+      }
       if (!row || row.status !== "pending") return NOT_ACTIONABLE;
       if (row.type === "ext_authz") {
         return resolveOnce(deps, row, "allow_once", "allow");
@@ -208,6 +212,9 @@ export function createApprovalsService(
 
     async approvePermanent(id) {
       const row = await loadOwned(deps, id);
+      if (row?.type === "spend_limit") {
+        return answerSpendQuestion(deps, row, "allow");
+      }
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
       if (row.type === "ext_authz" && row.payload.kind === "ext_authz") {
         const { host, port, method, path } = row.payload;
@@ -223,6 +230,9 @@ export function createApprovalsService(
 
     async approveHost(id) {
       const row = await loadOwned(deps, id);
+      if (row?.type === "spend_limit") {
+        return answerSpendQuestion(deps, row, "allow");
+      }
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
       if (row.type === "ext_authz" && row.payload.kind === "ext_authz") {
         const { host, port } = row.payload;
@@ -238,6 +248,9 @@ export function createApprovalsService(
 
     async denyForever(id) {
       const row = await loadOwned(deps, id);
+      if (row?.type === "spend_limit") {
+        return answerSpendQuestion(deps, row, "deny");
+      }
       if (!row || row.status === "resolved") return NOT_ACTIONABLE;
       if (row.type === "ext_authz" && row.payload.kind === "ext_authz") {
         const { host, port, method, path } = row.payload;
@@ -269,11 +282,35 @@ async function dismissOne(
   id: string,
 ): Promise<ApprovalActionOutcome> {
   const row = await loadOwned(deps, id);
+  if (row?.type === "spend_limit") {
+    return answerSpendQuestion(deps, row, "deny");
+  }
   if (!row || row.status !== "pending") return NOT_ACTIONABLE;
   if (row.type === "ext_authz") {
     return resolveOnce(deps, row, "deny_once", "deny");
   }
   return resolveAndDeliverAcpNative(deps, row, "deny_once");
+}
+
+async function answerSpendQuestion(
+  deps: CreateApprovalsServiceDeps,
+  row: PendingApprovalRow,
+  verdict: "allow" | "deny",
+): Promise<ApprovalActionOutcome> {
+  if (row.status !== "pending") return NOT_ACTIONABLE;
+  if (verdict === "allow" && deps.agentBinding !== "*") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message:
+        "continuing a spend limit raises it, so it requires an unrestricted (wildcard) principal; agent-bound API keys are refused.",
+    });
+  }
+  const casWon = await deps.repo.resolvePending(row.id, verdict, deps.ownerSub);
+  if (casWon) emitResolved(row, verdict);
+  auditVerdict(deps, row, verdict, { verdict, spendLimit: true });
+  return casWon
+    ? { outcome: "applied", type: row.type, rule: null }
+    : NOT_ACTIONABLE;
 }
 
 async function resolveOnce(
@@ -285,7 +322,9 @@ async function resolveOnce(
   const casWon = await deps.repo.resolvePending(row.id, verdict, deps.ownerSub);
   if (casWon) emitResolved(row, verdict);
   auditVerdict(deps, row, decision, { verdict, ruleWritten: false });
-  return casWon ? { outcome: "applied", rule: null } : NOT_ACTIONABLE;
+  return casWon
+    ? { outcome: "applied", type: row.type, rule: null }
+    : NOT_ACTIONABLE;
 }
 
 async function writeRuleAndResolve(
@@ -330,7 +369,11 @@ async function writeRuleAndResolve(
     ...auditRuleFields(written),
     ...ruleFields,
   });
-  return { outcome: casWon ? "applied" : "rule_written_expired", rule };
+  return {
+    outcome: casWon ? "applied" : "rule_written_expired",
+    type: row.type,
+    rule,
+  };
 }
 
 async function resolveAndDeliverAcpNative(
@@ -346,7 +389,7 @@ async function resolveAndDeliverAcpNative(
     native: true,
   });
   const outcome: ApprovalActionOutcome = casWon
-    ? { outcome: "applied", rule: null }
+    ? { outcome: "applied", type: row.type, rule: null }
     : NOT_ACTIONABLE;
   const rpcId = row.payload.rpcId;
   if (rpcId === undefined || rpcId === null) return outcome;

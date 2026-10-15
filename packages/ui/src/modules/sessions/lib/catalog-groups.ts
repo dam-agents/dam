@@ -177,3 +177,12 @@ export function addableProviders(
       conflict: providerAliasConflict(grantedAliased, aliased(connection)),
     }));
 }
+
+export function attachableProviders(
+  granted: readonly ProviderConnectionRef[],
+  candidates: readonly ProviderConnectionRef[],
+): ProviderConnectionRef[] {
+  return addableProviders(granted, candidates, () => true)
+    .filter((a) => a.conflict === null)
+    .map((a) => a.connection);
+}

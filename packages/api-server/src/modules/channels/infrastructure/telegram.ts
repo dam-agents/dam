@@ -39,6 +39,11 @@ import { wakeFailureUserCopy } from "./wake-failure-copy.js";
 import { OUTBOUND_TOOL_PREFIX } from "../../../core/platform-mcp.js";
 import { channelNetworkAccessGuidance } from "./network-access-copy.js";
 import {
+  spendHoldUserCopy,
+  telegramResetTime,
+  type ChannelSpendHold,
+} from "./spend-hold-copy.js";
+import {
   createConversationQueue,
   type ConversationQueue,
 } from "./conversation-queue.js";
@@ -192,7 +197,7 @@ async function publishTelegramCommands(botToken: string): Promise<void> {
 export interface ThreadLike {
   id: string;
   isDM: boolean;
-  post(message: string | CardElement): Promise<unknown>;
+  post(message: string | CardElement | { markdown: string }): Promise<unknown>;
   subscribe(): Promise<unknown>;
 }
 
@@ -230,7 +235,9 @@ export function createTelegramMessageHandler(deps: {
   oauthConfig: KeycloakOAuthConfig;
   pendingOAuthFlows: TtlStore<TelegramOAuthPending>;
   isTermsAccepted: (sub: string) => Promise<boolean>;
+  spendHold?: ChannelSpendHold;
   uiBaseUrl: string;
+  brandName: string;
   botUsername: () => string | null;
   relay: (
     agentId: string,
@@ -371,6 +378,18 @@ export function createTelegramMessageHandler(deps: {
       }
       return;
     }
+    const held = await deps.spendHold?.(binding.agentId);
+    if (held) {
+      await thread.post({
+        markdown: spendHoldUserCopy(
+          held,
+          "This agent",
+          deps.brandName,
+          telegramResetTime(new Date()),
+        ),
+      });
+      return;
+    }
     if (subscribe) await thread.subscribe();
     await deps.relay(binding.agentId, thread, message.text, message.author);
   };
@@ -452,6 +471,7 @@ export function createTelegramWorker(deps: {
   oauthConfig: KeycloakOAuthConfig;
   pendingOAuthFlows: TtlStore<TelegramOAuthPending>;
   isTermsAccepted: (sub: string) => Promise<boolean>;
+  spendHold?: ChannelSpendHold;
   uiBaseUrl: string;
   brandName: string;
   logLevel?: LogLevel;
@@ -694,7 +714,9 @@ export function createTelegramWorker(deps: {
           oauthConfig: deps.oauthConfig,
           pendingOAuthFlows: deps.pendingOAuthFlows,
           isTermsAccepted: deps.isTermsAccepted,
+          ...(deps.spendHold ? { spendHold: deps.spendHold } : {}),
           uiBaseUrl: deps.uiBaseUrl,
+          brandName,
           botUsername: () => username,
           relay: enqueueTelegramTurn,
         });

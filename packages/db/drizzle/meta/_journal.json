@@ -547,6 +547,20 @@
       "when": 1792061456741,
       "tag": "0077_qualify_schedule_models",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1792074625841,
+      "tag": "0078_spend_daily",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1792074655458,
+      "tag": "0079_spend_limits",
+      "breakpoints": true
     }
   ]
 }

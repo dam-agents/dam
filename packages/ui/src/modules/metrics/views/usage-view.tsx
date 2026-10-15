@@ -2,6 +2,8 @@ import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
 
+import { OwnSpendLimitCard } from "../../spend/components/own-spend-limit-card.js";
+import { SpendWidget } from "../../spend/components/spend-widget.js";
 import { AgentSpendBars } from "../components/agent-spend-bars.js";
 import { ModelSpendBars } from "../components/model-spend-bars.js";
 import { MonthSwitcher } from "../components/month-switcher.js";
@@ -13,6 +15,7 @@ import {
 } from "../components/spend-by-day-chart.js";
 import { UncountedCallsNote } from "../components/uncounted-calls-note.js";
 import {
+  HarnessReportsLead,
   readFailureMessage,
   UsageNotice,
   UsageStaleLabel,
@@ -24,8 +27,7 @@ import { totalCostUsd } from "../lib/totals.js";
 
 const PAGE_DESCRIPTION = (
   <span className="block max-w-[460px]">
-    LLM API spend across all supported agents (currently only Claude Code and
-    derivatives).
+    Spend limits, and what your agents spend on models.
   </span>
 );
 
@@ -51,6 +53,9 @@ export function UsageView() {
     return (
       <div>
         <PageHeader title="Usage" description={PAGE_DESCRIPTION} />
+        <MeasuredSpend />
+        <OwnSpendLimitCard />
+        <HarnessReportsLead />
         <UsageNotice>{readFailureMessage(true, label)}</UsageNotice>
       </div>
     );
@@ -72,6 +77,9 @@ export function UsageView() {
           </div>
         }
       />
+      <MeasuredSpend />
+      <OwnSpendLimitCard />
+      <HarnessReportsLead />
 
       {}
       {state === "failed" && (
@@ -136,6 +144,14 @@ export function UsageView() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function MeasuredSpend() {
+  return (
+    <div className="mb-10">
+      <SpendWidget showOwnLimit={false} />
     </div>
   );
 }

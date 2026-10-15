@@ -7,6 +7,8 @@ import {
   type SessionPair,
 } from "api-server-api";
 
+import { attachableProviders } from "./catalog-groups.js";
+
 export interface ProviderConnectionRef {
   id: string;
   name: string;
@@ -157,7 +159,8 @@ export function terminalHarnessChoice(input: {
       const fit = providerOptions(name, catalog, granted, owned);
       const displayName = harnessDisplayName(name, catalog) ?? name;
       const provider = fit.granted[0]?.id ?? null;
-      const attachable = provider === null ? fit.addable : [];
+      const attachable =
+        provider === null ? attachableProviders(granted, fit.addable) : [];
       return {
         name,
         displayName,

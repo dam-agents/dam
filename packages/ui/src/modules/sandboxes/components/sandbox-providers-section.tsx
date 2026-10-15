@@ -6,6 +6,7 @@ import { SectionLabel } from "@/components/ui/section-label";
 
 import { useStore } from "../../../store.js";
 import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
+import { useRootDriver } from "../../agents/hooks/use-root-driver.js";
 import { ProviderToggleRow } from "../../providers/components/provider-toggle-row.js";
 import {
   rememberSessionPair,
@@ -30,6 +31,8 @@ import {
   nextPair,
   providerHarnesses,
 } from "../../sessions/lib/session-pair-options.js";
+import { ConnectionSpendLimit } from "../../spend/components/connection-spend-limit.js";
+import { RootDriverSpendNote } from "../../spend/components/root-driver-spend-note.js";
 
 export function SandboxProvidersSection({ agentId }: { agentId: string }) {
   const navigateToSettings = useStore((s) => s.navigateToSettings);
@@ -37,9 +40,11 @@ export function SandboxProvidersSection({ agentId }: { agentId: string }) {
   const { owned, granted, loaded } = useProviderConnections(agentId);
   const { grant, revoke, pending } = useGrantProvider(agentId);
   const catalog = useHarnessCatalog().data?.harnesses;
+  const root = useRootDriver(agentId);
 
   return (
     <div className="flex flex-col gap-3">
+      {root && <RootDriverSpendNote root={root} />}
       {loaded && owned.length === 0 && (
         <p className="text-sm text-muted-foreground">
           No providers connected yet.
@@ -67,7 +72,15 @@ export function SandboxProvidersSection({ agentId }: { agentId: string }) {
                     { kind: "destructive", confirmLabel: "Disconnect" },
                   ).then((ok) => ok && revoke(p.id))
             }
-          />
+          >
+            {attached && root === null && p.templateId && (
+              <ConnectionSpendLimit
+                agentId={agentId}
+                connectionId={p.id}
+                templateId={p.templateId}
+              />
+            )}
+          </ProviderToggleRow>
         );
       })}
       <Button
