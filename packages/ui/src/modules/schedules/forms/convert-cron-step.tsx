@@ -61,7 +61,9 @@ export function ConvertCronStep({
         task: schedule.task ?? "",
         sessionMode: schedule.sessionMode ?? "fresh",
         precheck: schedule.precheck,
+        harness: schedule.harness,
         model: schedule.model,
+        settings: schedule.settings,
         sessionTitle: schedule.sessionTitle,
       },
       {

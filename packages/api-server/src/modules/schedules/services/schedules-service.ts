@@ -424,8 +424,13 @@ export function createSchedulesService(deps: {
       if (!current) return null;
       if (current.spec.type !== "cron")
         throw badRequest("only a cron schedule is edited with updateCron");
-      if (input.model && input.model !== current.spec.model)
-        await ensureSessionModel(current.agentId, input.model, undefined);
+      const merged = mergedChoices(input, current.spec);
+      if (choicesChanged(merged, current.spec))
+        await ensureSessionChoices(
+          current.agentId,
+          choicesOf(merged),
+          undefined,
+        );
       const spec: ScheduleSpec = {
         ...current.spec,
         cron: input.cron,
@@ -437,6 +442,12 @@ export function createSchedulesService(deps: {
       else if (input.precheck !== undefined) delete spec.precheck;
       if (input.model) spec.model = input.model;
       else if (input.model !== undefined) delete spec.model;
+      if (input.harness) spec.harness = input.harness;
+      else if (input.harness !== undefined) delete spec.harness;
+      if (input.settings) spec.settings = input.settings;
+      else if (input.settings !== undefined) delete spec.settings;
+      if (input.model !== undefined || input.harness !== undefined)
+        delete spec.migrationNote;
       if (input.sessionTitle) spec.sessionTitle = input.sessionTitle;
       else if (input.sessionTitle !== undefined) delete spec.sessionTitle;
       await deps.repo.updateName(input.id, deps.owner, input.name);

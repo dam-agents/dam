@@ -54,7 +54,9 @@ export const scheduleUpdateCronInputSchema = z.object({
   task: z.string().min(1),
   sessionMode: scheduleSessionModeSchema.optional(),
   precheck: precheckSchema.nullable().optional(),
+  harness: scheduleHarnessSchema.nullable().optional(),
   model: scheduleModelSchema.nullable().optional(),
+  settings: scheduleSettingsSchema.nullable().optional(),
   sessionTitle: sessionTitleSchema.nullable().optional(),
 });
 

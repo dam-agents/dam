@@ -191,6 +191,25 @@ describe("updateCron", () => {
     expect(getSavedSpec()).toBeUndefined();
   });
 
+  // TEST_SCENARIO: a cron schedule carries the same session choices as any other, so an edit checks the harness, model and settings it ends up with and saves them.
+  it("checks and saves a cron schedule's session choices", async () => {
+    const checked: unknown[] = [];
+    const { service, getSavedSpec } = makeDeps(cronSchedule(), async (_, c) => {
+      checked.push(c);
+      return undefined;
+    });
+    const choices = {
+      harness: "codex",
+      model: "openai/gpt-5.5",
+      settings: { effort: "high" },
+    };
+
+    await service.updateCron({ ...cronUpdate, ...choices });
+
+    expect(checked).toEqual([choices]);
+    expect(getSavedSpec()).toMatchObject({ type: "cron", ...choices });
+  });
+
   // TEST_SCENARIO: updateCron writes a cron expression, so it must not turn an RRULE schedule into a cron one.
   it("refuses an RRULE schedule", async () => {
     const { service, getSavedSpec } = makeDeps(makeCurrent());

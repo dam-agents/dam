@@ -45,7 +45,9 @@ export interface UpdateCronScheduleInput {
   task: string;
   sessionMode: "fresh" | "continuous";
   precheck: string | null;
+  harness: string | null;
   model: string | null;
+  settings: Record<string, string> | null;
   sessionTitle: string | null;
 }
 
