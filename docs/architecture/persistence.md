@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 ## Overview
 
@@ -257,14 +257,18 @@ The storage model is a constant; what varies is a migration's copy, whose entrie
 Beside the agent's home, in a namespace of its own so a `log` directory in that home cannot collide with it, the disk holds the platform state a machine's root cannot keep: the guest's boot log, where an agent's output goes since the harness never writes to the console, kept one boot deep so a machine that died still explains itself on the boot after, and bounded while it is written so an agent that logs without pause cannot fill its disk; and a directory an image's boot may keep its extracted trust store in rather than rebuilding it, which the platform's own images, whose rebuild is quick, leave unused.
 Both are rebuilt or resumed by the next boot rather than being state an Agent can lose.
 
-**A disk that has lost its home fails the boot.** smolvm formats a storage disk it cannot mount even after its own repair, and a formatted disk looks exactly like one never seeded.
+**A disk that holds a filesystem is never formatted at boot.** smolvm's guest agent repairs a storage disk it cannot mount, and formatted it when the repair did not help, which erased a home that only a passing I/O error, a killed repair or a kernel that lacks one of its features kept from mounting.
+The runner image ships that agent rebuilt with a patch that refuses the format when the disk carries a filesystem, or cannot be read, and counts a repair killed by a signal as failed: the boot fails with the reason on the machine's console and the disk stays as it was, for the next start to mount once the cause passes.
+A Mac host runner runs its installed smolvm's own agent, which still formats.
+
+**A disk that has lost its home fails the boot.** A disk that was formatted anyway looks exactly like one never seeded.
 So the runner records in the machine's share, the first time its guest answers — which it does only once platform-init has put the home on the disk, from the image or from a migration's copy — that the disk holds a home, and keeps the record for as long as the machine exists.
 A boot that finds the record but no home stops, with the reason on the machine's console, rather than seeding a fresh home that would look healthy.
 A migrated machine is held to its copy the same way: while a seed is expected, its home comes from exactly that seed or the boot fails, never from the image, and the record names the seed ([vm-runtime-migration](vm-runtime-migration.md)).
 The record is learned from the answer rather than read off the disk, because the host does not parse a filesystem a guest has had root on.
 The runner formats every new disk itself, with a journal and at its full size, before any guest has touched it.
 A runner without `mkfs.ext4`, or whose format fails, leaves that format to smolvm, which can write no journal, and so did every disk made before the runner formatted its own; on those an unclean stop — a killed runner — is what brings that repair on.
-The loss is refused, not prevented.
+On a Mac host runner the loss is refused, not prevented.
 
 **The claim those disks sit on is the owner's pool.** One claim per owner holds every machine disk they have, their bookkeeping, a [runtime migration](vm-runtime-migration.md)'s seed while it waits, and the image cache when the cache lives there, and every disk may grow to the pool, so the claim is created at the pool; the controller refuses an install whose image cache budget would take the whole of it.
 The runtime's disk templates live there too, sparse enough to need no share of it.
