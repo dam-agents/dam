@@ -68,6 +68,7 @@ describe("skills install under egress rules", () => {
       repo: { list: async () => [] } as unknown as SkillsRepository,
       agentSkillsRepo: {
         upsertSkill: async (...args: unknown[]) => upserts.push(args),
+        listSkills: async () => [],
       } as unknown as AgentSkillsRepository,
       seedSources: [],
       owner: "owner-1",

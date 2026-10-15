@@ -243,7 +243,6 @@ export function useSkillsSurface(
                 version: skill.version,
                 contentHash: skill.contentHash,
                 ...withSourcePath(skill),
-                ...withSourcePath(skill),
               }),
         `Failed to ${currentlyInstalled ? "uninstall" : "install"} ${skill.name}`,
       );
@@ -266,6 +265,7 @@ export function useSkillsSurface(
             name: skill.name,
             version: skill.version,
             contentHash: skill.contentHash,
+            ...withSourcePath(skill),
           }),
         `Failed to update ${skill.name}`,
       );
