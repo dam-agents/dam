@@ -96,7 +96,7 @@ pub const ROOTFS_DIR: &str = "rootfs";
 pub const LAYOUT_FILE: &str = "layout";
 pub const LAYOUT_VERSION: u32 = LAYOUT_SUBVOLUMES;
 
-// UNIT_BOUNDARY_DESCRIPTION: the two layouts. In LAYOUT_DIRECTORY the platform's root is the disk's DISK_ROOT_DIR, holding AGENT_DIR and SYSTEM_DIR as plain directories; every ext4 disk is in it, and every btrfs disk made before LAYOUT_SUBVOLUMES. In LAYOUT_SUBVOLUMES, a new btrfs disk's, the root is the whole filesystem, AGENT_DIR and SYSTEM_DIR are subvolumes, and so is the kept root under ROOTFS_DIR, which a boot onto a new image then deletes in one step however many files it holds. A disk stays in the layout it was made in.
+// UNIT_BOUNDARY_DESCRIPTION: the two layouts. In LAYOUT_DIRECTORY the platform's root is the disk's DISK_ROOT_DIR, holding AGENT_DIR and SYSTEM_DIR as plain directories; every ext4 disk is in it, and every btrfs disk made before LAYOUT_SUBVOLUMES. In LAYOUT_SUBVOLUMES, a new btrfs disk's, the root is the whole filesystem, AGENT_DIR and SYSTEM_DIR are subvolumes. The root's layers under ROOTFS_DIR stay plain directories of SYSTEM_DIR: overlayfs renames from its work layer into its upper one, which btrfs refuses across subvolumes.
 pub const LAYOUT_DIRECTORY: u32 = 1;
 pub const LAYOUT_SUBVOLUMES: u32 = 2;
 
