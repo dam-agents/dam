@@ -47,4 +47,4 @@ The HTTP API takes the same key as a bearer token.
 
 `candidate_channel`: `main` (default) \| `release`.
 `baseline_channel`: `release` (default) \| `none`.
-Releases up to `0.2.17` cannot install without the mesh: until a newer release ships, use `baseline_channel: none`.
+Releases before `0.2.20` cannot install without the mesh; the `release` channel already picks a later one.
