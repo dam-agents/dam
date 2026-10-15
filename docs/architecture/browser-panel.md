@@ -44,6 +44,27 @@ A managed policy in the image (`/etc/opt/chrome_for_testing/policies/managed/pla
 Launch switches point the account check and the push-messaging check-in at a closed loopback port.
 Safe Browsing and the component updater stay on: the updater is how Chrome gets security-critical data such as certificate revocations, and it is the only background traffic left.
 
+## Tabs
+
+The one browser has tabs, and the panel shows them all in a tab bar under its toolbar: each tab's title, whether it is loading, and which one is on screen.
+The user opens, selects and closes tabs there, and a tab opened, selected, renamed or closed by the agent or by a page — a link that opens a new tab, a popup — shows in the bar as Chromium reports it.
+The kiosk window shows only one tab, so **the tab on screen is the active tab**: the panel's address, title, loading and Back and Forward are always that tab's.
+
+Every tab is known by its **target id**, Chromium's own id for it, which agent-browser accepts as a tab reference too; positions in the list are never used.
+The toolbar names the tab the panel shows, so a tab the agent brings to the front meanwhile does not redirect the user's reload or address, and an action on a tab that has closed — also between the panel's list and Chromium's answer — is refused as a closed tab rather than run on another one.
+
+The user and the agent share the active tab both ways.
+A tab the agent brings to the front — `agent-browser tab`, `tab new`, a page's popup — comes on screen, and Chromium sends no event for that, so the runtime asks each tab whether it is visible once a second while a panel watches; a tab that has just turned visible becomes the active tab.
+A tab the user selects comes to the front at once, and the runtime then selects it in agent-browser too (`agent-browser tab <target id>`, in agent-browser's queue), so the agent's next command acts on the page the user sees.
+agent-browser does not list the browser's own pages, such as the new tab page a keyboard shortcut opens; the panel shows them and brings them to the front, but the agent stays on its last tab.
+What the agent only reads — a snapshot, a screenshot, a script — changes neither.
+
+A new tab from the panel is blank (`about:blank`), so agent-browser takes it as its own tab; the address bar is focused for it.
+Closing the active tab brings the tab after it in the bar to the front, else the one before.
+Closing the last tab opens a blank one first, as the browser would otherwise close its only window and exit.
+The tab list is the browser's, never the panel's: a panel that reconnects or opens again is sent the tabs and the active tab as they are.
+A runtime too old to report tabs shows the panel without its tab bar.
+
 ## The display
 
 `platform-display` is the display stack: Xvfb (the virtual display), i3 keeping every window full-screen, PipeWire with its PulseAudio server for sound, and **[Selkies](https://github.com/selkies-project/selkies)**, a stream server for Linux displays.
@@ -98,7 +119,7 @@ sequenceDiagram
   Both halves refuse any other agent: the stream relay checks the agent's spec at the api-server, and the runtime refuses the control procedures unless the controller told it the agent requires named connections (`PLATFORM_REQUIRE_CONNECTION_ADDRESS`, always set, after the agent's own secret, so the owner's environment cannot claim it).
 - **The control** is the runtime's `browser` tRPC procedures, on the same agent tRPC connection the UI uses for files and sessions: `browser.watch`, a subscription that keeps the browser up while a panel watches and reports its state, and the toolbar's mutations.
   One supervisor in agent-runtime serves every panel.
-  It launches the browser through agent-browser if it is not running, then opens a DevTools Protocol connection of its own to that Chromium and follows the tab on screen: its address, title, whether it is loading, and whether Back and Forward can go anywhere reach the panel the moment Chromium reports them, and the toolbar's navigate, reload, stop, back and forward run on that tab directly, never queued behind the agent's commands in agent-browser's one-at-a-time queue.
+  It launches the browser through agent-browser if it is not running, then opens a DevTools Protocol connection of its own to that Chromium and follows its tabs and the one on screen ([Tabs](#tabs)): their addresses, titles, whether they are loading, and whether Back and Forward can go anywhere reach the panel the moment Chromium reports them, and the toolbar's navigate, reload, stop, back and forward and the tab bar's new, select and close run on the tab they name directly, never queued behind the agent's commands in agent-browser's one-at-a-time queue.
   Words typed into the address bar that are not an address search DuckDuckGo.
   A dropped DevTools connection means the browser is gone, and the supervisor launches it again.
   A health check that times out finds the browser busy — a heavy page, or the agent keeping it busy — not gone, so it is left alone; when the browser fails to start, or answers nothing for a minute, the supervisor stops it — its daemon, the Chromium on its profile, and the profile's lock files, which would keep the next Chromium from starting — and launches it again, retrying with a growing delay.
