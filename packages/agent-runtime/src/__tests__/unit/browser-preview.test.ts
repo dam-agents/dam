@@ -47,6 +47,7 @@ function fakeBrowser() {
     pings: 0,
     tabs: ["T1"],
     active: "T1",
+    watchers: 0,
     die: () => {},
   };
   const run = async (args: string[]) => {
@@ -67,6 +68,7 @@ function fakeBrowser() {
     if (!browser.alive) throw new Error("CDP connection closed");
     let open = true;
     let opened = 1;
+    browser.watchers++;
     const state = (): BrowserView => ({
       page: {
         url: browser.url,
@@ -141,6 +143,7 @@ function fakeBrowser() {
         return Promise.resolve();
       },
       close: () => {
+        if (open) browser.watchers--;
         open = false;
       },
     };
@@ -367,7 +370,7 @@ describe("browser preview", () => {
     );
   });
 
-  // TEST_SCENARIO: the agent may be using the browser while no panel is open, so the last panel leaving leaves it running; the supervisor only stops watching it.
+  // TEST_SCENARIO: the agent may be using the browser while no panel is open, so the last panel leaving leaves it running; the supervisor only stops watching it — no health checks, and no CDP watcher asking its tabs for their visibility.
   it("leaves the browser running when the last panel leaves", async () => {
     const fake = fakeBrowser();
     let stops = 0;
@@ -387,6 +390,7 @@ describe("browser preview", () => {
     await pause(100);
     expect(stops).toBe(0);
     expect(fake.browser.pings).toBe(pings);
+    expect(fake.browser.watchers).toBe(0);
   });
 });
 

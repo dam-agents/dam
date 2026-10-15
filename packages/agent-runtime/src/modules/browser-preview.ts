@@ -250,7 +250,8 @@ export function createCommandQueue(run: BrowserCommand): {
  * own, by target id: a tab the panel selects comes to the front at once, and
  * agent-browser is then told to select it too (`tab <target id>`, in its
  * queue), so the agent's next command acts on the tab the user sees; a tab the
- * agent brings to the front reaches the panel through the watcher. Its display socket (attachDisplay)
+ * agent brings to the front reaches the panel through the watcher, which
+ * closes with the last panel, as it asks every tab for its visibility. Its display socket (attachDisplay)
  * is relayed to the display's stream server, held with what its client sent
  * until that server answers. A check or launch that times out finds the
  * browser busy — a heavy page, or the agent's own commands ahead in
@@ -361,6 +362,12 @@ export function createBrowserPreview(deps: {
     notify();
   }
 
+  function unwatch() {
+    page?.close();
+    page = null;
+    browserUp = false;
+  }
+
   function browserGone(reason: string) {
     page?.close();
     page = null;
@@ -446,7 +453,7 @@ export function createBrowserPreview(deps: {
       while (dirty && !closed) {
         dirty = false;
         if (viewers.size === 0) {
-          browserUp = false;
+          unwatch();
           continue;
         }
         if (!(await ensureBrowser())) continue;
@@ -623,7 +630,7 @@ export function createBrowserPreview(deps: {
     viewers.delete(viewer);
     if (viewers.size > 0) return;
     stopTimers();
-    browserUp = false;
+    unwatch();
     if (retryTimer) clearTimeout(retryTimer);
     retryTimer = null;
   }
