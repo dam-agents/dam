@@ -428,9 +428,7 @@ export function useAcpConnection(
           ...(undelivered.success ? undelivered.data : []),
           ...held,
         ]),
-        turn.success && !turn.data.inFlight
-          ? turn.data.interruptedAt
-          : undefined,
+        turn.success ? turn.data : undefined,
       );
       if (replayBefore === undefined && generation === generationRef.current) {
         useStore

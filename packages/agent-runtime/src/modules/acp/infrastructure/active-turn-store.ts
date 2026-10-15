@@ -5,6 +5,7 @@ import type { DocumentStoreBackend } from "../../../core/document-store.js";
 const markerSchema = z.object({
   startedAt: z.string(),
   attempts: z.number().int().nonnegative().default(0),
+  stopped: z.literal(true).optional(),
 });
 export type ActiveTurnMarker = z.infer<typeof markerSchema> & {
   sessionId: string;
@@ -25,6 +26,7 @@ export interface ActiveTurnStore {
   record(sessionId: string): void;
   remove(sessionId: string): void;
   bumpAttempts(sessionId: string): void;
+  markStopped(): void;
   leftovers(): ActiveTurnMarker[];
 }
 
@@ -36,6 +38,9 @@ export interface ActiveTurnStore {
  * session delete. It is deliberately NOT removed when the pod is shutting down
  * (SIGTERM), since that shutdown may be an eviction that SIGKILLs after its
  * grace period: the marker must outlive it so the next boot recovers the turn.
+ * That shutdown marks this process's markers stopped instead, so the next boot
+ * can tell a turn the platform stopped — a Sleep, an eviction, a restart —
+ * from one a kill without warning cut short, such as running out of memory.
  * So a surviving marker names precisely a turn whose in-process end agent-
  * runtime never saw — the process went down (an OOM group-kill, an eviction)
  * with the turn still running. `attempts` counts recovery resumes so a
@@ -94,6 +99,14 @@ export function createActiveTurnStore(
           [sessionId]: { ...existing, attempts: existing.attempts + 1 },
         },
       });
+    },
+    markStopped() {
+      const { sessions } = store.read();
+      const live = Object.keys(sessions).filter((sid) => !inherited.has(sid));
+      if (live.length === 0) return;
+      const next = { ...sessions };
+      for (const sid of live) next[sid] = { ...next[sid]!, stopped: true };
+      store.write({ sessions: next });
     },
     leftovers() {
       return Object.entries(store.read().sessions)

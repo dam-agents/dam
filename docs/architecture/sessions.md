@@ -102,6 +102,8 @@ Which ceiling depends on how the agent runs: a container is capped by its cgroup
 A container that carries no cgroup limit is left unwatched rather than measured against the node it shares, whose memory a neighbour moves.
 agent-runtime pushes back first: nearing the limit it kills the largest tool process, sparing every harness and the conversation processes any carried harness's manifest names, so the agent recovers mid-turn; only when those are the hog does the kernel's kill land.
 A turn that dies anyway is recovered from an [active-turns marker](persistence.md) surviving to the next boot: it resumes on its own, up to five times, with a notice to pick the task back up.
+The resumed turn is unattended: nobody reads it live, so it waits for the harness to hold the Session again and never for a viewer, and it runs on a Sleep's wake with no chat open.
+A turn the platform stopped — a Sleep, an eviction, a restart, all of which reach the runtime as SIGTERM — is marked stopped as the runtime shuts down, so the notice and the chat name the stop instead of blaming memory.
 The marker is written only after the harness *took* the prompt, so resuming continues a turn the agent already saw — not the [no-auto-resend](#prompt-delivery) of a prompt it never got.
 
 When a session goes idle — no engaged channel, no prompt active or queued, no agent request pending — the runtime sends `session/close` to the harness; a parked queue counts as queued work, holding the release back until its window passes.
