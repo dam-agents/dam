@@ -17,7 +17,9 @@ const AGENTS_HEIGHT_KEY = "platform-sidebar-agents-h";
 
 export function useSidebarWidth() {
   const [width, setWidth] = useState(() =>
-    clampSidebarWidth(readPersistedNumber(SIDEBAR_WIDTH_KEY, SIDEBAR_DEFAULT_W)),
+    clampSidebarWidth(
+      readPersistedNumber(SIDEBAR_WIDTH_KEY, SIDEBAR_DEFAULT_W),
+    ),
   );
   const widthRef = useRef(width);
   const [resizing, setResizing] = useState(false);

@@ -11,7 +11,10 @@ export function clampSidebarWidth(width: number): number {
 }
 
 export function clampAgentsHeight(height: number, totalPx: number): number {
-  const max = Math.max(totalPx - SIDEBAR_SECTION_MIN_PX, SIDEBAR_SECTION_MIN_PX);
+  const max = Math.max(
+    totalPx - SIDEBAR_SECTION_MIN_PX,
+    SIDEBAR_SECTION_MIN_PX,
+  );
   return Math.max(SIDEBAR_SECTION_MIN_PX, Math.min(max, height));
 }
 
