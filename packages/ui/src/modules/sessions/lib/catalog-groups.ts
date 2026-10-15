@@ -142,7 +142,7 @@ export function modelIndicatorLabel(
   name: string | null,
 ): string | null {
   const hit = findModel(groups, name);
-  if (hit) return `${modelLabel(hit.model)} · ${hit.group.displayName}`;
+  if (hit) return `${modelLabel(hit.model)} (${hit.group.displayName})`;
   return name;
 }
 

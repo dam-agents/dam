@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: what a new web terminal offers. While the agent's harnesses, the harness catalog or the provider grants load, nothing shows, so no harness reads unavailable by mistake. A failed load or an agent naming no harness falls back to one plain terminal. Otherwise every carried harness is listed with the first granted provider that fits it, else a provider the owner holds that could be attached to the agent, else a reason that names the harness.
+// TEST_OVERVIEW: what a new web terminal offers. While the agent's harnesses, the harness catalog or the provider grants load, nothing shows, so no harness reads unavailable by mistake. A failed load or an agent naming no harness falls back to one plain terminal. Otherwise every carried harness is listed with the first granted provider that fits it, else the providers the owner holds that could be attached to the agent, else a reason that names the harness.
 import type { HarnessView } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
@@ -61,14 +61,14 @@ describe("terminalHarnessChoice", () => {
           name: "claude-code",
           displayName: "Claude",
           provider: "a",
-          attach: null,
+          attachable: [],
           unavailable: null,
         },
         {
           name: "codex",
           displayName: "Codex",
           provider: null,
-          attach: null,
+          attachable: [],
           unavailable:
             "Codex does not support any of the LLM providers you have configured.",
         },
@@ -76,7 +76,7 @@ describe("terminalHarnessChoice", () => {
     });
   });
 
-  // TEST_SCENARIO: a provider the owner holds but this agent was not granted can be attached on the way, so the harness is offered with that provider to attach instead of reading unavailable.
+  // TEST_SCENARIO: providers the owner holds but this agent was not granted can be attached on the way, so the harness is offered with them to pick from instead of reading unavailable.
   it("offers to attach a fitting provider the owner holds", () => {
     const choice = terminalHarnessChoice({
       ...base,
@@ -84,7 +84,7 @@ describe("terminalHarnessChoice", () => {
     });
     expect(choice.kind === "harnesses" && choice.harnesses[1]).toMatchObject({
       provider: null,
-      attach: openai,
+      attachable: [openai],
       unavailable: null,
     });
   });

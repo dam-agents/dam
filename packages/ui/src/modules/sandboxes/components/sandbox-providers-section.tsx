@@ -2,13 +2,11 @@ import { routesSessionPairs } from "agent-runtime-api";
 import type { SessionPair } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { SectionLabel } from "@/components/ui/section-label";
-import { Switch } from "@/components/ui/switch";
 
 import { useStore } from "../../../store.js";
 import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
-import { CardIcon } from "../../providers/components/card-icon.js";
+import { ProviderToggleRow } from "../../providers/components/provider-toggle-row.js";
 import {
   rememberSessionPair,
   useGrantProvider,
@@ -30,6 +28,7 @@ import {
   fittingProviders,
   harnessOptions,
   nextPair,
+  providerHarnesses,
 } from "../../sessions/lib/session-pair-options.js";
 
 export function SandboxProvidersSection({ agentId }: { agentId: string }) {
@@ -37,6 +36,7 @@ export function SandboxProvidersSection({ agentId }: { agentId: string }) {
   const showConfirm = useStore((s) => s.showConfirm);
   const { owned, granted, loaded } = useProviderConnections(agentId);
   const { grant, revoke, pending } = useGrantProvider(agentId);
+  const catalog = useHarnessCatalog().data?.harnesses;
 
   return (
     <div className="flex flex-col gap-3">
@@ -48,30 +48,26 @@ export function SandboxProvidersSection({ agentId }: { agentId: string }) {
       {owned.map((p) => {
         const attached = granted.some((g) => g.id === p.id);
         return (
-          <Card key={p.id} className="flex items-center gap-3 p-4">
-            <CardIcon provider={p.type} />
-            <span className="min-w-0 flex-1 truncate text-base font-medium text-foreground">
-              {p.name}
-            </span>
-            <Switch
-              checked={attached}
-              disabled={pending}
-              label={`Use ${p.name} in this agent`}
-              onCheckedChange={(on) =>
-                on
-                  ? void grant(p.id)
-                  : void showConfirm(
-                      <p>
-                        Sessions running on <strong>{p.name}</strong> stop until
-                        it is attached again. Schedules and channels that use it
-                        move to another provider.
-                      </p>,
-                      `Disconnect ${p.name} from this agent?`,
-                      { kind: "destructive", confirmLabel: "Disconnect" },
-                    ).then((ok) => ok && revoke(p.id))
-              }
-            />
-          </Card>
+          <ProviderToggleRow
+            key={p.id}
+            provider={p}
+            harnesses={catalog && providerHarnesses(catalog, p)}
+            checked={attached}
+            disabled={pending}
+            onCheckedChange={(on) =>
+              on
+                ? void grant(p.id)
+                : void showConfirm(
+                    <p>
+                      Sessions running on <strong>{p.name}</strong> stop until
+                      it is attached again. Schedules and channels that use it
+                      move to another provider.
+                    </p>,
+                    `Disconnect ${p.name} from this agent?`,
+                    { kind: "destructive", confirmLabel: "Disconnect" },
+                  ).then((ok) => ok && revoke(p.id))
+            }
+          />
         );
       })}
       <Button

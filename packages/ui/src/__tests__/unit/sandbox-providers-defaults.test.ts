@@ -2,6 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
+import { TooltipProvider } from "../../components/ui/tooltip.js";
 import { SandboxProvidersSection } from "../../modules/sandboxes/components/sandbox-providers-section.js";
 
 const state = vi.hoisted(() => ({
@@ -106,7 +107,11 @@ describe("agent default session pair", () => {
   it("starts on the agent's default harness when nothing is remembered", () => {
     state.remembered = null;
     const html = renderToStaticMarkup(
-      createElement(SandboxProvidersSection, { agentId: "agent" }),
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(SandboxProvidersSection, { agentId: "agent" }),
+      ),
     );
     expect(html).toMatch(/aria-label="Harness"[^>]*><span[^>]*>Codex</);
     expect(html).toMatch(/aria-label="Provider"[^>]*><span[^>]*>OpenAI</);
@@ -115,7 +120,11 @@ describe("agent default session pair", () => {
   it("shows the remembered pair", () => {
     state.remembered = { harness: "pi", provider: "oai", model: "gpt" };
     const html = renderToStaticMarkup(
-      createElement(SandboxProvidersSection, { agentId: "agent" }),
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(SandboxProvidersSection, { agentId: "agent" }),
+      ),
     );
     expect(html).toMatch(/aria-label="Harness"[^>]*><span[^>]*>Pi</);
     expect(html).toMatch(/aria-label="Model"[^>]*><span[^>]*>GPT</);
@@ -134,7 +143,11 @@ describe("agent default on a runtime that routes by model name", () => {
       model: "openai/gpt-5.5",
     };
     const html = renderToStaticMarkup(
-      createElement(SandboxProvidersSection, { agentId: "agent" }),
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(SandboxProvidersSection, { agentId: "agent" }),
+      ),
     );
     expect(html).toMatch(
       /aria-label="Model"[^>]*><span[^>]*>gpt-5.5 · OpenAI</,

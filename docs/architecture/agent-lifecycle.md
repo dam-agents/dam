@@ -10,7 +10,7 @@ It is a custom resource whose `spec` the api-server owns and whose `status` the 
 The lifecycle is driven by three actors:
 
 - **Users** drive both management and sessions, but along different paths.
-  The **UI** is the only management surface — creating, configuring, hibernating, and deleting Agents all flow through tRPC on the api-server's public port, which is the sole writer of the Agent spec.
+  The **UI** is the only management surface — creating, configuring, disabling, and deleting Agents all flow through tRPC on the api-server's public port, which is the sole writer of the Agent spec.
   Sessions can be driven from the UI **or** from a connected channel (Slack, Telegram).
   Channels never hit management endpoints; they dial the api-server's ACP relay only, with identity scoped to the individual messenger user driving the session.
   Channel internals live on [channels](channels.md).

@@ -16,10 +16,12 @@ The model list a session or a [schedule](schedules.md#session-choices) picks fro
 The session picker offers named models, not a generic default-model choice.
 It shows loading, unavailable and empty listings explicitly, with a retry for failed discovery; a failed listing never falls back to the harness's static catalog.
 The catalog remains usable where discovery is not configured.
-Before a session starts, the picker lists every provider the harness accepts in one stable order: an attached provider shows its models and a disconnect action, and one not attached offers to attach it, after asking, so a provider never carries another provider's model.
+Before a session starts, the picker lists every provider the harness accepts in one stable order: an attached provider shows its models and a disconnect action, and one not attached offers to attach it, so a provider never carries another provider's model.
 It grays out a harness that no provider the owner holds accepts.
 A web terminal starts from a row of harness buttons on the agent's General page and on the empty chat: a button stores its harness, with the first attached provider it accepts, as the next session pair, and the terminal sends that pair when it connects.
-A harness that only a provider the owner holds but has not attached accepts asks to attach that provider, then opens; a harness no provider the owner holds accepts is grayed, and its tooltip names the harness and says why.
+A harness that only providers the owner holds but has not attached accept opens the attach dialog, then opens on the provider attached; a harness no provider the owner holds accepts is grayed, and its tooltip names the harness and says why.
+The attach dialog, from the picker or a harness button, lists only the owner's unattached providers the harness accepts, each as the agent's Providers page shows it, with the harnesses it runs, switched off but for the one the owner clicked; nothing is attached until at least one is on and the owner confirms.
+The UI names a provider by its Settings name, such as Bob Shell, not the connection's own name.
 With no provider at all, the chat opens the provider list in a modal.
 While the agent holds no provider, the chat blocks sending, and the picker's place holds a link to that modal; a provider connected or picked there is attached to the agent.
 With no pair picked or remembered, the picker preselects the default harness on the first granted provider it accepts, else the first carried harness a granted provider fits, with its default model.

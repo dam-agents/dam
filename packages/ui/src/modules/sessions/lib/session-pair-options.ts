@@ -2,6 +2,7 @@ import {
   harnessFits,
   type HarnessView,
   type ProviderPresetType,
+  PROVIDERS,
   providerTypeForTemplateId,
   type SessionPair,
 } from "api-server-api";
@@ -43,9 +44,11 @@ export function pairLabel(
   const harness = harnessDisplayName(pair.harness, catalog);
   return (
     harness &&
-    [pair.model, harness, granted.find((p) => p.id === pair.provider)?.name]
-      .filter(Boolean)
-      .join(" · ")
+    modelProviderLabel(
+      pair.model,
+      granted.find((p) => p.id === pair.provider)?.name,
+      harness,
+    )
   );
 }
 
@@ -93,7 +96,14 @@ export function grantedProviderRefs(
   const owned = connections.flatMap((c) => {
     const type = providerTypeForTemplateId(c.templateId);
     return type
-      ? [{ id: c.id, name: c.name, type, templateId: c.templateId }]
+      ? [
+          {
+            id: c.id,
+            name: PROVIDERS[type].displayName,
+            type,
+            templateId: c.templateId,
+          },
+        ]
       : [];
   });
   const held = new Set(grantedIds);
@@ -120,7 +130,7 @@ export interface TerminalHarness {
   name: string;
   displayName: string;
   provider: string | null;
-  attach: ProviderConnectionRef | null;
+  attachable: ProviderConnectionRef[];
   unavailable: string | null;
 }
 
@@ -129,7 +139,7 @@ export type TerminalHarnessChoice =
   | { kind: "fallback" }
   | { kind: "harnesses"; harnesses: TerminalHarness[] };
 
-// UNIT_BOUNDARY_DESCRIPTION: what a new web terminal can start with. Nothing shows while the agent's harnesses, the catalog or the provider grants still load. A failed load, or an agent that names no harnesses, falls back to one plain terminal on the default pair. Otherwise each harness carries the first granted provider that fits it, else a provider its owner holds that the agent could be granted, else the reason it cannot start.
+// UNIT_BOUNDARY_DESCRIPTION: what a new web terminal can start with. Nothing shows while the agent's harnesses, the catalog or the provider grants still load. A failed load, or an agent that names no harnesses, falls back to one plain terminal on the default pair. Otherwise each harness carries the first granted provider that fits it, else the providers its owner holds that the agent could be granted, else the reason it cannot start.
 export function terminalHarnessChoice(input: {
   loading: boolean;
   failed: boolean;
@@ -147,17 +157,42 @@ export function terminalHarnessChoice(input: {
       const fit = providerOptions(name, catalog, granted, owned);
       const displayName = harnessDisplayName(name, catalog) ?? name;
       const provider = fit.granted[0]?.id ?? null;
-      const attach = provider === null ? (fit.addable[0] ?? null) : null;
+      const attachable = provider === null ? fit.addable : [];
       return {
         name,
         displayName,
         provider,
-        attach,
+        attachable,
         unavailable:
-          provider === null && attach === null
+          provider === null && attachable.length === 0
             ? `${displayName} does not support any of the LLM providers you have configured.`
             : null,
       };
     }),
   };
+}
+
+export function providerHarnesses(
+  catalog: readonly HarnessView[],
+  provider: ProviderConnectionRef,
+): string[] {
+  return catalog
+    .filter((h) =>
+      harnessFits(
+        { harnesses: catalog },
+        h.name,
+        provider.type,
+        provider.templateId,
+      ),
+    )
+    .map((h) => h.name);
+}
+
+export function modelProviderLabel(
+  model: string | null | undefined,
+  provider: string | null | undefined,
+  fallback: string,
+): string {
+  if (model && provider) return `${model} (${provider})`;
+  return model || provider || fallback;
 }
