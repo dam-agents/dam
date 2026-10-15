@@ -365,6 +365,15 @@ virtualization:
     # than letting a new runtime manage machines an older one started. The
     # switch back if a runtime turns out not to.
     releaseSameRuntimeOnly: false
+    # How smolvm checks every VMM's syscalls, from after its device setup,
+    # against the allowlist a running microVM needs. `audit` logs a call
+    # outside it as a kernel audit record (`type=1326`, in the node's audit
+    # log or kernel log, never the pod's) and lets it through; `enforce`
+    # kills the VMM on such a call, which stops its machine; `off` installs no
+    # filter. The pod's own seccomp profile bounds every VMM in each mode.
+    # Changing this value rolls every runner, which reboots its owner's
+    # machines.
+    seccomp: audit
     # Local dev on macOS only. Set, the controller creates no runner pods:
     # every vm machine, whatever its owner, runs on one vm-runner process on
     # the host, which uses the host's own hypervisor instead of one nested in

@@ -116,6 +116,8 @@ type VMRunnerSpec struct {
 	ReleaseHostPath string `json:"releaseHostPath,omitempty"`
 	// UNIT_BOUNDARY_DESCRIPTION: set, a runner release built against another VM runtime than the pod's is not taken in place but rolls the pod, as before runtimes travelled with releases. It is the switch back for a runtime that turns out not to manage machines another one started.
 	ReleaseSameRuntimeOnly bool `json:"releaseSameRuntimeOnly,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: how smolvm checks every VMM's syscalls against its allowlist: `audit` logs a call outside it, `enforce` kills the VMM, `off` installs no filter. Empty means `audit`.
+	Seccomp string `json:"seccomp,omitempty"`
 }
 
 type VMRunnerClusterDNS struct {
