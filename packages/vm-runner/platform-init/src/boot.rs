@@ -1,4 +1,5 @@
 // UNIT_BOUNDARY_DESCRIPTION: the entrypoint of every vm-backend machine. It claims the machine's storage disk, moves the image onto a root of its own that lasts as long as the image does, mounts the agent's home from the disk, puts the temporary folders on the disk, and starts the image's own entrypoint, which it then supervises. It exists so persistence is the platform's to guarantee rather than the image's to implement: the runner supplies this binary, so an image that has never heard of this platform still keeps its agent's home across a stop, and a machine that cannot mount its disk does not boot at all rather than losing its work at the first stop.
+use std::collections::HashSet;
 use std::ffi::{CString, OsStr, OsString};
 use std::fs::{self, DirBuilder, File, OpenOptions};
 use std::io::{self, Seek, SeekFrom, Write};
@@ -1120,8 +1121,15 @@ fn evict_scratch(dirs: &[(PathBuf, u64)]) {
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |since| since.as_secs());
         let (mut freed, mut deleted) = (0, Vec::new());
+        let locked = match fs::read_to_string("/proc/locks") {
+            Ok(table) => locked_files(&table),
+            Err(e) => {
+                logf!("WARNING: reading /proc/locks ({e}); no scratch is evicted, since a file a tool has locked could not be told apart");
+                continue;
+            }
+        };
         let roots = open_scratch_roots(dirs);
-        for entry in scratch_entries(&roots, disk, now, pass.youngest) {
+        for entry in scratch_entries(&roots, disk, &locked, now, pass.youngest) {
             if !pass.continues(free_percent(home), freed) {
                 break;
             }
@@ -1159,8 +1167,14 @@ fn evict_scratch(dirs: &[(PathBuf, u64)]) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: every entry of the scratch folders that may be evicted at `now`, in the order to evict them: by the first EVICT_AGES pass it is old enough for, then rebuildable before not, then oldest first. An entry is left out when it was used within `youngest` seconds, when it holds the image's trust cache, a socket or fifo a process may still listen on, or a mount, or when it cannot be read.
-fn scratch_entries(roots: &[ScratchRoot], disk: u64, now: u64, youngest: u64) -> Vec<ScratchEntry> {
+// UNIT_BOUNDARY_DESCRIPTION: every entry of the scratch folders that may be evicted at `now`, in the order to evict them: by the first EVICT_AGES pass it is old enough for, then rebuildable before not, then oldest first. An entry is left out when it was used within `youngest` seconds, when it holds the image's trust cache, a socket or fifo a process may still listen on, a mount, or a file in `locked`, or when it cannot be read.
+fn scratch_entries(
+    roots: &[ScratchRoot],
+    disk: u64,
+    locked: &HashSet<(u32, u32, u64)>,
+    now: u64,
+    youngest: u64,
+) -> Vec<ScratchEntry> {
     let trust = Path::new(TRUST_CACHE_PATH);
     let mut entries: Vec<(usize, ScratchEntry)> = roots
         .iter()
@@ -1175,7 +1189,7 @@ fn scratch_entries(roots: &[ScratchRoot], disk: u64, now: u64, youngest: u64) ->
         })
         .filter(|(_, shown, _)| !trust.starts_with(shown))
         .filter_map(|(path, shown, mount)| {
-            let (used, bytes) = tree_use(&path, disk, mount)?;
+            let (used, bytes) = tree_use(&path, disk, mount, locked)?;
             let leftover = path
                 .file_name()
                 .is_some_and(|name| name.to_string_lossy().contains(EVICTED_INFIX));
@@ -1201,13 +1215,19 @@ fn scratch_entries(roots: &[ScratchRoot], disk: u64, now: u64, youngest: u64) ->
     entries.into_iter().map(|(_, entry)| entry).collect()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the newest modification or change time anywhere under `path`, and the bytes it holds, without following a symlink. None when the tree cannot be evicted whole: it leaves the disk's device or the scratch folder's `mount` — a bind mount on the same disk has the device but not the mount, and what it shows is someone's work — holds a socket or fifo, or a directory in it cannot be read.
-fn tree_use(path: &Path, disk: u64, mount: u64) -> Option<(u64, u64)> {
+// UNIT_BOUNDARY_DESCRIPTION: the newest modification or change time anywhere under `path`, and the bytes it holds, without following a symlink. None when the tree cannot be evicted whole: it leaves the disk's device or the scratch folder's `mount` — a bind mount on the same disk has the device but not the mount, and what it shows is someone's work — holds a socket or fifo or a file in `locked`, or a directory in it cannot be read.
+fn tree_use(
+    path: &Path,
+    disk: u64,
+    mount: u64,
+    locked: &HashSet<(u32, u32, u64)>,
+) -> Option<(u64, u64)> {
     let info = statx(libc::AT_FDCWD, path).ok()?;
     let kind = u32::from(info.stx_mode) & libc::S_IFMT;
     if libc::makedev(info.stx_dev_major, info.stx_dev_minor) != disk
         || info.stx_mnt_id != mount
         || ![libc::S_IFDIR, libc::S_IFREG, libc::S_IFLNK].contains(&kind)
+        || locked.contains(&(info.stx_dev_major, info.stx_dev_minor, info.stx_ino))
     {
         return None;
     }
@@ -1215,12 +1235,33 @@ fn tree_use(path: &Path, disk: u64, mount: u64) -> Option<(u64, u64)> {
     let mut bytes = info.stx_blocks * 512;
     if kind == libc::S_IFDIR {
         for child in fs::read_dir(path).ok()? {
-            let (child_used, child_bytes) = tree_use(&child.ok()?.path(), disk, mount)?;
+            let (child_used, child_bytes) = tree_use(&child.ok()?.path(), disk, mount, locked)?;
             used = used.max(child_used);
             bytes += child_bytes;
         }
     }
     Some((used, bytes))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: every file a process holds a lock on — BSD flock, POSIX or open file description — as its device's major and minor and its inode, from the kernel's lock table (/proc/locks), which platform-init, as the guest's first process, sees whole. A lock is how a tool says it still needs a file, wherever the file sits in an entry, so eviction keeps the entry whole. Reading the table takes no lock, so no tool is held up, and a lock taken after it is read is seen only by the next pass. A file open for writing without a lock is not looked for: its time moves as it is written, which keeps its entry.
+fn locked_files(table: &str) -> HashSet<(u32, u32, u64)> {
+    table
+        .lines()
+        .filter_map(|line| {
+            line.split_whitespace().find_map(|field| {
+                let mut parts = field.split(':');
+                let (major, minor, inode) = (parts.next()?, parts.next()?, parts.next()?);
+                if parts.next().is_some() {
+                    return None;
+                }
+                Some((
+                    u32::from_str_radix(major, 16).ok()?,
+                    u32::from_str_radix(minor, 16).ok()?,
+                    inode.parse().ok()?,
+                ))
+            })
+        })
+        .collect()
 }
 
 fn cache_tagged(dir: &Path) -> bool {
@@ -3577,7 +3618,7 @@ mod tests {
             .as_secs();
         let dirs = open_scratch_roots(&[(s.to_path_buf(), mount_of(s))]);
         let names = |now, disk| -> Vec<String> {
-            scratch_entries(&dirs, disk, now, EVICT_AGES[3])
+            scratch_entries(&dirs, disk, &HashSet::new(), now, EVICT_AGES[3])
                 .iter()
                 .map(|entry| {
                     entry
@@ -3601,15 +3642,26 @@ mod tests {
         rest.sort();
         assert_eq!(rest, ["forged", "link", "pr-body.md"]);
         assert_eq!(
-            scratch_entries(&dirs, disk, now + 2 * EVICT_AGES[3], CLAIM_EVICT_AGE).len(),
+            scratch_entries(
+                &dirs,
+                disk,
+                &HashSet::new(),
+                now + 2 * EVICT_AGES[3],
+                CLAIM_EVICT_AGE
+            )
+            .len(),
             1,
             "a claim pass keeps what was used within the hour"
         );
-        assert!(
-            scratch_entries(&dirs, disk, now + 2 * EVICT_AGES[3], EVICT_AGES[3])
-                .iter()
-                .any(|entry| entry.path.ends_with("go-build") && entry.bytes >= 8192)
-        );
+        assert!(scratch_entries(
+            &dirs,
+            disk,
+            &HashSet::new(),
+            now + 2 * EVICT_AGES[3],
+            EVICT_AGES[3]
+        )
+        .iter()
+        .any(|entry| entry.path.ends_with("go-build") && entry.bytes >= 8192));
         assert!(
             names(now + 2 * EVICT_AGES[3], disk + 1).is_empty(),
             "another device is not walked"
@@ -3638,7 +3690,7 @@ mod tests {
             (h.join(".cache"), mount_of(h)),
             (h.join(".npm"), mount_of(h)),
         ]);
-        let offered = scratch_entries(&roots, disk, later, EVICT_AGES[3]);
+        let offered = scratch_entries(&roots, disk, &HashSet::new(), later, EVICT_AGES[3]);
         let mut shown: Vec<_> = offered.iter().map(|entry| entry.shown.clone()).collect();
         shown.sort();
         assert_eq!(shown, [h.join(".npm/_cacache"), h.join(".npm/main.rs")]);
@@ -3724,7 +3776,7 @@ mod tests {
             + 2 * EVICT_AGES[0];
 
         let roots = open_scratch_roots(&boot);
-        let offered = scratch_entries(&roots, disk, later, EVICT_AGES[3]);
+        let offered = scratch_entries(&roots, disk, &HashSet::new(), later, EVICT_AGES[3]);
         let shown: Vec<_> = offered.iter().map(|entry| entry.shown.clone()).collect();
         assert_eq!(shown, [h.join(".cache/plain")]);
         for entry in &offered {
@@ -3743,6 +3795,78 @@ mod tests {
                 0
             );
         }
+    }
+
+    // TEST_SCENARIO: a tool that locks a file deep in its cache still needs it, so the whole entry holding it stays while the lock is held — a BSD lock or a POSIX one — however long the entry has gone unused, and an unlocked entry beside it goes. Once the lock is released, the entry is offered again. The lock table is the kernel's own, which this test process's locks are in.
+    #[test]
+    fn an_entry_holding_a_locked_file_is_kept_whole() {
+        let home = TempDir::new("evict-locked");
+        let h = home.path();
+        for dir in [".cache/tool/sub", ".cache/posix", ".cache/plain"] {
+            fs::create_dir_all(h.join(dir)).unwrap();
+        }
+        for file in [
+            ".cache/tool/sub/db",
+            ".cache/tool/other",
+            ".cache/posix/db",
+            ".cache/plain/old",
+        ] {
+            fs::write(h.join(file), b"x").unwrap();
+        }
+        let roots = open_scratch_roots(&[(h.join(".cache"), mount_of(h))]);
+        let disk = fs::metadata(h).unwrap().dev();
+        let later = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 2 * EVICT_AGES[0];
+        let offered = || {
+            let locked = locked_files(&fs::read_to_string("/proc/locks").unwrap());
+            let mut shown: Vec<_> = scratch_entries(&roots, disk, &locked, later, EVICT_AGES[3])
+                .into_iter()
+                .map(|entry| entry.shown)
+                .collect();
+            shown.sort();
+            shown
+        };
+
+        let bsd = File::open(h.join(".cache/tool/sub/db")).unwrap();
+        // SAFETY: the descriptor is open for the call and flock takes no pointer.
+        assert_eq!(unsafe { libc::flock(bsd.as_raw_fd(), libc::LOCK_EX) }, 0);
+        let posix = OpenOptions::new()
+            .write(true)
+            .open(h.join(".cache/posix/db"))
+            .unwrap();
+        // SAFETY: a zeroed flock is a valid value, and every field the call reads is set below.
+        let mut range: libc::flock = unsafe { std::mem::zeroed() };
+        range.l_type = libc::F_WRLCK as _;
+        range.l_whence = libc::SEEK_SET as _;
+        // SAFETY: range is a flock that outlives the call.
+        assert_eq!(
+            unsafe { libc::fcntl(posix.as_raw_fd(), libc::F_SETLK, &range) },
+            0
+        );
+        assert_eq!(offered(), [h.join(".cache/plain")]);
+
+        drop(bsd);
+        drop(posix);
+        assert_eq!(
+            offered(),
+            [
+                h.join(".cache/plain"),
+                h.join(".cache/posix"),
+                h.join(".cache/tool")
+            ]
+        );
+    }
+
+    // TEST_SCENARIO: the kernel's lock table names each locked file by device and inode, the device's numbers in hex, also on the lines of a process waiting for a lock.
+    #[test]
+    fn the_lock_table_is_read_for_device_and_inode() {
+        let table = "1: FLOCK  ADVISORY  WRITE 812 fd:01:1234 0 EOF\n1: -> FLOCK  ADVISORY  WRITE 813 fd:01:1234 0 EOF\n2: OFDLCK ADVISORY  READ  -1 00:1a:77 0 0\n";
+        let mut locked: Vec<_> = locked_files(table).into_iter().collect();
+        locked.sort();
+        assert_eq!(locked, [(0, 0x1a, 77), (0xfd, 1, 1234)]);
     }
 
     // TEST_SCENARIO: an evicted entry goes whole, and a link goes without its target. An entry a process holds a BSD lock on stays, the way systemd-tmpfiles leaves it, and goes once the lock is released. A leftover of a failed eviction is deleted where it is.
