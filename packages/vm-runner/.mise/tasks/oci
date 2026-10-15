@@ -115,9 +115,13 @@ tar -xzf "$(fetch "https://github.com/smol-machines/smolvm/releases/download/v${
 # Drop this once a smolvm release ships these fixes, but for the MADV_HUGEPAGE
 # call on guest RAM, which upstream leaves out and nested hosts need (a busy
 # dam-cl node filled 4 GiB in 4.1 s with it and 8.3 s without).
+# musl-tools and the musl target: libkrun's init.krun, which it builds static
+# against musl and serves as the guest's /init.krun. Without them its build
+# only warns and links it against glibc, which the agent rootfs lacks, so every
+# guest kernel panics on "Requested init /init.krun failed (error -2)".
 # bc to python3-pyelftools: the guest kernel's build; btrfs-progs: the btrfs
 # disk template.
-lk_deps="clang libclang-dev patchelf pkg-config libvirglrenderer-dev libepoxy-dev libdrm-dev libgbm-dev bc bison flex libelf-dev libssl-dev python3-pyelftools btrfs-progs"
+lk_deps="clang libclang-dev patchelf pkg-config libvirglrenderer-dev libepoxy-dev libdrm-dev libgbm-dev musl-tools bc bison flex libelf-dev libssl-dev python3-pyelftools btrfs-progs"
 lk_missing=$(for p in $lk_deps; do dpkg -s "$p" >/dev/null 2>&1 || echo "$p"; done)
 # Unattended and bounded: CI runs this in the background beside a starting k3s,
 # where a debconf or needrestart prompt waits on stdin for good, a needrestart
@@ -125,6 +129,7 @@ lk_missing=$(for p in $lk_deps; do dpkg -s "$p" >/dev/null 2>&1 || echo "$p"; do
 # its step times out, with nothing in the log.
 apt=(${sudo[@]+"${sudo[@]}"} env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l timeout 600 apt-get -o DPkg::Lock::Timeout=300)
 [ -z "$lk_missing" ] || { "${apt[@]}" update -qq && "${apt[@]}" install -y -qq $lk_missing; } </dev/null
+timeout 600 rustup target add "$(uname -m)-unknown-linux-musl" >/dev/null
 lk_commit="$(sed -n 's/^libkrun-commit=//p' smolvm.pin)"
 [ -n "$lk_commit" ] || { echo "smolvm.pin names no libkrun-commit" >&2; exit 1; }
 lk="$cache/libkrun"
