@@ -1,5 +1,6 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import type { ApiContext } from "./context.js";
+import { hasOversizedArray, OVERSIZED_ARRAY_MESSAGE } from "./input-bounds.js";
 import { storageFullSchema } from "./modules/budgets/schemas.js";
 import type { BudgetStorageFull } from "./modules/budgets/types.js";
 import { scanFailureSchema } from "./modules/skills/schemas.js";
@@ -100,6 +101,18 @@ const mapPgErrors = tBase.middleware(async ({ next }) => {
   throw new TRPCError({ ...mapped, cause: result.error.cause });
 });
 
+const rejectOversizedArrays = tBase.middleware(
+  async ({ getRawInput, next }) => {
+    if (hasOversizedArray(await getRawInput())) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: OVERSIZED_ARRAY_MESSAGE,
+      });
+    }
+    return next();
+  },
+);
+
 const requireTermsAccepted = tBase.middleware(async ({ ctx, path, next }) => {
   if (PRE_TERMS_PROCEDURES.has(path)) return next();
   if (!termsProven.has(ctx)) {
@@ -119,6 +132,7 @@ export const t = {
   ...tBase,
   procedure: tBase.procedure
     .use(({ path, type, next }) => withTrpcTelemetry(path, type, next))
+    .use(rejectOversizedArrays)
     .use(mapPgErrors)
     .use(requireTermsAccepted),
 };
