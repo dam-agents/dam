@@ -1,6 +1,6 @@
 # VM runner upgrades
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 How a change to the [runner](vm-runner.md) reaches owners whose machines are running: as a **roll** of the runner pod, which reboots the owner's machines, or, for a new runner release only, as a **hand-off** inside the pod, which reboots none.
 
@@ -56,6 +56,7 @@ The pod's own image is always available as a release.
 A staged one is used once the stager has reached the pod's node, and the loader first copies it, and its runtime, into the pod: the stager may remove them from the node while a runner still copies its guest binaries from one or a VMM still serves its guest agent from the other.
 Before a hand-off the loader checks that the release's runner loads in the pod at all.
 The loader restarts a runner that exits, with a backoff, and passes a stop of the pod to the runner, which then stops every machine as the [runner](vm-runner.md) page describes.
+A stop that arrives while no runner can take it — the old one closing for a hand-off, a release being copied in, a backoff — is kept: a hand-off not yet begun is dropped, a backoff is cut short, and the stop goes to the next runner once that runner has set up its own stop, since one killed before that leaves its machines to be powered off with the pod.
 
 **A hand-off** replaces the runner process.
 The loader signals the runner, which closes as it would for a stop but leaves every machine running, then starts the named release.
