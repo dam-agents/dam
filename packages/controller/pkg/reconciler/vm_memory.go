@@ -104,15 +104,25 @@ func (r *AgentReconciler) runnerOvershootMiB(ctx context.Context, owner string, 
 // UNIT_BOUNDARY_DESCRIPTION: as the OOM kill would stop it too.
 // UNIT_BOUNDARY_DESCRIPTION: Each frees what it is counted at, so a guest
 // UNIT_BOUNDARY_DESCRIPTION: holding little frees little.
-func (r *AgentReconciler) reclaimRunnerMemory(ctx context.Context, owner, self string, needMiB int, partial bool) (bool, error) {
-	if owner == "" || needMiB <= 0 {
+// UNIT_BOUNDARY_DESCRIPTION: A refused start and the memory pass reclaim for
+// UNIT_BOUNDARY_DESCRIPTION: one owner from different goroutines, so the need
+// UNIT_BOUNDARY_DESCRIPTION: is read, and the agents chosen are hibernated and
+// UNIT_BOUNDARY_DESCRIPTION: stop counting, under the owner's lock: the next
+// UNIT_BOUNDARY_DESCRIPTION: reclaim sees the room already freed instead of
+// UNIT_BOUNDARY_DESCRIPTION: choosing and counting the same agents again.
+func (r *AgentReconciler) reclaimRunnerMemory(ctx context.Context, owner, self string, need func() (int, error), partial bool) (bool, error) {
+	if owner == "" {
 		return false, nil
 	}
 	lock := r.ownerLock(owner)
 	lock.Lock()
+	defer lock.Unlock()
+	needMiB, err := need()
+	if err != nil || needMiB <= 0 {
+		return false, err
+	}
 	candidates, err := r.reclaimableAgents(ctx, self, owner)
 	if err != nil {
-		lock.Unlock()
 		return false, err
 	}
 	sort.Slice(candidates, func(i, j int) bool { return candidates[i].idleSince.Before(candidates[j].idleSince) })
@@ -146,10 +156,10 @@ func (r *AgentReconciler) reclaimRunnerMemory(ctx context.Context, owner, self s
 			chosen = append(chosen, c)
 		}
 	}
-	lock.Unlock()
 	if len(chosen) == 0 || left > 0 && !partial {
 		return false, nil
 	}
+	r.noteFreedUnderPressure(owner)
 	return true, r.hibernateReclaimed(ctx, chosen, owner, self, why)
 }
 
@@ -191,7 +201,9 @@ func (r *AgentReconciler) MemoryPass(ctx context.Context) []string {
 // UNIT_BOUNDARY_DESCRIPTION: one owner's pass, from the half-minute tick or,
 // UNIT_BOUNDARY_DESCRIPTION: with `pressure`, from their runner's signal. The
 // UNIT_BOUNDARY_DESCRIPTION: two never run together for one owner, since both
-// UNIT_BOUNDARY_DESCRIPTION: would pick the same idle agents for the same need.
+// UNIT_BOUNDARY_DESCRIPTION: would pick the same idle agents for the same need;
+// UNIT_BOUNDARY_DESCRIPTION: a refused start's reclaim beside them is kept
+// UNIT_BOUNDARY_DESCRIPTION: apart by the owner's lock in reclaimRunnerMemory.
 // UNIT_BOUNDARY_DESCRIPTION: Under the signal the counted threshold is not
 // UNIT_BOUNDARY_DESCRIPTION: waited for: the kernel's view is what kills the
 // UNIT_BOUNDARY_DESCRIPTION: runner, so the need is the larger of the counted
@@ -228,25 +240,25 @@ func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, age
 	if err != nil {
 		return "", false
 	}
-	need := 0
-	switch {
-	case pressure != nil && !r.freedUnderPressureSince(owner, time.Now().Add(-pressureReclaimCooldown)):
-		limit := pressure.LimitMiB
-		if pool := r.runnerLimitMiB(ctx, owner); pool > 0 {
-			limit = min(limit, pool)
-		}
-		need = max(r.runnerOvershootMiB(ctx, owner, demand.memoryMiB, memoryTargetPercent), pressure.WorkingSetMiB-limit*memoryTargetPercent/100)
-	case pressure == nil && r.runnerOvershootMiB(ctx, owner, demand.memoryMiB, memoryPressurePercent) > 0:
-		need = r.runnerOvershootMiB(ctx, owner, demand.memoryMiB, memoryTargetPercent)
-	}
-	if need > 0 {
-		freed, err := r.reclaimRunnerMemory(ctx, owner, "", need, pressure != nil)
+	_, err = r.reclaimRunnerMemory(ctx, owner, "", func() (int, error) {
+		demand, err := r.ownerRunnerDemand(ctx, owner, first, true)
 		if err != nil {
-			slog.WarnContext(ctx, "vm memory: reclaiming under pressure", "owner", owner, "error", err)
+			return 0, err
 		}
-		if freed && pressure != nil {
-			r.noteFreedUnderPressure(owner)
+		switch {
+		case pressure != nil && !r.freedUnderPressureSince(owner, time.Now().Add(-pressureReclaimCooldown)):
+			limit := pressure.LimitMiB
+			if pool := r.runnerLimitMiB(ctx, owner); pool > 0 {
+				limit = min(limit, pool)
+			}
+			return max(r.runnerOvershootMiB(ctx, owner, demand.memoryMiB, memoryTargetPercent), pressure.WorkingSetMiB-limit*memoryTargetPercent/100), nil
+		case pressure == nil && r.runnerOvershootMiB(ctx, owner, demand.memoryMiB, memoryPressurePercent) > 0:
+			return r.runnerOvershootMiB(ctx, owner, demand.memoryMiB, memoryTargetPercent), nil
 		}
+		return 0, nil
+	}, pressure != nil)
+	if err != nil {
+		slog.WarnContext(ctx, "vm memory: reclaiming under pressure", "owner", owner, "error", err)
 	}
 	if !r.runnerPodMoves(ctx, owner, demand) {
 		return "", false
@@ -269,6 +281,9 @@ func (r *AgentReconciler) hibernateReclaimed(ctx context.Context, chosen []recla
 		if err := r.stampReclaimed(ctx, c.name, now); err != nil {
 			return err
 		}
+		if c.vmMiB > 0 {
+			r.vmRunning.Store(c.name, false)
+		}
 		if err := hibernateAgentPair(ctx, r.client, r.dynamic, r.HaltMachine, owner, r.config.Namespace, c.name); err != nil {
 			return err
 		}
@@ -282,11 +297,10 @@ func (r *AgentReconciler) hibernateReclaimed(ctx context.Context, chosen []recla
 // UNIT_BOUNDARY_DESCRIPTION: the parked retry starts it once their machines
 // UNIT_BOUNDARY_DESCRIPTION: have stopped.
 func (r *AgentReconciler) reclaimForRefusedStart(ctx context.Context, agent *apiv1.Agent, owner string) error {
-	demand, err := r.ownerRunnerDemand(ctx, owner, agent, true)
-	if err != nil {
-		return err
-	}
-	_, err = r.reclaimRunnerMemory(ctx, owner, agent.Name, r.runnerOvershootMiB(ctx, owner, demand.memoryMiB, 100), false)
+	_, err := r.reclaimRunnerMemory(ctx, owner, agent.Name, func() (int, error) {
+		demand, err := r.ownerRunnerDemand(ctx, owner, agent, true)
+		return r.runnerOvershootMiB(ctx, owner, demand.memoryMiB, 100), err
+	}, false)
 	return err
 }
 
