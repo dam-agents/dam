@@ -55,6 +55,11 @@ export function AvatarPicker({
   const gridRef = useRef<HTMLDivElement>(null);
   const refocusing = useRef(false);
   const focusInside = useRef(false);
+  const focusGridOnOpen = useRef(false);
+  const focusGrid = () =>
+    gridRef.current
+      ?.querySelector<HTMLElement>("[aria-pressed=true], button")
+      ?.focus();
   useEffect(() => () => clearTimeout(timer.current), []);
   const later = (next: boolean, ms: number) => {
     clearTimeout(timer.current);
@@ -92,12 +97,9 @@ export function AvatarPicker({
             else if (e.currentTarget.matches(":focus-visible")) set(true);
           }}
           onClick={() => {
+            if (open) return focusGrid();
+            focusGridOnOpen.current = true;
             set(true);
-            requestAnimationFrame(() =>
-              gridRef.current
-                ?.querySelector<HTMLElement>("[aria-pressed=true], button")
-                ?.focus(),
-            );
           }}
         >
           {children}
@@ -106,7 +108,12 @@ export function AvatarPicker({
       <PopoverContent
         align="start"
         className="w-auto p-3"
-        onOpenAutoFocus={(e) => e.preventDefault()}
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          if (!focusGridOnOpen.current) return;
+          focusGridOnOpen.current = false;
+          focusGrid();
+        }}
         onCloseAutoFocus={(e) => {
           e.preventDefault();
           if (!focusInside.current) return;
