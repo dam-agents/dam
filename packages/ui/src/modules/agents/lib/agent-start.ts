@@ -62,3 +62,46 @@ export async function askAgainWhenReady<T>(
     return ask();
   }
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: a session action chosen while the agent cannot answer, such as Rename or Delete on a provisional row, wakes the agent and runs once it answers. Readiness is read when the action runs, not when the menu opened, so an agent that woke meanwhile runs the action at once. An agent already starting is not woken again. The same action asked again while it waits is dropped, so it never runs twice. An agent that stops before it answers runs nothing.
+export async function actWhenAwake({
+  inFlight,
+  key,
+  readiness,
+  wake,
+  untilOperable,
+  onWaiting,
+  onFailed,
+  act,
+}: {
+  inFlight: Set<string>;
+  key: string;
+  readiness: () => AgentReadiness;
+  wake: () => void;
+  untilOperable: () => Promise<void> | null;
+  onWaiting: () => void;
+  onFailed: () => void;
+  act: () => unknown;
+}): Promise<void> {
+  if (inFlight.has(key)) return;
+  inFlight.add(key);
+  try {
+    if (readiness() === "down") wake();
+    if (readiness() !== "ready") {
+      const hold = untilOperable();
+      if (!hold) {
+        if (readiness() !== "ready") return onFailed();
+      } else {
+        onWaiting();
+        try {
+          await hold;
+        } catch {
+          return onFailed();
+        }
+      }
+    }
+    await act();
+  } finally {
+    inFlight.delete(key);
+  }
+}

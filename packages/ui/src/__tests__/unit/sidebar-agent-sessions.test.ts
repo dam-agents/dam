@@ -9,12 +9,14 @@ import {
   toActivitySessions,
 } from "../../modules/home/lib/activity-sessions.js";
 import {
-  sessionListToggle,
+  moreClick,
+  nextSessionCursor,
+  sessionListControls,
   SIDEBAR_PREVIEW_SESSIONS,
   sidebarSessionWindow,
 } from "../../modules/sessions/lib/sidebar-session-window.js";
 
-// TEST_OVERVIEW: The sidebar lists each Agent's Sessions under the Agent, and no Session twice. An Agent shows its first three Sessions until the user clicks More, which lists the rest and turns into Less. The session filter in the Agents header applies to the attention record and to an Agent's own session list alike.
+// TEST_OVERVIEW: The sidebar lists each Agent's Sessions under the Agent, and no Session twice. An Agent shows its first three Sessions until the user clicks More, which lists the rest it has loaded; each further click on More loads one more page, and Less collapses the list. Paging stops when the Agent's cursor does not move or a page brings no new Session. The session filter in the Agents header applies to the attention record and to an Agent's own session list alike.
 
 function attention(
   agentId: string,
@@ -84,20 +86,63 @@ describe("an agent's session window", () => {
     ]);
   });
 
-  it("TEST_SCENARIO: More shows only when there is more to list, and turns into Less once expanded", () => {
+  it("TEST_SCENARIO: More shows while there is more to list, and Less once expanded", () => {
     const n = SIDEBAR_PREVIEW_SESSIONS;
+    const controls = (total: number, expanded: boolean, hasNextPage: boolean) =>
+      sessionListControls({ total, expanded, hasNextPage });
+    expect(controls(n, false, false)).toEqual({ more: false, less: false });
+    expect(controls(n, false, true)).toEqual({ more: true, less: false });
+    expect(controls(n + 1, false, false)).toEqual({ more: true, less: false });
+    expect(controls(n + 1, true, false)).toEqual({ more: false, less: true });
+    expect(controls(n + 1, true, true)).toEqual({ more: true, less: true });
+  });
+
+  it("TEST_SCENARIO: one click on More fetches at most one page", () => {
+    const n = SIDEBAR_PREVIEW_SESSIONS;
+    const click = (
+      total: number,
+      expanded: boolean,
+      hasNextPage: boolean,
+      isFetchingNextPage = false,
+    ) => moreClick({ total, expanded, hasNextPage, isFetchingNextPage });
+    expect(click(n + 1, false, true)).toEqual({
+      expand: true,
+      fetchNextPage: false,
+    });
+    expect(click(n, false, true)).toEqual({
+      expand: true,
+      fetchNextPage: true,
+    });
+    expect(click(n + 1, true, true)).toEqual({
+      expand: false,
+      fetchNextPage: true,
+    });
+    expect(click(n + 1, true, false).fetchNextPage).toBe(false);
+    expect(click(n + 1, true, true, true).fetchNextPage).toBe(false);
+  });
+
+  it("TEST_SCENARIO: paging stops when the cursor does not move or a page brings no new Session", () => {
+    const page = (ids: string[], next: string | null) => ({
+      sessions: ids.map((sessionId) => ({ sessionId })),
+      nextCursor: next === null ? null : { sessionId: next },
+    });
+    const first = page(["s1", "s2"], "s2");
+    expect(nextSessionCursor([first], null)).toEqual({ sessionId: "s2" });
     expect(
-      sessionListToggle({ total: n, expanded: false, hasNextPage: false }),
+      nextSessionCursor([first, page(["s3"], "s3")], { sessionId: "s2" }),
+    ).toEqual({ sessionId: "s3" });
+    expect(
+      nextSessionCursor([first, page(["s3"], null)], { sessionId: "s2" }),
     ).toBeNull();
     expect(
-      sessionListToggle({ total: n, expanded: false, hasNextPage: true }),
-    ).toBe("more");
+      nextSessionCursor([first, page(["s3"], "s2")], { sessionId: "s2" }),
+    ).toBeNull();
     expect(
-      sessionListToggle({ total: n + 1, expanded: false, hasNextPage: false }),
-    ).toBe("more");
+      nextSessionCursor([first, page(["s2"], "s9")], { sessionId: "s2" }),
+    ).toBeNull();
     expect(
-      sessionListToggle({ total: n + 1, expanded: true, hasNextPage: false }),
-    ).toBe("less");
+      nextSessionCursor([first, page([], "s9")], { sessionId: "s2" }),
+    ).toBeNull();
   });
 });
 
