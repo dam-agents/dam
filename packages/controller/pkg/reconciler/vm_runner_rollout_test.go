@@ -775,3 +775,20 @@ func TestASettledHandOffKeepsARunnerThatIsStillMidRoll(t *testing.T) {
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV1, namedRelease(t, r, "owner-b"), "the first runner is still mid-roll")
 }
+
+// TEST_SCENARIO: an install that keeps runners off some nodes with a node affinity, which a nodeSelector cannot express, gets it on every runner pod; one that sets none renders no affinity, so the pinned template hash above holds and no runner rolls.
+func TestARunnerPodTakesTheInstallsAffinity(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	offGPU := &corev1.Affinity{NodeAffinity: &corev1.NodeAffinity{
+		RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{NodeSelectorTerms: []corev1.NodeSelectorTerm{{
+			MatchExpressions: []corev1.NodeSelectorRequirement{{Key: "nvidia.com/gpu.present", Operator: corev1.NodeSelectorOpNotIn, Values: []string{"true"}}},
+		}}},
+	}}
+	r.config.VM.Runner.Affinity = offGPU
+	require.NoError(t, r.Reconcile(ctx, agent))
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, offGPU, dep.Spec.Template.Spec.Affinity)
+}
