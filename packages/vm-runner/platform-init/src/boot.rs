@@ -360,6 +360,19 @@ fn swap_header(page: usize, size: u64) -> Vec<u8> {
 
 // UNIT_BOUNDARY_DESCRIPTION: the disk is a sparse file on the owner's claim, and a block the agent frees stays allocated there until it is trimmed. smolvm's guest agent trims only once free space has risen by a quarter GiB since its last trim, so a file rewritten in place or replaced by a renamed copy — free space back where it was, the new copy on other blocks — keeps the old copy's blocks counted for up to half an hour. Every TRIM_INTERVAL the disk is trimmed regardless: ext4 skips every block group that has freed nothing since its last trim, so a trim with nothing to return costs little. Machines boot at different times, so their trims do not run in step.
 const TRIM_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+// UNIT_BOUNDARY_DESCRIPTION: whether the filesystem holding the agent's home sends a discard for each extent it frees, as btrfs does by itself (discard=async) on a disk that supports discard; the trim loop then has nothing left to return.
+fn discards_on_its_own(mounts: &str) -> bool {
+    mounts.lines().any(|line| {
+        let mut fields = line.split_whitespace();
+        fields.nth(1) == Some(guest::AGENT_HOME)
+            && fields.nth(1).is_some_and(|options| {
+                options
+                    .split(',')
+                    .any(|option| option.starts_with("discard"))
+            })
+    })
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: _IOWR('X', 121, struct fstrim_range), the same on every architecture a guest runs; the libc crate does not export it.
 const FITRIM: libc::c_ulong = 0xC018_5879;
 // UNIT_BOUNDARY_DESCRIPTION: free extents smaller than this are skipped, so a minute's trim sends no stream of tiny discards to the claim's storage.
@@ -373,6 +386,10 @@ struct FstrimRange {
 }
 
 fn trim_freed_blocks() {
+    if discards_on_its_own(&fs::read_to_string("/proc/self/mounts").unwrap_or_default()) {
+        logf!("the disk discards freed blocks on its own; no periodic trim");
+        return;
+    }
     let home = match File::open(guest::AGENT_HOME) {
         Ok(home) => home,
         Err(e) => {
@@ -3936,6 +3953,18 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
         assert_eq!(offered(), unlocked);
+    }
+
+    // TEST_SCENARIO: a home on btrfs mounted with discard=async gives freed blocks back by itself, so the trim loop stands down; an ext4 home, or a btrfs one on a disk without discard, keeps it.
+    #[test]
+    fn the_trim_loop_stands_down_for_a_discarding_home() {
+        assert!(discards_on_its_own("/dev/vda / btrfs rw 0 0\n/dev/vda /home/agent btrfs rw,noatime,compress=zstd:1,discard=async,space_cache=v2,subvol=/agent 0 0\n"));
+        assert!(!discards_on_its_own(
+            "/dev/vda /home/agent btrfs rw,noatime,compress=zstd:1,space_cache=v2 0 0\n"
+        ));
+        assert!(!discards_on_its_own(
+            "/dev/vda /home/agent ext4 rw,noatime 0 0\n/dev/vdb /data btrfs rw,discard=async 0 0\n"
+        ));
     }
 
     // TEST_SCENARIO: the kernel's lock table names each locked file by device and inode, the device's numbers in hex, also on the lines of a process waiting for a lock.
