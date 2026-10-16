@@ -257,9 +257,12 @@ virtualization:
     storage: 100Gi
     storageClass: ""
     # Placement: a node with KVM (e.g. KubeVirt's virt nodes and their
-    # taints).
+    # taints). `affinity` is a pod affinity, for what a selector cannot say,
+    # e.g. keeping runners off GPU nodes whose large images fill the disk.
+    # The node image cache and release stager DaemonSets follow all three.
     nodeSelector: {}
     tolerations: []
+    # affinity: {}  # unset by default; an empty one would roll every runner
     # REQUIRED when virtualization.enabled — the install fails without
     # limits.memory. Machines are processes of this pod, so that limit is also
     # what the runner admits them against (it refuses one that does not fit,
@@ -830,7 +833,10 @@ clickstack:
     deployment:
       image:
         repository: quay.io/dam-agents/hyperdx
-        tag: "2.40.0"
+        # 2.41.0 is under the 7-day age floor until 2026-10-20; taken early
+        # because it fixes the next (GHSA-vcvr-r3jv-pc5j), handlebars, shell-quote
+        # and proxy-addr criticals of 2.40.0. Drop this comment after that date.
+        tag: "2.41.0"
       waitForMongodb:
         image: "quay.io/dam-agents/busybox:1.38.0"
 
@@ -1099,12 +1105,39 @@ ui:
 # -- API Server
 apiServer:
   # -- Self-hosted OpenAI-compatible model server offered as the built-in
-  # provider behind the experimental `platform-provider` feature. Empty
-  # baseUrl turns the feature off. baseUrl is the server root without `/v1`;
-  # gateways reach it only through `controller.gatewayEgress.peers`.
+  # provider behind the experimental `platform-provider` feature. An empty
+  # baseUrl or no key turns the feature off. baseUrl is the server root over
+  # https, without `/v1`, e.g. `https://vllm.llm.svc.cluster.local:8443`;
+  # gateways reach it only through `controller.gatewayEgress.peers`, and trust
+  # its TLS issuer through `controller.gatewayUpstreamExtraCAs` when that is
+  # not a public CA. The server requires a bearer key: the agent gateway sends
+  # it on every call, so each call is metered and spend limits apply. Name an
+  # existing Secret in the release namespace in `apiKeySecret`, or set
+  # `apiKey` from a secret values layer, which lands in the chart's
+  # credentials Secret. The api-server reads the key at start, so after
+  # rotating it in an existing Secret restart the api-server; it then rewrites
+  # the copy each user's Connection holds. Price the model in
+  # `apiServer.spend.priceOverrides` under provider `platform-llm`, or its
+  # calls count as nothing against a limit.
+  # caConfigMap names a ConfigMap key in the release namespace holding the PEM
+  # CA that signed the server's certificate; the api-server reads it at start
+  # and gives it to each user's Connection, so the gateway validates the
+  # server against it. On OpenShift every namespace has
+  # `{name: openshift-service-ca.crt, key: service-ca.crt}`, the
+  # service-serving signer, so a model server with a service-ca certificate
+  # needs no pasted CA. Unset, the gateway validates the server against
+  # system trust plus `controller.gatewayUpstreamExtraCAs`. A ConfigMap or
+  # key that does not exist leaves the feature off.
   platformProvider:
     baseUrl: ""
     model: ""
+    apiKeySecret:
+      name: ""
+      key: api-key
+    apiKey: ""
+    caConfigMap:
+      name: ""
+      key: ""
   # -- Extra annotations for the Deployment object / its pod template
   # (merged over commonAnnotations / commonPodAnnotations).
   annotations: {}
@@ -1278,7 +1311,13 @@ apiServer:
     # tier prices, and `factors` keyed by speed or inference geography. The
     # rows below are IBM LiteLLM's own prices, read from its /model/info with
     # a temporary Management key on 2026-10-13. No public price list has them.
+    # The built-in provider (`apiServer.platformProvider`) has no price of its
+    # own; give its model one under provider `platform-llm` so per-user limits
+    # bind. The first row prices DeepSeek-V4.1-Flash at DeepSeek's own peak
+    # API price (2026-10), the higher of its peak and off-peak rates, since
+    # the meter has no time of day.
     priceOverrides:
+      - {provider: platform-llm, model: deepseek-v4.1-flash, input: 0.3, output: 1.2, cacheRead: 0.006}
       - {provider: ibm-litellm, model: aws/claude-opus-5-5, input: 3.04, output: 15.2, cacheRead: 0.152, cacheWrite5m: 3.8, cacheWrite1h: 8, webSearch: 0.01}
       - {provider: ibm-litellm, model: aws/claude-opus-5, input: 3.8, output: 19, cacheRead: 0.38, cacheWrite5m: 4.75, cacheWrite1h: 10, webSearch: 0.01}
       - {provider: ibm-litellm, model: aws/claude-opus-4-8, input: 3.8, output: 19, cacheRead: 0.38, cacheWrite5m: 4.75, cacheWrite1h: 10, webSearch: 0.01}
@@ -1552,9 +1591,11 @@ apiServer:
     # -- Connection-pool size, per replica. One pool serves both request
     # handlers and the runtime-delivery worker; delivery jobs hold a
     # connection only for their short queries, never across the call to the
-    # agent, so this sits far below `runtimeDelivery.concurrency`. Raise the
-    # server's `max_connections` (Postgres defaults to 100, shared with
-    # Keycloak) before scaling `replicas` past 100 / poolMax.
+    # agent, so this sits far below `runtimeDelivery.concurrency`. A pool
+    # closes connections idle for 30 s, but under load each pod holds up to
+    # poolMax, and mid-rollout so do the surge pod and the pod still draining:
+    # keep (replicas + 2) × poolMax under the server's `max_connections`
+    # (Postgres defaults to 100, less 3 reserved, shared with Keycloak).
     poolMax: 32
     # Postgres TLS mode for an external DB: require | verify-ca | verify-full.
     # null = no TLS (the in-cluster postgres). verify-ca/verify-full need caCert.
@@ -1957,8 +1998,8 @@ controller:
   # -- Image for the Envoy credential-injector sidecar.
   # Envoy publishes only to Docker Hub; pulled via mirror.gcr.io (Google's
   # pull-through cache, higher anonymous rate limits) — byte-identical to
-  # envoyproxy/envoy:distroless-v1.39.2 (same manifest digest).
-  envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.2
+  # envoyproxy/envoy:distroless-v1.39.3 (same manifest digest).
+  envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.3
   # -- PEM CA certificates every agent gateway trusts upstream, on top of the
   # public roots, and every agent trusts beside its gateway's CA, for the hosts
   # its gateway passes through untouched. Needed when something on the
@@ -1996,7 +2037,7 @@ controller:
       ports: [53]
     # In-cluster pods every gateway may also reach, in the same shape as
     # clusterDns — a self-hosted model server behind `apiServer.platformProvider`,
-    # for example `{namespace: llm, podLabels: {app: vllm}, ports: [8000]}`.
+    # for example `{namespace: llm, podLabels: {app: vllm}, ports: [8443]}`.
     # podLabels is required. `mesh: true` marks a peer in the ambient mesh and
     # also opens HBONE (15008); over it ztunnel carries any inner port, so
     # `ports` binds only a peer outside the mesh.

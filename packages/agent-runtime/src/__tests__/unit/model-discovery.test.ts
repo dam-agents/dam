@@ -115,8 +115,8 @@ describe("createModelDiscovery", () => {
     expect(headers[0]?.["x-api-key"]).toBeUndefined();
   });
 
-  // TEST_SCENARIO: the platform's vLLM is listed from its root with no credential header although the layer carries placeholder tokens, and each model's `max_model_len` becomes its context window.
-  it("lists the platform's vLLM without a key and reads max_model_len", async () => {
+  // TEST_SCENARIO: the platform's vLLM is listed from its root with the layer's bearer placeholder, so the gateway injects the operator key, and each model's `max_model_len` becomes its context window.
+  it("lists the platform's vLLM with the bearer placeholder and reads max_model_len", async () => {
     const { fetchImpl, urls, headers } = stubFetch({
       body: {
         data: [
@@ -133,7 +133,10 @@ describe("createModelDiscovery", () => {
       ANTHROPIC_AUTH_TOKEN: "placeholder",
     });
     expect(urls[0]).toBe("http://vllm.ns.svc:8000/v1/models");
-    expect(headers[0]).toEqual({ accept: "application/json" });
+    expect(headers[0]).toEqual({
+      accept: "application/json",
+      authorization: "Bearer placeholder",
+    });
     expect(outcome).toMatchObject({
       status: "observed",
       entries: [

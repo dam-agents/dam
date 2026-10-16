@@ -1,5 +1,5 @@
 import { AddAlt, NewTab, Pin, PinFilled, Tools } from "@carbon/icons-react";
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo, useRef } from "react";
 
 import { SectionLabel } from "@/components/ui/section-label";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -29,6 +29,8 @@ export function SidebarAgents({
     agents,
     pinnedAgentIds,
     openAgentId,
+    leadAgentId,
+    holdOrder,
     sessionOpen,
     unreadAgentIds,
     sessionsOf,
@@ -47,6 +49,24 @@ export function SidebarAgents({
   const setFilters = useStore((s) => s.setSidebarActivityFilters);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const startSession = useStartSession();
+
+  const list = useRef<HTMLElement>(null);
+  const dragging = useRef(false);
+  useEffect(() => {
+    if (leadAgentId) list.current?.parentElement?.scrollTo({ top: 0 });
+  }, [leadAgentId]);
+  const endDrag = () => {
+    dragging.current = false;
+    document.addEventListener(
+      "pointermove",
+      (event) =>
+        holdOrder(
+          event.target instanceof Node &&
+            !!list.current?.contains(event.target),
+        ),
+      { once: true },
+    );
+  };
 
   const navigate = (go: () => void) => () => {
     go();
@@ -107,7 +127,20 @@ export function SidebarAgents({
   };
 
   return (
-    <section aria-label="Agents" data-testid="sidebar-agents">
+    <section
+      ref={list}
+      aria-label="Agents"
+      data-testid="sidebar-agents"
+      onPointerEnter={() => holdOrder(true)}
+      onPointerLeave={() => {
+        if (!dragging.current) holdOrder(false);
+      }}
+      onDragStartCapture={() => {
+        dragging.current = true;
+        holdOrder(true);
+      }}
+      onDragEndCapture={endDrag}
+    >
       <div
         className={cn(
           "sticky top-0 z-raised flex items-center justify-between py-1 pl-2.5",

@@ -575,6 +575,13 @@
       "when": 1792099899640,
       "tag": "0081_sidebar_pins",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1792135595601,
+      "tag": "0082_agent_chat_form_preferences",
+      "breakpoints": true
     }
   ]
 }

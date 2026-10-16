@@ -55,7 +55,7 @@ writeFileSync(
 );
 writeFileSync(
   join(bin, "certutil"),
-  `#!/bin/sh\n[ -e ${dir}/slow-certutil ] && [ "$3" = -N ] && sleep 1\necho "certutil $3" >> ${calls}\n[ "$3" = -N ] && touch "\${2#sql:}/cert9.db"\nexit 0\n`,
+  `#!/bin/sh\nif [ -e ${dir}/certutil-awaits-command ] && [ "$3" = -N ]; then i=0; until grep -qx command ${calls} 2>/dev/null || [ $i -ge 300 ]; do sleep 0.1; i=$((i+1)); done; fi\necho "certutil $3" >> ${calls}\n[ "$3" = -N ] && touch "\${2#sql:}/cert9.db"\nexit 0\n`,
   { mode: 0o755 },
 );
 writeFileSync(
@@ -97,11 +97,11 @@ try {
   // TEST_SCENARIO: a machine keeps its root and its home across a stop, so a boot with the same CA set rebuilds neither store. This is the seconds a machine boot saves.
   assert.deepEqual(boot(), []);
 
-  // TEST_SCENARIO: Chromium's NSS store is built in a process the entrypoint does not wait for, so the image's command starts before it is done.
-  writeFileSync(join(dir, "slow-certutil"), "");
+  // TEST_SCENARIO: Chromium's NSS store is built in a process the entrypoint does not wait for, so the image's command starts before it is done. The store's build waits up to 30 s for the command, so an entrypoint that waits for the build records the command last.
+  writeFileSync(join(dir, "certutil-awaits-command"), "");
   rmSync(join(home, ".pki"), { recursive: true });
   assert.deepEqual(boot(["sh", "-c", `echo command >> ${calls}`]), ["command", "certutil -N", "certutil -L", "certutil -A", "certutil -A", "certutil -A"]);
-  rmSync(join(dir, "slow-certutil"));
+  rmSync(join(dir, "certutil-awaits-command"));
 
   // TEST_SCENARIO: an image's build records a digest of its distribution roots, and the boot reads it in place of the roots, so a root the digest does not follow rebuilds nothing.
   writeFileSync(digest, "digest one\n");

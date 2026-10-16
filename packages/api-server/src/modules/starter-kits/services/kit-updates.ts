@@ -1,3 +1,4 @@
+import type { ChatFormPreferences } from "api-server-api/chat-forms";
 import { TRPCError } from "@trpc/server";
 import type {
   Agent,
@@ -47,7 +48,9 @@ export interface KitUpdatesDeps {
   wakeAgent: (agentId: string) => Promise<void>;
   runtimeMutator: Pick<RuntimeMutator, "bump" | "enqueueAfterCommit">;
   sessionPair: (agentId: string) => Promise<SessionPair | null | undefined>;
-  chatFormsEnabled?: () => Promise<boolean>;
+  chatFormPreferences?: (
+    agentId: string,
+  ) => Promise<ChatFormPreferences | null>;
   now?: () => Date;
 }
 
@@ -142,7 +145,7 @@ export function createKitUpdates(deps: KitUpdatesDeps): KitUpdateOps {
           deps.schedules.list(agentId),
           deps.familyTitles(),
           deps.sessionPair(agentId),
-          deps.chatFormsEnabled?.() ?? false,
+          deps.chatFormPreferences?.(agentId) ?? null,
         ]);
       const task = composeKitUpdatePrompt({
         stamp,

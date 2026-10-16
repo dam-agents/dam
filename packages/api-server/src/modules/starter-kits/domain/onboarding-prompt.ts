@@ -3,6 +3,7 @@ import {
   type StarterKit,
   type TemplateHarness,
 } from "api-server-api";
+import type { ChatFormPreferences } from "api-server-api/chat-forms";
 import { spellHarnessCommand } from "../../templates/index.js";
 import type { GrantedTemplate } from "./requirements.js";
 import { satisfiesRequirement } from "./requirements.js";
@@ -15,15 +16,17 @@ export interface OnboardingFacts {
   schedules: { name: string; enabled: boolean }[];
   boundChannels: string[];
   familyTitles: ReadonlyMap<string, string>;
-  chatForms?: boolean;
+  chatForms?: ChatFormPreferences | null;
 }
 
-export function chatFormLines(chatForms: boolean | undefined): string[] {
+export function chatFormLines(
+  chatForms: ChatFormPreferences | null | undefined,
+): string[] {
   if (!chatForms) return [];
   return [
     "",
-    "The user's web chat renders A2UI forms (see the platform-chat-forms skill). When you ask the user to choose between options or fill in values, prefer a form.",
-    chatFormCapabilities(),
+    "The user's web chat renders A2UI forms (see the platform-chat-forms skill). When you ask the user to choose between options or fill in values, prefer a form, and follow the user's preferences in the capabilities below.",
+    chatFormCapabilities(chatForms),
   ];
 }
 

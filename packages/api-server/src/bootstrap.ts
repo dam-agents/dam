@@ -252,6 +252,7 @@ import {
   listPendingApprovalAgentIds,
 } from "./modules/approvals/compose.js";
 import { createWrapperFrameSender } from "./modules/approvals/infrastructure/wrapper-frame-sender.js";
+import { createChatFormPreferencesCleanup } from "./modules/chat-forms/index.js";
 import {
   composeSpendSystem,
   createSpendLimitsCleanupHook,
@@ -694,8 +695,10 @@ export async function bootstrap() {
     db,
     shareBaseUrl: config.shareBaseUrl,
     platformProvider: config.platformProvider && {
-      ...config.platformProvider,
+      baseUrl: config.platformProvider.baseUrl,
+      model: config.platformProvider.model,
       name: config.brand.name,
+      ca: config.platformProvider.ca,
     },
     e2eEnabled: config.e2eEnabled,
     secretStore,
@@ -755,6 +758,8 @@ export async function bootstrap() {
       connectionRulesSync: createConnectionRulesSyncAdapter(db),
       oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
       brandName: config.brand.name,
+      platformProviderKey: config.platformProvider?.apiKey ?? null,
+      platformProviderCa: config.platformProvider?.ca ?? null,
       platformProviderEnabled: async () =>
         (
           await composeFeaturesForOwner({
@@ -1474,6 +1479,10 @@ export async function bootstrap() {
       name: "satellite-grants",
       listAgentIds: () => satellitesBoot.listAgentIds(),
       cleanup: satellitesBoot.onAgentDeleted,
+    },
+    {
+      name: "chat-form-preferences",
+      ...createChatFormPreferencesCleanup(db),
     },
     {
       name: "sidebar-pins",
