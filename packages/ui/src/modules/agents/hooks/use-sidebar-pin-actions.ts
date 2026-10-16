@@ -5,6 +5,7 @@ import { trpc } from "../../../trpc.js";
 import {
   useSetPinnedAgents,
   useSetPinnedSessions,
+  useSidebarPins,
 } from "../api/sidebar-pins.js";
 import {
   movePin,
@@ -13,55 +14,57 @@ import {
   togglePin,
 } from "../lib/sidebar-pins.js";
 
-function currentPins(): SidebarPins | undefined {
+function loadedPins(): SidebarPins | undefined {
   return queryClient.getQueryData(trpc.sidebarPins.get.queryKey());
 }
 
 export function useSidebarPinActions() {
+  const { loaded } = useSidebarPins();
   const setAgents = useSetPinnedAgents();
   const setSessions = useSetPinnedSessions();
 
-  const writeAgents = (build: (agents: readonly string[]) => string[]) => {
-    const pins = currentPins();
+  const editAgents = (edit: (pinned: readonly string[]) => string[]) => {
+    const pins = loadedPins();
     if (!pins) return;
-    const next = build(pins.agents);
+    const next = edit(pins.agents);
     if (next.join("\n") !== pins.agents.join("\n"))
       setAgents.mutate({ agentIds: next });
   };
-  const writeSessions = (
+  const editSessions = (
     agentId: string,
-    build: (pinned: readonly string[]) => string[],
+    edit: (pinned: readonly string[]) => string[],
   ) => {
-    const pins = currentPins();
+    const pins = loadedPins();
     if (!pins) return;
     const pinned = pins.sessions[agentId] ?? [];
-    const next = build(pinned);
+    const next = edit(pinned);
     if (next.join("\n") !== pinned.join("\n"))
       setSessions.mutate({ agentId, sessionIds: next });
   };
 
   return {
+    ready: loaded,
     toggleAgent: (agentId: string) =>
-      writeAgents((agents) => togglePin(agents, agentId)),
+      editAgents((pinned) => togglePin(pinned, agentId)),
     moveAgent: (agentId: string, drop: PinDrop | null) =>
-      writeAgents((agents) => movePin(agents, agentId, drop)),
+      editAgents((pinned) => movePin(pinned, agentId, drop)),
     stepAgent: (agentId: string, step: -1 | 1, shown: ReadonlySet<string>) =>
-      writeAgents((agents) => stepPin(agents, agentId, step, shown)),
+      editAgents((pinned) => stepPin(pinned, agentId, step, shown)),
     toggleSession: (agentId: string, sessionId: string) =>
-      writeSessions(agentId, (pinned) => togglePin(pinned, sessionId)),
+      editSessions(agentId, (pinned) => togglePin(pinned, sessionId)),
     moveSession: (agentId: string, sessionId: string, drop: PinDrop | null) =>
-      writeSessions(agentId, (pinned) => movePin(pinned, sessionId, drop)),
+      editSessions(agentId, (pinned) => movePin(pinned, sessionId, drop)),
     stepSession: (
       agentId: string,
       sessionId: string,
       step: -1 | 1,
       shown: ReadonlySet<string>,
     ) =>
-      writeSessions(agentId, (pinned) =>
+      editSessions(agentId, (pinned) =>
         stepPin(pinned, sessionId, step, shown),
       ),
     unpinSession: (agentId: string, sessionId: string) =>
-      writeSessions(agentId, (pinned) =>
+      editSessions(agentId, (pinned) =>
         pinned.filter((id) => id !== sessionId),
       ),
   };

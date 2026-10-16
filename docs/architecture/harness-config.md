@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-10-15
+Last verified: 2026-10-16
 
 ## Overview
 
@@ -103,7 +103,8 @@ Which choices a harness offers is its catalog's to say: Codex's offers no mode, 
 
 agent-runtime keeps one **Model Catalog** per pod: every granted provider Connection's models, listed from that Connection's env layer (the api-server tags each provider layer with its Connection and template), under the **qualified name** `<alias>/<upstream id>`, the alias fixed per preset ([connections](connections.md)).
 Each preset lists the way its key allows: `/v1/models` for the LiteLLM proxies (IBM's virtual keys get 403 on every model-info route), Anthropic's and OpenAI's model lists, Bob's gateway model-info.
-Metadata is layered per model, first answer wins: the listing itself (Bob's model-info carries limits and prices), then the vendored LiteLLM price table (`model_prices_and_context_window.json`, re-vendored by `//packages/agent-runtime:update:model-prices`), then the preset's per-endpoint constants in the layer (`OPENAI_PROXY_CONTEXT_WINDOW` and kin); each value records its layer, and cache marks and the thinking format are family rules by id.
+The platform provider's self-hosted vLLM is listed from `/v1/models` on its root with no credential, and the maximum model length each entry reports is its context window.
+Metadata is layered per model, first answer wins: the listing itself (Bob's model-info carries limits and prices, vLLM's list the context window, and the platform provider's models cost nothing), then the vendored LiteLLM price table (`model_prices_and_context_window.json`, re-vendored by `//packages/agent-runtime:update:model-prices`), then the preset's per-endpoint constants in the layer (`OPENAI_PROXY_CONTEXT_WINDOW` and kin); each value records its layer, and cache marks and the thinking format are family rules by id.
 An Anthropic subscription (OAuth token) Connection is listed from Anthropic's model list like the key Connection and offered to Claude Code alone, since Anthropic accepts the token only from Claude Code; the router refuses it to any other harness by name.
 Bedrock is the one **native Connection**: its SigV4 signing is no header swap, so the router never lists or routes it, and every harness but Claude Code sees it as unsupported.
 Claude Code's view lists it under its alias with Claude Code's own tier names (`bedrock/sonnet`); a session on one runs in a Claude Code process of its own, started with the Connection's env instead of the router's, and switching between it and a routed model moves the session between processes once the running turn ends.
@@ -126,6 +127,7 @@ A qualified name resolves outright, case-insensitively on the upstream id; a bar
 The session is read from what each harness stamps: Bob's `X-Task-Id` (the root task id is the ACP session id; `X-Parent-Task-Id` marks a subagent's calls), Codex's `session-id` header (its thread id, the ACP session id; a subagent's own `thread-id` beside it), Claude Code's request metadata `user_id` ending in `_session_<uuid>`.
 
 The router **owns upstream auth**: the client's credential headers are dropped and the target Connection's placeholder is set in the header it claims at the [credential gateway](credential-gateway.md) (`Authorization: Bearer` for the LiteLLM proxies, OpenAI and the Anthropic subscription, `x-api-key` for the Anthropic key, `Authorization: Apikey` for Bob's gateway); the router never holds a secret.
+The platform provider's endpoint takes no key, so a call to it carries no credential header at all, on any of the three dialects.
 It adds Anthropic's OAuth beta flag to a call bound for the subscription Connection, removes it from every other call, and passes the other `anthropic-beta` flags as sent, so one Claude Code process mixes the subscription with any routed provider.
 The body goes out with `model` rewritten to the upstream id; the response comes back with only its model field rewritten to the name the harness asked for, so transcripts record the provider.
 No retries: a second model call is a second bill.

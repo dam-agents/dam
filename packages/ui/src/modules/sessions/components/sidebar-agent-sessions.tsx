@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
+import { useIsAgentAnswerableSoon } from "../../agents/api/queries.js";
 import { PinDropIndicator } from "../../agents/components/pin-drop-indicator.js";
 import { usePinDrag } from "../../agents/hooks/use-pin-drag.js";
 import type { useSidebarPinActions } from "../../agents/hooks/use-sidebar-pin-actions.js";
@@ -24,6 +25,7 @@ import { downloadTelemetryExport } from "../../telemetry/api/download-export.js"
 import {
   prefetchSessionHistory,
   provisionalSessionView,
+  useSessionsById,
 } from "../api/queries.js";
 import { useAgentSessionList } from "../hooks/use-agent-session-list.js";
 import { useOpenSession } from "../hooks/use-open-session.js";
@@ -64,7 +66,8 @@ export function SidebarAgentSessions({
   onNavigate,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
-  if (open || expanded)
+  const answerable = useIsAgentAnswerableSoon(agentId);
+  if (open || expanded || (pins.length > 0 && answerable))
     return (
       <AgentSessionList
         agentId={agentId}
@@ -120,6 +123,7 @@ function SessionPreview({
     total: sessions.length,
     expanded: false,
     hasNextPage: !complete,
+    pinned: pinned.size,
   });
 
   return (
@@ -127,36 +131,39 @@ function SessionPreview({
       className="flex flex-col gap-px pb-1"
       data-testid="sidebar-agent-sessions"
     >
-      {sidebarSessionWindow(sessions, false, () => false).map((item) => (
-        <PinnableRow
-          key={item.id}
-          agentId={agentId}
-          sessionId={item.session.sessionId}
-          pinned={pinned}
-          pinActions={pinActions}
-        >
-          <SessionRow
-            session={provisionalSessionView(item.session)}
-            active={false}
-            working={item.working}
-            needsApproval={false}
-            unread={item.unread}
-            provisional
-            conversation={conversationOf(item.session)}
-            pinned={pinned.has(item.session.sessionId)}
-            onTogglePin={() =>
-              pinActions.toggleSession(agentId, item.session.sessionId)
-            }
-            className={ROW_CLASS}
-            onResume={() => {
-              openSession(agentId, item.session.sessionId, item.session.mode);
-              onNavigate?.();
-            }}
-            onRename={() => {}}
-            onDelete={() => {}}
-          />
-        </PinnableRow>
-      ))}
+      {sidebarSessionWindow(sessions, false, () => false, pinned.size).map(
+        (item) => (
+          <PinnableRow
+            key={item.id}
+            agentId={agentId}
+            sessionId={item.session.sessionId}
+            pinned={pinned}
+            pinActions={pinActions}
+          >
+            <SessionRow
+              session={provisionalSessionView(item.session)}
+              active={false}
+              working={item.working}
+              needsApproval={false}
+              unread={item.unread}
+              provisional
+              conversation={conversationOf(item.session)}
+              pinned={pinned.has(item.session.sessionId)}
+              {...(pinActions.ready && {
+                onTogglePin: () =>
+                  pinActions.toggleSession(agentId, item.session.sessionId),
+              })}
+              className={ROW_CLASS}
+              onResume={() => {
+                openSession(agentId, item.session.sessionId, item.session.mode);
+                onNavigate?.();
+              }}
+              onRename={() => {}}
+              onDelete={() => {}}
+            />
+          </PinnableRow>
+        ),
+      )}
       {toggle && <ToggleRow toggle={toggle} onClick={onExpand} />}
     </div>
   );
@@ -204,8 +211,14 @@ function AgentSessionList({
     fetchNextPage,
   ]);
 
+  const listed = new Set(list.sessions.map((session) => session.sessionId));
+  const unlisted = useSessionsById(
+    agentId,
+    pins.filter((id) => !listed.has(id)),
+    { enabled: list.operable },
+  );
   const { items: rows, pinned } = pinnedFirst(
-    list.sessions
+    [...unlisted, ...list.sessions]
       .map((session) => ({ session, state: list.rowState(session) }))
       .filter(({ session, state }) =>
         matchesActivityFilters(
@@ -220,11 +233,13 @@ function AgentSessionList({
     rows,
     expanded,
     (row) => row.state.active,
+    pinned.size,
   );
   const toggle = sessionListToggle({
     total: rows.length,
     expanded,
     hasNextPage,
+    pinned: pinned.size,
   });
 
   const confirmDelete = async (s: SessionView) => {
@@ -268,7 +283,9 @@ function AgentSessionList({
             session={s}
             {...state}
             pinned={pinned.has(s.sessionId)}
-            onTogglePin={() => pinActions.toggleSession(agentId, s.sessionId)}
+            {...(pinActions.ready && {
+              onTogglePin: () => pinActions.toggleSession(agentId, s.sessionId),
+            })}
             className={ROW_CLASS}
             onResume={() => {
               openSession(agentId, s.sessionId, s.mode);

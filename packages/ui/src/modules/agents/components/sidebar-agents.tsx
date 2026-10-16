@@ -71,6 +71,7 @@ export function SidebarAgents({
           <>
             <RowIconButton
               label={pinned ? "Unpin agent" : "Pin agent"}
+              disabled={!pinActions.ready}
               onClick={() => pinActions.toggleAgent(agent.id)}
             >
               {pinned ? <PinFilled size={14} /> : <Pin size={14} />}
@@ -131,10 +132,12 @@ export function SidebarAgents({
 
 function RowIconButton({
   label,
+  disabled = false,
   onClick,
   children,
 }: {
   label: string;
+  disabled?: boolean;
   onClick: () => void;
   children: ReactNode;
 }) {
@@ -143,8 +146,9 @@ function RowIconButton({
       <button
         type="button"
         aria-label={label}
+        disabled={disabled}
         onClick={onClick}
-        className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+        className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:opacity-50"
       >
         {children}
       </button>

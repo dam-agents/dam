@@ -23,7 +23,7 @@ const NO_PINS: string[] = [];
 export function useSidebarAgents() {
   const list = useAgents().data?.list ?? NO_AGENTS;
   const activity = useActivitySessions();
-  const pins = useSidebarPins();
+  const { pins } = useSidebarPins();
   const filters = useStore((s) => s.sidebarActivityFilters);
   const openAgentId = useStore((s) =>
     s.view === "chat"
