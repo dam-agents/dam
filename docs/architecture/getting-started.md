@@ -29,9 +29,9 @@ The Agent whose create is that first meeting does not count.
 ## In the browser
 
 The UI reads the user's progress and renders it as a progress ring beside the approvals bell; it starts collapsed and opens once the first Agent's task is done.
-On a wide screen the ring sits in the icon bar along the right edge, above the bell, on every page and in an Agent's chat, and the checklist opens to its left; on a phone it sits in the top bar and the checklist opens below it.
+On a wide screen the ring sits in the side panel's icon bar along the right edge, above the bell, on every page and in an Agent's chat, and the checklist opens to its left; on a phone it sits in the top bar and the checklist opens below it.
 Collapsed, it takes no room from the page, so it never covers a chat, its composer or the bell.
-Each row opens the place where the task is done; tasks on an Agent open the newest one, and the chat tasks leave a starting line in its composer.
+Each row opens the place where the task is done; tasks on an Agent open the newest one, the chat tasks leave a starting line in its composer, and the artifact task opens the side panel's Artifacts tab.
 Every unlock is pushed to the owner's open tabs as a [live hint](platform-topology.md), and the dock plays a short celebration for each unlock the user has not seen, one at a time, then records it as seen.
 
 Dismissing the checklist hides it until the next unlock, which opens it again, or until the user asks for it from the avatar picker.

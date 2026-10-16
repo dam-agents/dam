@@ -2,6 +2,7 @@ import { Folder } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
 import { DisclosureChevron } from "@/components/ui/disclosure";
+import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { cn } from "@/lib/utils";
 
 import {
@@ -26,6 +27,7 @@ export function SidebarFolderGroup({
   drop,
   dropActive = false,
   testId,
+  actions,
   children,
 }: {
   folderId: string | null;
@@ -36,6 +38,7 @@ export function SidebarFolderGroup({
   drop?: FolderDropCallbacks;
   dropActive?: boolean;
   testId?: string;
+  actions?: ReactNode;
   children: ReactNode;
 }) {
   const dropTarget = useFolderDropTarget(folderId, drop ?? INERT_DROP);
@@ -44,27 +47,30 @@ export function SidebarFolderGroup({
       {...(drop ? dropTarget : {})}
       className={cn(dropActive && "ring-2 ring-inset ring-primary")}
     >
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={!collapsed}
-        data-testid={testId}
-        className={cn(
-          "flex h-8 w-full items-center gap-1.5 px-3 text-left text-sm",
-          "text-foreground transition-colors hover:bg-muted",
-        )}
-      >
-        <DisclosureChevron
-          open={!collapsed}
-          size={14}
-          className="text-muted-foreground"
-        />
-        <Folder size={14} className="shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate">{label}</span>
-        <span className="shrink-0 text-xs text-muted-foreground">
-          {count} artifact{count === 1 ? "" : "s"}
-        </span>
-      </button>
+      <div className="group flex h-8 items-center transition-colors hover:bg-muted">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={!collapsed}
+          data-testid={testId}
+          className={cn(
+            "flex h-full min-w-0 flex-1 items-center gap-1.5 px-3 text-left text-sm",
+            "text-foreground",
+          )}
+        >
+          <DisclosureChevron
+            open={!collapsed}
+            size={14}
+            className="text-muted-foreground"
+          />
+          <Folder size={14} className="shrink-0 text-muted-foreground" />
+          <span className="min-w-0 flex-1 truncate">{label}</span>
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {count} artifact{count === 1 ? "" : "s"}
+          </span>
+        </button>
+        {actions && <div className={cn("pr-2", HOVER_ACTION)}>{actions}</div>}
+      </div>
       {!collapsed && children}
     </div>
   );

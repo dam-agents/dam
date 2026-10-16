@@ -17,8 +17,9 @@ import { createSidePanelSlice } from "../../modules/sessions/store/side-panel.js
 import type { PlatformStore } from "../../store.js";
 
 /**
- * TEST_OVERVIEW: The chat view has one side panel on the right, switched by an
- * icon bar: Artifacts, Files, Changes, Browser and Processes. A list tab shows
+ * TEST_OVERVIEW: Every page has one side panel on the right, switched by an
+ * icon bar: Artifacts, Files, Changes, Browser and Processes in an Agent's
+ * chat, and only Artifacts on every other page. A list tab shows
  * its list, or the docked item it opened (a file, an artifact, a process
  * output). The Changes and Browser tabs show their docked panel and nothing
  * else. Clicking the active icon collapses the panel. A conversation opens with

@@ -66,9 +66,7 @@ export function ArtifactRowMenuItems({
       <Item onSelect={() => onShare(artifact)}>Share</Item>
       <Item onSelect={() => void downloadArtifact(artifact.id)}>Download</Item>
       {startSession.available && (
-        <Item onSelect={() => void startSession.start()}>
-          Discuss with agent
-        </Item>
+        <Item onSelect={startSession.start}>Discuss with agent</Item>
       )}
       <Separator />
       <Item onSelect={() => onSetRetention(artifact)}>Set expiration</Item>

@@ -16,8 +16,17 @@ const isChatRoute = (route: Route): route is Extract<Route, { view: "chat" }> =>
 
 export function useBrowserHistory(): void {
   useEffect(() => {
+    let shownPath = window.location.pathname;
+    const unsubscribe = useStore.subscribe(() => {
+      shownPath = window.location.pathname;
+    });
+
     const applyRoute = () => {
       if (RETIRED_PATHS.has(window.location.pathname)) {
+        if (window.location.pathname === "/artifacts") {
+          useStore.getState().setSidePanelTab("artifacts");
+          useStore.getState().setMobileScreen("files");
+        }
         window.history.replaceState({}, "", "/");
       }
       const route = parseRoute(window.location.pathname);
@@ -47,8 +56,25 @@ export function useBrowserHistory(): void {
       });
     };
 
+    const onPopState = () => {
+      const state = useStore.getState();
+      const resetsDock =
+        isChatView(state.view) ||
+        isChatRoute(parseRoute(window.location.pathname));
+      if (!resetsDock || (!state.openArtifactDirty && !state.openFileDirty))
+        return applyRoute();
+      const leftPath = shownPath;
+      void state.confirmDockDiscard().then((discard) => {
+        if (discard) applyRoute();
+        else window.history.pushState(null, "", leftPath);
+      });
+    };
+
     applyRoute();
-    window.addEventListener("popstate", applyRoute);
-    return () => window.removeEventListener("popstate", applyRoute);
+    window.addEventListener("popstate", onPopState);
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+      unsubscribe();
+    };
   }, []);
 }

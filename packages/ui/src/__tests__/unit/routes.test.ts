@@ -15,7 +15,6 @@ const canonicalPaths = [
   "/sandboxes/sb-1",
   "/sandboxes/sb-1/connections",
   "/starter-kits/platform/code-reviewer",
-  "/artifacts",
   "/analytics",
   "/nonexistent",
 ];
@@ -35,6 +34,7 @@ describe("route round-trip", () => {
     "/agents/new",
     "/starter-kits",
     "/starter-kits/software",
+    "/artifacts",
   ])("sends the retired %s to Home", (path) => {
     expect(parseRoute(path).view).toBe("home");
   });

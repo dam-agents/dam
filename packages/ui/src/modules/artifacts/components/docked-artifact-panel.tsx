@@ -180,7 +180,7 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
                 onShare={() => setShareOpen(true)}
                 onStartSession={
                   startSession.available && shownVersion === latest
-                    ? () => void startSession.start()
+                    ? startSession.start
                     : undefined
                 }
               />

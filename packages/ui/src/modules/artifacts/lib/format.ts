@@ -38,14 +38,6 @@ export function deletionDate(expiresAt: string | null): string {
   return formatDate(expiresAt, DELETION_DATE_FORMAT);
 }
 
-export function deletionTooltip(expiresAt: string | null): string {
-  const deletion = deletionState(expiresAt);
-  if (deletion.state === "never") return "";
-  const date = deletionDate(expiresAt);
-  if (deletion.state === "active") return `Deletes on ${date}`;
-  return `Deletion pending since ${date}`;
-}
-
 export function deletionSummary(expiresAt: string | null): string {
   const deletion = deletionState(expiresAt);
   if (deletion.state === "never")
