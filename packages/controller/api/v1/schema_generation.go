@@ -59,4 +59,6 @@ const (
 	// UserBudget gen 2: cpu and memory are optional and also set the user's
 	// VM pool; storage added — the ceiling of their VM runner's claim.
 	UserBudgetSchemaGeneration = 2
+	// UserSpendLimit gen 1: per-user daily Spend Ceiling in US dollars.
+	UserSpendLimitSchemaGeneration = 1
 )

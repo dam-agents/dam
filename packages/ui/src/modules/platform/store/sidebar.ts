@@ -11,13 +11,10 @@ import {
 } from "../../home/lib/activity-filter.js";
 
 const SIDEBAR_EXPANDED_STORAGE_KEY = "platform-sidebar-expanded";
-const SIDEBAR_HIBERNATING_STORAGE_KEY = "platform-sidebar-show-hibernating";
 
 export interface SidebarSlice {
   sidebarExpanded: boolean;
   setSidebarExpanded: (expanded: boolean) => void;
-  sidebarShowHibernating: boolean;
-  setSidebarShowHibernating: (show: boolean) => void;
   sidebarActivityFilters: ActivityFilters;
   setSidebarActivityFilters: (filters: ActivityFilters) => void;
   approvalsOpen: boolean;
@@ -40,14 +37,6 @@ export const createSidebarSlice: StateCreator<
   setSidebarExpanded: (expanded) => {
     writePersistedFlag(SIDEBAR_EXPANDED_STORAGE_KEY, expanded);
     set({ sidebarExpanded: expanded });
-  },
-  sidebarShowHibernating: readPersistedFlag(
-    SIDEBAR_HIBERNATING_STORAGE_KEY,
-    false,
-  ),
-  setSidebarShowHibernating: (show) => {
-    writePersistedFlag(SIDEBAR_HIBERNATING_STORAGE_KEY, show);
-    set({ sidebarShowHibernating: show });
   },
   sidebarActivityFilters: defaultActivityFilters(),
   setSidebarActivityFilters: (filters) =>

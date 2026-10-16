@@ -19,7 +19,7 @@ export function SidebarSection({
   id?: string;
   title: string;
   open: boolean;
-  onToggle: () => void;
+  onToggle?: () => void;
   headerLeft?: ReactNode;
   headerRight?: ReactNode;
   className?: string;
@@ -43,14 +43,20 @@ export function SidebarSection({
         )}
       >
         {headerLeft}
-        <DisclosureToggle
-          open={open}
-          onToggle={onToggle}
-          chevronClassName="text-muted-foreground"
-          className="flex-1 text-sm font-medium text-foreground transition-colors"
-        >
-          <span className="whitespace-nowrap">{title}</span>
-        </DisclosureToggle>
+        {onToggle ? (
+          <DisclosureToggle
+            open={open}
+            onToggle={onToggle}
+            chevronClassName="text-muted-foreground"
+            className="flex-1 text-sm font-medium text-foreground transition-colors"
+          >
+            <span className="whitespace-nowrap">{title}</span>
+          </DisclosureToggle>
+        ) : (
+          <h2 className="flex-1 whitespace-nowrap text-sm font-medium text-foreground">
+            {title}
+          </h2>
+        )}
         {headerRight}
       </div>
       {}

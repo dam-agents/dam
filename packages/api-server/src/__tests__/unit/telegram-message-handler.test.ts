@@ -67,6 +67,7 @@ function harness(opts?: {
     pendingOAuthFlows,
     isTermsAccepted: async () => opts?.termsAccepted ?? true,
     uiBaseUrl: "https://app.example",
+    brandName: "Platform",
     botUsername: () => "krodo_bot",
     relay,
   });

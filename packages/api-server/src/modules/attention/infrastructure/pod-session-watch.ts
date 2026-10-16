@@ -39,10 +39,12 @@ const READ_TIMEOUT_MS = 10_000;
 export function createPodSessionClient(
   namespace: string,
   log: (message: string) => void,
+  webSocket?: typeof WebSocket,
 ): PodSessionClient {
   const connect = (agentId: string) => {
     const wsClient = createWSClient({
       url: `ws://${podBaseUrl(agentId, namespace)}/api/trpc-ws`,
+      WebSocket: webSocket,
       keepAlive: { enabled: true },
       onError: () => log(`pod session watch errored for ${agentId}`),
     });

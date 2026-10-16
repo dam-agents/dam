@@ -33,6 +33,7 @@ const agent: AgentView = {
   grantedSecretIds: [],
   grantedConnectionIds: ["provider"],
   stopRequested: false,
+  disabled: false,
   overBudget: false,
   size: {},
   state: "hibernated",

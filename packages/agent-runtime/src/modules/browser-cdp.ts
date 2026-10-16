@@ -5,6 +5,7 @@ const CONNECT_TIMEOUT_MS = 10_000;
 const VISIBILITY_POLL_MS = 1_000;
 const VISIBILITY_TIMEOUT_MS = 2_000;
 export const NEW_TAB_URL = "about:blank";
+export const START_PAGE_URL = "chrome://newtab/";
 
 export interface PageState {
   url: string;
@@ -91,6 +92,10 @@ interface CdpMessage {
  * than acting on another one. Closing the tab on screen brings the tab after it
  * in the list to the front, else the one before; closing the last tab opens a
  * blank one first, as the browser would otherwise close its window and exit.
+ * Chromium starts with a New Tab page of its own, which agent-browser never
+ * takes as its tab, opening its own beside it; the watcher closes that page
+ * when it connects, while another tab is open, so the panel lists the tabs
+ * agent-browser does.
  */
 export const watchPages: WatchPages = ({
   url,
@@ -298,8 +303,24 @@ export const watchPages: WatchPages = ({
       emit();
     }
 
+    const closing = new Set<string>();
+    async function closeStartPage() {
+      const r = await call("Target.getTargets");
+      const infos = (r.targetInfos ?? []) as Record<string, unknown>[];
+      const pageInfos = infos.filter((info) => info.type === "page");
+      const start = pageInfos.find((info) => info.url === START_PAGE_URL);
+      if (!start || pageInfos.length < 2) return;
+      const targetId = String(start.targetId);
+      closing.add(targetId);
+      await call("Target.closeTarget", { targetId }).catch((err: Error) => {
+        closing.delete(targetId);
+        log(`cdp: close start page: ${err.message}`);
+      });
+    }
+
     const attaching = new Map<string, Promise<void>>();
     function attach(targetId: string, info: Record<string, unknown>) {
+      if (closing.has(targetId)) return Promise.resolve();
       let started = attaching.get(targetId);
       if (!started) {
         started = attachOnce(targetId, info);
@@ -347,6 +368,7 @@ export const watchPages: WatchPages = ({
         return;
       }
       if (msg.method === "Target.targetDestroyed") {
+        closing.delete(String(p.targetId));
         forget(String(p.targetId));
         void settle(pickActive());
         return;
@@ -486,6 +508,7 @@ export const watchPages: WatchPages = ({
       clearTimeout(connectTimer);
       void (async () => {
         try {
+          await closeStartPage();
           await call("Target.setDiscoverTargets", { discover: true });
           const r = await call("Target.getTargets");
           const infos = (r.targetInfos ?? []) as Record<string, unknown>[];

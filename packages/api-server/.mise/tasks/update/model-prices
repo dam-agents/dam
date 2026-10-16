@@ -1,0 +1,78 @@
+#!/usr/bin/env node
+//MISE description="Write the Anthropic API price table from LiteLLM's price list at one commit"
+//USAGE arg "<commit>" help="The full LiteLLM commit SHA to pin"
+/* UNIT_BOUNDARY_DESCRIPTION: The spend module prices Anthropic API keys and the
+Claude subscription value from this table. It copies only the Anthropic API's
+chat rows and their price fields, unchanged, so a reviewer can compare them with
+LiteLLM's file. It stops before it writes anything when a row misses one of the
+five token prices, so a broken LiteLLM update never reaches the table. */
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+
+const REPO = "BerriAI/litellm";
+const FILE = "model_prices_and_context_window.json";
+const OUT = "src/modules/spend/infrastructure/model-prices.json";
+const REQUIRED = [
+  "input_cost_per_token",
+  "output_cost_per_token",
+  "cache_read_input_token_cost",
+  "cache_creation_input_token_cost",
+  "cache_creation_input_token_cost_above_1hr",
+];
+const PRICE_FIELD =
+  /^(input_cost_per_token|output_cost_per_token|cache_read_input_token_cost|cache_creation_input_token_cost(_above_1hr)?)(_above_\d+k?_tokens)?(_flex|_priority)?$/;
+
+const commit = process.env.usage_commit ?? "";
+if (!/^[0-9a-f]{40}$/.test(commit)) {
+  console.error(`Give the full 40-character LiteLLM commit SHA, not "${commit}".`);
+  process.exit(1);
+}
+
+async function fetchJson(url) {
+  const res = await fetch(url, { headers: { "user-agent": "platform-model-prices" } });
+  if (!res.ok) throw new Error(`${url} answered HTTP ${res.status}`);
+  return res.json();
+}
+
+const meta = await fetchJson(`https://api.github.com/repos/${REPO}/commits/${commit}`);
+const list = await fetchJson(`https://raw.githubusercontent.com/${REPO}/${commit}/${FILE}`);
+
+const models = {};
+const problems = [];
+for (const name of Object.keys(list).sort()) {
+  const row = list[name];
+  if (row?.litellm_provider !== "anthropic" || row.mode !== "chat") continue;
+  const kept = {};
+  for (const field of Object.keys(row).sort()) {
+    if (PRICE_FIELD.test(field) && typeof row[field] === "number") kept[field] = row[field];
+  }
+  const search = row.search_context_cost_per_query?.search_context_size_medium;
+  if (typeof search === "number") kept.web_search_cost_per_query = search;
+  const factors = Object.entries(row.provider_specific_entry ?? {}).filter(
+    ([, value]) => typeof value === "number",
+  );
+  if (factors.length > 0) kept.price_factors = Object.fromEntries(factors.sort());
+  const missing = REQUIRED.filter((field) => typeof kept[field] !== "number");
+  if (missing.length > 0) problems.push(`${name}: no ${missing.join(", ")}`);
+  const thresholds = new Set(
+    Object.keys(kept).flatMap((field) => field.match(/_above_(\d+k?)_tokens/)?.[1] ?? []),
+  );
+  if (thresholds.size > 1) problems.push(`${name}: more than one prompt-size threshold`);
+  models[name] = kept;
+}
+
+if (Object.keys(models).length === 0) problems.push("no Anthropic API chat rows found");
+if (problems.length > 0) {
+  console.error(`LiteLLM ${commit} is not usable:\n  ${problems.join("\n  ")}`);
+  process.exit(1);
+}
+
+const table = {
+  source: `https://github.com/${REPO}/blob/${commit}/${FILE}`,
+  commit,
+  committedAt: meta.commit.committer.date,
+  models,
+};
+mkdirSync(dirname(OUT), { recursive: true });
+writeFileSync(OUT, `${JSON.stringify(table, null, 2)}\n`);
+console.log(`Wrote ${Object.keys(models).length} Anthropic API rows from ${commit} to ${OUT}`);

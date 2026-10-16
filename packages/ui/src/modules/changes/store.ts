@@ -19,6 +19,7 @@ export const createChangesSlice: StateCreator<
       agentId
         ? {
             openChangesAgentId: agentId,
+            sidePanelTab: "changes",
             openFilePath: null,
             openFileDirty: false,
             openFileEdit: false,

@@ -1,9 +1,11 @@
+import { err, ok, type Result } from "../../../core/result.js";
 import { isConflict, isNotFound, type K8sClient } from "./k8s.js";
 import type { AgentStateCache } from "./agent-state-cache.js";
 import {
   ACTIVE_SESSION_KEY,
   AGENTS_PLURAL,
   ANN_ROLL_REV,
+  DISABLED_KEY,
   INVOCATIONS_ACTIVE_KEY,
   LAST_ACTIVITY_KEY,
   RECLAIMED_AT_KEY,
@@ -62,7 +64,12 @@ export interface AgentsRepository {
   ): Promise<RuntimeMigrationWriteResult>;
   delete(id: string, owner?: string): Promise<boolean>;
   restart(id: string, owner?: string): Promise<boolean>;
-  wake(id: string): Promise<InfraAgent | null>;
+  wake(
+    id: string,
+  ): Promise<
+    Result<InfraAgent, { type: "AgentNotFound" } | { type: "AgentDisabled" }>
+  >;
+  setDisabled(id: string, disabled: boolean): Promise<InfraAgent | null>;
   requestStop(id: string): Promise<InfraAgent | null>;
   requestSleep(id: string): Promise<InfraAgent | null>;
   isOwnedBy(id: string, owner: string): Promise<boolean>;
@@ -140,6 +147,28 @@ export function createAgentsRepository(
   const inflight = new Map<string, Promise<void>>();
 
   const STALE_ACTIVITY = "1970-01-01T00:00:00Z";
+
+  const patchUnlessDisabled = async (
+    id: string,
+    annotations: Record<string, string>,
+  ) => {
+    for (let attempt = 0; ; attempt++) {
+      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
+      if (!obj) return null;
+      if (obj.metadata?.annotations?.[DISABLED_KEY]) return "disabled" as const;
+      try {
+        await k8s.patchCustomObject(AGENTS_PLURAL, id, {
+          metadata: {
+            resourceVersion: obj.metadata?.resourceVersion,
+            annotations,
+          },
+        });
+        return obj;
+      } catch (e) {
+        if (!isConflict(e) || attempt >= PIN_CONFLICT_RETRIES) throw e;
+      }
+    }
+  };
 
   async function bumpLastActivity(id: string): Promise<void> {
     await k8s.patchCustomObject(AGENTS_PLURAL, id, {
@@ -244,13 +273,30 @@ export function createAgentsRepository(
     },
 
     async wake(id) {
+      const woke = await patchUnlessDisabled(id, {
+        [LAST_ACTIVITY_KEY]: new Date().toISOString(),
+        [STOP_REQUESTED_KEY]: "",
+      });
+      if (woke === "disabled") return err({ type: "AgentDisabled" });
+      const reread = woke && (await k8s.getCustomObject(AGENTS_PLURAL, id));
+      return reread
+        ? ok(parseInfraAgent(reread))
+        : err({ type: "AgentNotFound" });
+    },
+
+    async setDisabled(id, disabled) {
       const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
       if (!obj) return null;
+      const stamp = disabled ? new Date().toISOString() : "";
       await k8s.patchCustomObject(AGENTS_PLURAL, id, {
         metadata: {
           annotations: {
-            [LAST_ACTIVITY_KEY]: new Date().toISOString(),
-            [STOP_REQUESTED_KEY]: "",
+            [DISABLED_KEY]: stamp,
+            [STOP_REQUESTED_KEY]: stamp,
+            [ACTIVE_SESSION_KEY]: "",
+            [INVOCATIONS_ACTIVE_KEY]: "",
+            [LAST_ACTIVITY_KEY]: STALE_ACTIVITY,
+            [RECLAIMED_AT_KEY]: "",
           },
         },
       });
@@ -277,6 +323,8 @@ export function createAgentsRepository(
     async requestSleep(id) {
       const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
       if (!obj) return null;
+      if (obj.metadata?.annotations?.[DISABLED_KEY])
+        return parseInfraAgent(obj);
       const sleepStamp = new Date().toISOString();
       await k8s.patchCustomObject(AGENTS_PLURAL, id, {
         metadata: {
@@ -408,19 +456,14 @@ export function createAgentsRepository(
     },
 
     async wakeIfHibernated(id) {
-      const obj = await k8s.getCustomObject(AGENTS_PLURAL, id);
-      if (!obj) return null;
       const written = new Date().toISOString();
-      await k8s.patchCustomObject(AGENTS_PLURAL, id, {
-        metadata: {
-          annotations: {
-            [LAST_ACTIVITY_KEY]: written,
-            [STOP_REQUESTED_KEY]: "",
-          },
-        },
+      const woke = await patchUnlessDisabled(id, {
+        [LAST_ACTIVITY_KEY]: written,
+        [STOP_REQUESTED_KEY]: "",
       });
+      if (woke === null || woke === "disabled") return null;
       return {
-        previous: obj.metadata?.annotations?.[LAST_ACTIVITY_KEY] ?? null,
+        previous: woke.metadata?.annotations?.[LAST_ACTIVITY_KEY] ?? null,
         written,
       };
     },
@@ -482,7 +525,10 @@ export function createAgentsRepository(
           });
         }
         if (current.metadata?.annotations?.[STOP_REQUESTED_KEY]) {
-          throw new AgentStoppedError(id);
+          throw new AgentStoppedError(
+            id,
+            !!current.metadata.annotations[DISABLED_KEY],
+          );
         }
         refuseWhileMigrating(id, parseInfraAgent(current), 0);
         if (await repo.isReady(id)) {
@@ -511,7 +557,10 @@ export function createAgentsRepository(
             const obj = await cache.get(id);
             if (!obj) return false;
             if (obj.metadata?.annotations?.[STOP_REQUESTED_KEY]) {
-              throw new AgentStoppedError(id);
+              throw new AgentStoppedError(
+                id,
+                !!obj.metadata.annotations[DISABLED_KEY],
+              );
             }
             const infra = parseInfraAgent(obj);
             refuseWhileMigrating(id, infra, Date.now() - startedAt);

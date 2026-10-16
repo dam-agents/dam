@@ -19,7 +19,8 @@ import type {
 const AGENT_GATE =
   "ResourceAttributes['platform.agent.id'] IN {agentIds:Array(String)}";
 
-const HARNESS_CALL = "Body IN ('claude_code.api_request', 'pi.api_request')";
+const HARNESS_CALL =
+  "Body IN ('claude_code.api_request', 'pi.api_request', 'codex.response_completed')";
 const CLAUDE_NATIVE_CALL =
   "(Body = 'claude_code.api_request' AND LogAttributes['model'] NOT LIKE 'claude/%')";
 const ROUTER_CALL = "Body = 'platform.model_call'";
