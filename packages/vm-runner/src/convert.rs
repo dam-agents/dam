@@ -5,9 +5,6 @@ use serde::{Deserialize, Serialize};
 use smolvm::data::disk::AttachedDisk;
 use smolvm::storage::STORAGE_DISK_FILENAME;
 
-// UNIT_BOUNDARY_DESCRIPTION: the switch that lets this runner convert its machines' ext4 storage disks to btrfs, set in its environment: a rollout turns it on runner by runner. Off, an ext4 disk boots as it always has.
-pub const ENABLE_ENV: &str = "VM_RUNNER_CONVERT_EXT4";
-
 // UNIT_BOUNDARY_DESCRIPTION: a conversion's record, beside the machine's disks: the nonce the guest names when its copy is committed, and whether the runner swapped the disks. The record is the runner's, never the guest's, so a guest cannot make the runner swap a disk it did not fill.
 const STATE_FILE: &str = "disk-conversion";
 const NEXT_DISK: &str = "storage.next.raw";
@@ -75,6 +72,7 @@ pub fn before_start(
     vm_dir: &Path,
     share: Option<&Path>,
     enabled: bool,
+    fits: impl FnOnce(u64) -> bool,
     format: impl FnOnce(&Path) -> anyhow::Result<()>,
 ) -> anyhow::Result<Option<AttachedDisk>> {
     let storage = vm_dir.join(STORAGE_DISK_FILENAME);
@@ -92,6 +90,7 @@ pub fn before_start(
         }
         tracing::info!(nonce = %conversion.nonce, "the storage disk was converted to btrfs; deleting the old ext4 disk");
         let _ = std::fs::remove_file(&next);
+        let _ = std::fs::remove_file(next.with_extension("formatted"));
         let _ = std::fs::remove_file(vm_dir.join(STATE_FILE));
         clear();
         return Ok(None);
@@ -105,6 +104,17 @@ pub fn before_start(
     };
     let mut conversion = state.unwrap_or_default();
     if conversion.attempts >= ATTEMPTS {
+        clear();
+        return Ok(None);
+    }
+    if let Some(other) = converting_beside(vm_dir) {
+        tracing::info!(other = %other.display(), "another machine of this runner is converting its disk; this one converts at a later start");
+        clear();
+        return Ok(None);
+    }
+    let need = allocated(&storage) / 10 * 11 + (1 << 30);
+    if !fits(need) {
+        tracing::warn!(need, "the owner's storage has no room for a btrfs copy of this disk beside it; it boots its ext4 disk and converts at a later start");
         clear();
         return Ok(None);
     }
@@ -149,6 +159,22 @@ pub fn after_ready(
     exchange(&vm_dir.join(STORAGE_DISK_FILENAME), &vm_dir.join(NEXT_DISK))?;
     tracing::info!(nonce = %conversion.nonce, "the guest converted its storage disk to btrfs; it boots from it from now on");
     Ok(true)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what a disk takes on the claim, by its allocated blocks: the disk is sparse, and its copy takes about as much, so it is the room a conversion needs beside the old disk until the old disk is deleted.
+fn allocated(disk: &Path) -> u64 {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::metadata(disk).map_or(0, |info| info.blocks() * 512)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a machine of this runner, a sibling of `vm_dir`, whose conversion is attached but not swapped yet. One conversion at a time keeps the claim's peak at one home's copy, however many ext4 machines start at once.
+fn converting_beside(vm_dir: &Path) -> Option<std::path::PathBuf> {
+    std::fs::read_dir(vm_dir.parent()?)
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|dir| dir != vm_dir)
+        .find(|dir| read(dir).is_some_and(|c| !c.committed && c.attempts < ATTEMPTS))
 }
 
 fn nonce() -> String {
@@ -214,10 +240,17 @@ mod tests {
         std::fs::create_dir_all(&share).unwrap();
         disk(&vm.join(STORAGE_DISK_FILENAME), Filesystem::Ext4);
 
-        let attached = before_start(&vm, Some(&share), true, |next| {
-            disk(next, Filesystem::Btrfs);
-            Ok(())
-        })
+        let attached = before_start(
+            &vm,
+            Some(&share),
+            true,
+            |_| true,
+            |next| {
+                disk(next, Filesystem::Btrfs);
+                std::fs::write(next.with_extension("formatted"), "1").unwrap();
+                Ok(())
+            },
+        )
         .unwrap()
         .unwrap();
         assert_eq!(attached.path, vm.join(NEXT_DISK));
@@ -241,10 +274,11 @@ mod tests {
         assert_eq!(filesystem(&vm.join(NEXT_DISK)).unwrap(), Filesystem::Ext4);
 
         assert_eq!(
-            before_start(&vm, Some(&share), true, |_| panic!("no new disk")).unwrap(),
+            before_start(&vm, Some(&share), true, |_| true, |_| panic!("no new disk")).unwrap(),
             None
         );
         assert!(!vm.join(NEXT_DISK).exists() && !vm.join(STATE_FILE).exists());
+        assert!(!vm.join(NEXT_DISK).with_extension("formatted").exists());
         assert!(!share.join(SHARE_RECORD).exists());
     }
 
@@ -266,7 +300,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            before_start(&vm, None, true, |_| panic!("no new disk")).unwrap(),
+            before_start(&vm, None, true, |_| true, |_| panic!("no new disk")).unwrap(),
             None
         );
         assert_eq!(
@@ -286,23 +320,96 @@ mod tests {
         disk(&vm.join(STORAGE_DISK_FILENAME), Filesystem::Ext4);
         std::fs::write(share.join(SHARE_RECORD), "stale\n").unwrap();
         assert_eq!(
-            before_start(&vm, Some(&share), false, |_| panic!()).unwrap(),
+            before_start(&vm, Some(&share), false, |_| true, |_| panic!()).unwrap(),
             None
         );
         assert!(!share.join(SHARE_RECORD).exists());
 
         for _ in 0..ATTEMPTS {
-            assert!(before_start(&vm, Some(&share), true, |next| {
-                disk(next, Filesystem::Btrfs);
-                Ok(())
-            })
+            assert!(before_start(
+                &vm,
+                Some(&share),
+                true,
+                |_| true,
+                |next| {
+                    disk(next, Filesystem::Btrfs);
+                    Ok(())
+                }
+            )
             .unwrap()
             .is_some());
         }
         assert_eq!(
-            before_start(&vm, Some(&share), true, |_| panic!()).unwrap(),
+            before_start(&vm, Some(&share), true, |_| true, |_| panic!()).unwrap(),
             None
         );
         assert!(!share.join(SHARE_RECORD).exists());
+    }
+
+    // TEST_SCENARIO: a conversion needs a copy of the home beside the old disk until the old one is deleted, so it waits while the owner's storage has no room for that copy, or while another machine of the runner is converting; the machine then boots its ext4 disk, and converts at a later start.
+    #[test]
+    fn a_conversion_waits_for_room_and_for_the_runner_s_other_conversion() {
+        let dir = TestDir::new("convert-room");
+        let (vm, other, share) = (
+            dir.path().join("vm"),
+            dir.path().join("other"),
+            dir.path().join("share"),
+        );
+        for d in [&vm, &other, &share] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        disk(&vm.join(STORAGE_DISK_FILENAME), Filesystem::Ext4);
+        let mut asked = 0;
+        assert_eq!(
+            before_start(
+                &vm,
+                Some(&share),
+                true,
+                |need| {
+                    asked = need;
+                    false
+                },
+                |_| panic!()
+            )
+            .unwrap(),
+            None
+        );
+        assert!(asked >= 1 << 30, "the need covers the copy and a margin");
+        assert!(!share.join(SHARE_RECORD).exists());
+
+        write(
+            &other,
+            &Conversion {
+                nonce: "o".into(),
+                committed: false,
+                attempts: 1,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            before_start(&vm, Some(&share), true, |_| true, |_| panic!()).unwrap(),
+            None
+        );
+        write(
+            &other,
+            &Conversion {
+                nonce: "o".into(),
+                committed: true,
+                attempts: 1,
+            },
+        )
+        .unwrap();
+        assert!(before_start(
+            &vm,
+            Some(&share),
+            true,
+            |_| true,
+            |next| {
+                disk(next, Filesystem::Btrfs);
+                Ok(())
+            }
+        )
+        .unwrap()
+        .is_some());
     }
 }

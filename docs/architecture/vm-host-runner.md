@@ -41,6 +41,7 @@ The harness tools the default image boots with are installed on the k3s node, wh
 The Mac's default filesystem folds names that differ only in case into one file, and agent images carry such names.
 Trees are unpacked without privilege, so a guest sees every image file owned by the runner's user rather than by the image's owners.
 The runner makes a new disk btrfs from the runner image's template ([vm-runner](vm-runner.md)), which needs no filesystem tool on the Mac.
+`PLATFORM_CONVERT_EXT4_DISKS=1 mise run cluster:host-runner` starts it converting its machines' ext4 disks to btrfs, as `virtualization.runner.convertExt4Disks` does for the runner pods ([vm-runner](vm-runner.md)).
 platform-init and the guest kernel are the runner image's, so the Mac's guests mount btrfs as the pods' do: the image build in the cluster's VM leaves its kernel wrapped for macOS, and `cluster:host-runner` compiles that into the release's libkrunfw.
 
 **Lifecycle.** The runner is a process on the Mac, not a supervised service.

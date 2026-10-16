@@ -78,8 +78,14 @@ impl Smolvm {
             nested,
             tools,
             btrfs,
-            convert: std::env::var_os(crate::convert::ENABLE_ENV).is_some_and(|v| v == "1"),
+            convert: false,
         })
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: lets this runner convert its machines' ext4 storage disks to btrfs (see convert).
+    pub fn converting(mut self, on: bool) -> Self {
+        self.convert = on;
+        self
     }
 
     fn record(&self, id: &str) -> anyhow::Result<Option<VmRecord>> {
@@ -267,8 +273,9 @@ impl Runtime for Smolvm {
                 .map(|(share, _, _)| PathBuf::from(share))
         });
         let gib = record.as_ref().and_then(|r| r.storage_gb).unwrap_or(0);
+        let fits = |need| crate::storage::measure(&dir).is_some_and(|claim| claim.takes(need));
         let conversion =
-            crate::convert::before_start(&dir, share.as_deref(), self.convert, |next| {
+            crate::convert::before_start(&dir, share.as_deref(), self.convert, fits, |next| {
                 format_btrfs(next, gib, &self.btrfs)
             })?;
         let rootfs = AgentManager::default_rootfs_path()?;

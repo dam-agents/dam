@@ -94,7 +94,12 @@ The root's upper and work layers stay in one subvolume: btrfs refuses a rename b
 A btrfs disk made before subvolumes moves to them at its next boot, inside the guest: each subvolume starts as a snapshot of the whole disk, which copies nothing, and becomes its store by renames inside it.
 The old directory layout is changed only once both subvolumes are complete, so a boot cut short keeps it and tries again; what the move set aside, smolvm's old guest-agent directories among it, is deleted in the background.
 A move that fails leaves the disk in the directory layout, which still boots, and the layout mark records which of the two a disk is in.
-An ext4 disk keeps the directory layout.
+An ext4 disk keeps the directory layout until the install turns on `virtualization.runner.convertExt4Disks`.
+Then the runner converts it at the machine's next start, one machine at a time and only while the owner's claim has room for a copy of the disk beside it and still stays under 90%: it attaches a fresh btrfs disk, made from the template with a UUID of its own, as the machine's second disk, and the share asks the guest to copy into it.
+platform-init checks the ext4 disk, mounts it read-only, copies its home and kept root into the btrfs disk's subvolumes with every owner, mode, time, extended attribute, hard link and hole, and boots this boot on the copy.
+The guest names the conversion's nonce in its answer to the runner's ping, over the socket only its init holds; only then does the runner swap the two disk files in one rename, recorded first, so a crash on either side of the swap is finished from what each file's superblock magic says.
+The old ext4 disk stays untouched, and is deleted at the next start, once the copy has booted; a copy that fails boots the ext4 disk as before, and three failed attempts leave it ext4.
+A converting boot may stay quiet for six hours before its first answer, so a large home's copy is not restarted from nothing.
 A disk already in the subvolume layout that also holds `workspace/` was booted by a rolled-back platform-init, which made a fresh one; it is set aside and kept, never moved, and the home in the subvolume boots.
 A btrfs disk that does not mount fails the boot and stays as it is, since btrfs has no repair a boot may run unattended.
 A start never copies smolvm's template over a disk that already holds a filesystem — not even one whose first format stopped short of resizing it to the size asked for.
