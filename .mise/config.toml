@@ -8,12 +8,6 @@ config_roots = ["packages/*", "packages/agents/*", "packages/e2e/*", "packages/e
 lockfile = true
 
 [env]
-CC_x86_64_unknown_linux_gnu = "{{config_root}}/.mise/zig/cc"
-AR_x86_64_unknown_linux_gnu = "{{config_root}}/.mise/zig/ar"
-CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER = "{{config_root}}/.mise/zig/cc"
-CC_aarch64_unknown_linux_gnu = "{{config_root}}/.mise/zig/cc"
-AR_aarch64_unknown_linux_gnu = "{{config_root}}/.mise/zig/ar"
-CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER = "{{config_root}}/.mise/zig/cc"
 # A git hook exports these, and they point every git command at the committing
 # worktree whatever the cwd: a task's git ls-files lists paths from the wrong
 # directory, and the smolvm clone checks out into the worktree's index. Unset,
@@ -75,7 +69,6 @@ trivy = "latest"
 usage = "latest"
 uv = "latest"
 yq = "latest"
-zig = { version = "latest", os = ["linux"] }
 zizmor = "latest"
 
 [settings]
