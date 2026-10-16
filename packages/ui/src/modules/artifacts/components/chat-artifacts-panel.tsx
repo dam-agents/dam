@@ -392,7 +392,6 @@ function ArtifactListRow({
           )}
           style={{ paddingLeft: `${12 + depth * 22}px` }}
         >
-          <span className="w-4 shrink-0" />
           <div
             className="-mx-1.5 shrink-0"
             onClick={(e) => e.stopPropagation()}

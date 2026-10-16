@@ -1,7 +1,6 @@
-import { Folder } from "@carbon/icons-react";
+import { Folder, FolderOpen } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
-import { DisclosureChevron } from "@/components/ui/disclosure";
 import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { TREE_GUIDE } from "@/components/ui/tree-guide";
 import { cn } from "@/lib/utils";
@@ -43,6 +42,7 @@ export function SidebarFolderGroup({
   children: ReactNode;
 }) {
   const dropTarget = useFolderDropTarget(folderId, drop ?? INERT_DROP);
+  const FolderIcon = collapsed ? Folder : FolderOpen;
   return (
     <div
       {...(drop ? dropTarget : {})}
@@ -59,14 +59,7 @@ export function SidebarFolderGroup({
             "text-foreground",
           )}
         >
-          <span className="flex w-4 shrink-0 items-center justify-center">
-            <DisclosureChevron
-              open={!collapsed}
-              size={14}
-              className="text-muted-foreground"
-            />
-          </span>
-          <Folder size={16} className="shrink-0 text-muted-foreground" />
+          <FolderIcon size={16} className="shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate">{label}</span>
           <span className="shrink-0 text-xs text-muted-foreground">
             {count} artifact{count === 1 ? "" : "s"}
@@ -75,7 +68,7 @@ export function SidebarFolderGroup({
         {actions && <div className={cn("pr-2", HOVER_ACTION)}>{actions}</div>}
       </div>
       {!collapsed && (
-        <div className={cn(TREE_GUIDE, "[--tree-guide-x:42px]")}>
+        <div className={cn(TREE_GUIDE, "[--tree-guide-x:20px]")}>
           {children}
         </div>
       )}
