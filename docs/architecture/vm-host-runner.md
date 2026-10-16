@@ -1,6 +1,6 @@
 # VM host runner
 
-Last verified: 2026-10-15
+Last verified: 2026-10-16
 
 On a Mac, the local cluster's `vm` Backend runs on **one runner outside the cluster**, on the Mac's own hypervisor, instead of on the per-owner [runner pods](vm-runner.md) inside the cluster's VM, which would need a hypervisor nested in that VM.
 A nested guest boots several times slower, a busy laptop pushes it past smolvm's fixed ready window, and only recent Apple chips nest at all.
