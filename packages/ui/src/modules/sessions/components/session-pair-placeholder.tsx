@@ -60,7 +60,11 @@ export function SessionPairPlaceholder({
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
-        <SessionPairTrigger label={label} aria-busy />
+        <SessionPairTrigger
+          label={label}
+          harness={pair ? pair.harness : undefined}
+          aria-busy
+        />
       </PopoverTrigger>
       <PopoverContent
         side="top"

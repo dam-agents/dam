@@ -6,6 +6,7 @@ import { getAccessToken } from "../../../lib/auth.js";
 import {
   expectMilestoneBeforeFailure,
   LONG_TURN_MS,
+  newestSessionRow,
   openMockAgentChat,
   queuedIndicator,
   restoreMockDefaultReply,
@@ -43,7 +44,7 @@ test("a prompt sent after reattaching mid-turn is reported as waiting, not faile
   await test.step("reload the tab while the turn is still running", async () => {
     await page.reload();
     await expect(page.getByTestId("app-sidebar")).toBeVisible();
-    const sessionRow = page.getByTestId("session-row").first();
+    const sessionRow = newestSessionRow(page);
     await expect(sessionRow).toBeVisible({ timeout: 60_000 });
     await sessionRow.click();
     await expect(chatInput(page)).toBeVisible();

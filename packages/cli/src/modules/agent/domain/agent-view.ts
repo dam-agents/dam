@@ -8,9 +8,14 @@ export interface AgentView {
   description?: string;
   env?: EnvVar[];
   state: AgentState;
+  disabled?: boolean;
   error?: string;
   overBudgetMessage?: string;
   podTerminationReason?: string;
   podTerminationCode?: string;
   channels: ChannelConfig[];
+}
+
+export function displayState(agent: AgentView): string {
+  return agent.disabled ? "disabled" : agent.state;
 }

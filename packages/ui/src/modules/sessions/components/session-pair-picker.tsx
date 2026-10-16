@@ -35,6 +35,7 @@ import {
 } from "../api/session-pair.js";
 import {
   addableProviders,
+  attachableProviders,
   modelGroups,
   modelIndicatorLabel,
   sameModel,
@@ -44,10 +45,12 @@ import {
   fittingProviders,
   harnessDisplayName,
   harnessOptions,
+  modelProviderLabel,
   nextPair,
   type ProviderConnectionRef,
   providerOptions,
 } from "../lib/session-pair-options.js";
+import { useAttachProvidersDialog } from "./attach-providers-dialog.js";
 import { SessionModelList } from "./session-model-list.js";
 import { SessionPairTrigger } from "./session-pair-trigger.js";
 import {
@@ -82,7 +85,20 @@ export function SessionPairPicker({
   const chosen = useStore((s) => s.nextSessionPair[agentId] ?? null);
   const setPair = useStore((s) => s.setNextSessionPair);
   const providers = useProviderConnections(agentId);
-  const { grant, revoke, pending } = useGrantProvider(agentId);
+  const { revoke, pending: revoking } = useGrantProvider(agentId);
+  const attachDialog = useAttachProvidersDialog(agentId);
+  const pending = revoking || attachDialog.pending;
+  const attach = (connection: { id: string }) =>
+    void attachDialog
+      .ask(harness, attachableProviders(providers.granted, offered.addable), [
+        connection.id,
+      ])
+      .then((ids) => {
+        const provider = ids?.includes(connection.id)
+          ? connection.id
+          : ids?.[0];
+        if (provider) choose(withSettings({ harness, provider, model: null }));
+      });
 
   const views = catalog?.harnesses ?? [];
   const harnessName = (name: string) => harnessDisplayName(name, views);
@@ -154,225 +170,210 @@ export function SessionPairPicker({
     return <ConnectProvidersPrompt onClick={onConnectProviders} />;
 
   const provider = providers.granted.find((p) => p.id === pair?.provider);
-  const label = pair
-    ? routed
-      ? [modelIndicatorLabel(groups, pair.model), harnessName(pair.harness)]
-      : [pair.model, harnessName(pair.harness), provider?.name]
-    : [];
+  const label = !pair
+    ? undefined
+    : routed
+      ? (modelIndicatorLabel(groups, pair.model) ?? "Default model")
+      : modelProviderLabel(
+          pair.model,
+          provider?.name,
+          harnessName(pair.harness) ?? pair.harness,
+        );
 
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger asChild>
-        <SessionPairTrigger
-          label={
-            catalog &&
-            (pair
-              ? label.filter(Boolean).join(" · ")
-              : "Choose a harness and model")
-          }
-        />
-      </PopoverTrigger>
-      <PopoverContent
-        side="top"
-        align="start"
-        aria-label="New session harness and model"
-        className="flex w-[340px] flex-col gap-2 p-1 text-sm"
-      >
-        <div className="flex max-h-96 flex-col gap-2 overflow-y-auto p-1">
-          {harnesses.length > 0 && (
-            <ul role="group" aria-label="Harness" className="flex flex-col">
-              {harnesses.map((h) => (
-                <li key={h.name} className="flex items-center">
-                  <button
-                    type="button"
-                    disabled={unsupported(h.name)}
-                    aria-pressed={h.name === harness}
-                    onClick={() =>
-                      choose({
-                        harness: h.name,
-                        provider:
-                          providerOptions(
-                            h.name,
-                            views,
-                            providers.granted,
-                            providers.owned,
-                          ).granted[0]?.id ?? null,
-                        model: null,
-                      })
-                    }
-                    className="flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50 aria-pressed:bg-muted aria-pressed:font-medium aria-pressed:text-foreground"
-                  >
-                    <span className="text-muted-foreground">
-                      <HarnessIcons harnesses={[h.name]} size="xs" />
-                    </span>
-                    {h.displayName}
-                  </button>
-                  {unsupported(h.name) && (
-                    <Tooltip content="This harness does not support any of the LLM providers you have configured.">
-                      <span
-                        tabIndex={0}
-                        aria-label={`Why ${h.displayName} is unavailable`}
-                        className="px-2 text-muted-foreground"
-                      >
-                        <Information size={14} />
-                      </span>
-                    </Tooltip>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-          <hr className="border-border" />
-          {routed ? (
-            <>
-              <SessionModelList
-                groups={groups}
-                harnessName={harnessName(harness)}
-                current={pair?.model ?? null}
-                loading={catalogModels.isLoading}
-                waiting={catalogModels.waiting}
-                failed={catalogModels.isError}
-                operable={catalogModels.operable}
-                starting={answerableSoon}
-                onRetry={() => void catalogModels.refetch()}
-                onChoose={(model, group) => {
-                  const kept = settingsForModel(
-                    capability,
-                    groups,
-                    model,
-                    settings,
-                  );
-                  choose({
-                    harness,
-                    provider: group.connectionId,
-                    model,
-                    ...(Object.keys(kept).length > 0 && { settings: kept }),
-                  });
-                }}
-                onDisconnect={(group) =>
-                  confirmDisconnect(group.displayName, group.connectionId)
-                }
-                disconnecting={pending}
-              />
-              {addable.map(({ connection, conflict }) => (
-                <section
-                  key={connection.id}
-                  aria-label={connection.name}
-                  className="flex flex-col px-1"
-                >
-                  <ProviderHeading name={connection.name} />
-                  <span className="inline-flex items-center gap-1 self-start">
+    <>
+      {attachDialog.dialog}
+      <Popover open={open} onOpenChange={onOpenChange}>
+        <PopoverTrigger asChild>
+          <SessionPairTrigger
+            harness={pair?.harness}
+            label={catalog && (pair ? label : "Choose a harness and model")}
+          />
+        </PopoverTrigger>
+        <PopoverContent
+          side="top"
+          align="start"
+          aria-label="New session harness and model"
+          className="flex w-[340px] flex-col gap-2 p-1 text-sm"
+        >
+          <div className="flex max-h-96 flex-col gap-2 overflow-y-auto p-1">
+            {harnesses.length > 0 && (
+              <ul role="group" aria-label="Harness" className="flex flex-col">
+                {harnesses.map((h) => (
+                  <li key={h.name} className="flex items-center">
                     <button
                       type="button"
-                      disabled={pending || conflict !== null}
+                      disabled={unsupported(h.name)}
+                      aria-pressed={h.name === harness}
                       onClick={() =>
-                        void grant(connection.id).then(
-                          (ok) =>
-                            ok &&
-                            choose(
-                              withSettings({
-                                harness,
-                                provider: connection.id,
-                                model: null,
-                              }),
-                            ),
-                        )
+                        choose({
+                          harness: h.name,
+                          provider:
+                            providerOptions(
+                              h.name,
+                              views,
+                              providers.granted,
+                              providers.owned,
+                            ).granted[0]?.id ?? null,
+                          model: null,
+                        })
                       }
-                      className="inline-flex items-center gap-1.5 py-1 text-muted-foreground hover:text-foreground hover:underline disabled:opacity-50 disabled:hover:no-underline"
+                      className="flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50 aria-pressed:bg-muted aria-pressed:font-medium aria-pressed:text-foreground"
                     >
-                      <Add size={16} /> Attach this provider
+                      <span className="text-muted-foreground">
+                        <HarnessIcons harnesses={[h.name]} size="xs" />
+                      </span>
+                      {h.displayName}
                     </button>
-                    {conflict && (
+                    {unsupported(h.name) && (
                       <Tooltip
-                        content={`An agent holds one ${conflict.displayName} connection at a time; this agent already uses ${conflict.held.name}.`}
+                        content={`${h.displayName} does not support any of the LLM providers you have configured.`}
                       >
                         <span
                           tabIndex={0}
-                          aria-label={`Why ${connection.name} cannot be attached`}
-                          className="px-1 text-muted-foreground"
+                          aria-label={`Why ${h.displayName} is unavailable`}
+                          className="px-2 text-muted-foreground"
                         >
                           <Information size={14} />
                         </span>
                       </Tooltip>
                     )}
-                  </span>
-                </section>
-              ))}
-              {groups.length === 0 &&
-                addable.length === 0 &&
-                !catalogModels.isLoading &&
-                !catalogModels.isError &&
-                catalogModels.operable && (
-                  <p className="px-1 text-muted-foreground">
-                    No connected model provider runs {harnessName(harness)}.
-                    Connect one first.
-                  </p>
-                )}
-            </>
-          ) : (
-            <OldRuntimeProviderSections
-              agentId={agentId}
-              harness={harness}
-              carried={carried}
-              sections={sections}
-              attached={attached}
-              pair={pair}
-              pending={pending}
-              harnessName={harnessName(harness)}
-              onDisconnect={confirmDisconnect}
-              onAttach={(id) =>
-                void grant(id).then(
-                  (ok) =>
-                    ok &&
-                    choose(
-                      withSettings({ harness, provider: id, model: null }),
-                    ),
-                )
-              }
-              onChoose={(id, model) =>
-                choose(withSettings({ harness, provider: id, model }))
-              }
-            />
-          )}
-        </div>
-        {pair && (
-          <div className="border-t border-border px-2 pt-2 empty:hidden">
-            <SessionSettingsControls
-              capability={capability}
-              model={pair.model}
-              settings={settings}
-              defaults={defaults}
-              modelChoices={sameSideGroups(groups, pair.model).flatMap((g) =>
-                g.models.map((m) => ({
-                  value: m.name,
-                  name: `${m.upstreamId} · ${g.displayName}`,
-                })),
-              )}
-              onChange={(id, value) => {
-                const rest = Object.fromEntries(
-                  Object.entries(settings).filter(([key]) => key !== id),
-                );
-                choose({
-                  ...pair,
-                  settings: value === "" ? rest : { ...rest, [id]: value },
-                });
-              }}
-            />
+                  </li>
+                ))}
+              </ul>
+            )}
+            <hr className="border-border" />
+            {routed ? (
+              <>
+                <SessionModelList
+                  groups={groups}
+                  harnessName={harnessName(harness)}
+                  current={pair?.model ?? null}
+                  loading={catalogModels.isLoading}
+                  waiting={catalogModels.waiting}
+                  failed={catalogModels.isError}
+                  operable={catalogModels.operable}
+                  starting={answerableSoon}
+                  onRetry={() => void catalogModels.refetch()}
+                  onChoose={(model, group) => {
+                    const kept = settingsForModel(
+                      capability,
+                      groups,
+                      model,
+                      settings,
+                    );
+                    choose({
+                      harness,
+                      provider: group.connectionId,
+                      model,
+                      ...(Object.keys(kept).length > 0 && { settings: kept }),
+                    });
+                  }}
+                  onDisconnect={(group) =>
+                    confirmDisconnect(group.displayName, group.connectionId)
+                  }
+                  disconnecting={pending}
+                />
+                {addable.map(({ connection, conflict }) => (
+                  <section
+                    key={connection.id}
+                    aria-label={connection.name}
+                    className="flex flex-col px-1"
+                  >
+                    <ProviderHeading name={connection.name} />
+                    <span className="inline-flex items-center gap-1 self-start">
+                      <button
+                        type="button"
+                        disabled={pending || conflict !== null}
+                        onClick={() => attach(connection)}
+                        className="inline-flex items-center gap-1.5 py-1 text-muted-foreground hover:text-foreground hover:underline disabled:opacity-50 disabled:hover:no-underline"
+                      >
+                        <Add size={16} /> Attach this provider
+                      </button>
+                      {conflict && (
+                        <Tooltip
+                          content={`An agent holds one ${conflict.displayName} connection at a time; this agent already uses ${conflict.held.name}.`}
+                        >
+                          <span
+                            tabIndex={0}
+                            aria-label={`Why ${connection.name} cannot be attached`}
+                            className="px-1 text-muted-foreground"
+                          >
+                            <Information size={14} />
+                          </span>
+                        </Tooltip>
+                      )}
+                    </span>
+                  </section>
+                ))}
+                {groups.length === 0 &&
+                  addable.length === 0 &&
+                  !catalogModels.isLoading &&
+                  !catalogModels.isError &&
+                  catalogModels.operable && (
+                    <p className="px-1 text-muted-foreground">
+                      No connected model provider runs {harnessName(harness)}.
+                      Connect one first.
+                    </p>
+                  )}
+              </>
+            ) : (
+              <OldRuntimeProviderSections
+                agentId={agentId}
+                harness={harness}
+                carried={carried}
+                sections={sections}
+                attached={attached}
+                pair={pair}
+                pending={pending}
+                harnessName={harnessName(harness)}
+                onDisconnect={confirmDisconnect}
+                onAttach={attach}
+                onChoose={(id, model) =>
+                  choose(withSettings({ harness, provider: id, model }))
+                }
+              />
+            )}
           </div>
-        )}
-        <div className="border-t border-border px-2 pb-1 pt-2 text-xs text-muted-foreground">
-          <PopoverClose asChild>
-            <button
-              type="button"
-              onClick={() => navigateToSandboxHome(agentId, "providers")}
-              className="underline underline-offset-2 hover:text-foreground"
-            >
-              Configure providers and defaults
-            </button>
-          </PopoverClose>
-        </div>
-      </PopoverContent>
-    </Popover>
+          {pair && (
+            <div className="border-t border-border px-2 pt-2 empty:hidden">
+              <SessionSettingsControls
+                capability={capability}
+                model={pair.model}
+                settings={settings}
+                defaults={defaults}
+                modelChoices={sameSideGroups(groups, pair.model).flatMap((g) =>
+                  g.models.map((m) => ({
+                    value: m.name,
+                    name: `${m.upstreamId} · ${g.displayName}`,
+                  })),
+                )}
+                onChange={(id, value) => {
+                  const rest = Object.fromEntries(
+                    Object.entries(settings).filter(([key]) => key !== id),
+                  );
+                  choose({
+                    ...pair,
+                    settings: value === "" ? rest : { ...rest, [id]: value },
+                  });
+                }}
+              />
+            </div>
+          )}
+          <div className="border-t border-border px-2 pb-1 pt-2 text-xs text-muted-foreground">
+            <PopoverClose asChild>
+              <button
+                type="button"
+                onClick={() => navigateToSandboxHome(agentId, "providers")}
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                Configure providers and defaults
+              </button>
+            </PopoverClose>
+          </div>
+        </PopoverContent>
+      </Popover>
+    </>
   );
 }
 
@@ -484,7 +485,7 @@ function OldRuntimeProviderSections({
   pending: boolean;
   harnessName: string | undefined;
   onDisconnect: (name: string, id: string) => void;
-  onAttach: (id: string) => void;
+  onAttach: (provider: { id: string }) => void;
   onChoose: (id: string, model: string) => void;
 }) {
   return (
@@ -512,7 +513,7 @@ function OldRuntimeProviderSections({
             <button
               type="button"
               disabled={pending}
-              onClick={() => onAttach(p.id)}
+              onClick={() => onAttach(p)}
               className="inline-flex items-center gap-1.5 self-start py-1 text-muted-foreground hover:text-foreground hover:underline disabled:opacity-50"
             >
               <Add size={16} /> Attach this provider

@@ -11,6 +11,7 @@ import type {
 } from "api-server-api";
 import type { FirePair } from "../../modules/harness-config/index.js";
 import type { RedisBus } from "../../core/redis-bus.js";
+import type { SpendSystem } from "../../modules/spend/index.js";
 import type { TtlStore } from "../../core/ttl-store.js";
 import type {
   AgentCleanupHook,
@@ -86,6 +87,7 @@ export interface ApiServerDeps {
   slackBindFlows: SlackBindFlowStore;
   seedSources: SkillSourceSeed[];
   redisBus: RedisBus;
+  spendForOwner: SpendSystem["forOwner"];
   approvalsRelay: ApprovalsRelayService;
   wrapperFrameSender: WrapperFrameSender;
   presetSeeder: PresetSeeder;

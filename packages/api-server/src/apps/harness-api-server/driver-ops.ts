@@ -18,6 +18,7 @@ import {
   InvalidSchemaError,
   ModelNameError,
   ProviderMismatchError,
+  SpendLimitReachedError,
   UnresolvableDriverError,
   type InvocationOrigin,
   type InvocationsService,
@@ -30,7 +31,11 @@ export type SpawnRequest = z.infer<typeof spawnInvocationRequestSchema>;
 
 export type SpawnOutcome =
   | { ok: true; id: string }
-  | { ok: false; kind: "invalid" | "forbidden" | "conflict"; message: string };
+  | {
+      ok: false;
+      kind: "invalid" | "forbidden" | "conflict" | "spend_limit_reached";
+      message: string;
+    };
 
 export interface DriverOpsDeps {
   agents: {
@@ -180,6 +185,13 @@ function driverOps(
         }
         if (err instanceof UnresolvableDriverError) {
           return { ok: false, kind: "conflict", message: err.message };
+        }
+        if (err instanceof SpendLimitReachedError) {
+          return {
+            ok: false,
+            kind: "spend_limit_reached",
+            message: err.message,
+          };
         }
         throw err;
       }

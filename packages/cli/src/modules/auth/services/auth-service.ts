@@ -168,6 +168,22 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
 
   return {
     async login(input) {
+      const cfg = await deps.authConfigProbe.probe(input.host);
+      if (!cfg.ok) {
+        return err({
+          kind: "preflight",
+          ...describeAuthConfigError(cfg.error),
+        });
+      }
+      const warnings: string[] = [];
+      const movedTo = cfg.value.movedTo;
+      if (movedTo !== undefined) {
+        warnings.push(
+          `${input.host} redirects to ${movedTo}; logged in there and saved it as the server`,
+        );
+        input = { ...input, host: movedTo, persistServer: movedTo };
+      }
+
       const existing = await deps.authStore.read();
       if (!existing.ok) {
         return err({ kind: "auth-store", detail: existing.error.reason });
@@ -183,7 +199,6 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
       if (!compat.ok) {
         return err({ kind: "preflight", ...describeCompatError(compat.error) });
       }
-      const warnings: string[] = [];
       switch (compat.value.kind) {
         case "below-floor":
           return err({
@@ -198,14 +213,6 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
           break;
         case "ok":
           break;
-      }
-
-      const cfg = await deps.authConfigProbe.probe(input.host);
-      if (!cfg.ok) {
-        return err({
-          kind: "preflight",
-          ...describeAuthConfigError(cfg.error),
-        });
       }
 
       const oidc = await deps.oidcDiscovery.discover(cfg.value.issuer);
@@ -311,6 +318,12 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
           if (!cfgWrite.ok && cfgWrite.error.kind === "file-write") {
             warnings.push(
               `failed to update config.toml: ${cfgWrite.error.reason}`,
+            );
+          }
+          const resolved = await deps.configService.getResolved({});
+          if (resolved.ok && resolved.value.server !== input.persistServer) {
+            warnings.push(
+              `the active server is still ${resolved.value.server}; update DAM_SERVER to ${input.persistServer}`,
             );
           }
         }

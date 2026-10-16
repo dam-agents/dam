@@ -35,7 +35,7 @@ export function FilesPanel({
   onOpenFile,
 }: {
   open: boolean;
-  onToggle: () => void;
+  onToggle?: () => void;
   className?: string;
   style?: CSSProperties;
   ref?: Ref<HTMLDivElement>;

@@ -24,6 +24,7 @@ export const createInvocationsSlice: StateCreator<
       open
         ? {
             openDelegation: open,
+            sidePanelTab: "delegation",
             openFilePath: null,
             openFileDirty: false,
             openArtifactId: null,

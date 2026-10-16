@@ -64,6 +64,7 @@ export interface SessionsSlice {
   terminalPaused: boolean;
   pendingResumeSessionId: string | null;
   pendingResumeSessionMode: SessionMode | null;
+  pendingResumeFresh: boolean;
   chatRequest: ChatRequest | null;
   toolActivityExpanded: boolean;
 
@@ -85,7 +86,6 @@ export interface SessionsSlice {
   addRunStart: (at: string) => void;
   setNextSessionPair: (agentId: string, pair: SessionPair) => void;
   setSessionError: (e: SessionError | null) => void;
-  toggleSessionFilter: (category: SessionCategory) => void;
   setDraft: (key: string, patch: Partial<SessionDraft>) => void;
   appendNewSessionDraft: (agentId: string, text: string) => void;
   clearDraft: (key: string) => void;
@@ -96,7 +96,7 @@ export interface SessionsSlice {
   applyForeignDraft: (key: string, draft: SessionDraft | null) => void;
   setBusy: (busy: boolean) => void;
 
-  deleteSession: (sessionId: string) => Promise<boolean>;
+  deleteSession: (sessionId: string, agentId?: string) => Promise<boolean>;
   reopenUnstoredSession: (
     sessionId: string,
     undelivered: PlatformUndeliveredPrompt[],
@@ -174,6 +174,7 @@ export const createSessionsSlice: StateCreator<
     terminalPaused: false,
     pendingResumeSessionId: null,
     pendingResumeSessionMode: null,
+    pendingResumeFresh: false,
     chatRequest: null,
     toolActivityExpanded: readPersistedFlag(
       TOOL_ACTIVITY_EXPANDED_STORAGE_KEY,
@@ -182,7 +183,11 @@ export const createSessionsSlice: StateCreator<
 
     setSessionId: (id) => set({ sessionId: id }),
     setPendingResumeSessionId: (id, mode = null) =>
-      set({ pendingResumeSessionId: id, pendingResumeSessionMode: mode }),
+      set({
+        pendingResumeSessionId: id,
+        pendingResumeSessionMode: mode,
+        pendingResumeFresh: false,
+      }),
     setSessionMode: (mode) => set({ sessionMode: mode }),
     setTerminalPaused: (paused) => set({ terminalPaused: paused }),
     requestChat: (request) => set({ chatRequest: request }),
@@ -208,12 +213,6 @@ export const createSessionsSlice: StateCreator<
         s.runStarts.includes(at) ? s : { runStarts: [...s.runStarts, at] },
       ),
     setSessionError: (e) => set({ sessionError: e }),
-    toggleSessionFilter: (category) =>
-      set((s) => ({
-        sessionFilter: s.sessionFilter.includes(category)
-          ? s.sessionFilter.filter((c) => c !== category)
-          : [...s.sessionFilter, category],
-      })),
     setDraft: (key, patch) =>
       updateDrafts((drafts) => {
         const next = { ...(drafts[key] ?? EMPTY_DRAFT), ...patch };
@@ -305,8 +304,10 @@ export const createSessionsSlice: StateCreator<
         chatRequest: null,
       }),
 
-    deleteSession: async (sessionId) => {
-      const agentId = get().selectedAgent;
+    deleteSession: async (
+      sessionId,
+      agentId = get().selectedAgent ?? undefined,
+    ) => {
       if (!agentId) return false;
       const ok = await runAction(
         () => deleteAgentSession(agentId, sessionId),

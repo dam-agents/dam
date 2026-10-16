@@ -7,6 +7,7 @@ export interface AuthConfig {
   issuer: string;
   clientId: string;
   cliClientId: string;
+  movedTo?: string;
 }
 
 export interface AuthConfigProbe {
@@ -80,6 +81,11 @@ export function createAuthConfigProbe(): AuthConfigProbe {
         issuer: parsed.data.issuer,
         clientId: parsed.data.clientId,
         cliClientId: parsed.data.cliClientId,
+        movedTo:
+          res.redirected &&
+          new URL(res.url).origin !== new URL(serverUrl).origin
+            ? res.url.replace(/api\/auth\/config$/, "")
+            : undefined,
       });
     },
   };

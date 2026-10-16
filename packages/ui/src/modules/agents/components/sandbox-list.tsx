@@ -1,12 +1,5 @@
-import { useState } from "react";
-
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import {
-  type BindMessenger,
-  ChannelBindModal,
-} from "../../sandboxes/components/channels/channel-bind-modal.js";
-import { useAgents } from "../api/queries.js";
 import type { useAgentRows } from "../hooks/use-agent-rows.js";
 import type { TemporarySandboxSplit } from "../utils/temporary-sandboxes.js";
 import { AgentRow } from "./agent-row.js";
@@ -16,7 +9,6 @@ interface Props {
   drawByDriver: TemporarySandboxSplit["drawByDriver"];
   rowProps: ReturnType<typeof useAgentRows>["rowProps"];
   workingByAgent?: ReadonlyMap<string, boolean>;
-  onDelete: (agent: AgentView) => void;
 }
 
 export function SandboxList({
@@ -24,14 +16,9 @@ export function SandboxList({
   drawByDriver,
   rowProps,
   workingByAgent,
-  onDelete,
 }: Props) {
   const selectAgent = useStore((s) => s.selectAgent);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const messengers = useAgents().data?.availableChannels ?? {};
-  const [bindMessenger, setBindMessenger] = useState<BindMessenger | null>(
-    null,
-  );
 
   return (
     <div className="flex flex-col gap-3">
@@ -44,17 +31,8 @@ export function SandboxList({
           onSelect={() => selectAgent(agent.id)}
           onConfigure={() => navigateToSandboxHome(agent.id)}
           configureLabel="Configure agent"
-          onDelete={() => onDelete(agent)}
-          messengers={messengers}
-          onAddToChannel={setBindMessenger}
         />
       ))}
-      {bindMessenger && (
-        <ChannelBindModal
-          messengers={[bindMessenger]}
-          onClose={() => setBindMessenger(null)}
-        />
-      )}
     </div>
   );
 }

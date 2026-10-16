@@ -11,6 +11,7 @@ function serviceReturning(states: AgentView["state"][]): AgentService {
     runtimeFleet: vi.fn(),
     deleteAgent: vi.fn(),
     restart: vi.fn(),
+    setDisabled: vi.fn(),
     get: vi.fn(async () => {
       const state = states[Math.min(i++, states.length - 1)]!;
       return {
