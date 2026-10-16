@@ -4,8 +4,11 @@ The DAM profile for the [quality-inspector](https://github.com/dam-agents/qualit
 It is data only: the inspector's `helm-k3s` engine runs the published chart in a nested k3s cluster inside the inspector's VM from `profile.json` → `engine_config`.
 Contract: quality-inspector `docs/profile-contract.md`; engine configuration: `engines/helm-k3s/README.md` there.
 
-- `profile.json` — the chart, its channels (`main` = `0.0.0-main.<n>`, `release` = `X.Y.Z`), the prerequisites (cert-manager, Gateway API CRDs, Istio CRDs without the mesh dataplane), the Helm values for a single-user QA install with a generated test owner, egress, requirements, config keys.
+- `profile.json` — the chart, its channels (`main` = `0.0.0-main.<n>`, `release` = `X.Y.Z`), the prerequisites (cert-manager, Gateway API CRDs, Istio CRDs without the mesh dataplane), the Helm values for a single-user QA install with a generated test owner, egress, the injection canary's object (one Mock agent, its text in the name), requirements, config keys.
+- The **Mock** harness template (`mock_image`) is on by default: the scripted e2e mock agent, pinned to the source sha it was built from (`quay.io/dam-agents/mock` has no release tags).
+  It carries the agent runtime of that sha, so bump it when a chart change needs a newer runtime: `mise run image:resolve -- source-sha mock` on main gives the tag.
 - Two install choices keep the nested product inside the inspector's egress, which is deny-by-default on GitHub: `harnessTools.hostPath: ""` leaves out the harness tools installer (its mise backends download from GitHub hosts), and the images the chart takes from `mirror.gcr.io` are in `egress`.
+- The cert-manager and Gateway API manifests are `github.com` release files the inspector's kit opens (quality-inspector 3.1.0 or later); the `trusted` preset allows the hosts GitHub redirects them to, so `egress` names neither.
 - `no-mesh-marker.yaml` — the `kube-system/platform-local-no-mesh` ConfigMap that lets the chart take `istio.enforce=false`.
   The inspector's VM kernel cannot run the Istio ambient dataplane, so the nested install runs without it; applied as a `file` prerequisite (quality-inspector 2.21.0 or later).
 - `SKILL.md` — DAM from a tester's point of view: vocabulary, and what the nested install cannot do.
@@ -25,5 +28,5 @@ Keep `.quality-inspector/` free of symlinks and submodules: the Contents API ans
 | Key                                                                                                            | Default                                    | Purpose                                    |
 | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------ |
 | `profile.chart_ref`                                                                                            | `oci://quay.io/dam-agents/charts/platform` | chart the builds come from                 |
-| `profile.mock_image`                                                                                           | empty (asked)                              | mock harness image so nested agents answer |
+| `profile.mock_image`                                                                                           | `quay.io/dam-agents/mock:<sha>`            | mock harness image so nested agents answer |
 | `profile.istio_version`, `profile.cert_manager_version`, `profile.gateway_api_version`, `profile.helm_version` | see `profile.json`                         | nested prerequisites                       |

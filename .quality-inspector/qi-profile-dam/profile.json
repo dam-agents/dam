@@ -49,8 +49,9 @@
     },
     "overlays": [
       { "when": "mock_image", "values": { "harnessTemplates": { "mock": {
-        "enabled": true, "description": "Scripted mock agent (QA)",
-        "image": { "repository": "{{config_repo:mock_image}}", "tag": "{{config_tag:mock_image}}" } } } } }
+        "enabled": true, "harness": "mock", "description": "Scripted mock agent (QA)",
+        "image": { "repository": "{{config_repo:mock_image}}", "tag": "{{config_tag:mock_image}}" },
+        "env": [ { "name": "MOCK_DEFAULT_REPLY", "value": "Hello from the mock agent." } ] } } } }
     ]
   },
   "boundary": { "github_paths": ["actions/runs?per_page=1", "releases?per_page=1"], "urls": [] },
@@ -59,16 +60,13 @@
     { "host": "*.quay.io", "method": "GET", "why": "image layers" },
     { "host": "get.helm.sh", "method": "GET", "why": "the helm binary" },
     { "host": "mirror.gcr.io", "method": "GET", "why": "SeaweedFS, Envoy, CoreDNS and job images (Docker Hub mirror; layers come from the same host)" },
-    { "host": "istio-release.storage.googleapis.com", "method": "GET", "why": "Istio charts" },
-    { "host": "github.com", "method": "GET", "path": "/cert-manager/cert-manager/releases/*", "why": "cert-manager manifest" },
-    { "host": "github.com", "method": "GET", "path": "/kubernetes-sigs/gateway-api/releases/*", "why": "Gateway API CRDs" },
-    { "host": "objects.githubusercontent.com", "method": "GET", "why": "release downloads" },
-    { "host": "release-assets.githubusercontent.com", "method": "GET", "why": "release downloads" }
+    { "host": "istio-release.storage.googleapis.com", "method": "GET", "why": "Istio charts" }
   ],
+  "canary": { "thing": "agent, created from the Mock template (New agent)", "field": "name" },
   "requires": { "root": true, "commands": ["k3s", "curl", "jq", "node"], "memory_gi": 12 },
   "config": {
     "chart_ref": { "default": "oci://quay.io/dam-agents/charts/platform", "about": "OCI chart the builds come from" },
-    "mock_image": { "default": "", "about": "image of a mock harness template so nested agents answer without a model; empty = none", "ask": true },
+    "mock_image": { "default": "quay.io/dam-agents/mock:cb334b15595863567e8a4d61474886a1cbf10aef", "about": "image of the scripted mock harness template, so nested agents answer without a model; empty = none" },
     "istio_version": { "default": "1.29.1", "about": "Istio CRDs only (istio-base), installed once in the nested cluster" },
     "cert_manager_version": { "default": "v1.21.2", "about": "cert-manager, installed once" },
     "gateway_api_version": { "default": "v1.2.0", "about": "Gateway API CRDs, installed once" },
