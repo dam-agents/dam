@@ -32,8 +32,6 @@ vi.mock("../../store.js", () => ({
   useStore: (select: (s: Record<string, unknown>) => unknown) =>
     select({
       setOpenBrowser: vi.fn(),
-      browserMaximized: false,
-      setBrowserMaximized: vi.fn(),
       showConfirm: vi.fn(),
       browserOpenRequest: null,
       takeBrowserOpenRequest: () => null,

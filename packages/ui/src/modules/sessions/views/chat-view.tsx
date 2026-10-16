@@ -143,6 +143,7 @@ import { SessionPairOutdatedNotice } from "../components/session-pair-outdated-n
 import { SessionPairPicker } from "../components/session-pair-picker.js";
 import { SessionPairPlaceholder } from "../components/session-pair-placeholder.js";
 import { SidePanelBar } from "../components/side-panel-bar.js";
+import { SidePanelEdgeTab } from "../components/side-panel-edge-tab.js";
 import { Terminal } from "../components/terminal.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
@@ -161,7 +162,10 @@ import { newLiveArrivals, noteArrivals } from "../lib/live-arrivals.js";
 import {
   type DockedItems,
   dockedItemTab,
+  maximizableView,
   selectSidePanelTab,
+  shownSidePanelWidth,
+  sidePanelMinWidth,
   type SidePanelTab,
   visibleSidePanelTab,
 } from "../lib/side-panel.js";
@@ -176,7 +180,6 @@ import type { SessionError } from "../store/sessions.js";
 
 const FILE_PANEL_WIDTH_KEY = "platform-file-w";
 const CHAT_MIN_W = 320;
-const SIDE_PANEL_MIN_W = 320;
 const SIDE_PANEL_BAR_W = 44;
 const TELEMETRY_SETTLE_MS = 5 * 60_000;
 
@@ -252,7 +255,6 @@ export function ChatView() {
     s.openChangesAgentId === s.selectedAgent ? s.openChangesAgentId : null,
   );
   const toggleChanges = useToggleChanges();
-  const browserMaximized = useStore((s) => s.browserMaximized);
   const openDelegation = useStore((s) =>
     s.openDelegation?.driverAgentId === s.selectedAgent
       ? s.openDelegation
@@ -269,6 +271,8 @@ export function ChatView() {
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const sidePanelTab = useStore((s) => s.sidePanelTab);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
+  const sidePanelMaximized = useStore((s) => s.sidePanelMaximized);
+  const setSidePanelMaximized = useStore((s) => s.setSidePanelMaximized);
   const draftDocked = useStore((s) => s.openFileDirty || s.openArtifactDirty);
   const hasPendingPermission = useHasPendingPermission();
   const mobileScreen = useStore((s) => s.mobileScreen);
@@ -690,17 +694,19 @@ export function ChatView() {
       void toggleChanges(selectedAgent);
     else void openBrowser(selectedAgent);
   };
-  const browserFills = browserMaximized && activeTab === "browser";
+  const maximizable = maximizableView(activeTab, dockedShown, openFilePath);
+  const maximized = maximizable !== null && sidePanelMaximized === maximizable;
+  const sidePanelMinW = sidePanelMinWidth(activeTab);
   const columnsDoNotFit =
     columnsW !== null &&
-    columnsW < CHAT_MIN_W + SIDE_PANEL_MIN_W + SIDE_PANEL_BAR_W;
-  const sidePanelFills = browserFills || (sidePanelOpen && columnsDoNotFit);
+    columnsW < CHAT_MIN_W + sidePanelMinW + SIDE_PANEL_BAR_W;
+  const sidePanelFills = maximized || (sidePanelOpen && columnsDoNotFit);
   const sidePanelMaxW =
     columnsW === null ? null : columnsW - CHAT_MIN_W - SIDE_PANEL_BAR_W;
   const sidePanelW =
-    rightW !== null && sidePanelMaxW !== null
-      ? Math.min(rightW, Math.max(SIDE_PANEL_MIN_W, sidePanelMaxW))
-      : rightW;
+    rightW === null
+      ? null
+      : shownSidePanelWidth(rightW, sidePanelMinW, sidePanelMaxW);
   const handleConfigureSandbox = useCallback(() => {
     if (!selectedAgent) return;
     navigateToSandboxHome(selectedAgent);
@@ -1160,11 +1166,12 @@ export function ChatView() {
               side="right"
               onResize={(d) => {
                 const max = sidePanelMaxW ?? window.innerWidth - 500;
-                const base = Math.min(
+                const base = shownSidePanelWidth(
                   rightWRef.current ?? filePanelRef.current?.offsetWidth ?? 0,
+                  sidePanelMinW,
                   max,
                 );
-                const v = Math.max(240, Math.min(max, base + d));
+                const v = Math.max(sidePanelMinW, Math.min(max, base + d));
                 rightWRef.current = v;
                 writePersistedNumber(FILE_PANEL_WIDTH_KEY, v);
                 setRightW(v);
@@ -1188,12 +1195,14 @@ export function ChatView() {
             <div
               ref={filePanelRef}
               style={
-                sidePanelW !== null
-                  ? ({ "--file-w": `${sidePanelW}px` } as CSSProperties)
-                  : undefined
+                {
+                  "--file-min-w": `${sidePanelMinW}px`,
+                  ...(sidePanelW !== null && { "--file-w": `${sidePanelW}px` }),
+                } as CSSProperties
               }
               className={cn(
                 "flex flex-col min-w-0 overflow-hidden max-md:flex-1",
+                !sidePanelFills && "md:min-w-[var(--file-min-w)]",
                 !sidePanelOpen && "hidden",
                 sidePanelFills || sidePanelW === null
                   ? "md:flex-1"
@@ -1282,6 +1291,14 @@ export function ChatView() {
                 </div>
               )}
             </div>
+          )}
+          {sidePanelOpen && maximizable && (maximized || !columnsDoNotFit) && (
+            <SidePanelEdgeTab
+              maximized={maximized}
+              onToggle={() =>
+                setSidePanelMaximized(maximized ? null : maximizable)
+              }
+            />
           )}
           <SidePanelBar
             active={activeTab}
