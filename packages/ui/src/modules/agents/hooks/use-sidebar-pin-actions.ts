@@ -13,64 +13,56 @@ import {
   togglePin,
 } from "../lib/sidebar-pins.js";
 
-function currentPins(): SidebarPins {
-  return (
-    queryClient.getQueryData(trpc.sidebarPins.get.queryKey()) ?? {
-      agents: [],
-      sessions: {},
-    }
-  );
+function currentPins(): SidebarPins | undefined {
+  return queryClient.getQueryData(trpc.sidebarPins.get.queryKey());
 }
 
 export function useSidebarPinActions() {
   const setAgents = useSetPinnedAgents();
   const setSessions = useSetPinnedSessions();
 
-  const writeAgents = (next: string[]) => {
-    const { agents } = currentPins();
-    if (next.join("\n") !== agents.join("\n"))
+  const writeAgents = (build: (agents: readonly string[]) => string[]) => {
+    const pins = currentPins();
+    if (!pins) return;
+    const next = build(pins.agents);
+    if (next.join("\n") !== pins.agents.join("\n"))
       setAgents.mutate({ agentIds: next });
   };
-  const writeSessions = (agentId: string, next: string[]) => {
-    const pinned = currentPins().sessions[agentId] ?? [];
+  const writeSessions = (
+    agentId: string,
+    build: (pinned: readonly string[]) => string[],
+  ) => {
+    const pins = currentPins();
+    if (!pins) return;
+    const pinned = pins.sessions[agentId] ?? [];
+    const next = build(pinned);
     if (next.join("\n") !== pinned.join("\n"))
       setSessions.mutate({ agentId, sessionIds: next });
   };
 
   return {
     toggleAgent: (agentId: string) =>
-      writeAgents(togglePin(currentPins().agents, agentId)),
+      writeAgents((agents) => togglePin(agents, agentId)),
     moveAgent: (agentId: string, drop: PinDrop | null) =>
-      writeAgents(movePin(currentPins().agents, agentId, drop)),
+      writeAgents((agents) => movePin(agents, agentId, drop)),
     stepAgent: (agentId: string, step: -1 | 1, shown: ReadonlySet<string>) =>
-      writeAgents(stepPin(currentPins().agents, agentId, step, shown)),
+      writeAgents((agents) => stepPin(agents, agentId, step, shown)),
+    toggleSession: (agentId: string, sessionId: string) =>
+      writeSessions(agentId, (pinned) => togglePin(pinned, sessionId)),
+    moveSession: (agentId: string, sessionId: string, drop: PinDrop | null) =>
+      writeSessions(agentId, (pinned) => movePin(pinned, sessionId, drop)),
     stepSession: (
       agentId: string,
       sessionId: string,
       step: -1 | 1,
       shown: ReadonlySet<string>,
     ) =>
-      writeSessions(
-        agentId,
-        stepPin(currentPins().sessions[agentId] ?? [], sessionId, step, shown),
+      writeSessions(agentId, (pinned) =>
+        stepPin(pinned, sessionId, step, shown),
       ),
-    toggleSession: (agentId: string, sessionId: string) =>
-      writeSessions(
-        agentId,
-        togglePin(currentPins().sessions[agentId] ?? [], sessionId),
+    unpinSession: (agentId: string, sessionId: string) =>
+      writeSessions(agentId, (pinned) =>
+        pinned.filter((id) => id !== sessionId),
       ),
-    moveSession: (agentId: string, sessionId: string, drop: PinDrop | null) =>
-      writeSessions(
-        agentId,
-        movePin(currentPins().sessions[agentId] ?? [], sessionId, drop),
-      ),
-    unpinSession: (agentId: string, sessionId: string) => {
-      const pinned = currentPins().sessions[agentId] ?? [];
-      if (pinned.includes(sessionId))
-        writeSessions(
-          agentId,
-          pinned.filter((id) => id !== sessionId),
-        );
-    },
   };
 }

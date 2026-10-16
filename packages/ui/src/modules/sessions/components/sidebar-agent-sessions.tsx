@@ -236,8 +236,8 @@ function AgentSessionList({
         { kind: "destructive", confirmLabel: "Delete session" },
       )
     ) {
-      void deleteSession(s.sessionId, agentId);
-      pinActions.unpinSession(agentId, s.sessionId);
+      if (await deleteSession(s.sessionId, agentId))
+        pinActions.unpinSession(agentId, s.sessionId);
     }
   };
 
