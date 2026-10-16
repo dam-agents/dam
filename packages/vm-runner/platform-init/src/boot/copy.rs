@@ -189,10 +189,15 @@ fn xattr_set(path: &Path, name: &CString, value: &[u8]) -> io::Result<()> {
 pub const CONVERTED_FILE: &str = "converted";
 const CONVERTING: &str = ".converting";
 
+// UNIT_BOUNDARY_DESCRIPTION: whether the btrfs disk mounted at `top` holds this conversion's committed copy, as the last step of convert_into_subvolumes records it.
+pub fn committed(top: &Path, nonce: &str) -> bool {
+    fs::read_to_string(guest::system_store(top, CONVERTED_FILE))
+        .is_ok_and(|text| text.trim() == nonce)
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: copies an ext4 disk's platform root in the directory layout, mounted read-only at `old`, into a fresh btrfs disk mounted at `top`, in the subvolume layout. Each store is copied into a subvolume staged under a CONVERTING name (a disk with no home gets no agent subvolume, so its boot seeds one), which a retry deletes and starts again; the system store leaves out what every boot makes again (the root's work and merged layers, the legacy upper, layers a boot discarded, and the scratch folders) and keeps the kept root, the boot log, the trust cache and the seed record. The commit is the system subvolume's layout mark and CONVERTED_FILE, flushed, then both renames into place, so the disk names complete subvolumes or none. Returns None when `nonce` is already recorded as done.
 pub fn convert_into_subvolumes(old: &Path, top: &Path, nonce: &str) -> io::Result<Option<Copied>> {
-    let marker = guest::system_store(top, CONVERTED_FILE);
-    if fs::read_to_string(&marker).is_ok_and(|text| text.trim() == nonce) {
+    if committed(top, nonce) {
         return Ok(None);
     }
     let stores = [guest::AGENT_DIR, guest::SYSTEM_DIR];
@@ -517,6 +522,7 @@ mod tests {
                 .collect();
             names.sort();
             assert_eq!(names, [guest::AGENT_DIR, guest::SYSTEM_DIR]);
+            assert!(committed(&btrfs, "n1") && !committed(&btrfs, "n2"));
             assert_eq!(convert_into_subvolumes(&old, &btrfs, "n1").unwrap(), None);
         };
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(checks));

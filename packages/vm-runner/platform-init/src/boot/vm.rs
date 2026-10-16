@@ -410,7 +410,7 @@ const CONVERT_DEVICE: &str = "/dev/vdb";
 static CONVERTED: Mutex<Option<String>> = Mutex::new(None);
 const CONVERTED_CAPABILITY_PREFIX: &str = "dam-disk-converted:";
 
-// UNIT_BOUNDARY_DESCRIPTION: converts the ext4 storage disk to btrfs when the runner asks (CONVERT_RECORD) and attached the btrfs disk (CONVERT_DEVICE): the ext4 disk is checked, then mounted read-only and never written again, and copied into the btrfs disk's subvolumes (copy::convert_into_subvolumes). The copy can outlast smolvm's start timeout, so the doorbell rings first, and the runner waits on the guest's answer instead. This boot then runs on the btrfs disk. Any failure is a console warning and a boot on the ext4 disk as before; the runner, which sees no capability, tries again or gives up. None when no conversion was asked for or it failed.
+// UNIT_BOUNDARY_DESCRIPTION: converts the ext4 storage disk to btrfs when the runner asks (CONVERT_RECORD) and attached the btrfs disk (CONVERT_DEVICE): the ext4 disk is checked, then mounted read-only and never written again, and copied into the btrfs disk's subvolumes (copy::convert_into_subvolumes). The copy can outlast smolvm's start timeout, so the doorbell rings first, and the runner waits on the guest's answer instead. This boot then runs on the btrfs disk. The btrfs disk is mounted first, and a copy it already holds for this nonce boots at once, without the ext4 disk: a guest whose committed copy booted must never boot the ext4 disk again, which would hide that boot's writes. A btrfs disk that does not mount fails the boot for the same reason. A failure before the commit is a console warning and a boot on the ext4 disk as before, and only then may the runner, which sees no capability, count a failed boot. None when no conversion was asked for or it failed.
 fn convert_storage(target: &Path) -> Option<(PathBuf, u32)> {
     let nonce = fs::read_to_string(Path::new(guest::STAGE0_SHARE).join(CONVERT_RECORD)).ok()?;
     let nonce = nonce.trim().to_string();
@@ -418,6 +418,34 @@ fn convert_storage(target: &Path) -> Option<(PathBuf, u32)> {
         return None;
     }
     ring_doorbell();
+    let committed = |copied: Option<copy::Copied>| {
+        match copied {
+            Some(c) => announce(&format!(
+                "converted the storage disk to btrfs: {} entries, {} bytes, {} hard links, {} skipped",
+                c.entries, c.bytes, c.hard_links, c.skipped
+            )),
+            None => announce("the storage disk was converted to btrfs by an earlier boot"),
+        }
+        *CONVERTED.lock().unwrap_or_else(|e| e.into_inner()) = Some(nonce.clone());
+        Some((target.to_path_buf(), guest::LAYOUT_SUBVOLUMES))
+    };
+    if let Err(e) = mkdir_all(target).and_then(|()| {
+        mount_typed(
+            CONVERT_DEVICE,
+            target,
+            "btrfs",
+            libc::MS_NOATIME,
+            "compress=zstd:1",
+        )
+    }) {
+        fatal!("mounting the btrfs disk this disk is being converted to: {e}; refusing to boot the ext4 disk, which may be older than a copy that booted. Both disks are kept as they are");
+    }
+    if let Err(e) = grow_btrfs(target) {
+        logf!("WARNING: growing btrfs to the disk ({e}); it keeps the size it had");
+    }
+    if copy::committed(target, &nonce) {
+        return committed(None);
+    }
     check_ext4();
     let old = Path::new(STAGE).join("ext4");
     let result = mkdir_all(&old)
@@ -431,40 +459,17 @@ fn convert_storage(target: &Path) -> Option<(PathBuf, u32)> {
             )
         })
         .and_then(|()| {
-            mkdir_all(target)?;
-            mount_typed(
-                CONVERT_DEVICE,
-                target,
-                "btrfs",
-                libc::MS_NOATIME,
-                "compress=zstd:1",
-            )?;
-            if let Err(e) = grow_btrfs(target) {
-                logf!("WARNING: growing btrfs to the disk ({e}); it keeps the size it had");
-            }
-            let converted =
+            let copied =
                 copy::convert_into_subvolumes(&old.join(guest::DISK_ROOT_DIR), target, &nonce);
-            if converted.is_err() {
-                let _ = umount(target);
-            }
-            converted
+            let _ = umount(&old);
+            copied
         });
-    let _ = umount(&old);
     match result {
-        Ok(copied) => {
-            match copied {
-                Some(c) => announce(&format!(
-                    "converted the storage disk to btrfs: {} entries, {} bytes, {} hard links, {} skipped",
-                    c.entries, c.bytes, c.hard_links, c.skipped
-                )),
-                None => announce("the storage disk was converted to btrfs by an earlier boot"),
-            }
-            *CONVERTED.lock().unwrap_or_else(|e| e.into_inner()) = Some(nonce);
-            Some((target.to_path_buf(), guest::LAYOUT_SUBVOLUMES))
-        }
+        Ok(copied) => committed(copied),
         Err(e) => {
+            let _ = umount(target);
             announce(&format!(
-                "WARNING: converting the storage disk to btrfs: {e}; it boots on its ext4 disk"
+                "WARNING: converting the storage disk to btrfs: {e}; nothing was committed, so it boots on its ext4 disk"
             ));
             None
         }
