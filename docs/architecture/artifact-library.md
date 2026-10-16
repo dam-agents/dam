@@ -177,7 +177,7 @@ flowchart LR
   Editing is bounded further by what the platform accepts in one inline write, which is less than it hands back to read — a document past that bound stays readable but offers no Edit, so no surface advertises an action the save would refuse.
   The version history is readable rather than merely steppable — each version says when it was written and who wrote it.
   Retention is reached from the artifact's own menu rather than the sharing dialog, and stays available whatever the artifact's visibility — it governs deletion, not the link.
-  An artifact's visibility badge is also the control that opens the sharing dialog, so the state and the means to change it sit in one place; the rows lead with a visibility icon that opens it, while every other action on a row stays behind a hover reveal.
+  An artifact's visibility badge is also the control that opens the sharing dialog, so the state and the means to change it sit in one place; the rows lead with a visibility icon that opens it, the creator byline opens that Agent's chat, and every other action on a row stays behind a hover reveal.
   The docked preview's top bar carries the same controls — a visibility icon that opens the sharing dialog, the title, which opens rename, and icon-only Edit, Share, Download, Open in new tab once a share link exists, and Discuss with agent — so opening an artifact is a place to start sharing or continuing it rather than a dead end.
   It returns to the list from a back control and maximizes through the side panel's edge tab, as an open file does.
   Deleting the artifact a preview is showing closes that preview.
@@ -186,7 +186,7 @@ flowchart LR
   Nothing reads membership as a claim about provenance.
 - The chat file panel's toolbar carries a **Create artifact / Sync to artifact** action that publishes the open file as above and switches the dock to the resulting artifact; binary and oversized files are excluded.
 - In a chat the preview shares one dock with the sandbox file viewer, so opening either evicts the other.
-  The dock belongs to the chat it was opened in: switching Agent, going back or leaving the chat closes it, while moving between pages outside a chat keeps it open.
+  The dock belongs to the chat it was opened in: switching Agent, going back or leaving the chat closes it, and so does entering a chat; moving between pages outside a chat keeps it open.
   Whatever displaces or closes an unsaved edit asks first — opening another item, dismissing the surface, and every navigation that leaves the chat, the browser's back and forward included; keeping the edit stays where the user was.
 
 ## Lifecycle and cleanup

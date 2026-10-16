@@ -98,7 +98,10 @@ function SharingControls({ artifact, onClose }: Props) {
             pendingLabel="Sharing…"
             pending={isPending}
             cancelDisabled={isPending}
-            onSubmit={() => void submit()}
+            onSubmit={() => {
+              setConfirmingPublic(false);
+              void submit();
+            }}
           />
         </>
       ) : (

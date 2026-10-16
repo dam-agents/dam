@@ -15,6 +15,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { match } from "ts-pattern";
 
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -96,13 +97,19 @@ export function ChatArtifactsPanel({
   ref?: Ref<HTMLDivElement>;
 }) {
   const [scope, setScope] = useState<ArtifactScope>("agent");
-  const scopeAgentId = scope === "agent" ? agentId : null;
-  const { data: artifacts = [], isPending } = useArtifacts(
+  const scopeAgentId = match(scope)
+    .with("agent", () => agentId)
+    .with("all", () => null)
+    .exhaustive();
+  const artifactsQuery = useArtifacts(
     open ? (scopeAgentId ? { agentId: scopeAgentId } : {}) : null,
   );
-  const { data: folders = [], isPending: foldersPending } =
-    useArtifactFolders(open);
-  const loading = open && (isPending || foldersPending);
+  const foldersQuery = useArtifactFolders(open);
+  const { data: artifacts = [] } = artifactsQuery;
+  const { data: folders = [] } = foldersQuery;
+  const failed = artifactsQuery.isError || foldersQuery.isError;
+  const loading =
+    open && !failed && (artifactsQuery.isPending || foldersQuery.isPending);
   const [search, setSearch] = useState("");
   const term = search.trim().toLowerCase();
   const shown = useMemo(
@@ -220,7 +227,21 @@ export function ChatArtifactsPanel({
           className="min-w-0 flex-1"
         />
       </div>
-      {loading || shown.length === 0 ? (
+      {failed ? (
+        <p className="px-4 py-5 text-xs text-muted-foreground">
+          Couldn't load artifacts.{" "}
+          <button
+            type="button"
+            className="underline hover:text-foreground"
+            onClick={() => {
+              void artifactsQuery.refetch();
+              void foldersQuery.refetch();
+            }}
+          >
+            Retry
+          </button>
+        </p>
+      ) : loading || groups.length === 0 ? (
         <p className="px-4 py-5 text-xs text-muted-foreground">
           {loading
             ? "Loading…"
@@ -321,8 +342,8 @@ export function ChatArtifactsPanel({
           if (!open) setDeleteFolderTarget(null);
         }}
         kind="destructive"
-        title={`Delete folder “${deleteFolderTarget?.name}”?`}
-        description="Artifacts inside are kept and become ungrouped."
+        title={`Delete folder “${deleteFolderTarget?.name ?? ""}”?`}
+        description="Artifacts inside are kept and move to the top level."
         confirmLabel="Delete"
         onConfirm={() => {
           if (deleteFolderTarget)
@@ -506,7 +527,8 @@ function CreatorByline({ agentId }: { agentId: string | null }) {
 function AgentCreatorLink({ agentId }: { agentId: string }) {
   const selectAgent = useStore((s) => s.selectAgent);
   const agent = useAgentsList().find((a) => a.id === agentId);
-  const agentName = agent?.name ?? agentId;
+  if (!agent) return <span className="truncate">{agentId}</span>;
+  const agentName = agent.name;
   return (
     <Tooltip content={`Open ${agentName}`}>
       <button
@@ -520,7 +542,7 @@ function AgentCreatorLink({ agentId }: { agentId: string }) {
       >
         <AgentAvatar
           name={agentName}
-          avatar={agent?.avatar}
+          avatar={agent.avatar}
           size={14}
           className="shrink-0"
         />
