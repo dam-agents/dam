@@ -34,7 +34,11 @@ function unused<T extends object>(fields: Partial<T> = {}): T {
   }) as T;
 }
 
-const ENDPOINT = { baseUrl: "http://llm.models.svc:8000", model: "m-flash" };
+const ENDPOINT = {
+  baseUrl: "http://llm.models.svc:8000",
+  model: "m-flash",
+  name: "Acme",
+};
 
 function makeService(opts: { configured?: boolean } = {}) {
   const rows = new Map<string, Connection>();

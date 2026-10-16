@@ -305,6 +305,7 @@ const BEDROCK: HeaderConnectionTemplate = {
 export interface PlatformProviderEndpoint {
   baseUrl: string;
   model: string;
+  name: string;
 }
 
 function platformLlm(

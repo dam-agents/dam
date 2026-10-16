@@ -118,9 +118,11 @@ export const PLATFORM_LLM_TEMPLATE_ID = "platform-llm";
 export function platformLlmEnvMappings(endpoint: {
   baseUrl: string;
   model: string;
+  name: string;
 }): EnvMapping[] {
   return [
     { envName: "PLATFORM_LLM_BASE_URL", placeholder: endpoint.baseUrl },
+    { envName: "PLATFORM_LLM_NAME", placeholder: endpoint.name },
     { envName: "ANTHROPIC_AUTH_TOKEN", placeholder: DEFAULT_ENV_PLACEHOLDER },
     { envName: "ANTHROPIC_BASE_URL", placeholder: endpoint.baseUrl },
     { envName: "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", placeholder: "1" },

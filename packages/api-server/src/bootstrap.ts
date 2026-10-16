@@ -688,7 +688,10 @@ export async function bootstrap() {
   const connectionsBoot = composeConnectionsAtBoot({
     db,
     shareBaseUrl: config.shareBaseUrl,
-    platformProvider: config.platformProvider,
+    platformProvider: config.platformProvider && {
+      ...config.platformProvider,
+      name: config.brand.name,
+    },
     e2eEnabled: config.e2eEnabled,
     secretStore,
     pendingFlowStore: createRedisTtlStore(

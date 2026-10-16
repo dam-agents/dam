@@ -231,7 +231,10 @@ describe("the model catalog", () => {
         {
           id: "conn-platform",
           template: "platform-llm",
-          env: { PLATFORM_LLM_BASE_URL: "http://vllm.example:8000" },
+          env: {
+            PLATFORM_LLM_BASE_URL: "http://vllm.example:8000",
+            PLATFORM_LLM_NAME: "Acme",
+          },
         },
       ],
     );
@@ -249,6 +252,7 @@ describe("the model catalog", () => {
       prices: "provider",
     });
     expect(entry.dialects).toHaveLength(3);
+    expect(catalog.providers()[0]?.displayName).toBe("Acme");
   });
   /** TEST_SCENARIO: Curve Bender's listing fails on a refresh; its last list
    * stays, marked unavailable, and IBM's fresh list is untouched. A Connection

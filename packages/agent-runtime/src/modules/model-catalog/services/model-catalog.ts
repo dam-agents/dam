@@ -89,7 +89,9 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
       connectionId: layer.id,
       template,
       alias: alias ?? ("ibm" as const),
-      displayName: type ? PROVIDERS[type].displayName : template || layer.id,
+      displayName:
+        layer.env.PLATFORM_LLM_NAME ??
+        (type ? PROVIDERS[type].displayName : template || layer.id),
       dialects: alias ? PROVIDER_DIALECTS[alias] : [],
       ...(listing?.harnesses && { harnesses: listing.harnesses }),
     };
