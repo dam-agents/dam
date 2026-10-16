@@ -324,6 +324,11 @@ fn mount_storage(target: &Path) -> (PathBuf, u32) {
     if let Err(e) = mkdir_all(target) {
         fatal!("creating {}: {e}", target.display());
     }
+    if magic_at(STORAGE_DEVICE, 1024 + 56, &[0x53, 0xEF]) {
+        if let Some(converted) = convert_storage(target) {
+            return converted;
+        }
+    }
     if magic_at(STORAGE_DEVICE, 0x1_0040, b"_BHRfS_M") {
         if let Err(e) = mount_typed(
             STORAGE_DEVICE,
@@ -397,6 +402,81 @@ fn settle_directory_layout(target: &Path) {
             )),
         }
     }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the share record that asks this boot to convert its ext4 storage disk to btrfs, holding the conversion's nonce, and the fresh btrfs disk the runner attached for it as the second disk.
+const CONVERT_RECORD: &str = "convert";
+const CONVERT_DEVICE: &str = "/dev/vdb";
+
+// UNIT_BOUNDARY_DESCRIPTION: the nonce of the conversion this boot committed, which Pong names as a capability (CONVERTED_CAPABILITY_PREFIX) so the runner swaps the disks only on the guest's word, over the socket only PID 1 holds; a console line any root process can forge.
+static CONVERTED: Mutex<Option<String>> = Mutex::new(None);
+const CONVERTED_CAPABILITY_PREFIX: &str = "dam-disk-converted:";
+
+// UNIT_BOUNDARY_DESCRIPTION: converts the ext4 storage disk to btrfs when the runner asks (CONVERT_RECORD) and attached the btrfs disk (CONVERT_DEVICE): the ext4 disk is checked, then mounted read-only and never written again, and copied into the btrfs disk's subvolumes (copy::convert_into_subvolumes). The copy can outlast smolvm's start timeout, so the doorbell rings first, and the runner waits on the guest's answer instead. This boot then runs on the btrfs disk. Any failure is a console warning and a boot on the ext4 disk as before; the runner, which sees no capability, tries again or gives up. None when no conversion was asked for or it failed.
+fn convert_storage(target: &Path) -> Option<(PathBuf, u32)> {
+    let nonce = fs::read_to_string(Path::new(guest::STAGE0_SHARE).join(CONVERT_RECORD)).ok()?;
+    let nonce = nonce.trim().to_string();
+    if nonce.is_empty() || !magic_at(CONVERT_DEVICE, 0x1_0040, b"_BHRfS_M") {
+        return None;
+    }
+    ring_doorbell();
+    check_ext4();
+    let old = Path::new(STAGE).join("ext4");
+    let result = mkdir_all(&old)
+        .and_then(|()| {
+            mount_typed(
+                STORAGE_DEVICE,
+                &old,
+                "ext4",
+                libc::MS_RDONLY | libc::MS_NOATIME,
+                "",
+            )
+        })
+        .and_then(|()| {
+            mkdir_all(target)?;
+            mount_typed(
+                CONVERT_DEVICE,
+                target,
+                "btrfs",
+                libc::MS_NOATIME,
+                "compress=zstd:1",
+            )?;
+            if let Err(e) = grow_btrfs(target) {
+                logf!("WARNING: growing btrfs to the disk ({e}); it keeps the size it had");
+            }
+            let converted =
+                copy::convert_into_subvolumes(&old.join(guest::DISK_ROOT_DIR), target, &nonce);
+            if converted.is_err() {
+                let _ = umount(target);
+            }
+            converted
+        });
+    let _ = umount(&old);
+    match result {
+        Ok(copied) => {
+            match copied {
+                Some(c) => announce(&format!(
+                    "converted the storage disk to btrfs: {} entries, {} bytes, {} hard links, {} skipped",
+                    c.entries, c.bytes, c.hard_links, c.skipped
+                )),
+                None => announce("the storage disk was converted to btrfs by an earlier boot"),
+            }
+            *CONVERTED.lock().unwrap_or_else(|e| e.into_inner()) = Some(nonce);
+            Some((target.to_path_buf(), guest::LAYOUT_SUBVOLUMES))
+        }
+        Err(e) => {
+            announce(&format!(
+                "WARNING: converting the storage disk to btrfs: {e}; it boots on its ext4 disk"
+            ));
+            None
+        }
+    }
+}
+
+fn umount(path: &Path) -> io::Result<()> {
+    let path = cstring(path.as_os_str())?;
+    // SAFETY: a NUL-terminated path that outlives the call.
+    succeeded(unsafe { libc::umount2(path.as_ptr(), 0) } == 0)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: struct btrfs_ioctl_vol_args, which the resize and the subvolume ioctls take: a NUL-terminated name in a fixed buffer.
@@ -703,10 +783,19 @@ fn respond(request: AgentRequest, conn: &mut File) -> AgentResponse {
     match request {
         AgentRequest::Ping => AgentResponse::Pong {
             version: smolvm_protocol::PROTOCOL_VERSION,
-            capabilities: vec![
+            capabilities: [
                 smolvm_protocol::QUIESCED_SHUTDOWN_CAPABILITY.to_string(),
                 smolvm_protocol::ONLINE_MEMORY_GROWTH_CAPABILITY.to_string(),
-            ],
+            ]
+            .into_iter()
+            .chain(
+                CONVERTED
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .as_ref()
+                    .map(|nonce| format!("{CONVERTED_CAPABILITY_PREFIX}{nonce}")),
+            )
+            .collect(),
         },
         AgentRequest::OnlineMemory {
             start_address,
@@ -1115,6 +1204,24 @@ mod tests {
         assert!(capabilities
             .iter()
             .any(|c| c == smolvm_protocol::ONLINE_MEMORY_GROWTH_CAPABILITY));
+    }
+
+    // TEST_SCENARIO: the runner swaps an ext4 disk for its btrfs copy only when a ping names that conversion's nonce, which the guest adds once the copy is committed and never before.
+    #[test]
+    fn a_ping_names_a_committed_conversion() {
+        let ping = || {
+            let mut conn = File::open("/dev/null").unwrap();
+            match respond(AgentRequest::Ping, &mut conn) {
+                AgentResponse::Pong { capabilities, .. } => capabilities,
+                other => panic!("{other:?}"),
+            }
+        };
+        assert!(!ping()
+            .iter()
+            .any(|c| c.starts_with(CONVERTED_CAPABILITY_PREFIX)));
+        *CONVERTED.lock().unwrap() = Some("n1".into());
+        assert!(ping().contains(&format!("{CONVERTED_CAPABILITY_PREFIX}n1")));
+        *CONVERTED.lock().unwrap() = None;
     }
 
     // TEST_SCENARIO: a btrfs disk in the directory layout moves to the subvolume layout at boot: the home becomes the root of its own subvolume with its owner, mode and every entry, one named like the old layout's directory included, the platform state keeps its kept root and is marked with the new layout, and the old tree is set aside for the background delete, with what smolvm's guest agent left at the top. What an attempt cut short left is deleted first. A DISK_ROOT_DIR a rolled-back platform-init then makes beside the subvolumes is set aside and kept, and the live home stays. Needs root and mkfs.btrfs, for a loop-mounted filesystem: `sudo -E cargo test -p platform-init -- --ignored migrates`.
