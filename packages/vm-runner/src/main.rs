@@ -268,8 +268,15 @@ fn prepare_host(args: &Args) -> anyhow::Result<()> {
 async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
     let nested = args.nested_virtualization;
     let tools = (!args.tools_dir.is_empty()).then(|| PathBuf::from(&args.tools_dir));
+    let install = args
+        .smolvm
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default();
+    let btrfs = install.join(vm_runner::embedded::BTRFS_TEMPLATE);
     let runtime = Arc::new(
-        tokio::task::spawn_blocking(move || Smolvm::open(nested, tools.as_deref())).await??,
+        tokio::task::spawn_blocking(move || Smolvm::open(nested, tools.as_deref(), btrfs))
+            .await??,
     );
     let server = Server::start(
         Config {
@@ -299,11 +306,6 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
         runtime,
     )?;
 
-    let install = args
-        .smolvm
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_default();
     let home = std::env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_default();

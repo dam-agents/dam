@@ -39,25 +39,37 @@ if [ ! -f "$release/storage-template.ext4" ]; then
   limactl shell "$LIMA_INSTANCE" sh -c 'cd /tmp && tar -cSf - storage-template.ext4 overlay-template.ext4 && rm storage-template.ext4 overlay-template.ext4' | tar -xf - -C "$release"
 fi
 
-# The runner formats a new disk with Homebrew's keg-only e2fsprogs; without it
-# smolvm copies its 20 GiB template, with no journal and at no smaller size.
-[ -x /opt/homebrew/opt/e2fsprogs/sbin/mkfs.ext4 ] || [ -x /usr/local/opt/e2fsprogs/sbin/mkfs.ext4 ] || command -v mkfs.ext4 >/dev/null ||
-  echo "note: no mkfs.ext4, so new vm agent disks get no journal and are made at least 20 GiB; brew install e2fsprogs" >&2
-
 # platform-init and platform-runc run inside the guest, so they are the static
-# Linux binaries from the runner image, not anything built for this Mac. The
-# image is rebuilt unless the caller just did (SKIP_IMAGE_BUILD), so they match
-# the runner built above.
+# Linux binaries from the runner image, not anything built for this Mac, as
+# are the guest agent smolvm.patch rebuilds (it knows btrfs disks) and
+# the btrfs disk template. The image is rebuilt unless the
+# caller just did (SKIP_IMAGE_BUILD), so they match the runner built above.
 image="$pkg/dist/oci/vm-runner.tar"
 [ -n "${SKIP_IMAGE_BUILD:-}" ] && [ -f "$image" ] || mise run //packages/vm-runner:oci
-for bin in platform-init platform-runc; do
+for path in usr/local/libexec/vm-runner/platform-init usr/local/libexec/vm-runner/platform-runc opt/smolvm/agent-rootfs/usr/local/bin/smolvm-agent opt/smolvm/storage-template.btrfs.zst; do
+  bin="${path##*/}"
   for blob in $(tar -tf "$image" | grep '^blobs/sha256/.'); do
-    tar -xOf "$image" "$blob" | gzip -cdf | tar -xOf - "usr/local/libexec/vm-runner/$bin" > "$R/$bin.new" 2>/dev/null || true
+    tar -xOf "$image" "$blob" | gzip -cdf | tar -xOf - "$path" > "$R/$bin.new" 2>/dev/null || true
     [ ! -s "$R/$bin.new" ] || break
   done
   [ -s "$R/$bin.new" ] || { echo "FATAL: no $bin in $image" >&2; exit 1; }
   chmod 755 "$R/$bin.new"
 done
+
+# The guest kernel is the runner image's: libkrunfw rebuilt with
+# libkrunfw.patch, which adds btrfs and zram. The image build leaves that arm64 kernel,
+# wrapped for macOS, in the build VM's cache (see oci); it is compiled here in
+# place of the release's libkrunfw.
+. "$MISE_CONFIG_ROOT/.mise/lib/lima-build.sh"
+fw_id="$(sed -n 's/^libkrunfw-commit=//p' "$pkg/smolvm.pin")-$(git -C "$pkg" hash-object libkrunfw.patch)"
+if [ "$(cat "$release/lib/libkrunfw.id" 2>/dev/null)" != "$fw_id" ]; then
+  limactl shell --workdir / "$LIMA_BUILD_VM" sh -c 'cat ~/.cache/platform-vm-runner/libkrunfw-"$1"-darwin.c' _ "$fw_id" > "$R/kernel.c"
+  cc -fPIC -DABI_VERSION=5 -shared -O2 -install_name libkrunfw.5.dylib -o "$R/libkrunfw.5.dylib" "$R/kernel.c" 2>/dev/null
+  codesign -f -s - "$R/libkrunfw.5.dylib"
+  mv "$R/libkrunfw.5.dylib" "$release/lib/libkrunfw.5.dylib"
+  rm "$R/kernel.c"
+  echo "$fw_id" > "$release/lib/libkrunfw.id"
+fi
 
 # The chart renders the runner's token and asks cert-manager for its serving
 # certificate (virtualization.runner.hostAddress); the runner holds copies.
@@ -85,6 +97,8 @@ host_runner_stop
 mv "$R/vm-runner.new" "$R/vm-runner"
 mv "$R/platform-init.new" "$R/platform-init"
 mv "$R/platform-runc.new" "$R/platform-runc"
+mv "$R/storage-template.btrfs.zst.new" "$release/storage-template.btrfs.zst"
+mv "$R/smolvm-agent.new" "$release/agent-rootfs/usr/local/bin/smolvm-agent"
 mem_mib="${PLATFORM_VM_RUNNER_MEMORY_MIB:-$(( $(sysctl -n hw.memsize) / 1048576 / 3 ))}"
 (
   cd "$R"

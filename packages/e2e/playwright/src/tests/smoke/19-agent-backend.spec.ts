@@ -16,6 +16,7 @@ import {
   createAgentOn,
   deleteBackendHost,
   expectHomeFile,
+  inGuest,
   laneBackend,
   refreshingToken,
   requireBackend,
@@ -86,6 +87,29 @@ test("grows its machine past the boot RAM", async () => {
       },
     )
     .toBe(true);
+});
+
+// TEST_SCENARIO: every vm machine runs on the guest kernel, guest agent and runner this platform patches for them. HOME is on btrfs, mounted compressed with zstd level 1, under a UUID of the disk's own rather than the template's (the template's stays as its metadata UUID), and the guest swaps to zram compressed with zstd. An unpatched kernel has neither, and an unpatched agent or runner would mount ext4 or format over the disk.
+test("keeps HOME on compressed btrfs with its own UUID, and swaps to zram", async () => {
+  test.skip(
+    laneBackend !== "vm",
+    "only a vm machine has a disk and a kernel of its own",
+  );
+  const guest = inGuest(
+    agentId,
+    "grep ' /home/agent ' /proc/self/mountinfo; for d in /sys/fs/btrfs/*-*; do echo \"fsid ${d##*/} metadata $(cat $d/metadata_uuid)\"; done; cat /proc/swaps; cat /sys/block/zram0/comp_algorithm",
+  );
+  expect(guest).toMatch(
+    / \/home\/agent .* - btrfs \/dev\/vda \S*compress=zstd:1/,
+  );
+  const [, fsid, metadata] = /^fsid (\S+) metadata (\S+)$/m.exec(guest) ?? [];
+  expect(fsid, "the guest mounted one btrfs filesystem").toBeDefined();
+  expect(
+    metadata,
+    "the disk keeps the template's UUID as its metadata UUID",
+  ).not.toEqual(fsid);
+  expect(guest).toMatch(/^\/dev\/zram0\s+partition/m);
+  expect(guest).toContain("[zstd]");
 });
 
 // TEST_SCENARIO: on the vm Backend the home dashboard shows the owner's memory and storage pools as meters read from the owner's runner, with this agent's own share in each.

@@ -30,6 +30,7 @@ pub struct Smolvm {
     proc_root: PathBuf,
     nested: bool,
     tools: Option<PathBuf>,
+    btrfs: PathBuf,
 }
 
 const USER: &str = "root";
@@ -57,7 +58,7 @@ const GUEST_DNS_SINK: std::net::Ipv4Addr = std::net::Ipv4Addr::LOCALHOST;
 const MANAGED_BY: (&str, &str) = ("app.kubernetes.io/managed-by", "vm-runner");
 
 impl Smolvm {
-    pub fn open(allow_nesting: bool, tools: Option<&Path>) -> anyhow::Result<Self> {
+    pub fn open(allow_nesting: bool, tools: Option<&Path>, btrfs: PathBuf) -> anyhow::Result<Self> {
         let nested = allow_nesting && host_nests(Path::new("/sys"));
         tracing::info!(
             allow_nesting,
@@ -76,6 +77,7 @@ impl Smolvm {
             proc_root: PathBuf::from("/proc"),
             nested,
             tools,
+            btrfs,
         })
     }
 
@@ -141,7 +143,12 @@ impl Runtime for Smolvm {
                 Some(USER.to_string()),
             )?;
             if let Some(gib) = storage_gib {
-                raw_storage_disk(id, gib)?;
+                if let Err(e) = raw_storage_disk(id, gib, &self.btrfs) {
+                    if let Err(deleted) = self.runtime.delete_machine(id) {
+                        tracing::warn!(machine = id, error = %deleted, "could not delete a machine whose disk was not made");
+                    }
+                    return Err(e);
+                }
             }
             record_gateway_host_port(id, machine.spec)?;
             let resolver = guest_resolver(machine.spec)?;
@@ -730,60 +737,94 @@ fn resolved_image(image: &str) -> anyhow::Result<String> {
     })
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: creates the machine's storage disk as a raw sparse file before its first boot. Left to smolvm, a disk of smolvm's default size is made instead as a qcow2 overlay over the template shipped with the runner image, named by its absolute path in that image — so an upgrade that ships a different template would change the bytes under every such agent's home. A raw disk depends on nothing. A new one is formatted here, with a journal, at its full size: both of smolvm's own fallbacks — formatting on the host when it finds no template, and formatting in the guest when the disk will not mount — leave a disk with no journal, and an unclean stop of such a disk can lose what the agent last wrote. Only a file no guest has written is formatted, so the host never parses a filesystem a guest had root on.
-fn raw_storage_disk(id: &str, gib: u64) -> anyhow::Result<()> {
+// UNIT_BOUNDARY_DESCRIPTION: creates the machine's storage disk as a raw sparse file before its first boot, made btrfs from the template (format_btrfs). Left to smolvm, a disk of smolvm's default size is made instead as a qcow2 overlay over the ext4 template shipped with the runner image, named by its absolute path in that image — so an upgrade that ships a different template would change the bytes under every such agent's home. A raw disk depends on nothing. A disk that cannot be made fails the create, which then deletes the machine: smolvm would otherwise make a disk of its own at the next start. Only a file no guest has written is formatted, so the host never parses a filesystem a guest had root on.
+fn raw_storage_disk(id: &str, gib: u64, template: &Path) -> anyhow::Result<()> {
     let disk = storage_disk_path(id);
     let fresh = !disk.exists();
     StorageDisk::open_or_create_at(&disk, gib)?;
     if fresh {
-        format_journaled(&disk);
+        if let Err(e) = format_btrfs(&disk, gib, template) {
+            let _ = std::fs::remove_file(&disk);
+            return Err(e.context(format!(
+                "making {} btrfs from {}",
+                disk.display(),
+                template.display()
+            )));
+        }
     }
     Ok(())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: where mkfs.ext4 is: on the runner image's PATH, or Homebrew's e2fsprogs on a Mac host runner, which installs it outside PATH.
-const MKFS_EXT4: [&str; 3] = [
-    "mkfs.ext4",
-    "/opt/homebrew/opt/e2fsprogs/sbin/mkfs.ext4",
-    "/usr/local/opt/e2fsprogs/sbin/mkfs.ext4",
-];
+// UNIT_BOUNDARY_DESCRIPTION: the btrfs template, beside the smolvm release: an empty 256 MiB btrfs with mixed block groups (see the image build: a guard file that preallocates the guest's room must not starve its metadata) and single profiles, compressed with zstd to a few KiB.
+pub const BTRFS_TEMPLATE: &str = "storage-template.btrfs.zst";
 
-// UNIT_BOUNDARY_DESCRIPTION: formats a fresh sparse disk as ext4 with a journal. Lazy init leaves the inode tables and the journal unzeroed, which on a file never written reads as zeros anyway, so the format writes little and takes well under a second at any size; the guest kernel zeroes the inode tables later, as it does on any disk formatted this way. A format that succeeds also writes smolvm's format marker, so smolvm never copies its template over the disk and the next start does not report an unmarked filesystem. A host with no mkfs.ext4, or a format that fails, leaves the disk empty for smolvm to format as before.
-fn format_journaled(disk: &Path) {
-    let args = [
-        "-F",
-        "-q",
-        "-m",
-        "0",
-        "-L",
-        "smolvm",
-        "-E",
-        "lazy_itable_init=1,lazy_journal_init=1,nodiscard",
-    ];
-    for mkfs in MKFS_EXT4 {
-        match std::process::Command::new(mkfs)
-            .args(args)
-            .arg(disk)
-            .output()
-        {
-            Ok(out) if out.status.success() => {
-                if let Err(e) = std::fs::write(disk.with_extension("formatted"), "1") {
-                    tracing::warn!(disk = %disk.display(), error = %e, "could not mark the formatted storage disk");
-                }
-                return;
-            }
-            Ok(out) => {
-                tracing::warn!(disk = %disk.display(), stderr = %String::from_utf8_lossy(&out.stderr).trim(), "formatting the storage disk failed; smolvm formats it instead, without a journal");
-                return;
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => {
-                tracing::warn!(disk = %disk.display(), error = %e, "formatting the storage disk failed; smolvm formats it instead, without a journal");
-                return;
-            }
+// UNIT_BOUNDARY_DESCRIPTION: makes a fresh sparse disk btrfs by expanding the template over its first 256 MiB, sparse, so only the few MiB that hold data are written, puts the file back at its full size, and gives it a UUID of its own. The guest grows the filesystem to the disk while it mounts it. A format that succeeds writes smolvm's format marker, so smolvm never copies its ext4 template over the disk.
+fn format_btrfs(disk: &Path, gib: u64, template: &Path) -> anyhow::Result<()> {
+    let out = std::process::Command::new("zstd")
+        .args(["-d", "-q", "-f", "--sparse", "-o"])
+        .arg(disk)
+        .arg(template)
+        .output()
+        .context("running zstd")?;
+    anyhow::ensure!(
+        out.status.success(),
+        "zstd: {}",
+        String::from_utf8_lossy(&out.stderr).trim()
+    );
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(disk)?
+        .set_len(gib << 30)?;
+    give_unique_fsid(disk)?;
+    std::fs::write(disk.with_extension("formatted"), "1")?;
+    Ok(())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: where a btrfs superblock copy sits that the template can hold: the primary at 64 KiB and the first mirror at 64 MiB. The second mirror, at 256 GiB, is past the template's end.
+const BTRFS_SUPERBLOCKS: [u64; 2] = [0x1_0000, 0x400_0000];
+const BTRFS_INCOMPAT_METADATA_UUID: u64 = 1 << 10;
+
+// UNIT_BOUNDARY_DESCRIPTION: gives a disk made from the btrfs template a filesystem UUID of its own, as `btrfstune -m` does: the superblocks take a random UUID, keep the template's as the metadata UUID (the METADATA_UUID incompat flag) so no tree block is rewritten, and get their crc32c again. Two disks from one template would otherwise share a UUID, and a guest or host that sees both would take them for one filesystem. A superblock copy that is not btrfs, or not checksummed with crc32c, fails the format.
+fn give_unique_fsid(disk: &Path) -> std::io::Result<()> {
+    use std::io::Read;
+    use std::os::unix::fs::FileExt;
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(disk)?;
+    let mut fsid = [0u8; 16];
+    std::fs::File::open("/dev/urandom")?.read_exact(&mut fsid)?;
+    fsid[6] = fsid[6] & 0x0f | 0x40;
+    fsid[8] = fsid[8] & 0x3f | 0x80;
+    for offset in BTRFS_SUPERBLOCKS {
+        let mut sb = [0u8; 4096];
+        file.read_exact_at(&mut sb, offset)?;
+        if &sb[64..72] != b"_BHRfS_M" || sb[196..198] != [0, 0] {
+            return Err(std::io::Error::other(format!(
+                "no crc32c btrfs superblock at {offset:#x}"
+            )));
         }
+        let incompat = u64::from_le_bytes(sb[188..196].try_into().expect("8 bytes"));
+        if incompat & BTRFS_INCOMPAT_METADATA_UUID == 0 {
+            sb.copy_within(32..48, 571);
+            sb[188..196].copy_from_slice(&(incompat | BTRFS_INCOMPAT_METADATA_UUID).to_le_bytes());
+        }
+        sb[32..48].copy_from_slice(&fsid);
+        sb[..32].fill(0);
+        let crc = crc32c(&sb[32..]);
+        sb[..4].copy_from_slice(&crc.to_le_bytes());
+        file.write_all_at(&sb, offset)?;
     }
-    tracing::warn!(disk = %disk.display(), "no mkfs.ext4; smolvm formats the storage disk instead, without a journal");
+    file.sync_all()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: CRC-32C (Castagnoli, reflected 0x82F63B78), bit by bit: it runs over two 4 KiB superblocks once per new disk, so a table or a crate buys nothing.
+fn crc32c(data: &[u8]) -> u32 {
+    !data.iter().fold(!0u32, |crc, &byte| {
+        (0..8).fold(crc ^ u32::from(byte), |crc, _| {
+            (crc >> 1) ^ (0x82F6_3B78 & (crc & 1).wrapping_neg())
+        })
+    })
 }
 
 fn storage_disk_path(id: &str) -> PathBuf {
@@ -852,7 +893,7 @@ mod tests {
         let tree = home.path.join("images/quay.io_x_vm_1/rootfs");
         fs::create_dir_all(&share).unwrap();
         fs::create_dir_all(&tree).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
         let spec = spec();
         let launch = launch();
 
@@ -1070,7 +1111,7 @@ mod tests {
         let home = Home::new("loopback");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
         let looped = MachineSpec {
             allow_cidrs: Vec::new(),
             gateway_host_port: 30100,
@@ -1148,7 +1189,7 @@ mod tests {
         let home = Home::new("nested");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let mut smolvm = Smolvm::open(false, None).unwrap();
+        let mut smolvm = Smolvm::open(false, None, test_template()).unwrap();
         smolvm.nested = true;
         let plain = MachineSpec {
             gateway_host_port: 30100,
@@ -1204,7 +1245,7 @@ mod tests {
         let home = Home::new("open");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
         let launch = launch();
         smolvm
             .create(
@@ -1237,7 +1278,7 @@ mod tests {
         let home = Home::new("dns");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
         let spec = MachineSpec {
             gateway_host_port: 30100,
             ..spec()
@@ -1281,7 +1322,7 @@ mod tests {
         let home = Home::new("resolver");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
         let named = MachineSpec {
             guest_resolver: "10.96.0.7".into(),
             ..spec()
@@ -1356,7 +1397,7 @@ mod tests {
         let home = Home::new("raw");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
         let spec = spec();
         let launch = launch();
         smolvm
@@ -1378,7 +1419,7 @@ mod tests {
         assert!(!vm_data_dir("m1").join("storage.qcow2").exists());
     }
 
-    // TEST_SCENARIO: smolvm formats a storage disk at every start that lacks its format marker, by copying its template over it, and a first boot whose resize failed leaves the marker unwritten, as a Mac without resize2fs does for every disk below the template's size. So a machine whose disk already holds a filesystem, and no marker, is started here: after the runner has prepared it, the format smolvm's start runs must leave the agent's home on it, while a fresh machine's disk, which the create formats itself where mkfs.ext4 is installed, is otherwise still formatted from the template.
+    // TEST_SCENARIO: smolvm formats a storage disk at every start that lacks its format marker, by copying its template over it, and a first boot whose resize failed leaves the marker unwritten, as a Mac without resize2fs does for every disk below the template's size. So a machine whose disk already holds a filesystem, and no marker, is started here: after the runner has prepared it, the format smolvm's start runs must leave the agent's home on it, and leave a fresh machine's disk, which the create made btrfs, btrfs.
     #[test]
     fn a_start_never_copies_the_template_over_a_disk_that_holds_a_filesystem() {
         use std::os::unix::fs::FileExt;
@@ -1408,7 +1449,7 @@ mod tests {
             &home.path.join(".smolvm/storage-template.ext4"),
             b"TEMPLATE",
         );
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
         let spec = spec();
         let launch = launch();
         for id in ["used", "fresh"] {
@@ -1438,72 +1479,186 @@ mod tests {
         }
 
         assert_eq!(&payload(&storage_disk_path("used")), b"HOMEDATA");
-        if !mkfs_available() {
-            assert_eq!(&payload(&storage_disk_path("fresh")), b"TEMPLATE");
-        }
-    }
-
-    fn mkfs_available() -> bool {
-        MKFS_EXT4
-            .iter()
-            .any(|m| std::process::Command::new(m).arg("-V").output().is_ok())
-    }
-
-    fn has_journal(disk: &std::path::Path) -> bool {
-        use std::os::unix::fs::FileExt;
-        let mut compat = [0; 4];
-        fs::File::open(disk)
+        let mut magic = [0; 8];
+        fs::File::open(storage_disk_path("fresh"))
             .unwrap()
-            .read_exact_at(&mut compat, 1024 + 0x5C)
+            .read_exact_at(&mut magic, 0x10040)
             .unwrap();
-        u32::from_le_bytes(compat) & 0x4 != 0
+        assert_eq!(&magic, b"_BHRfS_M");
     }
 
-    // TEST_SCENARIO: a new machine's disk must come with a journal, or an unclean stop can lose what its agent last wrote: smolvm's own formats leave none. The create formats it at its full size, sparse, so the guest neither formats nor grows it; a disk a guest has already written is never formatted again.
-    #[test]
-    fn a_new_disk_holds_a_journaled_filesystem_at_its_full_size() {
-        if !mkfs_available() {
-            eprintln!("skipping: no mkfs.ext4 on this host");
-            return;
-        }
-        let home = Home::new("journal");
-        let share = home.path.join("share");
-        fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
-        let spec = spec();
-        let launch = launch();
-        let machine = Machine {
-            spec: &spec,
-            image: "quay.io/x/vm:1",
-            host_port: 32000,
-            share: &share,
-            launch: &launch,
-        };
-        smolvm.create("m1", &machine).unwrap();
+    fn test_template() -> PathBuf {
+        static TEMPLATE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+        TEMPLATE
+            .get_or_init(|| {
+                use std::os::unix::fs::FileExt;
+                let dir = std::env::temp_dir()
+                    .join(format!("vm-runner-btrfs-template-{}", std::process::id()));
+                fs::create_dir_all(&dir).unwrap();
+                let image = dir.join("template");
+                let file = fs::File::create(&image).unwrap();
+                file.set_len(256 << 20).unwrap();
+                for at in BTRFS_SUPERBLOCKS {
+                    file.write_all_at(b"TEMPLATEFSIDXXXX", at + 32).unwrap();
+                    file.write_all_at(b"_BHRfS_M", at + 64).unwrap();
+                }
+                let template = dir.join(BTRFS_TEMPLATE);
+                assert!(std::process::Command::new("zstd")
+                    .args(["-q", "-f", "-o"])
+                    .arg(&template)
+                    .arg(&image)
+                    .status()
+                    .expect("the tests need zstd")
+                    .success());
+                template
+            })
+            .clone()
+    }
 
+    // TEST_SCENARIO: a new machine's disk is the btrfs template expanded over a sparse file at its full size, marked formatted so smolvm never copies its ext4 template over it, under a UUID of its own: both superblock copies take it, and keep the template's as the metadata UUID. A template that cannot be expanded fails the create rather than leaving a disk smolvm would format, and the next create starts again on no disk.
+    #[test]
+    fn a_new_disk_is_the_btrfs_template_at_its_full_size_with_its_own_uuid() {
+        use std::os::unix::fs::{FileExt, MetadataExt};
+        let _home = Home::new("btrfs");
+        let at = |disk: &Path, offset: u64| {
+            let mut read = [0; 16];
+            fs::File::open(disk)
+                .unwrap()
+                .read_exact_at(&mut read, offset)
+                .unwrap();
+            read
+        };
+
+        fs::create_dir_all(vm_data_dir("m1")).unwrap();
+        raw_storage_disk("m1", 20, &test_template()).unwrap();
         let disk = storage_disk_path("m1");
-        assert!(has_journal(&disk), "the new disk has no journal");
+        assert_eq!(&at(&disk, 0x10040)[..8], b"_BHRfS_M");
         assert!(
             disk.with_extension("formatted").exists(),
-            "the formatted disk is not marked"
+            "the btrfs disk is not marked"
         );
         assert_eq!(fs::metadata(&disk).unwrap().len(), 20 << 30);
-        use std::os::unix::fs::MetadataExt;
         assert!(
-            fs::metadata(&disk).unwrap().blocks() * 512 < 1 << 30,
-            "formatting filled the sparse disk"
+            fs::metadata(&disk).unwrap().blocks() * 512 < 1 << 20,
+            "expanding the template filled the sparse disk"
+        );
+        let fsid = at(&disk, 0x10000 + 32);
+        assert_ne!(
+            &fsid, b"TEMPLATEFSIDXXXX",
+            "the disk kept the template's UUID"
+        );
+        for sb in BTRFS_SUPERBLOCKS {
+            assert_eq!(at(&disk, sb + 32), fsid, "the superblock copies disagree");
+            assert_eq!(
+                &at(&disk, sb + 571),
+                b"TEMPLATEFSIDXXXX",
+                "the metadata UUID is not the template's"
+            );
+        }
+
+        fs::create_dir_all(vm_data_dir("m3")).unwrap();
+        raw_storage_disk("m3", 20, &test_template()).unwrap();
+        assert_ne!(
+            at(&storage_disk_path("m3"), 0x10000 + 32),
+            fsid,
+            "two disks share a UUID"
         );
 
-        use std::os::unix::fs::FileExt;
-        let file = fs::OpenOptions::new().write(true).open(&disk).unwrap();
-        file.write_all_at(b"HOMEDATA", 10 << 30).unwrap();
-        raw_storage_disk("m1", 20).unwrap();
-        let mut read = [0; 8];
-        fs::File::open(&disk)
+        fs::create_dir_all(vm_data_dir("m2")).unwrap();
+        assert!(raw_storage_disk("m2", 20, Path::new("/nonexistent/template.zst")).is_err());
+        assert!(
+            !storage_disk_path("m2").exists(),
+            "a failed format left a disk"
+        );
+    }
+
+    // TEST_SCENARIO: a create whose disk cannot be made btrfs fails and leaves no machine: a record left behind would boot at its next start on a disk smolvm makes itself, from its ext4 template.
+    #[test]
+    fn a_create_whose_disk_cannot_be_made_leaves_no_machine() {
+        let home = Home::new("no-template");
+        let share = home.path.join("share");
+        fs::create_dir_all(&share).unwrap();
+        let smolvm = Smolvm::open(false, None, PathBuf::from("/nonexistent/template.zst")).unwrap();
+        let spec = spec();
+        let launch = launch();
+        let created = smolvm.create(
+            "m1",
+            &Machine {
+                spec: &spec,
+                image: "quay.io/x/vm:1",
+                host_port: 32000,
+                share: &share,
+                launch: &launch,
+            },
+        );
+        assert!(created.is_err());
+        assert!(
+            smolvm.db.get_vm("m1").unwrap().is_none(),
+            "the failed create left its record"
+        );
+        assert!(
+            !storage_disk_path("m1").exists(),
+            "the failed create left a disk"
+        );
+    }
+
+    // TEST_SCENARIO: the kernel refuses a superblock whose crc32c is wrong, so the checksum is the standard CRC-32C, checked against its published check value.
+    #[test]
+    fn the_superblock_checksum_is_crc32c() {
+        assert_eq!(crc32c(b"123456789"), 0xE306_9283);
+    }
+
+    // TEST_SCENARIO: a disk the runner gave its own UUID must still be a btrfs filesystem that btrfs-progs checks clean, with the new UUID and the template's as its metadata UUID. Runs where mkfs.btrfs and btrfs are installed.
+    #[test]
+    fn a_disk_with_its_own_uuid_checks_clean() {
+        let dir = crate::testdir::TempDir::new("btrfs-uuid");
+        let image = dir.path().join("disk");
+        let run = |args: &[&str]| {
+            std::process::Command::new(args[0])
+                .args(&args[1..])
+                .output()
+        };
+        fs::File::create(&image)
             .unwrap()
-            .read_exact_at(&mut read, 10 << 30)
+            .set_len(256 << 20)
             .unwrap();
-        assert_eq!(&read, b"HOMEDATA");
+        let Ok(made) = run(&[
+            "mkfs.btrfs",
+            "-q",
+            "-M",
+            "-d",
+            "single",
+            "-m",
+            "single",
+            image.to_str().unwrap(),
+        ]) else {
+            eprintln!("skipping: no mkfs.btrfs on this host");
+            return;
+        };
+        assert!(made.status.success(), "{made:?}");
+        let uuid = |field: &str| {
+            let out = run(&[
+                "btrfs",
+                "inspect-internal",
+                "dump-super",
+                image.to_str().unwrap(),
+            ])
+            .unwrap();
+            String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .find_map(|line| line.strip_prefix(field).map(|v| v.trim().to_string()))
+                .unwrap()
+        };
+        let before = uuid("fsid");
+        give_unique_fsid(&image).unwrap();
+        assert_ne!(uuid("fsid"), before);
+        assert_eq!(uuid("metadata_uuid"), before);
+        let checked = run(&["btrfs", "check", "--readonly", image.to_str().unwrap()]).unwrap();
+        assert!(
+            checked.status.success(),
+            "{}",
+            String::from_utf8_lossy(&checked.stderr)
+        );
     }
 
     // TEST_SCENARIO: an update reshapes a stopped machine in place — size, env, and a disk that grows — so the agent keeps its disk across a resize.
@@ -1512,7 +1667,7 @@ mod tests {
         let home = Home::new("update");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
         let applied = spec();
         let launch = launch();
         smolvm
@@ -1568,7 +1723,7 @@ mod tests {
         let home = Home::new("grow-unknown");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
         let created = spec();
         let launch = launch();
         smolvm
@@ -1617,7 +1772,7 @@ mod tests {
     #[test]
     fn a_failed_create_does_not_repeat_the_agents_secrets() {
         let home = Home::new("redact");
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
         let mut spec = spec();
         spec.env.insert("TOKEN".into(), "hunter22".into());
         spec.cpus = 0;
@@ -1651,7 +1806,7 @@ mod tests {
         let home = Home::new("zombie");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
         let spec = spec();
         let launch = launch();
         smolvm
@@ -1711,7 +1866,7 @@ mod tests {
         let home = Home::new("unconfirmed");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
         let spec = spec();
         let launch = launch();
         smolvm
@@ -1769,7 +1924,7 @@ mod tests {
         let home = Home::new("delete");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
         smolvm.delete("never-created").unwrap();
 
         let spec = spec();
@@ -1797,7 +1952,7 @@ mod tests {
         let home = Home::new("leftover");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
         let spec = spec();
         let launch = launch();
         let machine = Machine {
@@ -1835,7 +1990,7 @@ mod tests {
         for dir in [&share, &old_tree, &new_tree] {
             fs::create_dir_all(dir).unwrap();
         }
-        let smolvm = Smolvm::open(false, None).unwrap();
+        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
         let old = spec();
         let old_launch = launch();
         smolvm

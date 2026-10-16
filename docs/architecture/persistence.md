@@ -273,15 +273,15 @@ A repair is a line on the machine's console; a filesystem still damaged after al
 The runner reads those lines, so the result is on the Agent.
 A repair shows, until a later boot finds the disk clean, as a notice that files in the damaged folders may be missing.
 A refusal is a failed start with the ways out: start again, since a cause that has passed lets the next check repair it; if it keeps failing, have an admin check the disk, which stays as it is, or delete and recreate the agent, which loses its files.
-A Mac host runner runs its installed smolvm's own agent, which still formats.
+A Mac host runner runs the same agent, taken from the runner image.
 
 **A disk that has lost its home fails the boot.** A disk that was formatted anyway looks exactly like one never seeded.
 So the runner records in the machine's share, the first time its guest answers — which it does only once platform-init has put the home on the disk, from the image or from a migration's copy — that the disk holds a home, and keeps the record for as long as the machine exists.
 A boot that finds the record but no home stops, with the reason on the machine's console, rather than seeding a fresh home that would look healthy.
 A migrated machine is held to its copy the same way: while a seed is expected, its home comes from exactly that seed or the boot fails, never from the image, and the record names the seed ([vm-runtime-migration](vm-runtime-migration.md)).
 The record is learned from the answer rather than read off the disk, because the host does not parse a filesystem a guest has had root on.
-The runner formats every new disk itself, with a journal and at its full size, before any guest has touched it.
-A runner without `mkfs.ext4`, or whose format fails, leaves that format to smolvm, which can write no journal, and so did every disk made before the runner formatted its own; on those an unclean stop — a killed runner — is what brings that repair on.
+The runner makes every new disk itself, btrfs at its full size, before any guest has touched it ([vm-runner](vm-runner.md)).
+Disks made before that are ext4, and those smolvm formatted have no journal; on those an unclean stop — a killed runner — is what brings that repair on.
 On a Mac host runner the loss is refused, not prevented.
 
 **The claim those disks sit on is the owner's pool.** One claim per owner holds every machine disk they have, their bookkeeping, a [runtime migration](vm-runtime-migration.md)'s seed while it waits, and the image cache when the cache lives there, and every disk may grow to the pool, so the claim is created at the pool; the controller refuses an install whose image cache budget would take the whole of it.

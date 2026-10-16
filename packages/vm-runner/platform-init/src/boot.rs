@@ -120,7 +120,8 @@ pub fn run(command: Vec<OsString>) -> ! {
             command[0]
         ),
     };
-    std::thread::spawn(reclaim_cold_cache);
+    let swapping = compressed_swap();
+    std::thread::spawn(move || reclaim_cold_cache(swapping));
     let scratch = scratch_folders();
     std::thread::spawn(move || evict_scratch(&scratch));
     std::thread::spawn(trim_freed_blocks);
@@ -130,11 +131,11 @@ pub fn run(command: Vec<OsString>) -> ! {
     supervise(&binary, &command, trust.as_deref())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a guest keeps the files it read in its page cache until something needs the memory, and the host counts that cache as memory the machine holds, so an agent that once read a large tree holds it long after. Every RECLAIM_INTERVAL the cache on the kernel's inactive list — what nothing has touched lately — is handed to the root cgroup's proactive reclaim, and the pages it frees go back to the host through free-page reporting within seconds. The guest has no swap, so reclaim drops only file pages: what the agent's processes hold stays. A guest kernel without cgroup v2 reclaim gives nothing to read or write, and the loop does nothing.
+// UNIT_BOUNDARY_DESCRIPTION: a guest keeps the files it read in its page cache until something needs the memory, and the host counts that cache as memory the machine holds, so an agent that once read a large tree holds it long after. Every RECLAIM_INTERVAL the cache on the kernel's inactive list — what nothing has touched lately — is handed to the root cgroup's proactive reclaim, and the pages it frees go back to the host through free-page reporting within seconds. With compressed swap (`swapping`) the inactive anonymous memory is handed over too, so what the agent's processes hold but have not touched lately is compressed into zram and the rest of its pages go back to the host; without it reclaim drops only file pages. A guest kernel without cgroup v2 reclaim gives nothing to read or write, and the loop does nothing.
 const RECLAIM_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 const RECLAIM_FLOOR: u64 = 64 << 20;
 
-fn reclaim_cold_cache() {
+fn reclaim_cold_cache(swapping: bool) {
     let order = fs::read_to_string("/sys/module/page_reporting/parameters/page_reporting_order")
         .ok()
         .and_then(|text| text.trim().parse().ok())
@@ -144,7 +145,14 @@ fn reclaim_cold_cache() {
         std::thread::sleep(RECLAIM_INTERVAL);
         if let Some(cold) = fs::read_to_string("/sys/fs/cgroup/memory.stat")
             .ok()
-            .and_then(|stat| inactive_file(&stat))
+            .and_then(|stat| {
+                let anon = if swapping {
+                    stat_bytes(&stat, "inactive_anon")?
+                } else {
+                    0
+                };
+                Some(stat_bytes(&stat, "inactive_file")? + anon)
+            })
         {
             if cold >= RECLAIM_FLOOR {
                 let _ = fs::write("/sys/fs/cgroup/memory.reclaim", cold.to_string());
@@ -191,12 +199,117 @@ fn free_below_order(buddyinfo: &str, order: usize) -> u64 {
         .sum()
 }
 
-fn inactive_file(stat: &str) -> Option<u64> {
+fn stat_bytes(stat: &str, key: &str) -> Option<u64> {
     stat.lines()
-        .find_map(|line| line.strip_prefix("inactive_file "))?
+        .find_map(|line| line.strip_prefix(key)?.strip_prefix(' '))?
         .trim()
         .parse()
         .ok()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: makes zram swap: memory the guest's processes hold but no longer touch is kept compressed in RAM rather than whole, so a machine of the same size holds about half to a quarter as much of it on the host. The guest boots below its size and grows once it is up, so the device takes ZRAM_BOOT_RAM_MULTIPLE times the RAM it boots with in uncompressed pages, a quarter to the whole of the machine's size; an unused device costs only its table. Pages are compressed with zstd: on an idle V8 heap it stored 1.5 GB in 163 MB where lz4 needed about 420 MB, and reading the heap back took 1.0 s against 0.86 s, and compression runs in the reclaim pass, off any request; swappiness 100 weighs a page in zram like a page of file cache, since reading one back costs about as little, and page-cluster 0 reads back one page at a time, as zram has no seek to amortise. The container's /sys is read-only and its /dev has no zram node, so the device is set up through a sysfs of platform-init's own, mounted at ZRAM_SYSFS and detached again, and its node is made from the numbers sysfs gives. A kernel without zram, or a device that will not set up, leaves the guest without swap, as before. True when swap is on.
+const ZRAM_BOOT_RAM_MULTIPLE: u64 = 2;
+const ZRAM_SYSFS: &str = "/run/platform-zram-sysfs";
+
+fn compressed_swap() -> bool {
+    let Ok(numbers) = fs::read_to_string("/sys/block/zram0/dev") else {
+        return false;
+    };
+    // SAFETY: sysconf has no preconditions.
+    let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
+    let sysfs = Path::new(ZRAM_SYSFS);
+    let result = (|| -> io::Result<()> {
+        let (major, minor) = numbers
+            .trim()
+            .split_once(':')
+            .and_then(|(major, minor)| Some((major.parse().ok()?, minor.parse().ok()?)))
+            .ok_or_else(|| io::Error::other(format!("zram0 is device {numbers:?}")))?;
+        let node = CString::new("/dev/zram0").expect("static path");
+        // SAFETY: a NUL-terminated path; an existing node is left as it is.
+        if unsafe {
+            libc::mknod(
+                node.as_ptr(),
+                libc::S_IFBLK | 0o600,
+                libc::makedev(major, minor),
+            )
+        } != 0
+            && io::Error::last_os_error().kind() != io::ErrorKind::AlreadyExists
+        {
+            return Err(io::Error::last_os_error());
+        }
+        fs::create_dir_all(sysfs)?;
+        let (source, fstype, target) = (
+            CString::new("sysfs").expect("static"),
+            CString::new("sysfs").expect("static"),
+            CString::new(ZRAM_SYSFS).expect("static path"),
+        );
+        // SAFETY: NUL-terminated source, target and type, and no data.
+        if unsafe {
+            libc::mount(
+                source.as_ptr(),
+                target.as_ptr(),
+                fstype.as_ptr(),
+                0,
+                std::ptr::null(),
+            )
+        } != 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        let zram = sysfs.join("block/zram0");
+        let configured = (|| -> io::Result<()> {
+            let ram = fs::read_to_string("/proc/meminfo")?
+                .lines()
+                .find_map(|line| {
+                    line.strip_prefix("MemTotal:")?
+                        .trim()
+                        .strip_suffix(" kB")?
+                        .parse::<u64>()
+                        .ok()
+                })
+                .ok_or_else(|| io::Error::other("no MemTotal in /proc/meminfo"))?;
+            fs::write(zram.join("comp_algorithm"), "zstd")?;
+            fs::write(
+                zram.join("disksize"),
+                (ram * 1024 * ZRAM_BOOT_RAM_MULTIPLE).to_string(),
+            )
+        })();
+        // SAFETY: the NUL-terminated target mounted above.
+        unsafe { libc::umount2(target.as_ptr(), libc::MNT_DETACH) };
+        configured?;
+        let size = fs::read_to_string("/sys/block/zram0/size")?
+            .trim()
+            .parse::<u64>()
+            .map_err(io::Error::other)?
+            * 512;
+        OpenOptions::new()
+            .write(true)
+            .open("/dev/zram0")?
+            .write_all(&swap_header(page, size))?;
+        let device = CString::new("/dev/zram0").expect("static path");
+        // SAFETY: a NUL-terminated path to the device the header was just written to.
+        if unsafe { libc::swapon(device.as_ptr(), 0) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        fs::write("/proc/sys/vm/swappiness", "100")?;
+        fs::write("/proc/sys/vm/page-cluster", "0")
+    })();
+    match result {
+        Ok(()) => true,
+        Err(e) => {
+            logf!("WARNING: setting up zram swap ({e}); the guest runs without swap");
+            false
+        }
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the first page of a swap area, as mkswap writes it (struct swap_header, version 1): the last usable page at 1028, no bad pages, and the magic `SWAPSPACE2` in the page's last ten bytes.
+fn swap_header(page: usize, size: u64) -> Vec<u8> {
+    let mut header = vec![0; page];
+    header[1024..1028].copy_from_slice(&1u32.to_ne_bytes());
+    header[1028..1032].copy_from_slice(&((size / page as u64 - 1) as u32).to_ne_bytes());
+    header[page - 10..].copy_from_slice(b"SWAPSPACE2");
+    header
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the disk is a sparse file on the owner's claim, and a block the agent frees stays allocated there until it is trimmed. smolvm's guest agent trims only once free space has risen by a quarter GiB since its last trim, so a file rewritten in place or replaced by a renamed copy — free space back where it was, the new copy on other blocks — keeps the old copy's blocks counted for up to half an hour. Every TRIM_INTERVAL the disk is trimmed regardless: ext4 skips every block group that has freed nothing since its last trim, so a trim with nothing to return costs little. Machines boot at different times, so their trims do not run in step.
@@ -4190,11 +4303,23 @@ mod tests {
         assert_eq!(free_below_order(buddy, 1), 4);
         assert_eq!(free_below_order("", 9), 0);
     }
-    // TEST_SCENARIO: the cold cache is read from the root cgroup's memory.stat, where `inactive_file` sits beside `file`, `active_file` and `inactive_anon`, all byte counts. Picking a neighbour would reclaim the wrong amount every minute — anonymous memory the guest cannot drop, or the active cache the agent is using.
+    // TEST_SCENARIO: the cold memory is read from the root cgroup's memory.stat, where `inactive_file` and `inactive_anon` sit beside `file`, `active_file` and `inactive_anon`, all byte counts. Picking a neighbour would reclaim the wrong amount every minute — anonymous memory the guest cannot drop, or the active cache the agent is using.
     #[test]
-    fn the_cold_cache_is_the_inactive_file_count() {
+    fn the_cold_memory_is_the_inactive_counts() {
         let stat = "anon 4096\nfile 1289818112\ninactive_anon 0\nactive_anon 4096\ninactive_file 1283219456\nactive_file 2838528\n";
-        assert_eq!(inactive_file(stat), Some(1283219456));
-        assert_eq!(inactive_file("file 1\nactive_file 1\n"), None);
+        assert_eq!(stat_bytes(stat, "inactive_file"), Some(1283219456));
+        assert_eq!(stat_bytes("file 1\nactive_file 1\n", "inactive_file"), None);
+        assert_eq!(stat_bytes(stat, "inactive_anon"), Some(0));
+    }
+
+    // TEST_SCENARIO: the kernel refuses swapon on a zram device whose first page is not a version 1 swap header with the right last page, and the guest then runs without swap. So the header carries the magic in the page's last ten bytes and names the last page of the device.
+    #[test]
+    fn the_zram_swap_header_is_the_one_mkswap_writes() {
+        let header = swap_header(4096, 8 << 20);
+        assert_eq!(header.len(), 4096);
+        assert_eq!(&header[4086..], b"SWAPSPACE2");
+        assert_eq!(header[1024..1028], 1u32.to_ne_bytes());
+        assert_eq!(header[1028..1032], 2047u32.to_ne_bytes());
+        assert!(header[..1024].iter().all(|&b| b == 0));
     }
 }
