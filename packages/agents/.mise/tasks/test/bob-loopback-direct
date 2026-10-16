@@ -6,7 +6,10 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { once } from "node:events";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const preload = fileURLToPath(new URL("../../../bob/rootfs/usr/local/lib/bob-loopback-direct.mjs", import.meta.url));
@@ -17,7 +20,16 @@ await once(router, "listening");
 const port = router.address().port;
 
 // TEST_SCENARIO: Bob sets one global ProxyAgent from HTTPS_PROXY, which would carry its loopback call to the Model Router through the gateway proxy. Here a stand-in agent takes the place of Bob's ProxyAgent and records what reaches it; under the preload a loopback request is answered by the router directly and never reaches the agent, while a request to any other host still does.
+// TEST_SCENARIO: `bob chat` in a terminal is a supervisor that runs the TUI in a child Node, started with its own env and argv and BOB_SUPERVISED=1; only that child installs the proxy agent, so the preload reaches it through NODE_OPTIONS.
 const bob = `
+if (process.env.BOB_SUPERVISED !== "1") {
+  const { spawnSync } = await import("node:child_process");
+  const child = spawnSync(process.execPath, [...process.execArgv, ...process.argv.slice(1)], {
+    env: { ...process.env, BOB_SUPERVISED: "1" },
+    stdio: "inherit",
+  });
+  process.exit(child.status);
+}
 const KEY = Symbol.for("undici.globalDispatcher.2");
 const reached = [];
 const bobAgent = {
@@ -32,25 +44,37 @@ const bobAgent = {
 Object.defineProperty(globalThis, KEY, { value: bobAgent, writable: true, enumerable: false, configurable: false });
 const body = await fetch("http://127.0.0.1:${port}/v1/chat/completions").then((r) => r.text());
 const elsewhere = await fetch("http://example.invalid/").then(() => "answered", () => "failed");
-console.log(JSON.stringify({ body, elsewhere, reached }));
+console.log(JSON.stringify({ body, elsewhere, reached, toolNodeOptions: process.env.NODE_OPTIONS ?? null }));
 process.exit(0);
 `;
 
+const dir = mkdtempSync(join(tmpdir(), "bob-loopback-direct-"));
+const script = join(dir, "bob.mjs");
+writeFileSync(script, bob);
+
 const run = async (env) => {
-  const { stdout } = await promisify(execFile)(process.execPath, ["--import", preload, "--input-type=module", "-e", bob], {
-    env: { ...process.env, ...env },
+  const { stdout } = await promisify(execFile)(process.execPath, [script], {
+    env: { ...process.env, NODE_OPTIONS: `--import=${preload} --no-warnings`, ...env },
     encoding: "utf8",
     timeout: 30_000,
   });
   return JSON.parse(stdout.trim());
 };
 
+const proxyEnv = { NODE_USE_ENV_PROXY: "1", HTTPS_PROXY: "http://127.0.0.1:9", HTTP_PROXY: "http://127.0.0.1:9", NO_PROXY: "localhost,127.0.0.1,::1" };
 try {
-  const out = await run({ NODE_USE_ENV_PROXY: "1", HTTPS_PROXY: "http://127.0.0.1:9", HTTP_PROXY: "http://127.0.0.1:9", NO_PROXY: "localhost,127.0.0.1,::1" });
-  assert.equal(out.body, "router");
-  assert.equal(out.elsewhere, "failed");
-  assert.deepEqual(out.reached, ["http://example.invalid"]);
-  console.log("Bob reaches the loopback Model Router directly and keeps its proxy for other hosts");
+  for (const [how, env] of [
+    ["unsupervised (bob acp)", { BOB_SUPERVISED: "1" }],
+    ["supervised (bob chat)", {}],
+  ]) {
+    const out = await run({ ...proxyEnv, ...env });
+    assert.equal(out.body, "router", how);
+    assert.equal(out.elsewhere, "failed", how);
+    assert.deepEqual(out.reached, ["http://example.invalid"], how);
+    assert.equal(out.toolNodeOptions, "--no-warnings", how);
+  }
+  console.log("Bob reaches the loopback Model Router directly, supervised or not, keeps its proxy for other hosts, and its tools get no preload");
 } finally {
   router.close();
+  rmSync(dir, { recursive: true, force: true });
 }
