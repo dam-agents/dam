@@ -43,7 +43,11 @@ import {
   COMPOSER_LOCKED_REASON,
   composerLocked,
 } from "../../a2ui/lib/composer-lock.js";
-import { isQueuedSend, rewritePointsOf } from "../../acp/session-projection.js";
+import {
+  conversationEmpty,
+  isQueuedSend,
+  rewritePointsOf,
+} from "../../acp/session-projection.js";
 import {
   useHarnessConfigCurrent,
   useHarnessConfigStatus,
@@ -369,7 +373,8 @@ export function ChatView() {
   }, [sessionTurns.data, messages]);
 
   const harnessForks = useStore((s) => s.harnessForks);
-  const queueEmpty = useStore((s) => s.queuedPrompts.length === 0);
+  const queuedPrompts = useStore((s) => s.queuedPrompts);
+  const queueEmpty = queuedPrompts.length === 0;
   const { data: sessionView } = useAgentSession(selectedAgent, sessionId);
   const canRewrite =
     harnessForks &&
@@ -911,18 +916,31 @@ export function ChatView() {
                   )}
                   {!loadingSession &&
                     !sessionError &&
-                    messages.length === 0 && (
+                    conversationEmpty(messages, queuedPrompts) && (
                       <div className="flex flex-1 flex-col items-center justify-center text-center">
-                        {agentView && (
-                          <AgentAvatar
-                            name={agentView.name}
-                            avatar={agentView.avatar}
-                            size={96}
-                            mood={avatarMood(agentDisplay?.state, agentView)}
-                          />
-                        )}
-                        <h2 className="mt-3 mb-2 text-xl font-bold text-foreground">
-                          {selectedAgentName}
+                        <h2 aria-label={selectedAgentName ?? undefined}>
+                          <button
+                            type="button"
+                            onClick={handleConfigureSandbox}
+                            aria-label={`Configure ${selectedAgentName ?? "agent"}`}
+                            className="group mb-2 flex cursor-pointer flex-col items-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            {agentView && (
+                              <AgentAvatar
+                                name={agentView.name}
+                                avatar={agentView.avatar}
+                                size={96}
+                                mood={avatarMood(
+                                  agentDisplay?.state,
+                                  agentView,
+                                )}
+                                className="transition-opacity group-hover:opacity-80"
+                              />
+                            )}
+                            <span className="mt-3 text-xl font-bold text-foreground underline-offset-4 group-hover:underline">
+                              {selectedAgentName}
+                            </span>
+                          </button>
                         </h2>
                         <p className="text-sm text-muted-foreground">
                           Send a message to begin or open a new session in:
