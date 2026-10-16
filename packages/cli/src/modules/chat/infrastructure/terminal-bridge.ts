@@ -10,6 +10,12 @@ import {
 
 import { proxyAgentForUrl } from "../../shared/ws-proxy.js";
 import { wsUrl } from "../../shared/ws-url.js";
+import {
+  createTitleFilter,
+  setTitle,
+  TITLE_RESTORE,
+  TITLE_SAVE,
+} from "./terminal-title.js";
 
 export type BridgeResult =
   { kind: "exited"; code: number } | { kind: "disconnected"; reason: string };
@@ -29,15 +35,19 @@ export function connectTerminalBridge({
   terminalPath,
   stdin,
   stdout,
+  title,
 }: {
   host: string;
   token: string;
   terminalPath: string;
   stdin: NodeJS.ReadStream & { setRawMode?(mode: boolean): void };
   stdout: NodeJS.WriteStream;
+  /** Window title held for the whole connection; the remote's own titles are dropped. */
+  title?: string;
 }): Promise<BridgeResult> {
   return new Promise<BridgeResult>((resolve) => {
     let settled = false;
+    const filter = title === undefined ? undefined : createTitleFilter();
     const url = wsUrl(host, terminalPath, token);
     const ws = new WebSocket(url, { agent: proxyAgentForUrl(url) });
 
@@ -60,6 +70,7 @@ export function connectTerminalBridge({
           stdin.setRawMode(false);
         } catch {}
       stdin.pause();
+      if (title !== undefined) stdout.write(TITLE_RESTORE);
       stdout.write(TERMINAL_MODE_RESET);
       if (
         ws.readyState === WebSocket.OPEN ||
@@ -70,6 +81,7 @@ export function connectTerminalBridge({
     };
 
     ws.on("open", () => {
+      if (title !== undefined) stdout.write(TITLE_SAVE + setTitle(title));
       ws.send(encodeResize(stdout.columns, stdout.rows));
       if (stdin.setRawMode) stdin.setRawMode(true);
       stdin.resume();
@@ -84,7 +96,8 @@ export function connectTerminalBridge({
       } catch {
         return;
       }
-      if (frame.op === OP_OUTPUT) stdout.write(Buffer.from(frame.data));
+      if (frame.op === OP_OUTPUT)
+        stdout.write(filter ? filter(frame.data) : Buffer.from(frame.data));
       else if (frame.op === OP_EXIT)
         finish({ kind: "exited", code: frame.code });
     });

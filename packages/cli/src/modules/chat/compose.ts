@@ -33,6 +33,42 @@ export function askModeSwitch(
   });
 }
 
+/** How long the attach notice stays up when nobody presses Enter. */
+export const ATTACH_PAUSE_MS = 5000;
+
+/**
+ * Holds the attach notice on screen before the agent's full-screen view covers
+ * it. Resolves true on Enter, when stdin closes, or after `ms`; false on
+ * Ctrl+C, which here is still the CLI's and not yet the agent's.
+ */
+export function pauseBeforeAttach(
+  input: NodeJS.ReadableStream,
+  output: NodeJS.WritableStream,
+  ms: number,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const rl = createInterface({ input, output });
+    let connect = true;
+    const timer = setTimeout(() => {
+      output.write("\n");
+      rl.close();
+    }, ms);
+    rl.on("SIGINT", () => {
+      connect = false;
+      output.write("\n");
+      rl.close();
+    });
+    rl.on("close", () => {
+      clearTimeout(timer);
+      resolve(connect);
+    });
+    rl.question(
+      `Press Enter to connect, or wait ${Math.round(ms / 1000)} s. `,
+      () => rl.close(),
+    );
+  });
+}
+
 export function composeChatModule({
   compatService,
   configService,
@@ -80,7 +116,11 @@ export function composeChatModule({
 
   return {
     commands: [
-      buildChatCommand({ chatService }),
+      buildChatCommand({
+        chatService,
+        pause: () =>
+          pauseBeforeAttach(process.stdin, process.stderr, ATTACH_PAUSE_MS),
+      }),
       buildRunCommand({ runService }),
       sessionParent,
     ],
