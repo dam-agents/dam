@@ -26,8 +26,7 @@ const REVEAL_ON_HOVER =
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The agent's avatar and name, each editable in
- * place and saved on confirm. The chat header and the agent configuration
- * header share it so both rename and re-skin the agent the same way.
+ * place and saved on confirm, in the agent configuration header.
  */
 export function EditableAgentIdentity({
   agent,

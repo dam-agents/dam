@@ -3,7 +3,6 @@ import {
   ArrowLeft,
   Document,
   Renew,
-  Tools,
   TrashCan,
   Warning,
 } from "@carbon/icons-react";
@@ -16,6 +15,7 @@ import {
 import {
   type CSSProperties,
   Fragment,
+  type ReactNode,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -65,13 +65,15 @@ import {
   hasStartNotice,
 } from "../../agents/components/agent-start-notice.js";
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
-import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
+import {
+  AgentAvatar,
+  avatarMood,
+} from "../../agents/components/avatar/agent-avatar.js";
 import {
   agentFailures,
   ContributionFailuresBadge,
 } from "../../agents/components/contribution-failures-badge.js";
 import { ContributionGapNotice } from "../../agents/components/contribution-gap-notice.js";
-import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
 import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
 import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-notice.js";
 import { UnsupportedContributionsBadge } from "../../agents/components/unsupported-contributions-badge.js";
@@ -745,8 +747,8 @@ export function ChatView() {
         <div
           className={`@container/chat relative flex flex-1 flex-col min-w-0 ${mobileOnPanel ? "hidden md:flex" : "flex"} ${sidePanelFills ? "md:!hidden" : ""}`}
         >
-          <header className="@container relative z-raised flex shrink-0 items-center gap-2 px-4 max-md:h-[52px] max-md:border-b max-md:border-border md:pointer-events-none md:absolute md:inset-x-0 md:top-0 md:h-[70px]">
-            <div className="flex min-w-0 items-center gap-3 max-md:flex-1 md:pointer-events-auto">
+          <header className="@container flex shrink-0 items-center gap-2 px-4 max-md:h-[52px] max-md:border-b max-md:border-border md:hidden md:py-2 md:has-[[data-chat-status]>*]:flex">
+            <div className="flex min-w-0 flex-1 items-center gap-3 md:hidden">
               <MobileMenuButton />
               <span
                 aria-hidden
@@ -756,19 +758,25 @@ export function ChatView() {
                   dotColor,
                 )}
               />
-              {agentView ? (
-                <EditableAgentIdentity
-                  agent={agentView}
-                  avatarSize={32}
-                  mood={avatarMood(agentDisplay?.state, agentView)}
-                  avatarClassName="@max-[149px]:hidden"
-                  nameClassName="text-sm font-bold text-foreground"
-                />
-              ) : (
-                <h1 className="text-sm font-bold text-foreground truncate">
+              <button
+                type="button"
+                onClick={handleConfigureSandbox}
+                aria-label={`Configure ${selectedAgentName ?? "agent"}`}
+                className="flex min-w-0 items-center gap-2"
+              >
+                {agentView && (
+                  <AgentAvatar
+                    name={agentView.name}
+                    avatar={agentView.avatar}
+                    size={28}
+                    mood={avatarMood(agentDisplay?.state, agentView)}
+                    className="@max-[149px]:hidden"
+                  />
+                )}
+                <span className="truncate text-sm font-bold text-foreground">
                   {selectedAgentName}
-                </h1>
-              )}
+                </span>
+              </button>
               {agentView && (
                 <span className="flex shrink-0 empty:hidden @max-[119px]:hidden">
                   <VmRuntimeBadge
@@ -777,19 +785,11 @@ export function ChatView() {
                   />
                 </span>
               )}
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Configure agent"
-                tooltip="Configure agent"
-                data-testid="configure-agent"
-                className="-ml-2 shrink-0 max-md:hidden"
-                onClick={handleConfigureSandbox}
-              >
-                <Tools size={16} />
-              </Button>
             </div>
-            <div className="flex shrink-0 items-center gap-2 md:pointer-events-auto">
+            <div
+              data-chat-status
+              className="flex shrink-0 items-center gap-2 md:ml-auto"
+            >
               <ChatHeaderStatus
                 selectedAgent={selectedAgent}
                 agents={agents}
@@ -798,6 +798,11 @@ export function ChatView() {
                 sessionId={sessionId}
                 processesEnabled={processesEnabled}
               />
+            </div>
+            <div className="flex shrink-0 items-center gap-2 md:hidden">
+              {processesEnabled && (
+                <ProcessesIndicator agentId={selectedAgent} />
+              )}
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -816,7 +821,7 @@ export function ChatView() {
               </div>
             </div>
           </header>
-          <div className="peer/notices empty:hidden md:pt-[70px]">
+          <div className="empty:hidden">
             {runtimeOutdated && (
               <RuntimeOutdatedNotice agentId={selectedAgent} />
             )}
@@ -827,7 +832,7 @@ export function ChatView() {
           {sessionMode === SessionMode.Terminal &&
           selectedAgent &&
           sessionId ? (
-            <div className="flex min-h-0 flex-1 flex-col md:peer-empty/notices:pt-[70px]">
+            <div className="flex min-h-0 flex-1 flex-col">
               <Terminal
                 key={sessionId}
                 agentId={selectedAgent}
@@ -857,9 +862,9 @@ export function ChatView() {
             </div>
           ) : (
             <>
-              <div className="@container relative flex flex-1 flex-col min-h-0 md:peer-empty/notices:[--chat-top:70px]">
+              <div className="@container relative flex flex-1 flex-col min-h-0">
                 <div ref={messagesRef} className="flex-1 overflow-y-auto">
-                  <ChatColumn className="px-2 @xs/chat:px-4 @xl/chat:px-8 py-8 md:pt-[max(2rem,var(--chat-top,0px))] flex flex-col gap-8 min-h-full">
+                  <ChatColumn className="px-2 @xs/chat:px-4 @xl/chat:px-8 py-8 flex flex-col gap-8 min-h-full">
                     {!historyShown && (
                       <div className="py-20 flex items-center justify-center gap-3 text-sm text-muted-foreground">
                         <Spinner size={20} />
@@ -884,9 +889,17 @@ export function ChatView() {
                       !sessionError &&
                       messages.length === 0 && (
                         <div className="flex flex-1 flex-col items-center justify-center text-center">
-                          <p className="text-base font-bold text-foreground mb-2">
-                            Start a new session
-                          </p>
+                          {agentView && (
+                            <AgentAvatar
+                              name={agentView.name}
+                              avatar={agentView.avatar}
+                              size={96}
+                              mood={avatarMood(agentDisplay?.state, agentView)}
+                            />
+                          )}
+                          <h2 className="mt-3 mb-2 text-xl font-bold text-foreground">
+                            {selectedAgentName}
+                          </h2>
                           <p className="text-sm text-muted-foreground">
                             Send a message to begin or open a new session in:
                           </p>
@@ -929,36 +942,43 @@ export function ChatView() {
                               item.message.id,
                             ) ?? [item.message];
                             const lastIndex = item.index + members.length - 1;
-                            const bubbles = members.map((m, k) => (
-                              <ChatMessage
-                                key={m.id}
-                                message={m}
-                                continued={k > 0}
-                                arriving={arrived.has(m.id)}
-                                avatarAgent={agentView ?? undefined}
-                                isLast={item.index + k === shown.length - 1}
-                                showModel={runStarts.length > 0}
-                                {...timeProps(m.at, now)}
-                                hasPendingPermission={hasPendingPermission}
-                                pendingNotice={
-                                  item.index + k === shown.length - 1
-                                    ? startNotice
-                                    : undefined
-                                }
-                                onRetry={sendPrompt}
-                                onFileClick={openFileHandler}
-                                onDelete={deleteMessage}
-                                onLoadOlder={loadOlderKeepingScroll}
-                              />
-                            ));
-                            const chatMessage =
-                              members.length === 1 ? (
+                            const chatMessage = (actions?: ReactNode) => {
+                              const bubbles = members.map((m, k) => (
+                                <ChatMessage
+                                  key={m.id}
+                                  message={m}
+                                  continued={k > 0}
+                                  arriving={arrived.has(m.id)}
+                                  avatarAgent={agentView ?? undefined}
+                                  onAgentClick={handleConfigureSandbox}
+                                  footer={
+                                    k === members.length - 1
+                                      ? actions
+                                      : undefined
+                                  }
+                                  isLast={item.index + k === shown.length - 1}
+                                  showModel={runStarts.length > 0}
+                                  {...timeProps(m.at, now)}
+                                  hasPendingPermission={hasPendingPermission}
+                                  pendingNotice={
+                                    item.index + k === shown.length - 1
+                                      ? startNotice
+                                      : undefined
+                                  }
+                                  onRetry={sendPrompt}
+                                  onFileClick={openFileHandler}
+                                  onDelete={deleteMessage}
+                                  onLoadOlder={loadOlderKeepingScroll}
+                                />
+                              ));
+                              return members.length === 1 ? (
                                 bubbles[0]
                               ) : (
-                                <div className="flex flex-col gap-2">
+                                <div className="flex flex-col gap-5">
                                   {bubbles}
                                 </div>
                               );
+                            };
                             const runMessage: Message =
                               members.length === 1
                                 ? item.message
@@ -994,7 +1014,7 @@ export function ChatView() {
                                   {chatMessage}
                                 </RewritableMessage>
                               ) : (
-                                chatMessage
+                                chatMessage()
                               );
                             return (
                               <Fragment key={item.message.id}>
@@ -1361,13 +1381,7 @@ function ChatHeaderStatus({
     connectionState === "reconnecting" || connectionState === "reloading";
   return (
     <>
-      {processesEnabled ? (
-        <span className="md:hidden">
-          <ProcessesIndicator agentId={selectedAgent} />
-        </span>
-      ) : (
-        <BackgroundWorkIndicator items={backgroundWork} />
-      )}
+      {!processesEnabled && <BackgroundWorkIndicator items={backgroundWork} />}
       {reconnecting && <Badge variant="warning">Reconnecting</Badge>}
       <ImportInProgressBadge agentId={selectedAgent} />
       {agent && <GatewayFailureBadge agent={agent} />}
