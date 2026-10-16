@@ -273,8 +273,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # The vm-runner's release build: its crates, cargo's target and the smolvm
-      # and crane downloads, per arch.
+      # The vm-runner's release build: its crates and cargo's target, per arch.
       # Keyed by the exact Rust version and the crate's lock and pins, with no
       # older entry to fall back on, so an entry holds one lockfile's build and
       # never piles up the artifacts of the crates a bump replaced. The
@@ -294,9 +293,18 @@ jobs:
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ~/.cargo/git/db
-            ~/.cache/platform-vm-runner
             packages/vm-runner/target
           key: &rust-release-key rust-release-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-release-key.outputs.rust }}-${{ hashFiles('packages/vm-runner/Cargo.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/smolvm.pin', 'packages/vm-runner/smolvm.patch', 'packages/vm-runner/libkrun.patch', 'packages/vm-runner/libkrunfw.patch') }}
+      # What the vm-runner's oci task builds outside cargo's target: the patched
+      # libkrun and guest kernel, and the smolvm and crane downloads. They
+      # follow the pins and patches alone, so a lockfile bump keeps the
+      # kernel, which takes minutes to build.
+      - id: vm-runner-deps
+        if: ${{ contains(fromJSON(needs.changes.outputs.images), 'vm-runner') }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: &vm-runner-deps-paths ~/.cache/platform-vm-runner
+          key: &vm-runner-deps-key vm-runner-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/vm-runner/smolvm.pin', 'packages/vm-runner/smolvm.patch', 'packages/vm-runner/libkrun.patch', 'packages/vm-runner/libkrunfw.patch') }}
       # check-test's Go and pnpm caches, read-only, for the images that build
       # from them. Before setup-mise, for the reason check-test gives.
       - if: ${{ contains(fromJSON(needs.changes.outputs.images), 'controller') }}
@@ -335,6 +343,11 @@ jobs:
         with:
           path: *rust-release-paths
           key: *rust-release-key
+      - if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.vm-runner-deps.outputs.cache-hit != 'true' && hashFiles('packages/vm-runner/target/release/vm-runner') != '' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *vm-runner-deps-paths
+          key: *vm-runner-deps-key
       # The keycloak theme build, for e2e on a PR. This job starts from an
       # empty task cache, so the entry holds this run's artifacts alone, and
       # only a run that built keycloak has any.
@@ -840,6 +853,11 @@ jobs:
         with:
           path: *rust-release-paths
           key: *rust-release-key
+      - if: steps.vm-runner-changed.outputs.changed == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *vm-runner-deps-paths
+          key: *vm-runner-deps-key
       - *e2e-setup-mise
       - *e2e-keycloak-theme
       - *e2e-pnpm-install
