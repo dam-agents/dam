@@ -18,7 +18,7 @@ import { MobileNavDrawer } from "./modules/platform/components/sidebar/mobile-na
 import { Sidebar } from "./modules/platform/components/sidebar/sidebar.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
 import { parseRoute } from "./modules/platform/lib/routes.js";
-import { isDarkTheme } from "./modules/platform/store/theme.js";
+import { applyTheme } from "./modules/platform/store/theme.js";
 import { NotFoundView } from "./modules/platform/views/not-found-view.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
@@ -38,12 +38,7 @@ export default function App() {
   useBrowserHistory();
 
   useEffect(() => {
-    const apply = () => {
-      document.documentElement.classList.toggle(
-        "dark",
-        isDarkTheme(useStore.getState().theme),
-      );
-    };
+    const apply = () => applyTheme(useStore.getState().theme);
     apply();
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     mq.addEventListener("change", apply);
