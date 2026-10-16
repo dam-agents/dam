@@ -219,6 +219,20 @@ describe("reply MCP tool — broadcast to channel (#2973)", () => {
     ]);
   });
 
+  it("passes chatId through as the conversation, so a multi-conversation agent can say where the thread is (#3753)", async () => {
+    const { client, replies } = await mcpHarness();
+
+    const res = await client.callTool({
+      name: "reply",
+      arguments: { text: "late answer", threadTs: "1.1", chatId: "C-SECOND" },
+    });
+
+    expect(res.isError).toBeFalsy();
+    expect(replies).toEqual([
+      { text: "late answer", threadTs: "1.1", conversationId: "C-SECOND" },
+    ]);
+  });
+
   it("leaves the reply thread-only when the option is omitted", async () => {
     const { client, replies } = await mcpHarness();
 

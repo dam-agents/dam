@@ -20,6 +20,7 @@ import { filesRouter } from "./modules/files/router.js";
 import { gettingStartedRouter } from "./modules/getting-started/router.js";
 import { harnessConfigRouter } from "./modules/harness-config/router.js";
 import { schedulesRouter } from "./modules/schedules/router.js";
+import { sidebarPinsRouter } from "./modules/sidebar-pins/router.js";
 import { skillsRouter } from "./modules/skills/router.js";
 import { spendRouter } from "./modules/spend/router.js";
 import { starterKitsRouter } from "./modules/starter-kits/router.js";
@@ -49,6 +50,7 @@ export const appRouter = t.router({
   features: featuresRouter,
   files: filesRouter,
   gettingStarted: gettingStartedRouter,
+  sidebarPins: sidebarPinsRouter,
   links: linksRouter,
   metrics: metricsRouter,
   telemetry: telemetryRouter,

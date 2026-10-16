@@ -30,7 +30,7 @@ export const connectionsRouter = t.router({
   ),
 
   list: readCredentialsProcedure.query(({ ctx }) =>
-    ctx.connections.listConnections(),
+    ctx.connections.listAndReconcileConnections(),
   ),
 
   get: readCredentialsProcedure
