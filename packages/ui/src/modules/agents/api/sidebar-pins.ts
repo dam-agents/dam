@@ -17,7 +17,8 @@ export function useSidebarPins(): { pins: SidebarPins; loaded: boolean } {
   return { pins: data ?? NO_PINS, loaded: data !== undefined };
 }
 
-function patchPins(patch: (pins: SidebarPins) => SidebarPins) {
+async function patchPins(patch: (pins: SidebarPins) => SidebarPins) {
+  await queryClient.cancelQueries({ queryKey: pinsKey() });
   queryClient.setQueryData(pinsKey(), (pins) => patch(pins ?? NO_PINS));
 }
 

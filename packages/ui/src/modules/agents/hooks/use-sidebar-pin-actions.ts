@@ -7,7 +7,12 @@ import {
   useSetPinnedSessions,
   useSidebarPins,
 } from "../api/sidebar-pins.js";
-import { movePin, type PinDrop, togglePin } from "../lib/sidebar-pins.js";
+import {
+  movePin,
+  type PinDrop,
+  stepPin,
+  togglePin,
+} from "../lib/sidebar-pins.js";
 
 function loadedPins(): SidebarPins | undefined {
   return queryClient.getQueryData(trpc.sidebarPins.get.queryKey());
@@ -43,10 +48,21 @@ export function useSidebarPinActions() {
       editAgents((pinned) => togglePin(pinned, agentId)),
     moveAgent: (agentId: string, drop: PinDrop | null) =>
       editAgents((pinned) => movePin(pinned, agentId, drop)),
+    stepAgent: (agentId: string, step: -1 | 1, shown: ReadonlySet<string>) =>
+      editAgents((pinned) => stepPin(pinned, agentId, step, shown)),
     toggleSession: (agentId: string, sessionId: string) =>
       editSessions(agentId, (pinned) => togglePin(pinned, sessionId)),
     moveSession: (agentId: string, sessionId: string, drop: PinDrop | null) =>
       editSessions(agentId, (pinned) => movePin(pinned, sessionId, drop)),
+    stepSession: (
+      agentId: string,
+      sessionId: string,
+      step: -1 | 1,
+      shown: ReadonlySet<string>,
+    ) =>
+      editSessions(agentId, (pinned) =>
+        stepPin(pinned, sessionId, step, shown),
+      ),
     unpinSession: (agentId: string, sessionId: string) =>
       editSessions(agentId, (pinned) =>
         pinned.filter((id) => id !== sessionId),

@@ -39,7 +39,7 @@ The sidebar shows the record's rows the same way under every Agent that is not o
 It offers more only when the record may hold more: a feed shorter than its row limit lists every row filed for the owner.
 
 The user's **pins** order the sidebar on top of that.
-Pinned Agents come first, and so do pinned Sessions within their own Agent, in the order the user dragged them into; everything else keeps the recency order.
+Pinned Agents come first, and so do pinned Sessions within their own Agent, in the order the user dragged them into or moved them to with Alt+Up and Alt+Down; everything else keeps the recency order.
 The api-server keeps the pins per user, so the order follows the user to every browser, and drops an Agent's pins when the Agent is deleted.
 An Agent with pinned Sessions shows all of them, even past three, and asks for each one its own list did not return.
 A sleeping Agent shows only the pinned Sessions the record holds, because the sidebar never wakes an Agent to draw it; the rest show once it is awake.

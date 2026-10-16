@@ -65,6 +65,7 @@ export function SidebarAgents({
         unread={unreadAgentIds.has(agent.id)}
         pinned={pinned}
         onMovePin={pinActions.moveAgent}
+        onStepPin={(id, step) => pinActions.stepAgent(id, step, pinnedAgentIds)}
         onSelect={navigate(() => startSession(agent.id))}
         actions={
           <>

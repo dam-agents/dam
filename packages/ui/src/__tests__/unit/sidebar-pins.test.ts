@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   movePin,
   pinnedFirst,
+  stepPin,
   togglePin,
 } from "../../modules/agents/lib/sidebar-pins.js";
 
@@ -82,5 +83,29 @@ describe("movePin", () => {
       "a",
       "b",
     ]);
+  });
+});
+
+describe("stepPin", () => {
+  const shown = new Set(["a", "b", "c"]);
+
+  // TEST_SCENARIO: Alt+Up on an unpinned row pins it at the end; Alt+Up and Alt+Down then move it one pinned row at a time, and Alt+Down past the last pinned row unpins it.
+  it("pins, moves and unpins one step at a time", () => {
+    expect(stepPin(["a", "b"], "c", -1, shown)).toEqual(["a", "b", "c"]);
+    expect(stepPin(["a", "b"], "c", 1, shown)).toEqual(["a", "b"]);
+    expect(stepPin(["a", "b", "c"], "c", -1, shown)).toEqual(["a", "c", "b"]);
+    expect(stepPin(["a", "b", "c"], "a", 1, shown)).toEqual(["b", "a", "c"]);
+    expect(stepPin(["a", "b", "c"], "a", -1, shown)).toEqual(["a", "b", "c"]);
+    expect(stepPin(["a", "b", "c"], "c", 1, shown)).toEqual(["a", "b"]);
+  });
+
+  // TEST_SCENARIO: a step passes over pins that name nothing listed, so every key press moves the row on screen, and keeps those pins.
+  it("steps over pins that are not shown", () => {
+    expect(stepPin(["a", "gone", "b"], "b", -1, shown)).toEqual([
+      "b",
+      "a",
+      "gone",
+    ]);
+    expect(stepPin(["a", "gone"], "a", 1, shown)).toEqual(["gone"]);
   });
 });
