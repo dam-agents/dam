@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
@@ -70,6 +70,7 @@ function MainApp() {
   const setApprovalsOpen = useStore((s) => s.setApprovalsOpen);
   const kitBrowserOpen = useStore((s) => s.kitBrowserOpen);
   const desktop = useIsDesktop();
+  const [dockSlot, setDockSlot] = useState<HTMLDivElement | null>(null);
 
   useLiveEvents();
   useAgentCrashToasts();
@@ -158,13 +159,16 @@ function MainApp() {
           </div>
         </main>
         {desktop && (
-          <aside
-            aria-label="Notifications"
-            className="flex w-11 shrink-0 flex-col items-center justify-end gap-1 border-l border-border bg-background py-2"
-          >
-            <GettingStartedDock placement="rail" />
-            <ApprovalsButton />
-          </aside>
+          <>
+            <div ref={setDockSlot} className="flex shrink-0 items-end" />
+            <aside
+              aria-label="Notifications"
+              className="flex w-11 shrink-0 flex-col items-center justify-end gap-1 border-l border-border bg-background py-2"
+            >
+              <GettingStartedDock placement="rail" slot={dockSlot} />
+              <ApprovalsButton />
+            </aside>
+          </>
         )}
       </div>
       {approvalsOpen && (

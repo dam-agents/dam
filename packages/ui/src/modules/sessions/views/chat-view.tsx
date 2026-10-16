@@ -289,6 +289,7 @@ export function ChatView() {
   const rightWRef = useRef(rightW);
   const [columnsEl, setColumnsEl] = useState<HTMLDivElement | null>(null);
   const [columnsW, setColumnsW] = useState<number | null>(null);
+  const [dockSlot, setDockSlot] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!columnsEl) return;
     const ro = new ResizeObserver(([entry]) =>
@@ -1322,6 +1323,7 @@ export function ChatView() {
               }
             />
           )}
+          <div ref={setDockSlot} className="flex shrink-0 items-end" />
           <SidePanelBar
             active={activeTab}
             hidden={hiddenTabs}
@@ -1338,7 +1340,7 @@ export function ChatView() {
             }
             footer={
               <div className="flex flex-col items-center gap-1">
-                <GettingStartedDock placement="rail" />
+                <GettingStartedDock placement="rail" slot={dockSlot} />
                 <ApprovalsButton />
               </div>
             }

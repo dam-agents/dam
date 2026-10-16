@@ -2,6 +2,7 @@ import "./getting-started.css";
 
 import type { AvatarCharacter } from "api-server-api/avatar/svg";
 import { useCallback, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { useIsDesktop } from "@/hooks/use-is-desktop";
 import { cn } from "@/lib/utils";
@@ -19,16 +20,17 @@ import { ChecklistPill } from "./checklist-pill.js";
 import { UnlockCelebration } from "./unlock-celebration.js";
 
 const PLACEMENT = {
-  rail: { desktop: true, popover: "right-full bottom-0 mr-2", tooltip: "left" },
+  rail: { desktop: true, popover: "mx-2 mb-11", tooltip: "left" },
   header: {
     desktop: false,
-    popover: "fixed right-4 top-[60px]",
+    popover: "absolute z-raised fixed right-4 top-[60px]",
     tooltip: "bottom",
   },
 } as const;
 
 interface Props {
   placement: keyof typeof PLACEMENT;
+  slot?: HTMLElement | null;
 }
 
 /**
@@ -41,9 +43,12 @@ interface Props {
  * stays collapsed. On a wide screen the ring sits in the icon bar on the
  * right, above the bell, and the checklist opens to its left; on a phone it
  * sits in the top bar and the checklist opens below it. Only the placement
- * that matches the screen renders, so the celebration plays once.
+ * that matches the screen renders, so the celebration plays once. On the
+ * rail, the checklist and the celebration render into `slot`, an element in
+ * the page's flow beside the bar, so they take room from the content instead
+ * of covering its buttons.
  */
-export function GettingStartedDock({ placement }: Props) {
+export function GettingStartedDock({ placement, slot }: Props) {
   const progress = useGettingStarted().data;
   const expanded = useStore((s) => s.checklistExpanded);
   const setExpanded = useStore((s) => s.setChecklistExpanded);
@@ -75,6 +80,33 @@ export function GettingStartedDock({ placement }: Props) {
   const dismiss = () => setDismissed.mutate({ dismissed: true });
 
   const open = expanded && !celebrating && !checklist.dismissed;
+  const popover = (celebrating || open) && (
+    <div
+      className={cn(
+        "getting-started-dock flex flex-col items-end gap-3",
+        at.popover,
+      )}
+    >
+      {celebrating && (
+        <UnlockCelebration
+          key={celebrating.unlock.task}
+          character={celebrating.unlock.character}
+          variant={celebrating.variant}
+          onFinished={finishCelebration}
+        />
+      )}
+      {open && (
+        <ChecklistPanel
+          rows={checklist.rows}
+          unlocked={checklist.unlocked}
+          justUnlocked={justUnlocked}
+          onCollapse={() => setExpanded(false)}
+          onDismiss={dismiss}
+          onStart={(task) => void startTask(task)}
+        />
+      )}
+    </div>
+  );
 
   return (
     <div className="getting-started-dock relative">
@@ -92,33 +124,7 @@ export function GettingStartedDock({ placement }: Props) {
           }}
         />
       )}
-      {(celebrating || open) && (
-        <div
-          className={cn(
-            "absolute z-raised flex flex-col items-end gap-3",
-            at.popover,
-          )}
-        >
-          {celebrating && (
-            <UnlockCelebration
-              key={celebrating.unlock.task}
-              character={celebrating.unlock.character}
-              variant={celebrating.variant}
-              onFinished={finishCelebration}
-            />
-          )}
-          {open && (
-            <ChecklistPanel
-              rows={checklist.rows}
-              unlocked={checklist.unlocked}
-              justUnlocked={justUnlocked}
-              onCollapse={() => setExpanded(false)}
-              onDismiss={dismiss}
-              onStart={(task) => void startTask(task)}
-            />
-          )}
-        </div>
-      )}
+      {popover && (at.desktop ? slot && createPortal(popover, slot) : popover)}
     </div>
   );
 }
