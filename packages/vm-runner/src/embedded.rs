@@ -731,7 +731,7 @@ fn record_gateway_host_port(id: &str, spec: &MachineSpec) -> anyhow::Result<()> 
         .with_context(|| format!("recording the gateway host port in {}", file.display()))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the image as the record must name it. A directory becomes a `local-dir:` reference smolvm boots in place, which is what lets every machine of an image share one unpacked tree. An archive is staged into smolvm's own cache and named `local:`. A registry reference passes through. The CLI resolves the same way before it writes a record; the embedding API does not, so it is done here.
+// UNIT_BOUNDARY_DESCRIPTION: the image as the record must name it. A directory becomes a `local-dir:` reference smolvm boots in place, which is what lets every machine of an image share one unpacked tree. A registry reference passes through. The CLI resolves the same way before it writes a record; the embedding API does not, so it is done here.
 fn resolved_image(image: &str) -> anyhow::Result<String> {
     Ok(match resolve(classify(image))? {
         ResolvedImage::Registry(reference) => reference,

@@ -191,7 +191,7 @@ struct Prepared {
 }
 
 impl ImageCache {
-    // UNIT_BOUNDARY_DESCRIPTION: opens the directory as its only writer. A scratch tree already there was left by a writer that died, mid-fetch or mid-eviction, so it is removed now. A directory mounted read-only, as the staged archives are, opens too: nothing is written there until a fetch, and that fetch fails with a message naming the directory.
+    // UNIT_BOUNDARY_DESCRIPTION: opens the directory as its only writer. A scratch tree already there was left by a writer that died, mid-fetch or mid-eviction, so it is removed now. A directory mounted read-only, as the staged trees are, opens too: nothing is written there until a fetch, and that fetch fails with a message naming the directory.
     pub fn open(config: CacheConfig) -> Self {
         let _ = fs::create_dir_all(&config.dir);
         cache::reclaim_scratch(&config.dir);
