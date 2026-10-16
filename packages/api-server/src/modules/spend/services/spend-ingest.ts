@@ -194,6 +194,17 @@ export function createSpendIngest(deps: {
         ? { ...measure.amounts, costMicros: await referenceCost(row) }
         : measure.amounts;
       await settle(record.callId, row, amounts, record.final);
+      if (record.final)
+        log().debug(
+          {
+            callId: record.callId,
+            agentId: record.agentId,
+            sessionId: record.sessionId,
+            harness: record.harness,
+            durationMs: record.durationMs,
+          },
+          "spend.call_recorded",
+        );
 
       const difference =
         record.final && measure.unit === "usd"

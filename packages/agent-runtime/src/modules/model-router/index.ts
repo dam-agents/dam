@@ -1,5 +1,9 @@
 export { composeModelRouter } from "./compose.js";
-export { sessionOf, type SessionHandle } from "./domain/session-of.js";
+export {
+  SESSION_HEADER,
+  sessionOf,
+  type SessionHandle,
+} from "./domain/session-of.js";
 export {
   applyReplayRules,
   dropUnsupportedReasoning,

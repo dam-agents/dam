@@ -32,6 +32,8 @@ The output texts are in [README — Wording](./README.md#wording).
    - Update the tool description in `packages/api-server/src/modules/metrics/mcp-tools.ts`: the cost is measured by the gateway; the per-call rows come from telemetry.
 3. **`dam metrics <agent>`** in `packages/cli/src/modules/metrics/commands/show.ts` and `services/metrics-service.ts`:
    - Spend from `spend.breakdown` (`agentId`) and `spend.sessions` for the UTC days that the `--since` window touches; the recent calls from `metrics.overview`'s `contextPerCall`.
+     Without `--since` (today "all time"), the window is T's day to today.
+     With `--session`, the totals and the summary come from that session's `spend.sessions` row, because `spend.breakdown` takes no session.
      A `PRECONDITION_FAILED` from `metrics.overview` prints the note of the Wording table and does not fail the command.
    - The summary and tables as in the Wording table; amounts with `formatSpendAmount`.
    - `--json` returns `{ agentId, window, measuredSince, totals, byModel, sessions, calls }`.

@@ -42,6 +42,8 @@ The Connection is the one that the request named, else the chain's only model-pr
 An address that names no Connection of the chain counts as no address, so a false address cannot hide a call.
 When the chain has several model-provider Connections and the request names none, the meter names all their providers and no Connection.
 The meter keeps these facts in the call's gateway metadata, out of the agent's reach, and the gateway hands them to the ext_authz check, so the gate and the ledger see the same call.
+The meter also copies the session and the harness that the [Model Router](harness-config.md#the-model-router) stamps on the call, when each is at most 128 characters of printable ASCII.
+The stamp comes from the agent's pod, so it serves display only; the gateway removes it before the provider, on every chain.
 The meter also removes the request's compression offer, because a compressed reply cannot be read as it passes.
 It notes the path without the query and without a Connection address prefix, the API dialect of the path, and whether the path is billable.
 Billable paths are the model calls: Anthropic Messages, OpenAI Chat Completions, legacy Completions, Responses and Embeddings, and the Bedrock invoke and converse calls, streamed or not.
@@ -59,7 +61,7 @@ It keeps the raw counts with the dialect and leaves their meaning to pricing: in
 
 **The record.** The gateway sends spend records over a gRPC access log to the agent's ext-authz Service, the address that only this agent's gateway can reach.
 A record names the payer, which is the root driver for an Invocation target, and the Connection and providers that the meter named on the request.
-It carries the reply size, the proxy's own cost figure when the reply has one, and whether the reply ended with its format's end event.
+It carries the session and the harness of the stamp, the call's duration, the reply size, the proxy's own cost figure when the reply has one, and whether the reply ended with its format's end event.
 A reply that stops early keeps the counts read so far and is not marked complete.
 
 **Periodic records.** While a call runs, the gateway also sends a periodic record of the same call every 2 seconds, with the counts so far.

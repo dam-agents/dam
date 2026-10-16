@@ -201,11 +201,12 @@ func buildOuterRouteConfig(p bootstrapParams) ev {
 			ev{"name": "connect", "domains": []any{"*"}, "routes": buildOuterRoutes(p)},
 		},
 	}
+	remove := []any{attributionAgentHeader, attributionInvocationHeader}
 	if p.Telemetry {
 		applyAttributionMutations(routeConfig, p)
-		return routeConfig
+		remove, _ = routeConfig["request_headers_to_remove"].([]any)
 	}
-	routeConfig["request_headers_to_remove"] = []any{attributionAgentHeader, attributionInvocationHeader}
+	routeConfig["request_headers_to_remove"] = append(remove, sessionStampHeader, harnessStampHeader)
 	return routeConfig
 }
 
@@ -315,7 +316,7 @@ func buildTerminatingChain(p bootstrapParams, c envoyHostChain) ev {
 					"name":                      "default",
 					"domains":                   []any{"*"},
 					"routes":                    buildChainForwardRoutes(c),
-					"request_headers_to_remove": []any{connectionAddressHeader},
+					"request_headers_to_remove": []any{connectionAddressHeader, sessionStampHeader, harnessStampHeader},
 				},
 			},
 		},
