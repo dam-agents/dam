@@ -1848,6 +1848,9 @@ impl Server {
             if let Some(seed) = ending {
                 self.record_seeded(id, seed.as_deref());
                 self.record_repair(id);
+                if let Err(e) = self.runtime.answered(id) {
+                    tracing::warn!(machine = %id, error = %format!("{e:#}"), "acting on the guest's first answer");
+                }
             }
         }
         let mut machines = locked(&self.machines);
