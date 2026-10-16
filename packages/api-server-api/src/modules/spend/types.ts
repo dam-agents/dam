@@ -6,6 +6,7 @@ import type {
   spendDailyInputSchema,
   spendLimitScopeSchema,
   spendLimitStateSchema,
+  spendSessionsInputSchema,
   spendSetLimitInputSchema,
   spendStatusInputSchema,
   spendUnitSchema,
@@ -14,6 +15,7 @@ import type {
 export type SpendUnit = z.infer<typeof spendUnitSchema>;
 export type SpendDailyInput = z.infer<typeof spendDailyInputSchema>;
 export type SpendBreakdownInput = z.infer<typeof spendBreakdownInputSchema>;
+export type SpendSessionsInput = z.infer<typeof spendSessionsInputSchema>;
 export type SpendLimitScope = z.infer<typeof spendLimitScopeSchema>;
 export type SpendLimitState = z.infer<typeof spendLimitStateSchema>;
 export type SpendCeilingSource = z.infer<typeof spendCeilingSourceSchema>;
@@ -110,6 +112,26 @@ export interface SpendBreakdown {
   byCallingAgent: (SpendAmount & { agentId: string; calls: number })[];
 }
 
+export interface SpendSessionRow {
+  sessionId: string;
+  amounts: SpendAmount[];
+  subAgentAmounts: SpendAmount[];
+  calls: number;
+  durationMs: number;
+  uncachedInputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWrite5mTokens: number;
+  cacheWrite1hTokens: number;
+  firstDay: string;
+  lastDay: string;
+}
+
+export interface SpendSessions {
+  rows: SpendSessionRow[];
+  truncated: boolean;
+}
+
 export interface SpendMetering {
   startedAt: string;
   startDay: string;
@@ -120,6 +142,7 @@ export interface SpendMetering {
 export interface SpendService {
   daily(input: SpendDailyInput): Promise<SpendDailyRow[]>;
   breakdown(input: SpendBreakdownInput): Promise<SpendBreakdown>;
+  sessions(input: SpendSessionsInput): Promise<SpendSessions>;
   metering(): Promise<SpendMetering>;
   status(input: SpendStatusInput): Promise<SpendStatus>;
   setLimit(input: SpendSetLimitInput): Promise<void>;

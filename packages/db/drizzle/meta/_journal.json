@@ -624,6 +624,13 @@
       "when": 1792174318221,
       "tag": "0088_spend_metering_start",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1792178919134,
+      "tag": "0089_spend_daily_sessions",
+      "breakpoints": true
     }
   ]
 }

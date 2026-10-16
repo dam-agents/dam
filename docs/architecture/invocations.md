@@ -108,6 +108,7 @@ Some adapters stream a shell command's output only in parts beside the tool call
 While children run and no line names them yet, the chat shows the Driver's running Invocations from the record, scoped to the Session it shows.
 A tool spawn records the Driver's Session that called it: the harness names it on each platform MCP call by an opaque reference the Driver's runtime hands it per Session, and the api-server asks the runtime which Session that is when it records the spawn.
 A chat shows the children its own Session spawned, and every child with no recorded Session — a script spawn, a harness that names no Session, a lookup that failed, a record from before Sessions were kept — so nothing that showed before goes missing.
+The recorded Session also places the child's [Metered Spend](spend-limits.md#ledger) under that Session of the Driver, with the spend of the children it spawns in turn; a child with no recorded Session adds its spend to no Session.
 Only the Driver's own children are scoped; a grandchild shows under its child.
 
 ## The Invocation Pin

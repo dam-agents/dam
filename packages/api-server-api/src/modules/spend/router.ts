@@ -7,6 +7,7 @@ import {
 import {
   spendBreakdownInputSchema,
   spendDailyInputSchema,
+  spendSessionsInputSchema,
   spendSetLimitInputSchema,
   spendStatusInputSchema,
 } from "./schemas.js";
@@ -24,6 +25,13 @@ export const spendRouter = t.router({
     .query(({ ctx, input }) => {
       if (input.agentId) checkAgentBinding(ctx, input.agentId);
       return ctx.spend.breakdown(input);
+    }),
+
+  sessions: readAgentProcedure
+    .input(spendSessionsInputSchema)
+    .query(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.agentId);
+      return ctx.spend.sessions(input);
     }),
 
   metering: readAgentProcedure.query(({ ctx }) => ctx.spend.metering()),

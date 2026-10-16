@@ -9,6 +9,7 @@ import {
   isZero,
   mapAmounts,
   utcDay,
+  NO_SESSION,
   UNKNOWN_CONNECTION,
   UNKNOWN_MODEL,
   type CallAmounts,
@@ -24,6 +25,10 @@ export interface AgentOwners {
   ownerOf(agentId: string): Promise<string | null>;
 }
 
+export interface SessionOwnership {
+  has(agentId: string, sessionId: string): Promise<boolean>;
+}
+
 export type StartedCall = CallMeta & { readonly callId: string };
 
 export interface SpendIngest {
@@ -37,12 +42,36 @@ const UNRECORDED_BATCH = 500;
 const REFERENCE_DAYS = 7;
 const PROXY_COST_TOLERANCE = 0.05;
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the stamp comes from the agent's pod, so a
+ * Session counts only when the calling agent reported it to the Session
+ * directory; any other stamp, or a failed check, counts as no Session. The
+ * split is for display only, so the check never loses a call's spend.
+ */
+export async function checkedSession(
+  sessions: SessionOwnership,
+  agentId: string,
+  sessionId: string | null,
+): Promise<string> {
+  if (!agentId || !sessionId) return NO_SESSION;
+  try {
+    return (await sessions.has(agentId, sessionId)) ? sessionId : NO_SESSION;
+  } catch (err) {
+    getLogger().warn(
+      { agentId, sessionId, reason: formatError(err) },
+      "spend.session_check_failed",
+    );
+    return NO_SESSION;
+  }
+}
+
 export function createSpendIngest(deps: {
   priceBook: PriceBook;
   calls: CallStates;
   ledger: SpendLedger;
   counters: DayCounters;
   owners: AgentOwners;
+  sessions: SessionOwnership;
 }): SpendIngest {
   const log = () => getLogger();
 
@@ -140,6 +169,12 @@ export function createSpendIngest(deps: {
       ownerSub: state.meta.ownerSub,
       connectionId: state.meta.connectionId ?? UNKNOWN_CONNECTION,
       model: UNKNOWN_MODEL,
+      sessionId: await checkedSession(
+        deps.sessions,
+        state.meta.agentId,
+        state.meta.sessionId,
+      ),
+      callingAgentId: state.meta.agentId,
       provider,
       unit: unitOf(provider),
     };
@@ -187,6 +222,12 @@ export function createSpendIngest(deps: {
         ownerSub,
         connectionId: record.connectionId ?? UNKNOWN_CONNECTION,
         model: measure.model,
+        sessionId: await checkedSession(
+          deps.sessions,
+          record.agentId,
+          record.sessionId,
+        ),
+        callingAgentId: record.agentId,
         provider: measure.provider,
         unit: measure.unit,
       };

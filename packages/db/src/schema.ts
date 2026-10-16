@@ -1088,6 +1088,8 @@ export const spendDaily = pgTable(
     payerAgentId: text("payer_agent_id").notNull(),
     connectionId: text("connection_id").notNull(),
     model: text("model").notNull(),
+    sessionId: text("session_id").notNull().default(""),
+    callingAgentId: text("calling_agent_id").notNull().default(""),
     ownerSub: text("owner_sub").notNull(),
     providerTemplate: text("provider_template").notNull(),
     unit: text("unit").notNull(),
@@ -1111,6 +1113,7 @@ export const spendDaily = pgTable(
     calls: integer("calls").notNull().default(0),
     estimatedCalls: integer("estimated_calls").notNull().default(0),
     refusedCalls: integer("refused_calls").notNull().default(0),
+    durationMs: bigint("duration_ms", { mode: "number" }).notNull().default(0),
     maxCallCostMicros: bigint("max_call_cost_micros", { mode: "number" })
       .notNull()
       .default(0),
@@ -1120,9 +1123,21 @@ export const spendDaily = pgTable(
   },
   (table) => [
     primaryKey({
-      columns: [table.day, table.payerAgentId, table.connectionId, table.model],
+      name: "spend_daily_pk",
+      columns: [
+        table.day,
+        table.payerAgentId,
+        table.connectionId,
+        table.model,
+        table.sessionId,
+        table.callingAgentId,
+      ],
     }),
     index("spend_daily_owner_day_idx").on(table.ownerSub, table.day),
+    index("spend_daily_calling_agent_day_idx").on(
+      table.callingAgentId,
+      table.day,
+    ),
   ],
 );
 

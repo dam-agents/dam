@@ -116,8 +116,14 @@ A call without a Connection keeps its cost under an unknown Connection, so it st
 **Who pays.** A call counts for its payer and the payer's owner, on the UTC day the call started.
 So a sub-agent's calls count for its root driver.
 
-**Daily rollup.** Postgres keeps one row per day, payer, Connection and model: the cost, the token counts, the web searches, the counts of calls, estimated calls and refused calls, and the most expensive single call.
+**Daily rollup.** Postgres keeps one row per day, payer, Connection, model, Session and calling agent: the cost, the token counts, the web searches, the model time, the counts of calls, estimated calls and refused calls, and the most expensive single call.
+The calling agent is the agent whose gateway sent the record, so a sub-agent's calls count for its root driver and still show as its own.
 A row outlives its agent, so the spend of a deleted agent still counts for its owner.
+
+**Session check.** The Session comes from the stamp in the agent's pod, so it serves display only, and no total and no limit depends on it.
+A call's Session counts only when the calling agent reported that Session to the [Session directory](metrics.md#session-directory); a Session that the agent never reported, or a failed check, counts as no Session.
+The agent's own pod writes the directory, so the check stops stray and wrong ids, not a deliberate agent: such rows stay under that agent's own spend.
+The check keeps a Session that it found for ten minutes and never keeps a miss, because a new Session's report can arrive after its first call.
 
 **Measuring start.** Postgres keeps one moment, T: the start of the measured spend on this deployment.
 A migration sets it once and never changes it.
@@ -125,8 +131,13 @@ When the rollup already has rows, T is 00:00 UTC of the first day in it; else T 
 The screens read T to say since when the spend is measured, to mark the days before T as not measured, and to show the notice about the change for 30 days after T.
 The api-server reads T once and keeps it.
 
-**Grouped read.** The screens read the rollup grouped by day, payer, Connection, model and unit, for at most 366 days.
-The api-server folds the rows into totals per unit and into spend by day, agent, model and Connection.
+**Grouped read.** The screens read the rollup grouped by day, payer, Connection, model, Session, calling agent and unit, for at most 366 days.
+The api-server folds the rows into totals per unit, the model time, and spend by day, agent, model, Connection, session type and calling agent.
+A call whose calling agent is not its payer counts as a sub-agent's; other calls take their Session's kind from the directory.
+The read for one agent counts the calls that it pays for, so a driver's figures include its sub-agents; for a sub-agent, it counts the calls that the sub-agent made.
+
+**Spend per Session.** For one agent, the api-server sums the calls that the agent made per Session, newest first, and adds to each Session the calls of the sub-agents spawned from it at any depth, also as a part of its own.
+A sub-agent whose spawn recorded no Session ([invocations](invocations.md)) adds its spend to no Session.
 
 **Day counters.** Redis keeps the day's totals per payer and unit, per owner and unit, and per payer and Connection, so the limit check reads no database.
 A missing counter, for example after a Redis restart, is rebuilt from the rollup, and a counter that fails to update is dropped so that the next read rebuilds it.
@@ -149,6 +160,8 @@ DAM counts high and marks a call estimated when its usage is missing or unsure:
   The gate notes each metered call when it starts.
   Sixty minutes later, a periodic sweep finishes a call that has only periodic records from its last counts, and counts a call with no record as the payer's most expensive call on that Connection that day, else in the last seven days, else at nothing with a warning.
   A real record that arrives later corrects the estimate.
+
+An estimated call keeps the Session and the calling agent of its stamp, and the gate's own row for a refused call keeps them too.
 
 **Shutdown.** A stopping api-server takes no new streams, ends every open record stream with a success status so that each gateway reconnects to another replica and loses no record, and gives the open calls twenty seconds before it closes the port.
 
