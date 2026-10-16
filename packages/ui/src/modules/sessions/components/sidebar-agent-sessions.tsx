@@ -8,6 +8,7 @@ import { type ReactNode, useEffect, useState } from "react";
 
 import { labelVariants } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
+import { TREE_GUIDE } from "@/components/ui/tree-guide";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
@@ -131,7 +132,10 @@ function SessionPreview({
 
   return (
     <div
-      className="flex flex-col gap-px pb-1"
+      className={cn(
+        "flex flex-col gap-px pb-1 [--tree-guide-x:20px] before:bottom-1",
+        TREE_GUIDE,
+      )}
       data-testid="sidebar-agent-sessions"
     >
       {visible.map((item) => (
@@ -255,7 +259,10 @@ function AgentSessionList({
 
   return (
     <div
-      className="flex flex-col gap-px pb-1"
+      className={cn(
+        "flex flex-col gap-px pb-1 [--tree-guide-x:20px] before:bottom-1",
+        TREE_GUIDE,
+      )}
       data-testid="sidebar-agent-sessions"
       data-provisional={list.provisional ? "true" : undefined}
       aria-busy={list.provisional || list.loading}

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { DisclosureChevron } from "@/components/ui/disclosure";
 import { HOVER_ACTION } from "@/components/ui/hover-action";
+import { TREE_GUIDE } from "@/components/ui/tree-guide";
 import { cn } from "@/lib/utils";
 
 import {
@@ -73,7 +74,11 @@ export function SidebarFolderGroup({
         </button>
         {actions && <div className={cn("pr-2", HOVER_ACTION)}>{actions}</div>}
       </div>
-      {!collapsed && children}
+      {!collapsed && (
+        <div className={cn(TREE_GUIDE, "[--tree-guide-x:42px]")}>
+          {children}
+        </div>
+      )}
     </div>
   );
 }
