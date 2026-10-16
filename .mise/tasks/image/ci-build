@@ -4,7 +4,7 @@
 #USAGE flag "--serial" help="Build one at a time, for images too large to build side by side on one runner's disk"
 #USAGE arg "<arch>"
 #USAGE arg "<component>..." var=#true help="<component>[:<output>]; output is digest (default: push by digest and write /tmp/digests/<component>/<hex>), cacheonly (build without pushing, to prove it builds), source (push <component>:<source sha>, the tag image:resolve reuses) or load (write the component's dist/oci tar, named platform-<component>:latest)"
-# cd.yml builds all of one arch's images, agents or workloads in one job
+# build.yml builds all of one arch's images, agents or workloads in one job
 # instead of one job per image. Each job costs a runner slot and a turn in the
 # shared queue, which is what a run waited on, not the builds.
 #

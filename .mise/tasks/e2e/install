@@ -29,7 +29,7 @@ INSTALL_ARGS=(
 # creates is a vm agent, and it adds the runtime migration spec — and that run
 # fails, rather than skips, on an install without the backend. It needs a
 # usable /dev/kvm (nested virtualization on the lima VM, or a KVM host in
-# sandbox mode), so it is opt-in: CI sets it only in its vm lane, cd.yml's
+# sandbox mode), so it is opt-in: CI sets it only in its vm lane, e2e.yml's
 # e2e-vm job on a KVM runner.
 #
 # That lane also gives every machine one vCPU and counts a booting one at

@@ -71,7 +71,7 @@ Two specs are tied to a Backend.
 `smoke/20-runtime-migration.spec.ts` exists only in a vm run, the one install with both Backends, and runs last: it creates a container agent with a HOME file and a Session, checks that the Migrate button is absent with the experiment off, turns the experiment on, migrates through the button, and checks that the agent keeps its id, HOME and Sessions and still chats.
 It turns the experiment off and on again, which is why nothing else may run beside it.
 
-CI runs the smoke suite as two lanes on every run but a tag and a docs-only PR (cd.yml's `docs-only` job): `mise e2e (container)` (cd.yml's `e2e` job) and `mise e2e (vm)` (`e2e-vm`, the same steps through YAML anchors, plus `E2E_VIRTUALIZATION=1`), each on its own GitHub-hosted x64 runner.
+CI runs the smoke suite as two lanes on every run but a tag and a docs-only PR (e2e.yml's `docs-only` job): `e2e / mise e2e (container)` (e2e.yml's `e2e` job) and `e2e / mise e2e (vm)` (`e2e-vm`, the same steps through YAML anchors, plus `E2E_VIRTUALIZATION=1`), each on its own GitHub-hosted x64 runner.
 The vm lane's runner exposes `/dev/kvm`, which a udev rule opens to the runner user, and builds or pulls the vm-runner beside the other images.
 A failure in the vm lane alone is the vm Backend's.
 

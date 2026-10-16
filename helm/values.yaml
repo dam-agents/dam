@@ -879,7 +879,7 @@ keycloak:
   # Keycloakify theme JAR on top of upstream Keycloak. The upstream
   # version is pinned in the keycloak-theme package's `oci` task.
   # In published charts CI replaces the empty tag with the image's content
-  # tag (the commit that last touched its inputs — see cd.yml `publish`),
+  # tag (the commit that last touched its inputs — see build.yml `publish`),
   # so a release that doesn't change the image doesn't roll the pod.
   # Empty falls back to .Chart.AppVersion.
   image:
