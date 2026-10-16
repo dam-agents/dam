@@ -178,7 +178,8 @@ gha_outputs() {
   agents_json="$(stale_json $AGENTS)"
   # A PR builds its images and the mock in e2e, which resolves them itself,
   # and never builds workloads: slow, rarely-changing builds on the default
-  # image. A merge group also builds its images on arm64, where no e2e runs.
+  # image. A merge group also builds its images in build-images, on amd64
+  # alone; arm64 builds on main only.
   [ "${EVENT:-}" = pull_request ] || images_json="$(stale_json $IMAGES)"
   if [ "${EVENT:-}" != pull_request ] && [ "${EVENT:-}" != merge_group ]; then
     workloads_json="$(stale_json $WORKLOADS)"
