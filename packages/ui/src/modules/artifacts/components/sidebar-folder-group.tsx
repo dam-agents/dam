@@ -58,12 +58,14 @@ export function SidebarFolderGroup({
             "text-foreground",
           )}
         >
-          <DisclosureChevron
-            open={!collapsed}
-            size={14}
-            className="text-muted-foreground"
-          />
-          <Folder size={14} className="shrink-0 text-muted-foreground" />
+          <span className="flex w-4 shrink-0 items-center justify-center">
+            <DisclosureChevron
+              open={!collapsed}
+              size={14}
+              className="text-muted-foreground"
+            />
+          </span>
+          <Folder size={16} className="shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate">{label}</span>
           <span className="shrink-0 text-xs text-muted-foreground">
             {count} artifact{count === 1 ? "" : "s"}

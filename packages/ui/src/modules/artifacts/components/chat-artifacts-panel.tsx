@@ -149,10 +149,11 @@ export function ChatArtifactsPanel({
     useState<ArtifactFolder | null>(null);
   const deleteFolder = useDeleteFolder();
 
-  const renderRow = (artifact: LibraryArtifact) => (
+  const renderRow = (artifact: LibraryArtifact, depth: number) => (
     <ArtifactListRow
       key={artifact.id}
       artifact={artifact}
+      depth={depth}
       active={artifact.id === openArtifactId}
       onClick={() => void openRow(artifact.id)}
       drag={dropCallbacks}
@@ -231,14 +232,15 @@ export function ChatArtifactsPanel({
         <div
           {...rootDrop}
           className={cn(
-            "overflow-y-auto",
+            "flex-1 overflow-y-auto",
             dragInProgress &&
               hotFolderId === null &&
               "ring-2 ring-inset ring-primary",
           )}
         >
           {groups.map((group) => {
-            if (!group.folder) return group.artifacts.map(renderRow);
+            if (!group.folder)
+              return group.artifacts.map((a) => renderRow(a, 0));
             const collapsed =
               folderCollapse?.[group.key] ?? group.artifacts.length === 0;
             return (
@@ -265,7 +267,7 @@ export function ChatArtifactsPanel({
                   />
                 }
               >
-                {group.artifacts.map(renderRow)}
+                {group.artifacts.map((a) => renderRow(a, 1))}
               </SidebarFolderGroup>
             );
           })}
@@ -334,6 +336,7 @@ export function ChatArtifactsPanel({
 
 function ArtifactListRow({
   artifact,
+  depth,
   active,
   onClick,
   drag,
@@ -345,6 +348,7 @@ function ArtifactListRow({
   onSetRetention,
 }: {
   artifact: LibraryArtifact;
+  depth: number;
   active: boolean;
   onClick: () => void;
   drag?: ArtifactDragCallbacks;
@@ -382,12 +386,17 @@ function ArtifactListRow({
           {...(drag ? dragProps : {})}
           title={artifact.title}
           className={cn(
-            "group flex min-h-8 w-full cursor-pointer items-center gap-1.5 py-1 pl-3.5 pr-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted",
+            "group flex min-h-8 w-full cursor-pointer items-center gap-1.5 py-1 pr-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted",
             active && "bg-muted text-foreground",
             dragging && "opacity-50",
           )}
+          style={{ paddingLeft: `${12 + depth * 22}px` }}
         >
-          <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+          <span className="w-4 shrink-0" />
+          <div
+            className="-mx-1.5 shrink-0"
+            onClick={(e) => e.stopPropagation()}
+          >
             <ArtifactVisibilityButton
               artifact={artifact}
               onShare={() => onShare(artifact)}
