@@ -117,7 +117,8 @@ pub fn run() -> ! {
         expected.as_ref(),
     );
     mount_scratch(&root);
-    let trust = offer_trust_cache(&root);
+    let trust = offer_trust_cache();
+    show_boot_log(&root);
     let guard = pool_guard(&root);
     leave_disk(&root);
     share_mounts();
@@ -930,6 +931,18 @@ fn keep_tail(path: &Path, limit: u64) {
     }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: where the guest reads its boot log: this boot's and the one before, read-only. The log lives in the platform's part of the disk, which is detached once the boot is through with it (leave_disk), and the host never reads the disk, so without this bind the log, which holds the harness's output, is readable by no one. Read-only, so nothing in the guest can rewrite what the platform recorded.
+const BOOT_LOG_VIEW: &str = "/var/log/platform";
+
+fn show_boot_log(root: &Path) {
+    let target = Path::new(BOOT_LOG_VIEW);
+    if let Err(e) =
+        mkdir_all(target).and_then(|()| bind_read_only(&guest::system_store(root, "log"), target))
+    {
+        logf!("WARNING: showing the boot log at {BOOT_LOG_VIEW} ({e}); it is still written to the disk");
+    }
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: an install whose gateway intercepts nothing mounts no CA, and every host then serves a certificate the public roots already cover — so a missing share is silence rather than a warning.
 fn bind_ca() {
     let share = Path::new(guest::SHARE_CA_DIR);
@@ -1231,7 +1244,7 @@ fn evict_scratch(dirs: &[(PathBuf, u64)]) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: every entry of the scratch folders that may be evicted at `now`, in the order to evict them: by the first EVICT_AGES pass it is old enough for, then rebuildable before not, then oldest first. An entry is left out when it was used within `youngest` seconds, when it holds the image's trust cache, a socket or fifo a process may still listen on, a mount, or a file in `locked`, or when it cannot be read.
+// UNIT_BOUNDARY_DESCRIPTION: every entry of the scratch folders that may be evicted at `now`, in the order to evict them: by the first EVICT_AGES pass it is old enough for, then rebuildable before not, then oldest first. An entry is left out when it was used within `youngest` seconds, when it holds a socket or fifo a process may still listen on, a mount, or a file in `locked`, or when it cannot be read.
 fn scratch_entries(
     roots: &[ScratchRoot],
     disk: u64,
@@ -1239,7 +1252,6 @@ fn scratch_entries(
     now: u64,
     youngest: u64,
 ) -> Vec<ScratchEntry> {
-    let trust = Path::new(TRUST_CACHE_PATH);
     let mut entries: Vec<(usize, ScratchEntry)> = roots
         .iter()
         .filter_map(|root| {
@@ -1251,7 +1263,6 @@ fn scratch_entries(
                 .flatten()
                 .map(|name| (name.path(), root.shown.join(name.file_name()), root.mount))
         })
-        .filter(|(_, shown, _)| !trust.starts_with(shown))
         .filter_map(|(path, shown, mount)| {
             let (used, bytes) = tree_use(&path, disk, mount, locked)?;
             let leftover = path
@@ -1614,21 +1625,17 @@ fn home_full(path: &Path) -> bool {
     })
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the image's own boot may keep its extracted CA trust store here rather than rebuilding it every time. The variable is set only on this backend, so an image that honors it caches on a machine and silently does without in a container, where there is no disk to cache on. The store is bound to a path of its own because the disk itself is detached before the image runs.
-fn offer_trust_cache(root: &Path) -> Option<PathBuf> {
-    let trust = guest::system_store(root, "trust");
-    let guest_dir = Path::new(TRUST_CACHE_PATH);
-    let bound = mkdir_all(&trust)
-        .and_then(|()| mkdir_all(guest_dir))
-        .and_then(|()| mount(&trust, guest_dir, libc::MS_BIND));
-    if let Err(e) = bound {
+// UNIT_BOUNDARY_DESCRIPTION: a directory an image's boot may keep its extracted trust store in rather than rebuilding it, named to the entrypoint in TRUST_CACHE_ENV. It is a plain directory of the root, so it lasts as long as the root does: an extracted trust store belongs to the image that extracted it, and a new image starts with none.
+fn offer_trust_cache() -> Option<PathBuf> {
+    let dir = Path::new(TRUST_CACHE_PATH);
+    if let Err(e) = mkdir_all(dir) {
         logf!("WARNING: no trust cache directory ({e}); the image re-extracts its CA store every boot");
         return None;
     }
-    Some(guest_dir.to_path_buf())
+    Some(dir.to_path_buf())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the disk's root stays mounted only as long as the boot needs it. Everything the image may keep is on it under other mounts by now — its home, the trust cache, the root's layers — and an open file such as the boot log keeps working once the mount is gone. Left mounted, the disk's root lets anything in the guest write outside HOME and past its root, straight into the record of which image wrote that root or the platform's own state.
+// UNIT_BOUNDARY_DESCRIPTION: the disk's root stays mounted only as long as the boot needs it. Everything the image may keep is on it under other mounts by now — its home and the root's layers — and an open file such as the boot log keeps working once the mount is gone. Left mounted, the disk's root lets anything in the guest write outside HOME and past its root, straight into the record of which image wrote that root or the platform's own state.
 fn leave_disk(root: &Path) {
     if let Err(e) = unmount_detached(root) {
         logf!(

@@ -127,6 +127,20 @@ test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async
   expect(Number(procs), "the entrypoint runs in its cgroup").toBeGreaterThan(0);
 });
 
+// TEST_SCENARIO: the guest's boot log, which holds the harness's output, is readable in the guest at /var/log/platform and cannot be rewritten there; the disk it lives on is detached after the boot, and the host never reads it.
+test("shows the boot log read-only at /var/log/platform", async () => {
+  test.skip(
+    laneBackend !== "vm",
+    "only a vm machine has platform-init as its init",
+  );
+  const guest = inGuest(
+    agentId,
+    "test -s /var/log/platform/agent-runtime.log && echo readable; touch /var/log/platform/x 2>/dev/null || echo read-only",
+  );
+  expect(guest).toContain("readable");
+  expect(guest).toContain("read-only");
+});
+
 // TEST_SCENARIO: on the vm Backend the home dashboard shows the owner's memory and storage pools as meters read from the owner's runner, with this agent's own share in each.
 test("shows its owner's pools on the home dashboard", async ({ page }) => {
   test.skip(laneBackend !== "vm", "only vm agents draw on a per-user pool");
