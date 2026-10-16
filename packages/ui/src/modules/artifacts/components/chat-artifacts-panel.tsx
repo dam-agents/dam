@@ -1,5 +1,4 @@
 import {
-  Box,
   Edit,
   FolderAdd,
   Link,
@@ -43,7 +42,8 @@ import { cn } from "@/lib/utils";
 
 import { api } from "../../../api.js";
 import { useStore } from "../../../store.js";
-import { useAgentDisplayName } from "../../agents/api/queries.js";
+import { useAgentsList } from "../../agents/api/queries.js";
+import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { SidebarSection } from "../../sessions/components/sidebar-section.js";
 import { useDeleteFolder } from "../api/mutations.js";
 import { useArtifactFolders, useArtifacts } from "../api/queries.js";
@@ -497,7 +497,8 @@ function CreatorByline({ agentId }: { agentId: string | null }) {
 
 function AgentCreatorLink({ agentId }: { agentId: string }) {
   const selectAgent = useStore((s) => s.selectAgent);
-  const agentName = useAgentDisplayName(agentId);
+  const agent = useAgentsList().find((a) => a.id === agentId);
+  const agentName = agent?.name ?? agentId;
   return (
     <Tooltip content={`Open ${agentName}`}>
       <button
@@ -509,7 +510,12 @@ function AgentCreatorLink({ agentId }: { agentId: string }) {
         }}
         className="inline-flex min-w-0 items-center gap-1 transition-colors hover:text-accent"
       >
-        <Box size={12} className="shrink-0" />
+        <AgentAvatar
+          name={agentName}
+          avatar={agent?.avatar}
+          size={14}
+          className="shrink-0"
+        />
         <span className="truncate">{agentName}</span>
       </button>
     </Tooltip>
