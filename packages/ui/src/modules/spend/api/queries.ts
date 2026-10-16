@@ -1,5 +1,5 @@
 import { keepPreviousData, skipToken, useQuery } from "@tanstack/react-query";
-import type { SpendDailyInput } from "api-server-api";
+import type { SpendBreakdownInput } from "api-server-api";
 
 import { trpc } from "../../../trpc.js";
 
@@ -19,10 +19,17 @@ export function useAgentSpendStatus(agentId: string | null) {
   });
 }
 
-export function useSpendDaily(input: SpendDailyInput) {
+export function useSpendBreakdown(input: SpendBreakdownInput) {
   return useQuery({
-    ...trpc.spend.daily.queryOptions(input),
+    ...trpc.spend.breakdown.queryOptions(input),
     refetchInterval: SPEND_REFRESH_MS * 2,
     placeholderData: keepPreviousData,
+  });
+}
+
+export function useSpendMetering() {
+  return useQuery({
+    ...trpc.spend.metering.queryOptions(),
+    staleTime: Infinity,
   });
 }

@@ -276,8 +276,14 @@ The owner sets each limit where the work happens, and each limit shows its meter
 - **The agent's Providers section:** each granted Connection that takes a limit sets its Connection limit there, in the Connection's unit, next to today's spend on that Connection.
   It explains the subscription value and Bobcoins, and that only this limit stops calls on such a Connection; a Connection that takes no limit says why.
 - **Settings, Usage tab:** the same spend view as on Home, the own limit, and the ceiling with its state when one applies.
-- **Home:** the spend widget shows the dollar Metered Spend of today or of the last 7, 30 or 365 UTC days, the top agents, and today's own limit when one is set.
-  It does not need the telemetry store.
+- **Home:** the spend card shows the paid Metered Spend in dollars for Today, This month or Last month, in UTC days, with the real date range under the total.
+  A period that starts before T shows only its measured days, and a period wholly before T shows no total.
+  The checkbox "Show use covered by plans" adds the subscription value to the top agents' bars and a line under the total, never to the total; the browser keeps the choice.
+  Bobcoins get their own line.
+  The own limit shows for Today.
+  For 30 days after T, a user who had an agent before T sees a notice about the change until that user dismisses it.
+  "View details" opens Settings › Usage with the same period.
+  The card does not need the telemetry store.
 
 A meter takes the warning colour at 80% of its limit and the danger colour when the limit is reached.
 A sub-agent's page sets no limit: its spend counts for its root driver, so the page names the root driver instead.
