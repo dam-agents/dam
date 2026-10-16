@@ -89,7 +89,9 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
       connectionId: layer.id,
       template,
       alias: alias ?? ("ibm" as const),
-      displayName: type ? PROVIDERS[type].displayName : template || layer.id,
+      displayName:
+        layer.env.PLATFORM_LLM_NAME ??
+        (type ? PROVIDERS[type].displayName : template || layer.id),
       dialects: alias ? PROVIDER_DIALECTS[alias] : [],
       ...(listing?.harnesses && { harnesses: listing.harnesses }),
     };
@@ -149,7 +151,9 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
         ...(base.harnesses && { harnesses: base.harnesses }),
         metadata: layerMetadata({
           upstreamId: m.id,
-          provider: m.info ?? null,
+          provider: listing.prices
+            ? { ...m.info, prices: listing.prices }
+            : (m.info ?? null),
           table: deps.table,
           presetEnv: layer.env,
         }),

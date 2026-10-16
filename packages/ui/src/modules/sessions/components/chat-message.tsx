@@ -35,7 +35,9 @@ type Props = BaseProps & MessageTime;
 interface BaseProps {
   message: Message;
   avatarAgent?: { name: string; avatar: string | null };
+  onAgentClick?: () => void;
   userLabel?: string;
+  footer?: ReactNode;
   readOnly?: boolean;
   showModel?: boolean;
   continued?: boolean;
@@ -104,7 +106,9 @@ function LoadOlderMarker({
 export const ChatMessage = memo(function ChatMessage({
   message,
   avatarAgent,
-  userLabel = "You",
+  onAgentClick,
+  userLabel,
+  footer,
   readOnly = false,
   showModel = false,
   continued = false,
@@ -150,42 +154,53 @@ export const ChatMessage = memo(function ChatMessage({
   const undelivered = !isAssistant && error !== undefined;
   if (isAssistant && streaming && queued && parts.length === 0) return null;
   const working = isAssistant && streaming && !queued && !hasPendingPermission;
+  const speaker = isAssistant ? (
+    <>
+      {avatarAgent !== undefined && (
+        <AgentAvatar
+          name={avatarAgent.name}
+          avatar={avatarAgent.avatar}
+          size={32}
+        />
+      )}
+      <span className="text-sm font-semibold text-foreground">
+        {avatarAgent?.name ?? "Agent"}
+      </span>
+    </>
+  ) : (
+    userLabel !== undefined && (
+      <span className="text-2xs font-medium text-muted-foreground">
+        {userLabel}
+      </span>
+    )
+  );
 
   return (
     <div
       data-testid="chat-message"
       data-role={role}
       className={cn(
-        "flex flex-col gap-1",
+        "group/message relative flex flex-col gap-1",
         ((isLast && streaming) || arriving) && "anim-in",
         isAssistant ? "items-start" : "items-end",
       )}
     >
-      <div
-        className={cn(
-          "flex gap-1.5 mb-0.5",
-          avatarAgent === undefined ? "items-baseline" : "items-center",
-          continued && "hidden",
-        )}
-      >
-        {isAssistant && avatarAgent !== undefined && (
-          <AgentAvatar
-            name={avatarAgent.name}
-            avatar={avatarAgent.avatar}
-            size={24}
-          />
-        )}
-        <span className="text-2xs font-medium text-muted-foreground">
-          {isAssistant ? (avatarAgent?.name ?? "Agent") : userLabel}
-        </span>
-        {timeLabel !== undefined && (
-          <Tooltip side="top" content={timeTitle}>
-            <span className="text-2xs text-muted-foreground cursor-default">
-              {timeLabel}
-            </span>
-          </Tooltip>
-        )}
-      </div>
+      {speaker && !continued && (
+        <div className="mb-0.5 flex">
+          {onAgentClick ? (
+            <button
+              type="button"
+              onClick={onAgentClick}
+              aria-label={`Configure ${avatarAgent?.name ?? "agent"}`}
+              className="flex items-center gap-2 rounded-md hover:opacity-80"
+            >
+              {speaker}
+            </button>
+          ) : (
+            <div className="flex items-center gap-2">{speaker}</div>
+          )}
+        </div>
+      )}
       {(!error || parts.length > 0 || undelivered) && (
         <div
           className={cn(
@@ -269,6 +284,27 @@ export const ChatMessage = memo(function ChatMessage({
           interrupted={hasAgentContent(message)}
           quiet={!isLast}
         />
+      )}
+      {(timeLabel !== undefined || footer) && (
+        <div
+          className={cn(
+            "flex items-center gap-1 transition-opacity md:absolute md:top-full md:z-10 md:pt-0.5 md:opacity-0 md:group-hover/message:opacity-100 md:group-focus-within/message:opacity-100",
+            isAssistant ? "md:left-0" : "md:right-0",
+            !footer && "max-md:hidden",
+          )}
+        >
+          {timeLabel !== undefined && (
+            <Tooltip side="bottom" content={timeTitle}>
+              <span
+                data-testid="message-time"
+                className="px-1 text-2xs text-muted-foreground cursor-default max-md:hidden"
+              >
+                {timeLabel}
+              </span>
+            </Tooltip>
+          )}
+          {footer}
+        </div>
       )}
     </div>
   );

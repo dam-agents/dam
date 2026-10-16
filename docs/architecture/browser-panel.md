@@ -1,6 +1,6 @@
 # Browser panel
 
-Last verified: 2026-10-15
+Last verified: 2026-10-16
 
 ## Overview
 
@@ -38,11 +38,12 @@ agent-browser launches Chromium through the image's launcher, `platform-browser`
 Switching saves the choice and restarts the browser at once, on the same profile, and opens the page it showed again; the panels show it starting meanwhile.
 A runtime too old to report the mode shows the switch disabled.
 
-**Quiet in the background.** The browser is Chrome for Testing, which calls Google's services on its own: network time, account and sync checks, push-messaging check-in, search suggestions.
+**Quiet in the background.** The browser is Chrome for Testing, which calls Google's services on its own: network time, account and sync checks, push-messaging check-in, search suggestions, component updates, autofill's form predictions, translation and the spell-check dictionary.
 Every such call is egress the gateway holds for the user's approval, though no page asked for it.
-A managed policy in the image (`/etc/opt/chrome_for_testing/policies/managed/platform.json`) turns off network time, sign-in, sync, search suggestions and Google's AI and search side panel features, and makes DuckDuckGo the default search engine, as the panel's address bar already is — so the new tab page is Chromium's own, not Google's, which fetches from `www.google.com`.
-Launch switches point the account check and the push-messaging check-in at a closed loopback port.
-Safe Browsing and the component updater stay on: the updater is how Chrome gets security-critical data such as certificate revocations, and it is the only background traffic left.
+A managed policy in the image (`/etc/opt/chrome_for_testing/policies/managed/platform.json`) turns off network time, sign-in, sync, search suggestions, translation (and its bubble over pages in another language), spell-check and Google's AI and search side panel features, and makes DuckDuckGo the default search engine, as the panel's address bar already is — so the new tab page is Chromium's own, not Google's, which fetches from `www.google.com`.
+Launch switches point the account check, the push-messaging check-in and the component updater at a closed loopback port, and turn off autofill's queries to Google's form-prediction server; no policy stops these.
+The component updater also brings security data, such as certificate revocation lists, so the browser goes without their updates.
+Safe Browsing stays on, and its list updates are the only background traffic left.
 
 ## Tabs
 

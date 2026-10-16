@@ -17,7 +17,7 @@ import {
   sidebarSessionWindow,
 } from "../../modules/sessions/lib/sidebar-session-window.js";
 
-// TEST_OVERVIEW: The sidebar lists each Agent's Sessions under the Agent, and no Session twice. Agents are ordered by their newest Session, and each Agent shows its newest Sessions first. An Agent shows three Sessions until the user clicks More, which lists the rest and turns into Less. The session filter in the Agents header applies to the attention record and to an Agent's own session list alike.
+// TEST_OVERVIEW: The sidebar lists each Agent's Sessions under the Agent, and no Session twice. Agents are ordered by their newest Session, and each Agent shows its newest Sessions first. An Agent shows three Sessions, or all its pinned Sessions when there are more, until the user clicks More, which lists the rest and turns into Less. The session filter in the Agents header applies to the attention record and to an Agent's own session list alike.
 
 function attention(
   agentId: string,
@@ -115,6 +115,31 @@ describe("an agent's session window", () => {
     expect(
       sessionListToggle({ total: n + 1, expanded: true, hasNextPage: false }),
     ).toBe("less");
+  });
+
+  it("TEST_SCENARIO: a collapsed list shows every pinned Session, even past three, and More counts only what is still hidden", () => {
+    expect(sidebarSessionWindow(sessions, false, none, 4)).toEqual([
+      "s1",
+      "s2",
+      "s3",
+      "s4",
+    ]);
+    expect(
+      sessionListToggle({
+        total: 4,
+        expanded: false,
+        hasNextPage: false,
+        pinned: 4,
+      }),
+    ).toBeNull();
+    expect(
+      sessionListToggle({
+        total: 5,
+        expanded: false,
+        hasNextPage: false,
+        pinned: 4,
+      }),
+    ).toBe("more");
   });
 });
 

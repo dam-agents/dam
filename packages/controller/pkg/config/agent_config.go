@@ -116,7 +116,7 @@ type VMRunnerSpec struct {
 	ReleaseHostPath string `json:"releaseHostPath,omitempty"`
 	// UNIT_BOUNDARY_DESCRIPTION: set, a runner release built against another VM runtime than the pod's is not taken in place but rolls the pod, as before runtimes travelled with releases. It is the switch back for a runtime that turns out not to manage machines another one started.
 	ReleaseSameRuntimeOnly bool `json:"releaseSameRuntimeOnly,omitempty"`
-	// UNIT_BOUNDARY_DESCRIPTION: how smolvm checks every VMM's syscalls against its allowlist: `audit` logs a call outside it, `enforce` kills the VMM, `off` installs no filter. Empty means `audit`.
+	// UNIT_BOUNDARY_DESCRIPTION: how smolvm checks every VMM's syscalls against its allowlist: `audit` logs a call outside it, `enforce` kills the VMM, `off` installs no filter. Empty means `enforce`.
 	Seccomp string `json:"seccomp,omitempty"`
 }
 
@@ -126,10 +126,18 @@ type VMRunnerClusterDNS struct {
 	Ports     []int32           `json:"ports,omitempty"`
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: where a gateway may go inside the network, beyond the public internet and the platform's own pods. ExtraCIDRs are private ranges an install opens for its own enterprise services; the cloud metadata endpoints stay closed inside them. ClusterDNS selects the cluster DNS pods the gateway resolves upstream names through.
+// UNIT_BOUNDARY_DESCRIPTION: where a gateway may go inside the network, beyond the public internet and the platform's own pods. ExtraCIDRs are private ranges an install opens for its own enterprise services; the cloud metadata endpoints stay closed inside them. ClusterDNS selects the cluster DNS pods the gateway resolves upstream names through. Peers are in-cluster pods an install opens to every gateway, such as a self-hosted model server, selected by namespace and non-empty pod labels, on their own TCP ports; Mesh marks a peer in the ambient mesh, which also opens HBONE 15008, and over HBONE ztunnel carries any inner port, so the port list binds only peers outside the mesh.
 type GatewayEgress struct {
-	ExtraCIDRs []string           `json:"extraCidrs,omitempty"`
-	ClusterDNS VMRunnerClusterDNS `json:"clusterDns,omitempty"`
+	ExtraCIDRs []string            `json:"extraCidrs,omitempty"`
+	ClusterDNS VMRunnerClusterDNS  `json:"clusterDns,omitempty"`
+	Peers      []GatewayEgressPeer `json:"peers,omitempty"`
+}
+
+type GatewayEgressPeer struct {
+	Namespace string            `json:"namespace"`
+	PodLabels map[string]string `json:"podLabels,omitempty"`
+	Ports     []int32           `json:"ports"`
+	Mesh      bool              `json:"mesh,omitempty"`
 }
 
 type VMRunnerRollout struct {
