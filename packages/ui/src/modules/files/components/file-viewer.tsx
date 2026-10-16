@@ -1,10 +1,4 @@
-import {
-  Close,
-  DocumentExport,
-  Download,
-  Edit,
-  Save,
-} from "@carbon/icons-react";
+import { ChevronLeft, Close, Download, Edit, Save } from "@carbon/icons-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { RenderToggle } from "@/components/render-toggle";
@@ -15,6 +9,7 @@ import { useUnsavedGuard } from "../../../hooks/use-unsaved-guard.js";
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import { useFilePromotion } from "../../artifacts/hooks/use-file-promotion.js";
+import { ArtifactIcon } from "../../artifacts/lib/artifact-icon.js";
 import { type FileContent, useFileWriteMutation } from "../api/queries.js";
 import { base64ToBlob, downloadFileContent } from "../lib/download.js";
 import { PLATFORM_INSTRUCTIONS_PATH } from "../lib/platform-instructions.js";
@@ -145,7 +140,17 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="@container/file-toolbar flex items-center gap-2 px-4 h-12 border-b border-border shrink-0">
+      <div className="@container/file-toolbar flex items-center gap-2 pl-2 pr-4 h-12 border-b border-border shrink-0">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="shrink-0"
+          onClick={onClose}
+          aria-label="Back to files"
+          tooltip="Back to files"
+        >
+          <ChevronLeft size={16} />
+        </Button>
         <TruncateStart
           className="text-sm font-medium text-foreground flex-1 min-w-0"
           title={path}
@@ -172,7 +177,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
               <Close size={14} /> Cancel
             </Button>
             <Button
-              variant="outline"
+              variant="ghost"
               size="xs"
               className="text-sm font-normal"
               onClick={save}
@@ -185,7 +190,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
         ) : (
           <>
             <Button
-              variant="outline"
+              variant="ghost"
               size="xs"
               className="text-sm font-normal"
               aria-label={promotionLabel}
@@ -197,12 +202,12 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
               }
               onClick={() => void promotion.promote()}
             >
-              <DocumentExport size={14} />
+              <ArtifactIcon size={14} />
               <span className={TOOLBAR_LABEL}>{promotionLabel}</span>
             </Button>
             {editable && (
               <Button
-                variant="outline"
+                variant="ghost"
                 size="xs"
                 className="text-sm font-normal"
                 onClick={() => setEditMode(true)}
@@ -214,7 +219,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
             )}
             {!tooLarge && (
               <Button
-                variant="outline"
+                variant="ghost"
                 size="xs"
                 className="text-sm font-normal"
                 onClick={() => downloadFileContent(file)}
@@ -229,6 +234,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
               <RenderToggle
                 rendered={renderSvg}
                 onToggle={() => setRenderSvg((p) => !p)}
+                variant="ghost"
                 className="text-sm"
                 labelClassName={TOOLBAR_LABEL}
               />
@@ -237,6 +243,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
               <RenderToggle
                 rendered={renderMd}
                 onToggle={() => setRenderMd((p) => !p)}
+                variant="ghost"
                 className="text-sm"
                 labelClassName={TOOLBAR_LABEL}
               />
@@ -245,22 +252,13 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
               <RenderToggle
                 rendered={renderHtml}
                 onToggle={() => setRenderHtml((p) => !p)}
+                variant="ghost"
                 className="text-sm"
                 labelClassName={TOOLBAR_LABEL}
               />
             )}
           </>
         )}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="shrink-0"
-          onClick={onClose}
-          aria-label="Close"
-          tooltip="Close"
-        >
-          <Close size={16} />
-        </Button>
       </div>
       {platformInstructions && (
         <p className="px-4 py-2 border-b border-border text-xs text-muted-foreground">
