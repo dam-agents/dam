@@ -46,7 +46,7 @@ On OpenShift, the node configuration in [`etc/openshift-node-config/`](../../etc
 
 The node directory is in the boot path of a container agent: one that starts on a node before its installer has finished has no harness until its next start.
 A download host that stalls or trickles fails the install in bounded time, after mise's own retries, and the kubelet restarts the installer until it succeeds, each run keeping what the last one installed.
-CI's vm lane restores the node directory from a cache that main writes, keyed on the lockfile and the installer, so on a hit the installer reaches no download host.
+CI's vm lane seeds the node directory with the tools tree its image build cached, which holds the same versions at the same path, so the installer reaches no download host.
 On a Mac, whose [host runner](vm-host-runner.md) runs outside the cluster, the tools are copied from the k3s node onto a case-sensitive volume of the runner's.
 
 Only the agent-runtime and the two driver SDKs (JavaScript and Python) come from the rest of the repo; the build compiles them into each image.

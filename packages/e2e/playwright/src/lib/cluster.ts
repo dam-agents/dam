@@ -136,3 +136,69 @@ export function retainedVolumes(agent: string): RetainedVolume[] {
       return { name, mount, until };
     });
 }
+
+interface HarnessToolsPod {
+  metadata: { name: string };
+  status: {
+    conditions?: { type: string; status: string }[];
+    initContainerStatuses?: {
+      name: string;
+      restartCount: number;
+      lastState?: { terminated?: { exitCode: number } };
+    }[];
+  };
+}
+
+export async function waitHarnessTools(timeoutMs = 240_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const pods = (
+      JSON.parse(
+        kubectl(
+          "-n",
+          AGENT_NS,
+          "get",
+          "pod",
+          "-l",
+          "app.kubernetes.io/component=harness-tools",
+          "-o",
+          "json",
+        ),
+      ) as { items: HarnessToolsPod[] }
+    ).items;
+    const failed = pods.find((p) =>
+      p.status.initContainerStatuses?.some(
+        (c) =>
+          c.name === "install" &&
+          c.restartCount >= 1 &&
+          (c.lastState?.terminated?.exitCode ?? 0) !== 0,
+      ),
+    );
+    if (failed) {
+      const name = failed.metadata.name;
+      const logs = kubectlOrEmpty(
+        "-n",
+        AGENT_NS,
+        "logs",
+        name,
+        "-c",
+        "install",
+        "--previous",
+        "--tail=40",
+      );
+      throw new Error(
+        `the harness tools installer in ${name} failed and is restarting; its last run's log:\n${logs}`,
+      );
+    }
+    const ready = (p: HarnessToolsPod) =>
+      p.status.conditions?.some(
+        (c) => c.type === "Ready" && c.status === "True",
+      );
+    if (pods.length > 0 && pods.every(ready)) return;
+    if (Date.now() > deadline)
+      throw new Error(
+        `the harness tools pods were not Ready in ${timeoutMs / 1000}s: ${pods.map((p) => p.metadata.name).join(", ") || "none"}`,
+      );
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+  }
+}
