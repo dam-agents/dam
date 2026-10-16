@@ -85,6 +85,10 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- with $v.runner.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: vm-image-cache
           image: {{ include "platform.vmRunner.image" $ | quote }}

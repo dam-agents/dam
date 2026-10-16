@@ -554,6 +554,13 @@ export function resolvesInCatalog(
   );
 }
 
+export function forEachRenderedComponent(
+  surface: Pick<SurfaceState, "components" | "dataModel">,
+  onNode: (component: A2uiComponent) => void,
+): void {
+  walkRendered(surface, surface.dataModel, MAX_RENDERED_NODES, onNode);
+}
+
 function rendersEventButton(surface: Draft): boolean {
   let found = false;
   walkRendered(surface, surface.dataModel, MAX_RENDERED_NODES, (component) => {

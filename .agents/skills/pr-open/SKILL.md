@@ -21,7 +21,7 @@ The first review round reads three things: the diff, the PR body, and the
 issue the body links. It loses rounds to a defect the author could have seen
 in their own diff, to a change the body does not declare, and to a deliberate
 choice it cannot tell from a mistake. This skill closes all three before the
-first push. The fix rounds after a review are the `review-remediation`
+first review. The fix rounds after a review are the `review-remediation`
 skill's; it reuses **Self-review** and **The author-decisions block** from
 here.
 
@@ -34,9 +34,9 @@ here.
   the person and their answers. Where the harness gives the caller a search
   over their own earlier sessions, the sessions that developed this branch
   count too — find them by the branch name.
-- `gh` authenticated for the repository, plus `jq`. Use plain REST
-  (`gh api`) everywhere — some deployments' auth proxies rewrite only REST
-  paths, so GraphQL-backed `gh` subcommands can 401.
+- `gh` authenticated for the repository. Use plain REST (`gh api`)
+  everywhere: behind an auth proxy that rewrites only REST paths,
+  GraphQL-backed `gh` subcommands fail.
 
 ## 1. Read the branch
 
@@ -100,7 +100,7 @@ Write the body in English, in ASD-STE100 (Simplified Technical English):
 - One topic per sentence, at most 20 words. Split a longer sentence.
 - Active voice, simple tenses, one term per concept, no idioms.
 - Short: a reader gets the whole change in two minutes. A bullet is better
-  than a paragraph. Keep only what the reader cannot see in the diff title.
+  than a paragraph. Do not restate the title or the diff.
 
 The parts:
 
@@ -152,6 +152,11 @@ that says so.
 3. **Report** the link, the checks that ran, and the decisions the block
    records, one line each. The first review starts on its own; this skill
    never requests one.
+4. **Same account as the reviewer.** GitHub refuses an approval or a change
+   request from the pull request's own author. When the new pull request's
+   `user.login` is the login of the automated reviews on this repository's
+   recent pull requests — a GitHub App (`<app>[bot]`) that several agents
+   share, typically — tell the caller: that reviewer can only comment on it.
 
 ## The author-decisions block
 
@@ -169,10 +174,10 @@ summary: <two or three sentences: what the person asked for, and how the
 ```
 
 - **Only the person's decisions.** An entry is a choice the person stated or
-  confirmed in the conversation or in the sessions that built the branch: an answer to a question you put to them, a
-  finding they deferred, a trade-off they picked, an option they rejected. A
-  choice you made alone and never put to them is not an entry. Write the
-  reason in their terms, and never more than they said.
+  confirmed in the conversation or in the sessions that built the branch: an
+  answer to a question you put to them, a finding they deferred, a trade-off
+  they picked, an option they rejected. A choice you made alone is not an
+  entry. Write the reason in their terms, and never more than they said.
 - **The decisions that matter most**, at most ten: the ones a reviewer could
   read as a defect — a behavior left out on purpose, a known limit, a scope
   cut, a rejected alternative. A routine step needs no entry.
