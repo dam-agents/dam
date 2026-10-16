@@ -94,6 +94,7 @@ Generated projection of the ADR log. Read this first when authoring a new decisi
 | 103 | [A Skill Source is a repository and a path](103-skill-source-per-path.md) |  | skills | A Skill Source is identified by its repository and its path together, so one owner may register the same repository once per path; an installed skill keeps the path of the source it came from. |
 | 104 | [Chat forms — agents write A2UI v1.0 into their replies](104-chat-forms-a2ui.md) |  | chat-forms | Agents put interactive UI into the web chat as A2UI v1.0 blocks in their reply text, rendered with the app's own components behind the experimental chat-forms flag; a check tool validates a form before it is sent, and the chat answers in A2UI renderer messages inside the user's next prompt. |
 | 105 | [Model spend is metered and limited in each agent's gateway](105-gateway-spend-meter.md) |  | spend-limits | DAM measures model spend in each agent's gateway and enforces spend limits there, with soft owner limits that refuse and ask and a hard operator ceiling per user; spend that a harness or an in-pod component reports stays display only. |
+| 106 | [The default image bakes its harness tools](106-baked-harness-tools.md) |  | agent-images | The default image carries base's and every harness's tools in a layer of its own, installed at build time by the image's own installer, instead of booting on a tools directory each node installs and never prunes. |
 
 ## Superseded
 
