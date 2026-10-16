@@ -64,15 +64,18 @@ export function useRunningDelegations(
   const options = trpc.invocations.running.queryOptions(
     driverAgentId ? { driverAgentId, sessionId } : skipToken,
   );
-  const cached = useQueryClient().getQueryData(options.queryKey);
+  const state = useQueryClient().getQueryState(options.queryKey);
+  const neverRead =
+    state === undefined ||
+    (state.dataUpdatedAt === 0 && state.errorUpdatedAt === 0);
   return useQuery({
     ...options,
     enabled:
       driverAgentId !== null &&
       (opts.busy ||
         opts.watch ||
-        cached === undefined ||
-        hasRunning(cached.nodes)),
+        neverRead ||
+        hasRunning(state.data?.nodes ?? [])),
     staleTime: 1_000,
     refetchInterval: (query) =>
       opts.busy || hasRunning(query.state.data?.nodes ?? [])

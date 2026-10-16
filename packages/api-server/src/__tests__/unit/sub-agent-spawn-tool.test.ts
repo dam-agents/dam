@@ -48,7 +48,7 @@ function setup(
     awaits: { markAwaited: async () => {}, markCollected: async () => {} },
     ...(subagentModel && { subagentModel }),
     ...(catalogModels && { catalogModels }),
-    ...(spawningSession ? { spawningSession } : {}),
+    spawningSession: spawningSession ?? (async () => null),
   });
   const spawn = tools.get("spawn_subagent")!;
   return {

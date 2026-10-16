@@ -296,7 +296,7 @@ export function registerSubAgentTools(
   deps: {
     ops: DriverOps;
     awaits: SubAgentAwaitMarks;
-    spawningSession?: () => Promise<string | null>;
+    spawningSession: () => Promise<string | null>;
     requestSignal?: AbortSignal;
     subagentModel?: () => Promise<string | null>;
     catalogModels?: (harness: string) => Promise<CatalogModelRef[] | null>;
@@ -343,7 +343,7 @@ export function registerSubAgentTools(
       }
       const [harness, driverSessionId] = await Promise.all([
         ops.harness(),
-        deps.spawningSession?.() ?? null,
+        deps.spawningSession(),
       ]);
       const unmet = unmetNeed(needs, body, harness);
       if (unmet) {
