@@ -43,7 +43,10 @@ interface ApprovalActions {
   openSettings: () => void;
 }
 
-export function useApprovalActions(row: ApprovalView): ApprovalActions {
+export function useApprovalActions(
+  row: ApprovalView,
+  ids: readonly string[] = [row.id],
+): ApprovalActions {
   const approveOnce = useApproveOnce();
   const approvePermanent = useApprovePermanent();
   const approveHost = useApproveHost();
@@ -87,6 +90,12 @@ export function useApprovalActions(row: ApprovalView): ApprovalActions {
     }
   };
 
+  const each = async (
+    mutate: (input: { id: string }) => Promise<unknown>,
+  ): Promise<void> => {
+    for (const id of ids) await mutate({ id });
+  };
+
   const continueText =
     row.payload.kind === "spend_limit"
       ? continueLabel(row.payload.amountMicros, row.payload.unit)
@@ -103,7 +112,7 @@ export function useApprovalActions(row: ApprovalView): ApprovalActions {
         ? undefined
         : `The question expired at ${localResetTime(row.expiresAt)} your time`,
       resolvedLabel: "Continued",
-      run: () => direct(() => approveOnce.mutateAsync({ id: row.id })),
+      run: () => direct(() => each(approveOnce.mutateAsync)),
     },
     {
       id: "dismiss",
@@ -112,7 +121,7 @@ export function useApprovalActions(row: ApprovalView): ApprovalActions {
       danger: true,
       disabled: inflight || !live,
       resolvedLabel: "Stopped for today",
-      run: () => direct(() => dismiss.mutateAsync({ id: row.id })),
+      run: () => direct(() => each(dismiss.mutateAsync)),
     },
   ];
 
@@ -127,7 +136,7 @@ export function useApprovalActions(row: ApprovalView): ApprovalActions {
         ? "Original request already failed; pick Allow permanently to allow future retries"
         : undefined,
       resolvedLabel: "Allowed",
-      run: () => direct(() => approveOnce.mutateAsync({ id: row.id })),
+      run: () => direct(() => each(approveOnce.mutateAsync)),
     },
     {
       id: "allow-permanent",
@@ -139,7 +148,7 @@ export function useApprovalActions(row: ApprovalView): ApprovalActions {
       resolvedLabel: "Allowed permanently",
       run: () =>
         confirmed(restart.confirmNarrow, "Allow & restart", () =>
-          approvePermanent.mutateAsync({ id: row.id }),
+          each(approvePermanent.mutateAsync),
         ),
     },
     ...(hostLabel
@@ -154,7 +163,7 @@ export function useApprovalActions(row: ApprovalView): ApprovalActions {
             resolvedLabel: `Allowed all of ${hostLabel}`,
             run: () =>
               confirmed(restart.confirmHost, "Allow & restart", () =>
-                approveHost.mutateAsync({ id: row.id }),
+                each(approveHost.mutateAsync),
               ),
           },
         ]
@@ -169,7 +178,7 @@ export function useApprovalActions(row: ApprovalView): ApprovalActions {
         ? "Deny this single request — re-prompts on the next attempt"
         : "Original request already failed; nothing to dismiss",
       resolvedLabel: "Denied",
-      run: () => direct(() => dismiss.mutateAsync({ id: row.id })),
+      run: () => direct(() => each(dismiss.mutateAsync)),
     },
     {
       id: "deny-forever",
@@ -181,7 +190,7 @@ export function useApprovalActions(row: ApprovalView): ApprovalActions {
       resolvedLabel: "Denied permanently",
       run: () =>
         confirmed(restart.confirmNarrow, "Deny & restart", () =>
-          denyForever.mutateAsync({ id: row.id }),
+          each(denyForever.mutateAsync),
         ),
     },
   ];

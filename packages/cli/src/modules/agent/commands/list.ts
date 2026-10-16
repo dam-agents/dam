@@ -1,3 +1,4 @@
+import { displayState } from "../domain/agent-view.js";
 import { Command } from "commander";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import type { AgentService } from "../services/agent-service.js";
@@ -87,7 +88,7 @@ export function buildListCommand(deps: {
               a.name,
               a.id,
               a.templateId ?? "<custom>",
-              a.disabled ? "disabled" : a.state,
+              displayState(a),
             ]),
           ]),
           EXIT_SUCCESS,

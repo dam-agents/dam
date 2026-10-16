@@ -53,26 +53,32 @@ test("one-click create from the Generalist kit, then the mock agent with the con
     });
   });
 
+  let oneClickId: string | undefined;
   await test.step("create an agent in one click from the Generalist kit", async () => {
+    const before = new Set((await api.agents.list.query()).map((a) => a.id));
     await page
       .getByTestId("app-sidebar")
       .getByRole("button", { name: "Starter kits" })
       .click();
     await page.getByTestId("default-agent-card").click();
     await expect(page).toHaveURL(/\/chat\//);
+    oneClickId = (await api.agents.list.query()).find(
+      (a) => !before.has(a.id),
+    )?.id;
+    expect(oneClickId).toBeTruthy();
   });
 
   await test.step("the one-click agent boots with a generated avatar", async () => {
-    const agent = (await api.agents.list.query()).find((a) =>
-      /^agent(-\d+)?$/.test(a.name),
+    const agent = (await api.agents.list.query()).find(
+      (a) => a.id === oneClickId,
     );
     expect(agent?.avatar).toBeTruthy();
     await waitForAgentIdRunning(api, agent!.id);
   });
 
   await test.step("delete the one-click agent from its configuration page", async () => {
-    const agent = (await api.agents.list.query()).find((a) =>
-      /^agent(-\d+)?$/.test(a.name),
+    const agent = (await api.agents.list.query()).find(
+      (a) => a.id === oneClickId,
     );
     await page.goto(baseUrl);
     await page

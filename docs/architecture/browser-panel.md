@@ -1,6 +1,6 @@
 # Browser panel
 
-Last verified: 2026-10-15
+Last verified: 2026-10-16
 
 ## Overview
 
@@ -38,17 +38,19 @@ agent-browser launches Chromium through the image's launcher, `platform-browser`
 Switching saves the choice and restarts the browser at once, on the same profile, and opens the page it showed again; the panels show it starting meanwhile.
 A runtime too old to report the mode shows the switch disabled.
 
-**Quiet in the background.** The browser is Chrome for Testing, which calls Google's services on its own: network time, account and sync checks, push-messaging check-in, search suggestions.
+**Quiet in the background.** The browser is Chrome for Testing, which calls Google's services on its own: network time, account and sync checks, push-messaging check-in, search suggestions, component updates, autofill's form predictions, translation and the spell-check dictionary.
 Every such call is egress the gateway holds for the user's approval, though no page asked for it.
-A managed policy in the image (`/etc/opt/chrome_for_testing/policies/managed/platform.json`) turns off network time, sign-in, sync, search suggestions and Google's AI and search side panel features, and makes DuckDuckGo the default search engine, as the panel's address bar already is — so the new tab page is Chromium's own, not Google's, which fetches from `www.google.com`.
-Launch switches point the account check and the push-messaging check-in at a closed loopback port.
-Safe Browsing and the component updater stay on: the updater is how Chrome gets security-critical data such as certificate revocations, and it is the only background traffic left.
+A managed policy in the image (`/etc/opt/chrome_for_testing/policies/managed/platform.json`) turns off network time, sign-in, sync, search suggestions, translation (and its bubble over pages in another language), spell-check and Google's AI and search side panel features, and makes DuckDuckGo the default search engine, as the panel's address bar already is — so the new tab page is Chromium's own, not Google's, which fetches from `www.google.com`.
+Launch switches point the account check, the push-messaging check-in and the component updater at a closed loopback port, and turn off autofill's queries to Google's form-prediction server; no policy stops these.
+The component updater also brings security data, such as certificate revocation lists, so the browser goes without their updates.
+Safe Browsing stays on, and its list updates are the only background traffic left.
 
 ## Tabs
 
 The one browser has tabs, and once it has two or more the panel shows them all in a tab bar under its toolbar: each tab's title, whether it is loading, and which one is on screen.
-As in Safari, a browser with one tab shows no tab bar, and with it no button for a new tab: a second tab is typically one the agent opens, and the bar hides again when one tab is left.
-The user opens, selects and closes tabs there, and a tab opened, selected, renamed or closed by the agent or by a page — a link that opens a new tab, a popup — shows in the bar as Chromium reports it.
+As in Safari, a browser with one tab shows no tab bar — a second tab is typically one the agent opens, and the bar hides again when one tab is left — and the button for a new tab is in the toolbar, so the user can open a second tab while the bar is hidden.
+As in Safari too, the tabs share the bar's width evenly with their titles centered; when an even share is too narrow to read a title, the active tab keeps a readable width and the others shrink to share the rest, down to a minimum, past which the bar scrolls and its list button reaches every tab.
+The user selects and closes tabs there, and a tab opened, selected, renamed or closed by the agent or by a page — a link that opens a new tab, a popup — shows in the bar as Chromium reports it.
 The kiosk window shows only one tab, so **the tab on screen is the active tab**: the panel's address, title, loading and Back and Forward are always that tab's.
 
 Every tab is known by its **target id**, Chromium's own id for it, which agent-browser accepts as a tab reference too; positions in the list are never used.
@@ -122,7 +124,7 @@ sequenceDiagram
   Both halves refuse any other agent: the stream relay checks the agent's spec at the api-server, and the runtime refuses the control procedures unless the controller told it the agent requires named connections (`PLATFORM_REQUIRE_CONNECTION_ADDRESS`, always set, after the agent's own secret, so the owner's environment cannot claim it).
 - **The control** is the runtime's `browser` tRPC procedures, on the same agent tRPC connection the UI uses for files and sessions: `browser.watch`, a subscription that keeps the browser up while a panel watches and reports its state, and the toolbar's mutations.
   One supervisor in agent-runtime serves every panel.
-  It launches the browser through agent-browser if it is not running, then opens a DevTools Protocol connection of its own to that Chromium and follows its tabs and the one on screen ([Tabs](#tabs)): their addresses, titles, whether they are loading, and whether Back and Forward can go anywhere reach the panel the moment Chromium reports them, and the toolbar's navigate, reload, stop, back and forward and the tab bar's new, select and close run on the tab they name directly, never queued behind the agent's commands in agent-browser's one-at-a-time queue.
+  It launches the browser through agent-browser if it is not running, then opens a DevTools Protocol connection of its own to that Chromium and follows its tabs and the one on screen ([Tabs](#tabs)): their addresses, titles, whether they are loading, and whether Back and Forward can go anywhere reach the panel the moment Chromium reports them, and the toolbar's navigate, reload, stop, back, forward and new tab and the tab bar's select and close run on the tab they name directly, never queued behind the agent's commands in agent-browser's one-at-a-time queue.
   Words typed into the address bar that are not an address search DuckDuckGo.
   A dropped DevTools connection means the browser is gone, and the supervisor launches it again.
   A health check that times out finds the browser busy — a heavy page, or the agent keeping it busy — not gone, so it is left alone; when the browser fails to start, or answers nothing for a minute, the supervisor stops it — its daemon, the Chromium on its profile, and the profile's lock files, which would keep the next Chromium from starting — and launches it again, retrying with a growing delay.

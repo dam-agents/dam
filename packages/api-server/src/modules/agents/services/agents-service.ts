@@ -1292,12 +1292,15 @@ export function createAgentsService(deps: {
     },
 
     async update(input: AgentUpdateInput) {
+      let renamed = false;
       if (input.secretRef || input.name !== undefined) {
         const current = await deps.repo.get(input.id, deps.owner);
         if (!current) return null;
         await assertOwnSecretRef(input.secretRef, current.owner, input.id);
-        if (input.name !== undefined && input.name !== current.name)
+        if (input.name !== undefined && input.name !== current.name) {
+          renamed = true;
           await assertNameFree(input.name, current.owner, input.id);
+        }
       }
       const patch: Record<string, unknown> = {};
       if (input.name !== undefined) patch.name = input.name;
@@ -1367,8 +1370,8 @@ export function createAgentsService(deps: {
           await deps.agentEnvRepo.list(input.id),
           input.name,
         );
-        if (refreshed) {
-          await deps.agentEnvRepo.replace(input.id, refreshed);
+        if (refreshed) await deps.agentEnvRepo.replace(input.id, refreshed);
+        if (refreshed || renamed) {
           await deps.runtimeMutator.bump(input.id, []);
           await deps.runtimeMutator.enqueueAfterCommit(input.id);
         }

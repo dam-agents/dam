@@ -149,6 +149,16 @@ function liteLlmModelInfo(
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: vLLM's `/v1/models` names each model's context
+ * window as `max_model_len`, which the OpenAI shape otherwise lacks.
+ */
+function openAiModelInfo(
+  entry: Record<string, unknown>,
+): DiscoveredModelInfo | undefined {
+  const contextWindow = asNumber(entry.max_model_len);
+  return contextWindow === undefined ? undefined : { contextWindow };
+}
 const listReaders: Record<
   ModelListShape,
   {
@@ -162,7 +172,11 @@ const listReaders: Record<
     id: liteLlmModelName,
     info: liteLlmModelInfo,
   },
-  "openai-models": { listKey: "data", id: openAiModelId },
+  "openai-models": {
+    listKey: "data",
+    id: openAiModelId,
+    info: openAiModelInfo,
+  },
   "bedrock-inference-profiles": {
     listKey: "inferenceProfileSummaries",
     id: activeInferenceProfileId,

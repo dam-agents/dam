@@ -15,3 +15,7 @@ export interface AgentView {
   podTerminationCode?: string;
   channels: ChannelConfig[];
 }
+
+export function displayState(agent: AgentView): string {
+  return agent.disabled ? "disabled" : agent.state;
+}

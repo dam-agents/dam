@@ -587,6 +587,12 @@ export function createMcpSession(
         .describe(
           "Thread to reply into. Omit for the thread of the message you're answering.",
         ),
+      chatId: z
+        .string()
+        .optional()
+        .describe(
+          "Conversation the thread is in: an id from describe_channel. Omit for the conversation you're answering; pass it when this agent is connected to several conversations and the reply is refused for not knowing which one.",
+        ),
       alsoSendToChannel: z
         .boolean()
         .optional()
@@ -610,6 +616,7 @@ export function createMcpSession(
       text,
       attachment,
       threadTs,
+      chatId,
       alsoSendToChannel,
       unfurlLinks,
       unfurlMedia,
@@ -622,6 +629,7 @@ export function createMcpSession(
         {
           text,
           ...(threadTs ? { threadTs } : {}),
+          ...(chatId ? { conversationId: chatId } : {}),
           ...(alsoSendToChannel ? { alsoSendToChannel } : {}),
           ...(loaded ? { attachment: loaded.resolved } : {}),
           ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
@@ -647,6 +655,7 @@ export function createMcpSession(
         detail: {
           action: "reply",
           textLength: text.length,
+          ...(chatId ? { conversationId: chatId } : {}),
           ...(alsoSendToChannel ? { alsoSendToChannel: true } : {}),
           ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
           ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
@@ -679,14 +688,21 @@ export function createMcpSession(
         .describe(
           "Message to react to. Omit for the message you're currently answering.",
         ),
+      chatId: z
+        .string()
+        .optional()
+        .describe(
+          "Conversation the message is in: an id from describe_channel. Omit for the conversation you're answering; pass it when this agent is connected to several conversations and the reaction is refused for not knowing which one.",
+        ),
     },
-    async ({ emoji, messageTs }) => {
+    async ({ emoji, messageTs, chatId }) => {
       const result = await deps.channelManager.react(
         agentId,
         ChannelType.Slack,
         {
           emoji,
           ...(messageTs ? { messageTs } : {}),
+          ...(chatId ? { conversationId: chatId } : {}),
         },
       );
       const failed = "error" in result;

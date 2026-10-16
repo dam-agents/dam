@@ -128,7 +128,12 @@ function wrapFetchWithServerGates(
       if (body.error === "terms_stale")
         throw new TermsStaleAtTransportError(host);
       if (body.error === "unauthorized")
-        throw new AuthRequiredAtTransportError(`session expired for ${host}`);
+        throw new AuthRequiredAtTransportError(
+          response.redirected &&
+            new URL(response.url).origin !== new URL(host).origin
+            ? `${host} moved to ${new URL(response.url).origin}/`
+            : `session expired for ${host}`,
+        );
       if (body.error === "forbidden")
         throw new ForbiddenAtTransportError(
           typeof body.message === "string" ? body.message : "",

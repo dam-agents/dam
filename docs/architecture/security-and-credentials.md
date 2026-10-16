@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-10-15
+Last verified: 2026-10-16
 
 ## Overview
 
@@ -240,6 +240,7 @@ Each one that joins raises the approval's in-session prompt again, to every sess
 That re-published prompt is for attached ACP clients such as the CLI.
 The web chat does not read it: a held request belongs to the agent, not to a session, so every open conversation of the agent shows the agent's waiting network approvals from the approvals list, with their verdict controls.
 The list is the api-server's own state, refreshed by the approvals live hint, so a conversation opened after the hold — or a retry that joined it — still shows the prompt, and a verdict given in one place clears it from every conversation, from Home and from its toast.
+Requests that arrive together, as a browser's parallel connections to one host do, can each file their own approval before any of them is there to join, so the UI shows an Agent's waiting approvals for the same host, port, method and path as one approval with a count, and a verdict on it answers every one of them.
 
 At most three rules speak for a host — itself, its `*.parent` wildcard, and the bare `*` — most specific first; a wildcard covers the one label its SNI chain and SAN do.
 Host names compare in any letter case, as DNS does: the agent writes the Host header and SNI, and a deny for `api.github.com` must also stop `API.GitHub.com`, which the gateway would resolve and forward all the same.
@@ -263,6 +264,8 @@ The platform's object store passes on its own authority, port included.
 **Gateway egress NetworkPolicy.** ext_authz decides on the name; Envoy then resolves it and dials the answer, so an approved name resolving to a private address (an owner's DNS record, or rebinding after approval) would otherwise reach the cluster, the node or the cloud metadata endpoint.
 A controller-rendered per-pair egress policy closes that at the kernel, whatever a name resolves to: the gateway reaches the public internet minus the private, loopback, link-local, CGNAT and this-network ranges; inside the network only the cluster DNS pods and the platform pods its own clusters dial (api-server ext-authz and harness, the harness waypoint, object store, telemetry collector), each on its port and on HBONE.
 An install may open further private ranges for enterprise services (`controller.gatewayEgress` in [`helm/values.yaml`](../../helm/values.yaml)); the metadata endpoints stay excepted inside them.
+It may also open in-cluster peers, such as a self-hosted model server: each peer (namespace, non-empty pod labels, TCP ports) becomes one rule on every gateway's policy, on its ports.
+A peer marked as in the ambient mesh also gets HBONE (15008), and over HBONE ztunnel carries any inner port, so the port list binds only a peer outside the mesh.
 A connection to a private upstream (an in-house API, a cluster's API server) needs its range listed there.
 
 **Unattended requests are refused, not held.** Holding is only worth doing where a verdict can be made.

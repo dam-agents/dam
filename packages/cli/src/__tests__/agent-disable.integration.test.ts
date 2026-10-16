@@ -168,6 +168,34 @@ describe("dam agent disable / enable (integration)", () => {
     );
   });
 
+  /** TEST_SCENARIO: The CLI refuses a name two agents share, so when the
+   * disabled agent's name is not unique the enable hint names it by id. */
+  it("names the agent by id in the hint when its name is shared", async () => {
+    const agent = makeAgent({ id: "agent-00000000000000aa", name: "twin" });
+    const other = makeAgent({ id: "agent-00000000000000bb", name: "twin" });
+    await withFixture(
+      {
+        list: async () => [agent, other],
+        get: async () => agent,
+        setDisabled: async (_id, disabled) => ({
+          ok: true,
+          value: { ...agent, disabled },
+        }),
+      },
+      async () => {
+        const r = await runDam(
+          ["agent", "disable", "agent-00000000000000aa"],
+          env,
+        );
+
+        expect(r.exitCode, `stderr: ${r.stderr}`).toBe(0);
+        expect(r.stdout).toBe(
+          '✓ Disabled agent "twin". Nothing wakes it until you run `dam agent enable agent-00000000000000aa`.\n',
+        );
+      },
+    );
+  });
+
   /** TEST_SCENARIO: Enable by id sends disabled=false. The Agent stays asleep,
    * so the line says only its next use wakes it. */
   it("enable by id sends disabled=false and says the next use wakes it", async () => {

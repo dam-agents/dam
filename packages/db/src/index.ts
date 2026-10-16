@@ -31,6 +31,8 @@ export {
   userFeatures,
   gettingStartedChecklists,
   avatarUnlocks,
+  sidebarAgentPins,
+  sidebarSessionPins,
   artifactFolders,
   libraryArtifacts,
   libraryArtifactVersions,

@@ -734,6 +734,33 @@ export const avatarUnlocks = pgTable(
   ],
 );
 
+export const sidebarAgentPins = pgTable(
+  "sidebar_agent_pins",
+  {
+    owner: text("owner").notNull(),
+    agentId: text("agent_id").notNull(),
+    position: integer("position").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.owner, table.agentId] }),
+    index("sidebar_agent_pins_agent_idx").on(table.agentId),
+  ],
+);
+
+export const sidebarSessionPins = pgTable(
+  "sidebar_session_pins",
+  {
+    owner: text("owner").notNull(),
+    agentId: text("agent_id").notNull(),
+    sessionId: text("session_id").notNull(),
+    position: integer("position").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.owner, table.agentId, table.sessionId] }),
+    index("sidebar_session_pins_agent_idx").on(table.agentId),
+  ],
+);
+
 export const artifactFolders = pgTable(
   "artifact_folders",
   {
