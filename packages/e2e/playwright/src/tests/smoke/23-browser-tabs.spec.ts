@@ -180,10 +180,14 @@ test("keeps the user and the agent on the same tab", async ({ page }) => {
   });
 
   await test.step("the user opens a second tab from the top bar", async () => {
+    const [kept] = agentTabs().map((t) => t.targetId);
     await newTabButton(page).click();
     await expect(tabBar(page).getByRole("tab")).toHaveCount(2, {
       timeout: SYNC_MS,
     });
+    await expect
+      .poll(async () => panelActive(page), { timeout: SYNC_MS })
+      .not.toBe(kept);
     const opened = (await panelActive(page))!;
     await expect(panelTab(page, opened)).toContainText("New tab");
     await expectSameTab(page, opened);

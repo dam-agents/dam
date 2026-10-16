@@ -1,0 +1,49 @@
+#!/usr/bin/env node
+//MISE description="Test that the browser panel's display stack starts WirePlumber only once PipeWire listens"
+//MISE sources=["base/rootfs/usr/local/bin/platform-display", ".mise/tasks/test/display-pipewire-order"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
+
+const script = fileURLToPath(new URL("../../../base/rootfs/usr/local/bin/platform-display", import.meta.url));
+const dir = mkdtempSync(join(tmpdir(), "display-pipewire-order-"));
+const [bin, run, x11] = ["bin", "run", "x11"].map((d) => join(dir, d));
+mkdirSync(bin);
+mkdirSync(x11);
+const stub = (name, body) => writeFileSync(join(bin, name), `#!/bin/bash\n${body}\n`, { mode: 0o755 });
+stub("Xvfb", `: >"${x11}/X99"; exec sleep 30`);
+stub("i3", "exec sleep 30");
+stub("pipewire", 'sleep 1; : >"$XDG_RUNTIME_DIR/pipewire-0"; : >"$XDG_RUNTIME_DIR/pipewire-0-manager"; exec sleep 30');
+stub("wireplumber", '[ -e "$XDG_RUNTIME_DIR/pipewire-0-manager" ] || { echo "Failed to connect to PipeWire" >&2; exit 69; }; exec sleep 30');
+stub("pipewire-pulse", 'mkdir -p "$(dirname "${PULSE_SERVER#unix:}")"; : >"${PULSE_SERVER#unix:}"; exec sleep 30');
+stub("selkies", "exec sleep 30");
+writeFileSync(
+  join(dir, "platform-display"),
+  readFileSync(script, "utf8").replaceAll("/tmp/.X11-unix", x11).replaceAll("/tmp/.X", join(dir, ".X")).replaceAll("/opt/selkies/bin/selkies", "selkies"),
+);
+
+const stack = spawn("bash", [join(dir, "platform-display")], {
+  env: { PATH: `${bin}:${process.env.PATH}`, DISPLAY: ":99", XDG_RUNTIME_DIR: run, PULSE_SERVER: `unix:${run}/pulse/native` },
+  detached: true,
+  stdio: ["ignore", "ignore", "pipe"],
+});
+let stderr = "";
+stack.stderr.on("data", (d) => (stderr += d));
+let exited = null;
+stack.on("exit", (code, signal) => (exited = signal ?? code));
+
+try {
+  // TEST_SCENARIO: PipeWire takes a second to listen, as on a busy small machine; WirePlumber, which exits when it finds no PipeWire, must start after it, or the stack ends and takes the agent's browser down with its display.
+  await sleep(3_000);
+  assert.equal(exited, null, `the display stack exited (${exited}): ${stderr}`);
+} finally {
+  try {
+    process.kill(-stack.pid, "SIGKILL");
+  } catch {}
+  rmSync(dir, { recursive: true, force: true });
+}
