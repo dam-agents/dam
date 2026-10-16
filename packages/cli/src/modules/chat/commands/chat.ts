@@ -7,9 +7,13 @@ import {
   EXIT_BELOW_FLOOR,
   EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,
+  EXIT_SIGINT,
 } from "../../shared/exit-codes.js";
 
-export function buildChatCommand(deps: { chatService: ChatService }): Command {
+export function buildChatCommand(deps: {
+  chatService: ChatService;
+  pause: () => Promise<boolean>;
+}): Command {
   return new Command("chat")
     .description("Connect your terminal to an agent's interactive TUI")
     .argument("<agent>", "agent name or ID")
@@ -17,6 +21,7 @@ export function buildChatCommand(deps: { chatService: ChatService }): Command {
     .option("-c, --continue", "continue the most recent terminal session")
     .option("-r, --resume <session-id>", "resume a specific session by ID")
     .option("--reset", "kill existing PTY and start a fresh terminal")
+    .option("--no-pause", "connect without waiting on the leave hint")
     .action(
       async (
         agentRef: string,
@@ -25,6 +30,7 @@ export function buildChatCommand(deps: { chatService: ChatService }): Command {
           continue?: boolean;
           resume?: string;
           reset?: boolean;
+          pause: boolean;
         },
       ) => {
         const strategy: TerminalStrategy = opts.resume
@@ -38,8 +44,11 @@ export function buildChatCommand(deps: { chatService: ChatService }): Command {
           serverFlag: opts.server,
           strategy,
           reset: opts.reset,
-          onAttach: (sessionId) =>
-            process.stderr.write(`${attachNotice(agentRef, sessionId)}\n`),
+          onAttach: async (sessionId) => {
+            process.stderr.write(`${attachNotice(agentRef, sessionId)}\n`);
+            if (opts.pause && !(await deps.pause())) process.exit(EXIT_SIGINT);
+          },
+          title: (sessionId) => attachTitle(agentRef, sessionId),
         });
 
         if (!result.ok) {
@@ -54,7 +63,7 @@ export function buildChatCommand(deps: { chatService: ChatService }): Command {
             ? `\x1b[33mSession ended\x1b[0m \x1b[2mProcess exited with code ${bridge.code}\x1b[0m`
             : `\x1b[33mDisconnected\x1b[0m \x1b[2m${bridge.reason}\x1b[0m`;
         process.stderr.write(
-          `\x1b[2J\x1b[H${status}\n\nResume this session with: ${resume}\n`,
+          `\x1b[2J\x1b[H${status}\n\nResume this session with: ${resume}\n\x1b[2m${LEAVE_HINT}\x1b[0m\n`,
         );
         process.exit(bridge.kind === "exited" ? bridge.code : 1);
       },
@@ -65,8 +74,15 @@ function resumeCommand(agentRef: string, sessionId: string): string {
   return `\x1b[32mdam chat ${agentRef} --resume ${sessionId}\x1b[0m`;
 }
 
+const LEAVE_HINT =
+  "To leave, close this terminal — Ctrl+C goes to the agent and stops its work.";
+
 export function attachNotice(agentRef: string, sessionId: string): string {
-  return `\x1b[2mTo leave, close this terminal — Ctrl+C goes to the agent and stops its work. Come back with:\x1b[0m ${resumeCommand(agentRef, sessionId)}`;
+  return `\x1b[2m${LEAVE_HINT} Come back with:\x1b[0m ${resumeCommand(agentRef, sessionId)}`;
+}
+
+export function attachTitle(agentRef: string, sessionId: string): string {
+  return `${agentRef} · close the terminal to leave, Ctrl+C goes to the agent · back: dam chat ${agentRef} --resume ${sessionId}`;
 }
 
 export function exitCodeFor(e: ChatError): number {
