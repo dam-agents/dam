@@ -3,6 +3,8 @@ import type { PendingRestart } from "agent-runtime-api";
 import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
+import { ChatFormSettings } from "../../a2ui/components/chat-form-settings.js";
+import { useChatFormsEnabled } from "../../a2ui/hooks/use-chat-forms-enabled.js";
 import { useAgents, useIsAgentInaccessible } from "../../agents/api/queries.js";
 import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
 import { HomeRepairedNotice } from "../../agents/components/home-repaired-notice.js";
@@ -50,6 +52,10 @@ export function SandboxHomeView() {
   useHarnessConfigWatch(agentId);
 
   const { summaries, warnings } = useSectionSummaries(agent);
+  const chatFormsEnabled = useChatFormsEnabled();
+  const sections = chatFormsEnabled
+    ? SECTIONS
+    : SECTIONS.filter((e) => e.section !== "chat-forms");
   const sectionEntry = SECTIONS.find((e) => e.section === section);
 
   if (!agent || !display) {
@@ -69,7 +75,7 @@ export function SandboxHomeView() {
     <>
       <div className="flex flex-col gap-6 md:flex-row md:gap-10">
         <SandboxSectionNav
-          sections={SECTIONS}
+          sections={sections}
           header={<SandboxIdentity agent={agent} display={display} />}
           active={section}
           onNavigate={(s) => navigateToSandboxHome(agent.id, s)}
@@ -97,6 +103,8 @@ export function SandboxHomeView() {
             <EnvTab agent={agent} />
           ) : section === "channels" ? (
             <SandboxChannelsSection agentId={agent.id} />
+          ) : section === "chat-forms" ? (
+            <ChatFormSettings agentId={agent.id} />
           ) : section === "skills" ? (
             <SandboxSkillsSection agent={agent} />
           ) : section === "schedules" ? (

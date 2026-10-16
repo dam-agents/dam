@@ -27,7 +27,7 @@
   "devDependencies": {
     "@agentclientprotocol/sdk": "^1.7.0",
     "@clack/prompts": "1.8.1",
-    "@modelcontextprotocol/sdk": "^1.32.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@trpc/client": "^11.19.0",
     "@trpc/server": "^11.19.0",
     "@types/node": "^26.6.4",

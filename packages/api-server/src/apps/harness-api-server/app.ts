@@ -68,6 +68,7 @@ import type {
 } from "../../modules/case-studies/index.js";
 import type { AgentTelemetryService } from "../../modules/metrics/index.js";
 import { composeFeaturesForOwner } from "../../modules/features/index.js";
+import { createChatFormPreferencesReader } from "../../modules/chat-forms/index.js";
 
 export interface HarnessApiServerAppDeps {
   agentStateCache: AgentStateCache;
@@ -245,6 +246,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     defaultLimits,
   };
 
+  const readChatFormPreferences = createChatFormPreferencesReader(db);
   const app = new Hono();
   app.use(limitRequestBody(MAX_AGENT_REQUEST_BODY_BYTES));
   mountMcpRoutes(app, {
@@ -269,15 +271,19 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     caseStudySubmissions,
     caseStudyInspection,
     carriesInspectorRole,
-    chatFormsEnabled: async (owner) =>
-      (
-        await composeFeaturesForOwner({
-          db,
-          owner,
-          surface: "mcp",
-          modes: config.featureModes,
-        }).features.flags()
-      )["chat-forms"],
+    chatFormPreferences: (owner, agentId) =>
+      readChatFormPreferences(
+        agentId,
+        async () =>
+          (
+            await composeFeaturesForOwner({
+              db,
+              owner,
+              surface: "mcp",
+              modes: config.featureModes,
+            }).features.flags()
+          )["chat-forms"],
+      ),
     agentImage: createAgentImageReader(k8sClient),
     agentTelemetry,
     spendStatusFor,
