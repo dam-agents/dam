@@ -7,6 +7,11 @@ import {
   connectTerminalBridge,
   TERMINAL_MODE_RESET,
 } from "../modules/chat/infrastructure/terminal-bridge.js";
+import {
+  setTitle,
+  TITLE_RESTORE,
+  TITLE_SAVE,
+} from "../modules/chat/infrastructure/terminal-title.js";
 
 type FakeStdin = NodeJS.ReadStream & { setRawMode?(mode: boolean): void };
 type FakeStdout = NodeJS.WriteStream & { captured(): string };
@@ -96,5 +101,27 @@ describe("connectTerminalBridge", () => {
     });
 
     expect(stdout.captured()).toBe(`hello${TERMINAL_MODE_RESET}`);
+  });
+
+  // TEST_SCENARIO: the harness sets its own window title as it starts. The bridge must keep its leave hint in the title for the whole connection, and give the user's own title back when it ends.
+  it("holds its title over the remote's and restores the old one", async () => {
+    const host = listen((ws) => {
+      ws.send(encodeDataFrame(OP_OUTPUT, "a\x1b]0;Claude Code\x07b"));
+      ws.send(encodeExit(0));
+    });
+
+    const stdout = fakeStdout();
+    await connectTerminalBridge({
+      host,
+      token: "t",
+      terminalPath: "/term",
+      stdin: fakeStdin(),
+      stdout,
+      title: "leave hint",
+    });
+
+    expect(stdout.captured()).toBe(
+      `${TITLE_SAVE}${setTitle("leave hint")}ab${TITLE_RESTORE}${TERMINAL_MODE_RESET}`,
+    );
   });
 });

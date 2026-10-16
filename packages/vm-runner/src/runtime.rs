@@ -21,6 +21,10 @@ pub trait Runtime: Send + Sync {
     fn grow(&self, _id: &str, _memory_mib: i32) -> anyhow::Result<()> {
         anyhow::bail!("this runtime cannot grow a running machine")
     }
+    // UNIT_BOUNDARY_DESCRIPTION: what the runtime does at a boot's first answer from the guest, such as swapping in a storage disk the guest has just filled (see convert). A failure is logged by the caller and tried again at the next boot's answer.
+    fn answered(&self, _id: &str) -> anyhow::Result<()> {
+        Ok(())
+    }
     fn stop(&self, id: &str) -> anyhow::Result<()>;
     fn delete(&self, id: &str) -> anyhow::Result<()>;
     // UNIT_BOUNDARY_DESCRIPTION: whether what the machine's record names to boot is still on the host. The record holds a path when the machine boots a cache tree or a staged archive, and the hypervisor reads that path at every start, so a tree evicted or relaid under a stopped machine fails every start until the record is rewritten. A registry reference is not a path and is always present.

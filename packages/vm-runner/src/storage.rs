@@ -59,6 +59,12 @@ impl StorageUse {
         })
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: whether `bytes` more still leave the claim under CRITICAL_PERCENT, the level up to which the owner's other agents are protected, as a seed upload is held to.
+    pub fn takes(&self, bytes: u64) -> bool {
+        (u128::from(self.used) + u128::from(bytes)) * 100
+            < u128::from(self.usable) * u128::from(CRITICAL_PERCENT)
+    }
+
     // UNIT_BOUNDARY_DESCRIPTION: the bytes each of `running` guests may still add to the claim before it reaches GUEST_ROOM_PERCENT, an even part of what is left. The guests share the claim and write at once, so a grant of the whole room to each could add up past it; a grant of a part is renewed at every look, so one guest that writes alone still reaches the level within a few looks. No running guest reads as one.
     pub fn guest_room(&self, running: usize) -> u64 {
         let limit = u64::try_from(u128::from(self.usable) * u128::from(GUEST_ROOM_PERCENT) / 100)

@@ -1,5 +1,5 @@
 {
-  "id": "ff17279a-24bc-49f1-b1ad-84ce5ce4817a",
+  "id": "6e7fb554-e371-4b39-9bdf-c3814ffeec6d",
   "prevId": "b101f070-b1cb-469f-bf0c-0e5b9e06d034",
   "version": "7",
   "dialect": "postgresql",
@@ -2266,12 +2266,6 @@
           "notNull": true,
           "default": "'script'"
         },
-        "driver_session_id": {
-          "name": "driver_session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "awaited_until": {
           "name": "awaited_until",
           "type": "timestamp with time zone",
@@ -3921,8 +3915,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.sidebar_agent_pins": {
-      "name": "sidebar_agent_pins",
+    "public.sidebar_agent_order": {
+      "name": "sidebar_agent_order",
       "schema": "",
       "columns": {
         "owner": {
@@ -3945,8 +3939,8 @@
         }
       },
       "indexes": {
-        "sidebar_agent_pins_agent_idx": {
-          "name": "sidebar_agent_pins_agent_idx",
+        "sidebar_agent_order_agent_idx": {
+          "name": "sidebar_agent_order_agent_idx",
           "columns": [
             {
               "expression": "agent_id",
@@ -3963,8 +3957,8 @@
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {
-        "sidebar_agent_pins_owner_agent_id_pk": {
-          "name": "sidebar_agent_pins_owner_agent_id_pk",
+        "sidebar_agent_order_owner_agent_id_pk": {
+          "name": "sidebar_agent_order_owner_agent_id_pk",
           "columns": [
             "owner",
             "agent_id"
@@ -3976,8 +3970,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.sidebar_session_pins": {
-      "name": "sidebar_session_pins",
+    "public.sidebar_session_order": {
+      "name": "sidebar_session_order",
       "schema": "",
       "columns": {
         "owner": {
@@ -4006,8 +4000,8 @@
         }
       },
       "indexes": {
-        "sidebar_session_pins_agent_idx": {
-          "name": "sidebar_session_pins_agent_idx",
+        "sidebar_session_order_agent_idx": {
+          "name": "sidebar_session_order_agent_idx",
           "columns": [
             {
               "expression": "agent_id",
@@ -4024,8 +4018,8 @@
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {
-        "sidebar_session_pins_owner_agent_id_session_id_pk": {
-          "name": "sidebar_session_pins_owner_agent_id_session_id_pk",
+        "sidebar_session_order_owner_agent_id_session_id_pk": {
+          "name": "sidebar_session_order_owner_agent_id_session_id_pk",
           "columns": [
             "owner",
             "agent_id",

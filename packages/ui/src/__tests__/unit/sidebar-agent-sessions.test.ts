@@ -2,13 +2,7 @@ import type { AttentionItem } from "api-server-api";
 import { SessionMode, SessionType } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
-import {
-  groupSessionsByAgent,
-  leadAgentId,
-  openFirst,
-  orderByLatestSession,
-} from "../../modules/agents/lib/sidebar-agent-order.js";
-import { pinnedFirst } from "../../modules/agents/lib/sidebar-pins.js";
+import { groupSessionsByAgent } from "../../modules/agents/lib/sidebar-agent-order.js";
 import { defaultActivityFilters } from "../../modules/home/lib/activity-filter.js";
 import {
   matchesActivityFilters,
@@ -20,7 +14,7 @@ import {
   sidebarSessionWindow,
 } from "../../modules/sessions/lib/sidebar-session-window.js";
 
-// TEST_OVERVIEW: The sidebar lists each Agent's Sessions under the Agent, and no Session twice. Agents are ordered by their newest Session, after the pinned Agents, and the Agent the user has open comes first of all, once the pointer leaves the list, so no row moves under the cursor. Each Agent shows its newest Sessions first. An Agent shows three Sessions, or all its pinned Sessions when there are more, until the user clicks More, which lists the rest and turns into Less. The session filter in the Agents header applies to the attention record and to an Agent's own session list alike.
+// TEST_OVERVIEW: The sidebar lists each Agent's Sessions under the Agent, and no Session twice. An Agent shows its first three Sessions until the user clicks More, which lists the rest and turns into Less. The session filter in the Agents header applies to the attention record and to an Agent's own session list alike.
 
 function attention(
   agentId: string,
@@ -52,47 +46,13 @@ const records = [
 describe("sessions grouped by agent", () => {
   const byAgent = groupSessionsByAgent(toActivitySessions(records, new Set()));
 
-  it("TEST_SCENARIO: each Session lands under its own Agent once, newest first", () => {
+  it("TEST_SCENARIO: each Session lands under its own Agent once", () => {
     const ids = (agentId: string) =>
       byAgent.get(agentId)?.map((item) => item.session.sessionId);
     expect(ids("a")).toEqual(["a-new", "a-old"]);
     expect(ids("b")).toEqual(["b-new", "b-old"]);
     const all = [...byAgent.values()].flat().map((i) => i.id);
     expect(new Set(all).size).toBe(records.length);
-  });
-
-  it("TEST_SCENARIO: Agents follow their newest Session, and Agents with no Session go last in their old order", () => {
-    const agents = [
-      { id: "idle-1" },
-      { id: "a" },
-      { id: "idle-2" },
-      { id: "b" },
-    ];
-    expect(orderByLatestSession(agents, byAgent).map((a) => a.id)).toEqual([
-      "b",
-      "a",
-      "idle-1",
-      "idle-2",
-    ]);
-  });
-
-  it("TEST_SCENARIO: the open Agent comes first, above the pinned Agents, and the others keep their order", () => {
-    const agents = ["b", "a", "idle-1", "idle-2"].map((id) => ({ id }));
-    const ordered = pinnedFirst(agents, ["a"], (agent) => agent.id).items;
-    const ids = (openAgentId: string | null) =>
-      openFirst(ordered, openAgentId).map((a) => a.id);
-    expect(ids("idle-2")).toEqual(["idle-2", "a", "b", "idle-1"]);
-    expect(ids("idle-1")).toEqual(["idle-1", "a", "b", "idle-2"]);
-    expect(ids("a")).toEqual(["a", "b", "idle-1", "idle-2"]);
-    expect(ids(null)).toEqual(["a", "b", "idle-1", "idle-2"]);
-    expect(ids("deleted")).toEqual(["a", "b", "idle-1", "idle-2"]);
-  });
-
-  it("TEST_SCENARIO: while the pointer is over the list, the Agent shown first stays first; when it leaves, the open Agent takes its place", () => {
-    expect(leadAgentId("a", "b", true)).toBe("a");
-    expect(leadAgentId(null, "b", true)).toBeNull();
-    expect(leadAgentId("a", "b", false)).toBe("b");
-    expect(leadAgentId("a", null, false)).toBeNull();
   });
 });
 
@@ -137,31 +97,6 @@ describe("an agent's session window", () => {
     expect(
       sessionListToggle({ total: n + 1, expanded: true, hasNextPage: false }),
     ).toBe("less");
-  });
-
-  it("TEST_SCENARIO: a collapsed list shows every pinned Session, even past three, and More counts only what is still hidden", () => {
-    expect(sidebarSessionWindow(sessions, false, none, 4)).toEqual([
-      "s1",
-      "s2",
-      "s3",
-      "s4",
-    ]);
-    expect(
-      sessionListToggle({
-        total: 4,
-        expanded: false,
-        hasNextPage: false,
-        pinned: 4,
-      }),
-    ).toBeNull();
-    expect(
-      sessionListToggle({
-        total: 5,
-        expanded: false,
-        hasNextPage: false,
-        pinned: 4,
-      }),
-    ).toBe("more");
   });
 });
 
