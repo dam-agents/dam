@@ -65,8 +65,9 @@ if [ -n "${E2E_VIRTUALIZATION:-}" ]; then
     --set=harnessTools.hostPath=/var/lib/platform-harness-tools
   )
 else
-  # The container lane says so: in sandbox mode cluster:install turns the vm
-  # backend on by itself wherever it can open /dev/kvm.
+  # The container lane says so: outside CI cluster:install turns the vm
+  # backend on by itself on an Apple silicon Mac and in a sandbox that can
+  # open /dev/kvm.
   INSTALL_ARGS+=(--set=virtualization.enabled=false)
 fi
 mise run cluster:install -- "${INSTALL_ARGS[@]}"
