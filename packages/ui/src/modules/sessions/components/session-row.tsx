@@ -1,4 +1,11 @@
-import { Download, Edit, Terminal, Time, TrashCan } from "@carbon/icons-react";
+import {
+  Download,
+  Edit,
+  Terminal,
+  TextCreation,
+  Time,
+  TrashCan,
+} from "@carbon/icons-react";
 import {
   type BackgroundWorkItemView,
   ChannelType,
@@ -226,7 +233,7 @@ export function SessionRow({
                   disabled={provisional}
                   onSelect={onRename}
                 >
-                  <Edit size={14} /> Rename session
+                  <TextCreation size={14} /> Rename session
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   data-testid="session-delete-button"
@@ -287,7 +294,7 @@ export function SessionRow({
               onRename();
             }}
           >
-            <Edit size={14} /> Rename session
+            <TextCreation size={14} /> Rename session
           </Button>
           <Button
             variant="ghost"

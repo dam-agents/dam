@@ -1,4 +1,4 @@
-import { Checkmark, Edit } from "@carbon/icons-react";
+import { Checkmark, TextCreation } from "@carbon/icons-react";
 import { useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
@@ -123,7 +123,7 @@ export function EditableIdentity({
             className="flex min-w-0 items-center gap-1.5 text-left"
           >
             <span className="truncate">{name}</span>
-            <Edit aria-hidden size={16} className={ICON_BUTTON} />
+            <TextCreation aria-hidden size={16} className={ICON_BUTTON} />
           </button>
         </NameTag>
       ) : (
