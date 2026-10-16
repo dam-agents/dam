@@ -46,8 +46,10 @@ Safe Browsing and the component updater stay on: the updater is how Chrome gets 
 
 ## Tabs
 
-The one browser has tabs, and the panel shows them all in a tab bar under its toolbar: each tab's title, whether it is loading, and which one is on screen.
-The user opens, selects and closes tabs there, and a tab opened, selected, renamed or closed by the agent or by a page — a link that opens a new tab, a popup — shows in the bar as Chromium reports it.
+The one browser has tabs, and once it has two or more the panel shows them all in a tab bar under its toolbar: each tab's title, whether it is loading, and which one is on screen.
+As in Safari, a browser with one tab shows no tab bar — a second tab is typically one the agent opens, and the bar hides again when one tab is left — and the button for a new tab is in the toolbar, so the user can open a second tab while the bar is hidden.
+As in Safari too, the tabs share the bar's width evenly with their titles centered; when an even share is too narrow to read a title, the active tab keeps a readable width and the others shrink to share the rest, down to a minimum, past which the bar scrolls and its list button reaches every tab.
+The user selects and closes tabs there, and a tab opened, selected, renamed or closed by the agent or by a page — a link that opens a new tab, a popup — shows in the bar as Chromium reports it.
 The kiosk window shows only one tab, so **the tab on screen is the active tab**: the panel's address, title, loading and Back and Forward are always that tab's.
 
 Every tab is known by its **target id**, Chromium's own id for it, which agent-browser accepts as a tab reference too; positions in the list are never used.
@@ -57,6 +59,8 @@ The user and the agent share the active tab both ways.
 A tab the agent brings to the front — `agent-browser tab`, `tab new`, a page's popup — comes on screen, and Chromium sends no event for that, nor for a script that renames a page, so the runtime asks each tab for its visibility and title once a second while a panel watches; a tab that has just turned visible becomes the active tab.
 A tab the user selects comes to the front at once, and the runtime then selects it in agent-browser too (`agent-browser tab <target id>`, in agent-browser's queue), so the agent's next command acts on the page the user sees.
 agent-browser does not list the browser's own pages, such as the new tab page a keyboard shortcut opens; the panel shows them and brings them to the front, but the agent stays on its last tab.
+Chromium starts with a New Tab page of its own, which agent-browser never takes as its tab, opening one of its own beside it; the runtime closes that start-up page when its connection opens, while another tab is open, so a fresh browser has one tab for the panel and the agent alike.
+Chromium is not given a start-up address instead, as it then reopens the last session's tabs beside it on every launch.
 What the agent only reads — a snapshot, a screenshot, a script — changes neither.
 
 A new tab from the panel is blank (`about:blank`), so agent-browser takes it as its own tab; the address bar is focused for it, and what the user enters there opens in the new tab, even before the runtime reports it.
@@ -119,7 +123,7 @@ sequenceDiagram
   Both halves refuse any other agent: the stream relay checks the agent's spec at the api-server, and the runtime refuses the control procedures unless the controller told it the agent requires named connections (`PLATFORM_REQUIRE_CONNECTION_ADDRESS`, always set, after the agent's own secret, so the owner's environment cannot claim it).
 - **The control** is the runtime's `browser` tRPC procedures, on the same agent tRPC connection the UI uses for files and sessions: `browser.watch`, a subscription that keeps the browser up while a panel watches and reports its state, and the toolbar's mutations.
   One supervisor in agent-runtime serves every panel.
-  It launches the browser through agent-browser if it is not running, then opens a DevTools Protocol connection of its own to that Chromium and follows its tabs and the one on screen ([Tabs](#tabs)): their addresses, titles, whether they are loading, and whether Back and Forward can go anywhere reach the panel the moment Chromium reports them, and the toolbar's navigate, reload, stop, back and forward and the tab bar's new, select and close run on the tab they name directly, never queued behind the agent's commands in agent-browser's one-at-a-time queue.
+  It launches the browser through agent-browser if it is not running, then opens a DevTools Protocol connection of its own to that Chromium and follows its tabs and the one on screen ([Tabs](#tabs)): their addresses, titles, whether they are loading, and whether Back and Forward can go anywhere reach the panel the moment Chromium reports them, and the toolbar's navigate, reload, stop, back, forward and new tab and the tab bar's select and close run on the tab they name directly, never queued behind the agent's commands in agent-browser's one-at-a-time queue.
   Words typed into the address bar that are not an address search DuckDuckGo.
   A dropped DevTools connection means the browser is gone, and the supervisor launches it again.
   A health check that times out finds the browser busy — a heavy page, or the agent keeping it busy — not gone, so it is left alone; when the browser fails to start, or answers nothing for a minute, the supervisor stops it — its daemon, the Chromium on its profile, and the profile's lock files, which would keep the next Chromium from starting — and launches it again, retrying with a growing delay.
@@ -148,7 +152,7 @@ Launches, failures and restarts go to a log file in the agent's home, so a misbe
 
 The browser keeps running when the last panel closes, since the agent may be using it; agent-browser never idle-closes a headed browser.
 An open panel keeps the agent awake the way an open chat does: it counts towards the agent's open connections, not towards runtime work.
-The panel never wakes a sleeping agent, since the stream client reconnects by itself whenever its socket closes, as it does when the user puts the agent to sleep: the stream socket only waits out a wake something deliberate asked for, such as the chat or the wake button, and counts as an open connection only once the agent's end is open.
+The panel never wakes a sleeping agent, since the stream client reconnects by itself whenever its socket closes, as it does when the agent falls asleep or is disabled: the stream socket only waits out a wake something deliberate asked for, such as the chat, and counts as an open connection only once the agent's end is open.
 The control rides the UI's tRPC connection to the agent, which stamps last activity while it is open, as for any open view of the agent; nothing on the stream socket does — the stream client acknowledges frames many times a second.
 A hidden tab stops its stream until it is shown again.
 A running Chromium never keeps the agent awake on its own.

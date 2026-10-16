@@ -16,7 +16,7 @@ import {
   sortFeedItems,
 } from "../../modules/home/lib/feed-item.js";
 
-// TEST_OVERVIEW: the activity ordering and filtering rules, kept pure so they can be pinned here. The sidebar Activity filters sessions by the channel they arrived through and by their state, so both halves are covered.
+// TEST_OVERVIEW: the activity ordering and filtering rules, kept pure so they can be pinned here. The session filter in the sidebar Agents header filters sessions by the channel they arrived through and by their state, so both halves are covered.
 
 function session(overrides: Partial<AttentionItem> = {}): AttentionItem {
   return {

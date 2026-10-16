@@ -16,7 +16,12 @@ export interface InvocationEndpointsDeps extends DriverOpsDeps {
   k8s: K8sClient;
 }
 
-const REFUSAL_STATUS = { invalid: 400, forbidden: 403, conflict: 409 } as const;
+const REFUSAL_STATUS = {
+  invalid: 400,
+  forbidden: 403,
+  conflict: 409,
+  spend_limit_reached: 403,
+} as const;
 
 export function mountInvocationRoutes(
   app: Hono,
@@ -47,7 +52,10 @@ export function mountInvocationRoutes(
 
     const outcome = await ops.spawn(body);
     if (!outcome.ok) {
-      return c.json({ error: outcome.message }, REFUSAL_STATUS[outcome.kind]);
+      return c.json(
+        { error: outcome.message, kind: outcome.kind },
+        REFUSAL_STATUS[outcome.kind],
+      );
     }
     return c.json({ id: outcome.id }, 201);
   });

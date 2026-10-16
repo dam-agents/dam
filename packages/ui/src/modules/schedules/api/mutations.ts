@@ -1,7 +1,10 @@
 import { useMutation } from "@tanstack/react-query";
 
 import { api } from "../../../api.js";
+import { getErrorMessage } from "../../../lib/errors.js";
+import { emitToast } from "../../../lib/toast.js";
 import { trpc } from "../../../trpc.js";
+import { runNowErrorText } from "../lib/schedule-format.js";
 
 const invalidatesScheduleList = {
   invalidates: [trpc.schedules.pathKey()],
@@ -177,7 +180,12 @@ export function useRunScheduleNow() {
     ...trpc.schedules.runNow.mutationOptions(),
     meta: {
       ...invalidatesScheduleList,
-      errorToast: "Couldn't run schedule",
+      suppressErrorToast: true,
     },
+    onError: (error) =>
+      emitToast({
+        kind: "error",
+        message: runNowErrorText(getErrorMessage(error, "")),
+      }),
   });
 }

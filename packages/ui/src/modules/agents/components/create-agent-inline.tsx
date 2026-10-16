@@ -8,13 +8,12 @@ import { Input } from "@/components/ui/input";
 import type { AgentView } from "../../../types.js";
 import { useVmRuntime } from "../../features/hooks/use-vm-runtime.js";
 import { useCreateAgent } from "../api/mutations.js";
-import { usePrefilledSandboxName } from "../hooks/use-default-sandbox-name.js";
+import { usePrefilledAgentName } from "../hooks/use-default-sandbox-name.js";
 import {
   buildCreateAgentInput,
   type CreateAgentDraft,
   isCreateAgentDraftComplete,
 } from "../lib/create-agent-input.js";
-import { AGENT_NAME_PREFIX } from "../lib/sandbox-name.js";
 import { VmRuntimeNotice } from "./vm-runtime-notice.js";
 
 interface Props {
@@ -25,7 +24,7 @@ export function CreateAgentInline({ onCreated }: Props) {
   const vmRuntime = useVmRuntime();
   const createAgent = useCreateAgent();
   const [name, setName] = useState("");
-  usePrefilledSandboxName(AGENT_NAME_PREFIX, name, setName);
+  usePrefilledAgentName(name, setName);
 
   const draft: CreateAgentDraft = {
     name,

@@ -14,8 +14,9 @@ import (
 // +kubebuilder:metadata:annotations marker out of sync with the constant.
 func TestGeneratedCRDsCarrySchemaGeneration(t *testing.T) {
 	cases := map[string]int{
-		"agent-platform.ai_agents.yaml":      AgentSchemaGeneration,
-		"agent-platform.ai_userbudgets.yaml": UserBudgetSchemaGeneration,
+		"agent-platform.ai_agents.yaml":          AgentSchemaGeneration,
+		"agent-platform.ai_userbudgets.yaml":     UserBudgetSchemaGeneration,
+		"agent-platform.ai_userspendlimits.yaml": UserSpendLimitSchemaGeneration,
 	}
 	for file, want := range cases {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "helm", "crds", file))

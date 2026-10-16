@@ -17,6 +17,7 @@ export const ACTIVE_SESSION_KEY = "agent-platform.ai/active-session";
 export const INVOCATIONS_ACTIVE_KEY = "agent-platform.ai/invocations-active";
 
 export const STOP_REQUESTED_KEY = "agent-platform.ai/stop-requested";
+export const DISABLED_KEY = "agent-platform.ai/disabled";
 export const RECLAIMED_AT_KEY = "agent-platform.ai/reclaimed-at";
 export const RUNTIME_MIGRATION_KEY = "agent-platform.ai/runtime-migration";
 export const RUNTIME_MIGRATION_MESSAGE_KEY =

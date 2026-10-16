@@ -838,9 +838,10 @@ describe("the shipped proof-of-concept catalog", () => {
   it("validates and lists its kits", async () => {
     const here = path.dirname(fileURLToPath(import.meta.url));
     const dir = path.resolve(here, "../../../../../helm/starter-kits");
-    const { refresh, repo } = harness([
-      { name: "platform", source: createLocalCatalogSource(dir) },
-    ]);
+    const { refresh, repo } = harness(
+      [{ name: "platform", source: createLocalCatalogSource(dir) }],
+      { sourceForEntry: (gitUrl) => memorySource(gitUrl, {}) },
+    );
     await refresh.run();
     const kits = await repo.list();
     expect(kits.map((k) => k.kit.id).sort()).toEqual([
