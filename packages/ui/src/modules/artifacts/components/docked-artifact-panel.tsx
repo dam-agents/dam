@@ -1,20 +1,10 @@
-import {
-  Close,
-  Download,
-  Edit,
-  Launch,
-  Maximize,
-  Save,
-  Share,
-} from "@carbon/icons-react";
+import { ChevronLeft, Close, Save } from "@carbon/icons-react";
 import { useCallback, useEffect, useState } from "react";
 
-import { RenderToggle } from "@/components/render-toggle";
 import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
 import { useFeatures } from "../../features/api/queries.js";
-import { FullscreenPreviewDialog } from "../../files/components/fullscreen-preview-dialog.js";
 import {
   useArtifact,
   useArtifactContent,
@@ -26,11 +16,11 @@ import { useStartArtifactSession } from "../hooks/use-start-artifact-session.js"
 import { canUseArtifactBridge } from "../lib/artifact-bridge.js";
 import { isEditableArtifact } from "../lib/editable.js";
 import { isRenderedKind } from "../lib/kinds.js";
-import { downloadArtifact } from "../lib/transfer.js";
-import { ArtifactStatusBadge } from "./artifact-badges.js";
+import { ArtifactVisibilityButton } from "./artifact-badges.js";
+import { ArtifactBarActions } from "./artifact-bar-actions.js";
 import { ArtifactSourceView } from "./artifact-source-view.js";
-import { CopyLinkButton } from "./copy-link-button.js";
 import { DeferredFrame } from "./deferred-frame.js";
+import { RenameArtifactDialog } from "./rename-artifact-dialog.js";
 import { ShareDialog } from "./share-dialog.js";
 import { VersionSwitcher } from "./version-switcher.js";
 
@@ -57,9 +47,8 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
     ] ?? false;
 
   const renderable = artifact ? isRenderedKind(artifact.kind) : false;
-  const [showSource, setShowSource] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
-  const [fullscreen, setFullscreen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
 
   const { data: versions } = useArtifactVersions(openArtifactId);
   const latest = artifact?.version;
@@ -69,7 +58,7 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
 
   const couldEdit = !!artifact && isEditableArtifact(artifact);
   const content = useArtifactContent(
-    artifact && (!renderable || showSource || couldEdit) ? artifact.id : null,
+    artifact && (!renderable || couldEdit) ? artifact.id : null,
     shownVersion,
   );
   const editor = useArtifactEditor({
@@ -94,7 +83,7 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
     setOpenArtifactId(null);
   }, [confirmDiscard, setOpenArtifactId]);
 
-  const showFrame = renderable && !showSource && !editor.editing;
+  const showFrame = renderable && !editor.editing;
   const preview = useArtifactPreview(
     showFrame && artifact ? artifact.id : null,
     shownVersion,
@@ -124,28 +113,47 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
       {preview.isLoading ? "Loading preview…" : "No preview available."}
     </p>
   );
-  const frameShowing = showFrame && frame !== null;
-  const expanded = fullscreen && showFrame;
 
   if (!openArtifactId) return null;
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
-        <span
-          className="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
+      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border pl-2 pr-4">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="shrink-0"
+          aria-label="Back to artifacts"
+          tooltip="Back to artifacts"
+          onClick={() => void closePanel()}
+        >
+          <ChevronLeft size={16} />
+        </Button>
+        {artifact && (
+          <ArtifactVisibilityButton
+            artifact={artifact}
+            onShare={() => setShareOpen(true)}
+          />
+        )}
+        <button
+          type="button"
+          className="min-w-0 truncate rounded-sm text-left text-sm font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default"
           title={artifact?.title}
+          aria-label={artifact ? `Rename ${artifact.title}` : undefined}
+          disabled={!artifact}
+          onClick={() => setRenameOpen(true)}
         >
           {editor.dirty ? "\u25cf " : ""}
           {artifact?.title ?? "Artifact"}
-        </span>
+        </button>
+        <span className="flex-1" />
         {editor.editing ? (
           <>
             <Button variant="ghost" size="xs" onClick={editor.cancelEdit}>
               <Close size={14} /> Cancel
             </Button>
             <Button
-              variant="outline"
+              variant="ghost"
               size="xs"
               onClick={editor.save}
               disabled={!editor.dirty || editor.saving}
@@ -165,84 +173,20 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
                 onChange={(v) => setPinnedVersion(v === latest ? null : v)}
               />
             )}
-            {editor.editable && (
-              <Button variant="outline" size="xs" onClick={editor.startEdit}>
-                <Edit size={14} /> Edit
-              </Button>
-            )}
             {artifact && (
-              <>
-                <ArtifactStatusBadge
-                  artifact={artifact}
-                  onShare={() => setShareOpen(true)}
-                />
-                {artifact.shareUrl && (
-                  <CopyLinkButton
-                    url={artifact.shareUrl}
-                    variant="outline"
-                    restricted={artifact.visibility === "restricted"}
-                  />
-                )}
-                <Button
-                  variant="outline"
-                  size="xs"
-                  onClick={() => setShareOpen(true)}
-                >
-                  <Share size={14} />
-                  Share
-                </Button>
-              </>
-            )}
-            {renderable && (
-              <RenderToggle
-                rendered={!showSource}
-                onToggle={() => setShowSource((s) => !s)}
+              <ArtifactBarActions
+                artifact={artifact}
+                onEdit={editor.editable ? editor.startEdit : undefined}
+                onShare={() => setShareOpen(true)}
+                onStartSession={
+                  startSession.available && shownVersion === latest
+                    ? startSession.start
+                    : undefined
+                }
               />
-            )}
-            {artifact && (
-              <Button
-                variant="outline"
-                size="icon-xs"
-                aria-label="Download"
-                tooltip="Download"
-                onClick={() => void downloadArtifact(artifact.id)}
-              >
-                <Download size={14} />
-              </Button>
-            )}
-            {startSession.available && shownVersion === latest && (
-              <Button
-                variant="outline"
-                size="icon-xs"
-                aria-label="Start a new session"
-                tooltip="Start a new session"
-                onClick={() => void startSession.start()}
-              >
-                <Launch size={14} />
-              </Button>
-            )}
-            {frameShowing && (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Open fullscreen"
-                tooltip="Open fullscreen"
-                onClick={() => setFullscreen(true)}
-              >
-                <Maximize size={16} />
-              </Button>
             )}
           </>
         )}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Close"
-          tooltip="Close"
-          onClick={() => void closePanel()}
-        >
-          <Close size={16} />
-        </Button>
       </div>
 
       <div className="min-h-0 flex-1">
@@ -268,13 +212,7 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
             Artifact not found — it may have been deleted.
           </p>
         ) : showFrame ? (
-          expanded ? (
-            <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-              Opened in fullscreen
-            </div>
-          ) : (
-            (frame ?? frameFallback)
-          )
+          (frame ?? frameFallback)
         ) : (
           <div
             className={
@@ -300,13 +238,11 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
         <ShareDialog artifact={artifact} onClose={() => setShareOpen(false)} />
       )}
 
-      {expanded && artifact && (
-        <FullscreenPreviewDialog
-          title={artifact.title}
-          onClose={() => setFullscreen(false)}
-        >
-          {frame ?? frameFallback}
-        </FullscreenPreviewDialog>
+      {renameOpen && artifact && (
+        <RenameArtifactDialog
+          artifact={artifact}
+          onClose={() => setRenameOpen(false)}
+        />
       )}
     </div>
   );

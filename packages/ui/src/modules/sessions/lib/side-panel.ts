@@ -81,9 +81,12 @@ export function maximizableView(
   activeTab: SidePanelTab | null,
   dockedShown: boolean,
   openFilePath: string | null,
+  openArtifactId: string | null,
 ): string | null {
   if (activeTab === "browser") return "browser";
   if (activeTab === "files" && dockedShown && openFilePath)
     return `file:${openFilePath}`;
+  if (activeTab === "artifacts" && dockedShown && openArtifactId)
+    return `artifact:${openArtifactId}`;
   return null;
 }

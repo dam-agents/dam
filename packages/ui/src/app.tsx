@@ -2,11 +2,13 @@ import { useEffect } from "react";
 
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
+import { Button } from "./components/ui/button.js";
 import { useIsDesktop } from "./hooks/use-is-desktop.js";
 import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
-import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
+import { ArtifactsSidePanel } from "./modules/artifacts/components/artifacts-side-panel.js";
+import { ArtifactIcon } from "./modules/artifacts/lib/artifact-icon.js";
 import { GettingStartedDock } from "./modules/getting-started/components/getting-started-dock.js";
 import { ApprovalsButton } from "./modules/home/components/approvals-button.js";
 import { ApprovalsPanel } from "./modules/home/components/approvals-panel.js";
@@ -69,6 +71,8 @@ function MainApp() {
   const approvalsOpen = useStore((s) => s.approvalsOpen);
   const setApprovalsOpen = useStore((s) => s.setApprovalsOpen);
   const kitBrowserOpen = useStore((s) => s.kitBrowserOpen);
+  const setSidePanelTab = useStore((s) => s.setSidePanelTab);
+  const setMobileScreen = useStore((s) => s.setMobileScreen);
   const desktop = useIsDesktop();
 
   useLiveEvents();
@@ -120,52 +124,54 @@ function MainApp() {
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <Sidebar />
-        <main className="relative z-content flex flex-1 flex-col overflow-y-auto">
-          {!desktop && (
-            <AppTopBar
-              actions={
+        <ArtifactsSidePanel>
+          <main className="flex flex-1 flex-col overflow-y-auto">
+            {!desktop && (
+              <AppTopBar
+                actions={
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Artifacts"
+                      onClick={() => {
+                        setSidePanelTab("artifacts");
+                        setMobileScreen("files");
+                      }}
+                    >
+                      <ArtifactIcon size={16} />
+                    </Button>
+                    <GettingStartedDock placement="header" />
+                    <ApprovalsButton />
+                  </>
+                }
+              />
+            )}
+            <div
+              className={cn(
+                "mx-auto w-full flex-1 px-4 md:px-[5%] py-6 md:py-10",
+                view === "home" || view === "starter-kit"
+                  ? "max-w-[1200px]"
+                  : view === "settings" || view === "sandbox-home"
+                    ? "max-w-[1040px]"
+                    : "max-w-[960px]",
+              )}
+            >
+              {view === "sandbox-home" ? (
+                <SandboxHomeView />
+              ) : view === "home" || view === "starter-kit" ? (
                 <>
-                  <GettingStartedDock placement="header" />
-                  <ApprovalsButton />
+                  <HomeView />
+                  {view === "starter-kit" && <StarterKitDetailView />}
                 </>
-              }
-            />
-          )}
-          <div
-            className={cn(
-              "mx-auto w-full flex-1 px-4 md:px-[5%] py-6 md:py-10",
-              view === "home" || view === "starter-kit"
-                ? "max-w-[1200px]"
-                : view === "settings" || view === "sandbox-home"
-                  ? "max-w-[1040px]"
-                  : "max-w-[960px]",
-            )}
-          >
-            {view === "sandbox-home" ? (
-              <SandboxHomeView />
-            ) : view === "home" || view === "starter-kit" ? (
-              <>
-                <HomeView />
-                {view === "starter-kit" && <StarterKitDetailView />}
-              </>
-            ) : view === "settings" ? (
-              <SettingsView />
-            ) : view === "artifacts" ? (
-              <ArtifactsView />
-            ) : (
-              <NotFoundView />
-            )}
-          </div>
-        </main>
-        {desktop && (
-          <aside
-            aria-label="Notifications"
-            className="flex w-11 shrink-0 flex-col items-center justify-end gap-1 border-l border-border bg-background py-2"
-          >
-            <GettingStartedDock placement="rail" />
-            <ApprovalsButton />
-          </aside>
-        )}
+              ) : view === "settings" ? (
+                <SettingsView />
+              ) : (
+                <NotFoundView />
+              )}
+            </div>
+          </main>
+        </ArtifactsSidePanel>
       </div>
       {approvalsOpen && (
         <ApprovalsPanel onClose={() => setApprovalsOpen(false)} />

@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-10-15
+Last verified: 2026-10-16
 
 ## Overview
 
@@ -60,8 +60,8 @@ The host validates both the message payload and the sending window against its p
 The page still never holds a credential for either call.
 The frame is sandboxed without modals, so browser dialogs are blocked.
 
-Callbacks are available only in the chat's docked preview, including fullscreen, and work in a newly started conversation without reloading the page.
-Library previews and historical versions cannot send prompts or requests, and disabling the feature disconnects both.
+Callbacks are available only in the docked preview inside the publishing Agent's chat, including fullscreen, and work in a newly started conversation without reloading the page.
+The same preview on a page outside that chat and historical versions cannot send prompts or requests, and disabling the feature disconnects both.
 There is no permanent Session binding: the currently open conversation is the destination.
 Interactive pages cannot be shared, including with named viewers; that restriction is enforced with the sharing write.
 Retention remains available, and a separate static copy can be shared.
@@ -158,7 +158,7 @@ flowchart LR
   The platform verifies the upload (existence, size cap) before the artifact row lands, and an upload reference outside the caller's own staging namespace reads as unknown.
   Attribution is the mesh-verified agent identity — a harness cannot publish as another agent, and the owner-scoped service means it can only ever touch its owner's library.
   Reads mirror this: small text content returns inline, and a download tool mints a short-lived presigned link — signed for the same agent-dialed store authority — that the harness GETs straight into its sandbox (any kind or size, current or a past version), so work products published from one sandbox are consumable in another without transiting the conversation.
-- **Users** publish from the Artifacts page in the UI: bytes go through an authenticated upload route on the app origin (avoiding browser↔store CORS), then the same create call.
+- **Users** publish from the Artifacts tab in the UI: bytes go through an authenticated upload route on the app origin (avoiding browser↔store CORS), then the same create call.
   Downloads answer with a presigned direct link when the store has a browser-reachable endpoint, a relayed blob otherwise.
 - **Workspace files** promote into artifacts from the chat file panel: the browser already holds the file's text, so publishing is the ordinary user create/update call (with the upload route for content over the inline cap) plus two extra facts — the create attributes the artifact to the sandbox's agent (validated against the owner's agents), and both calls record the file's workspace-relative path on the artifact as its source path.
   The path is a plain label: the server never dereferences or validates it, and the UI uses it only to decide between creating a new artifact and publishing a new version of an existing one (among the agent's artifacts with a matching path, the most recently updated wins).
@@ -166,24 +166,28 @@ flowchart LR
 
 ## UI surfaces
 
-- **Artifacts** is a top-level destination in the sidebar (the drawer on a phone): the whole library grouped by folder, with search, upload, folder management, sharing controls, a separate delete-after (retention) control, and in-app previews that reuse the chat file-viewer stack (markdown prose, highlighted code, inline images).
-  An owner can **change a text artifact's content** from the preview they read it in, which publishes a version like any other revision, so the artifact keeps its identity, its link and every earlier version.
+- The library lives in one place: the **Artifacts tab** of the side panel on the right, present on every page, with an Agent's chat or without one.
+  The sidebar's Artifacts destination (the drawer on a phone, where the panel opens full screen) opens that tab rather than a page of its own, and never marks itself as the current page; outside a chat it is the panel's only tab.
+  In an Agent's chat the list starts on that Agent's artifacts and switches to the whole library, uploads included; anywhere else it is the whole library, and there each row names the Agent that published it, or the user for an upload.
+  The tab offers search by title and file name, upload, folder management (rename, delete, copy the folder's public link), sharing controls and a separate delete-after (retention) control.
+  Folders are listed first and unfiled artifacts after them at the top level; every user folder is listed, empty ones included, even when the list shows one Agent's artifacts, so a folder created there is in view at once and can take a drop.
+- Opening an artifact docks a **preview** in the same tab that reuses the chat file-viewer stack (markdown prose, highlighted code, inline images) and follows new versions as they are published.
+  An owner can **change a text artifact's content** from the preview, which publishes a version like any other revision, so the artifact keeps its identity, its link and every earlier version.
   Only the current version is editable; a past one is read-only.
   Editing is bounded further by what the platform accepts in one inline write, which is less than it hands back to read — a document past that bound stays readable but offers no Edit, so no surface advertises an action the save would refuse.
   The version history is readable rather than merely steppable — each version says when it was written and who wrote it.
   Retention is reached from the artifact's own menu rather than the sharing dialog, and stays available whatever the artifact's visibility — it governs deletion, not the link.
-  An artifact's visibility badge is also the control that opens the sharing dialog, so the state and the means to change it sit in one place; the library's artifact rows therefore show their share actions at rest, while every other row — folders here, and artifacts in the chat side panel — keeps its actions behind a hover reveal.
-  The in-app preview and the chat panel's docked artifact view carry the same entry point — badge, a copy-link control once a share link exists, and an always-present Share button — so opening an artifact is a place to start sharing it rather than a dead end.
-  Folder membership is mutable and advisory: any artifact can be filed into any folder, moved to another, or taken out again from the library itself, so organising a library is not tied to the moment each artifact was published.
+  An artifact's visibility badge is also the control that opens the sharing dialog, so the state and the means to change it sit in one place; the rows lead with a visibility icon that opens it, the creator byline opens that Agent's chat, and every other action on a row stays behind a hover reveal.
+  The docked preview's top bar carries the same controls — a visibility icon that opens the sharing dialog, the title, which opens rename, and icon-only Edit, Share, Download, Open in new tab once a share link exists, and Discuss with agent — so opening an artifact is a place to start sharing or continuing it rather than a dead end.
+  It returns to the list from a back control and maximizes through the side panel's edge tab, as an open file does.
+  Deleting the artifact a preview is showing closes that preview.
+- Folder membership is mutable and advisory: any artifact can be filed into any folder, moved to another, or taken out again from the library itself, so organising a library is not tied to the moment each artifact was published.
   Filing works from the artifact's menu or by dragging it onto a folder; a drag held near the top or bottom edge of the list scrolls it, so a folder off screen can still take the drop.
   Nothing reads membership as a claim about provenance.
 - The chat file panel's toolbar carries a **Create artifact / Sync to artifact** action that publishes the open file as above and switches the dock to the resulting artifact; binary and oversized files are excluded.
-- The chat view carries the same library twice over: an **Artifacts tab** in the chat view's side panel, scoped to the sandbox's agent, grouped by folder and offering the same per-artifact actions plus drag-to-folder filing, and a **docked preview** in that same tab that renders the selected artifact, hosts the same editor, and follows new versions as they are published.
-  That preview shares one slot with the sandbox file viewer, so opening either evicts the other; both ask before they displace an unsaved edit, and so does every dismissal of a surface holding one.
-  Deleting the artifact a preview is showing closes that preview.
-- On the agent-scoped chat surface a folder shows only that agent's artifacts, and a folder that holds none of them is not listed, so the agent's artifacts stay in view.
-  **Move to folder…** still offers every user folder as a filing target, and a moved artifact makes its folder appear.
-  The library itself lists every folder unconditionally.
+- In a chat the preview shares one dock with the sandbox file viewer, so opening either evicts the other.
+  The dock belongs to the chat it was opened in: switching Agent, going back or leaving the chat closes it, and so does entering a chat; moving between pages outside a chat keeps it open.
+  Whatever displaces or closes an unsaved edit asks first — opening another item, dismissing the surface, and every navigation that leaves the chat, the browser's back and forward included; keeping the edit stays where the user was.
 
 ## Lifecycle and cleanup
 
@@ -220,5 +224,5 @@ The surface says who filed it: agent publishes arrive over the per-agent MCP ser
 - Contract (types, schemas, tRPC router): [`packages/api-server-api/src/modules/artifact-library/`](../../packages/api-server-api/src/modules/artifact-library/)
 - Implementation (service, repository, share and content apps, share sign-in, render tokens, renderer, MCP tools, sweeper): [`packages/api-server/src/modules/artifact-library/`](../../packages/api-server/src/modules/artifact-library/)
 - Blob storage port it consumes: [`packages/api-server/src/modules/artifacts/`](../../packages/api-server/src/modules/artifacts/)
-- UI destination: [`packages/ui/src/modules/artifacts/`](../../packages/ui/src/modules/artifacts/)
+- UI (side panel tab and docked preview): [`packages/ui/src/modules/artifacts/`](../../packages/ui/src/modules/artifacts/)
 - Share and content host wiring (ingress rules, env, share Keycloak client): [`helm/`](../../helm/)

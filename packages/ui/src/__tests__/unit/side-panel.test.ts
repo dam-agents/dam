@@ -17,8 +17,9 @@ import { createSidePanelSlice } from "../../modules/sessions/store/side-panel.js
 import type { PlatformStore } from "../../store.js";
 
 /**
- * TEST_OVERVIEW: The chat view has one side panel on the right, switched by an
- * icon bar: Artifacts, Files, Changes, Browser and Processes. A list tab shows
+ * TEST_OVERVIEW: Every page has one side panel on the right, switched by an
+ * icon bar: Artifacts, Files, Changes, Browser and Processes in an Agent's
+ * chat, and only Artifacts on every other page. A list tab shows
  * its list, or the docked item it opened (a file, an artifact, a process
  * output). The Changes and Browser tabs show their docked panel and nothing
  * else. Clicking the active icon collapses the panel. A conversation opens with
@@ -154,10 +155,12 @@ describe("the panel width", () => {
 });
 
 describe("the maximizable views", () => {
-  it("TEST_SCENARIO: only the browser and an open file maximize, and each file is its own view", () => {
-    expect(maximizableView("browser", true, null)).toBe("browser");
-    expect(maximizableView("files", true, "/a.md")).toBe("file:/a.md");
-    expect(maximizableView("files", false, "/a.md")).toBe(null);
-    expect(maximizableView("artifacts", true, null)).toBe(null);
+  it("TEST_SCENARIO: only the browser, an open file and an open artifact maximize, and each file or artifact is its own view", () => {
+    expect(maximizableView("browser", true, null, null)).toBe("browser");
+    expect(maximizableView("files", true, "/a.md", null)).toBe("file:/a.md");
+    expect(maximizableView("files", false, "/a.md", null)).toBe(null);
+    expect(maximizableView("artifacts", true, null, "a1")).toBe("artifact:a1");
+    expect(maximizableView("artifacts", false, null, "a1")).toBe(null);
+    expect(maximizableView("artifacts", true, null, null)).toBe(null);
   });
 });
