@@ -304,7 +304,7 @@ Turning the flag on gives the user one Connection from the built-in preset, name
 Connection names are unique per user, so when the user already has a Connection named after the brand it takes the first free name of the brand followed by `LLM`, then that numbered from 2.
 When the install turns the feature on for everyone there is no flag change to react to, so the user's own listing of their Connections provisions it, and a listing with the flag off removes a leftover one.
 Only that listing reconciles: the listings agent creation and sub-agent spawns make internally change nothing.
-An existing Connection follows the operator: when the install's root URL, model, key or brand changes, the next reconcile (the user's listing, a flag change, or the boot sweep) rewrites its name, contributions and Secret and re-delivers the Agents holding it.
+An existing Connection follows the operator: when the install's root URL, model, key, CA or brand changes, the next reconcile (the user's listing, a flag change, or the boot sweep) rewrites its name, contributions and Secret and re-delivers the Agents holding it.
 At boot the api-server reconciles every user holding one, so dropping the root URL removes them all and a changed endpoint reaches users who do not come back.
 Flag changes, listings and the boot sweep may run at once on different replicas; each reads the flag and the user's Connections under one per-owner lock, so whichever runs last decides.
 The user's own create, update and delete refuse the preset, so the Connection cannot be duplicated, dropped or given another key while the flag says it should exist.
@@ -312,7 +312,11 @@ It is created like any provider Connection, so the [first-provider grant](agent-
 Its credential is a copy of the operator's key in the Connection's Secret, written when the Connection is created and rewritten when the operator's key changes, as an IBM LiteLLM Connection holds the user's key.
 It contributes the base URLs and inert key placeholders each harness reads (the OpenAI route under `/v1`, the Anthropic route at the root), the model pin, and the injection of the key as a bearer token on the server's host and port.
 So every call leaves through the gateway's credential chain, which [meters](spend-limits.md) it like any model-provider call.
-The server is in the cluster, so the gateway also needs a network path to it, which the chart opens per peer, and must trust the server's certificate, which the install's extra upstream CAs provide when its issuer is not public.
+The server is in the cluster, so the gateway also needs a network path to it, which the chart opens per peer, and must trust the server's certificate.
+The install can name a ConfigMap key holding the CA that signed it; the api-server reads it at boot and writes it into each Connection's Secret as its upstream CA, as a Kubernetes Connection holds a pasted one, so the gateway validates the server against that CA alone.
+On OpenShift the service-serving signer is such a key in every namespace, so a server with a service-serving certificate needs no CA pasted anywhere.
+A CA the api-server cannot read leaves the feature off, with an error in its log.
+Without a named CA the gateway validates the server against system trust and the install's extra upstream CAs.
 Calls on it cost what the operator prices its model at, in dollars, so its spend counts toward the user's limits.
 A Connection left without a credential by an earlier release is replaced by a keyed one, since it has no Secret to rewrite.
 

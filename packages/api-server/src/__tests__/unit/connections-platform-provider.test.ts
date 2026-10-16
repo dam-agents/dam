@@ -52,6 +52,36 @@ const ENDPOINT: PlatformProviderEndpoint = {
   name: "Acme",
 };
 
+const CA_A = `-----BEGIN CERTIFICATE-----
+MIICDjCCAbQCCQD5R1rtVWLcEjAKBggqhkjOPQQDAjAVMRMwEQYDVQQDDAptb2Rl
+bC1jYS1hMB4XDTI2MTAxNjA4MTcyNloXDTM2MTAxMzA4MTcyNlowFTETMBEGA1UE
+AwwKbW9kZWwtY2EtYTCCAUswggEDBgcqhkjOPQIBMIH3AgEBMCwGByqGSM49AQEC
+IQD/////AAAAAQAAAAAAAAAAAAAAAP///////////////zBbBCD/////AAAAAQAA
+AAAAAAAAAAAAAP///////////////AQgWsY12Ko6k+ez671VdpiGvGUdBrDMU7D2
+O848PifSYEsDFQDEnTYIhucEk2pmeOETnSa3gZ9+kARBBGsX0fLhLEJH+Lzm5WOk
+QPJ3A32BLeszoPShOUXYmMKWT+NC4v4af5uO5+tKfA+eFivOM1drMV7Oy7ZAaDe/
+UfUCIQD/////AAAAAP//////////vOb6racXnoTzucrC/GMlUQIBAQNCAARe0Xtx
+RxQuJB2S/fgWU9jWEItXXyPbL5kEm/3hg8sbI+dSSjMbpGab+YWuZYVKhsQUhnDx
+LBIAQ7cYs+pcVa7JMAoGCCqGSM49BAMCA0gAMEUCIQDXOFH5iFHkU+nhfJ6T9+jt
+mmkBNIQHEZyNseqNrUDmwQIgTMRmxAc+KqNdi/HNDz1fCYGZvkoVYMgLYZM0W/aS
+1f8=
+-----END CERTIFICATE-----`;
+
+const CA_B = `-----BEGIN CERTIFICATE-----
+MIICDjCCAbQCCQDC68qrykSAhjAKBggqhkjOPQQDAjAVMRMwEQYDVQQDDAptb2Rl
+bC1jYS1iMB4XDTI2MTAxNjA4MTcyNloXDTM2MTAxMzA4MTcyNlowFTETMBEGA1UE
+AwwKbW9kZWwtY2EtYjCCAUswggEDBgcqhkjOPQIBMIH3AgEBMCwGByqGSM49AQEC
+IQD/////AAAAAQAAAAAAAAAAAAAAAP///////////////zBbBCD/////AAAAAQAA
+AAAAAAAAAAAAAP///////////////AQgWsY12Ko6k+ez671VdpiGvGUdBrDMU7D2
+O848PifSYEsDFQDEnTYIhucEk2pmeOETnSa3gZ9+kARBBGsX0fLhLEJH+Lzm5WOk
+QPJ3A32BLeszoPShOUXYmMKWT+NC4v4af5uO5+tKfA+eFivOM1drMV7Oy7ZAaDe/
+UfUCIQD/////AAAAAP//////////vOb6racXnoTzucrC/GMlUQIBAQNCAAT5wClv
+53+QDucvchCZbh8N5CkgeEoySDEk+vioGHA8ay65yWRRF097pUUbS1SUrVaQbBp+
+gpmG4FXPs9BzzUPlMAoGCCqGSM49BAMCA0gAMEUCIHw6/ro6BBHZ7XK+QdasOxJz
++07B/kZ3zgTJBzmBtWvSAiEA10Zn91GrgkSDmMG9by5vvriHr4hMEh2ORNUGlDzg
+uoE=
+-----END CERTIFICATE-----`;
+
 function keyedMutex(): XactLock {
   const tails = new Map<string, Promise<unknown>>();
   return <T>(key: string, fn: () => Promise<T>): Promise<T> => {
@@ -106,13 +136,15 @@ function makeService(
   opts: {
     endpoint?: PlatformProviderEndpoint | null;
     apiKey?: string | null;
+    ca?: string;
     store?: Store;
     lock?: XactLock;
     flag?: { on: boolean };
   } = {},
 ) {
   const { rows, grants, secrets } = opts.store ?? newStore();
-  const endpoint = opts.endpoint === undefined ? ENDPOINT : opts.endpoint;
+  const base = opts.endpoint === undefined ? ENDPOINT : opts.endpoint;
+  const endpoint = base && opts.ca ? { ...base, ca: opts.ca } : base;
   const fannedOut: string[] = [];
   const flag = opts.flag ?? { on: false };
   const grantKey = (connectionId: string, agentId: string) =>
@@ -177,6 +209,7 @@ function makeService(
     platformProviderEnabled: async () => flag.on,
     platformProviderKey:
       opts.apiKey === undefined ? "sk-operator" : opts.apiKey,
+    platformProviderCa: opts.ca ?? null,
   });
   return { svc, rows, grants, secrets, flag, fannedOut };
 }
@@ -472,6 +505,54 @@ describe("platform provider connection", () => {
       expect.stringContaining('"Bearer sk-rotated"'),
     );
     expect(after.fannedOut).toEqual(["agent-1"]);
+  });
+
+  // TEST_SCENARIO: an install that names the model server's CA gives the Connection's Secret that CA and marks the injected host to validate the server against it; without one the host carries no CA and the gateway falls back to system trust.
+  it("writes the operator's CA into the secret only when one is configured", async () => {
+    const withCa = makeService({ ca: CA_A });
+    withCa.flag.on = true;
+    await withCa.svc.reconcilePlatformConnection();
+    const secret = secretOf(withCa, platformRows(withCa.rows)[0]!);
+    expect(secret?.fields["upstream-ca.crt"]).toBe(CA_A);
+    expect(injectionHosts(secret)).toEqual([
+      expect.objectContaining({
+        host: "llm.models.svc",
+        caKey: "upstream-ca.crt",
+      }),
+    ]);
+
+    const without = makeService();
+    without.flag.on = true;
+    await without.svc.reconcilePlatformConnection();
+    const plain = secretOf(without, platformRows(without.rows)[0]!);
+    expect(plain?.fields).not.toHaveProperty("upstream-ca.crt");
+    expect(injectionHosts(plain)[0]).not.toHaveProperty("caKey");
+  });
+
+  // TEST_SCENARIO: the operator replacing the CA, adding one, or removing it rewrites the Connection's Secret in place on the next listing and re-delivers the agents holding it, once per change.
+  it("rewrites the secret and fans out when the operator's CA changes", async () => {
+    const store = newStore();
+    const first = makeService({ store });
+    first.flag.on = true;
+    await first.svc.reconcilePlatformConnection();
+    const [old] = platformRows(store.rows);
+
+    for (const [ca, caKey] of [
+      [CA_A, "upstream-ca.crt"],
+      [CA_B, "upstream-ca.crt"],
+      [undefined, undefined],
+    ] as const) {
+      const next = makeService({ store, ...(ca ? { ca } : {}) });
+      next.flag.on = true;
+      await next.svc.listAndReconcileConnections();
+      await next.svc.listAndReconcileConnections();
+      const [conn] = platformRows(store.rows);
+      expect(conn!.id).toBe(old!.id);
+      const secret = secretOf(store, conn!);
+      expect(secret?.fields["upstream-ca.crt"]).toBe(ca);
+      expect(injectionHosts(secret)[0]?.caKey).toBe(caKey);
+      expect(next.fannedOut).toEqual(["agent-1"]);
+    }
   });
 
   // TEST_SCENARIO: a keyless Connection left from before the provider was metered has no Secret to rewrite, so a listing replaces it with one holding the key.

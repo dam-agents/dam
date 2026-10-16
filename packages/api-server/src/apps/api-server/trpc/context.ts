@@ -124,6 +124,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
       brandName: config.brand.name,
       platformProviderKey: config.platformProvider?.apiKey ?? null,
+      platformProviderCa: config.platformProvider?.ca ?? null,
       platformProviderEnabled: async () =>
         (await features.flags())["platform-provider"],
     });
