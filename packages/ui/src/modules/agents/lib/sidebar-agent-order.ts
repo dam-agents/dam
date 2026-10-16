@@ -11,37 +11,3 @@ export function groupSessionsByAgent<T extends ActivitySession>(
   }
   return byAgent;
 }
-
-export function orderByLatestSession<A extends { id: string }>(
-  agents: readonly A[],
-  sessionsByAgent: ReadonlyMap<string, readonly ActivitySession[]>,
-): A[] {
-  const latest = (agent: A) => {
-    const at = sessionsByAgent.get(agent.id)?.[0]?.at;
-    return at === undefined ? null : Date.parse(at);
-  };
-  return [...agents].sort((a, b) => {
-    const [atA, atB] = [latest(a), latest(b)];
-    if (atA === null || atB === null)
-      return atA === atB ? 0 : atA === null ? 1 : -1;
-    return atB - atA;
-  });
-}
-
-export function openFirst<A extends { id: string }>(
-  agents: readonly A[],
-  openAgentId: string | null,
-): A[] {
-  const open = agents.find((agent) => agent.id === openAgentId);
-  return open
-    ? [open, ...agents.filter((agent) => agent !== open)]
-    : [...agents];
-}
-
-export function leadAgentId(
-  shown: string | null,
-  openAgentId: string | null,
-  pointerInside: boolean,
-): string | null {
-  return pointerInside ? shown : openAgentId;
-}
