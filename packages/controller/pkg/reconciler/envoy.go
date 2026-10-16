@@ -922,7 +922,7 @@ func envoyVolumes(instanceName string, cfg *config.Config, secrets []corev1.Secr
 	return volumes
 }
 
-const envoyBootstrapTemplateRev = "v24-spend-meter-session-stamp"
+const envoyBootstrapTemplateRev = "v25-spend-meter-proxy-cost-parts"
 
 func envoySecretsRev(secrets []corev1.Secret, l7Hosts []string) string {
 	parts := []string{"tmpl=" + envoyBootstrapTemplateRev}

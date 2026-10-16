@@ -13,6 +13,9 @@ const (
 	spendRecordLogName       = "spend"
 	spendRecordFlushInterval = "2s"
 	proxyCostHeader          = "x-litellm-response-cost"
+	proxyCostOriginalHeader  = "x-litellm-response-cost-original"
+	proxyCostDiscountHeader  = "x-litellm-response-cost-discount-amount"
+	proxyCostMarginHeader    = "x-litellm-response-cost-margin-amount"
 	sessionStampHeader       = "x-platform-session"
 	harnessStampHeader       = "x-platform-harness"
 )
@@ -45,7 +48,9 @@ func spendRecordAccessLog(p bootstrapParams) ev {
 					"envoy_grpc": ev{"cluster_name": "ext_authz_cluster", "authority": p.ExtAuthzHost},
 				},
 			},
-			"additional_response_headers_to_log": []any{proxyCostHeader},
+			"additional_response_headers_to_log": []any{
+				proxyCostHeader, proxyCostOriginalHeader, proxyCostDiscountHeader, proxyCostMarginHeader,
+			},
 		},
 		"filter": ev{
 			"metadata_filter": ev{

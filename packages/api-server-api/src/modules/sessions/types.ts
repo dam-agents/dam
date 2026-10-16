@@ -66,7 +66,6 @@ export interface SessionView {
   provider?: string | null;
   model?: string | null;
   settings?: Record<string, string>;
-  spend?: { unit: string; cost: number };
   repositories?: SessionRepository[];
 }
 

@@ -6,7 +6,6 @@ import {
   sessionHistoryInputSchema,
   sessionListInputSchema,
   sessionSettingsInputSchema,
-  sessionSpendInputSchema,
   setSessionTitleInputSchema,
   storeDelegationFramesInputSchema,
 } from "./schemas.js";
@@ -15,10 +14,6 @@ export const sessionsRouter = t.router({
   list: t.procedure
     .input(sessionListInputSchema)
     .query(({ ctx, input }) => ctx.sessions.list(input)),
-
-  spend: t.procedure
-    .input(sessionSpendInputSchema)
-    .query(({ ctx, input }) => ctx.sessions.spend(input)),
 
   history: t.procedure
     .input(sessionHistoryInputSchema)

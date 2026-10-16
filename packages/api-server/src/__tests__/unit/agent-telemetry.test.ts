@@ -90,7 +90,6 @@ function reader(
       note(ids, window, limit);
       return rowsFor(limit) as never;
     },
-    spendBySubAgent: async () => [],
     spendByAgent: async () => [],
     spendByDay: async () => [],
     spendBySession: async () => [],

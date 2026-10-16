@@ -144,6 +144,7 @@ Three properties of that report follow from what it is for:
 - **It is a snapshot, not a delta.** An agent that missed a report, restarted, or predates the directory converges on its next one; nothing has to be replayed, and a lost report costs latency rather than a permanent gap.
 - **It is sent only when the answer changes.** Session metadata is touched on every turn (activity stamps), while a Session's kind is fixed at creation — so the agent compares what it would send against what it last sent and stays silent when they match.
   Without that, an ordinary conversation would put one write per turn on the api-server to re-assert a constant.
+  Other changes wait a moment and go out together, but a new Session goes out at once, because the spend ledger checks a call's Session against the directory when the call's first record arrives.
 - **Reporting is best-effort.** A failed report is logged and left for the next change or the next boot; nothing about serving the agent depends on it.
   The read path degrades to the unattributed bucket described above, which is exactly what a not-yet-reported agent looks like.
 
@@ -174,12 +175,13 @@ The reader itself still receives ids alone; liveness never reaches the store and
 The reader is the only component in this subsystem that speaks to the telemetry store.
 It holds a process-wide read connection and translates each contract read into an aggregate query against the store, always gated on the owner allowlist plus the request's window filters.
 
-Its **spend** reads (every tRPC rollup and the agent-facing cost reads) take one log record per LLM call.
-On a runtime with the Model Router ([harness configuration](harness-config.md#the-model-router)) the router writes that record for every call on every harness: the token counts read off the response, the cost from the catalog's price in integer micro-dollars, the provider Connection and alias, the upstream model id and the harness; Claude Code and Codex keep writing their own record beside it.
+Its **spend** reads (the earlier-estimates rollups) and the agent-facing per-call rows take one log record per LLM call.
+On a runtime with the Model Router ([harness configuration](harness-config.md#the-model-router)) the router writes that record for every call on every harness: the token counts read off the response, the provider Connection and alias, the upstream model id, the harness and the session, and no cost; Claude Code and Codex keep writing their own record beside it.
+Router records from before the measuring start carried a cost, so the earlier estimates cover those days and show little after them.
 The reader sums an agent from the router's records when it has any in the window, else from the harness's own (Claude Code's, Pi's of the same shape, and Codex's, which the collector reshapes to it ([observability](observability.md#agent-export))), so a router export that never reached the store leaves the harness's count and no call is summed twice.
 The switch is per agent and invocation, at its own first router record, so an agent moved to a router image mid-window keeps the harness records from before, whenever the owner's other agents moved.
 A Claude Code call on a native Connection (Bedrock) has no router record; Claude Code's own record names the model without the `claude/` prefix and is always counted, with no provider.
-A call the router could not price is still a record: cut before its usage arrived, answered without usage, or on a model the catalog has no price for.
+A call the router could not count is still a record: cut before its usage arrived, or answered without usage.
 Each per-model and per-provider row carries its **uncounted** count beside its total, and the earlier-estimates view says so, so a total reads as a floor.
 The **per-provider** rollup groups rows by the alias and Connection the router recorded, labelled with the Connection's live display name (a deleted Connection keeps its alias), with the harness's own records, which name no provider, in a row of their own.
 Two agent-facing reads deliberately sit outside that shape: the emitted-record read drops the body predicate so an agent sees everything it emitted rather than only its LLM calls, and the span read goes to the **trace** store instead, which is why it is the one read that answers for a harness exporting traces alone.
@@ -214,6 +216,6 @@ The two guarantees are different and this subsystem inherits both from the expor
   So an agent can only ever pollute *its own* spend — never make its telemetry appear under another user, and never read another user's.
   The guarantee is **attribution, not content integrity**: whose spend is bounded exactly; how much is self-declared.
 - **Metered Spend is a different number.** The agent's gateway measures every model call from the provider's reply, and the api-server prices it ([spend-limits](spend-limits.md)).
-  The agent cannot change that number, so spend limits use it; the figures on this page stay agent-reported and serve display only, and the two need not agree.
+  The agent cannot change that number, so every spend figure on the screens, the limits and an agent's own cost report use it; the figures on this page stay agent-reported and serve only the earlier estimates, and the two need not agree.
 - **Display identity is not attribution.** The agent's user-facing name travels in a separate, agent-exported attribute that exists only for finding an instance in the exploration UI.
   It is display-only and never used for scoping or ownership — the gateway-stamped id is the sole authority for whose data this is.

@@ -26,7 +26,6 @@ import { upstreamUrl, upstreamWireOf } from "../domain/upstream.js";
 import { explainUpstreamError } from "../domain/upstream-error.js";
 import { createSseModelRewrite, rewriteBody } from "../domain/model-rewrite.js";
 import {
-  costUsdMicros,
   createUsageScanner,
   traceOf,
   usageOfBody,
@@ -50,9 +49,7 @@ export interface ModelCallRecord {
   startedAt: string;
   durationMs: number;
   usage: ModelUsage | null;
-  costUsdMicros: number | null;
   uncounted: UncountedReason | null;
-  providerReportedCostUsd: number | null;
   requestId: string | null;
   trace: { traceId: string; spanId: string } | null;
 }
@@ -303,17 +300,12 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       if (recorded) return;
       recorded = true;
       if (!billed) return;
-      const reported = Number(
-        upstreamHeaders?.get("x-litellm-response-cost") ?? "",
-      );
       const uncounted: UncountedReason | null =
         usage === null
           ? status >= 400 && status !== 499
             ? "error"
             : "no-usage-event"
-          : entry.metadata.prices === null
-            ? "unpriced"
-            : null;
+          : null;
       deps.onCall?.({
         connectionId: entry.connectionId,
         alias: entry.alias,
@@ -327,13 +319,7 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
         startedAt: startedAt.toISOString(),
         durationMs: Date.now() - startedAt.getTime(),
         usage,
-        costUsdMicros:
-          usage && status < 400
-            ? costUsdMicros(entry.metadata.prices, usage)
-            : null,
         uncounted,
-        providerReportedCostUsd:
-          Number.isFinite(reported) && reported > 0 ? reported : null,
         requestId:
           upstreamHeaders?.get("request-id") ??
           upstreamHeaders?.get("x-request-id") ??

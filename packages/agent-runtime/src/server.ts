@@ -431,7 +431,6 @@ const {
       name,
       {
         sessionHistory: manifest.sessionHistory,
-        sessionSpend: manifest.sessionSpend,
         ...(manifest.terminalSessionPins && {
           terminalSessionPins: expandHome(
             manifest.terminalSessionPins,

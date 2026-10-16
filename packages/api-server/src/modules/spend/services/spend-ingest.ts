@@ -275,8 +275,13 @@ export function createSpendIngest(deps: {
           "spend.call_recorded",
         );
 
+      const uncached =
+        amounts.cacheReadTokens +
+          amounts.cacheWrite5mTokens +
+          amounts.cacheWrite1hTokens ===
+        0;
       const difference =
-        record.final && measure.unit === "usd"
+        record.final && measure.unit === "usd" && uncached
           ? proxyCostDifference(amounts.costMicros, record.proxyCost)
           : null;
       if (difference !== null && difference > PROXY_COST_TOLERANCE) {
@@ -285,7 +290,12 @@ export function createSpendIngest(deps: {
             provider: measure.provider,
             model: measure.model,
             costMicros: amounts.costMicros,
-            proxyCost: record.proxyCost,
+            proxyCost: record.proxyCost.cost,
+            proxyCostOriginal: record.proxyCost.original,
+            proxyCostDiscount: record.proxyCost.discount,
+            proxyCostMargin: record.proxyCost.margin,
+            uncachedInputTokens: amounts.uncachedInputTokens,
+            outputTokens: amounts.outputTokens,
           },
           "spend.proxy_cost_mismatch",
         );

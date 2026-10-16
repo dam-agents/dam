@@ -4,7 +4,6 @@ import type {
   SessionRuntime,
   SpendByAgent,
   SpendByDay,
-  SubAgentSpend,
   TokenSpendByModel,
   TokenSpendByProvider,
 } from "api-server-api";
@@ -68,8 +67,6 @@ const ownedCallRows = (w: MetricsWindow): string =>
 const sessionMatch = (w: MetricsWindow): string | undefined => {
   if (w.sessionId !== undefined)
     return "LogAttributes['session.id'] = {sessionId:String}";
-  if (w.sessionIds !== undefined)
-    return "LogAttributes['session.id'] IN {sessionIds:Array(String)}";
   return undefined;
 };
 
@@ -116,7 +113,6 @@ const windowParams = (agentIds: readonly string[], w: MetricsWindow) => ({
   ...(w.fromIso === undefined ? {} : { fromIso: w.fromIso }),
   ...(w.toIso === undefined ? {} : { toIso: w.toIso }),
   ...(w.sessionId === undefined ? {} : { sessionId: w.sessionId }),
-  ...(w.sessionIds === undefined ? {} : { sessionIds: w.sessionIds }),
 });
 
 const INVOCATION_ID = "ResourceAttributes['platform.invocation.id']";
@@ -302,7 +298,6 @@ export function createClickhouseReader(
       const base = ownedApiRequests({
         ...window,
         sessionId: undefined,
-        sessionIds: undefined,
       });
       const r = await rows(
         `WITH trace_root AS (
@@ -404,47 +399,6 @@ export function createClickhouseReader(
         costUsd: n(x.costUsd),
         durationMs: n(x.durationMs),
       })) satisfies CallContext[];
-    },
-
-    async spendBySubAgent(agentIds, window, limit) {
-      const r = await rows(
-        `SELECT
-           ${INVOCATION_ID} AS subAgentId,
-           groupUniqArray(LogAttributes['model']) AS models,
-           count() AS calls,
-           sum(${IN("'duration_ms'")}) AS totalDurationMs,
-           sum(${TOK_IN}) AS inputTokens,
-           sum(${IN("'output_tokens'")}) AS outputTokens,
-           sum(${TOK_CACHE_R}) AS cacheReadTokens,
-           sum(${TOK_CACHE_C}) AS cacheCreationTokens,
-           sum(${COST_USD}) AS costUsd,
-           min(Timestamp) AS firstAt,
-           max(Timestamp) AS lastAt
-         FROM otel_logs
-         WHERE ${ownedApiRequests(window)} AND ${INVOCATION_ID} != ''
-         GROUP BY subAgentId
-         ORDER BY lastAt DESC
-         LIMIT {limit:UInt32}`,
-        { ...windowParams(agentIds, window), limit },
-      );
-      return r.map((x) => ({
-        subAgentId: String(x.subAgentId ?? ""),
-        models: Array.isArray(x.models)
-          ? x.models
-              .map(String)
-              .filter((m) => m !== "")
-              .sort()
-          : [],
-        calls: n(x.calls),
-        totalDurationMs: n(x.totalDurationMs),
-        inputTokens: n(x.inputTokens),
-        outputTokens: n(x.outputTokens),
-        cacheReadTokens: n(x.cacheReadTokens),
-        cacheCreationTokens: n(x.cacheCreationTokens),
-        costUsd: n(x.costUsd),
-        firstAt: String(x.firstAt ?? ""),
-        lastAt: String(x.lastAt ?? ""),
-      })) satisfies SubAgentSpend[];
     },
 
     async telemetryEvents(agentIds, window, limit) {
