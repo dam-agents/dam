@@ -1,4 +1,5 @@
 import { StopFilledAlt } from "@carbon/icons-react";
+import type { TurnSummary } from "api-server-api";
 import {
   memo,
   type ReactNode,
@@ -17,6 +18,7 @@ import { partKey } from "../../a2ui/lib/collect-blocks.js";
 import { hasAgentContent } from "../../acp/session-projection.js";
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { useIsFanOutChip } from "../../invocations/components/delegation-owners.js";
+import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
 import { activityItems } from "../lib/activity-groups.js";
 import { modelDisplayName } from "../lib/model-name.js";
 import type { MessageTime } from "../lib/thread-items.js";
@@ -49,6 +51,13 @@ interface BaseProps {
   onFileClick: (path: string) => void;
   onDelete: (id: string) => void;
   onLoadOlder?: (before: string) => Promise<LoadOlderOutcome>;
+  /**
+   * The reply's turn, in the session of the agent named. Its telemetry strip
+   * is the message's last row, so nothing the message draws can cover it.
+   */
+  turn?: TurnSummary;
+  agentId?: string;
+  sessionId?: string;
 }
 
 function LoadOlderMarker({
@@ -122,6 +131,9 @@ export const ChatMessage = memo(function ChatMessage({
   onFileClick,
   onDelete,
   onLoadOlder,
+  turn,
+  agentId,
+  sessionId,
 }: Props) {
   const isFanOut = useIsFanOutChip();
   const items = useMemo(
@@ -283,6 +295,14 @@ export const ChatMessage = memo(function ChatMessage({
           rawError={error.message}
           interrupted={hasAgentContent(message)}
           quiet={!isLast}
+        />
+      )}
+      {turn && agentId !== undefined && sessionId !== undefined && (
+        <TurnTelemetry
+          agentId={agentId}
+          sessionId={sessionId}
+          turn={turn}
+          className="self-stretch"
         />
       )}
       {(timeLabel !== undefined || footer) && (
