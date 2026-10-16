@@ -87,7 +87,7 @@ The guest's init is platform-init, not smolvm's guest agent: smolvm boots it fro
 An image that ships `/sbin/openrc` opts in to its services: platform-init runs openrc's `sysinit`, `boot` and `default` runlevels before the entrypoint and openrc's `shutdown` on a stop, and starts the entrypoint in a cgroup of its own, so a restart of the entrypoint ends what it left and keeps the services.
 That disk is made once, by the runner when it creates the machine: btrfs from the runner image's template, at its full size, under a UUID of its own, which the guest mounts compressed with zstd.
 A create whose disk cannot be made fails and leaves no machine, since smolvm would make a disk of its own at the next start.
-Disks made before btrfs are ext4, and stay ext4.
+Disks made before btrfs are ext4.
 A new btrfs disk holds two subvolumes: `agent`, mounted as `HOME`, and `system`, the platform state and the root's layers.
 The home is then a tree btrfs can snapshot, send or put a quota on alone.
 The root's upper and work layers stay in one subvolume: btrfs refuses a rename between subvolumes, and overlayfs renames from the work layer into the upper layer.
@@ -98,7 +98,7 @@ An ext4 disk keeps the directory layout until the install turns on `virtualizati
 Then the runner converts it at the machine's next start, one machine at a time and only while the owner's claim has room for a copy of the disk beside it and still stays under 90%: it attaches a fresh btrfs disk, made from the template with a UUID of its own, as the machine's second disk, and the share asks the guest to copy into it.
 platform-init checks the ext4 disk, mounts it read-only, copies its home and kept root into the btrfs disk's subvolumes with every owner, mode, time, extended attribute, hard link and hole, and boots this boot on the copy.
 The guest names the conversion's nonce in its answer to the runner's ping, over the socket only its init holds; only then does the runner swap the two disk files in one rename, recorded first, so a crash on either side of the swap is finished from what each file's superblock magic says.
-The old ext4 disk stays untouched, and is deleted at the next start, once the copy has booted; a copy that fails boots the ext4 disk as before, and three failed attempts leave it ext4.
+The old ext4 disk stays untouched, and is deleted at the next start, once the copy has booted; once started, a conversion's disk is attached at every start until the swap, so a copy that booted is never hidden by a boot on the ext4 disk; a copy that fails boots the ext4 disk as before, and three boots that answer on the ext4 disk give the conversion up.
 A converting boot may stay quiet for six hours before its first answer, so a large home's copy is not restarted from nothing.
 A disk already in the subvolume layout that also holds `workspace/` was booted by a rolled-back platform-init, which made a fresh one; it is set aside and kept, never moved, and the home in the subvolume boots.
 A btrfs disk that does not mount fails the boot and stays as it is, since btrfs has no repair a boot may run unattended.
