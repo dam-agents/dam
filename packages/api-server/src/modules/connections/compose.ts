@@ -116,6 +116,18 @@ export function listConnectionGrantAgentIds(db: Db): Promise<string[]> {
   return createConnectionsRepository(db).listDistinctGrantAgentIds();
 }
 
+export function createGrantedConnectionTemplates(db: Db): {
+  templateOf(agentId: string, connectionId: string): Promise<string | null>;
+} {
+  const repo = createConnectionsRepository(db);
+  return {
+    async templateOf(agentId, connectionId) {
+      const granted = await repo.listConnectionsForAgent(agentId);
+      return granted.find((c) => c.id === connectionId)?.templateId ?? null;
+    },
+  };
+}
+
 export function composeConnectionsForOwner(opts: {
   ownerId: string;
   db: Db;

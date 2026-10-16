@@ -3963,8 +3963,15 @@ mod tests {
 
         drop(bsd);
         drop(posix);
+        // UNIT_BOUNDARY_DESCRIPTION: a BSD lock belongs to the open file, and a parallel test's child shares that file between its fork and its exec, so the lock can outlive the drop for a moment.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let mut shown = offered();
+        while shown.len() < 3 && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            shown = offered();
+        }
         assert_eq!(
-            offered(),
+            shown,
             [
                 h.join(".cache/plain"),
                 h.join(".cache/posix"),

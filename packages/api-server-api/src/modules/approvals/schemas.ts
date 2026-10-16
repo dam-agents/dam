@@ -2,6 +2,12 @@ import { z } from "zod";
 
 export const approvalStatusSchema = z.enum(["pending", "resolved", "expired"]);
 
+export const approvalTypeSchema = z.enum([
+  "ext_authz",
+  "acp_native",
+  "spend_limit",
+]);
+
 export const approvalListOptionsSchema = z.object({
   limit: z.number().int().positive().max(500).optional(),
   status: approvalStatusSchema.optional(),
@@ -35,5 +41,6 @@ const approvalActionRuleSchema = z.object({
 
 export const approvalActionOutcomeSchema = z.object({
   outcome: z.enum(["applied", "rule_written_expired", "not_actionable"]),
+  type: approvalTypeSchema.nullable(),
   rule: approvalActionRuleSchema.nullable(),
 });

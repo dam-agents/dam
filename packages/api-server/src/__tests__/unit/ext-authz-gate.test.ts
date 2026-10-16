@@ -10,6 +10,9 @@ import {
   type ApprovalResolved,
 } from "../../events.js";
 
+const noSpend = { checkCall: async () => ({ verdict: "allow" as const }) };
+const noQuestions = { ask: async () => {} };
+
 interface FakeRepo {
   repo: ApprovalsRepository;
   rows: PendingApprovalRow[];
@@ -24,6 +27,7 @@ function makeFakeRepo(): FakeRepo {
   const expirePendingCalls: string[] = [];
   let inserts = 0;
   const repo: ApprovalsRepository = {
+    insertIfAbsent: async () => true,
     insertPending: async (input) => {
       inserts++;
       rows.push({
@@ -172,6 +176,8 @@ describe("ext-authz gate", () => {
       identityResolver,
       ruleMatcher: { match: async () => ({ verdict: "allow" }) },
       holdSeconds: 30,
+      spend: noSpend,
+      questions: noQuestions,
       platformAllowedAuthorities: [],
     });
 
@@ -199,6 +205,8 @@ describe("ext-authz gate", () => {
       identityResolver,
       ruleMatcher: noMatchRules,
       holdSeconds: 30,
+      spend: noSpend,
+      questions: noQuestions,
       platformAllowedAuthorities: [],
     });
 
@@ -225,6 +233,8 @@ describe("ext-authz gate", () => {
       identityResolver,
       ruleMatcher: noMatchRules,
       holdSeconds: 30,
+      spend: noSpend,
+      questions: noQuestions,
       platformAllowedAuthorities: [],
     });
 
@@ -259,6 +269,8 @@ describe("ext-authz gate", () => {
       identityResolver,
       ruleMatcher: noMatchRules,
       holdSeconds: 30,
+      spend: noSpend,
+      questions: noQuestions,
       platformAllowedAuthorities: [],
     });
 
@@ -294,6 +306,8 @@ describe("ext-authz gate", () => {
         identityResolver,
         ruleMatcher: noMatchRules,
         holdSeconds: 30,
+        spend: noSpend,
+        questions: noQuestions,
         platformAllowedAuthorities: [],
       });
       const inflight = gate.gateRequest({
@@ -323,6 +337,8 @@ describe("ext-authz gate", () => {
       identityResolver,
       ruleMatcher: noMatchRules,
       holdSeconds: 30,
+      spend: noSpend,
+      questions: noQuestions,
       platformAllowedAuthorities: [],
     });
 
@@ -384,6 +400,8 @@ describe("ext-authz gate", () => {
       identityResolver,
       ruleMatcher: noMatchRules,
       holdSeconds: 1800,
+      spend: noSpend,
+      questions: noQuestions,
       platformAllowedAuthorities: [],
     });
 
@@ -422,6 +440,8 @@ describe("ext-authz gate", () => {
       identityResolver,
       ruleMatcher: { match: ruleMatch },
       holdSeconds: 30,
+      spend: noSpend,
+      questions: noQuestions,
       platformAllowedAuthorities: [
         "platform-seaweedfs.platform.svc.cluster.local:8333",
       ],
@@ -452,6 +472,8 @@ describe("ext-authz gate", () => {
       identityResolver,
       ruleMatcher: noMatchRules,
       holdSeconds: 30,
+      spend: noSpend,
+      questions: noQuestions,
       platformAllowedAuthorities: ["store.internal:443"],
     });
 
@@ -479,6 +501,8 @@ describe("ext-authz gate", () => {
       identityResolver,
       ruleMatcher: { match: ruleMatch },
       holdSeconds: 30,
+      spend: noSpend,
+      questions: noQuestions,
       platformAllowedAuthorities: [],
     });
     const gateContents = (rest: string) =>
@@ -524,6 +548,8 @@ describe("ext-authz gate", () => {
       identityResolver,
       ruleMatcher: { match: ruleMatch },
       holdSeconds: 30,
+      spend: noSpend,
+      questions: noQuestions,
       platformAllowedAuthorities: [],
     });
 
@@ -559,6 +585,8 @@ describe("ext-authz gate", () => {
       identityResolver,
       ruleMatcher: { match: ruleMatch },
       holdSeconds: 30,
+      spend: noSpend,
+      questions: noQuestions,
       platformAllowedAuthorities: ["store.internal:8333"],
     });
 
@@ -593,6 +621,8 @@ describe("ext-authz gate", () => {
       identityResolver,
       ruleMatcher: noMatchRules,
       holdSeconds: 30,
+      spend: noSpend,
+      questions: noQuestions,
       platformAllowedAuthorities: [],
     });
 
@@ -636,6 +666,8 @@ describe("ext-authz gate", () => {
         identityResolver,
         ruleMatcher: noMatchRules,
         holdSeconds: 1800,
+        spend: noSpend,
+        questions: noQuestions,
         platformAllowedAuthorities: [],
       });
 
@@ -664,6 +696,8 @@ describe("ext-authz gate", () => {
         identityResolver,
         ruleMatcher: noMatchRules,
         holdSeconds: 1800,
+        spend: noSpend,
+        questions: noQuestions,
         platformAllowedAuthorities: [],
       });
 
@@ -689,6 +723,8 @@ describe("ext-authz gate", () => {
         identityResolver,
         ruleMatcher: noMatchRules,
         holdSeconds: 1800,
+        spend: noSpend,
+        questions: noQuestions,
         platformAllowedAuthorities: [],
       });
 
@@ -720,6 +756,8 @@ describe("ext-authz gate", () => {
         identityResolver,
         ruleMatcher: noMatchRules,
         holdSeconds: 30,
+        spend: noSpend,
+        questions: noQuestions,
         platformAllowedAuthorities: [],
       });
 
@@ -756,6 +794,8 @@ describe("ext-authz gate", () => {
         identityResolver,
         ruleMatcher: { match: async () => ({ verdict: "allow" }) },
         holdSeconds: 1800,
+        spend: noSpend,
+        questions: noQuestions,
         platformAllowedAuthorities: [],
       });
 

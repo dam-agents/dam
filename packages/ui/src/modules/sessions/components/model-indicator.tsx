@@ -31,7 +31,10 @@ import {
   modelIndicatorLabel,
   sameSideGroups,
 } from "../lib/catalog-groups.js";
-import { harnessDisplayName } from "../lib/session-pair-options.js";
+import {
+  harnessDisplayName,
+  modelProviderLabel,
+} from "../lib/session-pair-options.js";
 import { SessionModelList } from "./session-model-list.js";
 import { SetAsDefault } from "./session-pair-picker.js";
 import { SessionPairTrigger } from "./session-pair-trigger.js";
@@ -130,12 +133,17 @@ export function ModelIndicator({
       <PopoverTrigger asChild>
         <SessionPairTrigger
           testId="session-model-picker"
+          harness={harness}
           label={
             harnessName &&
             [
-              modelName,
-              harnessName,
-              routed ? null : activeProvider?.name,
+              routed
+                ? modelName
+                : modelProviderLabel(
+                    modelName,
+                    activeProvider?.name,
+                    harnessName,
+                  ),
               removed ? "Provider removed" : null,
               unlisted ? "Model not offered" : null,
             ]

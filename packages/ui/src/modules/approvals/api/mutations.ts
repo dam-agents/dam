@@ -7,7 +7,7 @@ export function useApproveOnce() {
   return useMutation({
     ...trpc.approvals.approveOnce.mutationOptions(),
     meta: {
-      invalidates: [approvalsKeys.all],
+      invalidates: [approvalsKeys.all, trpc.spend.status.queryKey()],
       errorToast: "Couldn't approve",
     },
   });

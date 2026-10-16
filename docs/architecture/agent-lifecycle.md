@@ -10,7 +10,7 @@ It is a custom resource whose `spec` the api-server owns and whose `status` the 
 The lifecycle is driven by three actors:
 
 - **Users** drive both management and sessions, but along different paths.
-  The **UI** is the only management surface — creating, configuring, hibernating, and deleting Agents all flow through tRPC on the api-server's public port, which is the sole writer of the Agent spec.
+  The **UI** is the only management surface — creating, configuring, disabling, and deleting Agents all flow through tRPC on the api-server's public port, which is the sole writer of the Agent spec.
   Sessions can be driven from the UI **or** from a connected channel (Slack, Telegram).
   Channels never hit management endpoints; they dial the api-server's ACP relay only, with identity scoped to the individual messenger user driving the session.
   Channel internals live on [channels](channels.md).
@@ -231,8 +231,8 @@ The pod terminates; the PVC, Secret, Service, and NetworkPolicy persist.
 Workspace state survives — the git checkout, `node_modules`, `.venv`, mise cache, and `$HOME` are all on the PVC and rejoin on the next wake.
 Anything written to the container's ephemeral filesystem (OS-level changes, tools installed outside `$HOME`) is lost; this is a deliberate constraint of the lifetime model.
 
-**Sleep.** The one user-initiated scale-down, built to free [Reserved compute](budgets.md) without waiting for the idle checker — including reclaiming an Agent pinned awake by an open session.
-The UI calls the state *Sleeping* and the action *Sleep*, and never offers a stop that outlasts the descent.
+**Sleep.** A scale-down on request, built to free [Reserved compute](budgets.md) without waiting for the idle checker — including reclaiming an Agent pinned awake by an open session.
+The UI calls the state *Sleeping* but offers no Sleep action: an Agent the user wants down without waiting for the idle timeout is [disabled](#disable) instead, and the api-server keeps the sleep call for other clients.
 The api-server stamps `agent-platform.ai/stop-requested`, clears the session and Invocation pins, and stales `last-activity`, so the Agent stays down once the stamp is gone; `shouldRun` treats the stamp as an overriding *negative* signal, and the reconciler scales the pair to zero immediately, bypassing the busy probe — sleep may interrupt work by design.
 While the stamp stands, background activity (UI polling, relay reconnects, proxied calls) never clears it — `ensureReady` on such an Agent fails with a typed *stopped* error instead of bumping — so an open tab cannot resurrect the pair before it lands.
 An explicit wake and a schedule fire clear it at any time, back through the budget gate.
@@ -241,7 +241,20 @@ The clear is a **compare-and-clear** of the exact stamp the sleep wrote: a secon
 Staling the clock in the *initial* patch (never at settle time) is what keeps the watcher from ever clobbering a concurrent wake.
 A sleeping Agent is afterwards a plain hibernated Agent: its next deliberate use wakes it.
 A sleep is refused while a [runtime migration](vm-runtime-migration.md) holds the Agent, since every wake is refused then too.
-A **never-hibernate** Agent (effective timeout `0`) runs regardless of activity, so the UI does not offer it Sleep; a direct call still stamps it without the settle clear, the only stable sleep it can have.
+A **never-hibernate** Agent (effective timeout `0`) runs regardless of activity; a direct sleep call still stamps it without the settle clear, the only stable sleep it can have.
+
+### Disable
+
+A **disabled** Agent is a sleeping Agent that nothing wakes until its owner enables it: no chat, terminal, SSH, Slack or Telegram message, schedule fire or Invocation outcome starts it.
+The owner disables and enables it from the Agent's *General* page, or with `dam agent disable` and `dam agent enable` ([CLI](cli.md#agent-lifecycle)).
+Disabling stamps `agent-platform.ai/disabled` together with the stop request, clears the session and Invocation pins, and stales `last-activity`, so the controller scales the pair to zero exactly as for a sleep; the controller never reads the disabled mark itself.
+The settle-watcher never runs, so the stop request stands for as long as the Agent is disabled.
+Every path that would clear the stop request — an explicit wake, a schedule poke, a workspace retry — first reads the disabled mark and writes nothing when it is set; the write names the version it read, so a disable landing in between makes it conflict and read again rather than undo the disable.
+An explicit wake answers with a typed *disabled* error, and `ensureReady` fails with the *stopped* error, which carries whether the Agent is disabled so a channel can tell its sender to ask the owner to enable it.
+A recurring schedule fire is held, reading `held: agent disabled`, and a one-time task due meanwhile is recorded missed ([schedules](schedules.md)).
+Enabling clears both marks and leaves `last-activity` stale, so the Agent stays asleep until its next use wakes it.
+Disabling is refused while a [runtime migration](vm-runtime-migration.md) holds the Agent, as a sleep is.
+A sleep asked of a disabled Agent writes nothing, so its settle-watcher never runs and cannot clear the standing stop request.
 
 **Early reclaim for a blocked start.** The one scale-down neither the user nor the idle timeout asks for: when the [budget gate](budgets.md#reclaiming-room-for-a-blocked-start) refuses a start, it may hibernate that same owner's *unattended idle* Agents ahead of their timeout to admit it, longest-idle first and only when the freed Sizes provably cover the shortfall.
 Eligibility is deliberately narrower than the idle checker's, since reclaim takes down a pod whose own timeout still permits it to run: session and Invocation pins, sweepable Invocation targets, and never-hibernate Agents are all excluded, and survivors are probed more strictly: only an Agent whose runtime answers `idle` is reclaimed, and an unreachable pod is spared.

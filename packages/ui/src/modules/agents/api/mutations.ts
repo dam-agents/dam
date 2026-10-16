@@ -157,12 +157,12 @@ export function useWakeAgentMutation() {
   });
 }
 
-export function useSleepAgentMutation() {
+export function useSetAgentDisabled() {
   return useMutation({
-    ...trpc.agents.sleep.mutationOptions(),
+    ...trpc.agents.setDisabled.mutationOptions(),
     meta: {
       ...invalidatesAgentsAndBudget,
-      errorToast: "Couldn't put the agent to sleep",
+      errorToast: "Couldn't change whether the agent is disabled",
     },
   });
 }
