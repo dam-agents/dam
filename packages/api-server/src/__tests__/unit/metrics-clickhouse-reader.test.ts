@@ -1,20 +1,57 @@
 import { describe, expect, it } from "vitest";
 import type { ClickHouseClient } from "@clickhouse/client";
-import { createClickhouseReader } from "../../modules/metrics/infrastructure/clickhouse-reader.js";
+import {
+  createClickhouseReader,
+  MAX_EXECUTION_SECONDS,
+} from "../../modules/metrics/infrastructure/clickhouse-reader.js";
 
 function fakeClient(returnRows: Record<string, unknown>[]): {
   client: ClickHouseClient;
   queries: string[];
+  settings: unknown[];
 } {
   const queries: string[] = [];
+  const settings: unknown[] = [];
   const client = {
-    query: async ({ query }: { query: string }) => {
+    query: async ({
+      query,
+      clickhouse_settings,
+    }: {
+      query: string;
+      clickhouse_settings?: unknown;
+    }) => {
       queries.push(query);
+      settings.push(clickhouse_settings);
       return { json: async () => returnRows };
     },
   } as unknown as ClickHouseClient;
-  return { client, queries };
+  return { client, queries, settings };
 }
+
+describe("every metrics read is bounded on the server", () => {
+  // TEST_SCENARIO: A month's breakdown ran longer than the client waited; the client hung up and ClickHouse kept every abandoned read until its query slots were full. Each read must carry a server-side time limit, and ask ClickHouse to cancel it when the client goes away.
+  it("sends max_execution_time and cancel-on-close with each read", async () => {
+    const { client, settings } = fakeClient([]);
+    const reader = createClickhouseReader(client);
+    const window = {
+      fromIso: "2026-10-01T00:00:00.000Z",
+      toIso: "2026-11-01T00:00:00.000Z",
+    };
+    await reader.tokenSpendByModel(["a-1"], window);
+    await reader.spendBySession(["a-1"], window);
+    await reader.runtimeBySession(["a-1"], window);
+    await reader.traceSpans(["a-1"], window, 10);
+    expect(settings).toHaveLength(4);
+    for (const s of settings) {
+      expect(s).toEqual({
+        max_execution_time: MAX_EXECUTION_SECONDS,
+        cancel_http_readonly_queries_on_client_close: 1,
+      });
+    }
+  });
+});
+
+const ROOTS_END = "SELECT\n           coalesce";
 
 describe("runtimeBySession folds sessions under their trace root", () => {
   it("resolves each trace's root as the session with the earliest row", async () => {
@@ -24,9 +61,8 @@ describe("runtimeBySession folds sessions under their trace root", () => {
     });
     expect(queries).toHaveLength(1);
     const sql = queries[0];
-    expect(sql).toContain(
-      "argMin(LogAttributes['session.id'], Timestamp) AS rootSid",
-    );
+    expect(sql).toContain("argMin(sid, firstAt) AS traceRootSid");
+    expect(sql).toContain("argMin(traceRootSid, member.2) AS rootSid");
     expect(sql).toContain("coalesce(nullIf(rootSid, ''), sid) AS sessionId");
     expect(sql).toContain("LEFT JOIN session_root USING (sid)");
   });
@@ -44,14 +80,27 @@ describe("runtimeBySession folds sessions under their trace root", () => {
     );
   });
 
+  // TEST_SCENARIO: The roots of traces and of sessions both come from the (session, trace) pairs. Reading those pairs once, rather than once per root, keeps a month's read inside the server's time limit.
+  it("reads the session and trace pairs once for both roots", async () => {
+    const { client, queries } = fakeClient([]);
+    await createClickhouseReader(client).spendBySession(["a-1"], {
+      fromIso: "2026-10-01T00:00:00.000Z",
+    });
+    const [roots] = queries[0].split(ROOTS_END);
+    expect(roots.match(/GROUP BY sid, TraceId/g)).toHaveLength(1);
+    expect(roots).not.toContain("trace_root");
+    expect(roots).toContain("ARRAY JOIN members AS member");
+  });
+
   it("computes roots session-unfiltered even when the read is session-scoped", async () => {
     const { client, queries } = fakeClient([]);
     await createClickhouseReader(client).runtimeBySession(["a-1"], {
       sessionId: "s-1",
     });
-    const sql = queries[0];
-    const [traceRootCte] = sql.split("session_root AS");
-    expect(traceRootCte).not.toContain("{sessionId:String}");
+    const [roots, rest] = queries[0].split(ROOTS_END);
+    expect(roots).toContain("session_root AS");
+    expect(roots).not.toContain("{sessionId:String}");
+    expect(rest).toContain("{sessionId:String}");
   });
 
   it("narrows a multi-session read to those sessions while roots stay unfiltered", async () => {
@@ -60,8 +109,9 @@ describe("runtimeBySession folds sessions under their trace root", () => {
       fromIso: "2026-10-01T00:00:00.000Z",
       sessionIds: ["s-1", "s-2"],
     });
-    const [traceRootCte, rest] = queries[0].split("session_root AS");
-    expect(traceRootCte).not.toContain("{sessionIds:Array(String)}");
+    const [roots, rest] = queries[0].split(ROOTS_END);
+    expect(roots).toContain("session_root AS");
+    expect(roots).not.toContain("{sessionIds:Array(String)}");
     expect(rest).toContain(
       "LogAttributes['session.id'] IN {sessionIds:Array(String)}",
     );

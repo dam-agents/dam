@@ -1,5 +1,8 @@
 import { createClient } from "@clickhouse/client";
-import { createClickhouseReader } from "./infrastructure/clickhouse-reader.js";
+import {
+  createClickhouseReader,
+  MAX_EXECUTION_SECONDS,
+} from "./infrastructure/clickhouse-reader.js";
 import type { MetricsReader } from "./services/metrics-service.js";
 
 export function composeMetricsReader(config: {
@@ -15,6 +18,7 @@ export function composeMetricsReader(config: {
       username: config.clickhouseUser,
       password: config.clickhousePassword,
       database: config.clickhouseDatabase,
+      request_timeout: (MAX_EXECUTION_SECONDS + 5) * 1000,
     }),
   );
 }

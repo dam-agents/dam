@@ -23,7 +23,7 @@ describe("ownedApiRequests", () => {
     const gates = sql.match(
       /ResourceAttributes\['platform\.agent\.id'\] IN \{agentIds:Array\(String\)\}/g,
     );
-    expect(gates).toHaveLength(9);
+    expect(gates).toHaveLength(12);
   });
 
   it("scopes to call records by Body, not template ServiceName", () => {
@@ -51,9 +51,13 @@ describe("ownedApiRequests", () => {
     expect(sql).toContain(
       `OR ${key} NOT IN (SELECT DISTINCT ${key} FROM otel_logs`,
     );
+    const keyText =
+      "concat(ResourceAttributes['platform.agent.id'], '|', ResourceAttributes['platform.invocation.id'])";
     expect(sql).toContain(
-      "OR Timestamp < (SELECT mapFromArrays(groupArray(k), groupArray(m)) FROM (SELECT concat(ResourceAttributes['platform.agent.id'], '|', ResourceAttributes['platform.invocation.id']) AS k, min(Timestamp) AS m FROM otel_logs",
+      `OR Timestamp < transform(${keyText}, (SELECT (groupArray(k), groupArray(m)) FROM (SELECT ${keyText} AS k, min(Timestamp) AS m FROM otel_logs`,
     );
+    expect(sql).toContain("toDateTime64(0, 9))");
+    expect(sql).not.toContain("mapFromArrays");
     expect(sql).not.toContain("SELECT min(Timestamp) FROM otel_logs");
     expect(sql).toContain(
       "(Body = 'claude_code.api_request' AND LogAttributes['model'] NOT LIKE 'claude/%')",

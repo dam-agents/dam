@@ -16,6 +16,19 @@ import type {
   TraceSpan,
 } from "../services/metrics-service.js";
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: ClickHouse stops a read it has run for this long
+ * itself, so a caller that gave up never leaves one behind to fill the
+ * server's query slots; the client waits a little longer than that, so the
+ * caller hears ClickHouse's own timeout rather than a dropped socket.
+ */
+export const MAX_EXECUTION_SECONDS = 25;
+
+const readGuards = {
+  max_execution_time: MAX_EXECUTION_SECONDS,
+  cancel_http_readonly_queries_on_client_close: 1,
+} as const;
+
 const AGENT_GATE =
   "ResourceAttributes['platform.agent.id'] IN {agentIds:Array(String)}";
 
@@ -37,7 +50,10 @@ const CALL_KEY_TEXT =
  * its driver's id, on a runtime of its own) from that key's own first router
  * record in the window on, so an image updated mid-window keeps its earlier
  * harness records whenever the owner's other agents moved. ClickHouse has no
- * correlated subquery, so the first records are one map looked up per row.
+ * correlated subquery, so the first records are one pair of arrays looked up
+ * per row with `transform`, which hashes them once; a map subscript searches
+ * the map on every row, which is minutes over a month. A key with no router
+ * record looks up the epoch, which no row precedes.
  * The split is read from the data, so a router export that never arrived
  * leaves the harness's count rather than none. A native Claude Code call
  * names its model without the `claude/` prefix and always counts from the
@@ -45,9 +61,10 @@ const CALL_KEY_TEXT =
  */
 const callRows = (w: MetricsWindow): string => {
   const routerRows = [ROUTER_CALL, AGENT_GATE, ...timeBounds(w)].join(" AND ");
+  const firstRouterAt = `(SELECT (groupArray(k), groupArray(m)) FROM (SELECT ${CALL_KEY_TEXT} AS k, min(Timestamp) AS m FROM otel_logs WHERE ${routerRows} GROUP BY k))`;
   return `(${ROUTER_CALL} OR (${HARNESS_CALL} AND (${CLAUDE_NATIVE_CALL}
      OR ${CALL_KEY} NOT IN (SELECT DISTINCT ${CALL_KEY} FROM otel_logs WHERE ${routerRows})
-     OR Timestamp < (SELECT mapFromArrays(groupArray(k), groupArray(m)) FROM (SELECT ${CALL_KEY_TEXT} AS k, min(Timestamp) AS m FROM otel_logs WHERE ${routerRows} GROUP BY k))[${CALL_KEY_TEXT}])))`;
+     OR Timestamp < transform(${CALL_KEY_TEXT}, ${firstRouterAt}.1, ${firstRouterAt}.2, toDateTime64(0, 9)))))`;
 };
 
 const timeBounds = (w: MetricsWindow): string[] => [
@@ -119,6 +136,32 @@ const windowParams = (agentIds: readonly string[], w: MetricsWindow) => ({
   ...(w.sessionIds === undefined ? {} : { sessionIds: w.sessionIds }),
 });
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a session folds under the root of the trace it
+ * first wrote to, and a trace's root is the session with its earliest row.
+ * Both come from one read of the (session, trace) pairs: each trace keeps its
+ * root beside its sessions' first times, and ARRAY JOIN unfolds the sessions
+ * again, so the rows are not read a second time to join the two.
+ */
+const sessionRoot = (base: string): string => `session_root AS (
+           SELECT member.1 AS sid, argMin(traceRootSid, member.2) AS rootSid
+           FROM (
+             SELECT argMin(sid, firstAt) AS traceRootSid,
+                    groupArray((sid, firstAt)) AS members
+             FROM (
+               SELECT LogAttributes['session.id'] AS sid,
+                      TraceId,
+                      min(Timestamp) AS firstAt
+               FROM otel_logs
+               WHERE ${base} AND TraceId != '' AND LogAttributes['session.id'] != ''
+               GROUP BY sid, TraceId
+             )
+             GROUP BY TraceId
+           )
+           ARRAY JOIN members AS member
+           GROUP BY sid
+         )`;
+
 const INVOCATION_ID = "ResourceAttributes['platform.invocation.id']";
 
 const IN = (a: string) => `toInt64OrZero(LogAttributes[${a}])`;
@@ -151,6 +194,7 @@ export function createClickhouseReader(
       query,
       query_params,
       format: "JSONEachRow",
+      clickhouse_settings: readGuards,
     });
     return rs.json();
   };
@@ -258,26 +302,7 @@ export function createClickhouseReader(
     async spendBySession(agentIds, window) {
       const base = ownedApiRequests({ ...window, sessionId: undefined });
       const r = await rows(
-        `WITH trace_root AS (
-           SELECT TraceId,
-                  argMin(LogAttributes['session.id'], Timestamp) AS rootSid
-           FROM otel_logs
-           WHERE ${base} AND TraceId != '' AND LogAttributes['session.id'] != ''
-           GROUP BY TraceId
-         ),
-         session_root AS (
-           SELECT sid, argMin(rootSid, firstAt) AS rootSid
-           FROM (
-             SELECT LogAttributes['session.id'] AS sid,
-                    TraceId,
-                    min(Timestamp) AS firstAt
-             FROM otel_logs
-             WHERE ${base} AND TraceId != '' AND LogAttributes['session.id'] != ''
-             GROUP BY sid, TraceId
-           ) AS st
-           INNER JOIN trace_root USING (TraceId)
-           GROUP BY sid
-         )
+        `WITH ${sessionRoot(base)}
          SELECT
            coalesce(nullIf(rootSid, ''), sid) AS sessionId,
            sum(rowCostUsd) AS costUsd
@@ -305,26 +330,7 @@ export function createClickhouseReader(
         sessionIds: undefined,
       });
       const r = await rows(
-        `WITH trace_root AS (
-           SELECT TraceId,
-                  argMin(LogAttributes['session.id'], Timestamp) AS rootSid
-           FROM otel_logs
-           WHERE ${base} AND TraceId != '' AND LogAttributes['session.id'] != ''
-           GROUP BY TraceId
-         ),
-         session_root AS (
-           SELECT sid, argMin(rootSid, firstAt) AS rootSid
-           FROM (
-             SELECT LogAttributes['session.id'] AS sid,
-                    TraceId,
-                    min(Timestamp) AS firstAt
-             FROM otel_logs
-             WHERE ${base} AND TraceId != '' AND LogAttributes['session.id'] != ''
-             GROUP BY sid, TraceId
-           ) AS st
-           INNER JOIN trace_root USING (TraceId)
-           GROUP BY sid
-         )
+        `WITH ${sessionRoot(base)}
          SELECT
            coalesce(nullIf(rootSid, ''), sid) AS sessionId,
            agentId,
