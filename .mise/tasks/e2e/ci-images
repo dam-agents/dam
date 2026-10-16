@@ -8,8 +8,12 @@
 # (CI_IMAGES_STATUS) right before it loads the images into k3s.
 #
 # An image whose effective source is already published (image:resolve says
-# REUSE) is pulled right away. The rest are built on this runner on a PR
-# (CI_IMAGES_BUILD=1), while the cluster comes up; see image:ci-build. A
+# REUSE) is pulled right away; in a merge group, so is one an earlier group's
+# build-images pushed to its cache tag. A merge group does not wait for that
+# push: the groups of a queue start together, and the group building it
+# takes as long to push it as this runner takes to build it. The rest are
+# built on this runner on a PR (CI_IMAGES_BUILD=1), while the cluster comes
+# up; see image:ci-build. A
 # separate build job would first wait for a runner of its own, and then e2e
 # would pull what it pushed. On every other run they come from this run's
 # build jobs, which build the same set: the `changes` job resolves it the same
