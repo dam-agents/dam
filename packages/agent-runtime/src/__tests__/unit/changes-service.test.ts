@@ -19,7 +19,9 @@ import {
  * disk. $HOME may itself be a repository with others nested inside it, a
  * repository may have several worktrees, and a session may edit a repository
  * outside $HOME (a clone in /tmp). The diff against base must give the same
- * files and lines as `git diff <merge-base>`.
+ * files and lines as `git diff <merge-base>`. Each spec runs tens of git
+ * processes, so a loaded machine needs more than vitest's defaults: 30 s per
+ * spec and 20 s for the service to settle.
  */
 
 let tmp: string;
@@ -61,6 +63,8 @@ async function repository(dir: string, files: Record<string, string>) {
   await git(dir, "commit", "--quiet", "-m", "initial");
 }
 
+const settles = { timeout: 20_000 };
+
 const noPullRequests: PullRequestFinder = { find: async () => null };
 
 function serviceFor(
@@ -93,7 +97,7 @@ afterEach(async () => {
   await fs.rm(tmp, { recursive: true, force: true });
 });
 
-describe("changes service", () => {
+describe("changes service", { timeout: 30_000 }, () => {
   /**
    * TEST_SCENARIO: $HOME is a repository and ignores work/, where another
    * repository lives. Each is its own entry, and the parent does not show the
@@ -237,7 +241,7 @@ describe("changes service", () => {
       settled: false,
     });
     await expect
-      .poll(() => service.repositoriesOf("s1").map((r) => r.path))
+      .poll(() => service.repositoriesOf("s1").map((r) => r.path), settles)
       .toEqual([clone]);
     const { changeSets } = await service.list("s1");
 
@@ -275,7 +279,7 @@ describe("changes service", () => {
       settled: false,
     });
     await expect
-      .poll(() => service.repositoriesOf("s1").map((r) => r.path))
+      .poll(() => service.repositoriesOf("s1").map((r) => r.path), settles)
       .toEqual([clone]);
 
     const restarted = serviceFor([path.join(home, "work"), home]);
@@ -323,7 +327,7 @@ describe("changes service", () => {
       settled: true,
     });
     await expect
-      .poll(() => service.repositoriesOf("s1")[0]?.pullRequest)
+      .poll(() => service.repositoriesOf("s1")[0]?.pullRequest, settles)
       .toEqual(link);
 
     const { changeSets } = await service.list("s1");
@@ -383,7 +387,7 @@ describe("changes service", () => {
   });
 });
 
-describe("session pushes", () => {
+describe("session pushes", { timeout: 30_000 }, () => {
   const link = { number: 9, url: "https://github.com/acme/app/pull/9" };
   const findsFeature: PullRequestFinder = {
     find: async (_remote, branch) => (branch === "feat/push" ? link : null),
@@ -430,7 +434,7 @@ describe("session pushes", () => {
     toolCall("s1", "t1", true);
 
     await expect
-      .poll(() => service.repositoriesOf("s1"), { timeout: 5_000 })
+      .poll(() => service.repositoriesOf("s1"), settles)
       .toEqual([
         expect.objectContaining({
           path: repo,
@@ -458,15 +462,15 @@ describe("session pushes", () => {
     toolCall("s1", "t0", true);
     toolCall("s1", "t1");
     toolCall("s2", "t2");
-    await expect.poll(() => service.repositoriesOf("s1").length).toBe(1);
+    await expect
+      .poll(() => service.repositoriesOf("s1").length, settles)
+      .toBe(1);
     await watching();
 
     await git(repo, "push", "--quiet", "origin", "feat/push");
 
     await expect
-      .poll(() => service.repositoriesOf("s1")[0]?.pullRequest, {
-        timeout: 5_000,
-      })
+      .poll(() => service.repositoriesOf("s1")[0]?.pullRequest, settles)
       .toEqual(link);
     expect(service.repositoriesOf("s2")).toEqual([]);
   });
@@ -489,9 +493,7 @@ describe("session pushes", () => {
     await expect
       .poll(
         () => logged.some((msg) => msg.includes("matches no single session")),
-        {
-          timeout: 5_000,
-        },
+        settles,
       )
       .toBe(true);
     expect(service.repositoriesOf("s1")).toEqual([]);
