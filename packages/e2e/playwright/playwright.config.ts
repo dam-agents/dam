@@ -57,8 +57,16 @@ const suite: NamedProject[] = [
     name: "own-agents",
     testMatch:
       laneBackend === "vm"
-        ? /\/(17|18|20|22|23|25)-.*\.spec\.ts$/
-        : /\/(17|18|19|25)-.*\.spec\.ts$/,
+        ? /\/(17|18|23|25)-.*\.spec\.ts$/
+        : /\/(17|18|25)-.*\.spec\.ts$/,
+    dependencies: ["agent"],
+    workers: 1,
+    use: { ...devices["Desktop Chrome"], storageState },
+  },
+  {
+    name: "own-machines",
+    testMatch:
+      laneBackend === "vm" ? /\/(20|22)-.*\.spec\.ts$/ : /\/19-.*\.spec\.ts$/,
     dependencies: ["agent"],
     workers: 1,
     use: { ...devices["Desktop Chrome"], storageState },
@@ -66,7 +74,13 @@ const suite: NamedProject[] = [
   {
     name: "platform-provider",
     testMatch: /24-.*\.spec\.ts$/,
-    dependencies: ["api-keys", "live-events", "chain", "own-agents"],
+    dependencies: [
+      "api-keys",
+      "live-events",
+      "chain",
+      "own-agents",
+      "own-machines",
+    ],
     use: { ...devices["Desktop Chrome"], storageState },
   },
   ...(full
@@ -121,7 +135,7 @@ const agentBackend: NamedProject = {
 export default defineConfig({
   testDir: "./src/tests",
   fullyParallel: false,
-  workers: 2,
+  workers: 3,
   retries: 0,
   reporter: [
     ["list"],
