@@ -29,6 +29,7 @@ import {
 import {
   createSpendIngest,
   type AgentOwners,
+  type SessionOwnership,
   type SpendIngest,
 } from "./services/spend-ingest.js";
 import {
@@ -36,6 +37,8 @@ import {
   type AgentPayers,
   type ConnectionNames,
   type OwnedAgentAges,
+  type SessionCategories,
+  type SpawnedSubAgents,
   type SpendQuestionCloser,
 } from "./services/spend-service.js";
 
@@ -72,6 +75,8 @@ export function composeSpendSystem(deps: {
   brandName: string;
   connectionNames: ConnectionNames;
   ownedAgents: OwnedAgentAges;
+  sessions: SessionOwnership & SessionCategories;
+  subAgents: SpawnedSubAgents;
   telemetryStoreOn: boolean;
 }): SpendSystem {
   const ledger = createSpendLedger(deps.db);
@@ -94,6 +99,7 @@ export function composeSpendSystem(deps: {
     ledger,
     counters,
     owners: deps.owners,
+    sessions: deps.sessions,
   });
   return {
     ingest,
@@ -104,6 +110,7 @@ export function composeSpendSystem(deps: {
       ledger,
       ingest,
       owners: deps.owners,
+      sessions: deps.sessions,
       connections: deps.connections,
       brandName: deps.brandName,
     }),
@@ -120,6 +127,8 @@ export function composeSpendSystem(deps: {
         connections: deps.connections,
         questions: deps.questions,
         payers: deps.payers,
+        sessions: deps.sessions,
+        subAgents: deps.subAgents,
         meteringStart,
         connectionNames: () => deps.connectionNames.namesOf(owner.ownerSub),
         ownedAgentCreatedBefore: (at) =>

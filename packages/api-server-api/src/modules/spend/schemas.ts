@@ -52,6 +52,27 @@ export const spendDailyInputSchema = z
 
 export const spendBreakdownInputSchema = spendDailyInputSchema;
 
+export const SPEND_SESSIONS_MAX = 200;
+export const SPEND_SESSIONS_DEFAULT_LIMIT = 50;
+
+export const spendSessionsInputSchema = z
+  .object({
+    agentId: z.string().min(1),
+    from: utcDaySchema.optional(),
+    to: utcDaySchema.optional(),
+    sessionIds: z.array(z.string().min(1)).max(SPEND_SESSIONS_MAX).optional(),
+    limit: z.number().int().min(1).max(SPEND_SESSIONS_MAX).optional(),
+  })
+  .superRefine((input, ctx) => {
+    if (input.from && input.to && input.from > input.to) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["from"],
+        message: "from must be on or before to",
+      });
+    }
+  });
+
 export const spendLimitScopeSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("agent"), agentId: z.string().min(1) }),
   z.object({ kind: z.literal("owner") }),

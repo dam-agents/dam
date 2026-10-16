@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-10-16
+Last verified: 2026-10-17
 
 ## Overview
 
@@ -39,6 +39,7 @@ A harness the install does not carry is refused, naming the ones it does; the im
 A spawn may bring its own image instead, the way a kit with its own image does: the target is then created from that image with the install's defaults, and the harness, when named, only says what runs inside it.
 Either way the harness catalog, or the custom Template, states the providers the harness can run on, which is what Provider Inheritance checks.
 The trigger that opens the target's first session names its harness, the inherited provider and the model; a model a spawn names is a qualified name (`ibm/gpt-5.5`), and a bare one is refused before anything is created.
+The trigger also marks the run as an Invocation, so the target types that session as an Invocation run, which its session list and its spend by session type show as a run, not as a scheduled one; a target on a runtime from before that mark still types it as a scheduled run.
 
 **A spawn may choose the model.** It can name the target's model, mode and harness settings — the choices the target's harness configuration offers — so one harness serves every model it runs, and a Driver can put one task to two models or a cheap model on a mechanical step.
 The choice is written into the target's own harness configuration in a delivery of its own, ahead of the task, so the one session already runs on it ([harness configuration](harness-config.md)).
@@ -108,6 +109,7 @@ Some adapters stream a shell command's output only in parts beside the tool call
 While children run and no line names them yet, the chat shows the Driver's running Invocations from the record, scoped to the Session it shows.
 A tool spawn records the Driver's Session that called it: the harness names it on each platform MCP call by an opaque reference the Driver's runtime hands it per Session, and the api-server asks the runtime which Session that is when it records the spawn.
 A chat shows the children its own Session spawned, and every child with no recorded Session — a script spawn, a harness that names no Session, a lookup that failed, a record from before Sessions were kept — so nothing that showed before goes missing.
+The recorded Session also places the child's [Metered Spend](spend-limits.md#ledger) under that Session of the Driver, with the spend of the children it spawns in turn; a child with no recorded Session adds its spend to no Session.
 Only the Driver's own children are scoped; a grandchild shows under its child.
 
 ## The Invocation Pin

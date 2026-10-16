@@ -3,6 +3,8 @@ import {
   connectionLimitRefusal,
   connectionLimitRule,
   nextUtcMidnight,
+  SPEND_SESSIONS_DEFAULT_LIMIT,
+  type SessionCategory,
   type SpendCeilingView,
   type SpendLimitScope,
   type SpendLimitView,
@@ -11,7 +13,7 @@ import {
 } from "api-server-api";
 import { match } from "ts-pattern";
 import { emit, EventType } from "../../../events.js";
-import { foldBreakdown } from "../domain/breakdown.js";
+import { foldBreakdown, type BreakdownRow } from "../domain/breakdown.js";
 import { utcDay } from "../domain/ledger.js";
 import {
   ceilingCounter,
@@ -22,6 +24,7 @@ import {
   type SpendLimit,
 } from "../domain/limits.js";
 import { meteringNoticeEnd, meteringView } from "../domain/metering.js";
+import { foldSessions } from "../domain/sessions.js";
 import type { SpendUnit } from "../domain/units.js";
 import type { SpendLedger } from "../infrastructure/spend-ledger.js";
 import type { SpendLimits } from "../infrastructure/spend-limits.js";
@@ -44,6 +47,17 @@ export interface OwnedAgentAges {
   anyCreatedBefore(ownerSub: string, at: Date): Promise<boolean>;
 }
 
+export interface SessionCategories {
+  categorize(
+    agentIds: readonly string[],
+    sessionIds: readonly string[],
+  ): Promise<ReadonlyMap<string, SessionCategory>>;
+}
+
+export interface SpawnedSubAgents {
+  spawnSessions(agentId: string): Promise<ReadonlyMap<string, string | null>>;
+}
+
 export function createSpendService(deps: {
   ledger: SpendLedger;
   limits: SpendLimits;
@@ -52,6 +66,8 @@ export function createSpendService(deps: {
   connections: GrantedConnections;
   questions: SpendQuestionCloser;
   payers: AgentPayers;
+  sessions: SessionCategories;
+  subAgents: SpawnedSubAgents;
   meteringStart(): Promise<Date>;
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   connectionNames(): Promise<ReadonlyMap<string, string>>;
@@ -143,6 +159,15 @@ export function createSpendService(deps: {
   const scopedAgents = (agentId: string | undefined) =>
     agentId ? [agentId] : deps.agentBinding === "*" ? null : deps.agentBinding;
 
+  const categoriesOf = async (rows: readonly BreakdownRow[]) => {
+    const withSession = rows.filter((row) => row.sessionId);
+    if (withSession.length === 0) return new Map<string, SessionCategory>();
+    return deps.sessions.categorize(
+      [...new Set(withSession.map((row) => row.callingAgentId || row.payer))],
+      [...new Set(withSession.map((row) => row.sessionId))],
+    );
+  };
+
   return {
     async daily({ agentId, from, to }) {
       return deps.ledger.daily({
@@ -154,16 +179,60 @@ export function createSpendService(deps: {
     },
 
     async breakdown({ agentId, from, to }) {
+      const payer = agentId ? await deps.payers.payerOf(agentId) : undefined;
+      const scope = !agentId ? "owner" : payer === agentId ? "payer" : "caller";
       const [rows, connectionNames] = await Promise.all([
         deps.ledger.breakdownRows({
           ownerSub: deps.ownerSub,
-          agentIds: scopedAgents(agentId),
+          agentIds: scopedAgents(payer),
+          ...(scope === "caller" && { callingAgentId: agentId }),
           from,
           to,
         }),
         deps.connectionNames(),
       ]);
-      return foldBreakdown({ from, to, rows, connectionNames });
+      return foldBreakdown({
+        from,
+        to,
+        rows,
+        connectionNames,
+        sessionCategories: await categoriesOf(rows),
+        scope,
+      });
+    },
+
+    async sessions({ agentId, from, to, sessionIds, limit }) {
+      const range = {
+        from: from ?? utcDay(await deps.meteringStart()),
+        to: to ?? utcDay(new Date()),
+      };
+      const [own, spawnSessions] = await Promise.all([
+        deps.ledger.sessionRows({
+          ownerSub: deps.ownerSub,
+          callingAgentIds: [agentId],
+          ...(sessionIds && { sessionIds }),
+          withSessionOnly: true,
+          ...range,
+        }),
+        deps.subAgents.spawnSessions(agentId),
+      ]);
+      const wanted = sessionIds ? new Set(sessionIds) : null;
+      const subAgentIds = [...spawnSessions]
+        .filter(([, session]) => session && (!wanted || wanted.has(session)))
+        .map(([id]) => id);
+      const subAgents = await deps.ledger.sessionRows({
+        ownerSub: deps.ownerSub,
+        callingAgentIds: subAgentIds,
+        withSessionOnly: false,
+        ...range,
+      });
+      return foldSessions({
+        own,
+        subAgents,
+        spawnSessions,
+        ...(sessionIds && { sessionIds }),
+        limit: limit ?? SPEND_SESSIONS_DEFAULT_LIMIT,
+      });
     },
 
     async metering() {

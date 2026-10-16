@@ -127,6 +127,7 @@ const POD_TYPE: Record<PodSession["type"], SessionType> = {
   schedule_cron: SessionType.ScheduleCron,
   schedule_once: SessionType.ScheduleOnce,
   cli_run: SessionType.CliRun,
+  invocation: SessionType.Invocation,
 };
 
 const POD_MODE: Record<PodSession["mode"], SessionMode> = {

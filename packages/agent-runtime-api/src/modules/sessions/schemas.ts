@@ -11,6 +11,7 @@ export const podSessionTypeSchema = z.enum([
   "schedule_cron",
   "schedule_once",
   "cli_run",
+  "invocation",
 ]);
 
 export const sessionSpendSchema = z.object({

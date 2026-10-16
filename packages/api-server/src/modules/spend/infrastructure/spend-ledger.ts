@@ -6,6 +6,7 @@ import {
   gte,
   inArray,
   lte,
+  ne,
   sql,
   spendDaily,
   spendMetering,
@@ -19,6 +20,7 @@ import type {
 import { match } from "ts-pattern";
 import type { BreakdownRow } from "../domain/breakdown.js";
 import type { CallAmounts, DayCounter, SpendRow } from "../domain/ledger.js";
+import type { SessionLedgerRow } from "../domain/sessions.js";
 
 export interface SpendLedger {
   add(row: SpendRow, delta: CallAmounts, callCostMicros: number): Promise<void>;
@@ -44,9 +46,18 @@ export interface SpendLedger {
   breakdownRows(query: {
     ownerSub: string;
     agentIds: readonly string[] | null;
+    callingAgentId?: string;
     from: string;
     to: string;
   }): Promise<BreakdownRow[]>;
+  sessionRows(query: {
+    ownerSub: string;
+    callingAgentIds: readonly string[];
+    sessionIds?: readonly string[];
+    withSessionOnly: boolean;
+    from: string;
+    to: string;
+  }): Promise<SessionLedgerRow[]>;
   meteringStart(): Promise<Date>;
 }
 
@@ -60,7 +71,17 @@ type Counted =
   | "webSearches"
   | "calls"
   | "estimatedCalls"
-  | "refusedCalls";
+  | "refusedCalls"
+  | "durationMs";
+
+const ROW_KEY = [
+  spendDaily.day,
+  spendDaily.payerAgentId,
+  spendDaily.connectionId,
+  spendDaily.model,
+  spendDaily.sessionId,
+  spendDaily.callingAgentId,
+];
 
 export function createSpendLedger(db: Db): SpendLedger {
   const added = (key: Counted) =>
@@ -77,6 +98,8 @@ export function createSpendLedger(db: Db): SpendLedger {
           payerAgentId: row.payer,
           connectionId: row.connectionId,
           model: row.model,
+          sessionId: row.sessionId,
+          callingAgentId: row.callingAgentId,
           ownerSub: row.ownerSub,
           providerTemplate: row.provider,
           unit: row.unit,
@@ -89,15 +112,11 @@ export function createSpendLedger(db: Db): SpendLedger {
           webSearches: delta.webSearches,
           calls: delta.calls,
           estimatedCalls: delta.estimatedCalls,
+          durationMs: delta.durationMs,
           maxCallCostMicros: callCostMicros,
         })
         .onConflictDoUpdate({
-          target: [
-            spendDaily.day,
-            spendDaily.payerAgentId,
-            spendDaily.connectionId,
-            spendDaily.model,
-          ],
+          target: ROW_KEY,
           set: {
             costMicros: added("costMicros"),
             uncachedInputTokens: added("uncachedInputTokens"),
@@ -108,6 +127,7 @@ export function createSpendLedger(db: Db): SpendLedger {
             webSearches: added("webSearches"),
             calls: added("calls"),
             estimatedCalls: added("estimatedCalls"),
+            durationMs: added("durationMs"),
             maxCallCostMicros: sql`greatest(${spendDaily.maxCallCostMicros}, excluded.max_call_cost_micros)`,
             updatedAt: sql`now()`,
           },
@@ -122,18 +142,15 @@ export function createSpendLedger(db: Db): SpendLedger {
           payerAgentId: row.payer,
           connectionId: row.connectionId,
           model: row.model,
+          sessionId: row.sessionId,
+          callingAgentId: row.callingAgentId,
           ownerSub: row.ownerSub,
           providerTemplate: row.provider,
           unit: row.unit,
           refusedCalls: 1,
         })
         .onConflictDoUpdate({
-          target: [
-            spendDaily.day,
-            spendDaily.payerAgentId,
-            spendDaily.connectionId,
-            spendDaily.model,
-          ],
+          target: ROW_KEY,
           set: {
             refusedCalls: added("refusedCalls"),
             updatedAt: sql`now()`,
@@ -266,7 +283,7 @@ export function createSpendLedger(db: Db): SpendLedger {
       }));
     },
 
-    async breakdownRows({ ownerSub, agentIds, from, to }) {
+    async breakdownRows({ ownerSub, agentIds, callingAgentId, from, to }) {
       const rows = await db
         .select({
           day: spendDaily.day,
@@ -274,6 +291,8 @@ export function createSpendLedger(db: Db): SpendLedger {
           connectionId: spendDaily.connectionId,
           providerTemplate: spendDaily.providerTemplate,
           model: spendDaily.model,
+          sessionId: spendDaily.sessionId,
+          callingAgentId: spendDaily.callingAgentId,
           unit: spendDaily.unit,
           costMicros: sumOf("costMicros"),
           calls: sumOf("calls"),
@@ -284,6 +303,7 @@ export function createSpendLedger(db: Db): SpendLedger {
           cacheWrite5mTokens: sumOf("cacheWrite5mTokens"),
           cacheWrite1hTokens: sumOf("cacheWrite1hTokens"),
           webSearches: sumOf("webSearches"),
+          durationMs: sumOf("durationMs"),
         })
         .from(spendDaily)
         .where(
@@ -294,6 +314,9 @@ export function createSpendLedger(db: Db): SpendLedger {
             agentIds
               ? inArray(spendDaily.payerAgentId, [...agentIds])
               : undefined,
+            callingAgentId !== undefined
+              ? eq(spendDaily.callingAgentId, callingAgentId)
+              : undefined,
           ),
         )
         .groupBy(
@@ -302,6 +325,8 @@ export function createSpendLedger(db: Db): SpendLedger {
           spendDaily.connectionId,
           spendDaily.providerTemplate,
           spendDaily.model,
+          spendDaily.sessionId,
+          spendDaily.callingAgentId,
           spendDaily.unit,
         );
       return rows.map((r) => ({
@@ -310,6 +335,8 @@ export function createSpendLedger(db: Db): SpendLedger {
         connectionId: r.connectionId,
         providerTemplate: r.providerTemplate,
         model: r.model,
+        sessionId: r.sessionId,
+        callingAgentId: r.callingAgentId,
         unit: r.unit as SpendUnit,
         costMicros: Number(r.costMicros),
         calls: Number(r.calls),
@@ -320,6 +347,67 @@ export function createSpendLedger(db: Db): SpendLedger {
         cacheWrite5mTokens: Number(r.cacheWrite5mTokens),
         cacheWrite1hTokens: Number(r.cacheWrite1hTokens),
         webSearches: Number(r.webSearches),
+        durationMs: Number(r.durationMs),
+      }));
+    },
+
+    async sessionRows({
+      ownerSub,
+      callingAgentIds,
+      sessionIds,
+      withSessionOnly,
+      from,
+      to,
+    }) {
+      if (callingAgentIds.length === 0) return [];
+      const rows = await db
+        .select({
+          callingAgentId: spendDaily.callingAgentId,
+          sessionId: spendDaily.sessionId,
+          unit: spendDaily.unit,
+          costMicros: sumOf("costMicros"),
+          calls: sumOf("calls"),
+          durationMs: sumOf("durationMs"),
+          uncachedInputTokens: sumOf("uncachedInputTokens"),
+          outputTokens: sumOf("outputTokens"),
+          cacheReadTokens: sumOf("cacheReadTokens"),
+          cacheWrite5mTokens: sumOf("cacheWrite5mTokens"),
+          cacheWrite1hTokens: sumOf("cacheWrite1hTokens"),
+          firstDay: sql<string>`min(${spendDaily.day})::text`,
+          lastDay: sql<string>`max(${spendDaily.day})::text`,
+        })
+        .from(spendDaily)
+        .where(
+          and(
+            eq(spendDaily.ownerSub, ownerSub),
+            inArray(spendDaily.callingAgentId, [...callingAgentIds]),
+            gte(spendDaily.day, from),
+            lte(spendDaily.day, to),
+            withSessionOnly ? ne(spendDaily.sessionId, "") : undefined,
+            sessionIds
+              ? inArray(spendDaily.sessionId, [...sessionIds])
+              : undefined,
+          ),
+        )
+        .groupBy(
+          spendDaily.callingAgentId,
+          spendDaily.sessionId,
+          spendDaily.unit,
+        );
+      return rows.map((r) => ({
+        callingAgentId: r.callingAgentId,
+        sessionId: r.sessionId,
+        unit: r.unit as SpendUnit,
+        costMicros: Number(r.costMicros),
+        calls: Number(r.calls),
+        durationMs: Number(r.durationMs),
+        uncachedInputTokens: Number(r.uncachedInputTokens),
+        outputTokens: Number(r.outputTokens),
+        cacheReadTokens: Number(r.cacheReadTokens),
+        cacheWrite5mTokens: Number(r.cacheWrite5mTokens),
+        cacheWrite1hTokens: Number(r.cacheWrite1hTokens),
+        firstDay: r.firstDay,
+        lastDay: r.lastDay,
       }));
     },
 

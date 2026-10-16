@@ -1,9 +1,10 @@
 import type {
+  SessionCategory,
   SpendAmount,
   SpendBreakdown,
   SpendCounts,
-  SpendUnit,
 } from "api-server-api";
+import { UNIT_RANK } from "./units.js";
 
 export interface BreakdownRow extends SpendAmount, SpendCounts {
   readonly day: string;
@@ -11,12 +12,15 @@ export interface BreakdownRow extends SpendAmount, SpendCounts {
   readonly connectionId: string;
   readonly providerTemplate: string;
   readonly model: string;
+  readonly sessionId: string;
+  readonly callingAgentId: string;
+  readonly durationMs: number;
 }
 
 type Entry<K extends keyof SpendBreakdown> =
   SpendBreakdown[K] extends readonly (infer E)[] ? E : never;
 
-const UNIT_ORDER: readonly SpendUnit[] = ["usd", "usd_list", "bobcoin", "free"];
+type SessionType = Entry<"bySessionType">["category"];
 
 const COUNT_FIELDS = [
   "calls",
@@ -70,18 +74,34 @@ function byUnitThenCost<T extends SpendAmount>(
   label: (entry: T) => string,
 ): (a: T, b: T) => number {
   return (a, b) =>
-    UNIT_ORDER.indexOf(a.unit) - UNIT_ORDER.indexOf(b.unit) ||
+    UNIT_RANK.indexOf(a.unit) - UNIT_RANK.indexOf(b.unit) ||
     b.costMicros - a.costMicros ||
     label(a).localeCompare(label(b));
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the scope is what the rows are: every agent of
+ * the owner, the calls one agent pays for, or the calls one agent made (a
+ * sub-agent's own page). A call whose calling agent is not its payer is a
+ * sub-agent's, except in the caller scope, where every row is that agent's.
+ * Other calls take their Session's kind; a call with no Session, or one the
+ * directory does not know, has none. A row from before the calling agent was
+ * recorded counts for its payer.
+ */
 export function foldBreakdown(input: {
   from: string;
   to: string;
   rows: readonly BreakdownRow[];
   connectionNames: ReadonlyMap<string, string>;
+  sessionCategories: ReadonlyMap<string, SessionCategory>;
+  scope: "owner" | "payer" | "caller";
 }): SpendBreakdown {
   const { rows } = input;
+  const callerOf = (row: BreakdownRow) => row.callingAgentId || row.payer;
+  const sessionTypeOf = (row: BreakdownRow): SessionType =>
+    input.scope !== "caller" && callerOf(row) !== row.payer
+      ? "subagents"
+      : (input.sessionCategories.get(row.sessionId) ?? "none");
 
   const totals = group<Entry<"totals">>(
     rows,
@@ -98,7 +118,7 @@ export function foldBreakdown(input: {
   ).sort(
     (a, b) =>
       a.day.localeCompare(b.day) ||
-      UNIT_ORDER.indexOf(a.unit) - UNIT_ORDER.indexOf(b.unit),
+      UNIT_RANK.indexOf(a.unit) - UNIT_RANK.indexOf(b.unit),
   );
 
   const byAgent = group<Entry<"byAgent">>(
@@ -144,8 +164,32 @@ export function foldBreakdown(input: {
     byAgent,
     byModel,
     byConnection,
-    modelTimeMs: 0,
-    bySessionType: [],
-    byCallingAgent: [],
+    modelTimeMs: rows.reduce((sum, row) => sum + row.durationMs, 0),
+    bySessionType: group<Entry<"bySessionType">>(
+      rows,
+      sessionTypeOf,
+      (row) => ({
+        category: sessionTypeOf(row),
+        unit: row.unit,
+        costMicros: 0,
+      }),
+      () => {},
+    ).sort(byUnitThenCost((entry) => entry.category)),
+    byCallingAgent:
+      input.scope === "owner"
+        ? []
+        : group<Entry<"byCallingAgent">>(
+            rows,
+            callerOf,
+            (row) => ({
+              agentId: callerOf(row),
+              unit: row.unit,
+              costMicros: 0,
+              calls: 0,
+            }),
+            (into, row) => {
+              into.calls += row.calls;
+            },
+          ).sort(byUnitThenCost((entry) => entry.agentId)),
   };
 }

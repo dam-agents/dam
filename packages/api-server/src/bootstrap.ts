@@ -237,6 +237,7 @@ import {
   composeInvocationLivenessSweep,
   composeSubAgentOutcomeDelivery,
   createDriverResolutionAdapter,
+  createSpawnSessionsAdapter,
   createInvocationsCleanupHook,
   createPodSessionClient,
   createInvocationSetupFailure,
@@ -1079,6 +1080,8 @@ export async function bootstrap() {
   const payerOf = async (agentId: string) =>
     (await invocationDriverResolution.resolveRoot(agentId)) ?? agentId;
 
+  const { sessionDirectory, retentionTick: sessionDirectoryRetentionTick } =
+    composeSessionDirectory(db);
   const spend = composeSpendSystem({
     db,
     redis: sharedRedis,
@@ -1102,6 +1105,8 @@ export async function bootstrap() {
             Date.parse(agent.createdAt) < at.getTime(),
         ),
     },
+    sessions: sessionDirectory,
+    subAgents: createSpawnSessionsAdapter(db),
     telemetryStoreOn: metricsReader !== null,
   });
   await periodicJobs.register("spend-unrecorded-calls", 5 * 60_000, () =>
@@ -1771,8 +1776,6 @@ export async function bootstrap() {
   await periodicJobs.register("image-update", 60_000, () => imageUpdate.tick());
   await periodicJobs.retire("retired-image-migration");
 
-  const { sessionDirectory, retentionTick: sessionDirectoryRetentionTick } =
-    composeSessionDirectory(db);
   await periodicJobs.register(
     "session-directory-retention",
     7 * 24 * 60 * 60 * 1000,

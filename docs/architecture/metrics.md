@@ -164,6 +164,7 @@ Three properties of that report follow from what it is for:
   The read path degrades to the unattributed bucket described above, which is exactly what a not-yet-reported agent looks like.
 
 The directory is keyed by agent and Session, and every read of it is scoped to the caller's already-resolved owned-agent set — it widens nothing and is never a path to another user's Sessions.
+The spend ledger reads it too: a call's Session counts only when the calling agent reported that Session here, and the spend by session type takes each Session's kind from it ([spend-limits](spend-limits.md#ledger)).
 
 It is the one table in the platform that grows with **use** rather than with the number of things that exist, so it ages out on its own: a weekly job drops rows past a retention horizon, guarded by an advisory lock so one replica does the delete and the others no-op — the same shape [usage-tracking](usage-tracking.md#retention) uses for its activity log.
 The horizon is deliberately several times the telemetry store's own retention rather than pinned to it.

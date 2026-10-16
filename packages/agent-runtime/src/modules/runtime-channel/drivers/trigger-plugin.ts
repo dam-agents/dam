@@ -35,6 +35,11 @@ function continuationPrompt(name: string, task: string): string {
   return `[One-time task "${name}", scheduled from this session, is due now]\n\n${task}`;
 }
 
+function sessionTypeOf(payload: TriggerEventPayload): SessionType {
+  if (payload.invocation) return SessionType.Invocation;
+  return payload.once ? SessionType.ScheduleOnce : SessionType.ScheduleCron;
+}
+
 function withContext(task: string, context: string | undefined): string {
   return context ? `${task}\n\n---\nPrecheck output:\n${context}` : task;
 }
@@ -69,7 +74,7 @@ export function createTriggerPlugin(deps: {
       ]);
     const model = payload.model;
     const platformMeta = {
-      type: payload.once ? SessionType.ScheduleOnce : SessionType.ScheduleCron,
+      type: sessionTypeOf(payload),
       mode: SessionMode.Chat,
       scheduleId: payload.scheduleId,
       ...(payload.harness !== undefined && { harness: payload.harness }),

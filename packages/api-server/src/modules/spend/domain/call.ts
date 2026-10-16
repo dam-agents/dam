@@ -117,6 +117,7 @@ export function measureCall(record: CallRecord, book: PriceBook): CallMeasure {
       webSearches: metered.webSearches,
       calls: 1,
       estimatedCalls: estimated ? 1 : 0,
+      durationMs: record.durationMs,
     },
   };
 }
