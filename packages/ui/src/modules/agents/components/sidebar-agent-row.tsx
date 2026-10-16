@@ -16,6 +16,7 @@ interface Props {
   unread: boolean;
   pinned: boolean;
   onMovePin: (agentId: string, drop: PinDrop | null) => void;
+  onStepPin: (agentId: string, step: -1 | 1) => void;
   onSelect: () => void;
   actions: ReactNode;
   children?: ReactNode;
@@ -28,12 +29,18 @@ export function SidebarAgentRow({
   unread,
   pinned,
   onMovePin,
+  onStepPin,
   onSelect,
   actions,
   children,
 }: Props) {
   const mood = avatarMood(agent.state, agent);
-  const drag = usePinDrag({ scope: "agents", id: agent.id, onMove: onMovePin });
+  const drag = usePinDrag({
+    scope: "agents",
+    id: agent.id,
+    onMove: onMovePin,
+    onStep: onStepPin,
+  });
   return (
     <li>
       <div
@@ -48,6 +55,7 @@ export function SidebarAgentRow({
           type="button"
           onClick={onSelect}
           aria-current={current ? "page" : undefined}
+          aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
           data-testid="sidebar-agent-row"
           className={cn(
             "flex h-[34px] min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2.5 text-left",

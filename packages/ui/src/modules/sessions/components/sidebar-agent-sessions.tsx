@@ -132,6 +132,7 @@ function SessionPreview({
           key={item.id}
           agentId={agentId}
           sessionId={item.session.sessionId}
+          pinned={pinned}
           pinActions={pinActions}
         >
           <SessionRow
@@ -260,6 +261,7 @@ function AgentSessionList({
           key={s.sessionId}
           agentId={agentId}
           sessionId={s.sessionId}
+          pinned={pinned}
           pinActions={pinActions}
         >
           <SessionRow
@@ -321,11 +323,13 @@ function AgentSessionList({
 function PinnableRow({
   agentId,
   sessionId,
+  pinned,
   pinActions,
   children,
 }: {
   agentId: string;
   sessionId: string;
+  pinned: ReadonlySet<string>;
   pinActions: PinActions;
   children: ReactNode;
 }) {
@@ -333,6 +337,7 @@ function PinnableRow({
     scope: `sessions:${agentId}`,
     id: sessionId,
     onMove: (id, drop) => pinActions.moveSession(agentId, id, drop),
+    onStep: (id, step) => pinActions.stepSession(agentId, id, step, pinned),
   });
   return (
     <div {...drag.dragProps} className="relative">

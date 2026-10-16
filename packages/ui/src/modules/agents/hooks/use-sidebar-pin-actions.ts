@@ -6,7 +6,12 @@ import {
   useSetPinnedAgents,
   useSetPinnedSessions,
 } from "../api/sidebar-pins.js";
-import { movePin, type PinDrop, togglePin } from "../lib/sidebar-pins.js";
+import {
+  movePin,
+  type PinDrop,
+  stepPin,
+  togglePin,
+} from "../lib/sidebar-pins.js";
 
 function currentPins(): SidebarPins {
   return (
@@ -37,6 +42,18 @@ export function useSidebarPinActions() {
       writeAgents(togglePin(currentPins().agents, agentId)),
     moveAgent: (agentId: string, drop: PinDrop | null) =>
       writeAgents(movePin(currentPins().agents, agentId, drop)),
+    stepAgent: (agentId: string, step: -1 | 1, shown: ReadonlySet<string>) =>
+      writeAgents(stepPin(currentPins().agents, agentId, step, shown)),
+    stepSession: (
+      agentId: string,
+      sessionId: string,
+      step: -1 | 1,
+      shown: ReadonlySet<string>,
+    ) =>
+      writeSessions(
+        agentId,
+        stepPin(currentPins().sessions[agentId] ?? [], sessionId, step, shown),
+      ),
     toggleSession: (agentId: string, sessionId: string) =>
       writeSessions(
         agentId,

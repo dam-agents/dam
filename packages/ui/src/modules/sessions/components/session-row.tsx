@@ -176,6 +176,7 @@ export function SessionRow({
         className,
       )}
       {...clickableProps(handleClick)}
+      aria-keyshortcuts={onTogglePin ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
       onPointerEnter={startDwell}
       onPointerLeave={endDwell}
       onFocus={onPrefetch}
