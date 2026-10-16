@@ -1,15 +1,18 @@
 import type { SpendBreakdown } from "api-server-api";
 
 import {
+  Duration,
   Stat,
   TokensInOut,
 } from "../../metrics/components/spend-stat-cards.js";
-import { API_CALLS, TOKENS_IN_OUT } from "../lib/copy.js";
+import { API_CALLS, MODEL_TIME, TOKENS_IN_OUT } from "../lib/copy.js";
 
 export function MeasuredStatCards({
   totals,
+  modelTimeMs,
 }: {
   totals: SpendBreakdown["totals"];
+  modelTimeMs: number;
 }) {
   const sum = (count: (row: SpendBreakdown["totals"][number]) => number) =>
     totals.reduce((total, row) => total + count(row), 0);
@@ -21,7 +24,7 @@ export function MeasuredStatCards({
       row.cacheWrite1hTokens,
   );
   return (
-    <dl className="grid grid-cols-2 gap-3">
+    <dl className="grid grid-cols-2 gap-3 lg:grid-cols-3">
       <Stat label={API_CALLS}>
         {sum((row) => row.calls).toLocaleString("en-US")}
       </Stat>
@@ -30,6 +33,9 @@ export function MeasuredStatCards({
           tokensIn={tokensIn}
           tokensOut={sum((row) => row.outputTokens)}
         />
+      </Stat>
+      <Stat label={MODEL_TIME}>
+        <Duration ms={modelTimeMs} />
       </Stat>
     </dl>
   );

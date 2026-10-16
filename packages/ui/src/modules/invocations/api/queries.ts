@@ -1,7 +1,12 @@
 import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { DelegationNode } from "api-server-api";
 
 import { trpc } from "../../../trpc.js";
-import { awaitsCapture, hasRunning } from "../lib/delegation-state.js";
+import {
+  awaitsCapture,
+  hasJustEnded,
+  hasRunning,
+} from "../lib/delegation-state.js";
 
 const LIVE_POLL_MS = 5_000;
 const IDLE_POLL_MS = 15_000;
@@ -34,7 +39,7 @@ export function useInvocationTurns(
   driverAgentId: string | null,
   ids: readonly string[],
   enabled: boolean,
-  live: boolean,
+  nodes: readonly DelegationNode[],
 ) {
   return useQuery({
     ...trpc.telemetry.invocationTurns.queryOptions(
@@ -43,7 +48,10 @@ export function useInvocationTurns(
         : skipToken,
     ),
     staleTime: 2_000,
-    refetchInterval: live ? LIVE_POLL_MS : false,
+    refetchInterval: () =>
+      hasRunning(nodes) || hasJustEnded(nodes, Date.now())
+        ? LIVE_POLL_MS
+        : false,
     retry: false,
   });
 }

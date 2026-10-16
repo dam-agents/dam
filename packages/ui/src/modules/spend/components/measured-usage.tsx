@@ -55,16 +55,19 @@ export function MeasuredUsage({ agentId, period, onPeriodChange }: Props) {
         breakdown={breakdown}
         showPlanUse={showPlanUse}
       />
-      <MeasuredStatCards totals={breakdown.totals} />
+      <MeasuredStatCards
+        totals={breakdown.totals}
+        modelTimeMs={breakdown.modelTimeMs}
+      />
       {estimatedCalls > 0 && (
         <p className="text-sm text-muted-foreground">
           {estimatedCallsNote(estimatedCalls)}
         </p>
       )}
       <MeasuredBreakdownCards
+        {...(agentId !== undefined && { agentId })}
         breakdown={breakdown}
         showPlanUse={showPlanUse}
-        showAgents={agentId === undefined}
       />
     </div>
   );
@@ -75,7 +78,7 @@ function MeasuredUsageSkeleton() {
     <div className="flex flex-col gap-4">
       <div className="h-8 w-64 animate-pulse rounded-md bg-muted" />
       <Card className={cn(CHART_HEIGHT_CLASS, "animate-pulse")} />
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Card className="h-40 animate-pulse" />
         <Card className="h-40 animate-pulse" />
       </div>
