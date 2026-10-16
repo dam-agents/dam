@@ -1240,4 +1240,79 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         result.unwrap();
     }
+
+    // TEST_SCENARIO: a platform-init from before subvolumes, booting a disk in the subvolume layout, makes a fresh workspace/ beside the subvolumes. The next boot sets it aside and keeps it, so the subvolume's home boots and what the rolled-back boot wrote is not lost. Needs root and mkfs.btrfs: `sudo -E cargo test -p platform-init -- --ignored rolled_back`.
+    #[test]
+    #[ignore = "needs root and mkfs.btrfs"]
+    fn a_rolled_back_workspace_is_set_aside() {
+        let dir =
+            std::env::temp_dir().join(format!("platform-init-rollback-{}", std::process::id()));
+        mkdir_all(&dir).unwrap();
+        let run = |program: &str, args: &[&std::ffi::OsStr]| {
+            let out = std::process::Command::new(program)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "{program}: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        };
+        let image = dir.join("disk.raw");
+        File::create(&image).unwrap().set_len(256 << 20).unwrap();
+        run(
+            "mkfs.btrfs",
+            &["-q".as_ref(), "-M".as_ref(), image.as_os_str()],
+        );
+        let top = dir.join("top");
+        mkdir_all(&top).unwrap();
+        run(
+            "mount",
+            &[
+                "-o".as_ref(),
+                "loop".as_ref(),
+                image.as_os_str(),
+                top.as_os_str(),
+            ],
+        );
+        let checks = || {
+            for name in [guest::AGENT_DIR, guest::SYSTEM_DIR] {
+                ensure_subvolume(&top, name).unwrap();
+            }
+            fs::write(top.join(guest::AGENT_DIR).join("work"), b"the agent's work").unwrap();
+            fs::write(guest::system_store(&top, guest::LAYOUT_FILE), b"2\n").unwrap();
+            let old = top.join(guest::DISK_ROOT_DIR);
+            mkdir_all(&guest::agent_store(&old)).unwrap();
+            fs::write(
+                guest::agent_store(&old).join("later"),
+                b"written while rolled back",
+            )
+            .unwrap();
+
+            settle_directory_layout(&top);
+
+            assert!(!old.exists(), "the subvolumes are no longer hidden");
+            assert_eq!(
+                fs::read(top.join(guest::AGENT_DIR).join("work")).unwrap(),
+                b"the agent's work"
+            );
+            let aside: Vec<_> = fs::read_dir(&top)
+                .unwrap()
+                .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+                .filter(|name| {
+                    name.starts_with(&format!("{}{ROLLED_BACK_INFIX}", guest::DISK_ROOT_DIR))
+                })
+                .collect();
+            assert_eq!(aside.len(), 1);
+            assert_eq!(
+                fs::read(guest::agent_store(&top.join(&aside[0])).join("later")).unwrap(),
+                b"written while rolled back"
+            );
+        };
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(checks));
+        run("umount", &[top.as_os_str()]);
+        let _ = fs::remove_dir_all(&dir);
+        result.unwrap();
+    }
 }
