@@ -2,6 +2,7 @@ import type { Db } from "db";
 import type { Redis } from "ioredis";
 import type { Subscription } from "rxjs";
 import type { SpendService } from "api-server-api";
+import { getLogger } from "../../core/logger.js";
 import type { PriceBook } from "./domain/prices.js";
 import { loadAnthropicPriceTable } from "./infrastructure/anthropic-price-table.js";
 import { createRedisCallStates } from "./infrastructure/call-states.js";
@@ -42,6 +43,8 @@ import {
   type SpendQuestionCloser,
 } from "./services/spend-service.js";
 
+const CALL_ROWS_RETENTION_DAYS = 30;
+
 function composePriceBook(
   priceOverrides: readonly OperatorPriceInput[],
 ): PriceBook {
@@ -55,6 +58,7 @@ export interface SpendSystem {
   ingest: SpendIngest;
   check: SpendCheck;
   extendSaga: Subscription;
+  callRowsRetentionTick(): Promise<void>;
   forOwner(deps: {
     ownerSub: string;
     agentBinding: readonly string[] | "*";
@@ -103,6 +107,16 @@ export function composeSpendSystem(deps: {
   });
   return {
     ingest,
+    async callRowsRetentionTick() {
+      const deleted = await ledger.deleteCallsBefore(
+        new Date(Date.now() - CALL_ROWS_RETENTION_DAYS * 86_400_000),
+      );
+      if (deleted > 0)
+        getLogger().info(
+          { deleted, days: CALL_ROWS_RETENTION_DAYS },
+          "spend.call_rows_deleted",
+        );
+    },
     check: createSpendCheck({
       limits,
       ceilings,

@@ -49,6 +49,7 @@ export {
   satelliteJobs,
   resourceAlerts,
   avatarImages,
+  spendCalls,
   spendDaily,
   spendMetering,
   spendLimits,

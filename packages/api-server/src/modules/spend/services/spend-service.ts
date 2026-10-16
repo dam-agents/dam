@@ -25,6 +25,7 @@ import {
 } from "../domain/limits.js";
 import { meteringNoticeEnd, meteringView } from "../domain/metering.js";
 import { foldSessions } from "../domain/sessions.js";
+import { foldTurns } from "../domain/turns.js";
 import type { SpendUnit } from "../domain/units.js";
 import type { SpendLedger } from "../infrastructure/spend-ledger.js";
 import type { SpendLimits } from "../infrastructure/spend-limits.js";
@@ -233,6 +234,16 @@ export function createSpendService(deps: {
         ...(sessionIds && { sessionIds }),
         limit: limit ?? SPEND_SESSIONS_DEFAULT_LIMIT,
       });
+    },
+
+    async turns({ agentId, sessionId, windows }) {
+      const rows = await deps.ledger.turnWindows({
+        ownerSub: deps.ownerSub,
+        callingAgentId: agentId,
+        ...(sessionId && { sessionId }),
+        windows,
+      });
+      return foldTurns(windows, rows);
     },
 
     async metering() {

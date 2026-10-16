@@ -25,7 +25,7 @@ Read [README — The contract](./README.md#the-contract) (`spend.turns`) and [RE
    - `services/spend-ingest.ts` calls it when a call is settled: a final record, the sweep's estimate for a call without a record (`settleUnrecorded`), and a call that the sweep finishes from its periodic records.
      It writes the totals that the call has after the settle, with the row's session and calling agent of slice 05.
      Periodic records and refusals (cost 0) write nothing.
-3. **Retention:** a daily job deletes `spend_calls` rows with `started_at` older than 30 days, with an advisory lock so that one replica does the delete, the pattern of the session directory's job (`packages/api-server/src/modules/session-directory/compose.ts`).
+3. **Retention:** a daily periodic job deletes `spend_calls` rows with `started_at` older than 30 days; `periodicJobs` (BullMQ) runs it on one worker, as for the session directory's job.
 4. **Read `spend.turns`** as pinned in the README: contract (`api-server-api/src/modules/spend/schemas.ts`, `types.ts`, `router.ts`; `readAgentProcedure` with `checkAgentBinding`), service and ledger query.
    - One query for all windows: the windows as two arrays of instants (`unnest … WITH ORDINALITY`), joined to the agent's rows in the session, grouped by window and unit.
      Pass instants as ISO strings with a cast, not `Date` objects (a `Date` in raw `sql` fails at bind).

@@ -93,11 +93,36 @@ export function createSpendIngest(deps: {
     }
   };
 
+  const putCall = (
+    callId: string,
+    row: SpendRow,
+    costMicros: number,
+    startedAt: Date,
+  ) =>
+    deps.ledger
+      .putCall({
+        callId,
+        callingAgentId: row.callingAgentId,
+        ownerSub: row.ownerSub,
+        payer: row.payer,
+        sessionId: row.sessionId,
+        startedAt,
+        unit: row.unit,
+        costMicros,
+      })
+      .catch((err: unknown) =>
+        log().warn(
+          { callId, reason: formatError(err) },
+          "spend.call_row_not_written",
+        ),
+      );
+
   const settle = async (
     callId: string,
     row: SpendRow,
     amounts: CallAmounts,
     final: boolean,
+    startedAt: Date,
   ) => {
     const applied = await deps.calls.apply(callId, row, amounts, final);
     if (!applied) return;
@@ -111,7 +136,9 @@ export function createSpendIngest(deps: {
       }
       if (delta.costMicros !== 0) await countDay(applied.row, delta.costMicros);
     }
-    if (final) await deps.calls.release(callId);
+    if (!final) return;
+    await deps.calls.release(callId);
+    await putCall(callId, applied.row, amounts.costMicros, startedAt);
   };
 
   const referenceCost = async (row: SpendRow) => {
@@ -158,6 +185,7 @@ export function createSpendIngest(deps: {
         state.row,
         { ...state.amounts, estimatedCalls: 1 },
         true,
+        state.meta?.startedAt ?? new Date(`${state.row.day}T00:00:00Z`),
       );
       return;
     }
@@ -186,7 +214,7 @@ export function createSpendIngest(deps: {
           ? 1
           : 0,
     );
-    await settle(callId, row, estimate, true);
+    await settle(callId, row, estimate, true, state.meta.startedAt);
   };
 
   return {
@@ -234,7 +262,7 @@ export function createSpendIngest(deps: {
       const amounts = measure.needsReferenceCost
         ? { ...measure.amounts, costMicros: await referenceCost(row) }
         : measure.amounts;
-      await settle(record.callId, row, amounts, record.final);
+      await settle(record.callId, row, amounts, record.final, record.startedAt);
       if (record.final)
         log().debug(
           {

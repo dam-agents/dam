@@ -8,6 +8,7 @@ import {
   lte,
   ne,
   sql,
+  spendCalls,
   spendDaily,
   spendMetering,
   type Db,
@@ -21,6 +22,7 @@ import { match } from "ts-pattern";
 import type { BreakdownRow } from "../domain/breakdown.js";
 import type { CallAmounts, DayCounter, SpendRow } from "../domain/ledger.js";
 import type { SessionLedgerRow } from "../domain/sessions.js";
+import type { SettledCall, TurnWindowRow } from "../domain/turns.js";
 
 export interface SpendLedger {
   add(row: SpendRow, delta: CallAmounts, callCostMicros: number): Promise<void>;
@@ -58,6 +60,14 @@ export interface SpendLedger {
     from: string;
     to: string;
   }): Promise<SessionLedgerRow[]>;
+  putCall(call: SettledCall): Promise<void>;
+  turnWindows(query: {
+    ownerSub: string;
+    callingAgentId: string;
+    sessionId?: string;
+    windows: readonly { from: string; to: string }[];
+  }): Promise<TurnWindowRow[]>;
+  deleteCallsBefore(before: Date): Promise<number>;
   meteringStart(): Promise<Date>;
 }
 
@@ -409,6 +419,71 @@ export function createSpendLedger(db: Db): SpendLedger {
         firstDay: r.firstDay,
         lastDay: r.lastDay,
       }));
+    },
+
+    async putCall(call) {
+      const row = {
+        ownerSub: call.ownerSub,
+        payerAgentId: call.payer,
+        sessionId: call.sessionId,
+        startedAt: call.startedAt,
+        unit: call.unit,
+        costMicros: call.costMicros,
+      };
+      await db
+        .insert(spendCalls)
+        .values({
+          callingAgentId: call.callingAgentId,
+          callId: call.callId,
+          ...row,
+        })
+        .onConflictDoUpdate({
+          target: [spendCalls.callingAgentId, spendCalls.callId],
+          set: row,
+        });
+    },
+
+    async turnWindows({ ownerSub, callingAgentId, sessionId, windows }) {
+      if (windows.length === 0) return [];
+      const values = sql.join(
+        windows.map(
+          (w, i) =>
+            sql`(${i}::int, ${w.from}::timestamptz, ${w.to}::timestamptz)`,
+        ),
+        sql`, `,
+      );
+      const rows = await db.execute<{
+        window: number;
+        unit: string;
+        cost_micros: string;
+        calls: number;
+      }>(sql`
+        SELECT w.i AS window, c.unit, sum(c.cost_micros)::text AS cost_micros,
+          count(*)::int AS calls
+        FROM (VALUES ${values}) AS w(i, f, t)
+        JOIN ${spendCalls} c
+          ON c.calling_agent_id = ${callingAgentId}
+          AND c.owner_sub = ${ownerSub}
+          AND c.started_at BETWEEN w.f AND w.t
+          ${sessionId !== undefined ? sql`AND c.session_id = ${sessionId}` : sql``}
+        GROUP BY w.i, c.unit`);
+      return rows.map((r) => ({
+        window: Number(r.window),
+        unit: r.unit as SpendUnit,
+        costMicros: Number(r.cost_micros),
+        calls: Number(r.calls),
+      }));
+    },
+
+    async deleteCallsBefore(before) {
+      const [row] = await db.execute<{ deleted: number }>(sql`
+        WITH gone AS (
+          DELETE FROM ${spendCalls}
+          WHERE ${spendCalls.startedAt} < ${before.toISOString()}::timestamptz
+          RETURNING 1
+        )
+        SELECT count(*)::int AS deleted FROM gone`);
+      return Number(row?.deleted ?? 0);
     },
 
     async meteringStart() {
