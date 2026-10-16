@@ -408,14 +408,14 @@ function ArtifactListRow({
           {...(drag ? dragProps : {})}
           title={artifact.title}
           className={cn(
-            "group flex min-h-8 w-full cursor-pointer items-center gap-1.5 py-1 pr-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted",
+            "group flex min-h-8 w-full cursor-pointer items-start gap-1.5 py-1.5 pr-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted",
             active && "bg-muted text-foreground",
             dragging && "opacity-50",
           )}
           style={{ paddingLeft: treeIndent(depth) }}
         >
           <div
-            className="-mx-1.5 shrink-0"
+            className="-mx-1.5 flex h-5 shrink-0 items-center"
             onClick={(e) => e.stopPropagation()}
           >
             <ArtifactVisibilityButton
@@ -447,7 +447,10 @@ function ArtifactListRow({
               </span>
             )}
           </div>
-          <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="flex h-5 shrink-0 items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
             <DropdownMenu>
               {}
               <DropdownMenuTrigger asChild>
