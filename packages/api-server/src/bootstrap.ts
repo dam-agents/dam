@@ -154,6 +154,7 @@ import {
 import { composeSessionDirectory } from "./modules/session-directory/index.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
 import { composeGettingStartedModule } from "./modules/getting-started/index.js";
+import { composeSidebarPinsModule } from "./modules/sidebar-pins/index.js";
 import {
   createUsageAgentsCleanupHook,
   listUsageAgentIds,
@@ -269,8 +270,14 @@ import {
   createConnectionGrantsCleanupHook,
   createGrantedConnectionTemplates,
   listConnectionGrantAgentIds,
+  listPlatformConnectionOwners,
 } from "./modules/connections/compose.js";
 import { startAttachFirstProviderSaga } from "./modules/connections/sagas/attach-first-provider.js";
+import {
+  startPlatformProviderSaga,
+  sweepPlatformConnections,
+} from "./modules/connections/sagas/platform-provider.js";
+import { composeFeaturesForOwner } from "./modules/features/index.js";
 import { createConnectionRulesSyncAdapter } from "./modules/egress-rules/compose.js";
 import {
   createAgentArtifactsSweeper,
@@ -686,6 +693,10 @@ export async function bootstrap() {
   const connectionsBoot = composeConnectionsAtBoot({
     db,
     shareBaseUrl: config.shareBaseUrl,
+    platformProvider: config.platformProvider && {
+      ...config.platformProvider,
+      name: config.brand.name,
+    },
     e2eEnabled: config.e2eEnabled,
     secretStore,
     pendingFlowStore: createRedisTtlStore(
@@ -744,6 +755,15 @@ export async function bootstrap() {
       connectionRulesSync: createConnectionRulesSyncAdapter(db),
       oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
       brandName: config.brand.name,
+      platformProviderEnabled: async () =>
+        (
+          await composeFeaturesForOwner({
+            db,
+            owner: ownerId,
+            surface: "system",
+            modes: config.featureModes,
+          }).features.flags()
+        )["platform-provider"],
     });
   await periodicJobs
     .register("oauth-refresh", 60_000, () =>
@@ -815,6 +835,16 @@ export async function bootstrap() {
         await agentsRepo.list(owner),
         connectionId,
       ),
+  );
+  const platformProviderSub = startPlatformProviderSaga(connectionsServiceFor);
+  sweepPlatformConnections(
+    () => listPlatformConnectionOwners(db),
+    connectionsServiceFor,
+  ).catch((err: unknown) =>
+    getLogger().error(
+      { reason: formatError(err) },
+      "connections.platform_provider_sweep_failed",
+    ),
   );
   const publicAgentPageService = publicAgentPage.service;
   await periodicJobs.register(
@@ -900,6 +930,8 @@ export async function bootstrap() {
       (await agentsRepo.list(owner)).map((a) => a.id),
   });
   gettingStarted.start();
+
+  const sidebarPins = composeSidebarPinsModule({ db });
 
   const caseStudies = composeCaseStudiesModule({
     db,
@@ -1444,6 +1476,11 @@ export async function bootstrap() {
       cleanup: satellitesBoot.onAgentDeleted,
     },
     {
+      name: "sidebar-pins",
+      listAgentIds: () => sidebarPins.listAgentIds(),
+      cleanup: (agentId: string) => sidebarPins.deleteForAgent(agentId),
+    },
+    {
       name: "agent-env",
       listAgentIds: () => agentEnvRepo.listAgentIds(),
       cleanup: (agentId: string) => agentEnvRepo.deleteForAgent(agentId),
@@ -1798,6 +1835,7 @@ export async function bootstrap() {
     shareHostGate,
     publicAgentPageService,
     gettingStarted,
+    sidebarPins,
     sessionPresence,
     wakeAgent: wakeAgentFor,
     artifactLibraryFor,
@@ -1882,6 +1920,7 @@ export async function bootstrap() {
   const cleanup = async (): Promise<void> => {
     publicAgentProfileSub.unsubscribe();
     attachFirstProviderSub.unsubscribe();
+    platformProviderSub.unsubscribe();
     usageMetrics.stop();
     kbShareAutoRefresh.unsubscribe();
     approvalsWakeSaga.unsubscribe();

@@ -14,6 +14,7 @@ interface Props {
   onClose: () => void;
   onClosed: () => void;
   className?: string;
+  containerClassName?: string;
   children: ReactNode;
 }
 
@@ -24,6 +25,7 @@ export function SideDrawer({
   onClose,
   onClosed,
   className,
+  containerClassName,
   children,
 }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -49,6 +51,7 @@ export function SideDrawer({
       className={cn(
         "fixed inset-0 z-overlay flex",
         side === "left" ? "justify-start" : "justify-end",
+        containerClassName,
       )}
     >
       <button

@@ -62,6 +62,7 @@ function setup(
   templates: Record<string, Partial<TemplateSpec>> = {},
 ) {
   const connections = createConnectionsService({
+    platformProviderEnabled: async () => false,
     isOwnedAgent: async () => true,
     ownerId: "owner-1",
     repo: unused<ConnectionsDeps["repo"]>({

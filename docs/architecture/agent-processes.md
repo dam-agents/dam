@@ -80,7 +80,7 @@ A watch sends data-less change notices when a row appears, goes, or changes whet
 The runtime scans every few seconds while someone watches, every quarter minute while a Keep Mark or kept Detached Process lives, and twice a minute otherwise, so finished work is recorded even when nobody looks.
 The user's decisions — the keep switch and Stop — go through the same surface.
 Field-level contract: [`packages/agent-runtime-api/`](../../packages/agent-runtime-api/).
-The chat view shows the inventory as a Processes tab of its side panel, beside Files, Changes, Artifacts and Browser, behind the `processes` [experimental feature](features.md); a row's output opens in that tab, the way a file opens in the Files tab, and follows the file while the process runs.
+The chat view shows the inventory as a Processes tab of its side panel, beside Artifacts, Files, Changes and Browser, behind the `processes` [experimental feature](features.md); a row's output opens in that tab, the way a file opens in the Files tab, and follows the file while the process runs.
 Running rows are grouped by their effect on the agent: active turns, the work keeping the agent awake, and the work that stops at hibernation (on an Always on agent the last two are one group, since nothing stops there).
 Each row's menu has a Stop that asks first; for a Harness Task or Detached Process it also has the keep choice, which names who decided and is disabled on an Always on agent, and changing it moves the row to the other group.
 A change [waiting for kept tasks](#reported-background-work) shows above the rows with its Apply now.

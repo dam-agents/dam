@@ -1,13 +1,18 @@
-import { Edit } from "@carbon/icons-react";
 import { AVATAR_CHARACTERS, AVATAR_EMOJI_RE } from "api-server-api/avatar/svg";
-import { useEffect, useState } from "react";
+import {
+  type PointerEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
+  PopoverAnchor,
   PopoverContent,
-  PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
@@ -24,47 +29,122 @@ import {
 import { AgentAvatar } from "./agent-avatar.js";
 import { NewAvatarDot } from "./new-avatar-dot.js";
 
+const HOVER_OPEN_MS = 150;
+const HOVER_CLOSE_MS = 300;
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The owner chooses one of the fixed avatar
- * characters for an agent. The trigger shows the current character and opens a
- * grid of all of them; a pick closes the grid. The figures are aria-hidden, so
- * every control carries the character's name for screen readers.
+ * characters for an agent. The grid opens like a tooltip when a mouse rests on
+ * the trigger or the trigger takes focus, and stays while the pointer moves
+ * into it; a click or Enter opens it and moves focus into the grid. A pick
+ * closes the grid. The figures are aria-hidden, so every control carries the
+ * character's name for screen readers.
  */
 export function AvatarPicker({
   value,
   onChange,
-  disabled = false,
+  children,
 }: {
   value: string;
   onChange: (avatar: string) => void;
-  disabled?: boolean;
+  children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const hasNew = useFreshAvatars().length > 0;
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const refocusing = useRef(false);
+  const focusInside = useRef(false);
+  const focusOnMount = useRef(false);
+  const focusGrid = (grid: HTMLDivElement) =>
+    (
+      grid.querySelector<HTMLElement>("[aria-pressed=true]") ??
+      grid.querySelector<HTMLElement>("button")
+    )?.focus();
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const later = (next: boolean, ms: number) => {
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      if (!next && focusInside.current) return;
+      setOpen(next);
+    }, ms);
+  };
+  const set = (next: boolean) => {
+    clearTimeout(timer.current);
+    setOpen(next);
+  };
+  const hover = {
+    onPointerEnter: (e: PointerEvent) => {
+      if (e.pointerType === "mouse") later(true, open ? 0 : HOVER_OPEN_MS);
+    },
+    onPointerLeave: (e: PointerEvent) => {
+      if (e.pointerType === "mouse") later(false, HOVER_CLOSE_MS);
+    },
+  };
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        type="button"
-        disabled={disabled}
-        aria-label={`Avatar: ${value}. Choose an avatar`}
-        data-testid="avatar-picker"
-        className="group relative flex size-12 shrink-0 items-center justify-center rounded-lg border border-border bg-card transition-colors hover:bg-muted/40 disabled:opacity-50"
-      >
-        <AgentAvatar name="" avatar={value} size={36} />
-        <span className="absolute -right-1.5 -bottom-1.5 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm group-hover:text-foreground">
-          <Edit size={12} />
-        </span>
-        {hasNew && <NewAvatarDot className="-top-1 -right-1" />}
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-auto p-3">
-        <AvatarGrid
-          value={value}
-          onPick={(character) => {
-            onChange(character);
-            setOpen(false);
+    <Popover open={open} onOpenChange={set}>
+      <PopoverAnchor asChild>
+        <button
+          ref={triggerRef}
+          type="button"
+          aria-label={`Avatar: ${value}. Choose an avatar`}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          data-testid="avatar-picker"
+          className="relative flex shrink-0 rounded-md"
+          {...hover}
+          onFocus={(e) => {
+            if (refocusing.current) refocusing.current = false;
+            else if (e.currentTarget.matches(":focus-visible")) set(true);
           }}
-          onLeave={() => setOpen(false)}
-        />
+          onClick={() => {
+            set(true);
+            if (gridRef.current) focusGrid(gridRef.current);
+            else focusOnMount.current = true;
+          }}
+        >
+          {children}
+        </button>
+      </PopoverAnchor>
+      <PopoverContent
+        align="start"
+        className="w-auto p-3"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        onCloseAutoFocus={(e) => {
+          e.preventDefault();
+          if (!focusInside.current) return;
+          focusInside.current = false;
+          refocusing.current = true;
+          triggerRef.current?.focus();
+        }}
+        onInteractOutside={(e) => {
+          if (triggerRef.current?.contains(e.target as Node))
+            e.preventDefault();
+        }}
+        {...hover}
+      >
+        <div
+          ref={(el) => {
+            gridRef.current = el;
+            if (!el || !focusOnMount.current) return;
+            focusOnMount.current = false;
+            focusGrid(el);
+          }}
+          onFocus={() => (focusInside.current = true)}
+          onBlur={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget))
+              focusInside.current = false;
+          }}
+        >
+          <AvatarGrid
+            value={value}
+            onPick={(character) => {
+              set(false);
+              if (character !== value) onChange(character);
+            }}
+            onLeave={() => set(false)}
+          />
+        </div>
       </PopoverContent>
     </Popover>
   );

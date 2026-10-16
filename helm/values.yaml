@@ -387,7 +387,7 @@ virtualization:
     # filter. The pod's own seccomp profile bounds every VMM in each mode.
     # Changing this value rolls every runner, which reboots its owner's
     # machines.
-    seccomp: audit
+    seccomp: enforce
     # Local dev on macOS only. Set, the controller creates no runner pods:
     # every vm machine, whatever its owner, runs on one vm-runner process on
     # the host, which uses the host's own hypervisor instead of one nested in
@@ -1105,6 +1105,13 @@ ui:
 
 # -- API Server
 apiServer:
+  # -- Self-hosted OpenAI-compatible model server offered as the built-in
+  # provider behind the experimental `platform-provider` feature. Empty
+  # baseUrl turns the feature off. baseUrl is the server root without `/v1`;
+  # gateways reach it only through `controller.gatewayEgress.peers`.
+  platformProvider:
+    baseUrl: ""
+    model: ""
   # -- Extra annotations for the Deployment object / its pod template
   # (merged over commonAnnotations / commonPodAnnotations).
   annotations: {}
@@ -1994,6 +2001,13 @@ controller:
       podLabels:
         k8s-app: kube-dns
       ports: [53]
+    # In-cluster pods every gateway may also reach, in the same shape as
+    # clusterDns — a self-hosted model server behind `apiServer.platformProvider`,
+    # for example `{namespace: llm, podLabels: {app: vllm}, ports: [8000]}`.
+    # podLabels is required. `mesh: true` marks a peer in the ambient mesh and
+    # also opens HBONE (15008); over it ztunnel carries any inner port, so
+    # `ports` binds only a peer outside the mesh.
+    peers: []
   # -- Image for a vm Agent's machine resolver, beside Envoy in its gateway
   # pod: it answers every name with the gateway's address and resolves nothing
   # upstream. CoreDNS publishes to Docker Hub; pulled via mirror.gcr.io like
@@ -2124,7 +2138,7 @@ harnesses:
       displayName: "Claude"
       description: "Anthropic's coding agent"
       releaseNotesUrl: "https://code.claude.com/docs/en/whats-new"
-      providers: [ibm-litellm, curve-bender, anthropic, bedrock]
+      providers: [ibm-litellm, curve-bender, anthropic, bedrock, platform]
       telemetry: claude-code
       tags: ["Anthropic"]
     codex:
@@ -2132,7 +2146,7 @@ harnesses:
       displayName: "Codex"
       description: "OpenAI Codex coding agent"
       releaseNotesUrl: "https://github.com/openai/codex/releases"
-      providers: [ibm-litellm, curve-bender, openai]
+      providers: [ibm-litellm, curve-bender, openai, platform]
       # Codex reads its exporters from config.toml alone; the image's launch
       # scripts render this rail into `-c otel.*` flags.
       telemetry: codex
@@ -2141,7 +2155,7 @@ harnesses:
       enabled: true
       displayName: "Pi"
       description: "Pi coding agent with multi-LLM support"
-      providers: [ibm-litellm, curve-bender, anthropic, openai, bedrock]
+      providers: [ibm-litellm, curve-bender, anthropic, openai, bedrock, platform]
       # Pi has no exporter of its own; the image's extension writes the
       # per-call log records on this rail.
       telemetry: pi

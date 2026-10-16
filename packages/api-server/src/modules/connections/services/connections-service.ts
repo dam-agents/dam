@@ -1,7 +1,9 @@
 import { randomBytes } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { TRPCError } from "@trpc/server";
 import {
   parseKbShareString,
+  PLATFORM_LLM_TEMPLATE_ID,
   PROVIDER_TEMPLATE_IDS,
   providerTypeForTemplateId,
   type ConnectionStatus,
@@ -128,6 +130,10 @@ function assertNoUnaddressableRival(
   }
 }
 
+export interface PlatformLlmConnections {
+  reconcilePlatformConnection(): Promise<void>;
+}
+
 export function createConnectionsService(deps: {
   ownerId: string;
   templates: ConnectionTemplateRegistry;
@@ -153,7 +159,8 @@ export function createConnectionsService(deps: {
     reachable: boolean;
   } | null>;
   maxSharedKbConnections?: number;
-}): ConnectionsService {
+  platformProviderEnabled: () => Promise<boolean>;
+}): ConnectionsService & PlatformLlmConnections {
   const maxSharedKbConnections =
     deps.maxSharedKbConnections ?? MAX_SHARED_KB_CONNECTIONS_PER_OWNER;
   function toView(conn: Connection): ConnectionView {
@@ -761,7 +768,7 @@ export function createConnectionsService(deps: {
     });
   }
 
-  return {
+  const service: Omit<ConnectionsService, "listAndReconcileConnections"> = {
     async listTemplates(): Promise<ConnectionTemplateView[]> {
       const templates = deps.templates.list();
       const family = templates.some(inheritsFamily)
@@ -1553,6 +1560,125 @@ export function createConnectionsService(deps: {
       });
     },
   };
+
+  const isPlatform = (c: Connection) =>
+    c.templateId === PLATFORM_LLM_TEMPLATE_ID;
+
+  async function platformState() {
+    const template = deps.templates.get(PLATFORM_LLM_TEMPLATE_ID);
+    const wanted = template !== null && (await deps.platformProviderEnabled());
+    const owned = await deps.repo.listByOwner(deps.ownerId);
+    const held = owned.filter(isPlatform);
+    const [keep, ...extra] = wanted ? held : [];
+    const remove = wanted ? extra : held;
+    const name = platformConnectionName(
+      deps.brandName,
+      new Set(owned.filter((c) => !isPlatform(c)).map((c) => c.name)),
+    );
+    const stale =
+      keep !== undefined &&
+      (keep.name !== name ||
+        !isDeepStrictEqual(keep.contributions, template?.contributions));
+    return {
+      owned,
+      template: wanted ? template : null,
+      keep,
+      remove,
+      name,
+      settled: !remove.length && (!wanted || (keep !== undefined && !stale)),
+    };
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: the built-in provider is one Connection per
+   * user, which the feature flag owns: it exists while the flag is on and the
+   * install names a model server, follows the operator's current endpoint and
+   * the brand, and is removed otherwise, never through the user's own create
+   * or delete. The flag is read rather than taken from the change event,
+   * because a user can record a flag that the install's mode overrides. Flag
+   * changes, listings and the boot sweep can all reconcile at once, on any
+   * replica, so the flag and the user's Connections are read only under one
+   * per-owner lock: whichever runs last sees the last flag.
+   */
+  async function reconcilePlatformConnection(): Promise<void> {
+    await deps.connectionLock(`platform-llm:${deps.ownerId}`, async () => {
+      const { owned, template, keep, remove, name } = await platformState();
+      for (const conn of remove) await service.deleteConnection(conn.id);
+      if (!template) return;
+      if (!keep) {
+        await service.createFromTemplate({
+          templateId: PLATFORM_LLM_TEMPLATE_ID,
+          name,
+          authKind: "none",
+        });
+        return;
+      }
+      if (keep.name !== name) await deps.repo.updateName(keep.id, name);
+      if (!isDeepStrictEqual(keep.contributions, template.contributions)) {
+        await deps.repo.updateContributions(keep.id, template.contributions);
+        await fanOutToAgents(
+          keep.id,
+          await deps.repo.listAgentsForConnection(keep.id),
+          new Set(owned.map((c) => c.id)),
+          "connection.update.fanout_failed",
+        );
+      }
+    });
+  }
+
+  const refuseUserManaged = () =>
+    new TRPCError({
+      code: "FORBIDDEN",
+      message:
+        "The built-in provider is managed by its feature. Turn the feature on or off in Settings instead.",
+    });
+
+  return {
+    ...service,
+    async listAndReconcileConnections() {
+      try {
+        if (!(await platformState()).settled)
+          await reconcilePlatformConnection();
+      } catch (err) {
+        securityLog("warn", "connection.platform_provider_reconcile_failed", {
+          category: "credential",
+          actor: deps.ownerId,
+          actorKind: "user",
+          result: "failure",
+          reason: err instanceof Error ? err.message : "unknown",
+        });
+      }
+      return service.listConnections();
+    },
+    async createFromTemplate(input) {
+      if (input.templateId === PLATFORM_LLM_TEMPLATE_ID) {
+        throw refuseUserManaged();
+      }
+      return service.createFromTemplate(input);
+    },
+    async deleteConnection(id) {
+      const conn = await deps.repo.get(id, deps.ownerId);
+      if (conn?.templateId === PLATFORM_LLM_TEMPLATE_ID) {
+        throw refuseUserManaged();
+      }
+      return service.deleteConnection(id);
+    },
+    reconcilePlatformConnection,
+  };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Connection names are unique per user, so a user
+ * who already named a Connection after the brand would block the built-in
+ * provider forever; it takes the first free name of the brand, then the brand
+ * followed by "LLM", then that numbered from 2, so every replica picks the same.
+ */
+function platformConnectionName(brand: string, taken: Set<string>): string {
+  if (!taken.has(brand)) return brand;
+  for (let n = 1; ; n++) {
+    const name = n === 1 ? `${brand} LLM` : `${brand} LLM ${n}`;
+    if (!taken.has(name)) return name;
+  }
 }
 
 function githubAppScopeView(

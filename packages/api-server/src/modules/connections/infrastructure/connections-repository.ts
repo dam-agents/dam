@@ -39,6 +39,8 @@ export interface ConnectionsRepository {
 
   updateContributions(id: string, contributions: Contribution[]): Promise<void>;
 
+  updateName(id: string, name: string): Promise<void>;
+
   delete(id: string, ownerId: string): Promise<void>;
 
   grant(connectionId: string, agentId: string): Promise<void>;
@@ -55,6 +57,7 @@ export interface ConnectionsRepository {
   listAgentsForConnection(connectionId: string): Promise<string[]>;
   revokeAllForAgent(agentId: string): Promise<void>;
   listDistinctGrantAgentIds(): Promise<string[]>;
+  listOwnersOfTemplate(templateId: string): Promise<string[]>;
 }
 
 interface InternalConnectionRow {
@@ -154,6 +157,13 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
       await db
         .update(connectionsTable)
         .set({ contributions, updatedAt: new Date() })
+        .where(eq(connectionsTable.id, id));
+    },
+
+    async updateName(id, name): Promise<void> {
+      await db
+        .update(connectionsTable)
+        .set({ name, updatedAt: new Date() })
         .where(eq(connectionsTable.id, id));
     },
 
@@ -263,6 +273,14 @@ export function createConnectionsRepository(db: Db): ConnectionsRepository {
       await db
         .delete(connectionGrantsTable)
         .where(eq(connectionGrantsTable.agentId, agentId));
+    },
+
+    async listOwnersOfTemplate(templateId): Promise<string[]> {
+      const rows = await db
+        .selectDistinct({ owner: connectionsTable.owner })
+        .from(connectionsTable)
+        .where(eq(connectionsTable.templateId, templateId));
+      return rows.map((r) => r.owner);
     },
 
     async listDistinctGrantAgentIds(): Promise<string[]> {

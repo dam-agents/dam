@@ -58,6 +58,16 @@ Every key and value you set survives, but comments and blank lines are dropped, 
 A file that does not parse is never replaced.
 The write fails and reports a delivery failure, and the file stays as it is until you fix it.
 
+## Platform instructions
+
+The platform instructions in `/etc/AGENTS.md` reach Codex as its `developer_instructions`.
+That setting takes the text itself, and Codex has no setting that reads it from a file.
+So `codex-app-server` and `harness-terminal` read the file at every start and pass its text with `-c developer_instructions=...`, quoted as a TOML string by `jq`.
+A Codex process therefore always gets the instructions of the image it runs in, also in an agent that existed before an image update.
+
+`~/.codex/AGENTS.md` is not used for this: it is the user's own global instructions file, and it lives in the persistent home, so the image cannot keep it current.
+A user's `~/.codex/AGENTS.md` and `work/AGENTS.md` still load beside the platform instructions.
+
 ## Startup network calls
 
 [`/etc/codex/config.toml`](rootfs/etc/codex/config.toml) turns off the Codex calls that would ask for egress approval each time a Codex process starts:
