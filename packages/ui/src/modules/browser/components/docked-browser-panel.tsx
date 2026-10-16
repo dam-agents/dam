@@ -18,6 +18,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { Spinner } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
 
 import {
   readPersistedFlag,
@@ -57,6 +58,10 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
   useEffect(() => {
     if (!editing) setAddress(shownUrl);
   }, [shownUrl, editing]);
+  useEffect(() => {
+    if (editing) addressRef.current?.select();
+  }, [editing]);
+  const showsTitle = !editing && stream.page.title !== "";
 
   const { navigate } = stream;
   useEffect(() => {
@@ -90,7 +95,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
+      <div className="relative flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
         <Button
           variant="ghost"
           size="icon-sm"
@@ -109,15 +114,12 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
         >
           <ArrowRight size={16} />
         </Button>
-        <form onSubmit={submit} className="min-w-0 flex-1">
+        <form onSubmit={submit} className="relative min-w-0 flex-1">
           <Input
             ref={addressRef}
-            value={address}
+            value={showsTitle ? stream.page.title : address}
             onChange={(e) => setAddress(e.target.value)}
-            onFocus={(e) => {
-              setEditing(true);
-              e.currentTarget.select();
-            }}
+            onFocus={() => setEditing(true)}
             onBlur={() => setEditing(false)}
             onKeyDown={(e) => {
               if (e.key !== "Escape") return;
@@ -125,7 +127,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
               e.currentTarget.blur();
             }}
             placeholder="Search or enter address"
-            title={stream.page.title || undefined}
+            title={shownUrl || undefined}
             type="text"
             name="browser-address"
             autoComplete="off"
@@ -136,28 +138,22 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
             data-lpignore="true"
             data-form-type="other"
             aria-label="Address in the agent's browser"
-            className="h-8 font-mono text-xs"
+            className={cn(
+              "h-8 pr-8 text-xs",
+              showsTitle ? "truncate text-center" : "font-mono",
+            )}
           />
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            type="button"
+            className="absolute top-1/2 right-1 -translate-y-1/2"
+            aria-label={stream.page.loading ? "Stop loading" : "Reload"}
+            onClick={stream.page.loading ? stream.stop : stream.reload}
+          >
+            {stream.page.loading ? <Close size={14} /> : <Renew size={14} />}
+          </Button>
         </form>
-        {stream.page.loading ? (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Stop loading"
-            onClick={stream.stop}
-          >
-            <Close size={16} />
-          </Button>
-        ) : (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Reload"
-            onClick={stream.reload}
-          >
-            <Renew size={16} />
-          </Button>
-        )}
         <Button
           variant="ghost"
           size="icon-sm"
@@ -186,11 +182,17 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
               <span className="text-2xs text-muted-foreground">
                 {launchUnsupported
                   ? "This agent's image cannot change how its browser starts."
-                  : "Choose how the browser starts. Turning testing mode off does not disable agent control. Switching restarts the browser and keeps sign-ins and the open page."}
+                  : "On, pages can tell the browser is automated, and some sites then block sign-ins or show bot checks. Turn it off when a site refuses you. The agent keeps control either way. Switching restarts the browser and keeps sign-ins and the open page."}
               </span>
             </span>
           </DropdownMenuSwitchItem>
         </RowActionsMenu>
+        {stream.page.loading && (
+          <span
+            aria-hidden
+            className="absolute inset-x-0 -bottom-px h-0.5 animate-pulse bg-accent"
+          />
+        )}
       </div>
 
       {showsTabBar(stream.tabs) && (
@@ -201,23 +203,6 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
           onClose={stream.closeTab}
         />
       )}
-
-      <div className="relative flex shrink-0 items-center gap-2 border-b border-border/60 px-4 py-1.5 text-xs text-muted-foreground">
-        {stream.page.title && (
-          <span className="min-w-0 max-w-[50%] truncate font-medium text-foreground">
-            {stream.page.title}
-          </span>
-        )}
-        <span className="min-w-0 flex-1 truncate">
-          Runs in {agentName}'s sandbox — not a page from this site
-        </span>
-        {stream.page.loading && (
-          <span
-            aria-hidden
-            className="absolute inset-x-0 -bottom-px h-0.5 animate-pulse bg-accent"
-          />
-        )}
-      </div>
 
       {!noticeSeen && (
         <Callout
