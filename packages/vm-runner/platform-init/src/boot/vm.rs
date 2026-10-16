@@ -319,7 +319,7 @@ fn magic_at(device: &str, offset: u64, magic: &[u8]) -> bool {
         .is_ok_and(|()| read == magic)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: mounts the storage disk, which the runner formats before the first boot: btrfs compressed with zstd level 1 and grown online to its disk, or the ext4 of an older machine, checked and grown before the mount. A disk with neither filesystem is never formatted here, since the only disk that has none is one whose filesystem was lost, and formatting it would erase what is left; the boot stops with the reason on the console. Returns the platform's root on the disk and its layout (guest::LAYOUT_DIRECTORY or guest::LAYOUT_SUBVOLUMES): a btrfs disk that holds no DISK_ROOT_DIR is in the subvolume layout, and gets its subvolumes on its first boot; every other disk's root is its DISK_ROOT_DIR, made on its first boot.
+// UNIT_BOUNDARY_DESCRIPTION: mounts the storage disk, which the runner formats before the first boot: btrfs compressed with zstd level 1 and grown online to its disk, or the ext4 of an older machine, checked and grown before the mount. A disk with neither filesystem is never formatted here, since the only disk that has none is one whose filesystem was lost, and formatting it would erase what is left; the boot stops with the reason on the console. Returns the platform's root on the disk and its layout (guest::LAYOUT_DIRECTORY or guest::LAYOUT_SUBVOLUMES): a btrfs disk that holds no DISK_ROOT_DIR is in the subvolume layout, and gets its system subvolume on its first boot (the agent's is the home's seed, see stage); every other disk's root is its DISK_ROOT_DIR, made on its first boot.
 fn mount_storage(target: &Path) -> (PathBuf, u32) {
     if let Err(e) = mkdir_all(target) {
         fatal!("creating {}: {e}", target.display());
@@ -340,10 +340,8 @@ fn mount_storage(target: &Path) -> (PathBuf, u32) {
         settle_directory_layout(target);
         if !target.join(guest::DISK_ROOT_DIR).exists() {
             delete_migrated(target);
-            for name in [guest::AGENT_DIR, guest::SYSTEM_DIR] {
-                if let Err(e) = ensure_subvolume(target, name) {
-                    fatal!("creating the subvolume {name}: {e}");
-                }
+            if let Err(e) = ensure_subvolume(target, guest::SYSTEM_DIR) {
+                fatal!("creating the subvolume {}: {e}", guest::SYSTEM_DIR);
             }
             return (target.to_path_buf(), guest::LAYOUT_SUBVOLUMES);
         }
@@ -435,7 +433,7 @@ fn grow_btrfs(mount: &Path) -> io::Result<()> {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: makes `parent/name` a subvolume (BTRFS_IOC_SUBVOL_CREATE) unless something is there already.
-fn ensure_subvolume(parent: &Path, name: &str) -> io::Result<()> {
+pub(super) fn ensure_subvolume(parent: &Path, name: &str) -> io::Result<()> {
     if fs::symlink_metadata(parent.join(name)).is_ok() {
         return Ok(());
     }
@@ -460,7 +458,7 @@ const MIGRATED: &str = "workspace.migrated";
 const ROLLED_BACK_INFIX: &str = ".rolled-back-";
 const MIGRATING: &str = ".migrating";
 
-// UNIT_BOUNDARY_DESCRIPTION: moves a btrfs disk from the directory layout, everything under DISK_ROOT_DIR, to the subvolume layout. What else is at the top of the disk is set aside first: a disk smolvm's guest agent once booted holds its image and container directories, which nothing uses since platform-init replaced it. Each subvolume starts as a snapshot of the whole disk, which copies nothing, and becomes its store by renames inside it: the store's entries move up to its root, which takes the store's owner and mode, the rest is set aside, and the empty directories a snapshot shows for the subvolumes beside its source go. Nothing of the old tree is changed until both subvolumes are complete and the system one is marked with its layout; moving DISK_ROOT_DIR aside is then the one step that switches the disk. A boot cut short before it finds the directory layout and starts again, deleting the subvolumes the last attempt left. The home's subvolume must not show the rest to the agent, so its share of it is deleted before the switch; the system's, a copy of the home, is deleted in the background afterwards. A home entry named MIGRATED fails the move, and the disk stays in the directory layout.
+// UNIT_BOUNDARY_DESCRIPTION: moves a btrfs disk from the directory layout, everything under DISK_ROOT_DIR, to the subvolume layout. What else is at the top of the disk is set aside first: a disk smolvm's guest agent once booted holds its image and container directories, which nothing uses since platform-init replaced it. Each subvolume starts as a snapshot of the whole disk, which copies nothing, and becomes its store by renames inside it: the store's entries move up to its root, which takes the store's owner and mode, the rest is set aside, and the empty directories a snapshot shows for the subvolumes beside its source go. Nothing of the old tree is changed until both subvolumes are complete and the system one is marked with its layout; moving DISK_ROOT_DIR aside is then the one step that switches the disk. A boot cut short before it finds the directory layout and starts again, deleting the subvolumes the last attempt left. The home's subvolume must not show the rest to the agent, so its share of it is deleted before the switch; the system's, a copy of the home, is deleted in the background afterwards. A disk that never held a home gets no agent subvolume, so its first boot seeds one (see stage). A home entry named MIGRATED fails the move, and the disk stays in the directory layout.
 fn migrate_to_subvolumes(top: &Path) -> io::Result<()> {
     let stores = [guest::AGENT_DIR, guest::SYSTEM_DIR];
     let ours = |name: &str| {
@@ -481,6 +479,11 @@ fn migrate_to_subvolumes(top: &Path) -> io::Result<()> {
     }
     for store in stores {
         let staged = format!("{store}{MIGRATING}");
+        if store == guest::AGENT_DIR
+            && fs::symlink_metadata(top.join(guest::DISK_ROOT_DIR).join(store)).is_err()
+        {
+            continue;
+        }
         snapshot(top, &staged)?;
         let root = top.join(&staged);
         for entry in fs::read_dir(&root)? {
@@ -511,7 +514,10 @@ fn migrate_to_subvolumes(top: &Path) -> io::Result<()> {
     )?;
     flush_filesystem(top)?;
     for store in stores {
-        fs::rename(top.join(format!("{store}{MIGRATING}")), top.join(store))?;
+        let staged = top.join(format!("{store}{MIGRATING}"));
+        if staged.exists() {
+            fs::rename(staged, top.join(store))?;
+        }
     }
     rename_noreplace(
         &top.join(guest::DISK_ROOT_DIR),
@@ -1309,6 +1315,68 @@ mod tests {
                 fs::read(guest::agent_store(&top.join(&aside[0])).join("later")).unwrap(),
                 b"written while rolled back"
             );
+        };
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(checks));
+        run("umount", &[top.as_os_str()]);
+        let _ = fs::remove_dir_all(&dir);
+        result.unwrap();
+    }
+
+    // TEST_SCENARIO: on a new disk in the subvolume layout the home arrives with its seed: the agent's subvolume does not exist until the image's home is copied into a staged subvolume and renamed into place, so the home is the image's, with its owner and mode, and the root of a subvolume. A store that existed empty before its seed would be taken for a seeded home and never get the image's files. Needs root and mkfs.btrfs: `sudo -E cargo test -p platform-init -- --ignored seeds_a_home_subvolume`.
+    #[test]
+    #[ignore = "needs root and mkfs.btrfs"]
+    fn seeds_a_home_subvolume() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir =
+            std::env::temp_dir().join(format!("platform-init-seed-subvol-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        mkdir_all(&dir).unwrap();
+        let run = |program: &str, args: &[&std::ffi::OsStr]| {
+            let out = std::process::Command::new(program)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "{program}: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        };
+        let image = dir.join("disk.raw");
+        File::create(&image).unwrap().set_len(256 << 20).unwrap();
+        run(
+            "mkfs.btrfs",
+            &["-q".as_ref(), "-M".as_ref(), image.as_os_str()],
+        );
+        let top = dir.join("top");
+        mkdir_all(&top).unwrap();
+        run(
+            "mount",
+            &[
+                "-o".as_ref(),
+                "loop".as_ref(),
+                image.as_os_str(),
+                top.as_os_str(),
+            ],
+        );
+        let home = dir.join("image-home");
+        mkdir_all(&home.join(".config")).unwrap();
+        fs::write(home.join(".config/settings"), b"from the image").unwrap();
+        std::os::unix::fs::lchown(&home, Some(65532), Some(65532)).unwrap();
+        fs::set_permissions(&home, fs::Permissions::from_mode(0o750)).unwrap();
+        let checks = || {
+            ensure_subvolume(&top, guest::SYSTEM_DIR).unwrap();
+            let store = guest::agent_store(&top);
+            assert!(needs_seed(&store).unwrap(), "a new disk holds no home yet");
+            seed(&home, &store).unwrap();
+            let info = fs::metadata(&store).unwrap();
+            assert_eq!(info.ino(), 256, "the home is a subvolume's root");
+            assert_eq!((info.uid(), info.mode() & 0o777), (65532, 0o750));
+            assert_eq!(
+                fs::read(store.join(".config/settings")).unwrap(),
+                b"from the image"
+            );
+            assert!(!needs_seed(&store).unwrap());
         };
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(checks));
         run("umount", &[top.as_os_str()]);

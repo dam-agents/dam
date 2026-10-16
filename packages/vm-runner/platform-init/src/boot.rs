@@ -1879,6 +1879,11 @@ fn stage(store: &Path, fill: impl FnOnce(&Path) -> io::Result<()>) -> io::Result
     mkdir_all(parent)?;
     let staged = with_suffix(store, ".seeding");
     remove_all(&staged)?;
+    if subvolume_root(parent) {
+        if let Some(name) = staged.file_name() {
+            vm::ensure_subvolume(parent, &name.to_string_lossy())?;
+        }
+    }
     if let Err(e) = fill(&staged).and_then(|()| flush_filesystem(&staged)) {
         let _ = remove_all(&staged);
         return Err(e);
@@ -1890,6 +1895,19 @@ fn stage(store: &Path, fill: impl FnOnce(&Path) -> io::Result<()>) -> io::Result
         fs::rename(&staged, store)?;
     }
     File::open(parent)?.sync_all()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether `dir` is the root of a btrfs subvolume, as the disk's top is in the subvolume layout. A store staged there is staged as a subvolume of its own, so the home it becomes is one too; a store that existed before its seed would be taken for a seeded home (needs_seed). The root of every btrfs subvolume is inode 256.
+fn subvolume_root(dir: &Path) -> bool {
+    const BTRFS_SUPER_MAGIC: i64 = 0x9123_683E;
+    let Ok(path) = cstring(dir.as_os_str()) else {
+        return false;
+    };
+    // SAFETY: a zeroed statfs is a valid value for the kernel to fill, and `path` is NUL-terminated; both outlive the call.
+    let mut fs_info: libc::statfs = unsafe { std::mem::zeroed() };
+    let btrfs = unsafe { libc::statfs(path.as_ptr(), &mut fs_info) } == 0
+        && fs_info.f_type as i64 == BTRFS_SUPER_MAGIC;
+    btrfs && fs::metadata(dir).is_ok_and(|info| info.ino() == 256)
 }
 
 fn exchange(a: &Path, b: &Path) -> io::Result<()> {
