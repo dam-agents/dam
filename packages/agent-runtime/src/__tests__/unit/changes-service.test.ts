@@ -518,9 +518,9 @@ describe("session pushes", { timeout: 30_000 }, () => {
     await expect
       .poll(() => service.repositoriesOf("s2")[0]?.pullRequest, settles)
       .toEqual(link);
-    expect(
-      service.repositoriesOf("s1").map((r) => [r.path, r.branch]),
-    ).toEqual([[other, "feat/other"]]);
+    expect(service.repositoriesOf("s1").map((r) => [r.path, r.branch])).toEqual(
+      [[other, "feat/other"]],
+    );
   });
 
   /**
@@ -550,9 +550,9 @@ describe("session pushes", { timeout: 30_000 }, () => {
         settles,
       )
       .toBe(true);
-    expect(
-      service.repositoriesOf("s1").map((r) => [r.path, r.branch]),
-    ).toEqual([[other, "feat/other"]]);
+    expect(service.repositoriesOf("s1").map((r) => [r.path, r.branch])).toEqual(
+      [[other, "feat/other"]],
+    );
     expect(service.repositoriesOf("s2")).toEqual([]);
   });
 

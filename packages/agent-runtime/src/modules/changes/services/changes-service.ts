@@ -286,24 +286,35 @@ export function createChangesService(deps: {
       });
   }
 
+  function pushedFrom(
+    sessionId: string,
+    branch: string,
+    worktreePaths: readonly string[],
+    checkedOutAt: string | null,
+  ): string | null {
+    const worked = deps.touched
+      .repositoriesOf(sessionId)
+      .find((repository) =>
+        checkedOutAt
+          ? repository.path === checkedOutAt
+          : worktreePaths.includes(repository.path) &&
+            repository.branch === branch,
+      );
+    return worked?.path ?? null;
+  }
+
   function pusherOf(
     at: number,
     branch: string,
     worktreePaths: readonly string[],
-    pushedPath: string | null,
-  ): string | null {
-    const running = windows.sessionsAt(at);
+    checkedOutAt: string | null,
+  ): { sessionId: string; path: string | null } | null {
+    const running = windows.sessionsAt(at).map((sessionId) => ({
+      sessionId,
+      path: pushedFrom(sessionId, branch, worktreePaths, checkedOutAt),
+    }));
     if (running.length === 1) return running[0]!;
-    const tied = running.filter((sessionId) =>
-      deps.touched
-        .repositoriesOf(sessionId)
-        .some((repository) =>
-          pushedPath
-            ? repository.path === pushedPath
-            : worktreePaths.includes(repository.path) &&
-              repository.branch === branch,
-        ),
-    );
+    const tied = running.filter(({ path }) => path !== null);
     return tied.length === 1 ? tied[0]! : null;
   }
 
@@ -314,22 +325,23 @@ export function createChangesService(deps: {
       { toplevel, commonDir: push.commonDir },
     ]);
     const worktrees = repository?.worktrees ?? [];
-    const pushedPath =
+    const checkedOutAt =
       worktrees.find((worktree) => worktree.branch === push.branch)?.path ??
       null;
-    const sessionId = pusherOf(
+    const pusher = pusherOf(
       push.at,
       push.branch,
       worktrees.map((worktree) => worktree.path),
-      pushedPath,
+      checkedOutAt,
     );
-    if (!sessionId) {
+    if (!pusher) {
       deps.log(
         `a push to ${push.branch} in ${toplevel} matches no single session; not linked`,
       );
       return;
     }
-    const path = pushedPath ?? toplevel;
+    const { sessionId } = pusher;
+    const path = checkedOutAt ?? pusher.path ?? toplevel;
     const remote = await deps.git(toplevel, [
       "config",
       "--get",
