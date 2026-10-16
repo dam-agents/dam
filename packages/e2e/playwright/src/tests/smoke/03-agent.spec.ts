@@ -7,14 +7,14 @@ import {
 } from "../../lib/agents.js";
 import { createApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
-import { bootTimeoutMs, onLaneBackend } from "../../lib/backend.js";
+import { onLaneBackend } from "../../lib/backend.js";
 import { getConnectionId } from "../../lib/connections.js";
 import { agentName, connectionName, harnessName } from "../../lib/fixtures.js";
 
 test("one-click create from the Generalist kit, then the mock agent with the connection and default provider", async ({
   page,
 }) => {
-  test.setTimeout(bootTimeoutMs(300_000));
+  test.setTimeout(300_000);
 
   const token = await getAccessToken();
   const api = createApiClient(token);

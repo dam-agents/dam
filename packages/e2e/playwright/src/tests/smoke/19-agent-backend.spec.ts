@@ -48,7 +48,7 @@ async function chatTurn(
 }
 
 test.beforeAll(async () => {
-  test.setTimeout(900_000);
+  test.setTimeout(300_000);
   api = createRefreshingApiClient(token);
   await requireBackend(api, laneBackend);
   await acceptTerms(api);
@@ -64,7 +64,7 @@ test.afterAll(async () => {
 
 // TEST_SCENARIO: the first boot. On the vm Backend it may wait for the owner's VM runner to be created and the image to be mounted, so the wait is minutes rather than a pod's seconds. The chat turn proves the relay reaches the harness on this Backend.
 test("boots and holds a chat turn", async ({ page }) => {
-  test.setTimeout(900_000);
+  test.setTimeout(300_000);
   await waitAgentState(api, agentId, "running");
   await chatTurn(page, "hello-backend", "backend-reply-first-boot");
 });
@@ -202,7 +202,7 @@ test("takes a scheduled fire", async () => {
 
 // TEST_SCENARIO: sleep hibernates the agent, and wake brings it back. On the vm Backend that is a stop and a boot of the same machine, and HOME is its disk, so the marker must read back and the chat must answer after the boot.
 test("hibernates and wakes with HOME intact", async ({ page }) => {
-  test.setTimeout(900_000);
+  test.setTimeout(300_000);
   await api.agents.sleep.mutate({ id: agentId });
   await waitAgentState(api, agentId, "hibernated");
   await api.agents.wake.mutate({ id: agentId });
@@ -213,7 +213,7 @@ test("hibernates and wakes with HOME intact", async ({ page }) => {
 
 // TEST_SCENARIO: the restart verb takes the agent down and up again without a hibernation. The agent must be seen to leave running, or the verb did nothing, and it must come back with HOME intact.
 test("restarts with HOME intact", async ({ page }) => {
-  test.setTimeout(900_000);
+  test.setTimeout(300_000);
   await api.agents.restart.mutate({ id: agentId });
   await expect
     .poll(async () => (await api.agents.get.query({ id: agentId })).state, {
@@ -231,7 +231,7 @@ test("restarts with HOME intact", async ({ page }) => {
 test("comes back after its host pod is deleted, with HOME intact", async ({
   page,
 }) => {
-  test.setTimeout(1_200_000);
+  test.setTimeout(300_000);
   await deleteBackendHost(agentId, laneBackend);
   await waitAgentState(api, agentId, "running", { failOnError: false });
   await expectHomeFile(token, agentId, markerPath, marker);

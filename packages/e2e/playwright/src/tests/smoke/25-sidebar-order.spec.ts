@@ -223,7 +223,7 @@ test("drag reorders Agents, and a new Agent goes to the bottom", async ({
 test("drag reorders Sessions within their Agent, and a new Session goes to the bottom", async ({
   page,
 }) => {
-  test.setTimeout(600_000);
+  test.setTimeout(300_000);
   const name = AGENTS[0];
   const agentId = agentIds.get(name)!;
   await waitForAgentRunning(api, name);

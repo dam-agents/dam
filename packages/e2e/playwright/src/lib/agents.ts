@@ -2,10 +2,10 @@ import { expect, type Locator, type Page } from "@playwright/test";
 
 import { baseUrl } from "../config.js";
 import type { ApiClient } from "./api-client.js";
-import { bootTimeoutMs, onLaneBackend } from "./backend.js";
+import { onLaneBackend } from "./backend.js";
 import { harnessName } from "./fixtures.js";
 
-const AGENT_RUNNING_TIMEOUT_MS = bootTimeoutMs(180_000);
+const AGENT_RUNNING_TIMEOUT_MS = 240_000;
 
 export async function waitForAgentRunning(
   api: ApiClient,

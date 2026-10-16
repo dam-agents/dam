@@ -5,7 +5,7 @@ import type { AppRouter, Scope } from "api-server-api";
 import { waitForAgentRunning } from "../../lib/agents.js";
 import { createApiClient, type ApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
-import { bootTimeoutMs, onLaneBackend } from "../../lib/backend.js";
+import { onLaneBackend } from "../../lib/backend.js";
 
 const KEY_PREFIX = "e2e-authz";
 const mintedKeyIds: string[] = [];
@@ -61,7 +61,7 @@ test.afterAll(async () => {
 });
 
 test("agent lifecycle across scoped keys — manage owns CRUD, operate runs it, read only looks", async () => {
-  test.setTimeout(bootTimeoutMs(240_000));
+  test.setTimeout(300_000);
 
   const manage = await mintKey(["agents:manage"]);
   const operate = await mintKey(["agents:operate"]);
