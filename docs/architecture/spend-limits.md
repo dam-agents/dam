@@ -273,9 +273,16 @@ The owner sets each limit where the work happens, and each limit shows its meter
   When the own limit or the ceiling stops the agent first, it says so.
   It tells the user which of the agent's providers the agent limit does not count, and an agent with only the Claude subscription or Bob gets no agent limit field, only a pointer to its Providers section.
   The agent's summary shows today's spend in each unit and the limit.
+  Below the limit, the section shows the same measured view as the Settings tab, for the spend that the agent pays, so the spend of the sub-agents that it started is included.
+  A sub-agent's Usage section shows only the note about its root driver.
 - **The agent's Providers section:** each granted Connection that takes a limit sets its Connection limit there, in the Connection's unit, next to today's spend on that Connection.
   It explains the subscription value and Bobcoins, and that only this limit stops calls on such a Connection; a Connection that takes no limit says why.
-- **Settings, Usage tab:** the same spend view as on Home, the own limit, and the ceiling with its state when one applies.
+- **Settings, Usage tab:** a period picker keeps its period in the URL.
+  It has presets, arrows that step one period of the same kind, and a calendar with week numbers for a custom range of up to 366 UTC days; the days before T are struck out.
+  Below it are the paid Metered Spend with the same lines as on Home, the spend by day (by week above 62 days), the counts of calls and tokens, and the spend by agent, model and provider.
+  A provider without a price shows "Not priced", and a free provider shows "No cost".
+  For 30 days after T, and only when the telemetry store is on, a link opens the earlier estimates: the old view of the spend that each agent reported about itself.
+  The own limit and the ceiling come last.
 - **Home:** the spend card shows the paid Metered Spend in dollars for Today, This month or Last month, in UTC days, with the real date range under the total.
   A period that starts before T shows only its measured days, and a period wholly before T shows no total.
   The checkbox "Show use covered by plans" adds the subscription value to the top agents' bars and a line under the total, never to the total; the browser keeps the choice.
@@ -292,4 +299,4 @@ Every surface uses the same names: the agent spend limit, the user's spend limit
 The Claude subscription's unit shows as "subscription value", in dollars.
 In the chat, a refused call shows as "Spend limit reached" or "Spend ceiling reached" with what to do and the local reset time; the harness's own error text stays below it as detail.
 Every text that a person reads gives the reset in that person's own time, on the screens, in the CLI and in the channel notices; texts for agents give it in UTC.
-The rest of the Usage pages still shows the spend that the harnesses report ([metrics](metrics.md)).
+The cost of each session in the sidebar still shows the spend that the harnesses report ([metrics](metrics.md)).

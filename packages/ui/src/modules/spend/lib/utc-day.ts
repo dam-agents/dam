@@ -31,6 +31,10 @@ export function daysInRange({ from, to }: DayRange): number {
   return daysBetween(from, to) + 1;
 }
 
+export function daysSpanned(a: string, b: string): number {
+  return Math.abs(daysBetween(a, b)) + 1;
+}
+
 export function eachDay(range: DayRange): string[] {
   return Array.from({ length: daysInRange(range) }, (_, i) =>
     addDays(range.from, i),

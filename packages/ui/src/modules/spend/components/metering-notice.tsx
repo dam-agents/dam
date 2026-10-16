@@ -5,11 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { cn } from "@/lib/utils";
 
-import { useSpendMetering } from "../api/queries.js";
-import {
-  useDismissMeteringNotice,
-  useMeteringNoticeDismissed,
-} from "../hooks/use-spend-preferences.js";
+import { useMeteringNotice } from "../hooks/use-metering-notice.js";
+import { useDismissMeteringNotice } from "../hooks/use-spend-preferences.js";
 import {
   DISMISS_NOTICE,
   METERING_NOTICE_DETAIL,
@@ -22,13 +19,9 @@ interface Props {
 }
 
 export function MeteringNotice({ className, children }: Props) {
-  const { data: metering } = useSpendMetering();
-  const dismissed = useMeteringNoticeDismissed();
+  const metering = useMeteringNotice();
   const dismiss = useDismissMeteringNotice();
-  const until = metering?.noticeUntil;
-  if (!metering || !until || dismissed || Date.now() >= Date.parse(until)) {
-    return null;
-  }
+  if (!metering) return null;
   return (
     <Callout
       tone="info"

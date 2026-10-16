@@ -46,11 +46,7 @@ const PERIOD_TABS = HOME_PERIODS.map((value) => ({
   label: PERIOD_LABELS[value],
 }));
 
-export function SpendWidget({
-  showOwnLimit = true,
-}: {
-  showOwnLimit?: boolean;
-}) {
+export function SpendWidget() {
   const [period, setPeriod] = useState<PresetPeriod>(DEFAULT_PERIOD);
   const today = utcDayOf(useNow(REFRESH_MS));
   const range = rangeOf(period, today);
@@ -107,7 +103,7 @@ export function SpendWidget({
           </div>
         )}
 
-        {showOwnLimit && period === "today" && ownLimit && (
+        {period === "today" && ownLimit && (
           <div className="mb-5">
             <SpendLimitMeter
               label={OWN_LIMIT_NAME}

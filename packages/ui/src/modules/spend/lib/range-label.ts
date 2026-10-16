@@ -15,6 +15,21 @@ const MONTHS = [
   "Dec",
 ];
 
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
 interface DayParts {
   year: string;
   month: number;
@@ -36,6 +51,11 @@ export function formatDayMonth(day: string): string {
 
 export function formatDay(day: string): string {
   return `${formatDayMonth(day)} ${partsOf(day).year}`;
+}
+
+export function formatMonth(day: string): string {
+  const parts = partsOf(day);
+  return `${MONTH_NAMES[parts.month]} ${parts.year}`;
 }
 
 export function formatRange({ from, to }: DayRange): string {

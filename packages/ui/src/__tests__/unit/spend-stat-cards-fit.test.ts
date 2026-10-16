@@ -3,21 +3,30 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
 
-import { SpendStatCards } from "../../modules/metrics/components/spend-stat-cards.js";
+import { MeasuredStatCards } from "../../modules/spend/components/measured-stat-cards.js";
 
 const html = renderToStaticMarkup(
-  createElement(SpendStatCards, {
-    costUsd: 12.34,
-    calls: 1234,
-    tokensIn: 12_300_000,
-    tokensOut: 456_700,
-    durationMs: 5_025_000,
+  createElement(MeasuredStatCards, {
+    totals: [
+      {
+        unit: "usd",
+        costMicros: 12_340_000,
+        calls: 1234,
+        estimatedCalls: 0,
+        uncachedInputTokens: 2_300_000,
+        outputTokens: 456_700,
+        cacheReadTokens: 10_000_000,
+        cacheWrite5mTokens: 0,
+        cacheWrite1hTokens: 0,
+        webSearches: 0,
+      },
+    ],
   }),
 );
 
 it("lets every card shrink below its content", () => {
   const cards = html.match(/<div data-slot="card" class="[^"]*"/g) ?? [];
-  expect(cards).toHaveLength(4);
+  expect(cards).toHaveLength(2);
   for (const card of cards) expect(card).toContain("min-w-0");
 });
 

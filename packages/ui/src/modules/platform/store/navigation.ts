@@ -29,6 +29,7 @@ export interface NavigationSlice {
     tab?: SettingsTab,
     options?: { period?: string },
   ) => void;
+  setUsagePeriod: (period: string) => void;
   navigateToSandboxHome: (agentId: string, section?: SandboxSection) => void;
   navigateToStarterKit: (catalog: string, kitId: string) => void;
   setKitBrowserOpen: (open: boolean) => void;
@@ -96,6 +97,14 @@ export const createNavigationSlice: StateCreator<
       }),
     );
     set({ view: "settings", settingsTab, usagePeriod: period, agentId: null });
+  },
+  setUsagePeriod: (period) => {
+    history.replaceState(
+      history.state,
+      "",
+      routeToPath({ view: "settings", settingsTab: "usage", period }),
+    );
+    set({ usagePeriod: period });
   },
   navigateToSandboxHome: (agentId, section = "setup") => {
     history.pushState(
