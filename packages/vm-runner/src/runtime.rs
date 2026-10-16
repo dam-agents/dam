@@ -7,7 +7,6 @@ use anyhow::Context;
 use smolvm::storage::STORAGE_DISK_FILENAME;
 
 use crate::api::{MachineSpec, State};
-use crate::guest::INIT_PATH;
 use crate::launch::ImageLaunch;
 
 // UNIT_BOUNDARY_DESCRIPTION: what the runner asks of the hypervisor, and the rules that do not depend on which one answers. The server drives machines through this trait, so it can be tested without KVM against a fake, and the embedded smolvm implementation is the only code that talks to the VMM. Everything here is the hypervisor-independent half: how a machine's workload is assembled, how its env is updated, when its disk grows, and how a VMM that outlived its stop is found and taken down.
@@ -127,12 +126,10 @@ pub fn workload(spec: &MachineSpec, launch: &ImageLaunch) -> anyhow::Result<Work
     if image_command.is_empty() {
         anyhow::bail!(IMAGE_LAUNCH_UNKNOWN);
     }
-    let mut command = vec![INIT_PATH.to_string()];
-    command.extend(image_command);
     Ok(Workload {
         env: env.into_iter().collect(),
         workdir: (!launch.working_dir.is_empty()).then(|| launch.working_dir.clone()),
-        command,
+        command: image_command,
     })
 }
 
@@ -558,11 +555,11 @@ mod tests {
             &launch(&["/entry", "-x"], &["serve"], &[], "/app"),
         )
         .unwrap();
-        assert_eq!(w.command, vec![INIT_PATH, "/entry", "-x", "serve"]);
+        assert_eq!(w.command, vec!["/entry", "-x", "serve"]);
         assert_eq!(w.workdir.as_deref(), Some("/app"));
 
         let bare = workload(&spec_with_env(&[]), &launch(&[], &["run"], &[], "")).unwrap();
-        assert_eq!(bare.command, vec![INIT_PATH, "run"]);
+        assert_eq!(bare.command, vec!["run"]);
         assert_eq!(
             bare.workdir, None,
             "an image with no working directory states none"

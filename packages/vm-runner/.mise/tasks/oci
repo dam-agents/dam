@@ -109,7 +109,10 @@ tar -xzf "$(fetch "https://github.com/smol-machines/smolvm/releases/download/v${
 # Drop this once a smolvm release ships these fixes, but for the MADV_HUGEPAGE
 # call on guest RAM, which upstream leaves out and nested hosts need (a busy
 # dam-cl node filled 4 GiB in 4.1 s with it and 8.3 s without).
-# musl-tools: musl-gcc, for the C in the guest agent's ring (see below).
+# musl-tools and the musl target: libkrun's init.krun, which it builds static
+# against musl and serves as the guest's /init.krun. Without them its build
+# only warns and links it against glibc, which the agent rootfs lacks, so every
+# guest kernel panics on "Requested init /init.krun failed (error -2)".
 # bc to python3-pyelftools: the guest kernel's build; btrfs-progs: the btrfs
 # disk template.
 lk_deps="clang libclang-dev patchelf pkg-config libvirglrenderer-dev libepoxy-dev libdrm-dev libgbm-dev musl-tools bc bison flex libelf-dev libssl-dev python3-pyelftools btrfs-progs"
@@ -199,13 +202,14 @@ install -m 755 "$fw_so" "$b/opt/smolvm/lib/libkrunfw.so.5.5.0"
 truncate -s 256M "$work/storage-template.btrfs"
 mkfs.btrfs -q -M -d single -m single -L smolvm --nodiscard "$work/storage-template.btrfs"
 zstd -q -19 --rm "$work/storage-template.btrfs" -o "$b/opt/smolvm/storage-template.btrfs.zst"
-# The guest agent is rebuilt from the pinned source with smolvm.patch applied,
-# as the release builds it (static musl, release-small), in place of the
-# release's: smolvm-agent formats a storage disk it cannot mount, which erases
-# a home a passing I/O error kept from mounting, and the patch refuses that.
-# Drop this once a smolvm release ships the fix.
-env "CC_$(uname -m)_unknown_linux_musl=musl-gcc" cargo build --locked --manifest-path .smolvm/Cargo.toml --target-dir "$target" --profile release-small -p smolvm-agent --target "$(uname -m)-unknown-linux-musl"
-install -m 755 "$target/$(uname -m)-unknown-linux-musl/release-small/smolvm-agent" "$b/opt/smolvm/agent-rootfs/usr/local/bin/smolvm-agent"
+# The guest's init is platform-init, not smolvm's guest agent: smolvm boots
+# the runner's machines on /sbin/platform-init of the agent rootfs, which is
+# only the first stage, mounting the share and executing the share's
+# platform-init, the runner release's (boot/vm.rs). That first stage does the
+# same in every release, so the runtime's copy need not match the release a
+# machine boots. smolvm's own /sbin/init, its guest agent, stays for the
+# machines the smolvm CLI starts.
+install -m 755 "$target/$host/release/platform-init" "$b/opt/smolvm/agent-rootfs/sbin/platform-init"
 
 # smolvm's guest rootfs ships a crane built with Go 1.21.6 and go-containerregistry
 # v0.19-era deps (docker/docker v24, x/sys v0.8.0) — 3 critical + 54 lesser CVEs, all
@@ -233,7 +237,7 @@ find "$b" \( -type d -exec chmod u+rwx {} + \) -o \( -type f -exec chmod u+r {} 
 # mise is isolated from the repo.
 from="$(mise config get -f "$repo/.mise/config.toml" vars.base_image_debian)"
 # What a runner release is built against and a running pod cannot change: the
-# smolvm release with its guest agent, the patched guest kernel and libkrun
+# smolvm release with platform-init as its init, the patched guest kernel and libkrun
 # and crane, and the base image's libc the runner links. All but the base and
 # crane are named in smolvm.pin, and their patches in smolvm.patch, libkrun.patch
 # and libkrunfw.patch. A loader hands its machines only to a

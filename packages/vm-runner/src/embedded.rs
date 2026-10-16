@@ -256,6 +256,7 @@ impl Runtime for Smolvm {
             .and_then(|r| recorded_image_env(r.image.as_deref()));
         if let Some(record) = &record {
             write_boot_image(record)?;
+            write_launch(record)?;
         }
         let rootfs = AgentManager::default_rootfs_path()?;
         crate::files::write(
@@ -329,7 +330,6 @@ impl Runtime for Smolvm {
     }
 
     fn stop(&self, id: &str) -> anyhow::Result<()> {
-        terminate_workload(id);
         timed("stop", id, &[], || {
             self.ended(id, || self.runtime.stop_machine(id))
         })?;
@@ -473,62 +473,6 @@ fn allocated_bytes(dir: &Path) -> Option<u64> {
     Some(total)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how long a stop gives the guest's workload to exit on SIGTERM before the guest is frozen and powered off. smolvm's own stop only quiesces the disks and kills the VMM, so without this the agent never hears it is being stopped, and what it has not yet written is lost with it.
-pub const WORKLOAD_TERM_GRACE: Duration = Duration::from_secs(5);
-
-// UNIT_BOUNDARY_DESCRIPTION: the guest agent runs the workload as a crun container under this root and binary, as the pinned smolvm release lays out its agent root filesystem. They are not smolvm library API, so a smolvm upgrade that moves them makes the SIGTERM a no-op, never a failed stop; the test pins them to be looked at with every bump.
-const GUEST_CRUN: &str = "/usr/bin/crun --root /storage/containers/crun";
-
-// UNIT_BOUNDARY_DESCRIPTION: the shell the guest agent runs, in its own root and not the image's, to send SIGTERM to every container it runs — the machine's one workload — and wait up to `grace` for them to stop. Every failure is swallowed: the stop goes on to quiesce and power off either way.
-fn workload_term_script(grace: Duration) -> String {
-    format!(
-        r#"crun="{GUEST_CRUN}"
-ids=$($crun list -q 2>/dev/null) || exit 0
-[ -n "$ids" ] || exit 0
-for id in $ids; do $crun kill "$id" TERM 2>/dev/null; done
-end=$(( $(date +%s) + {secs} ))
-while [ "$(date +%s)" -lt "$end" ]; do
-  up=0
-  for id in $ids; do $crun state "$id" 2>/dev/null | grep -q '"status": *"running"' && up=1; done
-  [ "$up" = 0 ] && exit 0
-  sleep 0.2 2>/dev/null || sleep 1
-done
-exit 0
-"#,
-        secs = grace.as_secs()
-    )
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: asks the guest agent, over its vsock socket, to send the workload SIGTERM and wait for it, as a pod's container gets before its kill. The workload is platform-init exec'd into the image's entrypoint, so the signal reaches what the image runs as its first process. A guest that cannot be reached is not waited on. The manager is detached at once: dropped attached, it would shut the machine down itself.
-fn terminate_workload(id: &str) {
-    let Ok(manager) = AgentManager::for_vm(id) else {
-        return;
-    };
-    manager.detach();
-    let Ok(mut client) = AgentClient::connect_for_state_probe(manager.vsock_socket()) else {
-        return;
-    };
-    let command = vec![
-        "/bin/sh".to_string(),
-        "-c".to_string(),
-        workload_term_script(WORKLOAD_TERM_GRACE),
-    ];
-    let limit = WORKLOAD_TERM_GRACE + Duration::from_secs(5);
-    match client.vm_exec(command, Vec::new(), None, Some(limit), None) {
-        Ok((0, _, _)) => {}
-        Ok((code, _, _)) => {
-            tracing::warn!(
-                machine = id,
-                code,
-                "the workload's SIGTERM did not run cleanly; stopping the guest anyway"
-            )
-        }
-        Err(e) => {
-            tracing::warn!(machine = id, error = %e, "the workload could not be sent SIGTERM; stopping the guest anyway")
-        }
-    }
-}
-
 // UNIT_BOUNDARY_DESCRIPTION: the smolvm record for one machine: the image, cpus, memory and storage disk; networking on the virtio-net backend with egress limited to the spec's CIDRs; the agent port published on a loopback port; the share mounted read-only; and the workload platform-init hands off to.
 fn embedded_spec(
     id: &str,
@@ -567,6 +511,32 @@ fn embedded_spec(
         ..SmolvmSpec::default()
     };
     Ok((smolvm_spec, workload))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: writes the share's launch record (guest::Launch) for the boot about to run, from the machine's record, which every create and update keeps current: platform-init is the guest's init and reads what it runs from there. A machine an older runner created records platform-init in front of the image's command, as the workload smolvm ran in a container; that is dropped, or the init would start a second platform-init inside the image. It is written whole and renamed into place, so a guest never reads half of it, and is readable by the guest's root alone, since the env holds the agent's secrets.
+fn write_launch(record: &VmRecord) -> anyhow::Result<()> {
+    let Some((share, _, _)) = record
+        .mounts
+        .iter()
+        .find(|(_, target, _)| target == SHARE_PATH)
+    else {
+        anyhow::bail!(
+            "machine {} has no share to write its launch record into",
+            record.name
+        );
+    };
+    let command = match record.cmd.split_first() {
+        Some((first, rest)) if first == crate::guest::INIT_PATH => rest.to_vec(),
+        _ => record.cmd.clone(),
+    };
+    let launch = crate::guest::Launch {
+        command,
+        env: record.env.clone(),
+        workdir: record.workdir.clone(),
+    };
+    let path = Path::new(share).join(crate::guest::LAUNCH_FILE);
+    crate::files::write(&path, &serde_json::to_vec(&launch)?, 0o600)
+        .with_context(|| format!("writing the launch record {}", path.display()))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: writes the share's image record for the boot about to run, or removes it for a record that names no image. A record that cannot be written fails the start, after an attempt to remove it: a stale record naming the last image would have platform-init keep that image's root under a new one.
@@ -923,7 +893,7 @@ mod tests {
         assert_eq!(record.ports, vec![(32000, GUEST_AGENT_PORT)]);
         assert_eq!(record.user.as_deref(), Some(USER));
         assert_eq!(record.workdir.as_deref(), Some("/app"));
-        assert_eq!(record.cmd, vec![crate::guest::INIT_PATH, "/entry"]);
+        assert_eq!(record.cmd, vec!["/entry"]);
         assert_eq!(
             record.env,
             vec![
@@ -944,6 +914,32 @@ mod tests {
         );
         assert!(!record.ephemeral, "a machine must survive a stop");
         assert_eq!(smolvm.state("m1").unwrap(), State::Stopped);
+        use std::os::unix::fs::PermissionsExt;
+        write_launch(&record).unwrap();
+        let launch = share.join(crate::guest::LAUNCH_FILE);
+        assert_eq!(
+            serde_json::from_slice::<crate::guest::Launch>(&fs::read(&launch).unwrap()).unwrap(),
+            crate::guest::Launch {
+                command: vec!["/entry".into()],
+                env: record.env.clone(),
+                workdir: Some("/app".into()),
+            },
+            "platform-init runs what the record says, and only that"
+        );
+        assert_eq!(
+            fs::metadata(&launch).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        let mut legacy = record.clone();
+        legacy.cmd.insert(0, crate::guest::INIT_PATH.into());
+        write_launch(&legacy).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<crate::guest::Launch>(&fs::read(&launch).unwrap())
+                .unwrap()
+                .command,
+            vec!["/entry".to_string()],
+            "a record an older runner wrote names platform-init first, which is the init itself now"
+        );
         assert_eq!(
             (record.dns, record.dns_filter_hosts),
             (Some(GUEST_DNS_SINK), Some(Vec::new())),
@@ -1754,16 +1750,6 @@ mod tests {
         assert_eq!(smolvm.record("m1").unwrap().unwrap().storage_gb, Some(25));
     }
 
-    // TEST_SCENARIO: a stop sends the workload SIGTERM through the guest agent, in the agent's own root where crun runs it, before smolvm freezes the guest. The crun root and binary are the pinned smolvm release's layout and not its API, so they are pinned here to be checked on every smolvm bump, and the wait is bounded by the grace.
-    #[test]
-    fn a_stop_signals_the_workload_where_the_guest_agent_runs_it() {
-        let script = workload_term_script(WORKLOAD_TERM_GRACE);
-        assert!(script.contains(r#"crun="/usr/bin/crun --root /storage/containers/crun""#));
-        assert!(script.contains(r#"$crun kill "$id" TERM"#));
-        assert!(script.contains("+ 5 ))"), "{script}");
-        assert_eq!(WORKLOAD_TERM_GRACE, Duration::from_secs(5));
-    }
-
     // TEST_SCENARIO: a failure's text reaches the Agent's status, and the env it was given holds the Agent's Secret values. Neither may appear in it.
     #[test]
     fn a_failed_create_does_not_repeat_the_agents_secrets() {
@@ -2036,10 +2022,7 @@ mod tests {
             Some(format!("local-dir:{}", new_tree.canonicalize().unwrap().display()).as_str())
         );
         assert!(record.entrypoint.is_empty());
-        assert_eq!(
-            record.cmd,
-            vec![crate::guest::INIT_PATH, "/entry2", "serve"]
-        );
+        assert_eq!(record.cmd, vec!["/entry2", "serve"]);
         assert_eq!(record.workdir.as_deref(), Some("/srv"));
         assert_eq!(
             record.env,

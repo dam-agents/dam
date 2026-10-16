@@ -65,9 +65,22 @@ pub fn is_sha256(text: &str) -> bool {
 pub const GUEST_CA_DIR: &str = "/etc/platform/ca";
 pub const GUEST_CA_FILE: &str = "/etc/platform/ca/ca.crt";
 
-// UNIT_BOUNDARY_DESCRIPTION: DISK_DEVICE_PATH is where smolvm attaches the storage disk, which is a property of the VMM and not a path anything should write to. platform-init moves it to DISK_PATH, whose name is not "workspace" — which in this platform means the directory inside an agent's HOME. smolvm also binds the whole disk at /storage; the root platform-init boots the image on leaves that bind behind, so the image reaches the disk only here and through HOME.
-pub const DISK_DEVICE_PATH: &str = "/workspace";
+// UNIT_BOUNDARY_DESCRIPTION: DISK_PATH is where platform-init puts the platform's part of the storage disk in the image's root while it boots, a name that is not "workspace" — which in this platform means the directory inside an agent's HOME. That part is DISK_ROOT_DIR, the directory smolvm's guest agent gave containers, kept so every disk it wrote boots as it is. The rest of the disk never reaches the image: the image reaches the disk only here and through HOME.
 pub const DISK_PATH: &str = "/mnt/platform";
+pub const DISK_ROOT_DIR: &str = "workspace";
+
+// UNIT_BOUNDARY_DESCRIPTION: where /sbin/init in the agent rootfs, platform-init in its first stage, mounts the share before it executes the share's init, which is the platform-init of the runner release. The agent rootfs is read-only and /mnt is its empty directory, so the release's platform-init starts with the share already there.
+pub const STAGE0_SHARE: &str = "/mnt";
+
+// UNIT_BOUNDARY_DESCRIPTION: what the guest runs: the image's command, its env with the platform's on top, and its working directory. The runner writes it into the share before every boot, from the machine's record, and platform-init reads it as the guest's init: no smolvm guest agent stands between them to hand them over.
+pub const LAUNCH_FILE: &str = "launch.json";
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Launch {
+    pub command: Vec<String>,
+    pub env: Vec<(String, String)>,
+    pub workdir: Option<String>,
+}
 
 // UNIT_BOUNDARY_DESCRIPTION: the one guest path a machine keeps. It is fixed rather than configured — the image bakes this home into its user and the controller sets it as HOME on both backends — which is what lets the whole storage model be a constant instead of a plan the runner has to write and the guest has to parse.
 pub const AGENT_HOME: &str = "/home/agent";

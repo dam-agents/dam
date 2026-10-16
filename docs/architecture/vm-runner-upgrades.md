@@ -38,8 +38,9 @@ On OpenShift the directory the kubelet creates carries the host's own SELinux la
 A cluster admin can instead have the nodes create and label the directory themselves, with the node configuration in [`etc/openshift-node-config/`](../../etc/openshift-node-config/).
 
 **A runner release** is the runner with the two guest binaries it copies into every machine's share, platform-init and platform-runc, so the side that writes a share and the side that reads it stay one version.
-Each release also records the **runtime** it was built against: the smolvm release with its guest agent, the guest kernel and the libkrun the platform patches, the image tooling, and the base image's libc.
-The runner is itself the VMM of every machine it starts, and loads its runtime's libraries and guest agent, so the runtime travels with the release.
+Each release also records the **runtime** it was built against: the smolvm release with the first stage of platform-init as the guests' init, the guest kernel and the libkrun the platform patches, the image tooling, and the base image's libc.
+The runner is itself the VMM of every machine it starts, and loads its runtime's libraries and agent root, so the runtime travels with the release.
+That first stage only executes the share's platform-init, which is the release's, so a machine's init is always the release that wrote its share.
 Its guest kernel is the smolvm release's own libkrunfw, Linux 6.18 with [smol-machines/libkrunfw#31](https://github.com/smol-machines/libkrunfw/pull/31), rebuilt with a patch that adds btrfs ([vm-runner](vm-runner.md)) and zram swap ([vm-memory](vm-memory.md)).
 The image build refuses a rebuilt kernel whose version is not the release's.
 Without that fix, from 6.15 on, FUSE DAX corrupts a mapped file that another process opens, and a guest of 6 GiB or more dies of SIGBUS ([smol-machines/smolvm#1741](https://github.com/smol-machines/smolvm/issues/1741)); 6.18 also stalls a guest whose mapped working set outgrows the DAX window.
@@ -56,7 +57,7 @@ A chart upgrade rolls the stager, which stages the new release.
 **The loader** is the runner pod's entrypoint.
 It supervises one runner process and runs the release the controller names in a ConfigMap per runner, which the runner's Deployment owns.
 The pod's own image is always available as a release.
-A staged one is used once the stager has reached the pod's node, and the loader first copies it, and its runtime, into the pod: the stager may remove them from the node while a runner still copies its guest binaries from one or a VMM still serves its guest agent from the other.
+A staged one is used once the stager has reached the pod's node, and the loader first copies it, and its runtime, into the pod: the stager may remove them from the node while a runner still copies its guest binaries from one or a VMM still serves its agent rootfs from the other.
 Before a hand-off the loader checks that the release's runner loads in the pod at all.
 The loader restarts a runner that exits, with a backoff, and passes a stop of the pod to the runner, which then stops every machine as the [runner](vm-runner.md) page describes.
 A stop that arrives while no runner can take it — the old one closing for a hand-off, a release being copied in, a backoff — is kept: a hand-off not yet begun is dropped, a backoff is cut short, and the stop goes to the next runner once that runner has set up its own stop, since one killed before that leaves its machines to be powered off with the pod.
@@ -66,8 +67,8 @@ The loader signals the runner, which closes as it would for a stop but leaves ev
 The new runner reads each machine's record, finds its VMM alive, and publishes its port again, as any restarted runner does.
 The machines and their disks are untouched, and each keeps the runtime it booted; the machines the new runner starts boot its own runtime, so a machine moves to a new runtime at its next boot.
 The runner records the runtime each machine booted, and manages a machine on another runtime assuming the two are compatible, rather than testing every pair of releases: a runtime error on such a machine, or a guest quiet for half a minute instead of ten, reboots it onto the runner's own runtime.
-platform-init flushes the agent's home to the disk when the workload stops, so a stop whose quiesce an older guest agent does not confirm, which the runner ends with a power-off, costs a journal replay and not the agent's last writes.
-The loader keeps a runtime in the pod while any VMM still boots from it: it finds each VMM by its command line and reads the guest agent root the runner recorded beside the VMM's boot config at its start.
+platform-init flushes the agent's home to the disk when the workload stops, so a stop whose quiesce a guest does not confirm, which the runner ends with a power-off, costs a journal replay and not the agent's last writes.
+The loader keeps a runtime in the pod while any VMM still boots from it: it finds each VMM by its command line and reads the agent root the runner recorded beside the VMM's boot config at its start.
 A VMM makes itself non-dumpable, so its memory map is shut to the loader, and smolvm deletes the boot config once read; a VMM with no record, one an older release started, keeps every runtime.
 Connections already open through a published port drop with the old process, and the machine API is down for the seconds between the two.
 A VMM whose runner exited is reaped by the pod's init.

@@ -224,7 +224,7 @@ test("a 6 GiB guest passes the DAX checks on the node's tools, and the runner ma
   const mounts = inRunner(
     "sh",
     "-c",
-    "grep -h '\"virtiofs mount active\"' /var/lib/platform/disks/.cache/smolvm/vms/*/agent-console.log",
+    "grep -h 'virtiofs mount active:' /var/lib/platform/disks/.cache/smolvm/vms/*/agent-console.log",
   )
     .split("\n")
     .filter(Boolean);
@@ -233,7 +233,7 @@ test("a 6 GiB guest passes the DAX checks on the node's tools, and the runner ma
     "the runner's machines log their mounts",
   ).toBeGreaterThan(0);
   expect(
-    mounts.filter((line) => !line.includes('"dax":true')),
+    mounts.filter((line) => !line.includes("dax=true")),
     "every mount of the runner's own machines is DAX-mapped",
   ).toEqual([]);
 });
