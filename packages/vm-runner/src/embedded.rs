@@ -246,8 +246,7 @@ impl Runtime for Smolvm {
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the guest agent's root overlay — and the image this boot runs is named in the share, so platform-init keeps the machine's root only for the image that wrote it. A record with no allowlist is never booted: smolvm reads none as no filter, and only a record edited or migrated outside the runner holds none, since every running spec the runner admits names one. A start that fails kills any VMM it left half-booted, so the next attempt does not inherit it. A VMM that survives even its kill fails the start, since booting beside it would put two VMMs on one disk. A record that names no resolver, or names the sink, gets the sink and its empty name list on every start, so a machine created by an earlier runner never boots onto smolvm's default, the runner's own resolver, nor relays to whatever answers on the runner's loopback. Nesting is the one thing a start may only take away: the record holds what the machine's spec asked for, as its create or last update wrote it, and a start keeps it only while this runner still nests, so a machine never boots with more than the runner grants. The mounts are decided at every start too, from what this runner holds and what the image asks for now: runner pods roll across owners one at a time, so a machine moved to an image that asks for the node's tools before its runner had them still gets them on its next boot, and one whose runner or image stopped offering them boots without.
-    fn start(&self, id: &str, boot_mib: i32) -> anyhow::Result<()> {
-        let boot = u32::try_from(boot_mib).context("boot memory")?;
+    fn start(&self, id: &str, boot_mib: i32, memory_mib: i32) -> anyhow::Result<()> {
         let dir = vm_data_dir(id);
         if dir.is_dir() {
             let vmms = orphan_pids(&self.proc_root, &dir);
@@ -278,6 +277,12 @@ impl Runtime for Smolvm {
             crate::convert::before_start(&dir, share.as_deref(), self.convert, fits, |next| {
                 format_btrfs(next, gib, &self.btrfs)
             })?;
+        let boot = u32::try_from(if conversion.is_some() {
+            memory_mib
+        } else {
+            boot_mib
+        })
+        .context("boot memory")?;
         let rootfs = AgentManager::default_rootfs_path()?;
         crate::files::write(
             &dir.join(crate::runtime::AGENT_ROOTFS_FILE),
@@ -991,7 +996,7 @@ mod tests {
         .unwrap();
         let mut smolvm = smolvm;
         smolvm.tools = Some(tools.canonicalize().unwrap());
-        let _ = smolvm.start("m1", 1024);
+        let _ = smolvm.start("m1", 1024, 1024);
         assert_eq!(
             smolvm.record("m1").unwrap().unwrap().mem,
             1024,
@@ -1259,10 +1264,10 @@ mod tests {
             assert_eq!(nested(&smolvm, "m1"), Some(want));
         }
 
-        let _ = smolvm.start("m1", 2048);
+        let _ = smolvm.start("m1", 2048, 2048);
         assert_eq!(nested(&smolvm, "m1"), Some(true));
         smolvm.nested = false;
-        let _ = smolvm.start("m1", 2048);
+        let _ = smolvm.start("m1", 2048, 2048);
         assert_eq!(nested(&smolvm, "m1"), Some(false));
         assert!(!smolvm.nests());
     }
@@ -1292,12 +1297,61 @@ mod tests {
             .update_vm("m1", |r| r.allowed_cidrs = None)
             .unwrap();
 
-        let err = smolvm.start("m1", 2048).unwrap_err();
+        let err = smolvm.start("m1", 2048, 2048).unwrap_err();
 
         assert!(
             format!("{err:#}").contains("no egress allowlist"),
             "{err:#}"
         );
+    }
+
+    // TEST_SCENARIO: a start that converts the machine's disk boots it with all its RAM, since its guest copies before it answers and would fail the grow, whose reboot cuts the copy short. Every other start boots at the boot size and grows. The record holds the RAM a start boots with, written before the VMM is asked to boot, so it is read even though the boot itself fails here.
+    #[test]
+    fn a_converting_start_boots_whole() {
+        use std::os::unix::fs::FileExt;
+        let home = Home::new("convert-whole");
+        let share = home.path.join("share");
+        fs::create_dir_all(&share).unwrap();
+        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
+        let launch = launch();
+        for id in ["m1", "m2"] {
+            smolvm
+                .create(
+                    id,
+                    &Machine {
+                        spec: &spec(),
+                        image: "quay.io/x/vm:1",
+                        host_port: 32000,
+                        share: &share,
+                        launch: &launch,
+                    },
+                )
+                .unwrap();
+        }
+        let dir = vm_data_dir("m1");
+        let disk = |name: &str, at: u64, magic: &[u8]| {
+            let file = fs::File::create(dir.join(name)).unwrap();
+            file.set_len(1 << 20).unwrap();
+            file.write_all_at(magic, at).unwrap();
+        };
+        disk(
+            smolvm::storage::STORAGE_DISK_FILENAME,
+            1024 + 56,
+            &[0x53, 0xEF],
+        );
+        disk("storage.next.raw", 0x1_0040, b"_BHRfS_M");
+        fs::write(
+            dir.join("disk-conversion"),
+            r#"{"nonce":"n1","committed":false,"attempts":0}"#,
+        )
+        .unwrap();
+
+        let _ = smolvm.start("m1", 1024, 2048);
+        let _ = smolvm.start("m2", 1024, 2048);
+
+        let mem = |id| smolvm.record(id).unwrap().unwrap().mem;
+        assert_eq!(mem("m1"), 2048, "the converting start boots whole");
+        assert_eq!(mem("m2"), 1024, "a start that converts nothing boots small");
     }
 
     // TEST_SCENARIO: a machine recorded by an earlier runner carries smolvm's default resolver and no name list, so its gateway would relay the guest's DNS to a real resolver — on a Mac, the one on its own loopback. Its next start pins the sink and the empty list before anything boots, even when, as here, the boot itself then fails, and the policy smolvm builds from that record, a gateway-port machine's included, forwards no name at all.
@@ -1332,7 +1386,7 @@ mod tests {
             })
             .unwrap();
 
-        let _ = smolvm.start("m1", 2048);
+        let _ = smolvm.start("m1", 2048, 2048);
 
         let record = smolvm.record("m1").unwrap().unwrap();
         assert_eq!(record.dns, Some(GUEST_DNS_SINK));
@@ -1375,7 +1429,7 @@ mod tests {
         };
         assert_eq!(dns(&smolvm), relayed);
 
-        let _ = smolvm.start("m1", 2048);
+        let _ = smolvm.start("m1", 2048, 2048);
         assert_eq!(dns(&smolvm), relayed);
 
         let unnamed = spec();
