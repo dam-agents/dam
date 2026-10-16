@@ -694,7 +694,8 @@ export async function bootstrap() {
     db,
     shareBaseUrl: config.shareBaseUrl,
     platformProvider: config.platformProvider && {
-      ...config.platformProvider,
+      baseUrl: config.platformProvider.baseUrl,
+      model: config.platformProvider.model,
       name: config.brand.name,
     },
     e2eEnabled: config.e2eEnabled,
@@ -755,6 +756,7 @@ export async function bootstrap() {
       connectionRulesSync: createConnectionRulesSyncAdapter(db),
       oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
       brandName: config.brand.name,
+      platformProviderKey: config.platformProvider?.apiKey ?? null,
       platformProviderEnabled: async () =>
         (
           await composeFeaturesForOwner({

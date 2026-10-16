@@ -33,6 +33,7 @@ function makeService(outcome: ProviderKeyProbeOutcome) {
   const probed: string[] = [];
   const svc = createConnectionsService({
     platformProviderEnabled: async () => false,
+    platformProviderKey: null,
     isOwnedAgent: async () => true,
     ownerId: "owner",
     templates: createConnectionTemplateRegistry(buildCatalog()),

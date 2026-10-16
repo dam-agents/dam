@@ -253,11 +253,21 @@ spec:
             - name: FEATURE_DEFAULT_MODE
               value: {{ include "platform.featureDefault" . | quote }}
             {{- with .Values.apiServer.platformProvider }}
-            {{- if .baseUrl }}
+            {{- if and .baseUrl (or (dig "apiKeySecret" "name" "" .) .apiKey) }}
             - name: PLATFORM_PROVIDER_BASE_URL
               value: {{ .baseUrl | quote }}
             - name: PLATFORM_PROVIDER_MODEL
               value: {{ .model | quote }}
+            - name: PLATFORM_PROVIDER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  {{- if dig "apiKeySecret" "name" "" . }}
+                  name: {{ .apiKeySecret.name }}
+                  key: {{ .apiKeySecret.key | default "api-key" }}
+                  {{- else }}
+                  name: {{ include "platform.apiserver.secrets.fullname" $ }}
+                  key: PLATFORM_PROVIDER_API_KEY
+                  {{- end }}
             {{- end }}
             {{- end }}
             - name: HARNESSES

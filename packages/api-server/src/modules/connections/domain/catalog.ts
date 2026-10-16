@@ -310,7 +310,7 @@ export interface PlatformProviderEndpoint {
 
 function platformLlm(
   endpoint: PlatformProviderEndpoint,
-): NoneConnectionTemplate {
+): HeaderConnectionTemplate {
   const url = new URL(endpoint.baseUrl);
   return {
     id: PLATFORM_LLM_TEMPLATE_ID,
@@ -318,14 +318,19 @@ function platformLlm(
     category: "app",
     isCustom: false,
     description:
-      "The operator's self-hosted model server. It needs no key, and it is connected when the feature is turned on.",
-    authKind: "none",
+      "The operator's self-hosted model server, reached with the operator's key. It is connected when the feature is turned on.",
+    authKind: "header",
+    host: url.hostname,
+    headerName: "Authorization",
+    valueFormat: "Bearer {value}",
     contributions: [
       ...envContributions(platformLlmEnvMappings(endpoint)),
       {
-        kind: "egress-allow",
+        kind: "egress-inject",
         host: url.hostname,
-        port: Number(url.port || (url.protocol === "https:" ? 443 : 80)),
+        ...(url.port ? { port: Number(url.port) } : {}),
+        headerName: "Authorization",
+        valueFormat: "Bearer {value}",
       },
     ],
   };
