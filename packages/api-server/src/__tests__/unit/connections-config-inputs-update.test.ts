@@ -33,6 +33,7 @@ function makeService() {
   const fannedOut: string[] = [];
   const svc = createConnectionsService({
     platformProviderEnabled: async () => false,
+    platformProviderKey: null,
     ownerId: "owner",
     templates: createConnectionTemplateRegistry(buildCatalog()),
     repo: unused<ConnectionsRepository>({

@@ -7,6 +7,7 @@ import { attentionRouter } from "./modules/attention/router.js";
 import { approvalsRouter } from "./modules/approvals/router.js";
 import { caseStudiesRouter } from "./modules/case-studies/router.js";
 import { channelsRouter } from "./modules/channels/router.js";
+import { chatFormsRouter } from "./modules/chat-forms/router.js";
 import { connectionsRouter } from "./modules/connections/router.js";
 import { e2eRouter } from "./modules/e2e/router.js";
 import { egressRulesRouter } from "./modules/egress-rules/router.js";
@@ -48,6 +49,7 @@ export const appRouter = t.router({
   artifactLibrary: artifactLibraryRouter,
   caseStudies: caseStudiesRouter,
   features: featuresRouter,
+  chatForms: chatFormsRouter,
   files: filesRouter,
   gettingStarted: gettingStartedRouter,
   sidebarPins: sidebarPinsRouter,
