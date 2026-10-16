@@ -130,6 +130,9 @@ export const ChatMessage = memo(function ChatMessage({
               role={role}
               streaming={streaming}
               isLast={i === parts.length - 1}
+              partIndex={i}
+              messageId={message.id}
+              interactive={!streaming}
               onFileClick={onFileClick}
             />
           ))}

@@ -19,3 +19,16 @@ export function useSetFeature() {
     },
   });
 }
+
+export function useInstallCapabilities() {
+  return useQuery({
+    queryKey: ["features", "install"],
+    queryFn: () =>
+      Promise.resolve({
+        virtualization: false,
+        features: { "chat-forms": "experimental" as const },
+      }),
+    staleTime: Infinity,
+    meta: { errorToast: "Couldn't load what this install supports" },
+  });
+}

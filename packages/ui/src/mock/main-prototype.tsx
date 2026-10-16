@@ -30,6 +30,7 @@ import {
   connectionTemplates,
 } from "./data/connections.js";
 import { driverSummaries, experiments } from "./data/experiments.js";
+import { chatFormPreferences } from "./data/chat-forms.js";
 import { featureFlags } from "./data/features.js";
 import { knowledgeBases } from "./data/knowledge-bases.js";
 import { schedules } from "./data/schedules.js";
@@ -92,6 +93,13 @@ queryClient.setQueryData(
 
 // Features
 queryClient.setQueryData(trpcKey("features.flags"), featureFlags);
+queryClient.setQueryData(trpcKey("features.install"), {
+  virtualization: false,
+  features: { "chat-forms": "experimental" },
+});
+
+// Chat forms
+queryClient.setQueryData(trpcKey("chatForms.preferences"), chatFormPreferences);
 
 // Connections
 queryClient.setQueryData(

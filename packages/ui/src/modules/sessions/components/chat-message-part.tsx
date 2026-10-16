@@ -1,8 +1,13 @@
+import { hasA2uiBlock } from "api-server-api/chat-forms";
 import { Document } from "@carbon/icons-react";
 
 import { formatBytes } from "@/lib/format-size";
 
 import { Markdown } from "../../../components/markdown.js";
+import { A2uiAssistantText } from "../../a2ui/components/a2ui-assistant-text.js";
+import { A2uiUserText } from "../../a2ui/components/a2ui-user-text.js";
+import { useChatFormsEnabled } from "../../a2ui/hooks/use-chat-forms-enabled.js";
+import { hasRendererBlocks } from "../../a2ui/lib/prompts.js";
 import type { MessagePart, Role } from "../../../types.js";
 import { PermissionVerdictLine } from "./permission-prompt.js";
 import { ThoughtBlock } from "./thought-block.js";
@@ -13,6 +18,9 @@ interface Props {
   role: Role;
   streaming: boolean;
   isLast: boolean;
+  partIndex: number;
+  messageId: string;
+  interactive: boolean;
   onFileClick: (path: string) => void;
 }
 
@@ -21,12 +29,31 @@ export function ChatMessagePart({
   role,
   streaming,
   isLast,
+  partIndex,
+  messageId,
+  interactive,
   onFileClick,
 }: Props) {
+  const formsEnabled = useChatFormsEnabled();
+
   switch (part.kind) {
     case "text":
-      if (role === "assistant")
+      if (role === "assistant") {
+        if (formsEnabled && hasA2uiBlock(part.text)) {
+          return (
+            <A2uiAssistantText
+              text={part.text}
+              partKey={`${messageId}:${partIndex}`}
+              interactive={interactive}
+              onFileClick={onFileClick}
+            />
+          );
+        }
         return <Markdown onFileClick={onFileClick}>{part.text}</Markdown>;
+      }
+      if (formsEnabled && hasRendererBlocks(part.text)) {
+        return <A2uiUserText text={part.text} />;
+      }
       return (
         <span className="whitespace-pre-wrap break-words">
           {part.text}

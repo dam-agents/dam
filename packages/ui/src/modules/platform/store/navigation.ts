@@ -26,7 +26,8 @@ type ParameterlessView =
   | "sidebar-specs"
   | "nav-flows"
   | "placeholder-texts"
-  | "handoff-sheet";
+  | "handoff-sheet"
+  | "chat-forms-gallery";
 
 export interface NavigationSlice {
   view: View;

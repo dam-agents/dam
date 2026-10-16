@@ -211,9 +211,14 @@ export {
 export type {
   FeatureId,
   FeatureFlags,
+  FeatureMode,
+  FeatureModes,
   FeaturesService,
 } from "./modules/features/types.js";
-export { featureIdSchema } from "./modules/features/schemas.js";
+export {
+  featureIdSchema,
+  featureModeSchema,
+} from "./modules/features/schemas.js";
 export {
   quietWindowSchema,
   scheduleCreateCronInputSchema,
@@ -628,3 +633,13 @@ export {
   apiKeyRevokeInputSchema,
   scopeSchema,
 } from "./modules/api-keys/schemas.js";
+
+export {
+  chatFormCapabilities,
+} from "./modules/chat-forms/capabilities.js";
+export {
+  findRendererBlocks,
+  joinRendererBlocks,
+  type RendererBlock,
+  separateRendererBlocks,
+} from "./modules/chat-forms/renderer-blocks.js";

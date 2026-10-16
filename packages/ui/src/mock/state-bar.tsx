@@ -1,4 +1,4 @@
-import { Document, TextFont, Warning } from "@carbon/icons-react";
+import { Chat, Document, TextFont, Warning } from "@carbon/icons-react";
 
 import { cn } from "@/lib/utils";
 
@@ -55,6 +55,24 @@ function MockStateBarPanel() {
         aria-label="Fire approval toast"
       >
         <Warning size={16} className="text-foreground" />
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          if (view === "chat-forms-gallery") {
+            useStore.setState({ view: "home" });
+          } else {
+            setView("chat-forms-gallery");
+          }
+        }}
+        className={cn(
+          "fixed bottom-4 right-[60px] z-[9999] flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card shadow-lg transition-colors hover:bg-muted",
+          view === "chat-forms-gallery" && "bg-muted",
+        )}
+        aria-label="Chat forms gallery"
+      >
+        <Chat size={16} className="text-foreground" />
       </button>
 
       <button

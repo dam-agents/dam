@@ -5,6 +5,8 @@ packages:
   - "packages/e2e/playwright"
   - "packages/agents/pi-agent/workspace/.pi/agent/extensions/*"
 minimumReleaseAge: 10080 # 7 days (in minutes)
+minimumReleaseAgeExclude:
+  - "@a2ui/web_core"
 trustPolicy: no-downgrade
 trustPolicyExclude:
   # rollup@2.80.0 is pinned by transitive deps still on the v2 line while

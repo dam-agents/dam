@@ -6,6 +6,7 @@ import { GlobalBanner } from "./components/global-banner.js";
 import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
 import { AgentCardGallery } from "./mock/data/agent-card-gallery.js";
+import { ChatFormsGallery } from "./mock/data/chat-forms-gallery.js";
 import { ComponentShowcase } from "./mock/data/component-showcase.js";
 import { HandoffSheet } from "./mock/handoff-sheet.js";
 import { FlowScreen, NavFlows } from "./mock/nav-flows.js";
@@ -180,6 +181,8 @@ function MainApp() {
                 <AgentCardGallery />
               ) : view === "component-showcase" ? (
                 <ComponentShowcase />
+              ) : view === "chat-forms-gallery" ? (
+                <ChatFormsGallery />
               ) : (
                 <HomeView />
               )}

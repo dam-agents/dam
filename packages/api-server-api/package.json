@@ -8,13 +8,15 @@
     ".": "./src/index.ts",
     "./router": "./src/router.ts",
     "./harness-router": "./src/harness-router.ts",
-    "./trpc-telemetry": "./src/trpc-telemetry.ts"
+    "./trpc-telemetry": "./src/trpc-telemetry.ts",
+    "./chat-forms": "./src/modules/chat-forms/index.ts"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",
     "@trpc/server": "^11.16.0",
     "agent-runtime-api": "workspace:*",
     "rrule": "^2.8.1",
+    "ts-pattern": "^5.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

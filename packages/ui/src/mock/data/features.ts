@@ -1,1 +1,1 @@
-export const featureFlags = { processes: true };
+export const featureFlags = { processes: true, "chat-forms": true };

@@ -6,6 +6,7 @@
     "./use-prompt-delivery": "./src/modules/sessions/hooks/use-prompt-delivery.ts"
   },
   "dependencies": {
+    "@a2ui/web_core": "^0.13.0",
     "@agentclientprotocol/sdk": "^0.17.1",
     "@carbon/icons-react": "^11.80.0",
     "@codemirror/commands": "^6.10.3",

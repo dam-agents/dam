@@ -43,6 +43,7 @@ import {
   createProcessesSlice,
   type ProcessesSlice,
 } from "./modules/processes/store.js";
+import { createA2uiSlice, type A2uiSlice } from "./modules/a2ui/store.js";
 import {
   claimDraftsFor,
   flushDraftsOnHide,
@@ -79,7 +80,8 @@ export type PlatformStore = DialogSlice &
   PermissionsSlice &
   ProcessesSlice &
   PacksSlice &
-  DismissalsSlice & {
+  DismissalsSlice &
+  A2uiSlice & {
     openDelegation: unknown | null;
   };
 
@@ -99,6 +101,7 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createProcessesSlice(...a),
   ...createPacksSlice(...a),
   ...createDismissalsSlice(...a),
+  ...createA2uiSlice(...a),
   openDelegation: null,
 }));
 

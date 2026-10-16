@@ -19,6 +19,7 @@ export const sandboxSectionSchema = z.enum([
   "schedules",
   "artifacts",
   "usage",
+  "chat-forms",
 ]);
 export type SandboxSection = z.infer<typeof sandboxSectionSchema>;
 
@@ -43,6 +44,7 @@ export type Route =
   | { view: "nav-flows" }
   | { view: "placeholder-texts" }
   | { view: "handoff-sheet" }
+  | { view: "chat-forms-gallery" }
   | { view: "flow-screen"; flowId: string; screen: number }
   | { view: "agent-landing"; agentId: string };
 
@@ -119,6 +121,7 @@ export function parseRoute(path: string): Route {
   if (path === "/nav-flows") return { view: "nav-flows" };
   if (path === "/placeholder-texts") return { view: "placeholder-texts" };
   if (path === "/handoff-sheet") return { view: "handoff-sheet" };
+  if (path === "/chat-forms-gallery") return { view: "chat-forms-gallery" };
   const flowScreenMatch = path.match(/^\/flow-screen\/([^/]+)\/(\d+)$/);
   if (flowScreenMatch) {
     return {
@@ -200,6 +203,8 @@ export function routeToPath(route: Route): string {
       return "/placeholder-texts";
     case "handoff-sheet":
       return "/handoff-sheet";
+    case "chat-forms-gallery":
+      return "/chat-forms-gallery";
     case "flow-screen":
       return `/flow-screen/${encodeURIComponent(route.flowId)}/${route.screen}`;
     case "agent-landing":

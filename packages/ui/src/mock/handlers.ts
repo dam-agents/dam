@@ -19,6 +19,7 @@ import {
   connectionTemplates,
 } from "./data/connections.js";
 import { driverSummaries, experiments } from "./data/experiments.js";
+import { chatFormPreferences } from "./data/chat-forms.js";
 import { featureFlags } from "./data/features.js";
 import { knowledgeBases } from "./data/knowledge-bases.js";
 import {
@@ -67,6 +68,11 @@ function getFixtures(): Record<string, unknown> {
     "terms.current": termsCurrent,
     "terms.latestAcceptance": termsLatestAcceptance,
     "features.flags": featureFlags,
+    "features.install": {
+      virtualization: false,
+      features: { "chat-forms": "experimental" },
+    },
+    "chatForms.preferences": chatFormPreferences,
     "connections.listTemplates": connectionTemplates,
     "connections.list": fresh ? [] : connections,
     "connections.getAgentConnections": fresh
@@ -531,6 +537,9 @@ export const handlers = [
         ) {
           return { result: { data: null } };
         }
+        if (proc === "chatForms.setPreferences") {
+          return { result: { data: chatFormPreferences } };
+        }
         return { result: { data: null } };
       });
 
@@ -633,6 +642,9 @@ export const handlers = [
         }
         if (proc === "skills.sources.refresh") {
           return { result: { data: null } };
+        }
+        if (proc === "chatForms.setPreferences") {
+          return { result: { data: chatFormPreferences } };
         }
         return { result: { data: null } };
       });

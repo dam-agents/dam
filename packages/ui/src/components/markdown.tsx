@@ -7,6 +7,7 @@ import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 
 import { MarkdownCodeBlock } from "@/components/markdown-code-block";
+import { cn } from "@/lib/utils";
 import { DisclosureToggle } from "@/components/ui/disclosure";
 import { externalLinkProps } from "@/lib/external-link";
 
@@ -75,9 +76,11 @@ function FrontmatterBlock({ source }: { source: string }) {
 
 export function Markdown({
   children,
+  className,
   onFileClick,
 }: {
   children: string;
+  className?: string;
   onFileClick?: (path: string) => void;
 }) {
   const { frontmatter, body } = useMemo(
@@ -131,7 +134,7 @@ export function Markdown({
   );
 
   return (
-    <div className="prose">
+    <div className={cn("prose", className)}>
       {frontmatter !== null && <FrontmatterBlock source={frontmatter} />}
       <ReactMarkdown
         remarkPlugins={REMARK_PLUGINS}

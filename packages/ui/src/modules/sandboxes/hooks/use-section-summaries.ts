@@ -3,6 +3,10 @@ import { useMemo } from "react";
 
 import type { AgentView } from "../../../types.js";
 import {
+  useChatFormPreferences,
+} from "../../a2ui/api/queries.js";
+import { useChatFormsEnabled } from "../../a2ui/hooks/use-chat-forms-enabled.js";
+import {
   useHarnessConfigCurrent,
   useHarnessConfigStatus,
   useResolvedHarnessConfig,
@@ -162,6 +166,15 @@ export function useSectionSummaries(agent: AgentView | null): {
       : "No spend this month";
   }, [monthSpend]);
 
+  const chatFormsEnabled = useChatFormsEnabled();
+  const { data: chatFormPrefs } = useChatFormPreferences(agent?.id ?? null, { quiet: true });
+  const chatFormsSummary = useMemo(() => {
+    if (!chatFormsEnabled) return "Feature off";
+    if (!chatFormPrefs) return undefined;
+    const mode = chatFormPrefs.forms === "all" ? "On" : chatFormPrefs.forms === "input" ? "Input only" : "Off";
+    return mode === "Off" ? mode : `${mode} · ${chatFormPrefs.pacing}`;
+  }, [chatFormsEnabled, chatFormPrefs]);
+
   return {
     summaries: {
       setup,
@@ -171,6 +184,7 @@ export function useSectionSummaries(agent: AgentView | null): {
       schedules: schedulesSummary,
       artifacts: artifactsSummary,
       usage: usageSummary,
+      "chat-forms": chatFormsSummary,
     },
     warnings: missingProvider
       ? { setup: NO_PROVIDER_WARNING }

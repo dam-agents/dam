@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
+import { ChatFormSettings } from "../../a2ui/components/chat-form-settings.js";
 import { useAgentDisplayName, useAgents } from "../../agents/api/queries.js";
 import { SandboxArtifactsSection } from "../../artifacts/components/sandbox-artifacts-section.js";
 import { SandboxUsageSection } from "../../metrics/components/sandbox-usage-section.js";
@@ -27,6 +28,7 @@ const SECTIONS: { section: SandboxSection; title: string }[] = [
   { section: "schedules", title: "Schedules" },
   { section: "artifacts", title: "Artifacts" },
   { section: "usage", title: "Usage" },
+  { section: "chat-forms", title: "Chat Forms" },
 ];
 
 interface Props {
@@ -173,6 +175,9 @@ export function ConfigureAgentModal({
             <SandboxArtifactsSection agentId={agentId} />
           )}
           {section === "usage" && <SandboxUsageSection agentId={agentId} />}
+          {section === "chat-forms" && (
+            <ChatFormSettings agentId={agentId} />
+          )}
         </div>
       </div>
 
