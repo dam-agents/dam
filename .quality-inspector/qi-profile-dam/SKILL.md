@@ -24,7 +24,8 @@ The nested install is a fresh, single-user platform at `http://localhost:4444`, 
 
 - No outbound network from inside the nested cluster: real model providers, GitHub, Slack and Telegram do not work.
   An AC that needs any of them is `testable: no — external dependency`, unless it only checks that the UI offers or records something.
-- Agents answer through the **Mock** harness template (a scripted mock agent, the profile's `mock_image`): it replies "Hello from the mock agent." to every prompt and never calls a model.
+- Agents answer through the **Mock** harness template (a scripted mock agent, the profile's `mock_image`): it replies "Hello from the mock agent."
+  to every prompt and never calls a model.
   An AC about what an agent says or decides is judged only on what the UI shows around that reply; with `mock_image` set empty, an AC that needs an agent to reply or run is `blocked`, not failed.
 - Only the mock harness runs: the install leaves out the harness tools installer, so the
   harness templates that need its tools (Claude Code, Codex, Pi, Bob) cannot start an agent.
