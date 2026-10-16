@@ -830,7 +830,10 @@ clickstack:
     deployment:
       image:
         repository: quay.io/dam-agents/hyperdx
-        tag: "2.40.0"
+        # 2.41.0 is under the 7-day age floor until 2026-10-20; taken early
+        # because it fixes the next (GHSA-vcvr-r3jv-pc5j), handlebars, shell-quote
+        # and proxy-addr criticals of 2.40.0. Drop this comment after that date.
+        tag: "2.41.0"
       waitForMongodb:
         image: "quay.io/dam-agents/busybox:1.38.0"
 
