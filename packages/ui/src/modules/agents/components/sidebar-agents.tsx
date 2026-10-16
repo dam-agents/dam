@@ -51,9 +51,22 @@ export function SidebarAgents({
   const startSession = useStartSession();
 
   const list = useRef<HTMLElement>(null);
+  const dragging = useRef(false);
   useEffect(() => {
     if (leadAgentId) list.current?.parentElement?.scrollTo({ top: 0 });
   }, [leadAgentId]);
+  const endDrag = () => {
+    dragging.current = false;
+    document.addEventListener(
+      "pointermove",
+      (event) =>
+        holdOrder(
+          event.target instanceof Node &&
+            !!list.current?.contains(event.target),
+        ),
+      { once: true },
+    );
+  };
 
   const navigate = (go: () => void) => () => {
     go();
@@ -119,7 +132,14 @@ export function SidebarAgents({
       aria-label="Agents"
       data-testid="sidebar-agents"
       onPointerEnter={() => holdOrder(true)}
-      onPointerLeave={() => holdOrder(false)}
+      onPointerLeave={() => {
+        if (!dragging.current) holdOrder(false);
+      }}
+      onDragStartCapture={() => {
+        dragging.current = true;
+        holdOrder(true);
+      }}
+      onDragEndCapture={endDrag}
     >
       <div
         className={cn(
