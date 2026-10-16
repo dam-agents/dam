@@ -692,6 +692,7 @@ jobs:
         name: Build or fetch this run's images in the background
         env:
           GH_TOKEN: ${{ github.token }}
+          ARCH: amd64
           # The jobs that make the images e2e loads; see e2e:ci-images.
           CI_IMAGES_BUILD: ${{ env.VERIFY == 'true' && '1' || '' }}
           CI_IMAGES_IMAGES_JOB: build-images (amd64)
