@@ -148,10 +148,9 @@ test("login via Keycloak and accept terms", async ({ page }) => {
   await page.context().storageState({ path: storageStatePath });
 });
 
-// TEST_SCENARIO: The global setup for the lane's Backend. The vm-sandboxes experiment makes the UI create agents on the vm Backend. So the vm lane turns it on for the e2e user here, before any spec creates an agent. The container lane turns it off, so a flag left from an earlier run on the same database cannot move that lane's agents. The vm lane also fails here, once, when the install has no vm backend, and not later in every spec that boots an agent. The setup also dismisses the Get started checklist: an unlock the suite earns, such as the first agent, opens it over the right of the page, where it covers the buttons of the agent rows.
+// TEST_SCENARIO: The global setup for the lane's Backend. The vm-sandboxes experiment makes the UI create agents on the vm Backend. So the vm lane turns it on for the e2e user here, before any spec creates an agent. The container lane turns it off, so a flag left from an earlier run on the same database cannot move that lane's agents. The vm lane also fails here, once, when the install has no vm backend, and not later in every spec that boots an agent.
 test("the e2e user's runtime matches the lane's Backend", async () => {
   const api = createApiClient(await getAccessToken());
   await requireBackend(api, laneBackend);
   await setVmSandboxes(api, laneBackend === "vm");
-  await api.gettingStarted.setDismissed.mutate({ dismissed: true });
 });

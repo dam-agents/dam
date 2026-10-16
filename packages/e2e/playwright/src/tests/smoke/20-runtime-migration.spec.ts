@@ -137,17 +137,19 @@ test("offers no Migrate button with the experiment off", async ({ page }) => {
   await expect(row.getByRole("button", { name: /^Migrate/ })).toHaveCount(0);
 });
 
-// TEST_SCENARIO: the user opts in and migrates through the Migrate button and its confirm dialog, which shows the plan, retention window included. The Get started checklist is open beside the agent rows, as it is for a new user after the first agent, and the Migrate button under its place still takes the click. The request switches nothing: the Agent keeps reading as a container Agent with a migration under way, which can still be aborted, while the controller prepares the machine beside it. It is settled once the controller has copied HOME and booted the machine from the copy, the api-server has switched the Backend, the migration's state is cleared, and the machine is running.
+// TEST_SCENARIO: the user opts in and migrates through the Migrate button and its confirm dialog, which shows the plan, retention window included. The Get started panel is open beside the agent rows; like any side panel it takes its room from the page, so the Migrate button still takes the click. The request switches nothing: the Agent keeps reading as a container Agent with a migration under way, which can still be aborted, while the controller prepares the machine beside it. It is settled once the controller has copied HOME and booted the machine from the copy, the api-server has switched the Backend, the migration's state is cleared, and the machine is running.
 test("migrates to the vm Backend from the Migrate button", async ({ page }) => {
   test.setTimeout(300_000);
   await setVmSandboxes(api, true);
   checklistDismissed = (await api.gettingStarted.progress.query()).dismissed;
   await api.gettingStarted.setDismissed.mutate({ dismissed: false });
-  await page.addInitScript(() =>
-    localStorage.setItem("platform-getting-started-expanded", "1"),
-  );
   await page.goto(baseUrl);
-  await expect(page.getByRole("region", { name: "Get started" })).toBeVisible();
+  await page.getByTestId("side-panel-tab-getting-started").click();
+  await expect(
+    page
+      .getByTestId("side-panel")
+      .getByRole("heading", { name: "Get started" }),
+  ).toBeVisible();
   const row = agentRow(page, agentName);
   const migrate = row.getByRole("button", {
     name: "Migrate to the new runtime",

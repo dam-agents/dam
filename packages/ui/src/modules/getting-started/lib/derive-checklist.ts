@@ -22,7 +22,7 @@ export interface Checklist {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Turns the server's progress into what the dock
+ * UNIT_BOUNDARY_DESCRIPTION: Turns the server's progress into what the checklist
  * shows. An unlock the user has not seen yet is celebrated before it counts
  * as done, one at a time and oldest first, so a starter kit that finishes
  * several tasks at once still shows each new character.

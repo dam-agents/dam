@@ -37,7 +37,7 @@ interface Props {
  * UNIT_BOUNDARY_DESCRIPTION: The moment a user unlocks an avatar character.
  * An egg wobbles and cracks, the character pops out with confetti in its own
  * colors, and a short message says where the user can use it. After a few
- * seconds, or on "Nice", it shrinks toward the checklist, where the
+ * seconds, or on "Nice", it shrinks into the checklist below, where the
  * character takes its place.
  */
 export function UnlockCelebration({ character, variant, onFinished }: Props) {
@@ -65,18 +65,10 @@ export function UnlockCelebration({ character, variant, onFinished }: Props) {
       role="status"
       aria-live="polite"
       className={cn(
-        "flex origin-bottom-right items-end gap-1",
+        "flex flex-col items-center gap-1 border-b border-border px-4 pt-2 pb-4 text-center",
         collecting && "animate-[unlock-collect_0.45s_ease-in_forwards]",
       )}
     >
-      <div className="relative mb-8 w-[min(250px,calc(100vw-11rem))] rounded-2xl border border-border bg-card p-4 opacity-0 shadow-xl animate-[unlock-bubble_0.35s_ease-out_1.15s_forwards]">
-        <p className="text-sm font-semibold text-foreground">{copy.title}</p>
-        <p className="mt-0.5 text-sm text-muted-foreground">{copy.body}</p>
-        <Button size="sm" className="mt-3" onClick={() => setCollecting(true)}>
-          Nice
-        </Button>
-        <span className="absolute -right-[7px] bottom-9 size-3.5 rotate-45 border-t border-r border-border bg-card" />
-      </div>
       <div className="relative size-32 shrink-0">
         <ConfettiBurst character={character} />
         <div className="absolute inset-9 animate-[unlock-wobble_0.9s_ease-in-out]">
@@ -92,6 +84,13 @@ export function UnlockCelebration({ character, variant, onFinished }: Props) {
         <div className="absolute inset-0 flex items-center justify-center opacity-0 animate-[unlock-pop_0.6s_cubic-bezier(0.34,1.56,0.64,1)_0.95s_forwards]">
           <AgentAvatar name="" avatar={character} size={96} playing />
         </div>
+      </div>
+      <div className="opacity-0 animate-[unlock-bubble_0.35s_ease-out_1.15s_forwards]">
+        <p className="text-sm font-semibold text-foreground">{copy.title}</p>
+        <p className="mt-0.5 text-sm text-muted-foreground">{copy.body}</p>
+        <Button size="sm" className="mt-3" onClick={() => setCollecting(true)}>
+          Nice
+        </Button>
       </div>
     </div>
   );

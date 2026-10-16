@@ -1,6 +1,5 @@
 import {
   ArrowDown,
-  ArrowLeft,
   Document,
   Renew,
   TrashCan,
@@ -13,7 +12,6 @@ import {
   TELEMETRY_MAX_SINCE_HOURS,
 } from "api-server-api";
 import {
-  type CSSProperties,
   Fragment,
   type ReactNode,
   useCallback,
@@ -31,12 +29,7 @@ import { Callout } from "@/components/ui/callout";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
-import { ResizeHandle } from "../../../components/resize-handle.js";
 import { useNow } from "../../../hooks/use-now.js";
-import {
-  readPersistedNumber,
-  writePersistedNumber,
-} from "../../../lib/persisted-prefs.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { AgentView, Message } from "../../../types.js";
@@ -101,8 +94,6 @@ import { FilesPanel } from "../../files/components/files-panel.js";
 import { HomeVolumeBar } from "../../files/components/home-volume-bar.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
-import { GettingStartedDock } from "../../getting-started/components/getting-started-dock.js";
-import { ApprovalsButton } from "../../home/components/approvals-button.js";
 import {
   DelegationOwnersProvider,
   useDelegationOwners,
@@ -131,6 +122,10 @@ import {
   useAgentSession,
 } from "../api/queries.js";
 import { useProviderConnections } from "../api/session-pair.js";
+import {
+  AppSidePanel,
+  AppSidePanelButtons,
+} from "../components/app-side-panel.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
@@ -147,9 +142,11 @@ import { SessionPairPicker } from "../components/session-pair-picker.js";
 import { SessionPairPlaceholder } from "../components/session-pair-placeholder.js";
 import { SidePanelBar } from "../components/side-panel-bar.js";
 import { SidePanelEdgeTab } from "../components/side-panel-edge-tab.js";
+import { SidePanelFrame } from "../components/side-panel-frame.js";
 import { Terminal } from "../components/terminal.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
+import { useAppSidePanelTabs } from "../hooks/use-app-side-panel-tabs.js";
 import { useChatArtifactPrompt } from "../hooks/use-chat-artifact-prompt.js";
 import { useChatFormPrompt } from "../hooks/use-chat-form-prompt.js";
 import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
@@ -160,15 +157,15 @@ import {
   useSessionUrlSync,
 } from "../hooks/use-session-url-sync.js";
 import { useSessionWatch } from "../hooks/use-session-watch.js";
+import { useSidePanelLayout } from "../hooks/use-side-panel-layout.js";
 import { draftKey } from "../lib/draft-key.js";
 import { newLiveArrivals, noteArrivals } from "../lib/live-arrivals.js";
 import {
   type DockedItems,
   dockedItemTab,
+  hiddenSidePanelTabs,
   maximizableView,
   selectSidePanelTab,
-  shownSidePanelWidth,
-  sidePanelMinWidth,
   type SidePanelTab,
   visibleSidePanelTab,
 } from "../lib/side-panel.js";
@@ -181,9 +178,7 @@ import {
 import { clearUndelivered } from "../lib/undelivered-store.js";
 import type { SessionError } from "../store/sessions.js";
 
-const FILE_PANEL_WIDTH_KEY = "platform-file-w";
 const CHAT_MIN_W = 320;
-const SIDE_PANEL_BAR_W = 44;
 const TELEMETRY_SETTLE_MS = 5 * 60_000;
 
 // UNIT_BOUNDARY_DESCRIPTION: a sent message lands in the transcript a render or two after the send, so the jump to the end repeats once it is laid out and once more after this wait.
@@ -283,31 +278,6 @@ export function ChatView() {
   const terminalPaused = useStore((s) => s.terminalPaused);
   const setTerminalPaused = useStore((s) => s.setTerminalPaused);
 
-  const [rightW, setRightW] = useState<number | null>(() =>
-    readPersistedNumber(FILE_PANEL_WIDTH_KEY, null),
-  );
-  const rightWRef = useRef(rightW);
-  const [columnsEl, setColumnsEl] = useState<HTMLDivElement | null>(null);
-  const [columnsW, setColumnsW] = useState<number | null>(null);
-  const [dockSlot, setDockSlot] = useState<HTMLDivElement | null>(null);
-  const [dockSlotW, setDockSlotW] = useState(0);
-  useEffect(() => {
-    if (!columnsEl) return;
-    const ro = new ResizeObserver(([entry]) =>
-      setColumnsW(entry.contentRect.width),
-    );
-    ro.observe(columnsEl);
-    return () => ro.disconnect();
-  }, [columnsEl]);
-  useEffect(() => {
-    if (!dockSlot) return;
-    const ro = new ResizeObserver(([entry]) =>
-      setDockSlotW(entry.contentRect.width),
-    );
-    ro.observe(dockSlot);
-    return () => ro.disconnect();
-  }, [dockSlot]);
-  const filePanelRef = useRef<HTMLDivElement>(null);
   const terminalFreshRef = useRef(false);
   const messagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -689,20 +659,20 @@ export function ChatView() {
     browser: openBrowserAgentId !== null && canOpenBrowser,
     delegation: openDelegation !== null,
   };
-  const activeTab = visibleSidePanelTab(sidePanelTab, docked, {
+  const { gettingStarted, ...appTabs } = useAppSidePanelTabs();
+  const hiddenTabs = hiddenSidePanelTabs({
+    agent: true,
     canOpenBrowser,
     processesEnabled,
+    gettingStarted,
   });
+  const activeTab = visibleSidePanelTab(sidePanelTab, docked, hiddenTabs);
   const dockedTab = dockedItemTab(docked);
   const dockedShown = dockedTab !== null && dockedTab === activeTab;
   const dockedKept = dockedTab !== null && (dockedShown || draftDocked);
   const sidePanelOpen = activeTab !== null;
   const mobileOnPanel = sidePanelOpen && mobileScreen === "files";
   const mobilePanelOpen = mobileOnPanel || (sidePanelOpen && dockedShown);
-  const hiddenTabs = new Set<SidePanelTab>([
-    ...(canOpenBrowser ? [] : (["browser"] as const)),
-    ...(processesEnabled ? [] : (["processes"] as const)),
-  ]);
   const onSidePanelTab = (tab: SidePanelTab) => {
     const selection = selectSidePanelTab(tab, activeTab, docked);
     if (selection.kind === "collapse") setSidePanelTab(null);
@@ -714,19 +684,8 @@ export function ChatView() {
   };
   const maximizable = maximizableView(activeTab, dockedShown, openFilePath);
   const maximized = maximizable !== null && sidePanelMaximized === maximizable;
-  const sidePanelMinW = sidePanelMinWidth(activeTab);
-  const columnsDoNotFit =
-    columnsW !== null &&
-    columnsW < CHAT_MIN_W + sidePanelMinW + SIDE_PANEL_BAR_W + dockSlotW;
-  const sidePanelFills = maximized || (sidePanelOpen && columnsDoNotFit);
-  const sidePanelMaxW =
-    columnsW === null
-      ? null
-      : columnsW - CHAT_MIN_W - SIDE_PANEL_BAR_W - dockSlotW;
-  const sidePanelW =
-    rightW === null
-      ? null
-      : shownSidePanelWidth(rightW, sidePanelMinW, sidePanelMaxW);
+  const layout = useSidePanelLayout(activeTab, CHAT_MIN_W);
+  const sidePanelFills = maximized || (sidePanelOpen && layout.doesNotFit);
   const handleConfigureSandbox = useCallback(() => {
     if (!selectedAgent) return;
     navigateToSandboxHome(selectedAgent);
@@ -755,7 +714,7 @@ export function ChatView() {
         />
       )}
       {}
-      <div ref={setColumnsEl} className="flex flex-1 min-h-0">
+      <div ref={layout.setRowEl} className="flex flex-1 min-h-0">
         {}
         <div
           className={`@container/chat relative flex flex-1 flex-col min-w-0 ${mobileOnPanel ? "hidden md:flex" : "flex"} ${sidePanelFills ? "md:!hidden" : ""}`}
@@ -830,8 +789,7 @@ export function ChatView() {
                 <Document size={16} />
               </Button>
               <div className="flex items-center gap-1 md:hidden">
-                <GettingStartedDock placement="header" />
-                <ApprovalsButton />
+                <AppSidePanelButtons />
               </div>
             </div>
           </header>
@@ -1194,169 +1152,109 @@ export function ChatView() {
         </div>
 
         {}
-        {sidePanelOpen && !sidePanelFills && (
-          <div className="hidden md:flex">
-            <ResizeHandle
-              side="right"
-              onResize={(d) => {
-                const max = sidePanelMaxW ?? window.innerWidth - 500;
-                const base = shownSidePanelWidth(
-                  rightWRef.current ?? filePanelRef.current?.offsetWidth ?? 0,
-                  sidePanelMinW,
-                  max,
-                );
-                const v = Math.max(sidePanelMinW, Math.min(max, base + d));
-                rightWRef.current = v;
-                writePersistedNumber(FILE_PANEL_WIDTH_KEY, v);
-                setRightW(v);
+        <SidePanelFrame
+          layout={layout}
+          open={sidePanelOpen}
+          fills={sidePanelFills}
+          keepMounted={dockedKept}
+          mobileOpen={mobilePanelOpen}
+          mobileTitle={selectedAgentName}
+          onMobileBack={() => {
+            setSidePanelTab(null);
+            setMobileScreen("chat");
+          }}
+          edge={
+            sidePanelOpen &&
+            maximizable &&
+            (maximized || !layout.doesNotFit) && (
+              <SidePanelEdgeTab
+                maximized={maximized}
+                onToggle={() =>
+                  setSidePanelMaximized(maximized ? null : maximizable)
+                }
+              />
+            )
+          }
+          bar={
+            <SidePanelBar
+              active={activeTab}
+              hidden={hiddenTabs}
+              onSelect={onSidePanelTab}
+              icons={appTabs.icons}
+              badges={{
+                ...appTabs.badges,
+                ...(runningProcesses && {
+                  processes: {
+                    count: runningProcesses.running,
+                    label: `Processes, ${String(runningProcesses.running)} running`,
+                  },
+                }),
               }}
             />
-          </div>
-        )}
-        <div
-          data-testid="side-panel"
-          className={cn(
-            "flex bg-background relative z-content max-md:fixed max-md:inset-0 max-md:z-overlay",
-            !mobilePanelOpen && "max-md:hidden",
-            sidePanelFills
-              ? "md:flex-1 md:min-w-0"
-              : sidePanelOpen && sidePanelW === null
-                ? "md:flex-1 md:basis-0 md:min-w-0"
-                : "md:shrink-0",
-          )}
+          }
         >
-          {(sidePanelOpen || dockedKept) && (
-            <div
-              ref={filePanelRef}
-              style={
-                {
-                  "--file-min-w": `${sidePanelMinW}px`,
-                  ...(sidePanelW !== null && { "--file-w": `${sidePanelW}px` }),
-                } as CSSProperties
-              }
-              className={cn(
-                "flex flex-col min-w-0 overflow-hidden max-md:flex-1",
-                !sidePanelFills && "md:min-w-[var(--file-min-w)]",
-                !sidePanelOpen && "hidden",
-                sidePanelFills || sidePanelW === null
-                  ? "md:flex-1"
-                  : "md:shrink-0 md:w-[var(--file-w)]",
-                "md:border-l md:border-border",
-              )}
-            >
-              <div className="flex h-[52px] shrink-0 items-center gap-2 border-b border-border px-3 md:hidden">
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Back to chat"
-                  onClick={() => {
-                    setSidePanelTab(null);
-                    setMobileScreen("chat");
-                  }}
-                >
-                  <ArrowLeft size={16} />
-                </Button>
-                <span className="truncate text-sm font-bold text-foreground">
-                  {selectedAgentName}
-                </span>
-              </div>
-              {!dockedShown && activeTab === "files" && (
-                <FilesPanel
-                  open
-                  className="flex-1"
-                  onOpenFile={openFileHandler}
-                />
-              )}
-              {!dockedShown && activeTab === "artifacts" && (
-                <ChatArtifactsPanel
-                  agentId={selectedAgent}
-                  open
-                  className="flex-1"
-                />
-              )}
-              {!dockedShown && activeTab === "processes" && (
-                <ProcessesPanel
-                  agentId={selectedAgent}
-                  alwaysOn={agentView?.hibernationTimeoutMin === 0}
-                  open
-                  className="flex-1"
-                />
-              )}
-              {dockedKept && (
-                <div
-                  className={cn(
-                    "flex flex-1 min-h-0 flex-col",
-                    !dockedShown && "hidden",
-                  )}
-                >
-                  {openBrowserAgentId && canOpenBrowser ? (
-                    <DockedBrowserPanel
-                      key={openBrowserAgentId}
-                      agentId={openBrowserAgentId}
-                      agentName={selectedAgentName ?? openBrowserAgentId}
-                    />
-                  ) : openDelegation ? (
-                    <DockedDelegationPanel
-                      key={openDelegation.id}
-                      driverAgentId={openDelegation.driverAgentId}
-                      id={openDelegation.id}
-                    />
-                  ) : openFilePath ? (
-                    <DockedFilePanel onOpenFile={openFileHandler} />
-                  ) : openArtifactId ? (
-                    <DockedArtifactPanel
-                      key={openArtifactId}
-                      agentId={selectedAgent}
-                      onSendPrompt={sendArtifactPrompt}
-                    />
-                  ) : openChangesAgentId ? (
-                    <DockedChangesPanel
-                      key={`${openChangesAgentId}:${sessionId ?? ""}`}
-                      agentId={openChangesAgentId}
-                      sessionId={sessionId}
-                    />
-                  ) : openProcessOutputKey && selectedAgent ? (
-                    <DockedProcessOutputPanel
-                      key={openProcessOutputKey}
-                      agentId={selectedAgent}
-                      outputKey={openProcessOutputKey}
-                    />
-                  ) : null}
-                </div>
-              )}
-            </div>
+          {!dockedShown && activeTab === "files" && (
+            <FilesPanel open className="flex-1" onOpenFile={openFileHandler} />
           )}
-          {sidePanelOpen && maximizable && (maximized || !columnsDoNotFit) && (
-            <SidePanelEdgeTab
-              maximized={maximized}
-              onToggle={() =>
-                setSidePanelMaximized(maximized ? null : maximizable)
-              }
+          {!dockedShown && activeTab === "artifacts" && (
+            <ChatArtifactsPanel
+              agentId={selectedAgent}
+              open
+              className="flex-1"
             />
           )}
-          <div ref={setDockSlot} className="flex shrink-0 items-end" />
-          <SidePanelBar
-            active={activeTab}
-            hidden={hiddenTabs}
-            onSelect={onSidePanelTab}
-            badges={
-              runningProcesses
-                ? {
-                    processes: {
-                      count: runningProcesses.running,
-                      label: `Processes, ${String(runningProcesses.running)} running`,
-                    },
-                  }
-                : undefined
-            }
-            footer={
-              <div className="flex flex-col items-center gap-1">
-                <GettingStartedDock placement="rail" slot={dockSlot} />
-                <ApprovalsButton />
-              </div>
-            }
-          />
-        </div>
+          {!dockedShown && activeTab === "processes" && (
+            <ProcessesPanel
+              agentId={selectedAgent}
+              alwaysOn={agentView?.hibernationTimeoutMin === 0}
+              open
+              className="flex-1"
+            />
+          )}
+          {dockedKept && (
+            <div
+              className={cn(
+                "flex flex-1 min-h-0 flex-col",
+                !dockedShown && "hidden",
+              )}
+            >
+              {openBrowserAgentId && canOpenBrowser ? (
+                <DockedBrowserPanel
+                  key={openBrowserAgentId}
+                  agentId={openBrowserAgentId}
+                  agentName={selectedAgentName ?? openBrowserAgentId}
+                />
+              ) : openDelegation ? (
+                <DockedDelegationPanel
+                  key={openDelegation.id}
+                  driverAgentId={openDelegation.driverAgentId}
+                  id={openDelegation.id}
+                />
+              ) : openFilePath ? (
+                <DockedFilePanel onOpenFile={openFileHandler} />
+              ) : openArtifactId ? (
+                <DockedArtifactPanel
+                  key={openArtifactId}
+                  agentId={selectedAgent}
+                  onSendPrompt={sendArtifactPrompt}
+                />
+              ) : openChangesAgentId ? (
+                <DockedChangesPanel
+                  key={`${openChangesAgentId}:${sessionId ?? ""}`}
+                  agentId={openChangesAgentId}
+                  sessionId={sessionId}
+                />
+              ) : openProcessOutputKey && selectedAgent ? (
+                <DockedProcessOutputPanel
+                  key={openProcessOutputKey}
+                  agentId={selectedAgent}
+                  outputKey={openProcessOutputKey}
+                />
+              ) : null}
+            </div>
+          )}
+          <AppSidePanel tab={activeTab} />
+        </SidePanelFrame>
       </div>
 
       {leavingForPublicPage ? (

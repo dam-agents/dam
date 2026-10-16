@@ -1,8 +1,4 @@
-import { Close } from "@carbon/icons-react";
-import { useState } from "react";
-
 import { Button } from "@/components/ui/button";
-import { SideDrawer } from "@/components/ui/side-drawer";
 import { useNow } from "@/hooks/use-now";
 
 import { timeAgo } from "../../../lib/format-time.js";
@@ -12,6 +8,7 @@ import {
   approvalGroupKey,
   groupBy,
 } from "../../approvals/lib/group-approvals.js";
+import { SidebarSection } from "../../sessions/components/sidebar-section.js";
 import { useFeed } from "../api/queries.js";
 import { useDismissals } from "../hooks/use-dismissals.js";
 import { useStickyResolved } from "../hooks/use-sticky-resolved.js";
@@ -20,9 +17,7 @@ import { FeedCardSkeleton } from "./feed-card-skeleton.js";
 
 const MINUTE_MS = 60_000;
 
-export function ApprovalsPanel({ onClose }: { onClose: () => void }) {
-  const [closing, setClosing] = useState(false);
-  const requestClose = () => setClosing(true);
+export function ApprovalsPanel({ className }: { className?: string }) {
   const { items, agents, loadingFeed } = useFeed();
   const { isDismissed, dismiss } = useDismissals();
   const sticky = useStickyResolved();
@@ -43,43 +38,26 @@ export function ApprovalsPanel({ onClose }: { onClose: () => void }) {
   const agentOf = (agentId: string) => agents.find((a) => a.id === agentId);
 
   return (
-    <SideDrawer
-      side="right"
-      label="Approvals"
-      closing={closing}
-      onClose={requestClose}
-      onClosed={onClose}
-      className="max-w-[520px]"
-      containerClassName="max-md:top-[52px] md:right-11"
-    >
-      <div className="flex items-center justify-between border-b border-border px-5 py-4">
-        <h2 className="text-base font-semibold text-foreground">Approvals</h2>
-        <div className="flex items-center gap-3">
-          {deniableApprovalIds(pending).length > 0 && (
-            <Button
-              data-dialog-noautofocus
-              variant="link"
-              size="inline"
-              disabled={denying}
-              onClick={() => void denyAll(pending)}
-              title="Denies every approval shown here, once each. Nothing is remembered, so an agent asks again if it tries again."
-              data-testid="deny-all-approvals"
-              className="text-sm"
-            >
-              Deny all
-            </Button>
-          )}
-          <button
-            type="button"
-            onClick={requestClose}
-            aria-label="Close approvals"
-            className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+    <SidebarSection
+      title="Approvals"
+      open
+      className={className}
+      headerRight={
+        deniableApprovalIds(pending).length > 0 && (
+          <Button
+            variant="link"
+            size="inline"
+            disabled={denying}
+            onClick={() => void denyAll(pending)}
+            title="Denies every approval shown here, once each. Nothing is remembered, so an agent asks again if it tries again."
+            data-testid="deny-all-approvals"
+            className="text-sm"
           >
-            <Close size={16} />
-          </button>
-        </div>
-      </div>
-
+            Deny all
+          </Button>
+        )
+      }
+    >
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
         {loadingFeed && approvals.length === 0 ? (
           <FeedCardSkeleton rows={3} />
@@ -115,6 +93,6 @@ export function ApprovalsPanel({ onClose }: { onClose: () => void }) {
           </div>
         )}
       </div>
-    </SideDrawer>
+    </SidebarSection>
   );
 }
