@@ -2,11 +2,11 @@ import {
   harnessFits,
   type HarnessView,
   type ProviderPresetType,
-  PROVIDERS,
   providerTypeForTemplateId,
   type SessionPair,
 } from "api-server-api";
 
+import { providerName } from "../../providers/lib/provider-rows.js";
 import { attachableProviders } from "./catalog-groups.js";
 
 export interface ProviderConnectionRef {
@@ -101,7 +101,7 @@ export function grantedProviderRefs(
       ? [
           {
             id: c.id,
-            name: PROVIDERS[type].displayName,
+            name: providerName(type),
             type,
             templateId: c.templateId,
           },

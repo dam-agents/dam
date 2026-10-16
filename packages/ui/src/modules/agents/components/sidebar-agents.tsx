@@ -1,4 +1,4 @@
-import { Add, NewTab, Tools } from "@carbon/icons-react";
+import { AddAlt, NewTab, Pin, PinFilled, Tools } from "@carbon/icons-react";
 import { type ReactNode, useMemo } from "react";
 
 import { SectionLabel } from "@/components/ui/section-label";
@@ -15,6 +15,7 @@ import { useStartSession } from "../../sessions/hooks/use-start-session.js";
 import { useAgentsList } from "../api/queries.js";
 import { useCreateDefaultAgent } from "../hooks/use-create-default-agent.js";
 import { useSidebarAgents } from "../hooks/use-sidebar-agents.js";
+import { useSidebarPinActions } from "../hooks/use-sidebar-pin-actions.js";
 import { SidebarAgentRow } from "./sidebar-agent-row.js";
 
 export function SidebarAgents({
@@ -24,8 +25,17 @@ export function SidebarAgents({
   stickyHeaderClassName: string;
   onNavigate?: () => void;
 }) {
-  const { agents, openAgentId, unreadAgentIds, sessionsOf } =
-    useSidebarAgents();
+  const {
+    agents,
+    pinnedAgentIds,
+    openAgentId,
+    sessionOpen,
+    unreadAgentIds,
+    sessionsOf,
+    pinnedSessionsOf,
+    previewComplete,
+  } = useSidebarAgents();
+  const pinActions = useSidebarPinActions();
   const activity = useActivitySessions();
   const allAgents = useAgentsList();
   const attention = useMemo(
@@ -35,7 +45,6 @@ export function SidebarAgents({
   const conversationOf = useActivityConversations(attention, allAgents);
   const filters = useStore((s) => s.sidebarActivityFilters);
   const setFilters = useStore((s) => s.setSidebarActivityFilters);
-  const selectAgent = useStore((s) => s.selectAgent);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const startSession = useStartSession();
 
@@ -46,17 +55,27 @@ export function SidebarAgents({
 
   const row = (agent: AgentView) => {
     const open = agent.id === openAgentId;
+    const pinned = pinnedAgentIds.has(agent.id);
     return (
       <SidebarAgentRow
         key={agent.id}
         agent={agent}
-        selected={open}
+        open={open}
+        current={open && !sessionOpen}
         unread={unreadAgentIds.has(agent.id)}
-        onSelect={() => {
-          if (!open) selectAgent(agent.id);
-        }}
+        pinned={pinned}
+        onMovePin={pinActions.moveAgent}
+        onStepPin={(id, step) => pinActions.stepAgent(id, step, pinnedAgentIds)}
+        onSelect={navigate(() => startSession(agent.id))}
         actions={
           <>
+            <RowIconButton
+              label={pinned ? "Unpin agent" : "Pin agent"}
+              disabled={!pinActions.ready}
+              onClick={() => pinActions.toggleAgent(agent.id)}
+            >
+              {pinned ? <PinFilled size={14} /> : <Pin size={14} />}
+            </RowIconButton>
             <RowIconButton
               label="New session"
               onClick={navigate(() => startSession(agent.id))}
@@ -76,6 +95,9 @@ export function SidebarAgents({
           agentId={agent.id}
           open={open}
           preview={sessionsOf(agent.id)}
+          previewComplete={previewComplete}
+          pins={pinnedSessionsOf(agent.id)}
+          pinActions={pinActions}
           conversationOf={conversationOf}
           stickyClassName={stickyHeaderClassName}
           onNavigate={onNavigate}
@@ -110,10 +132,12 @@ export function SidebarAgents({
 
 function RowIconButton({
   label,
+  disabled = false,
   onClick,
   children,
 }: {
   label: string;
+  disabled?: boolean;
   onClick: () => void;
   children: ReactNode;
 }) {
@@ -122,8 +146,9 @@ function RowIconButton({
       <button
         type="button"
         aria-label={label}
+        disabled={disabled}
         onClick={onClick}
-        className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+        className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:opacity-50"
       >
         {children}
       </button>
@@ -143,9 +168,9 @@ function CreateAgentButton({ onCreate }: { onCreate?: () => void }) {
           void defaultAgent.create();
           onCreate?.();
         }}
-        className="flex size-6 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+        className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
       >
-        <Add size={14} />
+        <AddAlt size={16} />
       </button>
     </Tooltip>
   );

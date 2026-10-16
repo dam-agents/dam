@@ -1,5 +1,7 @@
 import type { SessionMode, SessionType } from "../sessions/types.js";
 
+export const ATTENTION_FEED_LIMIT = 200;
+
 export type AttentionItemKind = "session" | "approval";
 
 export interface AttentionItem {

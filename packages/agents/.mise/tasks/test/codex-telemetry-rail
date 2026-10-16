@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-//MISE description="Test that the Codex launch scripts render the telemetry rail into -c otel flags, and pass Codex nothing extra while the rail is off"
+//MISE description="Test that the Codex launch scripts pass the platform instructions as text, render the telemetry rail into -c otel flags, and pass Codex nothing else while the rail is off"
 //MISE sources=["codex/rootfs/usr/local/lib/codex-otel.sh", "codex/rootfs/usr/local/bin/codex-app-server", "codex/rootfs/usr/local/bin/harness-terminal", ".mise/tasks/test/codex-telemetry-rail"]
 //MISE outputs=[]
 import assert from "node:assert/strict";
@@ -15,23 +15,33 @@ const home = mkdtempSync(join(tmpdir(), "codex-telemetry-rail-"));
 const argvFile = join(home, "argv");
 mkdirSync(join(home, "bin"));
 writeFileSync(join(home, "bin/codex"), `#!/bin/sh\nprintf '%s\\0' "$@" > '${argvFile}'\n`, { mode: 0o755 });
+const agentsMd = join(home, "AGENTS.md");
+const instructions = '# Platform\n\nKeep "long" jobs alive with \\`platform-keep\\`.\n\ttab, \'quote\', ü\n';
+writeFileSync(agentsMd, instructions);
 
 // TEST_SCENARIO: both launch scripts source the one helper, so the test runs the scripts as shipped with only its path moved.
 const script = (name) => {
   const body = readFileSync(join(rootfs, "usr/local/bin", name), "utf8");
   assert.ok(body.includes(". /usr/local/lib/codex-otel.sh\n"), `${name} sources the rail helper`);
   const path = join(home, name);
-  writeFileSync(path, body.replace("/usr/local/lib/codex-otel.sh", lib), { mode: 0o755 });
+  assert.ok(body.includes("/etc/AGENTS.md"), `${name} reads the platform instructions`);
+  writeFileSync(path, body.replace("/usr/local/lib/codex-otel.sh", lib).replace("/etc/AGENTS.md", agentsMd), { mode: 0o755 });
   return path;
 };
 const appServer = script("codex-app-server");
 const terminal = script("harness-terminal");
 
+// TEST_SCENARIO: Codex parses a -c value as TOML, and a JSON string is a TOML basic string, so the flag must carry the file's text as exactly that string. The flag is checked and then dropped here, so the rail scenarios below compare only the otel flags.
+const instructionsFlag = `developer_instructions=${JSON.stringify(instructions)}`;
 const run = (path, args, env) => {
   execFileSync("/bin/sh", [path, ...args], {
-    env: { PATH: `${home}/bin:/usr/bin:/bin`, HOME: home, HARNESS_SESSION_ID: "s1", ...env },
+    env: { PATH: `${home}/bin:${process.env.PATH}`, HOME: home, HARNESS_SESSION_ID: "s1", ...env },
   });
-  return readFileSync(argvFile, "utf8").split("\0").slice(0, -1);
+  const argv = readFileSync(argvFile, "utf8").split("\0").slice(0, -1);
+  const at = argv.indexOf(instructionsFlag);
+  assert.ok(at > 0 && argv[at - 1] === "-c", `${path} passes the platform instructions as text`);
+  argv.splice(at - 1, 2);
+  return argv;
 };
 
 const rail = {
@@ -66,7 +76,7 @@ try {
   assert.deepEqual(resumed.slice(2, 12), ["-c", logs, ...contentOff, "-c", traces]);
   assert.ok(!run(terminal, [], {}).some((arg) => arg.startsWith("otel.")), "a terminal without the rail gets no otel flag");
 
-  console.log("codex-telemetry-rail: the rail turns into -c otel flags on both launch paths, and no rail adds nothing");
+  console.log("codex-telemetry-rail: both launch paths pass the platform instructions as text, the rail turns into -c otel flags, and no rail adds nothing else");
 } finally {
   rmSync(home, { recursive: true, force: true });
 }

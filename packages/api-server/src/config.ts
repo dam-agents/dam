@@ -171,6 +171,15 @@ const spendPriceOverridesSchema = z
       }),
   );
 
+// UNIT_BOUNDARY_DESCRIPTION: the operator's self-hosted model server behind the built-in provider. An empty base URL means none is configured; the base URL is the server root, so a trailing slash is dropped before `/v1` is appended to it.
+const platformProviderSchema = z
+  .object({
+    baseUrl: z.union([z.literal(""), z.url()]).default(""),
+    model: z.string().default(""),
+  })
+  .transform(({ baseUrl, model }) =>
+    baseUrl === "" ? null : { baseUrl: baseUrl.replace(/\/+$/, ""), model },
+  );
 const configSchema = z.object({
   serverVersion: z.string().min(1),
   appVersion: z.string().min(1),
@@ -212,6 +221,7 @@ const configSchema = z.object({
   e2eEnabled: z.coerce.boolean().default(false),
   virtualizationEnabled: z.stringbool().default(false),
   featureModes: featureModesSchema,
+  platformProvider: platformProviderSchema,
   runtimeMigrationRetentionMs: z
     .string()
     .default("168h")
@@ -329,7 +339,13 @@ const validatedConfigSchema = configSchema
         "ACP_TURN_STALL_PROBE_SECONDS is below APPROVAL_HOLD_SECONDS and was raised to it, so a turn blocked on an approval is never probed before the hold resolves",
       );
     }
-    return { ...c, acpTurnStallProbeSeconds: stall };
+    return {
+      ...c,
+      acpTurnStallProbeSeconds: stall,
+      featureModes: c.platformProvider
+        ? c.featureModes
+        : { ...c.featureModes, "platform-provider": "off" as const },
+    };
   })
   .refine(
     (c) =>
@@ -405,6 +421,10 @@ export function loadConfig(): Config {
     featureModes: {
       named: process.env.FEATURE_MODES,
       fallback: process.env.FEATURE_DEFAULT_MODE,
+    },
+    platformProvider: {
+      baseUrl: process.env.PLATFORM_PROVIDER_BASE_URL,
+      model: process.env.PLATFORM_PROVIDER_MODEL,
     },
     runtimeMigrationRetentionMs: process.env.RUNTIME_MIGRATION_RETENTION,
     activityTrackingEnabled: process.env.ACTIVITY_TRACKING_ENABLED,
