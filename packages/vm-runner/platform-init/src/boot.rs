@@ -1158,7 +1158,7 @@ struct ScratchRoot {
     dir: File,
     shown: PathBuf,
     mount: u64,
-    dev: u64,
+    dev: Option<u64>,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the scratch folders eviction serves, each with the mount it is on at boot, before the agent runs: /tmp's own bind, and a home cache's home, or the cache itself when it already exists. A folder whose mount cannot be read is not served.
@@ -1182,6 +1182,17 @@ fn scratch_folders() -> Vec<(PathBuf, u64)> {
         .collect()
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: whether `dir` is on overlayfs, as /tmp and /var/tmp are on the platform's root. overlayfs gives its directories a device of its own but shows each file with its upper layer's, so a device check would reject every file there; the mount id is the boundary instead.
+fn on_overlay(dir: &File) -> bool {
+    const OVERLAYFS_SUPER_MAGIC: i64 = 0x794C_7630;
+    // SAFETY: a zeroed statfs is a valid value for the kernel to fill, and `dir` keeps its descriptor open for the call.
+    let mut info: libc::statfs = unsafe { std::mem::zeroed() };
+    unsafe {
+        libc::fstatfs(dir.as_raw_fd(), &mut info) == 0
+            && info.f_type as i64 == OVERLAYFS_SUPER_MAGIC
+    }
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: opens the scratch folders for a pass, without following a symlink. A folder that is one, such as a ~/.cache an agent pointed at its work, is skipped, since what it points at is not scratch, and so is one that is no longer on the mount it had at boot, such as a work directory bound onto it. A missing folder is skipped quietly.
 fn open_scratch_roots(dirs: &[(PathBuf, u64)]) -> Vec<ScratchRoot> {
     dirs.iter()
@@ -1197,10 +1208,11 @@ fn open_scratch_roots(dirs: &[(PathBuf, u64)]) -> Vec<ScratchRoot> {
                     None
                 }
                 Ok((info, dir)) => Some(ScratchRoot {
+                    dev: (!on_overlay(&dir))
+                        .then(|| libc::makedev(info.stx_dev_major, info.stx_dev_minor)),
                     dir,
                     shown: shown.clone(),
                     mount: info.stx_mnt_id,
-                    dev: libc::makedev(info.stx_dev_major, info.stx_dev_minor),
                 }),
                 Err(e) if e.kind() == io::ErrorKind::NotFound => None,
                 Err(_) if fs::symlink_metadata(shown).is_ok_and(|info| info.is_symlink()) => {
@@ -1333,13 +1345,13 @@ fn scratch_entries(
 // UNIT_BOUNDARY_DESCRIPTION: the newest modification or change time anywhere under `path`, and the bytes it holds, without following a symlink. None when the tree cannot be evicted whole: it leaves the disk's device or the scratch folder's `mount` — a bind mount on the same disk has the device but not the mount, and what it shows is someone's work — holds a socket or fifo or a file in `locked`, or a directory in it cannot be read.
 fn tree_use(
     path: &Path,
-    disk: u64,
+    disk: Option<u64>,
     mount: u64,
     locked: &HashSet<(u32, u32, u64)>,
 ) -> Option<(u64, u64)> {
     let info = statx(libc::AT_FDCWD, path).ok()?;
     let kind = u32::from(info.stx_mode) & libc::S_IFMT;
-    if libc::makedev(info.stx_dev_major, info.stx_dev_minor) != disk
+    if disk.is_some_and(|disk| libc::makedev(info.stx_dev_major, info.stx_dev_minor) != disk)
         || info.stx_mnt_id != mount
         || ![libc::S_IFDIR, libc::S_IFREG, libc::S_IFLNK].contains(&kind)
         || locked.contains(&(info.stx_dev_major, info.stx_dev_minor, info.stx_ino))
@@ -3780,7 +3792,7 @@ mod tests {
         let dirs = open_scratch_roots(&[(s.to_path_buf(), mount_of(s))]);
         let names = |now, dev| -> Vec<String> {
             let mut roots = open_scratch_roots(&[(s.to_path_buf(), mount_of(s))]);
-            roots.iter_mut().for_each(|root| root.dev = dev);
+            roots.iter_mut().for_each(|root| root.dev = Some(dev));
             scratch_entries(&roots, &HashSet::new(), now, EVICT_AGES[3])
                 .iter()
                 .map(|entry| {
@@ -4367,5 +4379,65 @@ mod tests {
         assert_eq!(header[1024..1028], 1u32.to_ne_bytes());
         assert_eq!(header[1028..1032], 2047u32.to_ne_bytes());
         assert!(header[..1024].iter().all(|&b| b == 0));
+    }
+
+    // TEST_SCENARIO: /tmp is on the platform's overlay root, where overlayfs shows a directory on a device of its own and each file on its upper layer's. Eviction must still offer a file, a symlink and a directory holding a file there, or a full disk frees nothing of /tmp. Needs root, for the overlay mount: `sudo -E cargo test -p platform-init -- --ignored overlay`.
+    #[test]
+    #[ignore = "needs root"]
+    fn eviction_offers_files_on_an_overlay_root() {
+        let dir = TempDir::new("evict-overlay");
+        let d = dir.path();
+        for name in ["lower", "upper", "work", "merged"] {
+            fs::create_dir_all(d.join(name)).unwrap();
+        }
+        let options = format!(
+            "lowerdir={},upperdir={},workdir={}",
+            d.join("lower").display(),
+            d.join("upper").display(),
+            d.join("work").display()
+        );
+        let merged = d.join("merged");
+        let out = std::process::Command::new("mount")
+            .args(["-t", "overlay", "overlay", "-o", &options])
+            .arg(&merged)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let checks = || {
+            fs::write(merged.join("file"), b"x").unwrap();
+            std::os::unix::fs::symlink("file", merged.join("link")).unwrap();
+            fs::create_dir(merged.join("cache")).unwrap();
+            fs::write(merged.join("cache/blob"), b"y").unwrap();
+            let roots = open_scratch_roots(&[(merged.clone(), mount_of(&merged))]);
+            assert_eq!(
+                roots[0].dev, None,
+                "an overlay root is bounded by its mount alone"
+            );
+            let later = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                + 2 * EVICT_AGES[0];
+            let mut names: Vec<_> = scratch_entries(&roots, &HashSet::new(), later, EVICT_AGES[3])
+                .into_iter()
+                .map(|entry| {
+                    entry
+                        .path
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .into_owned()
+                })
+                .collect();
+            names.sort();
+            assert_eq!(names, ["cache", "file", "link"]);
+        };
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(checks));
+        let _ = std::process::Command::new("umount").arg(&merged).status();
+        result.unwrap();
     }
 }
