@@ -49,7 +49,23 @@ cleanup() {
     echo "--- VM runner machine consoles (each VMM's log holds its guest kernel's console) ---"
     kubectl get pods -A -l app.kubernetes.io/component=vm-runner -o jsonpath='{range .items[*]}{.metadata.namespace} {.metadata.name}{"\n"}{end}' 2>/dev/null \
       | while read -r ns name; do
-          kubectl exec -n "$ns" "$name" -- sh -c 'for f in $(find /var/lib/platform -name agent-startup-error.log 2>/dev/null); do echo "### $f"; grep -v "muxer\|connection" "$f" | tail -n 40; done' </dev/null 2>&1 || true
+          kubectl exec -n "$ns" "$name" -- sh -c 'for f in $(find /var/lib/platform -name agent-startup-error.log 2>/dev/null); do echo "### $f"; grep -v "muxer\|connection" "$f" | grep -viE "relay failed|guest TCP SYN|balloon stats" | tail -n 40; done' </dev/null 2>&1 || true
+        done
+    echo ""
+    echo "--- VM runner VMM processes (threads, smolvm-tcp-* relay threads, CPU seconds) and runner metrics ---"
+    # A VMM is a `smolvm _boot-vm` process (the bracket keeps this script's own text from matching); a spinning relay shows as many smolvm-tcp-* threads and climbing CPU.
+    vmm_procs='port=$1 tck=$(getconf CLK_TCK) n=0
+      for d in /proc/[0-9]*; do
+        case "$(tr "\0" " " < "$d/cmdline" 2>/dev/null)" in *[_]boot-vm*) ;; *) continue ;; esac
+        p=${d#/proc/}; s=$(cat "$d/stat" 2>/dev/null) || continue; set -- ${s##*)}
+        n=$((n + 1)); [ "$n" -le 20 ] || { echo "(more VMMs not shown)"; break; }
+        echo "pid=$p ppid=$2 comm=$(cat "$d/comm") threads=$(ls "$d/task" | wc -l) smolvm_tcp_threads=$(cat "$d"/task/*/comm 2>/dev/null | grep -c "^smolvm-tcp-") cpu_seconds=$(( (${12} + ${13}) / tck ))"
+      done
+      [ -z "$port" ] || bash -c "exec 3<>/dev/tcp/127.0.0.1/$port && printf \"GET /metrics HTTP/1.0\r\n\r\n\" >&3 && cat <&3" | grep "^platform_vm_runner_" | grep -v "_bucket" | head -n 40'
+    kubectl get pods -A -l app.kubernetes.io/component=vm-runner -o jsonpath='{range .items[*]}{.metadata.namespace} {.metadata.name} {.spec.containers[0].ports[?(@.name=="metrics")].containerPort}{"\n"}{end}' 2>/dev/null \
+      | while read -r ns name port; do
+          echo "### $ns/$name ###"
+          kubectl exec -n "$ns" "$name" -- sh -c "$vmm_procs" sh "$port" </dev/null 2>&1 || true
         done
     echo ""
     echo "--- Logs from Platform pods ---"

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tokio_util::sync::CancellationToken;
 
@@ -15,6 +15,9 @@ pub const LOOPBACK_OFFSET: u16 = 1000;
 
 pub const HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
 pub const DIAL_TIMEOUT: Duration = Duration::from_secs(3);
+
+// UNIT_BOUNDARY_DESCRIPTION: how much of a health reply the runner reads. The guest's /healthz reply is about 120 bytes. The whole reply is read to its end, so the runner closes a socket with nothing left unread: a close with unread bytes makes the kernel send a reset, and smolvm logs each reset it relays as a line on the guest's console. A reply longer than this is cut off and judged on its status line.
+pub const HEALTH_REPLY_CAP: usize = 4096;
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a published port waits after a failed accept before it accepts again. The failures worth surviving, such as a pod out of file descriptors, pass once a connection closes, so the port keeps listening rather than dying with them, but it must not spin a worker thread while they last.
 pub const ACCEPT_RETRY: Duration = Duration::from_millis(100);
@@ -110,7 +113,7 @@ fn guest_address(port: u16) -> SocketAddr {
     SocketAddr::from(([127, 0, 0, 1], port + LOOPBACK_OFFSET))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the guest answers its health endpoint with a 200. Asked with a bare HTTP/1.1 request, bounded to HEALTH_TIMEOUT, on the loopback port smolvm publishes the guest on.
+// UNIT_BOUNDARY_DESCRIPTION: whether the guest answers its health endpoint with a 200. Asked with a bare HTTP/1.1 request, bounded to HEALTH_TIMEOUT, on the loopback port smolvm publishes the guest on. Only the status line decides; the rest of the reply is read up to the guest's close, HEALTH_REPLY_CAP or the timeout, and a failure after the status line does not change the verdict.
 pub fn healthy(port: u16) -> bool {
     if port == 0 {
         return false;
@@ -126,21 +129,26 @@ pub fn healthy(port: u16) -> bool {
     {
         return false;
     }
-    let mut head = [0u8; 64];
-    let mut read = 0;
-    while read < head.len() {
-        match stream.read(&mut head[read..]) {
+    let deadline = Instant::now() + HEALTH_TIMEOUT;
+    let mut reply = Vec::new();
+    let mut chunk = [0u8; 512];
+    while reply.len() < HEALTH_REPLY_CAP {
+        let left = deadline.saturating_duration_since(Instant::now());
+        let read = if left.is_zero() {
+            Err(std::io::ErrorKind::TimedOut.into())
+        } else {
+            let _ = stream.set_read_timeout(Some(left));
+            stream.read(&mut chunk)
+        };
+        match read {
             Ok(0) => break,
-            Ok(n) => {
-                read += n;
-                if head[..read].contains(&b'\n') {
-                    break;
-                }
-            }
+            Ok(n) => reply.extend_from_slice(&chunk[..n]),
+            Err(_) if reply.contains(&b'\n') => break,
             Err(_) => return false,
         }
     }
-    let line = String::from_utf8_lossy(&head[..read]);
+    let status = reply.split(|&b| b == b'\n').next().unwrap_or_default();
+    let line = String::from_utf8_lossy(status);
     let mut words = line.split_whitespace();
     matches!(words.next(), Some(v) if v.starts_with("HTTP/")) && words.next() == Some("200")
 }
@@ -172,6 +180,61 @@ mod tests {
         assert!(healthy(guest("200 OK")));
         assert!(!healthy(guest("503 Service Unavailable")));
         assert!(!healthy(0));
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: a guest whose reply is the given bytes, written at once and then held open for `hold`. Returns the port to probe and what the guest's socket read after the probe closed: Ok(0) for a clean close, an error for a reset.
+    fn guest_replying(
+        reply: Vec<u8>,
+        hold: Duration,
+    ) -> (u16, std::sync::mpsc::Receiver<std::io::Result<usize>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let guest_port = listener.local_addr().unwrap().port();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let (mut conn, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 256];
+            let _ = conn.read(&mut buf);
+            let _ = conn.set_write_timeout(Some(Duration::from_secs(5)));
+            let _ = conn.write_all(&reply);
+            std::thread::sleep(hold);
+            let _ = conn.shutdown(std::net::Shutdown::Write);
+            let _ = conn.set_read_timeout(Some(Duration::from_secs(5)));
+            let _ = tx.send(conn.read(&mut buf));
+        });
+        (guest_port - LOOPBACK_OFFSET, rx)
+    }
+
+    // TEST_SCENARIO: the guest's /healthz reply is longer than the status line, and a probe that closed after the status line left the rest unread, so the kernel reset the connection and smolvm logged the reset on the guest's console every STEADY_PROBE. The probe reads the reply to the guest's close, so the guest sees a clean close, and the verdict still comes from the status line.
+    #[test]
+    fn a_probe_reads_the_whole_reply_so_the_guest_sees_a_clean_close() {
+        let body = "x".repeat(100);
+        let reply = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        assert!(reply.len() > 64);
+        let (port, closed) = guest_replying(reply.into_bytes(), Duration::ZERO);
+        assert!(healthy(port));
+        assert_eq!(closed.recv().unwrap().unwrap(), 0);
+    }
+
+    // TEST_SCENARIO: a guest that keeps its socket open after a 200, or sends more than HEALTH_REPLY_CAP, must not hold the prober past HEALTH_TIMEOUT. The verdict is still the status line's, and a guest that sends nothing is not up.
+    #[test]
+    fn a_slow_or_oversized_reply_is_bounded_by_the_timeout_and_the_cap() {
+        let slack = HEALTH_TIMEOUT + Duration::from_secs(1);
+        for (reply, up) in [
+            (b"HTTP/1.1 200 OK\r\n".to_vec(), true),
+            (
+                [b"HTTP/1.1 200 OK\r\n".as_slice(), &[b'x'; 1 << 20]].concat(),
+                true,
+            ),
+            (Vec::new(), false),
+        ] {
+            let (port, _) = guest_replying(reply, Duration::from_secs(10));
+            let started = Instant::now();
+            assert_eq!(healthy(port), up);
+            assert!(started.elapsed() < slack, "{:?}", started.elapsed());
+        }
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: a published port and a guest at that port plus the loopback offset, both bound on loopback. The pair is retried on a fresh port when the guest's port is taken, since only the first of the two can be asked of the kernel as any free port.
