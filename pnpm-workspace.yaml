@@ -6,10 +6,9 @@ packages:
   - "packages/agents/pi-agent/rootfs/usr/local/share/pi-platform/extensions/*"
 minimumReleaseAge: 10080 # 7 days (in minutes)
 minimumReleaseAgeExclude:
-  # vite 8.3.3 (2026-10-06) fixes GHSA-rq7h-c2jc-7f22, GHSA-vfpm-58rq-9qcg
-  # and GHSA-9jrq-w75r-8gcw, dev-server reads outside `server.fs.allow`.
-  # Drop this once it ages past the floor (2026-10-13).
-  - "vite@8.3.3"
+  # qs 6.16.1 (2026-10-14) fixes CVE-2026-110816, reached through express's
+  # body-parser. Drop this once it ages past the floor (2026-10-21).
+  - "qs@6.16.1"
   # @a2ui/web_core 0.13.0 (2026-10-09) is the first release that reads the
   # A2UI v1.0 wire format (@path/@call keys); 0.12.0 predates it. The chat's
   # A2UI renderer runs its basic-catalog functions. Checked on 2026-10-12: no
