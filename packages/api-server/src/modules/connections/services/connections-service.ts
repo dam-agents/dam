@@ -60,6 +60,7 @@ import {
   buildConnectionSdsFields,
   connectionSecretAnnotations,
   CONNECTION_TOKEN_PLACEHOLDER,
+  UPSTREAM_CA_SECRET_FIELD,
 } from "../domain/connection-sds.js";
 import {
   awsCredentialsFile,
@@ -161,6 +162,7 @@ export function createConnectionsService(deps: {
   maxSharedKbConnections?: number;
   platformProviderEnabled: () => Promise<boolean>;
   platformProviderKey: string | null;
+  platformProviderCa?: string | null;
 }): ConnectionsService & PlatformLlmConnections {
   const maxSharedKbConnections =
     deps.maxSharedKbConnections ?? MAX_SHARED_KB_CONNECTIONS_PER_OWNER;
@@ -1584,6 +1586,7 @@ export function createConnectionsService(deps: {
   async function platformState() {
     const template = deps.templates.get(PLATFORM_LLM_TEMPLATE_ID);
     const key = deps.platformProviderKey;
+    const ca = deps.platformProviderCa ?? null;
     const wanted =
       template !== null &&
       key !== null &&
@@ -1598,7 +1601,11 @@ export function createConnectionsService(deps: {
     );
     const rotated =
       keep?.auth.kind === "header" &&
-      (await deps.secretStore.getField(keep.auth.valueRef)) !== key;
+      ((await deps.secretStore.getField(keep.auth.valueRef)) !== key ||
+        (await deps.secretStore.getField({
+          ...keep.auth.valueRef,
+          field: UPSTREAM_CA_SECRET_FIELD,
+        })) !== ca);
     const stale =
       keep !== undefined &&
       (keep.name !== name ||
@@ -1608,6 +1615,7 @@ export function createConnectionsService(deps: {
       owned,
       template: wanted ? template : null,
       key,
+      ca,
       keep,
       remove,
       name,
@@ -1626,14 +1634,15 @@ export function createConnectionsService(deps: {
    * changes, listings and the boot sweep can all reconcile at once, on any
    * replica, so the flag and the user's Connections are read only under one
    * per-owner lock: whichever runs last sees the last flag. Its Secret holds
-   * a copy of the operator's key and is rewritten whole when the key or the
+   * a copy of the operator's key, and the operator's CA for the server when
+   * one is configured, and is rewritten whole when the key, the CA or the
    * endpoint changes, since the endpoint names the hosts the gateway injects
    * on. A keyless one from before the provider was metered has no Secret to
    * rewrite, so it is replaced.
    */
   async function reconcilePlatformConnection(): Promise<void> {
     await deps.connectionLock(`platform-llm:${deps.ownerId}`, async () => {
-      const { owned, template, key, keep, remove, name, rotated } =
+      const { owned, template, key, ca, keep, remove, name, rotated } =
         await platformState();
       for (const conn of remove) await service.deleteConnection(conn.id);
       if (!template || key === null) return;
@@ -1643,6 +1652,7 @@ export function createConnectionsService(deps: {
           name,
           authKind: "header",
           value: key,
+          ...(ca ? { caData: ca } : {}),
         });
         return;
       }
@@ -1658,6 +1668,7 @@ export function createConnectionsService(deps: {
           keep.auth.valueRef.path,
           {
             value: key,
+            ...(ca ? { [UPSTREAM_CA_SECRET_FIELD]: ca } : {}),
             ...buildConnectionSdsFields(template.contributions, key),
           },
           template.contributions,

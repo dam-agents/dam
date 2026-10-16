@@ -1116,6 +1116,15 @@ apiServer:
   # the copy each user's Connection holds. Price the model in
   # `apiServer.spend.priceOverrides` under provider `platform-llm`, or its
   # calls count as nothing against a limit.
+  # caConfigMap names a ConfigMap key in the release namespace holding the PEM
+  # CA that signed the server's certificate; the api-server reads it at start
+  # and gives it to each user's Connection, so the gateway validates the
+  # server against it. On OpenShift every namespace has
+  # `{name: openshift-service-ca.crt, key: service-ca.crt}`, the
+  # service-serving signer, so a model server with a service-ca certificate
+  # needs no pasted CA. Unset, the gateway validates the server against
+  # system trust plus `controller.gatewayUpstreamExtraCAs`. A ConfigMap or
+  # key that does not exist leaves the feature off.
   platformProvider:
     baseUrl: ""
     model: ""
@@ -1123,6 +1132,9 @@ apiServer:
       name: ""
       key: api-key
     apiKey: ""
+    caConfigMap:
+      name: ""
+      key: ""
   # -- Extra annotations for the Deployment object / its pod template
   # (merged over commonAnnotations / commonPodAnnotations).
   annotations: {}
@@ -1298,9 +1310,11 @@ apiServer:
     # a temporary Management key on 2026-10-13. No public price list has them.
     # The built-in provider (`apiServer.platformProvider`) has no price of its
     # own; give its model one under provider `platform-llm` so per-user limits
-    # bind, e.g. a nominal
-    # `{provider: platform-llm, model: deepseek-v4.1-flash, input: 0.1, output: 0.4}`.
+    # bind. The first row prices DeepSeek-V4.1-Flash at DeepSeek's own peak
+    # API price (2026-10), the higher of its peak and off-peak rates, since
+    # the meter has no time of day.
     priceOverrides:
+      - {provider: platform-llm, model: deepseek-v4.1-flash, input: 0.3, output: 1.2, cacheRead: 0.006}
       - {provider: ibm-litellm, model: aws/claude-opus-5-5, input: 3.04, output: 15.2, cacheRead: 0.152, cacheWrite5m: 3.8, cacheWrite1h: 8, webSearch: 0.01}
       - {provider: ibm-litellm, model: aws/claude-opus-5, input: 3.8, output: 19, cacheRead: 0.38, cacheWrite5m: 4.75, cacheWrite1h: 10, webSearch: 0.01}
       - {provider: ibm-litellm, model: aws/claude-opus-4-8, input: 3.8, output: 19, cacheRead: 0.38, cacheWrite5m: 4.75, cacheWrite1h: 10, webSearch: 0.01}

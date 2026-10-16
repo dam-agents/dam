@@ -306,6 +306,7 @@ export interface PlatformProviderEndpoint {
   baseUrl: string;
   model: string;
   name: string;
+  ca?: string;
 }
 
 function platformLlm(
@@ -331,6 +332,7 @@ function platformLlm(
         ...(url.port ? { port: Number(url.port) } : {}),
         headerName: "Authorization",
         valueFormat: "Bearer {value}",
+        ...(endpoint.ca ? { upstreamCa: true } : {}),
       },
     ],
   };

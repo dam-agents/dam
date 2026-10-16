@@ -698,6 +698,7 @@ export async function bootstrap() {
       baseUrl: config.platformProvider.baseUrl,
       model: config.platformProvider.model,
       name: config.brand.name,
+      ca: config.platformProvider.ca,
     },
     e2eEnabled: config.e2eEnabled,
     secretStore,
@@ -758,6 +759,7 @@ export async function bootstrap() {
       oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
       brandName: config.brand.name,
       platformProviderKey: config.platformProvider?.apiKey ?? null,
+      platformProviderCa: config.platformProvider?.ca ?? null,
       platformProviderEnabled: async () =>
         (
           await composeFeaturesForOwner({
