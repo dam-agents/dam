@@ -239,6 +239,7 @@ flowchart TD
 | Whispers: on by default, per Agent; only its owner turns them off, with `/dam whisper <agent> on\|off` from any conversation or in the Agent's channel settings in the UI    | Platform, the switch is **Setup**         | One switch covers every conversation the Agent is connected to                                       |
 | All bindings released when the Agent is deleted                                                                                                                              | Platform                                  |                                                                                                      |
 | Terms of Use re-versioned and not re-accepted: the owner's Agents go quiet in Slack                                                                                          | Platform                                  | Addressed: a notice. Ambient: nothing                                                                |
+| Spend limit or Spend Ceiling reached for today: the Agent starts no turn and does not wake                                                                                   | Owner, operator                           | A person: a notice only they see. A bot: one notice in the thread. Ambient: nothing                  |
 
 ---
 
@@ -273,7 +274,7 @@ A revoked bot token or uninstalled app silences every conversation, and nothing 
 
 ### Notices
 
-Addressed turns get a plain-language notice for: unbound conversation, no default Agent, waking ("still starting" up to 10 min), stopped by owner, deleted, over budget, migrating, lost contact, stalled, terms not accepted, hand-off failed, a refused attachment.
+Addressed turns get a plain-language notice for: unbound conversation, no default Agent, waking ("still starting" up to 10 min), stopped by owner, deleted, over budget, migrating, lost contact, stalled, terms not accepted, spend limit or ceiling reached, hand-off failed, a refused attachment.
 Ambient turns get none.
 
 ---

@@ -92,6 +92,50 @@ data:
           - key: platform.invocation.id
             from_context: "metadata.x-platform-invocation-id"
             action: upsert
+      # Codex writes its log records with no body, its event name in
+      # `event.name`, its own counter names and its thread id as
+      # `conversation.id`, so they are reshaped here into the records the
+      # read path takes spend from: body from the event name, `session.id`
+      # from the thread id, and the per-call usage record renamed to
+      # codex.response_completed with Claude Code's counters, input net of
+      # cache reads. Codex also writes every tool call's arguments and an
+      # output preview into its records, with no setting to stop it, so only
+      # the structural attributes listed here are kept. Agents can send
+      # anything here, so this shapes a record and never attributes it.
+      # See docs/architecture/observability.md.
+      transform/codex:
+        error_mode: ignore
+        log_statements:
+          - context: log
+            conditions:
+              - IsMatch(log.attributes["event.name"], "^codex\\.")
+            statements:
+              - >-
+                keep_keys(log.attributes, ["event.name", "event.kind", "event.timestamp",
+                "conversation.id", "parent.conversation.id", "turn.id", "parent.turn.id",
+                "root.turn.id", "app.version", "originator", "terminal.type", "model",
+                "slug", "auth_mode", "provider_name", "approval_policy", "sandbox_policy",
+                "reasoning_summary", "reasoning_effort", "model_reasoning_effort",
+                "service_tier", "speed", "duration_ms", "ttft_ms", "attempt", "endpoint",
+                "http.response.status_code", "success", "outcome", "status", "decision",
+                "source", "error.message", "tool_name", "tool_namespace", "call_id",
+                "tool_result_seq", "output_truncated", "prompt_length", "text_input_count",
+                "image_input_count", "local_image_input_count", "input_token_count",
+                "output_token_count", "cached_token_count", "cache_write_token_count",
+                "reasoning_token_count", "tool_token_count", "usage.estimated_usd",
+                "turn.interrupted", "startup.phase", "startup.status", "context_window",
+                "auto_compact_token_limit"])
+              - set(log.attributes["session.id"], log.attributes["conversation.id"])
+              - set(log.body, log.attributes["event.name"])
+          - context: log
+            conditions:
+              - log.attributes["event.name"] == "codex.sse_event" and log.attributes["event.kind"] == "response.completed" and log.attributes["input_token_count"] != nil
+            statements:
+              - set(log.body, "codex.response_completed")
+              - set(log.attributes["input_tokens"], Int(log.attributes["input_token_count"]) - Int(log.attributes["cached_token_count"]))
+              - set(log.attributes["output_tokens"], Int(log.attributes["output_token_count"]))
+              - set(log.attributes["cache_read_tokens"], Int(log.attributes["cached_token_count"]))
+              - set(log.attributes["cache_creation_tokens"], Int(log.attributes["cache_write_token_count"]))
       batch: {}
       {{- if .Values.monitoring.enabled }}
       # Only the VM pool series reach the Prometheus export: the controller's
@@ -132,7 +176,7 @@ data:
       pipelines:
         logs:
           receivers: [otlp]
-          processors: [memory_limiter, resource/agent-identity, batch]
+          processors: [memory_limiter, resource/agent-identity, transform/codex, batch]
           exporters: [clickhouse]
         traces:
           receivers: [otlp]

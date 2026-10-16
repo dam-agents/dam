@@ -20,11 +20,14 @@ done < <(yq '.minimumReleaseAgeExclude // [] | .[]' pnpm-workspace.yaml 2>/dev/n
 check_pkg() {
   export PKG_NAME="$1" PKG_VERSIONS=$(awk -F'\t' -v n="$1" '$1==n{printf(c++?",":"[")"\""$2"\""}END{print"]"}' "$LOCKFILE_ENTRIES")
   # Packuments reach 60+ MB (drizzle-orm); a failed fetch must fail the check, not skip the package.
-  curl -sf --retry 2 --max-time 120 -H 'Accept: application/json' \
-    "https://registry.npmjs.org/$1" | \
+  # A file, not a pipe: a retry after a dropped connection truncates it instead of appending a second body.
+  local body; body=$(mktemp)
+  curl -sSf --retry 5 --retry-all-errors --max-time 120 -H 'Accept: application/json' \
+    -o "$body" "https://registry.npmjs.org/$1" && \
   yq -p json -r '.time as $t | (strenv(PKG_VERSIONS) | fromjson | .[]) as $ver |
-    $t[$ver] | select(. != null and . > strenv(CUTOFF)) | "  " + strenv(PKG_NAME) + "@" + $ver + "  " + .' 2>/dev/null
-  [[ "${PIPESTATUS[*]}" == "0 0" ]] || echo "  $1  registry fetch failed"
+    $t[$ver] | select(. != null and . > strenv(CUTOFF)) | "  " + strenv(PKG_NAME) + "@" + $ver + "  " + .' "$body" 2>/dev/null || \
+    echo "  $1  registry fetch failed"
+  rm -f "$body"
 }
 export -f check_pkg
 bash -c 'type check_pkg' >/dev/null 2>&1 || { echo "FAIL: export -f unsupported"; exit 1; }
