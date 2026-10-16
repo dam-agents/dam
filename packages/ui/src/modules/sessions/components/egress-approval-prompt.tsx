@@ -151,7 +151,7 @@ export function EgressApprovalPrompt() {
     <div className="px-4 md:px-8 pt-3">
       <ChatColumn>
         <EgressApprovalCard
-          key={current[0]!.id}
+          key={approvalGroupKey(current[0]!)}
           group={current}
           queued={groups.length - 1}
           waiting={waiting}

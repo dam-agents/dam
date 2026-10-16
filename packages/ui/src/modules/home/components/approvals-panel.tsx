@@ -37,11 +37,9 @@ export function ApprovalsPanel({ onClose }: { onClose: () => void }) {
   const pending = approvals.flatMap((item) =>
     sticky.labelFor(item.id) === null ? [item.approval] : [],
   );
-  const groups = groupBy(
-    approvals,
-    (item) =>
-      `${approvalGroupKey(item.approval)}:${sticky.labelFor(item.id) ?? ""}`,
-  );
+  const groupKeyOf = (item: (typeof approvals)[number]) =>
+    `${approvalGroupKey(item.approval)}:${sticky.labelFor(item.id) ?? ""}`;
+  const groups = groupBy(approvals, groupKeyOf);
   const agentOf = (agentId: string) => agents.find((a) => a.id === agentId);
 
   return (
@@ -96,7 +94,7 @@ export function ApprovalsPanel({ onClose }: { onClose: () => void }) {
               const agent = agentOf(item.agentId);
               return (
                 <FeedApprovalCard
-                  key={item.id}
+                  key={groupKeyOf(item)}
                   approval={item.approval}
                   ids={group.map((member) => member.approval.id)}
                   agentName={agent?.name ?? item.agentId}
