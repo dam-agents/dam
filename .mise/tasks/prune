@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+#MISE description="Reclaim disk in this checkout: stale build output, old test artifacts, and the cluster's dangling images"
+#MISE raw=true
+#USAGE flag "-n --dry-run" help="List what would go, delete nothing"
+# Removes only what the next build or test run does not reuse, so it is safe to
+# run after every work item. Installed dependencies (node_modules, the pnpm,
+# cargo and mise stores) are never touched. Paths are fixed and relative to
+# this checkout, so a main checkout leaves the worktrees under it alone.
+#
+# Removed:
+# - a cargo profile's build output (target/[<triple>/]<profile>) no build wrote
+#   to in 3 days. The cargo tasks are cached by their sources, so cargo runs
+#   only on a change, and each run rewrites the crates of the workspace: a
+#   profile untouched for 3 days is one no task built. Simplification: a crate
+#   rebuilt for new features inside a profile that is still used keeps its old
+#   build until the profile goes quiet; dropping single units needs cargo's
+#   unit graph (nightly) or a last-use record, like cargo-sweep keeps.
+# - image tars in dist/oci older than 3 days. A newer one lets the next
+#   cluster:install skip that image's build, so it stays.
+# - Playwright's results, report and videos. Each run replaces them, so they
+#   only ever hold the last run.
+# - the cluster's dangling images and leftover import tars (cluster:prune),
+#   when the cluster runs.
+set -eo pipefail
+cd "$MISE_CONFIG_ROOT"
+. .mise/lib/cluster.sh
+
+victims=()
+for d in packages/vm-runner/target/*/.fingerprint packages/vm-runner/target/*/*/.fingerprint; do
+  [ -d "$d" ] || continue
+  p="${d%/.fingerprint}"
+  [ -n "$(find "$p" -mtime -3 -print -quit)" ] || victims+=("$p")
+done
+while IFS= read -r t; do victims+=("$t"); done < <(find packages/*/dist/oci -maxdepth 1 -name '*.tar' -mtime +3 2>/dev/null)
+for d in test-results playwright-report blob-report; do
+  [ -e "packages/e2e/playwright/$d" ] && victims+=("packages/e2e/playwright/$d")
+done
+
+kb=0
+for v in "${victims[@]}"; do
+  s=$(du -sk "$v" | cut -f1)
+  kb=$((kb + s))
+  printf '%8s MiB  %s\n' $((s / 1024)) "$v"
+done
+if [ -n "${usage_dry_run:-}" ]; then
+  echo "Would free $((kb / 1024)) MiB in $MISE_CONFIG_ROOT (dry run, nothing deleted)."
+  exit 0
+fi
+[ ${#victims[@]} -eq 0 ] || rm -rf "${victims[@]}"
+echo "Freed $((kb / 1024)) MiB in $MISE_CONFIG_ROOT."
+
+if [ -n "${IS_SANDBOX:-}" ]; then
+  pgrep -x k3s-server >/dev/null && up=1
+else
+  [ "$(limactl list --format '{{.Status}}' "$LIMA_INSTANCE" 2>/dev/null)" = Running ] && up=1
+fi
+if [ -n "${up:-}" ]; then
+  mise run cluster:prune
+else
+  echo "No running cluster: its images are left as they are."
+fi

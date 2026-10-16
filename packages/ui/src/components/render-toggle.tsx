@@ -1,4 +1,5 @@
 import { Code, View } from "@carbon/icons-react";
+import type { ComponentProps } from "react";
 
 import { Button } from "@/components/ui/button";
 
@@ -7,6 +8,7 @@ interface Props {
   onToggle: () => void;
   className?: string;
   labelClassName?: string;
+  variant?: ComponentProps<typeof Button>["variant"];
 }
 
 export function RenderToggle({
@@ -14,11 +16,12 @@ export function RenderToggle({
   onToggle,
   className,
   labelClassName,
+  variant = "outline",
 }: Props) {
   const label = rendered ? "Source" : "Preview";
   return (
     <Button
-      variant="outline"
+      variant={variant}
       size="xs"
       className={className}
       onClick={onToggle}

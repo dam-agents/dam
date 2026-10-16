@@ -1,6 +1,5 @@
 import {
   Activity,
-  Box,
   Branch,
   type CarbonIconType,
   Folders,
@@ -13,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
+import { ArtifactIcon } from "../../artifacts/lib/artifact-icon.js";
 import type { SidePanelTab } from "../lib/side-panel.js";
 
 const TABS: readonly {
@@ -20,9 +20,9 @@ const TABS: readonly {
   label: string;
   icon: CarbonIconType;
 }[] = [
+  { tab: "artifacts", label: "Artifacts", icon: ArtifactIcon },
   { tab: "files", label: "Files", icon: Folders },
   { tab: "changes", label: "Changes", icon: Branch },
-  { tab: "artifacts", label: "Artifacts", icon: Box },
   { tab: "browser", label: "Browser", icon: Globe },
   { tab: "processes", label: "Processes", icon: Activity },
 ];

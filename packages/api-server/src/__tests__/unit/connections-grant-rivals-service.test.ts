@@ -93,6 +93,7 @@ function setup(
   const setPreferred = vi.fn(async () => {});
   const fanOut = vi.fn(async () => {});
   const service = createConnectionsService({
+    platformProviderEnabled: async () => false,
     isOwnedAgent: async (agentId) => agentId === AGENT,
     ownerId: OWNER,
     repo: unused<ConnectionsDeps["repo"]>({

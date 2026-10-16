@@ -1,4 +1,4 @@
-import { OverflowMenuHorizontal } from "@carbon/icons-react";
+import { OverflowMenuVertical } from "@carbon/icons-react";
 import type { ComponentProps, ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -52,7 +52,7 @@ export function RowActionsMenu({
             onMouseDown: (e) => e.stopPropagation(),
           })}
         >
-          <OverflowMenuHorizontal size={16} />
+          <OverflowMenuVertical size={16} />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent {...contentProps}>{children}</DropdownMenuContent>

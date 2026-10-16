@@ -1,29 +1,28 @@
 import { describe, expect, it } from "vitest";
 import { createStore } from "zustand/vanilla";
 
-import type { KeyValueStore } from "../../lib/safe-storage.js";
 import { createBrowserSlice } from "../../modules/browser/store.js";
 import { createChangesSlice } from "../../modules/changes/store.js";
 import { createFilesSlice } from "../../modules/files/store.js";
 import {
-  DEFAULT_SIDE_PANEL_TAB,
   type DockedItems,
   dockedItemTab,
-  readSidePanelTab,
+  maximizableView,
   selectSidePanelTab,
+  shownSidePanelWidth,
+  sidePanelMinWidth,
   visibleSidePanelTab,
-  writeSidePanelTab,
 } from "../../modules/sessions/lib/side-panel.js";
 import { createSidePanelSlice } from "../../modules/sessions/store/side-panel.js";
 import type { PlatformStore } from "../../store.js";
 
 /**
  * TEST_OVERVIEW: The chat view has one side panel on the right, switched by an
- * icon bar: Files, Changes, Artifacts, Browser and Processes. A list tab shows
+ * icon bar: Artifacts, Files, Changes, Browser and Processes. A list tab shows
  * its list, or the docked item it opened (a file, an artifact, a process
  * output). The Changes and Browser tabs show their docked panel and nothing
- * else. Clicking the active icon collapses the panel. The list tab the user
- * chose last, or the collapsed state, persists in browser storage.
+ * else. Clicking the active icon collapses the panel. A conversation opens with
+ * the panel collapsed.
  */
 
 const NOTHING_DOCKED: DockedItems = {
@@ -36,16 +35,6 @@ const NOTHING_DOCKED: DockedItems = {
 };
 
 const ALL_AVAILABLE = { canOpenBrowser: true, processesEnabled: true };
-
-function mapStore(seed: Record<string, string> = {}): KeyValueStore {
-  const map = new Map(Object.entries(seed));
-  return {
-    keys: () => [...map.keys()],
-    getItem: (key) => map.get(key) ?? null,
-    setItem: (key, value) => void map.set(key, value),
-    removeItem: (key) => void map.delete(key),
-  };
-}
 
 function panelStore() {
   return createStore<PlatformStore>()(
@@ -124,26 +113,51 @@ describe("opening a docked item", () => {
   });
 });
 
-describe("the persisted tab", () => {
-  it("TEST_SCENARIO: a list tab and the collapsed state survive a reload", () => {
-    const store = mapStore();
-    writeSidePanelTab("artifacts", store);
-    expect(readSidePanelTab(store)).toBe("artifacts");
-    writeSidePanelTab(null, store);
-    expect(readSidePanelTab(store)).toBe(null);
+describe("the panel on load", () => {
+  it("TEST_SCENARIO: a conversation opens with the side panel closed and nothing maximized", () => {
+    const state = panelStore().getState();
+    expect(state.sidePanelTab).toBe(null);
+    expect(state.sidePanelMaximized).toBe(null);
+  });
+});
+
+describe("a maximized panel", () => {
+  it("TEST_SCENARIO: collapsing the panel brings the chat back, so the next view opens docked rather than maximized", () => {
+    const store = panelStore();
+    store.getState().setOpenBrowser("agent-1");
+    store.getState().setSidePanelMaximized("browser");
+    store.getState().setSidePanelTab(null);
+    expect(store.getState().sidePanelMaximized).toBe(null);
   });
 
-  it("TEST_SCENARIO: a tab that only shows a docked item is not kept, since that item is gone after a reload", () => {
-    const store = mapStore();
-    writeSidePanelTab("processes", store);
-    writeSidePanelTab("browser", store);
-    expect(readSidePanelTab(store)).toBe("processes");
+  it("TEST_SCENARIO: closing the browser ends its maximized state", () => {
+    const store = panelStore();
+    store.getState().setOpenBrowser("agent-1");
+    store.getState().setSidePanelMaximized("browser");
+    store.getState().setOpenBrowser(null);
+    expect(store.getState().sidePanelMaximized).toBe(null);
+  });
+});
+
+describe("the panel width", () => {
+  it("TEST_SCENARIO: a view with a higher minimum, such as the browser, shows wider than the saved width without changing it", () => {
+    const min = sidePanelMinWidth("browser");
+    expect(min).toBeGreaterThan(sidePanelMinWidth("files"));
+    expect(shownSidePanelWidth(300, min, 900)).toBe(min);
+    expect(shownSidePanelWidth(300, sidePanelMinWidth("files"), 900)).toBe(300);
   });
 
-  it("TEST_SCENARIO: nothing stored, or a value this version does not know, opens the default tab", () => {
-    expect(readSidePanelTab(mapStore())).toBe(DEFAULT_SIDE_PANEL_TAB);
-    expect(
-      readSidePanelTab(mapStore({ "platform-side-panel-tab": "diff" })),
-    ).toBe(DEFAULT_SIDE_PANEL_TAB);
+  it("TEST_SCENARIO: the panel never takes more than the room the chat leaves, unless the view needs it", () => {
+    expect(shownSidePanelWidth(800, 280, 500)).toBe(500);
+    expect(shownSidePanelWidth(800, 480, 400)).toBe(480);
+  });
+});
+
+describe("the maximizable views", () => {
+  it("TEST_SCENARIO: only the browser and an open file maximize, and each file is its own view", () => {
+    expect(maximizableView("browser", true, null)).toBe("browser");
+    expect(maximizableView("files", true, "/a.md")).toBe("file:/a.md");
+    expect(maximizableView("files", false, "/a.md")).toBe(null);
+    expect(maximizableView("artifacts", true, null)).toBe(null);
   });
 });

@@ -8,6 +8,10 @@ import { useNow } from "@/hooks/use-now";
 import { timeAgo } from "../../../lib/format-time.js";
 import { useDenyApprovals } from "../../approvals/hooks/use-deny-approvals.js";
 import { deniableApprovalIds } from "../../approvals/lib/deny-all.js";
+import {
+  approvalGroupKey,
+  groupBy,
+} from "../../approvals/lib/group-approvals.js";
 import { useFeed } from "../api/queries.js";
 import { useDismissals } from "../hooks/use-dismissals.js";
 import { useStickyResolved } from "../hooks/use-sticky-resolved.js";
@@ -33,6 +37,9 @@ export function ApprovalsPanel({ onClose }: { onClose: () => void }) {
   const pending = approvals.flatMap((item) =>
     sticky.labelFor(item.id) === null ? [item.approval] : [],
   );
+  const groupKeyOf = (item: (typeof approvals)[number]) =>
+    `${approvalGroupKey(item.approval)}:${sticky.labelFor(item.id) ?? ""}`;
+  const groups = groupBy(approvals, groupKeyOf);
   const agentOf = (agentId: string) => agents.find((a) => a.id === agentId);
 
   return (
@@ -43,12 +50,14 @@ export function ApprovalsPanel({ onClose }: { onClose: () => void }) {
       onClose={requestClose}
       onClosed={onClose}
       className="max-w-[520px]"
+      containerClassName="max-md:top-[52px] md:right-11"
     >
       <div className="flex items-center justify-between border-b border-border px-5 py-4">
         <h2 className="text-base font-semibold text-foreground">Approvals</h2>
         <div className="flex items-center gap-3">
           {deniableApprovalIds(pending).length > 0 && (
             <Button
+              data-dialog-noautofocus
               variant="link"
               size="inline"
               disabled={denying}
@@ -80,22 +89,26 @@ export function ApprovalsPanel({ onClose }: { onClose: () => void }) {
           </p>
         ) : (
           <div className="flex flex-col gap-1">
-            {approvals.map((item) => {
+            {groups.map((group) => {
+              const item = group[0]!;
               const agent = agentOf(item.agentId);
               return (
                 <FeedApprovalCard
-                  key={item.id}
+                  key={groupKeyOf(item)}
                   approval={item.approval}
+                  ids={group.map((member) => member.approval.id)}
                   agentName={agent?.name ?? item.agentId}
                   avatarName={agent?.name}
                   avatar={agent?.avatar}
                   meta={item.at ? timeAgo(item.at, now) : "—"}
                   onDismiss={() => {
-                    sticky.drop(item.id);
-                    dismiss([item]);
+                    group.forEach((member) => sticky.drop(member.id));
+                    dismiss(group);
                   }}
                   resolvedLabel={sticky.labelFor(item.id)}
-                  onResolved={(label) => sticky.keep(item, label)}
+                  onResolved={(label) =>
+                    group.forEach((member) => sticky.keep(member, label))
+                  }
                 />
               );
             })}

@@ -223,6 +223,19 @@ func LoadFromEnv() (*Config, error) {
 			return nil, fmt.Errorf("GATEWAY_EGRESS: extraCidrs entry %q is not a CIDR: %w", c, err)
 		}
 	}
+	for i, p := range cfg.GatewayEgress.Peers {
+		if p.Namespace == "" || len(p.Ports) == 0 {
+			return nil, fmt.Errorf("GATEWAY_EGRESS: peers[%d] needs a namespace and at least one port — without ports it would open every port", i)
+		}
+		if len(p.PodLabels) == 0 {
+			return nil, fmt.Errorf("GATEWAY_EGRESS: peers[%d] needs podLabels — without them it would open every pod in namespace %q", i, p.Namespace)
+		}
+		for _, port := range p.Ports {
+			if port < 1 || port > 65535 {
+				return nil, fmt.Errorf("GATEWAY_EGRESS: peers[%d] port %d is out of range", i, port)
+			}
+		}
+	}
 	if cfg.VM.Enabled && (cfg.VM.Runner.Image == "" || cfg.VM.Runner.Storage == "") {
 		return nil, fmt.Errorf("AGENT_VM: enabled needs runner.image and runner.storage")
 	}
