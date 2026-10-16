@@ -38,6 +38,12 @@ export interface RuntimeEnvState {
   harnesses: EnvLayer[];
 }
 
+export function staleEnvReason(state: RuntimeEnvState): string | undefined {
+  return state.providers.some((layer) => layer.template === undefined)
+    ? "env file has provider layers without a template"
+    : undefined;
+}
+
 export interface EnvStateStore extends LeaseEnvReader {
   state(): RuntimeEnvState;
   write(state: RuntimeEnvState): void;

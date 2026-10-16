@@ -1,9 +1,13 @@
-// TEST_OVERVIEW: the runtime's applied-state record holds only while the env file it applied is on the disk, so a home restored without that file asks the api-server for the whole desired state again.
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+// TEST_OVERVIEW: the runtime's applied-state record holds only while the env file it applied is on the disk and was written the way this runtime reads it, so a home restored without that file, or with one an older runtime wrote, asks the api-server for the whole desired state again.
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createFileDocumentStoreBackend } from "../../core/document-store.js";
+import {
+  createEnvStateStore,
+  staleEnvReason,
+} from "../../modules/runtime-channel/infrastructure/env-state-store.js";
 import { createStateStore } from "../../modules/runtime-channel/state-store.js";
 
 describe("runtime-channel state store", () => {
@@ -44,5 +48,33 @@ describe("runtime-channel state store", () => {
       lastAppliedHash: "abc",
       eventRuns: { "sched-1": 100 },
     });
+  });
+
+  const reopenWithEnv = (template: string | undefined) => {
+    writeFileSync(
+      join(home, ".platform", "runtime-env.json"),
+      JSON.stringify({
+        env: {},
+        providers: [
+          { id: "conn-1", ...(template && { template }), env: { K: "v" } },
+        ],
+        harnesses: [],
+      }),
+    );
+    const env = createEnvStateStore(home, "claude-code");
+    return createStateStore(createFileDocumentStoreBackend(home), {
+      envReady: env.ready,
+      envStale: () => staleEnvReason(env.state()),
+    }).read();
+  };
+
+  // TEST_SCENARIO: an image update moves an agent from a runtime that wrote its provider env without templates to one that reads them; the api-server's state is unchanged, so only forgetting the applied version gets the templates written, or every provider reads as unsupported.
+  it("forgets the applied version when an older runtime wrote the provider env", () => {
+    expect(reopenWithEnv(undefined).lastAppliedVersion).toBe(0);
+  });
+
+  // TEST_SCENARIO: an env file this runtime wrote carries each provider's template, so a restart keeps the applied version.
+  it("keeps the applied version when the provider env carries its templates", () => {
+    expect(reopenWithEnv("ibm-litellm").lastAppliedVersion).toBe(7);
   });
 });

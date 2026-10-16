@@ -1,6 +1,6 @@
 # Runtime delivery and the runtime channel
 
-Last verified: 2026-10-15
+Last verified: 2026-10-16
 
 ## Overview
 
@@ -158,7 +158,7 @@ A surface the runtime does not claim is treated as absent, so an older image deg
 Each claim gates both the UI surfaces that read it and the platform's pod-facing streams.
 Because the claim decides membership in those streams, receiving it is itself an Agent change that the platform announces.
 
-An agent reports itself as never applied when its cursor no longer describes its disk: its home lost the env file the last delivery wrote, as after a runtime migration, or its image binds its contribution drivers differently from when it applied.
+An agent reports itself as never applied when its cursor no longer describes its disk: its home lost the env file the last delivery wrote, as after a runtime migration, its image binds its contribution drivers differently from when it applied, or an older runtime wrote the env file without the provider templates this one reads, as when an image update moves an agent past the Model Router release.
 The platform then re-delivers the whole snapshot to every driver.
 The dispatch a `hello` enqueues waits for the Agent to be ready, except for a migrated machine whose migration is verified: it is ready only after its Backend switches, and its runtime waits only seconds for the env before it starts the harness without it ([runtime migration](vm-runtime-migration.md)).
 
