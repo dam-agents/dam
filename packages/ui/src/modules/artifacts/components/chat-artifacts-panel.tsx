@@ -1,70 +1,26 @@
-import {
-  Edit,
-  FolderAdd,
-  Link,
-  OverflowMenuVertical,
-  TrashCan,
-  Upload,
-  View,
-} from "@carbon/icons-react";
+import { FolderAdd, Upload } from "@carbon/icons-react";
 import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
-import {
-  type CSSProperties,
-  type Ref,
-  useCallback,
-  useMemo,
-  useState,
-} from "react";
+import { type CSSProperties, type Ref, useMemo, useState } from "react";
 import { match } from "ts-pattern";
 
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { Input } from "@/components/ui/input";
-import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { Tabs } from "@/components/ui/tabs";
-import { Tooltip } from "@/components/ui/tooltip";
-import { treeIndent } from "@/components/ui/tree-guide";
-import { useCopy } from "@/hooks/use-copy";
-import { clickableProps } from "@/lib/clickable";
 import { formatBytes } from "@/lib/format-size";
 import { cn } from "@/lib/utils";
 
-import { api } from "../../../api.js";
 import { useStore } from "../../../store.js";
-import { useAgentsList } from "../../agents/api/queries.js";
-import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { SidebarSection } from "../../sessions/components/sidebar-section.js";
 import { useDeleteFolder } from "../api/mutations.js";
 import { useArtifactFolders, useArtifacts } from "../api/queries.js";
-import {
-  type ArtifactDragCallbacks,
-  useArtifactRowDrag,
-  useFolderDropTarget,
-} from "../hooks/use-artifact-row-drag.js";
+import { useFolderDropTarget } from "../hooks/use-artifact-row-drag.js";
 import { useFolderDragOrchestration } from "../hooks/use-folder-drag-orchestration.js";
 import { useOpenArtifact } from "../hooks/use-open-artifact.js";
 import { folderDisplayNames } from "../lib/folders.js";
 import { groupArtifactsByFolder } from "../lib/group-artifacts.js";
-import { toastCopyOutcome } from "../lib/share-link.js";
-import {
-  ArtifactDeletionChip,
-  ArtifactInteractiveBadge,
-  ArtifactVisibilityButton,
-} from "./artifact-badges.js";
-import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
+import { ArtifactListRow } from "./artifact-list-row.js";
+import { FolderActionsMenu } from "./folder-actions-menu.js";
 import { FolderDialog } from "./folder-dialog.js";
 import { MoveArtifactDialog } from "./move-artifact-dialog.js";
 import { RenameArtifactDialog } from "./rename-artifact-dialog.js";
@@ -353,205 +309,5 @@ export function ChatArtifactsPanel({
         }}
       />
     </SidebarSection>
-  );
-}
-
-function ArtifactListRow({
-  artifact,
-  depth,
-  active,
-  onClick,
-  drag,
-  showCreator,
-  onEdit,
-  onRename,
-  onMove,
-  onShare,
-  onSetRetention,
-}: {
-  artifact: LibraryArtifact;
-  depth: number;
-  active: boolean;
-  onClick: () => void;
-  drag?: ArtifactDragCallbacks;
-  showCreator: boolean;
-  onEdit: (artifact: LibraryArtifact) => void;
-  onRename: (artifact: LibraryArtifact) => void;
-  onMove: (artifact: LibraryArtifact) => void;
-  onShare: (artifact: LibraryArtifact) => void;
-  onSetRetention: (artifact: LibraryArtifact) => void;
-}) {
-  const [dragging, setDragging] = useState(false);
-  const startDrag = useCallback(
-    (folderId: string | null) => {
-      setDragging(true);
-      drag?.onStart(folderId);
-    },
-    [drag],
-  );
-  const endDrag = useCallback(() => {
-    setDragging(false);
-    drag?.onEnd();
-  }, [drag]);
-  const dragProps = useArtifactRowDrag(artifact.id, artifact.folderId, {
-    onStart: startDrag,
-    onEnd: endDrag,
-  });
-
-  const menuActions = { onEdit, onRename, onMove, onShare, onSetRetention };
-
-  return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
-        <div
-          {...clickableProps(onClick)}
-          {...(drag ? dragProps : {})}
-          title={artifact.title}
-          className={cn(
-            "group flex min-h-8 w-full cursor-pointer items-start gap-1.5 py-1.5 pr-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted",
-            active && "bg-muted text-foreground",
-            dragging && "opacity-50",
-          )}
-          style={{ paddingLeft: treeIndent(depth) }}
-        >
-          <div
-            className="-mx-1.5 flex h-5 shrink-0 items-center"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <ArtifactVisibilityButton
-              artifact={artifact}
-              onShare={() => onShare(artifact)}
-            />
-          </div>
-          <div className="min-w-0 flex-1">
-            <span className="flex min-w-0 items-center gap-2">
-              <span className="min-w-0 flex-1 truncate">{artifact.title}</span>
-              {showCreator && <CreatorByline agentId={artifact.agentId} />}
-            </span>
-            {(artifact.expiresAt !== null ||
-              artifact.viewCount > 0 ||
-              artifact.interactive) && (
-              <span className="flex min-w-0 items-center gap-2 overflow-hidden text-xs">
-                <ArtifactDeletionChip expiresAt={artifact.expiresAt} />
-                {artifact.viewCount > 0 && (
-                  <Tooltip
-                    content={`${artifact.viewCount} view${artifact.viewCount === 1 ? "" : "s"} of its share link`}
-                  >
-                    <span className="inline-flex shrink-0 items-center gap-1">
-                      <View size={12} />
-                      {artifact.viewCount}
-                    </span>
-                  </Tooltip>
-                )}
-                {artifact.interactive && <ArtifactInteractiveBadge />}
-              </span>
-            )}
-          </div>
-          <div
-            className="flex h-5 shrink-0 items-center"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <DropdownMenu>
-              {}
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  className={HOVER_ACTION}
-                  aria-label="More actions"
-                >
-                  <OverflowMenuVertical size={13} />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <ArtifactRowMenuItems artifact={artifact} {...menuActions} />
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-      </ContextMenuTrigger>
-      <ContextMenuContent>
-        <ArtifactRowMenuItems
-          artifact={artifact}
-          {...menuActions}
-          menu="context"
-        />
-      </ContextMenuContent>
-    </ContextMenu>
-  );
-}
-
-function FolderActionsMenu({
-  folder,
-  shared,
-  onEdit,
-  onDelete,
-}: {
-  folder: ArtifactFolder;
-  shared: boolean;
-  onEdit: (folder: ArtifactFolder) => void;
-  onDelete: (folder: ArtifactFolder) => void;
-}) {
-  const { copy } = useCopy();
-  return (
-    <RowActionsMenu label="Folder actions" dense>
-      <DropdownMenuItem
-        disabled={!shared}
-        onSelect={() =>
-          void copy(() =>
-            api.artifactLibrary.folderShareUrl.query({ id: folder.id }),
-          ).then(toastCopyOutcome)
-        }
-      >
-        <Link size={14} />
-        Copy folder link
-      </DropdownMenuItem>
-      <DropdownMenuItem onSelect={() => onEdit(folder)}>
-        <Edit size={14} />
-        Edit folder
-      </DropdownMenuItem>
-      <DropdownMenuSeparator />
-      <DropdownMenuItem tone="danger" onSelect={() => onDelete(folder)}>
-        <TrashCan size={14} />
-        Delete folder
-      </DropdownMenuItem>
-    </RowActionsMenu>
-  );
-}
-
-function CreatorByline({ agentId }: { agentId: string | null }) {
-  return (
-    <span className="flex max-w-28 shrink-0 items-center gap-1 text-xs">
-      by
-      {agentId ? <AgentCreatorLink agentId={agentId} /> : " you"}
-    </span>
-  );
-}
-
-function AgentCreatorLink({ agentId }: { agentId: string }) {
-  const selectAgent = useStore((s) => s.selectAgent);
-  const agent = useAgentsList().find((a) => a.id === agentId);
-  if (!agent) return <span className="truncate">{agentId}</span>;
-  const agentName = agent.name;
-  return (
-    <Tooltip content={`Open ${agentName}`}>
-      <button
-        type="button"
-        aria-label={`Open ${agentName}`}
-        onClick={(e) => {
-          e.stopPropagation();
-          selectAgent(agentId);
-        }}
-        className="inline-flex min-w-0 items-center gap-1 transition-colors hover:text-accent"
-      >
-        <AgentAvatar
-          name={agentName}
-          avatar={agent.avatar}
-          size={14}
-          className="shrink-0"
-        />
-        <span className="truncate">{agentName}</span>
-      </button>
-    </Tooltip>
   );
 }

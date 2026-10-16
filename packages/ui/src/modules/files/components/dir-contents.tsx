@@ -1,5 +1,5 @@
 import type { DirEntry } from "agent-runtime-api";
-import { type CSSProperties, Fragment } from "react";
+import type { CSSProperties } from "react";
 
 import { TREE_GUIDE, treeGuideX } from "@/components/ui/tree-guide";
 
@@ -55,7 +55,7 @@ function DirEntryRow({ entry, parentPath, depth }: DirEntryRowProps) {
   const isRenaming = panel.renamingPath === fullPath;
 
   return (
-    <Fragment>
+    <div className={depth > 0 ? TREE_GUIDE : undefined}>
       {isRenaming ? (
         <InlineNameRow
           kind={isDir ? "dir" : "file"}
@@ -75,23 +75,22 @@ function DirEntryRow({ entry, parentPath, depth }: DirEntryRowProps) {
           dropActive={isDir && panel.dragTargetPath === fullPath}
         />
       )}
-      <div
-        className={TREE_GUIDE}
-        style={{ "--tree-guide-x": treeGuideX(depth) } as CSSProperties}
-      >
+      <div style={{ "--tree-guide-x": treeGuideX(depth) } as CSSProperties}>
         {isExpanded && <DirContents path={fullPath} depth={depth + 1} />}
         {panel.pendingNew && panel.pendingNew.dir === fullPath && (
-          <InlineNameRow
-            kind={panel.pendingNew.kind}
-            depth={depth + 1}
-            placeholder={
-              panel.pendingNew.kind === "dir" ? "new-folder" : "new-file.md"
-            }
-            onCommit={panel.onCommitNew}
-            onCancel={panel.onCancelNew}
-          />
+          <div className={TREE_GUIDE}>
+            <InlineNameRow
+              kind={panel.pendingNew.kind}
+              depth={depth + 1}
+              placeholder={
+                panel.pendingNew.kind === "dir" ? "new-folder" : "new-file.md"
+              }
+              onCommit={panel.onCommitNew}
+              onCancel={panel.onCancelNew}
+            />
+          </div>
         )}
       </div>
-    </Fragment>
+    </div>
   );
 }

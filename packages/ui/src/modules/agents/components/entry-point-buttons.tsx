@@ -1,4 +1,4 @@
-import { Add, Catalog } from "@carbon/icons-react";
+import { AddAlt, Box } from "@carbon/icons-react";
 import type { EntryPointChoice } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
@@ -35,7 +35,7 @@ export function EntryPointButtons() {
         onClick={() => enter(BROWSE_KITS)}
         data-testid="entry-point-second"
       >
-        <Catalog size={16} aria-hidden />
+        <Box size={16} aria-hidden />
         {BROWSE_KITS.label}
       </Button>
       <Button
@@ -43,7 +43,7 @@ export function EntryPointButtons() {
         disabled={!defaultAgent.ready}
         data-testid="entry-point-lead"
       >
-        <Add size={16} aria-hidden />
+        <AddAlt size={16} aria-hidden />
         {CREATE_AGENT.label}
       </Button>
     </>
