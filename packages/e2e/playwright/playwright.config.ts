@@ -63,6 +63,12 @@ const suite: NamedProject[] = [
     workers: 1,
     use: { ...devices["Desktop Chrome"], storageState },
   },
+  {
+    name: "platform-provider",
+    testMatch: /24-.*\.spec\.ts$/,
+    dependencies: ["api-keys", "live-events", "chain", "own-agents"],
+    use: { ...devices["Desktop Chrome"], storageState },
+  },
   ...(full
     ? [
         {

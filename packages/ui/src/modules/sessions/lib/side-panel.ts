@@ -1,10 +1,3 @@
-import {
-  browserStorage,
-  type KeyValueStore,
-  safeGetItem,
-  safeSetItem,
-} from "../../../lib/safe-storage.js";
-
 export type SidePanelTab =
   "files" | "changes" | "artifacts" | "browser" | "processes" | "delegation";
 
@@ -21,12 +14,6 @@ export type SidePanelAvailability = {
   canOpenBrowser: boolean;
   processesEnabled: boolean;
 };
-
-const SIDE_PANEL_TAB_KEY = "platform-side-panel-tab";
-const LIST_TABS: readonly SidePanelTab[] = ["files", "artifacts", "processes"];
-const COLLAPSED = "none";
-
-export const DEFAULT_SIDE_PANEL_TAB: SidePanelTab = "files";
 
 export function dockedItemTab(docked: DockedItems): SidePanelTab | null {
   if (docked.browser) return "browser";
@@ -74,18 +61,29 @@ export function selectSidePanelTab(
   return { kind: "show", tab };
 }
 
-export function readSidePanelTab(
-  store: KeyValueStore = browserStorage,
-): SidePanelTab | null {
-  const raw = safeGetItem(store, SIDE_PANEL_TAB_KEY);
-  if (raw === COLLAPSED) return null;
-  return LIST_TABS.find((tab) => tab === raw) ?? DEFAULT_SIDE_PANEL_TAB;
+export const SIDE_PANEL_MIN_W = 280;
+const VIEW_MIN_W: Partial<Record<SidePanelTab, number>> = { browser: 480 };
+
+export function sidePanelMinWidth(tab: SidePanelTab | null): number {
+  return (tab && VIEW_MIN_W[tab]) ?? SIDE_PANEL_MIN_W;
 }
 
-export function writeSidePanelTab(
-  tab: SidePanelTab | null,
-  store: KeyValueStore = browserStorage,
-): void {
-  if (tab === null) safeSetItem(store, SIDE_PANEL_TAB_KEY, COLLAPSED);
-  else if (LIST_TABS.includes(tab)) safeSetItem(store, SIDE_PANEL_TAB_KEY, tab);
+export function shownSidePanelWidth(
+  saved: number,
+  min: number,
+  max: number | null,
+): number {
+  const wanted = Math.max(saved, min);
+  return max === null ? wanted : Math.min(wanted, Math.max(min, max));
+}
+
+export function maximizableView(
+  activeTab: SidePanelTab | null,
+  dockedShown: boolean,
+  openFilePath: string | null,
+): string | null {
+  if (activeTab === "browser") return "browser";
+  if (activeTab === "files" && dockedShown && openFilePath)
+    return `file:${openFilePath}`;
+  return null;
 }

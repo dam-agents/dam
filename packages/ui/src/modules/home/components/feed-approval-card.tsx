@@ -21,6 +21,7 @@ import {
 
 interface Props {
   approval: ApprovalView;
+  ids?: readonly string[];
   agentName: string;
   avatarName: string | undefined;
   avatar: string | null | undefined;
@@ -32,6 +33,7 @@ interface Props {
 
 export function FeedApprovalCard({
   approval,
+  ids = [approval.id],
   agentName,
   avatarName,
   avatar,
@@ -47,7 +49,7 @@ export function FeedApprovalCard({
     hostLabel,
     expiredNote,
     openSettings,
-  } = useApprovalActions(approval);
+  } = useApprovalActions(approval, ids);
   const { data: connections } = useAppConnections();
   const connectionName = (id: string) =>
     connections?.find((connection) => connection.id === id)?.name;
@@ -102,6 +104,11 @@ export function FeedApprovalCard({
         >
           {approvalDetail(approval, connectionName)}
         </span>
+        {ids.length > 1 && (
+          <span className="ml-auto shrink-0 text-sm text-muted-foreground">
+            {ids.length} requests
+          </span>
+        )}
       </div>
 
       {expiredNote && (

@@ -32,6 +32,7 @@ function makeService(outcome: ProviderKeyProbeOutcome) {
   const secrets = new Map<string, Record<string, string>>();
   const probed: string[] = [];
   const svc = createConnectionsService({
+    platformProviderEnabled: async () => false,
     isOwnedAgent: async () => true,
     ownerId: "owner",
     templates: createConnectionTemplateRegistry(buildCatalog()),

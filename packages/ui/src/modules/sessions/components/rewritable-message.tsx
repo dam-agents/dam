@@ -31,7 +31,7 @@ export function RewritableMessage({
   message: Message;
   enabled: boolean;
   onRewrite: (mode: RewriteMode, text: string) => Promise<void>;
-  children: ReactNode;
+  children: (actions: ReactNode) => ReactNode;
 }) {
   const rewriting = useStore((s) => s.rewriting);
   const setRewriting = useStore((s) => s.setRewriting);
@@ -70,36 +70,31 @@ export function RewritableMessage({
     );
   }
 
-  return (
-    <div className="group relative flex flex-col items-end gap-1">
-      {children}
-      {enabled && rewriting === null && (
-        <div className="flex gap-1 transition-opacity md:absolute md:right-0 md:top-full md:z-10 md:pt-0.5 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            tooltip="Rewind"
-            aria-label="Rewind"
-            onClick={() =>
-              setRewriting({ messageId: message.id, mode: "rewind" })
-            }
-          >
-            <Undo size={14} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            tooltip="Fork"
-            aria-label="Fork"
-            onClick={() =>
-              setRewriting({ messageId: message.id, mode: "fork" })
-            }
-          >
-            <Branch size={14} />
-          </Button>
-        </div>
-      )}
-    </div>
+  return children(
+    enabled && rewriting === null && (
+      <>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          tooltip="Rewind"
+          aria-label="Rewind"
+          onClick={() =>
+            setRewriting({ messageId: message.id, mode: "rewind" })
+          }
+        >
+          <Undo size={14} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          tooltip="Fork"
+          aria-label="Fork"
+          onClick={() => setRewriting({ messageId: message.id, mode: "fork" })}
+        >
+          <Branch size={14} />
+        </Button>
+      </>
+    ),
   );
 }
 

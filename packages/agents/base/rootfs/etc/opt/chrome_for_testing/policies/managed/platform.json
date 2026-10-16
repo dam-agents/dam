@@ -4,6 +4,8 @@
   "SyncDisabled": true,
   "SigninInterceptionEnabled": false,
   "SearchSuggestEnabled": false,
+  "TranslateEnabled": false,
+  "SpellcheckEnabled": false,
   "AIModeSettings": 1,
   "GeminiSettings": 1,
   "GoogleSearchSidePanelEnabled": false,
