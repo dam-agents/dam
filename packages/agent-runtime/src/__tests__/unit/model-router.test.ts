@@ -559,12 +559,12 @@ describe("response model rewrite", () => {
   });
 
   /** TEST_SCENARIO: Every forwarded call is reported once with its Connection,
-   * upstream model, dialect, harness and status. A streamed Messages call
-   * reports the tokens its `message_start` and `message_delta` events
-   * carried; the catalog has no price for the model, so the record is
-   * unpriced rather than free. A chat completion answered without a usage
-   * field is uncounted. The harness's trace context rides along. */
-  it("reports each call with its usage, marking unpriced and usage-less ones", async () => {
+   * upstream model, dialect, harness and status, and no cost: the gateway
+   * measures that. A streamed Messages call reports the tokens its
+   * `message_start` and `message_delta` events carried. A chat completion
+   * answered without a usage field is uncounted. The harness's trace context
+   * rides along. */
+  it("reports each call with its usage, marking usage-less ones", async () => {
     await call(
       "/v1/messages",
       { model: "claude/ibm/aws/claude-opus-4-8", stream: true },
@@ -588,8 +588,7 @@ describe("response model rewrite", () => {
         cacheReadTokens: 0,
         cacheCreationTokens: 0,
       },
-      costUsdMicros: null,
-      uncounted: "unpriced",
+      uncounted: null,
       trace: {
         traceId: "0af7651916cd43dd8448eb211c80319c",
         spanId: "b7ad6b7169203331",

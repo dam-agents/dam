@@ -1,12 +1,12 @@
 # Spend limits
 
-Last verified: 2026-10-16
+Last verified: 2026-10-17
 
 ## Overview
 
 DAM measures the spend of each model call in the agent's own gateway, for every harness and every provider dialect.
 This number is Metered Spend: the agent cannot change it, because the meter runs only in parts that the agent does not control.
-The spend that a harness reports through telemetry ([metrics](metrics.md)) stays for display only.
+Every spend figure on the screens and in an agent's own cost report reads it; the spend that a harness reports through telemetry ([metrics](metrics.md)) serves only the earlier estimates.
 
 The parts:
 
@@ -61,7 +61,7 @@ It keeps the raw counts with the dialect and leaves their meaning to pricing: in
 
 **The record.** The gateway sends spend records over a gRPC access log to the agent's ext-authz Service, the address that only this agent's gateway can reach.
 A record names the payer, which is the root driver for an Invocation target, and the Connection and providers that the meter named on the request.
-It carries the session and the harness of the stamp, the call's duration, the reply size, the proxy's own cost figure when the reply has one, and whether the reply ended with its format's end event.
+It carries the session and the harness of the stamp, the call's duration, the reply size, the proxy's own cost figures when the reply has them, and whether the reply ended with its format's end event.
 A reply that stops early keeps the counts read so far and is not marked complete.
 
 **Periodic records.** While a call runs, the gateway also sends a periodic record of the same call every 2 seconds, with the counts so far.
@@ -99,7 +99,9 @@ On the Anthropic API, fast mode and US-only inference multiply the token prices 
 Costs are whole micro-units of the Connection's unit, rounded up.
 
 **When a cost is fixed.** DAM prices a call when its record arrives and stores that cost, so a later price change alters neither the history nor a limit.
-When a reply carries a proxy cost figure above zero, DAM compares it with its own cost and logs a large difference, which shows an operator price that is wrong or old.
+DAM compares its cost with the proxy's own cost of a call and logs a large difference, which shows an operator price that is wrong or old.
+The proxy's cost is IBM LiteLLM's response cost when it is above zero, else its original cost less the discount plus the margin, the order in which LiteLLM applies them.
+Only a completed dollar call with no cache read and no cache write is compared, because the proxy's figure leaves out cached tokens.
 
 **Updating prices.** The Anthropic table changes only through a reviewed update to a newer pinned version of LiteLLM's list, which the regular dependency update proposes.
 The update stops when a copied price lacks one of its token prices, so a broken upstream list never reaches DAM.
@@ -122,6 +124,8 @@ A row outlives its agent, so the spend of a deleted agent still counts for its o
 
 **Session check.** The Session comes from the stamp in the agent's pod, so it serves display only, and no total and no limit depends on it.
 A call's Session counts only when the calling agent reported that Session to the [Session directory](metrics.md#session-directory); a Session that the agent never reported, or a failed check, counts as no Session.
+Bob sends no `X-Task-Id` on the first call of a new task, which asks for the model `background`, so the Model Router stamps no Session on that call and it counts as no Session.
+The totals and the limits of that call stay correct, because they do not read the Session.
 The agent's own pod writes the directory, so the check stops stray and wrong ids, not a deliberate agent: such rows stay under that agent's own spend.
 The check keeps a Session that it found for ten minutes and never keeps a miss, because a new Session's report can arrive after its first call.
 

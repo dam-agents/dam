@@ -27,7 +27,6 @@ export { routerEnvFor, tierModels } from "./domain/harness-env.js";
 export { classify, normalizePath } from "./domain/classify.js";
 export { upstreamWireOf, upstreamUrl } from "./domain/upstream.js";
 export {
-  costUsdMicros,
   createUsageScanner,
   traceOf,
   usageOfBody,

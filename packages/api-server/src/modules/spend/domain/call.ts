@@ -1,4 +1,4 @@
-import { callCostMicros } from "./cost.js";
+import { callCostMicros, type ProxyCostHeaders } from "./cost.js";
 import { lookupPrice, type PriceBook, type PriceSource } from "./prices.js";
 import { payingProvider, unitOf, type SpendUnit } from "./units.js";
 import type { NormalizedUsage } from "./usage.js";
@@ -43,7 +43,7 @@ export interface CallRecord {
   readonly status: number | null;
   readonly replyBytes: number | null;
   readonly complete: boolean;
-  readonly proxyCost: string | null;
+  readonly proxyCost: ProxyCostHeaders;
   readonly final: boolean;
   readonly refusedByGate: boolean;
   readonly startedAt: Date;

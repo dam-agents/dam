@@ -513,7 +513,6 @@ export {
 export type {
   MetricsService,
   MetricsQuery,
-  MetricsSessionCostsQuery,
   MetricsOverview,
   TokenSpendByModel,
   TokenSpendByProvider,
@@ -523,7 +522,6 @@ export type {
   SpendCategory,
   SessionRuntime,
   CallContext,
-  SubAgentSpend,
 } from "./modules/metrics/types.js";
 
 export type {

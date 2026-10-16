@@ -922,7 +922,7 @@ func envoyVolumes(instanceName string, cfg *config.Config, secrets []corev1.Secr
 	return volumes
 }
 
-const envoyBootstrapTemplateRev = "v24-spend-meter-session-stamp"
+const envoyBootstrapTemplateRev = "v26-outer-route-drops-stamps"
 
 func envoySecretsRev(secrets []corev1.Secret, l7Hosts []string) string {
 	parts := []string{"tmpl=" + envoyBootstrapTemplateRev}

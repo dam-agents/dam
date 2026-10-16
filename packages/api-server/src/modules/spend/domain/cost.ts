@@ -18,14 +18,42 @@ export function callCostMicros(
     .exhaustive();
 }
 
+export interface ProxyCostHeaders {
+  readonly cost: string | null;
+  readonly original: string | null;
+  readonly discount: string | null;
+  readonly margin: string | null;
+}
+
+const dollars = (text: string | null): number | null => {
+  const value = text === null ? NaN : Number(text);
+  return Number.isFinite(value) ? value : null;
+};
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: LiteLLM's own cost of a call: its response cost
+ * when that is above zero, else the original cost less the discount plus the
+ * margin, the order in which LiteLLM applies them; a missing discount or
+ * margin counts as zero.
+ */
+export function proxyCostDollars(headers: ProxyCostHeaders): number | null {
+  const cost = dollars(headers.cost);
+  if (cost !== null && cost > 0) return cost;
+  const original = dollars(headers.original);
+  if (original === null || original <= 0) return null;
+  return (
+    original - (dollars(headers.discount) ?? 0) + (dollars(headers.margin) ?? 0)
+  );
+}
+
 export function proxyCostDifference(
   ourMicros: number,
-  headerDollars: string | null,
+  headers: ProxyCostHeaders,
 ): number | null {
-  const header = headerDollars === null ? NaN : Number(headerDollars);
-  if (!Number.isFinite(header) || header <= 0) return null;
-  const headerMicros = header * 1_000_000;
-  return Math.abs(ourMicros - headerMicros) / headerMicros;
+  const proxy = proxyCostDollars(headers);
+  if (proxy === null || proxy <= 0) return null;
+  const proxyMicros = proxy * 1_000_000;
+  return Math.abs(ourMicros - proxyMicros) / proxyMicros;
 }
 
 function rowCostMicros(row: PriceRow, usage: NormalizedUsage): number {
