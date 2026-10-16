@@ -48,7 +48,7 @@ export function createPushLogWatcher(deps: {
   log: (msg: string) => void;
 }): PushLogWatcher {
   const watched = new Map<string, WatchHandle>();
-  const pending = new Set<string>();
+  const pending = new Map<string, Promise<void>>();
   let capLogged = false;
 
   async function scan(
@@ -75,16 +75,6 @@ export function createPushLogWatcher(deps: {
       if (!ref) continue;
       for (const entry of pushEntriesIn(text))
         deps.onPush({ commonDir, ...ref, at: entry.at });
-    }
-  }
-
-  async function watchOne(commonDir: string): Promise<void> {
-    if (pending.has(commonDir) || watched.has(commonDir)) return;
-    pending.add(commonDir);
-    try {
-      await watchFresh(commonDir);
-    } finally {
-      pending.delete(commonDir);
     }
   }
 
@@ -115,7 +105,12 @@ export function createPushLogWatcher(deps: {
   return {
     async watch(commonDirs) {
       for (const commonDir of commonDirs) {
-        if (watched.has(commonDir) || pending.has(commonDir)) continue;
+        const inFlight = pending.get(commonDir);
+        if (inFlight) {
+          await inFlight;
+          continue;
+        }
+        if (watched.has(commonDir)) continue;
         if (watched.size >= MAX_WATCHED_REPOSITORIES) {
           if (!capLogged)
             deps.log(
@@ -124,7 +119,11 @@ export function createPushLogWatcher(deps: {
           capLogged = true;
           return;
         }
-        await watchOne(commonDir);
+        const setup = watchFresh(commonDir).finally(() =>
+          pending.delete(commonDir),
+        );
+        pending.set(commonDir, setup);
+        await setup;
       }
     },
     close() {
