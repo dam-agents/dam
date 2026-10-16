@@ -8,6 +8,7 @@ import {
   openAgentChat,
   sendMessageToAgent,
   setMockAgentReply,
+  setMockLongTurnReply,
   sidebarAgentRow,
   waitForAgentRunning,
 } from "../../lib/agents.js";
@@ -20,6 +21,7 @@ import { onLaneBackend, refreshingToken } from "../../lib/backend.js";
 import { harnessName } from "../../lib/fixtures.js";
 
 test.describe.configure({ mode: "serial" });
+test.use({ viewport: { width: 1280, height: 1100 } });
 
 const AGENTS = ["e2e-pins-a", "e2e-pins-b", "e2e-pins-c"] as const;
 const PROMPTS = ["pins-first", "pins-second", "pins-third"] as const;
@@ -73,6 +75,7 @@ async function dragTo(
   to: () => Locator,
   at: "top" | "bottom" | "middle",
 ): Promise<void> {
+  await from.scrollIntoViewIfNeeded();
   const start = await from.boundingBox();
   expect(start).toBeTruthy();
   await page.mouse.move(start!.x + 40, start!.y + start!.height / 2);
@@ -202,7 +205,7 @@ test("the hover pin button pins an Agent at the end of the pinned rows", async (
   await expect.poll(() => pinnedAgents(page)).toEqual(before);
 });
 
-// TEST_SCENARIO: Sessions pin and reorder within their own Agent's list by the same rules. The pin and "⋯" buttons of a Session row take a click on every point, and a pinned row shows one pin icon on hover.
+// TEST_SCENARIO: Sessions pin and reorder within their own Agent's list by the same rules. A pinned row shows one pin icon on hover. The pin and "⋯" buttons of a working row take a click on every point: the hidden working indicator sits in the same place and must not catch it.
 test("drag pins and orders Sessions within their Agent", async ({ page }) => {
   test.setTimeout(600_000);
   const name = AGENTS[0];
@@ -251,19 +254,31 @@ test("drag pins and orders Sessions within their Agent", async ({ page }) => {
       .toEqual([`${order[1]}*`, `${order[2]}*`, order[0]]);
   });
 
-  await test.step("a pinned row shows one pin icon, and its buttons take every click", async () => {
+  await test.step("a pinned row shows one pin icon on hover", async () => {
     const pinnedRow = row(order[1]!);
     await pinnedRow.hover();
     await expect(pinnedRow.getByTestId("session-pinned")).toBeHidden();
     await expect(pinnedRow.getByTestId("session-pin-button")).toBeVisible();
-    await expectFullHitArea(pinnedRow.getByTestId("session-pin-button"));
-    await expectFullHitArea(pinnedRow.getByTestId("session-menu-button"));
-    const menu = await pinnedRow
-      .getByTestId("session-menu-button")
-      .boundingBox();
+  });
+
+  await test.step("the buttons of a working row take every click", async () => {
+    await setMockLongTurnReply(api, agentId, {
+      holdMs: 30_000,
+      tail: "pins-long-tail",
+    });
+    await sendMessageToAgent(page, "pins-working");
+    const working = row(order[0]!);
+    await expect(working.getByTestId("working-dots")).toBeAttached();
+    await working.hover();
+    await expectFullHitArea(working.getByTestId("session-pin-button"));
+    await expectFullHitArea(working.getByTestId("session-menu-button"));
+    const menu = await working.getByTestId("session-menu-button").boundingBox();
     await page.mouse.click(menu!.x + 3, menu!.y + menu!.height - 3);
     await expect(page.getByTestId("session-rename-button")).toBeVisible();
     await page.keyboard.press("Escape");
+    await expect(page.getByText("pins-long-tail")).toBeVisible({
+      timeout: 60_000,
+    });
   });
 
   await test.step("the order survives a reload", async () => {
