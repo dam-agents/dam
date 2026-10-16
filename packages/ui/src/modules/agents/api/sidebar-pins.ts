@@ -8,14 +8,13 @@ const NO_PINS: SidebarPins = { agents: [], sessions: {} };
 const pinsKey = () => trpc.sidebarPins.get.queryKey();
 const SCOPE = { id: "sidebar-pins" };
 
-export function useSidebarPins(): SidebarPins {
-  return (
-    useQuery({
-      ...trpc.sidebarPins.get.queryOptions(),
-      staleTime: 5 * 60_000,
-      meta: { errorToast: "Couldn't load your pinned agents and sessions" },
-    }).data ?? NO_PINS
-  );
+export function useSidebarPins(): { pins: SidebarPins; loaded: boolean } {
+  const { data } = useQuery({
+    ...trpc.sidebarPins.get.queryOptions(),
+    staleTime: 5 * 60_000,
+    meta: { errorToast: "Couldn't load your pinned agents and sessions" },
+  });
+  return { pins: data ?? NO_PINS, loaded: data !== undefined };
 }
 
 function patchPins(patch: (pins: SidebarPins) => SidebarPins) {
