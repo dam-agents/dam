@@ -3,6 +3,7 @@ import type { Db, DbTx } from "db";
 import {
   agentSkills,
   agentSkillPublishes,
+  agentHiddenSkillSources,
   agents as agentsTable,
   eq,
   and,
@@ -23,6 +24,11 @@ import {
 export interface SkillKey {
   source: string;
   name: string;
+}
+
+export interface HiddenSourceKey {
+  gitUrl: string;
+  path: string | undefined;
 }
 
 const GHOST_MIN_AGE_SECONDS = 60;
@@ -60,6 +66,13 @@ export interface AgentSkillsRepository {
   recordStandaloneSnapshot(
     agentId: string,
     skills: LocalSkill[],
+  ): Promise<void>;
+
+  listHiddenSources(agentId: string): Promise<HiddenSourceKey[]>;
+  setSourceHidden(
+    agentId: string,
+    key: HiddenSourceKey,
+    hidden: boolean,
   ): Promise<void>;
 
   deleteByAgent(agentId: string): Promise<void>;
@@ -283,23 +296,62 @@ export function createAgentSkillsRepository(db: Db): AgentSkillsRepository {
         .where(eq(agentsTable.id, agentId));
     },
 
+    async listHiddenSources(agentId) {
+      const rows = await db
+        .select({
+          gitUrl: agentHiddenSkillSources.gitUrl,
+          path: agentHiddenSkillSources.path,
+        })
+        .from(agentHiddenSkillSources)
+        .where(eq(agentHiddenSkillSources.agentId, agentId));
+      return rows.map((r) => ({ gitUrl: r.gitUrl, path: r.path || undefined }));
+    },
+
+    async setSourceHidden(agentId, key, hidden) {
+      const row = { agentId, gitUrl: key.gitUrl, path: key.path ?? "" };
+      if (hidden) {
+        await db
+          .insert(agentHiddenSkillSources)
+          .values(row)
+          .onConflictDoNothing();
+        return;
+      }
+      await db
+        .delete(agentHiddenSkillSources)
+        .where(
+          and(
+            eq(agentHiddenSkillSources.agentId, agentId),
+            eq(agentHiddenSkillSources.gitUrl, row.gitUrl),
+            eq(agentHiddenSkillSources.path, row.path),
+          ),
+        );
+    },
+
     async deleteByAgent(agentId) {
       await Promise.all([
         db.delete(agentSkills).where(eq(agentSkills.agentId, agentId)),
         db
           .delete(agentSkillPublishes)
           .where(eq(agentSkillPublishes.agentId, agentId)),
+        db
+          .delete(agentHiddenSkillSources)
+          .where(eq(agentHiddenSkillSources.agentId, agentId)),
       ]);
     },
 
     async listAgentIds() {
-      const [skills, publishes] = await Promise.all([
+      const [skills, publishes, hidden] = await Promise.all([
         db.selectDistinct({ agentId: agentSkills.agentId }).from(agentSkills),
         db
           .selectDistinct({ agentId: agentSkillPublishes.agentId })
           .from(agentSkillPublishes),
+        db
+          .selectDistinct({ agentId: agentHiddenSkillSources.agentId })
+          .from(agentHiddenSkillSources),
       ]);
-      return [...new Set([...skills, ...publishes].map((r) => r.agentId))];
+      return [
+        ...new Set([...skills, ...publishes, ...hidden].map((r) => r.agentId)),
+      ];
     },
   };
 }

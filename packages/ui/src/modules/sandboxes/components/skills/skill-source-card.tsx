@@ -5,6 +5,7 @@ import {
   Renew,
   Time,
   TrashCan,
+  ViewOff,
 } from "@carbon/icons-react";
 import type { ScanFailure, Skill, SkillRef, SkillSource } from "api-server-api";
 import { skillKey } from "api-server-api";
@@ -17,6 +18,7 @@ import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { Spinner } from "@/components/ui/spinner";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { gitCompareUrl, repoSlug } from "@/lib/git-source";
+import { cn } from "@/lib/utils";
 
 import type { SkillIdentity } from "../../lib/skill-identity.js";
 import { selectionKey } from "../../lib/skill-identity.js";
@@ -80,6 +82,7 @@ export function SkillSourceCard({
   onToggle,
   onRescan,
   onRemove,
+  onHide,
   onUpdate,
   onOpenSkill,
   onManageConnections,
@@ -103,6 +106,7 @@ export function SkillSourceCard({
   onToggle: (skill: Skill) => void;
   onRescan: () => void;
   onRemove: () => void;
+  onHide?: () => void;
   onUpdate: (skill: Skill) => void;
   onOpenSkill: (skill: Skill) => void;
   suppressedNames?: ReadonlySet<string>;
@@ -216,6 +220,26 @@ export function SkillSourceCard({
               <span className="flex-1">View repo</span>
               <Launch size={14} />
             </DropdownMenuItem>
+            {onHide && !readOnly && (
+              <DropdownMenuItem
+                disabled={disabled || enabled.length > 0}
+                onSelect={onHide}
+                className={cn(enabled.length > 0 && "h-auto items-start py-2")}
+              >
+                <ViewOff
+                  size={14}
+                  className={cn("shrink-0", enabled.length > 0 && "mt-0.5")}
+                />
+                <span className="flex-1">
+                  Hide for this agent
+                  {enabled.length > 0 && (
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      Turn its skills off first
+                    </span>
+                  )}
+                </span>
+              </DropdownMenuItem>
+            )}
             {canRemove && (
               <DropdownMenuItem tone="danger" onSelect={onRemove}>
                 <TrashCan size={14} />

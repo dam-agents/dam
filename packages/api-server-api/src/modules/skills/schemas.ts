@@ -18,6 +18,7 @@ export const skillSourceSchema = z.object({
     .object({ templateId: z.string(), templateName: z.string() })
     .optional(),
   canPublish: z.boolean().optional(),
+  hidden: z.boolean().optional(),
 });
 
 export const skillPublishResultSchema = z.object({
@@ -122,6 +123,12 @@ export const skillCreateSourceInputSchema =
 
 export const skillDeleteSourceInputSchema = z.object({
   id: z.string().min(1),
+});
+
+export const skillSetSourceHiddenInputSchema = z.object({
+  agentId: z.string().min(1),
+  id: z.string().min(1),
+  hidden: z.boolean(),
 });
 
 export const skillRefreshSourceInputSchema = z.object({

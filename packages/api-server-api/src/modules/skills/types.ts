@@ -22,6 +22,7 @@ import type {
   skillSetEntrySchema,
   skillSetSchema,
   skillSetSkipReasonSchema,
+  skillSetSourceHiddenInputSchema,
   skillSourceSchema,
   skillStateOutputSchema,
   skillUninstallInputSchema,
@@ -37,6 +38,10 @@ export type LocalSkill = z.infer<typeof localSkillSchema>;
 
 export type SkillCreateSourceInput = z.infer<
   typeof skillCreateSourceInputSchema
+>;
+
+export type SkillSetSourceHiddenInput = z.infer<
+  typeof skillSetSourceHiddenInputSchema
 >;
 
 export type SkillCreateLocalInput = z.infer<typeof skillCreateLocalInputSchema>;
@@ -85,6 +90,7 @@ export interface SkillsService {
   createSource: (input: SkillCreateSourceInput) => Promise<SkillSource>;
   deleteSource: (id: string) => Promise<void>;
   refreshSource: (id: string) => Promise<void>;
+  setSourceHidden: (input: SkillSetSourceHiddenInput) => Promise<void>;
   list: (sourceId: string, agentId?: string) => Promise<SkillListResult>;
   getSkillContent: (
     sourceId: string,

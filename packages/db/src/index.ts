@@ -11,6 +11,7 @@ export {
   skillSets,
   agentSkills,
   agentSkillPublishes,
+  agentHiddenSkillSources,
   agentEnv,
   agentChatFormPreferences,
   agentSessions,

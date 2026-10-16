@@ -21,6 +21,7 @@ import type {
   SkillSetApplyResult,
   SkillSetEntry,
   SkillSetSkipReason,
+  SkillSetSourceHiddenInput,
 } from "api-server-api";
 import {
   canonicalSourceLocation,
@@ -706,15 +707,24 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
 
   const service: SkillsService = {
     async listSources(agentId?: string) {
-      const [owned, template] = await Promise.all([
+      const [owned, template, hidden] = await Promise.all([
         deps.repo.list(deps.owner),
         agentId
           ? loadTemplateSources(deps, agentId)
           : Promise.resolve<SkillSource[]>([]),
+        agentId ? deps.agentSkillsRepo.listHiddenSources(agentId) : [],
       ]);
       const seeds = deps.seedSources.map(seedToSkillSource);
       const merged = dedupeBySourceIdentity([...owned, ...seeds, ...template]);
-      return sortSources(merged.map(enrichSource));
+      const hiddenKeys = new Set(hidden.map(sourceIdentity));
+      return sortSources(
+        merged.map((s) => {
+          const enriched = enrichSource(s);
+          return hiddenKeys.has(sourceIdentity(s))
+            ? { ...enriched, hidden: true }
+            : enriched;
+        }),
+      );
     },
     async getSource(id) {
       const s = await resolveSource(deps, id);
@@ -1180,6 +1190,27 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
       const source = await resolveSource(deps, input.sourceId);
       if (source) deps.invalidateScan(source.gitUrl, source.path);
       return result;
+    },
+
+    async setSourceHidden({ agentId, id, hidden }: SkillSetSourceHiddenInput) {
+      const [agent, source] = await Promise.all([
+        deps.agentsRepo.get(agentId, deps.owner),
+        resolveSource(deps, id),
+      ]);
+      if (!agent) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
+      }
+      if (!source) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "skill source not found",
+        });
+      }
+      await deps.agentSkillsRepo.setSourceHidden(
+        agentId,
+        { gitUrl: source.gitUrl, path: canonicalPath(source.path) },
+        hidden,
+      );
     },
 
     async refreshSource(id: string): Promise<void> {

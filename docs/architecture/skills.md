@@ -1,6 +1,6 @@
 # Skills
 
-Last verified: 2026-10-15
+Last verified: 2026-10-16
 
 ## Overview
 
@@ -38,6 +38,7 @@ flowchart LR
     inst[(agent_skills)]
     pubs[(agent_skill_publishes)]
     sets[(skill_sets)]
+    hidden[(agent_hidden_skill_sources)]
   end
 
   subgraph pod[agent pod]
@@ -55,6 +56,7 @@ flowchart LR
   skills-svc <--> src
   skills-svc <--> inst
   skills-svc <--> sets
+  skills-svc <--> hidden
   pub-svc --> pubs
 
   scanner -->|HTTPS| github
@@ -99,6 +101,10 @@ A source is identified by its repository **and** its path, so one owner may conn
 "No path" is a value of its own, and paths compare in canonical form.
 Listing dedupes on `(gitUrl, path)` with first-wins precedence: user → system → template.
 A user creating a custom source for the same URL and path shadows the system entry; deleting the user row exposes the system entry again.
+
+The owner can **hide** a source on one agent (`agent_hidden_skill_sources`), whatever its kind, so a system or template source that cannot be removed stops cluttering that agent's skills page.
+A hide is keyed by `(agentId, gitUrl, path)`, the same identity listing dedupes on, so it survives the source row being deleted and re-added; the agent's source list still returns the source, marked `hidden`, and the agent-delete cleanup removes the rows.
+The UI does not scan a hidden source, offers to hide a source only while none of its skills are on, and lists hidden sources in the Add source dialog to show them again.
 
 A source may carry an optional repo-relative **path** — a subdirectory the scanner walks instead of the defaults.
 When set, that directory is scanned (and skills resolved) exclusively, bypassing the [Source Roots](#source-roots) union and top-level fallback — and failing by name when it resolves to nothing, whichever scanner answers: no such directory, or no skill under it; when absent, resolution is unchanged.
@@ -252,7 +258,7 @@ Owns:
 - **MCP tools** — five tools registered on the per-agent MCP endpoint ([`mcp-endpoint.ts`](../../packages/api-server/src/apps/harness-api-server/mcp-endpoint.ts)): `list_skill_sources`, `list_skills_in_source`, `install_skill`, `uninstall_skill`, `publish_skill`.
   `agentId` is bound by the verified MCP session token, not user input — agents cannot spoof which agent they're acting on.
 - **Reconciled `state` view** — joins live `listLocal` from agent-runtime with the `agent_skills` rows, drops ghost rows whose directories were deleted out-of-band (once the pod has caught up), and folds in the `agent_skill_publishes` rows.
-- **Cleanup** — the module exports a delete-by-agent cleanup that removes both `agent_skills` and `agent_skill_publishes` rows; the api-server runs it on every deletion path, inside the API delete and from the periodic orphan sweep.
+- **Cleanup** — the module exports a delete-by-agent cleanup that removes the `agent_skills`, `agent_skill_publishes` and `agent_hidden_skill_sources` rows; the api-server runs it on every deletion path, inside the API delete and from the periodic orphan sweep.
   User-owned `skill_sources` and `skill_sets` are unaffected; they outlive any single agent.
 
 ## Flows

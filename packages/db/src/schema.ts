@@ -248,6 +248,21 @@ export const agentSkills = pgTable(
   ],
 );
 
+export const agentHiddenSkillSources = pgTable(
+  "agent_hidden_skill_sources",
+  {
+    agentId: text("agent_id").notNull(),
+    gitUrl: text("git_url").notNull(),
+    path: text("path").notNull().default(""),
+    hiddenAt: timestamp("hidden_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.agentId, table.gitUrl, table.path] }),
+  ],
+);
+
 export const starterKitCatalogEntries = pgTable(
   "starter_kit_catalog_entries",
   {

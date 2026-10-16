@@ -590,6 +590,7 @@ export type {
   SkillSetApplyResult,
   SkillSetEntry,
   SkillSetSkipReason,
+  SkillSetSourceHiddenInput,
   SkillSource,
   SkillsService,
   SkillsState,
