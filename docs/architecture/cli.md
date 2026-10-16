@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-10-15
+Last verified: 2026-10-16
 
 ## Overview
 
@@ -168,12 +168,13 @@ The CLI presents Agents as single, atomic entities — one resource carrying bot
 `dam chat <agent>` connects the local terminal to a running agent's interactive TUI over a WebSocket, using the same binary terminal-frame protocol as the UI's terminal mode.
 It requires a TTY and puts stdin in raw mode so keystrokes — including Ctrl+C — pass through to the remote harness rather than being intercepted locally.
 There is no detach key: as in the UI, closing the terminal is how the user leaves, and Ctrl+C stays the harness's interrupt.
-Before it attaches, the CLI prints one line that says so, with the resume command to come back.
+Before it attaches, the CLI prints one line that says so, with the resume command to come back, and waits for Enter or five seconds so the line can be read before the harness's full-screen view covers it; `--no-pause` skips the wait, and Ctrl+C during it cancels the attach.
+While attached, the window title carries the same hint and resume command: the bridge saves the user's title, sets its own, drops the title sequences the remote harness sends, and restores the saved title when it ends.
 
 Session strategy is resolved **client-side**: sessions are agent-owned, so the CLI lists them over its own ACP connection to the api-server relay and resolves locally — mint a fresh id (new, the default), match the single most-recent terminal session (continue), or target a specific id (resume, prompting before a chat→terminal mode switch) — then builds the terminal-relay URL itself.
 There is no server-side session endpoint.
 A `--reset` flag tells the relay to kill the PTY and spawn a fresh one, which also clears the agent-side session.
-On disconnect the CLI prints a ready-to-paste resume command.
+On disconnect or exit the CLI prints a ready-to-paste resume command and the leave hint again.
 `dam session list` reads the same agent-owned session list.
 
 ## Headless runs

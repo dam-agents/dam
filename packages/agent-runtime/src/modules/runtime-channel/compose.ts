@@ -85,6 +85,7 @@ export interface ComposeRuntimeChannelOpts {
   readSessions: () => readonly SessionDirectoryEntry[];
   plugins: readonly Plugin[];
   envReader: LeaseEnvReader;
+  envStale?: () => string | undefined;
   catalog?: ModelCatalog;
   modelRouter?: boolean;
   onSnapshotProcessed?: ApplyStateDeps["onSnapshotProcessed"];
@@ -122,6 +123,7 @@ export async function composeRuntimeChannel(
   }
   const stateStore = createStateStore(opts.stateBackend, {
     envReady: opts.envReader.ready,
+    ...(opts.envStale && { envStale: opts.envStale }),
     bindingsFingerprint: bindingsFingerprint(
       Object.fromEntries(
         Object.entries(contributionBindings).map(([kind, list]) => [

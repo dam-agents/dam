@@ -1,14 +1,18 @@
 import type { SkillSource } from "api-server-api";
+import { useMemo } from "react";
 
 import { DialogHeader, Modal } from "@/components/modal";
 
 import { useGithubSourceForm } from "../../hooks/use-github-source-form.js";
 import { useUploadStaging } from "../../hooks/use-upload-staging.js";
 import { GithubSourceTab } from "./github-source-tab.js";
+import { HiddenSourcesList } from "./hidden-sources-list.js";
 import { UploadSkillsTab } from "./upload-skills-tab.js";
 
 export function AddSkillSourceModal({
   sources,
+  hiddenSources,
+  onShowSource,
   onClose,
   onCreate,
   onCreateSkills,
@@ -16,6 +20,8 @@ export function AddSkillSourceModal({
   initialFiles,
 }: {
   sources: readonly SkillSource[];
+  hiddenSources: readonly SkillSource[];
+  onShowSource: (id: string) => Promise<boolean>;
   onClose: () => void;
   onCreate: (input: {
     name: string;
@@ -30,7 +36,15 @@ export function AddSkillSourceModal({
   mode: "github" | "upload";
   initialFiles?: File[];
 }) {
-  const githubForm = useGithubSourceForm({ sources, onCreate, onClose });
+  const allSources = useMemo(
+    () => [...sources, ...hiddenSources],
+    [sources, hiddenSources],
+  );
+  const githubForm = useGithubSourceForm({
+    sources: allSources,
+    onCreate,
+    onClose,
+  });
   const uploadStaging = useUploadStaging({
     initialFiles,
     onCreateSkills,
@@ -45,7 +59,13 @@ export function AddSkillSourceModal({
       />
 
       {mode === "github" ? (
-        <GithubSourceTab github={githubForm} onClose={onClose} />
+        <GithubSourceTab
+          github={githubForm}
+          onClose={onClose}
+          footer={
+            <HiddenSourcesList sources={hiddenSources} onShow={onShowSource} />
+          }
+        />
       ) : (
         <UploadSkillsTab staging={uploadStaging} onClose={onClose} />
       )}

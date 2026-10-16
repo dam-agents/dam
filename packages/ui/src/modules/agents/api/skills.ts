@@ -31,5 +31,5 @@ export function useSkillSources(agentId: string | null) {
 
 export function useSkillSourceCount(agentId: string | null): number | null {
   const { data } = useSkillSources(agentId);
-  return data?.length ?? null;
+  return data ? data.filter((s) => !s.hidden).length : null;
 }
