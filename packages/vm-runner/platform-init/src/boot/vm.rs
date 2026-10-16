@@ -435,7 +435,7 @@ fn grow_btrfs(mount: &Path) -> io::Result<()> {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: makes `parent/name` a subvolume (BTRFS_IOC_SUBVOL_CREATE) unless something is there already.
-fn ensure_subvolume(parent: &Path, name: &str) -> io::Result<()> {
+pub(super) fn ensure_subvolume(parent: &Path, name: &str) -> io::Result<()> {
     if fs::symlink_metadata(parent.join(name)).is_ok() {
         return Ok(());
     }
@@ -443,7 +443,7 @@ fn ensure_subvolume(parent: &Path, name: &str) -> io::Result<()> {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: deletes the subvolume `parent/name` and everything in it (BTRFS_IOC_SNAP_DESTROY).
-fn delete_subvolume(parent: &Path, name: &str) -> io::Result<()> {
+pub(super) fn delete_subvolume(parent: &Path, name: &str) -> io::Result<()> {
     btrfs_ioctl(parent, 15, name)
 }
 
