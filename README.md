@@ -113,12 +113,12 @@ ACP compatible runtimes can use DAM's platform capabilities without a custom ada
 DAM is Apache 2.0 licensed and can be deployed on your own Kubernetes cluster using Helm.
 
 ```sh
-helm install platform oci://quay.io/dam-agents/charts/platform --version 0.2.17
+helm install platform oci://quay.io/dam-agents/charts/platform
 ```
 
 The chart includes Keycloak, Postgres, Redis, and an optional telemetry backend.
 
-Configure harness templates, model endpoints, credentials, budgets, and isolation in [`values.yaml`](deploy/helm/platform/values.yaml).
+Configure harness templates, model endpoints, credentials, budgets, and isolation in [`values.yaml`](helm/values.yaml).
 
 DAM requires an Istio ambient mesh.
 Before deploying to production, read [`docs/architecture.md`](docs/architecture.md) and [`docs/architecture/security-and-credentials.md`](docs/architecture/security-and-credentials.md).

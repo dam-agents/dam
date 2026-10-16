@@ -23,7 +23,9 @@ const stripV1 = (base: string): string =>
  * UNIT_BOUNDARY_DESCRIPTION: the credential header must be in the exact form
  * the Connection claims at the credential gateway, carrying the layer's
  * placeholder, so Envoy names the Connection and injects its real key; the
- * router never sees a secret. Null for a template the router does not serve.
+ * router never sees a secret. The platform's self-hosted endpoint takes no
+ * key, so its wire carries none. Null for a template the router does not
+ * serve.
  */
 export function upstreamWireOf(
   template: string,
@@ -44,6 +46,12 @@ export function upstreamWireOf(
               bearer("OPENAI_API_KEY") ?? bearer("ANTHROPIC_AUTH_TOKEN"),
           }
         : null;
+    }
+    case "platform-llm": {
+      const base =
+        env.PLATFORM_LLM_BASE_URL ??
+        (env.OPENAI_BASE_URL ? stripV1(env.OPENAI_BASE_URL) : undefined);
+      return base ? { root: stripV1(base), credential: null } : null;
     }
     case "anthropic":
       return {

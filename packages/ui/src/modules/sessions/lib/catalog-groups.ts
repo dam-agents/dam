@@ -8,10 +8,10 @@ import {
   aliasForProviderType,
   type ProviderAliasConflict,
   providerAliasConflict,
-  PROVIDERS,
   templateIdsForAlias,
 } from "api-server-api";
 
+import { providerName } from "../../providers/lib/provider-rows.js";
 import type { ProviderConnectionRef } from "./session-pair-options.js";
 
 export interface ModelGroup {
@@ -53,7 +53,7 @@ export function modelGroups(
       .map((c) => ({
         connectionId: c.id,
         alias: aliasForProviderType(c.type),
-        displayName: PROVIDERS[c.type].displayName,
+        displayName: providerName(c.type),
         status: "unavailable" as const,
         listedAt: null,
         native: false,

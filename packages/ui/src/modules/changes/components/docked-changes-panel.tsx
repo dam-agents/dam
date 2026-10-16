@@ -1,4 +1,3 @@
-import { Close } from "@carbon/icons-react";
 import {
   type ChangeSet,
   type CompareTo,
@@ -6,12 +5,10 @@ import {
 } from "agent-runtime-api";
 import { memo, useId, useRef, useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
-import { useStore } from "../../../store.js";
 import { useIsAgentOperable } from "../../agents/api/queries.js";
 import { useChangeSetDiff, useChangeSets } from "../api/queries.js";
 import { useChangeSetSelection } from "../hooks/use-change-set-selection.js";
@@ -32,7 +29,6 @@ export const DockedChangesPanel = memo(function DockedChangesPanel({
   agentId,
   sessionId,
 }: Props) {
-  const close = useStore((s) => s.setOpenChanges);
   const operable = useIsAgentOperable(agentId);
   const { data, error, isPending } = useChangeSets(agentId, sessionId);
   useChangesWatch(agentId, true);
@@ -45,46 +41,42 @@ export const DockedChangesPanel = memo(function DockedChangesPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
-        {changeSets && selection ? (
-          <ChangeSetSelect
-            changeSets={changeSets}
-            selected={selected}
-            seen={selection.seen}
-            onSelect={select}
-          />
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-2">
+        {changeSets && changeSets.length > 0 && selection ? (
+          <div className="flex min-w-40 flex-1">
+            <ChangeSetSelect
+              changeSets={changeSets}
+              selected={selected}
+              seen={selection.seen}
+              onSelect={select}
+            />
+          </div>
         ) : (
           <span className="flex-1 text-sm font-medium text-foreground">
             Changes
           </span>
         )}
-        <div className="w-36 shrink-0">
-          <Select
-            size="sm"
-            aria-label="Compare to"
-            value={compare}
-            onChange={(event) => {
-              const parsed = compareToSchema.safeParse(event.target.value);
-              if (parsed.success) setCompare(parsed.data);
-            }}
-          >
-            <option value="base">
-              {selected?.baseRef ? `vs ${selected.baseRef}` : "vs base"}
-            </option>
-            <option value="uncommitted">Uncommitted</option>
-          </Select>
-        </div>
-        <LayoutToggle layout={layout} onChange={setLayout} />
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="shrink-0"
-          aria-label="Close"
-          tooltip="Close"
-          onClick={() => close(null)}
-        >
-          <Close size={16} />
-        </Button>
+        {selected && (
+          <div className="flex shrink-0 items-center gap-2">
+            <div className="w-32 shrink-0">
+              <Select
+                size="sm"
+                aria-label="Compare to"
+                value={compare}
+                onChange={(event) => {
+                  const parsed = compareToSchema.safeParse(event.target.value);
+                  if (parsed.success) setCompare(parsed.data);
+                }}
+              >
+                <option value="base">
+                  {selected.baseRef ? `vs ${selected.baseRef}` : "vs base"}
+                </option>
+                <option value="uncommitted">Uncommitted</option>
+              </Select>
+            </div>
+            <LayoutToggle layout={layout} onChange={setLayout} />
+          </div>
+        )}
       </div>
       {error ? (
         <Notice text={listErrorText(error.message)} />
