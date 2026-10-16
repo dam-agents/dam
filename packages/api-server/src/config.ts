@@ -171,14 +171,19 @@ const spendPriceOverridesSchema = z
       }),
   );
 
-// UNIT_BOUNDARY_DESCRIPTION: the operator's self-hosted model server behind the built-in provider. An empty base URL means none is configured; the base URL is the server root, so a trailing slash is dropped before `/v1` is appended to it.
+// UNIT_BOUNDARY_DESCRIPTION: the operator's self-hosted model server behind the built-in provider and the key the gateway sends it. The gateway injects the key only into TLS it terminates, so the base URL is https. An empty base URL or key means none is configured; the base URL is the server root, so a trailing slash is dropped before `/v1` is appended to it.
 const platformProviderSchema = z
   .object({
-    baseUrl: z.union([z.literal(""), z.url()]).default(""),
+    baseUrl: z
+      .union([z.literal(""), z.url({ protocol: /^https$/ })])
+      .default(""),
     model: z.string().default(""),
+    apiKey: z.string().default(""),
   })
-  .transform(({ baseUrl, model }) =>
-    baseUrl === "" ? null : { baseUrl: baseUrl.replace(/\/+$/, ""), model },
+  .transform(({ baseUrl, model, apiKey }) =>
+    baseUrl === "" || apiKey === ""
+      ? null
+      : { baseUrl: baseUrl.replace(/\/+$/, ""), model, apiKey },
   );
 const configSchema = z.object({
   serverVersion: z.string().min(1),
@@ -425,6 +430,7 @@ export function loadConfig(): Config {
     platformProvider: {
       baseUrl: process.env.PLATFORM_PROVIDER_BASE_URL,
       model: process.env.PLATFORM_PROVIDER_MODEL,
+      apiKey: process.env.PLATFORM_PROVIDER_API_KEY,
     },
     runtimeMigrationRetentionMs: process.env.RUNTIME_MIGRATION_RETENTION,
     activityTrackingEnabled: process.env.ACTIVITY_TRACKING_ENABLED,
