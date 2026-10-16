@@ -475,6 +475,87 @@ describe("session pushes", { timeout: 30_000 }, () => {
     expect(service.repositoriesOf("s2")).toEqual([]);
   });
 
+  async function worktreeOf(repo: string, branch: string): Promise<string> {
+    const worktree = path.join(home, "work", "slots", branch.split("/").pop()!);
+    await git(repo, "worktree", "add", "--quiet", "-b", branch, worktree);
+    await write(path.join(worktree, "b.txt"), "b\n");
+    await git(worktree, "add", "-A");
+    await git(worktree, "commit", "--quiet", "-m", "change b");
+    return worktree;
+  }
+
+  function edited(sessionId: string, toolCallId: string, file: string) {
+    service.onToolActivity({
+      sessionId,
+      toolCallId,
+      editedPaths: [file],
+      started: true,
+      settled: false,
+    });
+    toolCall(sessionId, toolCallId, true);
+  }
+
+  /**
+   * TEST_SCENARIO: Two sessions run tool calls when a push lands from a
+   * worktree only the second one worked in. The push is the second
+   * session's, though the first edited another worktree of the repository.
+   */
+  it("should give a push to the session that worked in the pushed worktree", async () => {
+    const repo = await repositoryWithRemote();
+    const other = await worktreeOf(repo, "feat/other");
+    service = serviceFor([home], findsFeature);
+    edited("s1", "t0", path.join(other, "b.txt"));
+    edited("s2", "t1", path.join(repo, "a.txt"));
+    toolCall("s1", "t2");
+    toolCall("s2", "t3");
+    await expect
+      .poll(() => service.repositoriesOf("s2").length, settles)
+      .toBe(1);
+    await watching();
+
+    await git(repo, "push", "--quiet", "origin", "feat/push");
+
+    await expect
+      .poll(() => service.repositoriesOf("s2")[0]?.pullRequest, settles)
+      .toEqual(link);
+    expect(service.repositoriesOf("s1").map((r) => [r.path, r.branch])).toEqual(
+      [[other, "feat/other"]],
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: Two sessions run tool calls when a push lands from a
+   * worktree neither worked in; the first edited another worktree of the
+   * repository. The push is nobody's, and the first session does not list
+   * the pushed worktree.
+   */
+  it("should not give a push to a session that worked in another worktree", async () => {
+    const repo = await repositoryWithRemote();
+    const other = await worktreeOf(repo, "feat/other");
+    const logged: string[] = [];
+    service = serviceFor([home], findsFeature, (msg) => logged.push(msg));
+    edited("s1", "t0", path.join(other, "b.txt"));
+    toolCall("s1", "t1");
+    toolCall("s2", "t2");
+    await expect
+      .poll(() => service.repositoriesOf("s1").length, settles)
+      .toBe(1);
+    await watching();
+
+    await git(repo, "push", "--quiet", "origin", "feat/push");
+
+    await expect
+      .poll(
+        () => logged.some((msg) => msg.includes("matches no single session")),
+        settles,
+      )
+      .toBe(true);
+    expect(service.repositoriesOf("s1").map((r) => [r.path, r.branch])).toEqual(
+      [[other, "feat/other"]],
+    );
+    expect(service.repositoriesOf("s2")).toEqual([]);
+  });
+
   /**
    * TEST_SCENARIO: Two sessions run tool calls when the push lands and
    * neither worked in the repository: the push is nobody's rather than a
