@@ -49,6 +49,7 @@ import { useAcpConnection } from "./use-acp-connection.js";
 import { type SendPromptOptions, useAcpPrompt } from "./use-acp-prompt.js";
 import { useAcpSessionEngagement } from "./use-acp-session-engagement.js";
 import { useAcpUpdateHandler } from "./use-acp-update-handler.js";
+import { useTakeBackPrompt } from "./use-take-back-prompt.js";
 
 async function classifyResumeFailure(
   agentId: string,
@@ -397,6 +398,13 @@ export function useAcpSession(
     [selectedAgent, ensureLive, bindEngagement, setSessionId, setMessages],
   );
 
+  const takeBackPrompt = useTakeBackPrompt({
+    selectedAgent,
+    stopAgent,
+    ensureLive,
+    bindEngagement,
+  });
+
   const sendPrompt = useCallback(
     (
       text: string,
@@ -415,6 +423,7 @@ export function useAcpSession(
     loadOlderMessages,
     sendPrompt,
     rewriteFrom,
+    takeBackPrompt,
     stopAgent,
     chooseSessionModel,
     configureSession,

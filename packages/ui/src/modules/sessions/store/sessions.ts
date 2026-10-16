@@ -101,6 +101,7 @@ export interface SessionsSlice {
     sessionId: string,
     undelivered: PlatformUndeliveredPrompt[],
   ) => Promise<void>;
+  discardSessionToDraft: (sessionId: string, text: string) => Promise<void>;
 
   resetChatContext: () => void;
 }
@@ -336,6 +337,14 @@ export const createSessionsSlice: StateCreator<
             ? "The agent stopped before it saved this conversation. Your message is back in a new chat."
             : "The agent stopped before it saved this conversation, so it was removed.",
       });
+    },
+
+    discardSessionToDraft: async (sessionId, text) => {
+      const agentId = get().selectedAgent;
+      if (!agentId) return;
+      await deleteAgentSession(agentId, sessionId);
+      await forgetSession(agentId, sessionId);
+      get().appendNewSessionDraft(agentId, text);
     },
   };
 };
