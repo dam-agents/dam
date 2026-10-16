@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   groupSessionsByAgent,
+  leadAgentId,
   openFirst,
   orderByLatestSession,
 } from "../../modules/agents/lib/sidebar-agent-order.js";
@@ -19,7 +20,7 @@ import {
   sidebarSessionWindow,
 } from "../../modules/sessions/lib/sidebar-session-window.js";
 
-// TEST_OVERVIEW: The sidebar lists each Agent's Sessions under the Agent, and no Session twice. Agents are ordered by their newest Session, after the pinned Agents, and the Agent the user has open comes first of all. Each Agent shows its newest Sessions first. An Agent shows three Sessions, or all its pinned Sessions when there are more, until the user clicks More, which lists the rest and turns into Less. The session filter in the Agents header applies to the attention record and to an Agent's own session list alike.
+// TEST_OVERVIEW: The sidebar lists each Agent's Sessions under the Agent, and no Session twice. Agents are ordered by their newest Session, after the pinned Agents, and the Agent the user has open comes first of all, once the pointer leaves the list, so no row moves under the cursor. Each Agent shows its newest Sessions first. An Agent shows three Sessions, or all its pinned Sessions when there are more, until the user clicks More, which lists the rest and turns into Less. The session filter in the Agents header applies to the attention record and to an Agent's own session list alike.
 
 function attention(
   agentId: string,
@@ -85,6 +86,13 @@ describe("sessions grouped by agent", () => {
     expect(ids("a")).toEqual(["a", "b", "idle-1", "idle-2"]);
     expect(ids(null)).toEqual(["a", "b", "idle-1", "idle-2"]);
     expect(ids("deleted")).toEqual(["a", "b", "idle-1", "idle-2"]);
+  });
+
+  it("TEST_SCENARIO: while the pointer is over the list, the Agent shown first stays first; when it leaves, the open Agent takes its place", () => {
+    expect(leadAgentId("a", "b", true)).toBe("a");
+    expect(leadAgentId(null, "b", true)).toBeNull();
+    expect(leadAgentId("a", "b", false)).toBe("b");
+    expect(leadAgentId("a", null, false)).toBeNull();
   });
 });
 

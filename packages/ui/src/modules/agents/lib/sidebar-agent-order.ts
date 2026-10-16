@@ -37,3 +37,11 @@ export function openFirst<A extends { id: string }>(
     ? [open, ...agents.filter((agent) => agent !== open)]
     : [...agents];
 }
+
+export function leadAgentId(
+  shown: string | null,
+  openAgentId: string | null,
+  pointerInside: boolean,
+): string | null {
+  return pointerInside ? shown : openAgentId;
+}

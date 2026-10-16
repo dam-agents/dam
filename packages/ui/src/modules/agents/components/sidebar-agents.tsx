@@ -29,6 +29,8 @@ export function SidebarAgents({
     agents,
     pinnedAgentIds,
     openAgentId,
+    leadAgentId,
+    holdOrder,
     sessionOpen,
     unreadAgentIds,
     sessionsOf,
@@ -48,10 +50,10 @@ export function SidebarAgents({
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const startSession = useStartSession();
 
-  const listTop = useRef<HTMLElement>(null);
+  const list = useRef<HTMLElement>(null);
   useEffect(() => {
-    if (openAgentId) listTop.current?.scrollIntoView({ block: "start" });
-  }, [openAgentId]);
+    if (leadAgentId) list.current?.parentElement?.scrollTo({ top: 0 });
+  }, [leadAgentId]);
 
   const navigate = (go: () => void) => () => {
     go();
@@ -112,7 +114,13 @@ export function SidebarAgents({
   };
 
   return (
-    <section ref={listTop} aria-label="Agents" data-testid="sidebar-agents">
+    <section
+      ref={list}
+      aria-label="Agents"
+      data-testid="sidebar-agents"
+      onPointerEnter={() => holdOrder(true)}
+      onPointerLeave={() => holdOrder(false)}
+    >
       <div
         className={cn(
           "sticky top-0 z-raised flex items-center justify-between py-1 pl-2.5",
