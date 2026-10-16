@@ -43,8 +43,9 @@ onboarding:
     optimization objective. If they are unsure about the objective, run
     `/spotlights-objective-setting` with them. Clone the repository under the
     work directory and confirm with the user which modules to include.
-    `--include` takes the extractor's qualified names, which start at the
-    repository root (`pkg/sub`, not `sub`); a run whose names match nothing
+    `--include` takes the extractor's qualified names: paths relative to the
+    source root it picks (the repository root, or a directory like `src/`),
+    with every level kept (`pkg/sub`, not `sub`); a run whose names match nothing
     logs the available ones and stops after extraction. Pin the models with
     `--claude-model "$ANTHROPIC_DEFAULT_OPUS_MODEL" --codex-model
     "$OPENAI_MODEL"`. A run resumes from its `--artifacts-dir`, and refuses
