@@ -750,10 +750,6 @@ export function mockTranscript(agentId: string, sessionId: string): Message[] {
   if (sessionId === MOCK_SESSION_IDS.longChat) {
     return longChatTranscript();
   }
-  if (sessionId === MOCK_SESSION_IDS.diffs) {
-    return diffsTranscript();
-  }
-
   const list = (mockSessions[agentId] ?? []) as {
     sessionId: string;
     title?: string;

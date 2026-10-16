@@ -28,7 +28,7 @@ async function main() {
       console.error("[mock] MSW failed to start:", err);
     }
 
-    const { mockSessions, MOCK_SESSION_IDS } =
+    const { mockSessions, MOCK_SESSION_IDS, KIT_SESSION_TO_PACK } =
       await import("./mock/data/sessions.js");
     const sessionsByAgent: Record<string, unknown[]> = { ...mockSessions };
     (window as any).__mockListAgentSessions = (agentId: string) =>
@@ -52,10 +52,13 @@ async function main() {
     await loadBrand().then(applyBrand);
 
     history.replaceState(null, "", `/chat/${agents[0]!.id}`);
+    const defaultSession = MOCK_SESSION_IDS.kitCodeGuardian;
     useStore.setState({
       view: "chat",
       selectedAgent: agents[0]!.id,
-      pendingResumeSessionId: MOCK_SESSION_IDS.chat,
+      pendingResumeSessionId: defaultSession,
+      starterKitMode: true,
+      selectedStarterKitId: KIT_SESSION_TO_PACK[defaultSession] ?? null,
     });
 
     const { default: App } = await import("./app.js");

@@ -41,7 +41,10 @@ import {
   type LeftPanelKind,
   WorkspaceChatHeader,
 } from "../../../mock/chat-workspace-variants.js";
-import { MOCK_SESSION_IDS } from "../../../mock/data/sessions.js";
+import {
+  KIT_SESSION_TO_PACK,
+  MOCK_SESSION_IDS,
+} from "../../../mock/data/sessions.js";
 import { MockBrowserPanel } from "../../../mock/mock-browser-panel.js";
 import { queryClient } from "../../../query-client.js";
 import type { SessionError } from "../../../store.js";
@@ -224,6 +227,22 @@ export function ChatView() {
       void openBrowser(selectedAgent);
     }
   }, [isMock, sessionId, selectedAgent, openBrowser]);
+
+  useEffect(() => {
+    if (!isMock || !sessionId) return;
+    const packId = KIT_SESSION_TO_PACK[sessionId];
+    if (packId) {
+      useStore.setState({
+        starterKitMode: true,
+        selectedStarterKitId: packId,
+      });
+    } else {
+      useStore.setState({
+        starterKitMode: false,
+        selectedStarterKitId: null,
+      });
+    }
+  }, [isMock, sessionId]);
 
   const [openPanels, setOpenPanels] = useState<Set<LeftPanelKind>>(new Set());
   const toggleNotifications = useStore((s) => s.toggleNotifications);
