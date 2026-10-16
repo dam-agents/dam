@@ -26,7 +26,7 @@ use crate::forward::{healthy, Forwarder, Listen, LOOPBACK_OFFSET};
 use crate::imagecache::{
     CacheConfig, ImageCache, Images, Resolved, HOLD_LEASE, REF_FRESH, ROOTFS_DIR,
 };
-use crate::launch::{launch_from_archive, read_launch, ImageLaunch};
+use crate::launch::{read_launch, ImageLaunch};
 use crate::locked;
 use crate::metrics::{Gauges, Metrics};
 use crate::plan::{
@@ -61,7 +61,7 @@ pub const STOP_ON_CLOSE: Duration = Duration::from_secs(40);
 // UNIT_BOUNDARY_DESCRIPTION: how long a delete waits for the action in flight on its machine. The delete cancels that action's fetch first, so the wait covers only a VMM call. It stays under the controller's twenty-second request timeout: a delete still waiting then answers 503, and the controller asks again on its next reconcile.
 pub const DELETE_WAIT: Duration = Duration::from_secs(15);
 
-// UNIT_BOUNDARY_DESCRIPTION: the longest the runner waits on one start, stop or delete call into the runtime. None of them can be interrupted, and a VMM stuck in the kernel can hold one forever, which would hold the machine's worker, and every delete of it, with it. Past this the call is reported failed and left to finish on its own thread; the runtime's own lock on the machine keeps the next call from running beside it, and a delete waits for it only DELETE_WAIT, as for any call in flight, rather than queue behind it on that lock. A start includes the guest pulling a staged archive, which is the longest of them.
+// UNIT_BOUNDARY_DESCRIPTION: the longest the runner waits on one start, stop or delete call into the runtime. None of them can be interrupted, and a VMM stuck in the kernel can hold one forever, which would hold the machine's worker, and every delete of it, with it. Past this the call is reported failed and left to finish on its own thread; the runtime's own lock on the machine keeps the next call from running beside it, and a delete waits for it only DELETE_WAIT, as for any call in flight, rather than queue behind it on that lock.
 pub const RUNTIME_CALL_LIMIT: Duration = Duration::from_secs(15 * 60);
 
 // UNIT_BOUNDARY_DESCRIPTION: how often the runner names the digests its machines boot to the image cache again. Well inside HOLD_LEASE, so one missed refresh never lets a hold lapse.
@@ -1208,7 +1208,7 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: what a machine of this spec boots: the archive an install with no registry staged for the reference, or else the tree the image cache resolves it to, with the launch recorded beside it. If the node's cache service cannot be reached, a reference one of this runner's own machines already boots still boots the tree that machine holds: it is only read, and it was checked for this owner when that machine got it. Anything else the cache cannot serve is refused as an image problem, never booted straight from the registry. The machine stops waiting for the cache once its token is cancelled; the fetch itself is the cache's, may serve other machines of the image, and runs on to its own end.
+    // UNIT_BOUNDARY_DESCRIPTION: what a machine of this spec boots: the tree an install with no registry staged for the reference, or else the tree the image cache resolves it to, with the launch recorded beside it. If the node's cache service cannot be reached, a reference one of this runner's own machines already boots still boots the tree that machine holds: it is only read, and it was checked for this owner when that machine got it. Anything else the cache cannot serve is refused as an image problem, never booted straight from the registry. The machine stops waiting for the cache once its token is cancelled; the fetch itself is the cache's, may serve other machines of the image, and runs on to its own end.
     fn resolve(
         &self,
         id: &str,
@@ -1626,22 +1626,23 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the `docker save` archive an install with no registry stages for this reference, with the launch read out of the archive's own config. The directory is mounted read-only in that mode, so nothing can be fetched there and this is what the machine boots.
+    // UNIT_BOUNDARY_DESCRIPTION: the tree an install with no registry stages for this reference, with the launch recorded beside it, which boots in place. The directory is mounted read-only in that mode, so nothing can be fetched there and this is what the machine boots. A `docker save` archive staged under the same name is refused rather than passed over: smolvm flattens an archive inside the guest, which no guest does since platform-init became its init, and `image:stage-vm` stages a tree and removes the archive.
     fn staged_image(&self, image: &str) -> anyhow::Result<Option<(PathBuf, ImageLaunch)>> {
-        // UNIT_BOUNDARY_DESCRIPTION: a staged tree wins over an archive of the same name: the tree boots in place, where the archive is flattened inside every guest on its first boot, under smolvm's fixed pull window, which a slow host outran.
         let tree = cache::staged_path(&self.config.image_dir, image);
         if let Some(launch) = read_launch(&tree).map_err(|e| unusable(format!("{e:#}")))? {
             return Ok(Some((tree.join(ROOTFS_DIR), launch)));
         }
         let archive = cache::archive_path(&self.config.image_dir, image);
-        if !archive.exists() {
-            return Ok(None);
+        if archive.exists() {
+            return Err(unusable(format!(
+                "{} is a staged image archive, which the runner does not boot; restage the image with `mise run image:stage-vm`",
+                archive.display()
+            )));
         }
-        let launch = launch_from_archive(&archive).map_err(|e| unusable(format!("{e:#}")))?;
-        Ok(Some((archive, launch)))
+        Ok(None)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: records the digest a machine is about to boot, before it boots, and holds it. The record is what this runner holds after a restart, when it knows its machines only from its state directory. With no digest the record is removed, because that machine boots from a staged archive and holds no cache entry.
+    // UNIT_BOUNDARY_DESCRIPTION: records the digest a machine is about to boot, before it boots, and holds it. The record is what this runner holds after a restart, when it knows its machines only from its state directory. With no digest the record is removed, because that machine boots a staged tree and holds no cache entry.
     fn record_digest(&self, id: &str, digest: Option<&str>) -> anyhow::Result<()> {
         let path = state::require_machine_dir(&self.config.state_dir, id)?.join(IMAGE_DIGEST_FILE);
         match digest {

@@ -7,7 +7,6 @@ use clap::Parser;
 use vm_runner::embedded::Smolvm;
 use vm_runner::forward::LOOPBACK_OFFSET;
 use vm_runner::http;
-use vm_runner::runtime::MAX_IMAGE_BYTES;
 use vm_runner::server::{Config, Server};
 
 // UNIT_BOUNDARY_DESCRIPTION: every flag the runner defines. Each is set by exactly one of two callers, and neither relies on a default: the image's ENTRYPOINT sets the paths that are the image's own layout, and the controller sets everything it has chosen — the ports it opens in the runner's NetworkPolicy, where it mounts the runner's state and credentials and the runner's budgets. The controller builds those args in Go, so a rename is not a build failure on either side: it is a runner that rejects an argument its own Deployment sets, which surfaces as a pod that will not start. contract/runner-args.json holds the args the controller renders, and both sides test against it.
@@ -22,7 +21,7 @@ struct Args {
     // UNIT_BOUNDARY_DESCRIPTION: per-machine state: published port, applied spec, and the share each guest reads its CA and platform-init from.
     #[arg(long = "state-dir", default_value = "/var/lib/platform/machines")]
     state_dir: PathBuf,
-    // UNIT_BOUNDARY_DESCRIPTION: unpacked agent images, or the archives an install with no registry stages. On a node cache this is the node's directory, mounted read-only.
+    // UNIT_BOUNDARY_DESCRIPTION: unpacked agent images, or the trees an install with no registry stages. On a node cache this is the node's directory, mounted read-only.
     #[arg(long = "image-dir", default_value = "/var/lib/platform/images")]
     image_dir: PathBuf,
     // UNIT_BOUNDARY_DESCRIPTION: the node image cache service's socket. Set, every image is resolved and fetched by that service and this runner only reads the image directory; empty makes this runner the one writer of its own cache.
@@ -107,7 +106,7 @@ fn gateway_host_port(boot_config: &Path) -> anyhow::Result<Option<u16>> {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: points the embedded runtime at the smolvm release the image installed, as the release's launcher script does for its own binary: libkrun and libkrunfw from its lib directory, the guest agent from its agent-rootfs. The environment is read by this process and inherited by every VMM it spawns, so it is set before any thread starts. The archive cap is the `--max-image-size` flag. SMOLVM_MOUNT_DAX gives every mount a machine boots with a 2 GiB DAX window, so the guest maps the host's page cache instead of copying each read through FUSE into its own: the harness tools, which every harness start reads `node` and its modules from, and the share. smolvm has no per-mount switch. Both mounts are read-only, and the runner replaces a share file by a rename and never writes one in place, so a mapped file is never truncated under the guest. The window costs the guest 32 MiB of RAM per mount for its page structs. smolvm ignores the variable on arm64, whose guest kernel has no FUSE DAX. DAX needs a guest kernel with smol-machines/libkrunfw#31, which smolvm 1.27.4 and later ship: before it, from Linux 6.15 on, a process that runs a large binary from a DAX mount dies of SIGBUS once another process opens it (smol-machines/smolvm#1741), and the vm e2e lane checks the kernel for that. Setting it to 0 turns DAX off to compare.
+// UNIT_BOUNDARY_DESCRIPTION: points the embedded runtime at the smolvm release the image installed, as the release's launcher script does for its own binary: libkrun and libkrunfw from its lib directory, the guest agent from its agent-rootfs. The environment is read by this process and inherited by every VMM it spawns, so it is set before any thread starts. SMOLVM_MOUNT_DAX gives every mount a machine boots with a 2 GiB DAX window, so the guest maps the host's page cache instead of copying each read through FUSE into its own: the harness tools, which every harness start reads `node` and its modules from, and the share. smolvm has no per-mount switch. Both mounts are read-only, and the runner replaces a share file by a rename and never writes one in place, so a mapped file is never truncated under the guest. The window costs the guest 32 MiB of RAM per mount for its page structs. smolvm ignores the variable on arm64, whose guest kernel has no FUSE DAX. DAX needs a guest kernel with smol-machines/libkrunfw#31, which smolvm 1.27.4 and later ship: before it, from Linux 6.15 on, a process that runs a large binary from a DAX mount dies of SIGBUS once another process opens it (smol-machines/smolvm#1741), and the vm e2e lane checks the kernel for that. Setting it to 0 turns DAX off to compare.
 fn configure_smolvm(launcher: &Path) {
     let install = launcher.parent().unwrap_or(Path::new("/"));
     let lib = install.join("lib");
@@ -125,9 +124,6 @@ fn configure_smolvm(launcher: &Path) {
     let rootfs = install.join("agent-rootfs");
     if rootfs.is_dir() && std::env::var_os("SMOLVM_AGENT_ROOTFS").is_none() {
         std::env::set_var("SMOLVM_AGENT_ROOTFS", rootfs);
-    }
-    if std::env::var_os("SMOLVM_MAX_IMAGE_BYTES").is_none() {
-        std::env::set_var("SMOLVM_MAX_IMAGE_BYTES", MAX_IMAGE_BYTES.to_string());
     }
     if std::env::var_os("SMOLVM_MOUNT_DAX").is_none() {
         std::env::set_var("SMOLVM_MOUNT_DAX", "1");
@@ -281,7 +277,7 @@ fn check_ports(min: u16, max: u16) -> anyhow::Result<()> {
     Ok(())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner's pod has to give its machines before any exists. The VMMs open /dev/kvm, and the state directories must be traversable by them; a device that cannot be opened is reported and not fatal, because the error it causes at boot names the device. An install with no registry mounts the image directory read-only, with archives staged in it, and so does a node cache, whose service is its only writer; a chmod there fails with EROFS and is not fatal either: the mount decides what machine uids see, and a tree they cannot read fails at boot with a message naming it.
+// UNIT_BOUNDARY_DESCRIPTION: what the runner's pod has to give its machines before any exists. The VMMs open /dev/kvm, and the state directories must be traversable by them; a device that cannot be opened is reported and not fatal, because the error it causes at boot names the device. An install with no registry mounts the image directory read-only, with trees staged in it, and so does a node cache, whose service is its only writer; a chmod there fails with EROFS and is not fatal either: the mount decides what machine uids see, and a tree they cannot read fails at boot with a message naming it.
 fn prepare_host(args: &Args) -> anyhow::Result<()> {
     use std::os::unix::fs::PermissionsExt;
     if let Err(e) = std::fs::set_permissions("/dev/kvm", std::fs::Permissions::from_mode(0o666)) {

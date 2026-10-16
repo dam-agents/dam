@@ -1,9 +1,7 @@
-use std::collections::BTreeMap;
 use std::fs;
-use std::io::Read;
 use std::path::Path;
 
-use anyhow::{anyhow, Context};
+use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 
 // UNIT_BOUNDARY_DESCRIPTION: what an image says a machine should run: its entrypoint, command, env and working directory. It is kept beside an unpacked tree and never crosses the machine API.
@@ -17,13 +15,10 @@ pub struct ImageLaunch {
     pub working_dir: String,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what an image says to run, which a tree of its files does not carry. smolvm handed a bare root filesystem starts the machine and waits for an exec that never comes, so a machine whose launch is unknown is refused rather than booted — the failure it prevents is silent, a guest that is up with nothing running in it. Two of the runner's three sources are here, in the order it reaches for them: the record kept beside an unpacked tree, and the config inside an archive an install with no registry staged. The third, a config read from the registry when neither exists, is in the fetch module.
+// UNIT_BOUNDARY_DESCRIPTION: what an image says to run, which a tree of its files does not carry. smolvm handed a bare root filesystem starts the machine and waits for an exec that never comes, so a machine whose launch is unknown is refused rather than booted — the failure it prevents is silent, a guest that is up with nothing running in it. The runner has two sources: the record kept beside an unpacked tree, which is here, and the config read from the registry when there is no record, which is in the fetch module.
 
 // UNIT_BOUNDARY_DESCRIPTION: the record written beside an unpacked tree, which a machine booted from that tree reads.
 pub const LAUNCH_FILE: &str = "launch.json";
-
-// UNIT_BOUNDARY_DESCRIPTION: the largest entry in an archive that could still be an image config. Layers are megabytes to gigabytes and configs are kilobytes, so this is what keeps a config scan from reading a whole image into memory looking for a JSON object.
-pub const MAX_IMAGE_CONFIG: u64 = 1 << 20;
 
 pub fn read_launch(cached: &Path) -> anyhow::Result<Option<ImageLaunch>> {
     let encoded = match fs::read(cached.join(LAUNCH_FILE)) {
@@ -32,55 +27,6 @@ pub fn read_launch(cached: &Path) -> anyhow::Result<Option<ImageLaunch>> {
         Err(e) => return Err(e.into()),
     };
     Ok(Some(serde_json::from_slice(&encoded)?))
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: an archive boots a machine without a tree beside it, and it carries the image's own config as well as its layers — but smolvm reads the layers out of it and not the config, so the config is read here. Entries are held only while they could still be that config: a layer is skipped by its size, and anything that is not an object by its first byte, so a scan of a ten-gigabyte archive holds kilobytes.
-pub fn launch_from_archive(path: &Path) -> anyhow::Result<ImageLaunch> {
-    let reading = || format!("reading the archive {}", path.display());
-    let file = fs::File::open(path)?;
-    let mut archive = tar::Archive::new(file);
-
-    let mut manifest: Option<Vec<u8>> = None;
-    let mut documents: BTreeMap<String, Vec<u8>> = BTreeMap::new();
-    for entry in archive.entries().with_context(reading)? {
-        let mut entry = entry.with_context(reading)?;
-        if entry.header().entry_type() != tar::EntryType::Regular
-            || entry.header().size().with_context(reading)? > MAX_IMAGE_CONFIG
-        {
-            continue;
-        }
-        let name = clean_name(&entry.path().with_context(reading)?.to_string_lossy());
-        let mut body = Vec::new();
-        entry.read_to_end(&mut body).with_context(reading)?;
-        if name == "manifest.json" {
-            manifest = Some(body);
-            continue;
-        }
-        if body.first() == Some(&b'{') {
-            documents.insert(name, body);
-        }
-    }
-
-    #[derive(Deserialize)]
-    struct Entry {
-        #[serde(rename = "Config")]
-        config: Option<String>,
-    }
-    let manifest = manifest.unwrap_or_default();
-    let entries: Vec<Entry> = serde_json::from_slice(&manifest)
-        .with_context(|| format!("reading the manifest of {}", path.display()))?;
-    let named = entries
-        .first()
-        .and_then(|first| first.config.as_deref())
-        .filter(|config| !config.is_empty())
-        .ok_or_else(|| anyhow!("the archive {} names no image config", path.display()))?;
-    let config = documents.get(&clean_name(named)).ok_or_else(|| {
-        anyhow!(
-            "the archive {} is missing its image config {named}",
-            path.display()
-        )
-    })?;
-    launch_from_config(config)
 }
 
 pub fn launch_from_config(config: &[u8]) -> anyhow::Result<ImageLaunch> {
@@ -115,31 +61,6 @@ pub fn launch_from_config(config: &[u8]) -> anyhow::Result<ImageLaunch> {
         ));
     }
     Ok(launch)
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the archive's own name for an entry, reduced the way Go's filepath.Clean reduces it, because the manifest names the config one way and the entry header may spell it another — `./sha256:abc.json` and `sha256:abc.json` are one file, and a lookup that told them apart would report an archive as missing the config it contains. Both sides of the comparison go through this, so what matters is that it is the same reduction on each.
-fn clean_name(name: &str) -> String {
-    let rooted = name.starts_with('/');
-    let mut parts: Vec<&str> = Vec::new();
-    for part in name.split('/') {
-        match part {
-            "" | "." => {}
-            ".." => {
-                if matches!(parts.last(), Some(&last) if last != "..") {
-                    parts.pop();
-                } else if !rooted {
-                    parts.push("..");
-                }
-            }
-            part => parts.push(part),
-        }
-    }
-    let cleaned = parts.join("/");
-    match (rooted, cleaned.is_empty()) {
-        (true, _) => format!("/{cleaned}"),
-        (false, true) => ".".to_string(),
-        (false, false) => cleaned,
-    }
 }
 
 #[cfg(test)]
@@ -197,7 +118,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the record beside an unpacked tree, and the one case that is not an error — a tree with no record beside it. The runner reads that as nothing to say and goes on to its other sources, so an error there would refuse a machine one of those sources could still launch: a staged archive, or the registry.
+    // TEST_SCENARIO: the record beside an unpacked tree, and the one case that is not an error — a tree with no record beside it. The runner reads that as nothing to say and goes on to its other sources, so an error there would refuse a machine the registry could still launch.
     #[test]
     fn a_tree_with_no_record_beside_it_is_nothing_to_say_rather_than_a_failure() {
         let dir = TempDir::new("record");
@@ -224,137 +145,5 @@ mod tests {
             read_launch(dir.path()).is_err(),
             "a record that cannot be read is not the same as no record: one means go on, the other means this tree is broken"
         );
-    }
-
-    // TEST_SCENARIO: an archive staged for an install with no registry boots a machine, and the config that says how is inside it. The manifest names the config, the entry headers spell the same file differently, and a lookup that told the two spellings apart would report an archive as missing a config it contains.
-    #[test]
-    fn an_archive_yields_the_launch_its_manifest_points_at() {
-        let dir = TempDir::new("archive");
-        let path = dir.path().join("image.tar");
-        write_archive(
-            &path,
-            &[
-                (
-                    "./manifest.json",
-                    br#"[{"Config":"./sha256_abc.json"}]"#.to_vec(),
-                ),
-                (
-                    "sha256_abc.json",
-                    br#"{"config":{"Entrypoint":["/init"],"Cmd":["serve"],"WorkingDir":"/srv"}}"#
-                        .to_vec(),
-                ),
-                ("layer.tar", vec![b'x'; 64]),
-            ],
-        );
-
-        let launch = launch_from_archive(&path).expect("the archive carries its config");
-        assert_eq!(launch.entrypoint, ["/init"]);
-        assert_eq!(launch.cmd, ["serve"]);
-        assert_eq!(launch.working_dir, "/srv");
-    }
-
-    // TEST_SCENARIO: an archive that cannot say what to run is refused with a reason, because the alternative is a machine created against a filesystem with nothing running in it. Each shape of missing is named separately: the manifest, the reference inside it, and the file it points at.
-    #[test]
-    fn an_archive_that_cannot_say_what_to_run_says_which_part_is_missing() {
-        let dir = TempDir::new("archive-broken");
-
-        let no_manifest = dir.path().join("no-manifest.tar");
-        write_archive(&no_manifest, &[("layer.tar", vec![b'x'; 8])]);
-        assert!(launch_from_archive(&no_manifest)
-            .unwrap_err()
-            .to_string()
-            .contains("manifest"));
-
-        for (what, manifest) in [
-            ("an empty manifest", &b"[]"[..]),
-            ("an entry naming nothing", &br#"[{"Config":""}]"#[..]),
-        ] {
-            let empty = dir.path().join(format!("empty-{}.tar", what.len()));
-            write_archive(&empty, &[("manifest.json", manifest.to_vec())]);
-            assert!(
-                launch_from_archive(&empty)
-                    .unwrap_err()
-                    .to_string()
-                    .contains("names no image config"),
-                "{what} was not refused"
-            );
-        }
-
-        let dangling = dir.path().join("dangling.tar");
-        write_archive(
-            &dangling,
-            &[("manifest.json", br#"[{"Config":"gone.json"}]"#.to_vec())],
-        );
-        assert!(launch_from_archive(&dangling)
-            .unwrap_err()
-            .to_string()
-            .contains("missing its image config"));
-    }
-
-    // TEST_SCENARIO: the scan holds only what could still be a config, which is what keeps it from reading a ten-gigabyte image into memory. A layer is skipped by its size before its body is read, and anything that is not a JSON object by its first byte is dropped after — so a large file named like a config never becomes one.
-    #[test]
-    fn a_scan_holds_nothing_that_could_not_be_a_config() {
-        let dir = TempDir::new("archive-big");
-        let path = dir.path().join("big.tar");
-        let oversized = MAX_IMAGE_CONFIG as usize + 1;
-        write_archive(
-            &path,
-            &[
-                ("manifest.json", br#"[{"Config":"big.json"}]"#.to_vec()),
-                ("big.json", vec![b'{'; oversized]),
-            ],
-        );
-
-        assert!(
-            launch_from_archive(&path)
-                .unwrap_err()
-                .to_string()
-                .contains("missing its image config"),
-            "an entry over the size limit was read and held"
-        );
-
-        let not_json = dir.path().join("not-json.tar");
-        write_archive(
-            &not_json,
-            &[
-                ("manifest.json", br#"[{"Config":"cfg.json"}]"#.to_vec()),
-                ("cfg.json", b"plain text".to_vec()),
-            ],
-        );
-        assert!(
-            launch_from_archive(&not_json)
-                .unwrap_err()
-                .to_string()
-                .contains("missing its image config"),
-            "an entry that is not an object by its first byte was held"
-        );
-    }
-
-    // TEST_SCENARIO: the manifest and the entry headers may spell one file differently, so both go through the same reduction. What matters is that it is the same one on each side — these are the spellings an archive actually uses.
-    #[test]
-    fn one_file_named_two_ways_is_one_name() {
-        assert_eq!(clean_name("./manifest.json"), "manifest.json");
-        assert_eq!(clean_name("manifest.json"), "manifest.json");
-        assert_eq!(clean_name("blobs/./sha256/abc"), "blobs/sha256/abc");
-        assert_eq!(clean_name("blobs/sha256/../abc"), "blobs/abc");
-        assert_eq!(clean_name("/blobs/abc"), "/blobs/abc");
-        assert_eq!(clean_name("."), ".");
-        assert_eq!(clean_name("../outside"), "../outside");
-    }
-
-    // UNIT_BOUNDARY_DESCRIPTION: writes each entry's name into the header exactly as given. The builder's own `append_data` reduces a path before storing it — `./manifest.json` goes in as `manifest.json` — so a fixture built with it cannot produce the spelling the reader exists to cope with, and a test that cannot produce it would agree with a reader that had dropped the handling.
-    fn write_archive(path: &Path, entries: &[(&str, Vec<u8>)]) {
-        let file = fs::File::create(path).unwrap();
-        let mut builder = tar::Builder::new(file);
-        for (name, body) in entries {
-            let mut header = tar::Header::new_gnu();
-            header.set_size(body.len() as u64);
-            header.set_mode(0o644);
-            let stored = header.as_gnu_mut().expect("a gnu header was just made");
-            stored.name[..name.len()].copy_from_slice(name.as_bytes());
-            header.set_cksum();
-            builder.append(&header, body.as_slice()).unwrap();
-        }
-        builder.finish().unwrap();
     }
 }

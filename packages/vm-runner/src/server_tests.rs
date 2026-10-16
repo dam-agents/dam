@@ -1392,9 +1392,9 @@ async fn an_image_is_fetched_once_for_every_machine_that_wants_it() {
     );
 }
 
-// TEST_SCENARIO: an install with no registry stages each image's archive in the image directory, mounted read-only. The staged archive boots without the registry being asked anything, with the launch read out of the archive's own config.
+// TEST_SCENARIO: an install with no registry once staged `docker save` archives in the image directory, and nothing boots one any more: smolvm flattens an archive inside the guest, which no guest does since platform-init became its init. An archive left there by hand is refused as an image problem whose message says how to restage it, rather than booted into a guest that never starts its agent, and the registry is not asked instead.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_staged_archive_boots_without_asking_the_registry() {
+async fn a_staged_archive_is_refused_with_how_to_restage_it() {
     let h = Harness::new("archive");
     fs::write(
         h.dir.join("crane"),
@@ -1403,21 +1403,23 @@ async fn a_staged_archive_boots_without_asking_the_registry() {
     .unwrap();
     let images = h.dir.join("images");
     fs::create_dir_all(&images).unwrap();
-    let archive = archive_path(&images, "quay.io/x/vm:1");
-    write_archive(&archive, r#"{"config":{"Entrypoint":["/from-archive"]}}"#);
+    fs::write(
+        archive_path(&images, "quay.io/x/vm:1"),
+        b"a docker save archive",
+    )
+    .unwrap();
     h.server.put("m1", spec(true)).unwrap();
-    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
-    let (image, launch) = locked(&h.fake.created).get("m1").cloned().unwrap();
-    assert_eq!(PathBuf::from(image), archive);
-    assert_eq!(launch.entrypoint, vec!["/from-archive"]);
-    assert_eq!(h.crane_calls(), 0);
+    let status = h.settle("m1").await;
+    assert_eq!(status.reason, REASON_IMAGE_UNAVAILABLE, "{status:?}");
     assert!(
-        !h.dir.join("machines/m1").join(IMAGE_DIGEST_FILE).exists(),
-        "a machine booted from an archive holds no cache entry"
+        status.message.contains("mise run image:stage-vm"),
+        "{status:?}"
     );
+    assert!(h.fake.calls().is_empty());
+    assert_eq!(h.crane_calls(), 0);
 }
 
-// TEST_SCENARIO: an install stages an image as a tree with its launch record beside it (image:stage-vm), so the machine boots the tree in place instead of flattening an archive inside the guest. The tree wins over an archive staged under the same name, which an earlier install left behind.
+// TEST_SCENARIO: an install stages an image as a tree with its launch record beside it (image:stage-vm), and the machine boots the tree in place. An archive left under the same name by an earlier install does not refuse the tree.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_staged_tree_boots_in_place_and_wins_over_the_archive() {
     let h = Harness::new("staged-tree");
@@ -1434,10 +1436,11 @@ async fn a_staged_tree_boots_in_place_and_wins_over_the_archive() {
         r#"{"entrypoint":["/from-tree"],"cmd":[],"env":[],"workingDir":"/"}"#,
     )
     .unwrap();
-    write_archive(
-        &archive_path(&images, "quay.io/x/vm:1"),
-        r#"{"config":{"Entrypoint":["/from-archive"]}}"#,
-    );
+    fs::write(
+        archive_path(&images, "quay.io/x/vm:1"),
+        b"a docker save archive",
+    )
+    .unwrap();
     h.server.put("m1", spec(true)).unwrap();
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
     let (image, launch) = locked(&h.fake.created).get("m1").cloned().unwrap();
@@ -1644,21 +1647,6 @@ async fn the_cache_never_evicts_an_image_a_machine_is_running() {
         "the running machine's image was evicted"
     );
     assert!(h.entry("m2").exists());
-}
-
-fn write_archive(path: &Path, config: &str) {
-    let mut builder = tar::Builder::new(fs::File::create(path).unwrap());
-    let manifest = br#"[{"Config":"config.json"}]"#;
-    for (name, body) in [
-        ("manifest.json", &manifest[..]),
-        ("config.json", config.as_bytes()),
-    ] {
-        let mut header = tar::Header::new_gnu();
-        header.set_size(body.len() as u64);
-        header.set_mode(0o644);
-        builder.append_data(&mut header, name, body).unwrap();
-    }
-    builder.finish().unwrap();
 }
 
 // TEST_SCENARIO: a reference pinned by digest cannot move, so it is never resolved — its entry is the digest it names, fetched by that digest.

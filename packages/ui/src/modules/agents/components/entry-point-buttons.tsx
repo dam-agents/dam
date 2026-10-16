@@ -35,7 +35,7 @@ export function EntryPointButtons() {
         onClick={() => enter(BROWSE_KITS)}
         data-testid="entry-point-second"
       >
-        <Box size={16} />
+        <Box size={16} aria-hidden />
         {BROWSE_KITS.label}
       </Button>
       <Button
@@ -43,7 +43,7 @@ export function EntryPointButtons() {
         disabled={!defaultAgent.ready}
         data-testid="entry-point-lead"
       >
-        <AddAlt size={16} />
+        <AddAlt size={16} aria-hidden />
         {CREATE_AGENT.label}
       </Button>
     </>

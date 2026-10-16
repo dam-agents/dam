@@ -9,7 +9,7 @@ export function RequestMoreLink() {
     <a
       href={links?.computeRequest ?? COMPUTE_REQUEST_URL}
       {...externalLinkProps}
-      className="shrink-0 text-muted-foreground/60 hover:underline"
+      className="ml-auto shrink-0 text-muted-foreground/60 hover:underline"
     >
       Request more
     </a>

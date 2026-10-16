@@ -311,7 +311,7 @@ signal that this is an OpenShift cluster.
 
 {{/*
 Both values back the same directory in the runner — the node cache the runners
-on a node write to, the archive path a read-only directory staged on the host —
+on a node write to, the staged-image path a read-only directory staged on the host —
 and only one volume can be mounted there. Rather than silently preferring one,
 say so.
 */}}
@@ -319,7 +319,7 @@ say so.
 {{- if .Values.virtualization.enabled -}}
 {{- $v := .Values.virtualization -}}
 {{- if and ($v.imageCache | default dict).hostPath $v.runner.imageArchiveHostPath -}}
-{{- fail "virtualization.imageCache.hostPath and virtualization.runner.imageArchiveHostPath both back the runner's image directory, and only one can be mounted there. Keep the node cache the runners fetch into, or keep the read-only archives staged for an install with no registry." -}}
+{{- fail "virtualization.imageCache.hostPath and virtualization.runner.imageArchiveHostPath both back the runner's image directory, and only one can be mounted there. Keep the node cache the runners fetch into, or keep the read-only images staged for an install with no registry." -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

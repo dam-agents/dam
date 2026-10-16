@@ -4,10 +4,8 @@
 # It lands under the read-only image directory the runners mount, by the name
 # the tar carries.
 # The runner boots a staged tree as a shared read-only lower layer, so a
-# machine starts in seconds. A `docker save` archive staged instead is
-# flattened inside every guest on first boot under smolvm's fixed 600 s pull
-# window; on a slow host that flatten outran the window, the start failed and
-# the flatten began again from nothing.
+# machine starts in seconds. The runner refuses a `docker save` archive
+# staged instead: no guest flattens one since platform-init became its init.
 set -euo pipefail
 IMAGE="$(tar -xOf "$usage_tar" manifest.json | jq -r '.[0].RepoTags[0]')"
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
@@ -27,7 +25,7 @@ tar -xOf "$usage_tar" "$config" | jq \
 # whole tree at every moment — never a half-written one, and never none. A
 # machine already booted from the old tree keeps its mounted files until it
 # restarts. The archive an earlier stage left under the same name goes last:
-# the runner prefers the tree, and the archive only costs disk. The tree keeps
+# the runner boots the tree, and the archive only costs disk. The tree keeps
 # the modes and owners the image gave it — the runner reads it with
 # DAC_OVERRIDE, and a file the image keeps from others, such as /etc/shadow,
 # must stay that way in the guest.
