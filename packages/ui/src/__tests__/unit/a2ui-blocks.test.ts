@@ -2,6 +2,7 @@
 import {
   A2UI_BASIC_CATALOG_ID as BASIC_CATALOG_ID,
   A2UI_CHAT_EXTENSION_ID,
+  DEFAULT_CHAT_FORM_PREFERENCES,
   renderedNodeCount,
   splitA2uiBlocks,
 } from "api-server-api/chat-forms";
@@ -163,7 +164,7 @@ describe("A2UI v1.0", () => {
     expect(surface && renderedNodeCount(surface, {}, 100)).toBe(101);
   });
 
-  // TEST_SCENARIO: a valid form that asks for the lock locks the composer only while it is the newest reply; an invalid one never does, so the user can still answer.
+  // TEST_SCENARIO: a valid form that asks for the lock locks the composer only while it is the newest reply and the agent's settings allow it; an invalid one never does, so the user can still answer.
   test("locks the composer only for a valid surface in the newest reply", () => {
     const form = (components: unknown[]) =>
       JSON.stringify({
@@ -195,6 +196,12 @@ describe("A2UI v1.0", () => {
     ]);
     expect(composerLocked(valid, "m1")).toBe(true);
     expect(composerLocked(valid, null)).toBe(false);
+    expect(
+      composerLocked(valid, "m1", {
+        ...DEFAULT_CHAT_FORM_PREFERENCES,
+        lockComposer: false,
+      }),
+    ).toBe(false);
     const invalid = buildConversation([
       {
         key: "a",

@@ -27,3 +27,21 @@ export function orderByLatestSession<A extends { id: string }>(
     return atB - atA;
   });
 }
+
+export function openFirst<A extends { id: string }>(
+  agents: readonly A[],
+  openAgentId: string | null,
+): A[] {
+  const open = agents.find((agent) => agent.id === openAgentId);
+  return open
+    ? [open, ...agents.filter((agent) => agent !== open)]
+    : [...agents];
+}
+
+export function leadAgentId(
+  shown: string | null,
+  openAgentId: string | null,
+  pointerInside: boolean,
+): string | null {
+  return pointerInside ? shown : openAgentId;
+}

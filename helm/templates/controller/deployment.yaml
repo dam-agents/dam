@@ -88,7 +88,7 @@ spec:
                   "dnsPolicy" ($r.dnsPolicy | default "Default")
                   "dnsCidrs" ($r.dnsCidrs | default list) "clusterDns" ($r.clusterDns | default dict)
                   "imageCacheHostPath" ($cache.hostPath | default "") "imageCacheBudget" ($cache.budget | default "" | toString)
-                  "nodeSelector" $r.nodeSelector "tolerations" $r.tolerations
+                  "nodeSelector" $r.nodeSelector "tolerations" $r.tolerations "affinity" $r.affinity
                   "resources" $r.resources
                   "hostAddress" ($r.hostAddress | default "")
                   "rollout" (dict "maxConcurrent" ($r.rollout.maxConcurrent | default 1 | int) "settleTimeout" ($r.rollout.settleTimeout | default "10m") "idleWait" ($r.rollout.idleWait | default "1h")) }}

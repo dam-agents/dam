@@ -396,11 +396,10 @@ describe("routing by qualified name", () => {
     expect(seen.length).toBe(2);
   });
 
-  /** TEST_SCENARIO: The platform's self-hosted endpoint takes no key: a call
-   * on each of the three dialects leaves for its root with neither an
-   * `authorization` nor an `x-api-key` header, although its env layer holds
-   * placeholder tokens and the client sent its own. */
-  it("sends no credential to the platform's endpoint on any dialect", async () => {
+  /** TEST_SCENARIO: A call on each of the three dialects leaves for the
+   * platform's root carrying the layer's bearer placeholder, which names the
+   * Connection at the gateway, and not the client's own key. */
+  it("sends the bearer placeholder to the platform's endpoint on any dialect", async () => {
     seen.length = 0;
     for (const [path, harness] of [
       ["/v1/messages", "pi"],
@@ -420,7 +419,7 @@ describe("routing by qualified name", () => {
       "/platform/v1/responses",
     ]);
     for (const s of seen) {
-      expect(s.headers.authorization).toBeUndefined();
+      expect(s.headers.authorization).toBe("Bearer placeholder");
       expect(s.headers["x-api-key"]).toBeUndefined();
       expect(s.body.model).toBe("deepseek-v4.1-flash");
     }
