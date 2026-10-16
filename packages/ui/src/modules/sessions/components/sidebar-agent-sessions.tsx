@@ -47,7 +47,7 @@ type OrderActions = ReturnType<typeof useSidebarOrderActions>;
 
 interface SessionActions {
   rename: (session: SessionView) => void;
-  delete: (session: SessionView) => void;
+  delete: (session: SessionView) => Promise<void>;
 }
 
 interface Props {
@@ -201,7 +201,7 @@ function SessionPreview({
                 onNavigate?.();
               }}
               onRename={() => sessionActions.rename(session)}
-              onDelete={() => sessionActions.delete(session)}
+              onDelete={() => void sessionActions.delete(session)}
             />
           </OrderedRow>
         );
@@ -320,7 +320,7 @@ function AgentSessionList({
                 onPrefetch: () => prefetchSessionHistory(agentId, s.sessionId),
               })}
             onRename={() => sessionActions.rename(s)}
-            onDelete={() => sessionActions.delete(s)}
+            onDelete={() => void sessionActions.delete(s)}
             {...(telemetryEnabled && {
               onExportTimeline: () =>
                 void downloadTelemetryExport({
