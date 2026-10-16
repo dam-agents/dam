@@ -172,17 +172,17 @@ flowchart LR
   Editing is bounded further by what the platform accepts in one inline write, which is less than it hands back to read — a document past that bound stays readable but offers no Edit, so no surface advertises an action the save would refuse.
   The version history is readable rather than merely steppable — each version says when it was written and who wrote it.
   Retention is reached from the artifact's own menu rather than the sharing dialog, and stays available whatever the artifact's visibility — it governs deletion, not the link.
-  An artifact's visibility badge is also the control that opens the sharing dialog, so the state and the means to change it sit in one place; the library's artifact rows therefore show their share actions at rest, while every other row — folders here, and artifacts in the chat side panel — keeps its actions behind a hover reveal.
+  An artifact's visibility badge is also the control that opens the sharing dialog, so the state and the means to change it sit in one place; the library's artifact rows therefore show their share actions at rest, and the chat side panel's artifact rows lead with a visibility icon that opens it, while every other action on a row stays behind a hover reveal.
   The in-app preview and the chat panel's docked artifact view carry the same entry point — badge, a copy-link control once a share link exists, and an always-present Share button — so opening an artifact is a place to start sharing it rather than a dead end.
   Folder membership is mutable and advisory: any artifact can be filed into any folder, moved to another, or taken out again from the library itself, so organising a library is not tied to the moment each artifact was published.
   Filing works from the artifact's menu or by dragging it onto a folder; a drag held near the top or bottom edge of the list scrolls it, so a folder off screen can still take the drop.
   Nothing reads membership as a claim about provenance.
 - The chat file panel's toolbar carries a **Create artifact / Sync to artifact** action that publishes the open file as above and switches the dock to the resulting artifact; binary and oversized files are excluded.
-- The chat view carries the same library twice over: an **Artifacts tab** in the chat view's side panel, scoped to the sandbox's agent, grouped by folder and offering the same per-artifact actions plus drag-to-folder filing, and a **docked preview** in that same tab that renders the selected artifact, hosts the same editor, and follows new versions as they are published.
+- The chat view carries the same library twice over: an **Artifacts tab** in the chat view's side panel, scoped to the sandbox's agent, its folders listed first and unfiled artifacts after them at the top level, offering the same per-artifact actions plus drag-to-folder filing, and a **docked preview** in that same tab that renders the selected artifact, hosts the same editor, and follows new versions as they are published.
   That preview shares one slot with the sandbox file viewer, so opening either evicts the other; both ask before they displace an unsaved edit, and so does every dismissal of a surface holding one.
   Deleting the artifact a preview is showing closes that preview.
 - On the agent-scoped chat surface a folder shows only that agent's artifacts, and a folder that holds none of them is not listed, so the agent's artifacts stay in view.
-  **Move to folder…** still offers every user folder as a filing target, and a moved artifact makes its folder appear.
+  **Move** still offers every user folder as a filing target, and a moved artifact makes its folder appear.
   The library itself lists every folder unconditionally.
 
 ## Lifecycle and cleanup

@@ -55,7 +55,7 @@ export function ArtifactRowMenuItems({
         Rename
       </DropdownMenuItem>
       <DropdownMenuItem onSelect={() => onMove(artifact)}>
-        Move to folder…
+        Move
       </DropdownMenuItem>
       <DropdownMenuItem onSelect={() => onShare(artifact)}>
         Share
@@ -70,7 +70,7 @@ export function ArtifactRowMenuItems({
       )}
       <DropdownMenuSeparator />
       <DropdownMenuItem onSelect={() => onSetRetention(artifact)}>
-        Delete after…
+        Set expiration
       </DropdownMenuItem>
       <DropdownMenuItem tone="danger" onSelect={() => void confirmAndDelete()}>
         Delete artifact

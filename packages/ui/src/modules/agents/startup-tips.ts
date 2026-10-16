@@ -28,7 +28,7 @@ export function startupTips(sandbox: string): readonly string[] {
     "Network egress is deny-by-default. Connections allowlist only the hosts your agent needs.",
     "Point a knowledge base at your docs and ask it questions in chat.",
     "Artifact previews open beside the chat, so you can read the result and keep talking.",
-    "Set “Delete after…” on an artifact and it is deleted permanently on that date, public or private.",
+    "Set “Set expiration” on an artifact and it is deleted permanently on that date, public or private.",
     "Ask an agent to publish its work as an artifact, then share the link with colleagues.",
     "An artifact keeps every version. Step back through its history in the preview.",
     "See what an agent costs. Settings › Usage breaks spend down by model and by day.",
