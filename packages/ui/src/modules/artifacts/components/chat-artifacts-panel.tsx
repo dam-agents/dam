@@ -17,7 +17,6 @@ import {
   useState,
 } from "react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
@@ -395,13 +394,14 @@ function ArtifactListRow({
             />
           </div>
           <div className="min-w-0 flex-1">
-            <span className="block truncate">{artifact.title}</span>
-            {(showCreator ||
-              artifact.expiresAt !== null ||
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="min-w-0 flex-1 truncate">{artifact.title}</span>
+              {showCreator && <CreatorByline agentId={artifact.agentId} />}
+            </span>
+            {(artifact.expiresAt !== null ||
               artifact.viewCount > 0 ||
               artifact.interactive) && (
               <span className="flex min-w-0 items-center gap-2 overflow-hidden text-xs">
-                {showCreator && <CreatorChip agentId={artifact.agentId} />}
                 <ArtifactDeletionChip expiresAt={artifact.expiresAt} />
                 {artifact.viewCount > 0 && (
                   <Tooltip
@@ -486,28 +486,28 @@ function FolderActionsMenu({
   );
 }
 
-function CreatorChip({ agentId }: { agentId: string | null }) {
-  if (!agentId)
-    return (
-      <Badge variant="muted" className="shrink-0">
-        you
-      </Badge>
-    );
-  return <AgentCreatorChip agentId={agentId} />;
+function CreatorByline({ agentId }: { agentId: string | null }) {
+  return (
+    <span className="flex max-w-28 shrink-0 items-center gap-1 text-xs">
+      by
+      {agentId ? <AgentCreatorLink agentId={agentId} /> : " you"}
+    </span>
+  );
 }
 
-function AgentCreatorChip({ agentId }: { agentId: string }) {
+function AgentCreatorLink({ agentId }: { agentId: string }) {
   const selectAgent = useStore((s) => s.selectAgent);
   const agentName = useAgentDisplayName(agentId);
   return (
     <Tooltip content={`Open ${agentName}`}>
       <button
         type="button"
+        aria-label={`Open ${agentName}`}
         onClick={(e) => {
           e.stopPropagation();
           selectAgent(agentId);
         }}
-        className="inline-flex max-w-24 shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-px text-xs transition-colors hover:bg-accent-light hover:text-accent"
+        className="inline-flex min-w-0 items-center gap-1 transition-colors hover:text-accent"
       >
         <Box size={12} className="shrink-0" />
         <span className="truncate">{agentName}</span>
