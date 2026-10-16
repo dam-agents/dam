@@ -15,8 +15,8 @@ pub trait Runtime: Send + Sync {
     fn state(&self, id: &str) -> anyhow::Result<State>;
     fn create(&self, id: &str, machine: &Machine<'_>) -> anyhow::Result<()>;
     fn update(&self, id: &str, update: &Update<'_>) -> anyhow::Result<()>;
-    // UNIT_BOUNDARY_DESCRIPTION: boots a stopped machine with `boot_mib` of guest RAM, which may be less than its size; `grow` adds the rest once the guest is up.
-    fn start(&self, id: &str, boot_mib: i32) -> anyhow::Result<()>;
+    // UNIT_BOUNDARY_DESCRIPTION: boots a stopped machine with `boot_mib` of guest RAM, which may be less than its size `memory_mib`; `grow` adds the rest once the guest is up. A boot whose guest is too busy to take the added RAM boots at `memory_mib` instead: a guest converting its disk copies before it answers anything, so its grow fails, and the reboot whole that follows would cut the copy short at every start.
+    fn start(&self, id: &str, boot_mib: i32, memory_mib: i32) -> anyhow::Result<()>;
     // UNIT_BOUNDARY_DESCRIPTION: adds guest RAM to a running machine until it has `memory_mib`, and has the guest put it to use. A runtime that cannot grow a machine fails, and the machine boots at its size from then on.
     fn grow(&self, _id: &str, _memory_mib: i32) -> anyhow::Result<()> {
         anyhow::bail!("this runtime cannot grow a running machine")
