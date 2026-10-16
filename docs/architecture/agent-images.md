@@ -1,10 +1,10 @@
 # Agent images
 
-Last verified: 2026-10-15
+Last verified: 2026-10-16
 
 The images an agent runs in: the **default image**, which the default Template boots, and the workloads and the e2e mock, each the default image under its own files.
 Each carries the agent-runtime and every harness.
-None bakes a tool but a bundle of Claude Code's ACP adapter: they boot on the node's **harness tools**.
+The default image bakes the **harness tools**, base's and every harness's, in a layer of their own.
 A workload bakes only its own Python, whole, and the mock the node it runs on.
 Nothing installs lazily, and no tool runs through a shim.
 Sources live in [`packages/agents/`](../../packages/agents/): one directory per image, and one per harness (Claude Code, Codex, pi, Bob), which is a source of the default image and no image of its own.
@@ -19,30 +19,32 @@ The shared base ([`packages/agents/base/`](../../packages/agents/base/)) declare
 - **A workload** is the default image under its own files and env, so a kit image carries every harness and runs the one its kit names.
   Its Python package is installed into a venv and shipped as a whole Python at a fixed path, the interpreter and its standard library copied in, named in an environment variable; the entrypoint and login shells put it first on `PATH`, so `python` is the workload's, whatever Python the node's tools hold.
   **k-search** also ships its upstream source trees, pinned by commit and checksum and patched at install, at fixed paths.
-- **The e2e mock**, beside its source in [`packages/e2e/agents/mock/`](../../packages/e2e/agents/mock/), is the default image under its scripted harness and the node binary its agent-runtime runs, so it boots without the node's tools.
+- **The e2e mock**, beside its source in [`packages/e2e/agents/mock/`](../../packages/e2e/agents/mock/), is the default image under its scripted harness and the node binary its agent-runtime runs.
 
 ## The default image and the harness tools
 
 The UI labels an Agent's image by its Template's name in its settings, resolving retired template aliases from the catalogue too; the agent card leaves it out, since a session picks its own harness.
 An unknown or absent Template falls back to the image reference.
 
-The default image is every harness over the base at once, with none of their tools packaged.
+The default image is every harness over the base at once, with their tools.
 Each harness's entry points and runtime manifest sit under its name.
 The agent-runtime loads every manifest there and runs each harness's drivers, so one contribution kind can have several bindings, each keeping its state per harness.
 The harness is chosen per session ([sessions](sessions.md#session-inside-the-pod)); the Agent's own harness, seeded at create and handed to the pod or machine in its environment, is the default for a session that names none.
-The tools, the base's and every harness's, are named in the image's system mise config with the lockfile, and its `PATH` names each tool's versioned install directory under mise's system data dir, so the image fixes every version it runs without holding a byte of them but that bundle.
+The tools, the base's and every harness's, are named in the image's system mise config with the lockfile, and its `PATH` names each tool's versioned install directory under mise's system data dir.
+The build installs them there with the image's own installer, run in the image's root under chroot with the image's env, so every path an install records is the one the image runs it from, and packs that directory as one root-owned layer, rebuilt only when the tool config or the installer changes.
 mise's own data dir stays the image's, writable, so `mise use -g` still installs there.
+A node holds the tools as it holds any image: the kubelet's image collection and the [vm image cache](vm-image-cache.md)'s eviction drop the versions no agent runs.
 
-They are installed by that same image, once per node: a DaemonSet on every node an agent or a VM runner may land on runs the image's installer into a node directory, and then idles, so a node that joins later gets the tools too.
-On the container Backend every agent pod mounts that directory read-only at the system data dir's path, whatever its image: no other image uses the path.
-On the `vm` Backend each runner mounts it read-only and shares it read-only into every machine whose image asks for it ([vm-runner](vm-runner.md)), DAX-mapped on x86 so a guest reads the node's page cache rather than copying every file a harness start loads into its own memory.
+Images before the tools were baked boot on a node directory instead, which the same installer fills while agents may still run them: a DaemonSet on every node an agent or a VM runner may land on runs the current image's installer into it, and then idles.
+On the container Backend every agent pod mounts that directory read-only at the system data dir's path, whatever its image: no other image uses the path, and it holds the same versions the baked image does.
+On the `vm` Backend each runner mounts it read-only and shares it read-only into every machine whose image's env names `PLATFORM_TOOLS_VOLUME`, which a baked image does not ([vm-runner](vm-runner.md)), DAX-mapped on x86 so a guest reads the node's page cache rather than copying every file a harness start loads into its own memory.
 DAX needs a guest kernel with [smol-machines/libkrunfw#31](https://github.com/smol-machines/libkrunfw/pull/31), which the pinned smolvm release ships ([vm-runner-upgrades](vm-runner-upgrades.md)): without it, from Linux 6.15 on, a process that runs a large binary from a DAX mount dies of SIGBUS once another process opens that binary ([smol-machines/smolvm#1741](https://github.com/smol-machines/smolvm/issues/1741)).
 A deploy with a new image rolls the DaemonSet on every node at once, which installs the new versions **in place**, beside the old ones: an agent still on an older image keeps the versions it names, and nothing is pruned.
-Playwright's browsers sit there too, each image naming its own.
+Playwright's browsers sit with the tools, in the image and in the node directory alike, each image naming its own.
 An install cut short (the installer killed, a node drained) is redone on the next run rather than taken as done: mise records a version as mid-install only in its cache, so the installer keeps that cache in the node directory too, and it removes any version directory left empty.
 On OpenShift, the node configuration in [`etc/openshift-node-config/`](../../etc/openshift-node-config/) has the nodes create the directory with the label confined pods can read.
 
-The directory is in the boot path: an agent that starts on a node before its installer has finished has no harness until its next start.
+The node directory is in the boot path of a container agent: one that starts on a node before its installer has finished has no harness until its next start.
 A download host that stalls or trickles fails the install in bounded time, after mise's own retries, and the kubelet restarts the installer until it succeeds, each run keeping what the last one installed.
 CI's vm lane restores the node directory from a cache that main writes, keyed on the lockfile and the installer, so on a hit the installer reaches no download host.
 On a Mac, whose [host runner](vm-host-runner.md) runs outside the cluster, the tools are copied from the k3s node onto a case-sensitive volume of the runner's.
@@ -50,7 +52,7 @@ On a Mac, whose [host runner](vm-host-runner.md) runs outside the cluster, the t
 Only the agent-runtime and the two driver SDKs (JavaScript and Python) come from the rest of the repo; the build compiles them into each image.
 
 The build also bundles Claude Code's ACP adapter with its agent SDK, from the locked install, into a few files of the default image.
-Loaded from the tools, the adapter is hundreds of ES modules, each a few reads over a machine's tools mount, paid by each adapter start and by the session-history worker's import of it.
+Loaded from the tools, the adapter is hundreds of ES modules, each a few reads, paid by each adapter start and by the session-history worker's import of it.
 The native CLI the adapter runs stays in the tools; the bundle cannot find it beside the SDK, so Claude Code's chat entry point names its path.
 
 ## Building
@@ -66,7 +68,7 @@ CI calls it from [`image:ci-build`](../../.mise/tasks/image/ci-build) and pushes
   That layer follows the packages alone: what the install stamps with the build's time (logs, caches, password dates, the mtimes of the paths it touched) is dropped or set to the base's creation time, so a rebuild with no package update keeps its digest.
   Every image is then packed by [`image:pack`](../../.mise/tasks/image/pack), the platform images' own packer: the default image onto that base, each workload and the mock onto the default image, a sorted tree per layer so a digest follows content alone.
   The images share the base's layers, so a node stores them once.
-- **Layers by how often they change.** A node pulls only the layers it lacks, and extracting a big one stalls every pod start on it, so the default image stacks Selkies, then mise, then Claude Code's adapter bundle, then everything else: the agent-runtime, the harnesses' files and the shipped skills, a few megabytes and the only layer a typical deploy changes.
+- **Layers by how often they change.** A node pulls only the layers it lacks, and extracting a big one stalls every pod start on it, so the default image stacks Selkies, then mise, then the harness tools, then Claude Code's adapter bundle, then everything else: the agent-runtime, the harnesses' files and the shipped skills, a few megabytes and the only layer a typical deploy changes.
   Selkies' Python bytecode is checked by source hash, since a packed layer's mtimes are zero.
 - **Pins live in the environment files and one lockfile.** The lockfile fixes every tool's version and checksum for both Linux architectures, and the npm tools' whole dependency trees, except the workloads' Python packages, which mise cannot lock and their files pin exactly; CI caches the tool installs under it, so they change only with it.
   k-search's GPU venv is gigabytes the repository's cache cannot hold, so each k-search build installs it afresh, which also picks up its unpinned dependencies' releases.
