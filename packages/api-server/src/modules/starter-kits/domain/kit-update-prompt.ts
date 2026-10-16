@@ -1,3 +1,4 @@
+import type { ChatFormPreferences } from "api-server-api/chat-forms";
 import type { ResolvedStarterKit, SeedStamp } from "api-server-api";
 import { chatFormLines, describeAccepts } from "./onboarding-prompt.js";
 import { type GrantedTemplate, satisfiesRequirement } from "./requirements.js";
@@ -13,7 +14,7 @@ export interface KitUpdateFacts {
   schedules: { name: string; enabled: boolean }[];
   env: { name: string; value?: string }[];
   familyTitles: ReadonlyMap<string, string>;
-  chatForms?: boolean;
+  chatForms?: ChatFormPreferences | null;
 }
 
 function checkoutDir(kit: ResolvedStarterKit | null): string {

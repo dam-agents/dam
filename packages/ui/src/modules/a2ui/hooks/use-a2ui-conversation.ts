@@ -1,3 +1,4 @@
+import type { ChatFormPreferences } from "api-server-api/chat-forms";
 import { useCallback, useMemo } from "react";
 
 import { useStore } from "../../../store.js";
@@ -26,6 +27,7 @@ export function useA2uiConversation(
   messages: readonly Message[],
   sessionKey: string,
   enabled: boolean,
+  preferences?: ChatFormPreferences,
 ): A2uiConversationState {
   const inputs = useMemo(
     () => (enabled ? collectBlocks(messages) : []),
@@ -59,9 +61,10 @@ export function useA2uiConversation(
             conversation,
             sessionKey,
             useStore.getState().a2uiEdits,
+            preferences,
           )
         : text,
-    [enabled, conversation, sessionKey],
+    [enabled, conversation, sessionKey, preferences],
   );
   return useMemo(
     () => ({

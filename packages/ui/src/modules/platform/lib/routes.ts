@@ -22,6 +22,7 @@ const sandboxSectionSchema = z.enum([
   "network",
   "environment",
   "channels",
+  "chat-forms",
   "skills",
   "schedules",
   "usage",

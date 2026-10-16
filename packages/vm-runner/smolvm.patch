@@ -1,5 +1,5 @@
 diff --git i/Cargo.toml w/Cargo.toml
-index d0a7a42..3f008b0 100644
+index 1e63774..f4d719c 100644
 --- i/Cargo.toml
 +++ w/Cargo.toml
 @@ -96,7 +96,7 @@ axum = { version = "0.8", features = ["macros", "ws"] }
@@ -12,10 +12,10 @@ index d0a7a42..3f008b0 100644
  http-body = "1"
  rustls = { version = "0.23.45", default-features = false, features = ["ring"] }
 diff --git i/crates/smolvm-agent/src/main.rs w/crates/smolvm-agent/src/main.rs
-index 208a954..2b00e13 100644
+index 78da739..d92f244 100644
 --- i/crates/smolvm-agent/src/main.rs
 +++ w/crates/smolvm-agent/src/main.rs
-@@ -1244,6 +1244,12 @@ fn setup_persistent_rootfs() {
+@@ -1245,6 +1245,12 @@ fn setup_persistent_rootfs() {
      let storage_handle = if Path::new(STORAGE_DEVICE).exists() {
          ensure_mount_dir(STORAGE_TEMP_MOUNT);
          Some(std::thread::spawn(|| {
@@ -28,7 +28,7 @@ index 208a954..2b00e13 100644
              // Resize before mount — template may be smaller than device.
              // Skip if filesystem already fills the device (subsequent boots).
              // If resize fails (e.g. macOS-created template with incompatible features),
-@@ -1818,6 +1824,20 @@ fn mount_storage_disk() -> bool {
+@@ -1840,6 +1846,20 @@ fn mount_storage_disk() -> bool {
          return true;
      }
  
@@ -49,7 +49,7 @@ index 208a954..2b00e13 100644
      // --- Attempt 1: resize (if needed) + mount (works on subsequent boots) ---
      let resized =
          ext4_already_full_size(STORAGE_DEVICE) || resize_ext4_if_needed(STORAGE_DEVICE, "storage");
-@@ -1839,7 +1859,8 @@ fn mount_storage_disk() -> bool {
+@@ -1861,7 +1881,8 @@ fn mount_storage_disk() -> bool {
          .status()
      {
          Ok(status) => {
@@ -59,7 +59,7 @@ index 208a954..2b00e13 100644
              if code <= 1 {
                  info!(exit_code = code, "fsck completed");
                  true
-@@ -1865,6 +1886,17 @@ fn mount_storage_disk() -> bool {
+@@ -1887,6 +1908,17 @@ fn mount_storage_disk() -> bool {
      }
  
      // --- Attempt 3: mkfs (last resort, destroys data) ---
@@ -77,7 +77,7 @@ index 208a954..2b00e13 100644
      info!("formatting storage disk (first boot or unrecoverable)");
      match Command::new("mkfs.ext4")
          .args(["-F", "-q", "-O", "^has_journal", STORAGE_DEVICE])
-@@ -1891,6 +1923,171 @@ fn mount_storage_disk() -> bool {
+@@ -1913,6 +1945,171 @@ fn mount_storage_disk() -> bool {
      false
  }
  
@@ -249,7 +249,7 @@ index 208a954..2b00e13 100644
  /// Stub for non-Linux platforms.
  #[cfg(not(target_os = "linux"))]
  fn mount_storage_disk() -> bool {
-@@ -8150,6 +8347,53 @@ mod bg_reap_tests {
+@@ -8230,6 +8427,53 @@ mod bg_reap_tests {
  
  #[cfg(test)]
  mod tests {
@@ -300,9 +300,9 @@ index 208a954..2b00e13 100644
 +        assert!(!super::may_format_storage(path));
 +    }
 +
-     /// A listing is what a caller uses to decide where to recurse and what to
-     /// download, so the shape matters: names only, sorted, with sizes only
-     /// where they mean something.
+     #[cfg(target_os = "linux")]
+     #[test]
+     fn workspace_is_shared_on_creation_without_changing_existing_permissions() {
 diff --git i/crates/smolvm-agent/src/shutdown_freeze.rs w/crates/smolvm-agent/src/shutdown_freeze.rs
 index ff3e95a..02b72a6 100644
 --- i/crates/smolvm-agent/src/shutdown_freeze.rs

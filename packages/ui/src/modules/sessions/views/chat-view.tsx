@@ -40,6 +40,7 @@ import {
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { AgentView, Message } from "../../../types.js";
+import { useChatFormPreferences } from "../../a2ui/api/queries.js";
 import { A2uiActionProvider } from "../../a2ui/contexts/a2ui-action-context.js";
 import { A2uiConversationProvider } from "../../a2ui/contexts/a2ui-conversation-context.js";
 import { useA2uiAutoReplies } from "../../a2ui/hooks/use-a2ui-auto-replies.js";
@@ -442,15 +443,21 @@ export function ChatView() {
     sendPrompt: sendAndFollow,
   });
   const chatFormsEnabled = useChatFormsEnabled();
+  const { data: chatFormPreferences } = useChatFormPreferences(
+    chatFormsEnabled ? selectedAgent : null,
+    { quiet: true },
+  );
   const a2uiConversation = useA2uiConversation(
     messages,
     sessionId ?? "",
     chatFormsEnabled,
+    chatFormPreferences,
   );
   const { withRendererMetadata } = a2uiConversation;
   const formLocksComposer = composerLocked(
     a2uiConversation.conversation,
     a2uiConversation.liveMessageId,
+    chatFormPreferences,
   );
   useA2uiAutoReplies(a2uiConversation, sendFormPrompt);
   const sendWithA2uiData = useCallback(

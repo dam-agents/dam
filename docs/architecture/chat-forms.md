@@ -34,20 +34,35 @@ sequenceDiagram
   The chat cuts blocks out of the reply as it streams and renders the rest of the reply as markdown.
 - **Chat → agent.** A button press, an error the user chooses to forward, and the answer to an agent's function call each travel as an A2UI **renderer message** in a block of the user's prompt.
   A surface that asks for it also gets its whole **data model** attached to every prompt, so the agent sees the current state of the form.
-- **Renderer capabilities.** While the owner has the feature on, the web chat attaches the catalogs it renders to every prompt, and the platform adds the same announcement to the onboarding and Kit Update briefings it composes.
+- **Renderer capabilities.** While the owner has the feature on and the agent's forms are not off, the web chat attaches the catalogs it renders and the [agent's chat form settings](#chat-form-settings-per-agent) to every prompt, and the platform adds the same announcement to the onboarding and Kit Update briefings it composes.
   An agent uses forms only in a conversation that announces them.
   Channel turns never carry the announcement, so in [Slack and Telegram](channels.md) the agent asks in plain text.
 - **The skill.** Agents learn the format from the `platform-chat-forms` [platform skill](skills.md#platform-skill), which ships in the base image and is listed under this feature.
   It names the catalogs, components, functions and rules, with worked examples.
   Where the context supports one, it asks the agent to preselect a recommended answer, mark it and say why; matters of taste, values only the user knows and risky choices stay empty.
   The chat shows a label's trailing `(Recommended)` as a muted tag.
-- **The check tool.** While the owner has the feature on, the agent's [platform MCP server](features.md#what-a-flag-does--and-does-not--gate) also offers `check_chat_form`.
+- **The check tool.** While the owner has the feature on and the agent's forms are not off, the agent's [platform MCP server](features.md#what-a-flag-does--and-does-not--gate) also offers `check_chat_form`.
   It validates a reply's blocks with the same code the chat replays them with, so the agent can fix a form before the user sees it.
   A surface the reply updates without creating is taken to come from an earlier reply, and only its components' shape is checked; agent function calls are checked, not run.
   The tool takes the attempt number and refuses a fourth: after the third failed check the skill and the tool's answer both tell the agent to ask in plain text.
   The count travels in the call, because the endpoint keeps no state between requests.
 
 In the user's own message the chat shows a short summary — the action's human-readable label and the values sent — instead of the raw renderer messages.
+
+## Chat form settings per agent
+
+The owner sets, for each agent, how it may use forms, in the agent's Chat forms section; the section is listed while the feature is on, and the platform-chat-forms skill on the Skills page links to it:
+
+- **Forms** — whenever they help, only to ask for input, or off.
+- **Questions** — the agent decides, all in one form, or one question per form.
+- **Recommendations** — preselect and mark, only mark, or none.
+- **Lock the chat input** — whether the agent may lock it.
+
+The settings are stored per agent in Postgres, because the api-server needs them for the briefings it composes and for `check_chat_form`.
+They travel to the agent inside the capability announcement, under the platform extension `urn:platform:a2ui:extension:chat:v1` as `preferences`, so a change applies from the next message without a new session.
+With forms off, the chat and the briefings announce nothing and the check tool is not registered, so the agent asks in plain text as it does in channels.
+The skill tells the agent how to follow each preference; `check_chat_form` reports a form that goes against them with the code `USER_PREFERENCE`, and the chat ignores a lock the owner did not allow.
+A chat with an agent the user does not own cannot read its settings, and announces the catalogs without them; the skill then uses the defaults.
 
 ## Surfaces across a session
 

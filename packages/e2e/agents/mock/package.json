@@ -4,8 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@trpc/server": "^11.19.0",
-    "zod": "^4.6.6"
+    "@trpc/server": "^11.19.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",

@@ -10,6 +10,8 @@ import {
   signUpsSchema,
   spendCeilingUsdTextSchema,
 } from "api-server-api";
+import { X509Certificate } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { DEFAULT_DB_POOL_MAX } from "db";
 import { z } from "zod";
 import pkg from "../package.json" with { type: "json" };
@@ -171,15 +173,35 @@ const spendPriceOverridesSchema = z
       }),
   );
 
-// UNIT_BOUNDARY_DESCRIPTION: the operator's self-hosted model server behind the built-in provider. An empty base URL means none is configured; the base URL is the server root, so a trailing slash is dropped before `/v1` is appended to it.
+// UNIT_BOUNDARY_DESCRIPTION: the operator's self-hosted model server behind the built-in provider, the key the gateway sends it, and optionally the CA the gateway validates it against. The gateway injects the key only into TLS it terminates, so a base URL that is not https, or a CA file that is set but holds no readable certificate, leaves the feature off, logged rather than failing the boot, so values written for an earlier release cannot crash-loop the api-server. An empty base URL or key means none is configured; the base URL is the server root, so a trailing slash is dropped before `/v1` is appended to it.
 const platformProviderSchema = z
   .object({
-    baseUrl: z.union([z.literal(""), z.url()]).default(""),
+    baseUrl: z.string().default(""),
     model: z.string().default(""),
+    apiKey: z.string().default(""),
+    caFile: z.string().default(""),
   })
-  .transform(({ baseUrl, model }) =>
-    baseUrl === "" ? null : { baseUrl: baseUrl.replace(/\/+$/, ""), model },
-  );
+  .transform(({ baseUrl, model, apiKey, caFile }) => {
+    if (baseUrl === "" || apiKey === "") return null;
+    if (!z.url({ protocol: /^https$/ }).safeParse(baseUrl).success) {
+      getLogger().error(
+        "platform provider off: PLATFORM_PROVIDER_BASE_URL must be an https URL, the gateway meters only TLS it terminates",
+      );
+      return null;
+    }
+    let ca: string | undefined;
+    try {
+      ca = caFile === "" ? undefined : readFileSync(caFile, "utf8").trim();
+      if (ca !== undefined) new X509Certificate(ca);
+    } catch (err) {
+      getLogger().error(
+        { caFile, err },
+        "platform provider off: PLATFORM_PROVIDER_CA_FILE does not hold a readable PEM certificate",
+      );
+      return null;
+    }
+    return { baseUrl: baseUrl.replace(/\/+$/, ""), model, apiKey, ca };
+  });
 const configSchema = z.object({
   serverVersion: z.string().min(1),
   appVersion: z.string().min(1),
@@ -425,6 +447,8 @@ export function loadConfig(): Config {
     platformProvider: {
       baseUrl: process.env.PLATFORM_PROVIDER_BASE_URL,
       model: process.env.PLATFORM_PROVIDER_MODEL,
+      apiKey: process.env.PLATFORM_PROVIDER_API_KEY,
+      caFile: process.env.PLATFORM_PROVIDER_CA_FILE,
     },
     runtimeMigrationRetentionMs: process.env.RUNTIME_MIGRATION_RETENTION,
     activityTrackingEnabled: process.env.ACTIVITY_TRACKING_ENABLED,
