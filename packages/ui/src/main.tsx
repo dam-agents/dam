@@ -16,6 +16,11 @@ import {
   parseRoute,
   routeToPath,
 } from "./modules/platform/lib/routes.js";
+import {
+  isDarkTheme,
+  readStoredTheme,
+} from "./modules/platform/store/theme.js";
+import { StartupErrorView } from "./modules/platform/views/startup-error-view.js";
 import { queryClient } from "./query-client.js";
 import { startDraftSync, useStore } from "./store.js";
 
@@ -65,4 +70,15 @@ async function main() {
   );
 }
 
-main();
+main().catch((err: unknown) => {
+  console.error("[startup] failed", err);
+  document.documentElement.classList.toggle(
+    "dark",
+    isDarkTheme(readStoredTheme()),
+  );
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <StartupErrorView />
+    </StrictMode>,
+  );
+});
