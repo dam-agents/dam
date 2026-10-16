@@ -7,6 +7,7 @@ import { createFilesSlice } from "../../modules/files/store.js";
 import {
   type DockedItems,
   dockedItemTab,
+  hiddenSidePanelTabs,
   maximizableView,
   selectSidePanelTab,
   shownSidePanelWidth,
@@ -18,12 +19,12 @@ import type { PlatformStore } from "../../store.js";
 
 /**
  * TEST_OVERVIEW: Every page has one side panel on the right, switched by an
- * icon bar: Artifacts, Files, Changes, Browser and Processes in an Agent's
- * chat, and only Artifacts on every other page. A list tab shows
- * its list, or the docked item it opened (a file, an artifact, a process
- * output). The Changes and Browser tabs show their docked panel and nothing
- * else. Clicking the active icon collapses the panel. A conversation opens with
- * the panel collapsed.
+ * icon bar. An Agent's chat offers Files, Changes, Browser and Processes;
+ * every page, the chat included, offers Artifacts, Get started and Approvals.
+ * A list tab shows its list, or the docked item it opened (a file, an
+ * artifact, a process output). The Changes and Browser tabs show their docked
+ * panel and nothing else. Clicking the active icon collapses the panel. A
+ * conversation opens with the panel collapsed.
  */
 
 const NOTHING_DOCKED: DockedItems = {
@@ -35,7 +36,12 @@ const NOTHING_DOCKED: DockedItems = {
   delegation: false,
 };
 
-const ALL_AVAILABLE = { canOpenBrowser: true, processesEnabled: true };
+const ALL_AVAILABLE = hiddenSidePanelTabs({
+  agent: true,
+  canOpenBrowser: true,
+  processesEnabled: true,
+  gettingStarted: true,
+});
 
 function panelStore() {
   return createStore<PlatformStore>()(
@@ -69,9 +75,49 @@ describe("which tab the side panel shows", () => {
 
   it("TEST_SCENARIO: an agent without a browser display, or with processes off, never shows those tabs", () => {
     const docked = { ...NOTHING_DOCKED, browser: true };
-    const unavailable = { canOpenBrowser: false, processesEnabled: false };
+    const unavailable = hiddenSidePanelTabs({
+      agent: true,
+      canOpenBrowser: false,
+      processesEnabled: false,
+      gettingStarted: true,
+    });
     expect(visibleSidePanelTab("browser", docked, unavailable)).toBe(null);
     expect(visibleSidePanelTab("processes", docked, unavailable)).toBe(null);
+  });
+});
+
+describe("the panels outside an Agent's chat", () => {
+  it("TEST_SCENARIO: a page that is not an Agent's chat offers only Artifacts, Get started and Approvals, so an Agent's tab left open there shows nothing", () => {
+    const hidden = hiddenSidePanelTabs({
+      agent: false,
+      canOpenBrowser: true,
+      processesEnabled: true,
+      gettingStarted: true,
+    });
+    expect(visibleSidePanelTab("files", NOTHING_DOCKED, hidden)).toBe(null);
+    expect(visibleSidePanelTab("processes", NOTHING_DOCKED, hidden)).toBe(null);
+    expect(visibleSidePanelTab("artifacts", NOTHING_DOCKED, hidden)).toBe(
+      "artifacts",
+    );
+    expect(visibleSidePanelTab("approvals", NOTHING_DOCKED, hidden)).toBe(
+      "approvals",
+    );
+    expect(visibleSidePanelTab("getting-started", NOTHING_DOCKED, hidden)).toBe(
+      "getting-started",
+    );
+  });
+
+  it("TEST_SCENARIO: a dismissed or finished checklist hides Get started, so its panel closes", () => {
+    const hidden = hiddenSidePanelTabs({
+      agent: true,
+      canOpenBrowser: true,
+      processesEnabled: true,
+      gettingStarted: false,
+    });
+    expect(visibleSidePanelTab("getting-started", NOTHING_DOCKED, hidden)).toBe(
+      null,
+    );
+    expect(hidden.has("approvals")).toBe(false);
   });
 });
 

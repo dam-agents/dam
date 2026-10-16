@@ -7,11 +7,7 @@ import { useIsDesktop } from "./hooks/use-is-desktop.js";
 import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
-import { ArtifactsSidePanel } from "./modules/artifacts/components/artifacts-side-panel.js";
 import { ArtifactIcon } from "./modules/artifacts/lib/artifact-icon.js";
-import { GettingStartedDock } from "./modules/getting-started/components/getting-started-dock.js";
-import { ApprovalsButton } from "./modules/home/components/approvals-button.js";
-import { ApprovalsPanel } from "./modules/home/components/approvals-panel.js";
 import { useApprovalToasts } from "./modules/home/hooks/use-approval-toasts.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
@@ -23,6 +19,10 @@ import { parseRoute } from "./modules/platform/lib/routes.js";
 import { applyTheme } from "./modules/platform/store/theme.js";
 import { NotFoundView } from "./modules/platform/views/not-found-view.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
+import {
+  AppSidePanelButtons,
+  AppSidePanelHost,
+} from "./modules/sessions/components/app-side-panel.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { SlackBindView } from "./modules/slack/views/slack-bind-view.js";
@@ -68,8 +68,6 @@ export default function App() {
 
 function MainApp() {
   const view = useStore((s) => s.view);
-  const approvalsOpen = useStore((s) => s.approvalsOpen);
-  const setApprovalsOpen = useStore((s) => s.setApprovalsOpen);
   const kitBrowserOpen = useStore((s) => s.kitBrowserOpen);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
@@ -110,9 +108,6 @@ function MainApp() {
             <ChatView />
           </div>
         </div>
-        {approvalsOpen && (
-          <ApprovalsPanel onClose={() => setApprovalsOpen(false)} />
-        )}
         {kitBrowserOpen && <BrowseKitsModal />}
         <MobileNavDrawer />
         <DialogOverlay />
@@ -124,7 +119,7 @@ function MainApp() {
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <Sidebar />
-        <ArtifactsSidePanel>
+        <AppSidePanelHost>
           <main className="flex flex-1 flex-col overflow-y-auto">
             {!desktop && (
               <AppTopBar
@@ -141,8 +136,7 @@ function MainApp() {
                     >
                       <ArtifactIcon size={16} />
                     </Button>
-                    <GettingStartedDock placement="header" />
-                    <ApprovalsButton />
+                    <AppSidePanelButtons />
                   </>
                 }
               />
@@ -171,11 +165,8 @@ function MainApp() {
               )}
             </div>
           </main>
-        </ArtifactsSidePanel>
+        </AppSidePanelHost>
       </div>
-      {approvalsOpen && (
-        <ApprovalsPanel onClose={() => setApprovalsOpen(false)} />
-      )}
       {kitBrowserOpen && <BrowseKitsModal />}
       <MobileNavDrawer />
       <DialogOverlay />

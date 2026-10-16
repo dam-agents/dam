@@ -5,6 +5,7 @@ Last verified: 2026-10-16
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
 Two surfaces read it: the sidebar lists the newest Sessions of every Agent under that Agent, and the **approvals bell** lists what waits on the user's decision.
+The bell sits in the icon bar on the right edge of every page and opens the Approvals side panel, a panel like the Artifacts panel beside it, that takes its room from the page.
 
 ## What Home reads
 

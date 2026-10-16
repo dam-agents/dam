@@ -17,10 +17,8 @@ export interface SidebarSlice {
   setSidebarExpanded: (expanded: boolean) => void;
   sidebarActivityFilters: ActivityFilters;
   setSidebarActivityFilters: (filters: ActivityFilters) => void;
-  approvalsOpen: boolean;
   mobileNavOpen: boolean;
   setMobileNavOpen: (open: boolean) => void;
-  setApprovalsOpen: (open: boolean) => void;
 }
 
 function readStoredSidebarExpanded(): boolean {
@@ -41,8 +39,6 @@ export const createSidebarSlice: StateCreator<
   sidebarActivityFilters: defaultActivityFilters(),
   setSidebarActivityFilters: (filters) =>
     set({ sidebarActivityFilters: filters }),
-  approvalsOpen: false,
   mobileNavOpen: false,
   setMobileNavOpen: (open) => set({ mobileNavOpen: open }),
-  setApprovalsOpen: (open) => set({ approvalsOpen: open }),
 });
