@@ -118,7 +118,8 @@ pub fn run() -> ! {
         expected.as_ref(),
     );
     mount_scratch(&root);
-    let trust = offer_trust_cache(&root);
+    let trust = offer_trust_cache();
+    show_boot_log(&root);
     let guard = pool_guard(&root);
     leave_disk(&root);
     share_mounts();
@@ -364,6 +365,19 @@ fn swap_header(page: usize, size: u64) -> Vec<u8> {
 
 // UNIT_BOUNDARY_DESCRIPTION: the disk is a sparse file on the owner's claim, and a block the agent frees stays allocated there until it is trimmed. smolvm's guest agent trims only once free space has risen by a quarter GiB since its last trim, so a file rewritten in place or replaced by a renamed copy — free space back where it was, the new copy on other blocks — keeps the old copy's blocks counted for up to half an hour. Every TRIM_INTERVAL the disk is trimmed regardless: ext4 skips every block group that has freed nothing since its last trim, so a trim with nothing to return costs little. Machines boot at different times, so their trims do not run in step.
 const TRIM_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+// UNIT_BOUNDARY_DESCRIPTION: whether the filesystem holding the agent's home sends a discard for each extent it frees, as btrfs does by itself (discard=async) on a disk that supports discard; the trim loop then has nothing left to return.
+fn discards_on_its_own(mounts: &str) -> bool {
+    mounts.lines().any(|line| {
+        let mut fields = line.split_whitespace();
+        fields.nth(1) == Some(guest::AGENT_HOME)
+            && fields.nth(1).is_some_and(|options| {
+                options
+                    .split(',')
+                    .any(|option| option.starts_with("discard"))
+            })
+    })
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: _IOWR('X', 121, struct fstrim_range), the same on every architecture a guest runs; the libc crate does not export it.
 const FITRIM: libc::c_ulong = 0xC018_5879;
 // UNIT_BOUNDARY_DESCRIPTION: free extents smaller than this are skipped, so a minute's trim sends no stream of tiny discards to the claim's storage.
@@ -377,6 +391,10 @@ struct FstrimRange {
 }
 
 fn trim_freed_blocks() {
+    if discards_on_its_own(&fs::read_to_string("/proc/self/mounts").unwrap_or_default()) {
+        logf!("the disk discards freed blocks on its own; no periodic trim");
+        return;
+    }
     let home = match File::open(guest::AGENT_HOME) {
         Ok(home) => home,
         Err(e) => {
@@ -914,6 +932,18 @@ fn keep_tail(path: &Path, limit: u64) {
     }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: where the guest reads its boot log: this boot's and the one before, read-only. The log lives in the platform's part of the disk, which is detached once the boot is through with it (leave_disk), and the host never reads the disk, so without this bind the log, which holds the harness's output, is readable by no one. Read-only, so nothing in the guest can rewrite what the platform recorded.
+const BOOT_LOG_VIEW: &str = "/var/log/platform";
+
+fn show_boot_log(root: &Path) {
+    let target = Path::new(BOOT_LOG_VIEW);
+    if let Err(e) =
+        mkdir_all(target).and_then(|()| bind_read_only(&guest::system_store(root, "log"), target))
+    {
+        logf!("WARNING: showing the boot log at {BOOT_LOG_VIEW} ({e}); it is still written to the disk");
+    }
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: an install whose gateway intercepts nothing mounts no CA, and every host then serves a certificate the public roots already cover — so a missing share is silence rather than a warning.
 fn bind_ca() {
     let share = Path::new(guest::SHARE_CA_DIR);
@@ -1215,7 +1245,7 @@ fn evict_scratch(dirs: &[(PathBuf, u64)]) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: every entry of the scratch folders that may be evicted at `now`, in the order to evict them: by the first EVICT_AGES pass it is old enough for, then rebuildable before not, then oldest first. An entry is left out when it was used within `youngest` seconds, when it holds the image's trust cache, a socket or fifo a process may still listen on, a mount, or a file in `locked`, or when it cannot be read.
+// UNIT_BOUNDARY_DESCRIPTION: every entry of the scratch folders that may be evicted at `now`, in the order to evict them: by the first EVICT_AGES pass it is old enough for, then rebuildable before not, then oldest first. An entry is left out when it was used within `youngest` seconds, when it holds a socket or fifo a process may still listen on, a mount, or a file in `locked`, or when it cannot be read.
 fn scratch_entries(
     roots: &[ScratchRoot],
     disk: u64,
@@ -1223,7 +1253,6 @@ fn scratch_entries(
     now: u64,
     youngest: u64,
 ) -> Vec<ScratchEntry> {
-    let trust = Path::new(TRUST_CACHE_PATH);
     let mut entries: Vec<(usize, ScratchEntry)> = roots
         .iter()
         .filter_map(|root| {
@@ -1235,7 +1264,6 @@ fn scratch_entries(
                 .flatten()
                 .map(|name| (name.path(), root.shown.join(name.file_name()), root.mount))
         })
-        .filter(|(_, shown, _)| !trust.starts_with(shown))
         .filter_map(|(path, shown, mount)| {
             let (used, bytes) = tree_use(&path, disk, mount, locked)?;
             let leftover = path
@@ -1598,21 +1626,17 @@ fn home_full(path: &Path) -> bool {
     })
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the image's own boot may keep its extracted CA trust store here rather than rebuilding it every time. The variable is set only on this backend, so an image that honors it caches on a machine and silently does without in a container, where there is no disk to cache on. The store is bound to a path of its own because the disk itself is detached before the image runs.
-fn offer_trust_cache(root: &Path) -> Option<PathBuf> {
-    let trust = guest::system_store(root, "trust");
-    let guest_dir = Path::new(TRUST_CACHE_PATH);
-    let bound = mkdir_all(&trust)
-        .and_then(|()| mkdir_all(guest_dir))
-        .and_then(|()| mount(&trust, guest_dir, libc::MS_BIND));
-    if let Err(e) = bound {
+// UNIT_BOUNDARY_DESCRIPTION: a directory an image's boot may keep its extracted trust store in rather than rebuilding it, named to the entrypoint in TRUST_CACHE_ENV. It is a plain directory of the root, so it lasts as long as the root does: an extracted trust store belongs to the image that extracted it, and a new image starts with none.
+fn offer_trust_cache() -> Option<PathBuf> {
+    let dir = Path::new(TRUST_CACHE_PATH);
+    if let Err(e) = mkdir_all(dir) {
         logf!("WARNING: no trust cache directory ({e}); the image re-extracts its CA store every boot");
         return None;
     }
-    Some(guest_dir.to_path_buf())
+    Some(dir.to_path_buf())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the disk's root stays mounted only as long as the boot needs it. Everything the image may keep is on it under other mounts by now — its home, the trust cache, the root's layers — and an open file such as the boot log keeps working once the mount is gone. Left mounted, the disk's root lets anything in the guest write outside HOME and past its root, straight into the record of which image wrote that root or the platform's own state.
+// UNIT_BOUNDARY_DESCRIPTION: the disk's root stays mounted only as long as the boot needs it. Everything the image may keep is on it under other mounts by now — its home and the root's layers — and an open file such as the boot log keeps working once the mount is gone. Left mounted, the disk's root lets anything in the guest write outside HOME and past its root, straight into the record of which image wrote that root or the platform's own state.
 fn leave_disk(root: &Path) {
     if let Err(e) = unmount_detached(root) {
         logf!(
@@ -3963,6 +3987,18 @@ mod tests {
                 h.join(".cache/tool")
             ]
         );
+    }
+
+    // TEST_SCENARIO: a home on btrfs mounted with discard=async gives freed blocks back by itself, so the trim loop stands down; an ext4 home, or a btrfs one on a disk without discard, keeps it.
+    #[test]
+    fn the_trim_loop_stands_down_for_a_discarding_home() {
+        assert!(discards_on_its_own("/dev/vda / btrfs rw 0 0\n/dev/vda /home/agent btrfs rw,noatime,compress=zstd:1,discard=async,space_cache=v2,subvol=/agent 0 0\n"));
+        assert!(!discards_on_its_own(
+            "/dev/vda /home/agent btrfs rw,noatime,compress=zstd:1,space_cache=v2 0 0\n"
+        ));
+        assert!(!discards_on_its_own(
+            "/dev/vda /home/agent ext4 rw,noatime 0 0\n/dev/vdb /data btrfs rw,discard=async 0 0\n"
+        ));
     }
 
     // TEST_SCENARIO: the kernel's lock table names each locked file by device and inode, the device's numbers in hex, also on the lines of a process waiting for a lock.
