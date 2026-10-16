@@ -1591,9 +1591,11 @@ apiServer:
     # -- Connection-pool size, per replica. One pool serves both request
     # handlers and the runtime-delivery worker; delivery jobs hold a
     # connection only for their short queries, never across the call to the
-    # agent, so this sits far below `runtimeDelivery.concurrency`. Raise the
-    # server's `max_connections` (Postgres defaults to 100, shared with
-    # Keycloak) before scaling `replicas` past 100 / poolMax.
+    # agent, so this sits far below `runtimeDelivery.concurrency`. A pool
+    # closes connections idle for 30 s, but under load each pod holds up to
+    # poolMax, and mid-rollout so do the surge pod and the pod still draining:
+    # keep (replicas + 2) × poolMax under the server's `max_connections`
+    # (Postgres defaults to 100, less 3 reserved, shared with Keycloak).
     poolMax: 32
     # Postgres TLS mode for an external DB: require | verify-ca | verify-full.
     # null = no TLS (the in-cluster postgres). verify-ca/verify-full need caCert.
