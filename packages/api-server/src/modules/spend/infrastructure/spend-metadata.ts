@@ -9,6 +9,8 @@ export interface SpendMetadata {
   readonly dialect: ApiDialect;
   readonly providers: readonly string[];
   readonly connectionId: string | null;
+  readonly sessionId: string | null;
+  readonly harness: string | null;
   readonly model: string | null;
   readonly usage: RawUsage;
   readonly replyBytes: number | null;
@@ -39,6 +41,8 @@ export function parseSpendMetadata(
     dialect: dialect as ApiDialect,
     providers: (text(fields.providers) ?? "").split(",").filter(Boolean),
     connectionId: text(fields.conn) ?? null,
+    sessionId: text(fields.session) ?? null,
+    harness: text(fields.harness) ?? null,
     model: text(fields.model) ?? null,
     usage: {
       inputTokens: amount(fields.input_tokens),

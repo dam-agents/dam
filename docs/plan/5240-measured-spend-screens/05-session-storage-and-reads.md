@@ -35,10 +35,14 @@ Read [README — Storage](./README.md#storage) and [README — The contract](./R
    - In `packages/api-server/src/modules/spend/services/spend-ingest.ts` `record` (around lines 169–213), build the row with `callingAgentId: record.agentId` and `sessionId`: the record's session when `has(record.agentId, session)`, else `""`.
    - In `packages/api-server/src/modules/spend/services/spend-check.ts` `checkCall`: the gate's call carries the session from the `platform.spend` metadata (extend the gate's spend call parsing and `CheckedCall`); a refusal row gets `callingAgentId` = the gate's `agentId` and the checked session; `callStarted` stores the session in `m_session`, so the sweep for calls without a record (`settleUnrecordedCalls`) keeps it.
    - Wire the port in `packages/api-server/src/modules/spend/compose.ts` and `packages/api-server/src/bootstrap.ts`.
+     `bootstrap.ts` composes the session directory after spend, so bind the port lazily or compose the directory earlier.
+   - The gate's spend-call parsing is in `apps/ext-authz/grpc.ts` and its type in `modules/approvals/services/ext-authz-gate.ts` (`SpendCall`).
+     `settleReleased` builds its row from the call meta, so it reads `m_agent` and `m_session` too; `mapAmounts` and the ledger's `Counted` type get `durationMs`.
+   - `record()` builds the row on every record, periodic ones too, so the check runs per record; positive answers come from the cache, and a stray session costs one database read per record.
 6. **Reads.**
    - `spend-ledger.ts` `breakdownRows` (slice 01) also groups by `session_id` and `calling_agent_id`, and sums `duration_ms`.
      When the grouped rows get too many for a long range, split it into two queries (one without the session keys for the totals and per-day rows, one per session for the session-type fold); measure on the dev database first.
-   - `domain/breakdown.ts` `foldBreakdown` fills `modelTimeMs`, `bySessionType` and `byCallingAgent`.
+   - `domain/breakdown.ts` `foldBreakdown` fills `modelTimeMs`, `bySessionType` and `byCallingAgent`; it stays a pure function, so the service reads the categories through a session-directory port first and passes them in.
      `bySessionType`: a row whose calling agent is not empty and is not its payer is `"subagents"`; the other rows map their session ids to categories with the session directory's `categorize(agentIds, sessionIds)` (`services/session-directory-service.ts`), where `agentIds` are the rows' calling agents; an empty session id, or one that the directory does not know, is `"none"`.
      For a sub-agent's own page (next bullet), its rows are its own calls, so they map by session, not to `"subagents"`.
      `byCallingAgent` is filled only when the input names an agent.

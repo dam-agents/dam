@@ -34,6 +34,8 @@ export interface CallRecord {
   readonly payer: string;
   readonly connectionId: string | null;
   readonly providers: readonly string[];
+  readonly sessionId: string | null;
+  readonly harness: string | null;
   readonly path: string;
   readonly dialect: ApiDialect;
   readonly model: string | null;
@@ -45,6 +47,7 @@ export interface CallRecord {
   readonly final: boolean;
   readonly refusedByGate: boolean;
   readonly startedAt: Date;
+  readonly durationMs: number;
 }
 
 export type CallMeasure =

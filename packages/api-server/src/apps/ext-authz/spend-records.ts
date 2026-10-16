@@ -84,6 +84,7 @@ function callRecordOf(
     common?.metadata?.filterMetadata[SPEND_METADATA_NAMESPACE],
   );
   if (!spend) return null;
+  const startedAt = common?.startTime ?? new Date();
   return {
     ...spend,
     agentId,
@@ -93,6 +94,10 @@ function callRecordOf(
     refusedByGate:
       common?.responseFlags?.unauthorizedDetails?.reason ===
       ResponseFlags_Unauthorized_Reason.EXTERNAL_SERVICE,
-    startedAt: common?.startTime ?? new Date(),
+    startedAt,
+    durationMs: common?.duration
+      ? common.duration.seconds * 1000 +
+        Math.round(common.duration.nanos / 1_000_000)
+      : Math.max(0, Date.now() - startedAt.getTime()),
   };
 }

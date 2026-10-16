@@ -78,7 +78,7 @@ Agreed with Petr on 2026-10-16 (grill-me), plus the four gap answers of the plan
    No screen reads a spend figure from them.
    The Model Router keeps its own telemetry record, without a cost.
 10. **Storage.** `spend_daily` gets two key columns, `session_id` and `calling_agent_id` (empty means none), and a `duration_ms` counter.
-    One write per call stays.
+    One write per call stays (G10 adds one more, once per call, for `spend_calls`).
     At ingest, a session that the calling agent's session directory does not have counts as no session.
     The agent's own pod writes that directory, so the check stops stray and wrong ids, not a deliberate agent (G6).
 11. **One pull request, with the escape hatch** above.
@@ -110,6 +110,18 @@ Gap answers (Petr, 2026-10-16, after the first plan review):
 - **G8 — Terminal sessions are translated (slice 04).** In a terminal session, Codex, Bob and Pi run under their own new id, not our session id.
   Codex keeps its thread id in `~/.codex/platform-sessions/<our id>`, Bob its task id in `~/.bob/platform-sessions/<our id>`, and Pi writes a new random id into `~/.pi/agent/sessions/<our id>.jsonl`.
   The Model Router maps such an id back to our session id; Claude Code's terminal already runs with `--session-id <our id>`.
+  G9 replaces the Pi part.
+
+Implementation answers (Petr, 2026-10-16, before slice 04):
+
+- **G9 — Pi's terminal stamps our id itself.** Pi's extension sets `x-platform-session` to `HARNESS_SESSION_ID` when it is set, else to Pi's own session id.
+  Only the terminal's PTY sets `HARNESS_SESSION_ID`, so a chat sends Pi's id, which is our id there.
+  Pi writes its session file only after the first reply, and `/new` or `/fork` in Pi's TUI starts another Pi id, so a router lookup of the file would miss those calls.
+  Codex and Bob keep the router mapping of G8: their SessionStart hooks write the pin before the first call.
+  The smoke test showed that Codex's TUI also calls on a title thread with no parent, so a Codex terminal stamps `HARNESS_SESSION_ID` too (`env_http_headers` in `/etc/codex/config.toml`); the router takes a harness's stamp only for an id that is no session of the runtime and has no pin (Petr, 2026-10-16).
+- **G10 — A measured cost per turn (slice 05b).** The chat's turn line (`TurnTelemetry`) summed the harnesses' own cost, against decisions 1 and 9.
+  It now reads measured spend: a table `spend_calls` keeps one row per call (calling agent, session, start time, unit, cost), and a turn's cost is the sum of the calls of its session that start inside the turn's time range.
+  This amends decision 10 (a call gets a second write, once, when it ends) and G7 (`spend_calls` has a 30-day retention job, the window that the chat reads turns from).
 
 ## Approach
 
@@ -117,18 +129,19 @@ Read these architecture pages first: [spend-limits](../../architecture/spend-lim
 
 ### Where each figure comes from
 
-| Figure                                             | Today                                     | After this feature                                     | Slice  |
-| -------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------ | ------ |
-| Home card                                          | `spend.daily` (meter), rolling days       | `spend.breakdown` (meter), calendar periods            | 02     |
-| Settings › Usage                                   | `metrics.spendBreakdown` (telemetry)      | `spend.breakdown`; telemetry only in "earlier"         | 03     |
-| Agent Usage section                                | `metrics.spendBreakdown` (telemetry)      | `spend.breakdown`                                      | 03, 06 |
-| Model time                                         | telemetry latency sum                     | `spend_daily.duration_ms`                              | 06     |
-| Spend by session type                              | telemetry + session directory             | `spend_daily.session_id` + session directory           | 05, 06 |
-| Sidebar session cost                               | `metrics.sessionCosts` (telemetry)        | `spend.sessions`                                       | 05, 06 |
-| Bob "Harness spend" card, session row Bob fallback | the Bob harness's own count, from the pod | removed; measured Bobcoins line                        | 06     |
-| `get_metrics` totals, by model, session, sub-agent | telemetry                                 | the meter                                              | 07     |
-| `get_metrics` per-call rows                        | telemetry                                 | telemetry, without cost                                | 07     |
-| `dam metrics <agent>`                              | `metrics.overview` (telemetry)            | `spend.breakdown` + `spend.sessions`; calls: telemetry | 07     |
+| Figure                                             | Today                                     | After this feature                                     | Slice   |
+| -------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------ | ------- |
+| Home card                                          | `spend.daily` (meter), rolling days       | `spend.breakdown` (meter), calendar periods            | 02      |
+| Settings › Usage                                   | `metrics.spendBreakdown` (telemetry)      | `spend.breakdown`; telemetry only in "earlier"         | 03      |
+| Agent Usage section                                | `metrics.spendBreakdown` (telemetry)      | `spend.breakdown`                                      | 03, 06  |
+| Model time                                         | telemetry latency sum                     | `spend_daily.duration_ms`                              | 06      |
+| Spend by session type                              | telemetry + session directory             | `spend_daily.session_id` + session directory           | 05, 06  |
+| Sidebar session cost                               | `metrics.sessionCosts` (telemetry)        | `spend.sessions`                                       | 05, 06  |
+| Turn cost (chat, delegation card, docked panel)    | telemetry turn summary `costUsd`          | `spend.turns` (`spend_calls`)                          | 05b, 06 |
+| Bob "Harness spend" card, session row Bob fallback | the Bob harness's own count, from the pod | removed; measured Bobcoins line                        | 06      |
+| `get_metrics` totals, by model, session, sub-agent | telemetry                                 | the meter                                              | 07      |
+| `get_metrics` per-call rows                        | telemetry                                 | telemetry, without cost                                | 07      |
+| `dam metrics <agent>`                              | `metrics.overview` (telemetry)            | `spend.breakdown` + `spend.sessions`; calls: telemetry | 07      |
 
 ### Measuring start T
 
@@ -228,6 +241,21 @@ The counts (`calls`, tokens, `durationMs`) include the sub-agents too.
 `from` defaults to T's day and `to` to today.
 `truncated` comes from reading `limit + 1` rows, never from a full page.
 
+**`spend.turns`** (slice 05b, G10):
+
+```ts
+// input
+{ agentId: string; sessionId?: string; windows: { from: string; to: string }[] /* ISO instants, 1 to 200 */ }
+// output
+interface SpendTurns {
+  windows: { from: string; to: string; amounts: SpendAmount[]; calls: number }[]; // in the order of the input
+}
+```
+
+It sums the `spend_calls` rows that the agent made (`calling_agent_id = agentId`), in the session when `sessionId` is set, whose `started_at` is inside each window (both ends included).
+The delegation card and the docked panel pass the sub-agent's id and no session.
+The windows span at most 31 days, the window that the chat reads turns from.
+
 ### The session stamp
 
 ```mermaid
@@ -244,8 +272,8 @@ flowchart LR
   S -->|session in the calling agent's directory?| D[(spend_daily)]
 ```
 
-1. The Model Router finds the session as today (`domain/session-of.ts`: Bob `x-task-id`, Codex `session-id`, Claude Code `metadata.user_id`; a harness sub-agent's call maps to its parent session), and from Pi's new `x-platform-session` (G1).
-   When the id is not a session of the runtime, the router maps a terminal session's harness id back to our session id (G8).
+1. The Model Router finds the session as today (`domain/session-of.ts`: Bob `x-task-id`, Codex `session-id`, Claude Code `metadata.user_id`; a harness sub-agent's call maps to its parent session), and from Pi's new `x-platform-session` (G1, G9).
+   When the id is not a session of the runtime, the router maps a Codex or Bob terminal session's harness id back to our session id through their pin files (G8).
    It sets `x-platform-session` (when it found one) and `x-platform-harness` on the call that it forwards, and it never passes a value that a harness sent.
 2. The gateway's Lua meter copies both values into the call's `platform.spend` metadata, so periodic records, final records, refusals and estimates carry them.
 3. The terminating chain's route removes both headers before the provider, on every chain, the same way it removes `x-platform-conn`.
@@ -268,7 +296,12 @@ Only the two upserts (`spend-ledger.ts` `add`, `addRefusal`) and the Redis call 
 A busy agent gets one row per day, Connection, model and session.
 On the local database (2026-10-16), `spend_daily` holds 2.9 rows per agent per day on average (at most 8), and an agent starts a median of 1 session per day (at most 26, over 30 days).
 For an install with 300 agents, 5 sessions and 3 rows each, that is about 4,500 rows per day, or 1.6 million per year; Postgres reads them per owner on the (owner, day) index.
-There is no retention job (G7).
+There is no retention job for `spend_daily` (G7).
+
+`spend_calls` (slice 05b, G10) keeps one row per call: call id (the key), owner, payer, calling agent, session, start time, unit and cost.
+The ingest writes it once per call, when the call is settled (its final record, the sweep's estimate, or a late real record that corrects an estimate), with the call's totals; periodic records do not write it.
+A daily job deletes rows older than 30 days, with the advisory-lock pattern of the session directory's job.
+On the local database (2026-10-16), the agents made 17 to 119 calls a day; an install with 300 agents at about 200 calls each gets about 60,000 rows a day, about 1.8 million at the 30-day limit.
 
 ### Units and display rules
 
@@ -303,7 +336,9 @@ The Settings URL carries the period: `/settings/usage?period=<id>`.
 ### Known limits
 
 - Calls that skip the Model Router (Bedrock, a custom template's own harness) have no session.
-- A sub-agent without a recorded spawning session (spawned before #5229, or when the spawn could not name its session) adds its spend to no session of its driver; it still counts under "Sub-agents" and in every total.
+- A sub-agent without a recorded spawning session (spawned before #5229, spawned from a driver script, or when the spawn could not name its session) adds its spend to no session of its driver; it still counts under "Sub-agents" and in every total.
+- A turn's cost counts the calls that start inside the turn's time range, which telemetry gives; calls between turns, such as a compaction, count in no turn.
+  The turn line needs the telemetry store, as before.
 - `spend_daily` has no retention: rows grow with the sessions of each day (G7).
 - A `claude -p` run that the agent starts in its own shell has its own session id, which is not in the session directory, so it counts as no session.
   Telemetry folded such a run into its parent session; the meter cannot.
@@ -314,24 +349,27 @@ The Settings URL carries the period: `/settings/usage?period=<id>`.
 
 ## Sub-issues
 
-| #     | Title                                                                            | Scope                                                                                                                                                                                                                                                 | Depends on |
-| ----- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| ✅ 01 | [Measuring start and the grouped read](01-measuring-start-and-grouped-read.md)   | Table `spend_metering` with T; `spend.metering`; `spend.breakdown` (totals, by day, agent, model, Connection). Backend only.                                                                                                                          | —          |
-| ✅ 02 | [Home card](02-home-card.md)                                                     | Today · This month · Last month, range line, paid total, plan line and checkbox, near-zero line, Bob line, notice, "View details" with the period in the URL.                                                                                         | 01         |
-| ✅ 03 | [Usage pages on measured spend](03-usage-pages.md)                               | Settings › Usage and the agent Usage section: the picker, the measured cards, the notice and "View the earlier estimates" (the old view, unchanged).                                                                                                  | 01, 02     |
-| 04    | [The session stamp](04-session-stamp.md)                                         | Pi's session marker; terminal ids mapped back to our session id; the router stamps session and harness; the meter copies them; the gateway removes them; the record gets `duration`; a new session reaches the directory at once. Logged, not stored. | —          |
-| 05    | [Spend per session: storage and reads](05-session-storage-and-reads.md)          | Migration of the new keys; the session check at ingest; `spend.breakdown` gains model time, session type (with "Sub-agents"), calling agent; `spend.sessions` with the sub-agents spawned from each session. Backend only.                            | 01, 04     |
-| 06    | [Spend per session on the screens](06-session-screens.md)                        | Sidebar session cost with its sub-agent part, Spend by session type, Model time, the agent's sub-agents, a sub-agent's own page; the Bob card goes.                                                                                                   | 03, 05     |
-| 07    | [`get_metrics` and `dam metrics` on measured spend](07-agent-metrics-and-cli.md) | Totals, by model, per session, per sub-agent from the meter; per-call rows on telemetry without cost.                                                                                                                                                 | 05         |
-| 08    | [Clean-up and records](08-cleanup-and-records.md)                                | Router record without cost; the proxy cost cross-check; the ADR; the architecture pages.                                                                                                                                                              | 04, 07     |
+| #     | Title                                                                            | Scope                                                                                                                                                                                                                                                 | Depends on  |
+| ----- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| ✅ 01 | [Measuring start and the grouped read](01-measuring-start-and-grouped-read.md)   | Table `spend_metering` with T; `spend.metering`; `spend.breakdown` (totals, by day, agent, model, Connection). Backend only.                                                                                                                          | —           |
+| ✅ 02 | [Home card](02-home-card.md)                                                     | Today · This month · Last month, range line, paid total, plan line and checkbox, near-zero line, Bob line, notice, "View details" with the period in the URL.                                                                                         | 01          |
+| ✅ 03 | [Usage pages on measured spend](03-usage-pages.md)                               | Settings › Usage and the agent Usage section: the picker, the measured cards, the notice and "View the earlier estimates" (the old view, unchanged).                                                                                                  | 01, 02      |
+| ✅ 04 | [The session stamp](04-session-stamp.md)                                         | Pi's session marker; terminal ids mapped back to our session id; the router stamps session and harness; the meter copies them; the gateway removes them; the record gets `duration`; a new session reaches the directory at once. Logged, not stored. | —           |
+| 05    | [Spend per session: storage and reads](05-session-storage-and-reads.md)          | Migration of the new keys; the session check at ingest; `spend.breakdown` gains model time, session type (with "Sub-agents"), calling agent; `spend.sessions` with the sub-agents spawned from each session. Backend only.                            | 01, 04      |
+| 05b   | [Spend per call and per turn](05b-call-rows-and-turns.md)                        | Table `spend_calls` with one row per call and its 30-day retention job; `spend.turns`. Backend only (G10).                                                                                                                                            | 05          |
+| 06    | [Spend per session on the screens](06-session-screens.md)                        | Sidebar session cost with its sub-agent part, Spend by session type, Model time, the agent's sub-agents, a sub-agent's own page, the measured turn cost; the Bob card goes.                                                                           | 03, 05, 05b |
+| 07    | [`get_metrics` and `dam metrics` on measured spend](07-agent-metrics-and-cli.md) | Totals, by model, per session, per sub-agent from the meter; per-call rows on telemetry without cost.                                                                                                                                                 | 05          |
+| 08    | [Clean-up and records](08-cleanup-and-records.md)                                | Router record without cost; the proxy cost cross-check; the ADR; the architecture pages.                                                                                                                                                              | 04, 07      |
 
 ```mermaid
 flowchart LR
   01 --> 02 --> 03
   01 --> 05
   04 --> 05
+  05 --> 05b
   03 --> 06
   05 --> 06
+  05b --> 06
   05 --> 07
   04 --> 08
   07 --> 08
@@ -453,6 +491,11 @@ Keep every text in one place: `packages/ui/src/modules/spend/lib/copy.ts`.
 | Tooltip                  | 12 API calls · 40k tokens in / 3k out · $0.1234 paid · $0.40 covered by your plan, at no extra cost |
 | Tooltip, with sub-agents | the same, then: incl. $0.05 by sub-agents started in this session                                   |
 
+### Turn line (slice 06, G10)
+
+The turn line in the chat, the delegation card and the docked panel keeps its duration, calls and tokens; its cost reads measured spend in the units of the sidebar row: "$0.12", "$0.40 covered" or "0.05 Bobcoins".
+A turn with no measured call shows no cost.
+
 ### `dam metrics <agent>` (slice 07)
 
 - Summary columns: AGENT · WINDOW (10–16 Oct 2026, UTC days) · API CALLS · SESSIONS · MODEL TIME · SPEND (each unit, for example "$12.30; $4.00 subscription value; 0.5 Bobcoins").
@@ -482,6 +525,7 @@ Use the IBM VPN for IBM LiteLLM, or an agent on the Claude subscription when the
 5. **Per session.** One prompt each in a Claude Code, a Codex, a Bob and a Pi chat, and one prompt in a terminal session of each harness: each session row in the sidebar shows its cost.
    The sum of the session costs plus the "No session" spend equals the agent's total for the day (`spend.sessions` against `spend.breakdown`).
    Model time on the agent section grows by about the duration of the calls.
+   With the telemetry store on, each chat turn line shows a cost, and the turn costs of a session add up to its sidebar cost, less the calls between turns.
 6. **Sub-agents.** A driver spawns a sub-agent from a chat, and the sub-agent makes a call: Settings › Usage counts it under the driver; the driver's agent section lists the sub-agent under Spend by agent and its spend under "Sub-agents"; the chat's sidebar cost includes it, and the tooltip names that part; the driver's `get_metrics` with `granularity: "subagent"` returns a row with the sub-agent's id; the sub-agent's own page shows its calls.
 7. **The stamp does not leave the gateway.** An Envoy probe with an echo upstream (see the slice 04 smoke test) shows no `x-platform-session` or `x-platform-harness` header upstream.
 8. **CLI.** `dam metrics <agent>` prints the summary, by-model and session tables with SPEND per unit; recent calls show the telemetry note when the store is off.

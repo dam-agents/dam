@@ -336,7 +336,7 @@ describe("routing by qualified name", () => {
    * `claude/` prefix, lowercased; the call leaves for Curve Bender's host with
    * its placeholder as a bearer and the upstream id spelled as served, and the
    * client's own credential is dropped. The same body naming IBM leaves for
-   * IBM with IBM's placeholder. */
+   * IBM with IBM's placeholder, stamped with the harness. */
   it("sends each call to its provider with that provider's placeholder", async () => {
     seen.length = 0;
     const a = await call(
@@ -362,7 +362,7 @@ describe("routing by qualified name", () => {
     expect(seen[1]!.headers.authorization).toBe(
       "Bearer platform:conn:conn-ibm",
     );
-    expect(seen[1]!.headers[HARNESS_HEADER]).toBeUndefined();
+    expect(seen[1]!.headers[HARNESS_HEADER]).toBe("claude-code");
     expect(seen[1]!.body.model).toBe("aws/claude-opus-4-8");
   });
 

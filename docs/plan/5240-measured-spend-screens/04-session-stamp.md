@@ -19,25 +19,25 @@ Read [README — The session stamp](./README.md#the-session-stamp) first.
 A change to the Lua meter needs a probe against a real Envoy: the repository has no Lua runtime.
 
 1. **Pi sends its session** in `packages/agents/pi-agent/rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts`:
-   - Register a `before_provider_headers` handler (Pi 1.1.0, `ExtensionAPI.on`; handlers change `event.headers` in place) that sets `x-platform-session` to `ctx.sessionManager.getSessionId()`.
-   - Set it only on calls to the router provider (`ROUTER_PROVIDER`); find in Pi's `ExtensionContext` how a handler knows the call's provider, and leave other providers' calls unchanged.
+   - Register a `before_provider_headers` handler (Pi 1.1.0, `ExtensionAPI.on`; handlers change `event.headers` in place) that sets `x-platform-session` to `HARNESS_SESSION_ID` when it is set (a terminal, G9), else to `ctx.sessionManager.getSessionId()`.
+   - Set it only on calls to the router provider: the event has no provider, but the router provider's configured `X-Platform-Harness` header is in `event.headers`; leave other providers' calls unchanged.
    - pi-acp takes the ACP session id from Pi's own session id (`state.sessionId` in pi-acp 0.0.34) and runs one Pi process per session, so in a chat this id is our session id.
 2. **The router reads the session** in `packages/agent-runtime/src/modules/model-router/`:
-   - `domain/session-of.ts`: for the harness `pi`, read the session from `x-platform-session`.
-     Pass the harness to `sessionOf` (today `compose.ts` line 37 drops it).
+   - `domain/session-of.ts`: read the session from `x-platform-session` after the other harnesses' markers, so agent-runtime needs no harness name; only Pi sends it.
    - Update `docs/architecture/harness-config.md`, which says that Pi's calls carry no session marker; Pi still has no harness sub-agents.
 3. **Terminal ids map back to our session id** in the agent-runtime:
-   - In a terminal session, the harness runs under its own id: Codex keeps its thread id in `~/.codex/platform-sessions/<our id>` (`packages/agents/codex/rootfs/usr/local/bin/harness-terminal`), Bob its task id in `~/.bob/platform-sessions/<our id>` (`packages/agents/bob/rootfs/usr/local/bin/harness-terminal`), and Pi writes a new random id into the header line of `~/.pi/agent/sessions/<our id>.jsonl` (`packages/agents/pi-agent/rootfs/usr/local/bin/harness-terminal`).
-     Claude Code's terminal runs with `--session-id <our id>`, so it needs nothing.
-   - Add a lookup `terminalSessionOf(harnessId): string | null` that reads those files for the runtime's terminal sessions (`sessionMetadata` entries with `mode: "terminal"`, `packages/agent-runtime/src/server.ts` around lines 645–700), keyed by the harness's id.
+   - In a terminal session, Codex and Bob run under their own id: Codex keeps its thread id in `~/.codex/platform-sessions/<our id>`, Bob its task id in `~/.bob/platform-sessions/<our id>` (the manifests' `terminalSessionPins`, read by `acp/infrastructure/terminal-session-pins.ts`).
+     Pi stamps our id itself (step 1, G9), and Claude Code's terminal runs with `--session-id <our id>`, so they need nothing.
+   - Add a lookup `terminalSessionOf(harnessId): string | null` over the pin directories, keyed by the harness's id.
      Keep the result in memory; on a miss, read the files again, at most once every few seconds, because a harness writes its id only after it starts.
    - Wire it into the router (`composeModelRouter` in `server.ts`, around line 268): when the session that `sessionOf` found is not a session of the runtime, use `terminalSessionOf` to get our id.
-     Keep the found id when the lookup has no answer.
+     With no pin, use the call's own `x-platform-session`, which a Codex terminal sends from `HARNESS_SESSION_ID` (`env_http_headers` in `packages/agents/codex/rootfs/etc/codex/config.toml`) and which covers the TUI's title thread; with neither, keep the found id.
    - The same id also reaches `sessionModelOf`; a terminal starts on its model already, so no change in model choice is expected.
 4. **The router stamps the call** in `packages/agent-runtime/src/modules/model-router/services/model-router.ts`:
    - Add the constant `SESSION_HEADER = "x-platform-session"` next to `HARNESS_HEADER` (line 38), and add it to `REQ_DROP` (lines 113–128), so a value that a harness sends never passes unchanged.
    - Where the outgoing headers are built (after the credential placeholder, around line 278): set `x-platform-session` to the session from steps 2–3 (`handle.parentSessionId ?? handle.sessionId`, around line 243) when there is one, and set `x-platform-harness` to the call's harness (around line 456).
      `HARNESS_HEADER` stays in `REQ_DROP`.
+   - Set a stamp only when its value is at most 128 characters of printable ASCII, the meter's rule (step 6): a Claude Code `user_id` can hold any text, and an invalid header value would make `fetch` throw and fail the call.
 5. **A new session reaches the directory at once** in `packages/agent-runtime/src/modules/runtime-channel/session-directory-report.ts`:
    when the current set has a session id that the last report did not have, send without the debounce (`SESSION_DIRECTORY_DEBOUNCE_MS` in `runtime-channel/compose.ts` stays for every other change).
    So the first call of a new session finds its session at ingest in slice 05.

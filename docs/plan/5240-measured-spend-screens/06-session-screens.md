@@ -24,14 +24,16 @@ The texts are in [README — Wording](./README.md#wording): the sidebar row (G2)
    - Remove `useSessionCosts` and its types from the UI when nothing else uses them.
 2. **Spend by session type** in `MeasuredUsage` (slice 03), on Settings and on the agent section: rows from `bySessionType`, labelled with `SESSION_CATEGORY_LABELS` (`modules/sessions/lib/session-category.ts`), "Sub-agents" for `"subagents"` and "No session" for `"none"`, each of the last two with its `HelpTip`.
    Leave `SessionTypeSpendBars` and its "Unattributed" label as they are for the earlier-estimates view.
-3. **Model time:** the stat card "Model time" from `modelTimeMs`, formatted with `durationSegments` (`modules/metrics/lib/format.ts`), on both pages.
+3. **Model time:** the stat card "Model time" from `modelTimeMs`, formatted with `formatDurationMs` (`packages/ui/src/lib/format-time.ts`; slice 03 removed `durationSegments`), on both pages.
 4. **The agent's sub-agents:** on the agent section, a "Spend by agent" card from `byCallingAgent`, shown only when a sub-agent has spend in the period; the first row is "‹name› (this agent)", then one row per sub-agent, labelled from the app's agent list, else its id.
-5. **A sub-agent's own page:** where slice 03 shows only `RootDriverSpendNote`, show `MeasuredUsage agentId={subAgentId}` too (`spend.breakdown` reads its own calls, slice 05) with the line "These are this sub-agent's own calls.
+5. **A sub-agent's own page:** below the limit card's `RootDriverSpendNote` (`AgentSpendLimitCard` renders it for a sub-agent), show `MeasuredUsage agentId={subAgentId}` too (`spend.breakdown` reads its own calls, slice 05) with the line "These are this sub-agent's own calls.
    They count for the limits of ‹root driver›."
-   The limit card stays hidden for a sub-agent, as today.
-6. **Remove the Bob card:** `HarnessSpendCard` (`modules/metrics/components/harness-spend-card.tsx`), `useHarnessSpend` (`modules/metrics/api/harness-spend.ts`) and `HARNESSES_WITH_OWN_SPEND`, and `formatHarnessSpend` when nothing uses it.
+6. **The turn line (G10):** `TurnTelemetry` shows the measured cost from `spend.turns` in place of the telemetry `costUsd`, in the units of the [Wording](./README.md#turn-line-slice-06-g10).
+   The chat view reads all its turns' windows (`startedAt`, `endedAt`) in one `spend.turns` query for the session; the delegation card and the docked panel read theirs with the sub-agent's id.
+   Keep the duration, calls and tokens from telemetry.
+7. **Remove the Bob card:** `HarnessSpendCard` (`modules/metrics/components/harness-spend-card.tsx`), `useHarnessSpend` (`modules/metrics/api/harness-spend.ts`) and `HARNESSES_WITH_OWN_SPEND`, and `formatHarnessSpend` when nothing uses it.
    Leave the agent-runtime's `sessions.spend` procedure alone in this slice; slice 08 decides about it.
-7. **Docs.**
+8. **Docs.**
    - `docs/architecture/metrics.md`: remove § Harness-reported spend; in § Contract, the Session costs read moves to the spend ledger (`spend.sessions`); state that the sidebar shows measured spend per session.
    - `docs/architecture/spend-limits.md` § Screens: the sidebar session cost, spend by session type, Model time and the sub-agent rows read Metered Spend.
 
@@ -45,6 +47,7 @@ The texts are in [README — Wording](./README.md#wording): the sidebar row (G2)
 - [ ] Model time shows on both pages and grows after a prompt.
 - [ ] A driver with a sub-agent shows both under Spend by agent on its section; the sub-agent's page shows its own calls and the line about the root driver.
 - [ ] No component reads Bob's own spend count any more.
+- [ ] With the telemetry store on, each chat turn line shows the measured cost of its calls; no screen shows the telemetry turn `costUsd`.
 
 ## Smoke test
 

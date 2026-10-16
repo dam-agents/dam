@@ -18,7 +18,7 @@ Apply `/typescript-engineering`.
    - `infrastructure/call-exporter.ts` `otlpLogRecord` (lines 75–114): stop sending `cost_usd_micros` and `platform.provider.reported_cost_usd`.
    - `domain/usage.ts`: remove `costUsdMicros` when nothing uses it; keep the usage parser, because the record keeps the token counts.
    - Keep the model catalog's price table (`model-catalog/infrastructure/model-prices.json`): the harness catalogs (Bob's model info, Pi's provider metadata) still show its prices.
-2. **Dead telemetry reads:** remove `metrics.sessionCosts` (contract, service, reader) and every other read that nothing calls after slices 06 and 07.
+2. **Dead telemetry reads:** remove `metrics.sessionCosts` (contract, service, reader), the telemetry turn summary's `costUsd` (slice 06 stops showing it), and every other read that nothing calls after slices 06 and 07.
    Keep what the earlier-estimates view (`metrics.spendBreakdown`) and the per-call rows (`metrics.overview`'s `contextPerCall`, `get_metrics` `call`) need.
    The agent-runtime's `sessions.spend` and the session list's `spend` field (Bob's own count): remove them only when nothing reads them; else leave them and say so in the commit body.
 3. **The proxy cost cross-check** (decision 13):
@@ -32,7 +32,9 @@ Apply `/typescript-engineering`.
    - Number: the next free one in `docs/adrs/index.md`; owner `@PetrBulanek`; `subsystem: spend-limits`; no `supersedes` (that would mark all of ADR-098 superseded).
    - Thesis, agreed with Petr: "The Model Router stamps each model call that it forwards with the session and the harness, and the gateway meter records them with the call.
      Every spend figure comes from the meter, per session too; the session split is for display only, and the router's own record carries no cost."
-   - The body says that it amends the spend part of ADR-098: the router's record is no longer the spend source per session, and the spend reader no longer prefers it for any spend figure.
+   - The body says that it amends the spend part of ADR-098: the router's record is no longer the spend source of any spend figure.
+     The telemetry reader still prefers the router's record over the harness's own for the earlier estimates; without a cost on the router's record, that view shows little for days after the upgrade, which is accepted (README, Known limits).
+   - It also records G10: the per-call rows (`spend_calls`) for the turn cost, with their second write per call and their 30-day retention.
    - The decision covers the parts that make the stamp work for every routed harness: Pi's extension sends its session id, and the router maps a terminal session's harness id back to our session id.
    - Consequences with evidence: one usage parser for spend instead of two; the session parts add up to the trusted total, with the sub-agents under the session that spawned them; calls that skip the router (Bedrock, a custom template's own harness) still count, with no session; `claude -p` runs inside the agent count as no session; the agent's pod writes the session directory, so the ingest check turns a session that the agent never reported into no session but does not stop a deliberate agent from adding rows under itself; telemetry keeps the per-call rows; the session key multiplies the ledger's rows by the sessions of a day (local measure 2026-10-16: a median of 1 new session per agent per day, at most 26).
    - Run `mise run //docs:fix:adr-index`.

@@ -315,7 +315,7 @@ func buildTerminatingChain(p bootstrapParams, c envoyHostChain) ev {
 					"name":                      "default",
 					"domains":                   []any{"*"},
 					"routes":                    buildChainForwardRoutes(c),
-					"request_headers_to_remove": []any{connectionAddressHeader},
+					"request_headers_to_remove": []any{connectionAddressHeader, sessionStampHeader, harnessStampHeader},
 				},
 			},
 		},

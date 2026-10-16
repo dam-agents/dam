@@ -5,7 +5,7 @@
 // fields must match Envoy's source-of-truth protos, so field numbers are pinned
 // here.
 //
-// Source: github.com/envoyproxy/envoy v1.39.2 → api/envoy/service/accesslog/v3/als.proto
+// Source: github.com/envoyproxy/envoy v1.39.3 → api/envoy/service/accesslog/v3/als.proto
 //                                              api/envoy/data/accesslog/v3/accesslog.proto
 //                                              api/envoy/config/core/v3/base.proto (Metadata)
 
@@ -13,6 +13,7 @@ syntax = "proto3";
 
 package envoy.service.accesslog.v3;
 
+import "google/protobuf/duration.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/wrappers.proto";
@@ -51,6 +52,7 @@ message AccessLogCommon {
   google.protobuf.Timestamp start_time = 5;
   ResponseFlags response_flags = 16;
   Metadata metadata = 17;
+  google.protobuf.Duration duration = 23;
   AccessLogType access_log_type = 33;
 }
 

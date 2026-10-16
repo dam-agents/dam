@@ -26,7 +26,7 @@ The launch scripts fall back to `dummy-placeholder` only when nothing sets it.
 
 ### The Model Router
 
-Every call Codex makes goes to the agent-runtime [Model Router](../../../docs/architecture/harness-config.md#the-model-router) on the pod's loopback: [`config.toml`](rootfs/etc/codex/config.toml) fixes the `openai-platform` provider's `base_url` there (the id stays, since rollouts record it), speaks the Responses API only (`wire_api = "responses"`), names the harness with `http_headers`, and reads its model catalog from the router's `model_catalog_url`.
+Every call Codex makes goes to the agent-runtime [Model Router](../../../docs/architecture/harness-config.md#the-model-router) on the pod's loopback: [`config.toml`](rootfs/etc/codex/config.toml) fixes the `openai-platform` provider's `base_url` there (the id stays, since rollouts record it), speaks the Responses API only (`wire_api = "responses"`), names the harness with `http_headers`, sends the platform's session id in a terminal with `env_http_headers`, and reads its model catalog from the router's `model_catalog_url`.
 The router routes each call by its provider-qualified model name (`ibm/gpt-5.5`, `cb/rits/zai-org/glm-5-3`) to that Connection's host with the Connection's placeholder, so one Codex process serves every granted provider and no `-c base_url` override is needed on any thread, the title thread included.
 A session's subagent model (`subagentModel`) is the router's: Codex's subagent threads carry their own `thread-id` beside the session's, and the router sends their calls to that model, whatever the thread asked for; a platform sub-agent spawned from the session runs on it too, whatever model the spawn names.
 
