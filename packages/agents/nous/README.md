@@ -78,7 +78,7 @@ The pinned tag is the `version` in [`image.toml`](image.toml).
 
 ## CI / publishing
 
-The nous image is published by CI (`.github/workflows/cd.yml`): the per-arch `build-workloads` job runs after `merge-agents` — nous builds `FROM` the default image, so it pulls its base by the same per-commit tag — and `merge-workloads` publishes the multi-arch manifest to `quay.io/dam-agents/nous`.
+The nous image is published by CI (`.github/workflows/build.yml`): the per-arch `build-workloads` job runs after `merge-agents` — nous builds `FROM` the default image, so it pulls its base by the same per-commit tag — and `merge-workloads` publishes the multi-arch manifest to `quay.io/dam-agents/nous`.
 The `publish` (Helm) job waits on `merge-workloads`.
 The template is enabled by default in `values.yaml` under "Pre-configured Images" (`category: preconfigured`, `experimental: true`).
 

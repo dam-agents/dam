@@ -13,10 +13,6 @@ export function onLaneBackend<T extends object>(input: T): T & { vm?: true } {
   return laneBackend === "vm" ? { ...input, vm: true } : input;
 }
 
-export function bootTimeoutMs(containerMs: number): number {
-  return laneBackend === "vm" ? containerMs * 3 : containerMs;
-}
-
 export async function setVmSandboxes(
   api: ApiClient,
   enabled: boolean,
@@ -83,7 +79,7 @@ export async function waitAgentState(
   agentId: string,
   state: AgentState,
   {
-    timeoutMs = 600_000,
+    timeoutMs = 240_000,
     failOnError = true,
   }: { timeoutMs?: number; failOnError?: boolean } = {},
 ): Promise<void> {
@@ -362,7 +358,7 @@ export async function deleteBackendHost(
         }
       },
       {
-        timeout: 600_000,
+        timeout: 240_000,
         intervals: [3_000],
         message: `no replacement pod for agent ${agentId} became ready`,
       },

@@ -88,7 +88,7 @@ async function pollSignedWith(
 }
 
 test("sigv4 connection: addressed requests are re-signed, foreign ones pass unchanged", async () => {
-  test.setTimeout(720_000);
+  test.setTimeout(300_000);
 
   const token = await getAccessToken();
   const api = createApiClient(token);

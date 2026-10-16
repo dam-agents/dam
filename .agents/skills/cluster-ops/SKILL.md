@@ -65,7 +65,7 @@ Everywhere else, and in the e2e lane, the vm backend needs a usable `/dev/kvm` o
 `E2E_VIRTUALIZATION=1 mise run e2e` (or `e2e:loop` bootstrapping a fresh test VM) installs with `virtualization.enabled=true` — `cluster:install` then applies the KVM device plugin (`helm/extra/kvm-device-plugin.yaml`), and values-local.yaml names its `squat.ai/kvm` and the runner's `egressCidrs` — stages the mock image for the VM runners, and runs the smoke suite with every agent on the vm Backend ([`src/lib/lane.ts`](../../../packages/e2e/playwright/src/lib/lane.ts)).
 The auth project's last test opts the e2e user into the `vm-sandboxes` experiment, so the agents the UI creates are machines, and the specs' API creates go through `onLaneBackend` (`src/lib/backend.ts`), which asks for vm.
 Without the variable the same test turns the experiment off.
-The first vm boot creates the owner's VM runner, so boot waits scale with `bootTimeoutMs`.
+Boot waits are the same on both Backends: four minutes for a boot, five for a smoke test, so a guest that stops answering fails the run in minutes.
 A vm run fails, rather than skips, against an install without the backend.
 
 Two specs are tied to a Backend.
@@ -73,7 +73,7 @@ Two specs are tied to a Backend.
 `smoke/20-runtime-migration.spec.ts` exists only in a vm run, the one install with both Backends, and runs last: it creates a container agent with a HOME file and a Session, checks that the Migrate button is absent with the experiment off, turns the experiment on, migrates through the button, and checks that the agent keeps its id, HOME and Sessions and still chats.
 It turns the experiment off and on again, which is why nothing else may run beside it.
 
-CI runs the smoke suite as two lanes on every run but a tag and a docs-only PR (cd.yml's `docs-only` job): `mise e2e (container)` (cd.yml's `e2e` job) and `mise e2e (vm)` (`e2e-vm`, the same steps through YAML anchors, plus `E2E_VIRTUALIZATION=1`), each on its own GitHub-hosted x64 runner.
+CI runs the smoke suite as two lanes on every run but a tag and a docs-only PR (e2e.yml's `docs-only` job): `e2e / mise e2e (container)` (e2e.yml's `e2e` job) and `e2e / mise e2e (vm)` (`e2e-vm`, the same steps through YAML anchors, plus `E2E_VIRTUALIZATION=1`), each on its own GitHub-hosted x64 runner.
 The vm lane's runner exposes `/dev/kvm`, which a udev rule opens to the runner user, and builds or pulls the vm-runner beside the other images.
 A failure in the vm lane alone is the vm Backend's.
 

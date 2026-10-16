@@ -11,6 +11,7 @@ export interface AttentionRecordRow {
   title: string | null;
   scheduleId: string | null;
   threadTs: string | null;
+  harness: string | null;
   createdAt: Date;
   activityAt: Date | null;
   seenAt: Date | null;
@@ -46,6 +47,7 @@ export function sameRecord(
     stored.title === next.title &&
     stored.scheduleId === next.scheduleId &&
     stored.threadTs === next.threadTs &&
+    stored.harness === next.harness &&
     stored.working === next.working &&
     sameTime(stored.createdAt, next.createdAt) &&
     sameTime(stored.activityAt, next.activityAt) &&

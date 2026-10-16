@@ -2,7 +2,7 @@ name: Security
 
 # Scans what a CI/CD run on main published, the lockfiles it built from and
 # the third-party images the chart runs, and keeps one summary issue open
-# while any finding stands. cd.yml calls it once the run's images are merged
+# while any finding stands. build.yml calls it once the run's images are merged
 # and its mirrored tags copied, so every image list-third-party names exists:
 # on every push to main and in the nightly run, which rebuilds every image.
 # The nightly run also checks the base image pins. The github context is the

@@ -64,7 +64,7 @@ WORKLOADS="nous openevolve shinkaevolve gepa skydiscover k-search"
 PACK_TOOLING=".mise/tasks/image/pack .mise/config.toml mise.lock"
 # The pnpm workspace: its root manifests and lockfile.
 PNPM_ROOT="package.json pnpm-workspace.yaml pnpm-lock.yaml packages/dev-config"
-# The images cd.yml's build-images job builds, one job per arch of
+# The images build.yml's build-images job builds, one job per arch of
 # image_archs. A Mac's cluster:install builds these five itself and never
 # pulls them, so only a v* tag, for release consumers, builds them for arm64.
 IMAGES="controller ui api-server keycloak vm-runner"

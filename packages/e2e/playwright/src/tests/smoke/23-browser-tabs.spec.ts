@@ -89,7 +89,7 @@ async function expectNoTabBar(page: Page) {
 }
 
 test.beforeAll(async () => {
-  test.setTimeout(900_000);
+  test.setTimeout(300_000);
   api = createApiClient(await getAccessToken());
   await acceptTerms(api);
   await deleteAgentIfPresent(api, AGENT);
@@ -101,7 +101,7 @@ test.beforeAll(async () => {
     "-l",
     "app.kubernetes.io/component=harness-tools",
     "--for=condition=Ready",
-    "--timeout=600s",
+    "--timeout=240s",
   );
   agentId = await createAgentOn(api, "container", AGENT, "default");
   await waitAgentState(api, agentId, "running");

@@ -1,0 +1,482 @@
+name: E2E
+
+# The smoke suite's two lanes, container and vm, and the docs-only check that
+# skips both. cd.yml calls it on every run but a push; the github context is
+# the calling run's. Its jobs report as `e2e / <name>`.
+#
+# Local actions are `./` and cache keys YAML anchors, for the reasons cd.yml
+# gives. An anchor cannot reach another file, so the keys of the caches
+# build.yml saves are anchored again here under the same names, and must
+# spell the same: a key that differs restores nothing, and nothing says so.
+# check:workflow-anchors compares them.
+
+on:
+  workflow_call:
+    inputs:
+      verify:
+        description: >-
+          A PR or a merge group: build the images here, and save nothing.
+        type: boolean
+        required: true
+      fresh:
+        description: >-
+          Every image is built afresh, as build.yml's `changes` job is told:
+          the nightly run and a dispatch.
+        type: boolean
+        required: true
+      save-caches:
+        description: >-
+          A run on main, which saves the caches this workflow writes: the
+          nightly run.
+        type: boolean
+        required: true
+    secrets:
+      QUAY_USERNAME:
+        required: false
+      QUAY_PASSWORD:
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_PREFIX: quay.io/dam-agents
+  MISE_LOCKED: "1"
+  # What a verifying run's change detection diffs against. A PR's checkout is
+  # its merge commit, whose first parent is the base; in a merge group that
+  # batches PRs, the first parent is only the PR queued before this one.
+  DIFF_BASE: ${{ github.event.merge_group.base_sha || 'HEAD^1' }}
+
+jobs:
+  docs-only:
+    name: detect docs-only change
+    # A PR or a merge group that changes only docs/ and Markdown outside
+    # packages/ skips both e2e lanes. Markdown under packages/ ships in agent
+    # images, so it counts as code. The lanes run when it fails, so a broken
+    # detection never skips them.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      docs: ${{ steps.d.outputs.docs }}
+    steps:
+      - if: inputs.verify
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # A merge group's base can be several commits back.
+          fetch-depth: ${{ github.event.merge_group && '0' || '2' }}
+      - id: d
+        if: inputs.verify
+        run: |
+          if git diff --quiet "$DIFF_BASE" HEAD -- . ':!docs' ':!*.md' && git diff --quiet "$DIFF_BASE" HEAD -- 'packages/*.md'; then
+            echo "docs=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  e2e:
+    name: mise e2e (container)
+    # The container lane: the smoke suite on an install without
+    # virtualization, so every agent is a pod. e2e-vm is the vm lane, the same
+    # suite with every agent on the vm Backend; the two run side by side on
+    # every run but a push and a docs-only change, each on its own runner, and
+    # the Playwright config picks each lane's specs from E2E_VIRTUALIZATION
+    # (see packages/e2e/playwright/src/lib/lane.ts).
+    # cd.yml calls neither on a push to main: the merge group before it ran
+    # them on the same tree. The nightly run still runs them on main, and
+    # saves their caches there.
+    # No `needs` on the builds: bringing the cluster up takes minutes and needs
+    # no image, so it runs while they build. e2e:ci-images builds them here on
+    # a PR or a merge group, or waits for this run's build jobs, in the
+    # background, and cluster:install waits for it at the image load. A
+    # failed build still fails this job, there.
+    # The steps e2e-vm shares are anchored here (&e2e-*), so the two lanes
+    # bring their clusters up the same way.
+    needs: [docs-only]
+    if: ${{ !cancelled() && needs.docs-only.outputs.docs != 'true' }}
+    runs-on: ubuntu-latest
+    # The builds' own time now counts against this budget.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read
+    env:
+      IS_SANDBOX: "1"
+    steps:
+      - &e2e-checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # e2e:ci-images resolves every image by its source history.
+          fetch-depth: 0
+      # k3s comes up in about twenty seconds and needs nothing the steps
+      # below set up, so it starts here, beside them: before setup-mise, on
+      # the runner image's own yq, as setup-mise alone takes about 20 s.
+      # `mise run e2e` waits for it and keeps the cluster instead of nuking it
+      # first; if this provision fails, it nukes whatever is left and
+      # provisions again.
+      - &e2e-provision
+        name: Provision k3s in the background
+        run: |
+          nohup bash -c '.mise/tasks/cluster/provision-host etc/lima/k3s-test.yaml; echo $? > /tmp/k3s-provision.status' \
+            > /tmp/k3s-provision.log 2>&1 &
+      # See build.yml's build-images. Before setup-mise, like check-test's.
+      - &e2e-keycloak-theme-cache
+        if: inputs.verify
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: &task-artifacts ~/.cache/mise/task-artifacts
+          key: &keycloak-theme-key mise-task-artifacts-${{ runner.os }}-keycloak-theme-${{ github.sha }}
+          restore-keys: mise-task-artifacts-${{ runner.os }}-keycloak-theme-
+      # build.yml's check-test saves it, and the Go cache below.
+      - &e2e-pnpm-cache
+        if: inputs.verify
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: &pnpm-store ~/.local/share/pnpm/store
+          key: &pnpm-key pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: &pnpm-restore-keys pnpm-store-${{ runner.os }}-
+      - &e2e-pnpm-verified-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: &pnpm-verified ~/.cache/pnpm/lockfile-verified.jsonl
+          key: &pnpm-verified-key pnpm-lockfile-verified-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
+      # Only a PR that changes the controller builds it here; one that does not
+      # pulls main's image.
+      - &e2e-controller-changed
+        id: controller-changed
+        if: inputs.verify
+        run: |
+          if git diff --quiet "$DIFF_BASE" HEAD -- $(.mise/tasks/image/resolve paths controller); then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - &e2e-go-cache
+        if: steps.controller-changed.outputs.changed == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: &go-paths |
+            ~/.cache/go-build
+            ~/.cache/staticcheck
+            ~/go/pkg/mod
+          key: &go-key go-${{ runner.os }}-check-test-${{ hashFiles('mise.lock', 'packages/controller/go.sum') }}
+          restore-keys: &go-restore-keys |
+            go-${{ runner.os }}-check-test-
+            go-${{ runner.os }}-
+      - &e2e-setup-mise
+        uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+        with:
+          quay-username: ${{ secrets.QUAY_USERNAME }}
+          quay-password: ${{ secrets.QUAY_PASSWORD }}
+      # The keycloak image bakes in the theme JAR. Built here, before the
+      # background build starts, so it does not race e2e:install's own run of
+      # the same task, which is then a cache hit.
+      - &e2e-keycloak-theme
+        if: inputs.verify
+        run: mise run //packages/keycloak-theme:build
+      # Before the background build: its pnpm install would race e2e:install's.
+      - &e2e-pnpm-install
+        if: inputs.verify
+        run: mise deps install --only pnpm
+      # A PR that changes the mock's source builds it here, onto a default
+      # image built here too, which installs every harness's tools. Main's
+      # agent-tools entry holds them, so a hit reaches none of their download
+      # hosts: Bob's, IBM Cloud Object Storage, stalled for minutes and failed
+      # this lane. A PR that changes no mock source pulls main's mock and
+      # skips the restore, a gigabyte and about 25 s.
+      - id: mock-changed
+        if: inputs.verify
+        run: |
+          if git diff --quiet "$DIFF_BASE" HEAD -- $(.mise/tasks/image/resolve paths mock); then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.mock-changed.outputs.changed == 'true'
+        uses: ./.github/actions/agent-tools # zizmor: ignore[self-repository]
+      - &e2e-ci-images
+        name: Build or fetch this run's images in the background
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # The jobs that make the images e2e loads; see e2e:ci-images. They
+          # are build.yml's, named under cd.yml's `build` job that calls it.
+          CI_IMAGES_BUILD: ${{ inputs.verify && '1' || '' }}
+          CI_IMAGES_CHANGES_JOB: build / detect stale images
+          CI_IMAGES_IMAGES_JOB: build / build-images (amd64)
+          CI_IMAGES_MOCK_JOB: build / build mock (e2e fixture)
+          CI_IMAGES_AGENTS_JOB: build / build-agents (amd64)
+          # As build.yml's `changes` job sets it, so both resolve the same
+          # images stale.
+          RESOLVE_NO_REUSE: ${{ inputs.fresh && '1' || '' }}
+        run: nohup .mise/tasks/e2e/ci-images /tmp/ci-images.status > /tmp/ci-images.log 2>&1 &
+      # Keyed by the Playwright the lockfile resolves, which fixes the browser
+      # build it downloads: a lockfile change elsewhere keeps the entry.
+      - &e2e-playwright-version
+        id: playwright
+        run: |
+          set -euo pipefail
+          v="$(sed -n 's/^  playwright-core@\([0-9][^:]*\):.*/\1/p' pnpm-lock.yaml | head -n1)"
+          [ -n "$v" ] || { echo "::error::pnpm-lock.yaml resolves no playwright-core"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      # Only main writes it, after the suite: a PR's entry would count against
+      # the repo's 10 GB.
+      - &e2e-playwright-cache
+        id: playwright-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: &playwright-path ~/.cache/ms-playwright
+          key: &playwright-key playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      # Under the job's timeout, so a hung image build fails the step and the
+      # log steps below still run; the job's own timeout cancels them too.
+      - run: &e2e-run |
+          timeout 180 bash -c 'until [ -s /tmp/k3s-provision.status ]; do sleep 1; done' ||
+            { echo "::error::the background k3s provision is still running after 3 minutes"; exit 1; }
+          status="$(cat /tmp/k3s-provision.status)"
+          if [ "$status" != 0 ]; then
+            echo "::warning::the background k3s provision exited $status; mise run e2e nukes and provisions again"
+            unset E2E_HOST_PROVISIONED
+          fi
+          mise run e2e
+        timeout-minutes: 35
+        env: &e2e-run-env
+          SKIP_IMAGE_BUILD: "1"
+          CI_IMAGES_STATUS: /tmp/ci-images.status
+          E2E_HOST_PROVISIONED: "1"
+          # The vm lane's harness tools installer: anonymous GitHub API calls
+          # from the runner's shared address hit the 60-an-hour limit.
+          HARNESS_TOOLS_GITHUB_TOKEN: ${{ github.token }}
+      - &e2e-playwright-save
+        if: ${{ inputs.save-caches && steps.playwright-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *playwright-path
+          key: *playwright-key
+      - &e2e-image-log
+        name: Image fetch log
+        if: ${{ !cancelled() }}
+        # A build that never finished never printed its own log there.
+        run: |
+          cat /tmp/ci-images.log
+          [ "$(cat /tmp/ci-images.status 2>/dev/null)" = ok ] || tail -n 200 /tmp/ci-build/logs/*.log 2>/dev/null || true
+      - &e2e-provision-log
+        name: k3s provision log
+        if: ${{ !cancelled() }}
+        run: cat /tmp/k3s-provision.log
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-report
+          path: &e2e-report-paths |
+            packages/e2e/playwright/playwright-report/
+            packages/e2e/playwright/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  e2e-vm:
+    name: mise e2e (vm)
+    # The vm lane: the same smoke suite on an install with virtualization
+    # enabled, where every agent the suite creates is a vm Agent. The KVM
+    # device plugin comes from cluster:install, the runner's egressCidrs and
+    # the staged mock image from values-local.yaml once e2e:install sees
+    # E2E_VIRTUALIZATION, and the vm-runner image is built or fetched with the
+    # rest by e2e:ci-images. The same variable makes the suite's global setup
+    # opt the e2e user into the vm-sandboxes experiment, so the UI creates vm
+    # agents, and the spec helpers create vm agents through the API. It also
+    # adds the runtime migration spec, which needs both Backends on one
+    # install, and runs it and the backend spec after the rest of the suite:
+    # the backend spec deletes the user's VM runner, which runs every one of
+    # the user's machines. It runs whenever the container lane does, so a
+    # vm-only failure shows on the PR that caused it.
+    #
+    # GitHub's standard x64 Linux runners expose /dev/kvm, root-owned; a udev
+    # rule opens it to the runner's user, whom cluster:install probes it as.
+    # On a PR that changes the vm-runner its release build shares this runner
+    # with the other image builds, so this lane has the longer budget.
+    #
+    # The job summary carries the lane's per-phase timings (e2e:timings), from
+    # the marks E2E_TIMINGS collects and the Playwright JSON report.
+    needs: [docs-only]
+    if: ${{ !cancelled() && needs.docs-only.outputs.docs != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read
+    env:
+      IS_SANDBOX: "1"
+      E2E_VIRTUALIZATION: "1"
+      E2E_TIMINGS: /tmp/e2e-timings
+      E2E_REPORT_JSON: /tmp/playwright-report.json
+    steps:
+      - name: Record the job start
+        run: printf '%s\tjob started\n' "$(date +%s)" >> "$E2E_TIMINGS"
+      - *e2e-checkout
+      - *e2e-provision
+      - name: Open /dev/kvm to the runner user
+        run: |
+          set -euo pipefail
+          [ -e /dev/kvm ] || { echo "::error::this runner has no /dev/kvm, and the vm lane needs a KVM-capable runner"; exit 1; }
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo udevadm settle
+          python3 -c 'import os; os.close(os.open("/dev/kvm", os.O_RDWR))'
+          ls -l /dev/kvm /dev/net/tun
+      - *e2e-keycloak-theme-cache
+      - *e2e-pnpm-cache
+      - *e2e-pnpm-verified-cache
+      - *e2e-controller-changed
+      - *e2e-go-cache
+      # Only a PR that changes the vm-runner builds it here, from main's
+      # release-build cache (see build.yml's build-images); one that does not
+      # pulls main's image.
+      - id: vm-runner-changed
+        if: inputs.verify
+        run: |
+          read -r -a paths <<< "$(.mise/tasks/image/resolve paths vm-runner)"
+          if git diff --quiet "$DIFF_BASE" HEAD -- "${paths[@]}"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - id: rust-release-key
+        if: steps.vm-runner-changed.outputs.changed == 'true'
+        run: &rust-release-version |
+          set -euo pipefail
+          rust="$(sed -n '/^\[\[tools\.rust\]\]$/{n;s/^version = "\(.*\)"$/\1/p;}' mise.lock)"
+          [ -n "$rust" ] || { echo "::error::mise.lock names no rust version"; exit 1; }
+          echo "rust=$rust" >> "$GITHUB_OUTPUT"
+      - if: steps.vm-runner-changed.outputs.changed == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: &rust-release-paths |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            packages/vm-runner/target
+          key: &rust-release-key rust-release-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-release-key.outputs.rust }}-${{ hashFiles('packages/vm-runner/Cargo.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/smolvm.pin', 'packages/vm-runner/smolvm.patch', 'packages/vm-runner/libkrun.patch', 'packages/vm-runner/libkrunfw.patch') }}
+      - if: steps.vm-runner-changed.outputs.changed == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: &vm-runner-deps-paths ~/.cache/platform-vm-runner
+          key: &vm-runner-deps-key vm-runner-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/vm-runner/smolvm.pin', 'packages/vm-runner/smolvm.patch', 'packages/vm-runner/libkrun.patch', 'packages/vm-runner/libkrunfw.patch') }}
+      - *e2e-setup-mise
+      - *e2e-keycloak-theme
+      - *e2e-pnpm-install
+      # The default image, which smoke/22-harness-tools boots, packages none of
+      # its tools but is built against them: a PR builds it here, beside the
+      # other images e2e:ci-images builds.
+      - if: inputs.verify
+        uses: ./.github/actions/agent-tools # zizmor: ignore[self-repository]
+      - *e2e-ci-images
+      - *e2e-playwright-version
+      - *e2e-playwright-cache
+      # The node directory the harness tools installer fills, so on a hit it
+      # finds every version installed and reaches no download host: one host
+      # that stalled for minutes failed this lane. Keyed by what fixes the
+      # versions, the installer included. Restored as the runner's user, then
+      # given to root, who owns every install there.
+      - name: Create the node's harness tools directory
+        run: sudo install -d -o "$USER" /var/lib/platform-harness-tools
+      - id: harness-tools-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /var/lib/platform-harness-tools
+          key: &harness-tools-key harness-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/agents/base/image.lock', 'packages/agents/base/image-locks/**', 'packages/agents/base/miserc.toml', 'packages/agents/base/base.toml', 'packages/agents/base/rootfs/etc/mise/conf.d/settings.toml', 'packages/agents/*/image.toml', 'packages/agents/default/rootfs/usr/local/bin/install-harness-tools') }}
+      - run: sudo chown -R root:root /var/lib/platform-harness-tools
+      # Twice the container lane's budget: the vm-runner build above on a PR,
+      # the node staging of the mock image, every agent's boots, each a machine
+      # start under nested virtualization, and the backend and runtime
+      # migration specs, which run after the rest of the suite.
+      - run: *e2e-run
+        timeout-minutes: 70
+        env: *e2e-run-env
+      - *e2e-playwright-save
+      # On a cache hit the installer finds every version installed, so its log
+      # shows no download.
+      - name: Harness tools install log
+        if: ${{ !cancelled() }}
+        env:
+          KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        run: kubectl -n platform-agents logs ds/platform-harness-tools -c install --timestamps || true
+      # Only main writes it, and only once the suite passed, which waits for the
+      # installer: an entry is a whole install of one lockfile. It is about the
+      # size of the agent-tools entry, and a PR reads main's.
+      - if: ${{ success() && inputs.save-caches && steps.harness-tools-cache.outputs.cache-hit != 'true' }}
+        run: sudo chown -R "$USER" /var/lib/platform-harness-tools
+      - if: ${{ success() && inputs.save-caches && steps.harness-tools-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /var/lib/platform-harness-tools
+          key: *harness-tools-key
+      - *e2e-image-log
+      - *e2e-provision-log
+      # smolvm's VMM seccomp filter reports to the kernel, never to a pod log: a
+      # call outside its allowlist is an audit record (type=1326, sig=0 in
+      # audit, sig=31 when enforce killed the VMM). With no auditd, as on this
+      # runner, they reach the kernel log, which is gone with the runner.
+      # Every run prints them and their count; a failed run keeps the whole
+      # kernel log too, for a VMM that died some other way. A canary process
+      # first makes one logged call (getppid under SECCOMP_RET_LOG), so a count
+      # of zero is known to mean no records rather than records never kept.
+      - name: Kernel log and VMM seccomp records
+        if: ${{ !cancelled() }}
+        run: |
+          python3 - <<'EOF' || echo "::warning::the seccomp canary did not run"
+          import ctypes, os
+          libc = ctypes.CDLL(None, use_errno=True)
+          class Insn(ctypes.Structure):
+              _fields_ = [("code", ctypes.c_ushort), ("jt", ctypes.c_ubyte), ("jf", ctypes.c_ubyte), ("k", ctypes.c_uint)]
+          class Prog(ctypes.Structure):
+              _fields_ = [("len", ctypes.c_ushort), ("filter", ctypes.POINTER(Insn))]
+          # x86_64: load the syscall number; getppid (110) returns LOG, all else ALLOW.
+          insns = (Insn * 4)(Insn(0x20, 0, 0, 0), Insn(0x15, 0, 1, 110), Insn(0x06, 0, 0, 0x7FFC0000), Insn(0x06, 0, 0, 0x7FFF0000))
+          libc.prctl(15, b"seccomp-canary", 0, 0, 0)
+          if libc.prctl(38, 1, 0, 0, 0) or libc.prctl(22, 2, ctypes.byref(Prog(4, insns)), 0, 0):
+              raise SystemExit(f"the seccomp canary could not install its filter: errno {ctypes.get_errno()}")
+          os.getppid()
+          EOF
+          sleep 2
+          mkdir -p /tmp/kernel-log
+          sudo journalctl -k -b --no-pager -o short-precise > /tmp/kernel-log/kernel.log ||
+            sudo dmesg -T > /tmp/kernel-log/kernel.log
+          [ ! -e /var/log/audit/audit.log ] || sudo cat /var/log/audit/audit.log > /tmp/kernel-log/audit.log
+          grep -hs 'type=1326\|type=SECCOMP' /tmp/kernel-log/kernel.log /tmp/kernel-log/audit.log | grep -v 'comm="seccomp-canary"' > /tmp/seccomp.log || true
+          canary="$(cat /tmp/kernel-log/kernel.log /tmp/kernel-log/audit.log 2>/dev/null | grep -c 'comm="seccomp-canary"' || true)"
+          killed="$(grep -c ' sig=31 ' /tmp/seccomp.log || true)"
+          # The kernel rate-limits audit records it prints, so a count can be short.
+          dropped="$(grep -c 'kauditd_printk_skb: .* callbacks suppressed\|audit: rate limit exceeded\|audit: backlog limit exceeded' /tmp/kernel-log/kernel.log || true)"
+          line="seccomp audit records: $(wc -l < /tmp/seccomp.log), $killed of them SIGSYS kills; audit drop notices: $dropped; canary records: $canary"
+          echo "$line" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ -s /tmp/seccomp.log ]; then
+            echo "::warning::$line"
+            tail -n 200 /tmp/seccomp.log
+            cp /tmp/seccomp.log /tmp/kernel-log/
+          fi
+          [ "$canary" != 0 ] || echo "::warning::the seccomp canary left no record, so the kernel log may not keep seccomp records here, and a low count proves nothing"
+          grep -h 'kauditd_printk_skb: .* callbacks suppressed\|audit: rate limit exceeded\|audit: backlog limit exceeded' /tmp/kernel-log/kernel.log || true
+      - if: ${{ failure() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: kernel-log-vm
+          path: /tmp/kernel-log/
+          retention-days: 7
+          if-no-files-found: ignore
+      # The background provision and image fetch each end by writing their
+      # status file, so its mtime is when they finished.
+      - name: Timing summary
+        if: ${{ !cancelled() }}
+        run: |
+          for mark in "k3s provisioned:/tmp/k3s-provision.status" "images ready:/tmp/ci-images.status"; do
+            [ ! -s "${mark#*:}" ] || printf '%s\t%s\n' "$(stat -c %Y "${mark#*:}")" "${mark%%:*}" >> "$E2E_TIMINGS"
+          done
+          .mise/tasks/e2e/timings | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-report-vm
+          path: *e2e-report-paths
+          retention-days: 7
+          if-no-files-found: ignore
