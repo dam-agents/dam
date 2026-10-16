@@ -408,14 +408,14 @@ function ArtifactListRow({
           {...(drag ? dragProps : {})}
           title={artifact.title}
           className={cn(
-            "group flex min-h-8 w-full cursor-pointer items-start gap-1.5 py-1.5 pr-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted",
+            "group flex h-8 w-full cursor-pointer items-center gap-1.5 pr-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted",
             active && "bg-muted text-foreground",
             dragging && "opacity-50",
           )}
           style={{ paddingLeft: treeIndent(depth) }}
         >
           <div
-            className="-mx-1.5 flex h-5 shrink-0 items-center"
+            className="-mx-1.5 shrink-0"
             onClick={(e) => e.stopPropagation()}
           >
             <ArtifactVisibilityButton
@@ -423,15 +423,14 @@ function ArtifactListRow({
               onShare={() => onShare(artifact)}
             />
           </div>
-          <div className="min-w-0 flex-1">
-            <span className="flex min-w-0 items-center gap-2">
-              <span className="min-w-0 flex-1 truncate">{artifact.title}</span>
-              {showCreator && <CreatorByline agentId={artifact.agentId} />}
+          <div className="flex min-w-0 flex-1 items-center gap-1.5">
+            <span className="min-w-12 shrink-[100] truncate">
+              {artifact.title}
             </span>
             {(artifact.expiresAt !== null ||
               artifact.viewCount > 0 ||
               artifact.interactive) && (
-              <span className="flex min-w-0 items-center gap-2 overflow-hidden text-xs">
+              <span className="flex h-4 min-w-0 flex-wrap items-center gap-x-1.5 overflow-hidden text-xs text-muted-foreground">
                 <ArtifactDeletionChip expiresAt={artifact.expiresAt} />
                 {artifact.viewCount > 0 && (
                   <Tooltip
@@ -447,10 +446,8 @@ function ArtifactListRow({
               </span>
             )}
           </div>
-          <div
-            className="flex h-5 shrink-0 items-center"
-            onClick={(e) => e.stopPropagation()}
-          >
+          {showCreator && <CreatorByline agentId={artifact.agentId} />}
+          <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
             <DropdownMenu>
               {}
               <DropdownMenuTrigger asChild>
