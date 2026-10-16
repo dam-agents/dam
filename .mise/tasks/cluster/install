@@ -120,7 +120,7 @@ AGENT_VALUE_FLAGS=()
 AGENT_VALUE_FLAGS+=("${HELM_EXTRA_ARGS[@]}")
 
 # virtualization.enabled drives extra provisioning below (nested virt on the
-# k3s VM, the vm image archive loaded onto the VM runner pod) — resolve it
+# k3s VM, the vm images staged on the node for the VM runners) — resolve it
 # from the values file + --set flags (chart default is false) so one flag
 # configures the whole stack.
 VIRT_ENABLED=""

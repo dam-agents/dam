@@ -356,11 +356,11 @@ virtualization:
       settleTimeout: 10m
       idleWait: 1h
     # A directory on the node holding pre-flattened image trees (each with
-    # its launch record; `mise run image:stage-vm` makes one) or `docker save`
-    # archives, named after the image reference and mounted read-only into
-    # every runner. It is how a cluster with no registry (local dev) gives
-    # runners their agent image; empty means runners fetch images from the
-    # registry.
+    # its launch record; `mise run image:stage-vm` makes one), named after the
+    # image reference and mounted read-only into every runner. The key keeps
+    # its old name; a `docker save` archive staged here is refused. It is how
+    # a cluster with no registry (local dev) gives runners their agent image;
+    # empty means runners fetch images from the registry.
     imageArchiveHostPath: ""
     # A directory on each node where a stager DaemonSet copies the runner
     # release this chart's runner image carries: the runner and the two guest
