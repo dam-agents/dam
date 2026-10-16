@@ -3,6 +3,7 @@ import { Document } from "@carbon/icons-react";
 import { formatBytes } from "@/lib/format-size";
 
 import { Markdown } from "../../../components/markdown.js";
+import { ChatFormCard } from "../../../mock/chat-form-card.js";
 import type { MessagePart, Role } from "../../../types.js";
 import { PermissionVerdictLine } from "./permission-prompt.js";
 import { ThoughtBlock } from "./thought-block.js";
@@ -47,6 +48,8 @@ export function ChatMessagePart({
       );
     case "verdict":
       return <PermissionVerdictLine verdict={part} />;
+    case "form":
+      return <ChatFormCard part={part} />;
     case "file":
       return (
         <div className="inline-flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2">

@@ -50,77 +50,36 @@ import { WorkingDots } from "./working-dots.js";
 
 const IMAGE_MIME = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
-import type { PackIngredientKind, PackSlot } from "../../packs/data/packs.js";
 import { PACKS, REAL_PACKS } from "../../packs/data/packs.js";
 import type { SandboxSection } from "../../platform/lib/routes.js";
 import type { RotatingPlaceholder } from "../../schedules/components/schedule-chat-discovery.js";
 
-interface KitStep {
-  id: string;
-  label: string;
-  done: boolean;
-  section: SandboxSection;
-}
-
-function slotToSection(kind: PackIngredientKind): SandboxSection {
-  switch (kind) {
-    case "connection":
-      return "connections";
-    case "channel":
-      return "channels";
-    case "schedule":
-      return "schedules";
-    case "skill":
-      return "skills";
-    default:
-      return "setup";
-  }
-}
-
-function slotToLabel(slot: PackSlot): string {
-  switch (slot.kind) {
-    case "connection":
-      return `Connect ${slot.label}`;
-    case "channel":
-      return `Add ${slot.label} channel`;
-    case "knowledge-base":
-      return `Add ${slot.label}`;
-    case "schedule":
-      return `Set up ${slot.label}`;
-    case "skill":
-      return `Add ${slot.label}`;
-    default:
-      return `Set up ${slot.label}`;
-  }
-}
-
-function buildKitSteps(required: PackSlot[]): KitStep[] {
-  return required.map((slot) => ({
-    id: `${slot.kind}-${slot.label}`,
-    label: slotToLabel(slot),
-    done: false,
-    section: slotToSection(slot.kind),
-  }));
-}
-
 function StarterKitStrip({
-  onConfigureSection,
+  onScrollToMessage,
 }: {
-  onConfigureSection?: (section: SandboxSection) => void;
+  onScrollToMessage?: (messageId: string) => void;
 }) {
   const kitMode = useStore((s) => s.starterKitMode);
   const selectedKitId = useStore((s) => s.selectedStarterKitId);
   const realPacks = useStore((s) => s.realPacks);
+  const phase = useStore((s) => s.onboardingPhase);
 
   if (!kitMode) return null;
 
   const allPacks = realPacks ? REAL_PACKS : PACKS;
-  const kitsWithSetup = allPacks.filter((p) => p.required.length > 0);
-  const pack =
-    kitsWithSetup.find((p) => p.id === selectedKitId) ?? kitsWithSetup[0];
+  const pack = allPacks.find((p) => p.id === selectedKitId) ?? allPacks[0];
   if (!pack) return null;
+  if (pack.onboarding === false || phase === "done") return null;
 
-  const steps = buildKitSteps(pack.required);
+  const checklist = pack.agentChecklist ?? [];
+  if (checklist.length === 0) return null;
+
+  const steps = checklist.map((item) => ({
+    id: item.id,
+    label: item.label,
+    done: phase === "halfway" ? item.layer === 1 : false,
+    messageId: item.messageId,
+  }));
   const done = steps.filter((s) => s.done).length;
   const remaining = steps.length - done;
 
@@ -129,9 +88,6 @@ function StarterKitStrip({
       <Cube size={16} className="shrink-0 text-preset" />
       <span className="min-w-0 truncate text-sm font-medium text-foreground">
         {pack.name}
-      </span>
-      <span className="shrink-0 text-sm text-muted-foreground">
-        &mdash; {remaining} to set up
       </span>
       <HoverCard openDelay={150} closeDelay={300}>
         <HoverCardTrigger asChild>
@@ -154,7 +110,9 @@ function StarterKitStrip({
               <li key={step.id}>
                 <button
                   type="button"
-                  onClick={() => onConfigureSection?.(step.section)}
+                  onClick={() =>
+                    step.messageId && onScrollToMessage?.(step.messageId)
+                  }
                   className="flex w-full items-center gap-3 rounded-md px-4 py-1.5 transition-colors hover:bg-muted/40"
                 >
                   <span className="flex size-4 shrink-0 items-center justify-center">
@@ -190,6 +148,7 @@ export interface ChatInputProps {
   onStop: () => void;
   rotatingPlaceholder?: RotatingPlaceholder | null;
   onConfigureSection?: (section: SandboxSection) => void;
+  onScrollToMessage?: (messageId: string) => void;
 }
 
 export function ChatInput({
@@ -200,9 +159,14 @@ export function ChatInput({
   onStop,
   rotatingPlaceholder,
   onConfigureSection,
+  onScrollToMessage,
 }: ChatInputProps) {
   const agentId = useStore((s) => s.selectedAgent);
   const sessionId = useStore((s) => s.sessionId);
+  const kitMode = useStore((s) => s.starterKitMode);
+  const selectedKitId = useStore((s) => s.selectedStarterKitId);
+  const onboardingPhase = useStore((s) => s.onboardingPhase);
+  const realPacks = useStore((s) => s.realPacks);
   const setDraft = useStore((s) => s.setDraft);
   const clearDraft = useStore((s) => s.clearDraft);
   const key = agentId ? draftKey(agentId, sessionId) : null;
@@ -211,6 +175,15 @@ export function ChatInput({
   );
   const input = draft.text;
   const attachments = draft.attachments;
+
+  const composerLocked = useMemo(() => {
+    if (!kitMode || onboardingPhase !== "just-created") return false;
+    const allPacks = realPacks ? REAL_PACKS : PACKS;
+    const pack = allPacks.find((p) => p.id === selectedKitId) ?? allPacks[0];
+    return (
+      pack?.onboarding !== false && (pack?.agentChecklist?.length ?? 0) > 0
+    );
+  }, [kitMode, onboardingPhase, realPacks, selectedKitId]);
 
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -342,7 +315,11 @@ export function ChatInput({
     }
   };
 
-  const placeholder = isComputing ? "Queue a message..." : "Message...";
+  const placeholder = composerLocked
+    ? "Complete the setup form above to continue"
+    : isComputing
+      ? "Queue a message..."
+      : "Message...";
 
   return (
     <div
@@ -362,7 +339,7 @@ export function ChatInput({
             e.target.value = "";
           }}
         />
-        <StarterKitStrip onConfigureSection={onConfigureSection} />
+        <StarterKitStrip onScrollToMessage={onScrollToMessage} />
         <div
           className={`flex flex-col rounded-xl border bg-background transition-colors focus-within:border-primary ${dragOver ? "border-primary bg-accent-light/30" : "border-border"}`}
         >
@@ -414,7 +391,7 @@ export function ChatInput({
                 onPaste={onPaste}
                 placeholder={showRotating ? "" : placeholder}
                 rows={1}
-                disabled={loadingSession || !key}
+                disabled={loadingSession || !key || composerLocked}
                 autoFocus
               />
             </div>

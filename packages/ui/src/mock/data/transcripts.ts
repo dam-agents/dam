@@ -1,5 +1,12 @@
-import type { Message } from "../../types.js";
+import { useStore } from "../../store.js";
+import type { FormPart, Message } from "../../types.js";
 import { MOCK_SESSION_IDS, mockSessions } from "./sessions.js";
+
+export interface TranscriptMeta {
+  messages: Message[];
+  justCreatedEnd: number;
+  halfwayEnd: number;
+}
 
 function msg(
   id: string,
@@ -743,6 +750,760 @@ function defaultTranscript(
   ];
 }
 
+function form(f: Omit<FormPart, "kind">): FormPart {
+  return { kind: "form", ...f };
+}
+
+function codeGuardianTranscript(): TranscriptMeta {
+  const m: Message[] = [];
+
+  m.push(
+    msg("cg-m0", "assistant", [
+      {
+        kind: "text",
+        text: "Welcome to **Code Reviewer**. I review every open pull request and nudge reviewers who go quiet. Let's get set up.",
+      },
+    ]),
+  );
+
+  m.push(
+    msg("cg-m1", "assistant", [
+      form({
+        formId: "cg-connect-github",
+        formKind: "connect",
+        label: "Connect GitHub",
+        locksComposer: true,
+        summary: "GitHub connected",
+      }),
+    ]),
+  );
+
+  m.push(
+    msg("cg-m2", "assistant", [
+      form({
+        formId: "cg-schedules",
+        formKind: "toggle-list",
+        label: "Review schedules",
+        options: [
+          {
+            id: "pr-review",
+            label: "PR review (every 5 min)",
+            defaultOn: true,
+          },
+          {
+            id: "reviewer-nudge",
+            label: "Reviewer nudges (hourly on workdays)",
+            defaultOn: false,
+          },
+          {
+            id: "weekly-audit",
+            label: "Weekly audit (Fri 7:00)",
+            defaultOn: true,
+          },
+          { id: "monthly-bench", label: "Monthly benchmark", defaultOn: false },
+        ],
+        summary: "Schedules configured",
+      }),
+    ]),
+  );
+
+  m.push(
+    msg("cg-m3", "assistant", [
+      {
+        kind: "text",
+        text: "Platform setup done. Now I need a few things specific to how you want reviews to work.",
+      },
+    ]),
+  );
+
+  m.push(
+    msg("cg-m4", "assistant", [
+      form({
+        formId: "cg-backup",
+        formKind: "confirm",
+        label: 'Back up your review history, or say "local-only"?',
+        summary: "Backup: local-only",
+      }),
+    ]),
+  );
+
+  m.push(msg("cg-m5", "user", [{ kind: "text", text: "Local-only for now." }]));
+
+  m.push(
+    msg("cg-m6", "assistant", [
+      form({
+        formId: "cg-repo",
+        formKind: "input",
+        label: "Which repo should I review?",
+        summary: "Repo: acme/web-app",
+      }),
+    ]),
+  );
+
+  m.push(msg("cg-m7", "user", [{ kind: "text", text: "acme/web-app" }]));
+
+  m.push(
+    msg("cg-m8", "assistant", [
+      form({
+        formId: "cg-name",
+        formKind: "input",
+        label: "What name should I sign reviews with?",
+        summary: 'Review name: "Code Reviewer"',
+      }),
+    ]),
+  );
+
+  m.push(msg("cg-m9", "user", [{ kind: "text", text: "Code Reviewer" }]));
+
+  m.push(
+    msg("cg-m10", "assistant", [
+      form({
+        formId: "cg-re-review",
+        formKind: "input",
+        label: "What label triggers a re-review? (e.g. needs-re-review)",
+        summary: "Re-review label: needs-re-review",
+      }),
+    ]),
+  );
+
+  m.push(msg("cg-m11", "user", [{ kind: "text", text: "needs-re-review" }]));
+
+  m.push(
+    msg("cg-m12", "assistant", [
+      form({
+        formId: "cg-auto-merge",
+        formKind: "confirm",
+        label: "Auto-merge when all checks pass?",
+        summary: "Auto-merge: off",
+      }),
+    ]),
+  );
+
+  m.push(msg("cg-m13", "user", [{ kind: "text", text: "No, keep it off." }]));
+
+  m.push(
+    msg("cg-m14", "assistant", [
+      {
+        kind: "text",
+        text: "All set. I'll start watching **acme/web-app** for pull requests. You can change any of these settings later from the session menu.",
+      },
+    ]),
+  );
+
+  return { messages: m, justCreatedEnd: 2, halfwayEnd: 4 };
+}
+
+function personalAssistantTranscript(): TranscriptMeta {
+  const m: Message[] = [];
+
+  m.push(
+    msg("pa-m0", "assistant", [
+      {
+        kind: "text",
+        text: "Hi, I'm your **Personal Assistant**. I'll live in your DMs, run your briefing, and handle the small stuff. Let's connect your messaging first.",
+      },
+    ]),
+  );
+
+  m.push(
+    msg("pa-m1", "assistant", [
+      form({
+        formId: "pa-connect-channel",
+        formKind: "select",
+        label: "Where should I live?",
+        options: [
+          { id: "slack", label: "Slack" },
+          { id: "telegram", label: "Telegram" },
+        ],
+        locksComposer: true,
+        summary: "Connected via Slack",
+      }),
+    ]),
+  );
+
+  m.push(
+    msg("pa-m2", "assistant", [
+      form({
+        formId: "pa-schedules",
+        formKind: "toggle-list",
+        label: "Briefing schedule",
+        options: [
+          {
+            id: "weekday-brief",
+            label: "Weekday brief (8:00)",
+            defaultOn: true,
+          },
+          {
+            id: "monday-review",
+            label: "Monday review (8:30)",
+            defaultOn: true,
+          },
+          { id: "friday-audit", label: "Friday audit (7:00)", defaultOn: true },
+        ],
+        summary: "Briefing schedule set",
+      }),
+    ]),
+  );
+
+  m.push(
+    msg("pa-m3", "assistant", [
+      {
+        kind: "text",
+        text: "Great, I'm connected. Now let me learn about you so I can be actually useful.",
+      },
+    ]),
+  );
+
+  m.push(
+    msg("pa-m4", "assistant", [
+      form({
+        formId: "pa-who",
+        formKind: "input",
+        label: "Tell me about yourself — role, team, what you're working on.",
+        summary: "Profile saved",
+      }),
+    ]),
+  );
+
+  m.push(
+    msg("pa-m5", "user", [
+      {
+        kind: "text",
+        text: "I'm a product designer on the platform team. Mostly working on the agent onboarding flow right now.",
+      },
+    ]),
+  );
+
+  m.push(
+    msg("pa-m6", "assistant", [
+      form({
+        formId: "pa-tasks",
+        formKind: "input",
+        label:
+          "What kinds of things should I help with? (e.g. scheduling, reminders, drafting)",
+        summary: "Handles: reminders, quick lookups, morning briefing",
+      }),
+    ]),
+  );
+
+  m.push(
+    msg("pa-m7", "user", [
+      {
+        kind: "text",
+        text: "Reminders, quick lookups, and the morning briefing.",
+      },
+    ]),
+  );
+
+  m.push(
+    msg("pa-m8", "assistant", [
+      form({
+        formId: "pa-slack-id",
+        formKind: "input",
+        label: "What's your Slack member ID? (Settings → Copy Member ID)",
+        summary: "Slack ID saved",
+      }),
+    ]),
+  );
+
+  m.push(msg("pa-m9", "user", [{ kind: "text", text: "U04B7K2QXYZ" }]));
+
+  m.push(
+    msg("pa-m10", "assistant", [
+      form({
+        formId: "pa-may-message",
+        formKind: "confirm",
+        label: "Can I message you first, or should I wait for you to start?",
+        summary: "May message first: yes",
+      }),
+    ]),
+  );
+
+  m.push(
+    msg("pa-m11", "user", [
+      { kind: "text", text: "You can message me first." },
+    ]),
+  );
+
+  m.push(
+    msg("pa-m12", "assistant", [
+      form({
+        formId: "pa-backup",
+        formKind: "confirm",
+        label: "Back up conversation history to GitHub?",
+        summary: "Backup: local-only",
+      }),
+    ]),
+  );
+
+  m.push(msg("pa-m13", "user", [{ kind: "text", text: "No, local-only." }]));
+
+  m.push(
+    msg("pa-m14", "assistant", [
+      {
+        kind: "text",
+        text: "All set. I'll send your first briefing tomorrow morning. If you need anything before then, just message me.",
+      },
+    ]),
+  );
+
+  return { messages: m, justCreatedEnd: 2, halfwayEnd: 4 };
+}
+
+function qualityInspectorTranscript(): TranscriptMeta {
+  const m: Message[] = [];
+
+  m.push(
+    msg("qi-m0", "assistant", [
+      {
+        kind: "text",
+        text: "Welcome to **Quality Inspector**. I test every issue, run nightly regressions, and benchmark your product. Let's connect to your repo.",
+      },
+    ]),
+  );
+
+  m.push(
+    msg("qi-m1", "assistant", [
+      form({
+        formId: "qi-connect-github",
+        formKind: "connect",
+        label: "Connect GitHub",
+        locksComposer: true,
+        summary: "GitHub connected",
+      }),
+    ]),
+  );
+
+  m.push(
+    msg("qi-m2", "assistant", [
+      form({
+        formId: "qi-schedules",
+        formKind: "toggle-list",
+        label: "Testing schedules",
+        options: [
+          { id: "issue-qa", label: "Issue QA (hourly)", defaultOn: true },
+          {
+            id: "nightly-regression",
+            label: "Nightly regression",
+            defaultOn: false,
+          },
+          { id: "monthly-bench", label: "Monthly benchmark", defaultOn: false },
+          { id: "weekly-security", label: "Weekly security", defaultOn: false },
+          {
+            id: "weekly-scenarios",
+            label: "Weekly scenarios",
+            defaultOn: false,
+          },
+        ],
+        summary: "Schedules configured",
+      }),
+    ]),
+  );
+
+  m.push(
+    msg("qi-m3", "assistant", [
+      {
+        kind: "text",
+        text: "Platform setup done. Now tell me about the product so I can write useful tests.",
+      },
+    ]),
+  );
+
+  m.push(
+    msg("qi-m4", "assistant", [
+      form({
+        formId: "qi-product",
+        formKind: "input",
+        label: "Describe your product in a sentence or two.",
+        summary: "Product: Kubernetes platform for AI agents",
+      }),
+    ]),
+  );
+
+  m.push(
+    msg("qi-m5", "user", [
+      {
+        kind: "text",
+        text: "Kubernetes platform for running AI agent harnesses in isolated environments.",
+      },
+    ]),
+  );
+
+  m.push(
+    msg("qi-m6", "assistant", [
+      form({
+        formId: "qi-backend",
+        formKind: "select",
+        label: "Primary backend?",
+        options: [
+          { id: "node", label: "Node.js / TypeScript" },
+          { id: "go", label: "Go" },
+          { id: "python", label: "Python" },
+          { id: "other", label: "Other" },
+        ],
+        summary: "Backend: Go + TypeScript",
+      }),
+    ]),
+  );
+
+  m.push(
+    msg("qi-m7", "user", [
+      { kind: "text", text: "Go for the operator, TypeScript for the UI." },
+    ]),
+  );
+
+  m.push(
+    msg("qi-m8", "assistant", [
+      form({
+        formId: "qi-repo",
+        formKind: "input",
+        label: "Target repository for tests?",
+        summary: "Repo: acme/platform",
+      }),
+    ]),
+  );
+
+  m.push(msg("qi-m9", "user", [{ kind: "text", text: "acme/platform" }]));
+
+  m.push(
+    msg("qi-m10", "assistant", [
+      form({
+        formId: "qi-egress",
+        formKind: "input",
+        label: "Any egress or network rules I should know about?",
+        summary: "Egress: internal only, no external calls",
+      }),
+    ]),
+  );
+
+  m.push(
+    msg("qi-m11", "user", [
+      { kind: "text", text: "Internal only, no external API calls." },
+    ]),
+  );
+
+  m.push(
+    msg("qi-m12", "assistant", [
+      form({
+        formId: "qi-comments",
+        formKind: "confirm",
+        label: "Should I comment on issues with test results?",
+        summary: "Issue comments: yes",
+      }),
+    ]),
+  );
+
+  m.push(msg("qi-m13", "user", [{ kind: "text", text: "Yes" }]));
+
+  m.push(
+    msg("qi-m14", "assistant", [
+      form({
+        formId: "qi-profile-settings",
+        formKind: "input",
+        label: "Test profile name (shown in reports)?",
+        summary: 'Profile: "QI Bot"',
+      }),
+    ]),
+  );
+
+  m.push(msg("qi-m15", "user", [{ kind: "text", text: "QI Bot" }]));
+
+  m.push(
+    msg("qi-m16", "assistant", [
+      form({
+        formId: "qi-model-cred",
+        formKind: "connect",
+        label: "Connect model credential (for LLM-based test generation)",
+        summary: "Model credential connected",
+      }),
+    ]),
+  );
+
+  m.push(msg("qi-m17", "user", [{ kind: "text", text: "Connected." }]));
+
+  m.push(
+    msg("qi-m18", "assistant", [
+      form({
+        formId: "qi-backup",
+        formKind: "confirm",
+        label: "Back up test results to GitHub?",
+        summary: "Work backup: GitHub",
+      }),
+    ]),
+  );
+
+  m.push(
+    msg("qi-m19", "user", [{ kind: "text", text: "Yes, GitHub is fine." }]),
+  );
+
+  m.push(
+    msg("qi-m20", "assistant", [
+      {
+        kind: "text",
+        text: "All set. I'll start watching issues on **acme/platform** and testing them as they come in. The first hourly run kicks off shortly.",
+      },
+    ]),
+  );
+
+  return { messages: m, justCreatedEnd: 2, halfwayEnd: 4 };
+}
+
+function llmWikiTranscript(): TranscriptMeta {
+  const m: Message[] = [];
+
+  m.push(
+    msg("lw-m0", "assistant", [
+      {
+        kind: "text",
+        text: "Welcome to **LLM Wiki**. I maintain structured knowledge pages with a knowledge graph. Let's set yours up.",
+      },
+    ]),
+  );
+
+  m.push(
+    msg("lw-m1", "assistant", [
+      form({
+        formId: "lw-name",
+        formKind: "input",
+        label: "What should the wiki be called?",
+        summary: 'Wiki name: "Platform Knowledge Base"',
+      }),
+    ]),
+  );
+
+  m.push(
+    msg("lw-m2", "user", [{ kind: "text", text: "Platform Knowledge Base" }]),
+  );
+
+  m.push(
+    msg("lw-m3", "assistant", [
+      form({
+        formId: "lw-knowledge",
+        formKind: "input",
+        label:
+          "What kind of knowledge will it hold? (e.g. runbooks, architecture docs, onboarding guides)",
+        summary: "Knowledge: architecture docs, runbooks, team processes",
+      }),
+    ]),
+  );
+
+  m.push(
+    msg("lw-m4", "user", [
+      {
+        kind: "text",
+        text: "Architecture docs, runbooks, and team processes.",
+      },
+    ]),
+  );
+
+  m.push(
+    msg("lw-m5", "assistant", [
+      form({
+        formId: "lw-first-docs",
+        formKind: "input",
+        label:
+          "Got any documents to start with? Paste a link or describe what you have.",
+        summary: "Seeded with: docs/ folder from platform repo",
+      }),
+    ]),
+  );
+
+  m.push(
+    msg("lw-m6", "user", [
+      {
+        kind: "text",
+        text: "The docs/ folder in our platform repo has the architecture pages.",
+      },
+    ]),
+  );
+
+  m.push(
+    msg("lw-m7", "assistant", [
+      form({
+        formId: "lw-git",
+        formKind: "confirm",
+        label: "Store the wiki in a Git remote, or keep it local-only?",
+        summary: "Storage: Git remote",
+      }),
+    ]),
+  );
+
+  m.push(msg("lw-m8", "user", [{ kind: "text", text: "Git remote." }]));
+
+  m.push(
+    msg("lw-m9", "assistant", [
+      form({
+        formId: "lw-maintenance",
+        formKind: "select",
+        label: "How often should I check pages for freshness?",
+        options: [
+          { id: "daily", label: "Daily" },
+          { id: "weekly", label: "Weekly" },
+          { id: "manual", label: "Only when I ask" },
+        ],
+        summary: "Maintenance: weekly",
+      }),
+    ]),
+  );
+
+  m.push(msg("lw-m10", "user", [{ kind: "text", text: "Weekly is good." }]));
+
+  m.push(
+    msg("lw-m11", "assistant", [
+      {
+        kind: "text",
+        text: 'I\'ll start building **Platform Knowledge Base** from the docs/ folder. The knowledge graph will grow as I process the pages. Ask me anything or say "update" when the source material changes.',
+      },
+    ]),
+  );
+
+  return { messages: m, justCreatedEnd: 1, halfwayEnd: 5 };
+}
+
+function plainWikiTranscript(): TranscriptMeta {
+  const m: Message[] = [];
+
+  m.push(
+    msg("pw-m0", "assistant", [
+      {
+        kind: "text",
+        text: "Welcome to **Plain Wiki**. I keep a simple markdown knowledge base for you. Just tell me what to remember.",
+      },
+    ]),
+  );
+
+  m.push(
+    msg("pw-m1", "assistant", [
+      form({
+        formId: "pw-what-for",
+        formKind: "input",
+        label: "What's this knowledge base for?",
+        summary: "Purpose: team onboarding notes",
+      }),
+    ]),
+  );
+
+  m.push(
+    msg("pw-m2", "user", [{ kind: "text", text: "Team onboarding notes." }]),
+  );
+
+  m.push(
+    msg("pw-m3", "assistant", [
+      form({
+        formId: "pw-first-files",
+        formKind: "input",
+        label: "Any notes or files to start with?",
+        summary: "Seeded with: getting-started.md",
+      }),
+    ]),
+  );
+
+  m.push(
+    msg("pw-m4", "user", [
+      { kind: "text", text: "I have a getting-started.md in the repo." },
+    ]),
+  );
+
+  m.push(
+    msg("pw-m5", "assistant", [
+      form({
+        formId: "pw-publish",
+        formKind: "confirm",
+        label: "Publish for your team, or keep private?",
+        summary: "Published for team",
+      }),
+    ]),
+  );
+
+  m.push(msg("pw-m6", "user", [{ kind: "text", text: "Publish it." }]));
+
+  m.push(
+    msg("pw-m7", "assistant", [
+      {
+        kind: "text",
+        text: "Done. I've imported getting-started.md and the wiki is live. Send me new notes any time and I'll file them.",
+      },
+    ]),
+  );
+
+  return { messages: m, justCreatedEnd: 1, halfwayEnd: 3 };
+}
+
+function nousTranscript(): TranscriptMeta {
+  return { messages: [], justCreatedEnd: 0, halfwayEnd: 0 };
+}
+
+function kSearchTranscript(): TranscriptMeta {
+  const m: Message[] = [];
+
+  m.push(
+    msg("ks-m0", "assistant", [
+      {
+        kind: "text",
+        text: "**K-Search** needs cloud GPUs to evaluate kernels. Connect Modal to get started.",
+      },
+    ]),
+  );
+
+  m.push(
+    msg("ks-m1", "assistant", [
+      form({
+        formId: "ks-connect-modal",
+        formKind: "connect",
+        label: "Connect Modal",
+        summary: "Modal connected",
+      }),
+    ]),
+  );
+
+  return { messages: m, justCreatedEnd: 1, halfwayEnd: 1 };
+}
+
+const KIT_TRANSCRIPTS: Record<string, () => TranscriptMeta> = {
+  [MOCK_SESSION_IDS.kitCodeGuardian]: codeGuardianTranscript,
+  [MOCK_SESSION_IDS.kitPersonalAssistant]: personalAssistantTranscript,
+  [MOCK_SESSION_IDS.kitQualityInspector]: qualityInspectorTranscript,
+  [MOCK_SESSION_IDS.kitLlmWiki]: llmWikiTranscript,
+  [MOCK_SESSION_IDS.kitPlainWiki]: plainWikiTranscript,
+  [MOCK_SESSION_IDS.kitNous]: nousTranscript,
+  [MOCK_SESSION_IDS.kitKSearch]: kSearchTranscript,
+};
+
+export function mockTranscriptMeta(
+  _agentId: string,
+  sessionId: string,
+): TranscriptMeta | null {
+  const factory = KIT_TRANSCRIPTS[sessionId];
+  return factory ? factory() : null;
+}
+
+export function sliceTranscriptForPhase(
+  meta: TranscriptMeta,
+  phase: "just-created" | "halfway" | "done",
+): Message[] {
+  const end =
+    phase === "just-created"
+      ? meta.justCreatedEnd
+      : phase === "halfway"
+        ? meta.halfwayEnd
+        : meta.messages.length;
+  const sliced = meta.messages.slice(0, end);
+  if (phase === "done") {
+    for (const m of sliced) {
+      for (const p of m.parts) {
+        if (p.kind === "form") (p as FormPart).answered = true;
+      }
+    }
+  } else if (phase === "halfway") {
+    for (const m of sliced.slice(0, meta.justCreatedEnd)) {
+      for (const p of m.parts) {
+        if (p.kind === "form") (p as FormPart).answered = true;
+      }
+    }
+  }
+  return sliced;
+}
+
 export function mockTranscript(agentId: string, sessionId: string): Message[] {
   if (sessionId === MOCK_SESSION_IDS.artifact) {
     return artifactTranscript();
@@ -750,6 +1511,12 @@ export function mockTranscript(agentId: string, sessionId: string): Message[] {
   if (sessionId === MOCK_SESSION_IDS.longChat) {
     return longChatTranscript();
   }
+  const meta = mockTranscriptMeta(agentId, sessionId);
+  if (meta) {
+    const phase = useStore.getState().onboardingPhase;
+    return sliceTranscriptForPhase(meta, phase);
+  }
+
   const list = (mockSessions[agentId] ?? []) as {
     sessionId: string;
     title?: string;

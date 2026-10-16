@@ -1,9 +1,11 @@
-import { Document, TextFont, Warning } from "@carbon/icons-react";
+import { Document, Renew, TextFont, Warning } from "@carbon/icons-react";
 
 import { cn } from "@/lib/utils";
 
 import { fireApprovalToast } from "../modules/notifications/hooks/use-approval-toasts.js";
 import { useStore } from "../store.js";
+
+const PHASE_CYCLE = ["just-created", "halfway", "done"] as const;
 
 const TOAST_AGENTS = [
   "CI Pipeline Agent",
@@ -24,6 +26,8 @@ function MockStateBarPanel() {
   const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
   const openApprovals = useStore((s) => s.openApprovals);
+  const onboardingPhase = useStore((s) => s.onboardingPhase);
+  const setOnboardingPhase = useStore((s) => s.setOnboardingPhase);
   return (
     <>
       <button
@@ -55,6 +59,19 @@ function MockStateBarPanel() {
         aria-label="Fire approval toast"
       >
         <Warning size={16} className="text-foreground" />
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          const idx = PHASE_CYCLE.indexOf(onboardingPhase);
+          setOnboardingPhase(PHASE_CYCLE[(idx + 1) % PHASE_CYCLE.length]!);
+        }}
+        className="fixed bottom-4 left-[168px] z-[9999] flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card shadow-lg transition-colors hover:bg-muted"
+        aria-label={`Onboarding: ${onboardingPhase}`}
+        title={`Onboarding: ${onboardingPhase}`}
+      >
+        <Renew size={16} className="text-foreground" />
       </button>
 
       <button

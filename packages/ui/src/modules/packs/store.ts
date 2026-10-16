@@ -24,6 +24,8 @@ export interface PacksSlice {
   starterKitMode: boolean;
   selectedStarterKitId: string | null;
   setSelectedStarterKitId: (id: string | null) => void;
+  onboardingPhase: "just-created" | "halfway" | "done";
+  setOnboardingPhase: (phase: "just-created" | "halfway" | "done") => void;
   realPacks: boolean;
   setRealPacks: (on: boolean) => void;
 }
@@ -102,6 +104,8 @@ export const createPacksSlice: StateCreator<
   starterKitMode: false,
   selectedStarterKitId: null,
   setSelectedStarterKitId: (id) => set({ selectedStarterKitId: id }),
+  onboardingPhase: "just-created",
+  setOnboardingPhase: (phase) => set({ onboardingPhase: phase }),
   realPacks: true,
   setRealPacks: (on) => set({ realPacks: on }),
 });

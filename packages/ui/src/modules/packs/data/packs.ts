@@ -3,14 +3,11 @@ import {
   Book,
   Box,
   Chat,
-  Chemistry,
   Code,
   Debug,
   Document,
-  EventSchedule,
   FlashFilled,
   Idea,
-  Link,
   MachineLearning,
   Microscope,
   Notebook,
@@ -56,6 +53,22 @@ export interface PackSlot {
   starterRepoUrl?: string;
 }
 
+export interface PackSchedule {
+  id: string;
+  label: string;
+  description: string;
+  cron?: string;
+  defaultOn: boolean;
+  heldUntil?: string;
+}
+
+export interface AgentChecklistItem {
+  id: string;
+  label: string;
+  layer: 1 | 2;
+  messageId?: string;
+}
+
 export const PACK_CATEGORIES = [
   "Software",
   "Productivity",
@@ -78,6 +91,9 @@ export interface Pack {
   required: PackSlot[];
   sizeCpuMilli?: number;
   sizeMemoryMi?: number;
+  onboarding?: boolean;
+  schedules?: PackSchedule[];
+  agentChecklist?: AgentChecklistItem[];
 }
 
 export const PACKS: Pack[] = [
@@ -506,7 +522,7 @@ export const PACKS: Pack[] = [
 export const REAL_PACKS: Pack[] = [
   {
     id: "code-guardian",
-    name: "Code Guardian",
+    name: "Code Reviewer",
     category: "Software",
     icon: Security,
     tagline:
@@ -538,13 +554,6 @@ export const REAL_PACKS: Pack[] = [
         description:
           "Step-by-step guide that walks the agent through first-run setup",
       },
-      {
-        kind: "schedule",
-        label: "Daily PR review",
-        description:
-          "Checks for stale pull requests every morning and nudges reviewers",
-        demoValue: "RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
-      },
     ],
     required: [
       {
@@ -561,145 +570,284 @@ export const REAL_PACKS: Pack[] = [
         templateId: "github-enterprise",
         connectionTemplateId: "github-enterprise",
       },
+    ],
+    schedules: [
       {
-        kind: "channel",
-        label: "Slack",
-        description: "Nudge reviewers and post review summaries",
-        demoValue: "#code-review",
+        id: "pr-review",
+        label: "PR review",
+        description: "Checks open pull requests for new activity",
+        cron: "Every 5 min",
+        defaultOn: true,
+      },
+      {
+        id: "reviewer-nudge",
+        label: "Reviewer nudges",
+        description: "Pings reviewers who haven't responded",
+        cron: "Hourly on workdays",
+        defaultOn: false,
+        heldUntil: "connect-slack",
+      },
+      {
+        id: "weekly-audit",
+        label: "Weekly audit",
+        description: "Full sweep of all open PRs",
+        cron: "Fri 7:00",
+        defaultOn: true,
+      },
+      {
+        id: "monthly-bench",
+        label: "Monthly benchmark",
+        description: "Review quality metrics across the month",
+        defaultOn: false,
+      },
+    ],
+    agentChecklist: [
+      {
+        id: "connect-github",
+        label: "Connect GitHub",
+        layer: 1,
+        messageId: "cg-m1",
+      },
+      {
+        id: "backup-or-local",
+        label: 'Backup repo, or say "local-only"',
+        layer: 2,
+        messageId: "cg-m4",
+      },
+      {
+        id: "repo-to-review",
+        label: "Repo to review",
+        layer: 2,
+        messageId: "cg-m6",
+      },
+      {
+        id: "review-name",
+        label: "Name to sign reviews with",
+        layer: 2,
+        messageId: "cg-m8",
+      },
+      {
+        id: "re-review-label",
+        label: "Re-review label",
+        layer: 2,
+        messageId: "cg-m10",
+      },
+      {
+        id: "auto-merge",
+        label: "Auto-merge on or off",
+        layer: 2,
+        messageId: "cg-m12",
       },
     ],
     sizeCpuMilli: 2000,
     sizeMemoryMi: 2048,
   },
   {
-    id: "meeting-assistant",
-    name: "Meeting Assistant",
-    category: "Productivity",
-    icon: EventSchedule,
-    tagline: "Drafts the agenda before each meeting from the last transcript.",
-    description:
-      "Reads the previous meeting's transcript, pulls out action items and open threads, and drafts an agenda for the next one. Posts it to your team channel so everyone walks in prepared.",
-    included: [
-      {
-        kind: "harness",
-        label: "Claude Code",
-        description:
-          "Reads transcripts, extracts action items, and drafts structured agendas",
-        templateId: "claude-code",
-      },
-      {
-        kind: "schedule",
-        label: "Before meetings",
-        description: "Runs weekly, 30 minutes before your meeting time",
-        demoValue: "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=30",
-      },
-    ],
-    required: [
-      {
-        kind: "channel",
-        label: "Slack",
-        description: "Post agendas and collect feedback before the meeting",
-        demoValue: "#team-meetings",
-      },
-    ],
-  },
-  {
-    id: "docs-maintainer-real",
-    name: "Docs Maintainer",
-    category: "Productivity",
-    icon: Document,
-    tagline:
-      "Audits the docs site against the latest release and opens a pull request.",
-    description:
-      "Compares your documentation against the latest code and release notes. Finds pages that have drifted, writes the updates, and opens a pull request with the changes.",
-    included: [
-      {
-        kind: "harness",
-        label: "Claude Code",
-        description: "Reads code changes and rewrites affected docs pages",
-        templateId: "claude-code",
-      },
-      {
-        kind: "schedule",
-        label: "Daily audit",
-        description: "Audits docs against the latest release every day",
-        demoValue: "RRULE:FREQ=DAILY;BYHOUR=8;BYMINUTE=0",
-      },
-    ],
-    required: [
-      {
-        kind: "connection",
-        label: "GitHub",
-        description: "Read source code, docs site, and open pull requests",
-        templateId: "github",
-        connectionTemplateId: "github",
-      },
-      {
-        kind: "channel",
-        label: "Slack",
-        description: "Post when docs PRs are opened or need review",
-        demoValue: "#docs-updates",
-      },
-    ],
-  },
-  {
-    id: "link-guardian",
-    name: "Link Guardian",
-    category: "Productivity",
-    icon: Link,
-    tagline: "Discovers and resolves broken links in your codebase.",
-    description:
-      "Crawls your repository and documentation for broken links — dead URLs, moved pages, and stale references. Opens a pull request to fix what it can and flags the rest.",
-    included: [
-      {
-        kind: "harness",
-        label: "Claude Code",
-        description: "Crawls links, verifies targets, and opens PRs with fixes",
-        templateId: "claude-code",
-      },
-      {
-        kind: "schedule",
-        label: "Daily scan",
-        description: "Scans for broken links every day",
-        demoValue: "RRULE:FREQ=DAILY;BYHOUR=6;BYMINUTE=0",
-      },
-    ],
-    required: [
-      {
-        kind: "connection",
-        label: "GitHub",
-        description: "Read repository files and open pull requests",
-        templateId: "github",
-        connectionTemplateId: "github",
-      },
-    ],
-  },
-  {
-    id: "coworker",
-    name: "Coworker",
+    id: "personal-assistant",
+    name: "Personal Assistant",
     category: "Productivity",
     icon: Chat,
     tagline:
-      "Lives in a team channel, follows a process you write down, and answers anyone.",
+      "Lives in your DMs, runs your briefing, and handles the small stuff.",
     description:
-      "A persistent agent that joins a Slack channel and responds to questions using a process document you provide. Useful for onboarding, runbooks, or any workflow where the same questions come up.",
+      "A persistent assistant that lives in Slack or Telegram. Runs a morning briefing, handles tasks you delegate, drafts messages, and answers questions — all in one conversation.",
     included: [
       {
         kind: "harness",
         label: "Claude Code",
-        description:
-          "Reads your process docs and answers questions in the channel",
+        description: "Reads your messages and handles tasks in context",
+        templateId: "claude-code",
+      },
+      {
+        kind: "connection",
+        label: "GitHub",
+        description: "Lets the assistant update itself and back up",
+        templateId: "github",
+        connectionTemplateId: "github",
+      },
+    ],
+    required: [
+      {
+        kind: "connection",
+        label: "Slack",
+        description: "The conversation this assistant lives in",
+        templateId: "slack",
+        connectionTemplateId: "slack",
+      },
+      {
+        kind: "connection",
+        label: "Telegram",
+        description: "The conversation this assistant lives in",
+        templateId: "telegram",
+        connectionTemplateId: "telegram",
+      },
+    ],
+    schedules: [
+      {
+        id: "weekday-brief",
+        label: "Weekday brief",
+        description: "Morning summary of your day",
+        cron: "Weekdays 8:00",
+        defaultOn: true,
+        heldUntil: "onboarding-done",
+      },
+      {
+        id: "monday-review",
+        label: "Monday review",
+        description: "Week ahead overview",
+        cron: "Mon 8:30",
+        defaultOn: true,
+        heldUntil: "onboarding-done",
+      },
+      {
+        id: "friday-audit",
+        label: "Friday audit",
+        description: "Week-in-review wrap-up",
+        cron: "Fri 7:00",
+        defaultOn: true,
+        heldUntil: "onboarding-done",
+      },
+    ],
+    agentChecklist: [
+      {
+        id: "connect-channel",
+        label: "Connect Slack or Telegram",
+        layer: 1,
+        messageId: "pa-m1",
+      },
+      { id: "who-i-am", label: "Who I am", layer: 2, messageId: "pa-m4" },
+      {
+        id: "what-i-do",
+        label: "What I take care of",
+        layer: 2,
+        messageId: "pa-m6",
+      },
+      {
+        id: "slack-member-id",
+        label: "Slack member ID",
+        layer: 2,
+        messageId: "pa-m8",
+      },
+      {
+        id: "may-message",
+        label: "May I message first?",
+        layer: 2,
+        messageId: "pa-m10",
+      },
+      {
+        id: "backup-local",
+        label: "Backup or local-only",
+        layer: 2,
+        messageId: "pa-m12",
+      },
+    ],
+  },
+  {
+    id: "quality-inspector",
+    name: "Quality Inspector",
+    category: "Software",
+    icon: Microscope,
+    tagline:
+      "Tests every issue, runs nightly regressions, and benchmarks your product.",
+    description:
+      "Watches for new issues, writes and runs test scenarios, and maintains a regression suite. Runs nightly, weekly, and monthly checks so quality problems surface before users find them.",
+    included: [
+      {
+        kind: "harness",
+        label: "Claude Code",
+        description: "Writes tests, runs scenarios, and reports results",
         templateId: "claude-code",
       },
     ],
     required: [
       {
-        kind: "channel",
-        label: "Slack",
-        description: "The team channel this agent lives in",
-        demoValue: "#team-support",
+        kind: "connection",
+        label: "GitHub",
+        description: "Read issues, PRs, and test results",
+        templateId: "github",
+        connectionTemplateId: "github",
       },
     ],
+    schedules: [
+      {
+        id: "issue-qa",
+        label: "Issue QA",
+        description: "Tests new issues as they come in",
+        cron: "Hourly",
+        defaultOn: true,
+      },
+      {
+        id: "nightly-regression",
+        label: "Nightly regression",
+        description: "Full regression suite overnight",
+        defaultOn: false,
+      },
+      {
+        id: "monthly-bench",
+        label: "Monthly benchmark",
+        description: "Performance and quality benchmarks",
+        defaultOn: false,
+      },
+      {
+        id: "weekly-security",
+        label: "Weekly security",
+        description: "Security-focused test sweep",
+        defaultOn: false,
+      },
+      {
+        id: "weekly-scenarios",
+        label: "Weekly scenarios",
+        description: "End-to-end scenario coverage",
+        defaultOn: false,
+      },
+    ],
+    agentChecklist: [
+      {
+        id: "product-profile",
+        label: "Product profile",
+        layer: 2,
+        messageId: "qi-m4",
+      },
+      { id: "backend", label: "Backend", layer: 2, messageId: "qi-m6" },
+      {
+        id: "target-repo",
+        label: "Target repository",
+        layer: 2,
+        messageId: "qi-m8",
+      },
+      {
+        id: "egress-rules",
+        label: "Egress rules",
+        layer: 2,
+        messageId: "qi-m10",
+      },
+      {
+        id: "issue-comments",
+        label: "Issue comments",
+        layer: 2,
+        messageId: "qi-m12",
+      },
+      {
+        id: "profile-settings",
+        label: "Profile settings",
+        layer: 2,
+        messageId: "qi-m14",
+      },
+      {
+        id: "model-credential",
+        label: "Model credential",
+        layer: 2,
+        messageId: "qi-m16",
+      },
+      {
+        id: "work-backup",
+        label: "Work backup",
+        layer: 2,
+        messageId: "qi-m18",
+      },
+    ],
+    sizeCpuMilli: 2000,
+    sizeMemoryMi: 2048,
   },
   {
     id: "llm-wiki",
@@ -719,19 +867,32 @@ export const REAL_PACKS: Pack[] = [
         templateId: "claude-code",
       },
     ],
-    required: [
+    required: [],
+    agentChecklist: [
+      { id: "name-wiki", label: "Name the wiki", layer: 2, messageId: "lw-m1" },
       {
-        kind: "connection",
-        label: "GitHub",
-        description: "Store wiki pages in a repository",
-        templateId: "github",
-        connectionTemplateId: "github",
+        id: "what-knowledge",
+        label: "What knowledge it will hold",
+        layer: 2,
+        messageId: "lw-m3",
       },
       {
-        kind: "channel",
-        label: "Slack",
-        description: "Ask the agent to look up or update wiki content",
-        demoValue: "#knowledge-base",
+        id: "first-docs",
+        label: "Hand over the first documents",
+        layer: 2,
+        messageId: "lw-m5",
+      },
+      {
+        id: "git-remote",
+        label: "Git remote or local-only",
+        layer: 2,
+        messageId: "lw-m7",
+      },
+      {
+        id: "maintenance",
+        label: "Maintenance cadence",
+        layer: 2,
+        messageId: "lw-m9",
       },
     ],
   },
@@ -743,7 +904,7 @@ export const REAL_PACKS: Pack[] = [
     tagline:
       "Simple markdown wiki. The agent writes pages and keeps them current.",
     description:
-      "A lightweight markdown wiki maintained by an agent. Pages are plain files in a repository — no knowledge graph, no structured schema. The agent writes and updates them from conversations.",
+      "A lightweight markdown wiki maintained by an agent. Pages are plain files — no knowledge graph, no structured schema. The agent writes and updates them from conversations.",
     included: [
       {
         kind: "harness",
@@ -752,19 +913,25 @@ export const REAL_PACKS: Pack[] = [
         templateId: "claude-code",
       },
     ],
-    required: [
+    required: [],
+    agentChecklist: [
       {
-        kind: "connection",
-        label: "GitHub",
-        description: "Store wiki pages in a repository",
-        templateId: "github",
-        connectionTemplateId: "github",
+        id: "what-for",
+        label: "What this knowledge base is for",
+        layer: 2,
+        messageId: "pw-m1",
       },
       {
-        kind: "channel",
-        label: "Slack",
-        description: "Ask the agent to write or update pages",
-        demoValue: "#wiki",
+        id: "first-files",
+        label: "First files or notes to remember",
+        layer: 2,
+        messageId: "pw-m3",
+      },
+      {
+        id: "publish",
+        label: "Publish for your team?",
+        layer: 2,
+        messageId: "pw-m5",
       },
     ],
   },
@@ -776,85 +943,48 @@ export const REAL_PACKS: Pack[] = [
     tagline:
       "Runs an experiment campaign: forms a hypothesis, patches your code, measures the result, keeps what worked.",
     description:
-      "Runs an experiment campaign: forms a hypothesis, patches your code, measures the result, keeps what worked. Findings build up across runs.",
+      "Runs an experiment campaign: forms a hypothesis, patches your code, measures the result, keeps what worked. Findings build up across runs. Stands in for every research kit (OpenEvolve, ShinkaEvolve, GEPA, AdaEvolve, EvoX).",
     included: [
       {
         kind: "framework",
         label: "Claude Code",
         templateId: "claude-code",
       },
-    ],
-    required: [],
-  },
-  {
-    id: "openevolve",
-    name: "OpenEvolve",
-    category: "Research",
-    icon: FlashFilled,
-    tagline:
-      "Open-source AlphaEvolve. Writes many versions of your code, scores each against your objective, keeps the best.",
-    description:
-      "Open-source AlphaEvolve. Writes many versions of your code, scores each against your objective, keeps the best.",
-    included: [
       {
-        kind: "framework",
-        label: "OpenEvolve",
-        templateId: "openevolve",
+        kind: "connection",
+        label: "GitHub",
+        description: "Optional: version control for experiments",
+        templateId: "github",
+        connectionTemplateId: "github",
       },
     ],
     required: [],
+    onboarding: false,
   },
   {
-    id: "shinka-evolve",
-    name: "ShinkaEvolve",
-    category: "Research",
-    icon: Chemistry,
-    tagline:
-      "Same idea on a smaller budget. Several models propose the changes, so it needs fewer runs to find a winner.",
-    description:
-      "Same idea on a smaller budget. Several models propose the changes, so it needs fewer runs to find a winner. (Sakana AI)",
-    included: [
-      {
-        kind: "framework",
-        label: "ShinkaEvolve",
-        templateId: "shinka-evolve",
-      },
-    ],
-    required: [],
-  },
-  {
-    id: "gepa",
-    name: "GEPA",
+    id: "k-search",
+    name: "K-Search",
     category: "Research",
     icon: MachineLearning,
-    tagline: "Optimizes text instead of code — prompts, instructions, configs.",
+    tagline: "LLM-driven GPU kernel optimization.",
     description:
-      "Optimizes text instead of code — prompts, instructions, configs. Reads why a candidate failed, then rewrites it.",
+      "Searches for high-performance GPU kernels using LLM-guided optimization. Requires Modal for cloud GPU access.",
     included: [
       {
         kind: "framework",
-        label: "GEPA",
-        templateId: "gepa",
+        label: "K-Search",
+        templateId: "k-search",
       },
     ],
-    required: [],
-  },
-  {
-    id: "ada-evolve-evox",
-    name: "AdaEvolve & EvoX",
-    category: "Research",
-    icon: Microscope,
-    tagline:
-      "AdaEvolve adapts its search for quick gains; EvoX evolves the strategy itself for longer runs.",
-    description:
-      "AdaEvolve adapts its own search as it goes — best for quick gains on a short run (Berkeley SkyDiscover). EvoX evolves the search strategy itself — best when you can let it run long.",
-    included: [
+    required: [
       {
-        kind: "framework",
-        label: "AdaEvolve & EvoX",
-        templateId: "ada-evolve-evox",
+        kind: "connection",
+        label: "Modal",
+        description: "Cloud GPUs for kernel evaluation",
+        templateId: "modal",
+        connectionTemplateId: "modal",
       },
     ],
-    required: [],
+    onboarding: false,
   },
 ];

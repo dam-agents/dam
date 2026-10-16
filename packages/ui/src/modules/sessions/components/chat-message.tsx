@@ -106,6 +106,7 @@ export const ChatMessage = memo(function ChatMessage({
     <div
       data-testid="chat-message"
       data-role={role}
+      data-message-id={message.id}
       className={cn(
         "flex flex-col gap-1",
         isLast && streaming && "anim-in",

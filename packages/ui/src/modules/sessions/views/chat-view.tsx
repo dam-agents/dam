@@ -244,6 +244,29 @@ export function ChatView() {
     }
   }, [isMock, sessionId]);
 
+  const onboardingPhase = useStore((s) => s.onboardingPhase);
+  const setMessages = useStore((s) => s.setMessages);
+
+  useEffect(() => {
+    if (!isMock || !sessionId || !selectedAgent) return;
+    const packId = KIT_SESSION_TO_PACK[sessionId];
+    if (!packId) return;
+    void import("../../../mock/data/transcripts.js").then(
+      ({ mockTranscriptMeta, sliceTranscriptForPhase }) => {
+        const meta = mockTranscriptMeta(selectedAgent, sessionId);
+        if (!meta) return;
+        setMessages(sliceTranscriptForPhase(meta, onboardingPhase));
+      },
+    );
+  }, [isMock, onboardingPhase, sessionId, selectedAgent, setMessages]);
+
+  const handleScrollToMessage = useCallback((messageId: string) => {
+    const el = messagesRef.current?.querySelector(
+      `[data-message-id="${messageId}"]`,
+    );
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, []);
+
   const [openPanels, setOpenPanels] = useState<Set<LeftPanelKind>>(new Set());
   const toggleNotifications = useStore((s) => s.toggleNotifications);
 
@@ -793,6 +816,7 @@ export function ChatView() {
                   onConfigureSection={
                     selectedAgent ? setConfigureSection : undefined
                   }
+                  onScrollToMessage={handleScrollToMessage}
                 />
                 {!hasPendingPermission && (
                   <div className="px-4 md:px-8">

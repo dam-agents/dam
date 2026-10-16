@@ -14,6 +14,14 @@ export interface OnboardingState {
 }
 
 export function buildOnboardingSteps(pack: Pack): OnboardingStep[] {
+  if (pack.agentChecklist?.length) {
+    return pack.agentChecklist.map((item) => ({
+      id: item.id,
+      label: item.label,
+      done: false,
+    }));
+  }
+
   const steps: OnboardingStep[] = [];
   const seen = new Set<string>();
 
