@@ -4,34 +4,22 @@ import { useIsDesktop } from "@/hooks/use-is-desktop";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
-import { GettingStartedPanel } from "../../getting-started/components/getting-started-panel.js";
-import { ApprovalsPanel } from "../../home/components/approvals-panel.js";
+import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
+import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
 import { useAppSidePanelTabs } from "../hooks/use-app-side-panel-tabs.js";
 import { useOpenSidePanel } from "../hooks/use-open-side-panel.js";
-import { useSidePanelLayout } from "../hooks/use-side-panel-layout.js";
 import {
   hiddenSidePanelTabs,
   NOTHING_DOCKED,
   selectSidePanelTab,
-  type SidePanelTab,
   visibleSidePanelTab,
 } from "../lib/side-panel.js";
 import {
   appSidePanelTabs,
   SIDE_PANEL_TABS,
-  SidePanelBar,
   SidePanelTabButtons,
 } from "./side-panel-bar.js";
-import { SidePanelFrame } from "./side-panel-frame.js";
-
-const PAGE_MIN_W = 320;
-
-export function AppSidePanel({ tab }: { tab: SidePanelTab | null }) {
-  if (tab === "getting-started")
-    return <GettingStartedPanel className="flex-1" />;
-  if (tab === "approvals") return <ApprovalsPanel className="flex-1" />;
-  return null;
-}
+import { SidePanelShell } from "./side-panel-shell.js";
 
 export function AppSidePanelButtons() {
   const { gettingStarted, ...tabs } = useAppSidePanelTabs();
@@ -57,15 +45,17 @@ export function AppSidePanelButtons() {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The icon bar and side panel of every page but an
- * Agent's chat, which hosts its own with the Agent's tabs added. Here only the
- * panels that belong to no Agent are offered: Get started and Approvals.
+ * UNIT_BOUNDARY_DESCRIPTION: The side panel on every page outside an Agent's
+ * chat. With no Agent in view, only the tabs that belong to no Agent exist:
+ * Artifacts, Get started and Approvals. Artifacts lists the whole library and
+ * docks the artifact it opens, without the interactive bridge, because no chat
+ * is open to receive a prompt.
  */
 export function AppSidePanelHost({ children }: { children: ReactNode }) {
+  const openArtifactId = useStore((s) => s.openArtifactId);
+  const artifactDirty = useStore((s) => s.openArtifactDirty);
   const sidePanelTab = useStore((s) => s.sidePanelTab);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
-  const mobileScreen = useStore((s) => s.mobileScreen);
-  const setMobileScreen = useStore((s) => s.setMobileScreen);
   const { gettingStarted, ...tabs } = useAppSidePanelTabs();
   const hidden = hiddenSidePanelTabs({
     agent: false,
@@ -74,43 +64,41 @@ export function AppSidePanelHost({ children }: { children: ReactNode }) {
     gettingStarted,
   });
   const activeTab = visibleSidePanelTab(sidePanelTab, NOTHING_DOCKED, hidden);
-  const layout = useSidePanelLayout(activeTab, PAGE_MIN_W);
-  const open = activeTab !== null;
-  const fills = open && layout.doesNotFit;
+  const dockedShown = openArtifactId !== null && activeTab === "artifacts";
 
   return (
-    <div ref={layout.setRowEl} className="flex min-h-0 min-w-0 flex-1">
-      <div className={cn("flex min-w-0 flex-1", fills && "md:hidden")}>
-        {children}
-      </div>
-      <SidePanelFrame
-        layout={layout}
-        open={open}
-        fills={fills}
-        mobileOpen={open && mobileScreen === "files"}
-        mobileTitle={SIDE_PANEL_TABS.find((t) => t.tab === activeTab)?.label}
-        onMobileBack={() => {
-          setSidePanelTab(null);
-          setMobileScreen("chat");
-        }}
-        bar={
-          <SidePanelBar
-            active={activeTab}
-            hidden={hidden}
-            onSelect={(tab) =>
-              setSidePanelTab(
-                selectSidePanelTab(tab, activeTab, NOTHING_DOCKED).kind ===
-                  "collapse"
-                  ? null
-                  : tab,
-              )
-            }
-            {...tabs}
+    <SidePanelShell
+      mainClassName="z-content"
+      activeTab={activeTab}
+      hiddenTabs={hidden}
+      onSelectTab={(tab) =>
+        setSidePanelTab(
+          selectSidePanelTab(tab, activeTab, NOTHING_DOCKED).kind === "collapse"
+            ? null
+            : tab,
+        )
+      }
+      {...tabs}
+      dockedShown={dockedShown}
+      dockedKept={openArtifactId !== null && (dockedShown || artifactDirty)}
+      mobileTitle={SIDE_PANEL_TABS.find((t) => t.tab === activeTab)?.label}
+      mobileBackLabel="Close side panel"
+      panel={
+        activeTab === "artifacts" && (
+          <ChatArtifactsPanel
+            agentId={null}
+            open
+            className={cn("flex-1", dockedShown && "hidden")}
           />
-        }
-      >
-        <AppSidePanel tab={activeTab} />
-      </SidePanelFrame>
-    </div>
+        )
+      }
+      dock={
+        openArtifactId && (
+          <DockedArtifactPanel key={openArtifactId} agentId={null} />
+        )
+      }
+    >
+      {children}
+    </SidePanelShell>
   );
 }

@@ -32,7 +32,7 @@ The UI shows the checklist as the **Get started** side panel, a panel like any o
 The panel takes its room from the page, as every side panel does, so it never covers the page's buttons, and it shares their width, resize handle and phone behavior: on a phone the ring sits in the top bar and the panel fills the screen under a back button.
 The panel opens only when the user asks for it.
 An unlock the user has not seen puts a count on the ring instead of opening the panel.
-Each row opens the place where the task is done; tasks on an Agent open the newest one, and the chat tasks leave a starting line in its composer.
+Each row opens the place where the task is done; tasks on an Agent open the newest one, the chat tasks leave a starting line in its composer, and the artifact task opens the side panel's Artifacts tab.
 Every unlock is pushed to the owner's open tabs as a [live hint](platform-topology.md); the panel plays a short celebration at its top for each unlock the user has not seen, one at a time, while it is open, then records it as seen.
 
 Dismissing the checklist closes the panel and hides the ring until the next unlock, which brings the ring back, or until the user asks for the checklist from the avatar picker, which opens the panel.

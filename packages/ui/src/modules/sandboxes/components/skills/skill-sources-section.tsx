@@ -6,6 +6,7 @@ import { ListSection } from "@/components/ui/list-section";
 
 import type { SkillsDerivations } from "../../hooks/use-skills-derivations.js";
 import type { SkillsSurface } from "../../hooks/use-skills-surface.js";
+import { sameSourcePath } from "../../lib/skill-identity.js";
 import { SkillSourceCard } from "./skill-source-card.js";
 import { SkillRowsSkeleton } from "./skills-skeleton.js";
 
@@ -45,6 +46,7 @@ export function SkillSourcesSection({
     busyKey,
     busySourceId,
     sets,
+    installed,
   } = surface;
   const { searching, shownSources, filteredBySource, suppressedBySource } =
     derived;
@@ -96,6 +98,10 @@ export function SkillSourcesSection({
             onRescan={() => void surface.refreshSource(src.id)}
             onRemove={() => onRemove(src)}
             onHide={() => void surface.setSourceHidden(src.id, true)}
+            hasInstalled={installed.some(
+              (r) =>
+                r.source === src.gitUrl && sameSourcePath(r.path, src.path),
+            )}
             onOpenSkill={(skill) => onOpenSkill(src, skill)}
             suppressedNames={suppressedBySource.get(src.id)}
             onToggleAll={(on, scope) => onToggleAll(src, on, scope)}

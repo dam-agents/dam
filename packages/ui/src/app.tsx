@@ -2,11 +2,12 @@ import { useEffect } from "react";
 
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
+import { Button } from "./components/ui/button.js";
 import { useIsDesktop } from "./hooks/use-is-desktop.js";
 import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
-import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
+import { ArtifactIcon } from "./modules/artifacts/lib/artifact-icon.js";
 import { useApprovalToasts } from "./modules/home/hooks/use-approval-toasts.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
@@ -68,6 +69,8 @@ export default function App() {
 function MainApp() {
   const view = useStore((s) => s.view);
   const kitBrowserOpen = useStore((s) => s.kitBrowserOpen);
+  const setSidePanelTab = useStore((s) => s.setSidePanelTab);
+  const setMobileScreen = useStore((s) => s.setMobileScreen);
   const desktop = useIsDesktop();
 
   useLiveEvents();
@@ -117,8 +120,27 @@ function MainApp() {
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <Sidebar />
         <AppSidePanelHost>
-          <main className="relative z-content flex flex-1 min-w-0 flex-col overflow-y-auto">
-            {!desktop && <AppTopBar actions={<AppSidePanelButtons />} />}
+          <main className="flex flex-1 flex-col overflow-y-auto">
+            {!desktop && (
+              <AppTopBar
+                actions={
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Artifacts"
+                      onClick={() => {
+                        setSidePanelTab("artifacts");
+                        setMobileScreen("files");
+                      }}
+                    >
+                      <ArtifactIcon size={16} />
+                    </Button>
+                    <AppSidePanelButtons />
+                  </>
+                }
+              />
+            )}
             <div
               className={cn(
                 "mx-auto w-full flex-1 px-4 md:px-[5%] py-6 md:py-10",
@@ -138,8 +160,6 @@ function MainApp() {
                 </>
               ) : view === "settings" ? (
                 <SettingsView />
-              ) : view === "artifacts" ? (
-                <ArtifactsView />
               ) : (
                 <NotFoundView />
               )}

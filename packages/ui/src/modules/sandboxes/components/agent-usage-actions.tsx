@@ -1,4 +1,4 @@
-import { Chat, Launch, LogoSlack, Terminal } from "@carbon/icons-react";
+import { Chat, Code, Launch, LogoSlack, Terminal } from "@carbon/icons-react";
 import { SessionMode } from "api-server-api";
 import type { ReactNode } from "react";
 
@@ -87,8 +87,7 @@ export function AgentUsageActions({
       icon: <PromptIcon />,
       kind: "expand",
       title: "CLI and SSH",
-      description:
-        "Use the agent from your own terminal, over SSH, or in your editor.",
+      description: "Use the agent from your own terminal or over SSH.",
       content: (
         <div className="flex flex-col gap-2 text-sm text-muted-foreground">
           <p>
@@ -100,9 +99,21 @@ export function AgentUsageActions({
           <CopyableCommand command={`${brand.short} chat ${ref}`} />
           <p className="mt-1">SSH to the agent:</p>
           <CopyableCommand command={`${brand.short} ssh connect ${ref}`} />
-          <p className="mt-1">
-            Open a remote <DocLink href={VS_CODE_REMOTE_URL}>VS Code</DocLink>{" "}
-            (or <DocLink href={ZED_REMOTE_URL}>Zed</DocLink> with{" "}
+        </div>
+      ),
+    },
+    {
+      icon: <Code />,
+      kind: "expand",
+      title: "VS Code and Zed",
+      description: "Work in the agent's sandbox from your own editor.",
+      content: (
+        <div className="flex flex-col gap-2 text-sm text-muted-foreground">
+          <p>
+            With the {brand.name} CLI installed (see the{" "}
+            <DocLink href={CLI_REFERENCE_URL}>CLI quickstart</DocLink>), open a
+            remote <DocLink href={VS_CODE_REMOTE_URL}>VS Code</DocLink> (or{" "}
+            <DocLink href={ZED_REMOTE_URL}>Zed</DocLink> with{" "}
             <code className="font-mono">-x zed</code>) session and work directly
             in the agent's sandbox:
           </p>

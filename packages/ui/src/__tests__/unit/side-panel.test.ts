@@ -19,8 +19,8 @@ import type { PlatformStore } from "../../store.js";
 
 /**
  * TEST_OVERVIEW: Every page has one side panel on the right, switched by an
- * icon bar. An Agent's chat offers Artifacts, Files, Changes, Browser and
- * Processes; every page, the chat included, offers Get started and Approvals.
+ * icon bar. An Agent's chat offers Files, Changes, Browser and Processes;
+ * every page, the chat included, offers Artifacts, Get started and Approvals.
  * A list tab shows its list, or the docked item it opened (a file, an
  * artifact, a process output). The Changes and Browser tabs show their docked
  * panel and nothing else. Clicking the active icon collapses the panel. A
@@ -87,14 +87,18 @@ describe("which tab the side panel shows", () => {
 });
 
 describe("the panels outside an Agent's chat", () => {
-  it("TEST_SCENARIO: a page that is not an Agent's chat offers only Get started and Approvals, so an Agent's tab left open there shows nothing", () => {
+  it("TEST_SCENARIO: a page that is not an Agent's chat offers only Artifacts, Get started and Approvals, so an Agent's tab left open there shows nothing", () => {
     const hidden = hiddenSidePanelTabs({
       agent: false,
       canOpenBrowser: true,
       processesEnabled: true,
       gettingStarted: true,
     });
-    expect(visibleSidePanelTab("artifacts", NOTHING_DOCKED, hidden)).toBe(null);
+    expect(visibleSidePanelTab("files", NOTHING_DOCKED, hidden)).toBe(null);
+    expect(visibleSidePanelTab("processes", NOTHING_DOCKED, hidden)).toBe(null);
+    expect(visibleSidePanelTab("artifacts", NOTHING_DOCKED, hidden)).toBe(
+      "artifacts",
+    );
     expect(visibleSidePanelTab("approvals", NOTHING_DOCKED, hidden)).toBe(
       "approvals",
     );
@@ -197,10 +201,12 @@ describe("the panel width", () => {
 });
 
 describe("the maximizable views", () => {
-  it("TEST_SCENARIO: only the browser and an open file maximize, and each file is its own view", () => {
-    expect(maximizableView("browser", true, null)).toBe("browser");
-    expect(maximizableView("files", true, "/a.md")).toBe("file:/a.md");
-    expect(maximizableView("files", false, "/a.md")).toBe(null);
-    expect(maximizableView("artifacts", true, null)).toBe(null);
+  it("TEST_SCENARIO: only the browser, an open file and an open artifact maximize, and each file or artifact is its own view", () => {
+    expect(maximizableView("browser", true, null, null)).toBe("browser");
+    expect(maximizableView("files", true, "/a.md", null)).toBe("file:/a.md");
+    expect(maximizableView("files", false, "/a.md", null)).toBe(null);
+    expect(maximizableView("artifacts", true, null, "a1")).toBe("artifact:a1");
+    expect(maximizableView("artifacts", false, null, "a1")).toBe(null);
+    expect(maximizableView("artifacts", true, null, null)).toBe(null);
   });
 });

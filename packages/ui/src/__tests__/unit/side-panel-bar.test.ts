@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The side panel's icon bar lists one button per visible tab, shows a count badge on a tab while it has one, such as the processes running now, and keeps the tabs of every page, Get started and Approvals, at its bottom, after the Agent's tabs.
+// TEST_OVERVIEW: The side panel's icon bar lists one button per visible tab, shows a count badge on a tab while it has one, such as the processes running now, keeps Get started and Approvals at its bottom, after the Agent's tabs, and outside an Agent's chat offers only Artifacts, Get started and Approvals.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
@@ -8,6 +8,7 @@ import {
   type SidePanelBadge,
   SidePanelBar,
 } from "../../modules/sessions/components/side-panel-bar.js";
+import { hiddenSidePanelTabs } from "../../modules/sessions/lib/side-panel.js";
 
 function render(processes?: SidePanelBadge) {
   return renderToStaticMarkup(
@@ -106,4 +107,28 @@ it("orders the tabs Artifacts, Files, Changes, Browser", () => {
   );
   expect(order).toEqual([...order].sort((a, b) => a - b));
   expect(order[0]).toBeGreaterThan(-1);
+});
+
+// TEST_SCENARIO: Home and every other page share the chat's icon bar, with Artifacts at the top beside Get started and Approvals at the bottom, and none of the Agent's tabs.
+it("offers only the tabs that belong to no Agent outside a chat", () => {
+  const html = renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(SidePanelBar, {
+        active: null,
+        hidden: hiddenSidePanelTabs({
+          agent: false,
+          canOpenBrowser: true,
+          processesEnabled: true,
+          gettingStarted: true,
+        }),
+        onSelect: () => {},
+      }),
+    ),
+  );
+  const tabs = [
+    ...html.matchAll(/data-testid="side-panel-tab-([a-z-]+)"/g),
+  ].map((m) => m[1]);
+  expect(tabs).toEqual(["artifacts", "getting-started", "approvals"]);
 });

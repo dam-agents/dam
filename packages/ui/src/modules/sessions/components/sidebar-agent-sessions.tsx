@@ -8,6 +8,7 @@ import { type ReactNode, useEffect, useState } from "react";
 
 import { labelVariants } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
+import { TREE_GUIDE } from "@/components/ui/tree-guide";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
@@ -40,8 +41,6 @@ import { SessionListSkeleton } from "./session-list-skeleton.js";
 import { SessionRow } from "./session-row.js";
 
 const ROW_CLASS = "rounded-lg border-b-0 py-1.5 pr-2 pl-9";
-const TREE_GUIDE =
-  "relative after:pointer-events-none after:absolute after:-top-px after:bottom-0 after:left-5 after:w-px after:-translate-x-1/2 after:bg-border after:content-['']";
 
 type OrderActions = ReturnType<typeof useSidebarOrderActions>;
 
@@ -133,7 +132,7 @@ function SessionPreview({
 
   return (
     <div
-      className="flex flex-col gap-px pb-1"
+      className="flex flex-col gap-px pb-1 [--tree-guide-x:20px]"
       data-testid="sidebar-agent-sessions"
     >
       {visible.map((item) => (
@@ -257,7 +256,7 @@ function AgentSessionList({
 
   return (
     <div
-      className="flex flex-col gap-px pb-1"
+      className="flex flex-col gap-px pb-1 [--tree-guide-x:20px]"
       data-testid="sidebar-agent-sessions"
       data-provisional={list.provisional ? "true" : undefined}
       aria-busy={list.provisional || list.loading}

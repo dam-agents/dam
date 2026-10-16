@@ -1,4 +1,4 @@
-import { Document, Folder, Image } from "@carbon/icons-react";
+import { Document, Folder, FolderOpen, Image } from "@carbon/icons-react";
 import { useState } from "react";
 
 import {
@@ -7,10 +7,10 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { DisclosureChevron } from "@/components/ui/disclosure";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
+import { treeIndent } from "@/components/ui/tree-guide";
 import { clickableProps } from "@/lib/clickable";
 
 import { useStore } from "../../../store.js";
@@ -75,7 +75,8 @@ export function FileRow({
       <ContextMenuTrigger asChild>
         <div
           className={`group relative flex items-center h-8 text-sm cursor-pointer transition-colors ${menuOpen ? "z-raised" : ""} ${highlight ? "bg-muted ring-1 ring-primary ring-inset text-muted-foreground font-medium" : `text-muted-foreground hover:bg-muted ${isDir ? "font-medium" : ""} ${isActive ? "bg-muted" : ""}`}`}
-          style={{ paddingLeft: `${12 + depth * 14}px`, paddingRight: 12 }}
+          style={{ paddingLeft: treeIndent(depth), paddingRight: 12 }}
+          aria-expanded={isDir ? !isCollapsed : undefined}
           {...clickableProps(
             isDir
               ? () => panel.onToggleDir(path)
@@ -131,17 +132,11 @@ function RowIcons({
   return (
     <>
       {isDir ? (
-        <span className="w-4 shrink-0 flex items-center justify-center">
-          <DisclosureChevron
-            open={!isCollapsed}
-            className="text-muted-foreground"
-          />
-        </span>
-      ) : (
-        <span className="w-4 shrink-0" />
-      )}
-      {isDir ? (
-        <Folder size={16} className="shrink-0" />
+        isCollapsed ? (
+          <Folder size={16} className="shrink-0" />
+        ) : (
+          <FolderOpen size={16} className="shrink-0" />
+        )
       ) : looksLikeImage ? (
         <Image size={16} className="shrink-0" />
       ) : (
