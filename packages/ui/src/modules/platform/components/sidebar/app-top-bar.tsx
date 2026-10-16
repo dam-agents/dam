@@ -17,7 +17,7 @@ export function AppTopBar({ actions }: { actions: ReactNode }) {
   const title = TITLES[view] ?? getBrand().name;
 
   return (
-    <div className="sticky top-0 z-raised flex h-[52px] items-center gap-2 border-b border-border bg-background px-4 md:hidden">
+    <div className="sticky top-0 z-raised flex h-[52px] items-center gap-2 border-b border-border bg-background px-4">
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <MobileMenuButton />
         <span className="truncate text-sm font-semibold text-foreground">

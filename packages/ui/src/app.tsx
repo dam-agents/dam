@@ -2,6 +2,7 @@ import { useEffect } from "react";
 
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
+import { useIsDesktop } from "./hooks/use-is-desktop.js";
 import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
@@ -73,6 +74,7 @@ function MainApp() {
   const approvalsOpen = useStore((s) => s.approvalsOpen);
   const setApprovalsOpen = useStore((s) => s.setApprovalsOpen);
   const kitBrowserOpen = useStore((s) => s.kitBrowserOpen);
+  const desktop = useIsDesktop();
 
   useLiveEvents();
   useAgentCrashToasts();
@@ -124,14 +126,16 @@ function MainApp() {
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <Sidebar />
         <main className="relative z-content flex flex-1 flex-col overflow-y-auto">
-          <AppTopBar
-            actions={
-              <>
-                <GettingStartedDock placement="header" />
-                <ApprovalsButton />
-              </>
-            }
-          />
+          {!desktop && (
+            <AppTopBar
+              actions={
+                <>
+                  <GettingStartedDock placement="header" />
+                  <ApprovalsButton />
+                </>
+              }
+            />
+          )}
           <div
             className={cn(
               "mx-auto w-full flex-1 px-4 md:px-[5%] py-6 md:py-10",
@@ -158,13 +162,15 @@ function MainApp() {
             )}
           </div>
         </main>
-        <aside
-          aria-label="Notifications"
-          className="hidden w-11 shrink-0 flex-col items-center justify-end gap-1 border-l border-border bg-background py-2 md:flex"
-        >
-          <GettingStartedDock placement="rail" />
-          <ApprovalsButton />
-        </aside>
+        {desktop && (
+          <aside
+            aria-label="Notifications"
+            className="flex w-11 shrink-0 flex-col items-center justify-end gap-1 border-l border-border bg-background py-2"
+          >
+            <GettingStartedDock placement="rail" />
+            <ApprovalsButton />
+          </aside>
+        )}
       </div>
       {approvalsOpen && (
         <ApprovalsPanel onClose={() => setApprovalsOpen(false)} />
