@@ -5,7 +5,9 @@ const DENY_BATCH_SIZE = 500;
 export function deniableApprovalIds(
   approvals: readonly ApprovalView[],
 ): string[] {
-  return approvals.filter((a) => a.status === "pending").map((a) => a.id);
+  return approvals
+    .filter((a) => a.status === "pending" && a.type !== "spend_limit")
+    .map((a) => a.id);
 }
 
 export function denyBatches(ids: readonly string[]): string[][] {

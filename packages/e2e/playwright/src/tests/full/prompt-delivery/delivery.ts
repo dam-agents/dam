@@ -10,6 +10,7 @@ import {
   openAgentChat,
   sendMessageToAgent,
   setMockAgentReply,
+  sidebarAgentRow,
 } from "../../../lib/agents.js";
 import type { ApiClient } from "../../../lib/api-client.js";
 import { acceptTerms, loginViaUi } from "../../../lib/auth.js";
@@ -58,6 +59,10 @@ export async function retryUndelivered(
   await page.getByRole("menuitem", { name: "Retry" }).click();
 }
 
+export function newestSessionRow(page: Page): Locator {
+  return sidebarAgentRow(page, agentName).getByTestId("session-row").first();
+}
+
 export async function reopenMockAgentChat(
   page: Page,
   agentId: string,
@@ -67,7 +72,7 @@ export async function reopenMockAgentChat(
     timeout: 60_000,
   });
   await gotoAgentChat(page, agentName, agentId);
-  const sessionRow = page.getByTestId("session-row").first();
+  const sessionRow = newestSessionRow(page);
   await expect(sessionRow).toBeVisible({ timeout: 60_000 });
   await sessionRow.click();
   await expect(chatInput(page)).toBeVisible();

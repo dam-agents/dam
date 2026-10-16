@@ -1,5 +1,4 @@
-import { type QueryClient, useQuery } from "@tanstack/react-query";
-import type { inferOutput } from "@trpc/tanstack-react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import { trpc } from "../../../trpc.js";
@@ -74,20 +73,4 @@ export function useFeed(): Feed {
     feedUnreadable: attention.isError,
     approvalsUnreadable: approvals.isError,
   };
-}
-
-type SpendBreakdown = inferOutput<typeof trpc.metrics.spendBreakdown>;
-
-export function cachedSpend(queryClient: QueryClient, homeSpend: string) {
-  return queryClient
-    .getQueriesData<SpendBreakdown>({
-      ...trpc.metrics.spendBreakdown.queryFilter(),
-      predicate: (query) =>
-        query.meta?.homeSpend === homeSpend && query.state.data !== undefined,
-    })
-    .sort(
-      ([a], [b]) =>
-        (queryClient.getQueryState(b)?.dataUpdatedAt ?? 0) -
-        (queryClient.getQueryState(a)?.dataUpdatedAt ?? 0),
-    )[0]?.[1];
 }

@@ -54,6 +54,9 @@ When a fire is due:
 A fire on an Agent created from a [starter kit](starter-kits.md#concepts) whose onboarding is still pending is **held** before step 1: no event is inserted, the next occurrence is computed and armed as usual, and the schedule's last result reads `held: onboarding not complete`, which the schedules page shows as held rather than failed.
 The hold reads the Agent's onboarding annotation and lifts the moment the mark lands.
 A fire on an Agent a [runtime migration](vm-runtime-migration.md) holds down — from the container's stop until the machine has booted from the copy, or after a failure that came after the stop — is held the same way, reading `held: moving to the new runtime`, since the fire could only wait out the wake.
+A fire on a [disabled](agent-lifecycle.md#disable) Agent is held too, reading `held: agent disabled`, and a one-time task due while it is disabled is recorded missed rather than left to wait for an enable.
+A fire whose payer is at a [spend limit or the Spend Ceiling](spend-limits.md#unattended-work) is held the same way, reading `held: spend limit reached for today` or `held: spend ceiling reached for today`.
+That check runs once the fire's provider Connection is chosen, so a limit on that Connection counts as well.
 
 An event that is never delivered stays pending in Postgres and is redelivered until it settles or expires, and the agent keeps a last-fire timestamp per schedule on the PVC, so a redelivered or superseded fire never runs twice.
 That safety net ends where a fire is settled.
@@ -80,6 +83,7 @@ What a single occurrence changes follows from it having **no next occurrence to 
   One whose window passed before it could be fired at all is recorded *missed* by the reconcile.
 - **Nothing may skip it.** It takes no Precheck, since a decline would mean *never* rather than *not this time*, and no quiet hours, since its moment was chosen deliberately.
   Neither the onboarding hold nor the runtime-migration hold applies — a hold guards a cadence, and skipping a single occurrence would lose the task outright; during a migration its event simply waits out the move inside its delivery window.
+  A [spend limit or the Spend Ceiling](spend-limits.md#unattended-work) only delays it the same way: the fire records nothing and re-arms for the next UTC midnight, when the limit starts again, and the owner setting or continuing a limit re-arms it at once.
   A sleep's stop stamp is overridden exactly as a recurring fire overrides it.
 - **It opens a fresh Session** unless tied to the one that scheduled it (below), typed as a one-time schedule's so the surfaces group it with scheduled work.
   That session can run on a **model of its own** rather than the default — a routine check-back on a cheap model, a hard one-off on a strong one — where the harness can switch a session's model ([harness-config](harness-config.md)); the choice is refused at creation where it cannot, and a harness that still refuses the switch when the task fires fails the task with its reason rather than running it on a model nobody chose.
@@ -223,3 +227,4 @@ A continuous schedule resumes its own session, a declined verdict restores the a
 Two cases refuse outright.
 A one-time schedule has no cadence to try out, and a run beside its own would do the task twice.
 And an Agent from a [starter kit](starter-kits.md#concepts) whose onboarding is still pending: a scheduled fire is *held* there because nobody is watching; here somebody is, so the refusal is reported rather than the fire quietly vanishing.
+An Agent at a spend limit or the Spend Ceiling is refused the same way, with the reason.

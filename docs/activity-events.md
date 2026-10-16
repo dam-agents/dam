@@ -40,6 +40,7 @@ They will not appear in `activity_events`, so they answer nothing about usage.
 | `ContributionGapChanged` | _elsewhere_ | runtime-delivery |
 | `ApprovalRequested` | _elsewhere_ | approvals |
 | `ApprovalResolved` | _elsewhere_ | approvals |
+| `SpendLimitsChanged` | _elsewhere_ | spend |
 | `ScheduleCreated` | _elsewhere_ | schedules |
 | `ScheduleUpdated` | _elsewhere_ | schedules |
 | `ScheduleDeleted` | _elsewhere_ | schedules |

@@ -5,7 +5,11 @@ import {
 } from "node:http";
 import { once } from "node:events";
 import { Readable } from "node:stream";
-import { parseQualifiedModel, type ProviderAlias } from "api-server-api";
+import {
+  parseQualifiedModel,
+  PLATFORM_REFUSAL_HEADER,
+  type ProviderAlias,
+} from "api-server-api";
 import type {
   CatalogEntry,
   CatalogProvider,
@@ -375,6 +379,12 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       deps.log(
         `[model-router] ${harness} ${entry.alias}/${entry.upstreamId} (${dialect}) → ${upstream.status}: ${text.replace(/\s+/g, " ").slice(0, 400)}`,
       );
+      if (upstream.headers.has(PLATFORM_REFUSAL_HEADER)) {
+        res.writeHead(upstream.status, resHeaders);
+        onceSent(() => record(upstream.status, null));
+        res.end(text);
+        return;
+      }
       const explained = explainUpstreamError({
         status: upstream.status,
         text,

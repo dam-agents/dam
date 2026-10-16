@@ -52,6 +52,7 @@ Networked verbs opt into the gate; `dam version` is the un-gated informational c
 The realm advertises a public `platform-cli` client (device grant only, no secret); the CLI discovers its id from the server rather than hardcoding it, then drives the standard device flow — print (and optionally open) a verification URL, poll the token endpoint — and on success persists a per-host credential record under `$XDG_STATE_HOME/dam/` with restrictive permissions and an atomic write.
 
 Credentials are keyed by host URL, so switching between deployments never clobbers state.
+A host that moved redirects its `/api/auth/config` to the new host; login follows that redirect, keys the credential under the new host, and saves the new host as the active one.
 `dam auth status` lists each host, credential source, and token expiry, and never prints tokens.
 `dam auth logout` best-effort revokes the refresh token ([RFC 7009](https://datatracker.ietf.org/doc/html/rfc7009)) and removes the local entry; the local clear always proceeds even when revocation fails.
 Logout is deliberately not RP-Initiated Logout — the CLI must not kill SSO sessions belonging to the web UI or federated apps.
@@ -63,6 +64,7 @@ A refresh that fails with an invalid grant clears the entry and surfaces a sessi
 Those are the client-side signals.
 The server can also reject a request that looked valid locally, and the CLI surfaces that distinctly rather than as a transport failure: it maps the api-server's raw 401/403 (alongside the existing 412 Terms gate) to typed errors.
 A 401 becomes session-expired — with a hint that switches to "check `DAM_TOKEN`" when that variable is set, because a bearer supplied that way lives outside the credential store and re-login can't fix it.
+A 401 that answers after a redirect to another host names the move instead, because `fetch` drops the bearer on a cross-origin redirect; the CLI never resends the bearer to the redirect target, since that host was never logged in to.
 A 403 becomes access-denied with no login hint: the caller is authenticated but not authorized (e.g. an account without the install's required realm role), so the remedy is an admin, not re-authentication.
 Any other reached-but-rejected request surfaces the server's own reason; "cannot reach server" is reserved for genuine connectivity failures.
 An error answer that is not JSON — a gateway's HTML page — names the HTTP status it came with, never a parse error.
@@ -98,7 +100,7 @@ The CLI is at parity with the web UI across these groups.
 Each concept's depth lives on its owning architecture page; per-verb flags, exit-code numbers, and tRPC procedure names live in the code, not here.
 
 - **`auth`** — login, logout, status, and API-key management ([Authentication](#authentication)).
-- **`agent`** — list, get, create, interactive create, delete, restart, plus read-only template listing ([Agent lifecycle](#agent-lifecycle)).
+- **`agent`** — list, get, create, interactive create, delete, restart, disable, enable, plus read-only template listing ([Agent lifecycle](#agent-lifecycle)).
 - **`chat`** / **`session`** — attach a local terminal to a running agent's TUI, and list an agent's sessions ([Terminal attach](#terminal-attach)).
 - **`telemetry`** — list a session's turns, and export its traces and log records as newline-delimited JSON ([Agent telemetry](agent-telemetry.md)).
 - **`run`** — headless programmatic runs for CI and orchestration: submit a prompt, stream the answer, read a finished run's result later, cancel a running one ([Headless runs](#headless-runs)).
@@ -116,6 +118,8 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
   `mcp` and `shell` are the two verbs with no browser counterpart: each is the worker itself, and its log is how a user reads what the machine accepted, refused and ran.
   The group marks itself experimental in its description and help text, which is how a pre-release surface is disclosed where there is no feature flag to read.
 - **`schedule`** — time-triggered tasks on an agent: recurrences, including the Precheck that decides each occurrence, and one-time schedules at a local moment or now, owned by [schedules.md](schedules.md).
+- **`spend`** — the Metered Spend per UTC day, today's spend against the Spend Limits and the caller's Spend Ceiling, for one agent or for the caller, and setting or removing a daily limit for an agent, for all of the caller's agents, or for an agent's calls on one Connection in that Connection's unit, owned by [spend-limits.md](spend-limits.md).
+  "Continue" at a limit is an `approval` verb, because the question is an approval.
 - **`terms`** — view the current Terms of Use and accept them from the CLI (`show` / `status` / `accept`), owned by the terms gate in [security-and-credentials.md](security-and-credentials.md).
 
 ## Shared conventions
@@ -144,6 +148,8 @@ The CLI presents Agents as single, atomic entities — one resource carrying bot
 - **Create** is one mutation; env vars and description attach to the payload and the merged Agent is provisioned atomically server-side.
   **Delete** cascades through Kubernetes ownership to the StatefulSet, Service, NetworkPolicy, and owned volumes — the same path the UI's delete uses.
   **Restart** deletes the agent's pod; the controller recreates it with the current spec and persistent volumes survive.
+  **Disable** puts the agent to sleep and keeps anything from waking it until **Enable**, which leaves it asleep until its next use ([agent-lifecycle](agent-lifecycle.md#disable)).
+  Both refuse with a conflict while a runtime migration holds the agent, and `list` and `get` show a disabled agent's state as `disabled`.
 - **Scripted create may name a model-provider Connection**, by id or unique name; without one the server grants every provider of the caller's that the harness runs on ([agent-lifecycle](agent-lifecycle.md#create)), and each session picks its harness and model.
   An id goes directly to creation with agent-management permission; name lookup additionally needs credential-read permission and rejects ambiguous matches.
   Before creating the Agent, the server checks that a named Connection belongs to the caller and is an active model provider, then includes it in the initial grants; an invalid one fails with guidance to choose or reconnect a provider.
