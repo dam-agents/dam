@@ -277,7 +277,7 @@ test("drag reorders Sessions within their Agent, and a new Session goes to the b
 
   await test.step("a turn in a Session moves nothing, and its ⋯ button takes every click", async () => {
     await setMockLongTurnReply(api, agentId, {
-      holdMs: 30_000,
+      holdMs: 15_000,
       tail: "order-long-tail",
     });
     await sendMessageToAgent(page, "order-working");
