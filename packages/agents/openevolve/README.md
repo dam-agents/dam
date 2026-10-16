@@ -31,5 +31,5 @@ The pinned release is the `version` in [`image.toml`](image.toml).
 
 ## CI / publishing
 
-The openevolve image is published by CI (`.github/workflows/cd.yml`): the per-arch `build-workloads` job runs after `merge-agents` — it builds `FROM` the default image, so it pulls its base by the same per-commit tag — and `merge-workloads` publishes the multi-arch manifest to the public `quay.io/dam-agents/openevolve` (no `imagePullSecret`).
+The openevolve image is published by CI (`.github/workflows/build.yml`): the per-arch `build-workloads` job runs after `merge-agents` — it builds `FROM` the default image, so it pulls its base by the same per-commit tag — and `merge-workloads` publishes the multi-arch manifest to the public `quay.io/dam-agents/openevolve` (no `imagePullSecret`).
 The template is enabled in `values.yaml` under "Pre-configured Images" (`category: preconfigured`, `experimental: true`).

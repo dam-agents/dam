@@ -14,7 +14,7 @@ import {
 } from "../../lib/fixtures.js";
 
 test("connection injects the credential (env placeholder + egress after Envoy)", async () => {
-  test.setTimeout(420_000);
+  test.setTimeout(300_000);
 
   const token = await getAccessToken();
   const api = createApiClient(token);

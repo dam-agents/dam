@@ -132,10 +132,7 @@ function SessionPreview({
 
   return (
     <div
-      className={cn(
-        "flex flex-col gap-px pb-1 [--tree-guide-x:20px] before:bottom-1",
-        TREE_GUIDE,
-      )}
+      className="flex flex-col gap-px pb-1 [--tree-guide-x:20px]"
       data-testid="sidebar-agent-sessions"
     >
       {visible.map((item) => (
@@ -259,10 +256,7 @@ function AgentSessionList({
 
   return (
     <div
-      className={cn(
-        "flex flex-col gap-px pb-1 [--tree-guide-x:20px] before:bottom-1",
-        TREE_GUIDE,
-      )}
+      className="flex flex-col gap-px pb-1 [--tree-guide-x:20px]"
       data-testid="sidebar-agent-sessions"
       data-provisional={list.provisional ? "true" : undefined}
       aria-busy={list.provisional || list.loading}
@@ -314,7 +308,10 @@ function AgentSessionList({
         <button
           type="button"
           onClick={() => void fetchNextPage()}
-          className="flex h-[30px] items-center rounded-lg pl-9 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className={cn(
+            TREE_GUIDE,
+            "flex h-[30px] items-center rounded-lg pl-9 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+          )}
         >
           Couldn't load the rest. Retry
         </button>
@@ -359,7 +356,7 @@ function OrderedRow({
     onStep: (id, step) => orderActions.stepSession(agentId, shown, id, step),
   });
   return (
-    <div {...drag.dragProps} className="relative">
+    <div {...drag.dragProps} className={TREE_GUIDE}>
       {children}
       <OrderDropIndicator at={drag.indicator} />
     </div>
@@ -387,6 +384,7 @@ function ToggleRow({
       data-testid="sidebar-agent-sessions-toggle"
       className={cn(
         labelVariants(),
+        TREE_GUIDE,
         "flex h-[30px] shrink-0 items-center gap-1 rounded-lg pl-9 text-left text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
         !more && ["sticky bottom-0 z-raised", stickyClassName],
       )}

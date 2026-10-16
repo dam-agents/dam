@@ -107,7 +107,7 @@ mise run //packages/e2e/playwright:install-browsers
 #
 # E2E_HOST_PROVISIONED says the caller provisioned k3s on this host for this
 # run, so there is nothing stale to nuke: CI's e2e job starts k3s on its fresh
-# runner at the top of the job, beside its own setup (see cd.yml).
+# runner at the top of the job, beside its own setup (see e2e.yml).
 if [ -n "${E2E_HOST_PROVISIONED:-}" ]; then
   echo "Keeping the k3s this run provisioned (E2E_HOST_PROVISIONED)."
 else

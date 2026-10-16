@@ -64,7 +64,7 @@ async function openSession(): Promise<Frame[]> {
 }
 
 test.beforeAll(async () => {
-  test.setTimeout(900_000);
+  test.setTimeout(300_000);
   api = createRefreshingApiClient(token);
   await requireBackend(api, "vm");
   await acceptTerms(api);
@@ -76,7 +76,7 @@ test.beforeAll(async () => {
     "-l",
     "app.kubernetes.io/component=harness-tools",
     "--for=condition=Ready",
-    "--timeout=600s",
+    "--timeout=240s",
   );
   agentId = await createAgentOn(api, "vm", "e2e-harness-tools", "claude-code");
 });
@@ -87,7 +87,7 @@ test.afterAll(async () => {
 
 // TEST_SCENARIO: the machine boots the default image, whose agent-runtime runs on node from the shared tools, and the Template's harness answers over the relay: Claude Code's ACP adapter, which only the tools directory holds, initializes and opens a session. A second client connecting to the same harness process is answered too, as a second tab or a reconnect would be.
 test("boots on the node's tools and opens a Claude Code session, twice", async () => {
-  test.setTimeout(900_000);
+  test.setTimeout(300_000);
   await waitAgentState(api, agentId, "running");
 
   for (const connection of ["first", "second"]) {

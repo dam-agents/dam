@@ -57,7 +57,7 @@ export function SidebarAgentRow({
           aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
           data-testid="sidebar-agent-row"
           className={cn(
-            "flex h-[34px] min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-left select-none",
+            "flex h-[34px] min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-lg pr-2 pl-2.5 text-left select-none",
             open ? "pr-[84px]" : "group-hover/agent:pr-[60px]",
             open
               ? "text-foreground"
@@ -81,10 +81,12 @@ export function SidebarAgentRow({
               <span
                 aria-hidden
                 className={cn(
-                  "size-2 shrink-0 rounded-full bg-accent group-hover/agent:hidden",
+                  "flex size-4 shrink-0 items-center justify-center group-hover/agent:hidden",
                   open && "hidden",
                 )}
-              />
+              >
+                <span className="size-2 rounded-full bg-accent" />
+              </span>
               <span className="sr-only">(unread)</span>
             </>
           )}
