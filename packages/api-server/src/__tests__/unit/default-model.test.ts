@@ -5,6 +5,7 @@ import type { HarnessCatalog, SessionPair } from "api-server-api";
 import { convertedDefaultModel } from "../../modules/harness-config/domain/default-conversion.js";
 import { NoDefaultModelError } from "../../modules/harness-config/domain/no-default-model.js";
 import { createDefaultConverter } from "../../modules/harness-config/services/default-conversion.js";
+import { createScheduleModelForFire } from "../../modules/harness-config/services/schedule-model.js";
 import {
   resolveFirePair,
   resolveRememberedPair,
@@ -191,12 +192,15 @@ describe("the one-time default conversion", () => {
     ran?: string[];
     moved?: boolean;
     running?: boolean;
+    helloAfterWake?: boolean;
   }) => {
     const writes: SessionPair[] = [];
     let saved = opts.saved ?? null;
     const ranQueries: number[] = [];
     const wakes: string[] = [];
     let catalogReads = 0;
+    let moved = opts.moved ?? false;
+    let clock = 0;
     const c = createDefaultConverter({
       pairRepo: {
         read: async () => saved,
@@ -229,13 +233,16 @@ describe("the one-time default conversion", () => {
         ranQueries.push(hours);
         return hours >= 7 * 24 ? (opts.ran ?? []) : [];
       },
-      movedToNewImage: async () => opts.moved ?? false,
+      movedToNewImage: async () => moved,
       isRunning: async () => opts.running ?? true,
       wake: async (id) => {
         wakes.push(id);
+        if (opts.helloAfterWake !== false) moved = false;
         return { previous: "T0", written: "T1" };
       },
-      lastHelloAt: async () => Number.MAX_SAFE_INTEGER,
+      lastHelloAt: async () =>
+        opts.helloAfterWake === false ? 0 : Number.MAX_SAFE_INTEGER,
+      now: () => (clock += 60_000),
       log: () => {},
       sleep: async () => {},
     });
@@ -307,8 +314,8 @@ describe("the one-time default conversion", () => {
     expect(refused.writes[0]?.model).toBeNull();
   });
 
-  // TEST_SCENARIO: a fire wakes an Agent first only while it is moved to a new image and has no saved default; any other Agent fires in the normal order.
-  it("wakes first only an agent moved to a new image", async () => {
+  // TEST_SCENARIO: a fire wakes an Agent first only while it is moved to a new image and asleep, so the fire is checked against the new runtime; its start ends the move, so a later fire takes the normal order.
+  it("wakes first only an agent moved to a new image and asleep", async () => {
     const notMoved = converter({ moved: false, running: false });
     expect(await notMoved.c.ensureForFire("a")).toBeNull();
     expect(notMoved.wakes).toEqual([]);
@@ -323,6 +330,28 @@ describe("the one-time default conversion", () => {
     expect(moved.writes[0]?.model).toBe("anthropic/claude-opus-5-5");
     expect(await moved.c.ensureForFire("a")).toBeNull();
     expect(moved.wakes).toEqual(["a"]);
+
+    const savedAlready = converter({
+      moved: true,
+      running: false,
+      saved: { harness: "claude-code", provider: "anth", model: "x/y" },
+    });
+    await savedAlready.c.ensureForFire("a");
+    expect(savedAlready.wakes).toEqual(["a"]);
+    expect(savedAlready.writes).toEqual([]);
+  });
+
+  // TEST_SCENARIO: a moved Agent whose new runtime does not say hello in time fails the fire as still setting up, rather than letting it go out on the old runtime's view.
+  it("fails the fire as pending when the moved agent does not start in time", async () => {
+    const slow = converter({
+      moved: true,
+      running: false,
+      helloAfterWake: false,
+    });
+    await expect(slow.c.ensureForFire("a")).rejects.toMatchObject({
+      name: "NoDefaultModelError",
+      pending: true,
+    });
   });
 
   // TEST_SCENARIO: a hello, a fire and a channel turn arriving together share one conversion instead of each polling the runtime.
@@ -330,5 +359,32 @@ describe("the one-time default conversion", () => {
     const { c, catalogReads } = converter({});
     await Promise.all([c.ensure("a", 1000), c.ensure("a", 1000)]);
     expect(catalogReads()).toBe(1);
+  });
+});
+
+describe("a schedule model on a runtime that takes none per session", () => {
+  const forFire = (capabilities: unknown, own: string | null) =>
+    createScheduleModelForFire({
+      getCapabilities: async () => capabilities,
+      snapshotRepo: {
+        read: async () => ({ model: own }) as never,
+        merge: async () => {},
+      },
+    });
+
+  // TEST_SCENARIO: the upgrade copied a v0.2.21 agent's own model onto its schedules; that runtime cannot take a model per session, so the fire drops the copy and runs as before, while a schedule naming another model still goes to the check that refuses it.
+  it("drops the agent's own model and keeps any other", async () => {
+    const legacy = forFire({}, "aws/claude-opus-4-8");
+    expect(await legacy("a", "ibm/aws/claude-opus-4-8")).toBeUndefined();
+    expect(await forFire({}, "opus[1m]")("a", "bedrock/opus")).toBeUndefined();
+    expect(await legacy("a", "ibm/aws/claude-sonnet-5-5")).toBe(
+      "ibm/aws/claude-sonnet-5-5",
+    );
+    expect(
+      await forFire(ROUTED, "aws/claude-opus-4-8")(
+        "a",
+        "ibm/aws/claude-opus-4-8",
+      ),
+    ).toBe("ibm/aws/claude-opus-4-8");
   });
 });

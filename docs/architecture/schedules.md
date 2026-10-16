@@ -179,6 +179,7 @@ A schedule, recurring or [one-time](#one-time-schedules), carries the same choic
 A schedule's choices live on its sessions alone.
 Each choice is optional; an unset one takes the agent's saved default ([harness configuration](harness-config.md#session-settings)), and no settings.
 With no default model saved, a fire fails with that reason on its first attempt, with no retry, and Run Now refuses with it.
+On a runtime that takes no model per session, a fire drops a schedule model that names the agent's own model setting (the copy the upgrade made) and runs as before; one that names another model is refused.
 
 **Checked twice, the same way.** The choices are checked at save and at each fire with one rule: the harness is one the agent's image carries; the model's provider is granted and accepted by the harness, and the model is on the list the harness last reported; the settings are ones the harness offers, valid for that model, and the platform sub-agent settings are ones the chosen sub-agent harness offers.
 A save that fails names the reason.

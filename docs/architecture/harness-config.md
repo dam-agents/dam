@@ -47,7 +47,9 @@ A run nobody picks for stays on the harness asked for, on the saved model and th
 **Conversion of an old default.** An agent from before per-session defaults has no saved pair, and once it runs the Model Router the api-server converts its default once, from what is certain about it: its one granted provider that fits its harness, and the model setting that harness was left with, read against that provider's listing on the agent's own runtime.
 A tier word (`opus`, `opus[1m]`) becomes the provider's newest model containing exactly that word, never another tier; a model id is kept when the provider lists it; the harness's own default becomes the model the agent's calls mostly ran, by output tokens in the last day, week or month of telemetry, when the provider lists it.
 Several fitting providers, a provider without that model, or nothing to go on saves the default as not set; a provider not listed yet is left for a later try.
-The conversion runs after each `hello` while nothing is saved, once per channel turn, and before a schedule fire for an agent moved to a new image and not yet started there, which the fire wakes first; Run Now on such an agent refuses with "setting up" and starts the conversion.
+The conversion runs after each `hello` while nothing is saved, and once per channel turn.
+A schedule fire for an agent moved to a new image and still asleep wakes it first, so the fire is checked, converted and resolved against the new runtime rather than the one its last `hello` came from; when the new runtime does not say hello in time, the fire fails as still setting up instead of going out on the old view.
+Run Now on such an agent refuses with "setting up" and starts that wake in the background.
 Each binding says how the harness takes the value.
 A session-scoped one (`mode`, `configOption`) is sent as ACP `session/set_mode` or `session/set_config_option` to that session only, never by recycling a harness other sessions share.
 The runtime sends it again whenever the session is loaded or resumed into a harness process.

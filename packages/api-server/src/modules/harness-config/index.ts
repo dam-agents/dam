@@ -1,6 +1,7 @@
 export {
   composeDefaultConverter,
   composeFirePair,
+  composeScheduleModelForFire,
   composeHarnessConfigModule,
   composeSessionChoicesValidator,
   type FirePair,

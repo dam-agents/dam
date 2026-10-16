@@ -5,6 +5,7 @@ import { convertedDefaultModel } from "../domain/default-conversion.js";
 import type { FillableSessionPairRepo } from "../infrastructure/session-pair-repo.js";
 import type { HarnessConfigSnapshotRepo } from "../infrastructure/snapshot-repo.js";
 import { defaultHarnessOf } from "./harness-config-service.js";
+import { NoDefaultModelError } from "../domain/no-default-model.js";
 
 export type DefaultConversion =
   "saved" | "converted" | "not-set" | "old-runtime" | "waiting";
@@ -35,10 +36,12 @@ const LISTING_WAIT_MS = 120_000;
  * result is saved even when it names no model, as "not set", so the owner is
  * told and nothing converts it again. An Agent still on an older runtime, or
  * whose provider has not listed, or is unsupported only because an older
- * runtime's env names no template for it, is left for a later try. A fire wakes an
- * Agent first only while it is moved to a new image and not yet started
- * there, so the conversion can run before the fire: that start ends the
- * move, so it happens at most once per move.
+ * runtime's env names no template for it, is left for a later try. A fire
+ * wakes an Agent first only while it is moved to a new image and asleep, so
+ * the fire is checked and resolved against the new runtime, not the one its
+ * last hello came from; that start ends the move. When the new runtime does
+ * not say hello in time, the fire fails as still setting up rather than go
+ * out with the old runtime's view.
  */
 export function createDefaultConverter(deps: {
   pairRepo: FillableSessionPairRepo;
@@ -146,31 +149,41 @@ export function createDefaultConverter(deps: {
     return run;
   };
 
-  const helloSince = async (agentId: string, since: number) => {
+  const helloSince = async (
+    agentId: string,
+    since: number,
+  ): Promise<boolean> => {
     const deadline = now() + HELLO_WAIT_MS;
     while (now() < deadline) {
-      if (((await deps.lastHelloAt?.(agentId)) ?? 0) >= since) return;
+      if (((await deps.lastHelloAt?.(agentId)) ?? 0) >= since) return true;
       await sleep(POLL_MS);
     }
+    return false;
   };
 
-  const pendingAfterMove = async (agentId: string): Promise<boolean> =>
-    !(await deps.pairRepo.read(agentId)) &&
-    ((await deps.movedToNewImage?.(agentId)) ?? false);
+  const moved = async (agentId: string): Promise<boolean> =>
+    (await deps.movedToNewImage?.(agentId)) ?? false;
+  const running = async (agentId: string): Promise<boolean> =>
+    (await deps.isRunning?.(agentId)) ?? true;
 
   return {
     convert,
     ensure,
-    pendingAfterMove,
+    async pendingAfterMove(agentId) {
+      if (!(await moved(agentId))) return false;
+      return !(await running(agentId)) || !(await deps.pairRepo.read(agentId));
+    },
     async ensureForFire(agentId) {
-      if (!(await pendingAfterMove(agentId))) return null;
+      if (!(await moved(agentId))) return null;
       let stamp: WakeStamp | null = null;
-      if (!((await deps.isRunning?.(agentId)) ?? true)) {
+      if (!(await running(agentId))) {
         const since = now();
         stamp = (await deps.wake?.(agentId)) ?? null;
-        await helloSince(agentId, since);
+        if (!(await helloSince(agentId, since)))
+          throw new NoDefaultModelError(undefined, { pending: true });
       }
-      await ensure(agentId, LISTING_WAIT_MS);
+      if (!(await deps.pairRepo.read(agentId)))
+        await ensure(agentId, LISTING_WAIT_MS);
       return stamp;
     },
   };

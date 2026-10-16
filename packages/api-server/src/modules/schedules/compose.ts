@@ -57,6 +57,10 @@ export interface ComposeSchedulesAtBootOpts {
   wakeAgent: (agentId: string) => Promise<AgentActivityStamp | null>;
   ensureDefault?: (agentId: string) => Promise<AgentActivityStamp | null>;
   defaultPendingAfterMove?: (agentId: string) => Promise<boolean>;
+  scheduleModelFor?: (
+    agentId: string,
+    model: string,
+  ) => Promise<string | undefined>;
   restoreActivity: (
     agentId: string,
     stamp: AgentActivityStamp,
@@ -83,6 +87,9 @@ export function composeSchedulesAtBoot(
     ...(opts.ensureDefault ? { ensureDefault: opts.ensureDefault } : {}),
     ...(opts.defaultPendingAfterMove
       ? { defaultPendingAfterMove: opts.defaultPendingAfterMove }
+      : {}),
+    ...(opts.scheduleModelFor
+      ? { scheduleModelFor: opts.scheduleModelFor }
       : {}),
     restoreActivity: opts.restoreActivity,
     activityStamps: createRedisTtlStore<AgentActivityStamp>(

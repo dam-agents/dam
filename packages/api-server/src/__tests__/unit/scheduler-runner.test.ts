@@ -355,43 +355,35 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
     expect(enqueued).toHaveLength(1);
   });
 
-  /** TEST_SCENARIO: A schedule that names its own model needs no default,
-   * so it never wakes the agent early for one; one that names none asks
-   * first. */
-  it("asks for the default before the fire only when the schedule names no model", async () => {
-    const asked: string[] = [];
-    const ensureDefault = async (agentId: string) => {
-      asked.push(agentId);
-      return null;
-    };
-    const withModel = makeDeps({
+  /** TEST_SCENARIO: The early wake for a moved agent comes before the
+   * session check and the pair, so both see the new runtime; it is asked for
+   * whether or not the schedule names its own model. */
+  it("asks for the early wake before checking the schedule's choices", async () => {
+    const order: string[] = [];
+    const { runner } = makeDeps({
       choices: { model: "ibm/gpt-5.5" },
-      firePair: async () => ({
-        harness: "claude-code",
-        provider: "lite",
-        model: "ibm/gpt-5.5",
-      }),
-      ensureDefault,
+      ensureDefault: async () => {
+        order.push("wake");
+        return null;
+      },
+      validateSessionChoices: async () => {
+        order.push("check");
+        return undefined;
+      },
+      firePair: async () => {
+        order.push("pair");
+        return {
+          harness: "claude-code",
+          provider: "lite",
+          model: "ibm/gpt-5.5",
+        };
+      },
     });
-    await withModel.runner.buildFireHandler()(
+    await runner.buildFireHandler()(
       SCHEDULE_ID,
       new Date("2026-06-12T10:30:00Z"),
     );
-    expect(asked).toEqual([]);
-
-    const withoutModel = makeDeps({
-      firePair: async () => ({
-        harness: "claude-code",
-        provider: "lite",
-        model: "ibm/gpt-5.5",
-      }),
-      ensureDefault,
-    });
-    await withoutModel.runner.buildFireHandler()(
-      SCHEDULE_ID,
-      new Date("2026-06-12T10:30:00Z"),
-    );
-    expect(asked).toHaveLength(1);
+    expect(order).toEqual(["wake", "check", "pair"]);
   });
 
   /** TEST_SCENARIO: Run now never waits for an agent that is still setting up

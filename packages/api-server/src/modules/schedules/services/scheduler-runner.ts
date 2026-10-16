@@ -90,6 +90,10 @@ export interface SchedulerRunnerDeps {
   wakeAgent: (agentId: string) => Promise<ActivityStamp | null>;
   ensureDefault?: (agentId: string) => Promise<ActivityStamp | null>;
   defaultPendingAfterMove?: (agentId: string) => Promise<boolean>;
+  scheduleModelFor?: (
+    agentId: string,
+    model: string,
+  ) => Promise<string | undefined>;
   restoreActivity?: (agentId: string, stamp: ActivityStamp) => Promise<void>;
   activityStamps?: TtlStore<ActivityStamp>;
   onboardingPending?: (agentId: string) => Promise<boolean>;
@@ -189,13 +193,21 @@ export function createSchedulerRunner(
     };
     if (sched.spec.sessionMode) payload.sessionMode = sched.spec.sessionMode;
     if (sched.spec.precheck) payload.precheck = sched.spec.precheck;
-    if (sched.spec.model) payload.model = sched.spec.model;
     if (sched.spec.sessionTitle) payload.sessionTitle = sched.spec.sessionTitle;
     const continues =
       sched.spec.type === "once" && sched.spec.origin?.mode === "continue";
+    if (!continues && opts.wakeFirst) {
+      const stamp = await deps.ensureDefault?.(sched.agentId);
+      if (stamp) earlyWake.set(sched, stamp);
+    }
+    const model =
+      sched.spec.model && deps.scheduleModelFor
+        ? await deps.scheduleModelFor(sched.agentId, sched.spec.model)
+        : sched.spec.model;
+    if (model) payload.model = model;
     const choices = {
       ...(sched.spec.harness && { harness: sched.spec.harness }),
-      ...(sched.spec.model && { model: sched.spec.model }),
+      ...(model && { model }),
       ...(sched.spec.settings && { settings: sched.spec.settings }),
     };
     if (!continues && Object.keys(choices).length > 0) {
@@ -206,15 +218,11 @@ export function createSchedulerRunner(
       if (refusal)
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: refusal });
     }
-    if (!continues && !sched.spec.model && opts.wakeFirst) {
-      const stamp = await deps.ensureDefault?.(sched.agentId);
-      if (stamp) earlyWake.set(sched, stamp);
-    }
     const pair = continues
       ? undefined
       : await deps.firePair?.(sched.agentId, {
           ...(sched.spec.harness && { harness: sched.spec.harness }),
-          ...(sched.spec.model && { model: sched.spec.model }),
+          ...(model && { model }),
         });
     if (pair === null)
       throw new TRPCError({
@@ -532,10 +540,7 @@ export function createSchedulerRunner(
         );
         return "onboarding-pending";
       }
-      if (
-        !sched.spec.model &&
-        (await deps.defaultPendingAfterMove?.(sched.agentId))
-      ) {
+      if (await deps.defaultPendingAfterMove?.(sched.agentId)) {
         log(
           `run-now: agent ${sched.agentId} is setting up its default model; refusing`,
         );

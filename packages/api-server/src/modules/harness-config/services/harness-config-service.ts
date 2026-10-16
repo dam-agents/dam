@@ -281,7 +281,7 @@ export function harnessConfigSupportOf(
   };
 }
 
-function sessionModelSupported(capabilities: unknown): boolean {
+export function sessionModelSupported(capabilities: unknown): boolean {
   if (capabilities == null) return false;
   return (capabilities as { sessionModel?: unknown }).sessionModel === true;
 }

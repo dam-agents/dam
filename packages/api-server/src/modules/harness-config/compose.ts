@@ -16,6 +16,7 @@ import {
 } from "./services/session-choices.js";
 import { createHarnessConfigSnapshotRepo } from "./infrastructure/snapshot-repo.js";
 import { createRuntimeCatalogReader } from "./infrastructure/runtime-catalog.js";
+import { createScheduleModelForFire } from "./services/schedule-model.js";
 import { startConvertDefaultOnHelloSaga } from "./sagas/convert-default-on-hello.js";
 import {
   createDefaultConverter,
@@ -100,4 +101,14 @@ export function composeDefaultConverter(deps: {
   });
   startConvertDefaultOnHelloSaga(converter);
   return converter;
+}
+
+export function composeScheduleModelForFire(deps: {
+  db: Db;
+  getCapabilities: (agentId: string) => Promise<unknown>;
+}): (agentId: string, model: string) => Promise<string | undefined> {
+  return createScheduleModelForFire({
+    getCapabilities: deps.getCapabilities,
+    snapshotRepo: createHarnessConfigSnapshotRepo(deps.db),
+  });
 }

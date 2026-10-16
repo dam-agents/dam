@@ -139,6 +139,7 @@ import {
   harnessConfigSupportOf,
   composeDefaultConverter,
   composeFirePair,
+  composeScheduleModelForFire,
   composeSessionChoicesValidator,
   NoDefaultModelError,
 } from "./modules/harness-config/index.js";
@@ -1465,6 +1466,12 @@ export async function bootstrap() {
     runtimeMutator: runtimeDelivery.runtimeMutator,
     wakeAgent: (agentId) => agentsRepo.wakeIfHibernated(agentId),
     ensureDefault: (agentId) => defaultConverter.ensureForFire(agentId),
+    scheduleModelFor: composeScheduleModelForFire({
+      db,
+      getCapabilities: async (agentId) =>
+        (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
+          ?.runtimeCapabilities ?? null,
+    }),
     defaultPendingAfterMove: async (agentId) => {
       if (!(await defaultConverter.pendingAfterMove(agentId))) return false;
       void defaultConverter
