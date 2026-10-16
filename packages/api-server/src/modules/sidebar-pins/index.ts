@@ -1,4 +1,1 @@
-export {
-  composeSidebarPinsModule,
-  type SidebarPinsModule,
-} from "./compose.js";
+export { composeSidebarPinsModule, type SidebarPinsModule } from "./compose.js";

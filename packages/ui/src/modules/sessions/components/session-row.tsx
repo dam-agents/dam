@@ -1,4 +1,12 @@
-import { Download, Edit, Terminal, Time, TrashCan } from "@carbon/icons-react";
+import {
+  Download,
+  Edit,
+  Pin,
+  PinFilled,
+  Terminal,
+  Time,
+  TrashCan,
+} from "@carbon/icons-react";
 import {
   type BackgroundWorkItemView,
   ChannelType,
@@ -53,6 +61,8 @@ interface Props {
   backgroundWork?: readonly BackgroundWorkItemView[];
   cost?: SessionRuntime;
   conversation?: string;
+  pinned?: boolean;
+  onTogglePin?: () => void;
   onResume: () => void;
   onPrefetch?: () => void;
   onRename: () => void;
@@ -72,6 +82,8 @@ export function SessionRow({
   backgroundWork = NO_WORK,
   cost,
   conversation,
+  pinned = false,
+  onTogglePin,
   onResume,
   onPrefetch,
   onRename,
@@ -198,6 +210,14 @@ export function SessionRow({
           <span className={`text-sm min-w-0 truncate ${titleClass}`}>
             {titleLabel}
           </span>
+          {pinned && (
+            <PinFilled
+              size={12}
+              aria-label="Pinned"
+              data-testid="session-pinned"
+              className="shrink-0 text-muted-foreground"
+            />
+          )}
           {onboarding && (
             <Badge variant={onboarding.variant} size="sm" className="shrink-0">
               {onboarding.label}
@@ -214,6 +234,24 @@ export function SessionRow({
             harness={s.harness ?? null}
           />
           {}
+          {onTogglePin && (
+            <button
+              type="button"
+              aria-label={pinned ? "Unpin session" : "Pin session"}
+              title={pinned ? "Unpin session" : "Pin session"}
+              data-testid="session-pin-button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onTogglePin();
+              }}
+              className={cn(
+                "absolute top-1/2 right-5 flex size-5 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground",
+                HOVER_ACTION,
+              )}
+            >
+              {pinned ? <PinFilled size={14} /> : <Pin size={14} />}
+            </button>
+          )}
           <RowActionsMenu
             label="More actions"
             testId="session-menu-button"

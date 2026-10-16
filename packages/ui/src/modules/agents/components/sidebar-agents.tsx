@@ -1,4 +1,4 @@
-import { Add, NewTab, Tools } from "@carbon/icons-react";
+import { Add, NewTab, Pin, PinFilled, Tools } from "@carbon/icons-react";
 import { type ReactNode, useMemo } from "react";
 
 import { SectionLabel } from "@/components/ui/section-label";
@@ -15,6 +15,7 @@ import { useStartSession } from "../../sessions/hooks/use-start-session.js";
 import { useAgentsList } from "../api/queries.js";
 import { useCreateDefaultAgent } from "../hooks/use-create-default-agent.js";
 import { useSidebarAgents } from "../hooks/use-sidebar-agents.js";
+import { useSidebarPinActions } from "../hooks/use-sidebar-pin-actions.js";
 import { SidebarAgentRow } from "./sidebar-agent-row.js";
 
 export function SidebarAgents({
@@ -24,8 +25,15 @@ export function SidebarAgents({
   stickyHeaderClassName: string;
   onNavigate?: () => void;
 }) {
-  const { agents, openAgentId, unreadAgentIds, sessionsOf } =
-    useSidebarAgents();
+  const {
+    agents,
+    pinnedAgentIds,
+    openAgentId,
+    unreadAgentIds,
+    sessionsOf,
+    pinnedSessionsOf,
+  } = useSidebarAgents();
+  const pinActions = useSidebarPinActions();
   const activity = useActivitySessions();
   const allAgents = useAgentsList();
   const attention = useMemo(
@@ -46,17 +54,26 @@ export function SidebarAgents({
 
   const row = (agent: AgentView) => {
     const open = agent.id === openAgentId;
+    const pinned = pinnedAgentIds.has(agent.id);
     return (
       <SidebarAgentRow
         key={agent.id}
         agent={agent}
         selected={open}
         unread={unreadAgentIds.has(agent.id)}
+        pinned={pinned}
+        onMovePin={pinActions.moveAgent}
         onSelect={() => {
           if (!open) selectAgent(agent.id);
         }}
         actions={
           <>
+            <RowIconButton
+              label={pinned ? "Unpin agent" : "Pin agent"}
+              onClick={() => pinActions.toggleAgent(agent.id)}
+            >
+              {pinned ? <PinFilled size={14} /> : <Pin size={14} />}
+            </RowIconButton>
             <RowIconButton
               label="New session"
               onClick={navigate(() => startSession(agent.id))}
@@ -76,6 +93,8 @@ export function SidebarAgents({
           agentId={agent.id}
           open={open}
           preview={sessionsOf(agent.id)}
+          pins={pinnedSessionsOf(agent.id)}
+          pinActions={pinActions}
           conversationOf={conversationOf}
           stickyClassName={stickyHeaderClassName}
           onNavigate={onNavigate}
