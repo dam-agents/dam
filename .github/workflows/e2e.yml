@@ -113,9 +113,17 @@ jobs:
       # `mise run e2e` waits for it and keeps the cluster instead of nuking it
       # first; if this provision fails, it nukes whatever is left and
       # provisions again.
+      # The Playwright Chromium shares the host network namespace with k3s.
+      # Each pod's host-side veth gets an IPv6 link-local address, and
+      # Chromium's netlink watcher (net/base/address_tracker_linux.cc) reads
+      # every address add or delete as an IP address change: it fails the
+      # pending requests with net::ERR_NETWORK_CHANGED. With
+      # addr_gen_mode=1 a new host interface gets no link-local address.
+      # Pod network namespaces reset their IPv6 settings, so pods keep theirs.
       - &e2e-provision
         name: Provision k3s in the background
         run: |
+          sudo sysctl -w net.ipv6.conf.default.addr_gen_mode=1
           nohup bash -c '.mise/tasks/cluster/provision-host etc/lima/k3s-test.yaml; echo $? > /tmp/k3s-provision.status' \
             > /tmp/k3s-provision.log 2>&1 &
       # See build.yml's build-images. Before setup-mise, like check-test's.
