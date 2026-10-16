@@ -34,7 +34,8 @@ const LISTING_WAIT_MS = 120_000;
  * setting) against that provider's listing on the Agent's own runtime. The
  * result is saved even when it names no model, as "not set", so the owner is
  * told and nothing converts it again. An Agent still on an older runtime, or
- * whose provider has not listed, is left for a later try. A fire wakes an
+ * whose provider has not listed, or is unsupported only because an older
+ * runtime's env names no template for it, is left for a later try. A fire wakes an
  * Agent first only while it is moved to a new image and not yet started
  * there, so the conversion can run before the fire: that start ends the
  * move, so it happens at most once per move.
@@ -98,7 +99,12 @@ export function createDefaultConverter(deps: {
       return save(agentId, { harness, provider: null, model: null });
     const view = await deps.catalogView(agentId, harness).catch(() => null);
     const group = view?.providers.find((p) => p.connectionId === provider.id);
-    if (group?.status !== "listed") return "waiting";
+    if (
+      !group ||
+      group.status === "unavailable" ||
+      (group.status === "unsupported" && group.template === "")
+    )
+      return "waiting";
     const setting =
       (await deps.snapshotRepo.read(agentId, harness))?.model ??
       (await deps.snapshotRepo.read(agentId))?.model ??
@@ -108,7 +114,8 @@ export function createDefaultConverter(deps: {
     const model = convertedDefaultModel({
       setting,
       alias: group.alias,
-      listed: group.models.map((m) => m.upstreamId),
+      listed:
+        group.status === "listed" ? group.models.map((m) => m.upstreamId) : [],
       ran: needsRan ? await modelsRan(agentId) : [],
     });
     return save(agentId, { harness, provider: provider.id, model });

@@ -275,11 +275,17 @@ describe("the one-time default conversion", () => {
     expect(harnessDefault.writes[0]?.model).toBe("anthropic/claude-opus-4-8");
   });
 
-  // TEST_SCENARIO: a provider the runtime cannot list yet, as when an older runtime's env names no template, is no evidence the model is gone, so nothing is decided or saved.
-  it("waits on an unsupported provider instead of saving not set", async () => {
-    const { c, writes } = converter({ catalog: view("unsupported", []) });
-    expect(await c.convert("a")).toBe("waiting");
-    expect(writes).toEqual([]);
+  // TEST_SCENARIO: a provider unsupported only because an older runtime's env names no template for it is no evidence the model is gone, so nothing is decided; one the runtime refuses for the harness (the subscription on Pi) is saved as not set rather than left pending for good.
+  it("waits on an untagged provider and saves not set on a refused one", async () => {
+    const untagged = view("unsupported", []);
+    untagged.providers[0]!.template = "";
+    const waiting = converter({ catalog: untagged });
+    expect(await waiting.c.convert("a")).toBe("waiting");
+    expect(waiting.writes).toEqual([]);
+
+    const refused = converter({ catalog: view("unsupported", []) });
+    expect(await refused.c.convert("a")).toBe("not-set");
+    expect(refused.writes[0]?.model).toBeNull();
   });
 
   // TEST_SCENARIO: a fire wakes an Agent first only while it is moved to a new image and has no saved default; any other Agent fires in the normal order.
