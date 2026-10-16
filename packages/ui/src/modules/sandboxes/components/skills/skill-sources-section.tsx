@@ -66,7 +66,11 @@ export function SkillSourcesSection({
         )
       }
       isEmpty={sourcesLoaded && sources.length === 0}
-      empty="No skill sources connected. Add a GitHub repo to browse and install its skills."
+      empty={
+        surface.hiddenSources.length > 0
+          ? "Every skill source is hidden for this agent. Add source lists them to show again."
+          : "No skill sources connected. Add a GitHub repo to browse and install its skills."
+      }
     >
       {!sourcesLoaded ? (
         <SkillRowsSkeleton rows={2} />
@@ -91,6 +95,7 @@ export function SkillSourcesSection({
             onUpdate={surface.update}
             onRescan={() => void surface.refreshSource(src.id)}
             onRemove={() => onRemove(src)}
+            onHide={() => void surface.setSourceHidden(src.id, true)}
             onOpenSkill={(skill) => onOpenSkill(src, skill)}
             suppressedNames={suppressedBySource.get(src.id)}
             onToggleAll={(on, scope) => onToggleAll(src, on, scope)}

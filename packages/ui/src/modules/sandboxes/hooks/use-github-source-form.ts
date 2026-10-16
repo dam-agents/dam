@@ -62,7 +62,9 @@ function buildSchema(sources: readonly SkillSource[]) {
         ctx.addIssue({
           code: "custom",
           path: ["gitUrl"],
-          message: `Already added as "${existing.name}"`,
+          message: existing.hidden
+            ? `Already added as "${existing.name}" and hidden for this agent`
+            : `Already added as "${existing.name}"`,
         });
       }
     });

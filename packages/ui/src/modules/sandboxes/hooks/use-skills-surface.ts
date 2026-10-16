@@ -10,7 +10,7 @@ import type {
   SkillSource,
   SkillsState,
 } from "api-server-api";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { getErrorMessage } from "@/lib/errors";
 import { toScanFailure } from "@/lib/scan-failure";
@@ -62,6 +62,7 @@ function skippedSummary(skipped: SkillSetApplyResult["skipped"]): string {
 
 export interface SkillsSurface {
   sources: SkillSource[];
+  hiddenSources: SkillSource[];
   sourcesLoaded: boolean;
   stateLoaded: boolean;
   skillsBySource: Record<string, Skill[]>;
@@ -116,6 +117,7 @@ export interface SkillsSurface {
   downloadStandalone: (skill: LocalSkill) => Promise<void>;
   removeSource: (id: string) => Promise<boolean>;
   refreshSource: (id: string) => Promise<void>;
+  setSourceHidden: (id: string, hidden: boolean) => Promise<boolean>;
 }
 
 export function useSkillsSurface(
@@ -133,7 +135,14 @@ export function useSkillsSurface(
   const [applyingSets, setApplyingSets] = useState(false);
 
   const sourcesQuery = useSkillSources(agentId);
-  const sources = sourcesQuery.data ?? NO_SOURCES;
+  const allSources = sourcesQuery.data ?? NO_SOURCES;
+  const [sources, hiddenSources] = useMemo(
+    () => [
+      allSources.filter((s) => !s.hidden),
+      allSources.filter((s) => s.hidden),
+    ],
+    [allSources],
+  );
   const sourcesLoaded = agentId === null || !sourcesQuery.isPending;
 
   const scans = useQueries({
@@ -525,6 +534,29 @@ export function useSkillsSurface(
     [agentId],
   );
 
+  const setSourceHidden = useCallback(
+    async (id: string, hidden: boolean) => {
+      if (!agentId) return false;
+      const result = await runAction(
+        () => api.skills.sources.setHidden.mutate({ agentId, id, hidden }),
+        hidden ? "Failed to hide source" : "Failed to show source",
+      );
+      if (result === ACTION_FAILED) return false;
+      queryClient.setQueryData(
+        trpc.skills.sources.list.queryKey({ agentId }),
+        (prev) =>
+          (prev ?? []).map((s) =>
+            s.id === id ? { ...s, hidden: hidden || undefined } : s,
+          ),
+      );
+      void queryClient.invalidateQueries({
+        queryKey: trpc.skills.sources.list.queryKey({ agentId }),
+      });
+      return true;
+    },
+    [agentId],
+  );
+
   const publish = useCallback(
     async (input: {
       sourceId: string;
@@ -589,6 +621,7 @@ export function useSkillsSurface(
 
   return {
     sources,
+    hiddenSources,
     sourcesLoaded,
     stateLoaded,
     skillsBySource: scans.skillsBySource,
@@ -622,6 +655,7 @@ export function useSkillsSurface(
     downloadStandalone,
     removeSource,
     refreshSource,
+    setSourceHidden,
     publish,
   };
 }

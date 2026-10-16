@@ -61,6 +61,8 @@ export function SkillsModals({
       return (
         <AddSkillSourceModal
           sources={surface.sources}
+          hiddenSources={surface.hiddenSources}
+          onShowSource={(id) => surface.setSourceHidden(id, false)}
           onClose={onClose}
           onCreate={surface.createSource}
           onCreateSkills={surface.createLocalSkills}
