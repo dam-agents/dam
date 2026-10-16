@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import { nextAutoWake } from "../../modules/agents/lib/auto-wake.js";
 
-// TEST_OVERVIEW: opening a sleeping agent's chat wakes it once per open. Re-renders and list refetches in the same open do not wake it again, leaving and reopening does, and an agent over its budget or already awake is not woken.
+// TEST_OVERVIEW: opening a sleeping agent's chat wakes it once per open. Re-renders and list refetches in the same open do not wake it again, leaving and reopening does, and an agent over its budget, disabled or already awake is not woken.
 
-const asleep = { state: "hibernated" as const, overBudget: false };
+const asleep = {
+  state: "hibernated" as const,
+  overBudget: false,
+  disabled: false,
+};
 
 describe("waking a sleeping agent on open", () => {
   // TEST_SCENARIO: the first render with the agent loaded wakes it; later renders of the same open do not.
@@ -37,13 +41,17 @@ describe("waking a sleeping agent on open", () => {
     });
   });
 
-  // TEST_SCENARIO: an over-budget or awake agent is not woken, and the open still counts as decided.
-  it("leaves over-budget and awake agents alone", () => {
-    expect(
-      nextAutoWake(null, "a1", { state: "hibernated", overBudget: true }),
-    ).toEqual({ decidedFor: "a1", wake: false });
-    expect(
-      nextAutoWake(null, "a1", { state: "running", overBudget: false }).wake,
-    ).toBe(false);
+  // TEST_SCENARIO: an over-budget, disabled or awake agent is not woken, and the open still counts as decided.
+  it("leaves over-budget, disabled and awake agents alone", () => {
+    expect(nextAutoWake(null, "a1", { ...asleep, overBudget: true })).toEqual({
+      decidedFor: "a1",
+      wake: false,
+    });
+    expect(nextAutoWake(null, "a1", { ...asleep, disabled: true }).wake).toBe(
+      false,
+    );
+    expect(nextAutoWake(null, "a1", { ...asleep, state: "running" }).wake).toBe(
+      false,
+    );
   });
 });
