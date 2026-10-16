@@ -1255,6 +1255,42 @@ apiServer:
     # -- Most one-time schedules an agent may create in a sliding hour.
     agentMaxPerHour: 30
 
+  # -- Prices of the model calls that the gateway meters, and the default
+  # Spend Ceiling.
+  spend:
+    # -- Default Spend Ceiling per user: the most dollars of Metered Spend on
+    # paid providers that one user's Agents may spend in a UTC day. At the
+    # ceiling the gateway refuses the next model call and asks nothing. A
+    # quoted decimal string with at most two decimals, e.g. "50" or "12.50";
+    # null turns the default ceiling off. A UserSpendLimit object overrides it
+    # for one user.
+    defaultUserCeilingUsd: null
+    # -- Operator prices: dollars per million tokens, and dollars per web
+    # search (`webSearch`). They win over every other price. A row can add a
+    # prompt-size `threshold` with the prices above it, `flex` and `priority`
+    # tier prices, and `factors` keyed by speed or inference geography. The
+    # rows below are IBM LiteLLM's own prices, read from its /model/info with
+    # a temporary Management key on 2026-10-13. No public price list has them.
+    priceOverrides:
+      - {provider: ibm-litellm, model: aws/claude-opus-5-5, input: 3.04, output: 15.2, cacheRead: 0.152, cacheWrite5m: 3.8, cacheWrite1h: 8, webSearch: 0.01}
+      - {provider: ibm-litellm, model: aws/claude-opus-5, input: 3.8, output: 19, cacheRead: 0.38, cacheWrite5m: 4.75, cacheWrite1h: 10, webSearch: 0.01}
+      - {provider: ibm-litellm, model: aws/claude-opus-4-8, input: 3.8, output: 19, cacheRead: 0.38, cacheWrite5m: 4.75, cacheWrite1h: 10, webSearch: 0.01}
+      - {provider: ibm-litellm, model: aws/claude-opus-4-5, input: 3.8, output: 19, cacheRead: 0.5, cacheWrite5m: 6.25, cacheWrite1h: 10, webSearch: 0.01}
+      - {provider: ibm-litellm, model: aws/claude-sonnet-5-5, input: 1.52, output: 7.6, cacheRead: 0.152, cacheWrite5m: 1.9, cacheWrite1h: 4, webSearch: 0.01}
+      - {provider: ibm-litellm, model: aws/claude-sonnet-5, input: 1.52, output: 7.6, cacheRead: 0.152, cacheWrite5m: 1.9, cacheWrite1h: 4, webSearch: 0.01}
+      - {provider: ibm-litellm, model: aws/claude-sonnet-4-6, input: 2.28, output: 11.4, cacheRead: 0.228, cacheWrite5m: 2.85, cacheWrite1h: 6, webSearch: 0.01}
+      - {provider: ibm-litellm, model: azure/gpt-6-astra, input: 10, output: 50, cacheRead: 1, cacheWrite5m: 12.5, webSearch: 0.01, threshold: {promptTokens: 272000, input: 20, output: 75, cacheRead: 2}}
+      - {provider: ibm-litellm, model: azure/gpt-5.6-sol, input: 5, output: 30, cacheRead: 0.5, cacheWrite5m: 5, webSearch: 0.01, threshold: {promptTokens: 272000, input: 8, output: 30, cacheRead: 0.8}, flex: {input: 2, output: 10, cacheRead: 0.2}, priority: {input: 8, output: 40, cacheRead: 0.8}}
+      - {provider: ibm-litellm, model: azure/gpt-5.6-terra, input: 2, output: 12, cacheRead: 0.2, cacheWrite5m: 2.5, webSearch: 0.01, threshold: {promptTokens: 272000, input: 4, output: 18, cacheRead: 0.4}, flex: {input: 1, output: 6, cacheRead: 0.1}, priority: {input: 4, output: 24, cacheRead: 0.4}}
+      - {provider: ibm-litellm, model: azure/gpt-5.6-luna, input: 0.2, output: 1.2, cacheRead: 0.02, cacheWrite5m: 0.25, webSearch: 0.01, threshold: {promptTokens: 272000, input: 0.4, output: 1.8, cacheRead: 0.04}, flex: {input: 0.1, output: 0.6, cacheRead: 0.01}, priority: {input: 0.4, output: 2.4, cacheRead: 0.04}}
+      - {provider: ibm-litellm, model: azure/gpt-5.5, input: 2.5, output: 15, cacheRead: 0.5, webSearch: 0.01, threshold: {promptTokens: 272000, input: 10, output: 45, cacheRead: 1}, flex: {input: 2.5, cacheRead: 0.25}, priority: {input: 12.5, output: 75, cacheRead: 1.25}}
+      - {provider: ibm-litellm, model: azure/gpt-5.3-codex, input: 1.75, output: 14, cacheRead: 0.175, priority: {input: 3.5, output: 28, cacheRead: 0.35}}
+      - {provider: ibm-litellm, model: gcp/gemini-3.1-pro-preview, input: 2, output: 12, cacheRead: 0.2, webSearch: 0.014, threshold: {promptTokens: 200000, input: 4, output: 18, cacheRead: 0.4, cacheWrite5m: 0.25}, flex: {input: 1, output: 6, cacheRead: 0.2}, priority: {input: 3.6, output: 21.6, cacheRead: 0.36}}
+      - {provider: ibm-litellm, model: Azure/text-embedding-3-small-1, input: 0.02, output: 0.02}
+      - {provider: ibm-litellm, model: Azure/text-embedding-3-large-1, input: 0.13, output: 0.13}
+      - {provider: ibm-litellm, model: rits/deepseek-ai/DeepSeek-V3.2, input: 0, output: 0}
+      - {provider: ibm-litellm, model: rits/moonshotai/Kimi-K2.5, input: 0, output: 0}
+
   # -- Hard ceiling for file-import bundle uploads, in bytes. Enforced at
   # the api-server proxy boundary (rejects oversized Content-Length AND
   # destroys the upstream pipe when streamed bytes pass the cap). The
@@ -2071,7 +2107,7 @@ harnessTemplates:
 # session has no harness of its own yet, and seeds the harness of new agents.
 # `providers` lists the model-provider connection types the harness can run on;
 # the session picker offers only their models. `telemetry` names the export
-# rail the harness reads (claude-code, bob or pi, see
+# rail the harness reads (claude-code, bob, pi or codex, see
 # docs/architecture/observability.md); it applies only with clickstack.enabled.
 harnesses:
   default: claude-code
@@ -2090,6 +2126,9 @@ harnesses:
       description: "OpenAI Codex coding agent"
       releaseNotesUrl: "https://github.com/openai/codex/releases"
       providers: [ibm-litellm, curve-bender, openai]
+      # Codex reads its exporters from config.toml alone; the image's launch
+      # scripts render this rail into `-c otel.*` flags.
+      telemetry: codex
       tags: ["OpenAI"]
     pi:
       enabled: true

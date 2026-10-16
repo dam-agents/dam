@@ -1,9 +1,10 @@
-import { OnceResult, rruleToText } from "api-server-api";
+import { nextUtcMidnight, OnceResult, rruleToText } from "api-server-api";
 import cronstrue from "cronstrue";
 
 import { sameLocalDay } from "@/lib/format-time";
 
 import type { Schedule } from "../../../types.js";
+import { localResetTime } from "../../spend/lib/format.js";
 
 export function formatRunTime(iso: string, now: Date = new Date()): string {
   const date = new Date(iso);
@@ -60,6 +61,15 @@ export function runNowConfirmText(schedule: Schedule): string {
     ? "The next run is not moved."
     : "The schedule stays paused afterwards.";
   return `Run "${schedule.name}" now? ${decides} ${cadence}`;
+}
+
+export function runNowErrorText(detail: string): string {
+  const reset = localResetTime(nextUtcMidnight());
+  if (/spend ceiling/i.test(detail))
+    return `Couldn't run schedule: the agent's owner reached the spend ceiling for today. The platform operator can raise it; otherwise wait until ${reset} your time.`;
+  if (/spend limit/i.test(detail))
+    return `Couldn't run schedule: the agent reached its spend limit for today. Continue it on Home, or wait until ${reset} your time.`;
+  return detail ? `Couldn't run schedule: ${detail}` : "Couldn't run schedule";
 }
 
 export function runNowStartedText(schedule: Schedule): string {

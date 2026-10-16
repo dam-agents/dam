@@ -1,12 +1,14 @@
-import { Activity, Bot } from "@carbon/icons-react";
+import { Bot } from "@carbon/icons-react";
 
+import { ResizeHandle } from "@/components/resize-handle";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
 import { SidebarAgents } from "../../../agents/components/sidebar-agents.js";
-import { SidebarActivity } from "../../../home/components/sidebar-activity.js";
 import { useActivitySessions } from "../../../home/hooks/use-activity-sessions.js";
 import { useSidebarDestinations } from "../../hooks/use-sidebar-destinations.js";
+import { useSidebarWidth } from "../../hooks/use-sidebar-layout.js";
+import { SIDEBAR_COLLAPSED_W } from "../../lib/sidebar-layout.js";
 import { SidebarContent } from "./sidebar-content.js";
 import { SidebarFlyout } from "./sidebar-flyout.js";
 import { SidebarHeader } from "./sidebar-header.js";
@@ -16,26 +18,35 @@ export function Sidebar() {
   const expanded = useStore((s) => s.sidebarExpanded);
   const setExpanded = useStore((s) => s.setSidebarExpanded);
   const { home } = useSidebarDestinations();
+  const { width, resizing, resize, endResize } = useSidebarWidth();
 
   return (
-    <nav
-      className={cn(
-        "hidden md:flex flex-col h-full px-2 bg-card border-r border-border shrink-0 transition-[width]",
-        expanded ? "w-[260px]" : "w-[56px]",
+    <>
+      <nav
+        className={cn(
+          "hidden md:flex flex-col h-full px-2 bg-card border-r border-border shrink-0",
+          !resizing && "transition-[width]",
+        )}
+        style={{ width: expanded ? width : SIDEBAR_COLLAPSED_W }}
+        data-testid="app-sidebar"
+      >
+        <SidebarHeader
+          expanded={expanded}
+          onToggle={() => setExpanded(!expanded)}
+          onHome={home.navigate}
+        />
+        {expanded ? (
+          <SidebarContent stickyHeaderClassName="bg-card" />
+        ) : (
+          <CollapsedRail />
+        )}
+      </nav>
+      {expanded && (
+        <div className="hidden md:flex" data-testid="app-sidebar-resize">
+          <ResizeHandle side="left" onResize={resize} onDragEnd={endResize} />
+        </div>
       )}
-      data-testid="app-sidebar"
-    >
-      <SidebarHeader
-        expanded={expanded}
-        onToggle={() => setExpanded(!expanded)}
-        onHome={home.navigate}
-      />
-      {expanded ? (
-        <SidebarContent stickyHeaderClassName="bg-card" />
-      ) : (
-        <CollapsedRail />
-      )}
-    </nav>
+    </>
   );
 }
 
@@ -55,12 +66,9 @@ function CollapsedRail() {
         ))}
       </div>
       <div className="mt-4 flex flex-col gap-px">
-        <SidebarFlyout label="Agents" icon={Bot}>
-          {(close) => <SidebarAgents onNavigate={close} />}
-        </SidebarFlyout>
-        <SidebarFlyout label="Activity" icon={Activity} badge={hasUnread}>
+        <SidebarFlyout label="Agents" icon={Bot} badge={hasUnread}>
           {(close) => (
-            <SidebarActivity
+            <SidebarAgents
               stickyHeaderClassName="bg-popover"
               onNavigate={close}
             />

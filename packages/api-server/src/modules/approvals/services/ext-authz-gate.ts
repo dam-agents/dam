@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { match } from "ts-pattern";
 import type { ApprovalsRepository } from "../infrastructure/approvals-repository.js";
 import type { RedisBus } from "../../../core/redis-bus.js";
 import {
@@ -11,10 +12,27 @@ import { formatError } from "../../../core/format-error.js";
 import { emit, EventType } from "../../../events.js";
 import { hasDotSegment } from "../domain/dot-segment.js";
 import { canonicalEgressHost } from "api-server-api";
+import type { SpendCheck } from "../../spend/index.js";
+import type { SpendLimitQuestions } from "./spend-limit-questions.js";
 
 export type ExtAuthzVerdict = "allow" | "deny";
 
+export interface DeniedResponse {
+  readonly status: number;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly body: string;
+}
+
+export type ExtAuthzDecision =
+  | ExtAuthzVerdict
+  | { readonly verdict: "refuse"; readonly response: DeniedResponse };
+
 export const approvalChannelOf = (id: string) => `approval:${id}`;
+
+type SpendCall = Omit<
+  Parameters<SpendCheck["checkCall"]>[0],
+  "agentId" | "ownerSub" | "startedAt"
+>;
 
 interface ExtAuthzGateInput {
   agentId: string;
@@ -23,10 +41,11 @@ interface ExtAuthzGateInput {
   tls: boolean;
   method: string;
   path: string;
+  spendCall?: SpendCall | null;
 }
 
 export interface ExtAuthzGate {
-  gateRequest(input: ExtAuthzGateInput): Promise<ExtAuthzVerdict>;
+  gateRequest(input: ExtAuthzGateInput): Promise<ExtAuthzDecision>;
 }
 
 export interface AgentIdentityResolver {
@@ -57,13 +76,23 @@ interface CreateExtAuthzGateDeps {
   identityResolver: AgentIdentityResolver;
   ruleMatcher: EgressRuleMatcher;
   attendance: EgressAttendance;
+  spend: Pick<SpendCheck, "checkCall">;
+  questions: SpendLimitQuestions;
   holdSeconds: number;
   platformAllowedAuthorities: readonly string[];
 }
 
 export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
   return {
-    async gateRequest({ agentId, host: requestHost, port, tls, method, path }) {
+    async gateRequest({
+      agentId,
+      host: requestHost,
+      port,
+      tls,
+      method,
+      path,
+      spendCall,
+    }) {
       const host = canonicalEgressHost(requestHost);
       const identity = await deps.identityResolver.resolve(agentId);
       if (!identity) {
@@ -82,6 +111,43 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
       }
 
       const via = identity.agentId !== agentId ? agentId : undefined;
+
+      if (spendCall) {
+        const spend = await deps.spend.checkCall({
+          ...spendCall,
+          agentId,
+          ownerSub: identity.ownerSub,
+          startedAt: new Date(),
+        });
+        if (spend.verdict === "refuse") {
+          await deps.questions.ask({
+            agentId: spendCall.payer,
+            ownerSub: identity.ownerSub,
+            questions: spend.questions,
+          });
+          securityLog("warn", "egress.decision", {
+            category: "egress",
+            actor: identity.ownerSub,
+            actorKind: "agent",
+            surface: "ext-authz",
+            agentId: identity.agentId,
+            target: host,
+            decision: "deny",
+            reason: match(spend.reason)
+              .with("ceiling", () => "spend-ceiling")
+              .with("limit", () => "spend-limit")
+              .exhaustive(),
+            detail: {
+              method,
+              path: path.split("?")[0],
+              basis: "spend",
+              status: spend.response.status,
+              via,
+            },
+          });
+          return { verdict: "refuse", response: spend.response };
+        }
+      }
 
       if (deps.platformAllowedAuthorities.includes(`${host}:${port}`)) {
         securityLog("info", "egress.decision", {

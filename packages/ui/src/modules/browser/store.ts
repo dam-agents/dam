@@ -30,6 +30,7 @@ export const createBrowserSlice: StateCreator<
       agentId
         ? {
             openBrowserAgentId: agentId,
+            sidePanelTab: "browser" as const,
             browserOpenRequest: url
               ? { url, id: (state.browserOpenRequest?.id ?? 0) + 1 }
               : state.browserOpenRequest,

@@ -15,6 +15,7 @@ function describeRule(rule: WrittenRule): string {
 export interface OutcomeWording {
   pastTense: string;
   onceLine: string;
+  spendLimitLine: string;
   expiredEffect: string;
 }
 
@@ -33,7 +34,9 @@ export function printOutcomeAndExit(
   }
   switch (outcome.outcome) {
     case "applied":
-      if (outcome.rule) {
+      if (outcome.type === "spend_limit") {
+        process.stdout.write(`${wording.spendLimitLine}\n`);
+      } else if (outcome.rule) {
         process.stdout.write(
           `${wording.pastTense} — wrote permanent ${describeRule(outcome.rule)}. It now appears in \`dam network list <agent>\`.\n`,
         );
