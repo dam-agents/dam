@@ -117,6 +117,15 @@ So a sub-agent's calls count for its root driver.
 **Daily rollup.** Postgres keeps one row per day, payer, Connection and model: the cost, the token counts, the web searches, the counts of calls, estimated calls and refused calls, and the most expensive single call.
 A row outlives its agent, so the spend of a deleted agent still counts for its owner.
 
+**Measuring start.** Postgres keeps one moment, T: the start of the measured spend on this deployment.
+A migration sets it once and never changes it.
+When the rollup already has rows, T is 00:00 UTC of the first day in it; else T is the time of the upgrade.
+The screens read T to say since when the spend is measured, to mark the days before T as not measured, and to show the notice about the change for 30 days after T.
+The api-server reads T once and keeps it.
+
+**Grouped read.** The screens read the rollup grouped by day, payer, Connection, model and unit, for at most 366 days.
+The api-server folds the rows into totals per unit and into spend by day, agent, model and Connection.
+
 **Day counters.** Redis keeps the day's totals per payer and unit, per owner and unit, and per payer and Connection, so the limit check reads no database.
 A missing counter, for example after a Redis restart, is rebuilt from the rollup, and a counter that fails to update is dropped so that the next read rebuilds it.
 

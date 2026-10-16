@@ -8,6 +8,7 @@ import {
   lte,
   sql,
   spendDaily,
+  spendMetering,
   type Db,
 } from "db";
 import type {
@@ -16,6 +17,7 @@ import type {
   SpendUnit,
 } from "api-server-api";
 import { match } from "ts-pattern";
+import type { BreakdownRow } from "../domain/breakdown.js";
 import type { CallAmounts, DayCounter, SpendRow } from "../domain/ledger.js";
 
 export interface SpendLedger {
@@ -39,6 +41,13 @@ export interface SpendLedger {
     agentId: string;
     day: string;
   }): Promise<SpendConnectionTotal[]>;
+  breakdownRows(query: {
+    ownerSub: string;
+    agentIds: readonly string[] | null;
+    from: string;
+    to: string;
+  }): Promise<BreakdownRow[]>;
+  meteringStart(): Promise<Date>;
 }
 
 type Counted =
@@ -255,6 +264,76 @@ export function createSpendLedger(db: Db): SpendLedger {
         costMicros: Number(r.costMicros),
         estimatedCalls: Number(r.estimatedCalls),
       }));
+    },
+
+    async breakdownRows({ ownerSub, agentIds, from, to }) {
+      const rows = await db
+        .select({
+          day: spendDaily.day,
+          payer: spendDaily.payerAgentId,
+          connectionId: spendDaily.connectionId,
+          providerTemplate: spendDaily.providerTemplate,
+          model: spendDaily.model,
+          unit: spendDaily.unit,
+          costMicros: sumOf("costMicros"),
+          calls: sumOf("calls"),
+          estimatedCalls: sumOf("estimatedCalls"),
+          uncachedInputTokens: sumOf("uncachedInputTokens"),
+          outputTokens: sumOf("outputTokens"),
+          cacheReadTokens: sumOf("cacheReadTokens"),
+          cacheWrite5mTokens: sumOf("cacheWrite5mTokens"),
+          cacheWrite1hTokens: sumOf("cacheWrite1hTokens"),
+          webSearches: sumOf("webSearches"),
+        })
+        .from(spendDaily)
+        .where(
+          and(
+            eq(spendDaily.ownerSub, ownerSub),
+            gte(spendDaily.day, from),
+            lte(spendDaily.day, to),
+            agentIds
+              ? inArray(spendDaily.payerAgentId, [...agentIds])
+              : undefined,
+          ),
+        )
+        .groupBy(
+          spendDaily.day,
+          spendDaily.payerAgentId,
+          spendDaily.connectionId,
+          spendDaily.providerTemplate,
+          spendDaily.model,
+          spendDaily.unit,
+        );
+      return rows.map((r) => ({
+        day: r.day,
+        payer: r.payer,
+        connectionId: r.connectionId,
+        providerTemplate: r.providerTemplate,
+        model: r.model,
+        unit: r.unit as SpendUnit,
+        costMicros: Number(r.costMicros),
+        calls: Number(r.calls),
+        estimatedCalls: Number(r.estimatedCalls),
+        uncachedInputTokens: Number(r.uncachedInputTokens),
+        outputTokens: Number(r.outputTokens),
+        cacheReadTokens: Number(r.cacheReadTokens),
+        cacheWrite5mTokens: Number(r.cacheWrite5mTokens),
+        cacheWrite1hTokens: Number(r.cacheWrite1hTokens),
+        webSearches: Number(r.webSearches),
+      }));
+    },
+
+    async meteringStart() {
+      const [row] = await db
+        .select({ startedAt: spendMetering.startedAt })
+        .from(spendMetering)
+        .where(eq(spendMetering.id, 1));
+      if (!row) {
+        throw new Error(
+          "spend_metering has no measuring start: the spend_metering_start migration did not run",
+        );
+      }
+      return row.startedAt;
     },
   };
 }

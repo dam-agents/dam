@@ -269,6 +269,7 @@ import {
   composeConnectionsAtBoot,
   composeConnectionsForOwner,
   createConnectionGrantsCleanupHook,
+  createConnectionNames,
   createGrantedConnectionTemplates,
   listConnectionGrantAgentIds,
   listPlatformConnectionOwners,
@@ -1092,6 +1093,16 @@ export async function bootstrap() {
     k8s: k8sClient,
     defaultCeilingMicros: config.spendDefaultUserCeilingMicros,
     brandName: config.brand.name,
+    connectionNames: createConnectionNames(db),
+    ownedAgents: {
+      anyCreatedBefore: async (ownerSub, at) =>
+        (await agentsRepo.list(ownerSub)).some(
+          (agent) =>
+            agent.createdAt !== undefined &&
+            Date.parse(agent.createdAt) < at.getTime(),
+        ),
+    },
+    telemetryStoreOn: metricsReader !== null,
   });
   await periodicJobs.register("spend-unrecorded-calls", 5 * 60_000, () =>
     spend.ingest.settleUnrecordedCalls(),

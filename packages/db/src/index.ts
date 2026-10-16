@@ -50,6 +50,7 @@ export {
   resourceAlerts,
   avatarImages,
   spendDaily,
+  spendMetering,
   spendLimits,
   spendLimitExtensions,
 } from "./schema.js";
