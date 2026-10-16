@@ -89,8 +89,8 @@ test("grows its machine past the boot RAM", async () => {
     .toBe(true);
 });
 
-// TEST_SCENARIO: every vm machine runs on the guest kernel, guest agent and runner this platform patches for them. HOME is on btrfs, mounted compressed with zstd level 1, under a UUID of the disk's own rather than the template's (the template's stays as its metadata UUID), and the guest swaps to zram compressed with zstd. An unpatched kernel has neither, and an unpatched agent or runner would mount ext4 or format over the disk.
-test("keeps HOME on compressed btrfs with its own UUID, and swaps to zram", async () => {
+// TEST_SCENARIO: every vm machine runs on the guest kernel, guest agent and runner this platform patches for them. HOME is the root of a btrfs subvolume of its own, mounted compressed with zstd level 1, under a UUID of the disk's own rather than the template's (the template's stays as its metadata UUID), and the guest swaps to zram compressed with zstd. An unpatched kernel has neither, and an unpatched agent or runner would mount ext4 or format over the disk.
+test("keeps HOME on a compressed btrfs subvolume with its own UUID, and swaps to zram", async () => {
   test.skip(
     laneBackend !== "vm",
     "only a vm machine has a disk and a kernel of its own",
@@ -100,7 +100,7 @@ test("keeps HOME on compressed btrfs with its own UUID, and swaps to zram", asyn
     "grep ' /home/agent ' /proc/self/mountinfo; for d in /sys/fs/btrfs/*-*; do echo \"fsid ${d##*/} metadata $(cat $d/metadata_uuid)\"; done; cat /proc/swaps; cat /sys/block/zram0/comp_algorithm",
   );
   expect(guest).toMatch(
-    / \/home\/agent .* - btrfs \/dev\/vda \S*compress=zstd:1/,
+    /^\S+ \S+ \S+ \/agent \/home\/agent .* - btrfs \/dev\/vda \S*compress=zstd:1/m,
   );
   const [, fsid, metadata] = /^fsid (\S+) metadata (\S+)$/m.exec(guest) ?? [];
   expect(fsid, "the guest mounted one btrfs filesystem").toBeDefined();
@@ -110,6 +110,33 @@ test("keeps HOME on compressed btrfs with its own UUID, and swaps to zram", asyn
   ).not.toEqual(fsid);
   expect(guest).toMatch(/^\/dev\/zram0\s+partition/m);
   expect(guest).toContain("[zstd]");
+});
+
+// TEST_SCENARIO: the guest's boot log, which holds the harness's output, is readable in the guest at /var/log/platform and cannot be rewritten there; the disk it lives on is detached after the boot, and the host never reads it.
+test("shows the boot log read-only at /var/log/platform", async () => {
+  test.skip(
+    laneBackend !== "vm",
+    "only a vm machine has platform-init as its init",
+  );
+  const guest = inGuest(
+    agentId,
+    "test -s /var/log/platform/agent-runtime.log && echo readable; touch /var/log/platform/x 2>/dev/null || echo read-only",
+  );
+  expect(guest).toContain("readable");
+  expect(guest).toContain("read-only");
+});
+
+// TEST_SCENARIO: /tmp and /var/tmp are plain directories of the machine's root, not mounts of their own, and are open to every user as a temporary folder is; platform-init empties them at each boot.
+test("keeps /tmp and /var/tmp as directories of the root", async () => {
+  test.skip(
+    laneBackend !== "vm",
+    "only a vm machine has platform-init as its init",
+  );
+  const guest = inGuest(
+    agentId,
+    "grep -cE ' /(var/)?tmp ' /proc/self/mountinfo; stat -c '%a %U' /tmp /var/tmp",
+  );
+  expect(guest.split("\n")).toEqual(["0", "1777 root", "1777 root"]);
 });
 
 // TEST_SCENARIO: on the vm Backend the home dashboard shows the owner's memory and storage pools as meters read from the owner's runner, with this agent's own share in each.

@@ -30,6 +30,7 @@ pub struct Smolvm {
     nested: bool,
     tools: Option<PathBuf>,
     btrfs: PathBuf,
+    convert: bool,
 }
 
 const USER: &str = "root";
@@ -77,7 +78,14 @@ impl Smolvm {
             nested,
             tools,
             btrfs,
+            convert: false,
         })
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: lets this runner convert its machines' ext4 storage disks to btrfs (see convert).
+    pub fn converting(mut self, on: bool) -> Self {
+        self.convert = on;
+        self
     }
 
     fn record(&self, id: &str) -> anyhow::Result<Option<VmRecord>> {
@@ -258,6 +266,18 @@ impl Runtime for Smolvm {
             write_boot_image(record)?;
             write_launch(record)?;
         }
+        let share = record.as_ref().and_then(|r| {
+            r.mounts
+                .iter()
+                .find(|(_, target, _)| target == SHARE_PATH)
+                .map(|(share, _, _)| PathBuf::from(share))
+        });
+        let gib = record.as_ref().and_then(|r| r.storage_gb).unwrap_or(0);
+        let fits = |need| crate::storage::measure(&dir).is_some_and(|claim| claim.takes(need));
+        let conversion =
+            crate::convert::before_start(&dir, share.as_deref(), self.convert, fits, |next| {
+                format_btrfs(next, gib, &self.btrfs)
+            })?;
         let rootfs = AgentManager::default_rootfs_path()?;
         crate::files::write(
             &dir.join(crate::runtime::AGENT_ROOTFS_FILE),
@@ -270,6 +290,7 @@ impl Runtime for Smolvm {
             guest_dns(r, r.dns.unwrap_or(GUEST_DNS_SINK));
             r.nested_virt = Some(r.nested_virt == Some(true) && self.nested);
             r.mounts = boot_mounts(id, &r.mounts, self.tools.as_deref(), image_env.as_deref());
+            r.disks = conversion.clone().into_iter().collect();
         })?;
         let result = timed("start", id, &[], || Ok(self.runtime.start_machine(id)?));
         if result.is_err() {
@@ -279,6 +300,21 @@ impl Runtime for Smolvm {
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: grows the guest's RAM through the virtio-mem area smolvm gives every machine, as smolvm's own resize does, but without its two host checks: it refuses a VMM that is not in a cgroup of its own, and every VMM of a runner shares the runner pod's, and it admits the growth against the host's free memory, while a runner admits its machines by what they use (see capacity). The VMM maps the added RAM, the guest agent puts each memory block online as the guest's virtio-mem driver adds it (the driver adds no more once 1 GiB of it waits offline), and the grow ends once the VMM reports all of it plugged, the order smolvm's own resize takes. Each step is idempotent, so a retry of a grow that stopped part-way finishes it. The record is set to the size the guest now has.
+    // UNIT_BOUNDARY_DESCRIPTION: swaps in the btrfs disk a converting guest filled, on its word over the agent socket (convert::after_ready), and detaches the old ext4 disk from the record, so the next boot neither attaches nor converts it. The manager is detached at once: dropped attached, it would shut the machine down.
+    fn answered(&self, id: &str) -> anyhow::Result<()> {
+        let dir = vm_data_dir(id);
+        let swapped = crate::convert::after_ready(&dir, |capability| {
+            let manager = AgentManager::for_vm(id)?;
+            manager.detach();
+            let mut client = AgentClient::connect_for_state_probe(manager.vsock_socket())?;
+            Ok(client.supports_capability(capability)?)
+        })?;
+        if swapped {
+            self.db.update_vm(id, |r| r.disks.clear())?;
+        }
+        Ok(())
+    }
+
     fn grow(&self, id: &str, memory_mib: i32) -> anyhow::Result<()> {
         let target = u32::try_from(memory_mib).context("memoryMiB")?;
         timed("grow", id, &[], || {

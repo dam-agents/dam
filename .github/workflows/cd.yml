@@ -140,6 +140,12 @@ jobs:
           TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: |
           if [ "$TAG" = true ]; then mise run check; else mise run --continue-on-error check ::: test; fi
+      # platform-init's tests that need root (loop-mounted btrfs and ext4),
+      # which the sandboxed, cached `test` cannot run. Only when the Rust cache
+      # was needed: otherwise `test` replays, and this step alone would fill
+      # the target that the main push then saves as the Rust cache.
+      - if: steps.rust-needed.outputs.needed == 'true'
+        run: mise run //packages/vm-runner:test:root
       # Main saves only what this run compiled or read. A Rust or Go cache
       # saved after every task came from the task cache would hold an empty
       # target under the new key, and the next miss would compile from scratch.
