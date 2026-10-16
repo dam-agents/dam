@@ -8,10 +8,7 @@ vi.mock("../modules/chat/infrastructure/terminal-bridge.js", () => ({
   }),
 }));
 
-import {
-  attachNotice,
-  attachTitle,
-} from "../modules/chat/commands/chat.js";
+import { attachNotice, attachTitle } from "../modules/chat/commands/chat.js";
 import { createChatService } from "../modules/chat/services/chat-service.js";
 import type { SessionsPort } from "../modules/chat/services/sessions-service.js";
 

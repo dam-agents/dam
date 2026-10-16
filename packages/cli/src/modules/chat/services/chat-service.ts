@@ -25,9 +25,7 @@ export interface ChatService {
     serverFlag?: string;
     strategy: TerminalStrategy;
     reset?: boolean;
-    /** Runs once the session resolves; the terminal attaches when it settles. */
     onAttach?: (sessionId: string) => void | Promise<void>;
-    /** The window title to hold while attached. */
     title?: (sessionId: string) => string;
   }): Promise<Result<{ bridge: BridgeResult; sessionId: string }, ChatError>>;
   listSessions(input: {

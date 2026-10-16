@@ -42,7 +42,6 @@ export function connectTerminalBridge({
   terminalPath: string;
   stdin: NodeJS.ReadStream & { setRawMode?(mode: boolean): void };
   stdout: NodeJS.WriteStream;
-  /** Window title held for the whole connection; the remote's own titles are dropped. */
   title?: string;
 }): Promise<BridgeResult> {
   return new Promise<BridgeResult>((resolve) => {

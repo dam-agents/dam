@@ -33,14 +33,8 @@ export function askModeSwitch(
   });
 }
 
-/** How long the attach notice stays up when nobody presses Enter. */
 export const ATTACH_PAUSE_MS = 5000;
 
-/**
- * Holds the attach notice on screen before the agent's full-screen view covers
- * it. Resolves true on Enter, when stdin closes, or after `ms`; false on
- * Ctrl+C, which here is still the CLI's and not yet the agent's.
- */
 export function pauseBeforeAttach(
   input: NodeJS.ReadableStream,
   output: NodeJS.WritableStream,

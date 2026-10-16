@@ -12,7 +12,6 @@ import {
 
 export function buildChatCommand(deps: {
   chatService: ChatService;
-  /** Holds the attach notice on screen; false when the user cancels. */
   pause: () => Promise<boolean>;
 }): Command {
   return new Command("chat")
@@ -82,7 +81,6 @@ export function attachNotice(agentRef: string, sessionId: string): string {
   return `\x1b[2m${LEAVE_HINT} Come back with:\x1b[0m ${resumeCommand(agentRef, sessionId)}`;
 }
 
-/** The window title while attached; a full-screen view does not cover it. */
 export function attachTitle(agentRef: string, sessionId: string): string {
   return `${agentRef} · close the terminal to leave, Ctrl+C goes to the agent · back: dam chat ${agentRef} --resume ${sessionId}`;
 }
