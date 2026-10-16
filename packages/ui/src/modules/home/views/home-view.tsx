@@ -43,13 +43,16 @@ export function HomeView() {
 
   return (
     <div>
-      <PageHeader title="Home" actions={<EntryPointButtons />} />
+      <PageHeader title="Home" />
       <ApprovalsBanner />
       <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="rounded-lg border border-border bg-card p-6">
           <ResourcesCard agents={allAgents} workingAgentIds={workingAgentIds} />
         </div>
         <SpendWidget />
+      </div>
+      <div className="mb-3 flex flex-wrap justify-end gap-2">
+        <EntryPointButtons />
       </div>
       <SandboxList
         agents={visible}
