@@ -1,6 +1,6 @@
 # Observability (agent telemetry)
 
-Last verified: 2026-10-15
+Last verified: 2026-10-16
 
 ## Overview
 
@@ -236,6 +236,7 @@ Series are still partitioned by runner, because each runner is a process with it
 The runner's other duty here rides the machine status rather than a signal: **explaining a boot**.
 A guest's own boot log is on its storage disk, which the host does not read — parsing a filesystem a guest has had root on is not something the host should do — so the runner reads the machine's **console**, which the runtime writes on the host side.
 It carries the guest kernel and platform-init, the guest's init, not the harness, whose output goes to the boot log ([persistence](persistence.md)).
+Inside the guest the boot log, this boot's and the one before, is readable at `/var/log/platform`, read-only, so an operator's `vm-runner exec` or the agent itself can read the harness's output.
 The two arrive apart — the runtime files the agent's output as the console and logs the kernel's console lines with its own — and the tail shows the kernel's first.
 platform-init writes its own verdicts there too, as kernel log lines at a level the guest's quiet console still prints — a refusal to boot, each hand-off to the image's entrypoint and each exit of it — so a machine that will not boot, or whose agent keeps exiting, says why.
 An exit with less than 64 MiB left in the agent's home says so, and the runner then reports the boot as a full home, which the Agent carries as `HomeVolumeFull`, the reason a container agent's full home gets; a boot that fails while the owner's claim is critically full is reported as that claim being full instead ([persistence](persistence.md#per-agent-pvcs)).

@@ -118,6 +118,7 @@ pub fn run() -> ! {
     );
     mount_scratch(&root);
     let trust = offer_trust_cache(&root);
+    show_boot_log(&root);
     let guard = pool_guard(&root);
     leave_disk(&root);
     share_mounts();
@@ -910,6 +911,18 @@ fn keep_tail(path: &Path, limit: u64) {
     let closed = close(destination);
     if copied.is_err() || closed.is_err() || fs::rename(&trimmed, path).is_err() {
         let _ = fs::remove_file(&trimmed);
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: where the guest reads its boot log: this boot's and the one before, read-only. The log lives in the platform's part of the disk, which is detached once the boot is through with it (leave_disk), and the host never reads the disk, so without this bind the log, which holds the harness's output, is readable by no one. Read-only, so nothing in the guest can rewrite what the platform recorded.
+const BOOT_LOG_VIEW: &str = "/var/log/platform";
+
+fn show_boot_log(root: &Path) {
+    let target = Path::new(BOOT_LOG_VIEW);
+    if let Err(e) =
+        mkdir_all(target).and_then(|()| bind_read_only(&guest::system_store(root, "log"), target))
+    {
+        logf!("WARNING: showing the boot log at {BOOT_LOG_VIEW} ({e}); it is still written to the disk");
     }
 }
 
