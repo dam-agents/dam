@@ -6,3 +6,6 @@ export const HOVER_YIELD =
 
 export const HOVER_ROOM =
   "pr-6 transition-[padding] hover-capable:pr-0 hover-capable:group-hover:pr-6 hover-capable:group-has-[button:focus-visible]:pr-6 hover-capable:group-has-[[data-state=open]]:pr-6";
+
+export const HOVER_ROOM_PAIR =
+  "pr-12 transition-[padding] hover-capable:pr-0 hover-capable:group-hover:pr-12 hover-capable:group-has-[button:focus-visible]:pr-12 hover-capable:group-has-[[data-state=open]]:pr-12";
