@@ -179,7 +179,7 @@ describe("agentsInstallSettings — what every agents module is built with", () 
       "custom-avatars": "off",
     });
   });
-  // TEST_SCENARIO: the built-in provider is offered only where the operator named a model server and its key; without a base URL or without a key the feature is off even when the chart pins it on, a configured base URL loses its trailing slash, and a plain-HTTP one is refused.
+  // TEST_SCENARIO: the built-in provider is offered only where the operator named a model server and its key; without a base URL or without a key the feature is off even when the chart pins it on, a configured base URL loses its trailing slash, and a plain-HTTP one leaves the feature off without failing the boot.
   it("turns the platform provider off without a base URL or key", () => {
     process.env.FEATURE_MODES = JSON.stringify({ "platform-provider": "on" });
     expect(loadConfig().platformProvider).toBeNull();
@@ -196,7 +196,8 @@ describe("agentsInstallSettings — what every agents module is built with", () 
     });
     expect(loadConfig().featureModes["platform-provider"]).toBe("on");
     process.env.PLATFORM_PROVIDER_BASE_URL = "http://llm.models.svc:8000";
-    expect(() => loadConfig()).toThrow();
+    expect(loadConfig().platformProvider).toBeNull();
+    expect(loadConfig().featureModes["platform-provider"]).toBe("off");
   });
 
   /** TEST_SCENARIO: The chart names the harness new agents start on, and any

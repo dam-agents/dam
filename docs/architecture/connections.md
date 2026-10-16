@@ -298,6 +298,7 @@ Its stream can carry the end of thinking and the start of the answer in one piec
 
 A model server the operator hosts in the cluster, offered as a provider the user never gives a key for.
 The install names the server's root URL over HTTPS, its model and its key in its chart values (exact keys in [`helm/values.yaml`](../../helm/values.yaml)); without a root URL or a key the preset does not exist and the built-in provider [feature](features.md) is off for everyone.
+A root URL that is not HTTPS also leaves the feature off, with an error in the api-server log, because the gateway can inject the key and meter calls only on TLS it terminates.
 The user never connects it: the feature flag owns the Connection.
 Turning the flag on gives the user one Connection from the built-in preset, named after the brand; turning it off removes it, which revokes it from every Agent holding it.
 Connection names are unique per user, so when the user already has a Connection named after the brand it takes the first free name of the brand followed by `LLM`, then that numbered from 2.

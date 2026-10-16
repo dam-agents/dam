@@ -171,20 +171,23 @@ const spendPriceOverridesSchema = z
       }),
   );
 
-// UNIT_BOUNDARY_DESCRIPTION: the operator's self-hosted model server behind the built-in provider and the key the gateway sends it. The gateway injects the key only into TLS it terminates, so the base URL is https. An empty base URL or key means none is configured; the base URL is the server root, so a trailing slash is dropped before `/v1` is appended to it.
+// UNIT_BOUNDARY_DESCRIPTION: the operator's self-hosted model server behind the built-in provider and the key the gateway sends it. The gateway injects the key only into TLS it terminates, so a base URL that is not https leaves the feature off, logged rather than failing the boot, so values written for an earlier release cannot crash-loop the api-server. An empty base URL or key means none is configured; the base URL is the server root, so a trailing slash is dropped before `/v1` is appended to it.
 const platformProviderSchema = z
   .object({
-    baseUrl: z
-      .union([z.literal(""), z.url({ protocol: /^https$/ })])
-      .default(""),
+    baseUrl: z.string().default(""),
     model: z.string().default(""),
     apiKey: z.string().default(""),
   })
-  .transform(({ baseUrl, model, apiKey }) =>
-    baseUrl === "" || apiKey === ""
-      ? null
-      : { baseUrl: baseUrl.replace(/\/+$/, ""), model, apiKey },
-  );
+  .transform(({ baseUrl, model, apiKey }) => {
+    if (baseUrl === "" || apiKey === "") return null;
+    if (!z.url({ protocol: /^https$/ }).safeParse(baseUrl).success) {
+      getLogger().error(
+        "platform provider off: PLATFORM_PROVIDER_BASE_URL must be an https URL, the gateway meters only TLS it terminates",
+      );
+      return null;
+    }
+    return { baseUrl: baseUrl.replace(/\/+$/, ""), model, apiKey };
+  });
 const configSchema = z.object({
   serverVersion: z.string().min(1),
   appVersion: z.string().min(1),
