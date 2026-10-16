@@ -1,5 +1,5 @@
 diff --git i/src/devices/src/virtio/balloon/device.rs w/src/devices/src/virtio/balloon/device.rs
-index 3e36adb3..d51108c4 100644
+index 3e36adb3..5a5e866c 100644
 --- i/src/devices/src/virtio/balloon/device.rs
 +++ w/src/devices/src/virtio/balloon/device.rs
 @@ -122,6 +122,9 @@ pub struct FreePageHintProgress {
@@ -166,7 +166,58 @@ index 3e36adb3..d51108c4 100644
      // Linux's MADV_DONTNEED zeroes anonymous RAM as it releases, and punching
      // RAM this VMM owns clears it from the file. A private view of a file
      // (every machine after its first checkpoint, every restore and branch)
-@@ -1206,3 +1242,123 @@ mod checkpoint_quiescence_tests {
+@@ -696,12 +732,14 @@ fn clear_hinted_range(mem: &GuestMemoryMmap, gpa: u64, len: u64) {
+     // keeps its contents.
+     #[cfg(target_os = "macos")]
+     {
+-        if let Ok(host_addr) = mem.get_host_address(vm_memory::GuestAddress(gpa))
+-            && unsafe {
+-                libc::madvise(host_addr as *mut libc::c_void, len as usize, libc::MADV_ZERO)
+-            } != 0
+-        {
+-            debug!("balloon: MADV_ZERO unavailable: {}", std::io::Error::last_os_error());
++        // Per region, like release_guest_range: adjacent regions need not be
++        // host-adjacent.
++        for slice in mem.get_slices(vm_memory::GuestAddress(gpa), len as usize).flatten() {
++            let addr = slice.ptr_guard_mut().as_ptr() as *mut libc::c_void;
++            if unsafe { libc::madvise(addr, slice.len(), libc::MADV_ZERO) } != 0 {
++                debug!("balloon: MADV_ZERO unavailable: {}", std::io::Error::last_os_error());
++                break;
++            }
+         }
+         release_guest_range(mem, gpa, len);
+     }
+@@ -716,17 +754,18 @@ fn clear_hinted_range(mem: &GuestMemoryMmap, gpa: u64, len: u64) {
+         use windows_sys::Win32::System::Memory::{
+             MEM_COMMIT, MEM_DECOMMIT, PAGE_READWRITE, VirtualAlloc, VirtualFree,
+         };
+-        let Ok(host_addr) = mem.get_host_address(vm_memory::GuestAddress(gpa)) else {
+-            return;
+-        };
+-        let addr = host_addr as *mut core::ffi::c_void;
+-        let released = release_reported_pages()
+-            && unsafe {
+-                VirtualFree(addr, len as usize, MEM_DECOMMIT) != 0
+-                    && !VirtualAlloc(addr, len as usize, MEM_COMMIT, PAGE_READWRITE).is_null()
+-            };
+-        if !released {
+-            unsafe { std::ptr::write_bytes(host_addr, 0, len as usize) };
++        // Per region, like release_guest_range.
++        for slice in mem.get_slices(vm_memory::GuestAddress(gpa), len as usize).flatten() {
++            let (host_addr, len) = (slice.ptr_guard_mut().as_ptr(), slice.len());
++            let addr = host_addr as *mut core::ffi::c_void;
++            let released = release_reported_pages()
++                && unsafe {
++                    VirtualFree(addr, len, MEM_DECOMMIT) != 0
++                        && !VirtualAlloc(addr, len, MEM_COMMIT, PAGE_READWRITE).is_null()
++                };
++            if !released {
++                unsafe { std::ptr::write_bytes(host_addr, 0, len) };
++            }
+         }
+     }
+ }
+@@ -1206,3 +1245,166 @@ mod checkpoint_quiescence_tests {
          }
      }
  }
@@ -288,6 +339,49 @@ index 3e36adb3..d51108c4 100644
 +            grown < i64::from(CLAIMED) / 2,
 +            "process_stq grew the peak RSS by {grown} bytes for a {CLAIMED}-byte claim"
 +        );
++    }
++}
++
++#[cfg(all(test, unix))]
++mod hinted_range_tests {
++    use super::*;
++    use vm_memory::{Bytes, GuestAddress, GuestRegionMmap, MmapRegion};
++
++    /// Two regions adjacent for the guest need not be adjacent on the host: a
++    /// hinted range across the boundary clears each region through its own
++    /// mapping and leaves the host page between them alone.
++    #[test]
++    fn a_hint_across_regions_clears_each_region_and_nothing_between() {
++        let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
++        let prot = libc::PROT_READ | libc::PROT_WRITE;
++        let flags = libc::MAP_PRIVATE | libc::MAP_ANONYMOUS;
++        let host = unsafe { libc::mmap(std::ptr::null_mut(), 3 * page, prot, flags, -1, 0) };
++        assert_ne!(host, libc::MAP_FAILED);
++        let host = host as *mut u8;
++        unsafe { std::slice::from_raw_parts_mut(host, 3 * page) }.fill(0xa5);
++        // Guest pages 0 and 1 are host pages 0 and 2; host page 1 is not guest memory.
++        let first = unsafe { MmapRegion::build_raw(host, page, prot, flags) }.unwrap();
++        let second =
++            unsafe { MmapRegion::build_raw(host.add(2 * page), page, prot, flags) }.unwrap();
++        let mem = GuestMemoryMmap::from_regions(vec![
++            GuestRegionMmap::new(first, GuestAddress(0)).unwrap(),
++            GuestRegionMmap::new(second, GuestAddress(page as u64)).unwrap(),
++        ])
++        .unwrap();
++
++        clear_hinted_range(&mem, 0, 2 * page as u64);
++
++        for gpa in [0, page as u64] {
++            let byte = mem.read_obj::<u8>(GuestAddress(gpa)).unwrap();
++            assert_eq!(byte, 0, "guest page at 0x{gpa:x}");
++        }
++        let between = unsafe { std::slice::from_raw_parts(host.add(page), page) };
++        assert!(
++            between.iter().all(|&b| b == 0xa5),
++            "the hint cleared the host page between the regions"
++        );
++        drop(mem);
++        unsafe { libc::munmap(host as *mut libc::c_void, 3 * page) };
 +    }
 +}
 diff --git i/src/devices/src/virtio/block/worker.rs w/src/devices/src/virtio/block/worker.rs
