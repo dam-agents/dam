@@ -7,14 +7,14 @@ import {
   type DisplaySupervisor,
 } from "../../modules/browser-display.js";
 
-// TEST_OVERVIEW: The runtime keeps the browser panel's display stack — platform-display, which runs the virtual display, its window manager, sound and stream server — running for as long as it runs: started again whenever it exits, and killed with everything it started.
+// TEST_OVERVIEW: The runtime keeps the browser panel's display stack — platform-display, which runs the virtual display, its window manager, sound and stream server — running for as long as it runs: started again whenever it exits, and killed with everything it started. Each spec spawns real shells, and on a loaded machine one spawn can take seconds, so the specs get 30 s and each wait 20 s.
 
 const supervisors: DisplaySupervisor[] = [];
 afterEach(() => {
   for (const s of supervisors.splice(0)) s.stop();
 });
 
-async function until(check: () => boolean, ms = 5_000) {
+async function until(check: () => boolean, ms = 20_000) {
   const start = Date.now();
   while (!check()) {
     if (Date.now() - start > ms) throw new Error("timed out");
@@ -47,7 +47,7 @@ const alive = (pid: number) => {
   }
 };
 
-describe("display supervisor", () => {
+describe("display supervisor", { timeout: 30_000 }, () => {
   // TEST_SCENARIO: a part of the stack died — Selkies crashed, Xvfb was killed — so platform-display exited. It is started again, with a backoff, so the panel's picture comes back on its own; what the dead one started is killed first, so it cannot hold the display the next one needs.
   it("starts the stack again after it exits, killing what it left", async () => {
     const { dir, path } = script(

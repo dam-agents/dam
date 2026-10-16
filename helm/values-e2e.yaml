@@ -26,11 +26,13 @@ controller:
           value: "8000"
 
 # Offers the built-in provider so the platform-provider spec can turn it on and
-# off. Nothing calls the model, so the endpoint need not answer.
+# off. Nothing calls the model, so the endpoint need not answer and the key is
+# a dummy.
 apiServer:
   platformProvider:
-    baseUrl: http://platform-llm.invalid.svc.cluster.local:8000
+    baseUrl: https://platform-llm.invalid.svc.cluster.local:8443
     model: e2e-model
+    apiKey: e2e-dummy-key
 # Only the mock image is built for the e2e cluster — disable the agent
 # templates values-local.yaml leaves enabled (default and nous). Any
 # enabled template is rendered, and cluster:install then imports its
