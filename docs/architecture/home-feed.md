@@ -38,6 +38,11 @@ Nothing acts on a provisional row as proof the session exists: opening one asks 
 The sidebar shows the record's rows the same way under every Agent that is not open, three at most, and asks the Agent for its own list only when the user opens the Agent (its chat or its configuration page) or asks for more.
 It offers more only when the record may hold more: a feed shorter than its row limit lists every row filed for the owner.
 
+The user's **pins** order the sidebar on top of that.
+Pinned Agents come first, and so do pinned Sessions within their own Agent, in the order the user dragged them into; everything else keeps the recency order.
+The api-server keeps the pins per user, so the order follows the user to every browser, and drops an Agent's pins when the Agent is deleted.
+A pin is only an id: it never decides that an Agent or a Session exists, and a pin that names nothing listed shows nothing.
+
 That boundary is what makes the record safe to rebuild or discard.
 Dropping it costs a user their feed history and nothing else; the next capture refills it from the pods.
 It is deliberately not in the [kept-on-purpose set](persistence.md#lifetime) that the session directory belongs to — the session directory is kept because spend must stay attributable, while the attention record is a convenience that may be thrown away.

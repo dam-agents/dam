@@ -154,6 +154,7 @@ import {
 import { composeSessionDirectory } from "./modules/session-directory/index.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
 import { composeGettingStartedModule } from "./modules/getting-started/index.js";
+import { composeSidebarPinsModule } from "./modules/sidebar-pins/index.js";
 import {
   createUsageAgentsCleanupHook,
   listUsageAgentIds,
@@ -901,6 +902,8 @@ export async function bootstrap() {
   });
   gettingStarted.start();
 
+  const sidebarPins = composeSidebarPinsModule({ db });
+
   const caseStudies = composeCaseStudiesModule({
     db,
     inspectorRole: config.keycloakInspectorRole ?? "",
@@ -1444,6 +1447,11 @@ export async function bootstrap() {
       cleanup: satellitesBoot.onAgentDeleted,
     },
     {
+      name: "sidebar-pins",
+      listAgentIds: () => sidebarPins.listAgentIds(),
+      cleanup: (agentId: string) => sidebarPins.deleteForAgent(agentId),
+    },
+    {
       name: "agent-env",
       listAgentIds: () => agentEnvRepo.listAgentIds(),
       cleanup: (agentId: string) => agentEnvRepo.deleteForAgent(agentId),
@@ -1798,6 +1806,7 @@ export async function bootstrap() {
     shareHostGate,
     publicAgentPageService,
     gettingStarted,
+    sidebarPins,
     sessionPresence,
     wakeAgent: wakeAgentFor,
     artifactLibraryFor,
