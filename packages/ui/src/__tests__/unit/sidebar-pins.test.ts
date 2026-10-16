@@ -7,7 +7,7 @@ import {
   togglePin,
 } from "../../modules/agents/lib/sidebar-pins.js";
 
-// TEST_OVERVIEW: The user pins Agents to the top of the sidebar, and Sessions to the top of their Agent's list. Pinned items come first, in the user's order; the rest keep their recency order. The pin icon adds an item at the end of the pinned items, or takes it out. A drag pins the item it carries: dropped on a pinned item it lands before or after it, dropped anywhere else it joins the end of the pinned items.
+// TEST_OVERVIEW: The user pins Agents to the top of the sidebar, and Sessions to the top of their Agent's list. Pinned items come first, in the user's order; the rest keep their recency order. The pin icon adds an item at the end of the pinned items, or takes it out. Dragging is how the user orders pins: an item dropped on a pinned item lands before or after it and is pinned, an item dropped on the "Drop to pin" area at the top is pinned first, and a drop anywhere else changes nothing.
 
 const byId = (id: string) => id;
 
@@ -54,7 +54,7 @@ describe("movePin", () => {
     ]);
   });
 
-  // TEST_SCENARIO: starting a drag on an unpinned item pins it. Dropped on a pinned item, it joins the pinned items at that place.
+  // TEST_SCENARIO: an unpinned item dropped on a pinned item joins the pinned items at that place, so the drop position is where it lands.
   it("pins an unpinned item where it is dropped", () => {
     expect(movePin(["a", "b"], "x", { id: "b", after: false })).toEqual([
       "a",
@@ -63,19 +63,22 @@ describe("movePin", () => {
     ]);
   });
 
-  // TEST_SCENARIO: pinned items always stay above unpinned ones. A drop on an unpinned item, or a drag that ends outside any row, puts an unpinned item at the end of the pinned items. A pinned item dropped outside any row keeps its place.
-  it("puts an item dropped outside the pinned items at their end", () => {
+  // TEST_SCENARIO: with nothing pinned yet, the "Drop to pin" area at the top of the list is the drop target. A drop there pins the item first.
+  it("pins an item dropped at the top first", () => {
+    expect(movePin([], "x", "top")).toEqual(["x"]);
+    expect(movePin(["a", "b"], "b", "top")).toEqual(["b", "a"]);
+  });
+
+  // TEST_SCENARIO: only pinned items take a drop. A drop on an unpinned item cancels the drag: nothing moves and nothing is pinned.
+  it("changes nothing when the item is dropped on an unpinned item", () => {
     expect(movePin(["a", "b"], "x", { id: "y", after: false })).toEqual([
       "a",
       "b",
-      "x",
     ]);
     expect(movePin(["a", "b"], "a", { id: "y", after: true })).toEqual([
-      "b",
       "a",
+      "b",
     ]);
-    expect(movePin(["a", "b"], "x", null)).toEqual(["a", "b", "x"]);
-    expect(movePin(["a", "b"], "a", null)).toEqual(["a", "b"]);
   });
 
   it("leaves the order alone when an item is dropped on itself", () => {

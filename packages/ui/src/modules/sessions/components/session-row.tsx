@@ -44,6 +44,9 @@ const LONG_PRESS_MS = 400;
 // UNIT_BOUNDARY_DESCRIPTION: a pointer resting this long on a row reads its history ahead of the click; a pointer sweeping across the list reads nothing.
 const PREFETCH_DWELL_MS = 100;
 
+const PIN_YIELD =
+  "[@media(hover:none)]:hidden hover-capable:group-hover:hidden hover-capable:group-has-[button:focus-visible]:hidden hover-capable:group-has-[[data-state=open]]:hidden";
+
 const NO_WORK: readonly BackgroundWorkItemView[] = Object.freeze([]);
 
 interface Props {
@@ -199,7 +202,10 @@ export function SessionRow({
               size={12}
               aria-label="Pinned"
               data-testid="session-pinned"
-              className="shrink-0 text-muted-foreground"
+              className={cn(
+                "shrink-0 text-muted-foreground",
+                onTogglePin && PIN_YIELD,
+              )}
             />
           )}
           {onboarding && (

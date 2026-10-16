@@ -1,6 +1,7 @@
 import { PinFilled } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
+import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../types.js";
@@ -15,7 +16,7 @@ interface Props {
   current: boolean;
   unread: boolean;
   pinned: boolean;
-  onMovePin: (agentId: string, drop: PinDrop | null) => void;
+  onMovePin: (agentId: string, drop: PinDrop) => void;
   onStepPin: (agentId: string, step: -1 | 1) => void;
   onSelect: () => void;
   actions: ReactNode;
@@ -38,6 +39,7 @@ export function SidebarAgentRow({
   const drag = usePinDrag({
     scope: "agents",
     id: agent.id,
+    pinned,
     onMove: onMovePin,
     onStep: onStepPin,
   });
@@ -51,14 +53,13 @@ export function SidebarAgentRow({
           current ? "bg-muted" : "hover:bg-muted",
         )}
       >
-        <button
-          type="button"
-          onClick={onSelect}
+        <div
+          {...clickableProps(onSelect)}
           aria-current={current ? "page" : undefined}
           aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
           data-testid="sidebar-agent-row"
           className={cn(
-            "flex h-[34px] min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2.5 text-left",
+            "flex h-[34px] min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-left select-none",
             open ? "pr-[110px]" : "group-hover/agent:pr-[86px]",
             open
               ? "text-foreground"
@@ -82,7 +83,7 @@ export function SidebarAgentRow({
               size={12}
               aria-label="Pinned"
               className={cn(
-                "shrink-0 text-muted-foreground group-hover/agent:hidden",
+                "shrink-0 text-muted-foreground group-hover/agent:hidden group-has-[button:focus]/agent:hidden group-has-[[data-state=open]]/agent:hidden",
                 open && "hidden",
               )}
             />
@@ -99,7 +100,7 @@ export function SidebarAgentRow({
               <span className="sr-only">(unread)</span>
             </>
           )}
-        </button>
+        </div>
         <div
           className={cn(
             "absolute right-1 flex items-center gap-0.5 transition-opacity focus-within:opacity-100 group-hover/agent:opacity-100 has-[[data-state=open]]:opacity-100",

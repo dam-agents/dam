@@ -13,7 +13,10 @@ import { cn } from "@/lib/utils";
 import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
 import { useIsAgentAnswerableSoon } from "../../agents/api/queries.js";
-import { PinDropIndicator } from "../../agents/components/pin-drop-indicator.js";
+import {
+  PinDropIndicator,
+  PinDropZone,
+} from "../../agents/components/pin-drop-indicator.js";
 import { usePinDrag } from "../../agents/hooks/use-pin-drag.js";
 import type { useSidebarPinActions } from "../../agents/hooks/use-sidebar-pin-actions.js";
 import { pinnedFirst } from "../../agents/lib/sidebar-pins.js";
@@ -131,6 +134,9 @@ function SessionPreview({
       className="flex flex-col gap-px pb-1"
       data-testid="sidebar-agent-sessions"
     >
+      {pinned.size === 0 && (
+        <SessionDropZone agentId={agentId} pinActions={pinActions} />
+      )}
       {sidebarSessionWindow(sessions, false, () => false, pinned.size).map(
         (item) => (
           <PinnableRow
@@ -263,6 +269,9 @@ function AgentSessionList({
       data-provisional={list.provisional ? "true" : undefined}
       aria-busy={list.provisional || list.loading}
     >
+      {pinned.size === 0 && (
+        <SessionDropZone agentId={agentId} pinActions={pinActions} />
+      )}
       {list.loading && <SessionListSkeleton />}
       {!list.loading && rows.length === 0 && !hasNextPage && (
         <p className="py-1.5 pl-9 text-xs text-muted-foreground">
@@ -337,6 +346,24 @@ function AgentSessionList({
   );
 }
 
+const sessionScope = (agentId: string) => `sessions:${agentId}`;
+
+function SessionDropZone({
+  agentId,
+  pinActions,
+}: {
+  agentId: string;
+  pinActions: PinActions;
+}) {
+  return (
+    <PinDropZone
+      scope={sessionScope(agentId)}
+      onMove={(id, drop) => pinActions.moveSession(agentId, id, drop)}
+      className="ml-9"
+    />
+  );
+}
+
 function PinnableRow({
   agentId,
   sessionId,
@@ -351,8 +378,9 @@ function PinnableRow({
   children: ReactNode;
 }) {
   const drag = usePinDrag({
-    scope: `sessions:${agentId}`,
+    scope: sessionScope(agentId),
     id: sessionId,
+    pinned: pinned.has(sessionId),
     onMove: (id, drop) => pinActions.moveSession(agentId, id, drop),
     onStep: (id, step) => pinActions.stepSession(agentId, id, step, pinned),
   });

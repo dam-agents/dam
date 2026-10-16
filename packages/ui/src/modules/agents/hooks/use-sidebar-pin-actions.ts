@@ -46,13 +46,13 @@ export function useSidebarPinActions() {
     ready: loaded,
     toggleAgent: (agentId: string) =>
       editAgents((pinned) => togglePin(pinned, agentId)),
-    moveAgent: (agentId: string, drop: PinDrop | null) =>
+    moveAgent: (agentId: string, drop: PinDrop) =>
       editAgents((pinned) => movePin(pinned, agentId, drop)),
     stepAgent: (agentId: string, step: -1 | 1, shown: ReadonlySet<string>) =>
       editAgents((pinned) => stepPin(pinned, agentId, step, shown)),
     toggleSession: (agentId: string, sessionId: string) =>
       editSessions(agentId, (pinned) => togglePin(pinned, sessionId)),
-    moveSession: (agentId: string, sessionId: string, drop: PinDrop | null) =>
+    moveSession: (agentId: string, sessionId: string, drop: PinDrop) =>
       editSessions(agentId, (pinned) => movePin(pinned, sessionId, drop)),
     stepSession: (
       agentId: string,

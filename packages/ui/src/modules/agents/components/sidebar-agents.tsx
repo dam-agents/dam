@@ -16,6 +16,7 @@ import { useAgentsList } from "../api/queries.js";
 import { useCreateDefaultAgent } from "../hooks/use-create-default-agent.js";
 import { useSidebarAgents } from "../hooks/use-sidebar-agents.js";
 import { useSidebarPinActions } from "../hooks/use-sidebar-pin-actions.js";
+import { PinDropZone } from "./pin-drop-indicator.js";
 import { SidebarAgentRow } from "./sidebar-agent-row.js";
 
 export function SidebarAgents({
@@ -157,6 +158,13 @@ export function SidebarAgents({
         <p className="px-2.5 py-1.5 text-xs text-muted-foreground">
           Recent sessions can't be loaded right now.
         </p>
+      )}
+      {pinnedAgentIds.size === 0 && (
+        <PinDropZone
+          scope="agents"
+          onMove={pinActions.moveAgent}
+          className="mb-px"
+        />
       )}
       <ul className="flex flex-col gap-px">{agents.map(row)}</ul>
     </section>

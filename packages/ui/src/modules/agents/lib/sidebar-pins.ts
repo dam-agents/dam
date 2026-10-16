@@ -1,7 +1,4 @@
-export interface PinDrop {
-  id: string;
-  after: boolean;
-}
+export type PinDrop = { id: string; after: boolean } | "top";
 
 export function pinnedFirst<T>(
   items: readonly T[],
@@ -24,12 +21,11 @@ export function togglePin(pins: readonly string[], id: string): string[] {
 export function movePin(
   pins: readonly string[],
   id: string,
-  drop: PinDrop | null,
+  drop: PinDrop,
 ): string[] {
-  if (drop === null || drop.id === id)
-    return pins.includes(id) ? [...pins] : [...pins, id];
   const rest = pins.filter((p) => p !== id);
-  if (!rest.includes(drop.id)) return [...rest, id];
+  if (drop === "top") return [id, ...rest];
+  if (drop.id === id || !rest.includes(drop.id)) return [...pins];
   const at = rest.indexOf(drop.id) + (drop.after ? 1 : 0);
   return [...rest.slice(0, at), id, ...rest.slice(at)];
 }
