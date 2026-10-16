@@ -697,6 +697,9 @@ func runnerOwnsImageCache(spec config.VMRunnerSpec) bool {
 // UNIT_BOUNDARY_DESCRIPTION: the node image cache service's socket, inside the node directory it shares with the runners. The chart's DaemonSet binds it at this same path in its own mount. A runner mounts the directory read-only, which still lets it connect to the socket but not replace it.
 const vmImageCacheSocket = vmRunnerImagesPath + "/.cache.sock"
 
+// UNIT_BOUNDARY_DESCRIPTION: the ephemeral storage a runner pod requests unless the install sets its own. A runner writes almost nothing outside its hostPaths and claim, but a pod with no request is over it at any use, and a node short of disk evicts such pods first: one runner evicted is every machine of its owner killed mid-turn. A request above what it uses puts it behind every pod that is over its own.
+var vmRunnerEphemeralRequest = resource.MustParse("1Gi")
+
 // UNIT_BOUNDARY_DESCRIPTION: renders the owner's runner Deployment and hands it to the roll. Only an agent's reconcile may create one (create); the rollout sweep only offers an existing runner its turn, so a runner the orphan sweep has just removed is never brought back by it.
 func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner string, refs []metav1.OwnerReference, create bool) error {
 	name, ns := r.runnerName(owner), r.config.Namespace
@@ -723,6 +726,12 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 		if req, ok := resources.Requests[corev1.ResourceMemory]; ok && req.Cmp(*pool) > 0 {
 			resources.Requests[corev1.ResourceMemory] = *pool
 		}
+	}
+	if _, ok := resources.Requests[corev1.ResourceEphemeralStorage]; !ok {
+		if resources.Requests == nil {
+			resources.Requests = corev1.ResourceList{}
+		}
+		resources.Requests[corev1.ResourceEphemeralStorage] = vmRunnerEphemeralRequest
 	}
 	for k, v := range spec.Devices {
 		q, err := resource.ParseQuantity(v)
