@@ -62,6 +62,7 @@ export interface SessionsService {
   setTitle(input: SetSessionTitleInput): Promise<boolean>;
   // UNIT_BOUNDARY_DESCRIPTION: null for a session the platform does not track; read by the api-server so a platform sub-agent spawned from the session defaults to its subagent model.
   settings(input: SessionSettingsInput): Promise<Record<string, string> | null>;
+  byRef(ref: string): Promise<string | null>;
   storeDelegationFrames(
     input: StoreDelegationFramesInput,
   ): Promise<{ truncated: boolean }>;

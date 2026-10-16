@@ -1049,6 +1049,7 @@ export function ChatView() {
                     {selectedAgent && (
                       <LiveDelegationBlock
                         driverAgentId={selectedAgent}
+                        sessionId={sessionId}
                         busy={busy}
                         claimed={delegationOwners}
                       />

@@ -945,6 +945,7 @@ export const invocations = pgTable(
       .default(false),
     harnessConfig: jsonb("harness_config"),
     origin: text("origin").notNull().default("script"),
+    driverSessionId: text("driver_session_id"),
     awaitedUntil: timestamp("awaited_until", { withTimezone: true }),
     claimedUntil: timestamp("claimed_until", { withTimezone: true }),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),

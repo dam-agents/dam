@@ -54,5 +54,5 @@ Opening the PR is the `pr-open` skill's; each fix round is the `review-remediati
   Find the run: `gh run list --event merge_group --limit 100 --json databaseId,headBranch,conclusion,createdAt --jq '.[]|select(.headBranch|contains("pr-<n>-"))'`; it may show `cancelled`, not `failure`.
   `verify` only aggregates: it fails when any job it needs failed or was cancelled, so read the jobs, not `verify`: `gh run view <run> --json jobs --jq '.jobs[]|select(.conclusion!="success" and .conclusion!="skipped")|"\(.name) \(.conclusion) \(.startedAt) \(.completedAt) \(.databaseId)"'`.
   A `cancelled` job whose run time equals its `timeout-minutes` timed out: `--json jobs` lists its steps with times, and `gh run view <run> --log --job <job-id>` shows the step it hung in.
-  The queue builds the amd64 images in `build / build-images (amd64)`, whose environment differs from the PR's e2e builds, so a job can fail there first; arm64 builds on main alone.
+  The queue builds the agent images for arm64, which a PR run never does, so an arm64-only agent build can fail there first.
   A flake or an infra failure (a download stall, a runner timeout) → enqueue again; a real failure against what merged ahead → fix on the branch, wait for green, enqueue again.

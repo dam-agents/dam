@@ -80,6 +80,7 @@ export const invocationsTreeInputSchema = z.object({
 
 export const invocationsRunningInputSchema = z.object({
   driverAgentId: z.string().min(1),
+  sessionId: z.string().min(1).nullable().optional(),
 });
 
 export const invocationTranscriptInputSchema = z.object({

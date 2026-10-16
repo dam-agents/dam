@@ -24,7 +24,9 @@
 # each build takes from its own commit, the version of mise that built it — is
 # that image: it gets this run's tags and keeps its digest. The image it would
 # replace is this commit's own, on a rerun or a release, else the last one main
-# published, which such a component is also tagged `main` for.
+# published, which such a component is also tagged `main` for, else the last
+# release: main builds it for amd64 alone and a release for both archs, so a
+# release can only match the one before it.
 #
 # The tags are what docker/metadata-action gave each image: the commit sha,
 # the composite version, and on a v* tag its semver version, major.minor
@@ -82,7 +84,7 @@ merge_one() {
     fi
     from="$IMAGE_PREFIX/$c:$s"
   elif [ "$reused" = true ]; then
-    for t in "$GITHUB_SHA" main; do
+    for t in "$GITHUB_SHA" main latest; do
       r="$(crane digest "$IMAGE_PREFIX/$c:$t" 2>/dev/null)" || continue
       same_content "$IMAGE_PREFIX/$c@$r" "$c" "${digests[@]}" && { from="$IMAGE_PREFIX/$c@$r"; break; }
     done

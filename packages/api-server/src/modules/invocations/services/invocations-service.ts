@@ -128,6 +128,7 @@ export interface SpawnInput {
   ttlMs?: number;
   harnessConfig?: InvocationHarnessConfig;
   origin?: InvocationOrigin;
+  driverSessionId?: string | null;
 }
 
 export interface RecordResult {
@@ -276,6 +277,7 @@ export function createInvocationsService(deps: {
         expiresAt,
         harnessConfig: input.harnessConfig ?? null,
         origin: input.origin ?? "script",
+        driverSessionId: input.driverSessionId ?? null,
       });
       let agent;
       try {

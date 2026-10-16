@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { t } from "../../trpc.js";
 import {
   delegationFramesInputSchema,
+  sessionByRefInputSchema,
   sessionHistoryInputSchema,
   sessionListInputSchema,
   sessionSettingsInputSchema,
@@ -43,6 +44,11 @@ export const sessionsRouter = t.router({
         throw new TRPCError({ code: "NOT_FOUND", message: "no such session" });
       return { settings };
     }),
+  byRef: t.procedure
+    .input(sessionByRefInputSchema)
+    .query(async ({ ctx, input }) => ({
+      sessionId: await ctx.sessions.byRef(input.ref),
+    })),
 
   storeDelegationFrames: t.procedure
     .input(storeDelegationFramesInputSchema)

@@ -33,12 +33,6 @@ on:
           The push to main: save the caches and publish the dev chart.
         type: boolean
         required: true
-      image-archs:
-        description: >-
-          The archs build-images builds, as a JSON list; empty builds the
-          archs the `changes` job lists.
-        type: string
-        default: ""
       release:
         description: >-
           The push of a v* tag: publish the release.
@@ -244,6 +238,7 @@ jobs:
     outputs:
       agents: ${{ steps.d.outputs.agents }}
       archs: ${{ steps.d.outputs.archs }}
+      image_archs: ${{ steps.d.outputs.image_archs }}
       workloads: ${{ steps.d.outputs.workloads }}
       images: ${{ steps.d.outputs.images }}
       mock: ${{ steps.d.outputs.mock }}
@@ -273,19 +268,16 @@ jobs:
     # One job per arch builds the stale ones of the five images side by side;
     # see image:ci-build. merge-images tags the rest. A PR builds its images in
     # e2e instead, so image:resolve lists none for this job: see
-    # e2e:ci-images. A merge group builds them there too, and here on amd64,
-    # the faster runner, without a push, so a break only this job's
-    # environment causes, as its ARCH did for the guest kernel, never reaches
-    # main. arm64 builds on main alone, so an arm64-only break first fails
-    # there. A PR stays amd64-only and skips this job: it runs on every push to
-    # its branch, the merge group once per merge.
+    # e2e:ci-images. A merge group builds them there too, and here without a
+    # push. Only a v* tag builds them for arm64 (image:resolve's image_archs),
+    # so an arm64-only break first fails a release.
     needs: [changes]
     if: ${{ needs.changes.outputs.images != '[]' }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 30
     strategy:
       matrix:
-        arch: ${{ fromJSON(inputs.image-archs || needs.changes.outputs.archs) }}
+        arch: ${{ fromJSON(needs.changes.outputs.image_archs) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
