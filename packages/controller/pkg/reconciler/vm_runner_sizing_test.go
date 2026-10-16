@@ -401,7 +401,7 @@ func TestAPendingResizeIsReportedOnce(t *testing.T) {
 	assert.Equal(t, 1, notices)
 }
 
-// TEST_SCENARIO: a node short of disk evicts first the pods over their ephemeral-storage request, and a runner with none is over it at any use, so every machine of its owner dies with it. The runner asks for 1Gi unless the install sets its own request, which is kept.
+// TEST_SCENARIO: a node short of disk evicts first the pods over their ephemeral-storage request, and a runner with none is over it at any use, so every machine of its owner dies with it. The runner asks for 1Gi unless the install sets its own request, which is kept, or a lower ephemeral-storage limit, which the request then matches.
 func TestARunnerPodRequestsEphemeralStorageSoDiskPressureEvictsItLast(t *testing.T) {
 	render := func(install *corev1.ResourceRequirements) resource.Quantity {
 		agent := vmAgentCR()
@@ -421,4 +421,8 @@ func TestARunnerPodRequestsEphemeralStorageSoDiskPressureEvictsItLast(t *testing
 		Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("8Gi")},
 	})
 	assert.Equal(t, "5Gi", got.String())
+	got = render(&corev1.ResourceRequirements{
+		Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("8Gi"), corev1.ResourceEphemeralStorage: resource.MustParse("512Mi")},
+	})
+	assert.Equal(t, "512Mi", got.String(), "a request above the install's limit is refused at admission")
 }
