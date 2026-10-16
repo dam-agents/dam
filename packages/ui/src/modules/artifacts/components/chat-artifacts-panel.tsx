@@ -36,6 +36,7 @@ import { Input } from "@/components/ui/input";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { Tabs } from "@/components/ui/tabs";
 import { Tooltip } from "@/components/ui/tooltip";
+import { treeIndent } from "@/components/ui/tree-guide";
 import { useCopy } from "@/hooks/use-copy";
 import { clickableProps } from "@/lib/clickable";
 import { formatBytes } from "@/lib/format-size";
@@ -411,7 +412,7 @@ function ArtifactListRow({
             active && "bg-muted text-foreground",
             dragging && "opacity-50",
           )}
-          style={{ paddingLeft: `${12 + depth * 22}px` }}
+          style={{ paddingLeft: treeIndent(depth) }}
         >
           <div
             className="-mx-1.5 shrink-0"

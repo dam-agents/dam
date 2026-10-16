@@ -1,5 +1,7 @@
 import type { DirEntry } from "agent-runtime-api";
-import { Fragment } from "react";
+import { type CSSProperties, Fragment } from "react";
+
+import { TREE_GUIDE, treeGuideX } from "@/components/ui/tree-guide";
 
 import { useStore } from "../../../store.js";
 import { useDirSnapshot } from "../api/queries.js";
@@ -73,18 +75,23 @@ function DirEntryRow({ entry, parentPath, depth }: DirEntryRowProps) {
           dropActive={isDir && panel.dragTargetPath === fullPath}
         />
       )}
-      {isExpanded && <DirContents path={fullPath} depth={depth + 1} />}
-      {panel.pendingNew && panel.pendingNew.dir === fullPath && (
-        <InlineNameRow
-          kind={panel.pendingNew.kind}
-          depth={depth + 1}
-          placeholder={
-            panel.pendingNew.kind === "dir" ? "new-folder" : "new-file.md"
-          }
-          onCommit={panel.onCommitNew}
-          onCancel={panel.onCancelNew}
-        />
-      )}
+      <div
+        className={TREE_GUIDE}
+        style={{ "--tree-guide-x": treeGuideX(depth) } as CSSProperties}
+      >
+        {isExpanded && <DirContents path={fullPath} depth={depth + 1} />}
+        {panel.pendingNew && panel.pendingNew.dir === fullPath && (
+          <InlineNameRow
+            kind={panel.pendingNew.kind}
+            depth={depth + 1}
+            placeholder={
+              panel.pendingNew.kind === "dir" ? "new-folder" : "new-file.md"
+            }
+            onCommit={panel.onCommitNew}
+            onCancel={panel.onCancelNew}
+          />
+        )}
+      </div>
     </Fragment>
   );
 }
