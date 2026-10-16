@@ -42,7 +42,7 @@ Run from the release branch.
 The task:
 
 1. Tags the current commit (e.g. `v0.3.0-rc1`) and pushes tag + branch atomically.
-2. The `v*` tag starts a [`cd.yml`](../../.github/workflows/cd.yml) run, whose release jobs in [`build.yml`](../../.github/workflows/build.yml) run: images are built, Helm chart is pushed, CLI is published to npm with `--tag rc`.
+2. The `v*` tag starts a [`cd.yml`](../../.github/workflows/cd.yml) run: [`build.yml`](../../.github/workflows/build.yml) builds the images, then `cd.yml`'s `publish release` job pushes the Helm chart and publishes the CLI to npm with `--tag rc`.
 3. Bumps the branch to the next RC (`0.3.0-rc2`).
 
 Repeat as needed — cherry-pick fixes onto the release branch and publish another RC.

@@ -35,9 +35,16 @@ on:
         required: true
       release:
         description: >-
-          The push of a v* tag: publish the release.
+          The push of a v* tag: mirror the third-party images for the release
+          cd.yml publishes.
         type: boolean
         required: true
+    # For cd.yml's publish job.
+    outputs:
+      source_shas:
+        value: ${{ jobs.changes.outputs.source_shas }}
+      composite:
+        value: ${{ jobs.appversion.outputs.composite }}
     secrets:
       QUAY_USERNAME:
         required: false
@@ -592,69 +599,6 @@ jobs:
           quay-password: ${{ secrets.QUAY_PASSWORD }}
       - name: Mirror
         run: .mise/tasks/image/mirror
-
-  publish:
-    name: publish release
-    needs: [changes, merge-images, merge-agents, merge-workloads, appversion]
-    if: >-
-      ${{ inputs.release && !cancelled() &&
-          needs.changes.result == 'success' &&
-          needs.appversion.result == 'success' &&
-          needs.merge-images.result == 'success' &&
-          needs.merge-agents.result == 'success' &&
-          (needs.merge-workloads.result == 'success' || needs.merge-workloads.result == 'skipped') }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      # Every tool: the CLI build below is a `mise run`. helm is mise's pin.
-      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
-        with:
-          cache: "false"
-          quay-username: ${{ secrets.QUAY_USERNAME }}
-          quay-password: ${{ secrets.QUAY_PASSWORD }}
-      - name: Log in to Helm OCI registry
-        env:
-          QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
-          QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
-        run: echo "$QUAY_PASSWORD" | helm registry login quay.io --username "$QUAY_USERNAME" --password-stdin
-      - id: version
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          if [[ "$VERSION" =~ [Rr][Cc] ]]; then
-            echo "npmTag=rc" >> "$GITHUB_OUTPUT"
-          else
-            echo "npmTag=latest" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Build Helm chart dependencies
-        run: helm/.mise/deps
-
-      - name: Pin content-tagged image tags and digests
-        env:
-          SOURCE_SHAS: ${{ needs.changes.outputs.source_shas }}
-        run: .mise/tasks/image/pin-tags "$SOURCE_SHAS"
-
-      - name: Push Helm chart
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-          COMPOSITE: ${{ needs.appversion.outputs.composite }}
-        run: |
-          helm package helm --version "$VERSION" --app-version "$COMPOSITE"
-          helm push "platform-${VERSION}.tgz" oci://quay.io/dam-agents/charts
-
-      - name: Publish CLI to npm
-        env:
-          NPM_TAG: ${{ steps.version.outputs.npmTag }}
-        run: |
-          mise run //packages/cli:build
-          pnpm --filter @dam-agents/cli publish --access public --no-git-checks --provenance --tag "$NPM_TAG"
 
   publish-dev:
     name: publish dev chart

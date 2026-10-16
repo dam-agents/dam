@@ -1,10 +1,10 @@
 name: CI/CD
 
 # One run per event. This file decides what each event's run does and passes
-# it on as inputs; build.yml (mise check and the images, then publishing and
-# the security scan) and e2e.yml (the smoke suite's lanes) read the inputs and
-# never the event. On main, build.yml hands what the run published to
-# security.yml, which scans it.
+# it on as inputs; build.yml (mise check and the images, then the dev chart
+# and the security scan) and e2e.yml (the smoke suite's lanes) read the inputs
+# and never the event. On main, build.yml hands what the run published to
+# security.yml, which scans it. A tag's release publishes from here.
 #
 # Steps that repeat across jobs live in .github/actions: setup-mise (mise and
 # the quay.io login) and agent-tools. They are referenced as `./`, not the
@@ -38,8 +38,6 @@ jobs:
   build:
     permissions:
       contents: read
-      # publish's npm provenance.
-      id-token: write
       # security.yml's summary issues.
       issues: write
     uses: $/.github/workflows/build.yml
@@ -71,6 +69,65 @@ jobs:
     secrets:
       QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
       QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+
+  publish:
+    name: publish release
+    # Here, not in build.yml: npm's trusted publishing and provenance name
+    # this file, so the CLI must publish from it.
+    needs: [build]
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Every tool: the CLI build below is a `mise run`. helm is mise's pin.
+      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+        with:
+          cache: "false"
+          quay-username: ${{ secrets.QUAY_USERNAME }}
+          quay-password: ${{ secrets.QUAY_PASSWORD }}
+      - name: Log in to Helm OCI registry
+        env:
+          QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+          QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+        run: echo "$QUAY_PASSWORD" | helm registry login quay.io --username "$QUAY_USERNAME" --password-stdin
+      - id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [[ "$VERSION" =~ [Rr][Cc] ]]; then
+            echo "npmTag=rc" >> "$GITHUB_OUTPUT"
+          else
+            echo "npmTag=latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build Helm chart dependencies
+        run: helm/.mise/deps
+
+      - name: Pin content-tagged image tags and digests
+        env:
+          SOURCE_SHAS: ${{ needs.build.outputs.source_shas }}
+        run: .mise/tasks/image/pin-tags "$SOURCE_SHAS"
+
+      - name: Push Helm chart
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          COMPOSITE: ${{ needs.build.outputs.composite }}
+        run: |
+          helm package helm --version "$VERSION" --app-version "$COMPOSITE"
+          helm push "platform-${VERSION}.tgz" oci://quay.io/dam-agents/charts
+
+      - name: Publish CLI to npm
+        env:
+          NPM_TAG: ${{ steps.version.outputs.npmTag }}
+        run: |
+          mise run //packages/cli:build
+          pnpm --filter @dam-agents/cli publish --access public --no-git-checks --provenance --tag "$NPM_TAG"
 
   verify:
     name: verify
