@@ -380,7 +380,7 @@ virtualization:
     # filter. The pod's own seccomp profile bounds every VMM in each mode.
     # Changing this value rolls every runner, which reboots its owner's
     # machines.
-    seccomp: audit
+    seccomp: enforce
     # Local dev on macOS only. Set, the controller creates no runner pods:
     # every vm machine, whatever its owner, runs on one vm-runner process on
     # the host, which uses the host's own hypervisor instead of one nested in
@@ -1101,6 +1101,28 @@ ui:
 
 # -- API Server
 apiServer:
+  # -- Self-hosted OpenAI-compatible model server offered as the built-in
+  # provider behind the experimental `platform-provider` feature. An empty
+  # baseUrl or no key turns the feature off. baseUrl is the server root over
+  # https, without `/v1`, e.g. `https://vllm.llm.svc.cluster.local:8443`;
+  # gateways reach it only through `controller.gatewayEgress.peers`, and trust
+  # its TLS issuer through `controller.gatewayUpstreamExtraCAs` when that is
+  # not a public CA. The server requires a bearer key: the agent gateway sends
+  # it on every call, so each call is metered and spend limits apply. Name an
+  # existing Secret in the release namespace in `apiKeySecret`, or set
+  # `apiKey` from a secret values layer, which lands in the chart's
+  # credentials Secret. The api-server reads the key at start, so after
+  # rotating it in an existing Secret restart the api-server; it then rewrites
+  # the copy each user's Connection holds. Price the model in
+  # `apiServer.spend.priceOverrides` under provider `platform-llm`, or its
+  # calls count as nothing against a limit.
+  platformProvider:
+    baseUrl: ""
+    model: ""
+    apiKeySecret:
+      name: ""
+      key: api-key
+    apiKey: ""
   # -- Extra annotations for the Deployment object / its pod template
   # (merged over commonAnnotations / commonPodAnnotations).
   annotations: {}
@@ -1274,6 +1296,10 @@ apiServer:
     # tier prices, and `factors` keyed by speed or inference geography. The
     # rows below are IBM LiteLLM's own prices, read from its /model/info with
     # a temporary Management key on 2026-10-13. No public price list has them.
+    # The built-in provider (`apiServer.platformProvider`) has no price of its
+    # own; give its model one under provider `platform-llm` so per-user limits
+    # bind, e.g. a nominal
+    # `{provider: platform-llm, model: deepseek-v4.1-flash, input: 0.1, output: 0.4}`.
     priceOverrides:
       - {provider: ibm-litellm, model: aws/claude-opus-5-5, input: 3.04, output: 15.2, cacheRead: 0.152, cacheWrite5m: 3.8, cacheWrite1h: 8, webSearch: 0.01}
       - {provider: ibm-litellm, model: aws/claude-opus-5, input: 3.8, output: 19, cacheRead: 0.38, cacheWrite5m: 4.75, cacheWrite1h: 10, webSearch: 0.01}
@@ -1990,6 +2016,13 @@ controller:
       podLabels:
         k8s-app: kube-dns
       ports: [53]
+    # In-cluster pods every gateway may also reach, in the same shape as
+    # clusterDns — a self-hosted model server behind `apiServer.platformProvider`,
+    # for example `{namespace: llm, podLabels: {app: vllm}, ports: [8443]}`.
+    # podLabels is required. `mesh: true` marks a peer in the ambient mesh and
+    # also opens HBONE (15008); over it ztunnel carries any inner port, so
+    # `ports` binds only a peer outside the mesh.
+    peers: []
   # -- Image for a vm Agent's machine resolver, beside Envoy in its gateway
   # pod: it answers every name with the gateway's address and resolves nothing
   # upstream. CoreDNS publishes to Docker Hub; pulled via mirror.gcr.io like
@@ -2120,7 +2153,7 @@ harnesses:
       displayName: "Claude"
       description: "Anthropic's coding agent"
       releaseNotesUrl: "https://code.claude.com/docs/en/whats-new"
-      providers: [ibm-litellm, curve-bender, anthropic, bedrock]
+      providers: [ibm-litellm, curve-bender, anthropic, bedrock, platform]
       telemetry: claude-code
       tags: ["Anthropic"]
     codex:
@@ -2128,7 +2161,7 @@ harnesses:
       displayName: "Codex"
       description: "OpenAI Codex coding agent"
       releaseNotesUrl: "https://github.com/openai/codex/releases"
-      providers: [ibm-litellm, curve-bender, openai]
+      providers: [ibm-litellm, curve-bender, openai, platform]
       # Codex reads its exporters from config.toml alone; the image's launch
       # scripts render this rail into `-c otel.*` flags.
       telemetry: codex
@@ -2137,7 +2170,7 @@ harnesses:
       enabled: true
       displayName: "Pi"
       description: "Pi coding agent with multi-LLM support"
-      providers: [ibm-litellm, curve-bender, anthropic, openai, bedrock]
+      providers: [ibm-litellm, curve-bender, anthropic, openai, bedrock, platform]
       # Pi has no exporter of its own; the image's extension writes the
       # per-call log records on this rail.
       telemetry: pi

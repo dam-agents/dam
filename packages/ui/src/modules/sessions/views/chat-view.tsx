@@ -3,7 +3,6 @@ import {
   ArrowLeft,
   Document,
   Renew,
-  Tools,
   TrashCan,
   Warning,
 } from "@carbon/icons-react";
@@ -16,6 +15,7 @@ import {
 import {
   type CSSProperties,
   Fragment,
+  type ReactNode,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -40,6 +40,7 @@ import {
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { AgentView, Message } from "../../../types.js";
+import { useChatFormPreferences } from "../../a2ui/api/queries.js";
 import { A2uiActionProvider } from "../../a2ui/contexts/a2ui-action-context.js";
 import { A2uiConversationProvider } from "../../a2ui/contexts/a2ui-conversation-context.js";
 import { useA2uiAutoReplies } from "../../a2ui/hooks/use-a2ui-auto-replies.js";
@@ -65,13 +66,15 @@ import {
   hasStartNotice,
 } from "../../agents/components/agent-start-notice.js";
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
-import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
+import {
+  AgentAvatar,
+  avatarMood,
+} from "../../agents/components/avatar/agent-avatar.js";
 import {
   agentFailures,
   ContributionFailuresBadge,
 } from "../../agents/components/contribution-failures-badge.js";
 import { ContributionGapNotice } from "../../agents/components/contribution-gap-notice.js";
-import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
 import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
 import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-notice.js";
 import { UnsupportedContributionsBadge } from "../../agents/components/unsupported-contributions-badge.js";
@@ -143,6 +146,7 @@ import { SessionPairOutdatedNotice } from "../components/session-pair-outdated-n
 import { SessionPairPicker } from "../components/session-pair-picker.js";
 import { SessionPairPlaceholder } from "../components/session-pair-placeholder.js";
 import { SidePanelBar } from "../components/side-panel-bar.js";
+import { SidePanelEdgeTab } from "../components/side-panel-edge-tab.js";
 import { Terminal } from "../components/terminal.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
@@ -161,7 +165,10 @@ import { newLiveArrivals, noteArrivals } from "../lib/live-arrivals.js";
 import {
   type DockedItems,
   dockedItemTab,
+  maximizableView,
   selectSidePanelTab,
+  shownSidePanelWidth,
+  sidePanelMinWidth,
   type SidePanelTab,
   visibleSidePanelTab,
 } from "../lib/side-panel.js";
@@ -176,7 +183,6 @@ import type { SessionError } from "../store/sessions.js";
 
 const FILE_PANEL_WIDTH_KEY = "platform-file-w";
 const CHAT_MIN_W = 320;
-const SIDE_PANEL_MIN_W = 320;
 const SIDE_PANEL_BAR_W = 44;
 const TELEMETRY_SETTLE_MS = 5 * 60_000;
 
@@ -252,7 +258,6 @@ export function ChatView() {
     s.openChangesAgentId === s.selectedAgent ? s.openChangesAgentId : null,
   );
   const toggleChanges = useToggleChanges();
-  const browserMaximized = useStore((s) => s.browserMaximized);
   const openDelegation = useStore((s) =>
     s.openDelegation?.driverAgentId === s.selectedAgent
       ? s.openDelegation
@@ -269,11 +274,12 @@ export function ChatView() {
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const sidePanelTab = useStore((s) => s.sidePanelTab);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
+  const sidePanelMaximized = useStore((s) => s.sidePanelMaximized);
+  const setSidePanelMaximized = useStore((s) => s.setSidePanelMaximized);
   const draftDocked = useStore((s) => s.openFileDirty || s.openArtifactDirty);
   const hasPendingPermission = useHasPendingPermission();
   const mobileScreen = useStore((s) => s.mobileScreen);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
-  const setApprovalsOpen = useStore((s) => s.setApprovalsOpen);
   const terminalPaused = useStore((s) => s.terminalPaused);
   const setTerminalPaused = useStore((s) => s.setTerminalPaused);
 
@@ -437,15 +443,21 @@ export function ChatView() {
     sendPrompt: sendAndFollow,
   });
   const chatFormsEnabled = useChatFormsEnabled();
+  const { data: chatFormPreferences } = useChatFormPreferences(
+    chatFormsEnabled ? selectedAgent : null,
+    { quiet: true },
+  );
   const a2uiConversation = useA2uiConversation(
     messages,
     sessionId ?? "",
     chatFormsEnabled,
+    chatFormPreferences,
   );
   const { withRendererMetadata } = a2uiConversation;
   const formLocksComposer = composerLocked(
     a2uiConversation.conversation,
     a2uiConversation.liveMessageId,
+    chatFormPreferences,
   );
   useA2uiAutoReplies(a2uiConversation, sendFormPrompt);
   const sendWithA2uiData = useCallback(
@@ -690,26 +702,23 @@ export function ChatView() {
       void toggleChanges(selectedAgent);
     else void openBrowser(selectedAgent);
   };
-  const browserFills = browserMaximized && activeTab === "browser";
+  const maximizable = maximizableView(activeTab, dockedShown, openFilePath);
+  const maximized = maximizable !== null && sidePanelMaximized === maximizable;
+  const sidePanelMinW = sidePanelMinWidth(activeTab);
   const columnsDoNotFit =
     columnsW !== null &&
-    columnsW < CHAT_MIN_W + SIDE_PANEL_MIN_W + SIDE_PANEL_BAR_W;
-  const sidePanelFills = browserFills || (sidePanelOpen && columnsDoNotFit);
+    columnsW < CHAT_MIN_W + sidePanelMinW + SIDE_PANEL_BAR_W;
+  const sidePanelFills = maximized || (sidePanelOpen && columnsDoNotFit);
   const sidePanelMaxW =
     columnsW === null ? null : columnsW - CHAT_MIN_W - SIDE_PANEL_BAR_W;
   const sidePanelW =
-    rightW !== null && sidePanelMaxW !== null
-      ? Math.min(rightW, Math.max(SIDE_PANEL_MIN_W, sidePanelMaxW))
-      : rightW;
+    rightW === null
+      ? null
+      : shownSidePanelWidth(rightW, sidePanelMinW, sidePanelMaxW);
   const handleConfigureSandbox = useCallback(() => {
     if (!selectedAgent) return;
     navigateToSandboxHome(selectedAgent);
   }, [selectedAgent, navigateToSandboxHome]);
-
-  const openApprovals = useCallback(
-    () => setApprovalsOpen(true),
-    [setApprovalsOpen],
-  );
 
   const handleBack = useCallback(() => {
     resetSession();
@@ -739,8 +748,8 @@ export function ChatView() {
         <div
           className={`@container/chat relative flex flex-1 flex-col min-w-0 ${mobileOnPanel ? "hidden md:flex" : "flex"} ${sidePanelFills ? "md:!hidden" : ""}`}
         >
-          <header className="@container relative z-raised flex shrink-0 items-center gap-2 px-4 max-md:h-[52px] max-md:border-b max-md:border-border md:pointer-events-none md:absolute md:inset-x-0 md:top-0 md:h-[70px]">
-            <div className="flex min-w-0 items-center gap-3 max-md:flex-1 md:pointer-events-auto">
+          <header className="@container flex shrink-0 items-center gap-2 px-4 max-md:h-[52px] max-md:border-b max-md:border-border md:hidden md:py-2 md:has-[[data-chat-status]>*]:flex">
+            <div className="flex min-w-0 flex-1 items-center gap-3 md:hidden">
               <MobileMenuButton />
               <span
                 aria-hidden
@@ -750,19 +759,25 @@ export function ChatView() {
                   dotColor,
                 )}
               />
-              {agentView ? (
-                <EditableAgentIdentity
-                  agent={agentView}
-                  avatarSize={32}
-                  mood={avatarMood(agentDisplay?.state, agentView)}
-                  avatarClassName="@max-[149px]:hidden"
-                  nameClassName="text-sm font-bold text-foreground"
-                />
-              ) : (
-                <h1 className="text-sm font-bold text-foreground truncate">
+              <button
+                type="button"
+                onClick={handleConfigureSandbox}
+                aria-label={`Configure ${selectedAgentName ?? "agent"}`}
+                className="flex min-w-0 items-center gap-2"
+              >
+                {agentView && (
+                  <AgentAvatar
+                    name={agentView.name}
+                    avatar={agentView.avatar}
+                    size={28}
+                    mood={avatarMood(agentDisplay?.state, agentView)}
+                    className="@max-[149px]:hidden"
+                  />
+                )}
+                <span className="truncate text-sm font-bold text-foreground">
                   {selectedAgentName}
-                </h1>
-              )}
+                </span>
+              </button>
               {agentView && (
                 <span className="flex shrink-0 empty:hidden @max-[119px]:hidden">
                   <VmRuntimeBadge
@@ -771,19 +786,11 @@ export function ChatView() {
                   />
                 </span>
               )}
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Configure agent"
-                tooltip="Configure agent"
-                data-testid="configure-agent"
-                className="-ml-2 shrink-0 max-md:hidden"
-                onClick={handleConfigureSandbox}
-              >
-                <Tools size={16} />
-              </Button>
             </div>
-            <div className="flex shrink-0 items-center gap-2 md:pointer-events-auto">
+            <div
+              data-chat-status
+              className="flex shrink-0 items-center gap-2 md:ml-auto"
+            >
               <ChatHeaderStatus
                 selectedAgent={selectedAgent}
                 agents={agents}
@@ -792,6 +799,11 @@ export function ChatView() {
                 sessionId={sessionId}
                 processesEnabled={processesEnabled}
               />
+            </div>
+            <div className="flex shrink-0 items-center gap-2 md:hidden">
+              {processesEnabled && (
+                <ProcessesIndicator agentId={selectedAgent} />
+              )}
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -805,12 +817,13 @@ export function ChatView() {
               >
                 <Document size={16} />
               </Button>
-              <div className="md:hidden">
-                <ApprovalsButton onOpen={openApprovals} />
+              <div className="flex items-center gap-1 md:hidden">
+                <GettingStartedDock placement="header" />
+                <ApprovalsButton />
               </div>
             </div>
           </header>
-          <div className="peer/notices empty:hidden md:pt-[70px]">
+          <div className="empty:hidden">
             {runtimeOutdated && (
               <RuntimeOutdatedNotice agentId={selectedAgent} />
             )}
@@ -821,7 +834,7 @@ export function ChatView() {
           {sessionMode === SessionMode.Terminal &&
           selectedAgent &&
           sessionId ? (
-            <div className="flex min-h-0 flex-1 flex-col md:peer-empty/notices:pt-[70px]">
+            <div className="flex min-h-0 flex-1 flex-col">
               <Terminal
                 key={sessionId}
                 agentId={selectedAgent}
@@ -851,9 +864,9 @@ export function ChatView() {
             </div>
           ) : (
             <>
-              <div className="@container relative flex flex-1 flex-col min-h-0 md:peer-empty/notices:[--chat-top:70px]">
+              <div className="@container relative flex flex-1 flex-col min-h-0">
                 <div ref={messagesRef} className="flex-1 overflow-y-auto">
-                  <ChatColumn className="px-2 @xs/chat:px-4 @xl/chat:px-8 py-8 md:pt-[max(2rem,var(--chat-top,0px))] flex flex-col gap-8 min-h-full">
+                  <ChatColumn className="px-2 @xs/chat:px-4 @xl/chat:px-8 py-8 flex flex-col gap-8 min-h-full">
                     {!historyShown && (
                       <div className="py-20 flex items-center justify-center gap-3 text-sm text-muted-foreground">
                         <Spinner size={20} />
@@ -878,9 +891,17 @@ export function ChatView() {
                       !sessionError &&
                       messages.length === 0 && (
                         <div className="flex flex-1 flex-col items-center justify-center text-center">
-                          <p className="text-base font-bold text-foreground mb-2">
-                            Start a new session
-                          </p>
+                          {agentView && (
+                            <AgentAvatar
+                              name={agentView.name}
+                              avatar={agentView.avatar}
+                              size={96}
+                              mood={avatarMood(agentDisplay?.state, agentView)}
+                            />
+                          )}
+                          <h2 className="mt-3 mb-2 text-xl font-bold text-foreground">
+                            {selectedAgentName}
+                          </h2>
                           <p className="text-sm text-muted-foreground">
                             Send a message to begin or open a new session in:
                           </p>
@@ -923,36 +944,43 @@ export function ChatView() {
                               item.message.id,
                             ) ?? [item.message];
                             const lastIndex = item.index + members.length - 1;
-                            const bubbles = members.map((m, k) => (
-                              <ChatMessage
-                                key={m.id}
-                                message={m}
-                                continued={k > 0}
-                                arriving={arrived.has(m.id)}
-                                avatarAgent={agentView ?? undefined}
-                                isLast={item.index + k === shown.length - 1}
-                                showModel={runStarts.length > 0}
-                                {...timeProps(m.at, now)}
-                                hasPendingPermission={hasPendingPermission}
-                                pendingNotice={
-                                  item.index + k === shown.length - 1
-                                    ? startNotice
-                                    : undefined
-                                }
-                                onRetry={sendPrompt}
-                                onFileClick={openFileHandler}
-                                onDelete={deleteMessage}
-                                onLoadOlder={loadOlderKeepingScroll}
-                              />
-                            ));
-                            const chatMessage =
-                              members.length === 1 ? (
+                            const chatMessage = (actions?: ReactNode) => {
+                              const bubbles = members.map((m, k) => (
+                                <ChatMessage
+                                  key={m.id}
+                                  message={m}
+                                  continued={k > 0}
+                                  arriving={arrived.has(m.id)}
+                                  avatarAgent={agentView ?? undefined}
+                                  onAgentClick={handleConfigureSandbox}
+                                  footer={
+                                    k === members.length - 1
+                                      ? actions
+                                      : undefined
+                                  }
+                                  isLast={item.index + k === shown.length - 1}
+                                  showModel={runStarts.length > 0}
+                                  {...timeProps(m.at, now)}
+                                  hasPendingPermission={hasPendingPermission}
+                                  pendingNotice={
+                                    item.index + k === shown.length - 1
+                                      ? startNotice
+                                      : undefined
+                                  }
+                                  onRetry={sendPrompt}
+                                  onFileClick={openFileHandler}
+                                  onDelete={deleteMessage}
+                                  onLoadOlder={loadOlderKeepingScroll}
+                                />
+                              ));
+                              return members.length === 1 ? (
                                 bubbles[0]
                               ) : (
-                                <div className="flex flex-col gap-2">
+                                <div className="flex flex-col gap-5">
                                   {bubbles}
                                 </div>
                               );
+                            };
                             const runMessage: Message =
                               members.length === 1
                                 ? item.message
@@ -988,7 +1016,7 @@ export function ChatView() {
                                   {chatMessage}
                                 </RewritableMessage>
                               ) : (
-                                chatMessage
+                                chatMessage()
                               );
                             return (
                               <Fragment key={item.message.id}>
@@ -1046,7 +1074,6 @@ export function ChatView() {
                   </ChatColumn>
                 </div>
 
-                <GettingStartedDock placement="chat" />
                 {showJump && (
                   <button
                     onClick={scrollToBottom}
@@ -1160,11 +1187,12 @@ export function ChatView() {
               side="right"
               onResize={(d) => {
                 const max = sidePanelMaxW ?? window.innerWidth - 500;
-                const base = Math.min(
+                const base = shownSidePanelWidth(
                   rightWRef.current ?? filePanelRef.current?.offsetWidth ?? 0,
+                  sidePanelMinW,
                   max,
                 );
-                const v = Math.max(240, Math.min(max, base + d));
+                const v = Math.max(sidePanelMinW, Math.min(max, base + d));
                 rightWRef.current = v;
                 writePersistedNumber(FILE_PANEL_WIDTH_KEY, v);
                 setRightW(v);
@@ -1188,12 +1216,14 @@ export function ChatView() {
             <div
               ref={filePanelRef}
               style={
-                sidePanelW !== null
-                  ? ({ "--file-w": `${sidePanelW}px` } as CSSProperties)
-                  : undefined
+                {
+                  "--file-min-w": `${sidePanelMinW}px`,
+                  ...(sidePanelW !== null && { "--file-w": `${sidePanelW}px` }),
+                } as CSSProperties
               }
               className={cn(
                 "flex flex-col min-w-0 overflow-hidden max-md:flex-1",
+                !sidePanelFills && "md:min-w-[var(--file-min-w)]",
                 !sidePanelOpen && "hidden",
                 sidePanelFills || sidePanelW === null
                   ? "md:flex-1"
@@ -1283,6 +1313,14 @@ export function ChatView() {
               )}
             </div>
           )}
+          {sidePanelOpen && maximizable && (maximized || !columnsDoNotFit) && (
+            <SidePanelEdgeTab
+              maximized={maximized}
+              onToggle={() =>
+                setSidePanelMaximized(maximized ? null : maximizable)
+              }
+            />
+          )}
           <SidePanelBar
             active={activeTab}
             hidden={hiddenTabs}
@@ -1297,7 +1335,12 @@ export function ChatView() {
                   }
                 : undefined
             }
-            footer={<ApprovalsButton onOpen={openApprovals} />}
+            footer={
+              <div className="flex flex-col items-center gap-1">
+                <GettingStartedDock placement="rail" />
+                <ApprovalsButton />
+              </div>
+            }
           />
         </div>
       </div>
@@ -1344,13 +1387,7 @@ function ChatHeaderStatus({
     connectionState === "reconnecting" || connectionState === "reloading";
   return (
     <>
-      {processesEnabled ? (
-        <span className="md:hidden">
-          <ProcessesIndicator agentId={selectedAgent} />
-        </span>
-      ) : (
-        <BackgroundWorkIndicator items={backgroundWork} />
-      )}
+      {!processesEnabled && <BackgroundWorkIndicator items={backgroundWork} />}
       {reconnecting && <Badge variant="warning">Reconnecting</Badge>}
       <ImportInProgressBadge agentId={selectedAgent} />
       {agent && <GatewayFailureBadge agent={agent} />}

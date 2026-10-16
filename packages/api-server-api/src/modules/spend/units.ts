@@ -8,6 +8,7 @@ const PROVIDER_UNITS: Readonly<Record<string, SpendUnit>> = {
   "anthropic-oauth": "usd_list",
   bob: "bobcoin",
   "curve-bender": "free",
+  "platform-llm": "usd",
 };
 
 const UNPRICED_PROVIDERS: ReadonlySet<string> = new Set(["openai", "bedrock"]);

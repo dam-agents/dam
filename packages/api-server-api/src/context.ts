@@ -10,6 +10,7 @@ import type {
 } from "./modules/satellites/types.js";
 import type { CaseStudiesService } from "./modules/case-studies/types.js";
 import type { ChannelsService } from "./modules/channels/types.js";
+import type { ChatFormPreferencesService } from "./modules/chat-forms/preferences.js";
 import type { ConnectionsService } from "./modules/connections/types.js";
 import type { E2eService } from "./modules/e2e/types.js";
 import type {
@@ -28,6 +29,7 @@ import type { FilesService } from "./modules/files/router.js";
 import type { GettingStartedService } from "./modules/getting-started/types.js";
 import type { HarnessConfigService } from "./modules/harness-config/types.js";
 import type { SchedulesService } from "./modules/schedules/types.js";
+import type { SidebarPinsService } from "./modules/sidebar-pins/types.js";
 import type { SkillsService } from "./modules/skills/types.js";
 import type { SpendService } from "./modules/spend/types.js";
 import type { StarterKitsService } from "./modules/starter-kits/types.js";
@@ -68,7 +70,9 @@ export interface ApiContext {
   artifactLibrary: ArtifactLibraryService;
   caseStudies: CaseStudiesService;
   features: FeaturesService;
+  chatFormPreferences: ChatFormPreferencesService;
   gettingStarted: GettingStartedService;
+  sidebarPins: SidebarPinsService;
   files: FilesService;
   harnessConfig: HarnessConfigService;
   links: Links;

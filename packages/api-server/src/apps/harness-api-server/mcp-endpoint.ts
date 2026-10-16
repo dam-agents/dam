@@ -75,6 +75,7 @@ import {
 } from "../../modules/satellites/index.js";
 import type { SatelliteAgentOpsImpl } from "../../modules/satellites/index.js";
 import { registerChatFormTools } from "../../modules/chat-forms/index.js";
+import type { ChatFormPreferences } from "api-server-api/chat-forms";
 
 function resolveWorkspacePath(input: string): string {
   if (input.startsWith("/")) {
@@ -166,7 +167,7 @@ export interface McpSessionDeps {
   agentTelemetry: AgentTelemetryService;
   spendStatus?: () => Promise<SpendStatus>;
   sessionRef?: string;
-  chatForms?: boolean;
+  chatForms?: ChatFormPreferences | null;
   satellites?: {
     ops: SatelliteAgentOpsImpl;
     granted: SatelliteView[];
@@ -586,6 +587,12 @@ export function createMcpSession(
         .describe(
           "Thread to reply into. Omit for the thread of the message you're answering.",
         ),
+      chatId: z
+        .string()
+        .optional()
+        .describe(
+          "Conversation the thread is in: an id from describe_channel. Omit for the conversation you're answering; pass it when this agent is connected to several conversations and the reply is refused for not knowing which one.",
+        ),
       alsoSendToChannel: z
         .boolean()
         .optional()
@@ -609,6 +616,7 @@ export function createMcpSession(
       text,
       attachment,
       threadTs,
+      chatId,
       alsoSendToChannel,
       unfurlLinks,
       unfurlMedia,
@@ -621,6 +629,7 @@ export function createMcpSession(
         {
           text,
           ...(threadTs ? { threadTs } : {}),
+          ...(chatId ? { conversationId: chatId } : {}),
           ...(alsoSendToChannel ? { alsoSendToChannel } : {}),
           ...(loaded ? { attachment: loaded.resolved } : {}),
           ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
@@ -646,6 +655,7 @@ export function createMcpSession(
         detail: {
           action: "reply",
           textLength: text.length,
+          ...(chatId ? { conversationId: chatId } : {}),
           ...(alsoSendToChannel ? { alsoSendToChannel: true } : {}),
           ...(unfurlLinks !== undefined ? { unfurlLinks } : {}),
           ...(unfurlMedia !== undefined ? { unfurlMedia } : {}),
@@ -678,14 +688,21 @@ export function createMcpSession(
         .describe(
           "Message to react to. Omit for the message you're currently answering.",
         ),
+      chatId: z
+        .string()
+        .optional()
+        .describe(
+          "Conversation the message is in: an id from describe_channel. Omit for the conversation you're answering; pass it when this agent is connected to several conversations and the reaction is refused for not knowing which one.",
+        ),
     },
-    async ({ emoji, messageTs }) => {
+    async ({ emoji, messageTs, chatId }) => {
       const result = await deps.channelManager.react(
         agentId,
         ChannelType.Slack,
         {
           emoji,
           ...(messageTs ? { messageTs } : {}),
+          ...(chatId ? { conversationId: chatId } : {}),
         },
       );
       const failed = "error" in result;
@@ -1357,7 +1374,7 @@ export function createMcpSession(
     },
   });
 
-  if (deps.chatForms) registerChatFormTools(server);
+  if (deps.chatForms) registerChatFormTools(server, deps.chatForms);
 
   if (deps.satellites)
     registerSatelliteTools(server, {
@@ -1405,7 +1422,10 @@ export interface MountMcpDeps {
   caseStudySubmissions: CaseStudySubmissionsService;
   caseStudyInspection: CaseStudyInspectionService;
   carriesInspectorRole: (sub: string) => Promise<boolean>;
-  chatFormsEnabled: (owner: string) => Promise<boolean>;
+  chatFormPreferences: (
+    owner: string,
+    agentId: string,
+  ) => Promise<ChatFormPreferences | null>;
   agentImage: (agentId: string) => Promise<string | null>;
   agentTelemetry: AgentTelemetryService;
   spendStatusFor?: (agentId: string, owner: string) => Promise<SpendStatus>;
@@ -1436,13 +1456,15 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const invocations = deps.invocationsServiceFor(verified.owner);
     const [ownerIsInspector, chatForms, grantedSatellites] = await Promise.all([
       deps.carriesInspectorRole(verified.owner),
-      deps.chatFormsEnabled(verified.owner).catch((err: unknown) => {
-        console.error(
-          `[chat-forms] could not read ${agentId}'s owner flags; serving the session without check_chat_form`,
-          err,
-        );
-        return false;
-      }),
+      deps
+        .chatFormPreferences(verified.owner, agentId)
+        .catch((err: unknown) => {
+          console.error(
+            `[chat-forms] could not read ${agentId}'s chat form settings; serving the session without check_chat_form`,
+            err,
+          );
+          return null;
+        }),
       Promise.resolve(deps.satelliteOps?.granted(agentId) ?? []).catch(
         (err: unknown) => {
           console.error(

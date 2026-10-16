@@ -115,6 +115,38 @@ describe("createModelDiscovery", () => {
     expect(headers[0]?.["x-api-key"]).toBeUndefined();
   });
 
+  // TEST_SCENARIO: the platform's vLLM is listed from its root with the layer's bearer placeholder, so the gateway injects the operator key, and each model's `max_model_len` becomes its context window.
+  it("lists the platform's vLLM with the bearer placeholder and reads max_model_len", async () => {
+    const { fetchImpl, urls, headers } = stubFetch({
+      body: {
+        data: [
+          { id: "deepseek-v4.1-flash", max_model_len: 262_144 },
+          { id: "no-len" },
+        ],
+      },
+    });
+    const discover = createModelDiscovery({ log: noop, fetchImpl });
+    const outcome = await discover(listingForTemplate("platform-llm")!.spec, {
+      PLATFORM_LLM_BASE_URL: "http://vllm.ns.svc:8000",
+      OPENAI_BASE_URL: "http://elsewhere/v1",
+      OPENAI_API_KEY: "placeholder",
+      ANTHROPIC_AUTH_TOKEN: "placeholder",
+    });
+    expect(urls[0]).toBe("http://vllm.ns.svc:8000/v1/models");
+    expect(headers[0]).toEqual({
+      accept: "application/json",
+      authorization: "Bearer placeholder",
+    });
+    expect(outcome).toMatchObject({
+      status: "observed",
+      entries: [
+        { id: "deepseek-v4.1-flash", info: { contextWindow: 262_144 } },
+        { id: "no-len" },
+      ],
+    });
+    if (outcome.status === "observed")
+      expect(outcome.entries?.[1]?.info).toBeUndefined();
+  });
   it("uses the first set candidate and normalizes the base to /v1/models without doubling /v1", async () => {
     const { fetchImpl, urls } = stubFetch({ body: { data: [{ id: "gpt" }] } });
     const discover = createModelDiscovery({ log: noop, fetchImpl });

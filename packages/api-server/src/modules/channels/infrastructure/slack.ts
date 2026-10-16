@@ -1081,7 +1081,8 @@ async function resolveOutboundTarget(
     return {
       error:
         `this agent is connected to ${bound.length} Slack conversations ` +
-        `(${bound.map((c) => c.id).join(", ")}) — pass chatId to say which one`,
+        `(${bound.map((c) => c.id).join(", ")}) and cannot tell which one ` +
+        "you mean — pass one of these ids as chatId",
     };
   }
   const boundTarget = bound.find((c) => c.id === conversationId);

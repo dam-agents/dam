@@ -53,6 +53,8 @@ function makeRepoFake() {
     listAgentsForConnection: async () => [],
     revokeAllForAgent: async () => {},
     listDistinctGrantAgentIds: async () => [],
+    updateName: async () => {},
+    listOwnersOfTemplate: async () => [],
   };
   return { repo, rows };
 }
@@ -116,6 +118,8 @@ function makeService(
     },
   };
   const svc = createConnectionsService({
+    platformProviderEnabled: async () => false,
+    platformProviderKey: null,
     isOwnedAgent: async () => true,
     ownerId: OWNER,
     templates: createConnectionTemplateRegistry(buildCatalog()),

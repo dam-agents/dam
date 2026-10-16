@@ -255,6 +255,8 @@ export interface ConnectionsService {
 
   listConnections(): Promise<ConnectionView[]>;
 
+  listAndReconcileConnections(): Promise<ConnectionView[]>;
+
   getConnection(id: string): Promise<ConnectionView | null>;
 
   validateProviderConnection(id: string): Promise<void>;

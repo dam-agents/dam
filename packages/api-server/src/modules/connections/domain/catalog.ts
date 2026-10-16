@@ -8,6 +8,8 @@ import {
   openaiEnvMappings,
   bobEnvMappings,
   bedrockEnvMappings,
+  platformLlmEnvMappings,
+  PLATFORM_LLM_TEMPLATE_ID,
   BEDROCK_REGION_PATTERN,
   BEDROCK_TEMPLATE_ID,
   BOB_CHAT_MODES,
@@ -300,6 +302,39 @@ const BEDROCK: HeaderConnectionTemplate = {
   ],
 };
 
+export interface PlatformProviderEndpoint {
+  baseUrl: string;
+  model: string;
+  name: string;
+}
+
+function platformLlm(
+  endpoint: PlatformProviderEndpoint,
+): HeaderConnectionTemplate {
+  const url = new URL(endpoint.baseUrl);
+  return {
+    id: PLATFORM_LLM_TEMPLATE_ID,
+    name: "Built-in LLM provider",
+    category: "app",
+    isCustom: false,
+    description:
+      "The operator's self-hosted model server, reached with the operator's key. It is connected when the feature is turned on.",
+    authKind: "header",
+    host: url.hostname,
+    headerName: "Authorization",
+    valueFormat: "Bearer {value}",
+    contributions: [
+      ...envContributions(platformLlmEnvMappings(endpoint)),
+      {
+        kind: "egress-inject",
+        host: url.hostname,
+        ...(url.port ? { port: Number(url.port) } : {}),
+        headerName: "Authorization",
+        valueFormat: "Bearer {value}",
+      },
+    ],
+  };
+}
 const S3_COMPATIBLE: Sigv4ConnectionTemplate = {
   id: S3_COMPATIBLE_TEMPLATE_ID,
   name: "Object Storage",
@@ -940,9 +975,13 @@ function assertContributionsParse(
 
 export function buildCatalog(
   creds: OperatorCredentials = {},
-  opts: { shareBaseUrl?: string } = {},
+  opts: {
+    shareBaseUrl?: string;
+    platformProvider?: PlatformProviderEndpoint | null;
+  } = {},
 ): ConnectionTemplate[] {
   return assertContributionsParse([
+    ...(opts.platformProvider ? [platformLlm(opts.platformProvider)] : []),
     sharedKnowledgeBase(opts.shareBaseUrl),
     ANTHROPIC,
     ANTHROPIC_OAUTH,

@@ -1,3 +1,4 @@
+import { ATTENTION_FEED_LIMIT } from "api-server-api";
 import { useMemo } from "react";
 
 import { useStore } from "../../../store.js";
@@ -39,6 +40,7 @@ export function useActivitySessions() {
   return {
     items,
     openSessionKey,
+    complete: (attention.data?.items.length ?? 0) < ATTENTION_FEED_LIMIT,
     loading: attention.isPending,
     unreadable: attention.isError,
   };
