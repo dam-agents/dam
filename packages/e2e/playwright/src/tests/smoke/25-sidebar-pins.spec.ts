@@ -17,7 +17,11 @@ import {
   createRefreshingApiClient,
 } from "../../lib/api-client.js";
 import { acceptTerms } from "../../lib/auth.js";
-import { onLaneBackend, refreshingToken } from "../../lib/backend.js";
+import {
+  onLaneBackend,
+  refreshingToken,
+  waitAgentState,
+} from "../../lib/backend.js";
 import { harnessName } from "../../lib/fixtures.js";
 
 test.describe.configure({ mode: "serial" });
@@ -29,6 +33,14 @@ const reply = "pins-reply";
 
 let api: ApiClient;
 const agentIds = new Map<string, string>();
+
+async function reload(page: Page): Promise<void> {
+  await page.reload().catch(async (error: Error) => {
+    if (!error.message.includes("ERR_NETWORK_CHANGED")) throw error;
+    await page.reload();
+  });
+  await expect(page.getByTestId("app-sidebar")).toBeVisible();
+}
 
 async function openSidebar(page: Page): Promise<void> {
   await page.goto(baseUrl);
@@ -130,6 +142,12 @@ test.beforeAll(async () => {
     agentIds.set(name, id);
     if (name !== AGENTS[0]) await api.agents.sleep.mutate({ id });
   }
+  for (const [name, id] of agentIds)
+    await waitAgentState(
+      api,
+      id,
+      name === AGENTS[0] ? "running" : "hibernated",
+    );
   await api.sidebarPins.setAgents.mutate({ agentIds: [] });
 });
 
@@ -173,8 +191,7 @@ test("drag pins and orders Agents, and a drop on an unpinned row cancels", async
   });
 
   await test.step("the order survives a reload", async () => {
-    await page.reload();
-    await expect(page.getByTestId("app-sidebar")).toBeVisible();
+    await reload(page);
     await ensureSidebarExpanded(page);
     await expect
       .poll(() => shownAgents(page))
@@ -282,8 +299,7 @@ test("drag pins and orders Sessions within their Agent", async ({ page }) => {
   });
 
   await test.step("the order survives a reload", async () => {
-    await page.reload();
-    await expect(page.getByTestId("app-sidebar")).toBeVisible();
+    await reload(page);
     await ensureSidebarExpanded(page);
     await expect
       .poll(() => shownSessions(page))
