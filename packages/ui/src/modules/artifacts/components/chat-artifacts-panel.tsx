@@ -6,6 +6,7 @@ import {
   OverflowMenuVertical,
   TrashCan,
   Upload,
+  View,
 } from "@carbon/icons-react";
 import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
 import {
@@ -38,6 +39,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useCopy } from "@/hooks/use-copy";
 import { clickableProps } from "@/lib/clickable";
+import { formatBytes } from "@/lib/format-size";
 import { cn } from "@/lib/utils";
 
 import { api } from "../../../api.js";
@@ -56,7 +58,11 @@ import { useOpenArtifact } from "../hooks/use-open-artifact.js";
 import { folderDisplayNames } from "../lib/folders.js";
 import { groupArtifactsByFolder } from "../lib/group-artifacts.js";
 import { toastCopyOutcome } from "../lib/share-link.js";
-import { ArtifactVisibilityButton } from "./artifact-badges.js";
+import {
+  ArtifactDeletionChip,
+  ArtifactInteractiveBadge,
+  ArtifactVisibilityButton,
+} from "./artifact-badges.js";
 import { ArtifactRowMenuItems } from "./artifact-row-menu-items.js";
 import { FolderDialog } from "./folder-dialog.js";
 import { MoveArtifactDialog } from "./move-artifact-dialog.js";
@@ -111,6 +117,7 @@ export function ChatArtifactsPanel({
         : artifacts,
     [artifacts, term],
   );
+  const shownBytes = shown.reduce((sum, a) => sum + a.sizeBytes, 0);
   const openArtifactId = useStore((s) => s.openArtifactId);
   const openArtifact = useOpenArtifact();
 
@@ -265,6 +272,12 @@ export function ChatArtifactsPanel({
           })}
         </div>
       )}
+      {!loading && shown.length > 0 && (
+        <p className="shrink-0 border-t border-border px-4 py-2 text-xs text-muted-foreground">
+          {shown.length} artifact{shown.length === 1 ? "" : "s"} ·{" "}
+          {formatBytes(shownBytes)} stored
+        </p>
+      )}
       {renameTarget && (
         <RenameArtifactDialog
           artifact={renameTarget}
@@ -370,7 +383,7 @@ function ArtifactListRow({
           {...(drag ? dragProps : {})}
           title={artifact.title}
           className={cn(
-            "group flex h-8 w-full cursor-pointer items-center gap-1.5 py-1 pl-3.5 pr-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted",
+            "group flex min-h-8 w-full cursor-pointer items-center gap-1.5 py-1 pl-3.5 pr-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted",
             active && "bg-muted text-foreground",
             dragging && "opacity-50",
           )}
@@ -381,8 +394,29 @@ function ArtifactListRow({
               onShare={() => onShare(artifact)}
             />
           </div>
-          <span className="min-w-0 flex-1 truncate">{artifact.title}</span>
-          {showCreator && <CreatorChip agentId={artifact.agentId} />}
+          <div className="min-w-0 flex-1">
+            <span className="block truncate">{artifact.title}</span>
+            {(showCreator ||
+              artifact.expiresAt !== null ||
+              artifact.viewCount > 0 ||
+              artifact.interactive) && (
+              <span className="flex min-w-0 items-center gap-2 overflow-hidden text-xs">
+                {showCreator && <CreatorChip agentId={artifact.agentId} />}
+                <ArtifactDeletionChip expiresAt={artifact.expiresAt} />
+                {artifact.viewCount > 0 && (
+                  <Tooltip
+                    content={`${artifact.viewCount} view${artifact.viewCount === 1 ? "" : "s"} of its share link`}
+                  >
+                    <span className="inline-flex shrink-0 items-center gap-1">
+                      <View size={12} />
+                      {artifact.viewCount}
+                    </span>
+                  </Tooltip>
+                )}
+                {artifact.interactive && <ArtifactInteractiveBadge />}
+              </span>
+            )}
+          </div>
           <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
             <DropdownMenu>
               {}

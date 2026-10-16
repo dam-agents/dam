@@ -1,4 +1,4 @@
-import { Earth, Link, Locked } from "@carbon/icons-react";
+import { Calendar, Earth, Flash, Link, Locked } from "@carbon/icons-react";
 import type {
   ArtifactKind,
   ArtifactVisibility,
@@ -7,7 +7,10 @@ import type {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { HintTooltip, Tooltip } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
+import { deletionState, deletionTooltip } from "../lib/format.js";
 import { VISIBILITY_OPTIONS } from "./share-visibility-choice.js";
 
 const KIND_PRESENTATION: Record<
@@ -67,5 +70,45 @@ export function ArtifactVisibilityButton({
     >
       <Icon size={16} />
     </Button>
+  );
+}
+
+export function ArtifactDeletionChip({
+  expiresAt,
+  className,
+}: {
+  expiresAt: string | null;
+  className?: string;
+}) {
+  const deletion = deletionState(expiresAt);
+  if (deletion.state === "never") return null;
+  const hint = deletionTooltip(expiresAt);
+  return (
+    <HintTooltip
+      label={hint}
+      content={hint}
+      className={cn(
+        "shrink-0 gap-1 whitespace-nowrap",
+        deletion.state === "expired" && "text-danger",
+        deletion.state === "active" && deletion.soon && "text-warning",
+        className,
+      )}
+    >
+      <Calendar size={12} />
+      {deletion.label}
+    </HintTooltip>
+  );
+}
+
+export function ArtifactInteractiveBadge() {
+  return (
+    <Tooltip content="This page can ask its agent to do something, so it stays private — it can never be shared.">
+      <span className="inline-flex">
+        <Badge variant="accent" className="gap-1">
+          <Flash size={12} />
+          Interactive
+        </Badge>
+      </span>
+    </Tooltip>
   );
 }
