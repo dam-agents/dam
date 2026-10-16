@@ -36,27 +36,10 @@ test("exchange messages with the agent", async ({ page }) => {
     expect((await bar.boundingBox())?.y).toBe(0);
   });
 
-  await test.step("the configure button sits right after the agent name", async () => {
-    const name = page.getByTitle(`Rename ${agentName}`);
-    const configure = page.getByTestId("configure-agent");
-    await expect(name).toBeVisible();
-    await expect(configure).toBeVisible();
-    await expect
-      .poll(() =>
-        page.evaluate(async (title) => {
-          await document.fonts.ready;
-          const nameBox = [...document.querySelectorAll("[title]")]
-            .find((el) => el.getAttribute("title") === title)
-            ?.getBoundingClientRect();
-          const configureBox = document
-            .querySelector('[data-testid="configure-agent"]')
-            ?.getBoundingClientRect();
-          return nameBox && configureBox
-            ? configureBox.left - nameBox.right
-            : Infinity;
-        }, `Rename ${agentName}`),
-      )
-      .toBeLessThan(16);
+  await test.step("the new session page names the agent", async () => {
+    await expect(
+      page.getByRole("heading", { level: 2, name: agentName, exact: true }),
+    ).toBeVisible();
   });
 
   await test.step("send a message and receive the scripted reply", async () => {
@@ -69,6 +52,15 @@ test("exchange messages with the agent", async ({ page }) => {
     const { prompts } = await api.e2e.getReceivedPrompts.query({ agentId });
     expect(prompts.length).toBeGreaterThan(0);
     expect(JSON.stringify(prompts)).toContain(userPrompt);
+  });
+
+  await test.step("the agent's name above its reply opens its configuration", async () => {
+    await page
+      .getByTestId("chat-message")
+      .filter({ hasText: scriptedReply })
+      .getByRole("button", { name: `Configure ${agentName}` })
+      .click();
+    await expect(page).toHaveURL(new RegExp(`/sandboxes/${agentId}$`));
   });
 });
 
