@@ -30,6 +30,10 @@ import { composeStarterKitsForOwner } from "../../../modules/starter-kits/index.
 import { composeKbSharesForOwner } from "../../../modules/kb-shares/index.js";
 import { composeCaseStudiesForOwner } from "../../../modules/case-studies/index.js";
 import { composeFeaturesForOwner } from "../../../modules/features/index.js";
+import {
+  composeChatFormPreferencesForOwner,
+  createChatFormPreferencesReader,
+} from "../../../modules/chat-forms/index.js";
 import { composeSkillsModule } from "../../../modules/skills/compose.js";
 import { composeFilesModule } from "../../../modules/files/files-service.js";
 import { composeConnectionsForOwner } from "../../../modules/connections/compose.js";
@@ -60,6 +64,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     telegramBindFlows,
     slackBindFlows,
     seedSources,
+    spendForOwner,
     wrapperFrameSender,
     presetSeeder,
     trustedHosts,
@@ -69,6 +74,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     contributionsProgress,
     onboardingChecklists,
     gettingStarted,
+    sidebarOrder,
     getAgentCapabilities,
     schedulesBoot,
     listRegisteredAgentIds,
@@ -99,6 +105,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     cpu: config.agentDefaultCpuLimit,
     memory: config.agentDefaultMemoryLimit,
   };
+  const readChatFormPreferences = createChatFormPreferencesReader(db);
 
   return (user: UserIdentity, surface: string): ApiContext => {
     const connections = composeConnectionsForOwner({
@@ -116,6 +123,10 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       connectionRulesSync: createConnectionRulesSyncAdapter(db),
       oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
       brandName: config.brand.name,
+      platformProviderKey: config.platformProvider?.apiKey ?? null,
+      platformProviderCa: config.platformProvider?.ca ?? null,
+      platformProviderEnabled: async () =>
+        (await features.flags())["platform-provider"],
     });
     const { budgets, resizeGate, storageGate } = composeBudgetsModule({
       k8s: k8sClient,
@@ -254,9 +265,19 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       kitUpstream,
       kitUpdateMarks: createKitUpdateMarks(agentsRepo),
       virtualizationEnabled: config.virtualizationEnabled,
+      chatFormPreferences: (agentId) =>
+        readChatFormPreferences(
+          agentId,
+          async () => (await features.flags())["chat-forms"],
+        ),
     });
     const isAgentOwnedBy = async (agentId: string, ownerSub: string) =>
       (await agentExists(agentId)) && ownerSub === user.sub;
+    const chatFormPreferences = composeChatFormPreferencesForOwner({
+      db,
+      ownerSub: user.sub,
+      isAgentOwnedBy,
+    });
     const { service: egressRules } = composeEgressRulesModule({
       db,
       ownerSub: user.sub,
@@ -336,6 +357,10 @@ export function createApiContextFactory(boot: ApiServerDeps) {
           reader: metricsReader,
           listOwnedAgents,
           isInvocationTargetName,
+          connectionNames: async () =>
+            new Map(
+              (await connections.listConnections()).map((c) => [c.id, c.name]),
+            ),
           sessionTypeSpend: createSessionTypeSpend({
             readSpend: (agentIds, window) =>
               metricsReader.spendBySession(agentIds, window),
@@ -370,7 +395,9 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       artifactLibrary,
       caseStudies,
       features,
+      chatFormPreferences,
       gettingStarted: gettingStarted.forOwner(user.sub),
+      sidebarOrder: sidebarOrder.forOwner(user.sub),
       files,
       harnessConfig,
       links: config.links,
@@ -384,6 +411,12 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       satellites,
       satelliteWorker: satellitesBoot.workerOps,
       budgets,
+      spend: spendForOwner({
+        ownerSub: user.sub,
+        agentBinding: user.agentIds,
+        isAgentOwnedBy: (agentId, ownerSub) =>
+          agentsRepo.isOwnedBy(agentId, ownerSub),
+      }),
       user,
       e2eEnabled: config.e2eEnabled,
       virtualizationEnabled: config.virtualizationEnabled,

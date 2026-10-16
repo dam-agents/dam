@@ -1,8 +1,15 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { createServer, type Server } from "node:http";
 import { createServer as createTcpServer } from "node:net";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
-import type { WatchPages } from "../../modules/browser-cdp.js";
+import {
+  TabGoneError,
+  type BrowserView,
+  type WatchPages,
+} from "../../modules/browser-cdp.js";
 import type { BrowserSnapshot } from "agent-runtime-api";
 import {
   LAUNCH,
@@ -13,6 +20,7 @@ import {
   killablePreviewPids,
   createBrowserPreview,
   previewUrl,
+  readTestingMode,
   type BrowserPreview,
 } from "../../modules/browser-preview.js";
 
@@ -37,6 +45,9 @@ function fakeBrowser() {
     hangPing: false,
     failPing: false,
     pings: 0,
+    tabs: ["T1"],
+    active: "T1",
+    watchers: 0,
     die: () => {},
   };
   const run = async (args: string[]) => {
@@ -56,32 +67,74 @@ function fakeBrowser() {
   const watch: WatchPages = async ({ onState, onClose }) => {
     if (!browser.alive) throw new Error("CDP connection closed");
     let open = true;
-    const state = () => ({
-      url: browser.url,
-      title: "",
-      loading: false,
-      canGoBack: false,
-      canGoForward: false,
+    let opened = 1;
+    browser.watchers++;
+    const state = (): BrowserView => ({
+      page: {
+        url: browser.url,
+        title: "",
+        loading: false,
+        canGoBack: false,
+        canGoForward: false,
+      },
+      tabs: browser.tabs.map((id) => ({
+        id,
+        url: id === browser.active ? browser.url : "about:blank",
+        title: "",
+        loading: false,
+      })),
+      activeTab: browser.active,
     });
     browser.die = () => {
       browser.alive = false;
       if (open) onClose();
     };
-    const act = (name: string, arg?: string) => {
-      calls.push(["page", name, ...(arg ? [arg] : [])]);
+    const act = (name: string, ...args: (string | undefined)[]) => {
+      calls.push(["page", name, ...args.filter((a) => a !== undefined)]);
       return Promise.resolve();
+    };
+    const known = (tab: string) => {
+      if (!browser.tabs.includes(tab)) throw new TabGoneError(tab);
     };
     return {
       state,
-      navigate: (url) => {
+      navigate: (url, tab) => {
+        if (tab) known(tab);
         browser.url = url;
         onState(state());
-        return act("navigate", url);
+        return act("navigate", url, tab);
       },
-      reload: () => act("reload"),
-      stop: () => act("stop"),
-      back: () => act("back"),
-      forward: () => act("forward"),
+      reload: (tab) => act("reload", tab),
+      stop: (tab) => act("stop", tab),
+      back: (tab) => act("back", tab),
+      forward: (tab) => act("forward", tab),
+      select: async (tab) => {
+        known(tab);
+        browser.active = tab;
+        onState(state());
+        await act("select", tab);
+      },
+      open: async () => {
+        const id = `T${++opened}`;
+        browser.tabs.push(id);
+        browser.active = id;
+        onState(state());
+        await act("open");
+        return id;
+      },
+      closeTab: async (tab) => {
+        known(tab);
+        const at = browser.tabs.indexOf(tab);
+        browser.tabs.splice(at, 1);
+        let next: string | null = null;
+        if (tab === browser.active) {
+          next = browser.tabs[at] ?? browser.tabs[at - 1] ?? null;
+          browser.active = next ?? "";
+        }
+        onState(state());
+        await act("close", tab);
+        return next;
+      },
       ping: () => {
         browser.pings++;
         if (browser.hangPing) return new Promise<void>(() => {});
@@ -90,6 +143,7 @@ function fakeBrowser() {
         return Promise.resolve();
       },
       close: () => {
+        if (open) browser.watchers--;
         open = false;
       },
     };
@@ -156,6 +210,12 @@ async function until(check: () => boolean, ms = 3_000) {
 
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+function launchModeFile() {
+  const dir = mkdtempSync(join(tmpdir(), "browser-launch-"));
+  closers.push(() => rmSync(dir, { recursive: true, force: true }));
+  return join(dir, "platform", "browser-launch");
+}
+
 function preview(
   fake: ReturnType<typeof fakeBrowser>,
   extra: Partial<Parameters<typeof createBrowserPreview>[0]> = {},
@@ -165,6 +225,7 @@ function preview(
     watch: fake.watch,
     profileDir: "/tmp/x",
     socketDir: "/tmp/y",
+    launchModeFile: launchModeFile(),
     available: () => true,
     offered: () => true,
     stopBrowser: async () => {},
@@ -228,7 +289,7 @@ describe("browser preview", () => {
     const fake = fakeBrowser();
     const eager: WatchPages = async (opts) => {
       const watcher = await fake.watch(opts);
-      opts.onState(watcher.state()!);
+      opts.onState(watcher.state());
       return watcher;
     };
     const browser = preview(fake, { watch: eager });
@@ -239,7 +300,7 @@ describe("browser preview", () => {
     expect(panel.states()).not.toContain("failed");
   });
 
-  // TEST_SCENARIO: the browser panel is the user browsing from inside the agent's sandbox, through its gateway. On an agent whose gateway injects its credentials into unaddressed requests, that would be browsing as the agent's accounts, so the platform refuses it there — not only hides it: watching, every toolbar action and the display socket are refused before any browser starts. An image without the display stack is refused the same way, with its own reason.
+  // TEST_SCENARIO: the browser panel is the user browsing from inside the agent's sandbox, through its gateway. On an agent whose gateway injects its credentials into unaddressed requests, that would be browsing as the agent's accounts, so the platform refuses it there — not only hides it: watching, every toolbar and tab bar action and the display socket are refused before any browser starts. An image without the display stack is refused the same way, with its own reason.
   it("refuses an agent without named connections, or without a display", async () => {
     for (const [extra, kind] of [
       [{ offered: () => false }, "NotOffered"],
@@ -254,6 +315,16 @@ describe("browser preview", () => {
         error: { kind },
       });
       expect(await browser.act("restart")).toEqual({
+        ok: false,
+        error: { kind },
+      });
+      for (const tabStep of [
+        () => browser.selectTab("T1"),
+        () => browser.newTab(),
+        () => browser.closeTab("T1"),
+      ])
+        expect(await tabStep()).toEqual({ ok: false, error: { kind } });
+      expect(await browser.setTestingMode(false)).toEqual({
         ok: false,
         error: { kind },
       });
@@ -299,7 +370,7 @@ describe("browser preview", () => {
     );
   });
 
-  // TEST_SCENARIO: the agent may be using the browser while no panel is open, so the last panel leaving leaves it running; the supervisor only stops watching it.
+  // TEST_SCENARIO: the agent may be using the browser while no panel is open, so the last panel leaving leaves it running; the supervisor only stops watching it — no health checks, and no CDP watcher asking its tabs for their visibility.
   it("leaves the browser running when the last panel leaves", async () => {
     const fake = fakeBrowser();
     let stops = 0;
@@ -319,6 +390,100 @@ describe("browser preview", () => {
     await pause(100);
     expect(stops).toBe(0);
     expect(fake.browser.pings).toBe(pings);
+    expect(fake.browser.watchers).toBe(0);
+  });
+});
+
+describe("tabs", () => {
+  // TEST_SCENARIO: the panel sees every tab of the one browser, by target id, and which one is on screen; selecting one brings it to the front over CDP at once, and agent-browser is then told to select the same target, so the agent's next command acts on the tab the user sees.
+  it("reports the tabs and selects one for the panel and the agent", async () => {
+    const fake = fakeBrowser();
+    fake.browser.tabs = ["T1", "T2"];
+    const browser = preview(fake);
+    closers.push(() => browser.close());
+    const panel = watching(browser);
+    await until(() => panel.states().includes("ready"));
+    expect(panel.snapshots.at(-1)?.tabs?.map((t) => t.id)).toEqual([
+      "T1",
+      "T2",
+    ]);
+    expect(panel.snapshots.at(-1)?.activeTab).toBe("T1");
+
+    expect(await browser.selectTab("T2")).toEqual({
+      ok: true,
+      value: undefined,
+    });
+    await until(() => panel.snapshots.at(-1)?.activeTab === "T2");
+    await until(() => fake.calls.some((c) => c[0] === "tab"));
+    expect(fake.calls).toContainEqual(["page", "select", "T2"]);
+    expect(fake.calls).toContainEqual(["tab", "T2"]);
+  });
+
+  // TEST_SCENARIO: the toolbar names the tab the panel shows, and the action runs on that tab; a tab that has closed meanwhile is refused as gone, and nothing runs on whatever tab is on screen now.
+  it("runs actions on the named tab and refuses a closed one", async () => {
+    const fake = fakeBrowser();
+    fake.browser.tabs = ["T1", "T2"];
+    const browser = preview(fake);
+    closers.push(() => browser.close());
+    const panel = watching(browser);
+    await until(() => panel.states().includes("ready"));
+
+    expect((await browser.act("reload", "T2")).ok).toBe(true);
+    expect(fake.calls).toContainEqual(["page", "reload", "T2"]);
+    expect(await browser.navigate("http://a/", "T9")).toEqual({
+      ok: false,
+      error: { kind: "TabGone" },
+    });
+    expect(await browser.selectTab("T9")).toEqual({
+      ok: false,
+      error: { kind: "TabGone" },
+    });
+    expect(await browser.closeTab("T9")).toEqual({
+      ok: false,
+      error: { kind: "TabGone" },
+    });
+    expect(fake.calls.flat()).not.toContain("http://a/");
+    expect(fake.calls.filter((c) => c[0] === "tab")).toEqual([]);
+  });
+
+  // TEST_SCENARIO: closing the tab on screen hands the screen to the tab the watcher picked, and agent-browser is told to select that one too rather than falling back to a tab of its own choosing; a new tab from the panel answers with its target id and is selected for the agent the same way.
+  it("keeps the agent on the panel's tab after a close and a new tab", async () => {
+    const fake = fakeBrowser();
+    fake.browser.tabs = ["T1", "T2"];
+    const browser = preview(fake);
+    closers.push(() => browser.close());
+    const panel = watching(browser);
+    await until(() => panel.states().includes("ready"));
+
+    expect((await browser.closeTab("T1")).ok).toBe(true);
+    await until(() => panel.snapshots.at(-1)?.activeTab === "T2");
+    await until(() => fake.calls.some((c) => c[0] === "tab"));
+    expect(fake.calls).toContainEqual(["tab", "T2"]);
+
+    const opened = await browser.newTab();
+    if (!opened.ok) throw new Error(`new tab refused: ${opened.error.kind}`);
+    await until(() => panel.snapshots.at(-1)?.activeTab === opened.value);
+    await until(() =>
+      fake.calls.some((c) => c[0] === "tab" && c[1] === opened.value),
+    );
+  });
+
+  // TEST_SCENARIO: agent-browser does not know every tab — it skips the browser's own pages, such as a new tab page opened from the keyboard — so its refusal to select one is logged, and the panel's select still succeeds, as the tab is on screen.
+  it("keeps a select that agent-browser cannot follow", async () => {
+    const fake = fakeBrowser();
+    fake.browser.tabs = ["T1", "T2"];
+    const logged: string[] = [];
+    const run = async (args: string[]) => {
+      if (args[0] === "tab") throw new Error("Tab T2 not found");
+      return fake.run(args);
+    };
+    const browser = preview(fake, { run, log: (m) => logged.push(m) });
+    closers.push(() => browser.close());
+    const panel = watching(browser);
+    await until(() => panel.states().includes("ready"));
+    expect((await browser.selectTab("T2")).ok).toBe(true);
+    await until(() => logged.some((m) => m.includes("Tab T2 not found")));
+    expect(panel.snapshots.at(-1)?.activeTab).toBe("T2");
   });
 });
 
@@ -440,6 +605,64 @@ describe("recovery", () => {
     await until(() => panel.states().at(-1) === "ready");
     expect(stops).toBe(1);
     expect(panel.states().slice(-2)).toEqual(["starting", "ready"]);
+  });
+});
+
+describe("browser testing mode", () => {
+  // TEST_SCENARIO: an agent that never touched the switch launches its browser as it always did, in testing mode, and the panel is told so. Choosing the mode it is already in changes nothing and restarts nothing.
+  it("starts in testing mode and leaves it alone when chosen again", async () => {
+    const fake = fakeBrowser();
+    const file = launchModeFile();
+    const browser = preview(fake, { launchModeFile: file });
+    closers.push(() => browser.close());
+    const panel = watching(browser);
+    await until(() => panel.states().includes("ready"));
+    expect(panel.snapshots.at(-1)?.testingMode).toBe(true);
+    expect((await browser.setTestingMode(true)).ok).toBe(true);
+    expect(fake.calls.filter(isLaunch)).toHaveLength(1);
+    expect(readTestingMode(file)).toBe(true);
+  });
+
+  // TEST_SCENARIO: turning testing mode off saves the choice where the image's launcher reads it on every launch — the agent's own launches too — and relaunches the browser on the same profile so it applies at once, back on the page the panel showed. The panels keep watching through it and see the new mode. A runtime that starts again, as after a restart of the agent, reads the same choice instead of falling back to testing mode.
+  it("saves the choice and relaunches on the same page", async () => {
+    const fake = fakeBrowser();
+    const file = launchModeFile();
+    let stops = 0;
+    const browser = preview(fake, {
+      launchModeFile: file,
+      stopBrowser: async () => {
+        stops++;
+        fake.browser.alive = false;
+        fake.browser.url = "about:blank";
+      },
+    });
+    closers.push(() => browser.close());
+    const panel = watching(browser);
+    await until(() => panel.states().includes("ready"));
+    await browser.navigate("https://example.com/game");
+    await until(() => panel.page()?.url === "https://example.com/game");
+
+    expect((await browser.setTestingMode(false)).ok).toBe(true);
+    expect(readFileSync(file, "utf8").trim()).toBe("standard");
+    await until(() => fake.calls.filter(isLaunch).length === 2);
+    await until(() => panel.states().at(-1) === "ready");
+    await until(() => panel.page()?.url === "https://example.com/game");
+    expect(stops).toBe(1);
+    expect(panel.snapshots.at(-1)?.testingMode).toBe(false);
+    expect(fake.calls.at(-1)).toEqual([
+      "page",
+      "navigate",
+      "https://example.com/game",
+    ]);
+
+    const restarted = preview(fakeBrowser(), { launchModeFile: file });
+    closers.push(() => restarted.close());
+    const again = watching(restarted);
+    await until(() => again.snapshots.length > 0);
+    expect(again.snapshots[0]?.testingMode).toBe(false);
+
+    expect((await browser.setTestingMode(true)).ok).toBe(true);
+    expect(readTestingMode(file)).toBe(true);
   });
 });
 

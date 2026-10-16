@@ -13,11 +13,7 @@ import { HarnessIcons } from "@/components/harness-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import {
-  HOVER_ACTION,
-  HOVER_ROOM,
-  HOVER_YIELD,
-} from "@/components/ui/hover-action";
+import { HOVER_ACTION, HOVER_YIELD } from "@/components/ui/hover-action";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { clickableProps } from "@/lib/clickable";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
@@ -25,6 +21,7 @@ import { cn } from "@/lib/utils";
 
 import { useAgentsList } from "../../agents/api/queries.js";
 import { onboardingBadge } from "../../agents/utils/agent-kind.js";
+import { SessionRepositoryBadges } from "../../changes/components/session-repository-badges.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import {
   formatHarnessSpend,
@@ -52,11 +49,13 @@ interface Props {
   backgroundWork?: readonly BackgroundWorkItemView[];
   cost?: SessionRuntime;
   conversation?: string;
+  reorderable?: boolean;
   onResume: () => void;
   onPrefetch?: () => void;
   onRename: () => void;
   onDelete: () => void;
   onExportTimeline?: () => void;
+  className?: string;
 }
 
 export function SessionRow({
@@ -70,11 +69,13 @@ export function SessionRow({
   backgroundWork = NO_WORK,
   cost,
   conversation,
+  reorderable = false,
   onResume,
   onPrefetch,
   onRename,
   onDelete,
   onExportTimeline,
+  className,
 }: Props) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didLongPress = useRef(false);
@@ -153,14 +154,6 @@ export function SessionRow({
       : s.type === SessionType.ChannelTelegram
         ? ChannelType.Telegram
         : null;
-  const hasIndicators =
-    scheduled ||
-    terminal ||
-    !!messenger ||
-    needsApproval ||
-    working ||
-    draft ||
-    backgroundWork.length > 0;
 
   return (
     <div
@@ -170,8 +163,10 @@ export function SessionRow({
       className={cn(
         "group relative flex items-center gap-1 px-4 py-3 cursor-pointer border-b border-border transition-colors select-none",
         active ? "bg-muted" : "hover:bg-muted/60",
+        className,
       )}
       {...clickableProps(handleClick)}
+      aria-keyshortcuts={reorderable ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
       onPointerEnter={startDwell}
       onPointerLeave={endDwell}
       onFocus={onPrefetch}
@@ -185,12 +180,7 @@ export function SessionRow({
       }}
     >
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-        <div
-          className={cn(
-            "relative flex items-center gap-1.5",
-            onboarding && !hasIndicators && !s.harness && HOVER_ROOM,
-          )}
-        >
+        <div className="flex items-center gap-1.5">
           <span className={`text-sm min-w-0 truncate ${titleClass}`}>
             {titleLabel}
           </span>
@@ -199,52 +189,56 @@ export function SessionRow({
               {onboarding.label}
             </Badge>
           )}
-          <SessionIndicators
-            scheduled={scheduled}
-            terminal={terminal}
-            messenger={messenger}
-            needsApproval={needsApproval}
-            working={working}
-            draft={draft}
-            backgroundWork={backgroundWork}
-            harness={s.harness ?? null}
-          />
-          {}
-          <RowActionsMenu
-            label="More actions"
-            testId="session-menu-button"
-            dense
-            className={cn(
-              "absolute top-1/2 -right-1 -translate-y-1/2",
-              HOVER_ACTION,
-            )}
-            stopPropagation
-            contentProps={{ onClick: (event) => event.stopPropagation() }}
-          >
-            {onExportTimeline && (
-              <DropdownMenuItem
-                data-testid="session-export-timeline-button"
-                onSelect={onExportTimeline}
+          <div className="ml-auto flex shrink-0 items-center gap-1 hover-capable:grid hover-capable:justify-items-end hover-capable:*:[grid-area:1/1]">
+            <SessionIndicators
+              scheduled={scheduled}
+              terminal={terminal}
+              messenger={messenger}
+              needsApproval={needsApproval}
+              working={working}
+              draft={draft}
+              backgroundWork={backgroundWork}
+              harness={s.harness ?? null}
+            />
+            <div
+              className={cn(
+                "flex items-center hover-capable:w-0 hover-capable:overflow-hidden hover-capable:group-hover:w-auto hover-capable:has-[:focus-visible]:w-auto hover-capable:has-[[data-state=open]]:w-auto",
+                HOVER_ACTION,
+              )}
+            >
+              <RowActionsMenu
+                label="More actions"
+                testId="session-menu-button"
+                dense
+                stopPropagation
+                contentProps={{ onClick: (event) => event.stopPropagation() }}
               >
-                <Download size={14} /> Export telemetry
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuItem
-              data-testid="session-rename-button"
-              disabled={provisional}
-              onSelect={onRename}
-            >
-              <Edit size={14} /> Rename session
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              data-testid="session-delete-button"
-              disabled={provisional}
-              tone="danger"
-              onSelect={onDelete}
-            >
-              <TrashCan size={14} /> Delete session
-            </DropdownMenuItem>
-          </RowActionsMenu>
+                {onExportTimeline && (
+                  <DropdownMenuItem
+                    data-testid="session-export-timeline-button"
+                    onSelect={onExportTimeline}
+                  >
+                    <Download size={14} /> Export telemetry
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem
+                  data-testid="session-rename-button"
+                  disabled={provisional}
+                  onSelect={onRename}
+                >
+                  <Edit size={14} /> Rename session
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  data-testid="session-delete-button"
+                  disabled={provisional}
+                  tone="danger"
+                  onSelect={onDelete}
+                >
+                  <TrashCan size={14} /> Delete session
+                </DropdownMenuItem>
+              </RowActionsMenu>
+            </div>
+          </div>
         </div>
         <span className="text-2xs text-muted-foreground truncate">
           {conversation ? `${conversation} · ` : ""}
@@ -273,6 +267,9 @@ export function SessionRow({
             </span>
           )}
         </span>
+        {s.repositories && s.repositories.length > 0 && (
+          <SessionRepositoryBadges repositories={s.repositories} />
+        )}
       </div>
       {}
       {menuOpen && (
@@ -343,12 +340,7 @@ function SessionIndicators({
   )
     return null;
   return (
-    <span
-      className={cn(
-        "ml-auto flex shrink-0 items-center gap-2 pl-2 pr-6 hover-capable:pr-0",
-        HOVER_YIELD,
-      )}
-    >
+    <span className={cn("flex shrink-0 items-center gap-2 pl-2", HOVER_YIELD)}>
       {terminal && (
         <Terminal size={16} className="text-foreground" aria-label="Terminal" />
       )}

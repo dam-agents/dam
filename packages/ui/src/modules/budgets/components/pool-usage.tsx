@@ -12,6 +12,7 @@ import {
 import { RESOURCE_ICON } from "../lib/resource-icons.js";
 import { CpuRow } from "./cpu-row.js";
 import { PoolBar } from "./pool-bar.js";
+import { StorageBreakdown } from "./storage-breakdown.js";
 
 const LEVEL_WORD: Record<PoolLevel, string> = {
   ok: "",
@@ -52,7 +53,7 @@ export function PoolUsage({ agents }: { agents: readonly AgentView[] }) {
         percent={percentOf(memory.usedBytes, memory.limitBytes)}
         warning={poolWarning(
           memory.level,
-          "Put agents to sleep to free up memory.",
+          "Disable agents you aren't using to free up memory.",
           "Idle agents are put to sleep automatically to make room.",
           slackLogin,
         )}
@@ -71,6 +72,9 @@ export function PoolUsage({ agents }: { agents: readonly AgentView[] }) {
           slackLogin,
         )}
       />
+      {storage.level !== "ok" && (
+        <StorageBreakdown usage={usage} agents={vmAgents} />
+      )}
       {usage.cpu && <CpuRow cpu={usage.cpu} usage={usage} agents={vmAgents} />}
     </div>
   );

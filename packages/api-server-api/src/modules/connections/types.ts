@@ -255,13 +255,15 @@ export interface ConnectionsService {
 
   listConnections(): Promise<ConnectionView[]>;
 
+  listAndReconcileConnections(): Promise<ConnectionView[]>;
+
   getConnection(id: string): Promise<ConnectionView | null>;
 
   validateProviderConnection(id: string): Promise<void>;
 
-  defaultProviderConnection(
+  defaultProviderConnections(
     fits: (type: ProviderPresetType, templateId: string) => boolean,
-  ): Promise<string | null>;
+  ): Promise<string[]>;
   getProviderBalance(id: string): Promise<ProviderBalance | null>;
 
   validateGrantSet(connectionIds: string[]): Promise<void>;

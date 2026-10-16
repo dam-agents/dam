@@ -9,11 +9,21 @@ export function resolveSourceRef(
   if (byId) return byId;
   const normalized = normalizeGitUrl(ref);
   if (!normalized) return null;
-  return (
-    sources.find(
-      (s) => normalizeGitUrl(s.gitUrl)?.gitUrl === normalized.gitUrl,
-    ) ?? null
+  const sameRepo = sources.filter(
+    (s) => normalizeGitUrl(s.gitUrl)?.gitUrl === normalized.gitUrl,
   );
+  const wanted = canonicalPath(normalized.path);
+  if (wanted !== undefined) {
+    return sameRepo.find((s) => canonicalPath(s.path) === wanted) ?? null;
+  }
+  const pathless = sameRepo.find((s) => canonicalPath(s.path) === undefined);
+  if (pathless) return pathless;
+  return sameRepo.length === 1 ? sameRepo[0] : null;
+}
+
+function canonicalPath(path: string | undefined): string | undefined {
+  const dir = path?.split("/").filter(Boolean).join("/");
+  return dir || undefined;
 }
 
 export function sourceKind(s: SkillSource): "Platform" | "Agent" | "User" {

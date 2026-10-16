@@ -119,6 +119,7 @@ export interface ComposeRuntimeDeliveryOpts {
   harnessServerUrl: string;
   telemetryEnv: (harness: string) => readonly EnvVar[];
   resolveOwner: (agentId: string) => Promise<string | null>;
+  resolveAgentName: (agentId: string) => Promise<string | null>;
   deliveryConcurrency: number;
 }
 
@@ -138,6 +139,7 @@ export function composeRuntimeDelivery(
     db: opts.db,
     outboxRepo,
     builtin,
+    agentName: opts.resolveAgentName,
     egressDenies: (agentId) => async (host, method, path) =>
       (await egressRules.match(agentId, host, 443, true, method, path))
         ?.verdict === "deny",
@@ -196,6 +198,7 @@ export function composeRuntimeDelivery(
     outboxRepo,
     agentsRuntimeRepo,
     snapshotWriter: opts.snapshotWriter,
+    stateBuilder,
     queue,
     uow: createUnitOfWork(opts.db),
     resolveOwner: opts.resolveOwner,

@@ -11,14 +11,16 @@ use tokio_util::task::TaskTracker;
 
 use crate::api::{
     CpuUsage, MachineSpec, MachineStatus, MachineUsage, MemoryUsage, RunnerPressure, RunnerUsage,
-    SeedResult, State, StorageUsage, REASON_BOOT_FAILED, REASON_HOME_FULL, REASON_OUT_OF_CAPACITY,
-    REASON_STORAGE_FULL, STATE_RUNNING,
+    SeedResult, State, StorageUsage, REASON_BOOT_FAILED, REASON_HOME_DAMAGED, REASON_HOME_FULL,
+    REASON_OUT_OF_CAPACITY, REASON_STORAGE_FULL, STATE_RUNNING,
 };
 use crate::cache::{self, pinned_digest};
 use crate::cacheapi::CacheClient;
 use crate::capability::Verified;
 use crate::capacity::Capacity;
-use crate::console::{home_full, with_console, SLOW_BOOT, SLOW_BOOT_AFTER};
+use crate::console::{
+    home_damaged, home_full, home_repaired, with_console, FSCK, SLOW_BOOT, SLOW_BOOT_AFTER,
+};
 use crate::fetch::{failure_reason, on_own_claim, seed_missing, unusable};
 use crate::forward::{healthy, Forwarder, Listen, LOOPBACK_OFFSET};
 use crate::imagecache::{
@@ -33,7 +35,8 @@ use crate::plan::{
 use crate::runtime::{redact, Machine, Runtime, Update};
 use crate::share::{self, write_share, SeedFile, SHARE_DIR};
 use crate::state::{
-    self, is_image_ref, is_machine_id, machine_dir, read_spec, write_spec, IMAGE_DIGEST_FILE,
+    self, is_image_ref, is_machine_id, machine_dir, read_spec, write_spec, HOME_REPAIRED_FILE,
+    IMAGE_DIGEST_FILE,
 };
 use crate::storage::StorageUse;
 
@@ -58,7 +61,7 @@ pub const STOP_ON_CLOSE: Duration = Duration::from_secs(40);
 // UNIT_BOUNDARY_DESCRIPTION: how long a delete waits for the action in flight on its machine. The delete cancels that action's fetch first, so the wait covers only a VMM call. It stays under the controller's twenty-second request timeout: a delete still waiting then answers 503, and the controller asks again on its next reconcile.
 pub const DELETE_WAIT: Duration = Duration::from_secs(15);
 
-// UNIT_BOUNDARY_DESCRIPTION: the longest the runner waits on one start, stop or delete call into the runtime. None of them can be interrupted, and a VMM stuck in the kernel can hold one forever, which would hold the machine's worker, and every delete of it, with it. Past this the call is reported failed and left to finish on its own thread; the runtime's own lock on the machine keeps the next call from running beside it. A start includes the guest pulling a staged archive, which is the longest of them.
+// UNIT_BOUNDARY_DESCRIPTION: the longest the runner waits on one start, stop or delete call into the runtime. None of them can be interrupted, and a VMM stuck in the kernel can hold one forever, which would hold the machine's worker, and every delete of it, with it. Past this the call is reported failed and left to finish on its own thread; the runtime's own lock on the machine keeps the next call from running beside it, and a delete waits for it only DELETE_WAIT, as for any call in flight, rather than queue behind it on that lock. A start includes the guest pulling a staged archive, which is the longest of them.
 pub const RUNTIME_CALL_LIMIT: Duration = Duration::from_secs(15 * 60);
 
 // UNIT_BOUNDARY_DESCRIPTION: how often the runner names the digests its machines boot to the image cache again. Well inside HOLD_LEASE, so one missed refresh never lets a hold lapse.
@@ -112,7 +115,7 @@ struct Seen {
     error: Option<String>,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `seeding` is set while a seed is uploaded into the machine's share, and no worker starts while it is. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change. `cancel` is the machine's own child of the runner's lifetime, cancelled by a delete so the action in flight stops waiting on its fetch. `acting_mib` is the memory of the spec the action in flight runs with, which a newer spec stored behind it does not change. `resident_mib` is what the prober last measured the running machine's VMM holding, kept beside `seen` rather than in it, so a figure that moves at every probe does not move the status version and wake every waiting read. `warming_since` is when the machine's last boot began, which admission counts it at the warm-up floor for WARMUP after. `deletes` counts the delete calls in progress, and `deleting` stays set after one gave up waiting, so the worker still takes no further action. `gave_up` is when the runner last restarted the machine for going quiet, which holds its next such restart back.
+// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `seeding` is set while a seed is uploaded into the machine's share, and no worker starts while it is. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change. `cancel` is the machine's own child of the runner's lifetime, cancelled by a delete so the action in flight stops waiting on its fetch. `acting_mib` is the memory of the spec the action in flight runs with, which a newer spec stored behind it does not change. `resident_mib` is what the prober last measured the running machine's VMM holding, kept beside `seen` rather than in it, so a figure that moves at every probe does not move the status version and wake every waiting read. `warming_since` is when the machine's last boot began, which admission counts it at the warm-up floor for WARMUP after. `deletes` counts the delete calls in progress, and `deleting` stays set after one gave up waiting, and while any runtime call it waited on still runs, so the worker still takes no further action and no ensure clears it. `calls` is held by every start, stop or delete call into the runtime until that call returns, also after the runner gave up waiting for it, so it counts one more holder per call still running. `gave_up` is when the runner last restarted the machine for going quiet, which holds its next such restart back. `restarts` counts those restarts since the controller last asked the machine stopped: the controller publishes no count for a hibernated Agent, so one kept across the stop would read after the wake as a crash the user never had.
 #[derive(Default)]
 struct MachineEntry {
     desired: Option<MachineSpec>,
@@ -139,6 +142,7 @@ struct MachineEntry {
     cpu_milli: u64,
     cancel: Option<CancellationToken>,
     deletes: u32,
+    calls: Arc<()>,
 }
 
 impl MachineEntry {
@@ -199,6 +203,7 @@ pub struct Server {
     admission: Mutex<()>,
     ports: Mutex<()>,
     storage_short: std::sync::atomic::AtomicBool,
+    shed_request: Mutex<Option<(u64, String)>>,
     lifetime: CancellationToken,
     work: TaskTracker,
     metrics: Metrics,
@@ -276,7 +281,7 @@ fn check_id(id: &str) -> Result<(), Rejected> {
 }
 
 impl Server {
-    // UNIT_BOUNDARY_DESCRIPTION: a runner over its state directory. It must be built inside the tokio runtime that will serve it, because every published port is a task on that runtime. Machines already on disk get their ports published again, since the listeners died with the previous process while the machines' ports did not.
+    // UNIT_BOUNDARY_DESCRIPTION: a runner over its state directory. It must be built inside the tokio runtime that will serve it, because every published port is a task on that runtime. Machines already on disk get their ports published again, since the listeners died with the previous process while the machines' ports did not. Each one the runtime finds running is measured before the runner admits anything, and the prober takes it from there: a runner that took the machines over in a hand-off or a restart would otherwise count each at the warm-up floor until the controller first asked about it, and admit a start into memory its running guests already hold.
     pub fn start(config: Config, runtime: Arc<dyn Runtime>) -> anyhow::Result<Arc<Self>> {
         let forwarder = Forwarder::new(tokio::runtime::Handle::current(), config.listen.clone());
         let lifetime = CancellationToken::new();
@@ -312,6 +317,7 @@ impl Server {
             admission: Mutex::new(()),
             ports: Mutex::new(()),
             storage_short: std::sync::atomic::AtomicBool::new(false),
+            shed_request: Mutex::new(None),
             lifetime,
             work: TaskTracker::new(),
             metrics: Metrics::default(),
@@ -322,6 +328,14 @@ impl Server {
                 if let Err(e) = server.forwarder.publish(&id, port) {
                     tracing::warn!(machine = %id, error = %e, "republishing machine port");
                 }
+            }
+            if server.runtime.state(&id).ok() == Some(State::Running) {
+                let resident = server.runtime.resident_mib(&id);
+                locked(&server.machines)
+                    .entries
+                    .entry(id)
+                    .or_default()
+                    .resident_mib = resident;
             }
         }
         server.hold_images();
@@ -477,6 +491,24 @@ impl Server {
         self.close_within(CLOSE_GRACE, None).await;
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: closes the runner after its machine API failed to serve. A runner its pod's loader supervises leaves every machine running, as a hand-off does: the loader goes back to the release this one replaced, or starts this one again, and that runner adopts them without a reboot. A pod stop that arrives during that close, through `stopped`, is the loader passing the pod's end on, so the machines are then stopped cleanly after all. A runner with no loader is the pod's last process, so it stops them before the pod's end powers them off.
+    pub async fn close_failed(
+        self: &Arc<Self>,
+        supervised: bool,
+        stopped: impl std::future::Future<Output = ()>,
+    ) {
+        if !supervised {
+            return self.close().await;
+        }
+        tokio::select! {
+            biased;
+            () = stopped => {
+                tracing::info!("vm runner: the pod stops while the runner closes after a failure; stopping its machines");
+                self.close().await;
+            }
+            () = self.hand_off() => {}
+        }
+    }
     async fn close_within(self: &Arc<Self>, grace: Duration, stopping: Option<Duration>) {
         self.stop_taking_work();
         if tokio::time::timeout(grace, self.work.wait()).await.is_err() {
@@ -579,7 +611,12 @@ impl Server {
         gateway_port_admissible(&spec, &self.config.ports).map_err(Rejected::bad_request)?;
         {
             let mut machines = locked(&self.machines);
-            let known = &mut machines.entries.entry(id.to_string()).or_default().secrets;
+            let entry = machines.entries.entry(id.to_string()).or_default();
+            if !spec.running && entry.restarts != 0 {
+                entry.restarts = 0;
+                self.bump(entry);
+            }
+            let known = &mut entry.secrets;
             for value in spec.env.values() {
                 if !known.contains(value) {
                     known.push(value.clone());
@@ -615,7 +652,7 @@ impl Server {
             }
             let entry = machines.entries.entry(id.to_string()).or_default();
             if entry.deleting {
-                if entry.converging || entry.deletes > 0 {
+                if entry.converging || entry.deletes > 0 || Arc::strong_count(&entry.calls) > 1 {
                     return Ok(status);
                 }
                 entry.deleting = false;
@@ -711,7 +748,7 @@ impl Server {
         self.bump(entry);
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: removes a machine, its disks and its state, and answers only once they are gone. It marks the machine as being deleted, so its worker takes no further action and any spec stored behind the current one is dropped, cancels the machine's token so an action waiting on a fetch returns now, then waits up to DELETE_WAIT for the action in flight to return. An action still running then is answered with a 503 and nothing removed; the mark stays, so the worker ends when its call returns, and the controller's next delete finds it gone.
+    // UNIT_BOUNDARY_DESCRIPTION: removes a machine, its disks and its state, and answers only once they are gone. It marks the machine as being deleted, so its worker takes no further action and any spec stored behind the current one is dropped, cancels the machine's token so an action waiting on a fetch returns now, then waits up to DELETE_WAIT for the action in flight to return. The same wait, polled since such a call returns on a thread that cannot signal it, covers a runtime call the worker gave up on at RUNTIME_CALL_LIMIT, which still holds the runtime's lock on the machine, and the runtime's own delete, which gets only what is left of DELETE_WAIT. A call still running then is answered with a 503, and the delete starts no runtime call of its own behind it, so a VMM stuck for good costs one blocked thread rather than one per retry; the mark stays, so the worker ends when its call returns, and the controller's next delete finds it gone.
     pub fn delete(&self, id: &str) -> Result<(), Rejected> {
         self.delete_within(id, DELETE_WAIT)
     }
@@ -731,26 +768,26 @@ impl Server {
             while let Some(action) = machines
                 .entries
                 .get(id)
-                .filter(|e| e.converging)
-                .map(|e| e.action)
+                .filter(|e| e.converging || Arc::strong_count(&e.calls) > 1)
+                .map(|e| e.action.filter(|_| e.converging))
             {
                 let left = deadline.saturating_duration_since(Instant::now());
                 if left.is_zero() {
                     if let Some(entry) = machines.entries.get_mut(id) {
                         entry.deletes -= 1;
                     }
-                    let doing = action.map_or("working on it", Action::label);
+                    let doing = action.map_or("in a runtime call", Action::label);
                     return Err(Rejected::unavailable(format!(
                         "the machine is still {doing}; it is deleted once that returns, so ask again"
                     )));
                 }
-                machines = match self.settled.wait_timeout(machines, left) {
+                machines = match self.settled.wait_timeout(machines, left.min(BOUNDED_TICK)) {
                     Ok((guard, _)) => guard,
                     Err(e) => e.into_inner().0,
                 };
             }
         }
-        let removed = self.remove(id);
+        let removed = self.remove(id, deadline);
         {
             let mut machines = locked(&self.machines);
             if removed.is_ok() {
@@ -758,7 +795,7 @@ impl Server {
                 self.changed.notify_all();
             } else if let Some(entry) = machines.entries.get_mut(id) {
                 entry.deletes -= 1;
-                if entry.deletes == 0 {
+                if entry.deletes == 0 && Arc::strong_count(&entry.calls) == 1 {
                     entry.deleting = false;
                     entry.cancel = None;
                 }
@@ -769,20 +806,24 @@ impl Server {
         Ok(())
     }
 
-    fn remove(&self, id: &str) -> Result<(), Rejected> {
-        let internal = |e: anyhow::Error| Rejected::internal(format!("{e:#}"));
-        if self.runtime.state(id).map_err(internal)? != State::Absent {
-            let runtime = self.runtime.clone();
-            let target = id.to_string();
-            bounded(
-                "the runtime's delete",
-                Some(RUNTIME_CALL_LIMIT),
-                None,
-                None,
-                move || runtime.delete(&target),
-            )
-            .map_err(internal)?;
-        }
+    fn remove(&self, id: &str, deadline: Instant) -> Result<(), Rejected> {
+        let runtime = self.runtime.clone();
+        let target = id.to_string();
+        self.runtime_call(
+            id,
+            "the runtime's delete",
+            deadline.saturating_duration_since(Instant::now()),
+            move || runtime.delete(&target),
+        )
+        .map_err(|e| {
+            if self.runtime_calls(id) > 0 {
+                Rejected::unavailable(format!(
+                    "{e:#}; the machine is deleted once it returns, so ask again"
+                ))
+            } else {
+                Rejected::internal(format!("{e:#}"))
+            }
+        })?;
         let dir = machine_dir(&self.config.state_dir, id)
             .ok_or_else(|| Rejected::bad_request("invalid machine id"))?;
         match fs::remove_dir_all(&dir) {
@@ -873,6 +914,33 @@ impl Server {
         share::remove_seed(&share)
             .and_then(|()| share::forget_seed_digest(&dir))
             .map_err(|e| Rejected::internal(e.to_string()))
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: runs one start, stop or delete call into the runtime through `bounded`, holding the machine's `calls` until the call itself returns rather than until the runner stops waiting for it.
+    fn runtime_call<T: Send + 'static>(
+        &self,
+        id: &str,
+        what: &str,
+        limit: Duration,
+        work: impl FnOnce() -> anyhow::Result<T> + Send + 'static,
+    ) -> anyhow::Result<T> {
+        let held = locked(&self.machines)
+            .entries
+            .entry(id.to_string())
+            .or_default()
+            .calls
+            .clone();
+        bounded(what, Some(limit), None, None, move || {
+            let _held = held;
+            work()
+        })
+    }
+
+    fn runtime_calls(&self, id: &str) -> usize {
+        locked(&self.machines)
+            .entries
+            .get(id)
+            .map_or(0, |e| Arc::strong_count(&e.calls) - 1)
     }
 
     fn converging(&self, id: &str) -> bool {
@@ -985,7 +1053,7 @@ impl Server {
             let mut reason = failure_reason(&e);
             if reason == REASON_BOOT_FAILED {
                 let tail = self.console_tail(id);
-                if let Some((why, explained)) = self.out_of_room(&tail) {
+                if let Some((why, explained)) = self.boot_trouble(&tail) {
                     reason = why;
                     message = format!("{explained}; {message}");
                 }
@@ -1238,13 +1306,9 @@ impl Server {
             size
         };
         let port = state::port(&self.config.state_dir, id);
-        let result = bounded(
-            "the runtime's start",
-            Some(RUNTIME_CALL_LIMIT),
-            None,
-            None,
-            move || boot_and_grow(&*runtime, &target, boot, size, || healthy(port)),
-        );
+        let result = self.runtime_call(id, "the runtime's start", RUNTIME_CALL_LIMIT, move || {
+            boot_and_grow(&*runtime, &target, boot, size, || healthy(port))
+        });
         self.metrics
             .start(action, started.elapsed(), result.is_ok());
         if let Ok(true) = result {
@@ -1267,13 +1331,9 @@ impl Server {
         }
         let runtime = self.runtime.clone();
         let target = id.to_string();
-        bounded(
-            "the runtime's stop",
-            Some(RUNTIME_CALL_LIMIT),
-            None,
-            None,
-            move || runtime.stop(&target),
-        )
+        self.runtime_call(id, "the runtime's stop", RUNTIME_CALL_LIMIT, move || {
+            runtime.stop(&target)
+        })
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: the machine's token, made on first use as a child of the runner's lifetime, so closing the runner cancels it as a delete does.
@@ -1290,6 +1350,10 @@ impl Server {
 
     // UNIT_BOUNDARY_DESCRIPTION: the machine's console, redacted with every env value this runner has been given for it and the ones its applied spec holds, the way a failed smolvm call's output is. A tail this runner cannot redact, because it holds no spec for the machine at all, is not shown.
     fn console_tail(&self, id: &str) -> String {
+        self.redacted(id, &self.runtime.console_tail(id))
+    }
+
+    fn redacted(&self, id: &str, console: &str) -> String {
         let remembered = locked(&self.machines)
             .entries
             .get(id)
@@ -1301,10 +1365,7 @@ impl Server {
         }
         let mut secrets = remembered.unwrap_or_default();
         secrets.extend(applied.into_iter().flat_map(|spec| spec.env.into_values()));
-        redact(
-            &self.runtime.console_tail(id),
-            secrets.iter().map(String::as_str),
-        )
+        redact(console, secrets.iter().map(String::as_str))
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: a guest that boots and never answers has no failure to report — its start call returned — so without this the Agent reads not ready for as long as it stays stuck, and why is only on the console. The prober writes the note once the boot is SLOW_BOOT_AFTER old and refreshes it no more often than that. A recorded failure carries its own tail and wins. An answer ends the boot: from then on a probe the guest misses is a health blip, not a boot still waited on, so the note does not come back for it.
@@ -1335,7 +1396,7 @@ impl Server {
             boot.at
         };
         let tail = self.console_tail(id);
-        let (message, reason) = match self.out_of_room(&tail) {
+        let (message, reason) = match self.boot_trouble(&tail) {
             Some((why, explained)) => (with_console(&explained, &tail), Some(why)),
             None => (with_console(SLOW_BOOT, &tail), None),
         };
@@ -1402,8 +1463,13 @@ impl Server {
             &|other| self.warming(other),
         )?;
         let storage = (self.config.measure_storage)().unwrap_or(StorageUse { used: 0, usable: 0 });
-        let machines = self
-            .list()?
+        let ids = self.list()?;
+        let seed_bytes = ids
+            .iter()
+            .filter_map(|id| machine_dir(&self.config.state_dir, id))
+            .map(|dir| share::seed_bytes(&dir.join(SHARE_DIR)))
+            .sum();
+        let machines = ids
             .into_iter()
             .map(|id| {
                 let status = self.status(&id);
@@ -1441,6 +1507,8 @@ impl Server {
             storage: StorageUsage {
                 used_bytes: storage.used,
                 usable_bytes: storage.usable,
+                image_cache_bytes: self.images.claimed_bytes(),
+                seed_bytes,
             },
             memory: MemoryUsage {
                 limit_mib: self.memory_limit_mib(),
@@ -1471,10 +1539,13 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: why a guest that failed to come up has no room, when it has none: the owner's claim is critically full, or the guest's own disk is, as its console says. A guest whose writes fail fails its boot with nothing typed in the error, so the room is what explains it; the claim comes first, because a full claim also fails every guest's writes.
-    fn out_of_room(&self, tail: &str) -> Option<(&'static str, String)> {
+    // UNIT_BOUNDARY_DESCRIPTION: why a guest that failed to come up failed, when its storage explains it: the owner's claim is critically full, the check at boot refused to mount a damaged disk, or the guest's own disk is full, as its console says. A guest whose writes fail fails its boot with nothing typed in the error, so the storage is what explains it; the claim comes first, because a full claim also fails every guest's writes, the check's repairs among them.
+    fn boot_trouble(&self, tail: &str) -> Option<(&'static str, String)> {
         if let Some(full) = self.storage_critical() {
             return Some((REASON_STORAGE_FULL, full.refusal()));
+        }
+        if home_damaged(tail) {
+            return Some((REASON_HOME_DAMAGED, HOME_DAMAGED.to_string()));
         }
         home_full(tail).then(|| {
             (
@@ -1484,23 +1555,53 @@ impl Server {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: one look at the claim, every STORAGE_CHECK. While it is short, the runner's own image cache gives up every tree no machine holds, since each can be fetched again, and every machine's share carries the mark that has its guest give back its scratch; what the guests keep beyond that is not the runner's to free.
+    // UNIT_BOUNDARY_DESCRIPTION: one look at the claim, every STORAGE_CHECK. Every machine's share gets a new grant of the bytes its guest may still add to the claim (StorageUse::guest_room), which platform-init holds the guest to; a claim that cannot be measured grants nothing, and the guests are then held to nothing. While it is short, the runner's own image cache gives up every tree no machine holds, since each can be fetched again, and every machine's share carries a request that its guest give back scratch: an id and the bytes asked of each running machine, its even part of what brings the claim back under SHORT_UNTIL_PERCENT. A guest serves each request once, so a new one goes out only when the claim has filled RESHED_STEP_PERCENT further since the last: the claim is mostly the agents' homes, which no guest gives back, and repeating the request would only have every guest delete its scratch again and again. What the guests keep beyond that is not the runner's to free.
     fn check_storage(&self) {
-        let Some(storage) = (self.config.measure_storage)() else {
+        let shares: Vec<(String, PathBuf)> = state::machine_ids(&self.config.state_dir)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|id| {
+                let share = machine_dir(&self.config.state_dir, &id)?.join(SHARE_DIR);
+                share.is_dir().then_some((id, share))
+            })
+            .collect();
+        let running = locked(&self.machines)
+            .entries
+            .values()
+            .filter(|e| e.seen.as_ref().is_some_and(|s| s.state == State::Running))
+            .count();
+        let storage = (self.config.measure_storage)();
+        let grant = storage.map(|storage| {
+            let id = self.versions.fetch_add(1, Ordering::Relaxed);
+            format!("{id} {}\n", storage.guest_room(running))
+        });
+        for (id, share) in &shares {
+            if let Err(e) = share::grant_storage_room(share, grant.as_deref()) {
+                tracing::warn!(machine = %id, error = %e, "vm runner: cannot grant the machine's guest its room on the claim");
+            }
+        }
+        let Some(storage) = storage else {
             return;
         };
         let was = self.storage_short.load(Ordering::Relaxed);
         let short = storage.short(was);
         self.storage_short.store(short, Ordering::Relaxed);
-        for id in state::machine_ids(&self.config.state_dir).unwrap_or_default() {
-            let Some(dir) = machine_dir(&self.config.state_dir, &id) else {
-                continue;
-            };
-            let share = dir.join(SHARE_DIR);
-            if !share.is_dir() {
-                continue;
+        let request = {
+            let mut current = locked(&self.shed_request);
+            let percent = storage.percent();
+            if !short {
+                *current = None;
+            } else if current
+                .as_ref()
+                .is_none_or(|(at, _)| percent >= at + crate::storage::RESHED_STEP_PERCENT)
+            {
+                let id = self.versions.fetch_add(1, Ordering::Relaxed);
+                *current = Some((percent, format!("{id} {}\n", storage.to_shed(running))));
             }
-            if let Err(e) = share::mark_storage_short(&share, short) {
+            current.as_ref().map(|(_, text)| text.clone())
+        };
+        for (id, share) in shares {
+            if let Err(e) = share::mark_storage_short(&share, request.as_deref()) {
                 tracing::warn!(machine = %id, error = %e, "vm runner: cannot mark the machine's share with the claim's room");
             }
         }
@@ -1573,18 +1674,18 @@ impl Server {
             .collect()
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: holds the digest of every machine that runs or is asked to, so the cache's eviction spares their trees. A stopped machine holds nothing: a hibernated agent would otherwise keep each image a deploy retires on the cache, and its start fetches the tree again when it is gone. A machine counts while either its stored spec or the one the controller last sent runs it, so a stop in flight still holds the tree its guest reads and a wake holds it before the start checks it is there. It runs at start, after a machine records a new digest, before a start, and every HOLD_REFRESH. A hold that fails is reported and not returned: the machines keep running, and the next refresh tries again inside the lease.
+    // UNIT_BOUNDARY_DESCRIPTION: holds the digest of every machine that runs or is asked to, so the cache's eviction spares their trees. A stopped machine holds nothing: a hibernated agent would otherwise keep each image a deploy retires on the cache, and its start fetches the tree again when it is gone. A machine counts while the controller last asked for it running, so a wake holds it before the start checks it is there, or while it runs as last recorded or as the runtime says, so a stop in flight still holds the tree its guest reads, and so does every machine a runner adopts after a hand-off or a restart from its first hold, before the controller has sent it anything. It runs at start, after a machine records a new digest, before a start, and every HOLD_REFRESH. A hold that fails is reported and not returned: the machines keep running, and the next refresh tries again inside the lease.
     pub fn hold_images(&self) {
         let held: BTreeSet<String> = state::machine_ids(&self.config.state_dir)
             .unwrap_or_default()
             .iter()
             .filter(|id| {
-                locked(&self.machines)
+                let asked = locked(&self.machines)
                     .entries
                     .get(*id)
                     .and_then(|e| e.desired.as_ref())
-                    .is_some_and(|d| d.running)
-                    || read_spec(&self.config.state_dir, id).is_some_and(|s| s.running)
+                    .is_some_and(|d| d.running);
+                asked || self.known_running(id)
             })
             .filter_map(|id| self.recorded_digest(id))
             .collect();
@@ -1676,10 +1777,15 @@ impl Server {
     // UNIT_BOUNDARY_DESCRIPTION: whether the machine has been quiet past its limit. A guest that answered is remembered in this process's memory and also in the share's seeded record, which outlives the process. After a hand-off, a runner restart or a crash the memory is empty, so the record is what lets the new runner restart a guest that answered before and went quiet before or during the change.
     fn dead_for_long(&self, id: &str) -> bool {
         let foreign = self.foreign(id);
-        let seeded = machine_dir(&self.config.state_dir, id)
-            .is_some_and(|dir| share::seeded(&dir.join(SHARE_DIR)));
+        let share = machine_dir(&self.config.state_dir, id).map(|dir| dir.join(SHARE_DIR));
+        let seeded = share.as_deref().is_some_and(share::seeded);
+        let converting = share.as_deref().is_some_and(crate::convert::requested);
         locked(&self.machines).entries.get(id).is_some_and(|e| {
-            let limit = quiet_limit(foreign, e.boot.is_none(), e.gave_up.map(|at| at.elapsed()));
+            let limit = if converting && e.boot.is_some() {
+                crate::plan::CONVERTING_RESTART
+            } else {
+                quiet_limit(foreign, e.boot.is_none(), e.gave_up.map(|at| at.elapsed()))
+            };
             let health = Health {
                 ever_ready: e.health.ever_ready || seeded,
                 ..e.health
@@ -1746,6 +1852,10 @@ impl Server {
                 .and_then(|e| e.boot.as_ref().map(|boot| boot.seed.clone()));
             if let Some(seed) = ending {
                 self.record_seeded(id, seed.as_deref());
+                self.record_repair(id);
+                if let Err(e) = self.runtime.answered(id) {
+                    tracing::warn!(machine = %id, error = %format!("{e:#}"), "acting on the guest's first answer");
+                }
             }
         }
         let mut machines = locked(&self.machines);
@@ -1790,6 +1900,26 @@ impl Server {
             if let Err(e) = share::record_seeded(&share, from) {
                 tracing::warn!(machine = %id, error = %format!("{e:#}"), "could not record that the machine's disk holds a home");
             }
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: at the first answer of a boot, keeps beside the machine's spec what the disk check of that boot repaired, or removes what an earlier boot's check left there, so the status reports the last boot's repair until the next boot, across a runner restart too. A record that cannot be written is logged, and the status goes on reporting the one before.
+    fn record_repair(&self, id: &str) {
+        let Some(path) =
+            machine_dir(&self.config.state_dir, id).map(|dir| dir.join(HOME_REPAIRED_FILE))
+        else {
+            return;
+        };
+        let checked = self.redacted(id, &self.runtime.console_lines(id, FSCK));
+        let written = match home_repaired(&checked) {
+            Some(repaired) => crate::files::write(&path, repaired.as_bytes(), 0o644),
+            None => match fs::remove_file(&path) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+                _ => Ok(()),
+            },
+        };
+        if let Err(e) = written {
+            tracing::warn!(machine = %id, error = %format!("{e:#}"), "could not record what the disk check at boot repaired");
         }
     }
 
@@ -1962,12 +2092,20 @@ impl Server {
         }
         drop(machines);
         // UNIT_BOUNDARY_DESCRIPTION: read after the lock is let go, so a stalled disk holds up only this read. A guest's first answer writes the seeded record before it marks the machine ready, so a status that read ready above reads the record from that answer.
-        status.home_seeded_from = machine_dir(&self.config.state_dir, id)
+        let dir = machine_dir(&self.config.state_dir, id);
+        status.home_seeded_from = dir
+            .as_ref()
             .map(|dir| share::seeded_from(&dir.join(SHARE_DIR)))
+            .unwrap_or_default();
+        status.home_repaired = dir
+            .and_then(|dir| fs::read_to_string(dir.join(HOME_REPAIRED_FILE)).ok())
             .unwrap_or_default();
         (state, status)
     }
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: what the owner is told when the disk check at boot left the agent's disk damaged: that the disk is kept, that the next start tries the repair again and helps when the damage came from a cause that has passed, and the two ways out when it keeps failing, as the persistence architecture page gives them.
+const HOME_DAMAGED: &str = "This agent's disk has file system errors that the check at start could not repair, so the agent was not started and its files are kept as they are. Start it again: when the errors came from storage that was full or a passing disk error, the next start can repair them. If it keeps failing, ask an admin to check the agent's disk, or delete the agent and create it again, which gives it an empty disk and loses its files";
 
 // UNIT_BOUNDARY_DESCRIPTION: the VM runtime that could not grow the machine, kept beside its spec. While it names this runner's runtime, the machine boots whole: a guest that cannot grow would otherwise pay a small boot and a failed grow on every start. A runner release with another runtime tries the grow again. It goes with the machine on delete.
 pub const BOOT_WHOLE_FILE: &str = "boot-whole";
@@ -2044,6 +2182,19 @@ fn spend_capability(dir: &std::path::Path, nonce: &str) -> std::io::Result<()> {
     )
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: how often, in bytes written, a seed upload looks at the claim's room. A look is a statvfs, cheap but not free at every chunk of a many-GiB home; the claim can pass the line by at most this much before the upload stops.
+const SEED_ROOM_CHECK: u64 = 64 << 20;
+
+// UNIT_BOUNDARY_DESCRIPTION: a seed write the claim had no room for is the owner's storage being full, and is reported as such, with the ways to free it, rather than as the runner's own failure.
+fn seed_write_refused(step: &str, e: &std::io::Error) -> Rejected {
+    if matches!(e.raw_os_error(), Some(libc::ENOSPC | libc::EDQUOT)) {
+        return Rejected::insufficient_storage(format!(
+            "{step} the seed: {e}. Your VM agents' shared storage is full. To free space, delete a VM agent you no longer need or files from this agent's home, or request more storage."
+        ));
+    }
+    Rejected::internal(format!("{step} the seed: {e}"))
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: one seed upload, holding its machine's seed claim. Every chunk is counted against the machine's disk size before it is written. A commit renames the seed into the share unless the machine was deleted meanwhile; dropped uncommitted, the staged file is removed. Either way the claim is released, so the machine can be booted. `capability` is the seed capability that let the upload in, when the token did not.
 pub struct Seeding {
     server: Arc<Server>,
@@ -2059,14 +2210,25 @@ impl Seeding {
             .file
             .as_mut()
             .ok_or_else(|| Rejected::internal("the seed was not staged"))?;
-        if file.bytes().saturating_add(chunk.len() as u64) > self.limit {
+        let (before, after) = (
+            file.bytes(),
+            file.bytes().saturating_add(chunk.len() as u64),
+        );
+        if after > self.limit {
             return Err(Rejected::too_large(format!(
                 "the seed is larger than machine {}'s {} byte disk",
                 self.id, self.limit
             )));
         }
+        if before / SEED_ROOM_CHECK != after / SEED_ROOM_CHECK {
+            if let Some(refusal) =
+                (self.server.config.measure_storage)().and_then(|claim| claim.seed_refusal(after))
+            {
+                return Err(Rejected::insufficient_storage(refusal));
+            }
+        }
         file.write(chunk)
-            .map_err(|e| Rejected::internal(format!("writing the seed: {e}")))
+            .map_err(|e| seed_write_refused("writing", &e))
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: a capability is spent before the seed is stored, so it never seeds twice even when storing fails; the retry then takes the fresh capability the controller mints for its next Job. Every stored seed goes on the security trail with its size, digest and what let it in, naming a capability only by its fingerprint.
@@ -2095,7 +2257,7 @@ impl Seeding {
             .map_err(|e| Rejected::internal(format!("replacing the seed's record: {e}")))?;
         let stored = file
             .commit()
-            .map_err(|e| Rejected::internal(format!("storing the seed: {e}")))?;
+            .map_err(|e| seed_write_refused("storing", &e))?;
         share::record_seed_digest(&dir, &stored)
             .map_err(|e| Rejected::internal(format!("recording the seed: {e:#}")))?;
         let (authority, fingerprint, expires) = match &self.capability {

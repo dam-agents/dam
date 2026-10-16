@@ -117,19 +117,40 @@ function agentTrpcUrl(agentId: string, procedure: string): string {
   return `${baseUrl}/api/agents/${encodeURIComponent(agentId)}/trpc/${procedure}`;
 }
 
+export async function mutateAgentFiles(
+  token: () => Promise<string>,
+  agentId: string,
+  procedure: string,
+  input: unknown,
+  { timeoutMs = 60_000 }: { timeoutMs?: number } = {},
+): Promise<Response> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const res = await fetch(agentTrpcUrl(agentId, `files.${procedure}`), {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${await token()}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(input),
+    });
+    if (res.status !== 502 || Date.now() > deadline) return res;
+    console.log(
+      `[e2e] files.${procedure} on ${agentId} answered 502, retrying: ${(await res.text()).slice(0, 200)}`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+  }
+}
+
 export async function writeHomeFile(
   token: () => Promise<string>,
   agentId: string,
   path: string,
   content: string,
 ): Promise<void> {
-  const res = await fetch(agentTrpcUrl(agentId, "files.write"), {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${await token()}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ path, content }),
+  const res = await mutateAgentFiles(token, agentId, "write", {
+    path,
+    content,
   });
   if (res.status !== 200)
     throw new Error(
@@ -253,8 +274,10 @@ function hostPods(selector: string): { uid: string; ready: boolean }[] {
     });
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the grows the agent's VM runner logged, as the fields of each JSON log line whose operation is a grow: one that succeeded logs "machine operation" (or "machine operation was slow"), one that failed "machine operation failed". The runner belongs to the agent's owner, so the grows of the owner's other machines are in it too.
-export function runnerGrows(agentId: string): Record<string, unknown>[] {
+// UNIT_BOUNDARY_DESCRIPTION: the grows of the agent's machine that its VM runner logged as done, as the fields of each JSON log line: the RAM the guest booted with and the total it has once its virtio-mem driver plugged, and its agent onlined, all of the added RAM. The runner belongs to the agent's owner, so the lines are kept to the agent's own machine.
+export function runnerGrows(
+  agentId: string,
+): { boot_mib: number; memory_mib: number }[] {
   const logs = kubectl(
     "-n",
     AGENT_NS,
@@ -268,13 +291,45 @@ export function runnerGrows(agentId: string): Record<string, unknown>[] {
       const { fields } = JSON.parse(line) as {
         fields?: Record<string, unknown>;
       };
-      return fields?.op === "grow" ? [fields] : [];
+      return fields?.machine === agentId &&
+        fields.message === "the guest has all its added RAM online"
+        ? [fields as { boot_mib: number; memory_mib: number }]
+        : [];
     } catch {
       return [];
     }
   });
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: runs a shell script as root inside a vm agent's guest, through `vm-runner exec` on its owner's runner pod, and returns its output.
+export function inGuest(agentId: string, script: string): string {
+  const pod = kubectl(
+    "-n",
+    AGENT_NS,
+    "get",
+    "pod",
+    "-l",
+    hostSelector(agentId, "vm"),
+    "-o",
+    "jsonpath={.items[0].metadata.name}",
+  );
+  return kubectl(
+    "-n",
+    AGENT_NS,
+    "exec",
+    pod,
+    "-c",
+    "vm-runner",
+    "--",
+    "/usr/local/libexec/vm-runner/vm-runner",
+    "exec",
+    agentId,
+    "--",
+    "sh",
+    "-c",
+    script,
+  );
+}
 export async function deleteBackendHost(
   agentId: string,
   backend: Backend,

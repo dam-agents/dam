@@ -3,6 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 import { KB_AGGREGATE_MCP_SERVER } from "api-server-api";
+import { rejectOversizedArrays } from "../../../core/mcp-input-bounds.js";
 import { securityLog } from "../../../core/security-log.js";
 import { getLogger } from "../../../core/logger.js";
 import {
@@ -425,6 +426,7 @@ export function createKbShareMcpApp(deps: KbShareMcpAppDeps): Hono {
       enableJsonResponse: true,
     });
     await server.connect(transport);
+    rejectOversizedArrays(transport);
     return transport.handleRequest(c.req.raw);
   });
 

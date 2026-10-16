@@ -40,6 +40,7 @@ export interface Harness {
   receivedMethods(): string[];
   answersTo(id: number): Frame[];
   replyTo(method: string, result?: unknown): void;
+  refuseTo(method: string, error: object): void;
   replyToSession(method: string, sessionId: string, result?: unknown): void;
   emit(frame: object): void;
   pushLine(line: string): void;
@@ -87,6 +88,14 @@ export function createHarness(): { harness: Harness; process: AgentProcess } {
         throw new Error(`no ${method} was ever forwarded to the harness`);
       }
       harness.emit({ jsonrpc: "2.0", id: last.id, result });
+    },
+    refuseTo(method, error) {
+      const matching = received(method);
+      const last = matching[matching.length - 1];
+      if (last === undefined) {
+        throw new Error(`no ${method} was ever forwarded to the harness`);
+      }
+      harness.emit({ jsonrpc: "2.0", id: last.id, error });
     },
     replyToSession(method, sessionId, result = {}) {
       const match = received(method).find(

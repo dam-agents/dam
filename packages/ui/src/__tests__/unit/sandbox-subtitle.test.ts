@@ -33,6 +33,7 @@ const agent: AgentView = {
   grantedSecretIds: [],
   grantedConnectionIds: ["provider"],
   stopRequested: false,
+  disabled: false,
   overBudget: false,
   size: {},
   state: "hibernated",
@@ -62,7 +63,13 @@ describe("agent card subtitle", () => {
     const vmAgent = { ...sized, vm: true, state: "running" as const };
     const usage = (memoryUsedBytes: number, storageUsedBytes: number) => ({
       memory: { usedBytes: 0, limitBytes: 0, level: "ok" as const },
-      storage: { usedBytes: 0, usableBytes: 0, level: "ok" as const },
+      storage: {
+        usedBytes: 0,
+        usableBytes: 0,
+        imageCacheBytes: 0,
+        seedBytes: 0,
+        level: "ok" as const,
+      },
       agents: [{ id: "agent", memoryUsedBytes, storageUsedBytes, cpuMilli: 0 }],
       observedAt: "",
     });

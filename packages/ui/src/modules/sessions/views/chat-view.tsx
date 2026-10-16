@@ -1,9 +1,8 @@
 import {
   ArrowDown,
   ArrowLeft,
-  Globe,
+  Document,
   Renew,
-  Tools,
   TrashCan,
   Warning,
 } from "@carbon/icons-react";
@@ -16,6 +15,7 @@ import {
 import {
   type CSSProperties,
   Fragment,
+  type ReactNode,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -33,7 +33,6 @@ import { cn } from "@/lib/utils";
 
 import { ResizeHandle } from "../../../components/resize-handle.js";
 import { useNow } from "../../../hooks/use-now.js";
-import { isMobile } from "../../../lib/breakpoints.js";
 import {
   readPersistedNumber,
   writePersistedNumber,
@@ -41,6 +40,16 @@ import {
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { AgentView, Message } from "../../../types.js";
+import { useChatFormPreferences } from "../../a2ui/api/queries.js";
+import { A2uiActionProvider } from "../../a2ui/contexts/a2ui-action-context.js";
+import { A2uiConversationProvider } from "../../a2ui/contexts/a2ui-conversation-context.js";
+import { useA2uiAutoReplies } from "../../a2ui/hooks/use-a2ui-auto-replies.js";
+import { useA2uiConversation } from "../../a2ui/hooks/use-a2ui-conversation.js";
+import { useChatFormsEnabled } from "../../a2ui/hooks/use-chat-forms-enabled.js";
+import {
+  COMPOSER_LOCKED_REASON,
+  composerLocked,
+} from "../../a2ui/lib/composer-lock.js";
 import { isQueuedSend, rewritePointsOf } from "../../acp/session-projection.js";
 import {
   useHarnessConfigCurrent,
@@ -57,13 +66,15 @@ import {
   hasStartNotice,
 } from "../../agents/components/agent-start-notice.js";
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
-import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
+import {
+  AgentAvatar,
+  avatarMood,
+} from "../../agents/components/avatar/agent-avatar.js";
 import {
   agentFailures,
   ContributionFailuresBadge,
 } from "../../agents/components/contribution-failures-badge.js";
 import { ContributionGapNotice } from "../../agents/components/contribution-gap-notice.js";
-import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
 import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
 import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-notice.js";
 import { UnsupportedContributionsBadge } from "../../agents/components/unsupported-contributions-badge.js";
@@ -81,6 +92,9 @@ import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-pa
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
 import { DockedBrowserPanel } from "../../browser/components/docked-browser-panel.js";
 import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
+import { DockedChangesPanel } from "../../changes/components/docked-changes-panel.js";
+import { SessionPullRequests } from "../../changes/components/session-pull-requests.js";
+import { useToggleChanges } from "../../changes/hooks/use-toggle-changes.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
@@ -88,18 +102,22 @@ import { HomeVolumeBar } from "../../files/components/home-volume-bar.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import { GettingStartedDock } from "../../getting-started/components/getting-started-dock.js";
+import { ApprovalsButton } from "../../home/components/approvals-button.js";
 import {
   DelegationOwnersProvider,
   useDelegationOwners,
 } from "../../invocations/components/delegation-owners.js";
 import { DockedDelegationPanel } from "../../invocations/components/docked-delegation-panel.js";
 import { LiveDelegationBlock } from "../../invocations/components/live-delegation-block.js";
+import { MobileMenuButton } from "../../platform/components/sidebar/mobile-menu-button.js";
 import { DockedProcessOutputPanel } from "../../processes/components/docked-process-output-panel.js";
 import { ProcessesIndicator } from "../../processes/components/processes-indicator.js";
 import { ProcessesPanel } from "../../processes/components/processes-panel.js";
 import { useProcessesEnabled } from "../../processes/hooks/use-processes-enabled.js";
 import { useProcessesLiveUpdates } from "../../processes/hooks/use-processes-live-updates.js";
+import { useRunningProcesses } from "../../processes/hooks/use-running-processes.js";
 import { ProviderSettingsModal } from "../../providers/components/provider-settings-modal.js";
+import { AgentUsageActions } from "../../sandboxes/components/agent-usage-actions.js";
 import { KitUpdateBar } from "../../starter-kits/components/kit-update-bar.js";
 import { OnboardingBar } from "../../starter-kits/components/onboarding-bar.js";
 import { useTurns } from "../../telemetry/api/queries.js";
@@ -118,7 +136,6 @@ import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
 import { ChatMessage } from "../components/chat-message.js";
 import { ModelIndicator } from "../components/model-indicator.js";
-import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
 import { QueuedPrompts } from "../components/queued-prompts.js";
 import {
@@ -128,11 +145,13 @@ import {
 import { SessionPairOutdatedNotice } from "../components/session-pair-outdated-notice.js";
 import { SessionPairPicker } from "../components/session-pair-picker.js";
 import { SessionPairPlaceholder } from "../components/session-pair-placeholder.js";
-import { SessionsSidebar } from "../components/sessions-sidebar.js";
+import { SidePanelBar } from "../components/side-panel-bar.js";
+import { SidePanelEdgeTab } from "../components/side-panel-edge-tab.js";
 import { Terminal } from "../components/terminal.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useChatArtifactPrompt } from "../hooks/use-chat-artifact-prompt.js";
+import { useChatFormPrompt } from "../hooks/use-chat-form-prompt.js";
 import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
 import { useOpenInitializationSession } from "../hooks/use-open-initialization-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
@@ -141,14 +160,19 @@ import {
   useSessionUrlSync,
 } from "../hooks/use-session-url-sync.js";
 import { useSessionWatch } from "../hooks/use-session-watch.js";
-import {
-  type SidebarPanelStack,
-  useSidebarPanels,
-} from "../hooks/use-sidebar-panels.js";
 import { useTakeBack } from "../hooks/use-take-back.js";
 import { draftKey } from "../lib/draft-key.js";
 import { newLiveArrivals, noteArrivals } from "../lib/live-arrivals.js";
-import type { SidebarPanelId } from "../lib/sidebar-panels.js";
+import {
+  type DockedItems,
+  dockedItemTab,
+  maximizableView,
+  selectSidePanelTab,
+  shownSidePanelWidth,
+  sidePanelMinWidth,
+  type SidePanelTab,
+  visibleSidePanelTab,
+} from "../lib/side-panel.js";
 import {
   dividerLabel,
   threadItems,
@@ -158,28 +182,10 @@ import {
 import { clearUndelivered } from "../lib/undelivered-store.js";
 import type { SessionError } from "../store/sessions.js";
 
-const LEFT_WIDTH_KEY = "platform-left-w";
-const LEFT_MIN_W = 240;
-const LEFT_MAX_W = 400;
 const FILE_PANEL_WIDTH_KEY = "platform-file-w";
 const CHAT_MIN_W = 320;
-const SIDE_PANEL_MIN_W = 320;
+const SIDE_PANEL_BAR_W = 44;
 const TELEMETRY_SETTLE_MS = 5 * 60_000;
-
-function clampLeftWidth(width: number): number {
-  return Math.max(LEFT_MIN_W, Math.min(LEFT_MAX_W, width));
-}
-
-function PanelDivider({
-  stack,
-  below,
-}: {
-  stack: SidebarPanelStack;
-  below: SidebarPanelId;
-}) {
-  const divider = stack.dividerProps(below);
-  return divider && <ResizeHandle orientation="vertical" {...divider} />;
-}
 
 // UNIT_BOUNDARY_DESCRIPTION: a sent message lands in the transcript a render or two after the send, so the jump to the end repeats once it is laid out and once more after this wait.
 const SEND_SETTLE_MS = 300;
@@ -211,7 +217,7 @@ export function ChatView() {
   const agentView = agents.find((a) => a.id === selectedAgent) ?? null;
   const runtimeOutdated = agentView?.features.liveUpdates === false;
   const agentDisplay = agentView
-    ? resolveAgentDisplay(agentView, restartingIds, undefined, slowStartIds)
+    ? resolveAgentDisplay(agentView, restartingIds, slowStartIds)
     : null;
   const selectedAgentName = agentView?.name ?? selectedAgent;
   const agentStarting =
@@ -249,36 +255,35 @@ export function ChatView() {
     s.openBrowserAgentId === s.selectedAgent ? s.openBrowserAgentId : null,
   );
   const openBrowser = useOpenBrowser();
-  const browserMaximized = useStore((s) => s.browserMaximized);
+  const openChangesAgentId = useStore((s) =>
+    s.openChangesAgentId === s.selectedAgent ? s.openChangesAgentId : null,
+  );
+  const toggleChanges = useToggleChanges();
   const openDelegation = useStore((s) =>
     s.openDelegation?.driverAgentId === s.selectedAgent
       ? s.openDelegation
       : null,
   );
-  const artifactsSectionOpen = useStore((s) => s.artifactsSectionOpen);
-  const setArtifactsSectionOpen = useStore((s) => s.setArtifactsSectionOpen);
   const processesEnabled = useProcessesEnabled();
-  const processesSectionOpen = useStore((s) => s.processesSectionOpen);
-  const setProcessesSectionOpen = useStore((s) => s.setProcessesSectionOpen);
   const storedProcessOutputKey = useStore((s) => s.openProcessOutputKey);
   const openProcessOutputKey = processesEnabled ? storedProcessOutputKey : null;
   useProcessesLiveUpdates(selectedAgent, processesEnabled);
+  const runningProcesses = useRunningProcesses(
+    processesEnabled ? selectedAgent : null,
+  );
   const goBack = useStore((s) => s.goBack);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const sessionsSectionOpen = useStore((s) => s.sessionsSectionOpen);
-  const setSessionsSectionOpen = useStore((s) => s.setSessionsSectionOpen);
-  const filesSectionOpen = useStore((s) => s.filesSectionOpen);
-  const setFilesSectionOpen = useStore((s) => s.setFilesSectionOpen);
+  const sidePanelTab = useStore((s) => s.sidePanelTab);
+  const setSidePanelTab = useStore((s) => s.setSidePanelTab);
+  const sidePanelMaximized = useStore((s) => s.sidePanelMaximized);
+  const setSidePanelMaximized = useStore((s) => s.setSidePanelMaximized);
+  const draftDocked = useStore((s) => s.openFileDirty || s.openArtifactDirty);
   const hasPendingPermission = useHasPendingPermission();
   const mobileScreen = useStore((s) => s.mobileScreen);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const terminalPaused = useStore((s) => s.terminalPaused);
   const setTerminalPaused = useStore((s) => s.setTerminalPaused);
 
-  const [leftW, setLeftW] = useState(() =>
-    clampLeftWidth(readPersistedNumber(LEFT_WIDTH_KEY, LEFT_MIN_W)),
-  );
-  const leftWRef = useRef(leftW);
   const [rightW, setRightW] = useState<number | null>(() =>
     readPersistedNumber(FILE_PANEL_WIDTH_KEY, null),
   );
@@ -294,14 +299,6 @@ export function ChatView() {
     return () => ro.disconnect();
   }, [columnsEl]);
   const filePanelRef = useRef<HTMLDivElement>(null);
-  const panelStack = useSidebarPanels([
-    { id: "sessions", open: sessionsSectionOpen },
-    { id: "files", open: filesSectionOpen },
-    { id: "artifacts", open: artifactsSectionOpen },
-    ...(processesEnabled
-      ? [{ id: "processes" as const, open: processesSectionOpen }]
-      : []),
-  ]);
   const terminalFreshRef = useRef(false);
   const messagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -321,14 +318,15 @@ export function ChatView() {
     connectionState,
   } = useAcpSession(selectedAgent, textareaRef);
 
-  const sendArtifactPrompt = useChatArtifactPrompt({
+  const promptGate = {
     agentId: selectedAgent,
     sessionId,
     sessionMode,
     agentOperable,
     loadingSession,
     sendPrompt,
-  });
+  };
+  const sendArtifactPrompt = useChatArtifactPrompt(promptGate);
 
   const { openFileHandler } = useFileTree(selectedAgent);
   const { data: harnessCurrent } = useHarnessConfigCurrent(selectedAgent);
@@ -352,6 +350,7 @@ export function ChatView() {
           agentId: newSessionAgent,
           carried,
           defaultHarness: harnessStatus?.defaultHarness ?? carried[0]!.name,
+          routed: harnessStatus?.modelRouter ?? false,
         }
       : null;
   const providerConnections = useProviderConnections(newSessionAgent);
@@ -452,6 +451,34 @@ export function ChatView() {
     [scrollToBottom, sendPrompt],
   );
 
+  const sendFormPrompt = useChatFormPrompt({
+    ...promptGate,
+    sendPrompt: sendAndFollow,
+  });
+  const chatFormsEnabled = useChatFormsEnabled();
+  const { data: chatFormPreferences } = useChatFormPreferences(
+    chatFormsEnabled ? selectedAgent : null,
+    { quiet: true },
+  );
+  const a2uiConversation = useA2uiConversation(
+    messages,
+    sessionId ?? "",
+    chatFormsEnabled,
+    chatFormPreferences,
+  );
+  const { withRendererMetadata } = a2uiConversation;
+  const formLocksComposer = composerLocked(
+    a2uiConversation.conversation,
+    a2uiConversation.liveMessageId,
+    chatFormPreferences,
+  );
+  useA2uiAutoReplies(a2uiConversation, sendFormPrompt);
+  const sendWithA2uiData = useCallback(
+    (...[text, ...rest]: Parameters<typeof sendPrompt>) =>
+      sendAndFollow(withRendererMetadata(text), ...rest),
+    [sendAndFollow, withRendererMetadata],
+  );
+
   const pendingPrependRef = useRef<{
     height: number;
     before: string;
@@ -540,12 +567,14 @@ export function ChatView() {
     (s) => s.setPendingResumeSessionId,
   );
   const pendingResumeSessionMode = useStore((s) => s.pendingResumeSessionMode);
+  const pendingResumeFresh = useStore((s) => s.pendingResumeFresh);
   useEffect(() => {
     if (!selectedAgent || !pendingResumeSessionId) return;
     const sid = pendingResumeSessionId;
     const mode = pendingResumeSessionMode;
     setPendingResumeSessionId(null);
     if (mode === SessionMode.Terminal) {
+      terminalFreshRef.current = pendingResumeFresh;
       setSessionMode(mode);
       setSessionId(sid);
       return;
@@ -555,6 +584,7 @@ export function ChatView() {
     selectedAgent,
     pendingResumeSessionId,
     pendingResumeSessionMode,
+    pendingResumeFresh,
     setPendingResumeSessionId,
     setSessionMode,
     setSessionId,
@@ -575,7 +605,7 @@ export function ChatView() {
     [view, selectedAgent],
   );
 
-  const mobileResumeSession = useCallback(
+  const openSession = useCallback(
     (sid: string, mode?: SessionMode) => {
       pushSessionUrl(sid, mode ?? SessionMode.Chat);
       setMobileScreen("chat");
@@ -635,6 +665,15 @@ export function ChatView() {
     ],
   );
 
+  const chatRequest = useStore((s) => s.chatRequest);
+  const requestChat = useStore((s) => s.requestChat);
+  useEffect(() => {
+    if (!chatRequest) return;
+    requestChat(null);
+    if (chatRequest.kind === "new") handleNewSession();
+    else openSession(chatRequest.sessionId, chatRequest.mode ?? undefined);
+  }, [chatRequest, requestChat, handleNewSession, openSession]);
+
   const handleNewTerminal = useCallback(() => {
     resetSession();
     const id = crypto.randomUUID();
@@ -645,38 +684,59 @@ export function ChatView() {
   }, [resetSession, setSessionId, setSessionMode, setMobileScreen]);
 
   const canOpenBrowser = agentView?.requireConnectionAddress === true;
-  const browserFills =
-    browserMaximized && openBrowserAgentId !== null && canOpenBrowser;
-  const sidePanelOpen =
-    openDelegation !== null ||
-    openFilePath !== null ||
-    openArtifactId !== null ||
-    openProcessOutputKey !== null ||
-    (openBrowserAgentId !== null && canOpenBrowser);
+  const docked: DockedItems = {
+    file: openFilePath !== null,
+    artifact: openArtifactId !== null,
+    processOutput: openProcessOutputKey !== null && selectedAgent !== null,
+    changes: openChangesAgentId !== null,
+    browser: openBrowserAgentId !== null && canOpenBrowser,
+    delegation: openDelegation !== null,
+  };
+  const activeTab = visibleSidePanelTab(sidePanelTab, docked, {
+    canOpenBrowser,
+    processesEnabled,
+  });
+  const dockedTab = dockedItemTab(docked);
+  const dockedShown = dockedTab !== null && dockedTab === activeTab;
+  const dockedKept = dockedTab !== null && (dockedShown || draftDocked);
+  const sidePanelOpen = activeTab !== null;
+  const mobileOnPanel = sidePanelOpen && mobileScreen === "files";
+  const mobilePanelOpen = mobileOnPanel || (sidePanelOpen && dockedShown);
+  const hiddenTabs = new Set<SidePanelTab>([
+    ...(canOpenBrowser ? [] : (["browser"] as const)),
+    ...(processesEnabled ? [] : (["processes"] as const)),
+  ]);
+  const onSidePanelTab = (tab: SidePanelTab) => {
+    const selection = selectSidePanelTab(tab, activeTab, docked);
+    if (selection.kind === "collapse") setSidePanelTab(null);
+    else if (selection.kind === "show") setSidePanelTab(selection.tab);
+    else if (!selectedAgent) return;
+    else if (selection.kind === "open-changes")
+      void toggleChanges(selectedAgent);
+    else void openBrowser(selectedAgent);
+  };
+  const maximizable = maximizableView(activeTab, dockedShown, openFilePath);
+  const maximized = maximizable !== null && sidePanelMaximized === maximizable;
+  const sidePanelMinW = sidePanelMinWidth(activeTab);
   const columnsDoNotFit =
-    columnsW !== null && columnsW < leftW + CHAT_MIN_W + SIDE_PANEL_MIN_W;
-  const sidePanelFills = browserFills || (sidePanelOpen && columnsDoNotFit);
+    columnsW !== null &&
+    columnsW < CHAT_MIN_W + sidePanelMinW + SIDE_PANEL_BAR_W;
+  const sidePanelFills = maximized || (sidePanelOpen && columnsDoNotFit);
   const sidePanelMaxW =
-    columnsW === null ? null : columnsW - leftW - CHAT_MIN_W;
+    columnsW === null ? null : columnsW - CHAT_MIN_W - SIDE_PANEL_BAR_W;
   const sidePanelW =
-    rightW !== null && sidePanelMaxW !== null
-      ? Math.min(rightW, Math.max(SIDE_PANEL_MIN_W, sidePanelMaxW))
-      : rightW;
+    rightW === null
+      ? null
+      : shownSidePanelWidth(rightW, sidePanelMinW, sidePanelMaxW);
   const handleConfigureSandbox = useCallback(() => {
     if (!selectedAgent) return;
     navigateToSandboxHome(selectedAgent);
   }, [selectedAgent, navigateToSandboxHome]);
 
   const handleBack = useCallback(() => {
-    if (isMobile() && mobileScreen === "chat") {
-      setMobileScreen("sessions");
-      return;
-    }
     resetSession();
     goBack();
-  }, [mobileScreen, setMobileScreen, resetSession, goBack]);
-
-  const leftPanelWidth = { width: leftW };
+  }, [resetSession, goBack]);
 
   const dotColor = agentDisplay
     ? stateDotClass[agentDisplay.state]
@@ -695,180 +755,126 @@ export function ChatView() {
           onClose={() => setProvidersModal(false)}
         />
       )}
-      <header
-        className={`${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} items-stretch h-[70px] max-md:border-b border-border shrink-0 relative z-content`}
-      >
-        <div
-          style={leftPanelWidth}
-          className="@container flex min-w-0 shrink-0 items-center gap-3 overflow-hidden px-6 md:px-4 max-md:!w-auto max-md:flex-1 md:border-r md:border-b md:border-border"
-        >
-          <Button
-            variant="ghost"
-            size="inline"
-            aria-label="Back"
-            onClick={handleBack}
-            className="md:hidden gap-1 text-sm font-medium text-muted-foreground hover:bg-transparent"
-          >
-            <ArrowLeft size={14} />
-          </Button>
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <span
-              aria-hidden
-              className={cn(
-                "h-2 w-2 shrink-0 rounded-full",
-                agentView && "hidden @max-[149px]:block",
-                dotColor,
-              )}
-            />
-            {agentView ? (
-              <EditableAgentIdentity
-                agent={agentView}
-                avatarSize={32}
-                mood={avatarMood(agentDisplay?.state, agentView.stopRequested)}
-                avatarClassName="@max-[149px]:hidden"
-                nameClassName="text-sm font-bold text-foreground"
-              />
-            ) : (
-              <h1 className="text-sm font-bold text-foreground truncate">
-                {selectedAgentName}
-              </h1>
-            )}
-            {agentView && (
-              <span className="flex shrink-0 empty:hidden @max-[119px]:hidden">
-                <VmRuntimeBadge
-                  agent={agentView}
-                  labelClassName="@max-[279px]:sr-only"
-                />
-              </span>
-            )}
-            <div className="ml-auto flex shrink-0">
-              {canOpenBrowser && selectedAgent && (
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Open browser"
-                  tooltip="Open browser"
-                  onClick={() => void openBrowser(selectedAgent)}
-                >
-                  <Globe size={16} />
-                </Button>
-              )}
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Configure agent"
-                tooltip="Configure agent"
-                onClick={handleConfigureSandbox}
-              >
-                <Tools size={16} />
-              </Button>
-            </div>
-          </div>
-        </div>
-        <div className="ml-auto flex items-center gap-2 pl-6 pr-14 md:pr-16">
-          <ChatHeaderStatus
-            selectedAgent={selectedAgent}
-            agents={agents}
-            busy={busy}
-            connectionState={connectionState}
-            sessionId={sessionId}
-            processesEnabled={processesEnabled}
-          />
-        </div>
-      </header>
-
       {}
       <div ref={setColumnsEl} className="flex flex-1 min-h-0">
         {}
         <div
-          style={leftPanelWidth}
-          className={`shrink-0 flex flex-col border-r border-border overflow-hidden relative z-content ${
-            mobileScreen === "chat" ? "hidden md:flex" : "flex"
-          } ${mobileScreen === "sessions" ? "max-md:!w-full" : ""} ${
-            browserFills ? "md:!hidden" : ""
-          }`}
+          className={`@container/chat relative flex flex-1 flex-col min-w-0 ${mobileOnPanel ? "hidden md:flex" : "flex"} ${sidePanelFills ? "md:!hidden" : ""}`}
         >
-          {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
-          <ContributionGapNotice agentId={selectedAgent} />
-          <WorkspaceFailureNotice agentId={selectedAgent} />
-          <SessionsSidebar
-            open={sessionsSectionOpen}
-            onToggle={() => setSessionsSectionOpen(!sessionsSectionOpen)}
-            {...panelStack.panelProps("sessions")}
-            onResumeSession={mobileResumeSession}
-            onNewSession={handleNewSession}
-          />
-          <PanelDivider stack={panelStack} below="files" />
-          <FilesPanel
-            open={filesSectionOpen}
-            onToggle={() => setFilesSectionOpen(!filesSectionOpen)}
-            {...panelStack.panelProps("files")}
-            onOpenFile={openFileHandler}
-          />
-          <PanelDivider stack={panelStack} below="artifacts" />
-          <ChatArtifactsPanel
-            agentId={selectedAgent}
-            open={artifactsSectionOpen}
-            onToggle={() => setArtifactsSectionOpen(!artifactsSectionOpen)}
-            {...panelStack.panelProps("artifacts")}
-          />
-          {processesEnabled && (
-            <>
-              <PanelDivider stack={panelStack} below="processes" />
-              <ProcessesPanel
-                agentId={selectedAgent}
-                alwaysOn={agentView?.hibernationTimeoutMin === 0}
-                open={processesSectionOpen}
-                onToggle={() => setProcessesSectionOpen(!processesSectionOpen)}
-                {...panelStack.panelProps("processes")}
+          <header className="@container flex shrink-0 items-center gap-2 px-4 max-md:h-[52px] max-md:border-b max-md:border-border md:hidden md:py-2 md:has-[[data-chat-status]>*]:flex">
+            <div className="flex min-w-0 flex-1 items-center gap-3 md:hidden">
+              <MobileMenuButton />
+              <span
+                aria-hidden
+                className={cn(
+                  "h-2 w-2 shrink-0 rounded-full",
+                  agentView && "hidden @max-[149px]:block",
+                  dotColor,
+                )}
               />
-            </>
-          )}
-        </div>
-        {!browserFills && (
-          <ResizeHandle
-            side="left"
-            onResize={(d) => {
-              const v = clampLeftWidth(leftWRef.current + d);
-              leftWRef.current = v;
-              writePersistedNumber(LEFT_WIDTH_KEY, v);
-              setLeftW(v);
-            }}
-          />
-        )}
-
-        {}
-        <div
-          className={`@container/chat relative flex flex-1 flex-col min-w-0 ${mobileScreen === "sessions" ? "hidden md:flex" : "flex"} ${sidePanelFills ? "md:!hidden" : ""}`}
-        >
+              <button
+                type="button"
+                onClick={handleConfigureSandbox}
+                aria-label={`Configure ${selectedAgentName ?? "agent"}`}
+                className="flex min-w-0 items-center gap-2"
+              >
+                {agentView && (
+                  <AgentAvatar
+                    name={agentView.name}
+                    avatar={agentView.avatar}
+                    size={28}
+                    mood={avatarMood(agentDisplay?.state, agentView)}
+                    className="@max-[149px]:hidden"
+                  />
+                )}
+                <span className="truncate text-sm font-bold text-foreground">
+                  {selectedAgentName}
+                </span>
+              </button>
+              {agentView && (
+                <span className="flex shrink-0 empty:hidden @max-[119px]:hidden">
+                  <VmRuntimeBadge
+                    agent={agentView}
+                    labelClassName="@max-[279px]:sr-only"
+                  />
+                </span>
+              )}
+            </div>
+            <div
+              data-chat-status
+              className="flex shrink-0 items-center gap-2 md:ml-auto"
+            >
+              <ChatHeaderStatus
+                selectedAgent={selectedAgent}
+                agents={agents}
+                busy={busy}
+                connectionState={connectionState}
+                sessionId={sessionId}
+                processesEnabled={processesEnabled}
+              />
+            </div>
+            <div className="flex shrink-0 items-center gap-2 md:hidden">
+              {processesEnabled && (
+                <ProcessesIndicator agentId={selectedAgent} />
+              )}
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Files and artifacts"
+                data-testid="open-agent-files"
+                className="md:hidden"
+                onClick={() => {
+                  if (!sidePanelOpen) setSidePanelTab("files");
+                  setMobileScreen("files");
+                }}
+              >
+                <Document size={16} />
+              </Button>
+              <div className="flex items-center gap-1 md:hidden">
+                <GettingStartedDock placement="header" />
+                <ApprovalsButton />
+              </div>
+            </div>
+          </header>
+          <div className="empty:hidden">
+            {runtimeOutdated && (
+              <RuntimeOutdatedNotice agentId={selectedAgent} />
+            )}
+            <ContributionGapNotice agentId={selectedAgent} />
+            <WorkspaceFailureNotice agentId={selectedAgent} />
+          </div>
           {}
           {sessionMode === SessionMode.Terminal &&
           selectedAgent &&
           sessionId ? (
-            <Terminal
-              key={sessionId}
-              agentId={selectedAgent}
-              sessionId={sessionId}
-              fresh={terminalFreshRef.current}
-              autoConnect={!terminalPaused && agentOperable}
-              onConnected={() => {
-                terminalFreshRef.current = false;
-                setTerminalPaused(false);
-              }}
-              onFirstSubmit={() => {
-                optimisticInsertSession(
-                  selectedAgent,
-                  sessionId,
-                  SessionMode.Terminal,
-                  true,
-                );
-                queryClient.invalidateQueries({
-                  queryKey: acpSessionsKeys.agent(selectedAgent),
-                });
-              }}
-              onSubmit={() => setSessionRunning(selectedAgent, sessionId, true)}
-              onSessionMoved={setSessionId}
-            />
+            <div className="flex min-h-0 flex-1 flex-col">
+              <Terminal
+                key={sessionId}
+                agentId={selectedAgent}
+                sessionId={sessionId}
+                fresh={terminalFreshRef.current}
+                autoConnect={!terminalPaused && agentOperable}
+                onConnected={() => {
+                  terminalFreshRef.current = false;
+                  setTerminalPaused(false);
+                }}
+                onFirstSubmit={() => {
+                  optimisticInsertSession(
+                    selectedAgent,
+                    sessionId,
+                    SessionMode.Terminal,
+                    true,
+                  );
+                  queryClient.invalidateQueries({
+                    queryKey: acpSessionsKeys.agent(selectedAgent),
+                  });
+                }}
+                onSubmit={() =>
+                  setSessionRunning(selectedAgent, sessionId, true)
+                }
+                onSessionMoved={setSessionId}
+              />
+            </div>
           ) : (
             <>
               <div className="@container relative flex flex-1 flex-col min-h-0">
@@ -891,7 +897,6 @@ export function ChatView() {
                           if (!(await deleteSession(sessionError.sessionId)))
                             return;
                           setSessionError(null);
-                          if (isMobile()) setMobileScreen("sessions");
                         }}
                       />
                     )}
@@ -899,136 +904,161 @@ export function ChatView() {
                       !sessionError &&
                       messages.length === 0 && (
                         <div className="flex flex-1 flex-col items-center justify-center text-center">
-                          <p className="text-base font-bold text-foreground mb-2">
-                            Start a new session
-                          </p>
+                          {agentView && (
+                            <AgentAvatar
+                              name={agentView.name}
+                              avatar={agentView.avatar}
+                              size={96}
+                              mood={avatarMood(agentDisplay?.state, agentView)}
+                            />
+                          )}
+                          <h2 className="mt-3 mb-2 text-xl font-bold text-foreground">
+                            {selectedAgentName}
+                          </h2>
                           <p className="text-sm text-muted-foreground">
                             Send a message to begin or open a new session in:
                           </p>
-                          {selectedAgent && (
-                            <NewSessionLauncher
-                              agentId={selectedAgent}
-                              agentName={selectedAgentName ?? ""}
-                              onNewTerminal={handleNewTerminal}
-                            />
+                          {agentView && (
+                            <div className="mt-5 w-full max-w-[640px] text-left">
+                              <AgentUsageActions
+                                agent={agentView}
+                                showChat={false}
+                                onNewTerminal={handleNewTerminal}
+                              />
+                            </div>
                           )}
                           {startNotice && (
                             <div className="mt-6">{startNotice}</div>
                           )}
                         </div>
                       )}
-                    <DelegationOwnersProvider value={delegationOwners}>
-                      {items.map((item) => {
-                        if (item.kind === "divider") {
-                          return (
-                            <div
-                              key={item.key}
-                              className="flex items-center gap-3 py-2"
-                            >
-                              <span className="h-px flex-1 bg-border/60" />
-                              <span className="text-2xs text-muted-foreground">
-                                {dividerLabel(item, now)}
-                              </span>
-                              <span className="h-px flex-1 bg-border/60" />
-                            </div>
-                          );
-                        }
-                        if (userRuns.inner.has(item.message.id)) return null;
-                        const turn = turnForMessage.get(item.message.id);
-                        const members = userRuns.runs.get(item.message.id) ?? [
-                          item.message,
-                        ];
-                        const lastIndex = item.index + members.length - 1;
-                        const bubbles = members.map((m, k) => (
-                          <ChatMessage
-                            key={m.id}
-                            message={m}
-                            continued={k > 0}
-                            arriving={arrived.has(m.id)}
-                            avatarAgent={agentView ?? undefined}
-                            isLast={item.index + k === shown.length - 1}
-                            showModel={runStarts.length > 0}
-                            {...timeProps(m.at, now)}
-                            hasPendingPermission={hasPendingPermission}
-                            pendingNotice={
-                              item.index + k === shown.length - 1
-                                ? startNotice
-                                : undefined
+                    <A2uiActionProvider value={sendFormPrompt}>
+                      <A2uiConversationProvider value={a2uiConversation}>
+                        <DelegationOwnersProvider value={delegationOwners}>
+                          {items.map((item) => {
+                            if (item.kind === "divider") {
+                              return (
+                                <div
+                                  key={item.key}
+                                  className="flex items-center gap-3 py-2"
+                                >
+                                  <span className="h-px flex-1 bg-border/60" />
+                                  <span className="text-2xs text-muted-foreground">
+                                    {dividerLabel(item, now)}
+                                  </span>
+                                  <span className="h-px flex-1 bg-border/60" />
+                                </div>
+                              );
                             }
-                            onRetry={sendPrompt}
-                            onFileClick={openFileHandler}
-                            onDelete={deleteMessage}
-                            onLoadOlder={loadOlderKeepingScroll}
-                          />
-                        ));
-                        const chatMessage =
-                          members.length === 1 ? (
-                            bubbles[0]
-                          ) : (
-                            <div className="flex flex-col gap-2">{bubbles}</div>
-                          );
-                        const runMessage: Message =
-                          members.length === 1
-                            ? item.message
-                            : {
-                                ...item.message,
-                                parts: members.flatMap((m) =>
-                                  m.parts.filter((p) => p.kind === "text"),
-                                ),
-                              };
-                        const upTo = rewritePoints.get(item.message.id);
-                        const editingHere =
-                          rewriting?.messageId === item.message.id;
-                        const doomed =
-                          rewriting?.mode === "rewind" &&
-                          rewriteIndex !== -1 &&
-                          item.index > rewriteIndex;
-                        const content =
-                          canRewrite && rewritePoints.has(item.message.id) ? (
-                            <RewritableMessage
-                              message={runMessage}
-                              enabled={queueEmpty && !busy}
-                              onRewrite={(mode, text) =>
-                                rewriteFrom({
-                                  messageId: item.message.id,
-                                  upToMessageId: upTo,
-                                  mode,
-                                  text,
-                                  title: sessionView?.title ?? null,
-                                })
-                              }
-                            >
-                              {chatMessage}
-                            </RewritableMessage>
-                          ) : (
-                            chatMessage
-                          );
-                        return (
-                          <Fragment key={item.message.id}>
-                            {doomed ? (
-                              <div className="opacity-30 grayscale">
-                                {content}
-                              </div>
-                            ) : (
-                              content
-                            )}
-                            {editingHere && rewriting && (
-                              <RewriteMarker
-                                mode={rewriting.mode}
-                                following={shown.length - 1 - lastIndex}
-                              />
-                            )}
-                            {selectedAgent && sessionId && turn && (
-                              <TurnTelemetry
-                                agentId={selectedAgent}
-                                sessionId={sessionId}
-                                turn={turn}
-                              />
-                            )}
-                          </Fragment>
-                        );
-                      })}
-                    </DelegationOwnersProvider>
+                            if (userRuns.inner.has(item.message.id))
+                              return null;
+                            const turn = turnForMessage.get(item.message.id);
+                            const members = userRuns.runs.get(
+                              item.message.id,
+                            ) ?? [item.message];
+                            const lastIndex = item.index + members.length - 1;
+                            const chatMessage = (actions?: ReactNode) => {
+                              const bubbles = members.map((m, k) => (
+                                <ChatMessage
+                                  key={m.id}
+                                  message={m}
+                                  continued={k > 0}
+                                  arriving={arrived.has(m.id)}
+                                  avatarAgent={agentView ?? undefined}
+                                  onAgentClick={handleConfigureSandbox}
+                                  footer={
+                                    k === members.length - 1
+                                      ? actions
+                                      : undefined
+                                  }
+                                  isLast={item.index + k === shown.length - 1}
+                                  showModel={runStarts.length > 0}
+                                  {...timeProps(m.at, now)}
+                                  hasPendingPermission={hasPendingPermission}
+                                  pendingNotice={
+                                    item.index + k === shown.length - 1
+                                      ? startNotice
+                                      : undefined
+                                  }
+                                  onRetry={sendPrompt}
+                                  onFileClick={openFileHandler}
+                                  onDelete={deleteMessage}
+                                  onLoadOlder={loadOlderKeepingScroll}
+                                />
+                              ));
+                              return members.length === 1 ? (
+                                bubbles[0]
+                              ) : (
+                                <div className="flex flex-col gap-5">
+                                  {bubbles}
+                                </div>
+                              );
+                            };
+                            const runMessage: Message =
+                              members.length === 1
+                                ? item.message
+                                : {
+                                    ...item.message,
+                                    parts: members.flatMap((m) =>
+                                      m.parts.filter((p) => p.kind === "text"),
+                                    ),
+                                  };
+                            const upTo = rewritePoints.get(item.message.id);
+                            const editingHere =
+                              rewriting?.messageId === item.message.id;
+                            const doomed =
+                              rewriting?.mode === "rewind" &&
+                              rewriteIndex !== -1 &&
+                              item.index > rewriteIndex;
+                            const content =
+                              canRewrite &&
+                              rewritePoints.has(item.message.id) ? (
+                                <RewritableMessage
+                                  message={runMessage}
+                                  enabled={queueEmpty && !busy}
+                                  onRewrite={(mode, text) =>
+                                    rewriteFrom({
+                                      messageId: item.message.id,
+                                      upToMessageId: upTo,
+                                      mode,
+                                      text,
+                                      title: sessionView?.title ?? null,
+                                    })
+                                  }
+                                >
+                                  {chatMessage}
+                                </RewritableMessage>
+                              ) : (
+                                chatMessage()
+                              );
+                            return (
+                              <Fragment key={item.message.id}>
+                                {doomed ? (
+                                  <div className="opacity-30 grayscale">
+                                    {content}
+                                  </div>
+                                ) : (
+                                  content
+                                )}
+                                {editingHere && rewriting && (
+                                  <RewriteMarker
+                                    mode={rewriting.mode}
+                                    following={shown.length - 1 - lastIndex}
+                                  />
+                                )}
+                                {selectedAgent && sessionId && turn && (
+                                  <TurnTelemetry
+                                    agentId={selectedAgent}
+                                    sessionId={sessionId}
+                                    turn={turn}
+                                  />
+                                )}
+                              </Fragment>
+                            );
+                          })}
+                        </DelegationOwnersProvider>
+                      </A2uiConversationProvider>
+                    </A2uiActionProvider>
                     {selectedAgent && (
                       <LiveDelegationBlock
                         driverAgentId={selectedAgent}
@@ -1057,7 +1087,6 @@ export function ChatView() {
                   </ChatColumn>
                 </div>
 
-                <GettingStartedDock placement="chat" />
                 {showJump && (
                   <button
                     onClick={scrollToBottom}
@@ -1080,13 +1109,15 @@ export function ChatView() {
                   textareaRef={textareaRef}
                   busy={busy}
                   loadingSession={loadingSession}
-                  onSend={sendAndFollow}
+                  onSend={sendWithA2uiData}
                   onStop={stopAgent}
                   onTakeBack={takeBack}
                   blockedReason={
                     noGrantedProvider
                       ? "No LLM provider connected to this agent."
-                      : null
+                      : formLocksComposer
+                        ? COMPOSER_LOCKED_REASON
+                        : null
                   }
                 />
                 {!hasPendingPermission && pickable && (
@@ -1120,19 +1151,26 @@ export function ChatView() {
                       {selectedAgent && pairOutdated ? (
                         <SessionPairOutdatedNotice agentId={selectedAgent} />
                       ) : selectedAgent && currentSession?.harness ? (
-                        <ModelIndicator
-                          agentId={selectedAgent}
-                          harness={currentSession.harness}
-                          provider={currentSession.provider ?? null}
-                          model={currentSession.model ?? null}
-                          settings={currentSession.settings}
-                          carried={harnessStatus?.harnesses ?? []}
-                          onChoose={(value) => void chooseSessionModel(value)}
-                          onConfigure={(change) =>
-                            void configureSession(change)
-                          }
-                          onNewSession={() => handleNewSession(true)}
-                        />
+                        <div className="flex min-w-0 items-center justify-between gap-3">
+                          <ModelIndicator
+                            agentId={selectedAgent}
+                            harness={currentSession.harness}
+                            provider={currentSession.provider ?? null}
+                            model={currentSession.model ?? null}
+                            settings={currentSession.settings}
+                            carried={harnessStatus?.harnesses ?? []}
+                            routed={harnessStatus?.modelRouter ?? false}
+                            turnRunning={busy}
+                            onChoose={(value) => void chooseSessionModel(value)}
+                            onConfigure={(change) =>
+                              void configureSession(change)
+                            }
+                            onNewSession={() => handleNewSession(true)}
+                          />
+                          <SessionPullRequests
+                            repositories={currentSession.repositories}
+                          />
+                        </div>
                       ) : selectedAgent ? (
                         <Button
                           variant="link"
@@ -1157,71 +1195,168 @@ export function ChatView() {
         </div>
 
         {}
-        {sidePanelOpen && (
-          <>
-            <div className={sidePanelFills ? "hidden" : "hidden md:flex"}>
-              <ResizeHandle
-                side="right"
-                onResize={(d) => {
-                  const max = sidePanelMaxW ?? window.innerWidth - 500;
-                  const base = Math.min(
-                    rightWRef.current ?? filePanelRef.current?.offsetWidth ?? 0,
-                    max,
-                  );
-                  const v = Math.max(240, Math.min(max, base + d));
-                  rightWRef.current = v;
-                  writePersistedNumber(FILE_PANEL_WIDTH_KEY, v);
-                  setRightW(v);
-                }}
-              />
-            </div>
+        {sidePanelOpen && !sidePanelFills && (
+          <div className="hidden md:flex">
+            <ResizeHandle
+              side="right"
+              onResize={(d) => {
+                const max = sidePanelMaxW ?? window.innerWidth - 500;
+                const base = shownSidePanelWidth(
+                  rightWRef.current ?? filePanelRef.current?.offsetWidth ?? 0,
+                  sidePanelMinW,
+                  max,
+                );
+                const v = Math.max(sidePanelMinW, Math.min(max, base + d));
+                rightWRef.current = v;
+                writePersistedNumber(FILE_PANEL_WIDTH_KEY, v);
+                setRightW(v);
+              }}
+            />
+          </div>
+        )}
+        <div
+          data-testid="side-panel"
+          className={cn(
+            "flex bg-background relative z-content max-md:fixed max-md:inset-0 max-md:z-overlay",
+            !mobilePanelOpen && "max-md:hidden",
+            sidePanelFills
+              ? "md:flex-1 md:min-w-0"
+              : sidePanelOpen && sidePanelW === null
+                ? "md:flex-1 md:basis-0 md:min-w-0"
+                : "md:shrink-0",
+          )}
+        >
+          {(sidePanelOpen || dockedKept) && (
             <div
               ref={filePanelRef}
               style={
-                sidePanelW !== null
-                  ? ({ "--file-w": `${sidePanelW}px` } as CSSProperties)
-                  : undefined
+                {
+                  "--file-min-w": `${sidePanelMinW}px`,
+                  ...(sidePanelW !== null && { "--file-w": `${sidePanelW}px` }),
+                } as CSSProperties
               }
               className={cn(
-                "flex flex-col overflow-hidden bg-background relative z-content max-md:fixed max-md:inset-0 max-md:z-overlay",
-                sidePanelFills
-                  ? "md:flex-1 md:min-w-0"
-                  : sidePanelW !== null
-                    ? "md:shrink-0 md:w-[var(--file-w)]"
-                    : "md:flex-1 md:basis-0 md:min-w-0",
+                "flex flex-col min-w-0 overflow-hidden max-md:flex-1",
+                !sidePanelFills && "md:min-w-[var(--file-min-w)]",
+                !sidePanelOpen && "hidden",
+                sidePanelFills || sidePanelW === null
+                  ? "md:flex-1"
+                  : "md:shrink-0 md:w-[var(--file-w)]",
                 "md:border-l md:border-border",
               )}
             >
-              {openBrowserAgentId && canOpenBrowser ? (
-                <DockedBrowserPanel
-                  key={openBrowserAgentId}
-                  agentId={openBrowserAgentId}
-                  agentName={selectedAgentName ?? openBrowserAgentId}
+              <div className="flex h-[52px] shrink-0 items-center gap-2 border-b border-border px-3 md:hidden">
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Back to chat"
+                  onClick={() => {
+                    setSidePanelTab(null);
+                    setMobileScreen("chat");
+                  }}
+                >
+                  <ArrowLeft size={16} />
+                </Button>
+                <span className="truncate text-sm font-bold text-foreground">
+                  {selectedAgentName}
+                </span>
+              </div>
+              {!dockedShown && activeTab === "files" && (
+                <FilesPanel
+                  open
+                  className="flex-1"
+                  onOpenFile={openFileHandler}
                 />
-              ) : openDelegation ? (
-                <DockedDelegationPanel
-                  key={openDelegation.id}
-                  driverAgentId={openDelegation.driverAgentId}
-                  id={openDelegation.id}
-                />
-              ) : openFilePath ? (
-                <DockedFilePanel onOpenFile={openFileHandler} />
-              ) : openArtifactId ? (
-                <DockedArtifactPanel
-                  key={openArtifactId}
+              )}
+              {!dockedShown && activeTab === "artifacts" && (
+                <ChatArtifactsPanel
                   agentId={selectedAgent}
-                  onSendPrompt={sendArtifactPrompt}
+                  open
+                  className="flex-1"
                 />
-              ) : openProcessOutputKey && selectedAgent ? (
-                <DockedProcessOutputPanel
-                  key={openProcessOutputKey}
+              )}
+              {!dockedShown && activeTab === "processes" && (
+                <ProcessesPanel
                   agentId={selectedAgent}
-                  outputKey={openProcessOutputKey}
+                  alwaysOn={agentView?.hibernationTimeoutMin === 0}
+                  open
+                  className="flex-1"
                 />
-              ) : null}
+              )}
+              {dockedKept && (
+                <div
+                  className={cn(
+                    "flex flex-1 min-h-0 flex-col",
+                    !dockedShown && "hidden",
+                  )}
+                >
+                  {openBrowserAgentId && canOpenBrowser ? (
+                    <DockedBrowserPanel
+                      key={openBrowserAgentId}
+                      agentId={openBrowserAgentId}
+                      agentName={selectedAgentName ?? openBrowserAgentId}
+                    />
+                  ) : openDelegation ? (
+                    <DockedDelegationPanel
+                      key={openDelegation.id}
+                      driverAgentId={openDelegation.driverAgentId}
+                      id={openDelegation.id}
+                    />
+                  ) : openFilePath ? (
+                    <DockedFilePanel onOpenFile={openFileHandler} />
+                  ) : openArtifactId ? (
+                    <DockedArtifactPanel
+                      key={openArtifactId}
+                      agentId={selectedAgent}
+                      onSendPrompt={sendArtifactPrompt}
+                    />
+                  ) : openChangesAgentId ? (
+                    <DockedChangesPanel
+                      key={`${openChangesAgentId}:${sessionId ?? ""}`}
+                      agentId={openChangesAgentId}
+                      sessionId={sessionId}
+                    />
+                  ) : openProcessOutputKey && selectedAgent ? (
+                    <DockedProcessOutputPanel
+                      key={openProcessOutputKey}
+                      agentId={selectedAgent}
+                      outputKey={openProcessOutputKey}
+                    />
+                  ) : null}
+                </div>
+              )}
             </div>
-          </>
-        )}
+          )}
+          {sidePanelOpen && maximizable && (maximized || !columnsDoNotFit) && (
+            <SidePanelEdgeTab
+              maximized={maximized}
+              onToggle={() =>
+                setSidePanelMaximized(maximized ? null : maximizable)
+              }
+            />
+          )}
+          <SidePanelBar
+            active={activeTab}
+            hidden={hiddenTabs}
+            onSelect={onSidePanelTab}
+            badges={
+              runningProcesses
+                ? {
+                    processes: {
+                      count: runningProcesses.running,
+                      label: `Processes, ${String(runningProcesses.running)} running`,
+                    },
+                  }
+                : undefined
+            }
+            footer={
+              <div className="flex flex-col items-center gap-1">
+                <GettingStartedDock placement="rail" />
+                <ApprovalsButton />
+              </div>
+            }
+          />
+        </div>
       </div>
 
       {leavingForPublicPage ? (
@@ -1266,11 +1401,7 @@ function ChatHeaderStatus({
     connectionState === "reconnecting" || connectionState === "reloading";
   return (
     <>
-      {processesEnabled ? (
-        <ProcessesIndicator agentId={selectedAgent} />
-      ) : (
-        <BackgroundWorkIndicator items={backgroundWork} />
-      )}
+      {!processesEnabled && <BackgroundWorkIndicator items={backgroundWork} />}
       {reconnecting && <Badge variant="warning">Reconnecting</Badge>}
       <ImportInProgressBadge agentId={selectedAgent} />
       {agent && <GatewayFailureBadge agent={agent} />}

@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 ## Overview
 
@@ -10,7 +10,7 @@ It is a custom resource whose `spec` the api-server owns and whose `status` the 
 The lifecycle is driven by three actors:
 
 - **Users** drive both management and sessions, but along different paths.
-  The **UI** is the only management surface — creating, configuring, hibernating, and deleting Agents all flow through tRPC on the api-server's public port, which is the sole writer of the Agent spec.
+  The **UI** is the only management surface — creating, configuring, disabling, and deleting Agents all flow through tRPC on the api-server's public port, which is the sole writer of the Agent spec.
   Sessions can be driven from the UI **or** from a connected channel (Slack, Telegram).
   Channels never hit management endpoints; they dial the api-server's ACP relay only, with identity scoped to the individual messenger user driving the session.
   Channel internals live on [channels](channels.md).
@@ -68,11 +68,12 @@ The **Agent Kind** marker survives only on agents stamped before kits: a knowled
 A kit apply is the plain create with the kit's grants, followed by the kit's schedules and channel binding, compensated by delete on failure.
 A new agent takes its template's size and the trusted egress preset — or, for a kit that declares either, the kit's — both editable afterwards, plus a Backend the template has no say in: a container, or a microVM, which has no size and shares its owner's [memory pool](vm-memory.md) instead.
 The caller picks the Backend, except on an install that pins the new sandbox runtime on, where every create is a microVM ([features](features.md)).
-A plain create names neither a harness nor a provider, since each session picks both ([below](#session-inside-the-pod)): it boots the default Template on the install's default harness and grants the caller's IBM LiteLLM provider Connection, else their earliest-created one, that the harness runs on.
+A plain create names neither a harness nor a provider, since each session picks both ([below](#session-inside-the-pod)): it boots the default Template on the install's default harness and grants every provider Connection of the caller's that the harness runs on, the oldest one per provider alias.
 A custom-image Template names the harness it wraps, if any, and may list its providers.
-Only a template create gets a default provider; a bare image and a [sub-agent](invocations.md) hold only what they name.
-A first agent is often created before its owner has any provider, so connecting a provider gives it to each of the owner's agents that holds none and whose default it would be.
-An agent that holds none while an older provider would be its default was detached on purpose, and stays so.
+A create that names a provider gets that one alone.
+Only a template create gets default providers; a bare image and a [sub-agent](invocations.md) hold only what they name.
+A first agent is often created before its owner has any provider, so connecting a provider gives it to each of the owner's agents that holds none, when it is the owner's first provider that agent's harness runs on.
+An agent that holds none while an older such provider exists was detached on purpose, and stays so.
 A create may also name a repository to seed into the work directory before the first session; it rides the runtime channel rather than the pod spec ([runtime delivery](runtime-delivery.md#event)).
 See [knowledge-bases](knowledge-bases.md) for what a knowledge base adds on top of what follows.
 
@@ -141,6 +142,10 @@ Three paths trigger a wake:
 
 Wake is bounded — the primitive polls pod readiness with backoff and gives up after two minutes, and a per-replica watch releases each wait the moment the condition flips and backs a read cache.
 A read bypasses that cache when its result decides a write — spec read-modify-write, the sleep flow's compare-and-clear — and while the watch is unsynced, when the cache cannot tell an absent Agent from an unseen one.
+It does not wait out the two minutes for a start that cannot succeed: an over-budget refusal ([budgets](budgets.md#failure-semantics-upstream)), or a vm machine's start the runner refused because the owner's VM storage is full, the image is unavailable, or the guest did not boot.
+Such a wake fails with that cause once it saw the refusal appear during its own poll, or once the refusal outlasted a ten-second grace, because its first polls can read the previous attempt's refusal.
+A vm start refusal read while the Agent still shows hibernated does not count, since the controller has not acted on the wake yet.
+An unschedulable runner and a machine still pulling or booting keep the wait, because both can still come up.
 On giving up it reads the controller's readiness conditions one final time and classifies the failure into a typed wake-failure cause — hibernation never acted on, a pod start failure (with the controller's termination cause, a full home volume named), pods still progressing, a gateway still coming up, a gateway failure it cannot outgrow, or a reconcile error — which callers receive and surface in their own idiom (channel reply copy, WS close reason, HTTP body, skills call error).
 The classification distinguishes transient causes (progressing, worth waiting or retrying) from hard ones (needing intervention); the two gateway causes split along exactly that line.
 A gateway wedged on a superseded configuration counts as hard even though the platform replaces such pods by itself ([security-and-credentials](security-and-credentials.md)): classification runs only once the budget is spent, so a repair that was going to land already had its chance.
@@ -226,8 +231,8 @@ The pod terminates; the PVC, Secret, Service, and NetworkPolicy persist.
 Workspace state survives — the git checkout, `node_modules`, `.venv`, mise cache, and `$HOME` are all on the PVC and rejoin on the next wake.
 Anything written to the container's ephemeral filesystem (OS-level changes, tools installed outside `$HOME`) is lost; this is a deliberate constraint of the lifetime model.
 
-**Sleep.** The one user-initiated scale-down, built to free [Reserved compute](budgets.md) without waiting for the idle checker — including reclaiming an Agent pinned awake by an open session.
-The UI calls the state *Sleeping* and the action *Sleep*, and never offers a stop that outlasts the descent.
+**Sleep.** A scale-down on request, built to free [Reserved compute](budgets.md) without waiting for the idle checker — including reclaiming an Agent pinned awake by an open session.
+The UI calls the state *Sleeping* but offers no Sleep action: an Agent the user wants down without waiting for the idle timeout is [disabled](#disable) instead, and the api-server keeps the sleep call for other clients.
 The api-server stamps `agent-platform.ai/stop-requested`, clears the session and Invocation pins, and stales `last-activity`, so the Agent stays down once the stamp is gone; `shouldRun` treats the stamp as an overriding *negative* signal, and the reconciler scales the pair to zero immediately, bypassing the busy probe — sleep may interrupt work by design.
 While the stamp stands, background activity (UI polling, relay reconnects, proxied calls) never clears it — `ensureReady` on such an Agent fails with a typed *stopped* error instead of bumping — so an open tab cannot resurrect the pair before it lands.
 An explicit wake and a schedule fire clear it at any time, back through the budget gate.
@@ -235,7 +240,21 @@ The api-server clears the stamp itself once the Agent settles Hibernated (a sett
 The clear is a **compare-and-clear** of the exact stamp the sleep wrote: a second sleep issued during the settle window carries a newer stamp and is not erased by the first one's watcher.
 Staling the clock in the *initial* patch (never at settle time) is what keeps the watcher from ever clobbering a concurrent wake.
 A sleeping Agent is afterwards a plain hibernated Agent: its next deliberate use wakes it.
-A **never-hibernate** Agent (effective timeout `0`) runs regardless of activity, so the UI does not offer it Sleep; a direct call still stamps it without the settle clear, the only stable sleep it can have.
+A sleep is refused while a [runtime migration](vm-runtime-migration.md) holds the Agent, since every wake is refused then too.
+A **never-hibernate** Agent (effective timeout `0`) runs regardless of activity; a direct sleep call still stamps it without the settle clear, the only stable sleep it can have.
+
+### Disable
+
+A **disabled** Agent is a sleeping Agent that nothing wakes until its owner enables it: no chat, terminal, SSH, Slack or Telegram message, schedule fire or Invocation outcome starts it.
+The owner disables and enables it from the Agent's *General* page, or with `dam agent disable` and `dam agent enable` ([CLI](cli.md#agent-lifecycle)).
+Disabling stamps `agent-platform.ai/disabled` together with the stop request, clears the session and Invocation pins, and stales `last-activity`, so the controller scales the pair to zero exactly as for a sleep; the controller never reads the disabled mark itself.
+The settle-watcher never runs, so the stop request stands for as long as the Agent is disabled.
+Every path that would clear the stop request — an explicit wake, a schedule poke, a workspace retry — first reads the disabled mark and writes nothing when it is set; the write names the version it read, so a disable landing in between makes it conflict and read again rather than undo the disable.
+An explicit wake answers with a typed *disabled* error, and `ensureReady` fails with the *stopped* error, which carries whether the Agent is disabled so a channel can tell its sender to ask the owner to enable it.
+A recurring schedule fire is held, reading `held: agent disabled`, and a one-time task due meanwhile is recorded missed ([schedules](schedules.md)).
+Enabling clears both marks and leaves `last-activity` stale, so the Agent stays asleep until its next use wakes it.
+Disabling is refused while a [runtime migration](vm-runtime-migration.md) holds the Agent, as a sleep is.
+A sleep asked of a disabled Agent writes nothing, so its settle-watcher never runs and cannot clear the standing stop request.
 
 **Early reclaim for a blocked start.** The one scale-down neither the user nor the idle timeout asks for: when the [budget gate](budgets.md#reclaiming-room-for-a-blocked-start) refuses a start, it may hibernate that same owner's *unattended idle* Agents ahead of their timeout to admit it, longest-idle first and only when the freed Sizes provably cover the shortfall.
 Eligibility is deliberately narrower than the idle checker's, since reclaim takes down a pod whose own timeout still permits it to run: session and Invocation pins, sweepable Invocation targets, and never-hibernate Agents are all excluded, and survivors are probed more strictly: only an Agent whose runtime answers `idle` is reclaimed, and an unreachable pod is spared.

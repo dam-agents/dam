@@ -6,6 +6,7 @@ import {
 import { t } from "../../trpc.js";
 import {
   harnessConfigApplyInputSchema,
+  harnessConfigDefaultForInputSchema,
   harnessConfigSettledSchema,
   harnessConfigSnapshotInputSchema,
   harnessConfigSnapshotResultSchema,
@@ -46,6 +47,14 @@ export const harnessConfigRouter = t.router({
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.agentId);
       return ctx.harnessConfig.sessionPair(input.agentId);
+    }),
+
+  defaultFor: readAgentProcedure
+    .input(harnessConfigDefaultForInputSchema)
+    .output(sessionPairSchema.nullable())
+    .query(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.agentId);
+      return ctx.harnessConfig.defaultFor(input.agentId, input.harness);
     }),
 
   rememberSessionPair: manageAgentsProcedure

@@ -19,6 +19,7 @@ import {
   agentRestartInputSchema,
   agentPeekBindFlowInputSchema,
   agentUpdateInputSchema,
+  agentSetDisabledInputSchema,
   agentSleepInputSchema,
   agentUpgradeInputSchema,
   agentMigrateRuntimeInputSchema,
@@ -51,6 +52,12 @@ export const agentsRouter = t.router({
       toAgentView(agent, driverByTarget.get(agent.id) ?? null),
     );
   }),
+
+  runtimeFleet: readAgentProcedure.query(({ ctx }) =>
+    ctx.agents.runtimeFleet(
+      ctx.user.agentIds === "*" ? undefined : ctx.user.agentIds,
+    ),
+  ),
 
   get: readAgentProcedure
     .input(agentGetInputSchema)
@@ -107,6 +114,11 @@ export const agentsRouter = t.router({
       if (res.ok) return toAgentView(res.value);
       if (res.error.type === "AgentNotFound")
         throw new TRPCError({ code: "NOT_FOUND" });
+      if (res.error.type === "AgentDisabled")
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "This agent is disabled; enable it to wake it",
+        });
       throw new TRPCError({
         code: "CONFLICT",
         message: res.error.failed
@@ -129,6 +141,20 @@ export const agentsRouter = t.router({
       const agent = await ctx.agents.sleep(input.id);
       if (!agent) throw new TRPCError({ code: "NOT_FOUND" });
       return toAgentView(agent);
+    }),
+
+  setDisabled: manageAgentsProcedure
+    .input(agentSetDisabledInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const res = await ctx.agents.setDisabled(input.id, input.disabled);
+      if (res.ok) return toAgentView(res.value);
+      if (res.error.type === "AgentNotFound")
+        throw new TRPCError({ code: "NOT_FOUND" });
+      throw new TRPCError({
+        code: "CONFLICT",
+        message:
+          "This agent is moving to the new runtime; abort the move to disable it",
+      });
     }),
 
   upgrade: manageAgentsProcedure

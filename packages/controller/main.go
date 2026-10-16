@@ -197,13 +197,21 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		agentReconciler.ReconcileRetainedVolumes(sctx)
 		agentReconciler.ReconcileOrphanLeafSecrets(sctx)
 		agentReconciler.ReconcileOrphanMachines(sctx)
-		agentReconciler.ReconcileRunnerRollout(sctx)
 		slog.DebugContext(sctx, "orphan sweep complete", "duration", time.Since(start))
 		finish(nil)
 	}
 	go func() {
 		orphanSweep()
 		every(ctx, 10*time.Minute, orphanSweep)
+	}()
+	rolloutSweep := func() {
+		sctx, finish := telemetry.StartPass(ctx, "runner rollout sweep")
+		agentReconciler.ReconcileRunnerRollout(sctx)
+		finish(nil)
+	}
+	go func() {
+		rolloutSweep()
+		every(ctx, 10*time.Minute, rolloutSweep)
 	}()
 
 	agentQueue := newShardedAgentQueue(agentInformer.Lister().ByNamespace(cfg.Namespace))

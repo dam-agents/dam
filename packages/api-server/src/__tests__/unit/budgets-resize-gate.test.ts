@@ -154,6 +154,8 @@ describe("budgets meter (#1900)", () => {
       storage: {
         usedBytes: 30 * 1024 ** 3,
         usableBytes: 100 * 1024 ** 3,
+        imageCacheBytes: 0,
+        seedBytes: 0,
         level: "ok",
       },
       agents: [
@@ -202,6 +204,8 @@ function usage(usedGi: number, usableGi: number) {
     storage: {
       usedBytes: usedGi * 1024 ** 3,
       usableBytes: usableGi * 1024 ** 3,
+      imageCacheBytes: 0,
+      seedBytes: 0,
     },
     memory: { limitMiB: 12288, committedMiB: 3072 },
     machines: [

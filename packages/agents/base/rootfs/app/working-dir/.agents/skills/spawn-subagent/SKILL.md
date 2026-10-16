@@ -37,7 +37,7 @@ The tools are the way to delegate: for one hand-off, for a fan-out, and for any 
 
 1. **Choose what it runs on — do not guess.** Call `list_harnesses` and `list_connections` and show the human what is available.
    If it is not obvious which to use, **ask them**.
-   The model needs nothing: the sub-agent runs on *your* model provider.
+   The model needs nothing: the sub-agent runs on the subagent model the user set for this session (a `model` you pass is then ignored), else on *your* model provider.
 2. **Spawn.** Call `spawn_subagent` with `needs` (from step 1), `prompt`, `schema` (JSON Schema, e.g. `{"type": "integer"}`) and `harness`, plus any setup option from the table below and, to pick the model, `model`, `mode` and `configOptions` as in "Choose the model per spawn".
    Never pick a model through `env`: the platform then records no harness config and runs none of its checks.
    It returns the sub-agent id at once.
@@ -140,28 +140,28 @@ An OOM-killed sub-agent fails fast with its reason.
 
 ## Choose the model per spawn
 
-One harness runs any model its provider offers, so pick the model per spawn: run one task on two models to compare the results and the cost, or put mechanical steps on a cheap model and hard ones on a strong one.
+One harness runs any model its providers offer, so pick the model per spawn: run one task on two models to compare the results and the cost, or put mechanical steps on a cheap model and hard ones on a strong one.
 `model=`, `mode=` and `config_options=` (JS: `model`, `mode`, `configOptions`) take the values the agent's Config panel offers.
 They are written into the sub-agent's harness config before its first turn.
 
 ```python
-cheap = d.spawn(prompt, schema, harness="claude-code", model="haiku", mode="bypassPermissions")
-strong = d.spawn(prompt, schema, harness="codex", config_options={"effort": "high"})
+cheap = d.spawn(prompt, schema, harness="claude-code", model="ibm/aws/claude-haiku-4-5", mode="bypassPermissions")
+strong = d.spawn(prompt, schema, harness="codex", model="ibm/azure/gpt-5.5", config_options={"effort": "high"})
 ```
 
-| harness       | `model`                                                                      | `config_options`                                  |
-| ------------- | ---------------------------------------------------------------------------- | ------------------------------------------------- |
-| `claude-code` | `fable`, `opus`, `sonnet`, `haiku`, or `claude/<provider model>` (see below) | `effort`: `low` … `xhigh` (Haiku takes none)      |
-| `codex`       | a name from the provider's model list                                        | `effort`: `minimal` … `xhigh`                     |
-| `pi`          | a name from the provider's model list                                        | — (`mode` is its thinking level: `off` … `xhigh`) |
-| `bob`         | a name from the provider's model list                                        | `approvals`: keep `auto`                          |
+| harness       | `model`                                                                         | `config_options`                                  |
+| ------------- | ------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `claude-code` | `<provider>/<model id>` from the agent's model list (`claude/` prefix accepted) | `effort`: `low` … `xhigh` (Haiku takes none)      |
+| `codex`       | `<provider>/<model id>` from the agent's model list                             | `effort`: `minimal` … `xhigh`                     |
+| `pi`          | `<provider>/<model id>` from the agent's model list                             | — (`mode` is its thinking level: `off` … `xhigh`) |
+| `bob`         | `<provider>/<model id>` from the agent's model list                             | `approvals`: keep `auto`                          |
 
-"The provider's model list" is what the Config panel shows for any agent on the same model connection.
+"The agent's model list" is what the session picker shows for the harness: every model named with its provider (`ibm/aws/claude-opus-4-8`, `anthropic/claude-sonnet-5-5`).
+Tier names such as `haiku` or `sonnet` are not models and are refused.
 
-- **The platform does not check the values, and a wrong one may not fail.** Claude Code on Anthropic fails the first turn, and the sub-agent hangs until its deadline.
-  Pi instead runs the connection's model without an error.
-- **On a provider other than Anthropic, Claude Code's names are approximate.** `haiku`, `sonnet` and `opus` run the closest model that provider serves, so `haiku` becomes Sonnet on a provider with no Haiku.
-  To be exact, name the provider's model with a `claude/` prefix, for example `model="claude/aws/claude-opus-4-8"`.
+- **A model the harness does not list on this agent is refused before the sub-agent exists**, naming the listed ones.
+  A provider that serves no model to the target harness (the Anthropic subscription on `codex`) is refused the same way.
+- **When the session has a subagent model setting, every sub-agent runs on it**, whatever the spawn names; a harness that cannot run it is refused, so spawn on one that lists it or clear the setting.
 - **Check the model the sub-agent reports** when the choice matters, for example when you compare models or cost.
   Try a new name with a short `ttl_ms`.
 - **Leave `mode` unset** unless you know the harness.

@@ -31,7 +31,7 @@ export function useSyncRestartingAgents() {
     if (freshlyParked) {
       const reason =
         freshlyParked.overBudgetMessage ??
-        "put agents you aren't using to sleep to free room";
+        "disable agents you aren't using to free room";
       void showConfirm(
         `${reason[0].toUpperCase()}${reason.slice(1)}${reason.endsWith(".") ? "" : "."}`,
         "This agent could not start",

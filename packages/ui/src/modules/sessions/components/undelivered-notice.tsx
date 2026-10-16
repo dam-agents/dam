@@ -59,6 +59,9 @@ export function UndeliveredNotice({
       <Warning size={16} className="text-danger shrink-0 mt-0.5" />
       <div className="flex-1 min-w-0 flex flex-col gap-1">
         <span className="text-xs text-foreground break-words">
+          {described.title && (
+            <span className="font-bold text-danger">{described.title} </span>
+          )}
           {described.message}
         </span>
         {described.hint && (

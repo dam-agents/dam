@@ -13,6 +13,7 @@ import {
   type ProviderPresetType,
   type SkillSetApplyResult,
   type SkillsService,
+  parseQualifiedModel,
 } from "api-server-api";
 import {
   type RuntimeMutator,
@@ -68,12 +69,42 @@ export class InvalidSchemaError extends Error {
   }
 }
 
+export class ModelNameError extends Error {
+  constructor(model: string) {
+    super(
+      `name the target's model with its provider, as <provider>/<model id> (for example ibm/${model}); a tier name is no model`,
+    );
+    this.name = "ModelNameError";
+  }
+}
+
 export class ProviderMismatchError extends Error {
   constructor(offered: ProviderPresetType[], runsOn: ProviderPresetType[]) {
     super(
       `the target cannot run on the driver's provider (${offered.join(", ")}); it runs on ${runsOn.join(", ")}`,
     );
     this.name = "ProviderMismatchError";
+  }
+}
+
+export type SpendHoldReason = "limit" | "ceiling";
+
+export type SpendHoldGate = (input: {
+  agentId: string;
+  connectionId?: string;
+}) => Promise<SpendHoldReason | null>;
+
+const SPEND_HOLD_MESSAGE: Record<SpendHoldReason, string> = {
+  limit:
+    "the agent reached its spend limit for today, so no sub-agent starts until its owner continues the limit or the day ends at midnight UTC",
+  ceiling:
+    "the agent's owner reached the spend ceiling for today, so no sub-agent starts until the UTC day ends; the platform operator can raise the ceiling",
+};
+
+export class SpendLimitReachedError extends Error {
+  constructor(public readonly reason: SpendHoldReason) {
+    super(SPEND_HOLD_MESSAGE[reason]);
+    this.name = "SpendLimitReachedError";
   }
 }
 
@@ -129,6 +160,7 @@ export function createInvocationsService(deps: {
   wakeAgent: (agentId: string) => Promise<void>;
   readHarnessConfigSupport: ReadHarnessConfigSupport;
   targetAdmission?: TargetAdmission;
+  spendHold?: SpendHoldGate;
   reaper: TargetReaper;
   reportGraceMs?: number;
   skills?: Pick<SkillsService, "applyEntries">;
@@ -170,10 +202,25 @@ export function createInvocationsService(deps: {
 
       compileSchema(input.schema);
 
-      const provider = inheritProvider(
-        input.driverProviders,
-        input.target.runsOn,
-      );
+      const requestedModel = input.harnessConfig?.model;
+      const parsedModel = requestedModel
+        ? parseQualifiedModel(requestedModel, { claudePrefix: true })
+        : null;
+      if (requestedModel && !parsedModel)
+        throw new ModelNameError(requestedModel);
+      if (parsedModel && input.harnessConfig)
+        input = {
+          ...input,
+          harnessConfig: {
+            ...input.harnessConfig,
+            model: `${parsedModel.alias}/${parsedModel.upstreamId}`,
+          },
+        };
+      const provider = inheritProvider(input.driverProviders, {
+        runsOn: input.target.runsOn,
+        ...(parsedModel && { alias: parsedModel.alias }),
+        ...(input.target.harness && { harness: input.target.harness }),
+      });
       if (provider.kind === "incompatible")
         throw new ProviderMismatchError(
           provider.offered,
@@ -197,6 +244,11 @@ export function createInvocationsService(deps: {
       if (rootId === null) {
         throw new UnresolvableDriverError(input.driverAgentId);
       }
+      const held = await deps.spendHold?.({
+        agentId: rootId,
+        ...(provider.kind === "inherited" && { connectionId: provider.id }),
+      });
+      if (held) throw new SpendLimitReachedError(held);
 
       const targetId = generateK8sName("agent");
       const ttlMs =

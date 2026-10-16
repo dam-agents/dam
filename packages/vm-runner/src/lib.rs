@@ -6,6 +6,7 @@ mod capability;
 mod capacity;
 mod command;
 pub mod console;
+mod convert;
 mod cpu;
 pub mod embedded;
 mod fetch;
@@ -25,7 +26,6 @@ pub mod server;
 mod share;
 mod state;
 pub mod storage;
-pub mod templates;
 
 pub use platform_init::guest;
 

@@ -135,9 +135,9 @@ cat /tmp/reclaim.*
 stuck=$(grep -l '^State:.*(disk sleep)' /proc/[0-9]*/status 2>/dev/null)
 [ -z "$stuck" ] || sleep 1
 for s in $stuck; do grep -qs '^State:.*(disk sleep)' $s && echo "stuck $(grep '^Name:' $s | cut -f2)"; done
-dmesg | grep -E 'Bad page map|Bad rss-counter|cut here' | head -5`;
+if dmesg | grep -qE 'Bad page map|Bad rss-counter|cut here'; then echo '--- guest kernel log ---'; dmesg; fi`;
 
-// TEST_SCENARIO: the guest kernel passes the DAX checks that Linux 6.18 failed until smol-machines/libkrunfw#31, so the runner can move off the pinned Linux 6.12 with no change here. A throwaway smolvm machine in the agent's runner boots the staged default image with the node's tools where the image reads them, and asks for DAX itself, so the checks hold whatever the runner sets for its own machines. The runner does set it: every mount of its own machines, the tools among them, is DAX-mapped. First check: node runs from the tools while other processes open its binary. On 6.18 each open drops DAX pages that node still maps: the kernel logs a WARN and Bad page map, and in a guest of 6 GiB or more node dies of SIGBUS, exit 135 (smol-machines/smolvm#1741). Second check: three processes map 3 GiB of the tools, more than the mount's 2 GiB DAX window, and touch every 2 MiB range, so the guest must reclaim ranges that processes still map. On 6.18 that reclaim waits forever: the processes stay in D state and the guest stalls. A 2 GiB guest shows only the WARN, so the guest is 6 GiB, and the checks time out inside the guest, since smolvm prints the guest's output only when it exits. It runs only on an x86 runner in the cluster: smolvm maps no DAX window on arm64, and the Mac's host runner has no pod.
+// TEST_SCENARIO: the guest kernel passes the DAX checks that Linux 6.18 failed until smol-machines/libkrunfw#31, so a smolvm release whose kernel lacks the fix fails here. A throwaway smolvm machine in the agent's runner boots the staged default image with the node's tools where the image reads them, and asks for DAX itself, so the checks hold whatever the runner sets for its own machines. The runner does set it: every mount of its own machines, the tools among them, is DAX-mapped. First check: node runs from the tools while other processes open its binary. On 6.18 each open drops DAX pages that node still maps: the kernel logs a WARN and Bad page map, and in a guest of 6 GiB or more node dies of SIGBUS, exit 135 (smol-machines/smolvm#1741). Second check: three processes map 3 GiB of the tools, more than the mount's 2 GiB DAX window, and touch every 2 MiB range, so the guest must reclaim ranges that processes still map. On 6.18 that reclaim waits forever: the processes stay in D state and the guest stalls. A 2 GiB guest shows only the WARN, so the guest is 6 GiB, and the checks time out inside the guest, since smolvm prints the guest's output only when it exits. It runs only on an x86 runner in the cluster: smolvm maps no DAX window on arm64, and the Mac's host runner has no pod.
 test("a 6 GiB guest passes the DAX checks on the node's tools, and the runner maps its machines' mounts with DAX", async () => {
   test.setTimeout(300_000);
   const owner = kubectl(
@@ -224,7 +224,7 @@ test("a 6 GiB guest passes the DAX checks on the node's tools, and the runner ma
   const mounts = inRunner(
     "sh",
     "-c",
-    "grep -h '\"virtiofs mount active\"' /var/lib/platform/disks/.cache/smolvm/vms/*/agent-console.log",
+    "grep -h 'virtiofs mount active:' /var/lib/platform/disks/.cache/smolvm/vms/*/agent-console.log",
   )
     .split("\n")
     .filter(Boolean);
@@ -233,7 +233,7 @@ test("a 6 GiB guest passes the DAX checks on the node's tools, and the runner ma
     "the runner's machines log their mounts",
   ).toBeGreaterThan(0);
   expect(
-    mounts.filter((line) => !line.includes('"dax":true')),
+    mounts.filter((line) => !line.includes("dax=true")),
     "every mount of the runner's own machines is DAX-mapped",
   ).toEqual([]);
 });

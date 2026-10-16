@@ -1,0 +1,77 @@
+#!/usr/bin/env node
+//MISE description="Live test, run by hand with CODEX_ACP naming a real codex-acp, not in CI: Codex picks from the router's catalog and switches providers per turn in one thread"
+//MISE sources=["codex/rootfs/etc/codex/config.toml", "test-lib/acp-client.mjs", ".mise/tasks/live/codex-router-catalog"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { acpClient, mockCodexRouter, modelOption, pickerValues } from "../../../test-lib/acp-client.mjs";
+
+const adapter = process.env.CODEX_ACP;
+if (!adapter) {
+  console.error("CODEX_ACP is not set: set CODEX_ACP=<path to codex-acp dist/index.js> to run against the real adapter");
+  process.exit(1);
+}
+const imageConfig = readFileSync(fileURLToPath(new URL("../../../codex/rootfs/etc/codex/config.toml", import.meta.url)), "utf8");
+const home = mkdtempSync(join(tmpdir(), "codex-router-catalog-"));
+const work = join(home, "work");
+const codexHome = join(home, ".codex");
+mkdirSync(work);
+mkdirSync(codexHome);
+
+const GPT = "ibm/gpt-5.5";
+const GLM = "cb/rits/zai-org/glm-5-3";
+const router = await mockCodexRouter({ catalog: [{ alias: "ibm", id: "gpt-5.5", display: "GPT-5.5 (IBM)" }, { alias: "cb", id: "rits/zai-org/glm-5-3", display: "GLM 5.3 (Curve Bender)" }] });
+writeFileSync(
+  join(codexHome, "config.toml"),
+  imageConfig
+    .replaceAll("http://127.0.0.1:24180", router.base)
+    .replace('[projects."/home/agent/work"]', `[projects."${work}"]`)
+    .replace('developer_instructions = "/etc/AGENTS.md"\n', "")
+    .replace("/etc/codex/model-instructions.md", fileURLToPath(new URL("../../../codex/rootfs/etc/codex/model-instructions.md", import.meta.url))),
+);
+const env = { PATH: process.env.PATH, HOME: home, CODEX_HOME: codexHome, OPENAI_API_KEY: "platform:conn:test", NO_PROXY: "127.0.0.1,localhost,::1" };
+const refuse = () => {
+  throw new Error("no client requests expected");
+};
+let turns = 0;
+const modelsOfTurn = async (c, sessionId) => {
+  const before = router.seen.length;
+  const text = `Reply with the single word: ok (turn ${++turns})`;
+  const r = await c.request("session/prompt", { sessionId, prompt: [{ type: "text", text }] }, 180_000);
+  assert.equal(r.stopReason, "end_turn");
+  return [...new Set(router.seen.slice(before).filter((s) => JSON.stringify(s.body?.input ?? []).includes(text)).map((s) => s.body?.model))];
+};
+
+try {
+  const c = acpClient("node", [adapter], { env, cwd: work, name: "codex", onRequest: refuse });
+  await c.request("initialize", { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } }, clientInfo: { name: "dam-test", version: "0" } }, 60_000);
+
+  // TEST_SCENARIO: With the image's config (api_key_model_discovery on, the catalog URL at the router), session/new fetches the catalog and the picker holds exactly the served slugs, no bundled OpenAI slug.
+  const s = await c.request("session/new", { cwd: work, mcpServers: [] }, 120_000);
+  assert.ok(router.catalogHits() >= 1, "the catalog was never fetched");
+  assert.deepEqual([...pickerValues(s.configOptions)].sort(), [GLM, GPT].sort());
+
+  // TEST_SCENARIO: A per-turn set_config_option moves the next call to the other provider and back, in one thread, with no process restart; every call carries the Connection placeholder as its bearer and the harness marker.
+  const set1 = await c.request("session/set_config_option", { sessionId: s.sessionId, configId: "model", value: GPT }, 60_000);
+  assert.equal(modelOption(set1.configOptions)?.currentValue, GPT);
+  assert.deepEqual(await modelsOfTurn(c, s.sessionId), [GPT]);
+  const set2 = await c.request("session/set_config_option", { sessionId: s.sessionId, configId: "model", value: GLM }, 60_000);
+  assert.equal(modelOption(set2.configOptions)?.currentValue, GLM);
+  assert.deepEqual(await modelsOfTurn(c, s.sessionId), [GLM]);
+  await c.request("session/set_config_option", { sessionId: s.sessionId, configId: "model", value: GPT }, 60_000);
+  assert.deepEqual(await modelsOfTurn(c, s.sessionId), [GPT]);
+  const last = router.seen.at(-1);
+  assert.equal(last.headers.authorization, "Bearer platform:conn:test");
+  assert.equal(last.headers["x-platform-harness"], "codex");
+  await c.close();
+  console.log("codex picks from the router's catalog and switches providers per turn in one thread");
+} finally {
+  router.close();
+  await new Promise((r) => setTimeout(r, 1500));
+  try {
+    rmSync(home, { recursive: true, force: true });
+  } catch {}
+}

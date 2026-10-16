@@ -1,12 +1,13 @@
 # Credential gateway
 
-Last verified: 2026-10-13
+Last verified: 2026-10-14
 
 ## Overview
 
 The credential gateway is the Envoy proxy in each Agent's paired gateway pod: every HTTPS request the agent makes exits through it, and for the hosts the agent's Connections cover it adds the real credential on the wire — injected into a header or query parameter, or, for S3-compatible storage, by signing the request with keys the agent never holds — from Secrets mounted on the gateway pod only.
 This page owns the mechanics of that path — how a host gets an intercepting chain, how credentials are injected, how requests are signed, and what keeps the gateway bootable when a Secret goes bad.
 The trust model it enforces — who holds credentials, the pod and mesh boundaries, and the ext_authz HITL gate every forwarded request passes — lives on [security-and-credentials](security-and-credentials.md).
+Model calls reach it through the agent-side [Model Router](harness-config.md#the-model-router), which sends each call with the target Connection's placeholder in the header the Connection claims here and holds no credential.
 
 ## Envoy credential injection
 
@@ -94,6 +95,10 @@ An injector skips when the marker names a rival on its header over an overlappin
 The prefix and marker are dropped on the way upstream.
 A request naming no Connection on a contested scope is refused by that same step, not served from whichever credential sorted first.
 The gate reads the path with the prefix removed, so egress rules and approvals keep naming real paths.
+
+**Model-provider chains.** A chain whose credential comes from a model-provider Connection also carries the spend meter, directly after the address step and before the gate.
+On such a chain the gateway gives each call an id the agent cannot set, removes the request's compression offer so that the reply stays readable, reads the usage in the reply without changing it, and sends a spend record per call to the api-server.
+The depth is on [spend-limits](spend-limits.md).
 
 ## Request signing
 

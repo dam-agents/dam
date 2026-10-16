@@ -50,6 +50,8 @@ import {
   createImageUpdate,
   podIsIdle,
   createAvatarImagesRepository,
+  MAX_AVATAR_BYTES,
+  storeAvatarImage,
   sweepAvatarImages,
 } from "./modules/agents/index.js";
 import {
@@ -136,7 +138,7 @@ import {
   createHarnessConfigSnapshotWriter,
   harnessConfigSupportOf,
   composeFirePair,
-  composeSessionModelChoices,
+  composeSessionChoicesValidator,
 } from "./modules/harness-config/index.js";
 import {
   composeSchedulesAtBoot,
@@ -152,6 +154,7 @@ import {
 import { composeSessionDirectory } from "./modules/session-directory/index.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
 import { composeGettingStartedModule } from "./modules/getting-started/index.js";
+import { composeSidebarOrderModule } from "./modules/sidebar-order/index.js";
 import {
   createUsageAgentsCleanupHook,
   listUsageAgentIds,
@@ -243,10 +246,18 @@ import {
 } from "./modules/invocations/index.js";
 import {
   composeApprovalsSystem,
+  composeSpendLimitQuestions,
   createApprovalsCleanupHook,
+  createSpendQuestionStore,
   listPendingApprovalAgentIds,
 } from "./modules/approvals/compose.js";
 import { createWrapperFrameSender } from "./modules/approvals/infrastructure/wrapper-frame-sender.js";
+import { createChatFormPreferencesCleanup } from "./modules/chat-forms/index.js";
+import {
+  composeSpendSystem,
+  createSpendLimitsCleanupHook,
+  listSpendLimitAgentIds,
+} from "./modules/spend/index.js";
 import {
   createEgressRuleMatchAdapter,
   createEgressRulesCleanupHook,
@@ -258,9 +269,16 @@ import {
   composeConnectionsAtBoot,
   composeConnectionsForOwner,
   createConnectionGrantsCleanupHook,
+  createGrantedConnectionTemplates,
   listConnectionGrantAgentIds,
+  listPlatformConnectionOwners,
 } from "./modules/connections/compose.js";
 import { startAttachFirstProviderSaga } from "./modules/connections/sagas/attach-first-provider.js";
+import {
+  startPlatformProviderSaga,
+  sweepPlatformConnections,
+} from "./modules/connections/sagas/platform-provider.js";
+import { composeFeaturesForOwner } from "./modules/features/index.js";
 import { createConnectionRulesSyncAdapter } from "./modules/egress-rules/compose.js";
 import {
   createAgentArtifactsSweeper,
@@ -441,6 +459,11 @@ export async function bootstrap() {
         name: skill.name,
         description: skill.description,
       })),
+    avatar: {
+      maxBytes: MAX_AVATAR_BYTES,
+      store: (bytes, ownerSub) =>
+        storeAvatarImage(createAvatarImagesRepository(db), bytes, ownerSub),
+    },
   });
   const reposService = createReposRepository(config.gitReposPath);
   const userDirectory = createKeycloakUserDirectory({
@@ -522,10 +545,11 @@ export async function bootstrap() {
   });
   await periodicJobs.register("avatar-images-sweep", 3_600_000, async () => {
     const agents = await agentsRepo.list();
-    const removed = await sweepAvatarImages(
-      createAvatarImagesRepository(db),
-      agents.map((a) => a.spec.avatar),
-    );
+    const kits = await resolvedCatalog.list();
+    const removed = await sweepAvatarImages(createAvatarImagesRepository(db), [
+      ...agents.map((a) => a.spec.avatar),
+      ...kits.map((k) => k.kit.avatar),
+    ]);
     if (removed > 0) getLogger().info({ removed }, "avatar_images.swept");
   });
   const sessionPresence = createSessionPresence(liveAgentsRepo, sharedRedis);
@@ -550,6 +574,8 @@ export async function bootstrap() {
 
   const resolveAgentOwner = async (agentId: string) =>
     (await agentsRepo.get(agentId).catch(() => null))?.owner ?? null;
+  const resolveAgentName = async (agentId: string) =>
+    (await agentsRepo.getLive(agentId, undefined))?.name ?? null;
 
   const runtimeDelivery = composeRuntimeDelivery({
     db,
@@ -568,6 +594,7 @@ export async function bootstrap() {
     harnessServerUrl: config.harnessServerUrl,
     telemetryEnv: harnessCatalog.telemetryEnv,
     resolveOwner: resolveAgentOwner,
+    resolveAgentName,
     deliveryConcurrency: config.runtimeDeliveryConcurrency,
   });
   deliverOnReady = async (agentId) => {
@@ -667,6 +694,12 @@ export async function bootstrap() {
   const connectionsBoot = composeConnectionsAtBoot({
     db,
     shareBaseUrl: config.shareBaseUrl,
+    platformProvider: config.platformProvider && {
+      baseUrl: config.platformProvider.baseUrl,
+      model: config.platformProvider.model,
+      name: config.brand.name,
+      ca: config.platformProvider.ca,
+    },
     e2eEnabled: config.e2eEnabled,
     secretStore,
     pendingFlowStore: createRedisTtlStore(
@@ -725,6 +758,17 @@ export async function bootstrap() {
       connectionRulesSync: createConnectionRulesSyncAdapter(db),
       oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
       brandName: config.brand.name,
+      platformProviderKey: config.platformProvider?.apiKey ?? null,
+      platformProviderCa: config.platformProvider?.ca ?? null,
+      platformProviderEnabled: async () =>
+        (
+          await composeFeaturesForOwner({
+            db,
+            owner: ownerId,
+            surface: "system",
+            modes: config.featureModes,
+          }).features.flags()
+        )["platform-provider"],
     });
   await periodicJobs
     .register("oauth-refresh", 60_000, () =>
@@ -752,6 +796,7 @@ export async function bootstrap() {
       db,
       version: config.terms.version,
       text: config.terms.text,
+      signUps: config.signUps,
     });
 
   const fakeSlackGateway =
@@ -795,6 +840,16 @@ export async function bootstrap() {
         await agentsRepo.list(owner),
         connectionId,
       ),
+  );
+  const platformProviderSub = startPlatformProviderSaga(connectionsServiceFor);
+  sweepPlatformConnections(
+    () => listPlatformConnectionOwners(db),
+    connectionsServiceFor,
+  ).catch((err: unknown) =>
+    getLogger().error(
+      { reason: formatError(err) },
+      "connections.platform_provider_sweep_failed",
+    ),
   );
   const publicAgentPageService = publicAgentPage.service;
   await periodicJobs.register(
@@ -880,6 +935,8 @@ export async function bootstrap() {
       (await agentsRepo.list(owner)).map((a) => a.id),
   });
   gettingStarted.start();
+
+  const sidebarOrder = composeSidebarOrderModule({ db });
 
   const caseStudies = composeCaseStudiesModule({
     db,
@@ -1017,6 +1074,58 @@ export async function bootstrap() {
     ? createPostgresState({ url: chatSdkDatabaseUrl, keyPrefix: "chat-sdk" })
     : undefined;
 
+  const invocationDriverResolution = createDriverResolutionAdapter(db);
+  const payerOf = async (agentId: string) =>
+    (await invocationDriverResolution.resolveRoot(agentId)) ?? agentId;
+
+  const spend = composeSpendSystem({
+    db,
+    redis: sharedRedis,
+    priceOverrides: config.spendPriceOverrides,
+    owners: {
+      ownerOf: async (agentId) =>
+        (await agentsRepo.resolveIdentity(agentId))?.owner ?? null,
+    },
+    payers: { payerOf },
+    questions: createSpendQuestionStore(db),
+    connections: createGrantedConnectionTemplates(db),
+    k8s: k8sClient,
+    defaultCeilingMicros: config.spendDefaultUserCeilingMicros,
+    brandName: config.brand.name,
+  });
+  await periodicJobs.register("spend-unrecorded-calls", 5 * 60_000, () =>
+    spend.ingest.settleUnrecordedCalls(),
+  );
+
+  const spendQuestions = composeSpendLimitQuestions(db);
+  const spendHold = async ({
+    agentId,
+    connectionId,
+  }: {
+    agentId: string;
+    connectionId?: string;
+  }) => {
+    const payer = await payerOf(agentId);
+    const hold = await spend.check.holdFor({
+      payer,
+      ...(connectionId ? { connectionId } : {}),
+    });
+    if (hold === null) return null;
+    await spendQuestions.ask({
+      agentId: payer,
+      ownerSub: hold.ownerSub,
+      questions: hold.questions,
+    });
+    return hold.reason;
+  };
+  const channelSpendHold = async (agentId: string) => {
+    const provider = (await firePair(agentId, {}))?.provider;
+    return spendHold({
+      agentId,
+      ...(provider ? { connectionId: provider } : {}),
+    });
+  };
+
   const channelRegistry: ChannelRegistry = {
     resolveSlackBindings: async (slackChannelId) => {
       const rows = await findSlackBindingsByChannelId(db)(slackChannelId);
@@ -1090,6 +1199,7 @@ export async function bootstrap() {
         setSlackDefault: setSlackChannelDefault(db),
         brand: { name: config.brand.name, short: config.brand.short },
         isTermsAccepted,
+        spendHold: channelSpendHold,
         uiBaseUrl: config.uiBaseUrl,
         attendance: turnAttendance,
         workspaceFiles: (agentId) =>
@@ -1140,6 +1250,7 @@ export async function bootstrap() {
           },
           pendingOAuthFlows: pendingTelegramOAuthFlows,
           isTermsAccepted,
+          spendHold: channelSpendHold,
           uiBaseUrl: config.uiBaseUrl,
           brandName: config.brand.name,
           logLevel: config.logLevel,
@@ -1208,8 +1319,6 @@ export async function bootstrap() {
   const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
   const presetSeeder = createPresetSeederAdapter(db, trustedHosts);
 
-  const invocationDriverResolution = createDriverResolutionAdapter(db);
-
   const wrapperFrameSender = createWrapperFrameSender({
     resolveWrapperUrl: (agentId) =>
       `ws://${podBaseUrl(agentId, config.namespace)}/api/acp`,
@@ -1236,6 +1345,7 @@ export async function bootstrap() {
     },
     ruleMatcher: createEgressRuleMatchAdapter(db),
     attendance: turnAttendance,
+    spend: spend.check,
     wrapperFrameSender,
     holdSeconds: config.approvalHoldSeconds,
     platformAllowedAuthorities: objectStoreAgentUrl
@@ -1262,11 +1372,13 @@ export async function bootstrap() {
       maxOpen: config.onceScheduleAgentMaxOpen,
       maxPerHour: config.onceScheduleAgentMaxPerHour,
     },
-    sessionModelChoices: composeSessionModelChoices({
+    validateSessionChoices: composeSessionChoicesValidator({
       db,
+      catalog: harnessCatalog,
       getCapabilities: async (agentId) =>
         (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
           ?.runtimeCapabilities ?? null,
+      firePair,
     }),
     bullConnection,
     runtimeMutator: runtimeDelivery.runtimeMutator,
@@ -1284,6 +1396,9 @@ export async function bootstrap() {
     runtimeMigrating: async (agentId) =>
       ((await agentsRepo.get(agentId))?.runtimeMigrationHold ?? "none") !==
       "none",
+    spendHold,
+    agentDisabled: async (agentId) =>
+      (await agentsRepo.get(agentId))?.disabled === true,
   });
   runtimeDelivery.registerEventOutcomeHandler(
     "trigger",
@@ -1346,6 +1461,11 @@ export async function bootstrap() {
       cleanup: createApprovalsCleanupHook(db),
     },
     {
+      name: "spend-limits",
+      listAgentIds: () => listSpendLimitAgentIds(db),
+      cleanup: createSpendLimitsCleanupHook(db),
+    },
+    {
       name: "registry-pull-secrets",
       listAgentIds: () => registrySecretPort.listAgentIds(),
       cleanup: (agentId: string) => registrySecretPort.delete(agentId),
@@ -1359,6 +1479,15 @@ export async function bootstrap() {
       name: "satellite-grants",
       listAgentIds: () => satellitesBoot.listAgentIds(),
       cleanup: satellitesBoot.onAgentDeleted,
+    },
+    {
+      name: "chat-form-preferences",
+      ...createChatFormPreferencesCleanup(db),
+    },
+    {
+      name: "sidebar-order",
+      listAgentIds: () => sidebarOrder.listAgentIds(),
+      cleanup: (agentId: string) => sidebarOrder.deleteForAgent(agentId),
     },
     {
       name: "agent-env",
@@ -1663,6 +1792,7 @@ export async function bootstrap() {
     slackBindFlows,
     seedSources,
     redisBus,
+    spendForOwner: spend.forOwner,
     approvalsRelay,
     wrapperFrameSender,
     presetSeeder,
@@ -1714,6 +1844,7 @@ export async function bootstrap() {
     shareHostGate,
     publicAgentPageService,
     gettingStarted,
+    sidebarOrder,
     sessionPresence,
     wakeAgent: wakeAgentFor,
     artifactLibraryFor,
@@ -1727,6 +1858,15 @@ export async function bootstrap() {
   const harnessDeps = {
     satellitesBoot,
     secretStore,
+    spendHold,
+    spendStatusFor: async (agentId: string, owner: string) =>
+      spend
+        .forOwner({
+          ownerSub: owner,
+          agentBinding: "*",
+          isAgentOwnedBy: (id, ownerSub) => agentsRepo.isOwnedBy(id, ownerSub),
+        })
+        .status({ agentId: await payerOf(agentId) }),
     agentStateCache,
     config,
     api,
@@ -1779,6 +1919,7 @@ export async function bootstrap() {
     port: config.extAuthzPort,
     holdSeconds: config.approvalHoldSeconds,
     gate: extAuthzGate,
+    spend: spend.ingest,
     releaseName: config.releaseName,
   };
 
@@ -1788,9 +1929,11 @@ export async function bootstrap() {
   const cleanup = async (): Promise<void> => {
     publicAgentProfileSub.unsubscribe();
     attachFirstProviderSub.unsubscribe();
+    platformProviderSub.unsubscribe();
     usageMetrics.stop();
     kbShareAutoRefresh.unsubscribe();
     approvalsWakeSaga.unsubscribe();
+    spend.extendSaga.unsubscribe();
     usage.stop();
     audit.stop();
     gettingStarted.stop();

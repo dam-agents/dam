@@ -1,0 +1,82 @@
+#!/usr/bin/env node
+//MISE description="Test that the Codex launch scripts pass the platform instructions as text, render the telemetry rail into -c otel flags, and pass Codex nothing else while the rail is off"
+//MISE sources=["codex/rootfs/usr/local/lib/codex-otel.sh", "codex/rootfs/usr/local/bin/codex-app-server", "codex/rootfs/usr/local/bin/harness-terminal", ".mise/tasks/test/codex-telemetry-rail"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const rootfs = fileURLToPath(new URL("../../../codex/rootfs/", import.meta.url));
+const lib = join(rootfs, "usr/local/lib/codex-otel.sh");
+const home = mkdtempSync(join(tmpdir(), "codex-telemetry-rail-"));
+const argvFile = join(home, "argv");
+mkdirSync(join(home, "bin"));
+writeFileSync(join(home, "bin/codex"), `#!/bin/sh\nprintf '%s\\0' "$@" > '${argvFile}'\n`, { mode: 0o755 });
+const agentsMd = join(home, "AGENTS.md");
+const instructions = '# Platform\n\nKeep "long" jobs alive with \\`platform-keep\\`.\n\ttab, \'quote\', ü\n';
+writeFileSync(agentsMd, instructions);
+
+// TEST_SCENARIO: both launch scripts source the one helper, so the test runs the scripts as shipped with only its path moved.
+const script = (name) => {
+  const body = readFileSync(join(rootfs, "usr/local/bin", name), "utf8");
+  assert.ok(body.includes(". /usr/local/lib/codex-otel.sh\n"), `${name} sources the rail helper`);
+  const path = join(home, name);
+  assert.ok(body.includes("/etc/AGENTS.md"), `${name} reads the platform instructions`);
+  writeFileSync(path, body.replace("/usr/local/lib/codex-otel.sh", lib).replace("/etc/AGENTS.md", agentsMd), { mode: 0o755 });
+  return path;
+};
+const appServer = script("codex-app-server");
+const terminal = script("harness-terminal");
+
+// TEST_SCENARIO: Codex parses a -c value as TOML, and a JSON string is a TOML basic string, so the flag must carry the file's text as exactly that string. The flag is checked and then dropped here, so the rail scenarios below compare only the otel flags.
+const instructionsFlag = `developer_instructions=${JSON.stringify(instructions)}`;
+const run = (path, args, env) => {
+  execFileSync("/bin/sh", [path, ...args], {
+    env: { PATH: `${home}/bin:${process.env.PATH}`, HOME: home, HARNESS_SESSION_ID: "s1", ...env },
+  });
+  const argv = readFileSync(argvFile, "utf8").split("\0").slice(0, -1);
+  const at = argv.indexOf(instructionsFlag);
+  assert.ok(at > 0 && argv[at - 1] === "-c", `${path} passes the platform instructions as text`);
+  argv.splice(at - 1, 2);
+  return argv;
+};
+
+const rail = {
+  OTEL_LOGS_EXPORTER: "otlp",
+  OTEL_TRACES_EXPORTER: "otlp",
+  OTEL_EXPORTER_OTLP_ENDPOINT: "https://collector.platform.svc.cluster.local:4318/",
+};
+const logs = "otel.exporter={otlp-http={endpoint=\"https://collector.platform.svc.cluster.local:4318/v1/logs\",protocol=\"binary\"}}";
+const traces = "otel.trace_exporter={otlp-http={endpoint=\"https://collector.platform.svc.cluster.local:4318/v1/traces\",protocol=\"binary\"}}";
+const contentOff = ["-c", "otel.log_user_prompt=false", "-c", "otel.log_agent_responses=false", "-c", "otel.log_guardian_assessments=false"];
+
+try {
+  // TEST_SCENARIO: with the rail on, every chat thread's app-server gets both exporters and the content switches pinned off, ahead of the subcommand.
+  assert.deepEqual(run(appServer, ["app-server"], rail), [
+    "-c", logs, ...contentOff,
+    "-c", traces,
+    "app-server",
+  ]);
+
+  // TEST_SCENARIO: with the rail off, the app-server gets exactly what it got before the rail existed.
+  assert.deepEqual(run(appServer, ["app-server"], {}), ["app-server"]);
+  assert.deepEqual(run(appServer, ["app-server"], { OTEL_LOGS_EXPORTER: "otlp", OTEL_TRACES_EXPORTER: "otlp" }), ["app-server"], "no endpoint, no export");
+
+  // TEST_SCENARIO: each signal follows its own switch, so a rail that turns only logs on exports no traces.
+  assert.deepEqual(run(appServer, ["app-server"], { ...rail, OTEL_TRACES_EXPORTER: "none" }), ["-c", logs, ...contentOff, "app-server"]);
+
+  // TEST_SCENARIO: a terminal that resumes its pinned thread gets the same flags after the resume subcommand.
+  mkdirSync(join(home, ".codex/platform-sessions"), { recursive: true });
+  writeFileSync(join(home, ".codex/platform-sessions/s1"), "thread-1");
+  const resumed = run(terminal, [], rail);
+  assert.deepEqual(resumed.slice(0, 2), ["resume", "thread-1"]);
+  assert.deepEqual(resumed.slice(2, 12), ["-c", logs, ...contentOff, "-c", traces]);
+  assert.ok(!run(terminal, [], {}).some((arg) => arg.startsWith("otel.")), "a terminal without the rail gets no otel flag");
+
+  console.log("codex-telemetry-rail: both launch paths pass the platform instructions as text, the rail turns into -c otel flags, and no rail adds nothing else");
+} finally {
+  rmSync(home, { recursive: true, force: true });
+}

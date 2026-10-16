@@ -2,19 +2,20 @@ import { useEffect } from "react";
 
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
-import { IconRail } from "./components/icon-rail.js";
+import { useIsDesktop } from "./hooks/use-is-desktop.js";
 import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { GettingStartedDock } from "./modules/getting-started/components/getting-started-dock.js";
-import {
-  ActivityButton,
-  NotificationsPanel,
-} from "./modules/home/components/notifications-panel.js";
+import { ApprovalsButton } from "./modules/home/components/approvals-button.js";
+import { ApprovalsPanel } from "./modules/home/components/approvals-panel.js";
 import { useApprovalToasts } from "./modules/home/hooks/use-approval-toasts.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
+import { AppTopBar } from "./modules/platform/components/sidebar/app-top-bar.js";
+import { MobileNavDrawer } from "./modules/platform/components/sidebar/mobile-nav-drawer.js";
+import { Sidebar } from "./modules/platform/components/sidebar/sidebar.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
 import { parseRoute } from "./modules/platform/lib/routes.js";
 import { isDarkTheme } from "./modules/platform/store/theme.js";
@@ -70,9 +71,10 @@ export default function App() {
 
 function MainApp() {
   const view = useStore((s) => s.view);
-  const activityOpen = useStore((s) => s.activityView !== null);
-  const setActivityView = useStore((s) => s.setActivityView);
+  const approvalsOpen = useStore((s) => s.approvalsOpen);
+  const setApprovalsOpen = useStore((s) => s.setApprovalsOpen);
   const kitBrowserOpen = useStore((s) => s.kitBrowserOpen);
+  const desktop = useIsDesktop();
 
   useLiveEvents();
   useAgentCrashToasts();
@@ -104,20 +106,16 @@ function MainApp() {
     return (
       <>
         <div className="flex h-dvh bg-background overflow-hidden">
-          <IconRail hideMobileBar />
+          <Sidebar />
           <div className="relative z-content flex-1 min-w-0">
-            <div className="pointer-events-none absolute top-0 right-0 z-raised px-4 pt-3 md:px-6">
-              <div className="pointer-events-auto">
-                <ActivityButton onOpen={() => setActivityView("feed")} />
-              </div>
-            </div>
             <ChatView />
           </div>
         </div>
-        {activityOpen && (
-          <NotificationsPanel onClose={() => setActivityView(null)} />
+        {approvalsOpen && (
+          <ApprovalsPanel onClose={() => setApprovalsOpen(false)} />
         )}
         {kitBrowserOpen && <BrowseKitsModal />}
+        <MobileNavDrawer />
         <DialogOverlay />
         <ConnectionBanner />
       </>
@@ -126,16 +124,21 @@ function MainApp() {
   return (
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        <IconRail />
+        <Sidebar />
         <main className="relative z-content flex flex-1 flex-col overflow-y-auto">
-          <div className="pointer-events-none sticky top-0 z-raised flex justify-end px-4 pt-3 md:px-6">
-            <div className="pointer-events-auto">
-              <ActivityButton onOpen={() => setActivityView("feed")} />
-            </div>
-          </div>
+          {!desktop && (
+            <AppTopBar
+              actions={
+                <>
+                  <GettingStartedDock placement="header" />
+                  <ApprovalsButton />
+                </>
+              }
+            />
+          )}
           <div
             className={cn(
-              "mx-auto w-full flex-1 px-4 md:px-[5%] py-6 md:py-10 pb-20 md:pb-10",
+              "mx-auto w-full flex-1 px-4 md:px-[5%] py-6 md:py-10",
               view === "home" || view === "starter-kit"
                 ? "max-w-[1200px]"
                 : view === "settings" || view === "sandbox-home"
@@ -159,14 +162,23 @@ function MainApp() {
             )}
           </div>
         </main>
+        {desktop && (
+          <aside
+            aria-label="Notifications"
+            className="flex w-11 shrink-0 flex-col items-center justify-end gap-1 border-l border-border bg-background py-2"
+          >
+            <GettingStartedDock placement="rail" />
+            <ApprovalsButton />
+          </aside>
+        )}
       </div>
-      {activityOpen && (
-        <NotificationsPanel onClose={() => setActivityView(null)} />
+      {approvalsOpen && (
+        <ApprovalsPanel onClose={() => setApprovalsOpen(false)} />
       )}
       {kitBrowserOpen && <BrowseKitsModal />}
+      <MobileNavDrawer />
       <DialogOverlay />
       <ConnectionBanner />
-      <GettingStartedDock placement="page" />
     </div>
   );
 }

@@ -11,20 +11,11 @@
 # (smolvm's libkrun submodule at commit=). The image build rebuilds it from that
 # commit with libkrun.patch applied, and refuses a build whose exported krun_*
 # symbols differ from the release's.
-tag=v1.27.0
-commit=06a45a223497b58c74c5c5e61d46b5aeaecf7f67
-libkrun-commit=c8a57e974945fa6d2c46071278e7c0131fbc8729
-sha256-linux-x86_64=125f2eb87b9c7210f1cff9e4daff79c90fcaf977c6f2c50d24e917d8f18443ca
-sha256-linux-arm64=875c9754945eec9fec8e85978a62cf455a09954e74cd3e0602be3169b81e6777
-sha256-darwin-arm64=fdbe7f95c696aa174724d494473fbd5949b460bec189dd629f2c29139ad4ca77
-# The guest kernel is not tag='s. libkrunfw-tag= is the older smolvm release
-# whose lib/libkrunfw.so.5.5.0 the image build installs in its place: smolvm's
-# libkrunfw at libkrunfw-commit=, Linux 6.12. tag='s is Linux 6.18, whose FUSE
-# DAX makes guests of 6 GiB or more die of SIGBUS (smol-machines/smolvm#1741).
-# The build refuses a tarball whose digest is not the libkrunfw-sha256- line
-# for its architecture (that release's checksums.sha256), and a library whose
-# kernel is not Linux 6.12. The Mac host runner keeps tag='s own kernel.
-libkrunfw-tag=v1.24.1
-libkrunfw-commit=8f79d4403d3fb5ccdb42cad90d7eb6b51b9bc5d6
-libkrunfw-sha256-linux-x86_64=670f317626665902a4ec324d2a6b6fedcd7fe44453101ba62db6af62e2a5fe1f
-libkrunfw-sha256-linux-arm64=e09bb49f595440b05fbdefee8e9a1dfc6f0426841bf36e9842982d9a24bfe18c
+tag=v1.29.0
+commit=346e4d674058fd3e3cff074e14ff97b37b98bace
+libkrun-commit=6ccb7516938e31b93057d0f36ab768eb5da13b2a
+libkrunfw-commit=8ba5fe2219b5c407ce1824d1c2dcf39adff84d8e
+libkrunfw-kernel-sha256=f410638061a165c12f42ab871d2f3fcd525515359b5faeee80969cff84524df9
+sha256-linux-x86_64=6494d97a1f95b970638cc667700865169807f785cb3d4f72e28a6d58d17b3ff3
+sha256-linux-arm64=46a262aa9c0676ba7af92b405ed5eddc372645ea06d0e182d4eed9ffe2e36978
+sha256-darwin-arm64=b701388109b6d700fc97ab7a8a1a67a1ca1f5ef835f714990992272f999d406a

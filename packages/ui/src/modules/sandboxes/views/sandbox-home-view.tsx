@@ -3,8 +3,11 @@ import type { PendingRestart } from "agent-runtime-api";
 import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
+import { ChatFormSettings } from "../../a2ui/components/chat-form-settings.js";
+import { useChatFormsEnabled } from "../../a2ui/hooks/use-chat-forms-enabled.js";
 import { useAgents, useIsAgentInaccessible } from "../../agents/api/queries.js";
 import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
+import { HomeRepairedNotice } from "../../agents/components/home-repaired-notice.js";
 import { useHarnessConfigWatch } from "../../agents/hooks/use-harness-config-watch.js";
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
 import { useResolvedAgentDisplay } from "../../agents/hooks/use-resolved-agent-display.js";
@@ -14,6 +17,8 @@ import { routeToPath } from "../../platform/lib/routes.js";
 import { useProcesses } from "../../processes/api/queries.js";
 import { useApplyPendingRestartWithConfirm } from "../../processes/components/pending-restart-banner.js";
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
+import { AgentManagementActions } from "../components/agent-management-actions.js";
+import { AgentUsageActions } from "../components/agent-usage-actions.js";
 import { ConnectionsSection } from "../components/connections-section.js";
 import { SandboxChannelsSection } from "../components/sandbox-channels-section.js";
 import {
@@ -27,11 +32,12 @@ import {
 } from "../components/sandbox-section-nav.js";
 import { SandboxSetupSection } from "../components/sandbox-setup-section.js";
 import { SandboxSkillsSection } from "../components/sandbox-skills-section.js";
+import { ConnectionAddressingSection } from "../components/setup/setup-sections.js";
 import { useSectionSummaries } from "../hooks/use-section-summaries.js";
 
 export function SandboxHomeView() {
   const agentId = useStore((s) => s.agentId);
-  const storedSection = useStore((s) => s.sandboxSection);
+  const section = useStore((s) => s.sandboxSection);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const openAgentSession = useStore((s) => s.openAgentSession);
   const agentsQuery = useAgents();
@@ -46,13 +52,11 @@ export function SandboxHomeView() {
   useHarnessConfigWatch(agentId);
 
   const { summaries, warnings } = useSectionSummaries(agent);
-  // UNIT_BOUNDARY_DESCRIPTION: vm agents have no setup settings, so links to "setup" land on the first section they do have.
-  const sections = agent?.vm
-    ? SECTIONS.filter((e) => e.section !== "setup")
-    : SECTIONS;
-  const section =
-    storedSection === "setup" && agent?.vm ? "providers" : storedSection;
-  const sectionEntry = sections.find((e) => e.section === section);
+  const chatFormsEnabled = useChatFormsEnabled();
+  const sections = chatFormsEnabled
+    ? SECTIONS
+    : SECTIONS.filter((e) => e.section !== "chat-forms");
+  const sectionEntry = SECTIONS.find((e) => e.section === section);
 
   if (!agent || !display) {
     return (
@@ -81,12 +85,16 @@ export function SandboxHomeView() {
         <div className="min-w-0 flex-1 md:max-w-[760px]">
           <SandboxHomeHeader
             agent={agent}
-            display={display}
             title={sectionEntry?.title ?? ""}
             description={sectionEntry?.description}
           />
+          <HomeRepairedNotice agent={agent} />
           {section === "setup" ? (
-            <SandboxSetupSection agent={agent} />
+            <>
+              <AgentUsageActions agent={agent} />
+              <SandboxSetupSection agent={agent} />
+              <AgentManagementActions agent={agent} display={display} />
+            </>
           ) : section === "providers" ? (
             <SandboxProvidersSection agentId={agent.id} />
           ) : section === "network" ? (
@@ -95,6 +103,8 @@ export function SandboxHomeView() {
             <EnvTab agent={agent} />
           ) : section === "channels" ? (
             <SandboxChannelsSection agentId={agent.id} />
+          ) : section === "chat-forms" ? (
+            <ChatFormSettings agentId={agent.id} />
           ) : section === "skills" ? (
             <SandboxSkillsSection agent={agent} />
           ) : section === "schedules" ? (
@@ -107,14 +117,17 @@ export function SandboxHomeView() {
           ) : section === "usage" ? (
             <SandboxUsageSection agentId={agent.id} />
           ) : (
-            <ConnectionsSection
-              agentId={agent.id}
-              oauthReturnView={routeToPath({
-                view: "sandbox-home",
-                agentId: agent.id,
-                sandboxSection: "connections",
-              })}
-            />
+            <>
+              <ConnectionAddressingSection agent={agent} />
+              <ConnectionsSection
+                agentId={agent.id}
+                oauthReturnView={routeToPath({
+                  view: "sandbox-home",
+                  agentId: agent.id,
+                  sandboxSection: "connections",
+                })}
+              />
+            </>
           )}
         </div>
       </div>

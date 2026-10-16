@@ -1,5 +1,9 @@
 import type { Hono } from "hono";
-import { spawnInvocationRequestSchema } from "api-server-api";
+import {
+  hasOversizedArray,
+  OVERSIZED_ARRAY_MESSAGE,
+  spawnInvocationRequestSchema,
+} from "api-server-api";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
 import {
   createDriverOps,
@@ -12,7 +16,12 @@ export interface InvocationEndpointsDeps extends DriverOpsDeps {
   k8s: K8sClient;
 }
 
-const REFUSAL_STATUS = { invalid: 400, forbidden: 403, conflict: 409 } as const;
+const REFUSAL_STATUS = {
+  invalid: 400,
+  forbidden: 403,
+  conflict: 409,
+  spend_limit_reached: 403,
+} as const;
 
 export function mountInvocationRoutes(
   app: Hono,
@@ -32,14 +41,21 @@ export function mountInvocationRoutes(
 
     let body: SpawnRequest;
     try {
-      body = spawnInvocationRequestSchema.parse(await c.req.json());
+      const raw: unknown = await c.req.json();
+      if (hasOversizedArray(raw)) {
+        return c.json({ error: OVERSIZED_ARRAY_MESSAGE }, 400);
+      }
+      body = spawnInvocationRequestSchema.parse(raw);
     } catch (err) {
       return c.json({ error: (err as Error).message }, 400);
     }
 
     const outcome = await ops.spawn(body);
     if (!outcome.ok) {
-      return c.json({ error: outcome.message }, REFUSAL_STATUS[outcome.kind]);
+      return c.json(
+        { error: outcome.message, kind: outcome.kind },
+        REFUSAL_STATUS[outcome.kind],
+      );
     }
     return c.json({ id: outcome.id }, 201);
   });

@@ -15,9 +15,8 @@ interface SectionEntry {
 export const SECTIONS: SectionEntry[] = [
   {
     section: "setup",
-    title: "Sandbox",
-    description:
-      "How long this agent stays awake and how much compute it gets.",
+    title: "General",
+    description: "Ways to use this agent, its settings, and managing it.",
   },
   {
     section: "providers",
@@ -50,6 +49,12 @@ export const SECTIONS: SectionEntry[] = [
       "Channels let people message this agent from Slack or Telegram.",
   },
   {
+    section: "chat-forms",
+    title: "Chat forms",
+    description:
+      "How this agent may use forms, choices and cards in its web chat replies.",
+  },
+  {
     section: "skills",
     title: "Skills",
     description:
@@ -64,7 +69,7 @@ export const SECTIONS: SectionEntry[] = [
     section: "usage",
     title: "Usage",
     description:
-      "LLM spend for this agent, including work it delegated to other agents.",
+      "What this agent spends on models, including the sub-agents it started, and its spend limit.",
   },
 ];
 

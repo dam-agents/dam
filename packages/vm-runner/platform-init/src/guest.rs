@@ -23,9 +23,13 @@ pub const IMAGE_PATH: &str = "/platform/image";
 // UNIT_BOUNDARY_DESCRIPTION: the runner keeps this file in the share while the owner's claim, which holds every machine disk of the owner, is short of room. A guest sees its own disk as free while the claim under it fills, so this is how it learns to give back what it keeps only as scratch; the runner removes it once the claim has room again.
 pub const STORAGE_SHORT_PATH: &str = "/platform/storage-short";
 
-// UNIT_BOUNDARY_DESCRIPTION: the words platform-init adds to its console line for an entrypoint that exited with the agent's home nearly full, which is how the runner, reading the console from the host, tells a full home from any other crash. Nearly full is less than HOME_FULL_BYTES free, the agent runtime's own threshold for exiting on a full home.
+// UNIT_BOUNDARY_DESCRIPTION: the runner keeps this file in the share with the bytes this machine's guest may still add to the owner's claim: one line, an id that changes with every look at the claim, and the bytes. A guest's disk is sized at the whole claim and sparse, so without it the guest sees its disk free while the claim under it fills, and once the claim has no block left its writes fail as a broken disk would, under every other agent of the owner too. A share without it, from an older runner, holds the guest to nothing.
+pub const STORAGE_ROOM_PATH: &str = "/platform/storage-room";
+
+// UNIT_BOUNDARY_DESCRIPTION: the words platform-init adds to its console line for an entrypoint that exited with the agent's home nearly full, and to a boot it stops because the disk had no space or inode left, which is how the runner, reading the console from the host, tells a full home from any other crash. Nearly full is less than HOME_FULL_BYTES free, the agent runtime's own threshold for exiting on a full home, or fewer than HOME_FULL_INODES inodes.
 pub const HOME_FULL: &str = "the agent's home is full";
 pub const HOME_FULL_BYTES: u64 = 64 << 20;
+pub const HOME_FULL_INODES: u64 = 4096;
 
 // UNIT_BOUNDARY_DESCRIPTION: the system store file where platform-init records the SHA-256 of the seed it restored the home from. It is written before the restored home is renamed into place, so a home that exists and came from a seed always has it. A later boot that still expects a seed reads it to tell a home from that seed from any other.
 pub const SEEDED_FROM_FILE: &str = "seeded-from";
@@ -61,9 +65,22 @@ pub fn is_sha256(text: &str) -> bool {
 pub const GUEST_CA_DIR: &str = "/etc/platform/ca";
 pub const GUEST_CA_FILE: &str = "/etc/platform/ca/ca.crt";
 
-// UNIT_BOUNDARY_DESCRIPTION: DISK_DEVICE_PATH is where smolvm attaches the storage disk, which is a property of the VMM and not a path anything should write to. platform-init moves it to DISK_PATH, whose name is not "workspace" — which in this platform means the directory inside an agent's HOME. smolvm also binds the whole disk at /storage; the root platform-init boots the image on leaves that bind behind, so the image reaches the disk only here and through HOME.
-pub const DISK_DEVICE_PATH: &str = "/workspace";
+// UNIT_BOUNDARY_DESCRIPTION: DISK_PATH is where platform-init puts the platform's part of the storage disk in the image's root while it boots, a name that is not "workspace" — which in this platform means the directory inside an agent's HOME. That part is DISK_ROOT_DIR, the directory smolvm's guest agent gave containers, kept so every disk it wrote boots as it is. The rest of the disk never reaches the image: the image reaches the disk only here and through HOME.
 pub const DISK_PATH: &str = "/mnt/platform";
+pub const DISK_ROOT_DIR: &str = "workspace";
+
+// UNIT_BOUNDARY_DESCRIPTION: where /sbin/init in the agent rootfs, platform-init in its first stage, mounts the share before it executes the share's init, which is the platform-init of the runner release. The agent rootfs is read-only and /mnt is its empty directory, so the release's platform-init starts with the share already there.
+pub const STAGE0_SHARE: &str = "/mnt";
+
+// UNIT_BOUNDARY_DESCRIPTION: what the guest runs: the image's command, its env with the platform's on top, and its working directory. The runner writes it into the share before every boot, from the machine's record, and platform-init reads it as the guest's init: no smolvm guest agent stands between them to hand them over.
+pub const LAUNCH_FILE: &str = "launch.json";
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Launch {
+    pub command: Vec<String>,
+    pub env: Vec<(String, String)>,
+    pub workdir: Option<String>,
+}
 
 // UNIT_BOUNDARY_DESCRIPTION: the one guest path a machine keeps. It is fixed rather than configured — the image bakes this home into its user and the controller sets it as HOME on both backends — which is what lets the whole storage model be a constant instead of a plan the runner has to write and the guest has to parse.
 pub const AGENT_HOME: &str = "/home/agent";
@@ -75,9 +92,13 @@ pub const SYSTEM_DIR: &str = "system";
 // UNIT_BOUNDARY_DESCRIPTION: the system store that holds the upper and work layers of the root the image boots on. platform-init keeps the upper layer while the machine boots the same image, and empties it when the image changes or is unknown, so what the image writes outside HOME lasts as long as that image, and an old image's changes never lie over a new one. The work layer is overlayfs scratch and is emptied on every boot.
 pub const ROOTFS_DIR: &str = "rootfs";
 
-// UNIT_BOUNDARY_DESCRIPTION: the system store file that says which layout the disk is in: one decimal version on one line. Every disk carries one from its first boot, so a later layout change can upgrade a disk in place at boot, from the version it reads, instead of guessing from what the disk happens to hold. A disk from before the file existed is in the first layout, the only one there has been, and is marked as such on its next boot.
+// UNIT_BOUNDARY_DESCRIPTION: the system store file that says which layout the disk is in: one decimal version on one line. Every disk carries one from its first boot, so a boot reads which layout a disk is in, instead of guessing from what the disk happens to hold. A disk from before the file existed is in the first layout, the only one there has been, and is marked as such on its next boot.
 pub const LAYOUT_FILE: &str = "layout";
-pub const LAYOUT_VERSION: u32 = 1;
+pub const LAYOUT_VERSION: u32 = LAYOUT_SUBVOLUMES;
+
+// UNIT_BOUNDARY_DESCRIPTION: the two layouts. In LAYOUT_DIRECTORY the platform's root is the disk's DISK_ROOT_DIR, holding AGENT_DIR and SYSTEM_DIR as plain directories; every ext4 disk is in it, and every btrfs disk made before LAYOUT_SUBVOLUMES. In LAYOUT_SUBVOLUMES, a new btrfs disk's, the root is the whole filesystem, AGENT_DIR and SYSTEM_DIR are subvolumes. The root's layers under ROOTFS_DIR stay plain directories of SYSTEM_DIR: overlayfs renames from its work layer into its upper one, which btrfs refuses across subvolumes.
+pub const LAYOUT_DIRECTORY: u32 = 1;
+pub const LAYOUT_SUBVOLUMES: u32 = 2;
 
 pub fn agent_store(root: &Path) -> PathBuf {
     root.join(AGENT_DIR)

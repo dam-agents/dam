@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import type { avatarSchema } from "../agents/schemas.js";
 import type { Agent } from "../agents/types.js";
 import type { SkillSetApplyResult } from "../skills/types.js";
 import type {
@@ -29,8 +30,9 @@ export type StarterKitEgressRule = z.infer<typeof starterKitEgressRuleSchema>;
 export type StarterKitResources = z.infer<typeof starterKitResourcesSchema>;
 export type StarterKit = z.infer<typeof starterKitSchema>;
 
-export type ResolvedStarterKit = Omit<StarterKit, "seed"> & {
+export type ResolvedStarterKit = Omit<StarterKit, "seed" | "avatar"> & {
   seed?: NonNullable<StarterKit["seed"]> & { url: string };
+  avatar?: z.infer<typeof avatarSchema>;
 };
 export type StarterKitCatalogEntry = z.infer<
   typeof starterKitCatalogEntrySchema

@@ -1,6 +1,8 @@
 export type { AppRouter } from "./router.js";
 export type { ApiContext, UserIdentity } from "./context.js";
 
+export { hasOversizedArray, OVERSIZED_ARRAY_MESSAGE } from "./input-bounds.js";
+
 export { ChannelType, type EnvVar } from "./modules/shared.js";
 
 export { liveEventSchema, type LiveEvent } from "./modules/events/schemas.js";
@@ -55,6 +57,19 @@ export {
   harnessConfigSnapshotSchema,
   sessionPairSchema,
 } from "./modules/harness-config/schemas.js";
+export {
+  CLAUDE_MODEL_NAME_PREFIX,
+  formatQualifiedModel,
+  isQualifiedModel,
+  parseQualifiedModel,
+  type QualifiedModel,
+} from "./modules/harness-config/model-name.js";
+export {
+  orderByAlias,
+  resolveDefaultProvider,
+  type ProviderChoice,
+  type SavedProviderChoice,
+} from "./modules/harness-config/default-provider.js";
 
 export type {
   Agent,
@@ -94,6 +109,8 @@ export type {
   SlackChannel,
   SlackConversationLabel,
   ChannelConfig,
+  RuntimeFleet,
+  RuntimeFleetAgent,
 } from "./modules/agents/types.js";
 export {
   AGENT_ID_RE,
@@ -128,6 +145,49 @@ export type {
   CpuCongestion,
   BudgetsService,
 } from "./modules/budgets/types.js";
+export {
+  MICROS_PER_UNIT,
+  PLATFORM_REFUSAL_HEADER,
+  SPEND_DAILY_MAX_DAYS,
+  SPEND_LIMIT_MAX_MICROS,
+  spendCeilingSourceSchema,
+  spendCeilingUsdTextSchema,
+  spendDailyInputSchema,
+  spendLimitAmountSchema,
+  spendLimitAmountTextSchema,
+  spendLimitScopeSchema,
+  spendLimitStateSchema,
+  spendSetLimitInputSchema,
+  spendStatusInputSchema,
+  spendUnitSchema,
+} from "./modules/spend/schemas.js";
+export {
+  formatLocalResetTime,
+  formatSpendAmount,
+  nextUtcMidnight,
+} from "./modules/spend/format.js";
+export {
+  connectionLimitRefusal,
+  connectionLimitRule,
+  spendUnitOfProvider,
+  type ConnectionLimitRule,
+} from "./modules/spend/units.js";
+export type {
+  SpendCeilingSource,
+  SpendCeilingView,
+  SpendConnectionTotal,
+  SpendDailyInput,
+  SpendDailyRow,
+  SpendLimitScope,
+  SpendLimitState,
+  SpendLimitView,
+  SpendService,
+  SpendSetLimitInput,
+  SpendStatus,
+  SpendStatusInput,
+  SpendTotal,
+  SpendUnit,
+} from "./modules/spend/types.js";
 export type { AgentSpecCR } from "./crd-types.gen.js";
 export type {
   EventReportInput,
@@ -140,7 +200,9 @@ export type {
 export {
   scheduleSpecSchema,
   precheckSchema,
+  scheduleHarnessSchema,
   scheduleModelSchema,
+  scheduleSettingsSchema,
   PRECHECK_MAX_LENGTH,
 } from "./modules/schedules/schemas.js";
 export type {
@@ -153,6 +215,7 @@ export type {
   ScheduleCreator,
   ScheduleCreateCronInput,
   ScheduleCreateRRuleInput,
+  ScheduleUpdateCronInput,
   ScheduleUpdateRRuleInput,
   ScheduleCreateOnceInput,
   ScheduleUpdateOnceInput,
@@ -262,6 +325,7 @@ export {
 export type {
   FeatureId,
   FeatureFlags,
+  FeatureMode,
   FeatureModes,
   FeaturesService,
 } from "./modules/features/types.js";
@@ -279,6 +343,11 @@ export {
   GETTING_STARTED_TASKS,
   gettingStartedTaskSchema,
 } from "./modules/getting-started/schemas.js";
+export type {
+  SidebarOrder,
+  SidebarOrderService,
+} from "./modules/sidebar-order/types.js";
+export { SIDEBAR_ORDER_MAX } from "./modules/sidebar-order/schemas.js";
 export { quietWindowSchema } from "./modules/schedules/schemas.js";
 export {
   ONCE_DELIVERY_WINDOW_MS,
@@ -303,6 +372,9 @@ export type {
 
 export type {
   ProviderPresetType,
+  ProviderAlias,
+  ProviderAliasConflict,
+  AliasedConnection,
   EnvMapping,
   BobModelPins,
   BedrockPins,
@@ -326,6 +398,8 @@ export {
   bedrockEnvMappings,
   BEDROCK_REGION_PATTERN,
   BEDROCK_TEMPLATE_ID,
+  PLATFORM_LLM_TEMPLATE_ID,
+  platformLlmEnvMappings,
   BOB_CHAT_MODES,
   normalizeBobChatMode,
   IBM_LITELLM_HOST,
@@ -337,6 +411,14 @@ export {
   S3_COMPATIBLE_TEMPLATE_ID,
   providerTypeForTemplateId,
   templateIdForProvider,
+  PROVIDER_ALIASES,
+  PROVIDER_ALIAS_RE,
+  aliasForProviderType,
+  aliasForTemplateId,
+  aliasOrder,
+  HARNESS_HOME_PROVIDERS,
+  templateIdsForAlias,
+  providerAliasConflict,
 } from "./modules/connections/providers.js";
 
 export {
@@ -412,6 +494,7 @@ export type {
   MetricsSessionCostsQuery,
   MetricsOverview,
   TokenSpendByModel,
+  TokenSpendByProvider,
   SpendByAgent,
   SpendByDay,
   SpendBySessionType,
@@ -471,6 +554,7 @@ export type {
   AttentionService,
   DismissedEntry,
 } from "./modules/attention/types.js";
+export { ATTENTION_FEED_LIMIT } from "./modules/attention/types.js";
 export type { SessionCategory, SessionView } from "./modules/sessions/types.js";
 export type { SessionDirectoryService } from "./modules/session-directory/types.js";
 
@@ -506,6 +590,7 @@ export type {
   SkillSetApplyResult,
   SkillSetEntry,
   SkillSetSkipReason,
+  SkillSetSourceHiddenInput,
   SkillSource,
   SkillsService,
   SkillsState,
@@ -536,6 +621,7 @@ export type {
   ApprovalStatus,
   ApprovalVerdict,
   ApprovalPayload,
+  SpendLimitPayload,
   AcpPermissionOption,
   AcpPermissionOptionKind,
   ApprovalView,
@@ -644,7 +730,11 @@ export type {
   AcceptedAcceptance,
   TermsService,
 } from "./modules/terms/types.js";
-export { termsDocumentSchema } from "./modules/terms/schemas.js";
+export {
+  signUpsSchema,
+  termsDocumentSchema,
+  type SignUps,
+} from "./modules/terms/schemas.js";
 export { PRE_TERMS_PROCEDURES } from "./modules/terms/types.js";
 
 export type { EntryPointChoice, UsageService } from "./modules/usage/types.js";
@@ -756,3 +846,16 @@ export type {
   SatellitesService,
   WorkItem,
 } from "./modules/satellites/types.js";
+export {
+  A2UI_BASIC_CATALOG_ID,
+  A2UI_PLATFORM_CATALOG_ID,
+  CHAT_FORM_CATALOG_IDS,
+  chatFormCapabilities,
+} from "./modules/chat-forms/capabilities.js";
+export {
+  findRendererBlocks,
+  joinRendererBlocks,
+  type RendererBlock,
+  type RendererTag,
+  separateRendererBlocks,
+} from "./modules/chat-forms/renderer-blocks.js";

@@ -8,11 +8,18 @@
 # a path dependency there). Undeclared, a cached pass taken against the old
 # source replays.
 [deps.smolvm]
-description = "Clone the pinned smolvm source this crate builds against"
+description = "Link the shared clone of the pinned smolvm source this crate builds against"
 auto = true
 sources = ["smolvm.pin", "smolvm.patch"]
 outputs = [".smolvm/.pinned"]
 run = "./.mise/fetch-smolvm"
+
+# Keeps cargo's target at one build: see .mise/prune-target.
+[deps.target]
+description = "Empty cargo's target when the toolchain or Cargo.lock it was built with changed"
+auto = true
+sources = ["Cargo.lock", "../../mise.lock"]
+run = "./.mise/prune-target"
 
 [tasks.check]
 description = "Run this package's checks"
@@ -21,3 +28,20 @@ depends = [":check:*"]
 [tasks.fix]
 description = "Apply this package's fixes"
 depends = [":fix:*"]
+
+# platform-init's ignored tests mount a loop device, set file owners, make
+# device nodes and write trusted.* attributes, which only root may do: the
+# btrfs subvolume layout, its migration, and the ext4-to-btrfs copy. They are
+# built as the caller and only their binaries run under sudo, through cargo's
+# target runner, so nothing in the target becomes root's. Linux only, with
+# passwordless sudo, as a GitHub-hosted runner has; not part of `test`, whose
+# runs are cached and sandboxed.
+[tasks."test:root"]
+description = "Run platform-init's tests that need root: loop-mounted btrfs and ext4"
+run = '''
+set -eu
+[ "$(uname)" = Linux ] || { echo "test:root mounts loop devices, so it runs on Linux only" >&2; exit 1; }
+command -v mkfs.btrfs >/dev/null || sudo apt-get install -y -qq btrfs-progs >/dev/null
+triple="$(rustc -vV | sed -n 's/^host: //p' | tr 'a-z-' 'A-Z_')"
+env "CARGO_TARGET_${triple}_RUNNER=sudo -E" cargo test --locked -p platform-init -- --ignored
+'''

@@ -1,6 +1,6 @@
 # Slack: what is guaranteed, what is the agent's call, what depends on setup
 
-Last verified: 2026-10-13
+Last verified: 2026-10-15
 
 Companion to [channels](channels.md) and [channel-turns](channel-turns.md).
 Those pages own the mechanics; this one states, for each thing an agent does in Slack, whether the outcome is guaranteed, the agent's judgement, or dependent on setup.
@@ -214,7 +214,7 @@ flowchart TD
 | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | Only tool calls reach Slack; answered means `reply`, `react`, `no_reply_needed`, hand-off, or a top-level post into the same channel | Platform                               | Prose is lost unless the reminder rescues it. A post via the owner's Connection doesn't count; close such a turn with `no_reply_needed` |
 | Answer, react, stay silent or hand off; thread vs. top-level; `alsoSendToChannel`; names not raw ids                                 | **Agent**, prompted                    | A `no_reply_needed` is final. A top-level answer counts, just noisier                                                                   |
-| Standard Markdown rendering for agent posts, with paired compact Slack-style code fences normalized                                  | Platform                               | Ambiguous standalone fences keep Markdown semantics; tools ask for separate fence lines. Oversized text bypasses normalization          |
+| Standard Markdown rendering for agent posts, with compact Slack-style code fences moved onto their own lines                         | Platform                               | A fence pair inside one line of prose stays as it is; tools ask for separate fence lines                                                |
 | One reminder after a silent addressed turn                                                                                           | Platform                               | Never on ambient. A reply whose attachment failed still counts; the agent is told which file                                            |
 | With two turns running, each reply, reaction, silence or hand-off names its thread; the platform never guesses                       | Platform                               |                                                                                                                                         |
 | A reply after the api-server lost the agent mid-turn: accepted for 60 min                                                            | Platform                               | Later, one that names its thread still lands; one that doesn't is refused                                                               |
@@ -239,6 +239,7 @@ flowchart TD
 | Whispers: on by default, per Agent; only its owner turns them off, with `/dam whisper <agent> on\|off` from any conversation or in the Agent's channel settings in the UI    | Platform, the switch is **Setup**         | One switch covers every conversation the Agent is connected to                                       |
 | All bindings released when the Agent is deleted                                                                                                                              | Platform                                  |                                                                                                      |
 | Terms of Use re-versioned and not re-accepted: the owner's Agents go quiet in Slack                                                                                          | Platform                                  | Addressed: a notice. Ambient: nothing                                                                |
+| Spend limit or Spend Ceiling reached for today: the Agent starts no turn and does not wake                                                                                   | Owner, operator                           | A person: a notice only they see. A bot: one notice in the thread. Ambient: nothing                  |
 
 ---
 
@@ -273,7 +274,7 @@ A revoked bot token or uninstalled app silences every conversation, and nothing 
 
 ### Notices
 
-Addressed turns get a plain-language notice for: unbound conversation, no default Agent, waking ("still starting" up to 10 min), stopped by owner, deleted, over budget, migrating, lost contact, stalled, terms not accepted, hand-off failed, a refused attachment.
+Addressed turns get a plain-language notice for: unbound conversation, no default Agent, waking ("still starting" up to 10 min), stopped by owner, deleted, over budget, migrating, lost contact, stalled, terms not accepted, spend limit or ceiling reached, hand-off failed, a refused attachment.
 Ambient turns get none.
 
 ---

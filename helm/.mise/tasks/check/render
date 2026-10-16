@@ -63,15 +63,18 @@ helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   | "${KUBECONFORM[@]}" "$@"
 # A confined runner reaches DNS only at the resolver it uses. One that caches
 # on its own claim and names no resolver, a resolver range of /0, and an
-# egress entry naming the link-local metadata endpoint all fail the render.
+# egress entry naming the link-local metadata endpoint all fail the render, as
+# does a VMM seccomp mode smolvm would read as no filter.
 VM=(--set virtualization.enabled=true --set virtualization.runner.resources.limits.memory=8Gi
   --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0')
 for refused in 'virtualization.runner.dnsPolicy=Default' \
   'virtualization.runner.dnsCidrs[0]=0.0.0.0/0' \
   'virtualization.runner.egressCidrs[1]=169.254.169.254/32' \
-  'virtualization.runner.clusterDns=null'; do
+  'virtualization.runner.clusterDns=null' \
+  'virtualization.runner.seccomp=permissive'; do
   extra=(--set "$refused")
   case "$refused" in
+    *seccomp*) extra+=(--set virtualization.imageCache.hostPath=/var/lib/platform-images) ;;
     *egressCidrs*) extra+=(--set 'virtualization.runner.dnsCidrs[0]=10.0.2.3/32') ;;
     *clusterDns*) extra+=(--set virtualization.runner.dnsPolicy=ClusterFirst) ;;
   esac
@@ -80,6 +83,12 @@ for refused in 'virtualization.runner.dnsPolicy=Default' \
     exit 1
   fi
 done
+# An unquoted `seccomp: off` in a values file arrives as a boolean, and must
+# still mean no filter rather than the default.
+helm template platform . "${COMMON[@]}" "${VM[@]}" \
+  --set virtualization.imageCache.hostPath=/var/lib/platform-images \
+  --set virtualization.runner.seccomp=false | grep '\\"seccomp\\":\\"off\\"' >/dev/null ||
+  { echo "a render with seccomp=false did not give the runners seccomp off" >&2; exit 1; }
 # A runner on the node cache resolves nothing, so it needs no resolver named.
 helm template platform . "${COMMON[@]}" "${VM[@]}" \
   --set virtualization.imageCache.hostPath=/var/lib/platform-images >/dev/null
@@ -141,3 +150,30 @@ grep -q '^kind: PrometheusRule$' <<<"$rendered" && grep -q '^kind: ServiceMonito
 "${KUBECONFORM[@]:0:3}" -skip "${KUBECONFORM[4]},ServiceMonitor,PrometheusRule" "$@" <<<"$rendered"
 ! helm template platform . "${COMMON[@]}" "${MONITORING[@]}" | grep -Eq '^kind: (PrometheusRule|ServiceMonitor)$' \
   || { echo "monitoring.enabled without prometheus-operator's API rendered its kinds" >&2; exit 1; }
+# The Postgres health checks take their timing from values: by default liveness
+# waits 10s per check and kills only after 6 misses, and an override reaches the
+# pod. Both keep checking the postgres database.
+pg_probes() {
+  helm template platform . "${COMMON[@]}" --show-only templates/postgres.yaml "$@" |
+    yq -o=json 'select(.kind == "StatefulSet") | .spec.template.spec.containers[0] | {"liveness": .livenessProbe, "readiness": .readinessProbe}'
+}
+probes=$(pg_probes)
+jq -e '.liveness.timeoutSeconds == 10 and .liveness.failureThreshold == 6 and .liveness.periodSeconds == 15
+  and .readiness.timeoutSeconds == 5 and .readiness.failureThreshold == 10 and .readiness.periodSeconds == 5
+  and ([.liveness, .readiness] | all(.exec.command | index(["-d", "postgres"]) != null))' <<<"$probes" >/dev/null ||
+  { echo "the default Postgres health checks are not the tolerant ones: $probes" >&2; exit 1; }
+probes=$(pg_probes --set postgres.livenessProbe.timeoutSeconds=30 --set postgres.readinessProbe.failureThreshold=3)
+jq -e '.liveness.timeoutSeconds == 30 and .liveness.failureThreshold == 6 and .readiness.failureThreshold == 3' <<<"$probes" >/dev/null ||
+  { echo "postgres.livenessProbe / readinessProbe overrides did not reach the Postgres pod: $probes" >&2; exit 1; }
+# The built-in provider's CA reaches the api-server as a file from the named
+# ConfigMap key, which the default values leave out entirely.
+ca=$(helm template platform . "${COMMON[@]}" --show-only templates/apiserver/app.yaml \
+  --set apiServer.platformProvider.baseUrl=https://llm.models.svc:8443 --set apiServer.platformProvider.apiKey=k \
+  --set apiServer.platformProvider.caConfigMap.name=openshift-service-ca.crt \
+  --set apiServer.platformProvider.caConfigMap.key=service-ca.crt |
+  yq -o=json 'select(.kind == "Deployment") | .spec.template.spec')
+jq -e '(.containers[0].env[] | select(.name == "PLATFORM_PROVIDER_CA_FILE") | .value) as $file
+  | (.containers[0].volumeMounts[] | select(.name == "platform-provider-ca") | .mountPath + "/ca.crt") == $file
+  and any(.volumes[]; .name == "platform-provider-ca" and .configMap.name == "openshift-service-ca.crt"
+    and .configMap.items == [{"key": "service-ca.crt", "path": "ca.crt"}])' <<<"$ca" >/dev/null ||
+  { echo "apiServer.platformProvider.caConfigMap did not mount the CA file the api-server reads: $ca" >&2; exit 1; }

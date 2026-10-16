@@ -1,6 +1,7 @@
 import type { FeatureId } from "api-server-api";
 import type { ReactNode } from "react";
 
+import { getBrand } from "@/brand";
 import { CARD_SURFACE } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { Switch } from "@/components/ui/switch";
@@ -21,6 +22,12 @@ interface FeatureRow {
 }
 
 const FEATURE_ROWS: FeatureRow[] = [
+  {
+    id: "platform-provider",
+    label: `${getBrand().name} LLM provider`,
+    description:
+      "Adds a built-in LLM provider served by this install, with no API key, to Settings → Providers.",
+  },
   {
     id: "interactive-artifacts",
     label: "Interactive artifacts",
@@ -58,6 +65,12 @@ const FEATURE_ROWS: FeatureRow[] = [
     label: "Agent telemetry",
     description:
       "Shows what each turn of a conversation actually did — its spans, its records and what the call cost — under the reply itself, and adds a telemetry export to the session menu.",
+  },
+  {
+    id: "chat-forms",
+    label: "Chat forms",
+    description:
+      "Lets agents put forms, choices and cards into their replies in chat — during onboarding or a kit update, for example — and sends your answer back with one click.",
   },
   {
     id: "processes",

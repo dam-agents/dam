@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -95,12 +95,14 @@ Other Agents' posts are never ignored.
 Bot posts can answer each other — two readers, or an Agent and a webhook — so a conversation admits at most **three bot posts since a person last posted there**; later ones start nothing until a person posts.
 The count is per thread (and per channel top level) and lives in the leader's memory, so a restart only allows a new run of the same size.
 A bot sender gets no private notices, since a notice needs a person, and a bot post in a 1:1 DM starts nothing — that conversation is with one person.
+A tag of an Agent at a [spend limit or the Spend Ceiling](spend-limits.md#unattended-work) starts no turn; whoever tagged it gets the reason instead — a person privately, a bot in one footer-less notice in the thread, which starts nothing.
 
 Ambient turns are deliberately unobtrusive on the platform's side: the platform posts no acknowledgment reaction and no wake notices, and failures are logged and evented but never posted — nobody summoned the agent, and a turn dropped after the wait is recovered by catch-up on the next one.
 Acknowledgement instead comes from the agent itself: when a message is worth engaging, the ambient frame has it open with a fitting emoji reaction — a quiet, notifies-no-one signal that it has picked the message up, chosen to suit the message rather than a rote mark.
 The agent declines explicitly, or by ending its turn without posting.
 The frame also announces how the agent appears in the channel — the install's bot name and Slack id, and the agent name its posts are signed with — so a message that calls it by any of them is answered like a mention; the persona behind that name comes from the agent's workspace setup, never from the relay.
 Each relayed message is still security-logged as a place-basis allow (marked as ambient-triggered), and the binding owner's Terms-of-Use acceptance gates ambient turns like any shared turn — silently.
+An Agent at a [spend limit or the Spend Ceiling](spend-limits.md#unattended-work) is skipped the same silent way.
 
 Inbound traffic and outbound traffic take different paths.
 Inbound is push from the messenger into the api-server worker, which routes the message to the agent pod over ACP.
@@ -194,7 +196,7 @@ The differences are transport, identity model, and where the bot token comes fro
 
 ### Slack — platform channel
 
-- **Message formatting.** Agent posts use standard Markdown, with compact Slack-style code fences normalized within Slack's Markdown size limit by the shared [outbound renderer](channel-turns.md#outbound--agent-to-channel).
+- **Message formatting.** Agent posts use standard Markdown, with compact Slack-style code fences moved onto their own lines by the shared [outbound renderer](channel-turns.md#outbound--agent-to-channel).
 - **Transport.** Socket Mode, one workspace-level WebSocket to Slack, opened by the lease-holding replica at boot so slash commands, mentions and DMs work in chats that have no binding yet (mirroring the Telegram client).
   The api-server has no inbound network access requirement; events arrive over the socket the api-server itself opened.
   Slack caps Socket Mode at ten concurrent connections per app, which is the install-level scale ceiling for Slack.

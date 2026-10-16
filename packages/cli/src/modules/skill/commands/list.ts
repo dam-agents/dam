@@ -75,9 +75,13 @@ export function buildListCommand(deps: {
 
 function renderInstalled(
   installed: SkillsState["installed"],
-  sources: readonly { gitUrl: string; name: string }[],
+  sources: readonly { gitUrl: string; path?: string; name: string }[],
 ): string {
-  const nameByUrl = new Map(sources.map((s) => [s.gitUrl, s.name]));
+  const sourceKey = (gitUrl: string, path?: string | null) =>
+    `${gitUrl}\0${path?.split("/").filter(Boolean).join("/") ?? ""}`;
+  const nameByUrl = new Map(
+    sources.map((s) => [sourceKey(s.gitUrl, s.path), s.name]),
+  );
   const unresolved = new Set<string>();
   const rows = [...installed]
     .sort(
@@ -85,7 +89,7 @@ function renderInstalled(
         a.source.localeCompare(b.source) || a.name.localeCompare(b.name),
     )
     .map((r) => {
-      const name = nameByUrl.get(r.source);
+      const name = nameByUrl.get(sourceKey(r.source, r.path));
       if (name === undefined) unresolved.add(r.source);
       return [name ?? r.source, r.name, r.version.slice(0, 7)];
     });

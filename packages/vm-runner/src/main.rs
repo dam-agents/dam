@@ -6,9 +6,9 @@ use std::time::Duration;
 use clap::Parser;
 use vm_runner::embedded::Smolvm;
 use vm_runner::forward::LOOPBACK_OFFSET;
+use vm_runner::http;
 use vm_runner::runtime::MAX_IMAGE_BYTES;
 use vm_runner::server::{Config, Server};
-use vm_runner::{http, templates};
 
 // UNIT_BOUNDARY_DESCRIPTION: every flag the runner defines. Each is set by exactly one of two callers, and neither relies on a default: the image's ENTRYPOINT sets the paths that are the image's own layout, and the controller sets everything it has chosen — the ports it opens in the runner's NetworkPolicy, where it mounts the runner's state and credentials and the runner's budgets. The controller builds those args in Go, so a rename is not a build failure on either side: it is a runner that rejects an argument its own Deployment sets, which surfaces as a pod that will not start. contract/runner-args.json holds the args the controller renders, and both sides test against it.
 #[derive(Parser, Debug)]
@@ -72,6 +72,9 @@ struct Args {
     // UNIT_BOUNDARY_DESCRIPTION: whether the install lets machines run KVM themselves. The runner nests a guest only when this is set and the node's KVM allows it. Nesting is the kernel's default on Intel and AMD, and turning it off on a node takes a module reload, so the node alone is no choice at all: the install makes it, and only one that sets `virtualization.runner.nestedVirtualization` passes this flag.
     #[arg(long = "nested-virtualization")]
     nested_virtualization: bool,
+    // UNIT_BOUNDARY_DESCRIPTION: whether this runner converts its machines' ext4 storage disks to btrfs, each at its next start (see convert). The install sets it with `virtualization.runner.convertExt4Disks` for a rollout.
+    #[arg(long = "convert-ext4-disks")]
+    convert_ext4_disks: bool,
     #[arg(long = "token-file", default_value = "/etc/vm-runner/token")]
     token_file: PathBuf,
     // UNIT_BOUNDARY_DESCRIPTION: the serving certificate and key cert-manager issues for the runner's Service host. The machine API carries the runner's token, so it is served over TLS only.
@@ -81,7 +84,7 @@ struct Args {
     tls_key: String,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: smolvm boots every VMM by spawning its own executable again with `_boot-vm` and a boot-config path, so this binary is also the VMM. The subcommand is checked before anything else runs: a boot process must never parse runner flags, bind the machine API or start a runtime of its own. Serving it here rather than pointing smolvm at a separate binary means the VMM is always the smolvm library this runner was built against.
+// UNIT_BOUNDARY_DESCRIPTION: smolvm boots every VMM by spawning its own executable again with `_boot-vm` and a boot-config path, so this binary is also the VMM. Its machines boot no smolvm guest agent, in this process and in every VMM: platform-init is their init (agent rootfs /sbin/init), so smolvm makes no overlay disk, pulls and runs no workload, and boots the init as PID 1; each machine has one disk, its storage disk.
 fn boot_config(mut args: impl Iterator<Item = std::ffi::OsString>) -> Option<Option<PathBuf>> {
     args.next();
     if args.next().as_deref() != Some(std::ffi::OsStr::new("_boot-vm")) {
@@ -104,7 +107,7 @@ fn gateway_host_port(boot_config: &Path) -> anyhow::Result<Option<u16>> {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: points the embedded runtime at the smolvm release the image installed, as the release's launcher script does for its own binary: libkrun and libkrunfw from its lib directory, the guest agent from its agent-rootfs. The environment is read by this process and inherited by every VMM it spawns, so it is set before any thread starts. The archive cap is the `--max-image-size` flag. SMOLVM_MOUNT_DAX gives every mount a machine boots with a 2 GiB DAX window, so the guest maps the host's page cache instead of copying each read through FUSE into its own: the harness tools, which every harness start reads `node` and its modules from, and the share. smolvm has no per-mount switch. Both mounts are read-only, and the runner replaces a share file by a rename and never writes one in place, so a mapped file is never truncated under the guest. The window costs the guest 32 MiB of RAM per mount for its page structs. smolvm ignores the variable on arm64, whose guest kernel has no FUSE DAX. DAX is safe only on the Linux 6.12 guest kernel smolvm.pin names: from 6.15 on, a process that runs a large binary from a DAX mount dies of SIGBUS once another process opens it (smol-machines/smolvm#1741), and the vm e2e lane holds the kernel to that. Setting it to 0 turns DAX off to compare.
+// UNIT_BOUNDARY_DESCRIPTION: points the embedded runtime at the smolvm release the image installed, as the release's launcher script does for its own binary: libkrun and libkrunfw from its lib directory, the guest agent from its agent-rootfs. The environment is read by this process and inherited by every VMM it spawns, so it is set before any thread starts. The archive cap is the `--max-image-size` flag. SMOLVM_MOUNT_DAX gives every mount a machine boots with a 2 GiB DAX window, so the guest maps the host's page cache instead of copying each read through FUSE into its own: the harness tools, which every harness start reads `node` and its modules from, and the share. smolvm has no per-mount switch. Both mounts are read-only, and the runner replaces a share file by a rename and never writes one in place, so a mapped file is never truncated under the guest. The window costs the guest 32 MiB of RAM per mount for its page structs. smolvm ignores the variable on arm64, whose guest kernel has no FUSE DAX. DAX needs a guest kernel with smol-machines/libkrunfw#31, which smolvm 1.27.4 and later ship: before it, from Linux 6.15 on, a process that runs a large binary from a DAX mount dies of SIGBUS once another process opens it (smol-machines/smolvm#1741), and the vm e2e lane checks the kernel for that. Setting it to 0 turns DAX off to compare.
 fn configure_smolvm(launcher: &Path) {
     let install = launcher.parent().unwrap_or(Path::new("/"));
     let lib = install.join("lib");
@@ -181,7 +184,46 @@ fn reload_tls(tls: axum_server::tls_rustls::RustlsConfig, cert: String, key: Str
     });
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: `vm-runner exec <machine> [--] <command>...` runs one command as root in a running machine's guest, through its init (platform-init's answer to smolvm's exec request), prints what it wrote and exits with its exit code. It finds the machine under HOME as the runner does, so it runs in the runner's pod or beside a host runner. smolvm's own `machine exec` reaches the container a guest agent ran, which these machines do not have.
+fn exec_args(mut args: impl Iterator<Item = std::ffi::OsString>) -> Option<(String, Vec<String>)> {
+    args.next();
+    if args.next().as_deref() != Some(std::ffi::OsStr::new("exec")) {
+        return None;
+    }
+    let id = args.next()?.into_string().ok()?;
+    let mut command: Vec<String> = args.filter_map(|arg| arg.into_string().ok()).collect();
+    if command.first().is_some_and(|arg| arg == "--") {
+        command.remove(0);
+    }
+    Some((id, command))
+}
+
+fn guest_exec(id: &str, command: Vec<String>) -> anyhow::Result<()> {
+    use std::io::Write;
+    anyhow::ensure!(
+        !command.is_empty(),
+        "usage: vm-runner exec <machine> [--] <command>..."
+    );
+    let manager = smolvm::agent::AgentManager::for_vm(id)?;
+    manager.detach();
+    let mut client = smolvm::agent::AgentClient::connect(manager.vsock_socket())?;
+    let (code, stdout, stderr) = client.vm_exec(
+        command,
+        Vec::new(),
+        None,
+        Some(std::time::Duration::from_secs(300)),
+        None,
+    )?;
+    std::io::stdout().write_all(&stdout)?;
+    std::io::stderr().write_all(&stderr)?;
+    std::process::exit(code)
+}
+
 fn main() -> anyhow::Result<()> {
+    smolvm::internal_boot::GUEST_AGENT.store(false, std::sync::atomic::Ordering::Relaxed);
+    if let Some((id, command)) = exec_args(std::env::args_os()) {
+        return guest_exec(&id, command);
+    }
     if let Some(config) = boot_config(std::env::args_os()) {
         let config =
             config.ok_or_else(|| anyhow::anyhow!("_boot-vm requires a boot-config path"))?;
@@ -267,9 +309,19 @@ fn prepare_host(args: &Args) -> anyhow::Result<()> {
 
 async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
     let nested = args.nested_virtualization;
+    let convert = args.convert_ext4_disks;
     let tools = (!args.tools_dir.is_empty()).then(|| PathBuf::from(&args.tools_dir));
+    let install = args
+        .smolvm
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default();
+    let btrfs = install.join(vm_runner::embedded::BTRFS_TEMPLATE);
     let runtime = Arc::new(
-        tokio::task::spawn_blocking(move || Smolvm::open(nested, tools.as_deref())).await??,
+        tokio::task::spawn_blocking(move || {
+            Smolvm::open(nested, tools.as_deref(), btrfs).map(|smolvm| smolvm.converting(convert))
+        })
+        .await??,
     );
     let server = Server::start(
         Config {
@@ -299,16 +351,6 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
         runtime,
     )?;
 
-    let install = args
-        .smolvm
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_default();
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_default();
-    let kept = (!home.as_os_str().is_empty()).then(|| home.join(templates::KEPT_DIR));
-    server.background(move |cancel| templates::warm(&install, kept.as_deref(), &home, &cancel));
     let logs = server.clone();
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(vm_runner::console::TRIM_EVERY);
@@ -345,7 +387,7 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
     } else {
         let listener = bind(&args.metrics_listen)?;
         let handle = axum_server::Handle::new();
-        let serving = axum_server::from_tcp(listener)?
+        let serving = axum_server::from_tcp(listener)
             .handle(handle.clone())
             .serve(http::metrics_router(server.clone()).into_make_service());
         Some((handle, tokio::spawn(serving)))
@@ -368,7 +410,7 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
                 axum_server::tls_rustls::RustlsConfig::from_pem_file(&args.tls_cert, &args.tls_key)
                     .await?;
             reload_tls(tls.clone(), args.tls_cert.clone(), args.tls_key.clone());
-            axum_server::from_tcp_rustls(listener, tls)?
+            axum_server::from_tcp_rustls(listener, tls)
                 .handle(handle)
                 .serve(app)
                 .await
@@ -380,8 +422,22 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
         tokio::signal::unix::signal(tokio::signal::unix::SignalKind::user_defined1())?;
     let handing_off = tokio::select! {
         result = &mut serving => {
-            server.close().await;
-            return result.map_err(|e| anyhow::anyhow!("serving: {e}"));
+            let result = result.map_err(|e| anyhow::anyhow!("serving: {e}"));
+            let supervised = std::env::var_os(vm_runner::release::RELEASES_ENV).is_some_and(|dir| !dir.is_empty());
+            server
+                .close_failed(supervised, async {
+                    tokio::select! {
+                        _ = term.recv() => {}
+                        _ = tokio::signal::ctrl_c() => {}
+                    }
+                })
+                .await;
+            if supervised {
+                tracing::error!(error = ?result.err(), "VM runner failed to serve; its machines stay up for the loader's next runner");
+                // UNIT_BOUNDARY_DESCRIPTION: exits before the runtime is dropped, as a hand-off does, so the machines this runner started itself outlive it too.
+                std::process::exit(1);
+            }
+            return result;
         }
         _ = term.recv() => { tracing::info!(signal = "SIGTERM", "VM runner stopping"); false }
         _ = tokio::signal::ctrl_c() => { tracing::info!(signal = "SIGINT", "VM runner stopping"); false }
@@ -417,6 +473,27 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // TEST_SCENARIO: `exec` names a machine and the command to run in it, with an optional `--` before the command; anything else is the runner's own invocation and is left to flag parsing.
+    #[test]
+    fn an_exec_names_the_machine_and_the_command() {
+        let args = |words: &[&str]| {
+            words
+                .iter()
+                .map(std::ffi::OsString::from)
+                .collect::<Vec<_>>()
+                .into_iter()
+        };
+        assert_eq!(
+            exec_args(args(&["vm-runner", "exec", "m1", "--", "sh", "-c", "true"])),
+            Some(("m1".into(), vec!["sh".into(), "-c".into(), "true".into()]))
+        );
+        assert_eq!(
+            exec_args(args(&["vm-runner", "exec", "m1", "ls"])),
+            Some(("m1".into(), vec!["ls".into()]))
+        );
+        assert_eq!(exec_args(args(&["vm-runner", "--listen=:4600"])), None);
+    }
 
     // TEST_SCENARIO: smolvm spawns this binary as the VMM with `_boot-vm <config>`. That call must be recognised before flag parsing, which would refuse it, and nothing else may be mistaken for it — the runner's own invocation least of all.
     #[test]
@@ -580,6 +657,10 @@ mod tests {
     fn pod_argv() -> Vec<String> {
         let mut argv = base_argv();
         argv.extend(nested_args());
+        argv.extend(contract_args(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/contract/runner-args-convert.json"
+        )));
         argv
     }
 
@@ -591,6 +672,7 @@ mod tests {
             .unwrap_or_else(|e| panic!("the pod's arguments {argv:?} are rejected: {e}"));
         assert!(args.memory_mib > 0 && args.port_min <= args.port_max);
         assert!(args.nested_virtualization);
+        assert!(args.convert_ext4_disks);
     }
 
     // TEST_SCENARIO: an install that does not set `virtualization.runner.nestedVirtualization` renders the runner without the nesting args. The runner must still start from that argv, and must then not nest, whatever the node allows: nesting is the kernel's default, so a runner that nested on its own would expose every guest on a stock node to the host's nested-virtualization code.
@@ -600,6 +682,10 @@ mod tests {
         let args = Args::try_parse_from(&argv)
             .unwrap_or_else(|e| panic!("the pod's arguments {argv:?} are rejected: {e}"));
         assert!(!args.nested_virtualization);
+        assert!(
+            !args.convert_ext4_disks,
+            "a runner converts disks only when the install asks"
+        );
     }
 
     // TEST_SCENARIO: an install that sets no harness tools directory renders `--tools-dir=` with nothing after it, as it renders an empty `--image-cache-socket=`. The runner must start from that argv and share no tools, or every runner of such an install exits on start.

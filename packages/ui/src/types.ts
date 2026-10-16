@@ -168,6 +168,7 @@ export interface AgentView {
   state: AgentState;
   error?: string;
   stopRequested: boolean;
+  disabled: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
   reclaimed?: { at: string; for: "memory" | "compute" };
@@ -177,6 +178,7 @@ export interface AgentView {
   notReadyMessage?: string;
   podRestarts: number;
   podRestartReason?: string;
+  homeRepaired?: string;
   gatewayFailure?: string;
   contributionFailures: { kind: string; message: string }[];
   unsupportedContributionKinds: string[];
@@ -240,7 +242,10 @@ export interface Schedule {
   rrule: string | null;
   at: string | null;
   inSession: "fresh" | "continue" | "report" | null;
+  harness: string | null;
   model: string | null;
+  settings: Record<string, string> | null;
+  migrationNote: string | null;
   sessionTitle: string | null;
   timezone: string | null;
   quietHours: QuietWindowView[];

@@ -6,7 +6,7 @@ import {
   type ConversationNames,
 } from "../../modules/sessions/lib/conversation-label.js";
 
-// TEST_OVERVIEW: the label that names the Slack channel or Telegram chat a session came from. The sessions sidebar and the Home feed both show it, so the thread-key rules are pinned here once.
+// TEST_OVERVIEW: the label that names the Slack channel or Telegram chat a session came from. The sidebar's per-agent session list and its Activity list both show it, so the thread-key rules are pinned here once.
 
 const names: ConversationNames = {
   slackByChannelId: new Map([["C123", "#code-review"]]),

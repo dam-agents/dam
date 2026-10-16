@@ -33,6 +33,9 @@ pub const PORT_FILE: &str = "port";
 // UNIT_BOUNDARY_DESCRIPTION: the digest a machine was created from, kept beside its spec. The spec keeps the reference the controller asked for, and a tag no longer says which tree a machine has mounted once it has moved, so the runner reads this file to know which digest it holds against the cache's eviction, including after a restart.
 pub const IMAGE_DIGEST_FILE: &str = "image-digest";
 
+// UNIT_BOUNDARY_DESCRIPTION: what the disk check at the machine's last answered boot repaired, as its console said it, kept beside the spec rather than in the share, because the guest must not be able to write it. A boot whose check repaired nothing removes it. It goes with the machine on delete.
+pub const HOME_REPAIRED_FILE: &str = "home-repaired";
+
 // UNIT_BOUNDARY_DESCRIPTION: the VM runtime the machine's running VMM booted, written at each start. A runner release may bring another runtime than the one that started a machine still running, and a machine on another runtime is managed on the assumption that the two are compatible, with any failure ending in a reboot onto the runner's own (see Server::foreign).
 pub const RUNTIME_FILE: &str = "runtime";
 
@@ -109,6 +112,7 @@ pub fn read_spec(state_dir: &Path, id: &str) -> Option<MachineSpec> {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: whether a reference is one a cache entry can be named after. Hand-written to the pattern `^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,254}$`. The `..` a caller might hide in a reference is refused separately, by the reader, because this pattern admits the dots a tag legitimately carries.
+// UNIT_BOUNDARY_DESCRIPTION: a reference whose staged name would begin `sha256_` in any case is refused too. That is the name of a node cache entry, so the staged lookup would boot another owner's tree without the cache's access check; and no registry serves a repository named `sha256`.
 pub fn is_image_ref(image: &str) -> bool {
     let mut chars = image.chars();
     let Some(first) = chars.next() else {
@@ -118,6 +122,10 @@ pub fn is_image_ref(image: &str) -> bool {
         return false;
     }
     chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '/' | ':' | '@' | '-'))
+        && !image.get(..7).is_some_and(|head| {
+            head.replace(['/', ':', '@'], "_")
+                .eq_ignore_ascii_case("sha256_")
+        })
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: records what a machine was created with. The running flag is cleared first, deliberately: this file says what shape the machine has, never whether it should be up, and a runner that restarted and believed a stale flag would start machines an owner had stopped. The registry credential is cleared too: it is sent only so that the image can be fetched, and a stored copy would keep a credential on the state volume for as long as the machine exists.

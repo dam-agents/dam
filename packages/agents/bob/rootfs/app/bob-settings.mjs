@@ -90,7 +90,10 @@ function withPinSessionHook(hooks) {
 }
 
 function resolveApprovals(panel) {
-  const chosen = firstNonBlank(process.env.BOB_SESSION_APPROVALS, panel.approvals);
+  const chosen = firstNonBlank(
+    process.env.BOB_SESSION_APPROVALS,
+    panel.approvals,
+  );
   if (chosen && APPROVALS.includes(chosen)) return chosen;
   return process.env.BOB_AUTO_APPROVE === "0" ? "ask" : "auto";
 }
@@ -103,6 +106,7 @@ function writeSettings() {
   const model = firstNonBlank(
     process.env.PLATFORM_MODEL,
     panel.model,
+    process.env.PLATFORM_BOB_DEFAULT_MODEL,
     process.env.BOB_SHELL_MODEL,
   );
   const cost = Number(
@@ -160,7 +164,9 @@ function run(step, { required }) {
   try {
     step();
   } catch (err) {
-    process.stderr.write(`[bob-settings] ${step.name} failed: ${err.message}\n`);
+    process.stderr.write(
+      `[bob-settings] ${step.name} failed: ${err.message}\n`,
+    );
     if (required) process.exitCode = 1;
   }
 }

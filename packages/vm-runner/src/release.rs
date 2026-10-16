@@ -232,16 +232,24 @@ pub fn copy_tree(from: &Path, dest: &Path) -> anyhow::Result<()> {
         .with_context(|| format!("moving the copy to {}", dest.display()))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether any process has a file under `dir` mapped, read from `proc`. A VMM maps its runtime's libraries for as long as it runs and serves its guest agent's root from the same directory, so a runtime a VMM still maps must stay.
-pub fn mapped(proc: &Path, dir: &Path) -> bool {
-    let needle = format!("{}/", dir.display());
+// UNIT_BOUNDARY_DESCRIPTION: whether a VMM running under `proc` boots from the runtime in `dir`. smolvm runs every VMM as `_boot-vm <boot-config>`, and beside that config the runner records the guest agent root the VMM serves, which lies in the runtime it booted on; smolvm deletes the config itself once the VMM has read it, while the record stays. A VMM makes itself non-dumpable, so its maps and exe are shut to the loader, but its command line and that record are not. A VMM with no readable record, one an older release started, keeps every runtime: nothing else says which one it needs.
+pub fn booted_from(proc: &Path, dir: &Path) -> bool {
     std::fs::read_dir(proc)
         .into_iter()
         .flatten()
         .filter_map(Result::ok)
-        .any(|entry| {
-            std::fs::read_to_string(entry.path().join("maps"))
-                .is_ok_and(|maps| maps.contains(&needle))
+        .filter_map(|entry| {
+            let cmdline = std::fs::read(entry.path().join("cmdline")).ok()?;
+            let mut args = cmdline.split(|b| *b == 0);
+            args.position(|arg| arg == b"_boot-vm")?;
+            Some(PathBuf::from(
+                String::from_utf8_lossy(args.next()?).into_owned(),
+            ))
+        })
+        .any(|config| {
+            std::fs::read_to_string(config.with_file_name(crate::runtime::AGENT_ROOTFS_FILE))
+                .ok()
+                .is_none_or(|rootfs| Path::new(rootfs.trim()).starts_with(dir))
         })
 }
 
@@ -507,20 +515,37 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: a runtime stays in the pod while any VMM maps a file from it, which is how a machine booted before a hand-off keeps the runtime it booted.
+    // TEST_SCENARIO: a runtime stays in the pod while any VMM boots from it, which is how a machine booted before a hand-off keeps the runtime it booted. A VMM is non-dumpable, so it shows the loader no maps, and smolvm has deleted its boot config: the loader finds it by its `_boot-vm` command line and reads the guest agent root the runner recorded beside that config. A VMM with no record keeps every runtime.
     #[test]
-    fn a_runtime_a_process_maps_is_in_use() {
-        let dir = TempDir::new("release-mapped");
+    fn a_runtime_a_vmm_boots_from_is_in_use() {
+        let dir = TempDir::new("release-booted");
         let proc = dir.path().join("proc");
-        std::fs::create_dir_all(proc.join("42")).unwrap();
+        let vmm = |pid: &str, vm: &str| {
+            std::fs::create_dir_all(proc.join(pid)).unwrap();
+            let config = dir.path().join(vm).join("boot-config.json");
+            let cmdline = format!("/proc/self/exe\0_boot-vm\0{}\0", config.display());
+            std::fs::write(proc.join(pid).join("cmdline"), cmdline).unwrap();
+            dir.path().join(vm)
+        };
+        let booted = vmm("42", "vm-a");
+        std::fs::create_dir_all(&booted).unwrap();
         std::fs::write(
-            proc.join("42/maps"),
-            "7f00-7f10 r-xp 0 00:00 1 /pod/runtimes/a/lib/libkrun.so\n",
+            booted.join(crate::runtime::AGENT_ROOTFS_FILE),
+            "/pod/runtimes/a/agent-rootfs",
         )
         .unwrap();
-        assert!(mapped(&proc, Path::new("/pod/runtimes/a")));
-        assert!(!mapped(&proc, Path::new("/pod/runtimes/ab")));
-        assert!(!mapped(&proc, Path::new("/pod/runtimes/b")));
+        std::fs::create_dir_all(proc.join("7")).unwrap();
+        std::fs::write(
+            proc.join("7/cmdline"),
+            "vm-runner\0--state-dir=/pod/runtimes/b\0",
+        )
+        .unwrap();
+        assert!(booted_from(&proc, Path::new("/pod/runtimes/a")));
+        assert!(!booted_from(&proc, Path::new("/pod/runtimes/ab")));
+        assert!(!booted_from(&proc, Path::new("/pod/runtimes/b")));
+
+        vmm("43", "vm-older");
+        assert!(booted_from(&proc, Path::new("/pod/runtimes/b")));
     }
 
     // TEST_SCENARIO: the controller sets the loader's environment from Go, so a renamed variable is a loader that silently runs only the pod's own release. Both sides are held to the names in contract/loader-env.json.

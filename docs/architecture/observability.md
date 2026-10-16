@@ -1,6 +1,6 @@
 # Observability (agent telemetry)
 
-Last verified: 2026-10-14
+Last verified: 2026-10-16
 
 ## Overview
 
@@ -65,12 +65,12 @@ The UI is unaffected: it reads the telemetry store directly, not the collector.
 
 Harnesses produce telemetry by exporting it themselves over OTLP — the platform does not scrape or tap it.
 Export turns on with the backend: enabling `clickstack.enabled` stands up the collector, the gateway's collector egress chain, and the [trusted attribution](#trusted-attribution) below, and configures the harness to export to the collector.
-Each harness in the install's harness catalog may name a `telemetry` rail, which opts it in **and names which env rail it gets**, because the harnesses read different export configuration: Claude Code the standard OTLP env, Bob Shell its own `BOB_TELEMETRY_*` set, Pi a standard OTLP subset read by the image's own exporter.
+Each harness in the install's harness catalog may name a `telemetry` rail, which opts it in **and names which env rail it gets**, because the harnesses read different export configuration: Claude Code the standard OTLP env, Bob Shell its own `BOB_TELEMETRY_*` set, Pi a standard OTLP subset read by the image's own exporter, and Codex the same subset, which its image turns into overrides of Codex's own configuration at launch, since Codex reads its exporters from its configuration file alone.
 Bob Shell reads the standard OTLP exporter env too, but on it the harness also sends a copy of its export to the vendor endpoint, so a Bob image does not share the Claude Code rail.
 Pi exports nothing itself: its image ships an extension that writes one log record per model call and one per prompt, shaped like Claude Code's records under Pi's own event names, and stays off unless its rail turns log export on.
-Three rails exist today — Claude Code's, Bob Shell's and Pi's — and all point at the same collector over the same gateway egress; a further harness means a further rail, not a change to anything downstream.
+Four rails exist today — Claude Code's, Bob Shell's, Pi's and Codex's — and all point at the same collector over the same gateway egress; a further harness means a further rail, plus a reshaping step in the collector where its records do not match the shape the read path takes.
 
-- **Rides the agent's ordinary egress.** Claude Code's exporter and Pi's extension honour the agent's `HTTPS_PROXY`, so their telemetry leaves through the paired gateway pod over HTTPS to the bundled collector — the same dedicated, MITM-terminating chain that performs the trusted attribution below.
+- **Rides the agent's ordinary egress.** Claude Code's exporter, Pi's extension and Codex's exporter honour the agent's `HTTPS_PROXY`, so their telemetry leaves through the paired gateway pod over HTTPS to the bundled collector — the same dedicated, MITM-terminating chain that performs the trusted attribution below.
   No new network path, and no credential is injected into the export.
   This is a **precondition, not a convenience**: for a correctly configured rail the collector is reachable no other way, and an exporter that ignored the proxy would also miss the attribution stamp, so its records could never be attributed to a user.
   Honouring it is not automatic: Bob Shell's OTLP exporter builds its own HTTP agent, which the runtime's env-proxy support does not cover, so on the platform its export is attempted directly and dies at the agent's egress policy, silently — today Bob's spend reaches no collector, and the Bob rail is wired for the day its export goes through the proxy.
@@ -84,21 +84,30 @@ Three rails exist today — Claude Code's, Bob Shell's and Pi's — and all poin
   The api-server delivers it tagged with its harness, and only to a runtime that advertises the harnesses it carries, so each [Harness Lease](sessions.md#session-inside-the-pod) reads its own harness's rail.
   A harness's layer owns its variables over an agent-wide copy, so the rail an older agent was seeded from its Template never leaks into another harness: Bob never sees the Claude Code rail's OTLP protocol.
 
-- **Signals.** Claude Code exports metrics, logs, and traces (the last via the enhanced-telemetry beta) over OTLP/HTTP, with one **log record per LLM call**.
+- **Signals.** The agent-runtime's Model Router ([harness configuration](harness-config.md#the-model-router)) exports one **log record per LLM call** on every harness it serves, as OTLP/HTTP JSON on the same rail with the harness's trace context: the token counts, the cost from the catalog's price, the provider Connection, the upstream model, the harness, and whether the call went uncounted (cut short, no usage, unpriced).
+  It batches for a second, retries a refused post once, then drops with a log line; a call never waits on it.
+  Claude Code also exports metrics, logs and traces (the last via the enhanced-telemetry beta) over OTLP/HTTP, with its own **log record per LLM call**; the [metrics](metrics.md) reader prefers the router's records where an agent has them.
   Pi exports **log records only**: the same per-call counters, and a prompt identifier on every record a prompt caused, but no traces, so its sessions never fold child runs by trace.
   Its cost counter is Pi's own reckoning at the model vendor's list price; for a model behind an OpenAI-compatible proxy, which reports no prices, the image prices it from the vendor's entry in Pi's built-in catalog, and a model no vendor lists counts as free.
   Bob Shell exports **traces only**, and its per-call counters ride a generation span under GenAI semantic-convention names — there is no log-record equivalent to fall back to.
-  The [metrics](metrics.md) read path takes its **spend** from Claude Code's and Pi's log records only, so even once Bob's export reaches the collector no Usage surface reads it yet; normalizing that shape is separate work.
+  The [metrics](metrics.md) read path takes its **spend** from log records alone, the router's, Claude Code's, Pi's or Codex's, so Bob's spans never count as spend.
   That path does also read the trace store, for the agent-facing span read alone — which is therefore the one read that answers something for a traces-only harness, though what it answers is span shape, not spend.
   Bob additionally gates those spans behind its own agent-operations switch, so the rail turns it on explicitly; without it the harness exports its lifecycle spans and none of the spend.
+  Codex exports **log records and traces**, but in a shape of its own: no record body, its event name and counter names its own, its thread id where the others carry the session, and input counted with cache reads included.
+  The collector reshapes Codex's records on arrival — body from the event name, session from the thread id, and its per-call usage record renamed with the common counters, input net of cache reads — so the read path takes Codex spend from them like Claude Code's.
+  Codex reports no per-call cost; the Model Router prices each of its calls in a record of its own, which the read path prefers, so Codex's own records count, as tokens at zero cost, only where no router record reached the store.
+  Its usage record carries no trace context, so a session-scoped span read finds no Codex session.
 
 - **Content bodies are not exported** — prompt text, tool arguments, and raw API bodies stay off; only structural telemetry (durations, model/tool names, token and cost counters, span shape) leaves the agent.
   Claude Code omits them by default, and Pi's extension never writes them.
   Bob **includes** them by default, so its image writes the payload-exclusion setting into the harness's own configuration at startup rather than relying on the env rail: the invariant is the platform's, and a harness that defaults the other way must be corrected where it reads its settings.
+  Codex's image likewise pins its prompt and response logging off in the launch overrides, which outrank the user's own configuration file.
+  Codex also writes every tool call's arguments and an output preview into its log records, and has no setting to stop it, so the collector keeps only a fixed list of structural attributes on Codex's records: that content reaches the collector over the platform's own path but is never stored.
 
 - **Self-declared identity for exploration.** On the Claude Code rail the export env names the OTel service after the **harness** the session ran on, and seeds the user-declared agent name as a `platform.agent.name` resource attribute, kept current on rename.
   Both are exported by the harness itself and exist for finding an instance in the exploration UI — they are **display-only**; attribution rests solely on the gateway-stamped `platform.agent.id` below.
   Pi's extension reads the same two from the standard env.
+  Codex reads the standard resource environment, so the agent name arrives, though still URL-encoded, but it fixes its own service name for each kind of Codex process.
   Bob supplies **neither**: it fixes its own service name and builds its resource attributes internally, reading no standard OTel resource environment, so its signals are findable by service and by trusted agent id but not by the user's name for the agent.
   That the gap is tolerable is the same point — nothing but exploration ever depended on those two.
   This split is what lets an Invocation target keep its own name in the UI while its spend merges into the Driver that drove it (see [trusted attribution](#trusted-attribution)).
@@ -233,12 +242,12 @@ Series are still partitioned by runner, because each runner is a process with it
 
 The runner's other duty here rides the machine status rather than a signal: **explaining a boot**.
 A guest's own boot log is on its storage disk, which the host does not read — parsing a filesystem a guest has had root on is not something the host should do — so the runner reads the machine's **console**, which the runtime writes on the host side.
-It carries the guest kernel and the runtime's guest agent, not the harness, whose output goes to the boot log ([persistence](persistence.md)).
+It carries the guest kernel and platform-init, the guest's init, not the harness, whose output goes to the boot log ([persistence](persistence.md)).
+Inside the guest the boot log, this boot's and the one before, is readable at `/var/log/platform`, read-only, so an operator's `vm-runner exec` or the agent itself can read the harness's output.
 The two arrive apart — the runtime files the agent's output as the console and logs the kernel's console lines with its own — and the tail shows the kernel's first.
 platform-init writes its own verdicts there too, as kernel log lines at a level the guest's quiet console still prints — a refusal to boot, each hand-off to the image's entrypoint and each exit of it — so a machine that will not boot, or whose agent keeps exiting, says why.
 An exit with less than 64 MiB left in the agent's home says so, and the runner then reports the boot as a full home, which the Agent carries as `HomeVolumeFull`, the reason a container agent's full home gets; a boot that fails while the owner's claim is critically full is reported as that claim being full instead ([persistence](persistence.md#per-agent-pvcs)).
 When a boot fails, and when a guest has not answered for a minute after it was asked to start, the status message carries the end of that console: a few kilobytes of each source, stripped to printable text, and redacted with every env value the machine has been given — longest first, and each line of a value that spans lines — because a guest that prints its environment puts an operator's Secret there; a value of three characters or fewer is left as it is.
-The guest agent's line for each connection it accepts is left out first, because enough of them, one for each command the runner runs in the guest, would fill those kilobytes and push out every line the guest itself wrote.
 Every start empties both of the console's sources first — the runner does so itself rather than trusting the runtime's own removal of its log — because the file outlives the runner and a restarted runner knows only the current spec: what a tail quotes is then a boot this runner started, with values it holds.
 A console the runner cannot redact, holding no spec for the machine, is not shown.
 The runner's health prober writes the note for a quiet guest and refreshes it about once a minute, not on every probe, so a stuck machine does not rewrite its Agent's condition on each one.
@@ -283,7 +292,8 @@ The attribute is namespaced under the permanent `platform` codename so it never 
 **Invocation targets attribute to their Driver.** An Invocation target is not a spend principal of its own — the same rule [Egress Aliasing](../ubiquitous-language.md) applies to network identity and Driver Cascade to deletion, here in its spend face.
 So a target's gateway stamps its **root Driver's** id as the trusted `platform.agent.id`, not the target's own, and every record the target produces counts as the Driver's from the first export.
 To keep the merged child rows distinguishable, the same gateway additionally stamps a trusted `platform.invocation.id` carrying the target's *own* id; the collector promotes it with the same drop-then-stamp sanitization, so it too is unforgeable.
-A non-target's gateway **strips** the invocation stamp on every route out, just as a target's stamps it on every route out, so the attribute only ever appears on genuine target rows.
+A non-target's gateway **strips** the invocation stamp on the same two routes that carry the agent stamp, just as a target's stamps it there, so the attribute only ever appears on genuine target rows.
+The host chains carry neither stamp, since they cannot reach the collector.
 The target's `platform.agent.name` stays its own and remains display-only.
 This attribution is fixed at **spawn (write) time**: the api-server resolves the root Driver when it creates the target and bakes the override into that gateway's controller-rendered configuration, so it is settled before the target's first call and never recomputed at read time.
 A target that has reported is reaped a short moment later rather than in the same breath, so its last export is not cut off mid-flight by the pod and its gateway going down together; the liveness sweep reaps what a restarted api-server forgot to.

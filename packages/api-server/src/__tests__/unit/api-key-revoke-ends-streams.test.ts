@@ -13,7 +13,7 @@ import {
   createRelayAdmission,
   relayRoute,
 } from "../../apps/api-server/agent-proxies/upgrade.js";
-import { createTrpcHttpHandler } from "../../apps/api-server/trpc/http.js";
+import { createTrpcHttpRoutes } from "../../apps/api-server/trpc/http.js";
 import { createTrpcWsEndpoint } from "../../apps/api-server/trpc/ws.js";
 import type { ApiVariables } from "../../apps/api-server/deps.js";
 import { createLiveEventsService } from "../../modules/live-events/services/live-events-service.js";
@@ -95,9 +95,9 @@ describe("API key revocation and open streams", () => {
     const { listeners, liveEvents } = liveEventsWithListeners();
     const app = new Hono<{ Variables: ApiVariables }>();
     app.use("/api/*", createAuthMiddleware(authenticate, attribution));
-    app.all(
-      "/api/trpc/*",
-      createTrpcHttpHandler({
+    app.route(
+      "/api/trpc",
+      createTrpcHttpRoutes({
         composeApiContext: (user) => ({ user, liveEvents }) as ApiContext,
       }),
     );

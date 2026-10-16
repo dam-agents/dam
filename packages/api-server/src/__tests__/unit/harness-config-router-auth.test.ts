@@ -23,6 +23,7 @@ function setup(user: User) {
       supported: true,
       catalog: null,
       sessionModel: false,
+      modelRouter: false,
       defaultHarness: null,
       harnesses: null,
     })),

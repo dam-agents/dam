@@ -667,13 +667,33 @@ describe("finalizeAllStreaming + hasStreamingAssistant", () => {
 
 describe("appendInterruptedNotice", () => {
   test("appends one notice bubble when a turn was interrupted", () => {
-    const out = appendInterruptedNotice(
-      [userMsg("u1", "hi")],
-      "2026-09-07T00:00:00Z",
-    );
+    const out = appendInterruptedNotice([userMsg("u1", "hi")], {
+      inFlight: false,
+      interruptedAt: "2026-09-07T00:00:00Z",
+    });
     expect(out).toHaveLength(2);
     expect(out[1].notice).toBe(true);
-    expect(out[1].parts[0]).toMatchObject({ kind: "text" });
+    expect(out[1].parts[0]).toMatchObject({
+      kind: "text",
+      text: expect.stringContaining("out of memory"),
+    });
+  });
+
+  /** TEST_SCENARIO: the platform stopped the turn, as a user's Sleep does, so
+   * the notice names the stop and does not blame memory. */
+  test("names a stop instead of memory when the platform stopped the turn", () => {
+    const out = appendInterruptedNotice([userMsg("u1", "hi")], {
+      inFlight: false,
+      interruptedAt: "2026-09-07T00:00:00Z",
+      interruptedByStop: true,
+    });
+    expect(out[1].parts[0]).toMatchObject({
+      kind: "text",
+      text: expect.stringContaining("put to sleep"),
+    });
+    expect(out[1].parts[0]).not.toMatchObject({
+      text: expect.stringContaining("memory"),
+    });
   });
 
   test("no-op when the session was not interrupted", () => {

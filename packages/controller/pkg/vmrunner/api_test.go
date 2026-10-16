@@ -88,6 +88,7 @@ func TestTheWireTypesWriteAndReadWhatTheContractSays(t *testing.T) {
 		Version:   1,
 
 		HomeSeededFrom: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+		HomeRepaired:   "storage: e2fsck -p repaired the filesystem: /dev/vda: 12/65536 files",
 		Nested:         true,
 	})
 	matchesTheContract(t, "runner-release", RunnerRelease{
@@ -132,7 +133,7 @@ func TestTheStatesAndReasonsAreTheOnesTheRunnerReports(t *testing.T) {
 		StateRestarting, StateRunning, StateStopping, StateStopped,
 	}, vocabulary.States)
 	assert.Equal(t, []string{
-		ReasonNotReady, ReasonOutOfCapacity, ReasonImageUnavailable, ReasonBootFailed, ReasonSeedMissing, ReasonStorageFull, ReasonHomeFull,
+		ReasonNotReady, ReasonOutOfCapacity, ReasonImageUnavailable, ReasonBootFailed, ReasonSeedMissing, ReasonStorageFull, ReasonHomeFull, ReasonHomeDamaged,
 	}, vocabulary.Reasons)
 	assert.Equal(t, int32(SeedExitPermanent), vocabulary.SeedExitPermanent)
 	assert.Equal(t, []string{HeldUnstaged, HeldRuntime, HeldFailed}, vocabulary.ReleaseHolds)

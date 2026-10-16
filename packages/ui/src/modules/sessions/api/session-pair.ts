@@ -1,5 +1,5 @@
 import { skipToken, useMutation, useQuery } from "@tanstack/react-query";
-import { routesSessionPairs } from "agent-runtime-api";
+import { type HarnessCatalogView, routesSessionPairs } from "agent-runtime-api";
 import type {
   ConnectionView,
   HarnessConfigStatus,
@@ -22,6 +22,7 @@ import {
 import { useAppConnections } from "../../connections/api/queries.js";
 import { egressRulesKeys } from "../../egress-rules/api/queries.js";
 import { askToRestartAfterSave } from "../../processes/lib/ask-restart-after-save.js";
+import { catalogSettled } from "../lib/catalog-groups.js";
 import {
   fittingProviders,
   grantedProviderRefs,
@@ -46,6 +47,10 @@ export function useRememberedPair(agentId: string | null) {
   });
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Old runtime path: remove when agents.runtimeFleet.outdated is empty on prod.
+ * The models one provider lists for a harness, asked per provider.
+ */
 export function useProviderModels(
   agentId: string | null,
   harness: string | null,
@@ -76,6 +81,58 @@ export function useProviderModels(
   return { ...query, operable, answerable };
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: keyed by the agent's granted providers, so a
+ * grant or revoke asks again at once, and polled until the catalog has caught
+ * up with them, since a grant reaches the pod a few seconds after it is
+ * saved and its first listings wait for the restarted egress gateway. A
+ * provider still unavailable after a minute, or a failing read, stops the
+ * poll; `waiting` says the poll is still running.
+ */
+const CATALOG_POLL_MS = 5_000;
+const CATALOG_POLL_LIMIT = 12;
+export function useHarnessCatalogModels(
+  agentId: string | null,
+  harness: string | null,
+) {
+  const operable = useIsAgentOperable(agentId);
+  const { granted } = useProviderConnections(agentId);
+  const grantedIds = granted.map((p) => p.id).sort();
+  const polling = (state: {
+    status: string;
+    dataUpdateCount: number;
+    data: HarnessCatalogView | undefined;
+  }) =>
+    state.status !== "error" &&
+    state.dataUpdateCount < CATALOG_POLL_LIMIT &&
+    !catalogSettled(state.data, grantedIds);
+  const queryKey = ["harness-catalog-models", agentId, harness, grantedIds];
+  const query = useQuery({
+    queryKey,
+    queryFn:
+      agentId && harness && operable
+        ? () => agentTrpc(agentId).harnessConfig.catalog.query({ harness })
+        : skipToken,
+    staleTime: 60_000,
+    refetchInterval: (q) => (polling(q.state) ? CATALOG_POLL_MS : false),
+    retry: 5,
+    retryDelay: 2_000,
+  });
+  return {
+    ...query,
+    operable,
+    granted,
+    waiting:
+      operable &&
+      polling({
+        status: query.status,
+        dataUpdateCount:
+          queryClient.getQueryState(queryKey)?.dataUpdateCount ?? 0,
+        data: query.data,
+      }),
+  };
+}
+
 export function useHarnessConfigured(agentId: string, harness: string) {
   const operable = useIsAgentOperable(agentId);
   return useQuery({
@@ -92,15 +149,17 @@ export function useProviderConnections(agentId: string | null): {
   granted: ProviderConnectionRef[];
   owned: ProviderConnectionRef[];
   loaded: boolean;
+  failed: boolean;
 } {
-  const { data: grants } = useAgentConnections(agentId);
-  const { data: connections } = useAppConnections();
+  const { data: grants, isError: grantsFailed } = useAgentConnections(agentId);
+  const { data: connections, isError: connectionsFailed } = useAppConnections();
   return {
     ...grantedProviderRefs(
       (grants?.connections ?? []).map((g) => g.connectionId),
       connections ?? [],
     ),
     loaded: grants !== undefined && connections !== undefined,
+    failed: grantsFailed || connectionsFailed,
   };
 }
 
@@ -130,6 +189,13 @@ export function useGrantProvider(agentId: string | null) {
       () => false,
     );
   return {
+    attachAll: async (connectionIds: readonly string[]) => {
+      if (!(await settle({ grant: [...connectionIds] }))) return false;
+      await queryClient.invalidateQueries({
+        queryKey: trpc.connections.getAgentConnections.queryKey(),
+      });
+      return true;
+    },
     grant: (connectionId: string) => settle({ grant: [connectionId] }),
     revoke: (connectionId: string) => settle({ revoke: [connectionId] }),
     pending: update.isPending,

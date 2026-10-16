@@ -1,0 +1,47 @@
+#!/usr/bin/env node
+//MISE description="Test that the panel browser's launcher starts Chromium the way the Browser testing mode switch chose"
+//MISE sources=["base/rootfs/usr/local/bin/platform-browser", "base/base.toml", ".mise/tasks/test/browser-launch-mode"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const launcher = fileURLToPath(new URL("../../../base/rootfs/usr/local/bin/platform-browser", import.meta.url));
+const baseToml = readFileSync(new URL("../../../base/base.toml", import.meta.url), "utf8");
+const dir = mkdtempSync(join(tmpdir(), "browser-launch-mode-"));
+const home = join(dir, "home");
+const chromium = join(dir, "chromium");
+const choice = join(home, ".local/share/platform/browser-launch");
+writeFileSync(chromium, '#!/bin/sh\nprintf "%s\\n" "$@"\n', { mode: 0o755 });
+writeFileSync(join(dir, "platform-browser"), readFileSync(launcher, "utf8").replaceAll("/opt/ms-playwright/chromium", chromium));
+const launch = (...args) =>
+  execFileSync("/bin/sh", [join(dir, "platform-browser"), ...args], {
+    env: { PATH: process.env.PATH, HOME: home },
+    encoding: "utf8",
+  }).trimEnd().split("\n");
+
+try {
+  // TEST_SCENARIO: agent-browser launches the panel's browser through the launcher, so every launch — the panel's and the agent's own — goes through the switch.
+  assert.match(baseToml, /^AGENT_BROWSER_EXECUTABLE_PATH = "\/usr\/local\/bin\/platform-browser"$/m);
+
+  // TEST_SCENARIO: an agent whose home holds no choice launches as it always did, in testing mode: agent-browser's arguments reach Chromium as they are, so the DevTools port marks the browser automated.
+  assert.deepEqual(launch("--remote-debugging-port=0", "--kiosk"), ["--remote-debugging-port=0", "--kiosk"]);
+
+  // TEST_SCENARIO: with testing mode off, Chromium is launched without its automation report (navigator.webdriver), and the DevTools port agent-browser controls it through is kept.
+  mkdirSync(join(home, ".local/share/platform"), { recursive: true });
+  writeFileSync(choice, "standard\n");
+  assert.deepEqual(launch("--remote-debugging-port=0", "--kiosk"), [
+    "--disable-blink-features=AutomationControlled",
+    "--remote-debugging-port=0",
+    "--kiosk",
+  ]);
+
+  // TEST_SCENARIO: turning testing mode back on restores the testing launch.
+  writeFileSync(choice, "testing\n");
+  assert.deepEqual(launch("--remote-debugging-port=0"), ["--remote-debugging-port=0"]);
+} finally {
+  rmSync(dir, { recursive: true, force: true });
+}

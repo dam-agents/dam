@@ -1,7 +1,9 @@
 import { randomBytes } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { TRPCError } from "@trpc/server";
 import {
   parseKbShareString,
+  PLATFORM_LLM_TEMPLATE_ID,
   PROVIDER_TEMPLATE_IDS,
   providerTypeForTemplateId,
   type ConnectionStatus,
@@ -20,6 +22,9 @@ import {
   preferenceGroupOf,
   signingTargetOf,
   unaddressableRivalHost,
+  aliasForProviderType,
+  orderByAlias,
+  providerAliasConflict,
 } from "api-server-api";
 import type { SecretStore } from "../../secret-store/index.js";
 import type { ConnectionsRepository } from "../infrastructure/connections-repository.js";
@@ -55,6 +60,7 @@ import {
   buildConnectionSdsFields,
   connectionSecretAnnotations,
   CONNECTION_TOKEN_PLACEHOLDER,
+  UPSTREAM_CA_SECRET_FIELD,
 } from "../domain/connection-sds.js";
 import {
   awsCredentialsFile,
@@ -107,6 +113,13 @@ function assertNoUnaddressableRival(
   desired: readonly Connection[],
 ): void {
   for (const connection of added) {
+    const conflict = providerAliasConflict(desired, connection);
+    if (conflict) {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: `this agent already has a ${conflict.displayName} provider ('${conflict.held.name}'); an agent holds one '${conflict.alias}' provider, so remove it before granting '${connection.name}'`,
+      });
+    }
     for (const other of desired) {
       const host = unaddressableRivalHost(connection, other);
       if (host === undefined) continue;
@@ -116,6 +129,10 @@ function assertNoUnaddressableRival(
       });
     }
   }
+}
+
+export interface PlatformLlmConnections {
+  reconcilePlatformConnection(): Promise<void>;
 }
 
 export function createConnectionsService(deps: {
@@ -143,7 +160,10 @@ export function createConnectionsService(deps: {
     reachable: boolean;
   } | null>;
   maxSharedKbConnections?: number;
-}): ConnectionsService {
+  platformProviderEnabled: () => Promise<boolean>;
+  platformProviderKey: string | null;
+  platformProviderCa?: string | null;
+}): ConnectionsService & PlatformLlmConnections {
   const maxSharedKbConnections =
     deps.maxSharedKbConnections ?? MAX_SHARED_KB_CONNECTIONS_PER_OWNER;
   function toView(conn: Connection): ConnectionView {
@@ -325,6 +345,28 @@ export function createConnectionsService(deps: {
       ),
       ...pinned,
     ];
+  }
+
+  async function putConnectionSecret(
+    connectionId: string,
+    templateId: string,
+    path: string,
+    fields: Record<string, string>,
+    contributions: Contribution[],
+  ): Promise<void> {
+    await deps.secretStore.put(
+      { storeId: deps.secretStore.storeId, path, field: "" },
+      fields,
+      {
+        owner: deps.ownerId,
+        purpose: `connection:${templateId}`,
+        extraLabels: {
+          "agent-platform.ai/secret-type": "connection",
+          "agent-platform.ai/connection": connectionId,
+        },
+        extraAnnotations: connectionSecretAnnotations(contributions),
+      },
+    );
   }
 
   async function rotateHeaderValue(
@@ -751,7 +793,7 @@ export function createConnectionsService(deps: {
     });
   }
 
-  return {
+  const service: Omit<ConnectionsService, "listAndReconcileConnections"> = {
     async listTemplates(): Promise<ConnectionTemplateView[]> {
       const templates = deps.templates.list();
       const family = templates.some(inheritsFamily)
@@ -824,21 +866,24 @@ export function createConnectionsService(deps: {
       }
     },
 
-    async defaultProviderConnection(fits) {
+    async defaultProviderConnections(fits) {
       const usable = (
         await deps.repo.listByOwnerOldestFirst(deps.ownerId)
-      ).filter((c) => {
+      ).flatMap((c) => {
         const type = providerTypeForTemplateId(c.templateId);
-        return (
-          type !== null &&
+        return type !== null &&
           fits(type, c.templateId) &&
           PROVIDER_IS_ACTIVE[deriveStatus(c)]
-        );
+          ? [{ id: c.id, type }]
+          : [];
       });
-      return (
-        (usable.find((c) => c.templateId === "ibm-litellm") ?? usable[0])?.id ??
-        null
-      );
+      const aliases = new Set<string>();
+      return orderByAlias(usable).flatMap((c) => {
+        const alias = aliasForProviderType(c.type);
+        if (aliases.has(alias)) return [];
+        aliases.add(alias);
+        return [c.id];
+      });
     },
 
     async getProviderBalance(id: string): Promise<ProviderBalance | null> {
@@ -1283,18 +1328,12 @@ export function createConnectionsService(deps: {
           contributions,
           CONNECTION_TOKEN_PLACEHOLDER,
         );
-        await deps.secretStore.put(
-          { storeId: deps.secretStore.storeId, path: secretPath, field: "" },
+        await putConnectionSecret(
+          id,
+          template.id,
+          secretPath,
           { ...placeholderSds, ...(built.secrets.get(secretPath) ?? {}) },
-          {
-            owner: deps.ownerId,
-            purpose: `connection:${template.id}`,
-            extraLabels: {
-              "agent-platform.ai/secret-type": "connection",
-              "agent-platform.ai/connection": id,
-            },
-            extraAnnotations: connectionSecretAnnotations(contributions),
-          },
+          contributions,
         );
       }
 
@@ -1540,6 +1579,173 @@ export function createConnectionsService(deps: {
       });
     },
   };
+
+  const isPlatform = (c: Connection) =>
+    c.templateId === PLATFORM_LLM_TEMPLATE_ID;
+
+  async function platformState() {
+    const template = deps.templates.get(PLATFORM_LLM_TEMPLATE_ID);
+    const key = deps.platformProviderKey;
+    const ca = deps.platformProviderCa ?? null;
+    const wanted =
+      template !== null &&
+      key !== null &&
+      (await deps.platformProviderEnabled());
+    const owned = await deps.repo.listByOwner(deps.ownerId);
+    const held = owned.filter(isPlatform);
+    const [keep] = wanted ? held.filter((c) => c.auth.kind === "header") : [];
+    const remove = held.filter((c) => c !== keep);
+    const name = platformConnectionName(
+      deps.brandName,
+      new Set(owned.filter((c) => !isPlatform(c)).map((c) => c.name)),
+    );
+    const rotated =
+      keep?.auth.kind === "header" &&
+      ((await deps.secretStore.getField(keep.auth.valueRef)) !== key ||
+        (await deps.secretStore.getField({
+          ...keep.auth.valueRef,
+          field: UPSTREAM_CA_SECRET_FIELD,
+        })) !== ca);
+    const stale =
+      keep !== undefined &&
+      (keep.name !== name ||
+        rotated ||
+        !isDeepStrictEqual(keep.contributions, template?.contributions));
+    return {
+      owned,
+      template: wanted ? template : null,
+      key,
+      ca,
+      keep,
+      remove,
+      name,
+      rotated,
+      settled: !remove.length && (!wanted || (keep !== undefined && !stale)),
+    };
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: the built-in provider is one Connection per
+   * user, which the feature flag owns: it exists while the flag is on and the
+   * install names a model server, follows the operator's current endpoint and
+   * the brand, and is removed otherwise, never through the user's own create
+   * or delete. The flag is read rather than taken from the change event,
+   * because a user can record a flag that the install's mode overrides. Flag
+   * changes, listings and the boot sweep can all reconcile at once, on any
+   * replica, so the flag and the user's Connections are read only under one
+   * per-owner lock: whichever runs last sees the last flag. Its Secret holds
+   * a copy of the operator's key, and the operator's CA for the server when
+   * one is configured, and is rewritten whole when the key, the CA or the
+   * endpoint changes, since the endpoint names the hosts the gateway injects
+   * on. A keyless one from before the provider was metered has no Secret to
+   * rewrite, so it is replaced.
+   */
+  async function reconcilePlatformConnection(): Promise<void> {
+    await deps.connectionLock(`platform-llm:${deps.ownerId}`, async () => {
+      const { owned, template, key, ca, keep, remove, name, rotated } =
+        await platformState();
+      for (const conn of remove) await service.deleteConnection(conn.id);
+      if (!template || key === null) return;
+      if (!keep) {
+        await service.createFromTemplate({
+          templateId: PLATFORM_LLM_TEMPLATE_ID,
+          name,
+          authKind: "header",
+          value: key,
+          ...(ca ? { caData: ca } : {}),
+        });
+        return;
+      }
+      if (keep.name !== name) await deps.repo.updateName(keep.id, name);
+      const moved = !isDeepStrictEqual(
+        keep.contributions,
+        template.contributions,
+      );
+      if ((moved || rotated) && keep.auth.kind === "header") {
+        await putConnectionSecret(
+          keep.id,
+          PLATFORM_LLM_TEMPLATE_ID,
+          keep.auth.valueRef.path,
+          {
+            value: key,
+            ...(ca ? { [UPSTREAM_CA_SECRET_FIELD]: ca } : {}),
+            ...buildConnectionSdsFields(template.contributions, key),
+          },
+          template.contributions,
+        );
+        if (moved) {
+          await deps.repo.updateContributions(keep.id, template.contributions);
+        }
+        await fanOutToAgents(
+          keep.id,
+          await deps.repo.listAgentsForConnection(keep.id),
+          new Set(owned.map((c) => c.id)),
+          "connection.update.fanout_failed",
+        );
+      }
+    });
+  }
+
+  const refuseUserManaged = () =>
+    new TRPCError({
+      code: "FORBIDDEN",
+      message:
+        "The built-in provider is managed by its feature. Turn the feature on or off in Settings instead.",
+    });
+
+  return {
+    ...service,
+    async listAndReconcileConnections() {
+      try {
+        if (!(await platformState()).settled)
+          await reconcilePlatformConnection();
+      } catch (err) {
+        securityLog("warn", "connection.platform_provider_reconcile_failed", {
+          category: "credential",
+          actor: deps.ownerId,
+          actorKind: "user",
+          result: "failure",
+          reason: err instanceof Error ? err.message : "unknown",
+        });
+      }
+      return service.listConnections();
+    },
+    async createFromTemplate(input) {
+      if (input.templateId === PLATFORM_LLM_TEMPLATE_ID) {
+        throw refuseUserManaged();
+      }
+      return service.createFromTemplate(input);
+    },
+    async deleteConnection(id) {
+      const conn = await deps.repo.get(id, deps.ownerId);
+      if (conn?.templateId === PLATFORM_LLM_TEMPLATE_ID) {
+        throw refuseUserManaged();
+      }
+      return service.deleteConnection(id);
+    },
+    async update(id, credential) {
+      const conn = await deps.repo.get(id, deps.ownerId);
+      if (conn?.templateId === PLATFORM_LLM_TEMPLATE_ID) {
+        throw refuseUserManaged();
+      }
+      return service.update(id, credential);
+    },
+    reconcilePlatformConnection,
+  };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Connection names are unique per user, so a user
+ * who already named a Connection after the brand would block the built-in
+ * provider forever; it takes the first free name of the brand, then the brand
+ * followed by "LLM", then that numbered from 2, so every replica picks the same.
+ */
+function platformConnectionName(brand: string, taken: Set<string>): string {
+  if (!taken.has(brand)) return brand;
+  for (let n = 1; ; n++) {
+    const name = n === 1 ? `${brand} LLM` : `${brand} LLM ${n}`;
+    if (!taken.has(name)) return name;
+  }
 }
 
 function githubAppScopeView(

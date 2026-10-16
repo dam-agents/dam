@@ -1,4 +1,5 @@
 import { Branch, Undo } from "@carbon/icons-react";
+import { joinRendererBlocks, separateRendererBlocks } from "api-server-api";
 import { type ReactNode, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -25,18 +26,19 @@ export function RewritableMessage({
   message: Message;
   enabled: boolean;
   onRewrite: (mode: RewriteMode, text: string) => Promise<void>;
-  children: ReactNode;
+  children: (actions: ReactNode) => ReactNode;
 }) {
   const rewriting = useStore((s) => s.rewriting);
   const setRewriting = useStore((s) => s.setRewriting);
   const [pending, setPending] = useState(false);
   const mode = rewriting?.messageId === message.id ? rewriting.mode : null;
+  const original = separateRendererBlocks(messageText(message));
 
   const save = async (text: string) => {
     if (mode === null) return;
     setPending(true);
     try {
-      await onRewrite(mode, text);
+      await onRewrite(mode, joinRendererBlocks(text, original.blocks));
     } catch (err) {
       emitToast({ kind: "error", message: extractErrorMessage(err) });
     } finally {
@@ -51,7 +53,7 @@ export function RewritableMessage({
           {EDITOR_COPY[mode].label}
         </span>
         <MessageEditor
-          initial={messageText(message)}
+          initial={original.text}
           pending={pending}
           canSave={enabled}
           saveLabel={EDITOR_COPY[mode].save}
@@ -63,36 +65,31 @@ export function RewritableMessage({
     );
   }
 
-  return (
-    <div className="group relative flex flex-col items-end gap-1">
-      {children}
-      {enabled && rewriting === null && (
-        <div className="flex gap-1 transition-opacity md:absolute md:right-0 md:top-full md:z-10 md:pt-0.5 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            tooltip="Rewind"
-            aria-label="Rewind"
-            onClick={() =>
-              setRewriting({ messageId: message.id, mode: "rewind" })
-            }
-          >
-            <Undo size={14} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            tooltip="Fork"
-            aria-label="Fork"
-            onClick={() =>
-              setRewriting({ messageId: message.id, mode: "fork" })
-            }
-          >
-            <Branch size={14} />
-          </Button>
-        </div>
-      )}
-    </div>
+  return children(
+    enabled && rewriting === null && (
+      <>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          tooltip="Rewind"
+          aria-label="Rewind"
+          onClick={() =>
+            setRewriting({ messageId: message.id, mode: "rewind" })
+          }
+        >
+          <Undo size={14} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          tooltip="Fork"
+          aria-label="Fork"
+          onClick={() => setRewriting({ messageId: message.id, mode: "fork" })}
+        >
+          <Branch size={14} />
+        </Button>
+      </>
+    ),
   );
 }
 

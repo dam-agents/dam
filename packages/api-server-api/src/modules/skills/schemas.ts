@@ -18,6 +18,7 @@ export const skillSourceSchema = z.object({
     .object({ templateId: z.string(), templateName: z.string() })
     .optional(),
   canPublish: z.boolean().optional(),
+  hidden: z.boolean().optional(),
 });
 
 export const skillPublishResultSchema = z.object({
@@ -32,6 +33,7 @@ export const skillSchema = z.object({
   version: z.string(),
   contentHash: z.string(),
   dir: z.string().optional(),
+  path: z.string().optional(),
 });
 
 export const skillListResultSchema = z.object({
@@ -123,6 +125,12 @@ export const skillDeleteSourceInputSchema = z.object({
   id: z.string().min(1),
 });
 
+export const skillSetSourceHiddenInputSchema = z.object({
+  agentId: z.string().min(1),
+  id: z.string().min(1),
+  hidden: z.boolean(),
+});
+
 export const skillRefreshSourceInputSchema = z.object({
   id: z.string().min(1),
 });
@@ -149,6 +157,7 @@ export const skillInstallInputSchema = z.object({
   name: z.string().min(1),
   version: z.string().min(1),
   contentHash: z.string().optional(),
+  path: skillSourcePathSchema.optional(),
 });
 
 export const skillUninstallInputSchema = z.object({
@@ -160,6 +169,7 @@ export const skillUninstallInputSchema = z.object({
 export const skillSetEntrySchema = z.object({
   source: z.string().url(),
   name: z.string().min(1),
+  path: skillSourcePathSchema.optional(),
 });
 
 export const skillKey = (e: { source: string; name: string }) =>
@@ -212,6 +222,7 @@ export const skillApplyBatchInputSchema = z
           name: z.string().min(1),
           version: z.string().min(1),
           contentHash: z.string().optional(),
+          path: skillSourcePathSchema.optional(),
         }),
       )
       .max(MAX_SKILL_BATCH_ENTRIES)

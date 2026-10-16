@@ -38,6 +38,40 @@
       "type": "string",
       "minLength": 1
     },
+    "avatar": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "stack",
+            "shield",
+            "roller",
+            "tower",
+            "wave",
+            "compass",
+            "spark",
+            "lens"
+          ]
+        },
+        {
+          "type": "string",
+          "pattern": "^emoji:.+$",
+          "description": "`emoji:` and one RGI emoji"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "path"
+          ]
+        }
+      ]
+    },
     "video": {
       "type": "string",
       "format": "uri"
@@ -413,7 +447,6 @@
       }
     },
     "skills": {
-      "default": [],
       "type": "array",
       "items": {
         "type": "object",
@@ -425,6 +458,9 @@
           "name": {
             "type": "string",
             "minLength": 1
+          },
+          "path": {
+            "type": "string"
           }
         },
         "required": [

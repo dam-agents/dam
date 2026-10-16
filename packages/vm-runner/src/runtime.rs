@@ -7,7 +7,6 @@ use anyhow::Context;
 use smolvm::storage::STORAGE_DISK_FILENAME;
 
 use crate::api::{MachineSpec, State};
-use crate::guest::INIT_PATH;
 use crate::launch::ImageLaunch;
 
 // UNIT_BOUNDARY_DESCRIPTION: what the runner asks of the hypervisor, and the rules that do not depend on which one answers. The server drives machines through this trait, so it can be tested without KVM against a fake, and the embedded smolvm implementation is the only code that talks to the VMM. Everything here is the hypervisor-independent half: how a machine's workload is assembled, how its env is updated, when its disk grows, and how a VMM that outlived its stop is found and taken down.
@@ -22,6 +21,10 @@ pub trait Runtime: Send + Sync {
     fn grow(&self, _id: &str, _memory_mib: i32) -> anyhow::Result<()> {
         anyhow::bail!("this runtime cannot grow a running machine")
     }
+    // UNIT_BOUNDARY_DESCRIPTION: what the runtime does at a boot's first answer from the guest, such as swapping in a storage disk the guest has just filled (see convert). A failure is logged by the caller and tried again at the next boot's answer.
+    fn answered(&self, _id: &str) -> anyhow::Result<()> {
+        Ok(())
+    }
     fn stop(&self, id: &str) -> anyhow::Result<()>;
     fn delete(&self, id: &str) -> anyhow::Result<()>;
     // UNIT_BOUNDARY_DESCRIPTION: whether what the machine's record names to boot is still on the host. The record holds a path when the machine boots a cache tree or a staged archive, and the hypervisor reads that path at every start, so a tree evicted or relaid under a stopped machine fails every start until the record is rewritten. A registry reference is not a path and is always present.
@@ -29,6 +32,14 @@ pub trait Runtime: Send + Sync {
     // UNIT_BOUNDARY_DESCRIPTION: the end of the machine's console as printable text, unredacted, or nothing when the runtime keeps none.
     fn console_tail(&self, _id: &str) -> String {
         String::new()
+    }
+    // UNIT_BOUNDARY_DESCRIPTION: every line of the machine's console in this boot that holds `needle`, as printable text, unredacted. A line written early in a boot can be gone from the tail by the time the guest answers, and this reads the whole boot.
+    fn console_lines(&self, id: &str, needle: &str) -> String {
+        self.console_tail(id)
+            .lines()
+            .filter(|line| line.contains(needle))
+            .collect::<Vec<_>>()
+            .join("\n")
     }
     // UNIT_BOUNDARY_DESCRIPTION: how much host memory the machine's VMM holds now, or nothing when no VMM runs or the runtime cannot tell. Guests hand freed memory back to the host, so this is what the machine uses, well below its size, and what admission and the runner's memory request count it at.
     fn resident_mib(&self, _id: &str) -> Option<i32> {
@@ -69,6 +80,8 @@ pub const GUEST_AGENT_PORT: u16 = 8080;
 
 // UNIT_BOUNDARY_DESCRIPTION: the file in a machine's smolvm directory naming the host loopback port its guest may reach at its gateway address. The runner writes it; the machine's VMM, which is this binary started with `_boot-vm`, reads it beside its boot config.
 pub const GATEWAY_HOST_PORT_FILE: &str = "platform-gateway-host-port";
+// UNIT_BOUNDARY_DESCRIPTION: the file in a machine's smolvm directory naming the guest agent root its VMM boots, which lies in the runtime the runner booted it on. The runner writes it before each start, beside the boot config the VMM deletes once read, so it lasts as long as the VMM; the loader reads it to keep that runtime in the pod (see release::booted_from).
+pub const AGENT_ROOTFS_FILE: &str = "platform-agent-rootfs";
 
 // UNIT_BOUNDARY_DESCRIPTION: the largest image archive a machine may boot from. smolvm refuses archives over 8 GiB by default, and agent images with their toolchains are bigger than that.
 pub const MAX_IMAGE_BYTES: u64 = 16 << 30;
@@ -90,9 +103,6 @@ pub const STALE_RUNTIME_FILES: [&str; 5] = [
     "vm.lock",
     "agent.pid",
 ];
-
-// UNIT_BOUNDARY_DESCRIPTION: the root overlay of smolvm's guest agent in both of the forms smolvm writes it — a qcow2 over the shipped template, or a raw disk whenever smolvm cannot overlay the template — and the marker that says it was formatted. All three go, so the next boot formats a fresh root whichever form this one had.
-pub const OVERLAY_FILES: [&str; 3] = ["overlay.qcow2", "overlay.raw", "overlay.formatted"];
 
 // UNIT_BOUNDARY_DESCRIPTION: what the guest runs and with what, as the create hands it to smolvm.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -120,12 +130,10 @@ pub fn workload(spec: &MachineSpec, launch: &ImageLaunch) -> anyhow::Result<Work
     if image_command.is_empty() {
         anyhow::bail!(IMAGE_LAUNCH_UNKNOWN);
     }
-    let mut command = vec![INIT_PATH.to_string()];
-    command.extend(image_command);
     Ok(Workload {
         env: env.into_iter().collect(),
         workdir: (!launch.working_dir.is_empty()).then(|| launch.working_dir.clone()),
-        command,
+        command: image_command,
     })
 }
 
@@ -389,37 +397,16 @@ pub fn kill_orphans(proc_root: &Path, vm_dir: &Path) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: throws away the machine's root overlay, which is the root of smolvm's own guest agent and not the image's. The image's root is an overlay on the storage disk that smolvm keeps, and platform-init replaces it with a fresh one on every boot; that is what keeps a machine to HOME and nothing else. Discarding this one still means every boot starts the guest agent from the shipped template, so an agent root that was left corrupt, or written by an older runner, is never booted again. It runs after a stop and again before a start, because a machine that died with its runner never got the stop. Nothing is removed while a VMM still holds the disks.
-pub fn discard_overlay(id: &str, proc_root: &Path, vm_dir: &Path, vmms: Vec<i32>) {
-    if !vm_dir.is_dir() {
-        return;
-    }
-    if !vmms_left(proc_root, vm_dir, vmms, VMM_EXIT_WAIT).is_empty() {
-        tracing::warn!(
-            machine = id,
-            "machine still has a VMM holding its disks; leaving the root overlay in place"
-        );
-        return;
-    }
-    for file in OVERLAY_FILES {
-        match fs::remove_file(vm_dir.join(file)) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => {
-                tracing::warn!(machine = id, file, error = %e, "could not discard the root overlay")
-            }
-        }
-    }
-}
-
 // UNIT_BOUNDARY_DESCRIPTION: where ext4 keeps its magic number: the superblock starts 1024 bytes into the disk, and its magic, 0xEF53 little-endian, is 56 bytes into the superblock.
 const EXT4_MAGIC_OFFSET: u64 = 1024 + 56;
+// UNIT_BOUNDARY_DESCRIPTION: where btrfs keeps its magic: the primary superblock starts 64 KiB into the disk, and its magic, `_BHRfS_M`, is 64 bytes into the superblock.
+const BTRFS_MAGIC_OFFSET: u64 = 0x10000 + 0x40;
 
-// UNIT_BOUNDARY_DESCRIPTION: marks a storage disk that holds a filesystem as formatted when its marker is missing, so smolvm never copies its template over it. smolvm copies the template over any storage disk without the marker at every start, and it writes the marker only once that copy has also been resized to the size asked for. A resize that fails — on a host without resize2fs, every disk smaller than the template — leaves a disk without the marker, and every later start then replaced it, and the agent's home on it, with the template. A disk with an ext4 superblock was formatted whatever its marker says, so it is marked here. Only a disk that holds no filesystem yet, the sparse file a create makes, is left for smolvm to format.
+// UNIT_BOUNDARY_DESCRIPTION: marks a storage disk that holds a filesystem as formatted when its marker is missing, so smolvm never copies its template over it. smolvm copies the template over any storage disk without the marker at every start, and it writes the marker only once that copy has also been resized to the size asked for. A resize that fails — on a host without resize2fs, every disk smaller than the template — leaves a disk without the marker, and every later start then replaced it, and the agent's home on it, with the template. A disk with an ext4 or btrfs superblock was formatted whatever its marker says, so it is marked here. A disk with no filesystem never reaches a start: a create whose disk cannot be made fails.
 fn keep_formatted_storage(id: &str, vm_dir: &Path) -> anyhow::Result<()> {
     let disk = vm_dir.join(STORAGE_DISK_FILENAME);
     let marker = disk.with_extension("formatted");
-    if marker.exists() || !holds_ext4(&disk)? {
+    if marker.exists() || !holds_filesystem(&disk)? {
         return Ok(());
     }
     tracing::warn!(
@@ -429,25 +416,28 @@ fn keep_formatted_storage(id: &str, vm_dir: &Path) -> anyhow::Result<()> {
     fs::write(&marker, "1").with_context(|| format!("marking {} formatted", disk.display()))
 }
 
-fn holds_ext4(disk: &Path) -> anyhow::Result<bool> {
+fn holds_filesystem(disk: &Path) -> anyhow::Result<bool> {
     use std::os::unix::fs::FileExt;
     let file = match fs::File::open(disk) {
         Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(e) => return Err(e).with_context(|| format!("reading {}", disk.display())),
     };
-    let mut magic = [0; 2];
-    match file.read_exact_at(&mut magic, EXT4_MAGIC_OFFSET) {
-        Ok(()) => Ok(magic == [0x53, 0xEF]),
-        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
-        Err(e) => Err(e).with_context(|| format!("reading {}", disk.display())),
-    }
+    let magic_at = |offset, magic: &[u8]| {
+        let mut read = vec![0; magic.len()];
+        match file.read_exact_at(&mut read, offset) {
+            Ok(()) => Ok(read == magic),
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
+            Err(e) => Err(e).with_context(|| format!("reading {}", disk.display())),
+        }
+    };
+    Ok(magic_at(EXT4_MAGIC_OFFSET, &[0x53, 0xEF])? || magic_at(BTRFS_MAGIC_OFFSET, b"_BHRfS_M")?)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a VMM killed with SIGKILL may take to be gone. A process leaves at once unless it is stuck in the kernel, and one stuck there keeps the disks open however long it is waited on.
 pub const KILLED_EXIT_WAIT: Duration = Duration::from_secs(1);
 
-// UNIT_BOUNDARY_DESCRIPTION: prepares a machine's directory for a fresh boot: any VMM still holding it is waited out for `wait` and then killed, the files a dead VMM leaves are removed, the overlay is discarded, a storage disk that holds a filesystem is marked formatted, and the console an earlier boot wrote is emptied. A VMM that outlives even SIGKILL — stuck in uninterruptible sleep on its disk — fails the start instead: its lock and sockets are what keep a second VMM off the same storage disk, and a second VMM writing that disk under the first corrupts the agent's home.
+// UNIT_BOUNDARY_DESCRIPTION: prepares a machine's directory for a fresh boot: any VMM still holding it is waited out for `wait` and then killed, the files a dead VMM leaves are removed, a storage disk that holds a filesystem is marked formatted, and the console an earlier boot wrote is emptied. A VMM that outlives even SIGKILL — stuck in uninterruptible sleep on its disk — fails the start instead: its lock and sockets are what keep a second VMM off the same storage disk, and a second VMM writing that disk under the first corrupts the agent's home.
 pub fn clear_for_start(
     id: &str,
     proc_root: &Path,
@@ -471,7 +461,6 @@ pub fn clear_for_start(
     for file in STALE_RUNTIME_FILES {
         let _ = fs::remove_file(vm_dir.join(file));
     }
-    discard_overlay(id, proc_root, vm_dir, Vec::new());
     keep_formatted_storage(id, vm_dir)?;
     crate::console::clear_console(id, vm_dir);
     Ok(())
@@ -516,9 +505,11 @@ mod tests {
     fn a_vmm_holding_the_machine_directory_is_found_and_ended_on_this_host() {
         let dir = TempDir::new("vmm-scan");
         let vm_dir = dir.path().join("m1");
+        // UNIT_BOUNDARY_DESCRIPTION: the stand-in VMM blocks in a shell builtin so it forks nothing; a forked child carries sh's command line until it execs, and a scan in that moment finds two VMMs.
         let mut vmm = std::process::Command::new("sh")
-            .args(["-c", "sleep 60; true", "_boot-vm"])
+            .args(["-c", "read _", "_boot-vm"])
             .arg(format!("{}/", vm_dir.display()))
+            .stdin(std::process::Stdio::piped())
             .spawn()
             .unwrap();
         let pid = i32::try_from(vmm.id()).unwrap();
@@ -568,11 +559,11 @@ mod tests {
             &launch(&["/entry", "-x"], &["serve"], &[], "/app"),
         )
         .unwrap();
-        assert_eq!(w.command, vec![INIT_PATH, "/entry", "-x", "serve"]);
+        assert_eq!(w.command, vec!["/entry", "-x", "serve"]);
         assert_eq!(w.workdir.as_deref(), Some("/app"));
 
         let bare = workload(&spec_with_env(&[]), &launch(&[], &["run"], &[], "")).unwrap();
-        assert_eq!(bare.command, vec![INIT_PATH, "run"]);
+        assert_eq!(bare.command, vec!["run"]);
         assert_eq!(
             bare.workdir, None,
             "an image with no working directory states none"
@@ -847,28 +838,7 @@ mod tests {
         assert!(vmms_left(proc.path(), &dir, vec![100], wait).is_empty());
     }
 
-    // TEST_SCENARIO: the root overlay is discarded in whichever form smolvm wrote it, and only once no VMM holds it. The storage disk, which is the agent's home, is never touched.
-    #[test]
-    fn the_overlay_goes_and_the_storage_disk_stays() {
-        let proc = TempDir::new("discard-proc");
-        let vm = TempDir::new("discard-vm");
-        for file in OVERLAY_FILES.iter().chain(&["storage.raw"]) {
-            fs::write(vm.path().join(file), "x").unwrap();
-        }
-        discard_overlay("m1", proc.path(), vm.path(), Vec::new());
-        for file in OVERLAY_FILES {
-            assert!(
-                !vm.path().join(file).exists(),
-                "{file} survived the discard"
-            );
-        }
-        assert!(
-            vm.path().join("storage.raw").exists(),
-            "the agent's disk was discarded"
-        );
-    }
-
-    // TEST_SCENARIO: a machine's directory outlives the runner process that made it, and a VMM that died with its runner leaves its sockets, lock and pid file in it. What a start clears and what a discard removes is pinned to the names smolvm writes, so a renamed entry here does not leave a stale socket in place and the next boot believing the machine is still up.
+    // TEST_SCENARIO: a machine's directory outlives the runner process that made it, and a VMM that died with its runner leaves its sockets, lock and pid file in it. What a start clears is pinned to the names smolvm writes, so a renamed entry here does not leave a stale socket in place and the next boot believing the machine is still up.
     #[test]
     fn a_start_clears_the_files_a_vmm_leaves_behind() {
         assert_eq!(
@@ -880,10 +850,6 @@ mod tests {
                 "vm.lock",
                 "agent.pid",
             ]
-        );
-        assert_eq!(
-            OVERLAY_FILES,
-            ["overlay.qcow2", "overlay.raw", "overlay.formatted"]
         );
     }
 

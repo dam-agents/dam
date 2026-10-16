@@ -1,22 +1,24 @@
 # Sessions
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 ## Session inside the pod
 
-agent-runtime holds one harness process, a **Harness Lease**, per harness, provider Connection, model and process-scoped [session settings](harness-config.md#session-settings) its sessions ask for: the model and those settings reach the harness as its process env, never as a switch inside a live session, and changing a session's model or such a setting moves its next turn to the matching lease.
-Neither change is accepted while the session's turn runs.
+agent-runtime holds one harness process, a **Harness Lease**, per harness and set of process-scoped [session settings](harness-config.md#session-settings) its sessions ask for; the provider and model are no fact of a process.
+Every model call goes through the [Model Router](harness-config.md#the-model-router) by the session's model name: a per-turn choice kept in the session's metadata and applied through the harness's own per-session call before each prompt and after every cold load; a harness that refuses the name is asked once more, then the queued prompts fail with its reason rather than run on a substitute.
+A model change applies to the next turn; a setting change moves the next turn to the matching lease.
+The default harness's lease starts once the server listens, so a waking chat finds it loaded; any other starts on the first frame naming a session on its harness.
+A lease that held no session for a while shuts down, the default's included, and one whose harness crashes is respawned by the next frame.
 A lease outlives connections.
 ACP channels attach concurrently and engage sessions by the `sessionId` each frame carries.
 
 Each lease is the unchanged ACP runtime this section describes, behind a **lease router**.
-`session/new` names the session's harness, provider and model; the runtime persists that pair in its session-metadata store, so later frames, and a load or resume after a restart, route back to the same lease.
-A session naming none runs on the default harness and first granted provider, and keeps that pair.
-Leases spawn lazily, except the default one, which starts once the server listens so a waking chat finds it loaded; each is told about the client as the first was, and an agent's question is answered to the lease that asked.
-The default lease stays; any other shuts down once it holds no session, and one whose harness crashes is dropped for the next session to respawn.
+`session/new` names the session's harness and model; the runtime persists that choice in its session-metadata store, so later frames, and a load or resume after a restart, route back to the same lease.
+Each lease is told about the client as the first was, and an agent's question is answered to the lease that asked.
+The session list draws on the metadata store too, so a harness not running still lists its sessions.
 
-A lease spawns with the agent-wide env, its own provider's layer and its harness's layer ([connections](connections.md#contribution-fan-out)), then the pod's process env, then its harness, provider and model.
-Revoking a provider recycles only the leases on it; a prompt or setting sent to a session on a removed provider fails with a structured *provider removed* error naming it, and granting it again resumes the session.
+A lease spawns with the agent-wide env, its harness's layer ([connections](connections.md#contribution-fan-out)) and the router's env; a routed provider's env stays with the Model Router, which reads it per call, a native Connection's (Bedrock) still reaches the process, and a provider env change recycles the leases.
+A prompt to a session whose model names a removed provider fails with a structured *provider removed* error naming it; another provider's model, or the grant restored, resumes it.
 
 Each session is an append-only in-memory log (≤2 MB soft cap; inline image and audio bytes give way to a placeholder before any entry is evicted).
 Every channel keeps a per-session cursor; new events append to the log and fan out to engaged channels that have not yet seen them.
@@ -111,6 +113,8 @@ Which ceiling depends on how the agent runs: a container is capped by its cgroup
 A container that carries no cgroup limit is left unwatched rather than measured against the node it shares, whose memory a neighbour moves.
 agent-runtime pushes back first: nearing the limit it kills the largest tool process, sparing every harness and the conversation processes any carried harness's manifest names, so the agent recovers mid-turn; only when those are the hog does the kernel's kill land.
 A turn that dies anyway is recovered from an [active-turns marker](persistence.md) surviving to the next boot: it resumes on its own, up to five times, with a notice to pick the task back up.
+The resumed turn is unattended: nobody reads it live, so it waits for the harness to hold the Session again and never for a viewer, and it runs on a Sleep's wake with no chat open.
+A turn the platform stopped — a Sleep, an eviction, a restart, all of which reach the runtime as SIGTERM — is marked stopped as the runtime shuts down, so the notice and the chat name the stop instead of blaming memory.
 The marker is written only after the harness *took* the prompt, so resuming continues a turn the agent already saw — not the [no-auto-resend](#prompt-delivery) of a prompt it never got.
 A harness stores a new session only while its first turn runs, so the runtime flags a session from `session/new` as unstored until the harness answers a prompt of it, and the marker of an unstored session's turn keeps that turn's prompt.
 When the harness exits during such a turn, the runtime moves the kept prompt to the undelivered document; at a shutdown of the agent-runtime process the marker keeps it, for boot recovery or a failed load to settle.
@@ -143,7 +147,7 @@ The runtime starts it once the runtime-channel env exists, restarts it when it c
 When the env changes, the service is asked to reload in place, and one that cannot is restarted with the fresh env.
 Its output joins the pod log stream.
 The pod's init reaps processes orphaned by a dying harness or service, so none linger as zombies.
-claude-code uses the hook to front custom Anthropic-compatible upstreams with a local model gateway, each provider apart; images without a pod service are unaffected.
+No shipped image carries a pod service; the hook stays for a custom image.
 
 Switching a session's mode (e.g. chat → terminal) is metadata-only: the switching client persists the new mode over ACP, which the runtime merges into its session-metadata store.
 The running harness is unaffected — mode is a UI hint about which surface (chat vs. terminal PTY) to render.

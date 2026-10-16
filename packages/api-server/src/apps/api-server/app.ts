@@ -30,7 +30,7 @@ import {
 import type { ApiServerDeps, ApiVariables } from "./deps.js";
 import { mountRoutes } from "./routes/index.js";
 import { createApiContextFactory } from "./trpc/context.js";
-import { createTrpcHttpHandler } from "./trpc/http.js";
+import { createTrpcHttpRoutes } from "./trpc/http.js";
 import { createTrpcWsEndpoint } from "./trpc/ws.js";
 
 export const securityHeaders: MiddlewareHandler = async (c, next) => {
@@ -88,7 +88,7 @@ export function startApiServerApp(deps: ApiServerDeps) {
     ),
   );
   mountRoutes(app, deps);
-  app.all("/api/trpc/*", createTrpcHttpHandler({ composeApiContext }));
+  app.route("/api/trpc", createTrpcHttpRoutes({ composeApiContext }));
   app.all(
     "/api/agents/:id/trpc/*",
     createAgentTrpcProxy({

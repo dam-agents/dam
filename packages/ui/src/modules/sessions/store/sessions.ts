@@ -29,10 +29,13 @@ import {
   rememberUndelivered,
 } from "../lib/undelivered-store.js";
 
-const SESSIONS_SECTION_OPEN_STORAGE_KEY = "platform-sessions-open";
 const TOOL_ACTIVITY_EXPANDED_STORAGE_KEY = "platform-tool-activity-expanded";
 
 export type RewriteMode = "rewind" | "fork";
+
+export type ChatRequest =
+  | { kind: "open"; sessionId: string; mode: SessionMode | null }
+  | { kind: "new" };
 
 export interface Rewriting {
   messageId: string;
@@ -61,7 +64,8 @@ export interface SessionsSlice {
   terminalPaused: boolean;
   pendingResumeSessionId: string | null;
   pendingResumeSessionMode: SessionMode | null;
-  sessionsSectionOpen: boolean;
+  pendingResumeFresh: boolean;
+  chatRequest: ChatRequest | null;
   toolActivityExpanded: boolean;
 
   setSessionId: (id: string | null) => void;
@@ -71,7 +75,7 @@ export interface SessionsSlice {
   ) => void;
   setSessionMode: (mode: SessionMode | null) => void;
   setTerminalPaused: (paused: boolean) => void;
-  setSessionsSectionOpen: (open: boolean) => void;
+  requestChat: (request: ChatRequest | null) => void;
   setToolActivityExpanded: (expanded: boolean) => void;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
   setRunStarts: (list: string[]) => void;
@@ -82,7 +86,6 @@ export interface SessionsSlice {
   addRunStart: (at: string) => void;
   setNextSessionPair: (agentId: string, pair: SessionPair) => void;
   setSessionError: (e: SessionError | null) => void;
-  toggleSessionFilter: (category: SessionCategory) => void;
   setDraft: (key: string, patch: Partial<SessionDraft>) => void;
   appendNewSessionDraft: (agentId: string, text: string) => void;
   clearDraft: (key: string) => void;
@@ -93,7 +96,7 @@ export interface SessionsSlice {
   applyForeignDraft: (key: string, draft: SessionDraft | null) => void;
   setBusy: (busy: boolean) => void;
 
-  deleteSession: (sessionId: string) => Promise<boolean>;
+  deleteSession: (sessionId: string, agentId?: string) => Promise<boolean>;
   reopenUnstoredSession: (
     sessionId: string,
     undelivered: PlatformUndeliveredPrompt[],
@@ -172,10 +175,8 @@ export const createSessionsSlice: StateCreator<
     terminalPaused: false,
     pendingResumeSessionId: null,
     pendingResumeSessionMode: null,
-    sessionsSectionOpen: readPersistedFlag(
-      SESSIONS_SECTION_OPEN_STORAGE_KEY,
-      true,
-    ),
+    pendingResumeFresh: false,
+    chatRequest: null,
     toolActivityExpanded: readPersistedFlag(
       TOOL_ACTIVITY_EXPANDED_STORAGE_KEY,
       false,
@@ -183,13 +184,14 @@ export const createSessionsSlice: StateCreator<
 
     setSessionId: (id) => set({ sessionId: id }),
     setPendingResumeSessionId: (id, mode = null) =>
-      set({ pendingResumeSessionId: id, pendingResumeSessionMode: mode }),
+      set({
+        pendingResumeSessionId: id,
+        pendingResumeSessionMode: mode,
+        pendingResumeFresh: false,
+      }),
     setSessionMode: (mode) => set({ sessionMode: mode }),
     setTerminalPaused: (paused) => set({ terminalPaused: paused }),
-    setSessionsSectionOpen: (open) => {
-      writePersistedFlag(SESSIONS_SECTION_OPEN_STORAGE_KEY, open);
-      set({ sessionsSectionOpen: open });
-    },
+    requestChat: (request) => set({ chatRequest: request }),
     setToolActivityExpanded: (expanded) => {
       writePersistedFlag(TOOL_ACTIVITY_EXPANDED_STORAGE_KEY, expanded);
       set({ toolActivityExpanded: expanded });
@@ -212,12 +214,6 @@ export const createSessionsSlice: StateCreator<
         s.runStarts.includes(at) ? s : { runStarts: [...s.runStarts, at] },
       ),
     setSessionError: (e) => set({ sessionError: e }),
-    toggleSessionFilter: (category) =>
-      set((s) => ({
-        sessionFilter: s.sessionFilter.includes(category)
-          ? s.sessionFilter.filter((c) => c !== category)
-          : [...s.sessionFilter, category],
-      })),
     setDraft: (key, patch) =>
       updateDrafts((drafts) => {
         const next = { ...(drafts[key] ?? EMPTY_DRAFT), ...patch };
@@ -300,15 +296,19 @@ export const createSessionsSlice: StateCreator<
         openDelegation: null,
         openBrowserAgentId: null,
         openProcessOutputKey: null,
+        openChangesAgentId: null,
         openFileDirty: false,
         openArtifactDirty: false,
         openFileEdit: false,
         pendingPermissions: [],
         pendingResumeSessionId: null,
+        chatRequest: null,
       }),
 
-    deleteSession: async (sessionId) => {
-      const agentId = get().selectedAgent;
+    deleteSession: async (
+      sessionId,
+      agentId = get().selectedAgent ?? undefined,
+    ) => {
       if (!agentId) return false;
       const ok = await runAction(
         () => deleteAgentSession(agentId, sessionId),

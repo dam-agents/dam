@@ -3,15 +3,19 @@ import type { TokenSpendByModel } from "api-server-api";
 import { Card } from "@/components/ui/card";
 import { SectionLabel } from "@/components/ui/section-label";
 
+import { AgentSpendLimitCard } from "../../spend/components/agent-spend-limit-card.js";
 import { useMonthlySpend } from "../hooks/use-monthly-spend.js";
 import { fillMonthDays, monthLabel, monthRange } from "../lib/month-range.js";
 import { totalCostUsd } from "../lib/totals.js";
 import { HarnessSpendCard } from "./harness-spend-card.js";
 import { ModelSpendBars } from "./model-spend-bars.js";
 import { MonthSwitcher } from "./month-switcher.js";
+import { ProviderSpendBars } from "./provider-spend-bars.js";
 import { CHART_HEIGHT_CLASS, SpendByDayChart } from "./spend-by-day-chart.js";
 import { SpendStatCards } from "./spend-stat-cards.js";
+import { UncountedCallsNote } from "./uncounted-calls-note.js";
 import {
+  HarnessReportsLead,
   readFailureMessage,
   UsageNotice,
   UsageStaleLabel,
@@ -51,6 +55,8 @@ export function SandboxUsageSection({ agentId }: { agentId: string }) {
 
   return (
     <section className="mb-8">
+      <AgentSpendLimitCard agentId={agentId} />
+      <HarnessReportsLead />
       <div className="mb-3 flex items-center justify-end gap-4">
         {state !== "unavailable" && (
           <div className="flex items-center gap-3">
@@ -75,6 +81,7 @@ export function SandboxUsageSection({ agentId }: { agentId: string }) {
       {state === "ready" && data && (
         <div aria-busy={freshness === "updating"} className="space-y-6">
           <SpendStatCards {...sums} />
+          <UncountedCallsNote rows={data.byModel} />
           {data.byModel.length === 0 ? (
             <UsageNotice>{`No LLM calls in ${monthLabel(shownMonth)}.`}</UsageNotice>
           ) : (
@@ -85,6 +92,14 @@ export function SandboxUsageSection({ agentId }: { agentId: string }) {
                   <ModelSpendBars rows={data.byModel} />
                 </Card>
               </section>
+              {data.byProvider.length > 0 && (
+                <section>
+                  <SectionLabel spaced>Spend by provider</SectionLabel>
+                  <Card className="p-5">
+                    <ProviderSpendBars rows={data.byProvider} />
+                  </Card>
+                </section>
+              )}
               <section>
                 <SectionLabel spaced>Spend by day</SectionLabel>
                 <Card className="p-5">

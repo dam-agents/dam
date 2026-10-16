@@ -20,7 +20,10 @@ const base: Schedule = {
   status: null,
   at: null,
   inSession: null,
+  harness: null,
   model: null,
+  settings: null,
+  migrationNote: null,
   sessionTitle: null,
 };
 

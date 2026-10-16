@@ -9,7 +9,7 @@ import { useTemplates } from "../../templates/api/queries.js";
 import { useCreateAgent } from "../api/mutations.js";
 import { useAgents } from "../api/queries.js";
 import { defaultAvatar } from "../lib/default-avatar.js";
-import { AGENT_NAME_PREFIX, nextSandboxName } from "../lib/sandbox-name.js";
+import { nextAgentName } from "../lib/sandbox-name.js";
 
 export function useCreateDefaultAgent() {
   const list = useAgents().data?.list;
@@ -29,10 +29,7 @@ export function useCreateDefaultAgent() {
       if (!list || !templates) return;
       const templateId = defaultHarnessId(imageCatalogue(templates).harnesses);
       try {
-        const name = nextSandboxName(
-          AGENT_NAME_PREFIX,
-          list.map((a) => a.name),
-        );
+        const name = nextAgentName(list.map((a) => a.name));
         const agent = await createAgent.mutateAsync({
           name,
           egressPreset: "trusted",

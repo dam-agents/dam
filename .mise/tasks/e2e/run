@@ -42,6 +42,16 @@ cleanup() {
           echo ""
         done
     echo ""
+    echo "--- Agent conditions that are not True (a vm machine's carry its guest console) ---"
+    kubectl get agents -A -o json 2>/dev/null \
+      | jq -r '.items[] | "### \(.metadata.name)", (.status.conditions[]? | select(.status != "True") | "\(.type) \(.reason): \(.message)")' || true
+    echo ""
+    echo "--- VM runner machine consoles (each VMM's log holds its guest kernel's console) ---"
+    kubectl get pods -A -l app.kubernetes.io/component=vm-runner -o jsonpath='{range .items[*]}{.metadata.namespace} {.metadata.name}{"\n"}{end}' 2>/dev/null \
+      | while read -r ns name; do
+          kubectl exec -n "$ns" "$name" -- sh -c 'for f in $(find /var/lib/platform -name agent-startup-error.log 2>/dev/null); do echo "### $f"; grep -v "muxer\|connection" "$f" | tail -n 40; done' </dev/null 2>&1 || true
+        done
+    echo ""
     echo "--- Logs from Platform pods ---"
     for ns in default platform-agents; do
       for pod in $(kubectl get pods -n "$ns" -o name 2>/dev/null); do

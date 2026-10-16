@@ -11,6 +11,7 @@ import type {
 } from "api-server-api";
 import type { FirePair } from "../../modules/harness-config/index.js";
 import type { RedisBus } from "../../core/redis-bus.js";
+import type { SpendSystem } from "../../modules/spend/index.js";
 import type { TtlStore } from "../../core/ttl-store.js";
 import type {
   AgentCleanupHook,
@@ -61,6 +62,7 @@ import type { SessionPresence } from "./agent-proxies/session-presence.js";
 
 import type { ApiVariables } from "../../core/http-context.js";
 import type { GettingStartedModule } from "../../modules/getting-started/index.js";
+import type { SidebarOrderModule } from "../../modules/sidebar-order/index.js";
 export type { ApiVariables };
 
 export interface ApiServerDeps {
@@ -86,6 +88,7 @@ export interface ApiServerDeps {
   slackBindFlows: SlackBindFlowStore;
   seedSources: SkillSourceSeed[];
   redisBus: RedisBus;
+  spendForOwner: SpendSystem["forOwner"];
   approvalsRelay: ApprovalsRelayService;
   wrapperFrameSender: WrapperFrameSender;
   presetSeeder: PresetSeeder;
@@ -130,6 +133,7 @@ export interface ApiServerDeps {
   shareHostGate: MiddlewareHandler;
   publicAgentPageService: PublicAgentPageService;
   gettingStarted: GettingStartedModule;
+  sidebarOrder: SidebarOrderModule;
   sessionPresence: SessionPresence;
   wakeAgent: (agentId: string) => Promise<void>;
   artifactLibraryFor: ArtifactLibraryFor;

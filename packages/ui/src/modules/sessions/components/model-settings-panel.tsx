@@ -1,4 +1,5 @@
 import { Checkmark, ChevronDown } from "@carbon/icons-react";
+import { modelConstraintsFor } from "agent-runtime-api";
 import type { ReactNode } from "react";
 
 import { Callout } from "@/components/ui/callout";
@@ -54,13 +55,12 @@ export function ModelSettingsPanel({
   const valueOf = (field: string): string | null => draft.valueOf(field);
 
   const shownModel = valueOf("model");
-  const constraints =
-    (shownModel && catalog.modelConstraints?.[shownModel]) || undefined;
+  const constraints = modelConstraintsFor(catalog, shownModel);
 
   const change = (field: string, value: string | null) => {
     draft.set(field, value);
     if (field !== "model") return;
-    const allowed = (value && catalog.modelConstraints?.[value]) || {};
+    const allowed = modelConstraintsFor(catalog, value) ?? {};
     for (const group of catalog.options) {
       if (group.id === "model") continue;
       const list = allowed[group.id];

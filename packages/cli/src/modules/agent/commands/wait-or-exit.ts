@@ -82,7 +82,7 @@ export async function waitForRunningOrExit(
 }
 
 export const REFUSAL_HINT =
-  "hint: put agents you aren't using to sleep to free room, then start this one again; it may also start by itself once room frees";
+  "hint: disable agents you aren't using to free room, then start this one again; it may also start by itself once room frees";
 
 export function refusalReason(agent: AgentView): string {
   return agent.overBudgetMessage ?? "your agents' resources are in use";
@@ -90,4 +90,15 @@ export function refusalReason(agent: AgentView): string {
 
 export function failureReason(agent: AgentView): string {
   return agent.error ?? agent.podTerminationReason ?? "unknown";
+}
+
+export async function startFailure(
+  svc: AgentService,
+  agentId: string,
+): Promise<string | null> {
+  const now = await svc.get(agentId);
+  if (!now.ok || now.value === null) return null;
+  if (now.value.state === "over_budget") return refusalReason(now.value);
+  if (now.value.state === "error") return failureReason(now.value);
+  return null;
 }

@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-10-14
+Last verified: 2026-10-16
 
 ## Overview
 
@@ -72,9 +72,15 @@ The agent pod has no service account token (`automountServiceAccountToken: false
 It runs in-cluster as a Helm subchart and is the OIDC provider for every authenticated surface.
 
 Keycloak's branded login page ships two presentation variants selected per deployment: password-first (the default — username/password form, with any identity-provider buttons offered below it) and SSO-first (identity-provider CTAs only, for deployments where corporate SSO is the expected sign-in path; the page falls back to the password form when the realm has no identity provider configured).
-The chart's `keycloak.login` values ([`helm/values.yaml`](../../helm/values.yaml)) select the variant and an optional "Request access" link; they reach the theme as container environment variables resolved through the theme's `theme.properties` placeholders, so switching variants is a values change and a pod roll — no theme rebuild, no realm change.
+The chart's `keycloak.login` values ([`helm/values.yaml`](../../helm/values.yaml)) select the variant; they reach the theme as container environment variables resolved through the theme's `theme.properties` placeholders, so switching variants is a values change and a pod roll — no theme rebuild, no realm change.
 The same page also knows which client started the sign-in: when it is the artifact share host's client, the heading and lead paragraph tell the visitor they need to sign in to view a shared artifact instead of the general product pitch.
 Upstream identity providers themselves (e.g. w3id) are realm configuration managed outside the chart.
+
+Anyone the realm lets sign in can start: there is no approval step, and a first sign-in goes through the Terms-of-Use gate straight to the agent list.
+The chart's `signUps` value is the kill switch for growth the install cannot absorb.
+Set to `closed`, the api-server refuses the Terms acceptance of a user who has never accepted any Terms version, and the Terms page shows that sign-ups are closed.
+"New user" means exactly that — no acceptance on record — because the Terms gate already stands before every authenticated route, so a user who never accepted holds nothing to lose.
+Every user who accepted before keeps working, including through the re-accept a Terms version bump asks for.
 
 The user agent flow:
 
@@ -234,10 +240,14 @@ Each one that joins raises the approval's in-session prompt again, to every sess
 That re-published prompt is for attached ACP clients such as the CLI.
 The web chat does not read it: a held request belongs to the agent, not to a session, so every open conversation of the agent shows the agent's waiting network approvals from the approvals list, with their verdict controls.
 The list is the api-server's own state, refreshed by the approvals live hint, so a conversation opened after the hold — or a retry that joined it — still shows the prompt, and a verdict given in one place clears it from every conversation, from Home and from its toast.
+Requests that arrive together, as a browser's parallel connections to one host do, can each file their own approval before any of them is there to join, so the UI shows an Agent's waiting approvals for the same host, port, method and path as one approval with a count, and a verdict on it answers every one of them.
 
 At most three rules speak for a host — itself, its `*.parent` wildcard, and the bare `*` — most specific first; a wildcard covers the one label its SNI chain and SAN do.
 Host names compare in any letter case, as DNS does: the agent writes the Host header and SNI, and a deny for `api.github.com` must also stop `API.GitHub.com`, which the gateway would resolve and forward all the same.
 `failure_mode_allow: false` — a blocked Check fails closed: agent gets 403, no approval prompt.
+
+**Spend limits.** On a metered model call, the gate also checks the payer's spend limits, after identity and before the rules ([spend-limits](spend-limits.md#limits)).
+At a limit it refuses at once, with a response shaped for the call's API path instead of the bare 403, and files a spend-limit question instead of an egress approval; it never holds such a call.
 
 The HTTP filter on TLS-terminated chains sees method/path; the network filter on the catch-all chain sees SNI only.
 
@@ -254,6 +264,8 @@ The platform's object store passes on its own authority, port included.
 **Gateway egress NetworkPolicy.** ext_authz decides on the name; Envoy then resolves it and dials the answer, so an approved name resolving to a private address (an owner's DNS record, or rebinding after approval) would otherwise reach the cluster, the node or the cloud metadata endpoint.
 A controller-rendered per-pair egress policy closes that at the kernel, whatever a name resolves to: the gateway reaches the public internet minus the private, loopback, link-local, CGNAT and this-network ranges; inside the network only the cluster DNS pods and the platform pods its own clusters dial (api-server ext-authz and harness, the harness waypoint, object store, telemetry collector), each on its port and on HBONE.
 An install may open further private ranges for enterprise services (`controller.gatewayEgress` in [`helm/values.yaml`](../../helm/values.yaml)); the metadata endpoints stay excepted inside them.
+It may also open in-cluster peers, such as a self-hosted model server: each peer (namespace, non-empty pod labels, TCP ports) becomes one rule on every gateway's policy, on its ports.
+A peer marked as in the ambient mesh also gets HBONE (15008), and over HBONE ztunnel carries any inner port, so the port list binds only a peer outside the mesh.
 A connection to a private upstream (an in-house API, a cluster's API server) needs its range listed there.
 
 **Unattended requests are refused, not held.** Holding is only worth doing where a verdict can be made.

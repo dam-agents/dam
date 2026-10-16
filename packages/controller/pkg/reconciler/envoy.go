@@ -33,6 +33,7 @@ const (
 	envoyQueryParamAnn          = "agent-platform.ai/injection-query-param"
 	envoyInjectionHTTP2Ann      = "agent-platform.ai/injection-http2"
 	envoyInjectionHostsAnn      = "agent-platform.ai/injection-hosts"
+	envoySecretPurposeAnn       = "agent-platform.ai/secret-purpose"
 	credentialSecretNamePrefix  = "platform-cred-"
 	envoyBootstrapVolume        = "envoy-bootstrap"
 	envoyBootstrapMount         = "/etc/envoy"
@@ -64,6 +65,7 @@ func gatewayUpstreamTrustedCA(cfg *config.Config) string {
 
 type envoyCredential struct {
 	ConnectionID   string
+	TemplateID     string
 	SecretName     string
 	HeaderName     string
 	PathPattern    string
@@ -82,6 +84,7 @@ func (c envoyCredential) QueryParamFilterName() string {
 
 type envoySigner struct {
 	ConnectionID   string
+	TemplateID     string
 	SecretName     string
 	VolumeName     string
 	CredentialsKey string
@@ -155,6 +158,26 @@ func (c envoyHostChain) ConnectionIDs() []string {
 	}
 	return out
 }
+
+var meteredProviderTemplates = []string{"anthropic", "anthropic-oauth", "openai", "ibm-litellm", "curve-bender", "bob", "bedrock", "platform-llm"}
+
+func (c envoyHostChain) MeteredConnectionTemplates() map[string]string {
+	out := map[string]string{}
+	add := func(id, templateID string) {
+		if id != "" && slices.Contains(meteredProviderTemplates, templateID) {
+			out[id] = templateID
+		}
+	}
+	for _, cred := range c.Credentials {
+		add(cred.ConnectionID, cred.TemplateID)
+	}
+	for _, signer := range c.Signers {
+		add(signer.ConnectionID, signer.TemplateID)
+	}
+	return out
+}
+
+func (c envoyHostChain) Metered() bool { return len(c.MeteredConnectionTemplates()) > 0 }
 
 func (c envoyHostChain) Signs(connectionID string) bool {
 	return connectionID != "" && slices.ContainsFunc(c.Signers, func(s envoySigner) bool { return s.ConnectionID == connectionID })
@@ -530,6 +553,7 @@ func expandConnectionSecret(s corev1.Secret) []hostCredential {
 			opts: opts,
 			cred: &envoyCredential{
 				ConnectionID:   s.Labels[envoyConnectionLabel],
+				TemplateID:     connectionTemplateID(s),
 				SecretName:     s.Name,
 				PathPattern:    e.PathPattern,
 				HeaderName:     header,
@@ -540,6 +564,11 @@ func expandConnectionSecret(s corev1.Secret) []hostCredential {
 		})
 	}
 	return out
+}
+
+func connectionTemplateID(s corev1.Secret) string {
+	templateID, _ := strings.CutPrefix(s.Annotations[envoySecretPurposeAnn], "connection:")
+	return templateID
 }
 
 func upstreamCAFile(s corev1.Secret, e connectionHostInjection) string {
@@ -598,6 +627,7 @@ func signerFor(s corev1.Secret, entries []connectionHostInjection, e connectionH
 	}
 	return &envoySigner{
 		ConnectionID:   s.Labels[envoyConnectionLabel],
+		TemplateID:     connectionTemplateID(s),
 		SecretName:     s.Name,
 		VolumeName:     "cred-" + s.Name,
 		CredentialsKey: key,
@@ -892,7 +922,7 @@ func envoyVolumes(instanceName string, cfg *config.Config, secrets []corev1.Secr
 	return volumes
 }
 
-const envoyBootstrapTemplateRev = "v20-signing-path-scopes"
+const envoyBootstrapTemplateRev = "v23-spend-meter-connection-stamp"
 
 func envoySecretsRev(secrets []corev1.Secret, l7Hosts []string) string {
 	parts := []string{"tmpl=" + envoyBootstrapTemplateRev}
@@ -900,8 +930,9 @@ func envoySecretsRev(secrets []corev1.Secret, l7Hosts []string) string {
 		parts = append(parts, "l7|"+h)
 	}
 	for _, s := range secrets {
-		parts = append(parts, fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s",
+		parts = append(parts, fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s|%s",
 			s.Name,
+			s.Annotations[envoySecretPurposeAnn],
 			s.Annotations[envoyHostPatternAnn],
 			s.Labels[envoySecretTypeLabel],
 			s.Labels[envoyConnectionLabel],

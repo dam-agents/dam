@@ -24,12 +24,14 @@ export const createInvocationsSlice: StateCreator<
       open
         ? {
             openDelegation: open,
+            sidePanelTab: "delegation",
             openFilePath: null,
             openFileDirty: false,
             openArtifactId: null,
             openArtifactDirty: false,
             openBrowserAgentId: null,
             openProcessOutputKey: null,
+            openChangesAgentId: null,
           }
         : { openDelegation: null },
     ),

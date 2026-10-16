@@ -6,14 +6,12 @@ import {
 } from "../../lib/persisted-prefs.js";
 import type { PlatformStore } from "../../store.js";
 
-const FILES_SECTION_OPEN_STORAGE_KEY = "platform-files-open";
 const SHOW_HIDDEN_FILES_STORAGE_KEY = "platform-files-show-hidden";
 
 export const DEFAULT_EXPANDED_DIRS: ReadonlySet<string> = new Set(["work"]);
 
 export interface FilesSlice {
   openFilePath: string | null;
-  filesSectionOpen: boolean;
   showHiddenFiles: boolean;
   openFileDirty: boolean;
   openFileEdit: boolean;
@@ -21,7 +19,6 @@ export interface FilesSlice {
   importingAgents: Record<string, number>;
   setOpenFilePath: (path: string | null, opts?: { edit?: boolean }) => void;
   setOpenFileEdit: (edit: boolean) => void;
-  setFilesSectionOpen: (open: boolean) => void;
   setShowHiddenFiles: (show: boolean) => void;
   setOpenFileDirty: (dirty: boolean) => void;
   toggleExpandedDir: (agentId: string, path: string) => void;
@@ -60,7 +57,6 @@ export const createFilesSlice: StateCreator<
   FilesSlice
 > = (set) => ({
   openFilePath: null,
-  filesSectionOpen: readPersistedFlag(FILES_SECTION_OPEN_STORAGE_KEY, false),
   showHiddenFiles: readPersistedFlag(SHOW_HIDDEN_FILES_STORAGE_KEY, false),
   openFileDirty: false,
   openFileEdit: false,
@@ -73,19 +69,17 @@ export const createFilesSlice: StateCreator<
       openFileEdit: opts?.edit ?? false,
       ...(path !== null
         ? {
+            sidePanelTab: "files" as const,
             openArtifactId: null,
             openArtifactDirty: false,
             openDelegation: null,
             openBrowserAgentId: null,
             openProcessOutputKey: null,
+            openChangesAgentId: null,
           }
         : {}),
     }),
   setOpenFileEdit: (edit) => set({ openFileEdit: edit }),
-  setFilesSectionOpen: (open) => {
-    writePersistedFlag(FILES_SECTION_OPEN_STORAGE_KEY, open);
-    set({ filesSectionOpen: open });
-  },
   setShowHiddenFiles: (show) => {
     writePersistedFlag(SHOW_HIDDEN_FILES_STORAGE_KEY, show);
     set({ showHiddenFiles: show });

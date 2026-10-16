@@ -11,7 +11,9 @@ export {
   skillSets,
   agentSkills,
   agentSkillPublishes,
+  agentHiddenSkillSources,
   agentEnv,
+  agentChatFormPreferences,
   agentSessions,
   agentPublicProfiles,
   egressRules,
@@ -30,6 +32,8 @@ export {
   userFeatures,
   gettingStartedChecklists,
   avatarUnlocks,
+  sidebarAgentOrder,
+  sidebarSessionOrder,
   artifactFolders,
   libraryArtifacts,
   libraryArtifactVersions,
@@ -45,6 +49,9 @@ export {
   satelliteJobs,
   resourceAlerts,
   avatarImages,
+  spendDaily,
+  spendLimits,
+  spendLimitExtensions,
 } from "./schema.js";
 export {
   eq,

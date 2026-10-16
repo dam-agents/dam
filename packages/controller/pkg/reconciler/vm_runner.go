@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -661,7 +662,7 @@ func runnerDNSPolicy(configured string) corev1.DNSPolicy {
 	return corev1.DNSDefault
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner's env also has smolvm audit every VMM against the syscalls a running microVM needs (SMOLVM_SECCOMP=audit), from after the VMM's device setup: a call outside the allowlist is logged, not refused. Enforced, the vm lane's runtime migration lost a migrated machine's sessions intermittently, so the filter only reports until the logs show which call it would have refused; the runtime's default profile still bounds every VMM. smolvm applies the filter under its own serve by default, and an embedder only when asked.
+// UNIT_BOUNDARY_DESCRIPTION: the runner's env also has smolvm check every VMM against the syscalls a running microVM needs (SMOLVM_SECCOMP), from after the VMM's device setup, in the install's mode and by default in enforce: a call outside the allowlist kills the VMM, which stops its machine. Audit only logs such a call; it is the switch back for a node whose kernel or libc makes a call the allowlist lacks. The runtime's default profile still bounds every VMM in each mode. smolvm applies the filter under its own serve by default, and an embedder only when asked.
 // UNIT_BOUNDARY_DESCRIPTION: the runner's env also confines every VMM's filesystem with Landlock (SMOLVM_LANDLOCK=enforce), applied before the VMM loads libkrun: the shared guest rootfs and the image tree are read-only to it, and it may write only its own machine's disks, sockets and logs and its own readiness marker. Without it a guest's root virtiofs export writes through to the agent rootfs every machine of the owner boots from. smolvm refuses to boot a VMM it fails to confine.
 // UNIT_BOUNDARY_DESCRIPTION: smolvm can give each machine's VMM its own unprivileged uid, and the runner's env turns that off (SMOLVM_VM_UID_DROP=off). A VMM with its own uid reaches the image tree through an idmapped mount that maps on-disk uid 0 to it, so every file the image gives another uid reaches the guest as nobody, and the workload exits as it starts.
 // UNIT_BOUNDARY_DESCRIPTION: the capabilities the runner container adds. None is for the network: smolvm runs each machine's network in user space, over a socket pair to its VMM, with no tun device, route or NAT of its own. DAC_OVERRIDE is for the VMMs: each runs as the runner's uid and serves the image tree to its guest over virtiofs, opening every file with its own credentials, so a file the image keeps from root — a 0000 /etc/shadow, or anything under another uid's 0700 directory — cannot be read without it. CHOWN, FOWNER and FSETID are only for a runner that unpacks images into its own claim: tar restores each file's owner, then sets a mode on a file it no longer owns, and a setgid bit on a file whose group root is not in survives that mode only with FSETID. A runner on the node cache or on staged archives unpacks nothing, so it does not get them.
@@ -696,6 +697,9 @@ func runnerOwnsImageCache(spec config.VMRunnerSpec) bool {
 // UNIT_BOUNDARY_DESCRIPTION: the node image cache service's socket, inside the node directory it shares with the runners. The chart's DaemonSet binds it at this same path in its own mount. A runner mounts the directory read-only, which still lets it connect to the socket but not replace it.
 const vmImageCacheSocket = vmRunnerImagesPath + "/.cache.sock"
 
+// UNIT_BOUNDARY_DESCRIPTION: the ephemeral storage a runner pod requests unless the install sets its own. A runner writes almost nothing outside its hostPaths and claim, but a pod with no request is over it at any use, and a node short of disk evicts such pods first: one runner evicted is every machine of its owner killed mid-turn. A request above what it uses puts it behind every pod that is over its own.
+var vmRunnerEphemeralRequest = resource.MustParse("1Gi")
+
 // UNIT_BOUNDARY_DESCRIPTION: renders the owner's runner Deployment and hands it to the roll. Only an agent's reconcile may create one (create); the rollout sweep only offers an existing runner its turn, so a runner the orphan sweep has just removed is never brought back by it.
 func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner string, refs []metav1.OwnerReference, create bool) error {
 	name, ns := r.runnerName(owner), r.config.Namespace
@@ -722,6 +726,12 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 		if req, ok := resources.Requests[corev1.ResourceMemory]; ok && req.Cmp(*pool) > 0 {
 			resources.Requests[corev1.ResourceMemory] = *pool
 		}
+	}
+	if _, ok := resources.Requests[corev1.ResourceEphemeralStorage]; !ok {
+		if resources.Requests == nil {
+			resources.Requests = corev1.ResourceList{}
+		}
+		resources.Requests[corev1.ResourceEphemeralStorage] = vmRunnerEphemeralRequest
 	}
 	for k, v := range spec.Devices {
 		q, err := resource.ParseQuantity(v)
@@ -775,7 +785,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 	env := []corev1.EnvVar{{
 		Name: "SMOLVM_VM_UID_DROP", Value: "off",
 	}, {
-		Name: "SMOLVM_SECCOMP", Value: "audit",
+		Name: "SMOLVM_SECCOMP", Value: cmp.Or(spec.Seccomp, "enforce"),
 	}, {
 		Name: "SMOLVM_LANDLOCK", Value: "enforce",
 	}, {
@@ -829,6 +839,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 					EnableServiceLinks:            new(false),
 					NodeSelector:                  spec.NodeSelector,
 					Tolerations:                   spec.Tolerations,
+					Affinity:                      spec.Affinity,
 					ImagePullSecrets:              spec.ImagePullSecrets,
 					Containers: []corev1.Container{{
 						Name:            vmRunnerComponent,
@@ -851,7 +862,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 							fmt.Sprintf("--boot-mib=%d", spec.BootMiB),
 							"--tls-cert=/etc/vm-runner/tls.crt",
 							"--tls-key=/etc/vm-runner/tls.key",
-						}, nestedRunnerArgs(spec)...),
+						}, append(nestedRunnerArgs(spec), convertRunnerArgs(spec)...)...),
 						Env: env,
 						Ports: []corev1.ContainerPort{
 							{Name: "machine-api", ContainerPort: vmRunnerPort},
@@ -1027,6 +1038,14 @@ func (r *AgentReconciler) certificateNotReady(ctx context.Context, name string) 
 		return msg
 	}
 	return ""
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the arg that lets a runner convert its machines' ext4 storage disks to btrfs, one at each machine's next start. The install turns it on with virtualization.runner.convertExt4Disks for a rollout; an install that does not gets no extra arg, so its runner pods stay as they were.
+func convertRunnerArgs(spec config.VMRunnerSpec) []string {
+	if !spec.ConvertExt4Disks {
+		return nil
+	}
+	return []string{"--convert-ext4-disks"}
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the args that let a runner give its machines the node's virtualization extensions. Nesting is the kernel's default on Intel and AMD and turning it off takes a module reload, so the install chooses it with virtualization.runner.nestedVirtualization. An install that does not gets no extra args, so its runner pods, and the machines they host, stay as they were.

@@ -533,6 +533,69 @@
       "when": 1792012901117,
       "tag": "0075_avatar_images",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1792050125623,
+      "tag": "0076_skill_source_per_path",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1792061456741,
+      "tag": "0077_qualify_schedule_models",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1792074625841,
+      "tag": "0078_spend_daily",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1792074655458,
+      "tag": "0079_spend_limits",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1792095725267,
+      "tag": "0080_bump_agents_for_codex_telemetry_rail",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1792099899640,
+      "tag": "0081_sidebar_pins",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1792135595601,
+      "tag": "0082_agent_chat_form_preferences",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1792140518769,
+      "tag": "0083_agent_hidden_skill_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1792154368890,
+      "tag": "0084_sidebar_order",
+      "breakpoints": true
     }
   ]
 }

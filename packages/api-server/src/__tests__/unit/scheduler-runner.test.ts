@@ -32,6 +32,11 @@ function makeSchedule(
   precheck?: string,
   lastRun?: string,
   enabled = true,
+  choices?: {
+    harness?: string;
+    model?: string;
+    settings?: Record<string, string>;
+  },
 ): Schedule {
   const status = {
     ...(storedNextRun ? { nextRun: storedNextRun } : {}),
@@ -49,6 +54,7 @@ function makeSchedule(
       enabled,
       createdBy: "user",
       ...(precheck ? { precheck } : {}),
+      ...choices,
     },
     ...(Object.keys(status).length > 0 ? { status } : {}),
   };
@@ -81,8 +87,22 @@ function makeDeps(opts?: {
   once?: boolean;
   onceResult?: string;
   runtimeMigrating?: boolean;
+  agentDisabled?: boolean;
   enabled?: boolean;
   firePair?: FirePair;
+  choices?: {
+    harness?: string;
+    model?: string;
+    settings?: Record<string, string>;
+  };
+  validateSessionChoices?: (
+    agentId: string,
+    choices: {
+      harness?: string;
+      model?: string;
+      settings?: Record<string, string>;
+    },
+  ) => Promise<string | undefined>;
 }) {
   const calls: string[] = [];
   const fires: { result: string; nextRun: Date | null }[] = [];
@@ -114,6 +134,7 @@ function makeDeps(opts?: {
             opts?.precheck,
             opts?.lastRun,
             opts?.enabled,
+            opts?.choices,
           )
         : null;
     },
@@ -184,6 +205,9 @@ function makeDeps(opts?: {
 
   const runner = createSchedulerRunner({
     ...(opts?.firePair ? { firePair: opts.firePair } : {}),
+    ...(opts?.validateSessionChoices
+      ? { validateSessionChoices: opts.validateSessionChoices }
+      : {}),
     repo,
     queue,
     runtimeMutator,
@@ -202,6 +226,7 @@ function makeDeps(opts?: {
     ...(opts?.runtimeMigrating !== undefined
       ? { runtimeMigrating: async () => opts.runtimeMigrating === true }
       : {}),
+    agentDisabled: async () => opts?.agentDisabled === true,
     log: () => {},
     now: () => new Date("2026-06-12T10:30:00Z"),
   });
@@ -281,9 +306,89 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
     expect(events).toEqual([]);
     expect(fires[0]?.result).toMatch(/no model provider granted/);
   });
+
+  /** TEST_SCENARIO: The schedule names a harness, a qualified model and a
+   * setting. The fire re-checks them, asks the pair resolver for that harness
+   * and model, and carries the settings on the trigger. */
+  it("fires on the schedule's harness, model and settings", async () => {
+    const asked: unknown[] = [];
+    const checked: unknown[] = [];
+    const { runner, payloads } = makeDeps({
+      choices: {
+        harness: "codex",
+        model: "openai/gpt-5.5",
+        settings: { effort: "high" },
+      },
+      validateSessionChoices: async (_agentId, choices) => {
+        checked.push(choices);
+        return undefined;
+      },
+      firePair: async (_agentId, preferred) => {
+        asked.push(preferred);
+        return { harness: "codex", provider: "oai", model: "openai/gpt-5.5" };
+      },
+    });
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+    expect(checked).toEqual([
+      {
+        harness: "codex",
+        model: "openai/gpt-5.5",
+        settings: { effort: "high" },
+      },
+    ]);
+    expect(asked).toEqual([{ harness: "codex", model: "openai/gpt-5.5" }]);
+    expect(payloads[0]).toMatchObject({
+      harness: "codex",
+      provider: "oai",
+      model: "openai/gpt-5.5",
+      settings: { effort: "high" },
+    });
+  });
+
+  /** TEST_SCENARIO: Since the schedule was saved the agent lost the provider
+   * its model names. The fire fails with that reason on the schedule rather
+   * than running on a substitute model. */
+  it("fails the fire with the reason a choice no longer holds", async () => {
+    const { runner, fires, events } = makeDeps({
+      choices: { model: "openai/gpt-5.5" },
+      validateSessionChoices: async () => "this agent holds no openai provider",
+      firePair: async () => {
+        throw new Error("the pair resolver must not run");
+      },
+    });
+    await expect(
+      runner.buildFireHandler()(SCHEDULE_ID, new Date("2026-06-12T10:30:00Z")),
+    ).rejects.toThrow(/holds no openai provider/);
+    expect(events).toEqual([]);
+    expect(fires[0]?.result).toMatch(/holds no openai provider/);
+  });
 });
 
 describe("scheduler-runner fire", () => {
+  // TEST_SCENARIO: a disabled agent does nothing, so a recurring fire neither commits a trigger nor wakes it; the occurrence is held with a reason the schedules page shows, and the next one is armed for when the agent is enabled again.
+  it("holds the occurrence while the agent is disabled", async () => {
+    const { runner, calls, fires, enqueued } = makeDeps({
+      agentDisabled: true,
+    });
+
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+
+    expect(calls).toEqual([]);
+    expect(fires).toEqual([
+      {
+        result: "held: agent disabled",
+        nextRun: new Date("2026-06-12T11:00:00Z"),
+      },
+    ]);
+    expect(enqueued).toEqual([new Date("2026-06-12T11:00:00Z")]);
+  });
+
   // TEST_SCENARIO: while an agent moves to the new runtime the controller holds it down, so a fire would only wait out the wake and read as a failed run. The occurrence is held with a reason the schedules page shows, and the next one is armed as usual.
   it("holds the occurrence while the agent is moving to the new runtime", async () => {
     const { runner, calls, fires, enqueued } = makeDeps({
@@ -371,6 +476,22 @@ describe("scheduler-runner fire", () => {
       `wake:${AGENT_ID}`,
     ]);
     expect(fires).toEqual([{ result: "delivering", nextRun: null }]);
+  });
+
+  // TEST_SCENARIO: a one-time task due while its agent is disabled is recorded missed, as a task past its window is, and neither commits a trigger nor wakes the agent.
+  it("misses a one-time fire while the agent is disabled", async () => {
+    const { runner, calls, fires } = makeDeps({
+      once: true,
+      agentDisabled: true,
+    });
+
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+
+    expect(calls).toEqual([]);
+    expect(fires).toEqual([{ result: "missed", nextRun: null }]);
   });
 
   // TEST_SCENARIO: once the event is committed the task will run when the Agent is Ready, so a poke that fails afterwards must not overwrite delivering with the error — the settle listener replaces delivering only, and a failed result would hide a task that ran.

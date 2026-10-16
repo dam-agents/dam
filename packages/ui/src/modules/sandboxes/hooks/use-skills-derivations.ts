@@ -1,6 +1,6 @@
 import type { LocalSkill, Skill, SkillSource } from "api-server-api";
-import { platformSkillFeature, skillKey } from "api-server-api";
-import { useMemo } from "react";
+import { platformSkillFeature } from "api-server-api";
+import { useCallback, useMemo } from "react";
 
 import { repoSlug } from "@/lib/git-source";
 
@@ -12,6 +12,12 @@ import {
 import { publishedDuplicatesBySource } from "../components/skills/published-duplicates.js";
 import type { SaveSetGroup } from "../components/skills/save-skill-set-modal.js";
 import { isDrifted } from "../components/skills/skill-drift.js";
+import {
+  pickSetSource,
+  sameSourcePath,
+  selectionKey,
+  type SkillIdentity,
+} from "../lib/skill-identity.js";
 import type { SkillsSurface } from "./use-skills-surface.js";
 
 function filterByQuery<T extends { name: string; description: string }>(
@@ -42,7 +48,9 @@ export interface SkillsDerivations {
   existingSetNames: ReadonlySet<string>;
   availableKeys: ReadonlySet<string>;
   installedKeys: ReadonlySet<string>;
-  unreadableSources: ReadonlySet<string>;
+  resolveSetEntry: (
+    entry: SkillIdentity,
+  ) => { key: string; unreadable: boolean } | null;
   saveOmitted: { source: SkillSource; count: number }[];
   previewReady: boolean;
   anyInstalled: boolean;
@@ -127,9 +135,7 @@ export function useSkillsDerivations(
     let on = 0;
     for (const list of listBySource.values()) {
       skills += list.length;
-      on += list.filter(
-        (s) => installedRef(s.source, s.name) !== undefined,
-      ).length;
+      on += list.filter((s) => installedRef(s) !== undefined).length;
     }
     return { skills, sources: sources.length, on };
   }, [
@@ -192,24 +198,32 @@ export function useSkillsDerivations(
   const availableKeys = useMemo(() => {
     const out = new Set<string>();
     for (const list of listBySource.values()) {
-      for (const skill of list) out.add(skillKey(skill));
+      for (const skill of list) out.add(selectionKey(skill));
     }
     return out;
   }, [listBySource]);
   const installedKeys = useMemo(
-    () => new Set(installed.map((r) => skillKey(r))),
+    () => new Set(installed.map((r) => selectionKey(r))),
     [installed],
   );
-  const unreadableSources = useMemo(
-    () =>
-      new Set(sources.filter((s) => errorBySource[s.id]).map((s) => s.gitUrl)),
+  const resolveSetEntry = useCallback(
+    (entry: SkillIdentity) => {
+      const source = pickSetSource(sources, entry);
+      if (!source) return null;
+      return {
+        key: selectionKey({ ...entry, path: source.path }),
+        unreadable: !!errorBySource[source.id],
+      };
+    },
     [sources, errorBySource],
   );
   const saveOmitted = useMemo(() => {
     const out: { source: SkillSource; count: number }[] = [];
     for (const src of sources) {
       if (!errorBySource[src.id]) continue;
-      const count = installed.filter((r) => r.source === src.gitUrl).length;
+      const count = installed.filter(
+        (r) => r.source === src.gitUrl && sameSourcePath(r.path, src.path),
+      ).length;
       if (count > 0) out.push({ source: src, count });
     }
     return out;
@@ -221,7 +235,7 @@ export function useSkillsDerivations(
     const out: Skill[] = [];
     for (const list of listBySource.values()) {
       for (const skill of list) {
-        if (isDrifted(installedRef(skill.source, skill.name), skill)) {
+        if (isDrifted(installedRef(skill), skill)) {
           out.push(skill);
         }
       }
@@ -249,16 +263,23 @@ export function useSkillsDerivations(
           : {}),
       });
     }
+    const unclaimed = [...installed];
+    for (const src of sources) {
+      const names: string[] = [];
+      for (let i = unclaimed.length - 1; i >= 0; i--) {
+        const ref = unclaimed[i];
+        if (ref.source !== src.gitUrl || !sameSourcePath(ref.path, src.path))
+          continue;
+        names.unshift(ref.name);
+        unclaimed.splice(i, 1);
+      }
+      if (names.length > 0) rows.push({ label: src.name, names });
+    }
     const byUrl = new Map<string, string[]>();
-    for (const ref of installed) {
+    for (const ref of unclaimed) {
       const names = byUrl.get(ref.source);
       if (names) names.push(ref.name);
       else byUrl.set(ref.source, [ref.name]);
-    }
-    for (const src of sources) {
-      const names = byUrl.get(src.gitUrl);
-      if (names && names.length > 0) rows.push({ label: src.name, names });
-      byUrl.delete(src.gitUrl);
     }
     for (const [gitUrl, names] of byUrl) {
       rows.push({ label: repoSlug(gitUrl), names });
@@ -292,7 +313,7 @@ export function useSkillsDerivations(
     existingSetNames,
     availableKeys,
     installedKeys,
-    unreadableSources,
+    resolveSetEntry,
     saveOmitted,
     previewReady,
     anyInstalled: totals.on > 0,

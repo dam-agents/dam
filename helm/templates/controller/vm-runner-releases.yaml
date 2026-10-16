@@ -15,8 +15,8 @@ It also stages the VM runtime the release was built against — the smolvm
 release with its libkrun and guest agent — once per runtime, so a release
 built against another runtime than a pod's image brings its own.
 
-It runs wherever a runner can, on the runner's own nodeSelector and
-tolerations. A runner on a node it has not reached yet keeps its release until
+It runs wherever a runner can, on the runner's own nodeSelector,
+tolerations and affinity. A runner on a node it has not reached yet keeps its release until
 it does. It needs no capability: it is root writing a directory root owns,
 and the image build leaves root, the owner of every file it copies, able to
 read them.
@@ -63,6 +63,10 @@ spec:
       {{- end }}
       {{- with $v.runner.tolerations }}
       tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $v.runner.affinity }}
+      affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:

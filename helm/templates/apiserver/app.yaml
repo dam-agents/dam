@@ -250,6 +250,30 @@ spec:
             {{- end }}
             - name: FEATURE_MODES
               value: {{ include "platform.featureModes" . | quote }}
+            - name: FEATURE_DEFAULT_MODE
+              value: {{ include "platform.featureDefault" . | quote }}
+            {{- with .Values.apiServer.platformProvider }}
+            {{- if and .baseUrl (or (dig "apiKeySecret" "name" "" .) .apiKey) }}
+            - name: PLATFORM_PROVIDER_BASE_URL
+              value: {{ .baseUrl | quote }}
+            - name: PLATFORM_PROVIDER_MODEL
+              value: {{ .model | quote }}
+            - name: PLATFORM_PROVIDER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  {{- if dig "apiKeySecret" "name" "" . }}
+                  name: {{ .apiKeySecret.name }}
+                  key: {{ .apiKeySecret.key | default "api-key" }}
+                  {{- else }}
+                  name: {{ include "platform.apiserver.secrets.fullname" $ }}
+                  key: PLATFORM_PROVIDER_API_KEY
+                  {{- end }}
+            {{- if dig "caConfigMap" "name" "" . }}
+            - name: PLATFORM_PROVIDER_CA_FILE
+              value: /etc/platform/platform-provider-ca/ca.crt
+            {{- end }}
+            {{- end }}
+            {{- end }}
             - name: HARNESSES
               value: {{ include "platform.harnesses" . | quote }}
             {{- if .Values.virtualization.enabled }}
@@ -457,6 +481,13 @@ spec:
               value: {{ .Values.apiServer.oneTimeSchedules.agentMaxOpen | quote }}
             - name: ONCE_SCHEDULE_AGENT_MAX_PER_HOUR
               value: {{ .Values.apiServer.oneTimeSchedules.agentMaxPerHour | quote }}
+            - name: SPEND_PRICE_OVERRIDES
+              value: {{ (.Values.apiServer.spend | default dict).priceOverrides | default list | toJson | quote }}
+            {{- $defaultUserCeilingUsd := (.Values.apiServer.spend | default dict).defaultUserCeilingUsd }}
+            {{- if not (kindIs "invalid" $defaultUserCeilingUsd) }}
+            - name: SPEND_DEFAULT_USER_CEILING_USD
+              value: {{ $defaultUserCeilingUsd | quote }}
+            {{- end }}
             {{- if .Values.apiServer.maxImportBundleBytes }}
             - name: MAX_IMPORT_BUNDLE_BYTES
               value: {{ .Values.apiServer.maxImportBundleBytes | quote }}
@@ -542,6 +573,8 @@ spec:
               value: {{ .Values.terms.version | quote }}
             - name: TERMS_TEXT
               value: {{ .Values.terms.text | quote }}
+            - name: SIGN_UPS
+              value: {{ .Values.signUps | quote }}
             {{- if .Values.links.computeRequest }}
             - name: LINKS_COMPUTE_REQUEST
               value: {{ .Values.links.computeRequest | quote }}
@@ -587,6 +620,11 @@ spec:
             {{- if .Values.apiServer.db.caCert }}
             - name: pg-ca
               mountPath: /etc/platform/pg-ca
+              readOnly: true
+            {{- end }}
+            {{- if dig "platformProvider" "caConfigMap" "name" "" .Values.apiServer }}
+            - name: platform-provider-ca
+              mountPath: /etc/platform/platform-provider-ca
               readOnly: true
             {{- end }}
           {{- if .Values.probes.enabled }}
@@ -665,4 +703,17 @@ spec:
         - name: pg-ca
           configMap:
             name: {{ include "platform.fullname" . }}-apiserver-db-ca
+        {{- end }}
+        {{- with dig "platformProvider" "caConfigMap" dict .Values.apiServer }}
+        {{- if .name }}
+        # Optional: a missing ConfigMap or key leaves the built-in provider
+        # off, logged by the api-server, instead of blocking the pod's start.
+        - name: platform-provider-ca
+          configMap:
+            name: {{ .name }}
+            optional: true
+            items:
+              - key: {{ required "apiServer.platformProvider.caConfigMap.key is required with its name" .key }}
+                path: ca.crt
+        {{- end }}
         {{- end }}

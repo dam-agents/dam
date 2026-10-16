@@ -38,6 +38,7 @@ export enum EventType {
   ContributionGapChanged = "ContributionGapChanged",
   ApprovalRequested = "ApprovalRequested",
   ApprovalResolved = "ApprovalResolved",
+  SpendLimitsChanged = "SpendLimitsChanged",
   ScheduleCreated = "ScheduleCreated",
   ScheduleUpdated = "ScheduleUpdated",
   ScheduleDeleted = "ScheduleDeleted",
@@ -228,6 +229,11 @@ export type ApprovalResolved = {
   agentId: string;
   ownerSub: string;
   resolution: ApprovalResolution;
+};
+
+export type SpendLimitsChanged = {
+  type: EventType.SpendLimitsChanged;
+  ownerSub: string;
 };
 
 export type ScheduleCreated = {
@@ -496,6 +502,7 @@ export type DomainEvent =
   | ContributionGapChanged
   | ApprovalRequested
   | ApprovalResolved
+  | SpendLimitsChanged
   | ScheduleCreated
   | ScheduleUpdated
   | ScheduleDeleted

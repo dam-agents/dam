@@ -461,6 +461,17 @@
 .prose p:last-child {
   margin: 0;
 }
+.prose-flush > :first-child {
+  margin-top: 0;
+}
+.prose-flush > :last-child {
+  margin-bottom: 0;
+}
+.prose-caption {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
 .prose h1,
 .prose h2,
 .prose h3,

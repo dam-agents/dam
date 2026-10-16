@@ -1,5 +1,6 @@
 import { create } from "zustand";
 
+import { type A2uiSlice, createA2uiSlice } from "./modules/a2ui/store.js";
 import { type AgentsSlice, createAgentsSlice } from "./modules/agents/store.js";
 import {
   type ArtifactsSlice,
@@ -9,6 +10,10 @@ import {
   type BrowserSlice,
   createBrowserSlice,
 } from "./modules/browser/store.js";
+import {
+  type ChangesSlice,
+  createChangesSlice,
+} from "./modules/changes/store.js";
 import {
   createFeaturesSlice,
   type FeaturesSlice,
@@ -56,8 +61,13 @@ import {
   createSessionsSlice,
   type SessionsSlice,
 } from "./modules/sessions/store/sessions.js";
+import {
+  createSidePanelSlice,
+  type SidePanelSlice,
+} from "./modules/sessions/store/side-panel.js";
 
 export type PlatformStore = DialogSlice &
+  A2uiSlice &
   ThemeSlice &
   NavigationSlice &
   SidebarSlice &
@@ -70,10 +80,13 @@ export type PlatformStore = DialogSlice &
   FeaturesSlice &
   PermissionsSlice &
   ProcessesSlice &
+  ChangesSlice &
+  SidePanelSlice &
   GettingStartedSlice;
 
 export const useStore = create<PlatformStore>()((...a) => ({
   ...createDialogSlice(...a),
+  ...createA2uiSlice(...a),
   ...createThemeSlice(...a),
   ...createNavigationSlice(...a),
   ...createSidebarSlice(...a),
@@ -86,6 +99,8 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createFeaturesSlice(...a),
   ...createPermissionsSlice(...a),
   ...createProcessesSlice(...a),
+  ...createChangesSlice(...a),
+  ...createSidePanelSlice(...a),
   ...createGettingStartedSlice(...a),
 }));
 

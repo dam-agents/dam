@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-10-13
+Last verified: 2026-10-16
 
 ## Overview
 
@@ -74,11 +74,11 @@ The `auth` field carries credential-acquisition state in one of six modes: **OAu
 Token references point at the per-Connection K8s Secret — never inline secret material.
 Exact field shapes live in the [Connections contract types](../../packages/api-server-api/src/modules/connections/).
 
-An Agent may hold several **provider Connections**, and each session picks the one it runs on.
-Creation grants the one it names, else a default one its harness runs on ([agent-lifecycle](agent-lifecycle.md#create)), validating ownership, provider type, and active status; agent-management permission suffices to use a known provider id.
-The session picker offers the rest as "+ <Provider>".
-The agent's Providers section does the same outside a session: it lists every provider Connection the owner holds, each with a toggle that grants or revokes it, links to Settings to connect new ones, and picks the default pair for new sessions ([harness-config](harness-config.md)).
-A provider Connection's env is tagged with the Connection and lands in a per-provider layer rather than the agent-wide env, so only the [Harness Leases](sessions.md#session-inside-the-pod) on that provider read it, and granting or revoking one recycles only those.
+An Agent may hold several **provider Connections**, at most one per **provider alias**: the alias names the provider in every qualified model name, so a second Connection behind one alias is refused.
+A session picks its model per turn, and the provider follows from the name.
+Creation grants the one it names, else every provider Connection the owner holds that the harness runs on, the oldest one per alias ([agent-lifecycle](agent-lifecycle.md#create)).
+The agent's Providers section lists every provider Connection the owner holds with a grant toggle and picks the default pair for new sessions ([harness-config](harness-config.md)).
+A provider Connection's env lands in a per-provider layer the Model Router reads; granting or revoking one recycles the [Harness Leases](sessions.md#session-inside-the-pod).
 
 Credentials carry their own lifecycle.
 A stored one can be **updated in place** — the injected value, the client secret, the GitHub App private key, or the storage key pair, whichever the auth mode holds.
@@ -275,9 +275,9 @@ Which model provider an agent runs against follows from the Connection it is gra
 Bob is the case that needs more than a base URL.
 It prefixes every gateway call with its own service path, and that prefix is not configurable, so the Connection also declares the prefix rewrite the gateway applies; the auth scheme needs no such treatment, because the gateway overwrites the credential header outright.
 What the endpoint has to offer for this to work is the OpenAI-shaped chat-completion route, a model-information route reporting a non-empty model list (Bob treats an empty list as an error), and no region hint of its own — a gateway answering the profile route with one would redirect Bob's inference calls off the configured host.
-Bob's built-in default resolves to a model only its own gateway serves, so the Connection pins Bob's model as it pins Codex's and Pi's; a per-agent override or a session's pick that the endpoint lists outranks the pin, and a pin the endpoint no longer lists is passed over.
-A redirecting Connection that pins nothing leaves the choice to the seed, which takes the first of the names the endpoint lists once they are ordered — from the OpenAI model list when the key is refused the model-information route ([harness configuration](harness-config.md#model-discovery-and-the-seeded-model)).
-Claude Code reaches custom upstreams through its in-pod model gateway, which fronts each granted provider apart.
+Bob's built-in default resolves to a model only its own gateway serves, so the Connection pins Bob's model as it pins Codex's and Pi's; on a routed runtime the pin never reaches a harness process, since a session's model is a qualified name the router routes.
+The [model catalog](harness-config.md#the-model-catalog) lists the endpoint's models under the Connection's alias, through the OpenAI model list since the key is refused the model-information route, and a session picks one per turn.
+Every harness reaches the endpoint through the [Model Router](harness-config.md#the-model-router), which sends the Connection's placeholder.
 The endpoint caches a Claude prompt only when the request marks it: Claude Code marks its own, and the image's Pi extension marks Pi's.
 GPT models cache on their own.
 
@@ -288,11 +288,37 @@ An Agent can hold either proxy or both.
 CurveBender uses the same routing and credential scheme, including Bob's prefix rewrite, aimed at its own host; its model defaults differ.
 
 Work runs on GLM.
-Claude Code reserves a separate model slot for its non-reasoning permission classifier; the Connection pins both roles ([harness configuration](harness-config.md#model-discovery-and-the-seeded-model)).
+Claude Code reserves a separate model slot for its non-reasoning permission classifier; the Connection pins both roles ([harness configuration](harness-config.md#model-discovery-and-the-agents-default-model)).
 The endpoint's model list names models but does not describe them, so the Connection supplies the supported deployment window to both Claude Code and Pi.
 Pi also needs the reasoning capability and OpenAI-style reasoning effort: the endpoint ignores the switch GLM's own vendor API uses, so Pi's built-in description would be wrong here.
 Pi applies these hints to every listed model.
 Its stream can carry the end of thinking and the start of the answer in one piece, so the image's Pi extension preserves thinking-before-answer order.
+
+### Built-in preset: platform LLM
+
+A model server the operator hosts in the cluster, offered as a provider the user never gives a key for.
+The install names the server's root URL over HTTPS, its model and its key in its chart values (exact keys in [`helm/values.yaml`](../../helm/values.yaml)); without a root URL or a key the preset does not exist and the built-in provider [feature](features.md) is off for everyone.
+A root URL that is not HTTPS also leaves the feature off, with an error in the api-server log, because the gateway can inject the key and meter calls only on TLS it terminates.
+The user never connects it: the feature flag owns the Connection.
+Turning the flag on gives the user one Connection from the built-in preset, named after the brand; turning it off removes it, which revokes it from every Agent holding it.
+Connection names are unique per user, so when the user already has a Connection named after the brand it takes the first free name of the brand followed by `LLM`, then that numbered from 2.
+When the install turns the feature on for everyone there is no flag change to react to, so the user's own listing of their Connections provisions it, and a listing with the flag off removes a leftover one.
+Only that listing reconciles: the listings agent creation and sub-agent spawns make internally change nothing.
+An existing Connection follows the operator: when the install's root URL, model, key, CA or brand changes, the next reconcile (the user's listing, a flag change, or the boot sweep) rewrites its name, contributions and Secret and re-delivers the Agents holding it.
+At boot the api-server reconciles every user holding one, so dropping the root URL removes them all and a changed endpoint reaches users who do not come back.
+Flag changes, listings and the boot sweep may run at once on different replicas; each reads the flag and the user's Connections under one per-owner lock, so whichever runs last decides.
+The user's own create, update and delete refuse the preset, so the Connection cannot be duplicated, dropped or given another key while the flag says it should exist.
+It is created like any provider Connection, so the [first-provider grant](agent-lifecycle.md#create) attaches it to Agents that hold no provider; otherwise a user grants it per Agent.
+Its credential is a copy of the operator's key in the Connection's Secret, written when the Connection is created and rewritten when the operator's key changes, as an IBM LiteLLM Connection holds the user's key.
+It contributes the base URLs and inert key placeholders each harness reads (the OpenAI route under `/v1`, the Anthropic route at the root), the model pin, and the injection of the key as a bearer token on the server's host and port.
+So every call leaves through the gateway's credential chain, which [meters](spend-limits.md) it like any model-provider call.
+The server is in the cluster, so the gateway also needs a network path to it, which the chart opens per peer, and must trust the server's certificate.
+The install can name a ConfigMap key holding the CA that signed it; the api-server reads it at boot and writes it into each Connection's Secret as its upstream CA, as a Kubernetes Connection holds a pasted one, so the gateway validates the server against that CA alone.
+On OpenShift the service-serving signer is such a key in every namespace, so a server with a service-serving certificate needs no CA pasted anywhere.
+A CA the api-server cannot read leaves the feature off, with an error in its log.
+Without a named CA the gateway validates the server against system trust and the install's extra upstream CAs.
+Calls on it cost what the operator prices its model at, in dollars, so its spend counts toward the user's limits.
+A Connection left without a credential by an earlier release is replaced by a keyed one, since it has no Secret to rewrite.
 
 ### App preset: AWS Bedrock
 
@@ -304,9 +330,8 @@ An optional model input becomes the provider's model pin.
 The Connection also asks the harness's Bedrock client for HTTP/1.1, which every credential chain speaks by default.
 IAM access keys and assumed roles are not accepted: Bedrock requires those to sign each request with SigV4, and the gateway's request signing serves S3-compatible storage only (below).
 
-Two harnesses run on it.
-**Pi**'s harness-config driver lists the profiles itself, so a session is offered their IDs ([harness configuration](harness-config.md#model-discovery-and-the-seeded-model)).
-**Claude Code** has Bedrock built in; its image switches it on whenever the key placeholder is present, and leaves model choice to Claude Code itself.
+**Claude Code** runs on it, outside the Model Router, since the gateway cannot sign for it; a routed Pi does not reach it ([harness configuration](harness-config.md#model-discovery-and-the-agents-default-model)).
+Claude Code has Bedrock built in; its image switches it on whenever the key placeholder is present in a process the runtime did not mark as routed, and leaves model choice to Claude Code itself.
 At start it resolves each of its model tiers to the region's profile, falling back to an earlier version, or from Opus to Sonnet, when the account cannot invoke the default; the platform pins no tier, which would lose that fallback.
 The pin is a new session's default only, and Claude Code ignores it when the account cannot invoke it.
 
@@ -357,7 +382,7 @@ The gateway picks the new file up without a roll and the agent's placeholders ar
 ## Built-in contributions
 
 Not every contribution comes from a grant: the runtime state builder also merges **built-ins** the platform itself contributes.
-Every agent gets the platform MCP entry; a sandbox holding at least one shared-knowledge-base grant additionally gets the aggregate `knowledge-bases` MCP entry pointing at the in-cluster harness route (`/api/agents/:id/kb`, alongside the platform MCP entry), appearing and disappearing with its first and last such grant.
+Every agent gets the platform MCP entry and its display name as the `PLATFORM_AGENT_NAME` env var, which a rename refreshes at the next harness spawn without a pod roll; a sandbox holding at least one shared-knowledge-base grant additionally gets the aggregate `knowledge-bases` MCP entry pointing at the in-cluster harness route (`/api/agents/:id/kb`, alongside the platform MCP entry), appearing and disappearing with its first and last such grant.
 
 ## Contribution fan-out
 

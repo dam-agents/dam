@@ -22,7 +22,9 @@ export const scheduleFormSchema = z
       .string()
       .trim()
       .max(PRECHECK_MAX_LENGTH, `Max ${PRECHECK_MAX_LENGTH} characters`),
+    harness: z.string(),
     model: z.string(),
+    settings: z.record(z.string(), z.string()),
     sessionTitle: z
       .string()
       .trim()
@@ -139,7 +141,9 @@ export function scheduleFormDefaults(existing?: Schedule): ScheduleFormValues {
     name: existing?.name ?? "",
     task: existing?.task ?? "",
     precheck: existing?.precheck ?? "",
+    harness: existing?.harness ?? "",
     model: existing?.model ?? "",
+    settings: existing?.settings ?? {},
     sessionTitle: existing?.sessionTitle ?? "",
     timezone: existing?.timezone ?? detectTimezone(),
     sessionMode: existing?.sessionMode ?? "fresh",

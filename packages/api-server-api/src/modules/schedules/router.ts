@@ -16,6 +16,7 @@ import {
   scheduleResetSessionInputSchema,
   scheduleRunNowInputSchema,
   scheduleToggleInputSchema,
+  scheduleUpdateCronInputSchema,
   scheduleUpdateOnceInputSchema,
   scheduleUpdateRRuleInputSchema,
 } from "./schemas.js";
@@ -33,7 +34,10 @@ function toView(sched: Schedule) {
     type: sched.spec.type,
     task: sched.spec.task ?? null,
     precheck: sched.spec.precheck ?? null,
+    harness: sched.spec.harness ?? null,
     model: sched.spec.model ?? null,
+    settings: sched.spec.settings ?? null,
+    migrationNote: sched.spec.migrationNote ?? null,
     sessionTitle: sched.spec.sessionTitle ?? null,
     enabled: sched.spec.enabled,
     sessionMode: sched.spec.sessionMode,
@@ -104,6 +108,14 @@ export const schedulesRouter = t.router({
     .input(scheduleCreateCronInputSchema)
     .mutation(async ({ ctx, input }) => {
       const sched = await ctx.schedules.createCron(input);
+      return toView(sched);
+    }),
+
+  updateCron: manageAgentsProcedure
+    .input(scheduleUpdateCronInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const sched = await ctx.schedules.updateCron(input);
+      if (!sched) throw new TRPCError({ code: "NOT_FOUND" });
       return toView(sched);
     }),
 

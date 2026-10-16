@@ -29,6 +29,7 @@ export {
 } from "./modules/sessions/types.js";
 export {
   sessionSettingsSchema,
+  modelConstraintsFor,
   sessionSettingsError,
   type SessionSettings,
 } from "./modules/harness-config/session-settings.js";
@@ -120,6 +121,14 @@ export type {
 } from "./modules/skills/git-url.js";
 export type { SshService } from "./modules/ssh/types.js";
 export type {
+  HarnessCatalogView,
+  CatalogProviderView,
+  CatalogProviderStatus,
+  CatalogModelView,
+  CatalogModelPrices,
+  CatalogMetadataSource,
+} from "./modules/harness-config/types.js";
+export type {
   HarnessConfigNotice,
   HarnessConfigService,
 } from "./modules/harness-config/types.js";
@@ -152,6 +161,31 @@ export {
   setKeepInputSchema,
 } from "./modules/processes/schemas.js";
 
+export type {
+  ChangeSet,
+  ChangeSetDiff,
+  ChangeSetList,
+  ChangesDomainError,
+  ChangesNotice,
+  ChangesService,
+  CompareTo,
+  DiffStat,
+  FileChangeStatus,
+  FileDiff,
+  PullRequestLink,
+  SessionRepository,
+} from "./modules/changes/types.js";
+export {
+  changeSetDiffSchema,
+  changeSetListSchema,
+  changeSetSchema,
+  changesNoticeSchema,
+  compareToSchema,
+  fileDiffSchema,
+  pullRequestLinkSchema,
+  sessionRepositorySchema,
+} from "./modules/changes/schemas.js";
+
 export {
   backgroundWorkReportSchema,
   type BackgroundWorkItem,
@@ -174,6 +208,7 @@ export {
   harnessConfigCurrentByHarness,
   harnessCapability,
   routesSessionPairs,
+  routesByModelName,
   fileFormat,
   mergeMode,
   eventReportInput,
@@ -248,6 +283,7 @@ export type { ArtifactApiService } from "./modules/artifact-api/types.js";
 export {
   browserSnapshotSchema,
   pageStateSchema,
+  tabStateSchema,
 } from "./modules/browser/schemas.js";
 export type {
   BrowserAction,
@@ -256,4 +292,6 @@ export type {
   BrowserSnapshot,
   BrowserState,
   PageState,
+  TabAction,
+  TabState,
 } from "./modules/browser/types.js";

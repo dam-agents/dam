@@ -8,8 +8,10 @@ function serviceReturning(states: AgentView["state"][]): AgentService {
   let i = 0;
   return {
     list: vi.fn(),
+    runtimeFleet: vi.fn(),
     deleteAgent: vi.fn(),
     restart: vi.fn(),
+    setDisabled: vi.fn(),
     get: vi.fn(async () => {
       const state = states[Math.min(i++, states.length - 1)]!;
       return {

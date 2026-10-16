@@ -1,15 +1,17 @@
 # Home feed
 
-Last verified: 2026-10-13
+Last verified: 2026-10-16
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
+Two surfaces read it: the sidebar lists the newest Sessions of every Agent under that Agent, and the **approvals bell** lists what waits on the user's decision.
 
 ## What Home reads
 
 Three sources sit behind the feed, and they are deliberately different kinds of thing.
 
 **Approvals** come from their own table: a decision is genuinely pending until someone makes it, so it is durable state the api-server owns outright.
+A spend-limit question is an approval too, but it belongs to no session: its card offers only "Continue" and "Stop for today", and it stays open until the next UTC midnight ([spend-limits](spend-limits.md#continue)).
 **Live agent state** says which Agents are awake right now, and comes from the same Agent watch that feeds every other surface.
 **Sessions** come from the attention record — a per-owner, server-side account of the sessions that have asked for attention.
 
@@ -33,6 +35,17 @@ One reader outside Home shows the rows: an Agent's session list, while that Agen
 It shows its owner the rows filed for that Agent as a **provisional** list, display-only, and replaces it with the Agent's own list the moment the Agent answers.
 The UI asks the Agent for that list once the Agent shows as starting, not first at Ready: the agent's tRPC relay holds the ask while the wake runs, and an ask it refuses, or a hold that fails, is asked again when the Agent turns Ready.
 Nothing acts on a provisional row as proof the session exists: opening one asks the Agent, which still decides.
+The sidebar shows the record's rows the same way under every Agent that is not open, three at most, and asks the Agent for its own list only when the user opens the Agent (its chat or its configuration page), asks for more, or has put one of its Sessions in a manual order while it is awake.
+It offers more only when the record may hold more: a feed shorter than its row limit lists every row filed for the owner.
+
+The sidebar lists Agents, and the Sessions of each Agent, in one **manual order** per list, which the user sets by drag and drop or with Alt+Up and Alt+Down.
+A Session moves only within its own Agent's list.
+An item the order does not name yet, a new Agent or a new Session, goes to the bottom of its list, oldest first, and activity never moves anything.
+A move stores the whole list as the user sees it, so the rows the user did not touch keep their places too.
+The api-server keeps the order per user, so it follows the user to every browser, and drops an Agent's entries when the Agent is deleted.
+An Agent with a manual Session order asks for each of its first three Sessions its own list did not return.
+The order is only a list of ids: it never decides that an Agent or a Session exists, and an id that names nothing the Agent knows shows nothing.
+Until the user asks for more, an Agent's list orders only the Sessions it has loaded, the newest page of its own list or the record's rows, so an old Session the order does not name may show only after More.
 
 That boundary is what makes the record safe to rebuild or discard.
 Dropping it costs a user their feed history and nothing else; the next capture refills it from the pods.
@@ -49,6 +62,8 @@ The watcher pulls the list, compares it against what it last wrote, and writes o
 The comparison runs both ways: a session the Agent no longer lists has its row removed, along with any dismissal recorded against it.
 That is what keeps the Agent authoritative for existence in practice and not just in principle — a deleted session stops being mentioned rather than lingering as a card nothing stands behind.
 A backstop reconcile bounds the loss if a notice is missed, and Agents whose runtime image predates the watch surface are polled instead.
+An Agent that has not yet reported its runtime features is polled too, so a poll often targets a pod that is still starting or will never start.
+Each poll read is bounded in time and ends when the Agent leaves the watcher's list, so an Agent deleted before its pod answered does not leave a socket that retries until the replica restarts.
 When it does write, it emits the same per-owner invalidation hint every other domain emits, so open tabs re-read over the query path rather than being pushed rows.
 
 Two consequences are worth stating plainly, because both are costs.
@@ -63,7 +78,8 @@ Both are watermarks, so they compose without a write for every card rendered, an
 
 The seen watermark is the pod's.
 The agent-runtime stamps it while a viewer is attached to a session — machine-driven channels do not count as viewers — and the watcher snapshots it into the record so a sleeping Agent can still answer.
-Dismissal is the user's own watermark, stored per user against the item: dismissing hides a card from Home without resolving anything, without marking anything read, and without touching running work.
+Dismissal is the user's own watermark, stored per user against the item: dismissing hides an approval from the bell without resolving it, without marking anything read, and without touching running work.
+The sidebar lists Sessions as they are and reads no dismissals.
 
 Read state is still **per session, not per person**.
 An Agent currently has a single driving user, so the distinction has no observable effect today; the shared-agent work is what must revisit it.

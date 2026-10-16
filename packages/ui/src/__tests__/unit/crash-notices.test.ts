@@ -75,13 +75,19 @@ describe("nextCrashNotices", () => {
     ).toEqual([[]]);
   });
 
-  // TEST_SCENARIO: the count falls to zero when the pod is replaced or the agent hibernates, then rises from there. Only the rise is a crash.
+  // TEST_SCENARIO: a container agent's count falls to zero when the pod is replaced or the agent hibernates, then rises from there. Only the rise is a crash.
   it("treats a reset count as a new baseline", () => {
     expect(
       replay(
-        [agent({ podRestarts: 2 })],
-        [agent({ state: "hibernated", podRestarts: 0 })],
-        [agent({ podRestarts: 1, podRestartReason: "OutOfMemory" })],
+        [agent({ vm: false, podRestarts: 2 })],
+        [agent({ vm: false, state: "hibernated", podRestarts: 0 })],
+        [
+          agent({
+            vm: false,
+            podRestarts: 1,
+            podRestartReason: "OutOfMemory",
+          }),
+        ],
       ),
     ).toEqual([
       [],
@@ -90,6 +96,23 @@ describe("nextCrashNotices", () => {
         "Scout ran out of memory and restarted — give it a larger size in its settings",
       ],
     ]);
+  });
+
+  // TEST_SCENARIO: a vm agent's count is the runner's and survives the machine's stop, while hibernation publishes zero. Waking it, here seconds after its user put it to sleep, brings the old count back, which is not a crash; a restart once it runs again still is.
+  it("does not report a vm agent's old count, back after it slept, as a crash", () => {
+    const restarted = {
+      podRestarts: 1,
+      podRestartReason: "GuestStoppedAnswering",
+    };
+    expect(
+      replay(
+        [agent(restarted)],
+        [agent({ state: "hibernated", podRestarts: 0 })],
+        [agent({ ...restarted, state: "starting" })],
+        [agent(restarted)],
+        [agent({ ...restarted, podRestarts: 2 })],
+      ),
+    ).toEqual([[], [], [], [], ["Scout stopped responding and restarted"]]);
   });
 
   // TEST_SCENARIO: a refresh caught the not-ready window and the termination cause was announced. The restart count that follows is the same crash and must not raise a second notice.
@@ -160,7 +183,7 @@ describe("nextCrashNotices", () => {
     ).toEqual([
       [],
       [
-        "Your VM agents ran out of memory together, so Ada, Bo and Cy restarted. Put agents you aren't using to sleep to free memory.",
+        "Your VM agents ran out of memory together, so Ada, Bo and Cy restarted. Disable agents you aren't using to free memory.",
       ],
     ]);
   });
@@ -185,5 +208,26 @@ describe("nextCrashNotices", () => {
         "Scout can't start: your VM agents' storage is full. Delete an agent you no longer need",
       ],
     ]);
+  });
+
+  // TEST_SCENARIO: a VM agent whose disk the check at start could not repair did not crash and will not start by waiting. The notice must say it can't start and give the ways out, without the console tail.
+  it("gives a damaged disk's ways out", () => {
+    const [, [notice]] = replay(
+      [agent()],
+      [
+        agent({
+          state: "error",
+          podTerminationCode: "MachineHomeDamaged",
+          podTerminationReason:
+            "the disk is damaged\nthe guest console ends:\nboot log",
+        }),
+      ],
+    );
+    expect(notice).toMatch(
+      /^Scout can't start: its disk has file system errors/,
+    );
+    expect(notice).toContain("Start it again");
+    expect(notice).toContain("delete the agent and create it again");
+    expect(notice).not.toContain("boot log");
   });
 });

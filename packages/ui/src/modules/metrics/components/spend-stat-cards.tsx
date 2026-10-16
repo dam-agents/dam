@@ -22,9 +22,9 @@ function Sub({ children }: { children: ReactNode }) {
 
 function Stat({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <Card className="p-4">
+    <Card className="min-w-0 p-4">
       <dt className="text-sm text-muted-foreground">{label}</dt>
-      <dd className="mt-1.5 whitespace-nowrap font-mono text-2xl font-semibold leading-none tracking-[-0.02em] tabular-nums text-foreground">
+      <dd className="mt-1.5 font-mono text-2xl font-semibold leading-none tracking-[-0.02em] tabular-nums text-foreground">
         {children}
       </dd>
     </Card>
@@ -44,10 +44,12 @@ export function SpendStatCards({
       <Stat label="API calls">{calls.toLocaleString()}</Stat>
       <Stat label="Tokens in / out">
         {formatTokens(tokensIn)}
+        <wbr />
         <Sub>
-          {}
-          <span className="mx-1">/</span>
-          {formatTokens(tokensOut)}
+          <span className="whitespace-nowrap">
+            <span className="mx-1">/</span>
+            {formatTokens(tokensOut)}
+          </span>
         </Sub>
       </Stat>
       <Stat label="Model time">

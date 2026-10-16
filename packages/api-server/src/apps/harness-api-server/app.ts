@@ -8,6 +8,7 @@ import type {
   HarnessCatalog,
   RuntimeDeliveryService,
   SessionDirectoryService,
+  SpendStatus,
 } from "api-server-api";
 import type { Db } from "db";
 import type { OnboardingMarker } from "../../modules/starter-kits/services/onboarding-marker.js";
@@ -31,6 +32,7 @@ import {
   createTargetAdmission,
   type DelegationFramesPort,
   type ReadHarnessConfigSupport,
+  type SpendHoldGate,
 } from "../../modules/invocations/index.js";
 import {
   composeBudgetsModule,
@@ -53,6 +55,10 @@ import { mountRuntimeTrpc } from "./runtime-trpc.js";
 import { mountInvocationRoutes } from "./invocation-endpoints.js";
 import { createDriverOps, type DriverOpsDeps } from "./driver-ops.js";
 import { createAgentImageReader } from "./agent-image.js";
+import {
+  limitRequestBody,
+  MAX_AGENT_REQUEST_BODY_BYTES,
+} from "../../core/request-body-bounds.js";
 import { agentsInstallSettings, type Config } from "../../config.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
@@ -61,6 +67,8 @@ import type {
   CaseStudySubmissionsService,
 } from "../../modules/case-studies/index.js";
 import type { AgentTelemetryService } from "../../modules/metrics/index.js";
+import { composeFeaturesForOwner } from "../../modules/features/index.js";
+import { createChatFormPreferencesReader } from "../../modules/chat-forms/index.js";
 
 export interface HarnessApiServerAppDeps {
   agentStateCache: AgentStateCache;
@@ -94,6 +102,8 @@ export interface HarnessApiServerAppDeps {
   runtimeProgress: RuntimeProgressPort;
   satellitesBoot: SatellitesComposition;
   secretStore: SecretStore;
+  spendHold: SpendHoldGate;
+  spendStatusFor: (agentId: string, owner: string) => Promise<SpendStatus>;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -126,6 +136,8 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     readHarnessConfigSupport,
     runtimeProgress,
     secretStore,
+    spendHold,
+    spendStatusFor,
   } = deps;
 
   const defaultLimits = {
@@ -170,6 +182,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       wakeAgent,
       frames: deps.delegationFrames,
       readHarnessConfigSupport,
+      spendHold,
       targetAdmission: createTargetAdmission({
         readTemplateResources: async (templateId) =>
           (await templatesRepo.readSpec(templateId))?.spec.resources,
@@ -233,7 +246,9 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     defaultLimits,
   };
 
+  const readChatFormPreferences = createChatFormPreferencesReader(db);
   const app = new Hono();
+  app.use(limitRequestBody(MAX_AGENT_REQUEST_BODY_BYTES));
   mountMcpRoutes(app, {
     channelManager,
     k8s: k8sClient,
@@ -256,8 +271,22 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     caseStudySubmissions,
     caseStudyInspection,
     carriesInspectorRole,
+    chatFormPreferences: (owner, agentId) =>
+      readChatFormPreferences(
+        agentId,
+        async () =>
+          (
+            await composeFeaturesForOwner({
+              db,
+              owner,
+              surface: "mcp",
+              modes: config.featureModes,
+            }).features.flags()
+          )["chat-forms"],
+      ),
     agentImage: createAgentImageReader(k8sClient),
     agentTelemetry,
+    spendStatusFor,
     satelliteOps: deps.satellitesBoot.agentOps,
     satelliteWaitDeadlineMs: config.satelliteWaitDeadlineMs,
   });

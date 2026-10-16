@@ -167,6 +167,34 @@ describe("ensureReady", () => {
       kind: "reconcile-error",
       logCause: "wake-timeout:reconcile-error",
     },
+    {
+      name: "a machine still booting → agent-pod-not-ready (progressing)",
+      conditions: [
+        { type: "Ready", status: "False", reason: "PodsNotReady" },
+        {
+          type: "AgentPodReady",
+          status: "False",
+          reason: "MachineNotReady",
+          message: "pulling the image",
+        },
+      ],
+      kind: "agent-pod-not-ready",
+      logCause: "wake-timeout:agent-pod-not-ready",
+    },
+    {
+      name: "an unschedulable runner → agent-pod-failed, only at the timeout",
+      conditions: [
+        { type: "Ready", status: "False", reason: "PodsNotReady" },
+        {
+          type: "AgentPodReady",
+          status: "False",
+          reason: "MachineRunnerUnschedulable",
+          message: "the owner's VM runner cannot be scheduled: 0/3 nodes",
+        },
+      ],
+      kind: "agent-pod-failed",
+      logCause: "wake-timeout:agent-pod-failed:MachineRunnerUnschedulable",
+    },
   ];
 
   for (const { name, conditions, kind, logCause } of timeoutCases) {
@@ -250,6 +278,115 @@ describe("ensureReady", () => {
     }
   });
 
+  const STORAGE_FULL: Condition[] = [
+    { type: "Ready", status: "False", reason: "PodsNotReady" },
+    {
+      type: "AgentPodReady",
+      status: "False",
+      reason: "MachineStorageFull",
+      message: "the owner's VM storage is full",
+    },
+  ];
+
+  // TEST_SCENARIO: the runner refuses the machine's start because the owner's VM storage is full. No wait can outgrow that, so a refusal that appears during the wake fails it at once with the cause, not at the two-minute timeout.
+  it("fail-fast: a start refusal that appears during the wake rejects immediately", async () => {
+    const { repo, store, lines } = harness([agentObj("a1", HIBERNATED)]);
+    const p = repo.ensureReady("a1");
+    p.catch(() => {});
+    await vi.advanceTimersByTimeAsync(0);
+    store.set("a1", agentObj("a1", STORAGE_FULL));
+    await advanceUntilSettled(p);
+    const err = await p.then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(isAgentWakeTimeoutError(err)).toBe(true);
+    if (isAgentWakeTimeoutError(err)) {
+      expect(err.failure).toEqual({
+        kind: "agent-pod-failed",
+        terminationReason: "MachineStorageFull",
+      });
+      expect(err.durationMs).toBeLessThan(10_000);
+      expect(err.message).toContain("was not started");
+    }
+    expect(lines.find((l) => l.msg === "agent.wake.rejected")?.cause).toBe(
+      "wake-timeout:agent-pod-failed:MachineStorageFull",
+    );
+  });
+
+  // TEST_SCENARIO: the disk check at boot refused a damaged disk. Waiting does not repair it, so the wake fails at once with the cause, as for a full storage.
+  it("fail-fast: a damaged disk rejects the wake immediately", async () => {
+    const { repo, store } = harness([agentObj("a1", HIBERNATED)]);
+    const p = repo.ensureReady("a1");
+    p.catch(() => {});
+    await vi.advanceTimersByTimeAsync(0);
+    store.set(
+      "a1",
+      agentObj("a1", [
+        { type: "Ready", status: "False", reason: "PodsNotReady" },
+        {
+          type: "AgentPodReady",
+          status: "False",
+          reason: "MachineHomeDamaged",
+          message: "the agent's disk has errors the check could not repair",
+        },
+      ]),
+    );
+    await advanceUntilSettled(p);
+    const err = await p.then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(isAgentWakeTimeoutError(err)).toBe(true);
+    if (isAgentWakeTimeoutError(err)) {
+      expect(err.failure).toEqual({
+        kind: "agent-pod-failed",
+        terminationReason: "MachineHomeDamaged",
+      });
+      expect(err.durationMs).toBeLessThan(10_000);
+    }
+  });
+
+  // TEST_SCENARIO: an awake agent already in error with a refused start. The first polls may read the previous attempt's refusal, so the wake waits out the short grace, then fails well before its timeout.
+  it("fail-fast: a standing start refusal outlasting the grace window rejects", async () => {
+    const { repo } = harness([agentObj("a1", STORAGE_FULL)]);
+    const p = repo.ensureReady("a1");
+    p.catch(() => {});
+    await advanceUntilSettled(p);
+    const err = await p.then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(isAgentWakeTimeoutError(err)).toBe(true);
+    if (isAgentWakeTimeoutError(err)) {
+      expect(err.failure.kind).toBe("agent-pod-failed");
+      expect(err.durationMs).toBeGreaterThanOrEqual(10_000);
+      expect(err.durationMs).toBeLessThan(120_000);
+    }
+  });
+
+  // TEST_SCENARIO: the refusal the wake first reads is the previous attempt's; the owner freed storage, and the controller's retry boots the machine within the grace. The wake must ride the stale refusal through and succeed.
+  it("keeps polling past a stale start refusal and succeeds once the machine boots", async () => {
+    const { repo, store } = harness([agentObj("a1", STORAGE_FULL)]);
+    const p = repo.ensureReady("a1");
+    await vi.advanceTimersByTimeAsync(0);
+    store.set("a1", agentObj("a1", READY));
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(p).resolves.toBeUndefined();
+  });
+
+  // TEST_SCENARIO: a hibernated agent keeps the refusal of the start before it slept. Until the controller acts on the wake, that refusal is not this wake's, so the wake keeps waiting.
+  it("ignores a start refusal while the agent still reads hibernated", async () => {
+    const { repo, store } = harness([
+      agentObj("a1", [...HIBERNATED, STORAGE_FULL[1]!]),
+    ]);
+    const p = repo.ensureReady("a1");
+    p.catch(() => {});
+    await vi.advanceTimersByTimeAsync(30_000);
+    store.set("a1", agentObj("a1", READY));
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(p).resolves.toBeUndefined();
+  });
   it("a stop landing mid-wake fails fast and is never cleared by the wake", async () => {
     const { repo, store } = harness([agentObj("a1", HIBERNATED)]);
     const p = repo.ensureReady("a1");
@@ -590,6 +727,19 @@ describe("requestSleep settle", () => {
     store.get("a1")!.metadata!.annotations![PIN_KEY] = "true";
     await repo.requestSleep("a1");
     expect(store.get("a1")?.metadata?.annotations?.[PIN_KEY]).toBe("");
+  });
+
+  // TEST_SCENARIO: a sleep stales last activity behind any reclaim mark an earlier reclaim left, which would make the agent read as put to sleep automatically to free memory. The user put it to sleep, so the sleep removes the mark.
+  it("removes an earlier reclaim mark", async () => {
+    const { repo, store } = harness([agentObj("a1", READY)]);
+    store.get("a1")!.metadata!.annotations!["agent-platform.ai/reclaimed-at"] =
+      "2026-10-14T23:39:22Z";
+    await repo.requestSleep("a1");
+    expect(
+      store.get("a1")?.metadata?.annotations?.[
+        "agent-platform.ai/reclaimed-at"
+      ],
+    ).toBe("");
   });
 
   it("leaves a stop stamped during the settle window in place", async () => {

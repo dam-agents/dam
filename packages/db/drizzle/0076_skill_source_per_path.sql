@@ -1,0 +1,2 @@
+DROP INDEX "skill_sources_owner_git_url_idx";--> statement-breakpoint
+CREATE UNIQUE INDEX "skill_sources_owner_git_url_path_idx" ON "skill_sources" USING btree ("owner","git_url",coalesce("path", ''));

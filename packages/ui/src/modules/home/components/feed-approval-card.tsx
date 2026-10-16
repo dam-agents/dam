@@ -12,10 +12,16 @@ import { cn } from "@/lib/utils";
 
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { useApprovalActions } from "../../approvals/hooks/use-approval-actions.js";
-import { approvalDetail, approvalHeadline } from "../lib/approval-copy.js";
+import { useAppConnections } from "../../connections/api/queries.js";
+import {
+  approvalDetail,
+  approvalHeadline,
+  approvalHideHint,
+} from "../lib/approval-copy.js";
 
 interface Props {
   approval: ApprovalView;
+  ids?: readonly string[];
   agentName: string;
   avatarName: string | undefined;
   avatar: string | null | undefined;
@@ -27,6 +33,7 @@ interface Props {
 
 export function FeedApprovalCard({
   approval,
+  ids = [approval.id],
   agentName,
   avatarName,
   avatar,
@@ -35,8 +42,17 @@ export function FeedApprovalCard({
   resolvedLabel = null,
   onResolved,
 }: Props) {
-  const { actions, inflight, hostLabel, expiredNote, openSettings } =
-    useApprovalActions(approval);
+  const {
+    actions,
+    primaryLabel,
+    inflight,
+    hostLabel,
+    expiredNote,
+    openSettings,
+  } = useApprovalActions(approval, ids);
+  const { data: connections } = useAppConnections();
+  const connectionName = (id: string) =>
+    connections?.find((connection) => connection.id === id)?.name;
   const [ownResolved, setOwnResolved] = useState<string | null>(null);
   const resolved = resolvedLabel ?? ownResolved;
 
@@ -72,7 +88,7 @@ export function FeedApprovalCard({
         <button
           type="button"
           onClick={onDismiss}
-          title="Hides this from Home. The request stays pending — resolve it in the session."
+          title={approvalHideHint(approval)}
           className="shrink-0 text-sm text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:text-foreground"
         >
           Dismiss
@@ -80,9 +96,19 @@ export function FeedApprovalCard({
       </div>
 
       <div className="mt-3 flex min-w-0 items-center gap-2 overflow-hidden rounded-md border border-border/50 bg-muted/40 px-2.5 py-1.5">
-        <span className="min-w-0 truncate font-mono text-sm text-muted-foreground">
-          {approvalDetail(approval)}
+        <span
+          className={cn(
+            "min-w-0 font-mono text-sm text-muted-foreground",
+            approval.type !== "spend_limit" && "truncate",
+          )}
+        >
+          {approvalDetail(approval, connectionName)}
         </span>
+        {ids.length > 1 && (
+          <span className="ml-auto shrink-0 text-sm text-muted-foreground">
+            {ids.length} requests
+          </span>
+        )}
       </div>
 
       {expiredNote && (
@@ -95,7 +121,9 @@ export function FeedApprovalCard({
           <span
             className={cn(
               "text-sm",
-              resolved.startsWith("Denied") ? "text-danger" : "text-success",
+              /^(Denied|Stopped)/.test(resolved)
+                ? "text-danger"
+                : "text-success",
             )}
           >
             {resolved}
@@ -109,7 +137,7 @@ export function FeedApprovalCard({
                 tooltip={allowOnce.tooltip}
                 onClick={() => void act(allowOnce.run, allowOnce.resolvedLabel)}
               >
-                Allow
+                {primaryLabel}
               </Button>
             )}
             <RowActionsMenu

@@ -30,6 +30,18 @@ test("exchange messages with the agent", async ({ page }) => {
     await openAgentChat(page, agentName, agentId);
   });
 
+  await test.step("the chat view has no top bar: the icon bar reaches the top edge and holds the bell", async () => {
+    const bar = page.getByTestId("side-panel-bar");
+    await expect(bar.getByTestId("open-approvals")).toBeVisible();
+    expect((await bar.boundingBox())?.y).toBe(0);
+  });
+
+  await test.step("the new session page names the agent", async () => {
+    await expect(
+      page.getByRole("heading", { level: 2, name: agentName, exact: true }),
+    ).toBeVisible();
+  });
+
   await test.step("send a message and receive the scripted reply", async () => {
     await sendMessageToAgent(page, userPrompt);
 
@@ -40,6 +52,34 @@ test("exchange messages with the agent", async ({ page }) => {
     const { prompts } = await api.e2e.getReceivedPrompts.query({ agentId });
     expect(prompts.length).toBeGreaterThan(0);
     expect(JSON.stringify(prompts)).toContain(userPrompt);
+  });
+
+  await test.step("the agent's name above its reply opens its configuration", async () => {
+    await page
+      .getByTestId("chat-message")
+      .filter({ hasText: scriptedReply })
+      .getByRole("button", { name: `Configure ${agentName}` })
+      .click();
+    await expect(page).toHaveURL(new RegExp(`/sandboxes/${agentId}$`));
+  });
+
+  await test.step("the avatar picker opens on hover and closes when the pointer leaves", async () => {
+    const picker = page.getByTestId("avatar-picker");
+    const grid = page.getByRole("group", { name: "Avatar" });
+    await picker.hover();
+    await expect(grid).toBeVisible();
+    await page.mouse.move(0, 0);
+    await expect(grid).toBeHidden();
+  });
+
+  await test.step("Enter moves focus into the avatar picker and Escape returns it", async () => {
+    const picker = page.getByTestId("avatar-picker");
+    const grid = page.getByRole("group", { name: "Avatar" });
+    await picker.press("Enter");
+    await expect(grid.getByRole("button", { pressed: true })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(grid).toBeHidden();
+    await expect(picker).toBeFocused();
   });
 });
 

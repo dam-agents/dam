@@ -89,6 +89,7 @@ export const platformClippedReplayMetaSchema = z.object({
 export const platformReplayTurnMetaSchema = z.object({
   inFlight: z.boolean(),
   interruptedAt: z.string().optional(),
+  interruptedByStop: z.boolean().optional(),
 });
 export type PlatformReplayTurnMeta = z.infer<
   typeof platformReplayTurnMetaSchema

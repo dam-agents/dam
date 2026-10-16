@@ -3,23 +3,42 @@ model_provider = "openai-platform"
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
 cli_auth_credentials_store = "file"
-developer_instructions = "/etc/AGENTS.md"
+# The router's catalog entries carry a one-line template only (the full one
+# on every model overflows the catalog response Codex accepts); this file
+# wins over any template.
+model_instructions_file = "/etc/codex/model-instructions.md"
 forced_login_method = "api"
 # CLI rides the image pin; the startup upgrade nag would only hit the egress chain
 check_for_update_on_startup = false
 
+# The provider keeps its id (rollouts record it, a rename would strand old
+# threads) but every call goes to the Model Router on the pod's loopback,
+# which routes by the provider-qualified model name and serves the catalog
+# Codex picks from; see docs/architecture/harness-config.md.
 # WSS disabled: the Envoy MITM proxy can't relay upgrades, Codex would hang then fall back
 [model_providers.openai-platform]
-name = "OpenAI"
+name = "Platform model router"
+base_url = "http://127.0.0.1:24180/v1"
 env_key = "OPENAI_API_KEY"
+wire_api = "responses"
+model_catalog_url = "http://127.0.0.1:24180/codex/models"
+http_headers = { "X-Platform-Harness" = "codex" }
 supports_websockets = false
+# Codex ignores x-should-retry, so its default retries make a refused model
+# take a minute to fail; one retry keeps a transient blip survivable.
+request_max_retries = 1
+stream_max_retries = 1
 
 [projects."/home/agent/work"]
 trust_level = "trusted"
 
 # Plugins sync OpenAI's catalog from chatgpt.com and GitHub at every start, an egress prompt per process.
 # MCP servers in [mcp_servers.*] do not depend on it.
+# Codex fetches model_catalog_url only with this flag (UnderDevelopment,
+# default off; codex-rs core/src/features.rs). A pin bump must re-check that
+# it still exists and still gates the fetch.
 [features]
 plugins = false
 # Interactive launches otherwise leave a background daemon that copies the CLI aside and self-updates hourly
 daemon_auto_start = false
+api_key_model_discovery = true

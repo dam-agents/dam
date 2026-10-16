@@ -6,7 +6,9 @@ export const featureIdSchema = z.enum([
   "interactive-artifacts",
   "agent-telemetry",
   "processes",
+  "chat-forms",
   "custom-avatars",
+  "platform-provider",
 ]);
 
 export const featureModeSchema = z.enum(["off", "experimental", "on"]);

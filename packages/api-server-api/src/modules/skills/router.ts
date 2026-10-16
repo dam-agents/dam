@@ -33,6 +33,7 @@ import {
   skillSetCreateInputSchema,
   skillSetDeleteInputSchema,
   skillSetSchema,
+  skillSetSourceHiddenInputSchema,
   skillSourceSchema,
   skillStateInputSchema,
   skillStateOutputSchema,
@@ -72,6 +73,13 @@ export const skillsRouter = t.router({
     refresh: manageAgentsProcedure
       .input(skillRefreshSourceInputSchema)
       .mutation(({ ctx, input }) => ctx.skills.refreshSource(input.id)),
+
+    setHidden: manageAgentsProcedure
+      .input(skillSetSourceHiddenInputSchema)
+      .mutation(({ ctx, input }) => {
+        checkAgentBinding(ctx, input.agentId);
+        return ctx.skills.setSourceHidden(input);
+      }),
   }),
 
   list: readAgentProcedure

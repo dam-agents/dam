@@ -6,22 +6,16 @@ packages:
   - "packages/agents/pi-agent/rootfs/usr/local/share/pi-platform/extensions/*"
 minimumReleaseAge: 10080 # 7 days (in minutes)
 minimumReleaseAgeExclude:
-  # The pi-agent image pins @earendil-works/pi-coding-agent 1.0.4 (2026-10-05)
-  # and the pi-dynamic-providers extension type-checks against the same
-  # version; the fork publishes all its packages in lockstep. Drop these once
-  # the release ages past the floor (2026-10-12).
-  - "@earendil-works/chord@1.0.4"
-  - "@earendil-works/pi-agent-core@1.0.4"
-  - "@earendil-works/pi-ai@1.0.4"
-  - "@earendil-works/pi-codemode@1.0.4"
-  - "@earendil-works/pi-coding-agent@1.0.4"
-  - "@earendil-works/pi-mcp@1.0.4"
-  - "@earendil-works/pi-telemetry@1.0.4"
-  - "@earendil-works/pi-tui@1.0.4"
-  # vite 8.3.3 (2026-10-06) fixes GHSA-rq7h-c2jc-7f22, GHSA-vfpm-58rq-9qcg
-  # and GHSA-9jrq-w75r-8gcw, dev-server reads outside `server.fs.allow`.
-  # Drop this once it ages past the floor (2026-10-13).
-  - "vite@8.3.3"
+  # qs 6.16.1 (2026-10-14) fixes CVE-2026-110816, reached through express's
+  # body-parser. Drop this once it ages past the floor (2026-10-21).
+  - "qs@6.16.1"
+  # @a2ui/web_core 0.13.0 (2026-10-09) is the first release that reads the
+  # A2UI v1.0 wire format (@path/@call keys); 0.12.0 predates it. The chat's
+  # A2UI renderer runs its basic-catalog functions. Checked on 2026-10-12: no
+  # OSV or GitHub advisory for 0.13.0 or its dependencies (GHSA-72qq-p3r5-f7wq
+  # affects only <0.10.2), no install scripts, no network or eval code. Drop
+  # this once it ages past the floor (2026-10-16).
+  - "@a2ui/web_core@0.13.0"
   # zod 4.6.6 (2026-10-11) mitigates CVE-2023-54404 (GHSA-mrhx-c7xc-m3w5):
   # its #6652 rejects an array, set or map over its `.max()` before parsing
   # any element. Drop this once it ages past the floor (2026-10-18).
@@ -59,7 +53,6 @@ allowBuilds:
 overrides:
   "esbuild@<0.25.0": "0.25.12"
   "esbuild@>=0.27.3 <0.28.1": "0.28.1"
-  "serialize-javascript@<7.0.5": "7.0.5"
 
 packageExtensions:
   "drizzle-kit":

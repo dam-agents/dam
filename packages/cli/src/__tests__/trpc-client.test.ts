@@ -150,4 +150,55 @@ describe("shared trpc-client adapter", () => {
       "the agent is unavailable: your VM agents' memory is full",
     );
   });
+
+  /**
+   * TEST_SCENARIO: The configured server permanently redirects to a new
+   * host. fetch follows the redirect but drops the bearer header across
+   * origins, so the new host answers 401 to every call. The error names the
+   * new host instead of calling a fresh login an expired session.
+   */
+  it("names the new host when a cross-origin redirect drops the bearer", async () => {
+    const trpc = createTrpcClient({
+      host: "https://old.test/",
+      tokenProvider: fakeTokenProvider(async () => ok("AT-1")),
+      fetch: (async () =>
+        Object.defineProperties(
+          new Response(JSON.stringify({ error: "unauthorized" }), {
+            status: 401,
+            headers: { "content-type": "application/json" },
+          }),
+          {
+            redirected: { value: true },
+            url: { value: "https://new.test/api/trpc/agents.list" },
+          },
+        )) as unknown as typeof fetch,
+    });
+
+    await expect(trpc.agents.list.query()).rejects.toThrow(
+      "https://old.test/ moved to https://new.test/",
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: A gateway in front of the api-server answers an agent call
+   * with an HTML error page. The client names the HTTP status instead of
+   * throwing a JSON parse error such as "Unexpected token '<'".
+   */
+  it("names the status of an HTML error page instead of failing to parse it", async () => {
+    const trpc = createAgentTrpcClient({
+      host: HOST,
+      agentId: "agent-0123456789abcdef",
+      tokenProvider: fakeTokenProvider(async () => ok("AT-1")),
+      fetch: (async () =>
+        new Response("<html><body>504</body></html>", {
+          status: 504,
+          statusText: "Gateway Timeout",
+          headers: { "content-type": "text/html" },
+        })) as unknown as typeof fetch,
+    });
+
+    await expect(trpc.files.listDirs.query({ paths: [""] })).rejects.toThrow(
+      "the server answered HTTP 504 Gateway Timeout with a body that is not an API response",
+    );
+  });
 });

@@ -23,6 +23,7 @@ import {
   type ListTelegramChatsResult,
   type UnbindTelegramChatResult,
   type AgentBackgroundWork,
+  type RuntimeFleetAgent,
   type TemplateUpdate,
   type UpgradeAgentError,
   ChannelType,
@@ -543,6 +544,7 @@ export function createAgentsService(deps: {
   agentIdleTimeoutMinutes: IdleTimeoutMinutes;
   owner: string | undefined;
   readTemplateSpec: ReadTemplateSpec;
+  lastHelloAt?: (agentId: string) => Promise<Date | null>;
   presetSeeder?: PresetSeeder;
   cleanupHooks: readonly AgentCleanupHook[];
   registrySecretPort: AgentRegistrySecretPort;
@@ -567,10 +569,10 @@ export function createAgentsService(deps: {
       connectionIds: string[];
       providerConnectionId?: string;
     }): Promise<{ grantedConnectionIds: string[] }>;
-    defaultProvider(
+    defaultProviders(
       connectionIds: string[],
       template: { harness?: string; providers?: readonly string[] },
-    ): Promise<string | null>;
+    ): Promise<string[]>;
     applyAfterCreate(
       agentId: string,
       sel: { connectionIds: string[] },
@@ -986,6 +988,51 @@ export function createAgentsService(deps: {
       });
     },
 
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: read from the Agent resources' image pins,
+     * since a hibernated agent has said no hello since it slept. The count
+     * the old runtime path waits on; a key bound to some agents counts only
+     * those.
+     */
+    async runtimeFleet(agentIds) {
+      const infraAgents = (await deps.repo.list(deps.owner)).filter(
+        (a) => !agentIds || agentIds.includes(a.id),
+      );
+      const templateIds = [
+        ...new Set(infraAgents.flatMap((a) => a.templateId ?? [])),
+      ];
+      const templateImages = new Map<string, string>();
+      await Promise.all(
+        templateIds.map(async (tid) => {
+          const tmpl = await deps.readTemplateSpec(tid);
+          if (tmpl) templateImages.set(tid, tmpl.spec.image);
+        }),
+      );
+      const outdated: RuntimeFleetAgent[] = [];
+      let onCurrent = 0;
+      for (const infra of infraAgents) {
+        const templateImage = infra.templateId
+          ? templateImages.get(infra.templateId)
+          : undefined;
+        const update = templateImage
+          ? templateImageUpdate(infra.spec.image, templateImage)
+          : undefined;
+        if (!update) {
+          onCurrent += 1;
+          continue;
+        }
+        const hello = await deps.lastHelloAt?.(infra.id);
+        outdated.push({
+          agentId: infra.id,
+          name: infra.name,
+          image: update.fromImage,
+          templateImage: update.toImage,
+          lastHello: hello ? hello.toISOString() : null,
+        });
+      }
+      return { onCurrent, outdated };
+    },
+
     async get(id) {
       const infra = await deps.repo.get(id, deps.owner);
       if (!infra) return null;
@@ -1078,10 +1125,12 @@ export function createAgentsService(deps: {
       if (input.requireConnectionAddress !== false)
         spec.requireConnectionAddress = true;
 
-      const providerConnectionId =
-        input.providerConnectionId ??
-        (templateId !== undefined && !input.noDefaultProvider
-          ? await deps.grantProvisioner?.defaultProvider(
+      const providerConnectionId = input.providerConnectionId;
+      const defaultProviders =
+        providerConnectionId === undefined &&
+        templateId !== undefined &&
+        !input.noDefaultProvider
+          ? ((await deps.grantProvisioner?.defaultProviders(
               input.connectionIds ?? [],
               {
                 ...(typeof spec.harness === "string" && {
@@ -1089,14 +1138,14 @@ export function createAgentsService(deps: {
                 }),
                 ...(templateProviders && { providers: templateProviders }),
               },
-            )
-          : undefined) ??
-        undefined;
+            )) ?? [])
+          : [];
       const grantSel = {
         connectionIds: Array.from(
           new Set([
             ...(input.connectionIds ?? []),
             ...(providerConnectionId ? [providerConnectionId] : []),
+            ...defaultProviders,
           ]),
         ),
         providerConnectionId,
@@ -1243,12 +1292,15 @@ export function createAgentsService(deps: {
     },
 
     async update(input: AgentUpdateInput) {
+      let renamed = false;
       if (input.secretRef || input.name !== undefined) {
         const current = await deps.repo.get(input.id, deps.owner);
         if (!current) return null;
         await assertOwnSecretRef(input.secretRef, current.owner, input.id);
-        if (input.name !== undefined && input.name !== current.name)
+        if (input.name !== undefined && input.name !== current.name) {
+          renamed = true;
           await assertNameFree(input.name, current.owner, input.id);
+        }
       }
       const patch: Record<string, unknown> = {};
       if (input.name !== undefined) patch.name = input.name;
@@ -1318,8 +1370,8 @@ export function createAgentsService(deps: {
           await deps.agentEnvRepo.list(input.id),
           input.name,
         );
-        if (refreshed) {
-          await deps.agentEnvRepo.replace(input.id, refreshed);
+        if (refreshed) await deps.agentEnvRepo.replace(input.id, refreshed);
+        if (refreshed || renamed) {
           await deps.runtimeMutator.bump(input.id, []);
           await deps.runtimeMutator.enqueueAfterCommit(input.id);
         }
@@ -1408,8 +1460,9 @@ export function createAgentsService(deps: {
       const hold = (await deps.repo.get(id))?.runtimeMigrationHold ?? "none";
       if (hold !== "none")
         return err({ type: "RuntimeMigrating", failed: hold === "failed" });
-      const infra = await deps.repo.wake(id);
-      if (!infra) return err({ type: "AgentNotFound" });
+      const woke = await deps.repo.wake(id);
+      if (!woke.ok) return err(woke.error);
+      const infra = woke.value;
       securityLog("info", "agent.wake", {
         category: "privileged",
         actor: deps.owner ?? null,
@@ -1443,6 +1496,12 @@ export function createAgentsService(deps: {
       if (!(await ownsOrDeny(id, "agent.sleep"))) return null;
       const current = await deps.repo.get(id, deps.owner);
       if (!current) return null;
+      if ((current.runtimeMigrationHold ?? "none") !== "none")
+        throw new TRPCError({
+          code: "CONFLICT",
+          message:
+            "This agent is moving to the new runtime and is not running; abort the move to stop it",
+        });
       const effectiveTimeout = resolveEffectiveHibernationTimeoutMin(
         current.spec.hibernationTimeout,
         current.spec.backend?.type === "vm",
@@ -1461,6 +1520,30 @@ export function createAgentsService(deps: {
         result: "success",
       });
       return project(infra);
+    },
+
+    async setDisabled(id, disabled) {
+      if (!(await ownsOrDeny(id, "agent.setDisabled")))
+        return err({ type: "AgentNotFound" });
+      const current = await deps.repo.get(id, deps.owner);
+      if (!current) return err({ type: "AgentNotFound" });
+      if ((current.runtimeMigrationHold ?? "none") !== "none")
+        return err({ type: "RuntimeMigrating" });
+      const infra = await deps.repo.setDisabled(id, disabled);
+      if (!infra) return err({ type: "AgentNotFound" });
+      securityLog("info", disabled ? "agent.disable" : "agent.enable", {
+        category: "privileged",
+        actor: deps.owner ?? null,
+        actorKind: "user",
+        agentId: id,
+        result: "success",
+      });
+      emit({
+        type: EventType.AgentUpdated,
+        agentId: id,
+        ...(deps.owner ? { ownerSub: deps.owner } : {}),
+      });
+      return ok(await project(infra));
     },
 
     async upgrade(id, expectedToImage) {

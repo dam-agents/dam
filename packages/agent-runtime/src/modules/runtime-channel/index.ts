@@ -6,11 +6,17 @@ export {
   harnessConfigBindingOf,
   resolveDrivers,
   sessionModelOf,
+  type ModelDialect,
+  type ModelRouterBinding,
   type RuntimeManifest,
 } from "./manifest.js";
 
 export { createEnvPlugin } from "./drivers/env-plugin.js";
-export { createEnvStateStore } from "./infrastructure/env-state-store.js";
+export {
+  createEnvStateStore,
+  staleEnvReason,
+} from "./infrastructure/env-state-store.js";
+export { createModelDiscovery } from "./infrastructure/model-discovery.js";
 export { createFilePlugin } from "./drivers/file-plugin.js";
 export { createMcpEntryPlugin } from "./drivers/mcp-entry-plugin.js";
 export {

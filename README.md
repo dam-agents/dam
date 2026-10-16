@@ -17,8 +17,6 @@
   <a href="https://ibm.biz/dam-docs"><strong>Documentation</strong></a>
   ·
   <a href="https://ibm.biz/dam-agents"><strong>Launch DAM</strong></a>
-  ·
-  <a href="https://ibm.biz/dam-waitlist"><strong>Join the Waitlist</strong></a>
 </p>
 
 <p align="center">
@@ -115,12 +113,12 @@ ACP compatible runtimes can use DAM's platform capabilities without a custom ada
 DAM is Apache 2.0 licensed and can be deployed on your own Kubernetes cluster using Helm.
 
 ```sh
-helm install platform oci://quay.io/dam-agents/charts/platform --version 0.2.17
+helm install platform oci://quay.io/dam-agents/charts/platform
 ```
 
 The chart includes Keycloak, Postgres, Redis, and an optional telemetry backend.
 
-Configure harness templates, model endpoints, credentials, budgets, and isolation in [`values.yaml`](deploy/helm/platform/values.yaml).
+Configure harness templates, model endpoints, credentials, budgets, and isolation in [`values.yaml`](helm/values.yaml).
 
 DAM requires an Istio ambient mesh.
 Before deploying to production, read [`docs/architecture.md`](docs/architecture.md) and [`docs/architecture/security-and-credentials.md`](docs/architecture/security-and-credentials.md).
@@ -130,12 +128,12 @@ Before deploying to production, read [`docs/architecture.md`](docs/architecture.
 ## For IBMers
 
 IBM Research operates a hosted DAM deployment, so IBM employees do not need to run their own cluster.
+Sign in with your IBM login to start; there is no approval step.
 
-|                    |                                                      |
-| ------------------ | ---------------------------------------------------- |
-| **Launch DAM**     | [ibm.biz/dam-agents](https://ibm.biz/dam-agents)     |
-| **Documentation**  | [ibm.biz/dam-docs](https://ibm.biz/dam-docs)         |
-| **Request access** | [ibm.biz/dam-waitlist](https://ibm.biz/dam-waitlist) |
+|                   |                                                  |
+| ----------------- | ------------------------------------------------ |
+| **Launch DAM**    | [ibm.biz/dam-agents](https://ibm.biz/dam-agents) |
+| **Documentation** | [ibm.biz/dam-docs](https://ibm.biz/dam-docs)     |
 
 The hosted deployment provides IBM internal model endpoints and integrations that are not included in the open source deployment.
 
@@ -156,8 +154,8 @@ The Keycloak theme's full preview (`mise run //packages/keycloak-theme:run`) run
 On Linux, install QEMU to run k3s in a VM, or set `IS_SANDBOX=1` when running directly in an existing VM.
 The cluster tasks run their privileged steps through sudo, or directly when already root, so a root sandbox needs no sudo.
 
-On Linux, the agent and VM runner images build with sudo, and the VM runner's image build (only with virtualization on) needs a C toolchain with glibc's static library (`build-essential` on Debian and Ubuntu).
-Everything else needs no C toolchain of the machine's own: on Linux, Rust builds use the zig the repository's mise installs.
+On Linux, the agent and VM runner images build with sudo.
+Rust builds need the machine's C toolchain, and the VM runner's image build (only with virtualization on) also needs glibc's static library: `build-essential` on Debian and Ubuntu has both.
 
 ### Setup
 

@@ -1,3 +1,4 @@
+import type { ChatFormPreferences } from "api-server-api/chat-forms";
 import { TRPCError } from "@trpc/server";
 
 import { getLogger } from "../../../core/logger.js";
@@ -81,6 +82,9 @@ export interface StarterKitsServiceDeps {
     ): Promise<void>;
   };
   virtualizationEnabled?: boolean;
+  chatFormPreferences?: (
+    agentId: string,
+  ) => Promise<ChatFormPreferences | null>;
   kitUpstream: KitUpstream;
   kitUpdateMarks: KitUpdateMarks;
 }
@@ -228,6 +232,7 @@ export function createStarterKitsService(
         })),
         boundChannels: agent.channels.map((c) => c.type),
         familyTitles: await familyTitles(),
+        chatForms: (await deps.chatFormPreferences?.(agentId)) ?? null,
       },
       harness,
     );
@@ -260,6 +265,7 @@ export function createStarterKitsService(
     wakeAgent: deps.wakeAgent,
     runtimeMutator: deps.runtimeMutator,
     sessionPair: deps.sessionPair,
+    chatFormPreferences: deps.chatFormPreferences,
   });
 
   return {

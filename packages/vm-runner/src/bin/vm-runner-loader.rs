@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use clap::{Parser, Subcommand};
 use tokio::process::{Child, Command};
 use tokio::signal::unix::{signal, SignalKind};
+use tokio_util::sync::CancellationToken;
 use vm_runner::api::{RunnerRelease, HELD_FAILED, HELD_RUNTIME, HELD_UNSTAGED};
 use vm_runner::release::{self, Choice, Releases, RUNNER};
 
@@ -60,6 +61,9 @@ const SETTLE: Duration = Duration::from_secs(60);
 const HAND_OFF_WAIT: Duration = Duration::from_secs(60);
 
 const RESTART_BACKOFF_MAX: Duration = Duration::from_secs(30);
+
+// UNIT_BOUNDARY_DESCRIPTION: how often a stop of the pod looks whether the runner it passes the stop to has set up its own stop yet.
+const CATCH_POLL: Duration = Duration::from_millis(50);
 
 fn env(name: &str) -> String {
     std::env::var(name).unwrap_or_default()
@@ -262,7 +266,7 @@ impl Loader {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: removes the pod's copies the loader no longer needs: every release but the one running and the one it would go back to, and every runtime none of those runs against and no VMM still maps. A machine booted before a hand-off keeps the runtime it booted until it stops.
+    // UNIT_BOUNDARY_DESCRIPTION: removes the pod's copies the loader no longer needs: every release but the one running and the one it would go back to, and every runtime none of those runs against and no running VMM boots from. A machine booted before a hand-off keeps the runtime it booted until it stops.
     fn prune(&self, running: &Running) {
         let kept: Vec<&Release> = std::iter::once(&running.release)
             .chain(running.replaced.as_ref())
@@ -275,7 +279,7 @@ impl Loader {
                 .flatten()
                 .filter_map(Result::ok)
                 .map(|entry| entry.path())
-                .filter(|dir| release::mapped(Path::new("/proc"), dir)),
+                .filter(|dir| release::booted_from(Path::new("/proc"), dir)),
         );
         let runtimes: Vec<&Path> = runtimes.iter().map(PathBuf::as_path).collect();
         for (dir, keep) in [(&self.copies, &releases), (&self.runtimes, &runtimes)] {
@@ -302,9 +306,21 @@ impl Loader {
         }
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: supervises the runner until the pod stops. A stop can arrive while no runner is there to take it — while the old one closes for a hand-off, a release is copied in, or a crashed runner waits out its backoff — and the machines are then left running with nobody to stop them. So the stop is kept until a runner is running again: a hand-off not yet begun is dropped, a backoff is cut short, and the runner started next is given the stop, which it ends by stopping every machine.
     async fn run(mut self) -> anyhow::Result<i32> {
-        let mut term = signal(SignalKind::terminate())?;
-        let mut interrupt = signal(SignalKind::interrupt())?;
+        let stopping = CancellationToken::new();
+        {
+            let mut term = signal(SignalKind::terminate())?;
+            let mut interrupt = signal(SignalKind::interrupt())?;
+            let stopping = stopping.clone();
+            tokio::spawn(async move {
+                tokio::select! {
+                    _ = term.recv() => {}
+                    _ = interrupt.recv() => {}
+                }
+                stopping.cancel();
+            });
+        }
         let builtin = self.builtin();
         let mut running = match self.choose(&self.target()).await {
             Ok(release) if release.dir != builtin.dir => self.take_over(release, builtin)?,
@@ -330,13 +346,15 @@ impl Loader {
                         _ => {
                             backoff = if ran < SETTLE { (backoff * 2).min(RESTART_BACKOFF_MAX) } else { Duration::from_secs(1) };
                             tracing::warn!(release = running.release.name, status = %exited, backoff_secs = backoff.as_secs(), "the runner exited; starting it again");
-                            tokio::time::sleep(backoff).await;
+                            tokio::select! {
+                                () = tokio::time::sleep(backoff) => {}
+                                () = stopping.cancelled() => {}
+                            }
                             self.spawn(running.release.clone(), None)?
                         }
                     };
                 }
-                _ = term.recv() => return stop(&mut running.child).await,
-                _ = interrupt.recv() => return stop(&mut running.child).await,
+                () = stopping.cancelled() => return stop(&mut running.child).await,
                 _ = tick.tick() => {
                     if running.started.elapsed() >= SETTLE {
                         running.replaced = None;
@@ -347,6 +365,7 @@ impl Loader {
                         continue;
                     }
                     match self.choose(&target).await {
+                        Ok(_) if stopping.is_cancelled() => {}
                         Ok(release) => {
                             tracing::info!(from = running.release.name, to = release.name, "handing the machines off to another runner release");
                             hand_off(&mut running.child).await;
@@ -383,9 +402,33 @@ async fn hand_off(child: &mut Child) {
     }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: passes the pod's stop to the runner once it catches SIGTERM. A runner just started has not set up its stop yet, and a SIGTERM before that kills it by default with every machine left running, which the pod's end then powers off.
 async fn stop(child: &mut Child) -> anyhow::Result<i32> {
+    while !catches_term(child) {
+        tokio::select! {
+            exited = child.wait() => return Ok(exit_code(exited?)),
+            () = tokio::time::sleep(CATCH_POLL) => {}
+        }
+    }
     signal_child(child, libc::SIGTERM);
     Ok(exit_code(child.wait().await?))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the child has a SIGTERM handler, from the caught-signal mask Linux shows in its status. The spawn returns only once the child has exec'd, so the mask is the runner's own and not the loader's it was forked from. Elsewhere there is no such mask to read, and the loader runs only in a Linux pod.
+fn catches_term(child: &Child) -> bool {
+    #[cfg(target_os = "linux")]
+    if let Some(status) = child
+        .id()
+        .and_then(|pid| std::fs::read_to_string(format!("/proc/{pid}/status")).ok())
+    {
+        return status
+            .lines()
+            .find_map(|line| line.strip_prefix("SigCgt:"))
+            .and_then(|mask| u64::from_str_radix(mask.trim(), 16).ok())
+            .is_some_and(|mask| mask & (1 << (libc::SIGTERM - 1)) != 0);
+    }
+    let _ = child;
+    true
 }
 
 fn exit_code(status: ExitStatus) -> i32 {

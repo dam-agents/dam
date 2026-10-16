@@ -7,6 +7,7 @@ import { attentionRouter } from "./modules/attention/router.js";
 import { approvalsRouter } from "./modules/approvals/router.js";
 import { caseStudiesRouter } from "./modules/case-studies/router.js";
 import { channelsRouter } from "./modules/channels/router.js";
+import { chatFormsRouter } from "./modules/chat-forms/router.js";
 import { connectionsRouter } from "./modules/connections/router.js";
 import { e2eRouter } from "./modules/e2e/router.js";
 import { egressRulesRouter } from "./modules/egress-rules/router.js";
@@ -20,7 +21,9 @@ import { filesRouter } from "./modules/files/router.js";
 import { gettingStartedRouter } from "./modules/getting-started/router.js";
 import { harnessConfigRouter } from "./modules/harness-config/router.js";
 import { schedulesRouter } from "./modules/schedules/router.js";
+import { sidebarOrderRouter } from "./modules/sidebar-order/router.js";
 import { skillsRouter } from "./modules/skills/router.js";
+import { spendRouter } from "./modules/spend/router.js";
 import { starterKitsRouter } from "./modules/starter-kits/router.js";
 import { reposRouter } from "./modules/repos/router.js";
 import { metricsRouter } from "./modules/metrics/router.js";
@@ -46,8 +49,10 @@ export const appRouter = t.router({
   artifactLibrary: artifactLibraryRouter,
   caseStudies: caseStudiesRouter,
   features: featuresRouter,
+  chatForms: chatFormsRouter,
   files: filesRouter,
   gettingStarted: gettingStartedRouter,
+  sidebarOrder: sidebarOrderRouter,
   links: linksRouter,
   metrics: metricsRouter,
   telemetry: telemetryRouter,
@@ -58,6 +63,7 @@ export const appRouter = t.router({
   satellites: satellitesRouter,
   harnessConfig: harnessConfigRouter,
   budgets: budgetsRouter,
+  spend: spendRouter,
   events: eventsRouter,
 });
 

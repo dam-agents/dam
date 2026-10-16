@@ -143,6 +143,73 @@ describe("harness-config service: harnesses chosen per session", () => {
   });
 });
 
+describe("harness-config service: pairs on a runtime that routes by model name", () => {
+  const ROUTED = { ...CARRIES_CODEX, modelRouter: true };
+  const granted: GrantedProvider[] = [
+    { id: "lite", type: "ibm-litellm" },
+    { id: "oai", type: "openai" },
+  ];
+
+  /** TEST_SCENARIO: A saved pair names its model with the provider; the
+   * provider follows from that name, a bare name is refused, and a provider
+   * the agent does not hold is refused naming the alias. */
+  it("saves a qualified model with the provider it names", async () => {
+    const { service, calls } = makeService({ capabilities: ROUTED, granted });
+    await service.rememberSessionPair("a1", {
+      harness: "codex",
+      provider: null,
+      model: "openai/gpt-5.5",
+    });
+    expect(calls.pairs).toEqual([
+      { harness: "codex", provider: "oai", model: "openai/gpt-5.5" },
+    ]);
+    await expect(
+      service.rememberSessionPair("a1", {
+        harness: "codex",
+        provider: "oai",
+        model: "gpt-5.5",
+      }),
+    ).rejects.toThrow(/name the model with its provider/);
+    await expect(
+      service.rememberSessionPair("a1", {
+        harness: "codex",
+        provider: null,
+        model: "cb/glm",
+      }),
+    ).rejects.toThrow(/holds no cb provider/);
+  });
+
+  /** TEST_SCENARIO: The harness last reported its model list; a model not on
+   * it is refused, one on it is saved, in Claude Code's spelling too. */
+  it("refuses a model the harness's last list does not carry", async () => {
+    const { service, calls } = makeService({
+      capabilities: ROUTED,
+      granted,
+      snapshot: {
+        model: null,
+        mode: null,
+        configOptions: {},
+        availableModels: [{ value: "openai/gpt-5.5", name: "gpt-5.5" }],
+        capturedAt: new Date(0).toISOString(),
+        confirmed: true,
+      },
+    });
+    await expect(
+      service.rememberSessionPair("a1", {
+        harness: "codex",
+        provider: null,
+        model: "openai/gpt-4",
+      }),
+    ).rejects.toThrow(/does not list openai\/gpt-4/);
+    await service.rememberSessionPair("a1", {
+      harness: "codex",
+      provider: null,
+      model: "openai/gpt-5.5",
+    });
+    expect(calls.pairs[0]?.model).toBe("openai/gpt-5.5");
+  });
+});
+
 describe("harness-config service", () => {
   it("fires a one-shot harness-config event carrying the change, then enqueues", async () => {
     const { service, calls } = makeService();
@@ -185,6 +252,7 @@ describe("harness-config service", () => {
       supported: true,
       catalog: null,
       sessionModel: false,
+      modelRouter: false,
       defaultHarness: null,
       harnesses: null,
     });
@@ -196,6 +264,7 @@ describe("harness-config service", () => {
       supported: false,
       catalog: null,
       sessionModel: false,
+      modelRouter: false,
       defaultHarness: null,
       harnesses: null,
     });
@@ -205,6 +274,7 @@ describe("harness-config service", () => {
       supported: true,
       catalog: null,
       sessionModel: false,
+      modelRouter: false,
       defaultHarness: null,
       harnesses: null,
     });
@@ -229,6 +299,7 @@ describe("harness-config service", () => {
       supported: true,
       catalog,
       sessionModel: false,
+      modelRouter: false,
       defaultHarness: null,
       harnesses: null,
     });

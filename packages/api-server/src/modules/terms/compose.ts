@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Db } from "db";
-import type { TermsService } from "api-server-api";
+import type { SignUps, TermsService } from "api-server-api";
 import { createTermsAcceptancesRepository } from "./infrastructure/terms-acceptances-repository.js";
 import { createTermsService } from "./services/terms-service.js";
 
@@ -10,6 +10,7 @@ export function composeTermsModule(deps: {
   db: Db;
   version: string;
   text: string;
+  signUps: SignUps;
 }): {
   service: TermsService;
   isAcceptedPort: IsAcceptedPort;
@@ -19,6 +20,7 @@ export function composeTermsModule(deps: {
   const service = createTermsService({
     current: { version: deps.version, text: deps.text, hash },
     repo,
+    signUps: deps.signUps,
   });
   return {
     service,

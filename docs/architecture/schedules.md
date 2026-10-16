@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-10-14
+Last verified: 2026-10-15
 
 ## Overview
 
@@ -30,6 +30,10 @@ A rule with no future occurrence is rejected at save time; the occurrence search
 An occurrence inside quiet hours resumes the search at the end of that window, and a rule still quiet after 64 windows counts as covered.
 Rules longer than 1,000 characters, with an `INTERVAL` above 10,000, or with a `BY*` value out of range (`BYHOUR` 0–23, `BYMINUTE` and `BYSECOND` 0–59 with no leap second, `BYMONTH` 1–12, `BYMONTHDAY` ±1–31, and so on) are rejected; the RRULE parser would otherwise drop such a value and fire more often than the rule says.
 The schedule form runs the same check as the save call, so it shows a refused rule's reason inline instead of a preview.
+A cron expression always fires in UTC, and a cron schedule has no timezone and no quiet hours.
+A user edits a cron schedule they created as cron, or converts it to an RRULE to get both.
+The conversion keeps the cron fields' values and reads them in a timezone the user picks — UTC by default, so the schedule fires at the same moments — and it shows the next runs before and after.
+An expression with no exact RRULE match is not converted and stays a cron schedule: one that names both days of the month and days of the week, which cron matches as either, or one that uses `L`, `W`, `#`, `H` or seconds.
 A local time erased by the spring-forward jump is skipped, as RFC 5545 requires.
 An enabled schedule with no next run shows why — a refused rule, one that never fires or has run out, or quiet hours that cover every remaining occurrence — worked out when the schedule is read, so it clears the moment an edit re-arms it.
 
@@ -50,6 +54,9 @@ When a fire is due:
 A fire on an Agent created from a [starter kit](starter-kits.md#concepts) whose onboarding is still pending is **held** before step 1: no event is inserted, the next occurrence is computed and armed as usual, and the schedule's last result reads `held: onboarding not complete`, which the schedules page shows as held rather than failed.
 The hold reads the Agent's onboarding annotation and lifts the moment the mark lands.
 A fire on an Agent a [runtime migration](vm-runtime-migration.md) holds down — from the container's stop until the machine has booted from the copy, or after a failure that came after the stop — is held the same way, reading `held: moving to the new runtime`, since the fire could only wait out the wake.
+A fire on a [disabled](agent-lifecycle.md#disable) Agent is held too, reading `held: agent disabled`, and a one-time task due while it is disabled is recorded missed rather than left to wait for an enable.
+A fire whose payer is at a [spend limit or the Spend Ceiling](spend-limits.md#unattended-work) is held the same way, reading `held: spend limit reached for today` or `held: spend ceiling reached for today`.
+That check runs once the fire's provider Connection is chosen, so a limit on that Connection counts as well.
 
 An event that is never delivered stays pending in Postgres and is redelivered until it settles or expires, and the agent keeps a last-fire timestamp per schedule on the PVC, so a redelivered or superseded fire never runs twice.
 That safety net ends where a fire is settled.
@@ -76,6 +83,7 @@ What a single occurrence changes follows from it having **no next occurrence to 
   One whose window passed before it could be fired at all is recorded *missed* by the reconcile.
 - **Nothing may skip it.** It takes no Precheck, since a decline would mean *never* rather than *not this time*, and no quiet hours, since its moment was chosen deliberately.
   Neither the onboarding hold nor the runtime-migration hold applies — a hold guards a cadence, and skipping a single occurrence would lose the task outright; during a migration its event simply waits out the move inside its delivery window.
+  A [spend limit or the Spend Ceiling](spend-limits.md#unattended-work) only delays it the same way: the fire records nothing and re-arms for the next UTC midnight, when the limit starts again, and the owner setting or continuing a limit re-arms it at once.
   A sleep's stop stamp is overridden exactly as a recurring fire overrides it.
 - **It opens a fresh Session** unless tied to the one that scheduled it (below), typed as a one-time schedule's so the surfaces group it with scheduled work.
   That session can run on a **model of its own** rather than the default — a routine check-back on a cheap model, a hard one-off on a strong one — where the harness can switch a session's model ([harness-config](harness-config.md)); the choice is refused at creation where it cannot, and a harness that still refuses the switch when the task fires fails the task with its reason rather than running it on a model nobody chose.
@@ -160,29 +168,31 @@ A one-time task that continues the session that scheduled it takes no title, sin
 Every run of a fresh schedule gets the same title.
 How the title reaches the session list belongs to [platform topology](platform-topology.md).
 
-## Session model
+## Session choices
 
-A schedule, recurring or [one-time](#one-time-schedules), can name the model its sessions run on: a cheap model for a frequent routine check, a strong one for a demanding task, without touching any other session: a schedule's model lives on its session alone.
-Only a harness whose manifest accepts a session model ([harness configuration](harness-config.md)) accepts one: elsewhere the model is refused when the schedule is saved, as is a name outside that harness's model list.
+A schedule, recurring or [one-time](#one-time-schedules), carries the same choices as a session: the **harness** its sessions run on, their **model** as a qualified name (`<alias>/<model id>`, [harness configuration](harness-config.md#the-model-router)) and the harness's per-session **settings** (an effort level, a reasoning mode).
+A schedule's choices live on its sessions alone.
+Each choice is optional; an unset one takes the agent's default: its default harness, that harness's default provider in alias order, that provider's first listed model, no settings.
 
-Each fire opens its session on the schedule's model, or pins a resumed session to it before the resume, so a continuous schedule picks up an edited model at its next fire; the model reaches the harness as the env of that model's lease ([sessions](sessions.md#session-inside-the-pod)), and a pin the runtime refuses fails the run.
+**Checked twice, the same way.** The choices are checked at save and at each fire with one rule: the harness is one the agent's image carries; the model's provider is granted and accepted by the harness, and the model is on the list the harness last reported; the settings are ones the harness offers, valid for that model.
+A save that fails names the reason.
+A fire that fails, because a provider was revoked or a model left the list, fails the *run* with that reason rather than running on a substitute.
+A one-time task that continues its scheduling session keeps that session's choices.
+An agent creating a schedule names the same choices through its tools.
 
-**The harness and provider a fire runs on.** Where the agent's runtime picks the harness per session ([sessions](sessions.md#session-inside-the-pod)), each fire names the harness, provider and model it opens on: the pair a person last picked on the agent, model included.
-A schedule's own model runs on the agent's own harness, on the first granted provider that harness can run on.
-A remembered provider since revoked, or one the harness cannot run on, falls back to the install's default harness on a still-granted provider it can run on, with that harness's default model; when no granted provider fits, the fire fails visibly, the reason on the schedule, rather than running elsewhere.
-A one-time task continuing its scheduling session keeps that session's pair.
+Each fire opens its session on the schedule's choices, or pins a resumed session to the model before the resume, so a continuous schedule picks up an edited choice at its next fire; the model and settings reach the harness per turn ([agent-lifecycle](sessions.md#session-inside-the-pod)).
+The provider follows the model's name: a schedule on `openai/gpt-5.5` fires on the agent's OpenAI Connection whatever its default for the harness.
 
-On a runtime with one harness process, a schedule with no model runs on the harness's **default** ([harness configuration](harness-config.md)), what the Agent's own Default setting gives, never on the model the Agent is set to: switching a conversation to an expensive model must not move every routine schedule onto it.
-Each fire switches to the default unless the session opened on it, which also returns a continuous session to it, history kept, once its model is cleared.
-Where the harness has no default, a schedule with no model follows the Agent's model, as before, and the form offers "Same as agent" instead of Default.
-Schedules saved before this change on a harness with a default were migrated to their Agent's model at the time, except a one-time task that continues its scheduling session, so none changed model.
-An agent creating a schedule can name a model too.
+On a runtime with one harness process ([harness configuration](harness-config.md)) the pre-router rule stands: a schedule names no harness or settings, and its model must be one of the runtime's listed choices.
+There a schedule with no model runs on the harness's **default**, never on the model the Agent is set to; where the harness has no default, it follows the Agent's model.
 
-**A schedule never silently runs on another model.** A switch the harness refuses at fire time gets no prompt.
-The fire still settles, so it is not redelivered, and the runtime reports a failed *run*, a stage distinct from a broken Precheck.
-The schedule's last result shows the harness's reason (a one-time task records it as its result), and the last-run stamp stays put, since a Precheck measures "anything new since last time?"
+**Migration.** A schedule saved with a bare model was qualified with the alias of the agent's one provider; with several, its model was cleared and the schedule carries `migrationNote` until its owner picks a model again.
+The one-shot SQL migration carries its dry-run count query in its comment.
+
+**A refused fire is a failed run.** The fire still settles, so it is not redelivered, and the runtime reports a failed *run*, a stage distinct from a broken Precheck.
+The schedule's last result shows the reason (a one-time task records it as its result), and the last-run stamp stays put, since a Precheck measures "anything new since last time?"
 from it.
-The unprompted session stays behind, empty.
+A switch the harness refuses at fire time leaves the unprompted session behind, empty.
 Follow-up turns keep the session's model as far as the harness restores it on reload.
 
 In a session with scheduled runs, each reply shows the model that answered it in a muted line, as the harness reports it: Claude Code only today, and the main conversation's model, never a subagent's.
@@ -217,3 +227,4 @@ A continuous schedule resumes its own session, a declined verdict restores the a
 Two cases refuse outright.
 A one-time schedule has no cadence to try out, and a run beside its own would do the task twice.
 And an Agent from a [starter kit](starter-kits.md#concepts) whose onboarding is still pending: a scheduled fire is *held* there because nobody is watching; here somebody is, so the refusal is reported rather than the fire quietly vanishing.
+An Agent at a spend limit or the Spend Ceiling is refused the same way, with the reason.

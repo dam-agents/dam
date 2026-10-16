@@ -16,6 +16,7 @@ import {
   createAgentOn,
   deleteBackendHost,
   expectHomeFile,
+  inGuest,
   laneBackend,
   refreshingToken,
   requireBackend,
@@ -68,7 +69,7 @@ test("boots and holds a chat turn", async ({ page }) => {
   await chatTurn(page, "hello-backend", "backend-reply-first-boot");
 });
 
-// TEST_SCENARIO: on the vm Backend a machine boots with the install's boot estimate and the runner grows it to its size once the guest is up. A grow that fails boots the machine again whole, so the agent still answers and nothing else in the suite would notice; the runner's log of a successful grow is the evidence that the guest put the added RAM online.
+// TEST_SCENARIO: on the vm Backend a machine boots with the install's boot estimate, 1 GiB in this lane, and the runner grows it to its size, half the runner's pool, once the guest is up. A grow that fails boots the machine again whole, so the agent still answers and nothing else in the suite would notice; the runner logs a grow as done only once the guest's virtio-mem driver plugged all the added RAM and its agent put it online. A guest that adds more than 1 GiB must not stall: smolvm before 1.28.1 plugged no more once 1 GiB waited offline (smol-machines/smolvm#1745), so the grow must add at least 3 GiB, and the lane's sizes cannot shrink below the bug unnoticed.
 test("grows its machine past the boot RAM", async () => {
   test.skip(laneBackend !== "vm", "only a vm machine boots small and grows");
   test.setTimeout(120_000);
@@ -76,15 +77,66 @@ test("grows its machine past the boot RAM", async () => {
     .poll(
       () =>
         runnerGrows(agentId).some(
-          (grow) => grow.message !== "machine operation failed",
+          (grow) => grow.memory_mib - grow.boot_mib >= 3072,
         ),
       {
         timeout: 60_000,
         intervals: [3_000],
-        message: "the runner logged no successful grow",
+        message:
+          "the runner logged no done grow of this agent's machine that added at least 3 GiB",
       },
     )
     .toBe(true);
+});
+
+// TEST_SCENARIO: every vm machine runs on the guest kernel, guest agent and runner this platform patches for them. HOME is the root of a btrfs subvolume of its own, mounted compressed with zstd level 1, under a UUID of the disk's own rather than the template's (the template's stays as its metadata UUID), and the guest swaps to zram compressed with zstd. An unpatched kernel has neither, and an unpatched agent or runner would mount ext4 or format over the disk.
+test("keeps HOME on a compressed btrfs subvolume with its own UUID, and swaps to zram", async () => {
+  test.skip(
+    laneBackend !== "vm",
+    "only a vm machine has a disk and a kernel of its own",
+  );
+  const guest = inGuest(
+    agentId,
+    "grep ' /home/agent ' /proc/self/mountinfo; for d in /sys/fs/btrfs/*-*; do echo \"fsid ${d##*/} metadata $(cat $d/metadata_uuid)\"; done; cat /proc/swaps; cat /sys/block/zram0/comp_algorithm",
+  );
+  expect(guest).toMatch(
+    /^\S+ \S+ \S+ \/agent \/home\/agent .* - btrfs \/dev\/vda \S*compress=zstd:1/m,
+  );
+  const [, fsid, metadata] = /^fsid (\S+) metadata (\S+)$/m.exec(guest) ?? [];
+  expect(fsid, "the guest mounted one btrfs filesystem").toBeDefined();
+  expect(
+    metadata,
+    "the disk keeps the template's UUID as its metadata UUID",
+  ).not.toEqual(fsid);
+  expect(guest).toMatch(/^\/dev\/zram0\s+partition/m);
+  expect(guest).toContain("[zstd]");
+});
+
+// TEST_SCENARIO: the guest's boot log, which holds the harness's output, is readable in the guest at /var/log/platform and cannot be rewritten there; the disk it lives on is detached after the boot, and the host never reads it.
+test("shows the boot log read-only at /var/log/platform", async () => {
+  test.skip(
+    laneBackend !== "vm",
+    "only a vm machine has platform-init as its init",
+  );
+  const guest = inGuest(
+    agentId,
+    "test -s /var/log/platform/agent-runtime.log && echo readable; touch /var/log/platform/x 2>/dev/null || echo read-only",
+  );
+  expect(guest).toContain("readable");
+  expect(guest).toContain("read-only");
+});
+
+// TEST_SCENARIO: /tmp and /var/tmp are plain directories of the machine's root, not mounts of their own, and are open to every user as a temporary folder is; platform-init empties them at each boot.
+test("keeps /tmp and /var/tmp as directories of the root", async () => {
+  test.skip(
+    laneBackend !== "vm",
+    "only a vm machine has platform-init as its init",
+  );
+  const guest = inGuest(
+    agentId,
+    "grep -cE ' /(var/)?tmp ' /proc/self/mountinfo; stat -c '%a %U' /tmp /var/tmp",
+  );
+  expect(guest.split("\n")).toEqual(["0", "1777 root", "1777 root"]);
 });
 
 // TEST_SCENARIO: on the vm Backend the home dashboard shows the owner's memory and storage pools as meters read from the owner's runner, with this agent's own share in each.

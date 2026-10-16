@@ -27,6 +27,7 @@ export const TerminationCode = {
   RunnerOutOfMemory: "RunnerOutOfMemory",
   HomeVolumeFull: "HomeVolumeFull",
   MachineStorageFull: "MachineStorageFull",
+  MachineHomeDamaged: "MachineHomeDamaged",
   MachineImageUnavailable: "MachineImageUnavailable",
   MachineBootFailed: "MachineBootFailed",
   MachineRunnerUnschedulable: "MachineRunnerUnschedulable",
@@ -38,6 +39,7 @@ export const TerminationCode = {
 // UNIT_BOUNDARY_DESCRIPTION: termination codes that mean the agent was refused a start rather than crashed, so every client says it "can't start" for the same codes.
 const START_REFUSAL_CODES: ReadonlySet<string> = new Set([
   TerminationCode.MachineStorageFull,
+  TerminationCode.MachineHomeDamaged,
   TerminationCode.HomeVolumeFull,
   TerminationCode.MachineImageUnavailable,
   TerminationCode.MachineBootFailed,
@@ -143,6 +145,7 @@ export interface Agent {
   effectiveHibernationTimeoutMin: number;
   error?: string;
   stopRequested: boolean;
+  disabled: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
   reclaimed?: AgentReclaim;
@@ -151,6 +154,7 @@ export interface Agent {
   notReadyMessage?: string;
   podRestarts: number;
   podRestartReason?: string;
+  homeRepaired?: string;
   gatewayFailure?: string;
   contributionFailures: { kind: string; message: string }[];
   unsupportedContributionKinds: string[];
@@ -238,7 +242,15 @@ export type MigrateRuntimeResult =
   { ok: true; value: Agent } | { ok: false; error: MigrateRuntimeError };
 
 export type WakeAgentError =
-  { type: "AgentNotFound" } | { type: "RuntimeMigrating"; failed: boolean };
+  | { type: "AgentNotFound" }
+  | { type: "AgentDisabled" }
+  | { type: "RuntimeMigrating"; failed: boolean };
+
+export type SetAgentDisabledError =
+  { type: "AgentNotFound" } | { type: "RuntimeMigrating" };
+
+export type SetAgentDisabledResult =
+  { ok: true; value: Agent } | { ok: false; error: SetAgentDisabledError };
 
 export type WakeAgentResult =
   { ok: true; value: Agent } | { ok: false; error: WakeAgentError };
@@ -311,8 +323,22 @@ export type UnbindTelegramChatError =
 export type UnbindTelegramChatResult =
   { ok: true; value: null } | { ok: false; error: UnbindTelegramChatError };
 
+export interface RuntimeFleetAgent {
+  agentId: string;
+  name: string;
+  image: string;
+  templateImage: string;
+  lastHello: string | null;
+}
+
+export interface RuntimeFleet {
+  onCurrent: number;
+  outdated: RuntimeFleetAgent[];
+}
+
 export interface AgentsService {
   list: () => Promise<Agent[]>;
+  runtimeFleet: (agentIds?: readonly string[]) => Promise<RuntimeFleet>;
   get: (id: string) => Promise<Agent | null>;
   backgroundWork: (id: string) => Promise<AgentBackgroundWork | null>;
   create: (input: AgentCreateInput) => Promise<Agent>;
@@ -325,6 +351,10 @@ export interface AgentsService {
     kind: WorkspaceMutationKind,
   ) => Promise<Agent | null>;
   sleep: (id: string) => Promise<Agent | null>;
+  setDisabled: (
+    id: string,
+    disabled: boolean,
+  ) => Promise<SetAgentDisabledResult>;
   upgrade: (
     id: string,
     expectedToImage?: string,

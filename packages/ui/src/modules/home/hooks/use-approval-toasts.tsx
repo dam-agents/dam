@@ -39,7 +39,7 @@ function fireApprovalToast(
 
 export function useApprovalToasts(): void {
   const { items, agents, loadingFeed } = useFeed();
-  const setActivityView = useStore((s) => s.setActivityView);
+  const setApprovalsOpen = useStore((s) => s.setApprovalsOpen);
   const seen = useRef<ReadonlySet<string> | null>(null);
 
   useEffect(() => {
@@ -63,8 +63,8 @@ export function useApprovalToasts(): void {
         item.id,
         names.get(item.agentId) ?? "An agent",
         approvalHeadline(item.approval),
-        () => setActivityView("approvals"),
+        () => setApprovalsOpen(true),
       );
     }
-  }, [items, agents, loadingFeed, setActivityView]);
+  }, [items, agents, loadingFeed, setApprovalsOpen]);
 }

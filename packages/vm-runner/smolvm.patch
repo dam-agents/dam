@@ -1,8 +1,21 @@
+diff --git i/Cargo.toml w/Cargo.toml
+index 1e63774..f4d719c 100644
+--- i/Cargo.toml
++++ w/Cargo.toml
+@@ -96,7 +96,7 @@ axum = { version = "0.8", features = ["macros", "ws"] }
+ # mTLS for the fleet serve API (control↔node). axum-server's rustls acceptor
+ # does the TLS handshake + client-cert verification; rustls-pemfile parses the
+ # CA/cert/key PEMs handed to us at enrollment.
+-axum-server = { version = "0.7", features = ["tls-rustls"] }
++axum-server = { version = "0.7", features = ["tls-rustls-no-provider"] }
+ # Wraps a response body so serve counts a request until it has been sent.
+ http-body = "1"
+ rustls = { version = "0.23.45", default-features = false, features = ["ring"] }
 diff --git i/crates/smolvm-network/src/stack.rs w/crates/smolvm-network/src/stack.rs
-index 29ad5bc..15d51e2 100644
+index 527a9ae..0584f5e 100644
 --- i/crates/smolvm-network/src/stack.rs
 +++ w/crates/smolvm-network/src/stack.rs
-@@ -830,7 +830,7 @@ fn relay_accepted_tcp_connection(
+@@ -862,7 +862,7 @@ fn relay_accepted_tcp_connection(
                  Ok(connection) => {
                      let guest_destination =
                          SocketAddr::new(std::net::IpAddr::V4(guest_ipv4), connection.guest_port);
@@ -12,7 +25,7 @@ index 29ad5bc..15d51e2 100644
                          connection.peer_addr,
                          connection.host_port,
 diff --git i/crates/smolvm-network/src/tcp_relay.rs w/crates/smolvm-network/src/tcp_relay.rs
-index 76b1368..dad5d21 100644
+index 95b89bf..dad5d21 100644
 --- i/crates/smolvm-network/src/tcp_relay.rs
 +++ w/crates/smolvm-network/src/tcp_relay.rs
 @@ -867,7 +867,7 @@ pub fn spawn_tcp_relay(
@@ -66,106 +79,158 @@ index 76b1368..dad5d21 100644
                  "virtio-net: using accepted host TCP socket for published port guest_destination={} peer_addr={:?} local_addr={:?}",
                  destination,
                  stream.peer_addr().ok(),
-@@ -1345,6 +1345,22 @@ fn relay_stream(
-             poller.modify(stream, interest)?;
-             events.clear();
-             poller.wait(&mut events, Some(RELAY_WAIT_BACKSTOP))?;
-+            if host_read_closed && pending_guest_data.is_none() {
-+                // Nothing reads or writes the host socket from here on, so
-+                // nothing would notice it failing. epoll reports EPOLLERR and
-+                // EPOLLHUP whatever the interest, so once the host resets, every
-+                // wait returns at once and this loop spins until the guest
-+                // closes. kqueue reports nothing, so the error is read as well.
-+                if let Some(err) = stream.take_error()? {
-+                    return Err(err);
-+                }
-+                if events.iter().any(|event| event.key == HOST_STREAM_KEY) {
-+                    return Err(io::Error::new(
-+                        io::ErrorKind::ConnectionReset,
-+                        "host TCP socket hung up",
-+                    ));
-+                }
-+            }
-         } else {
-             last_activity = Instant::now();
-         }
-@@ -1650,6 +1666,79 @@ mod tests {
-         }
-     }
+diff --git i/src/agent/launcher.rs w/src/agent/launcher.rs
+index 6851407..48fee7a 100644
+--- i/src/agent/launcher.rs
++++ w/src/agent/launcher.rs
+@@ -37,6 +37,11 @@ use std::path::{Path, PathBuf};
  
-+    /// A host server for one connection that half-closes, then hands the
-+    /// accepted socket to `then`.
-+    fn half_closing_server(then: impl FnOnce(TcpStream) + Send + 'static) -> SocketAddr {
-+        let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-+        let address = listener.local_addr().unwrap();
-+        thread::spawn(move || {
-+            let (stream, _) = listener.accept().unwrap();
-+            stream.shutdown(Shutdown::Write).unwrap();
-+            then(stream);
-+        });
-+        address
-+    }
+ use super::{KrunFunctions, PortMapping, VmResources};
+ 
++/// The init a machine boots when the embedder cleared
++/// `internal_boot::GUEST_AGENT`: the embedder installs it in the agent rootfs
++/// beside smolvm's own /sbin/init, which machines smolvm itself starts keep.
++pub const EMBEDDER_INIT: &str = "/sbin/platform-init";
 +
-+    fn wait_for_exit_mode(exit_state: &RelayExitState, mode: RelayExitMode, within: Duration) {
-+        let started = Instant::now();
-+        while exit_state.load() != mode {
-+            assert!(
-+                started.elapsed() < within,
-+                "relay is {:?} after {:?}, expected {mode:?}",
-+                exit_state.load(),
-+                started.elapsed()
-+            );
-+            thread::sleep(Duration::from_millis(1));
+ /// Maximum number of CIDR entries held in the live egress allow-list.
+ /// Protects the muxer's per-packet O(n) scan from unbounded growth when
+ /// a host resolves to many IPs across many refresh cycles.
+@@ -2416,13 +2421,22 @@ pub fn launch_agent_vm(config: &LaunchConfig<'_>) -> Result<()> {
+         if packed_layers_dir.is_some_and(|d| d.exists()) {
+             env_strings.push(cstr("SMOLVM_PACKED_LAYERS=smolvm_layers:/packed_layers"));
+         }
++        // An embedder's own init is the guest's PID 1; init.krun execs it.
++        if !crate::internal_boot::GUEST_AGENT.load(std::sync::atomic::Ordering::Relaxed) {
++            env_strings.push(cstr("KRUN_INIT_PID1=1"));
 +        }
+ 
+         let mut envp: Vec<*const libc::c_char> = env_strings.iter().map(|s| s.as_ptr()).collect();
+         envp.push(std::ptr::null());
+ 
+-        // Set exec command (/sbin/init)
+-        let exec_path = cstr("/sbin/init");
+-        let argv_strings = [cstr("/sbin/init")];
++        // Set exec command (/sbin/init, or the embedder's own init)
++        let init = if crate::internal_boot::GUEST_AGENT.load(std::sync::atomic::Ordering::Relaxed) {
++            "/sbin/init"
++        } else {
++            EMBEDDER_INIT
++        };
++        let exec_path = cstr(init);
++        let argv_strings = [cstr(init)];
+         let mut argv: Vec<*const libc::c_char> = argv_strings.iter().map(|s| s.as_ptr()).collect();
+         argv.push(std::ptr::null());
+ 
+diff --git i/src/agent/manager.rs w/src/agent/manager.rs
+index cffe2dd..abdb75d 100644
+--- i/src/agent/manager.rs
++++ w/src/agent/manager.rs
+@@ -168,6 +168,9 @@ fn open_overlay_disk_for_manager(
+     format: DiskFormat,
+     access: DiskAccess,
+ ) -> Result<OverlayDisk> {
++    if !crate::internal_boot::GUEST_AGENT.load(std::sync::atomic::Ordering::Relaxed) {
++        return Ok(OverlayDisk::absent_at(path));
 +    }
+     match (format, access) {
+         (DiskFormat::Qcow2, _) => OverlayDisk::open_existing_with_format(path, format),
+         (DiskFormat::Raw, DiskAccess::Observe) if path.exists() => {
+@@ -2278,7 +2281,9 @@ impl AgentManager {
+         // A manager opened to observe a never-started machine has no disks to
+         // boot from; creating them here would be creating them at a guessed
+         // size. Launches go through a manager opened with the machine's sizes.
+-        if !self.storage_disk.exists() || !self.overlay_disk.exists() {
++        let attach_overlay =
++            crate::internal_boot::GUEST_AGENT.load(std::sync::atomic::Ordering::Relaxed);
++        if !self.storage_disk.exists() || (attach_overlay && !self.overlay_disk.exists()) {
+             let mut inner = self.inner.lock();
+             inner.state = AgentState::Stopped;
+             return Err(Error::agent(
+@@ -2306,7 +2311,11 @@ impl AgentManager {
+             let overlay_disk = &self.overlay_disk;
+             std::thread::scope(|s| {
+                 let storage_handle = s.spawn(|| storage_disk.ensure_formatted());
+-                let overlay_result = overlay_disk.ensure_formatted();
++                let overlay_result = if attach_overlay {
++                    overlay_disk.ensure_formatted()
++                } else {
++                    Ok(())
++                };
+                 if let Err(e) = storage_handle.join().unwrap_or_else(|_| {
+                     Err(crate::Error::storage("format storage", "thread panicked"))
+                 }) {
+diff --git i/src/embedded/handle.rs w/src/embedded/handle.rs
+index fe6c2c1..02c600a 100644
+--- i/src/embedded/handle.rs
++++ w/src/embedded/handle.rs
+@@ -78,6 +78,9 @@ impl VmHandle {
+         let Some(image) = record.image.as_deref() else {
+             return Ok(());
+         };
++        if !crate::internal_boot::GUEST_AGENT.load(std::sync::atomic::Ordering::Relaxed) {
++            return Ok(());
++        }
+         let client = self.client_mut()?;
+         client.pull_with_registry_config(image)?;
+         let mut env = record.env.clone();
+diff --git i/src/internal_boot.rs w/src/internal_boot.rs
+index 9550f0d..03475e9 100644
+--- i/src/internal_boot.rs
++++ w/src/internal_boot.rs
+@@ -71,6 +71,14 @@ fn open_boot_disk<K: DiskType>(path: &Path, size_gb: u64) -> crate::Result<VmDis
+     }
+ }
+ 
++/// Whether machines boot smolvm's guest agent. An embedder that ships its
++/// own init in the agent rootfs (`launcher::EMBEDDER_INIT`) clears it, in its own process and
++/// before `run` in the boot process: its machines get no overlay disk (the
++/// disk is never made or opened), no image workload is pulled or run (the
++/// record's image is still shared with the guest), and the init runs as PID 1.
++pub static GUEST_AGENT: std::sync::atomic::AtomicBool =
++    std::sync::atomic::AtomicBool::new(true);
 +
-+    #[test]
-+    fn a_host_reset_after_its_half_close_ends_a_relay_whose_guest_is_silent() {
-+        let (reset_tx, reset_rx) = mpsc::channel::<()>();
-+        let destination = half_closing_server(move |stream| {
-+            reset_rx.recv().unwrap();
-+            socket2::SockRef::from(&stream)
-+                .set_linger(Some(Duration::ZERO))
-+                .unwrap();
-+        });
-+        // The guest side stays open and sends nothing.
-+        let (_to_proxy, _from_proxy, exit_state) = spawn_test_relay(destination);
-+        wait_for_exit_mode(
-+            &exit_state,
-+            RelayExitMode::HalfClosed,
-+            Duration::from_secs(2),
-+        );
-+        reset_tx.send(()).unwrap();
-+        // On epoll the relay used to spin here until the guest closed.
-+        wait_for_exit_mode(&exit_state, RelayExitMode::Abort, RELAY_WAIT_BACKSTOP * 5);
-+    }
-+
-+    #[test]
-+    fn a_host_half_close_keeps_relaying_guest_bytes() {
-+        let (received_tx, received_rx) = mpsc::channel();
-+        let destination = half_closing_server(move |mut stream| {
-+            let mut buffer = [0u8; 4];
-+            stream.read_exact(&mut buffer).unwrap();
-+            received_tx.send(buffer).unwrap();
-+            // Keep the socket open until the relay is checked.
-+            thread::sleep(Duration::from_secs(1));
-+        });
-+        let (to_proxy, _from_proxy, exit_state) = spawn_test_relay(destination);
-+        wait_for_exit_mode(
-+            &exit_state,
-+            RelayExitMode::HalfClosed,
-+            Duration::from_secs(2),
-+        );
-+        // Idle for a few backstop waits before the guest sends.
-+        thread::sleep(RELAY_WAIT_BACKSTOP * 3);
-+        to_proxy.try_send(b"ping".to_vec()).unwrap();
-+        assert_eq!(
-+            received_rx.recv_timeout(Duration::from_secs(2)).unwrap(),
-+            *b"ping"
-+        );
-+        assert_eq!(exit_state.load(), RelayExitMode::HalfClosed);
-+    }
-+
-     #[test]
-     fn guest_payload_is_buffered_when_relay_channel_is_full() {
-         let (to_proxy, from_smoltcp) = mpsc::sync_channel(1);
+ /// Run the boot subprocess.
+ ///
+ /// Reads the boot config from the given path, sets up libkrun, and calls
+@@ -604,25 +612,29 @@ pub fn run(config_path: PathBuf) -> crate::Result<()> {
+     };
+     proc_timing!("storage opened");
+ 
+-    let overlay_disk = match open_boot_disk::<crate::storage::Overlay>(
+-        &config.overlay_disk_path,
+-        config.overlay_size_gb,
+-    ) {
+-        Ok(d) => d,
+-        Err(e) => {
+-            let _ = std::fs::write(
+-                &config.startup_error_log,
+-                format!("failed to open overlay disk: {}", e),
+-            );
+-            crate::process::exit_child(1);
++    let overlay_disk = if GUEST_AGENT.load(std::sync::atomic::Ordering::Relaxed) {
++        match open_boot_disk::<crate::storage::Overlay>(
++            &config.overlay_disk_path,
++            config.overlay_size_gb,
++        ) {
++            Ok(d) => Some(d),
++            Err(e) => {
++                let _ = std::fs::write(
++                    &config.startup_error_log,
++                    format!("failed to open overlay disk: {}", e),
++                );
++                crate::process::exit_child(1);
++            }
+         }
++    } else {
++        None
+     };
+     proc_timing!("overlay opened");
+ 
+     // Launch the VM (never returns on success)
+     let disks = VmDisks {
+         storage: &storage_disk,
+-        overlay: Some(&overlay_disk),
++        overlay: overlay_disk.as_ref(),
+     };
+ 
+     // Start DNS filter listener if configured

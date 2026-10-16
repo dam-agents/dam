@@ -223,6 +223,19 @@ func LoadFromEnv() (*Config, error) {
 			return nil, fmt.Errorf("GATEWAY_EGRESS: extraCidrs entry %q is not a CIDR: %w", c, err)
 		}
 	}
+	for i, p := range cfg.GatewayEgress.Peers {
+		if p.Namespace == "" || len(p.Ports) == 0 {
+			return nil, fmt.Errorf("GATEWAY_EGRESS: peers[%d] needs a namespace and at least one port — without ports it would open every port", i)
+		}
+		if len(p.PodLabels) == 0 {
+			return nil, fmt.Errorf("GATEWAY_EGRESS: peers[%d] needs podLabels — without them it would open every pod in namespace %q", i, p.Namespace)
+		}
+		for _, port := range p.Ports {
+			if port < 1 || port > 65535 {
+				return nil, fmt.Errorf("GATEWAY_EGRESS: peers[%d] port %d is out of range", i, port)
+			}
+		}
+	}
 	if cfg.VM.Enabled && (cfg.VM.Runner.Image == "" || cfg.VM.Runner.Storage == "") {
 		return nil, fmt.Errorf("AGENT_VM: enabled needs runner.image and runner.storage")
 	}
@@ -248,7 +261,7 @@ func LoadFromEnv() (*Config, error) {
 	cfg.HarnessServerURL = os.Getenv("PLATFORM_HARNESS_SERVER_URL")
 	cfg.HarnessServerPort = envOrDefaultInt("PLATFORM_HARNESS_SERVER_PORT", 4001)
 	cfg.AgentProbesEnabled = envOrDefaultBool("AGENT_PROBES_ENABLED", true)
-	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.2")
+	cfg.EnvoyImage = envOrDefault("ENVOY_IMAGE", "mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.3")
 	cfg.MachineDNSImage = envOrDefault("MACHINE_DNS_IMAGE", "mirror.gcr.io/coredns/coredns:1.14.7")
 	cfg.EnvoyPort = envOrDefaultInt("ENVOY_PORT", 10000)
 	cfg.EnvoyMitmCAIssuer = envOrDefault("ENVOY_MITM_CA_ISSUER", "platform-mitm-ca-issuer")

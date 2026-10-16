@@ -1,6 +1,6 @@
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import crypto from "node:crypto";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { Connection, ConnectionAuthConfig } from "api-server-api";
 import { createConnectionsService } from "../../modules/connections/services/connections-service.js";
 import { createConnectionTemplateRegistry } from "../../modules/connections/domain/connection-template.js";
@@ -53,6 +53,8 @@ function makeRepoFake() {
     listAgentsForConnection: async () => [],
     revokeAllForAgent: async () => {},
     listDistinctGrantAgentIds: async () => [],
+    updateName: async () => {},
+    listOwnersOfTemplate: async () => [],
   };
   return { repo, rows };
 }
@@ -116,6 +118,8 @@ function makeService(
     },
   };
   const svc = createConnectionsService({
+    platformProviderEnabled: async () => false,
+    platformProviderKey: null,
     isOwnedAgent: async () => true,
     ownerId: OWNER,
     templates: createConnectionTemplateRegistry(buildCatalog()),
@@ -435,6 +439,9 @@ describe("github-app scope editing", () => {
   });
 
   it("refuses a connection that is not a GitHub App installation", async () => {
+    vi.stubGlobal("fetch", async () =>
+      Response.json({ login: "octo", id: 1, name: null, email: null }),
+    );
     const { svc } = makeService(okToken);
     const id = await svc.createFromTemplate({
       templateId: "github-pat",

@@ -10,12 +10,37 @@ export const pageStateSchema = z.object({
   canGoForward: z.boolean(),
 });
 
+export const tabStateSchema = z.object({
+  id: z.string(),
+  url: z.string(),
+  title: z.string(),
+  loading: z.boolean(),
+});
+
 export const browserSnapshotSchema = z.object({
   state: browserStateSchema,
   message: z.string().nullable(),
   page: pageStateSchema.nullable(),
+  testingMode: z.boolean().optional(),
+  tabs: z.array(tabStateSchema).optional(),
+  activeTab: z.string().nullable().optional(),
+});
+
+const tabIdSchema = z.string().min(1).max(256);
+
+export const browserTabInputSchema = z.object({
+  tab: tabIdSchema,
+});
+
+export const browserActionInputSchema = z
+  .object({ tab: tabIdSchema.optional() })
+  .optional();
+
+export const browserTestingModeInputSchema = z.object({
+  on: z.boolean(),
 });
 
 export const browserNavigateInputSchema = z.object({
   url: z.string().min(1).max(8192),
+  tab: tabIdSchema.optional(),
 });

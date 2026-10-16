@@ -36,6 +36,7 @@ function replica() {
     driverOpsFor: () => ({}),
     subAgentAwaitsFor: () => ({}),
     carriesInspectorRole: async () => false,
+    chatFormPreferences: async () => null,
     caseStudySubmissions: {},
     caseStudyInspection: {},
     agentImage: async () => null,
