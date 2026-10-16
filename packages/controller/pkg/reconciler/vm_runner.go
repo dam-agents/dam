@@ -731,7 +731,11 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 		if resources.Requests == nil {
 			resources.Requests = corev1.ResourceList{}
 		}
-		resources.Requests[corev1.ResourceEphemeralStorage] = vmRunnerEphemeralRequest
+		request := vmRunnerEphemeralRequest
+		if limit, ok := resources.Limits[corev1.ResourceEphemeralStorage]; ok && limit.Cmp(request) < 0 {
+			request = limit
+		}
+		resources.Requests[corev1.ResourceEphemeralStorage] = request
 	}
 	for k, v := range spec.Devices {
 		q, err := resource.ParseQuantity(v)
