@@ -13,11 +13,7 @@ import { HarnessIcons } from "@/components/harness-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import {
-  HOVER_ACTION,
-  HOVER_ROOM,
-  HOVER_YIELD,
-} from "@/components/ui/hover-action";
+import { HOVER_ACTION, HOVER_YIELD } from "@/components/ui/hover-action";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { clickableProps } from "@/lib/clickable";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
@@ -156,14 +152,6 @@ export function SessionRow({
       : s.type === SessionType.ChannelTelegram
         ? ChannelType.Telegram
         : null;
-  const hasIndicators =
-    scheduled ||
-    terminal ||
-    !!messenger ||
-    needsApproval ||
-    working ||
-    draft ||
-    backgroundWork.length > 0;
 
   return (
     <div
@@ -189,12 +177,7 @@ export function SessionRow({
       }}
     >
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-        <div
-          className={cn(
-            "relative flex items-center gap-1.5",
-            onboarding && !hasIndicators && !s.harness && HOVER_ROOM,
-          )}
-        >
+        <div className="flex items-center gap-1.5">
           <span className={`text-sm min-w-0 truncate ${titleClass}`}>
             {titleLabel}
           </span>
@@ -203,52 +186,51 @@ export function SessionRow({
               {onboarding.label}
             </Badge>
           )}
-          <SessionIndicators
-            scheduled={scheduled}
-            terminal={terminal}
-            messenger={messenger}
-            needsApproval={needsApproval}
-            working={working}
-            draft={draft}
-            backgroundWork={backgroundWork}
-            harness={s.harness ?? null}
-          />
-          {}
-          <RowActionsMenu
-            label="More actions"
-            testId="session-menu-button"
-            dense
-            className={cn(
-              "absolute top-1/2 -right-1 -translate-y-1/2",
-              HOVER_ACTION,
-            )}
-            stopPropagation
-            contentProps={{ onClick: (event) => event.stopPropagation() }}
-          >
-            {onExportTimeline && (
+          <div className="ml-auto flex shrink-0 items-center gap-1 hover-capable:grid hover-capable:justify-items-end hover-capable:*:[grid-area:1/1]">
+            <SessionIndicators
+              scheduled={scheduled}
+              terminal={terminal}
+              messenger={messenger}
+              needsApproval={needsApproval}
+              working={working}
+              draft={draft}
+              backgroundWork={backgroundWork}
+              harness={s.harness ?? null}
+            />
+            {}
+            <RowActionsMenu
+              label="More actions"
+              testId="session-menu-button"
+              dense
+              className={HOVER_ACTION}
+              stopPropagation
+              contentProps={{ onClick: (event) => event.stopPropagation() }}
+            >
+              {onExportTimeline && (
+                <DropdownMenuItem
+                  data-testid="session-export-timeline-button"
+                  onSelect={onExportTimeline}
+                >
+                  <Download size={14} /> Export telemetry
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem
-                data-testid="session-export-timeline-button"
-                onSelect={onExportTimeline}
+                data-testid="session-rename-button"
+                disabled={provisional}
+                onSelect={onRename}
               >
-                <Download size={14} /> Export telemetry
+                <Edit size={14} /> Rename session
               </DropdownMenuItem>
-            )}
-            <DropdownMenuItem
-              data-testid="session-rename-button"
-              disabled={provisional}
-              onSelect={onRename}
-            >
-              <Edit size={14} /> Rename session
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              data-testid="session-delete-button"
-              disabled={provisional}
-              tone="danger"
-              onSelect={onDelete}
-            >
-              <TrashCan size={14} /> Delete session
-            </DropdownMenuItem>
-          </RowActionsMenu>
+              <DropdownMenuItem
+                data-testid="session-delete-button"
+                disabled={provisional}
+                tone="danger"
+                onSelect={onDelete}
+              >
+                <TrashCan size={14} /> Delete session
+              </DropdownMenuItem>
+            </RowActionsMenu>
+          </div>
         </div>
         <span className="text-2xs text-muted-foreground truncate">
           {conversation ? `${conversation} · ` : ""}
@@ -350,12 +332,7 @@ function SessionIndicators({
   )
     return null;
   return (
-    <span
-      className={cn(
-        "ml-auto flex shrink-0 items-center gap-2 pl-2 pr-6 hover-capable:pr-0",
-        HOVER_YIELD,
-      )}
-    >
+    <span className={cn("flex shrink-0 items-center gap-2 pl-2", HOVER_YIELD)}>
       {terminal && (
         <Terminal size={16} className="text-foreground" aria-label="Terminal" />
       )}

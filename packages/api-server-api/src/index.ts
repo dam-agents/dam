@@ -547,6 +547,7 @@ export type {
   AttentionService,
   DismissedEntry,
 } from "./modules/attention/types.js";
+export { ATTENTION_FEED_LIMIT } from "./modules/attention/types.js";
 export type { SessionCategory, SessionView } from "./modules/sessions/types.js";
 export type { SessionDirectoryService } from "./modules/session-directory/types.js";
 

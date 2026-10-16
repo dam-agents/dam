@@ -7,7 +7,8 @@ import { AgentAvatar, avatarMood } from "./avatar/agent-avatar.js";
 
 interface Props {
   agent: AgentView;
-  selected: boolean;
+  open: boolean;
+  current: boolean;
   unread: boolean;
   onSelect: () => void;
   actions: ReactNode;
@@ -16,7 +17,8 @@ interface Props {
 
 export function SidebarAgentRow({
   agent,
-  selected,
+  open,
+  current,
   unread,
   onSelect,
   actions,
@@ -28,18 +30,18 @@ export function SidebarAgentRow({
       <div
         className={cn(
           "group group/agent relative flex items-center rounded-lg transition-colors",
-          selected ? "bg-muted" : "hover:bg-muted",
+          current ? "bg-muted" : "hover:bg-muted",
         )}
       >
         <button
           type="button"
           onClick={onSelect}
-          aria-current={selected ? "page" : undefined}
+          aria-current={current ? "page" : undefined}
           data-testid="sidebar-agent-row"
           className={cn(
             "flex h-[34px] min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2.5 text-left",
-            selected ? "pr-[84px]" : "group-hover/agent:pr-[60px]",
-            selected
+            open ? "pr-[84px]" : "group-hover/agent:pr-[60px]",
+            open
               ? "text-foreground"
               : mood !== "awake"
                 ? "text-muted-foreground hover:text-foreground"
@@ -49,7 +51,7 @@ export function SidebarAgentRow({
           <AgentAvatar
             name={agent.name}
             avatar={agent.avatar}
-            size={18}
+            size={20}
             mood={mood}
             className="shrink-0"
           />
@@ -62,7 +64,7 @@ export function SidebarAgentRow({
                 aria-hidden
                 className={cn(
                   "size-2 shrink-0 rounded-full bg-accent group-hover/agent:hidden",
-                  selected && "hidden",
+                  open && "hidden",
                 )}
               />
               <span className="sr-only">(unread)</span>
@@ -72,7 +74,7 @@ export function SidebarAgentRow({
         <div
           className={cn(
             "absolute right-1 flex items-center gap-0.5 transition-opacity focus-within:opacity-100 group-hover/agent:opacity-100 has-[[data-state=open]]:opacity-100",
-            selected
+            open
               ? "opacity-100"
               : "pointer-events-none opacity-0 focus-within:pointer-events-auto group-hover/agent:pointer-events-auto has-[[data-state=open]]:pointer-events-auto",
           )}

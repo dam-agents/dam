@@ -22,8 +22,13 @@ export function useSidebarAgents() {
   const activity = useActivitySessions();
   const filters = useStore((s) => s.sidebarActivityFilters);
   const openAgentId = useStore((s) =>
-    s.view === "chat" ? s.selectedAgent : null,
+    s.view === "chat"
+      ? s.selectedAgent
+      : s.view === "sandbox-home"
+        ? s.agentId
+        : null,
   );
+  const sessionOpen = useStore((s) => s.view === "chat" && !!s.sessionId);
 
   const sessionsByAgent = useMemo(
     () => groupSessionsByAgent(filterActivitySessions(activity.items, filters)),
@@ -48,5 +53,12 @@ export function useSidebarAgents() {
   const sessionsOf = (agentId: string) =>
     sessionsByAgent.get(agentId) ?? NO_SESSIONS;
 
-  return { agents, openAgentId, unreadAgentIds, sessionsOf };
+  return {
+    agents,
+    openAgentId,
+    sessionOpen,
+    unreadAgentIds,
+    sessionsOf,
+    previewComplete: activity.complete,
+  };
 }

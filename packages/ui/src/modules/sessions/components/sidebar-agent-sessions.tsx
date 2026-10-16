@@ -38,6 +38,7 @@ interface Props {
   agentId: string;
   open: boolean;
   preview: readonly AgentActivitySession[];
+  previewComplete: boolean;
   conversationOf: (session: AttentionItem) => string | undefined;
   stickyClassName: string;
   onNavigate?: () => void;
@@ -47,6 +48,7 @@ export function SidebarAgentSessions({
   agentId,
   open,
   preview,
+  previewComplete,
   conversationOf,
   stickyClassName,
   onNavigate,
@@ -66,6 +68,7 @@ export function SidebarAgentSessions({
     <SessionPreview
       agentId={agentId}
       sessions={preview}
+      complete={previewComplete}
       conversationOf={conversationOf}
       onExpand={() => setExpanded(true)}
       onNavigate={onNavigate}
@@ -76,12 +79,14 @@ export function SidebarAgentSessions({
 function SessionPreview({
   agentId,
   sessions,
+  complete,
   conversationOf,
   onExpand,
   onNavigate,
 }: {
   agentId: string;
   sessions: readonly AgentActivitySession[];
+  complete: boolean;
   conversationOf: Props["conversationOf"];
   onExpand: () => void;
   onNavigate?: () => void;
@@ -91,7 +96,7 @@ function SessionPreview({
   const toggle = sessionListToggle({
     total: sessions.length,
     expanded: false,
-    hasNextPage: true,
+    hasNextPage: !complete,
   });
 
   return (
