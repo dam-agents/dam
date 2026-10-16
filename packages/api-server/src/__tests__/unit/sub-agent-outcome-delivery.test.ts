@@ -44,6 +44,7 @@ function row(patch: Partial<InvocationRow> = {}): InvocationRow {
     transcriptCaptured: false,
     transcriptTruncated: false,
     harnessConfig: null,
+    driverSessionId: null,
     ...patch,
   };
 }
