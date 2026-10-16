@@ -32,7 +32,7 @@ test("exchange messages with the agent", async ({ page }) => {
 
   await test.step("the chat view has no top bar: the icon bar reaches the top edge and holds the bell", async () => {
     const bar = page.getByTestId("side-panel-bar");
-    await expect(bar.getByTestId("open-approvals")).toBeVisible();
+    await expect(bar.getByTestId("side-panel-tab-approvals")).toBeVisible();
     expect((await bar.boundingBox())?.y).toBe(0);
   });
 

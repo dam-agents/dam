@@ -1,5 +1,12 @@
 export type SidePanelTab =
-  "files" | "changes" | "artifacts" | "browser" | "processes" | "delegation";
+  | "files"
+  | "changes"
+  | "artifacts"
+  | "browser"
+  | "processes"
+  | "delegation"
+  | "getting-started"
+  | "approvals";
 
 export type DockedItems = {
   file: boolean;
@@ -10,10 +17,39 @@ export type DockedItems = {
   delegation: boolean;
 };
 
+export const NOTHING_DOCKED: DockedItems = {
+  file: false,
+  artifact: false,
+  processOutput: false,
+  changes: false,
+  browser: false,
+  delegation: false,
+};
+
 export type SidePanelAvailability = {
+  agent: boolean;
   canOpenBrowser: boolean;
   processesEnabled: boolean;
+  gettingStarted: boolean;
 };
+
+export function hiddenSidePanelTabs(
+  available: SidePanelAvailability,
+): ReadonlySet<SidePanelTab> {
+  const shown: Record<SidePanelTab, boolean> = {
+    artifacts: true,
+    files: available.agent,
+    changes: available.agent,
+    delegation: available.agent,
+    browser: available.agent && available.canOpenBrowser,
+    processes: available.agent && available.processesEnabled,
+    "getting-started": available.gettingStarted,
+    approvals: true,
+  };
+  return new Set(
+    (Object.keys(shown) as SidePanelTab[]).filter((tab) => !shown[tab]),
+  );
+}
 
 export function dockedItemTab(docked: DockedItems): SidePanelTab | null {
   if (docked.browser) return "browser";
@@ -28,17 +64,16 @@ export function dockedItemTab(docked: DockedItems): SidePanelTab | null {
 export function visibleSidePanelTab(
   tab: SidePanelTab | null,
   docked: DockedItems,
-  available: SidePanelAvailability,
+  hidden: ReadonlySet<SidePanelTab>,
 ): SidePanelTab | null {
+  if (tab === null || hidden.has(tab)) return null;
   switch (tab) {
     case "browser":
-      return available.canOpenBrowser && docked.browser ? tab : null;
+      return docked.browser ? tab : null;
     case "changes":
       return docked.changes ? tab : null;
     case "delegation":
       return docked.delegation ? tab : null;
-    case "processes":
-      return available.processesEnabled ? tab : null;
     default:
       return tab;
   }

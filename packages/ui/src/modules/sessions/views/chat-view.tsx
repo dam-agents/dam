@@ -94,8 +94,6 @@ import { FilesPanel } from "../../files/components/files-panel.js";
 import { HomeVolumeBar } from "../../files/components/home-volume-bar.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
-import { GettingStartedDock } from "../../getting-started/components/getting-started-dock.js";
-import { ApprovalsButton } from "../../home/components/approvals-button.js";
 import {
   DelegationOwnersProvider,
   useDelegationOwners,
@@ -124,6 +122,7 @@ import {
   useAgentSession,
 } from "../api/queries.js";
 import { useProviderConnections } from "../api/session-pair.js";
+import { AppSidePanelButtons } from "../components/app-side-panel.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
@@ -142,6 +141,7 @@ import { SidePanelShell } from "../components/side-panel-shell.js";
 import { Terminal } from "../components/terminal.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
+import { useAppSidePanelTabs } from "../hooks/use-app-side-panel-tabs.js";
 import { useChatArtifactPrompt } from "../hooks/use-chat-artifact-prompt.js";
 import { useChatFormPrompt } from "../hooks/use-chat-form-prompt.js";
 import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
@@ -157,6 +157,7 @@ import { newLiveArrivals, noteArrivals } from "../lib/live-arrivals.js";
 import {
   type DockedItems,
   dockedItemTab,
+  hiddenSidePanelTabs,
   selectSidePanelTab,
   type SidePanelTab,
   visibleSidePanelTab,
@@ -647,18 +648,18 @@ export function ChatView() {
     browser: openBrowserAgentId !== null && canOpenBrowser,
     delegation: openDelegation !== null,
   };
-  const activeTab = visibleSidePanelTab(sidePanelTab, docked, {
+  const { gettingStarted, ...appTabs } = useAppSidePanelTabs();
+  const hiddenTabs = hiddenSidePanelTabs({
+    agent: true,
     canOpenBrowser,
     processesEnabled,
+    gettingStarted,
   });
+  const activeTab = visibleSidePanelTab(sidePanelTab, docked, hiddenTabs);
   const dockedTab = dockedItemTab(docked);
   const dockedShown = dockedTab !== null && dockedTab === activeTab;
   const dockedKept = dockedTab !== null && (dockedShown || draftDocked);
   const sidePanelOpen = activeTab !== null;
-  const hiddenTabs = new Set<SidePanelTab>([
-    ...(canOpenBrowser ? [] : (["browser"] as const)),
-    ...(processesEnabled ? [] : (["processes"] as const)),
-  ]);
   const onSidePanelTab = (tab: SidePanelTab) => {
     const selection = selectSidePanelTab(tab, activeTab, docked);
     if (selection.kind === "collapse") setSidePanelTab(null);
@@ -701,16 +702,16 @@ export function ChatView() {
         activeTab={activeTab}
         hiddenTabs={hiddenTabs}
         onSelectTab={onSidePanelTab}
-        badges={
-          runningProcesses
-            ? {
-                processes: {
-                  count: runningProcesses.running,
-                  label: `Processes, ${String(runningProcesses.running)} running`,
-                },
-              }
-            : undefined
-        }
+        icons={appTabs.icons}
+        badges={{
+          ...appTabs.badges,
+          ...(runningProcesses && {
+            processes: {
+              count: runningProcesses.running,
+              label: `Processes, ${String(runningProcesses.running)} running`,
+            },
+          }),
+        }}
         dockedShown={dockedShown}
         dockedKept={dockedKept}
         mobileTitle={selectedAgentName}
@@ -846,8 +847,7 @@ export function ChatView() {
               <Document size={16} />
             </Button>
             <div className="flex items-center gap-1 md:hidden">
-              <GettingStartedDock placement="header" />
-              <ApprovalsButton />
+              <AppSidePanelButtons />
             </div>
           </div>
         </header>

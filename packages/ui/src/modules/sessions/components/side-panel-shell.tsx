@@ -16,15 +16,15 @@ import {
   writePersistedNumber,
 } from "../../../lib/persisted-prefs.js";
 import { useStore } from "../../../store.js";
-import { GettingStartedDock } from "../../getting-started/components/getting-started-dock.js";
-import { ApprovalsButton } from "../../home/components/approvals-button.js";
+import { GettingStartedPanel } from "../../getting-started/components/getting-started-panel.js";
+import { ApprovalsPanel } from "../../home/components/approvals-panel.js";
 import {
   maximizableView,
   shownSidePanelWidth,
   sidePanelMinWidth,
   type SidePanelTab,
 } from "../lib/side-panel.js";
-import { type SidePanelBadge, SidePanelBar } from "./side-panel-bar.js";
+import { SidePanelBar, type SidePanelTabProps } from "./side-panel-bar.js";
 import { SidePanelEdgeTab } from "./side-panel-edge-tab.js";
 
 const FILE_PANEL_WIDTH_KEY = "platform-file-w";
@@ -36,13 +36,15 @@ const SIDE_PANEL_BAR_W = 44;
  * its icon rail, resize handle, saved width, maximize edge tab and full-screen
  * phone view. The chat view and every other page share it, so the panel looks
  * and sizes the same wherever it opens; each caller decides which tabs exist
- * and what they show.
+ * and what its own tabs show. Get started and Approvals belong to no page, so
+ * the shell shows them itself.
  */
 export function SidePanelShell({
   activeTab,
   hiddenTabs,
   onSelectTab,
   badges,
+  icons,
   dockedShown,
   dockedKept,
   panel,
@@ -55,7 +57,8 @@ export function SidePanelShell({
   activeTab: SidePanelTab | null;
   hiddenTabs: ReadonlySet<SidePanelTab>;
   onSelectTab: (tab: SidePanelTab) => void;
-  badges?: Partial<Record<SidePanelTab, SidePanelBadge>>;
+  badges?: SidePanelTabProps["badges"];
+  icons?: SidePanelTabProps["icons"];
   dockedShown: boolean;
   dockedKept: boolean;
   panel: ReactNode;
@@ -191,6 +194,10 @@ export function SidePanelShell({
               </span>
             </div>
             {panel}
+            {activeTab === "getting-started" && (
+              <GettingStartedPanel className="flex-1" />
+            )}
+            {activeTab === "approvals" && <ApprovalsPanel className="flex-1" />}
             {dockedKept && (
               <div
                 className={cn(
@@ -216,12 +223,7 @@ export function SidePanelShell({
           hidden={hiddenTabs}
           onSelect={onSelectTab}
           badges={badges}
-          footer={
-            <div className="flex flex-col items-center gap-1">
-              <GettingStartedDock placement="rail" />
-              <ApprovalsButton />
-            </div>
-          }
+          icons={icons}
         />
       </div>
     </div>
