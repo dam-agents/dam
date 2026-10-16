@@ -75,6 +75,7 @@ import {
 } from "../../modules/satellites/index.js";
 import type { SatelliteAgentOpsImpl } from "../../modules/satellites/index.js";
 import { registerChatFormTools } from "../../modules/chat-forms/index.js";
+import type { ChatFormPreferences } from "api-server-api/chat-forms";
 
 function resolveWorkspacePath(input: string): string {
   if (input.startsWith("/")) {
@@ -166,7 +167,7 @@ export interface McpSessionDeps {
   agentTelemetry: AgentTelemetryService;
   spendStatus?: () => Promise<SpendStatus>;
   sessionRef?: string;
-  chatForms?: boolean;
+  chatForms?: ChatFormPreferences | null;
   satellites?: {
     ops: SatelliteAgentOpsImpl;
     granted: SatelliteView[];
@@ -1373,7 +1374,7 @@ export function createMcpSession(
     },
   });
 
-  if (deps.chatForms) registerChatFormTools(server);
+  if (deps.chatForms) registerChatFormTools(server, deps.chatForms);
 
   if (deps.satellites)
     registerSatelliteTools(server, {
@@ -1421,7 +1422,10 @@ export interface MountMcpDeps {
   caseStudySubmissions: CaseStudySubmissionsService;
   caseStudyInspection: CaseStudyInspectionService;
   carriesInspectorRole: (sub: string) => Promise<boolean>;
-  chatFormsEnabled: (owner: string) => Promise<boolean>;
+  chatFormPreferences: (
+    owner: string,
+    agentId: string,
+  ) => Promise<ChatFormPreferences | null>;
   agentImage: (agentId: string) => Promise<string | null>;
   agentTelemetry: AgentTelemetryService;
   spendStatusFor?: (agentId: string, owner: string) => Promise<SpendStatus>;
@@ -1452,13 +1456,15 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const invocations = deps.invocationsServiceFor(verified.owner);
     const [ownerIsInspector, chatForms, grantedSatellites] = await Promise.all([
       deps.carriesInspectorRole(verified.owner),
-      deps.chatFormsEnabled(verified.owner).catch((err: unknown) => {
-        console.error(
-          `[chat-forms] could not read ${agentId}'s owner flags; serving the session without check_chat_form`,
-          err,
-        );
-        return false;
-      }),
+      deps
+        .chatFormPreferences(verified.owner, agentId)
+        .catch((err: unknown) => {
+          console.error(
+            `[chat-forms] could not read ${agentId}'s chat form settings; serving the session without check_chat_form`,
+            err,
+          );
+          return null;
+        }),
       Promise.resolve(deps.satelliteOps?.granted(agentId) ?? []).catch(
         (err: unknown) => {
           console.error(

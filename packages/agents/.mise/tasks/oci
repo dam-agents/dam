@@ -252,7 +252,10 @@ build_default() (
   [ "$(mise -E "$envs" exec -- node "$bundle/index.js" --version)" = "$(jq -r .version "$adapter/package.json")" ]
   mise -E "$envs" exec -- node -e 'Promise.all(process.argv.slice(1).map((f) => import(f)))' "$bundle/acp-agent.js" "$bundle/claude-agent-sdk.js"
   # Playwright's browsers: the node installer puts them in the tools, beside
-  # other Playwrights' own, and the image names this one's.
+  # other Playwrights' own, and the image names this one's. The install drops
+  # the browsers no linked Playwright uses; the build keeps the Playwrights a
+  # lockfile replaced, so their links go first.
+  rm -rf "$work/ms-playwright/.links"
   PLAYWRIGHT_BROWSERS_PATH="$work/ms-playwright" mise -E "$envs" exec -- playwright install chromium
   for d in "$work"/ms-playwright/*/; do
     d="${d%/}"

@@ -162,6 +162,8 @@ export function composeConnectionsForOwner(opts: {
   brandName: string;
   maxSharedKbConnections?: number;
   platformProviderEnabled: () => Promise<boolean>;
+  platformProviderKey: string | null;
+  platformProviderCa: string | null;
 }): ConnectionsService & PlatformLlmConnections {
   const repo = createConnectionsRepository(opts.db);
   const connectionLock = createXactLock(opts.db);
@@ -212,6 +214,8 @@ export function composeConnectionsForOwner(opts: {
     isOwnedAgent: (agentId) => opts.agentsRepo.isOwnedBy(agentId, opts.ownerId),
     resolveKbShare: createKbShareResolver(opts.db),
     platformProviderEnabled: opts.platformProviderEnabled,
+    platformProviderKey: opts.platformProviderKey,
+    platformProviderCa: opts.platformProviderCa,
     ...(opts.maxSharedKbConnections !== undefined
       ? { maxSharedKbConnections: opts.maxSharedKbConnections }
       : {}),

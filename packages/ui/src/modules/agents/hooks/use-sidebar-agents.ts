@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
@@ -11,6 +11,8 @@ import { useAgents } from "../api/queries.js";
 import { useSidebarPins } from "../api/sidebar-pins.js";
 import {
   groupSessionsByAgent,
+  leadAgentId,
+  openFirst,
   orderByLatestSession,
 } from "../lib/sidebar-agent-order.js";
 import { pinnedFirst } from "../lib/sidebar-pins.js";
@@ -39,7 +41,7 @@ export function useSidebarAgents() {
     [activity.items, filters],
   );
 
-  const { items: agents, pinned: pinnedAgentIds } = useMemo(
+  const { items: ordered, pinned: pinnedAgentIds } = useMemo(
     () =>
       pinnedFirst(
         orderByLatestSession(
@@ -51,6 +53,11 @@ export function useSidebarAgents() {
       ),
     [list, sessionsByAgent, pins.agents],
   );
+  const [pointerInside, setPointerInside] = useState(false);
+  const [shownLead, setShownLead] = useState(openAgentId);
+  const lead = leadAgentId(shownLead, openAgentId, pointerInside);
+  if (lead !== shownLead) setShownLead(lead);
+  const agents = useMemo(() => openFirst(ordered, lead), [ordered, lead]);
 
   const unreadAgentIds = new Set(
     activity.items
@@ -68,6 +75,8 @@ export function useSidebarAgents() {
     agents,
     pinnedAgentIds,
     openAgentId,
+    leadAgentId: lead,
+    holdOrder: setPointerInside,
     sessionOpen,
     unreadAgentIds,
     sessionsOf,
