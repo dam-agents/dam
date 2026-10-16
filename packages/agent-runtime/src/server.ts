@@ -85,6 +85,7 @@ import {
   createArtifactTouchReporter,
   createEnvPlugin,
   createEnvStateStore,
+  staleEnvReason,
   createModelDiscovery,
   createFilePlugin,
   createHarnessClient,
@@ -517,6 +518,7 @@ const runtimeChannel = await composeRuntimeChannel({
       sessionMetadata.isTombstoned(sessionId),
     ),
   envReader: envStore,
+  envStale: () => staleEnvReason(envStore.state()),
   catalog: modelCatalog,
   modelRouter: true,
   plugins: [

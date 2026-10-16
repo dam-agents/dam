@@ -16,15 +16,17 @@ export type StateStore = DocumentStore<RuntimeState>;
 
 export interface StateStoreOpts {
   envReady?: () => boolean;
+  envStale?: () => string | undefined;
   bindingsFingerprint?: string;
   log?: (msg: string) => void;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runtime's record of the last desired state it applied, which hello reports so the api-server pushes only what is newer. The record only holds while it still describes the disk: the env file that push wrote is still there, and the image binds its contribution drivers as it did when the record was kept. A home restored without the env file, as a runtime migration restores one, or an image whose drivers write somewhere else, drops the applied version and hash, so hello asks for the whole state again and every driver writes it anew. Event runs are kept, so an event that already ran does not run twice.
+// UNIT_BOUNDARY_DESCRIPTION: the runtime's record of the last desired state it applied, which hello reports so the api-server pushes only what is newer. The record only holds while it still describes the disk: the env file that push wrote is still there, and the image binds its contribution drivers as it did when the record was kept. A home restored without the env file, as a runtime migration restores one, an image whose drivers write somewhere else, or an env file an older runtime wrote, without the provider templates this one reads, drops the applied version and hash, so hello asks for the whole state again and every driver writes it anew. Event runs are kept, so an event that already ran does not run twice.
 export function createStateStore(
   backend: DocumentStoreBackend,
   {
     envReady = () => true,
+    envStale = () => undefined,
     bindingsFingerprint,
     log = () => {},
   }: StateStoreOpts = {},
@@ -39,7 +41,7 @@ export function createStateStore(
   });
   const state = store.read();
   const fingerprint = bindingsFingerprint ?? state.bindingsFingerprint;
-  const reason = forgetReason(state, fingerprint, envReady);
+  const reason = forgetReason(state, fingerprint, envReady, envStale);
   if (reason) {
     log(
       `[runtime] forgetting applied v=${state.lastAppliedVersion}: ${reason}; hello asks for the whole state`,
@@ -59,13 +61,14 @@ function forgetReason(
   state: RuntimeState,
   fingerprint: string | undefined,
   envReady: () => boolean,
+  envStale: () => string | undefined,
 ): string | undefined {
   if (!state.lastAppliedVersion) return undefined;
   if (fingerprint !== state.bindingsFingerprint) {
     return `contribution driver bindings changed (${short(state.bindingsFingerprint)} → ${short(fingerprint)})`;
   }
   if (!envReady()) return "env file missing";
-  return undefined;
+  return envStale();
 }
 
 function short(fingerprint: string | undefined): string {
