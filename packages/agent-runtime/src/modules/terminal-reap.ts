@@ -1,6 +1,4 @@
-export type TerminalReap =
-  | { kind: "kill" }
-  | { kind: "wait"; ms: number };
+export type TerminalReap = { kind: "kill" } | { kind: "wait"; ms: number };
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Decides when a detached PTY is killed. A PTY that

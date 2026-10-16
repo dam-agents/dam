@@ -128,6 +128,7 @@ A detached PTY is reaped on idleness, not on viewer loss: after a short detach g
 Liveness keys on harness output rather than viewer presence, so in-flight work (a running build, a streaming response) survives switching away and can be reattached live, while an abandoned idle prompt is cleaned up.
 Background work the session reports holds that reap back, as it holds a chat session's: a background command prints to its own output file, not to the screen, so a quiet screen does not mean the work is done.
 While the report is not empty the PTY is never reaped; once it is empty, the quiet clock applies again.
+Such a PTY makes the runtime busy only while its work is [kept](agent-processes.md#keeping-work), as a chat session does: unkept work holds the terminal open and dies at hibernation.
 When the PTY ends, the session's report goes with it, so a dead terminal cannot keep the agent busy.
 There is no append-only log, no fan-out, and no `session/resume` — terminal sessions belong to one viewer at a time, and the harness's own on-disk session store is the only durable record.
 

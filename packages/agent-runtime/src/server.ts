@@ -60,6 +60,7 @@ import {
   spawnSshd,
   type PreparedSshd,
 } from "./modules/ssh.js";
+import { terminalBusy } from "./modules/terminal-busy.js";
 import { terminalReap } from "./modules/terminal-reap.js";
 import { moveTerminalSlot } from "./modules/terminal-slots.js";
 import {
@@ -713,6 +714,21 @@ function killPtySlot(sessionId: string): void {
   ptyLog(sessionId, "killed");
 }
 
+function anyPtyBusy(): boolean {
+  const kept = new Set(backgroundWork.held().map((h) => h.sessionId));
+  const now = Date.now();
+  return [...ptySlots.values()].some((slot) =>
+    terminalBusy({
+      attached: slot.client !== null,
+      sinceDetachMs: now - slot.detachedAt,
+      quietMs: now - slot.lastOutputAt,
+      detachGraceMs: PTY_DETACH_GRACE_MS,
+      idleReapMs: PTY_IDLE_REAP_MS,
+      keptBackgroundWork: kept.has(slot.sessionId),
+    }),
+  );
+}
+
 function reapPtySlotIfIdle(sessionId: string): void {
   const slot = ptySlots.get(sessionId);
   if (!slot || slot.client || !slot.pty) return;
@@ -957,7 +973,7 @@ const server = http.createServer((req, res) => {
   if (req.url === "/api/status") {
     const acp = acpRuntime.status();
     const status = {
-      idle: acp.idle && ptySlots.size === 0 && !kbPublish.isBusy(),
+      idle: acp.idle && !anyPtyBusy() && !kbPublish.isBusy(),
       backgroundWork: acp.backgroundWork,
       keptProcesses: acp.keptProcesses,
     };
