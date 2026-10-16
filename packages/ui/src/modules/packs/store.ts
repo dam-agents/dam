@@ -1,5 +1,9 @@
 import type { StateCreator } from "zustand";
 
+import type {
+  TranscriptMeta,
+  TranscriptStep,
+} from "../../mock/data/transcripts/types.js";
 import type { PlatformStore } from "../../store.js";
 import type { Pack } from "./data/packs.js";
 import {
@@ -26,6 +30,13 @@ export interface PacksSlice {
   setSelectedStarterKitId: (id: string | null) => void;
   onboardingPhase: "just-created" | "halfway" | "done";
   setOnboardingPhase: (phase: "just-created" | "halfway" | "done") => void;
+  onboardingStep: number;
+  setOnboardingStep: (step: number) => void;
+  advanceOnboardingStep: () => void;
+  currentTranscriptSteps: TranscriptStep[];
+  setCurrentTranscriptSteps: (steps: TranscriptStep[]) => void;
+  currentTranscriptMeta: TranscriptMeta | null;
+  setCurrentTranscriptMeta: (meta: TranscriptMeta | null) => void;
   realPacks: boolean;
   setRealPacks: (on: boolean) => void;
 }
@@ -106,6 +117,20 @@ export const createPacksSlice: StateCreator<
   setSelectedStarterKitId: (id) => set({ selectedStarterKitId: id }),
   onboardingPhase: "just-created",
   setOnboardingPhase: (phase) => set({ onboardingPhase: phase }),
+  onboardingStep: 0,
+  setOnboardingStep: (step) => set({ onboardingStep: step }),
+  advanceOnboardingStep: () =>
+    set((s) => ({
+      onboardingStep: Math.min(
+        s.onboardingStep + 1,
+        s.currentTranscriptSteps.length,
+      ),
+    })),
+  currentTranscriptSteps: [],
+  setCurrentTranscriptSteps: (steps) =>
+    set({ currentTranscriptSteps: steps }),
+  currentTranscriptMeta: null,
+  setCurrentTranscriptMeta: (meta) => set({ currentTranscriptMeta: meta }),
   realPacks: true,
   setRealPacks: (on) => set({ realPacks: on }),
 });

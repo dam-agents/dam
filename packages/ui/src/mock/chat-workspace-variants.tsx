@@ -200,6 +200,7 @@ function AgentMenuTrigger({ chrome }: { chrome: AgentChrome }) {
       <button
         type="button"
         onClick={chrome.onConfigure}
+        data-pointer-target="header-agent-name"
         className="group flex min-w-0 items-center gap-2 rounded-lg py-1 pl-1 pr-3 transition-colors hover:bg-muted"
       >
         {chrome.agentId && (

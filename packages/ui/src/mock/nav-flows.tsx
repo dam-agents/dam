@@ -20,7 +20,7 @@ import { HomeView } from "../modules/home/views/home-view.js";
 import { parseRoute } from "../modules/platform/lib/routes.js";
 import { ChatColumn } from "../modules/sessions/components/chat-column.js";
 import { ChatMessage } from "../modules/sessions/components/chat-message.js";
-import { mockTranscript } from "./data/transcripts.js";
+import { mockTranscript } from "./data/transcripts/index.js";
 import {
   CollapsedNav,
   ExpandedNav,

@@ -135,6 +135,7 @@ export function PlusMenuPopover({
             disabled={disabled}
             aria-label="Add"
             tooltip="Add"
+            data-pointer-target="plus-menu"
           >
             <Add size={16} />
           </Button>

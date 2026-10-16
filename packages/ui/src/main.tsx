@@ -13,6 +13,7 @@ import { applyBrand, loadBrand } from "./brand.js";
 import { rememberReturnPath } from "./lib/return-path.js";
 import {
   parsePublicAgentPath,
+  parseRoute,
   routeToPath,
 } from "./modules/platform/lib/routes.js";
 import { preflightTermsGate } from "./modules/terms/lib/preflight.js";
@@ -51,14 +52,19 @@ async function main() {
 
     await loadBrand().then(applyBrand);
 
+    const route = parseRoute(window.location.pathname);
+    const urlSession =
+      route.view === "chat" && "session" in route ? route.session : null;
+    const defaultSession = urlSession ?? MOCK_SESSION_IDS.kitCodeGuardian;
+    const packId = KIT_SESSION_TO_PACK[defaultSession] ?? null;
+
     history.replaceState(null, "", `/chat/${agents[0]!.id}`);
-    const defaultSession = MOCK_SESSION_IDS.kitCodeGuardian;
     useStore.setState({
       view: "chat",
       selectedAgent: agents[0]!.id,
       pendingResumeSessionId: defaultSession,
-      starterKitMode: true,
-      selectedStarterKitId: KIT_SESSION_TO_PACK[defaultSession] ?? null,
+      starterKitMode: !!packId,
+      selectedStarterKitId: packId,
     });
 
     const { default: App } = await import("./app.js");

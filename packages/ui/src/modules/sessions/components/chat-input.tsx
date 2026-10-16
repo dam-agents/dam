@@ -62,25 +62,17 @@ function StarterKitStrip({
   const kitMode = useStore((s) => s.starterKitMode);
   const selectedKitId = useStore((s) => s.selectedStarterKitId);
   const realPacks = useStore((s) => s.realPacks);
-  const phase = useStore((s) => s.onboardingPhase);
+  const steps = useStore((s) => s.currentTranscriptSteps);
+  const currentStep = useStore((s) => s.onboardingStep);
 
   if (!kitMode) return null;
+  if (steps.length === 0 || currentStep >= steps.length) return null;
 
   const allPacks = realPacks ? REAL_PACKS : PACKS;
   const pack = allPacks.find((p) => p.id === selectedKitId) ?? allPacks[0];
   if (!pack) return null;
-  if (pack.onboarding === false || phase === "done") return null;
 
-  const checklist = pack.agentChecklist ?? [];
-  if (checklist.length === 0) return null;
-
-  const steps = checklist.map((item) => ({
-    id: item.id,
-    label: item.label,
-    done: phase === "halfway" ? item.layer === 1 : false,
-    messageId: item.messageId,
-  }));
-  const done = steps.filter((s) => s.done).length;
+  const done = currentStep;
   const remaining = steps.length - done;
 
   return (
@@ -106,17 +98,18 @@ function StarterKitStrip({
             </p>
           </div>
           <ul className="border-t border-border py-1.5">
-            {steps.map((step) => (
+            {steps.map((step, i) => (
               <li key={step.id}>
                 <button
                   type="button"
                   onClick={() =>
-                    step.messageId && onScrollToMessage?.(step.messageId)
+                    step.firstMessageId &&
+                    onScrollToMessage?.(step.firstMessageId)
                   }
                   className="flex w-full items-center gap-3 rounded-md px-4 py-1.5 transition-colors hover:bg-muted/40"
                 >
                   <span className="flex size-4 shrink-0 items-center justify-center">
-                    {step.done ? (
+                    {i < currentStep ? (
                       <CheckmarkFilled size={16} className="text-success" />
                     ) : (
                       <span className="size-4 rounded-full border-2 border-border" />
@@ -125,10 +118,15 @@ function StarterKitStrip({
                   <span
                     className={cn(
                       "min-w-0 flex-1 truncate text-left text-sm",
-                      step.done ? "text-muted-foreground" : "text-foreground",
+                      i < currentStep
+                        ? "text-muted-foreground"
+                        : "text-foreground",
                     )}
                   >
                     {step.label}
+                  </span>
+                  <span className="shrink-0 text-[12px] text-muted-foreground">
+                    {step.kind}
                   </span>
                 </button>
               </li>
@@ -165,8 +163,9 @@ export function ChatInput({
   const sessionId = useStore((s) => s.sessionId);
   const kitMode = useStore((s) => s.starterKitMode);
   const selectedKitId = useStore((s) => s.selectedStarterKitId);
-  const onboardingPhase = useStore((s) => s.onboardingPhase);
   const realPacks = useStore((s) => s.realPacks);
+  const transcriptSteps = useStore((s) => s.currentTranscriptSteps);
+  const onboardingStep = useStore((s) => s.onboardingStep);
   const setDraft = useStore((s) => s.setDraft);
   const clearDraft = useStore((s) => s.clearDraft);
   const key = agentId ? draftKey(agentId, sessionId) : null;
@@ -177,13 +176,9 @@ export function ChatInput({
   const attachments = draft.attachments;
 
   const composerLocked = useMemo(() => {
-    if (!kitMode || onboardingPhase !== "just-created") return false;
-    const allPacks = realPacks ? REAL_PACKS : PACKS;
-    const pack = allPacks.find((p) => p.id === selectedKitId) ?? allPacks[0];
-    return (
-      pack?.onboarding !== false && (pack?.agentChecklist?.length ?? 0) > 0
-    );
-  }, [kitMode, onboardingPhase, realPacks, selectedKitId]);
+    if (!kitMode) return false;
+    return transcriptSteps.length > 0 && onboardingStep < transcriptSteps.length;
+  }, [kitMode, transcriptSteps, onboardingStep]);
 
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);

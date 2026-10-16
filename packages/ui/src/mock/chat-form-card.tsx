@@ -7,6 +7,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
+import { useStore } from "../store.js";
 import type { FormPart } from "../types.js";
 
 interface ChatFormCardProps {
@@ -36,7 +37,14 @@ export function ChatFormCard({ part }: ChatFormCardProps) {
         <h3 className="text-[15px] font-semibold tracking-tight text-foreground">
           {part.label}
         </h3>
-        <FormBody part={part} onAnswer={() => setLocalAnswered(true)} />
+        <FormBody
+          part={part}
+          onAnswer={() => {
+            setLocalAnswered(true);
+            const s = useStore.getState();
+            if (s.starterKitMode) s.advanceOnboardingStep();
+          }}
+        />
       </div>
     </div>
   );

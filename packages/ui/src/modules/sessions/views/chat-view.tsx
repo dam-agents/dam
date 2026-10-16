@@ -41,10 +41,7 @@ import {
   type LeftPanelKind,
   WorkspaceChatHeader,
 } from "../../../mock/chat-workspace-variants.js";
-import {
-  KIT_SESSION_TO_PACK,
-  MOCK_SESSION_IDS,
-} from "../../../mock/data/sessions.js";
+import { MOCK_SESSION_IDS } from "../../../mock/data/sessions.js";
 import { MockBrowserPanel } from "../../../mock/mock-browser-panel.js";
 import { queryClient } from "../../../query-client.js";
 import type { SessionError } from "../../../store.js";
@@ -126,6 +123,12 @@ import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
 import { useSessionUrlSync } from "../hooks/use-session-url-sync.js";
 import { useSessionWatch } from "../hooks/use-session-watch.js";
+
+const PointerMarkerOverlay = lazy(() =>
+  import("../../../mock/pointer-marker-overlay.js").then((m) => ({
+    default: m.PointerMarkerOverlay,
+  })),
+);
 
 const ConfigureAgentModal = lazy(() =>
   import("../../sandboxes/components/configure-agent-modal.js").then((m) => ({
@@ -228,37 +231,19 @@ export function ChatView() {
     }
   }, [isMock, sessionId, selectedAgent, openBrowser]);
 
-  useEffect(() => {
-    if (!isMock || !sessionId) return;
-    const packId = KIT_SESSION_TO_PACK[sessionId];
-    if (packId) {
-      useStore.setState({
-        starterKitMode: true,
-        selectedStarterKitId: packId,
-      });
-    } else {
-      useStore.setState({
-        starterKitMode: false,
-        selectedStarterKitId: null,
-      });
-    }
-  }, [isMock, sessionId]);
-
-  const onboardingPhase = useStore((s) => s.onboardingPhase);
+  const onboardingStep = useStore((s) => s.onboardingStep);
   const setMessages = useStore((s) => s.setMessages);
 
+  const currentTranscriptMeta = useStore((s) => s.currentTranscriptMeta);
+
   useEffect(() => {
-    if (!isMock || !sessionId || !selectedAgent) return;
-    const packId = KIT_SESSION_TO_PACK[sessionId];
-    if (!packId) return;
-    void import("../../../mock/data/transcripts.js").then(
-      ({ mockTranscriptMeta, sliceTranscriptForPhase }) => {
-        const meta = mockTranscriptMeta(selectedAgent, sessionId);
-        if (!meta) return;
-        setMessages(sliceTranscriptForPhase(meta, onboardingPhase));
+    if (!isMock || !currentTranscriptMeta) return;
+    void import("../../../mock/data/transcripts/index.js").then(
+      ({ sliceTranscriptForStep }) => {
+        setMessages(sliceTranscriptForStep(currentTranscriptMeta, onboardingStep));
       },
     );
-  }, [isMock, onboardingPhase, sessionId, selectedAgent, setMessages]);
+  }, [isMock, onboardingStep, currentTranscriptMeta, setMessages]);
 
   const handleScrollToMessage = useCallback((messageId: string) => {
     const el = messagesRef.current?.querySelector(
@@ -612,6 +597,11 @@ export function ChatView() {
 
   return (
     <div className="flex flex-col h-full bg-background relative overflow-hidden">
+      {isMock && (
+        <Suspense>
+          <PointerMarkerOverlay />
+        </Suspense>
+      )}
       {isMock && (
         <div
           className={cn(

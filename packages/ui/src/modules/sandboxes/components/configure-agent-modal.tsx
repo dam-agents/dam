@@ -115,6 +115,7 @@ export function ConfigureAgentModal({
               key={entry.section}
               type="button"
               onClick={() => setSection(entry.section)}
+              data-pointer-target={`configure:${entry.section}`}
               className={cn(
                 "flex w-full flex-col gap-0.5 rounded-lg px-3 py-2.5 text-left transition-colors",
                 entry.section === section ? "bg-muted" : "hover:bg-muted/60",

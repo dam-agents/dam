@@ -111,13 +111,33 @@ export function useAcpSession(
       setSessionId(sid);
 
       if (import.meta.env.VITE_MOCK) {
-        const { mockTranscript } =
-          await import("../../../mock/data/transcripts.js");
-        const { MOCK_SESSION_IDS } =
+        const { mockTranscript, mockTranscriptMeta } =
+          await import("../../../mock/data/transcripts/index.js");
+        const { MOCK_SESSION_IDS, KIT_SESSION_TO_PACK } =
           await import("../../../mock/data/sessions.js");
         setMessages(mockTranscript(selectedAgent, sid));
         if (sid === MOCK_SESSION_IDS.artifact) {
           useStore.getState().setOpenArtifactId("art-1");
+        }
+        const packId = KIT_SESSION_TO_PACK[sid];
+        if (packId) {
+          const meta = mockTranscriptMeta(selectedAgent, sid);
+          if (meta) {
+            useStore.setState({
+              starterKitMode: true,
+              selectedStarterKitId: packId,
+              onboardingStep: 0,
+              currentTranscriptSteps: meta.steps,
+              currentTranscriptMeta: meta,
+            });
+          }
+        } else {
+          useStore.setState({
+            starterKitMode: false,
+            selectedStarterKitId: null,
+            currentTranscriptSteps: [],
+            currentTranscriptMeta: null,
+          });
         }
         setLoadingSession(false);
         return;
@@ -195,7 +215,7 @@ export function useAcpSession(
   const mockSendPrompt: typeof sendPrompt = useCallback(
     async (text) => {
       if (!text.trim()) return;
-      const { mockReply } = await import("../../../mock/data/transcripts.js");
+      const { mockReply } = await import("../../../mock/data/transcripts/index.js");
       const replyId = crypto.randomUUID();
       setMessages((p) => [
         ...p,
