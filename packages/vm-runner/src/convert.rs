@@ -11,7 +11,7 @@ const NEXT_DISK: &str = "storage.next.raw";
 // UNIT_BOUNDARY_DESCRIPTION: the share record that asks the guest to convert, holding the nonce, as platform-init reads it.
 const SHARE_RECORD: &str = "convert";
 pub const CAPABILITY_PREFIX: &str = "dam-disk-converted:";
-// UNIT_BOUNDARY_DESCRIPTION: how many boots may try a conversion before the runner leaves the disk ext4 for good: a copy that keeps failing would otherwise make every start of the machine a long one.
+// UNIT_BOUNDARY_DESCRIPTION: how many boots may answer without the copy before the runner gives the conversion up and leaves the disk ext4: a copy that keeps failing would otherwise make every start of the machine a long one.
 const ATTEMPTS: u32 = 3;
 
 // UNIT_BOUNDARY_DESCRIPTION: whether the machine's share asks its guest to convert, which is what a boot that has not answered yet may be busy doing for as long as the copy takes (see plan::CONVERTING_RESTART).
@@ -24,6 +24,8 @@ struct Conversion {
     nonce: String,
     committed: bool,
     attempts: u32,
+    #[serde(default)]
+    abandoned: bool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -67,7 +69,7 @@ fn write(vm_dir: &Path, conversion: &Conversion) -> anyhow::Result<()> {
     Ok(())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: settles a conversion before a boot, and returns the disk to attach for this boot's copy, if any. A committed conversion whose exchange a crash cut short is finished, told apart by the magic of what storage.raw holds; one that finished is cleaned up, its old ext4 disk deleted, since the btrfs disk has booted and answered since. An ext4 disk, with the switch on and attempts left, gets a fresh btrfs disk made by `format` (the template's, with a UUID of its own) unless one is there, and the share asks the guest to copy into it. Anything else clears the share's request, so a guest never converts on a stale one.
+// UNIT_BOUNDARY_DESCRIPTION: settles a conversion before a boot, and returns the disk to attach for this boot's copy, if any. A committed conversion whose exchange a crash cut short is finished, told apart by the magic of what storage.raw holds; one that finished is cleaned up, its old ext4 disk deleted, since the btrfs disk has booted and answered since. A conversion that was started and not swapped is attached and asked for again at every start, whatever the switch, the room and the other machines: its guest may have committed the copy and booted on it, and that boot's writes are only on the btrfs disk, so a boot on the ext4 disk would hide them, and a later swap lose the ext4 boot's. The gates hold only a new conversion: an ext4 disk, with the switch on, room on the claim for a copy beside it, and no other conversion on this runner, gets a fresh btrfs disk made by `format` (the template's, with a UUID of its own) and the share asks the guest to copy into it. One the runner gave up is cleaned up. Anything else clears the share's request, so a guest never converts on a stale one.
 pub fn before_start(
     vm_dir: &Path,
     share: Option<&Path>,
@@ -84,45 +86,52 @@ pub fn before_start(
         }
     };
     let state = read(vm_dir);
-    if let Some(conversion) = state.as_ref().filter(|c| c.committed) {
-        if filesystem(&storage)? == Filesystem::Ext4 && filesystem(&next)? == Filesystem::Btrfs {
-            exchange(&storage, &next)?;
+    if let Some(conversion) = state.as_ref().filter(|c| c.committed || c.abandoned) {
+        if conversion.committed {
+            if filesystem(&storage)? == Filesystem::Ext4 && filesystem(&next)? == Filesystem::Btrfs
+            {
+                exchange(&storage, &next)?;
+            }
+            tracing::info!(nonce = %conversion.nonce, "the storage disk was converted to btrfs; deleting the old ext4 disk");
         }
-        tracing::info!(nonce = %conversion.nonce, "the storage disk was converted to btrfs; deleting the old ext4 disk");
         let _ = std::fs::remove_file(&next);
         let _ = std::fs::remove_file(next.with_extension("formatted"));
-        let _ = std::fs::remove_file(vm_dir.join(STATE_FILE));
+        if conversion.committed {
+            let _ = std::fs::remove_file(vm_dir.join(STATE_FILE));
+        }
         clear();
         return Ok(None);
     }
-    let Some(request) = request
-        .clone()
-        .filter(|_| enabled && filesystem(&storage).is_ok_and(|fs| fs == Filesystem::Ext4))
-    else {
-        clear();
+    let Some(request) = request.clone() else {
         return Ok(None);
     };
-    let mut conversion = state.unwrap_or_default();
-    if conversion.attempts >= ATTEMPTS {
-        clear();
-        return Ok(None);
-    }
-    if let Some(other) = converting_beside(vm_dir) {
-        tracing::info!(other = %other.display(), "another machine of this runner is converting its disk; this one converts at a later start");
-        clear();
-        return Ok(None);
-    }
-    let need = allocated(&storage) / 10 * 11 + (1 << 30);
-    if !fits(need) {
-        tracing::warn!(need, "the owner's storage has no room for a btrfs copy of this disk beside it; it boots its ext4 disk and converts at a later start");
-        clear();
-        return Ok(None);
-    }
-    if conversion.nonce.is_empty() {
-        conversion.nonce = nonce();
-    }
-    conversion.attempts += 1;
-    write(vm_dir, &conversion)?;
+    let conversion = match state.filter(|c| !c.nonce.is_empty()) {
+        Some(started) => started,
+        None => {
+            if !enabled || filesystem(&storage)? != Filesystem::Ext4 {
+                clear();
+                return Ok(None);
+            }
+            if let Some(other) = converting_beside(vm_dir) {
+                tracing::info!(other = %other.display(), "another machine of this runner is converting its disk; this one converts at a later start");
+                clear();
+                return Ok(None);
+            }
+            let need = allocated(&storage) / 10 * 11 + (1 << 30);
+            if !fits(need) {
+                tracing::warn!(need, "the owner's storage has no room for a btrfs copy of this disk beside it; it boots its ext4 disk and converts at a later start");
+                clear();
+                return Ok(None);
+            }
+            let conversion = Conversion {
+                nonce: nonce(),
+                ..Conversion::default()
+            };
+            write(vm_dir, &conversion)?;
+            conversion
+        }
+    };
+    // UNIT_BOUNDARY_DESCRIPTION: a disk without btrfs's magic holds no copy the guest could have committed, so only that one is made again.
     if filesystem(&next)? != Filesystem::Btrfs {
         let _ = std::fs::remove_file(&next);
         format(&next).context("making the btrfs disk to convert into")?;
@@ -133,7 +142,7 @@ pub fn before_start(
         0o644,
     )?;
     tracing::info!(
-        attempt = conversion.attempts,
+        failed_boots = conversion.attempts,
         "converting the storage disk to btrfs at this boot"
     );
     Ok(Some(AttachedDisk {
@@ -142,16 +151,24 @@ pub fn before_start(
     }))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: at a boot's first answer, swaps the disks when the guest says its copy is committed, by naming this conversion's nonce among its capabilities (`supports` asks it). The swap is one rename of both files, recorded as committed first, so a crash on either side of it is finished by before_start. The running VMM keeps both files open by descriptor, so the guest is not disturbed. Returns whether the disks were swapped, so the caller detaches the old disk from the machine's record.
+// UNIT_BOUNDARY_DESCRIPTION: at a boot's first answer, swaps the disks when the guest says its copy is committed, by naming this conversion's nonce among its capabilities (`supports` asks it). The swap is one rename of both files, recorded as committed first, so a crash on either side of it is finished by before_start. The running VMM keeps both files open by descriptor, so the guest is not disturbed. An answer without the nonce proves that this boot runs on the ext4 disk and that the btrfs disk holds no committed copy: a guest that finds its committed copy boots on it. Only that proof counts a failed boot, and after ATTEMPTS of them the conversion is given up. Returns whether the disks were swapped, so the caller detaches the old disk from the machine's record.
 pub fn after_ready(
     vm_dir: &Path,
     supports: impl FnOnce(&str) -> anyhow::Result<bool>,
 ) -> anyhow::Result<bool> {
-    let Some(mut conversion) = read(vm_dir).filter(|c| !c.committed && !c.nonce.is_empty()) else {
+    let Some(mut conversion) =
+        read(vm_dir).filter(|c| !c.committed && !c.abandoned && !c.nonce.is_empty())
+    else {
         return Ok(false);
     };
     let named = format!("{CAPABILITY_PREFIX}{}", conversion.nonce);
     if !supports(&named)? {
+        conversion.attempts += 1;
+        conversion.abandoned = conversion.attempts >= ATTEMPTS;
+        if conversion.abandoned {
+            tracing::warn!(nonce = %conversion.nonce, "the guest did not convert its storage disk in {ATTEMPTS} boots; it stays ext4");
+        }
+        write(vm_dir, &conversion)?;
         return Ok(false);
     }
     conversion.committed = true;
@@ -174,7 +191,7 @@ fn converting_beside(vm_dir: &Path) -> Option<std::path::PathBuf> {
         .flatten()
         .map(|entry| entry.path())
         .filter(|dir| dir != vm_dir)
-        .find(|dir| read(dir).is_some_and(|c| !c.committed && c.attempts < ATTEMPTS))
+        .find(|dir| read(dir).is_some_and(|c| !c.committed && !c.abandoned && !c.nonce.is_empty()))
 }
 
 fn nonce() -> String {
@@ -295,6 +312,7 @@ mod tests {
                 nonce: "n".into(),
                 committed: true,
                 attempts: 1,
+                ..Conversion::default()
             },
         )
         .unwrap();
@@ -310,7 +328,7 @@ mod tests {
         assert!(!vm.join(NEXT_DISK).exists());
     }
 
-    // TEST_SCENARIO: with the switch off, or on a btrfs disk, nothing is attached and a stale request in the share is removed; after the last attempt failed, the disk stays ext4 and boots as it is.
+    // TEST_SCENARIO: with the switch off nothing is attached and a stale request in the share is removed; once ATTEMPTS boots answered on the ext4 disk, the conversion is given up, its disk deleted, and the disk stays ext4.
     #[test]
     fn nothing_converts_without_the_switch_or_after_the_last_attempt() {
         let dir = TestDir::new("convert-off");
@@ -338,12 +356,25 @@ mod tests {
             )
             .unwrap()
             .is_some());
+            assert!(
+                !after_ready(&vm, |_| Ok(false)).unwrap(),
+                "the guest booted ext4"
+            );
         }
         assert_eq!(
             before_start(&vm, Some(&share), true, |_| true, |_| panic!()).unwrap(),
             None
         );
         assert!(!share.join(SHARE_RECORD).exists());
+        assert!(
+            !vm.join(NEXT_DISK).exists(),
+            "a conversion given up deletes its disk"
+        );
+        assert_eq!(
+            before_start(&vm, Some(&share), true, |_| true, |_| panic!()).unwrap(),
+            None,
+            "and is not started again"
+        );
     }
 
     // TEST_SCENARIO: a conversion needs a copy of the home beside the old disk until the old one is deleted, so it waits while the owner's storage has no room for that copy, or while another machine of the runner is converting; the machine then boots its ext4 disk, and converts at a later start.
@@ -383,6 +414,7 @@ mod tests {
                 nonce: "o".into(),
                 committed: false,
                 attempts: 1,
+                ..Conversion::default()
             },
         )
         .unwrap();
@@ -396,6 +428,7 @@ mod tests {
                 nonce: "o".into(),
                 committed: true,
                 attempts: 1,
+                ..Conversion::default()
             },
         )
         .unwrap();
@@ -411,5 +444,56 @@ mod tests {
         )
         .unwrap()
         .is_some());
+    }
+
+    // TEST_SCENARIO: a conversion that was started is attached and asked for again at every start, with the switch off, no room on the claim and another machine converting: its guest may have booted on a committed copy whose answer the runner missed, and a boot on the ext4 disk would hide that boot's writes.
+    #[test]
+    fn a_started_conversion_is_attached_again_whatever_the_gates() {
+        let dir = TestDir::new("convert-started");
+        let (vm, other, share) = (
+            dir.path().join("vm"),
+            dir.path().join("other"),
+            dir.path().join("share"),
+        );
+        for d in [&vm, &other, &share] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        disk(&vm.join(STORAGE_DISK_FILENAME), Filesystem::Ext4);
+        let first = before_start(
+            &vm,
+            Some(&share),
+            true,
+            |_| true,
+            |next| {
+                disk(next, Filesystem::Btrfs);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert!(first.is_some());
+        let nonce = std::fs::read_to_string(share.join(SHARE_RECORD)).unwrap();
+        write(
+            &other,
+            &Conversion {
+                nonce: "o".into(),
+                ..Conversion::default()
+            },
+        )
+        .unwrap();
+
+        let again = before_start(
+            &vm,
+            Some(&share),
+            false,
+            |_| false,
+            |_| panic!("the copy is kept"),
+        )
+        .unwrap();
+        assert_eq!(again, first);
+        assert_eq!(
+            std::fs::read_to_string(share.join(SHARE_RECORD)).unwrap(),
+            nonce,
+            "the same nonce"
+        );
     }
 }
