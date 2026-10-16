@@ -27,7 +27,8 @@
 # (the leading `--` keeps mise from parsing the subcommand's own `--`)
 #
 # Env: IMAGE_PREFIX (default quay.io/dam-agents), GITHUB_SHA, EVENT (gha-outputs
-# archs + workload skip: pull_request never builds workloads),
+# archs + workload skip: pull_request never builds workloads; merge_group
+# builds both archs like main, without workloads or the mock),
 # RESOLVE_NO_REUSE=1 forces BUILD everywhere (CI tag/schedule/dispatch: publish
 # all, which also picks up newer Debian packages and uncached tool trees). A
 # main push reuses every image whose effective source did not move.
@@ -177,10 +178,10 @@ gha_outputs() {
   agents_json="$(stale_json $AGENTS)"
   # A PR builds its images and the mock in e2e, which resolves them itself,
   # and never builds workloads: slow, rarely-changing builds on the default
-  # image.
-  if [ "${EVENT:-}" != pull_request ]; then
+  # image. A merge group also builds its images on arm64, where no e2e runs.
+  [ "${EVENT:-}" = pull_request ] || images_json="$(stale_json $IMAGES)"
+  if [ "${EVENT:-}" != pull_request ] && [ "${EVENT:-}" != merge_group ]; then
     workloads_json="$(stale_json $WORKLOADS)"
-    images_json="$(stale_json $IMAGES)"
     [ "$(resolve mock | cut -d' ' -f1)" = BUILD ] && mock=true
   fi
   printf 'agents=%s\narchs=%s\nworkloads=%s\nimages=%s\nmock=%s\nsource_shas=%s\n' \
@@ -255,6 +256,11 @@ self_check() {
   has "$out" 'images=[]'
   has "$out" 'mock=false'
   has "$out" 'archs=["amd64"]'
+  out="$(EVENT=merge_group GITHUB_SHA=deadbeef RESOLVE_NO_REUSE=1; export EVENT GITHUB_SHA RESOLVE_NO_REUSE; gha_outputs)"
+  has "$out" 'workloads=[]'
+  has "$out" 'images=["controller","ui","api-server","keycloak","vm-runner"]'
+  has "$out" 'mock=false'
+  has "$out" 'archs=["amd64","arm64"]'
   # A reused component, last in its list, leaves it out and fails nothing.
   out="$(resolve() { case "$1" in b) echo "REUSE x" ;; *) echo BUILD ;; esac; }; stale_json a b)" || { echo "FAIL: stale_json failed on a reused last component" >&2; f=1; }
   chk "$out" '["a"]'

@@ -1,0 +1,100 @@
+// Minimal subset of Envoy's `envoy.service.accesslog.v3.AccessLogService` and
+// the `envoy.data.accesslog.v3` entry messages: only the fields the spend
+// record receiver reads. The gateway's gRPC access logger sends the full
+// messages; proto3 drops the unknown fields. The wire format for declared
+// fields must match Envoy's source-of-truth protos, so field numbers are pinned
+// here.
+//
+// Source: github.com/envoyproxy/envoy v1.39.2 → api/envoy/service/accesslog/v3/als.proto
+//                                              api/envoy/data/accesslog/v3/accesslog.proto
+//                                              api/envoy/config/core/v3/base.proto (Metadata)
+
+syntax = "proto3";
+
+package envoy.service.accesslog.v3;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+service AccessLogService {
+  rpc StreamAccessLogs (stream StreamAccessLogsMessage) returns (StreamAccessLogsResponse);
+}
+
+message StreamAccessLogsResponse {
+}
+
+message StreamAccessLogsMessage {
+  // Sent only on the first message of a stream.
+  message Identifier {
+    string log_name = 2;
+  }
+
+  message HTTPAccessLogEntries {
+    repeated HTTPAccessLogEntry log_entry = 1;
+  }
+
+  Identifier identifier = 1;
+
+  oneof log_entries {
+    HTTPAccessLogEntries http_logs = 2;
+  }
+}
+
+message HTTPAccessLogEntry {
+  AccessLogCommon common_properties = 1;
+  HTTPRequestProperties request = 3;
+  HTTPResponseProperties response = 4;
+}
+
+message AccessLogCommon {
+  google.protobuf.Timestamp start_time = 5;
+  ResponseFlags response_flags = 16;
+  Metadata metadata = 17;
+  AccessLogType access_log_type = 33;
+}
+
+message Metadata {
+  map<string, google.protobuf.Struct> filter_metadata = 1;
+}
+
+message ResponseFlags {
+  message Unauthorized {
+    enum Reason {
+      REASON_UNSPECIFIED = 0;
+      EXTERNAL_SERVICE = 1;
+    }
+
+    Reason reason = 1;
+  }
+
+  Unauthorized unauthorized_details = 13;
+}
+
+enum AccessLogType {
+  NotSet = 0;
+  TcpUpstreamConnected = 1;
+  TcpPeriodic = 2;
+  TcpConnectionStart = 14;
+  TcpConnectionEnd = 3;
+  DownstreamStart = 4;
+  DownstreamPeriodic = 5;
+  DownstreamEnd = 6;
+  UpstreamPoolReady = 7;
+  UpstreamPeriodic = 8;
+  UpstreamEnd = 9;
+  DownstreamTunnelSuccessfullyEstablished = 10;
+  UdpTunnelUpstreamConnected = 11;
+  UdpPeriodic = 12;
+  UdpSessionEnd = 13;
+}
+
+message HTTPRequestProperties {
+  string authority = 3;
+  string path = 5;
+}
+
+message HTTPResponseProperties {
+  google.protobuf.UInt32Value response_code = 1;
+  map<string, string> response_headers = 4;
+}

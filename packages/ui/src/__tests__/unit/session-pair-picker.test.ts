@@ -332,7 +332,7 @@ describe("session pair model choices", () => {
         onConnectProviders: state.connectProviders,
       }),
     );
-    expect(html).toContain(">Pi · IBM</button>");
+    expect(html).toContain("</span>IBM</button>");
     expect(html).toContain("Loading models…");
     expect(html).not.toContain("Configure");
     expect(html).not.toContain("Connect an LLM provider");
@@ -384,7 +384,7 @@ describe("session pair model choices", () => {
         onConnectProviders: state.connectProviders,
       }),
     );
-    expect(html).toContain(">glm · Pi · Curve</button>");
+    expect(html).toContain("</span>glm (Curve)</button>");
   });
 
   it("warns before the agent answers when no provider is connected", () => {
@@ -470,9 +470,7 @@ describe("session pair model choices", () => {
           }),
         ),
       )?.[0];
-    expect(label("glm-5-3")).toContain(
-      "glm-5-3 · Pi · Curve · Model not offered",
-    );
+    expect(label("glm-5-3")).toContain("glm-5-3 (Curve) · Model not offered");
     expect(label("glm-5-4")).not.toContain("Model not offered");
   });
 
@@ -604,7 +602,7 @@ describe("one model list on a runtime that routes by model name", () => {
         onNewSession: state.newSession,
       }),
     );
-    expect(html).toContain("gpt-5.5 · IBM · Pi");
+    expect(html).toContain("gpt-5.5 (IBM)");
     expect(html).toContain("rits/zai-org/glm-5-3");
     expect(html).toContain("applies to the next message");
     expect(html).not.toContain("start a new session");

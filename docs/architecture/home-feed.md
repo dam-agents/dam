@@ -4,13 +4,14 @@ Last verified: 2026-10-15
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
-Two surfaces read it: the sidebar's **Activity** lists Sessions across every Agent, and the **approvals bell** lists what waits on the user's decision.
+Two surfaces read it: the sidebar lists the newest Sessions of every Agent under that Agent, and the **approvals bell** lists what waits on the user's decision.
 
 ## What Home reads
 
 Three sources sit behind the feed, and they are deliberately different kinds of thing.
 
 **Approvals** come from their own table: a decision is genuinely pending until someone makes it, so it is durable state the api-server owns outright.
+A spend-limit question is an approval too, but it belongs to no session: its card offers only "Continue" and "Stop for today", and it stays open until the next UTC midnight ([spend-limits](spend-limits.md#continue)).
 **Live agent state** says which Agents are awake right now, and comes from the same Agent watch that feeds every other surface.
 **Sessions** come from the attention record — a per-owner, server-side account of the sessions that have asked for attention.
 
@@ -34,6 +35,7 @@ One reader outside Home shows the rows: an Agent's session list, while that Agen
 It shows its owner the rows filed for that Agent as a **provisional** list, display-only, and replaces it with the Agent's own list the moment the Agent answers.
 The UI asks the Agent for that list once the Agent shows as starting, not first at Ready: the agent's tRPC relay holds the ask while the wake runs, and an ask it refuses, or a hold that fails, is asked again when the Agent turns Ready.
 Nothing acts on a provisional row as proof the session exists: opening one asks the Agent, which still decides.
+The sidebar shows the record's rows the same way under every Agent that is not open, three at most, and asks the Agent for its own list only when the user opens the Agent or asks for more.
 
 That boundary is what makes the record safe to rebuild or discard.
 Dropping it costs a user their feed history and nothing else; the next capture refills it from the pods.
@@ -67,7 +69,7 @@ Both are watermarks, so they compose without a write for every card rendered, an
 The seen watermark is the pod's.
 The agent-runtime stamps it while a viewer is attached to a session — machine-driven channels do not count as viewers — and the watcher snapshots it into the record so a sleeping Agent can still answer.
 Dismissal is the user's own watermark, stored per user against the item: dismissing hides an approval from the bell without resolving it, without marking anything read, and without touching running work.
-Activity lists Sessions as they are and reads no dismissals.
+The sidebar lists Sessions as they are and reads no dismissals.
 
 Read state is still **per session, not per person**.
 An Agent currently has a single driving user, so the distinction has no observable effect today; the shared-agent work is what must revisit it.

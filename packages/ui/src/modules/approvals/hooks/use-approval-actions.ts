@@ -9,6 +9,8 @@ import {
 import type { ApprovalView } from "api-server-api";
 
 import { useStore } from "../../../store.js";
+import { continueLabel } from "../../spend/lib/copy.js";
+import { localResetTime } from "../../spend/lib/format.js";
 import {
   useApproveHost,
   useApproveOnce,
@@ -34,6 +36,7 @@ interface ApprovalAction {
 
 interface ApprovalActions {
   actions: readonly ApprovalAction[];
+  primaryLabel: string;
   inflight: boolean;
   hostLabel: string | null;
   expiredNote: string | null;
@@ -84,7 +87,36 @@ export function useApprovalActions(row: ApprovalView): ApprovalActions {
     }
   };
 
-  const actions: ApprovalAction[] = [
+  const continueText =
+    row.payload.kind === "spend_limit"
+      ? continueLabel(row.payload.amountMicros, row.payload.unit)
+      : "Continue";
+
+  const spendLimitActions: ApprovalAction[] = [
+    {
+      id: "allow-once",
+      label: continueText,
+      icon: Checkmark,
+      danger: false,
+      disabled: inflight || !live,
+      tooltip: live
+        ? undefined
+        : `The question expired at ${localResetTime(row.expiresAt)} your time`,
+      resolvedLabel: "Continued",
+      run: () => direct(() => approveOnce.mutateAsync({ id: row.id })),
+    },
+    {
+      id: "dismiss",
+      label: "Stop for today",
+      icon: Close,
+      danger: true,
+      disabled: inflight || !live,
+      resolvedLabel: "Stopped for today",
+      run: () => direct(() => dismiss.mutateAsync({ id: row.id })),
+    },
+  ];
+
+  const egressActions: ApprovalAction[] = [
     {
       id: "allow-once",
       label: "Allow once",
@@ -154,8 +186,11 @@ export function useApprovalActions(row: ApprovalView): ApprovalActions {
     },
   ];
 
+  const spendLimit = row.type === "spend_limit";
+
   return {
-    actions,
+    actions: spendLimit ? spendLimitActions : egressActions,
+    primaryLabel: spendLimit ? continueText : "Allow",
     inflight,
     hostLabel,
     expiredNote:

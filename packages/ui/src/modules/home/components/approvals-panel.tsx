@@ -7,6 +7,7 @@ import { useNow } from "@/hooks/use-now";
 
 import { timeAgo } from "../../../lib/format-time.js";
 import { useDenyApprovals } from "../../approvals/hooks/use-deny-approvals.js";
+import { deniableApprovalIds } from "../../approvals/lib/deny-all.js";
 import { useFeed } from "../api/queries.js";
 import { useDismissals } from "../hooks/use-dismissals.js";
 import { useStickyResolved } from "../hooks/use-sticky-resolved.js";
@@ -46,7 +47,7 @@ export function ApprovalsPanel({ onClose }: { onClose: () => void }) {
       <div className="flex items-center justify-between border-b border-border px-5 py-4">
         <h2 className="text-base font-semibold text-foreground">Approvals</h2>
         <div className="flex items-center gap-3">
-          {pending.length > 0 && (
+          {deniableApprovalIds(pending).length > 0 && (
             <Button
               variant="link"
               size="inline"

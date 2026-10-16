@@ -23,6 +23,7 @@ const agent = (id: string, overrides: Partial<AgentView> = {}): AgentView => ({
   grantedSecretIds: [],
   grantedConnectionIds: [],
   stopRequested: false,
+  disabled: false,
   overBudget: false,
   size: { cpu: "1", memory: "2Gi" },
   state: "running",

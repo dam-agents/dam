@@ -53,7 +53,7 @@ export function HarnessSpendCard({
       </p>
       <p className="mt-1.5 text-sm text-muted-foreground">
         {sessionsLabel(data.sessions)} started in {label}, as the harness
-        reports it. Not part of the LLM spend below.
+        reports it. Not part of the model spend below.
       </p>
     </HarnessSpendShell>
   );

@@ -22,12 +22,12 @@ export function SidebarAgentRow({
   actions,
   children,
 }: Props) {
-  const mood = avatarMood(agent.state, agent.stopRequested);
+  const mood = avatarMood(agent.state, agent);
   return (
     <li>
       <div
         className={cn(
-          "group/agent relative flex items-center rounded-lg transition-colors",
+          "group group/agent relative flex items-center rounded-lg transition-colors",
           selected ? "bg-muted" : "hover:bg-muted",
         )}
       >
@@ -41,7 +41,7 @@ export function SidebarAgentRow({
             selected ? "pr-[84px]" : "group-hover/agent:pr-[60px]",
             selected
               ? "text-foreground"
-              : mood === "asleep"
+              : mood !== "awake"
                 ? "text-muted-foreground hover:text-foreground"
                 : "text-foreground/90 hover:text-foreground",
           )}
@@ -51,7 +51,7 @@ export function SidebarAgentRow({
             avatar={agent.avatar}
             size={18}
             mood={mood}
-            className={cn("shrink-0", mood === "asleep" && "opacity-60")}
+            className="shrink-0"
           />
           <span className="min-w-0 flex-1 truncate text-sm font-medium">
             {agent.name}

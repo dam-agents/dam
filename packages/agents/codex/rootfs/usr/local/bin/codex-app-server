@@ -2,4 +2,5 @@
 # codex-acp runs `$CODEX_PATH app-server`. The provider's base URL is the Model
 # Router, fixed in /etc/codex/config.toml, so every thread (also the title thread
 # codex-acp starts without CODEX_CONFIG) reaches it without a -c override.
+. /usr/local/lib/codex-otel.sh
 exec codex "$@"
