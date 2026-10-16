@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the browser panel's top bar carries the button that opens a new tab, so a person reaches it whether or not the tab bar shows; the tab bar itself, shown from two tabs on, holds the tabs and their list, and no second new-tab button.
+// TEST_OVERVIEW: the browser panel's top bar carries the address bar, with the page title and reload inside it, and the button that opens a new tab, so a person reaches it whether or not the tab bar shows; the tab bar itself, shown from two tabs on, holds the tabs and their list, and no second new-tab button.
 import type { TabState } from "agent-runtime-api";
 import { createElement, Fragment, type PropsWithChildren } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -120,5 +120,21 @@ describe("the new-tab button", () => {
       markup.indexOf('data-testid="browser-tabs"'),
     );
     expect(newTabButtons(topBar)).toBe(1);
+  });
+});
+
+describe("the address bar", () => {
+  // TEST_SCENARIO: at rest the address bar reads like a browser's: the page title, with reload inside the bar, and no separate row below the toolbar naming the sandbox.
+  test("shows the page title with reload inside it", () => {
+    state.tabs = [tab("a")];
+    const markup = render();
+    const form = markup.slice(
+      markup.indexOf("<form"),
+      markup.indexOf("</form>"),
+    );
+    expect(form).toContain('value="A"');
+    expect(form).toContain('title="http://a/"');
+    expect(form).toContain('aria-label="Reload"');
+    expect(markup).not.toContain("sandbox");
   });
 });
