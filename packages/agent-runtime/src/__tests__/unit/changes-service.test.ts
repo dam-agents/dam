@@ -407,17 +407,33 @@ describe("session pushes", { timeout: 30_000 }, () => {
     return repo;
   }
 
-  function toolCall(sessionId: string, toolCallId: string, settled = false) {
-    service.onToolActivity({
-      sessionId,
-      toolCallId,
-      editedPaths: [],
-      started: !settled,
-      settled,
-    });
+  let pushWatches: Promise<void>[] = [];
+  beforeEach(() => {
+    pushWatches = [];
+  });
+
+  function activity(
+    sessionId: string,
+    toolCallId: string,
+    editedPaths: string[],
+    settled: boolean,
+  ) {
+    pushWatches.push(
+      service.onToolActivity({
+        sessionId,
+        toolCallId,
+        editedPaths,
+        started: !settled,
+        settled,
+      }),
+    );
   }
 
-  const watching = () => new Promise((resolve) => setTimeout(resolve, 1_000));
+  function toolCall(sessionId: string, toolCallId: string, settled = false) {
+    activity(sessionId, toolCallId, [], settled);
+  }
+
+  const watching = () => Promise.all(pushWatches);
 
   /**
    * TEST_SCENARIO: A session pushes its branch from a shell command, which
@@ -452,13 +468,7 @@ describe("session pushes", { timeout: 30_000 }, () => {
   it("should give a push to the running session that worked in the repository", async () => {
     const repo = await repositoryWithRemote();
     service = serviceFor([home], findsFeature);
-    service.onToolActivity({
-      sessionId: "s1",
-      toolCallId: "t0",
-      editedPaths: [path.join(repo, "a.txt")],
-      started: true,
-      settled: false,
-    });
+    activity("s1", "t0", [path.join(repo, "a.txt")], false);
     toolCall("s1", "t0", true);
     toolCall("s1", "t1");
     toolCall("s2", "t2");
@@ -485,13 +495,7 @@ describe("session pushes", { timeout: 30_000 }, () => {
   }
 
   function edited(sessionId: string, toolCallId: string, file: string) {
-    service.onToolActivity({
-      sessionId,
-      toolCallId,
-      editedPaths: [file],
-      started: true,
-      settled: false,
-    });
+    activity(sessionId, toolCallId, [file], false);
     toolCall(sessionId, toolCallId, true);
   }
 
