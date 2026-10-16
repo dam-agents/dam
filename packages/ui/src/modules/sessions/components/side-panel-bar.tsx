@@ -55,34 +55,48 @@ export function SidePanelTabButtons({
   onSelect,
   badges = {},
   icons = {},
-  tooltipSide = "left",
+  placement = "rail",
 }: SidePanelTabProps & {
   tabs: readonly (typeof SIDE_PANEL_TABS)[number][];
-  tooltipSide?: "left" | "bottom";
+  placement?: "rail" | "top-bar";
 }) {
+  const rail = placement === "rail";
   return tabs.map(({ tab, label, icon: Icon }) => {
     const badge = badges[tab];
     const shown = badge && badge.count > 0 ? badge : null;
     return (
-      <Tooltip key={tab} content={shown?.label ?? label} side={tooltipSide}>
+      <Tooltip
+        key={tab}
+        content={shown?.label ?? label}
+        side={rail ? "left" : "bottom"}
+      >
         <Button
           variant="ghost"
-          size="icon-sm"
+          size={rail ? "icon" : "icon-sm"}
           aria-label={shown?.label ?? label}
           aria-pressed={active === tab}
           data-testid={`side-panel-tab-${tab}`}
           className={cn(
             "relative text-muted-foreground",
-            active === tab && "bg-muted text-foreground",
+            rail
+              ? "h-12 w-12 rounded-none hover:bg-transparent focus-visible:ring-inset focus-visible:ring-offset-0"
+              : active === tab && "bg-muted",
+            active === tab && "text-foreground",
+            rail &&
+              active === tab &&
+              "before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-foreground",
           )}
           onClick={() => onSelect(tab)}
         >
-          {icons[tab] ?? <Icon size={16} />}
+          {icons[tab] ?? <Icon size={rail ? 24 : 16} />}
           {shown && (
             <Badge
               data-testid={`side-panel-badge-${tab}`}
               className={cn(
-                "absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full border-0 px-1 text-[10px] font-bold text-white",
+                "absolute flex items-center justify-center rounded-full border-0 font-bold text-white",
+                rail
+                  ? "top-2 right-1.5 h-[18px] min-w-[18px] px-1 text-[11px]"
+                  : "-top-1 -right-1 h-4 min-w-4 px-1 text-[10px]",
                 shown.tone === "warning"
                   ? "bg-warning hover:bg-warning"
                   : "bg-accent hover:bg-accent",
@@ -116,7 +130,7 @@ export function SidePanelBar({
       aria-label="Side panel"
       data-testid="side-panel-bar"
       className={cn(
-        "flex w-11 shrink-0 flex-col items-center gap-1 border-l border-border bg-background py-2",
+        "box-content flex w-12 shrink-0 flex-col border-l border-border bg-background py-1",
         className,
       )}
     >
@@ -126,7 +140,7 @@ export function SidePanelBar({
         )}
         {...props}
       />
-      <div className="mt-auto flex flex-col items-center gap-1">
+      <div className="mt-auto flex flex-col">
         <SidePanelTabButtons tabs={appSidePanelTabs(hidden)} {...props} />
       </div>
     </nav>

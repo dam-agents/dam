@@ -29,7 +29,7 @@ import { SidePanelEdgeTab } from "./side-panel-edge-tab.js";
 
 const FILE_PANEL_WIDTH_KEY = "platform-file-w";
 const MAIN_MIN_W = 320;
-const SIDE_PANEL_BAR_W = 44;
+const SIDE_PANEL_BAR_W = 49;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The side panel beside a page's main column, with
