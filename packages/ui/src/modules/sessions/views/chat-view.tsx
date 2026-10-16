@@ -121,7 +121,6 @@ import { AgentUsageActions } from "../../sandboxes/components/agent-usage-action
 import { KitUpdateBar } from "../../starter-kits/components/kit-update-bar.js";
 import { OnboardingBar } from "../../starter-kits/components/onboarding-bar.js";
 import { useTurns } from "../../telemetry/api/queries.js";
-import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
 import { matchTurnsToReplies } from "../../telemetry/lib/align-turns.js";
 import { useSessionBackgroundWork } from "../api/background-work.js";
 import { acpSessionsKeys } from "../api/keys.js";
@@ -971,6 +970,9 @@ export function ChatView() {
                                   onFileClick={openFileHandler}
                                   onDelete={deleteMessage}
                                   onLoadOlder={loadOlderKeepingScroll}
+                                  turn={turn}
+                                  agentId={selectedAgent ?? undefined}
+                                  sessionId={sessionId ?? undefined}
                                 />
                               ));
                               return members.length === 1 ? (
@@ -1031,13 +1033,6 @@ export function ChatView() {
                                   <RewriteMarker
                                     mode={rewriting.mode}
                                     following={shown.length - 1 - lastIndex}
-                                  />
-                                )}
-                                {selectedAgent && sessionId && turn && (
-                                  <TurnTelemetry
-                                    agentId={selectedAgent}
-                                    sessionId={sessionId}
-                                    turn={turn}
                                   />
                                 )}
                               </Fragment>
