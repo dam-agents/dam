@@ -44,7 +44,6 @@ import { useNow } from "@/hooks/use-now";
 import { cn } from "@/lib/utils";
 
 import { getBrand } from "../brand.js";
-import { AgentJobsBadge } from "../components/sidebar-agent-item.js";
 import { DOCS_URL } from "../constants.js";
 import { externalLinkProps } from "../lib/external-link.js";
 import { timeAgo } from "../lib/format-time.js";
@@ -471,7 +470,6 @@ export function IconRail({
                               <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
                                 {agent.name}
                               </span>
-                              <AgentJobsBadge agentId={agent.id} />
                             </div>
                           ) : isFocused ? (
                             <FocusedAgentCard
@@ -1052,7 +1050,6 @@ export function IconRail({
                             <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
                               {agent.name}
                             </span>
-                            <AgentJobsBadge agentId={agent.id} />
                           </button>
                         );
                       })}

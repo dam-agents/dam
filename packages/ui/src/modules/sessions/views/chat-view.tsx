@@ -99,7 +99,6 @@ import {
   walkAway,
 } from "../../packs/lib/demo-exit-actions.js";
 import type { SandboxSection } from "../../platform/lib/routes.js";
-import { ChatLiveJobBlocks } from "../../processes/components/chat-live-job-block.js";
 import { DockedProcessOutputPanel } from "../../processes/components/docked-process-output-panel.js";
 import {
   getDefaultExamples,
@@ -113,7 +112,6 @@ import {
 } from "../api/queries.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
-import { BackgroundTasksIndicator } from "../components/chat-input.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
 import { ChatMessage } from "../components/chat-message.js";
 import { ModelIndicator } from "../components/model-indicator.js";
@@ -744,9 +742,6 @@ export function ChatView() {
                       />
                     ))}
                     {!statusLineInThread && <PermissionStatusLine />}
-                    {sessionId === MOCK_SESSION_IDS.tasks && (
-                      <ChatLiveJobBlocks agentId={selectedAgent} />
-                    )}
                   </ChatColumn>
                 </div>
 
@@ -797,9 +792,6 @@ export function ChatView() {
                                 : undefined
                             }
                           />
-                        )}
-                        {sessionId === MOCK_SESSION_IDS.tasks && (
-                          <BackgroundTasksIndicator agentId={selectedAgent} />
                         )}
                       </div>
                     </ChatColumn>
