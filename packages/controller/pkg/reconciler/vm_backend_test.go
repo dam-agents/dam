@@ -1213,7 +1213,7 @@ func TestTheMachineDiskIsNoSmallerThanAnyMountAsksFor(t *testing.T) {
 	}), "a size on a path the machine never keeps buys nothing, since nothing is written there across a stop")
 }
 
-// TEST_SCENARIO: images/ is the directory that may not be on the runner's claim at all — a node cache the runners there share, or a read-only host directory of staged archives — so it gets a mount of its own rather than being a directory inside a parent mount. The other two always live on the claim and are mounted by subPath, so the claim's root is never exposed.
+// TEST_SCENARIO: images/ is the directory that may not be on the runner's claim at all — a node cache the runners there share, or a read-only host directory of staged images — so it gets a mount of its own rather than being a directory inside a parent mount. The other two always live on the claim and are mounted by subPath, so the claim's root is never exposed.
 func TestRunnerMountsTheImageCacheAsItsOwnSource(t *testing.T) {
 	mounts := func(configure func(*config.VMRunnerSpec)) (map[string]corev1.VolumeMount, map[string]corev1.Volume) {
 		r, _, _ := setupVMReconciler(t, vmAgentCR())
@@ -1915,7 +1915,7 @@ func TestASweepWakeRefusedForMemoryStartsOnTheRetryTick(t *testing.T) {
 	assert.NotContains(t, r.ParkedForRetry(), "my-agent", "and the agent left the retry queue")
 }
 
-// TEST_SCENARIO: a runner that caches images on its own claim unpacks them itself, and tar restores each file's owner and then sets a mode on a file it no longer owns, keeping a setgid bit only with FSETID — so that runner holds CHOWN, FOWNER and FSETID. A runner on the node cache or on staged archives unpacks nothing, so it holds neither. Every runner holds DAC_OVERRIDE for its VMMs, which read the image tree with the runner's own credentials to serve it to the guest, including files the image keeps from root.
+// TEST_SCENARIO: a runner that caches images on its own claim unpacks them itself, and tar restores each file's owner and then sets a mode on a file it no longer owns, keeping a setgid bit only with FSETID — so that runner holds CHOWN, FOWNER and FSETID. A runner on the node cache or on staged images unpacks nothing, so it holds neither. Every runner holds DAC_OVERRIDE for its VMMs, which read the image tree with the runner's own credentials to serve it to the guest, including files the image keeps from root.
 func TestOnlyARunnerThatUnpacksImagesCanChownThem(t *testing.T) {
 	capsFor := func(configure func(*config.VMRunnerSpec)) []corev1.Capability {
 		r, _, _ := setupVMReconciler(t, vmAgentCR())
@@ -1936,7 +1936,7 @@ func TestOnlyARunnerThatUnpacksImagesCanChownThem(t *testing.T) {
 		"the node's image cache service unpacks, and this runner only reads")
 	assert.ElementsMatch(t, []corev1.Capability{"DAC_OVERRIDE"},
 		capsFor(func(spec *config.VMRunnerSpec) { spec.ImageArchiveHostPath = "/var/lib/platform-archives" }),
-		"a staged archive is flattened inside the guest")
+		"a staged image is unpacked before the runner reads it")
 }
 
 // TEST_SCENARIO: service links would put one set of env vars per sibling agent Service into the runner, and the runner reads none of them.
