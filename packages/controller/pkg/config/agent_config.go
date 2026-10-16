@@ -126,7 +126,7 @@ type VMRunnerClusterDNS struct {
 	Ports     []int32           `json:"ports,omitempty"`
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: where a gateway may go inside the network, beyond the public internet and the platform's own pods. ExtraCIDRs are private ranges an install opens for its own enterprise services; the cloud metadata endpoints stay closed inside them. ClusterDNS selects the cluster DNS pods the gateway resolves upstream names through. Peers are in-cluster services an install opens to every gateway, such as a self-hosted model server, each on its own TCP ports.
+// UNIT_BOUNDARY_DESCRIPTION: where a gateway may go inside the network, beyond the public internet and the platform's own pods. ExtraCIDRs are private ranges an install opens for its own enterprise services; the cloud metadata endpoints stay closed inside them. ClusterDNS selects the cluster DNS pods the gateway resolves upstream names through. Peers are in-cluster pods an install opens to every gateway, such as a self-hosted model server, selected by namespace and non-empty pod labels, on their own TCP ports plus HBONE 15008; when a peer is in the ambient mesh, ztunnel carries any inner port over HBONE, so the port list binds only peers outside the mesh.
 type GatewayEgress struct {
 	ExtraCIDRs []string            `json:"extraCidrs,omitempty"`
 	ClusterDNS VMRunnerClusterDNS  `json:"clusterDns,omitempty"`

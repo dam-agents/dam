@@ -269,9 +269,13 @@ import {
   createConnectionGrantsCleanupHook,
   createGrantedConnectionTemplates,
   listConnectionGrantAgentIds,
+  listPlatformConnectionOwners,
 } from "./modules/connections/compose.js";
 import { startAttachFirstProviderSaga } from "./modules/connections/sagas/attach-first-provider.js";
-import { startPlatformProviderSaga } from "./modules/connections/sagas/platform-provider.js";
+import {
+  startPlatformProviderSaga,
+  sweepPlatformConnections,
+} from "./modules/connections/sagas/platform-provider.js";
 import { composeFeaturesForOwner } from "./modules/features/index.js";
 import { createConnectionRulesSyncAdapter } from "./modules/egress-rules/compose.js";
 import {
@@ -832,6 +836,15 @@ export async function bootstrap() {
       ),
   );
   const platformProviderSub = startPlatformProviderSaga(connectionsServiceFor);
+  sweepPlatformConnections(
+    () => listPlatformConnectionOwners(db),
+    connectionsServiceFor,
+  ).catch((err: unknown) =>
+    getLogger().error(
+      { reason: formatError(err) },
+      "connections.platform_provider_sweep_failed",
+    ),
+  );
   const publicAgentPageService = publicAgentPage.service;
   await periodicJobs.register(
     "public-agent-profile-reconcile",

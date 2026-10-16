@@ -1,5 +1,8 @@
 import type { Db } from "db";
-import type { ConnectionsService } from "api-server-api";
+import {
+  PLATFORM_LLM_TEMPLATE_ID,
+  type ConnectionsService,
+} from "api-server-api";
 import { createXactLock } from "../../core/xact-lock.js";
 import { createKbShareResolver } from "../kb-shares/index.js";
 import { createConnectionsRepository } from "./infrastructure/connections-repository.js";
@@ -123,6 +126,12 @@ export function createConnectionGrantsCleanupHook(
 
 export function listConnectionGrantAgentIds(db: Db): Promise<string[]> {
   return createConnectionsRepository(db).listDistinctGrantAgentIds();
+}
+
+export function listPlatformConnectionOwners(db: Db): Promise<string[]> {
+  return createConnectionsRepository(db).listOwnersOfTemplate(
+    PLATFORM_LLM_TEMPLATE_ID,
+  );
 }
 
 export function createGrantedConnectionTemplates(db: Db): {

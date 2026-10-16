@@ -176,7 +176,7 @@ func TestGatewayEgressAdmitsThePlatformPodsItDialsOnTheirPortsOnly(t *testing.T)
 	}, ports)
 }
 
-func TestGatewayEgressAdmitsOperatorPeersOnTheirPortsOnly(t *testing.T) {
+func TestGatewayEgressAdmitsOperatorPeersOnTheirPortsAndHBONE(t *testing.T) {
 	cfg := *testConfig
 	cfg.GatewayEgress.Peers = []config.GatewayEgressPeer{{Namespace: "gpu", PodLabels: map[string]string{"app": "llm"}, Ports: []int32{8000}}}
 	np := BuildGatewayEgressNetworkPolicy("my-instance", &cfg, configMapOwnerRef(testOwnerCM))

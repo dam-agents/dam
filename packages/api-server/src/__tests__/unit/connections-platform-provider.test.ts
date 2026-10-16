@@ -5,22 +5,32 @@ import {
   type Connection,
 } from "api-server-api";
 
-import { buildCatalog } from "../../modules/connections/domain/catalog.js";
+import { attachProviderToBareAgents } from "../../modules/agents/compose.js";
+import {
+  buildCatalog,
+  type PlatformProviderEndpoint,
+} from "../../modules/connections/domain/catalog.js";
 import { createConnectionTemplateRegistry } from "../../modules/connections/domain/connection-template.js";
 import type { ConnectionsRepository } from "../../modules/connections/infrastructure/connections-repository.js";
 import { createConnectionsService } from "../../modules/connections/services/connections-service.js";
-import { startPlatformProviderSaga } from "../../modules/connections/sagas/platform-provider.js";
+import { startAttachFirstProviderSaga } from "../../modules/connections/sagas/attach-first-provider.js";
+import {
+  startPlatformProviderSaga,
+  sweepPlatformConnections,
+} from "../../modules/connections/sagas/platform-provider.js";
 import type { SecretStore } from "../../modules/secret-store/index.js";
+import type { XactLock } from "../../core/xact-lock.js";
 import { configureLogger } from "../../core/logger.js";
-import { emit, events$, EventType, type DomainEvent } from "../../events.js";
+import { emit, events$, EventType } from "../../events.js";
 
 /**
  * TEST_OVERVIEW: the built-in provider's Connection follows its feature flag:
  * turning the flag on gives the user exactly one keyless platform-llm
  * Connection named after the brand, which the attach-first-provider saga
- * picks up; turning it off removes it and revokes it from the agents holding
- * it; the user cannot delete or create it by hand; and an install with no
- * model server offers no template to create it from.
+ * grants to a bare agent; turning it off, or the operator dropping the model
+ * server, removes it and revokes it from the agents holding it; an existing
+ * one follows the operator's endpoint and the brand; only the user-facing
+ * listing reconciles; and the user cannot delete or create it by hand.
  */
 
 configureLogger({ level: "error", write: () => {} });
@@ -34,32 +44,87 @@ function unused<T extends object>(fields: Partial<T> = {}): T {
   }) as T;
 }
 
-const ENDPOINT = {
+const ENDPOINT: PlatformProviderEndpoint = {
   baseUrl: "http://llm.models.svc:8000",
   model: "m-flash",
   name: "Acme",
 };
 
-function makeService(opts: { configured?: boolean } = {}) {
-  const rows = new Map<string, Connection>();
+function keyedMutex(): XactLock {
+  const tails = new Map<string, Promise<unknown>>();
+  return <T>(key: string, fn: () => Promise<T>): Promise<T> => {
+    const run = (tails.get(key) ?? Promise.resolve()).then(fn);
+    tails.set(
+      key,
+      run.catch(() => {}),
+    );
+    return run;
+  };
+}
+
+interface Store {
+  rows: Map<string, Connection>;
+  grants: Set<string>;
+}
+
+const newStore = (): Store => ({ rows: new Map(), grants: new Set() });
+
+function makeService(
+  opts: {
+    endpoint?: PlatformProviderEndpoint | null;
+    store?: Store;
+    lock?: XactLock;
+    flag?: { on: boolean };
+  } = {},
+) {
+  const { rows, grants } = opts.store ?? newStore();
+  const endpoint = opts.endpoint === undefined ? ENDPOINT : opts.endpoint;
   const fannedOut: string[] = [];
-  const flag = { on: false };
+  const flag = opts.flag ?? { on: false };
+  const grantKey = (connectionId: string, agentId: string) =>
+    `${connectionId}|${agentId}`;
+  const agentsOf = (connectionId: string) =>
+    [...grants]
+      .map((g) => g.split("|"))
+      .filter(([c]) => c === connectionId)
+      .map(([, a]) => a!);
   const svc = createConnectionsService({
     isOwnedAgent: async () => true,
     ownerId: "owner",
     templates: createConnectionTemplateRegistry(
-      buildCatalog(
-        {},
-        { platformProvider: (opts.configured ?? true) ? ENDPOINT : null },
-      ),
+      buildCatalog({}, { platformProvider: endpoint }),
     ),
     repo: unused<ConnectionsRepository>({
-      insert: async (c) => void rows.set(c.id, c),
+      insert: async (c) => {
+        if ([...rows.values()].some((r) => r.name === c.name))
+          throw Object.assign(new Error("duplicate"), { code: "23505" });
+        rows.set(c.id, c);
+      },
       get: async (id) => rows.get(id) ?? null,
       listByOwner: async () => [...rows.values()],
-      delete: async (id) => void rows.delete(id),
-      listAgentsForConnection: async () => ["agent-1"],
-      listConnectionsForAgent: async () => [],
+      listByOwnerOldestFirst: async () => [...rows.values()],
+      updateContributions: async (id, contributions) =>
+        void rows.set(id, { ...rows.get(id)!, contributions }),
+      updateName: async (id, name) =>
+        void rows.set(id, { ...rows.get(id)!, name }),
+      delete: async (id) => {
+        rows.delete(id);
+        for (const g of grants) if (g.startsWith(`${id}|`)) grants.delete(g);
+      },
+      grant: async (c, a) => void grants.add(grantKey(c, a)),
+      revoke: async (c, a) => void grants.delete(grantKey(c, a)),
+      listAgentGrants: async (agentId) =>
+        [...rows.keys()]
+          .filter((c) => grants.has(grantKey(c, agentId)))
+          .map((connectionId) => ({
+            connectionId,
+            grantedAt: new Date(0),
+            preferred: false,
+          })),
+      listAgentsForConnection: async (id) =>
+        rows.has(id) ? ["agent-1", ...agentsOf(id)] : [],
+      listConnectionsForAgent: async (agentId) =>
+        [...rows.values()].filter((c) => grants.has(grantKey(c.id, agentId))),
     }),
     secretStore: unused<SecretStore>(),
     fanOut: unused({
@@ -72,34 +137,37 @@ function makeService(opts: { configured?: boolean } = {}) {
     providerBalance: unused(),
     providerKeyProbe: unused(),
     oauthCallbackUrl: "https://example.com/callback",
-    brandName: "Acme",
-    connectionLock: (_key, fn) => fn(),
+    brandName: endpoint?.name ?? "Acme",
+    connectionLock: opts.lock ?? keyedMutex(),
     resolveKbShare: unused(),
     platformProviderEnabled: async () => flag.on,
   });
-  return { svc, rows, flag, fannedOut };
+  return { svc, rows, grants, flag, fannedOut };
 }
 
 const platformRows = (rows: Map<string, Connection>) =>
   [...rows.values()].filter((c) => c.templateId === "platform-llm");
 
-function recordEvents(): DomainEvent[] {
-  const seen: DomainEvent[] = [];
-  const sub = events$().subscribe((e) => seen.push(e));
-  subs.push(sub);
-  return seen;
-}
+const userConnection = (name: string): Connection => ({
+  id: `conn-${name}`,
+  ownerId: "owner",
+  templateId: "github",
+  name,
+  inputs: {},
+  auth: { kind: "none" },
+  contributions: [],
+});
 
 const subs: { unsubscribe(): void }[] = [];
 afterEach(() => {
   for (const s of subs.splice(0)) s.unsubscribe();
 });
 
-function toggle(on: boolean, flag: { on: boolean }) {
+function toggle(on: boolean, flag: { on: boolean }, owner = "owner") {
   flag.on = on;
   emit({
     type: EventType.FeatureFlagChanged,
-    actorSub: "owner",
+    actorSub: owner,
     surface: "test",
     feature: "platform-provider",
     enabled: on,
@@ -107,18 +175,31 @@ function toggle(on: boolean, flag: { on: boolean }) {
 }
 
 describe("platform provider connection", () => {
-  // TEST_SCENARIO: enabling the feature twice and listing in between leaves one keyless Connection named after the brand, announced once as a provider so the attach-first-provider saga grants it.
-  it("creates exactly one connection when the flag is turned on", async () => {
-    const { svc, rows, flag } = makeService();
-    const seen = recordEvents();
+  // TEST_SCENARIO: enabling the feature twice and listing in between leaves one keyless Connection named after the brand, which the attach-first-provider saga grants to an agent holding no provider.
+  it("creates exactly one connection when the flag is turned on and grants it to a bare agent", async () => {
+    const { svc, rows, grants, flag } = makeService();
     subs.push(startPlatformProviderSaga(() => svc));
+    subs.push(
+      startAttachFirstProviderSaga((_owner, connectionId) =>
+        attachProviderToBareAgents(
+          svc,
+          { harnesses: [] },
+          [{ id: "agent-1", spec: {} }],
+          connectionId,
+        ),
+      ),
+    );
 
     toggle(true, flag);
     await vi.waitFor(() => expect(platformRows(rows)).toHaveLength(1));
     toggle(true, flag);
-    const views = await svc.listConnections();
+    const views = await svc.listAndReconcileConnections();
 
+    const [conn] = platformRows(rows);
     expect(platformRows(rows)).toHaveLength(1);
+    await vi.waitFor(() =>
+      expect(grants).toEqual(new Set([`${conn!.id}|agent-1`])),
+    );
     const view = views.find((v) => v.templateId === "platform-llm")!;
     expect(view).toMatchObject({
       name: "Acme",
@@ -137,19 +218,31 @@ describe("platform provider connection", () => {
       name: "OPENAI_BASE_URL",
       placeholder: "http://llm.models.svc:8000/v1",
     });
-    const created = seen.filter((e) => e.type === EventType.ConnectionCreated);
-    expect(created).toHaveLength(1);
     expect(PROVIDER_TEMPLATE_IDS.has("platform-llm")).toBe(true);
     expect(providerTypeForTemplateId("platform-llm")).toBe("platform");
   });
 
-  // TEST_SCENARIO: with the install's mode on there is no flag change, so the first listing provisions the Connection.
-  it("provisions the connection lazily on listing while the flag is on", async () => {
+  // TEST_SCENARIO: with the install's mode on there is no flag change, so the first user-facing listing provisions the Connection, while the internal listing agent paths use creates nothing.
+  it("provisions the connection lazily only on the user-facing listing", async () => {
     const { svc, rows, flag } = makeService();
     flag.on = true;
     await svc.listConnections();
-    await svc.listConnections();
+    expect(platformRows(rows)).toHaveLength(0);
+    await svc.listAndReconcileConnections();
+    await svc.listAndReconcileConnections();
     expect(platformRows(rows)).toHaveLength(1);
+  });
+
+  // TEST_SCENARIO: a listing with the flag off removes a Connection left over from when it was on.
+  it("removes a leftover connection on listing while the flag is off", async () => {
+    const { svc, rows, flag, fannedOut } = makeService();
+    flag.on = true;
+    await svc.reconcilePlatformConnection();
+    flag.on = false;
+
+    await svc.listAndReconcileConnections();
+    expect(platformRows(rows)).toHaveLength(0);
+    expect(fannedOut).toEqual(["agent-1"]);
   });
 
   // TEST_SCENARIO: disabling the feature removes the Connection and re-delivers the agents that held it.
@@ -162,6 +255,117 @@ describe("platform provider connection", () => {
     toggle(false, flag);
     await vi.waitFor(() => expect(platformRows(rows)).toHaveLength(0));
     expect(fannedOut).toEqual(["agent-1"]);
+  });
+
+  // TEST_SCENARIO: a listing that read the flag on and an off-event racing it on another replica leave no Connection, because the flag is read under the per-owner lock.
+  it("leaves no connection when an off-event interleaves with a listing", async () => {
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => (open = resolve));
+    const mutex = keyedMutex();
+    const entered: string[] = [];
+    const lock: XactLock = async (key, fn) => {
+      if (key.startsWith("platform-llm:")) {
+        entered.push(key);
+        await gate;
+      }
+      return mutex(key, fn);
+    };
+    const store = newStore();
+    const flag = { on: true };
+    const listing = makeService({ store, lock, flag });
+    const saga = makeService({ store, lock, flag });
+    subs.push(startPlatformProviderSaga(() => saga.svc));
+
+    const listed = listing.svc.listAndReconcileConnections();
+    await vi.waitFor(() => expect(entered).toHaveLength(1));
+    toggle(false, flag);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    open();
+    await listed;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(platformRows(store.rows)).toHaveLength(0);
+  });
+
+  // TEST_SCENARIO: one owner's slow reconcile does not hold up another owner's flag change.
+  it("serializes flag changes per owner, not globally", async () => {
+    const { svc, rows, flag } = makeService();
+    subs.push(
+      startPlatformProviderSaga((owner) =>
+        owner === "slow"
+          ? { reconcilePlatformConnection: () => new Promise(() => {}) }
+          : svc,
+      ),
+    );
+
+    toggle(true, { on: true }, "slow");
+    toggle(true, flag);
+    await vi.waitFor(() => expect(platformRows(rows)).toHaveLength(1));
+  });
+
+  // TEST_SCENARIO: an existing Connection follows the operator's new model, endpoint and brand, and the agents holding it are re-delivered.
+  it("refreshes an existing connection when the operator changes the endpoint", async () => {
+    const store = newStore();
+    const before = makeService({ store });
+    before.flag.on = true;
+    await before.svc.reconcilePlatformConnection();
+    const [old] = platformRows(store.rows);
+
+    const after = makeService({
+      store,
+      endpoint: {
+        baseUrl: "http://other.svc:9000",
+        model: "m-pro",
+        name: "Zed",
+      },
+    });
+    after.flag.on = true;
+    await after.svc.listAndReconcileConnections();
+
+    const [conn] = platformRows(store.rows);
+    expect(conn!.id).toBe(old!.id);
+    expect(conn!.name).toBe("Zed");
+    expect(conn!.contributions).toContainEqual({
+      kind: "env",
+      name: "OPENAI_MODEL",
+      placeholder: "m-pro",
+    });
+    expect(conn!.contributions).toContainEqual({
+      kind: "egress-allow",
+      host: "other.svc",
+      port: 9000,
+    });
+    expect(after.fannedOut).toEqual(["agent-1"]);
+  });
+
+  // TEST_SCENARIO: a user who already owns Connections named after the brand gets the built-in provider under the next free fallback name.
+  it("falls back to a free name when the brand name is taken", async () => {
+    const store = newStore();
+    for (const name of ["Acme", "Acme LLM"])
+      store.rows.set(`conn-${name}`, userConnection(name));
+    const { svc, rows, flag } = makeService({ store });
+    flag.on = true;
+
+    await svc.listAndReconcileConnections();
+    await svc.listAndReconcileConnections();
+    expect(platformRows(rows).map((c) => c.name)).toEqual(["Acme LLM 2"]);
+  });
+
+  // TEST_SCENARIO: the boot sweep removes every built-in provider Connection once the operator no longer names a model server, re-delivering the agents.
+  it("sweeps leftover connections when no model server is configured", async () => {
+    const store = newStore();
+    const before = makeService({ store });
+    before.flag.on = true;
+    await before.svc.reconcilePlatformConnection();
+
+    const after = makeService({ store, endpoint: null });
+    after.flag.on = true;
+    await sweepPlatformConnections(
+      async () => ["owner"],
+      () => after.svc,
+    );
+    expect(platformRows(store.rows)).toHaveLength(0);
+    expect(after.fannedOut).toEqual(["agent-1"]);
   });
 
   // TEST_SCENARIO: the user's own delete and create paths refuse the built-in provider.
@@ -186,9 +390,9 @@ describe("platform provider connection", () => {
 
   // TEST_SCENARIO: an install with no model server has no template, so even a flag that reads on creates nothing.
   it("creates nothing without a configured base URL", async () => {
-    const { svc, rows, flag } = makeService({ configured: false });
+    const { svc, rows, flag } = makeService({ endpoint: null });
     flag.on = true;
-    await svc.listConnections();
+    await svc.listAndReconcileConnections();
     expect(rows.size).toBe(0);
     expect(buildCatalog().some((t) => t.id === "platform-llm")).toBe(false);
   });

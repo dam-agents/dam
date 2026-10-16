@@ -59,7 +59,7 @@ It controls where a feature *appears*:
 - **UI surfaces** — navigation destinations, settings tabs, panels.
   Most current features gate only these.
 
-- **A Connection the flag owns** — the built-in LLM provider's flag decides whether the user holds its provider Connection: the connections module creates it when the flag turns on, or on the first listing when the install's mode is `on`, and removes it when the flag turns off.
+- **A Connection the flag owns** — the built-in LLM provider's flag decides whether the user holds its provider Connection: the connections module creates it when the flag turns on, or on the user's next listing of their Connections when the install's mode is `on`, and removes it when the flag turns off.
   The flag is read rather than taken from the change event, so a stored choice the install's mode overrides creates nothing.
   The feature is `off` on an install that names no model server, whatever the chart's modes say.
 

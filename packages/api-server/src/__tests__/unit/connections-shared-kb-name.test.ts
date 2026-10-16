@@ -90,6 +90,8 @@ function makeRepoFake() {
     listAgentsForConnection: async () => [],
     revokeAllForAgent: async () => {},
     listDistinctGrantAgentIds: async () => [],
+    updateName: async () => {},
+    listOwnersOfTemplate: async () => [],
   };
   return { repo, rows };
 }

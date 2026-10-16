@@ -218,11 +218,12 @@ func TestLoadFromEnv_UnknownFieldRejected(t *testing.T) {
 
 func TestLoadFromEnv_GatewayEgressPeers(t *testing.T) {
 	for egress, want := range map[string]string{
-		`{"peers": [{"namespace": "gpu", "podLabels": {"app": "llm"}, "ports": [8000]}]}`: "",
-		`{"peers": [{"podLabels": {"app": "llm"}, "ports": [8000]}]}`:                     "peers[0] needs a namespace",
-		`{"peers": [{"namespace": "gpu"}]}`:                                               "peers[0] needs a namespace and at least one port",
-		`{"peers": [{"namespace": "gpu", "ports": [70000]}]}`:                             "out of range",
-		`{"peers": {"namespace": "gpu"}}`:                                                 "GATEWAY_EGRESS: invalid JSON",
+		`{"peers": [{"namespace": "gpu", "podLabels": {"app": "llm"}, "ports": [8000]}]}`:  "",
+		`{"peers": [{"podLabels": {"app": "llm"}, "ports": [8000]}]}`:                      "peers[0] needs a namespace",
+		`{"peers": [{"namespace": "gpu"}]}`:                                                "peers[0] needs a namespace and at least one port",
+		`{"peers": [{"namespace": "gpu", "podLabels": {"app": "llm"}, "ports": [70000]}]}`: "out of range",
+		`{"peers": [{"namespace": "gpu", "podLabels": {}, "ports": [8000]}]}`:              "peers[0] needs podLabels",
+		`{"peers": {"namespace": "gpu"}}`:                                                  "GATEWAY_EGRESS: invalid JSON",
 	} {
 		setEnv(t, map[string]string{"PLATFORM_RELEASE_NAME": "platform", "POD_NAME": "controller-0", "GATEWAY_EGRESS": egress})
 		cfg, err := LoadFromEnv()

@@ -300,7 +300,12 @@ A model server the operator hosts in the cluster, offered as a provider that nee
 The chart's `apiServer.platformProvider` names its root URL and model; without a root URL the template does not exist and the `platform-provider` [feature](features.md) is off for everyone.
 The user never connects it: the feature flag owns the Connection.
 Turning the flag on gives the user one Connection from the `platform-llm` template, named after the brand; turning it off removes it, which revokes it from every Agent holding it.
-With the install's mode `on` there is no flag change to react to, so the first listing of the user's Connections provisions it, and a listing with the flag off removes a leftover one.
+Connection names are unique per user, so when the user already has a Connection named after the brand it takes the first free name of the brand followed by `LLM`, then that numbered from 2.
+With the install's mode `on` there is no flag change to react to, so the user's own listing of their Connections provisions it, and a listing with the flag off removes a leftover one.
+Only that listing reconciles: the listings agent creation and sub-agent spawns make internally change nothing.
+An existing Connection follows the operator: when the chart's root URL, model or brand changes, the next reconcile (the user's listing, a flag change, or the boot sweep) rewrites its name and contributions and re-delivers the Agents holding it.
+At boot the api-server reconciles every user holding one, so dropping the root URL removes them all and a changed endpoint reaches users who do not come back.
+Flag changes, listings and the boot sweep may run at once on different replicas; each reads the flag and the user's Connections under one per-owner lock, so whichever runs last decides.
 The user's own create and delete refuse the template, so the Connection cannot be duplicated or dropped while the flag says it should exist.
 It is created like any provider Connection, so the [first-provider grant](agent-lifecycle.md#create) attaches it to Agents that hold no provider; otherwise a user grants it per Agent.
 The Connection stores no credential.

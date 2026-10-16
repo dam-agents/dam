@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { TRPCError } from "@trpc/server";
 import {
   parseKbShareString,
@@ -767,7 +768,7 @@ export function createConnectionsService(deps: {
     });
   }
 
-  const service: ConnectionsService = {
+  const service: Omit<ConnectionsService, "listAndReconcileConnections"> = {
     async listTemplates(): Promise<ConnectionTemplateView[]> {
       const templates = deps.templates.list();
       const family = templates.some(inheritsFamily)
@@ -1560,35 +1561,69 @@ export function createConnectionsService(deps: {
     },
   };
 
-  const platformConnections = async () =>
-    (await deps.repo.listByOwner(deps.ownerId)).filter(
-      (c) => c.templateId === PLATFORM_LLM_TEMPLATE_ID,
+  const isPlatform = (c: Connection) =>
+    c.templateId === PLATFORM_LLM_TEMPLATE_ID;
+
+  async function platformState() {
+    const template = deps.templates.get(PLATFORM_LLM_TEMPLATE_ID);
+    const wanted =
+      template !== null && (await deps.platformProviderEnabled?.()) === true;
+    const owned = await deps.repo.listByOwner(deps.ownerId);
+    const held = owned.filter(isPlatform);
+    const [keep, ...extra] = wanted ? held : [];
+    const remove = wanted ? extra : held;
+    const name = platformConnectionName(
+      deps.brandName,
+      new Set(owned.filter((c) => !isPlatform(c)).map((c) => c.name)),
     );
+    const stale =
+      keep !== undefined &&
+      (keep.name !== name ||
+        !isDeepStrictEqual(keep.contributions, template?.contributions));
+    return {
+      owned,
+      template: wanted ? template : null,
+      keep,
+      remove,
+      name,
+      settled: !remove.length && (!wanted || (keep !== undefined && !stale)),
+    };
+  }
 
   /**
    * UNIT_BOUNDARY_DESCRIPTION: the built-in provider is one Connection per
-   * user, which the feature flag owns: it exists while the flag is on and is
-   * removed once it is off, and never through the user's own create or
-   * delete. The flag is read rather than taken from the change event, because
-   * a user can record a flag that the install's mode overrides. A flag change
-   * and a listing can both reconcile at once, so each re-checks under one
-   * per-owner lock and the user never ends up with two.
+   * user, which the feature flag owns: it exists while the flag is on and the
+   * install names a model server, follows the operator's current endpoint and
+   * the brand, and is removed otherwise, never through the user's own create
+   * or delete. The flag is read rather than taken from the change event,
+   * because a user can record a flag that the install's mode overrides. Flag
+   * changes, listings and the boot sweep can all reconcile at once, on any
+   * replica, so the flag and the user's Connections are read only under one
+   * per-owner lock: whichever runs last sees the last flag.
    */
   async function reconcilePlatformConnection(): Promise<void> {
     if (!deps.platformProviderEnabled) return;
-    const enabled = await deps.platformProviderEnabled();
-    if (enabled && !deps.templates.get(PLATFORM_LLM_TEMPLATE_ID)) return;
-    if ((await platformConnections()).length > 0 === enabled) return;
     await deps.connectionLock(`platform-llm:${deps.ownerId}`, async () => {
-      const held = await platformConnections();
-      if (!enabled) {
-        for (const conn of held) await service.deleteConnection(conn.id);
-      } else if (held.length === 0) {
+      const { owned, template, keep, remove, name } = await platformState();
+      for (const conn of remove) await service.deleteConnection(conn.id);
+      if (!template) return;
+      if (!keep) {
         await service.createFromTemplate({
           templateId: PLATFORM_LLM_TEMPLATE_ID,
-          name: deps.brandName,
+          name,
           authKind: "none",
         });
+        return;
+      }
+      if (keep.name !== name) await deps.repo.updateName(keep.id, name);
+      if (!isDeepStrictEqual(keep.contributions, template.contributions)) {
+        await deps.repo.updateContributions(keep.id, template.contributions);
+        await fanOutToAgents(
+          keep.id,
+          await deps.repo.listAgentsForConnection(keep.id),
+          new Set(owned.map((c) => c.id)),
+          "connection.update.fanout_failed",
+        );
       }
     });
   }
@@ -1602,16 +1637,19 @@ export function createConnectionsService(deps: {
 
   return {
     ...service,
-    async listConnections() {
-      await reconcilePlatformConnection().catch((err: unknown) =>
+    async listAndReconcileConnections() {
+      try {
+        if (deps.platformProviderEnabled && !(await platformState()).settled)
+          await reconcilePlatformConnection();
+      } catch (err) {
         securityLog("warn", "connection.platform_provider_reconcile_failed", {
           category: "credential",
           actor: deps.ownerId,
           actorKind: "user",
           result: "failure",
           reason: err instanceof Error ? err.message : "unknown",
-        }),
-      );
+        });
+      }
       return service.listConnections();
     },
     async createFromTemplate(input) {
@@ -1629,6 +1667,20 @@ export function createConnectionsService(deps: {
     },
     reconcilePlatformConnection,
   };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Connection names are unique per user, so a user
+ * who already named a Connection after the brand would block the built-in
+ * provider forever; it takes the first free name of the brand, then the brand
+ * followed by "LLM", then that numbered from 2, so every replica picks the same.
+ */
+function platformConnectionName(brand: string, taken: Set<string>): string {
+  if (!taken.has(brand)) return brand;
+  for (let n = 1; ; n++) {
+    const name = n === 1 ? `${brand} LLM` : `${brand} LLM ${n}`;
+    if (!taken.has(name)) return name;
+  }
 }
 
 function githubAppScopeView(

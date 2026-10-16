@@ -227,6 +227,9 @@ func LoadFromEnv() (*Config, error) {
 		if p.Namespace == "" || len(p.Ports) == 0 {
 			return nil, fmt.Errorf("GATEWAY_EGRESS: peers[%d] needs a namespace and at least one port — without ports it would open every port", i)
 		}
+		if len(p.PodLabels) == 0 {
+			return nil, fmt.Errorf("GATEWAY_EGRESS: peers[%d] needs podLabels — without them it would open every pod in namespace %q", i, p.Namespace)
+		}
 		for _, port := range p.Ports {
 			if port < 1 || port > 65535 {
 				return nil, fmt.Errorf("GATEWAY_EGRESS: peers[%d] port %d is out of range", i, port)

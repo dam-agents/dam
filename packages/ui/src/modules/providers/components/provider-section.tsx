@@ -22,7 +22,10 @@ export function ProviderSection({
   const { data: catalog, isPending: catalogPending } = useHarnessCatalog();
   const { data: flags } = useFeatures();
   const rows = PROVIDER_ROWS.filter(
-    (row) => row.type !== "platform" || flags?.["platform-provider"],
+    (row) =>
+      row.type !== "platform" ||
+      (flags?.["platform-provider"] &&
+        (!onConnected || itemByType.has("platform"))),
   );
   const showConfirm = useStore((s) => s.showConfirm);
   const deleteConnection = useDeleteConnection();
@@ -56,7 +59,7 @@ export function ProviderSection({
                 <ProviderRow
                   key={row.type}
                   type={row.type}
-                  connected={builtIn || !!item}
+                  connected={!!item}
                   harnesses={catalog?.harnesses
                     .filter((h) =>
                       harnessFits(

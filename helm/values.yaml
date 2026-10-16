@@ -1997,6 +1997,9 @@ controller:
     # In-cluster pods every gateway may also reach, in the same shape as
     # clusterDns — a self-hosted model server behind `apiServer.platformProvider`,
     # for example `{namespace: llm, podLabels: {app: vllm}, ports: [8000]}`.
+    # podLabels is required. Each peer also gets HBONE (15008): for a peer in
+    # the ambient mesh, ztunnel carries any inner port over it, so `ports`
+    # binds only a peer outside the mesh.
     peers: []
   # -- Image for a vm Agent's machine resolver, beside Envoy in its gateway
   # pod: it answers every name with the gateway's address and resolves nothing
