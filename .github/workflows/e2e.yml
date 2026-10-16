@@ -204,9 +204,11 @@ jobs:
           CI_IMAGES_IMAGES_JOB: build / build-images (amd64)
           CI_IMAGES_MOCK_JOB: build / build mock (e2e fixture)
           CI_IMAGES_AGENTS_JOB: build / build-agents (amd64)
-          # As build.yml's `changes` job sets it, so both resolve the same
-          # images stale.
+          # As build.yml's `changes` job sets them, so both resolve the same
+          # images stale. EVENT lets a merge group reuse an earlier group's
+          # build; see image:resolve.
           RESOLVE_NO_REUSE: ${{ inputs.fresh && '1' || '' }}
+          EVENT: ${{ github.event_name }}
         run: nohup .mise/tasks/e2e/ci-images /tmp/ci-images.status > /tmp/ci-images.log 2>&1 &
       # Keyed by the Playwright the lockfile resolves, which fixes the browser
       # build it downloads: a lockfile change elsewhere keeps the entry.

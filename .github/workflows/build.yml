@@ -19,7 +19,7 @@ on:
       verify:
         description: >-
           A PR or a merge group: build to prove it builds, and tag, publish
-          and save nothing.
+          and save nothing, except a merge group's cache tags (build-images).
         type: boolean
         required: true
       fresh:
@@ -275,9 +275,10 @@ jobs:
     # One job per arch builds the stale ones of the five images side by side;
     # see image:ci-build. merge-images tags the rest. A PR builds its images in
     # e2e instead, so image:resolve lists none for this job: see
-    # e2e:ci-images. A merge group builds them there too, and here without a
-    # push. Only a v* tag builds them for arm64 (image:resolve's image_archs),
-    # so an arm64-only break first fails a release.
+    # e2e:ci-images. A merge group builds them there too, and here pushes
+    # them to the cache tag a later merge group reuses. Only a v* tag builds
+    # them for arm64 (image:resolve's image_archs), so an arm64-only break
+    # first fails a release.
     needs: [changes]
     if: ${{ needs.changes.outputs.images != '[]' }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
@@ -348,10 +349,14 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}
           VERIFY: ${{ inputs.verify }}
+          EVENT: ${{ github.event_name }}
           IMAGES: ${{ join(fromJSON(needs.changes.outputs.images), ' ') }}
         run: |
           read -r -a images <<< "$IMAGES"
-          [ "$VERIFY" != true ] || images=("${images[@]/%/:cacheonly}")
+          # A merge group pushes its builds to the cache tag later groups
+          # reuse, and no consumer reads; see image:resolve's mq_tag.
+          if [ "$EVENT" = merge_group ]; then images=("${images[@]/%/:mq}")
+          elif [ "$VERIFY" = true ]; then images=("${images[@]/%/:cacheonly}"); fi
           .mise/tasks/image/ci-build "$ARCH" "${images[@]}"
       # Main writes it on a miss, once the build has compiled into it; a PR's
       # e2e-vm job (e2e.yml) reads the amd64 one.

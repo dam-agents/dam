@@ -10,11 +10,13 @@
 # base change propagate to its children automatically (a stale base ⇒ the child's
 # last-touching commit moves ⇒ its reuse tag moves too), and the registry check is
 # self-correcting: a missing image (never built, build failed, off-main branch)
-# just falls back to BUILD.
+# just falls back to BUILD. A merge group (EVENT=merge_group) also reuses an
+# earlier group's build, from its cache tag (mq_tag); nothing else reads it.
 #
 # Usage:
 #   mise run image:resolve -- resolve <component>        -> "BUILD" | "REUSE <full-ref>"
 #   mise run image:resolve -- source-sha <component>     -> the commit that last touched its effective source
+#   mise run image:resolve -- mq-tag <component>         -> the merge-queue cache tag of its effective source's content
 #   mise run image:resolve -- gha-outputs                -> key=value lines for $GITHUB_OUTPUT (all components)
 #   mise run image:resolve -- list-workloads            -> the workload components, each packed onto the default image
 #   mise run image:resolve -- list-harnesses            -> the harness directories the default image carries, no image of their own
@@ -146,6 +148,10 @@ registry_has() { crane digest "$1" >/dev/null 2>&1; }
 # Last commit touching the component's effective source (tests excluded).
 # Empty when git/history is unavailable — callers pick their own fallback.
 source_sha() { git log -1 --format=%H -- $(effective_paths "$1") $UNSHIPPED 2>/dev/null || true; }
+# A merge group's cache tag: build-images pushes it there, and only a merge
+# group reuses it. It names the effective source's content, not a commit: a
+# queue rebuilt after an ejection gets new commits, the same content.
+mq_tag() { echo "mq-$(git ls-files -s -- $(effective_paths "$1") $UNSHIPPED | git hash-object --stdin)"; }
 
 resolve() {
   local comp="$1" paths sha ref
@@ -156,7 +162,12 @@ resolve() {
   sha="$(source_sha "$comp")"
   [ -z "$sha" ] && { echo BUILD; return; }
   ref="${IMAGE_PREFIX}/${comp}:${sha}"
-  if registry_has "$ref"; then echo "REUSE $ref"; else echo BUILD; fi
+  registry_has "$ref" && { echo "REUSE $ref"; return; }
+  if [ "${EVENT:-}" = merge_group ]; then
+    ref="${IMAGE_PREFIX}/${comp}:$(mq_tag "$comp")"
+    registry_has "$ref" && { echo "REUSE $ref"; return; }
+  fi
+  echo BUILD
 }
 
 # The components of a list that resolve to BUILD, as a JSON array. An `if`,
@@ -276,12 +287,30 @@ archs=["amd64","arm64"]'
   # A reused component, last in its list, leaves it out and fails nothing.
   out="$(resolve() { case "$1" in b) echo "REUSE x" ;; *) echo BUILD ;; esac; }; stale_json a b)" || { echo "FAIL: stale_json failed on a reused last component" >&2; f=1; }
   chk "$out" '["a"]'
+  # Only a merge group reuses a cache tag, which follows content alone. The
+  # git and registry stand-ins keep it hermetic.
+  local tag1 tag2
+  tag1="$(git() { case "$1" in ls-files) echo "100644 aa 0 packages/vm-runner/x" ;; *) command git "$@" ;; esac; }; mq_tag vm-runner)"
+  tag2="$(git() { case "$1" in ls-files) echo "100644 bb 0 packages/vm-runner/x" ;; *) command git "$@" ;; esac; }; mq_tag vm-runner)"
+  case "$tag1" in mq-????????????????????????????????????????) ;; *) echo "FAIL: mq tag [$tag1]" >&2; f=1 ;; esac
+  [ "$tag1" != "$tag2" ] || { echo "FAIL: mq tag ignores content" >&2; f=1; }
+  mq_resolve() (
+    git() { case "$1" in status) ;; ls-files) echo "100644 aa 0 packages/vm-runner/x" ;; *) command git "$@" ;; esac; }
+    source_sha() { echo cafe; }
+    registry_has() { case "$1" in *:mq-*) ;; *) return 1 ;; esac; }
+    EVENT="$1" resolve vm-runner
+  )
+  chk "$(mq_resolve merge_group)" "REUSE $IMAGE_PREFIX/vm-runner:$tag1"
+  chk "$(mq_resolve pull_request)" BUILD
+  chk "$(mq_resolve push)" BUILD
+  chk "$(mq_resolve '')" BUILD
   [ "$f" = 0 ] && echo "self-check OK" || exit 1
 }
 
 case "${1:-}" in
   resolve)        resolve "$2" ;;
   source-sha)     source_sha "$2" ;;
+  mq-tag)         mq_tag "$2" ;;
   gha-outputs)    gha_outputs ;;
   list-workloads) echo $WORKLOADS ;;
   list-harnesses) echo $HARNESSES ;;
@@ -291,5 +320,5 @@ case "${1:-}" in
   paths)          effective_paths "$2" ;;
   tar-path)       tar_path "$2" ;;
   --self-check)   self_check ;;
-  *) echo "usage: image:resolve {resolve|source-sha|gha-outputs|list-workloads|list-harnesses|list-pinned-tags|list-components|list-third-party|paths|tar-path|--self-check}" >&2; exit 2 ;;
+  *) echo "usage: image:resolve {resolve|source-sha|mq-tag|gha-outputs|list-workloads|list-harnesses|list-pinned-tags|list-components|list-third-party|paths|tar-path|--self-check}" >&2; exit 2 ;;
 esac
