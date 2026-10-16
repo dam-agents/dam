@@ -149,6 +149,9 @@ pub fn run() -> ! {
         let mut stopping = false;
         for runlevel in ["sysinit", "boot", "default"] {
             run_openrc(runlevel, &mut stopping);
+            if stopping {
+                break;
+            }
         }
         if stopping {
             stop(openrc);
