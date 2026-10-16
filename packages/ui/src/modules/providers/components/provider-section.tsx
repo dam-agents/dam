@@ -20,7 +20,7 @@ export function ProviderSection({
 } = {}) {
   const { itemByType, isPending } = useProviderItems();
   const { data: catalog, isPending: catalogPending } = useHarnessCatalog();
-  const { data: flags } = useFeatures();
+  const { data: flags, isPending: flagsPending } = useFeatures();
   const rows = PROVIDER_ROWS.filter(
     (row) =>
       row.type !== "platform" ||
@@ -50,7 +50,7 @@ export function ProviderSection({
   return (
     <>
       <div className="flex flex-col gap-3">
-        {isPending || catalogPending
+        {isPending || catalogPending || flagsPending
           ? rows.map((row) => <ProviderRow.Skeleton key={row.type} />)
           : rows.map((row) => {
               const item = itemByType.get(row.type);

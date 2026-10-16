@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProviderSection } from "../../modules/providers/components/provider-section.js";
 
 const state = vi.hoisted(() => ({
-  flags: {} as Record<string, boolean>,
+  flags: {} as Record<string, boolean> | undefined,
   items: new Map<string, { id: string; conn: { templateId: string } }>(),
 }));
 
@@ -16,7 +16,7 @@ vi.mock("../../store.js", () => ({
     select({ showConfirm: vi.fn() }),
 }));
 vi.mock("../../modules/features/api/queries.js", () => ({
-  useFeatures: () => ({ data: state.flags }),
+  useFeatures: () => ({ data: state.flags, isPending: !state.flags }),
 }));
 vi.mock("../../modules/connections/api/mutations.js", () => ({
   useDeleteConnection: () => ({ mutate: vi.fn() }),
@@ -56,6 +56,12 @@ describe("built-in provider row", () => {
   beforeEach(() => {
     state.flags = {};
     state.items = new Map();
+  });
+
+  // TEST_SCENARIO: while the feature flags are still loading, only placeholders show, so the built-in row cannot appear later and shift the rows below it.
+  it("shows no rows until the feature flags load", () => {
+    state.flags = undefined;
+    expect(render()).not.toContain("title=");
   });
 
   // TEST_SCENARIO: with the feature off, no row carries the brand name.

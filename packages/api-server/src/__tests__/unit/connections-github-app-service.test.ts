@@ -118,6 +118,7 @@ function makeService(
     },
   };
   const svc = createConnectionsService({
+    platformProviderEnabled: async () => false,
     isOwnedAgent: async () => true,
     ownerId: OWNER,
     templates: createConnectionTemplateRegistry(buildCatalog()),

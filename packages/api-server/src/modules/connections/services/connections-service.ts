@@ -159,7 +159,7 @@ export function createConnectionsService(deps: {
     reachable: boolean;
   } | null>;
   maxSharedKbConnections?: number;
-  platformProviderEnabled?: () => Promise<boolean>;
+  platformProviderEnabled: () => Promise<boolean>;
 }): ConnectionsService & PlatformLlmConnections {
   const maxSharedKbConnections =
     deps.maxSharedKbConnections ?? MAX_SHARED_KB_CONNECTIONS_PER_OWNER;
@@ -1566,8 +1566,7 @@ export function createConnectionsService(deps: {
 
   async function platformState() {
     const template = deps.templates.get(PLATFORM_LLM_TEMPLATE_ID);
-    const wanted =
-      template !== null && (await deps.platformProviderEnabled?.()) === true;
+    const wanted = template !== null && (await deps.platformProviderEnabled());
     const owned = await deps.repo.listByOwner(deps.ownerId);
     const held = owned.filter(isPlatform);
     const [keep, ...extra] = wanted ? held : [];
@@ -1602,7 +1601,6 @@ export function createConnectionsService(deps: {
    * per-owner lock: whichever runs last sees the last flag.
    */
   async function reconcilePlatformConnection(): Promise<void> {
-    if (!deps.platformProviderEnabled) return;
     await deps.connectionLock(`platform-llm:${deps.ownerId}`, async () => {
       const { owned, template, keep, remove, name } = await platformState();
       for (const conn of remove) await service.deleteConnection(conn.id);
@@ -1639,7 +1637,7 @@ export function createConnectionsService(deps: {
     ...service,
     async listAndReconcileConnections() {
       try {
-        if (deps.platformProviderEnabled && !(await platformState()).settled)
+        if (!(await platformState()).settled)
           await reconcilePlatformConnection();
       } catch (err) {
         securityLog("warn", "connection.platform_provider_reconcile_failed", {
