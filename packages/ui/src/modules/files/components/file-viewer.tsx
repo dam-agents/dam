@@ -3,7 +3,6 @@ import {
   DocumentExport,
   Download,
   Edit,
-  Maximize,
   Save,
 } from "@carbon/icons-react";
 import { useCallback, useEffect, useState } from "react";
@@ -21,7 +20,6 @@ import { base64ToBlob, downloadFileContent } from "../lib/download.js";
 import { PLATFORM_INSTRUCTIONS_PATH } from "../lib/platform-instructions.js";
 import { saveFileDraft } from "../lib/save-file.js";
 import { FilePreviewBody } from "./file-preview-body.js";
-import { FullscreenPreviewDialog } from "./fullscreen-preview-dialog.js";
 
 interface Props {
   file: FileContent;
@@ -37,8 +35,6 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
   const isSvg = mime === "image/svg+xml";
   const isHtml = mime === "text/html";
   const isPdf = mime === "application/pdf";
-  const isBinaryImage =
-    binary && !!content && !!mime && mime.startsWith("image/") && !isSvg;
   const platformInstructions = path === PLATFORM_INSTRUCTIONS_PATH;
   const editable = !binary && !tooLarge && !platformInstructions;
 
@@ -52,7 +48,6 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
   const [renderMd, setRenderMd] = useState(true);
   const [renderSvg, setRenderSvg] = useState(true);
   const [renderHtml, setRenderHtml] = useState(true);
-  const [isExpanded, setIsExpanded] = useState(false);
   const [editMode, setEditMode] = useState(editable && openFileEdit);
   const [draft, setDraft] = useState(content);
   const [baseMtimeMs, setBaseMtimeMs] = useState<number | undefined>(
@@ -65,8 +60,6 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
       setOpenFileEdit(false);
     }
   }, [openFileEdit, editable, setOpenFileEdit]);
-
-  useEffect(() => setIsExpanded(false), [path]);
 
   const dirty = editMode && draft !== content;
   const changedOnDisk =
@@ -143,29 +136,6 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
     setPdfBlobUrl(url);
     return () => URL.revokeObjectURL(url);
   }, [content, isPdf]);
-
-  const isRenderedPreview =
-    !editMode &&
-    (isBinaryImage ||
-      (isPdf && !!pdfBlobUrl) ||
-      (isSvg && renderSvg) ||
-      (isMarkdown && renderMd) ||
-      (isHtml && renderHtml));
-
-  const previewBody = (
-    <FilePreviewBody
-      file={file}
-      editMode={editMode}
-      draft={draft}
-      onDraftChange={setDraft}
-      onSave={save}
-      renderSvg={renderSvg}
-      renderMd={renderMd}
-      renderHtml={renderHtml}
-      pdfBlobUrl={pdfBlobUrl}
-      onOpenFile={onOpenFile}
-    />
-  );
 
   const promotionLabel = promotion.pending
     ? "Publishing…"
@@ -279,18 +249,6 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
                 labelClassName={TOOLBAR_LABEL}
               />
             )}
-            {isRenderedPreview && (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="shrink-0"
-                onClick={() => setIsExpanded(true)}
-                aria-label="Open fullscreen"
-                tooltip="Open fullscreen"
-              >
-                <Maximize size={14} />
-              </Button>
-            )}
           </>
         )}
         <Button
@@ -315,22 +273,19 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
           editMode ? "flex-1 overflow-hidden p-2" : "flex-1 overflow-auto p-4"
         }
       >
-        {isExpanded ? (
-          <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-            Opened in fullscreen
-          </div>
-        ) : (
-          previewBody
-        )}
+        <FilePreviewBody
+          file={file}
+          editMode={editMode}
+          draft={draft}
+          onDraftChange={setDraft}
+          onSave={save}
+          renderSvg={renderSvg}
+          renderMd={renderMd}
+          renderHtml={renderHtml}
+          pdfBlobUrl={pdfBlobUrl}
+          onOpenFile={onOpenFile}
+        />
       </div>
-      {isExpanded && (
-        <FullscreenPreviewDialog
-          title={path}
-          onClose={() => setIsExpanded(false)}
-        >
-          {previewBody}
-        </FullscreenPreviewDialog>
-      )}
     </div>
   );
 }

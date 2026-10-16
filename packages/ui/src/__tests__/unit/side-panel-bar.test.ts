@@ -70,3 +70,23 @@ it("caps the count at 9+", () => {
     /data-testid="side-panel-badge-processes"[^>]*>9\+<\/span>/,
   );
 });
+
+// TEST_SCENARIO: The icon bar lists the views by how often users reach for them, Artifacts first.
+it("orders the tabs Artifacts, Files, Changes, Browser", () => {
+  const html = renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(SidePanelBar, {
+        active: null,
+        hidden: new Set<never>(),
+        onSelect: () => {},
+      }),
+    ),
+  );
+  const order = ["artifacts", "files", "changes", "browser"].map((tab) =>
+    html.indexOf(`data-testid="side-panel-tab-${tab}"`),
+  );
+  expect(order).toEqual([...order].sort((a, b) => a - b));
+  expect(order[0]).toBeGreaterThan(-1);
+});
