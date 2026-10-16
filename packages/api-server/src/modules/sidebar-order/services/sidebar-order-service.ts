@@ -1,11 +1,11 @@
-import type { SidebarPinsService } from "api-server-api";
+import type { SidebarOrderService } from "api-server-api";
 
-import type { SidebarPinsRepository } from "../infrastructure/sidebar-pins-repository.js";
+import type { SidebarOrderRepository } from "../infrastructure/sidebar-order-repository.js";
 
-export function createSidebarPinsService(deps: {
-  repo: SidebarPinsRepository;
+export function createSidebarOrderService(deps: {
+  repo: SidebarOrderRepository;
   owner: string;
-}): SidebarPinsService {
+}): SidebarOrderService {
   const get = () => deps.repo.find(deps.owner);
   return {
     get,

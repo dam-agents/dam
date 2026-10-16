@@ -3,13 +3,13 @@ import {
   asc,
   eq,
   type Db,
-  sidebarAgentPins,
-  sidebarSessionPins,
+  sidebarAgentOrder,
+  sidebarSessionOrder,
 } from "db";
-import type { SidebarPins } from "api-server-api";
+import type { SidebarOrder } from "api-server-api";
 
-export interface SidebarPinsRepository {
-  find(owner: string): Promise<SidebarPins>;
+export interface SidebarOrderRepository {
+  find(owner: string): Promise<SidebarOrder>;
   replaceAgents(owner: string, agentIds: readonly string[]): Promise<void>;
   replaceSessions(
     owner: string,
@@ -20,23 +20,23 @@ export interface SidebarPinsRepository {
   deleteForAgent(agentId: string): Promise<void>;
 }
 
-export function createSidebarPinsRepository(db: Db): SidebarPinsRepository {
+export function createSidebarOrderRepository(db: Db): SidebarOrderRepository {
   return {
     async find(owner) {
       const [agentRows, sessionRows] = await Promise.all([
         db
-          .select({ agentId: sidebarAgentPins.agentId })
-          .from(sidebarAgentPins)
-          .where(eq(sidebarAgentPins.owner, owner))
-          .orderBy(asc(sidebarAgentPins.position)),
+          .select({ agentId: sidebarAgentOrder.agentId })
+          .from(sidebarAgentOrder)
+          .where(eq(sidebarAgentOrder.owner, owner))
+          .orderBy(asc(sidebarAgentOrder.position)),
         db
           .select({
-            agentId: sidebarSessionPins.agentId,
-            sessionId: sidebarSessionPins.sessionId,
+            agentId: sidebarSessionOrder.agentId,
+            sessionId: sidebarSessionOrder.sessionId,
           })
-          .from(sidebarSessionPins)
-          .where(eq(sidebarSessionPins.owner, owner))
-          .orderBy(asc(sidebarSessionPins.position)),
+          .from(sidebarSessionOrder)
+          .where(eq(sidebarSessionOrder.owner, owner))
+          .orderBy(asc(sidebarSessionOrder.position)),
       ]);
       const sessions: Record<string, string[]> = {};
       for (const row of sessionRows)
@@ -47,11 +47,11 @@ export function createSidebarPinsRepository(db: Db): SidebarPinsRepository {
     async replaceAgents(owner, agentIds) {
       await db.transaction(async (tx) => {
         await tx
-          .delete(sidebarAgentPins)
-          .where(eq(sidebarAgentPins.owner, owner));
+          .delete(sidebarAgentOrder)
+          .where(eq(sidebarAgentOrder.owner, owner));
         if (agentIds.length === 0) return;
         await tx
-          .insert(sidebarAgentPins)
+          .insert(sidebarAgentOrder)
           .values(
             agentIds.map((agentId, position) => ({ owner, agentId, position })),
           );
@@ -61,15 +61,15 @@ export function createSidebarPinsRepository(db: Db): SidebarPinsRepository {
     async replaceSessions(owner, agentId, sessionIds) {
       await db.transaction(async (tx) => {
         await tx
-          .delete(sidebarSessionPins)
+          .delete(sidebarSessionOrder)
           .where(
             and(
-              eq(sidebarSessionPins.owner, owner),
-              eq(sidebarSessionPins.agentId, agentId),
+              eq(sidebarSessionOrder.owner, owner),
+              eq(sidebarSessionOrder.agentId, agentId),
             ),
           );
         if (sessionIds.length === 0) return;
-        await tx.insert(sidebarSessionPins).values(
+        await tx.insert(sidebarSessionOrder).values(
           sessionIds.map((sessionId, position) => ({
             owner,
             agentId,
@@ -83,11 +83,11 @@ export function createSidebarPinsRepository(db: Db): SidebarPinsRepository {
     async listAgentIds() {
       const [agentRows, sessionRows] = await Promise.all([
         db
-          .selectDistinct({ agentId: sidebarAgentPins.agentId })
-          .from(sidebarAgentPins),
+          .selectDistinct({ agentId: sidebarAgentOrder.agentId })
+          .from(sidebarAgentOrder),
         db
-          .selectDistinct({ agentId: sidebarSessionPins.agentId })
-          .from(sidebarSessionPins),
+          .selectDistinct({ agentId: sidebarSessionOrder.agentId })
+          .from(sidebarSessionOrder),
       ]);
       return [
         ...new Set([...agentRows, ...sessionRows].map((row) => row.agentId)),
@@ -97,11 +97,11 @@ export function createSidebarPinsRepository(db: Db): SidebarPinsRepository {
     async deleteForAgent(agentId) {
       await db.transaction(async (tx) => {
         await tx
-          .delete(sidebarAgentPins)
-          .where(eq(sidebarAgentPins.agentId, agentId));
+          .delete(sidebarAgentOrder)
+          .where(eq(sidebarAgentOrder.agentId, agentId));
         await tx
-          .delete(sidebarSessionPins)
-          .where(eq(sidebarSessionPins.agentId, agentId));
+          .delete(sidebarSessionOrder)
+          .where(eq(sidebarSessionOrder.agentId, agentId));
       });
     },
   };

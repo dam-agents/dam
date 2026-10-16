@@ -154,7 +154,7 @@ import {
 import { composeSessionDirectory } from "./modules/session-directory/index.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
 import { composeGettingStartedModule } from "./modules/getting-started/index.js";
-import { composeSidebarPinsModule } from "./modules/sidebar-pins/index.js";
+import { composeSidebarOrderModule } from "./modules/sidebar-order/index.js";
 import {
   createUsageAgentsCleanupHook,
   listUsageAgentIds,
@@ -936,7 +936,7 @@ export async function bootstrap() {
   });
   gettingStarted.start();
 
-  const sidebarPins = composeSidebarPinsModule({ db });
+  const sidebarOrder = composeSidebarOrderModule({ db });
 
   const caseStudies = composeCaseStudiesModule({
     db,
@@ -1485,9 +1485,9 @@ export async function bootstrap() {
       ...createChatFormPreferencesCleanup(db),
     },
     {
-      name: "sidebar-pins",
-      listAgentIds: () => sidebarPins.listAgentIds(),
-      cleanup: (agentId: string) => sidebarPins.deleteForAgent(agentId),
+      name: "sidebar-order",
+      listAgentIds: () => sidebarOrder.listAgentIds(),
+      cleanup: (agentId: string) => sidebarOrder.deleteForAgent(agentId),
     },
     {
       name: "agent-env",
@@ -1844,7 +1844,7 @@ export async function bootstrap() {
     shareHostGate,
     publicAgentPageService,
     gettingStarted,
-    sidebarPins,
+    sidebarOrder,
     sessionPresence,
     wakeAgent: wakeAgentFor,
     artifactLibraryFor,

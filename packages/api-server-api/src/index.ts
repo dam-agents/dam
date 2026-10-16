@@ -344,10 +344,10 @@ export {
   gettingStartedTaskSchema,
 } from "./modules/getting-started/schemas.js";
 export type {
-  SidebarPins,
-  SidebarPinsService,
-} from "./modules/sidebar-pins/types.js";
-export { SIDEBAR_PINS_MAX } from "./modules/sidebar-pins/schemas.js";
+  SidebarOrder,
+  SidebarOrderService,
+} from "./modules/sidebar-order/types.js";
+export { SIDEBAR_ORDER_MAX } from "./modules/sidebar-order/schemas.js";
 export { quietWindowSchema } from "./modules/schedules/schemas.js";
 export {
   ONCE_DELIVERY_WINDOW_MS,

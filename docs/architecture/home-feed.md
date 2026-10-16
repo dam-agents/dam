@@ -35,19 +35,17 @@ One reader outside Home shows the rows: an Agent's session list, while that Agen
 It shows its owner the rows filed for that Agent as a **provisional** list, display-only, and replaces it with the Agent's own list the moment the Agent answers.
 The UI asks the Agent for that list once the Agent shows as starting, not first at Ready: the agent's tRPC relay holds the ask while the wake runs, and an ask it refuses, or a hold that fails, is asked again when the Agent turns Ready.
 Nothing acts on a provisional row as proof the session exists: opening one asks the Agent, which still decides.
-The sidebar shows the record's rows the same way under every Agent that is not open, three at most unless more are pinned, and asks the Agent for its own list only when the user opens the Agent (its chat or its configuration page), asks for more, or has pinned one of its Sessions while it is awake.
+The sidebar shows the record's rows the same way under every Agent that is not open, three at most, and asks the Agent for its own list only when the user opens the Agent (its chat or its configuration page), asks for more, or has put one of its Sessions in a manual order while it is awake.
 It offers more only when the record may hold more: a feed shorter than its row limit lists every row filed for the owner.
 
-The user's **pins** order the sidebar on top of that.
-Pinned Agents come first, and so do pinned Sessions within their own Agent, in the order the user dragged them into or moved them to with Alt+Up and Alt+Down; everything else keeps the recency order.
-The pin button on a row puts the item at the end of the pinned ones; a drag puts it where it is dropped, and pins it.
-Only the pinned rows and, while nothing in that list is pinned, a "Drop to pin" area at its top take a drop, so a drop among the unpinned rows moves nothing and pins nothing.
-The Agent the user has open, in its chat or on its configuration page, comes before all of them, so it is easy to find however old its last activity is; once another Agent is open, it goes back to its place, and opening an Agent moves nothing else.
-The move waits until the pointer leaves the list, so no row moves under the cursor, and then the list scrolls to its top.
-The api-server keeps the pins per user, so the order follows the user to every browser, and drops an Agent's pins when the Agent is deleted.
-An Agent with pinned Sessions shows all of them, even past three, and asks for each one its own list did not return.
-A sleeping Agent shows only the pinned Sessions the record holds, because the sidebar never wakes an Agent to draw it; the rest show once it is awake.
-A pin is only an id: it never decides that an Agent or a Session exists, and a pin that names nothing the Agent knows shows nothing.
+The sidebar lists Agents, and the Sessions of each Agent, in one **manual order** per list, which the user sets by drag and drop or with Alt+Up and Alt+Down.
+A Session moves only within its own Agent's list.
+An item the order does not name yet, a new Agent or a new Session, goes to the bottom of its list, oldest first, and activity never moves anything.
+A move stores the whole list as the user sees it, so the rows the user did not touch keep their places too.
+The api-server keeps the order per user, so it follows the user to every browser, and drops an Agent's entries when the Agent is deleted.
+An Agent with a manual Session order asks for each of its first three Sessions its own list did not return.
+The order is only a list of ids: it never decides that an Agent or a Session exists, and an id that names nothing the Agent knows shows nothing.
+Until the user asks for more, an Agent's list orders only the Sessions it has loaded, the newest page of its own list or the record's rows, so an old Session the order does not name may show only after More.
 
 That boundary is what makes the record safe to rebuild or discard.
 Dropping it costs a user their feed history and nothing else; the next capture refills it from the pods.

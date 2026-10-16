@@ -589,6 +589,13 @@
       "when": 1792140518769,
       "tag": "0083_agent_hidden_skill_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1792154368890,
+      "tag": "0084_sidebar_order",
+      "breakpoints": true
     }
   ]
 }

@@ -13,13 +13,10 @@ import { cn } from "@/lib/utils";
 import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
 import { useIsAgentAnswerableSoon } from "../../agents/api/queries.js";
-import {
-  PinDropIndicator,
-  PinDropZone,
-} from "../../agents/components/pin-drop-indicator.js";
-import { usePinDrag } from "../../agents/hooks/use-pin-drag.js";
-import type { useSidebarPinActions } from "../../agents/hooks/use-sidebar-pin-actions.js";
-import { pinnedFirst } from "../../agents/lib/sidebar-pins.js";
+import { OrderDropIndicator } from "../../agents/components/order-drop-indicator.js";
+import { useOrderDrag } from "../../agents/hooks/use-order-drag.js";
+import type { useSidebarOrderActions } from "../../agents/hooks/use-sidebar-order-actions.js";
+import { manualOrder } from "../../agents/lib/sidebar-order.js";
 import { useFeatures } from "../../features/api/queries.js";
 import type { AgentActivitySession } from "../../home/hooks/use-activity-sessions.js";
 import { isFiltered } from "../../home/lib/activity-filter.js";
@@ -35,6 +32,7 @@ import { useOpenSession } from "../hooks/use-open-session.js";
 import {
   type SessionListToggle,
   sessionListToggle,
+  SIDEBAR_PREVIEW_SESSIONS,
   sidebarSessionWindow,
 } from "../lib/sidebar-session-window.js";
 import { RenameSessionDialog } from "./rename-session-dialog.js";
@@ -43,15 +41,15 @@ import { SessionRow } from "./session-row.js";
 
 const ROW_CLASS = "rounded-lg border-b-0 py-1.5 pr-2 pl-9";
 
-type PinActions = ReturnType<typeof useSidebarPinActions>;
+type OrderActions = ReturnType<typeof useSidebarOrderActions>;
 
 interface Props {
   agentId: string;
   open: boolean;
   preview: readonly AgentActivitySession[];
   previewComplete: boolean;
-  pins: readonly string[];
-  pinActions: PinActions;
+  order: readonly string[];
+  orderActions: OrderActions;
   conversationOf: (session: AttentionItem) => string | undefined;
   stickyClassName: string;
   onNavigate?: () => void;
@@ -62,20 +60,20 @@ export function SidebarAgentSessions({
   open,
   preview,
   previewComplete,
-  pins,
-  pinActions,
+  order,
+  orderActions,
   conversationOf,
   stickyClassName,
   onNavigate,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
   const answerable = useIsAgentAnswerableSoon(agentId);
-  if (open || expanded || (pins.length > 0 && answerable))
+  if (open || expanded || (order.length > 0 && answerable))
     return (
       <AgentSessionList
         agentId={agentId}
-        pins={pins}
-        pinActions={pinActions}
+        order={order}
+        orderActions={orderActions}
         expanded={expanded}
         onExpandedChange={setExpanded}
         stickyClassName={stickyClassName}
@@ -87,8 +85,8 @@ export function SidebarAgentSessions({
       agentId={agentId}
       sessions={preview}
       complete={previewComplete}
-      pins={pins}
-      pinActions={pinActions}
+      order={order}
+      orderActions={orderActions}
       conversationOf={conversationOf}
       onExpand={() => setExpanded(true)}
       onNavigate={onNavigate}
@@ -100,8 +98,8 @@ function SessionPreview({
   agentId,
   sessions: recent,
   complete,
-  pins,
-  pinActions,
+  order,
+  orderActions,
   conversationOf,
   onExpand,
   onNavigate,
@@ -109,24 +107,25 @@ function SessionPreview({
   agentId: string;
   sessions: readonly AgentActivitySession[];
   complete: boolean;
-  pins: readonly string[];
-  pinActions: PinActions;
+  order: readonly string[];
+  orderActions: OrderActions;
   conversationOf: Props["conversationOf"];
   onExpand: () => void;
   onNavigate?: () => void;
 }) {
   const openSession = useOpenSession();
-  const { items: sessions, pinned } = pinnedFirst(
+  const sessions = manualOrder(
     recent,
-    pins,
+    order,
     (item) => item.session.sessionId,
+    (item) => item.session.createdAt,
   );
   if (sessions.length === 0) return null;
+  const shown = sessions.map((item) => item.session.sessionId);
   const toggle = sessionListToggle({
     total: sessions.length,
     expanded: false,
     hasNextPage: !complete,
-    pinned: pinned.size,
   });
 
   return (
@@ -134,42 +133,33 @@ function SessionPreview({
       className="flex flex-col gap-px pb-1"
       data-testid="sidebar-agent-sessions"
     >
-      {pinned.size === 0 && (
-        <SessionDropZone agentId={agentId} pinActions={pinActions} />
-      )}
-      {sidebarSessionWindow(sessions, false, () => false, pinned.size).map(
-        (item) => (
-          <PinnableRow
-            key={item.id}
-            agentId={agentId}
-            sessionId={item.session.sessionId}
-            pinned={pinned}
-            pinActions={pinActions}
-          >
-            <SessionRow
-              session={provisionalSessionView(item.session)}
-              active={false}
-              working={item.working}
-              needsApproval={false}
-              unread={item.unread}
-              provisional
-              conversation={conversationOf(item.session)}
-              pinned={pinned.has(item.session.sessionId)}
-              {...(pinActions.ready && {
-                onTogglePin: () =>
-                  pinActions.toggleSession(agentId, item.session.sessionId),
-              })}
-              className={ROW_CLASS}
-              onResume={() => {
-                openSession(agentId, item.session.sessionId, item.session.mode);
-                onNavigate?.();
-              }}
-              onRename={() => {}}
-              onDelete={() => {}}
-            />
-          </PinnableRow>
-        ),
-      )}
+      {sidebarSessionWindow(sessions, false, () => false).map((item) => (
+        <OrderedRow
+          key={item.id}
+          agentId={agentId}
+          sessionId={item.session.sessionId}
+          shown={shown}
+          orderActions={orderActions}
+        >
+          <SessionRow
+            session={provisionalSessionView(item.session)}
+            active={false}
+            working={item.working}
+            needsApproval={false}
+            unread={item.unread}
+            provisional
+            conversation={conversationOf(item.session)}
+            reorderable={orderActions.ready}
+            className={ROW_CLASS}
+            onResume={() => {
+              openSession(agentId, item.session.sessionId, item.session.mode);
+              onNavigate?.();
+            }}
+            onRename={() => {}}
+            onDelete={() => {}}
+          />
+        </OrderedRow>
+      ))}
       {toggle && <ToggleRow toggle={toggle} onClick={onExpand} />}
     </div>
   );
@@ -177,16 +167,16 @@ function SessionPreview({
 
 function AgentSessionList({
   agentId,
-  pins,
-  pinActions,
+  order,
+  orderActions,
   expanded,
   onExpandedChange,
   stickyClassName,
   onNavigate,
 }: {
   agentId: string;
-  pins: readonly string[];
-  pinActions: PinActions;
+  order: readonly string[];
+  orderActions: OrderActions;
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
   stickyClassName: string;
@@ -220,10 +210,10 @@ function AgentSessionList({
   const listed = new Set(list.sessions.map((session) => session.sessionId));
   const unlisted = useSessionsById(
     agentId,
-    pins.filter((id) => !listed.has(id)),
-    { enabled: list.operable },
+    order.slice(0, SIDEBAR_PREVIEW_SESSIONS).filter((id) => !listed.has(id)),
+    { enabled: list.operable && !expanded },
   );
-  const { items: rows, pinned } = pinnedFirst(
+  const rows = manualOrder(
     [...unlisted, ...list.sessions]
       .map((session) => ({ session, state: list.rowState(session) }))
       .filter(({ session, state }) =>
@@ -232,20 +222,20 @@ function AgentSessionList({
           filters,
         ),
       ),
-    pins,
+    order,
     (row) => row.session.sessionId,
+    (row) => row.session.createdAt,
   );
+  const shown = rows.map((row) => row.session.sessionId);
   const visible = sidebarSessionWindow(
     rows,
     expanded,
     (row) => row.state.active,
-    pinned.size,
   );
   const toggle = sessionListToggle({
     total: rows.length,
     expanded,
     hasNextPage,
-    pinned: pinned.size,
   });
 
   const confirmDelete = async (s: SessionView) => {
@@ -258,7 +248,7 @@ function AgentSessionList({
       )
     ) {
       if (await deleteSession(s.sessionId, agentId))
-        pinActions.unpinSession(agentId, s.sessionId);
+        orderActions.forgetSession(agentId, s.sessionId);
     }
   };
 
@@ -269,9 +259,6 @@ function AgentSessionList({
       data-provisional={list.provisional ? "true" : undefined}
       aria-busy={list.provisional || list.loading}
     >
-      {pinned.size === 0 && (
-        <SessionDropZone agentId={agentId} pinActions={pinActions} />
-      )}
       {list.loading && <SessionListSkeleton />}
       {!list.loading && rows.length === 0 && !hasNextPage && (
         <p className="py-1.5 pl-9 text-xs text-muted-foreground">
@@ -281,20 +268,17 @@ function AgentSessionList({
         </p>
       )}
       {visible.map(({ session: s, state }) => (
-        <PinnableRow
+        <OrderedRow
           key={s.sessionId}
           agentId={agentId}
           sessionId={s.sessionId}
-          pinned={pinned}
-          pinActions={pinActions}
+          shown={shown}
+          orderActions={orderActions}
         >
           <SessionRow
             session={s}
             {...state}
-            pinned={pinned.has(s.sessionId)}
-            {...(pinActions.ready && {
-              onTogglePin: () => pinActions.toggleSession(agentId, s.sessionId),
-            })}
+            reorderable={orderActions.ready}
             className={ROW_CLASS}
             onResume={() => {
               openSession(agentId, s.sessionId, s.mode);
@@ -316,7 +300,7 @@ function AgentSessionList({
                 }),
             })}
           />
-        </PinnableRow>
+        </OrderedRow>
       ))}
       {expanded && hasNextPage && fetchNextPageFailed && (
         <button
@@ -346,48 +330,29 @@ function AgentSessionList({
   );
 }
 
-const sessionScope = (agentId: string) => `sessions:${agentId}`;
-
-function SessionDropZone({
-  agentId,
-  pinActions,
-}: {
-  agentId: string;
-  pinActions: PinActions;
-}) {
-  return (
-    <PinDropZone
-      scope={sessionScope(agentId)}
-      onMove={(id, drop) => pinActions.moveSession(agentId, id, drop)}
-      className="ml-9"
-    />
-  );
-}
-
-function PinnableRow({
+function OrderedRow({
   agentId,
   sessionId,
-  pinned,
-  pinActions,
+  shown,
+  orderActions,
   children,
 }: {
   agentId: string;
   sessionId: string;
-  pinned: ReadonlySet<string>;
-  pinActions: PinActions;
+  shown: readonly string[];
+  orderActions: OrderActions;
   children: ReactNode;
 }) {
-  const drag = usePinDrag({
-    scope: sessionScope(agentId),
+  const drag = useOrderDrag({
+    scope: `sessions:${agentId}`,
     id: sessionId,
-    pinned: pinned.has(sessionId),
-    onMove: (id, drop) => pinActions.moveSession(agentId, id, drop),
-    onStep: (id, step) => pinActions.stepSession(agentId, id, step, pinned),
+    onMove: (id, drop) => orderActions.moveSession(agentId, shown, id, drop),
+    onStep: (id, step) => orderActions.stepSession(agentId, shown, id, step),
   });
   return (
     <div {...drag.dragProps} className="relative">
       {children}
-      <PinDropIndicator at={drag.indicator} />
+      <OrderDropIndicator at={drag.indicator} />
     </div>
   );
 }
