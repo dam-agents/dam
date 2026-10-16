@@ -61,6 +61,10 @@ import {
   createSessionsSlice,
   type SessionsSlice,
 } from "./modules/sessions/store/sessions.js";
+import {
+  createSidePanelSlice,
+  type SidePanelSlice,
+} from "./modules/sessions/store/side-panel.js";
 
 export type PlatformStore = DialogSlice &
   A2uiSlice &
@@ -77,6 +81,7 @@ export type PlatformStore = DialogSlice &
   PermissionsSlice &
   ProcessesSlice &
   ChangesSlice &
+  SidePanelSlice &
   GettingStartedSlice;
 
 export const useStore = create<PlatformStore>()((...a) => ({
@@ -95,6 +100,7 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createPermissionsSlice(...a),
   ...createProcessesSlice(...a),
   ...createChangesSlice(...a),
+  ...createSidePanelSlice(...a),
   ...createGettingStartedSlice(...a),
 }));
 

@@ -1,9 +1,9 @@
 import {
+  Add,
   ArrowLeft,
   ArrowRight,
   Close,
   ErrorFilled,
-  Globe,
   Maximize,
   Minimize,
   Renew,
@@ -28,6 +28,7 @@ import {
 import { useStore } from "../../../store.js";
 import { useBrowserControl } from "../hooks/use-browser-control.js";
 import { addressUrl } from "../lib/address.js";
+import { showsTabBar } from "../lib/tabs.js";
 import { BrowserTabBar } from "./browser-tab-bar.js";
 import { StreamView } from "./stream-view.js";
 
@@ -95,12 +96,6 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
-        <span
-          aria-hidden
-          className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-accent-light text-accent"
-        >
-          {stream.page.loading ? <Spinner size={13} /> : <Globe size={13} />}
-        </span>
         <Button
           variant="ghost"
           size="icon-sm"
@@ -168,6 +163,15 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
             <Renew size={16} />
           </Button>
         )}
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="New tab"
+          tooltip="New tab"
+          onClick={openTab}
+        >
+          <Add size={16} />
+        </Button>
         <RowActionsMenu label="Browser actions">
           <DropdownMenuItem onSelect={stream.restartBrowser}>
             Restart browser
@@ -212,13 +216,12 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
         </Button>
       </div>
 
-      {stream.tabs && (
+      {showsTabBar(stream.tabs) && (
         <BrowserTabBar
           tabs={stream.tabs}
           activeTab={stream.activeTab}
           onSelect={stream.selectTab}
           onClose={stream.closeTab}
-          onNew={openTab}
         />
       )}
 

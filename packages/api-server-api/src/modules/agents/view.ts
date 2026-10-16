@@ -26,6 +26,7 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
     state: agent.state,
     error: agent.error,
     stopRequested: agent.stopRequested,
+    disabled: agent.disabled,
     overBudget: agent.overBudget,
     overBudgetMessage: agent.overBudgetMessage,
     ...(agent.reclaimed ? { reclaimed: agent.reclaimed } : {}),

@@ -10,7 +10,6 @@ import { cn } from "@/lib/utils";
 import { getUser, logout } from "../../../auth.js";
 import { getBrand } from "../../../brand.js";
 import { useStore } from "../../../store.js";
-import { RuntimeFleetNote } from "../../agents/components/runtime-fleet-note.js";
 import { ApiKeysList } from "../../api-keys/components/api-keys-list.js";
 import { ConnectionsView } from "../../connections/views/connections-view.js";
 import { useFeatures } from "../../features/api/queries.js";
@@ -198,7 +197,6 @@ export function SettingsView() {
               <section className="mb-8">
                 <ProviderSection />
               </section>
-              <RuntimeFleetNote />
             </div>
           </div>
         )}

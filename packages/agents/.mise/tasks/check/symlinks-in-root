@@ -7,7 +7,10 @@
 # crane export drops it, and a vm guest booted from a crane-flattened tree
 # misses the file.
 set -euo pipefail
-cd "$(dirname "$0")/../../.."
+# From the repo root: in a pre-commit hook git exports GIT_DIR, and with it
+# git takes the current directory for the top of the work tree, so paths are
+# listed from wherever this runs; at the root they match readlink's.
+cd "$(dirname "$0")/../../../../.."
 bad=()
 while IFS= read -r link; do
   target="$(readlink "$link")"
@@ -23,7 +26,7 @@ while IFS= read -r link; do
     esac
     [ "$depth" -ge 0 ] || { bad+=("$link -> $target"); break; }
   done
-done < <(git ls-files -s -- '*/rootfs/*' | awk -F '\t' '$1 ~ /^120000 / { print $2 }')
+done < <(git ls-files -s -- 'packages/agents/*/rootfs/*' | awk -F '\t' '$1 ~ /^120000 / { print $2 }')
 if [ ${#bad[@]} -gt 0 ]; then
   echo "symlinks-in-root: these climb past / (crane export drops them, so vm guests miss them):" >&2
   printf '  %s\n' "${bad[@]}" >&2

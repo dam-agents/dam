@@ -65,6 +65,12 @@ rules:
   - apiGroups: ["agent-platform.ai"]
     resources: ["userbudgets"]
     verbs: ["get"]
+  # UserSpendLimits are operator-written; only the api-server reads them, a
+  # direct get by the CEL-pinned name, for the Spend Ceiling at the ext_authz
+  # gate.
+  - apiGroups: ["agent-platform.ai"]
+    resources: ["userspendlimits"]
+    verbs: ["get"]
   # Secrets for credentials. ConfigMaps are gone from the api-server's API
   # surface: agents are CRs and the chart-shipped templates
   # are mounted as files, loaded at boot — not read via the K8s API.

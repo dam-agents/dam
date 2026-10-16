@@ -8,8 +8,13 @@ export const BOUNDARY_DEBOUNCE_MS = 2_000;
 const TURN_BOUNDARY_EVENTS = new Set([
   "claude_code.user_prompt",
   "pi.user_prompt",
+  "codex.user_prompt",
 ]);
-const CALL_EVENTS = new Set(["claude_code.api_request", "pi.api_request"]);
+const CALL_EVENTS = new Set([
+  "claude_code.api_request",
+  "pi.api_request",
+  "codex.response_completed",
+]);
 const ERROR_EVENT = "claude_code.api_error";
 
 export interface TurnGroup {
