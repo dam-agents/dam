@@ -1,7 +1,5 @@
 export const SIDEBAR_PREVIEW_SESSIONS = 3;
 
-export type SessionListToggle = "more" | "less" | null;
-
 export function sidebarSessionWindow<T>(
   sessions: readonly T[],
   expanded: boolean,
@@ -14,7 +12,7 @@ export function sidebarSessionWindow<T>(
   return active ? [...head, active] : head;
 }
 
-export function sessionListToggle({
+export function sessionListControls({
   total,
   expanded,
   hasNextPage,
@@ -22,7 +20,52 @@ export function sessionListToggle({
   total: number;
   expanded: boolean;
   hasNextPage: boolean;
-}): SessionListToggle {
-  if (total <= SIDEBAR_PREVIEW_SESSIONS && !hasNextPage) return null;
-  return expanded ? "less" : "more";
+}): { more: boolean; less: boolean } {
+  const overflow = total > SIDEBAR_PREVIEW_SESSIONS;
+  return {
+    more: expanded ? hasNextPage : overflow || hasNextPage,
+    less: expanded && (overflow || hasNextPage),
+  };
+}
+
+export function moreClick({
+  total,
+  expanded,
+  hasNextPage,
+  isFetchingNextPage,
+}: {
+  total: number;
+  expanded: boolean;
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
+}): { expand: boolean; fetchNextPage: boolean } {
+  return {
+    expand: !expanded,
+    fetchNextPage:
+      hasNextPage &&
+      !isFetchingNextPage &&
+      (expanded || total <= SIDEBAR_PREVIEW_SESSIONS),
+  };
+}
+
+export function nextSessionCursor<C>(
+  pages: readonly {
+    sessions: readonly { sessionId: string }[];
+    nextCursor: C | null;
+  }[],
+  lastCursor: C | null,
+): C | null {
+  const last = pages[pages.length - 1];
+  if (!last?.nextCursor) return null;
+  if (
+    lastCursor &&
+    JSON.stringify(lastCursor) === JSON.stringify(last.nextCursor)
+  )
+    return null;
+  const seen = new Set(
+    pages.slice(0, -1).flatMap((p) => p.sessions.map((s) => s.sessionId)),
+  );
+  return last.sessions.some((s) => !seen.has(s.sessionId))
+    ? last.nextCursor
+    : null;
 }

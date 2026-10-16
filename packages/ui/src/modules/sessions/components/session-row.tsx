@@ -44,7 +44,6 @@ interface Props {
   needsApproval: boolean;
   unread?: boolean;
   draft?: boolean;
-  provisional?: boolean;
   backgroundWork?: readonly BackgroundWorkItemView[];
   cost?: SessionRuntime;
   conversation?: string;
@@ -64,7 +63,6 @@ export function SessionRow({
   needsApproval,
   unread = false,
   draft = false,
-  provisional = false,
   backgroundWork = NO_WORK,
   cost,
   conversation,
@@ -82,12 +80,11 @@ export function SessionRow({
 
   const startPress = useCallback(() => {
     didLongPress.current = false;
-    if (provisional) return;
     timerRef.current = setTimeout(() => {
       didLongPress.current = true;
       setMenuOpen(true);
     }, LONG_PRESS_MS);
-  }, [provisional]);
+  }, []);
 
   const dwellRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startDwell = useCallback(() => {
@@ -158,7 +155,6 @@ export function SessionRow({
       onTouchEnd={endPress}
       onTouchCancel={endPress}
       onContextMenu={(e) => {
-        if (provisional) return;
         e.preventDefault();
         setMenuOpen(true);
       }}
@@ -209,14 +205,12 @@ export function SessionRow({
                 )}
                 <DropdownMenuItem
                   data-testid="session-rename-button"
-                  disabled={provisional}
                   onSelect={onRename}
                 >
                   <Edit size={14} /> Rename session
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   data-testid="session-delete-button"
-                  disabled={provisional}
                   tone="danger"
                   onSelect={onDelete}
                 >

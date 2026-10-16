@@ -79,7 +79,6 @@ export function useAgentSessionList(agentId: string) {
         pendingPermissions.some((p) => p.sessionId === s.sessionId),
       unread: isUnreadSession(s, { open }),
       draft: !terminal && draftKeySet.has(draftKey(agentId, s.sessionId)),
-      provisional,
       backgroundWork: backgroundWorkBySession.get(s.sessionId),
       cost: costs.get(s.sessionId),
       conversation: conversationOf(s),

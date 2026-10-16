@@ -33,11 +33,13 @@ A missing row therefore means only one thing: nobody was told about that session
 It never means the session is gone.
 
 One reader outside Home shows the rows: an Agent's session list, while that Agent cannot answer for itself — asleep, or still waking.
-It shows its owner the rows filed for that Agent as a **provisional** list, display-only, and replaces it with the Agent's own list the moment the Agent answers.
+It shows its owner the rows filed for that Agent as a **provisional** list, and replaces it with the Agent's own list the moment the Agent answers.
 The UI asks the Agent for that list once the Agent shows as starting, not first at Ready: the agent's tRPC relay holds the ask while the wake runs, and an ask it refuses, or a hold that fails, is asked again when the Agent turns Ready.
 Nothing acts on a provisional row as proof the session exists: opening one asks the Agent, which still decides.
+Rename and Delete on a provisional row wake the Agent and run once it answers, so the Agent still decides; a Delete asks its confirmation before the wake, and an Agent that stops before it answers changes nothing.
 The sidebar shows the record's rows the same way under every Agent that is not open, three at most, and asks the Agent for its own list only when the user opens the Agent (its chat or its configuration page), asks for more, or has put one of its Sessions in a manual order while it is awake.
 It offers more only when the record may hold more: a feed shorter than its row limit lists every row filed for the owner.
+Once the list is expanded, each More asks the Agent for one more page of its list, and the list stops offering more when a page brings no new Session or the Agent's cursor does not move.
 
 The sidebar lists Agents, and the Sessions of each Agent, in one **manual order** per list, which the user sets by drag and drop or with Alt+Up and Alt+Down.
 A Session moves only within its own Agent's list.
