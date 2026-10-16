@@ -76,6 +76,30 @@ function DropdownMenuCheckboxItem({
   );
 }
 
+const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup;
+
+function DropdownMenuRadioItem({
+  className,
+  children,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.RadioItem>) {
+  return (
+    <DropdownMenuPrimitive.RadioItem
+      className={cn(
+        menuItemVariants({ tone: "default" }),
+        "relative pl-8",
+        className,
+      )}
+      {...props}
+    >
+      <span className="absolute left-2 flex size-4 items-center justify-center rounded-full border border-primary">
+        <DropdownMenuPrimitive.ItemIndicator className="size-2 rounded-full bg-primary" />
+      </span>
+      {children}
+    </DropdownMenuPrimitive.RadioItem>
+  );
+}
+
 function DropdownMenuSwitchItem({
   className,
   children,
@@ -142,6 +166,8 @@ export {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuSwitchItem,
   DropdownMenuTrigger,
