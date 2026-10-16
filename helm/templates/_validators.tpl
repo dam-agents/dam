@@ -73,7 +73,7 @@ mode: an unquoted `off` arrives as `false`, which `default` would take as unset.
 {{- if kindIs "bool" $mode -}}
 {{- ternary "on" "off" $mode -}}
 {{- else -}}
-{{- $mode | default "audit" -}}
+{{- $mode | default "enforce" -}}
 {{- end -}}
 {{- end -}}
 

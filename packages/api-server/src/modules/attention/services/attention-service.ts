@@ -1,16 +1,16 @@
-import type {
-  AttentionDismissal,
-  AttentionItem,
-  AttentionList,
-  AttentionService,
-  SessionMode,
-  SessionType,
+import {
+  ATTENTION_FEED_LIMIT,
+  type AttentionDismissal,
+  type AttentionItem,
+  type AttentionList,
+  type AttentionService,
+  type SessionMode,
+  type SessionType,
 } from "api-server-api";
 
 import type { AttentionRecordRow } from "../domain/types.js";
 import type { AttentionRepository } from "../infrastructure/attention-repository.js";
 
-const FEED_LIMIT = 200;
 const AGENT_SESSIONS_LIMIT = 50;
 
 function toItem(row: AttentionRecordRow): AttentionItem {
@@ -38,7 +38,7 @@ export function createAttentionService(deps: {
   return {
     async listForOwner(): Promise<AttentionList> {
       const [records, dismissals] = await Promise.all([
-        deps.repo.listForOwner(deps.ownerSub, FEED_LIMIT),
+        deps.repo.listForOwner(deps.ownerSub, ATTENTION_FEED_LIMIT),
         deps.repo.listDismissals(deps.ownerSub),
       ]);
       return {

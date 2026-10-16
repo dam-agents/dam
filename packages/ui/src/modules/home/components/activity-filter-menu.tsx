@@ -45,7 +45,7 @@ export function ActivityFilterMenu({
           title={label}
           data-testid="sidebar-session-filter"
           className={cn(
-            "relative flex size-6 items-center justify-center rounded-md border border-border transition-colors hover:bg-muted hover:text-foreground",
+            "relative flex size-6 items-center justify-center rounded-md transition-colors hover:bg-muted hover:text-foreground",
             filtered ? "text-primary" : "text-muted-foreground",
           )}
         >
