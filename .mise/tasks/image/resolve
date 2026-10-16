@@ -28,7 +28,8 @@
 #
 # Env: IMAGE_PREFIX (default quay.io/dam-agents), GITHUB_SHA, EVENT (gha-outputs
 # archs + workload skip: pull_request never builds workloads; merge_group
-# builds both archs like main, without workloads or the mock),
+# builds both archs like main, without workloads or the mock), GITHUB_REF
+# (gha-outputs image_archs: only a v* tag builds the IMAGES for arm64),
 # RESOLVE_NO_REUSE=1 forces BUILD everywhere (CI tag/schedule/dispatch: publish
 # all, which also picks up newer Debian packages and uncached tool trees). A
 # main push reuses every image whose effective source did not move.
@@ -63,7 +64,9 @@ WORKLOADS="nous openevolve shinkaevolve gepa skydiscover k-search"
 PACK_TOOLING=".mise/tasks/image/pack .mise/config.toml mise.lock"
 # The pnpm workspace: its root manifests and lockfile.
 PNPM_ROOT="package.json pnpm-workspace.yaml pnpm-lock.yaml packages/dev-config"
-# The images cd.yml's build-images job builds, both arches in one job each.
+# The images cd.yml's build-images job builds, one job per arch of
+# image_archs. A Mac's cluster:install builds these five itself and never
+# pulls them, so only a v* tag, for release consumers, builds them for arm64.
 IMAGES="controller ui api-server keycloak vm-runner"
 
 # Components whose chart or kit tag is rewritten from a source sha by pin-tags:
@@ -167,8 +170,9 @@ stale_json() {
 }
 
 gha_outputs() {
-  local archs a s src agents_json workloads_json='[]' images_json='[]' mock=false
+  local archs image_archs='["amd64"]' a s src agents_json workloads_json='[]' images_json='[]' mock=false
   archs='["amd64","arm64"]'; [ "${EVENT:-}" = pull_request ] && archs='["amd64"]'
+  case "${GITHUB_REF:-}" in refs/tags/v*) image_archs="$archs" ;; esac
   # source_shas: per-component last-touching-source sha — non-PR runs tag their
   # images with it so PR reuse hits even when that commit was never a green
   # push tip. Falls back to GITHUB_SHA (a duplicate of the sha tag, harmless).
@@ -178,14 +182,14 @@ gha_outputs() {
   agents_json="$(stale_json $AGENTS)"
   # A PR builds its images and the mock in e2e, which resolves them itself,
   # and never builds workloads: slow, rarely-changing builds on the default
-  # image. A merge group also builds its images on arm64, where no e2e runs.
+  # image. A merge group also builds its images in build-images, on amd64.
   [ "${EVENT:-}" = pull_request ] || images_json="$(stale_json $IMAGES)"
   if [ "${EVENT:-}" != pull_request ] && [ "${EVENT:-}" != merge_group ]; then
     workloads_json="$(stale_json $WORKLOADS)"
     [ "$(resolve mock | cut -d' ' -f1)" = BUILD ] && mock=true
   fi
-  printf 'agents=%s\narchs=%s\nworkloads=%s\nimages=%s\nmock=%s\nsource_shas=%s\n' \
-    "$agents_json" "$archs" "$workloads_json" "$images_json" "$mock" "$src"
+  printf 'agents=%s\narchs=%s\nimage_archs=%s\nworkloads=%s\nimages=%s\nmock=%s\nsource_shas=%s\n' \
+    "$agents_json" "$archs" "$image_archs" "$workloads_json" "$images_json" "$mock" "$src"
 }
 
 self_check() {
@@ -239,10 +243,12 @@ self_check() {
   has "$(effective_paths skydiscover)" packages/agents/claude-code
   # NO_REUSE reproduces the full-build (tag/schedule/dispatch) output without
   # git or a registry.
-  local out; out="$(EVENT=push GITHUB_SHA=deadbeef RESOLVE_NO_REUSE=1; export EVENT GITHUB_SHA RESOLVE_NO_REUSE; gha_outputs)"
+  local out; out="$(EVENT=push GITHUB_REF=refs/heads/main GITHUB_SHA=deadbeef RESOLVE_NO_REUSE=1; export EVENT GITHUB_REF GITHUB_SHA RESOLVE_NO_REUSE; gha_outputs)"
   has "$out" 'agents=["default"]'
   has "$out" 'workloads=["nous","openevolve","shinkaevolve","gepa","skydiscover","k-search"]'
-  has "$out" 'archs=["amd64","arm64"]'
+  has "$out" '
+archs=["amd64","arm64"]'
+  has "$out" 'image_archs=["amd64"]'
   has "$out" 'source_shas={"controller":"'
   has "$out" '"keycloak":"'
   has "$out" '"vm-runner":"'
@@ -255,12 +261,18 @@ self_check() {
   has "$out" 'workloads=[]'
   has "$out" 'images=[]'
   has "$out" 'mock=false'
-  has "$out" 'archs=["amd64"]'
-  out="$(EVENT=merge_group GITHUB_SHA=deadbeef RESOLVE_NO_REUSE=1; export EVENT GITHUB_SHA RESOLVE_NO_REUSE; gha_outputs)"
+  has "$out" '
+archs=["amd64"]'
+  out="$(EVENT=merge_group GITHUB_REF=refs/heads/gh-readonly-queue/main/pr-1-deadbeef GITHUB_SHA=deadbeef RESOLVE_NO_REUSE=1; export EVENT GITHUB_REF GITHUB_SHA RESOLVE_NO_REUSE; gha_outputs)"
   has "$out" 'workloads=[]'
   has "$out" 'images=["controller","ui","api-server","keycloak","vm-runner"]'
   has "$out" 'mock=false'
-  has "$out" 'archs=["amd64","arm64"]'
+  has "$out" '
+archs=["amd64","arm64"]'
+  has "$out" 'image_archs=["amd64"]'
+  # A release builds every image for both archs.
+  out="$(EVENT=push GITHUB_REF=refs/tags/v1.2.3 GITHUB_SHA=deadbeef RESOLVE_NO_REUSE=1; export EVENT GITHUB_REF GITHUB_SHA RESOLVE_NO_REUSE; gha_outputs)"
+  has "$out" 'image_archs=["amd64","arm64"]'
   # A reused component, last in its list, leaves it out and fails nothing.
   out="$(resolve() { case "$1" in b) echo "REUSE x" ;; *) echo BUILD ;; esac; }; stale_json a b)" || { echo "FAIL: stale_json failed on a reused last component" >&2; f=1; }
   chk "$out" '["a"]'
