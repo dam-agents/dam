@@ -11,6 +11,7 @@ import {
 } from "api-server-api";
 import { match } from "ts-pattern";
 import { emit, EventType } from "../../../events.js";
+import { foldBreakdown } from "../domain/breakdown.js";
 import { utcDay } from "../domain/ledger.js";
 import {
   ceilingCounter,
@@ -20,6 +21,7 @@ import {
   type SpendCeiling,
   type SpendLimit,
 } from "../domain/limits.js";
+import { meteringNoticeEnd, meteringView } from "../domain/metering.js";
 import type { SpendUnit } from "../domain/units.js";
 import type { SpendLedger } from "../infrastructure/spend-ledger.js";
 import type { SpendLimits } from "../infrastructure/spend-limits.js";
@@ -34,6 +36,14 @@ export interface AgentPayers {
   payerOf(agentId: string): Promise<string>;
 }
 
+export interface ConnectionNames {
+  namesOf(ownerSub: string): Promise<ReadonlyMap<string, string>>;
+}
+
+export interface OwnedAgentAges {
+  anyCreatedBefore(ownerSub: string, at: Date): Promise<boolean>;
+}
+
 export function createSpendService(deps: {
   ledger: SpendLedger;
   limits: SpendLimits;
@@ -42,7 +52,11 @@ export function createSpendService(deps: {
   connections: GrantedConnections;
   questions: SpendQuestionCloser;
   payers: AgentPayers;
+  meteringStart(): Promise<Date>;
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
+  connectionNames(): Promise<ReadonlyMap<string, string>>;
+  ownedAgentCreatedBefore(at: Date): Promise<boolean>;
+  telemetryStoreOn: boolean;
   ownerSub: string;
   agentBinding: readonly string[] | "*";
 }): SpendService {
@@ -136,6 +150,32 @@ export function createSpendService(deps: {
         agentIds: scopedAgents(agentId),
         from,
         to,
+      });
+    },
+
+    async breakdown({ agentId, from, to }) {
+      const [rows, connectionNames] = await Promise.all([
+        deps.ledger.breakdownRows({
+          ownerSub: deps.ownerSub,
+          agentIds: scopedAgents(agentId),
+          from,
+          to,
+        }),
+        deps.connectionNames(),
+      ]);
+      return foldBreakdown({ from, to, rows, connectionNames });
+    },
+
+    async metering() {
+      const now = new Date();
+      const startedAt = await deps.meteringStart();
+      const noticeOpen = now < meteringNoticeEnd(startedAt);
+      return meteringView({
+        startedAt,
+        now,
+        ownsAgentFromBeforeStart:
+          noticeOpen && (await deps.ownedAgentCreatedBefore(startedAt)),
+        telemetryStoreOn: deps.telemetryStoreOn,
       });
     },
 

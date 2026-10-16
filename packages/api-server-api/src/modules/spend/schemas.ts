@@ -50,6 +50,8 @@ export const spendDailyInputSchema = z
     }
   });
 
+export const spendBreakdownInputSchema = spendDailyInputSchema;
+
 export const spendLimitScopeSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("agent"), agentId: z.string().min(1) }),
   z.object({ kind: z.literal("owner") }),

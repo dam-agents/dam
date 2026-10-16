@@ -1,12 +1,12 @@
 # Metrics (spend read path)
 
-Last verified: 2026-10-15
+Last verified: 2026-10-16
 
 ## Overview
 
 The **metrics** subsystem is the user-facing read path over agent telemetry: it answers *how much have my agents spent, and where* for the signed-in user.
-It backs the two **Usage** surfaces — the Settings tab spanning every agent the user owns, and the per-agent section narrowed to one — with per-model token/cost aggregates, monthly spend per day, spend per session kind, and (unnarrowed) a per-agent spend breakdown, reading live from the columnar telemetry store that [observability](observability.md) fills.
-Home's spend widget, the same view at the top of the Settings Usage tab, and each agent's spend summary read Metered Spend instead, which the gateway measures ([spend-limits](spend-limits.md#screens)).
+It backs the **earlier estimates** on the Settings Usage tab: for 30 days after the measuring start, the user can open the spend that each agent reported about itself, with per-model token/cost aggregates, monthly spend per day, spend per session kind and a per-agent spend breakdown, read live from the columnar telemetry store that [observability](observability.md) fills.
+Every other figure on the Usage surfaces — the Settings tab, the per-agent section, Home's spend card and each agent's spend summary — reads Metered Spend, which the gateway measures ([spend-limits](spend-limits.md#screens)).
 A separate **Session costs** read serves a different consumer — the cost-per-session line in the sidebar's list of an Agent's Sessions — not either Usage surface.
 It is almost entirely a query surface: it mutates nothing and emits no events.
 Spend is the only question it answers; the raw traces and log records behind those numbers are read by [agent-telemetry](agent-telemetry.md), which opens its own connection to the same store and shares this subsystem's owner scoping but inverts its fail-closed posture on an empty result.
@@ -50,11 +50,11 @@ The field-level shapes live in the contract package [`packages/api-server-api/`]
   The id list narrows only what is summed: roots are still resolved from every call in the time bound, as the Overview does.
   Only the newest page is polled; older pages hold Sessions that saw no recent activity, so their cost is read once and kept for a few minutes.
   The read exists so that the sidebar does not ask the Overview for all-time spend of every Session on a timer.
-- **Spend breakdown** — the whole Usage tab in one read.
+- **Spend breakdown** — the whole earlier-estimates view in one read.
   Over an absolute half-open `[from, to)` instant range, it returns four rollups together: token/cost **per model**, spend **per agent** (sorted highest cost first, no top-N cap), spend **per day** for the spend-over-time chart, and spend **per session kind**.
   The range is instants rather than calendar fields on purpose: the client decides what a "month" means in its own timezone, and the server never reasons about calendars.
   It is a single procedure — rather than one per rollup — so **ownership resolves once per page load** (one owned-agent-list + scope check, not three) and the client renders the tab from a single loading/error state, never showing a stale total above an empty chart while a slower rollup is still in flight.
-  It spans *all* of the caller's agents by default and narrows to **one owned agent** on request, which is what backs the per-agent Usage section beside the global one; narrowing goes through the same ownership resolution, so it can only ever shrink the scope.
+  It spans *all* of the caller's agents by default and narrows to **one owned agent** on request; narrowing goes through the same ownership resolution, so it can only ever shrink the scope.
   Under a narrowed read the per-agent rollup collapses to a single row restating the total — computed anyway rather than special-cased, since the single-procedure shape is the point.
   - The **per-agent** rollup groups on the trusted, gateway-stamped agent id — the same key every read scopes by.
     Spend an agent drove through an Invocation already rolls up under it **by construction**, not by a read-time join: an Invocation target's rows arrive already stamped with the root Driver's id (attribution decided at spawn time — see [observability — trusted attribution](observability.md#trusted-attribution)), so the grouping needs no special case and one row per real agent covers both direct and delegated spend.
@@ -94,7 +94,7 @@ A key that may not read its own figures — a LiteLLM key without access to its 
 
 A harness that does not export telemetry can still keep its own account of what each conversation cost.
 Bob does, in Bobcoins.
-The pod's session list carries that figure beside each session ([platform-topology](platform-topology.md)), and the per-agent Usage section shows its total over the selected month for the sessions that started in it.
+The pod's session list carries that figure beside each session ([platform-topology](platform-topology.md)), and the per-agent Usage section shows its total over the month in which the selected period starts, for the sessions that started in that month.
 It is read from the running agent and never reaches the telemetry store, so a hibernated agent shows nothing until it starts, and a deleted agent's figure is gone with its volume.
 It is in the harness's unit and stays apart from the LLM spend the rest of this page describes.
 
@@ -195,7 +195,7 @@ The reader sums an agent from the router's records when it has any in the window
 The switch is per agent and invocation, at its own first router record, so an agent moved to a router image mid-window keeps the harness records from before, whenever the owner's other agents moved.
 A Claude Code call on a native Connection (Bedrock) has no router record; Claude Code's own record names the model without the `claude/` prefix and is always counted, with no provider.
 A call the router could not price is still a record: cut before its usage arrived, answered without usage, or on a model the catalog has no price for.
-Each per-model and per-provider row carries its **uncounted** count beside its total, and the Usage surfaces say so, so a total reads as a floor.
+Each per-model and per-provider row carries its **uncounted** count beside its total, and the earlier-estimates view says so, so a total reads as a floor.
 The **per-provider** rollup groups rows by the alias and Connection the router recorded, labelled with the Connection's live display name (a deleted Connection keeps its alias), with the harness's own records, which name no provider, in a row of their own.
 Two agent-facing reads deliberately sit outside that shape: the emitted-record read drops the body predicate so an agent sees everything it emitted rather than only its LLM calls, and the span read goes to the **trace** store instead, which is why it is the one read that answers for a harness exporting traces alone.
 Neither widens the ownership gate, which is the same attribute in both stores.
@@ -212,8 +212,9 @@ The two reads that do not narrow by body (emitted records, spans) still never wi
 The telemetry store is optional (it ships with [observability](observability.md), disabled by default).
 When no store endpoint is configured, the metrics service is wired to a **disabled** variant whose every read fails loud with a `PRECONDITION_FAILED` error rather than returning empty results.
 Failing closed is deliberate: an empty success is indistinguishable from "no spend yet" and would silently misreport a bill as zero.
-Both Usage surfaces treat that error as *metrics unavailable on this deployment* and show an unavailable message, distinct from the empty-but-enabled state where a real store simply has no rows for the window.
-Because the verdict is deployment-wide rather than per-window, they withdraw the period control instead of offering months that would fail identically.
+The Usage surfaces do not depend on the store: they read Metered Spend, and without a store the Settings Usage tab hides the link to the earlier estimates.
+The earlier-estimates view treats that error as *metrics unavailable on this deployment* and shows an unavailable message, distinct from the empty-but-enabled state where a real store simply has no rows for the window.
+Because the verdict is deployment-wide rather than per-window, it withdraws its month switcher instead of offering months that would fail identically.
 The agent-facing read deliberately inverts this: it answers `available: false` with a reason, as a *success*, because its caller is unattended and needs to report "cost is not measured on this install" and carry on rather than treat a thrown error as a failed task.
 Both variants are chosen once at composition time from the same configuration, so neither can be reached on an install of the other kind.
 

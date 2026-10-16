@@ -34,6 +34,8 @@ import {
 import {
   createSpendService,
   type AgentPayers,
+  type ConnectionNames,
+  type OwnedAgentAges,
   type SpendQuestionCloser,
 } from "./services/spend-service.js";
 
@@ -68,6 +70,9 @@ export function composeSpendSystem(deps: {
   k8s: CustomObjectReader;
   defaultCeilingMicros: number | null;
   brandName: string;
+  connectionNames: ConnectionNames;
+  ownedAgents: OwnedAgentAges;
+  telemetryStoreOn: boolean;
 }): SpendSystem {
   const ledger = createSpendLedger(deps.db);
   const counters = createRedisDayCounters(deps.redis);
@@ -77,6 +82,12 @@ export function composeSpendSystem(deps: {
     defaultMicros: deps.defaultCeilingMicros,
   });
   const totals = createDayTotals({ counters, ledger });
+  let startedAt: Promise<Date> | null = null;
+  const meteringStart = () =>
+    (startedAt ??= ledger.meteringStart().catch((error: unknown) => {
+      startedAt = null;
+      throw error;
+    }));
   const ingest = createSpendIngest({
     priceBook: composePriceBook(deps.priceOverrides),
     calls: createRedisCallStates(deps.redis),
@@ -109,6 +120,11 @@ export function composeSpendSystem(deps: {
         connections: deps.connections,
         questions: deps.questions,
         payers: deps.payers,
+        meteringStart,
+        connectionNames: () => deps.connectionNames.namesOf(owner.ownerSub),
+        ownedAgentCreatedBefore: (at) =>
+          deps.ownedAgents.anyCreatedBefore(owner.ownerSub, at),
+        telemetryStoreOn: deps.telemetryStoreOn,
         ...owner,
       }),
   };

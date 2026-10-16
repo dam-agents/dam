@@ -20,7 +20,10 @@ export function useBrowserHistory(): void {
       if (RETIRED_PATHS.has(window.location.pathname)) {
         window.history.replaceState({}, "", "/");
       }
-      const route = parseRoute(window.location.pathname);
+      const route = parseRoute(
+        window.location.pathname,
+        window.location.search,
+      );
       const wasChat = isChatView(useStore.getState().view);
 
       if (isChatRoute(route)) {

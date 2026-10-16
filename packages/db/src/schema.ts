@@ -15,6 +15,8 @@ import {
   doublePrecision,
   customType,
   unique,
+  smallint,
+  check,
 } from "drizzle-orm/pg-core";
 
 const bytea = customType<{ data: Buffer }>({ dataType: () => "bytea" });
@@ -1122,6 +1124,15 @@ export const spendDaily = pgTable(
     }),
     index("spend_daily_owner_day_idx").on(table.ownerSub, table.day),
   ],
+);
+
+export const spendMetering = pgTable(
+  "spend_metering",
+  {
+    id: smallint("id").primaryKey().default(1),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [check("spend_metering_single_row", sql`${table.id} = 1`)],
 );
 
 export const spendLimits = pgTable(

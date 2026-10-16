@@ -1,92 +1,72 @@
-import type { SpendDailyRow } from "api-server-api";
-import { AnimatePresence, motion, MotionConfig } from "motion/react";
-import { useEffect, useMemo, useState } from "react";
+import type { SpendBreakdown } from "api-server-api";
+import { MotionConfig } from "motion/react";
+import { useState } from "react";
 
 import { Spinner } from "@/components/ui/spinner";
+import { Tabs } from "@/components/ui/tabs";
 import { TextSkeleton } from "@/components/ui/text-skeleton";
-import { cn } from "@/lib/utils";
+import { useNow } from "@/hooks/use-now";
 
-import type { AgentView } from "../../../types.js";
-import { useAgentsList } from "../../agents/api/queries.js";
-import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
-import { NEUTRAL_FILL } from "../../budgets/lib/pool-colors.js";
-import { useOwnerSpendStatus, useSpendDaily } from "../api/queries.js";
-import { apiSpendHelp, OWN_LIMIT_NAME } from "../lib/copy.js";
-import { microsToUsd } from "../lib/format.js";
 import {
-  SPEND_PERIODS,
-  spendDays,
-  type SpendPeriod,
+  useOwnerSpendStatus,
+  useSpendBreakdown,
+  useSpendMetering,
+} from "../api/queries.js";
+import { useShowPlanUse } from "../hooks/use-spend-preferences.js";
+import {
+  API_SPEND_TITLE,
+  apiSpendHelp,
+  OWN_LIMIT_NAME,
+  PERIOD_LABELS,
+  SPEND_LOAD_ERROR,
+} from "../lib/copy.js";
+import { microsToUsd } from "../lib/format.js";
+import { unitTotals } from "../lib/measured-spend.js";
+import { measuredRange } from "../lib/range-label.js";
+import {
+  DEFAULT_PERIOD,
+  HOME_PERIODS,
+  type PresetPeriod,
+  rangeOf,
 } from "../lib/spend-period.js";
+import { utcDayOf } from "../lib/utc-day.js";
 import { AnimatedUsd } from "./animated-usd.js";
 import { HelpTip } from "./help-tip.js";
+import { MeteringNotice } from "./metering-notice.js";
+import { PlanUseCheckbox } from "./plan-use-checkbox.js";
 import { SpendLimitMeter } from "./spend-limit-meter.js";
+import { SpendRangeLine, SpendSideLines } from "./spend-total-lines.js";
+import { TopSpenders, TopSpendersSkeleton } from "./top-spenders.js";
+import { ViewDetailsLink } from "./view-details-link.js";
 
-const TOP_SPENDERS = 3;
-const ROUNDS_TO_A_VISIBLE_CENT_USD = 0.005;
 const REFRESH_MS = 30_000;
-const ROW_HIDDEN = { opacity: 0, y: 16 };
 
-interface Spender {
-  agentId: string;
-  agentName: string;
-  costUsd: number;
-}
+const PERIOD_TABS = HOME_PERIODS.map((value) => ({
+  value,
+  label: PERIOD_LABELS[value],
+}));
 
-function usdSpend(
-  rows: readonly SpendDailyRow[],
-  agents: readonly AgentView[],
-): { total: number; spenders: Spender[] } {
-  const byAgent = new Map<string, number>();
-  for (const row of rows) {
-    if (row.unit !== "usd") continue;
-    byAgent.set(row.agentId, (byAgent.get(row.agentId) ?? 0) + row.costMicros);
-  }
-  const spenders = [...byAgent].map(([agentId, micros]) => ({
-    agentId,
-    agentName: agents.find((a) => a.id === agentId)?.name ?? agentId,
-    costUsd: microsToUsd(micros),
-  }));
-  return {
-    total: spenders.reduce((sum, spender) => sum + spender.costUsd, 0),
-    spenders: spenders
-      .filter((spender) => spender.costUsd >= ROUNDS_TO_A_VISIBLE_CENT_USD)
-      .sort((a, b) => b.costUsd - a.costUsd)
-      .slice(0, TOP_SPENDERS),
-  };
-}
-
-export function SpendWidget({
-  showOwnLimit = true,
-}: {
-  showOwnLimit?: boolean;
-}) {
-  const [period, setPeriod] = useState<SpendPeriod>("1m");
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => {
-      if (!document.hidden) setNow(Date.now());
-    }, REFRESH_MS);
-    return () => clearInterval(timer);
-  }, []);
-  const agents = useAgentsList();
-  const { from, to } = useMemo(
-    () => spendDays(period, new Date(now)),
-    [period, now],
-  );
-  const query = useSpendDaily({ from, to });
+export function SpendWidget() {
+  const [period, setPeriod] = useState<PresetPeriod>(DEFAULT_PERIOD);
+  const today = utcDayOf(useNow(REFRESH_MS));
+  const range = rangeOf(period, today);
+  const { data: metering } = useSpendMetering();
+  const query = useSpendBreakdown(range);
+  const showPlanUse = useShowPlanUse();
   const { data: status } = useOwnerSpendStatus();
   const ownLimit = status?.limits.find((view) => view.scope.kind === "owner");
   const data = query.data;
-  const { total, spenders } = usdSpend(data ?? [], agents);
-  const top = spenders[0]?.costUsd ?? 0;
+  const totals = unitTotals(data?.totals ?? []);
+  const measured = metering
+    ? measuredRange(range, metering.startDay) !== null
+    : true;
 
   return (
     <MotionConfig reducedMotion="user">
       <div className="flex flex-col rounded-lg border border-border bg-card p-6">
-        <div className="mb-1 flex min-h-[32px] items-center justify-between">
+        <div className="mb-1 flex min-h-[32px] flex-wrap items-center justify-between gap-2">
           <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            API spend
+            {API_SPEND_TITLE}
             <HelpTip content={apiSpendHelp()} />
             {query.isFetching && (
               <Spinner
@@ -96,37 +76,34 @@ export function SpendWidget({
               />
             )}
           </p>
-          <div className="flex shrink-0 gap-0.5 rounded-md border border-border/50 bg-muted/40 p-0.5">
-            {SPEND_PERIODS.map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => setPeriod(option)}
-                aria-pressed={option === period}
-                className={cn(
-                  "rounded-md px-1.5 py-1 text-sm transition-colors",
-                  option === period
-                    ? "bg-card font-medium text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {option}
-              </button>
-            ))}
-          </div>
+          <Tabs
+            tabs={PERIOD_TABS}
+            value={period}
+            onValueChange={setPeriod}
+            variant="pill"
+            size="sm"
+            ariaLabel="Period"
+          />
         </div>
 
-        <p className="mb-5 text-2xl font-semibold tabular-nums text-foreground">
-          {data ? (
-            <AnimatedUsd value={total} />
-          ) : query.isError ? (
-            "—"
-          ) : (
-            <TextSkeleton width={96} />
-          )}
+        <p className="text-2xl font-semibold tabular-nums text-foreground">
+          <TotalValue
+            usdMicros={totals.usd}
+            ready={data !== undefined && metering !== undefined}
+            failed={query.isError}
+            measured={measured}
+          />
         </p>
+        {metering && (
+          <div className="mb-5 mt-0.5 flex flex-col gap-1">
+            <SpendRangeLine range={range} startDay={metering.startDay} />
+            {measured && (
+              <SpendSideLines totals={totals} showPlanUse={showPlanUse} />
+            )}
+          </div>
+        )}
 
-        {showOwnLimit && ownLimit && (
+        {period === "today" && ownLimit && (
           <div className="mb-5">
             <SpendLimitMeter
               label={OWN_LIMIT_NAME}
@@ -140,75 +117,64 @@ export function SpendWidget({
           </div>
         )}
 
+        <MeteringNotice className="mb-5" />
+
         <div className="relative min-h-[132px]">
-          {data ? (
-            <div className="flex flex-col gap-3">
-              <AnimatePresence initial={false} mode="popLayout">
-                {spenders.map((spender) => (
-                  <motion.div
-                    key={spender.agentId}
-                    layout="position"
-                    initial={ROW_HIDDEN}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={ROW_HIDDEN}
-                  >
-                    <div className="mb-1 flex items-center justify-between">
-                      <span className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
-                        <AgentAvatar
-                          name={spender.agentName}
-                          avatar={
-                            agents.find((a) => a.id === spender.agentId)?.avatar
-                          }
-                          size={16}
-                        />
-                        <span className="truncate">{spender.agentName}</span>
-                      </span>
-                      <span className="ml-2 shrink-0 text-sm text-muted-foreground tabular-nums">
-                        <AnimatedUsd value={spender.costUsd} />
-                      </span>
-                    </div>
-                    <motion.div
-                      className={cn("h-3 rounded-full", NEUTRAL_FILL)}
-                      initial={{ width: "0%" }}
-                      animate={{
-                        width:
-                          top > 0 ? `${(spender.costUsd / top) * 100}%` : "0%",
-                      }}
-                    />
-                  </motion.div>
-                ))}
-                {spenders.length === 0 && (
-                  <motion.p
-                    key="empty"
-                    layout="position"
-                    initial={ROW_HIDDEN}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={ROW_HIDDEN}
-                    className="text-sm text-muted-foreground"
-                  >
-                    No API spend in this period.
-                  </motion.p>
-                )}
-              </AnimatePresence>
-            </div>
-          ) : query.isError ? (
-            <p className="text-sm text-muted-foreground">
-              Spend could not be loaded.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {Array.from({ length: TOP_SPENDERS }, (_, i) => (
-                <div key={i}>
-                  <p className="mb-1 text-sm">
-                    <TextSkeleton width={i % 2 === 0 ? "40%" : "30%"} />
-                  </p>
-                  <div className="h-3 animate-pulse rounded-full bg-muted" />
-                </div>
-              ))}
-            </div>
-          )}
+          <SpendersArea
+            byAgent={data?.byAgent}
+            failed={query.isError}
+            showPlanUse={showPlanUse}
+            measured={measured}
+          />
+        </div>
+
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border-hairline pt-4">
+          <PlanUseCheckbox />
+          <ViewDetailsLink period={period} />
         </div>
       </div>
     </MotionConfig>
   );
+}
+
+function TotalValue({
+  usdMicros,
+  ready,
+  failed,
+  measured,
+}: {
+  usdMicros: number;
+  ready: boolean;
+  failed: boolean;
+  measured: boolean;
+}) {
+  if (ready && measured) return <AnimatedUsd value={microsToUsd(usdMicros)} />;
+  if (ready || failed) return "—";
+  return <TextSkeleton width={96} />;
+}
+
+function SpendersArea({
+  byAgent,
+  failed,
+  showPlanUse,
+  measured,
+}: {
+  byAgent: SpendBreakdown["byAgent"] | undefined;
+  failed: boolean;
+  showPlanUse: boolean;
+  measured: boolean;
+}) {
+  if (byAgent) {
+    return (
+      <TopSpenders
+        byAgent={byAgent}
+        showPlanUse={showPlanUse}
+        measured={measured}
+      />
+    );
+  }
+  if (failed) {
+    return <p className="text-sm text-muted-foreground">{SPEND_LOAD_ERROR}</p>;
+  }
+  return <TopSpendersSkeleton />;
 }
