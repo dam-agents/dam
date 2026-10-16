@@ -426,6 +426,7 @@ export function ChatView() {
     queuedPrompts,
     title: sessionView?.title ?? null,
     takeBackPrompt,
+    stop: stopAgent,
   });
   const rewriting = useStore((s) => s.rewriting);
   const rewriteIndex = rewriting

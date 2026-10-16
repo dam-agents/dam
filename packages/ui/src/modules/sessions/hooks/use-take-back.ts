@@ -19,6 +19,7 @@ export function useTakeBack({
   queuedPrompts,
   title,
   takeBackPrompt,
+  stop,
 }: {
   shown: Message[];
   rewritePoints: Map<string, string | null | undefined>;
@@ -28,6 +29,7 @@ export function useTakeBack({
   queuedPrompts: readonly QueuedPrompt[];
   title: string | null;
   takeBackPrompt: (take: TakeBack) => Promise<void>;
+  stop: () => void;
 }): (() => void) | null {
   const unanswered = unansweredPrompt(shown);
   const upTo = unanswered ? rewritePoints.get(unanswered.id) : undefined;
@@ -45,12 +47,16 @@ export function useTakeBack({
   const awaitingSession = useRef<string | null>(null);
 
   useEffect(() => {
-    if (awaitingSession.current !== messageId) awaitingSession.current = null;
-    if (!ready || messageId === null || awaitingSession.current === null)
+    if (awaitingSession.current === null) return;
+    if (awaitingSession.current !== messageId) {
+      awaitingSession.current = null;
+      stop();
       return;
+    }
+    if (!ready) return;
     awaitingSession.current = null;
     void takeBackPrompt({ messageId, upToMessageId: upTo, title });
-  }, [ready, messageId, upTo, title, takeBackPrompt]);
+  }, [ready, messageId, upTo, title, takeBackPrompt, stop]);
 
   if (messageId === null) return null;
   if (sessionId === null)

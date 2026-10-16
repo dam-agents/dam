@@ -1,3 +1,4 @@
+import { separateRendererBlocks } from "api-server-api";
 import { useCallback, useRef } from "react";
 
 import { emitToast } from "../../../lib/toast.js";
@@ -36,7 +37,7 @@ export function useTakeBackPrompt({
       const sid = state.sessionId;
       const at = state.messages.findIndex((m) => m.id === take.messageId);
       if (!selectedAgent || !sid || at === -1) return;
-      const text = messageText(state.messages[at]);
+      const text = separateRendererBlocks(messageText(state.messages[at])).text;
       const reply = state.messages[at + 1];
       const promptId = reply?.promptId;
       const inView = () => useStore.getState().sessionId === sid;
