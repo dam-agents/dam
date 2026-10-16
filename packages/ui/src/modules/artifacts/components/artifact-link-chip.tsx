@@ -1,4 +1,3 @@
-import { Box } from "@carbon/icons-react";
 import { ARTIFACT_INTERNAL_LINK_PREFIX } from "api-server-api";
 import type { ReactNode } from "react";
 
@@ -7,6 +6,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { useStore } from "../../../store.js";
 import { useArtifact } from "../api/queries.js";
 import { useOpenArtifact } from "../hooks/use-open-artifact.js";
+import { ArtifactIcon } from "../lib/artifact-icon.js";
 import { ArtifactKindBadge } from "./artifact-badges.js";
 
 export const ARTIFACT_LINK_PREFIX = ARTIFACT_INTERNAL_LINK_PREFIX;
@@ -48,7 +48,7 @@ export function ArtifactLinkChip({
         {artifact ? (
           <ArtifactKindBadge kind={artifact.kind} />
         ) : (
-          <Box size={13} className="shrink-0 text-muted-foreground" />
+          <ArtifactIcon size={13} className="shrink-0 text-muted-foreground" />
         )}
         <span className="truncate">{label}</span>
       </button>
