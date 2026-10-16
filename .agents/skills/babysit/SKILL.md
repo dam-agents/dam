@@ -45,6 +45,7 @@ Opening the PR is the `pr-open` skill's; each fix round is the `review-remediati
 - `main` merges through GitHub's merge queue; its one required check is `verify`.
   A branch from before the queue reports no `verify`: merge the base branch.
   Merging is enqueueing: `gh pr merge <n> --squash --auto`, or `gh stack merge <top> --yes --squash` for a stack, which enqueues the whole stack.
+  "The merge strategy for main is set by the merge queue" is a notice, not a failure: the PR is enqueued.
   Being behind `main` needs no merge; the queue tests the PR on top of `main` and the PRs ahead of it.
 - Enqueued → wait until `gh pr view <n> --json state` is `MERGED`.
   The queue's run is a `merge_group` run on a `gh-readonly-queue/main/pr-<n>-<base-sha>` branch; `gh pr checks <n>` never shows it.
