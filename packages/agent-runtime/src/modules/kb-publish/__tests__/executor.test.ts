@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { contentHash } from "agent-runtime-api/kb-snapshot";
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it, onTestFinished, vi } from "vitest";
 
 import { executeWork } from "../executor.js";
 
@@ -28,6 +28,7 @@ let workDir = "";
 let server: Server;
 let origin = "";
 const puts: string[] = [];
+const attemptTimeouts: AbortController[] = [];
 
 beforeAll(async () => {
   workDir = await mkdtemp(join(tmpdir(), "kb-publish-executor-"));
@@ -38,6 +39,10 @@ beforeAll(async () => {
     req.on("end", () => {
       puts.push(req.url ?? "");
       if (puts.length > 1) res.end();
+      else
+        attemptTimeouts[0]?.abort(
+          new DOMException("signal timed out", "TimeoutError"),
+        );
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -53,9 +58,18 @@ afterAll(async () => {
 /**
  * TEST_SCENARIO: the store takes the first blob PUT and never answers it, as
  * a stalled object store does. The attempt times out, the retry lands, and
- * the segment upload follows, so the work order completes.
+ * the segment upload follows, so the work order completes. The test fires
+ * the attempt's timeout once the store holds the PUT: a wall-clock timeout
+ * short enough for a test also cuts off the answered attempts on a busy
+ * machine.
  */
 it("retries an upload the store never answers", async () => {
+  const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation(() => {
+    const controller = new AbortController();
+    attemptTimeouts.push(controller);
+    return controller.signal;
+  });
+  onTestFinished(() => timeout.mockRestore());
   const result = await executeWork({
     workDir,
     log: () => {},
@@ -87,4 +101,5 @@ it("retries an upload the store never answers", async () => {
 
   expect(result.ok).toBe(true);
   expect(puts).toEqual(["/blob", "/blob", "/seg"]);
+  expect(timeout.mock.calls).toEqual([[200], [200], [200]]);
 });
