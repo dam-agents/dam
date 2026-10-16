@@ -51,10 +51,10 @@ export function useInvocationTurns(
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a driver's running children, as one of its
  * chats shows them: the ones that chat's Session spawned and the ones with no
- * recorded Session. They are read while its turn runs, while its transcript
- * names a fan-out, and for as long as the last answer still had a child
- * running, so a background fan-out stays in view without every open chat
- * polling forever.
+ * recorded Session. They are read once when a chat first shows, while its
+ * turn runs, while its transcript names a fan-out, and for as long as the last
+ * answer still had a child running, so a background fan-out stays in view
+ * without every open chat polling forever.
  */
 export function useRunningDelegations(
   driverAgentId: string | null,
@@ -69,7 +69,10 @@ export function useRunningDelegations(
     ...options,
     enabled:
       driverAgentId !== null &&
-      (opts.busy || opts.watch || hasRunning(cached?.nodes ?? [])),
+      (opts.busy ||
+        opts.watch ||
+        cached === undefined ||
+        hasRunning(cached.nodes)),
     staleTime: 1_000,
     refetchInterval: (query) =>
       opts.busy || hasRunning(query.state.data?.nodes ?? [])
