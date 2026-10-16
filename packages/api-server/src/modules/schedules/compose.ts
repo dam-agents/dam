@@ -55,6 +55,8 @@ export interface ComposeSchedulesAtBootOpts {
   bullConnection: ConnectionOptions;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<AgentActivityStamp | null>;
+  ensureDefault?: (agentId: string) => Promise<AgentActivityStamp | null>;
+  defaultPendingAfterMove?: (agentId: string) => Promise<boolean>;
   restoreActivity: (
     agentId: string,
     stamp: AgentActivityStamp,
@@ -78,6 +80,10 @@ export function composeSchedulesAtBoot(
     queue,
     runtimeMutator: opts.runtimeMutator,
     wakeAgent: opts.wakeAgent,
+    ...(opts.ensureDefault ? { ensureDefault: opts.ensureDefault } : {}),
+    ...(opts.defaultPendingAfterMove
+      ? { defaultPendingAfterMove: opts.defaultPendingAfterMove }
+      : {}),
     restoreActivity: opts.restoreActivity,
     activityStamps: createRedisTtlStore<AgentActivityStamp>(
       opts.redis,

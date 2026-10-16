@@ -177,7 +177,8 @@ How the title reaches the session list belongs to [platform topology](platform-t
 
 A schedule, recurring or [one-time](#one-time-schedules), carries the same choices as a session: the **harness** its sessions run on, their **model** as a qualified name (`<alias>/<model id>`, [harness configuration](harness-config.md#the-model-router)) and the harness's per-session **settings** (an effort level, a reasoning mode), which include the session's platform sub-agent settings ([session settings](harness-config.md#session-settings)).
 A schedule's choices live on its sessions alone.
-Each choice is optional; an unset one takes the agent's default: its default harness, that harness's default provider in alias order, that provider's first listed model, no settings.
+Each choice is optional; an unset one takes the agent's saved default ([harness configuration](harness-config.md#session-settings)), and no settings.
+With no default model saved, a fire fails with that reason on its first attempt, with no retry, and Run Now refuses with it.
 
 **Checked twice, the same way.** The choices are checked at save and at each fire with one rule: the harness is one the agent's image carries; the model's provider is granted and accepted by the harness, and the model is on the list the harness last reported; the settings are ones the harness offers, valid for that model, and the platform sub-agent settings are ones the chosen sub-agent harness offers.
 A save that fails names the reason.

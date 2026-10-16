@@ -11,7 +11,10 @@ import { createSchedulerRunner } from "../../modules/schedules/services/schedule
 import type { SchedulesRepository } from "../../modules/schedules/infrastructure/schedules-repository.js";
 import type { ScheduleQueue } from "../../modules/schedules/infrastructure/schedule-queue.js";
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
-import type { FirePair } from "../../modules/harness-config/index.js";
+import {
+  NoDefaultModelError,
+  type FirePair,
+} from "../../modules/harness-config/index.js";
 import type { AgentActivityStamp } from "../../modules/agents/index.js";
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import type { ScheduleStatusPatch } from "../../modules/schedules/domain/status-transitions.js";
@@ -93,6 +96,8 @@ function makeDeps(opts?: {
   agentDisabled?: boolean;
   enabled?: boolean;
   firePair?: FirePair;
+  ensureDefault?: (agentId: string) => Promise<AgentActivityStamp | null>;
+  defaultPendingAfterMove?: (agentId: string) => Promise<boolean>;
   choices?: {
     harness?: string;
     model?: string;
@@ -218,6 +223,10 @@ function makeDeps(opts?: {
 
   const runner = createSchedulerRunner({
     ...(opts?.firePair ? { firePair: opts.firePair } : {}),
+    ...(opts?.ensureDefault ? { ensureDefault: opts.ensureDefault } : {}),
+    ...(opts?.defaultPendingAfterMove
+      ? { defaultPendingAfterMove: opts.defaultPendingAfterMove }
+      : {}),
     ...(opts?.validateSessionChoices
       ? { validateSessionChoices: opts.validateSessionChoices }
       : {}),
@@ -322,6 +331,89 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
     ).rejects.toThrow(/no model provider/);
     expect(events).toEqual([]);
     expect(stampedResults[0]?.result).toMatch(/no model provider granted/);
+  });
+
+  /** TEST_SCENARIO: The agent has no default model. A retry cannot change
+   * that, so the first attempt records the reason, queues the next run and
+   * ends the job instead of waking the agent again on every retry. */
+  it("records a missing default on the first attempt without a retry", async () => {
+    const { runner, fires, events, enqueued } = makeDeps({
+      firePair: async () => {
+        throw new NoDefaultModelError();
+      },
+    });
+    await expect(
+      runner.buildFireHandler()(
+        SCHEDULE_ID,
+        new Date("2026-06-12T10:30:00Z"),
+        false,
+      ),
+    ).resolves.toBeUndefined();
+    expect(events).toEqual([]);
+    expect(fires[0]?.result).toMatch(/no default model/);
+    expect(fires[0]?.nextRun).not.toEqual(new Date("2026-06-12T10:30:00Z"));
+    expect(enqueued).toHaveLength(1);
+  });
+
+  /** TEST_SCENARIO: A schedule that names its own model needs no default,
+   * so it never wakes the agent early for one; one that names none asks
+   * first. */
+  it("asks for the default before the fire only when the schedule names no model", async () => {
+    const asked: string[] = [];
+    const ensureDefault = async (agentId: string) => {
+      asked.push(agentId);
+      return null;
+    };
+    const withModel = makeDeps({
+      choices: { model: "ibm/gpt-5.5" },
+      firePair: async () => ({
+        harness: "claude-code",
+        provider: "lite",
+        model: "ibm/gpt-5.5",
+      }),
+      ensureDefault,
+    });
+    await withModel.runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+    expect(asked).toEqual([]);
+
+    const withoutModel = makeDeps({
+      firePair: async () => ({
+        harness: "claude-code",
+        provider: "lite",
+        model: "ibm/gpt-5.5",
+      }),
+      ensureDefault,
+    });
+    await withoutModel.runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+    expect(asked).toHaveLength(1);
+  });
+
+  /** TEST_SCENARIO: Run now never waits for an agent that is still setting up
+   * its default after a move; it says so at once. */
+  it("refuses run now while the default is being set up", async () => {
+    const { runner, events } = makeDeps({
+      defaultPendingAfterMove: async () => true,
+    });
+    expect(await runner.runNow(SCHEDULE_ID)).toBe("default-pending");
+    expect(events).toEqual([]);
+  });
+
+  /** TEST_SCENARIO: Run now on an agent with no default model is refused
+   * with the reason, which the schedule also records, not a server error. */
+  it("refuses run now when the agent has no default model", async () => {
+    const { runner, stampedFires } = makeDeps({
+      firePair: async () => {
+        throw new NoDefaultModelError();
+      },
+    });
+    expect(await runner.runNow(SCHEDULE_ID)).toBe("no-default-model");
+    expect(stampedFires[0]).toMatch(/no default model/);
   });
 
   /** TEST_SCENARIO: The schedule names a harness, a qualified model and a

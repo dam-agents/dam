@@ -28,6 +28,7 @@ import {
   resolveSessionPair,
 } from "../domain/session-pair.js";
 import { harnessFits } from "../../templates/index.js";
+import { NoDefaultModelError } from "../domain/no-default-model.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import type { HarnessConfigSnapshotRepo } from "../infrastructure/snapshot-repo.js";
 import { harnessConfigEvent } from "../domain/harness-config-event.js";
@@ -136,10 +137,6 @@ export function createHarnessConfigService(deps: {
           catalog: deps.catalog,
           getCapabilities: deps.getCapabilities,
           specHarness: deps.specHarness,
-          availableModels: async (id, h) =>
-            (await deps.snapshotRepo.read(id, h))?.availableModels?.map(
-              (m) => m.value,
-            ) ?? null,
         },
         agentId,
         harness ? { harness } : {},
@@ -311,7 +308,7 @@ function harnessConfigCatalogOf(
   return parsed.success ? parsed.data : null;
 }
 
-function defaultHarnessOf(capabilities: unknown): string | null {
+export function defaultHarnessOf(capabilities: unknown): string | null {
   const raw = (capabilities as { defaultHarness?: unknown } | null)
     ?.defaultHarness;
   return typeof raw === "string" && raw !== "" ? raw : null;
@@ -328,10 +325,6 @@ export interface PairResolverDeps {
   catalog: HarnessCatalog;
   getCapabilities: (agentId: string) => Promise<unknown>;
   specHarness: (agentId: string) => Promise<string | undefined>;
-  availableModels?: (
-    agentId: string,
-    harness: string,
-  ) => Promise<readonly string[] | null>;
 }
 
 export async function resolveRememberedPair(
@@ -369,13 +362,6 @@ export async function resolveFirePair(
   if (!deps.catalog.harnesses.some((h) => h.name === agentHarness))
     return undefined;
   const routed = routesByModelName(capabilities);
-  const listedFor = async (
-    harness: string,
-  ): Promise<readonly string[] | null> =>
-    (await deps.availableModels?.(agentId, harness)) ?? null;
-  const listed = routed
-    ? await listedFor(preferred.harness ?? stored?.harness ?? agentHarness)
-    : null;
   const requestedHarness = preferred.harness ?? stored?.harness ?? agentHarness;
   const savedForHarness = stored?.harness === requestedHarness ? stored : null;
   const remembered: SessionPair | null = routed
@@ -400,7 +386,7 @@ export async function resolveFirePair(
             model: preferred.model,
           }
         : stored;
-  return resolveSessionPair({
+  const pair = resolveSessionPair({
     remembered,
     agentHarness,
     defaultHarness: deps.catalog.default,
@@ -408,6 +394,8 @@ export async function resolveFirePair(
     fits: (harness, type, templateId) =>
       harnessFits(deps.catalog, harness, type, templateId),
     routed,
-    availableModels: () => listed,
   });
+  if (requireLeases && routed && pair?.model === null && granted.length > 0)
+    throw new NoDefaultModelError(preferred.model);
+  return pair;
 }

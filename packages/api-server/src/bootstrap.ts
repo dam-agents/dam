@@ -137,8 +137,10 @@ import {
 import {
   createHarnessConfigSnapshotWriter,
   harnessConfigSupportOf,
+  composeDefaultConverter,
   composeFirePair,
   composeSessionChoicesValidator,
+  NoDefaultModelError,
 } from "./modules/harness-config/index.js";
 import {
   composeSchedulesAtBoot,
@@ -953,6 +955,31 @@ export async function bootstrap() {
   });
   const metricsReader = composeMetricsReader(config);
   const telemetryReader = composeTelemetryReader(config);
+  const defaultConverter = composeDefaultConverter({
+    db,
+    namespace: config.namespace,
+    catalog: harnessCatalog,
+    getCapabilities: async (agentId) =>
+      (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
+        ?.runtimeCapabilities ?? null,
+    specHarness: async (agentId) =>
+      (await agentsRepo.get(agentId))?.spec.harness,
+    ...(metricsReader && {
+      modelsRanBy: async (agentId: string, hours: number) =>
+        (await metricsReader.tokenSpendByModel([agentId], { hours }))
+          .sort((a, b) => b.outputTokens - a.outputTokens)
+          .map((r) => r.model),
+    }),
+    movedToNewImage: async (agentId) =>
+      (await agentsRepo.get(agentId))?.imageUpdateFrom !== undefined,
+    isRunning: (agentId) => agentsRepo.isReady(agentId),
+    wake: (agentId) => agentsRepo.wakeIfHibernated(agentId),
+    lastHelloAt: async (agentId) =>
+      (
+        await runtimeDelivery.agentsRuntimeRepo.get(agentId)
+      )?.runtimeLastHelloAt?.getTime() ?? null,
+    log: (msg) => getLogger().info(msg),
+  });
 
   const sessionWatcher = composeSessionWatcher({
     db,
@@ -1145,7 +1172,12 @@ export async function bootstrap() {
     return hold.reason;
   };
   const channelSpendHold = async (agentId: string) => {
-    const provider = (await firePair(agentId, {}))?.provider;
+    const provider = (
+      await firePair(agentId, {}).catch((err: unknown) => {
+        if (err instanceof NoDefaultModelError) return undefined;
+        throw err;
+      })
+    )?.provider;
     return spendHold({
       agentId,
       ...(provider ? { connectionId: provider } : {}),
@@ -1189,7 +1221,16 @@ export async function bootstrap() {
       namespace: config.namespace,
       instanceName,
       stallProbeMs: config.acpTurnStallProbeSeconds * 1000,
-      firePair: (agentId) => firePair(agentId, {}),
+      firePair: async (agentId) => {
+        const outcome = await defaultConverter.convert(agentId);
+        try {
+          return await firePair(agentId, {});
+        } catch (err) {
+          if (err instanceof NoDefaultModelError && outcome === "waiting")
+            throw new NoDefaultModelError(undefined, { pending: true });
+          throw err;
+        }
+      },
     });
 
   const agentIcons =
@@ -1423,6 +1464,16 @@ export async function bootstrap() {
     bullConnection,
     runtimeMutator: runtimeDelivery.runtimeMutator,
     wakeAgent: (agentId) => agentsRepo.wakeIfHibernated(agentId),
+    ensureDefault: (agentId) => defaultConverter.ensureForFire(agentId),
+    defaultPendingAfterMove: async (agentId) => {
+      if (!(await defaultConverter.pendingAfterMove(agentId))) return false;
+      void defaultConverter
+        .ensureForFire(agentId)
+        .catch((err: unknown) =>
+          getLogger().warn({ err, agentId }, "default conversion failed"),
+        );
+      return true;
+    },
     restoreActivity: (agentId, stamp) =>
       agentsRepo.restoreActivityIfUnchanged(agentId, stamp),
     redis: sharedRedis,

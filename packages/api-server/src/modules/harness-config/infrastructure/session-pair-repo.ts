@@ -3,6 +3,7 @@ import {
   asc,
   eq,
   inArray,
+  isNull,
   agents as agentsTable,
   connectionGrants,
   connections as connectionsTable,
@@ -23,7 +24,11 @@ export interface SessionPairRepo {
   grantedProviders(agentId: string): Promise<GrantedProvider[]>;
 }
 
-export function createSessionPairRepo(db: Db): SessionPairRepo {
+export interface FillableSessionPairRepo extends SessionPairRepo {
+  writeIfEmpty(agentId: string, pair: SessionPair): Promise<boolean>;
+}
+
+export function createSessionPairRepo(db: Db): FillableSessionPairRepo {
   return {
     async read(agentId) {
       const rows = await db
@@ -39,6 +44,17 @@ export function createSessionPairRepo(db: Db): SessionPairRepo {
         .update(agentsTable)
         .set({ sessionPair: pair })
         .where(eq(agentsTable.id, agentId));
+    },
+
+    async writeIfEmpty(agentId, pair) {
+      const rows = await db
+        .update(agentsTable)
+        .set({ sessionPair: pair })
+        .where(
+          and(eq(agentsTable.id, agentId), isNull(agentsTable.sessionPair)),
+        )
+        .returning({ id: agentsTable.id });
+      return rows.length > 0;
     },
 
     async grantedProviders(agentId) {
