@@ -62,7 +62,9 @@ describe("dam chat attach notice (#4007)", () => {
     const result = await chat.run({
       agentRef: AGENT_ID,
       strategy: { kind: "new" },
-      onAttach: (sessionId) => calls.push(`attach ${sessionId}`),
+      onAttach: (sessionId) => {
+        calls.push(`attach ${sessionId}`);
+      },
     });
 
     expect(result.ok).toBe(true);
@@ -102,7 +104,9 @@ describe("dam chat attach notice (#4007)", () => {
     const result = await chat.run({
       agentRef: AGENT_ID,
       strategy: { kind: "continue" },
-      onAttach: (sessionId) => calls.push(`attach ${sessionId}`),
+      onAttach: (sessionId) => {
+        calls.push(`attach ${sessionId}`);
+      },
     });
 
     expect(result.ok).toBe(false);

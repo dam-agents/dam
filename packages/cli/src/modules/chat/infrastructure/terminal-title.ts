@@ -5,7 +5,6 @@ export const TITLE_SAVE = "\x1b[22;0t";
 export const TITLE_RESTORE = "\x1b[23;0t";
 
 export function setTitle(text: string): string {
-  // eslint-disable-next-line no-control-regex
   return `\x1b]2;${text.replace(/[\x00-\x1f\x7f]/g, "")}\x07`;
 }
 
