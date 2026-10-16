@@ -18,9 +18,8 @@ use crate::api::{MachineSpec, State};
 use crate::console;
 use crate::guest::SHARE_PATH;
 use crate::runtime::{
-    clear_for_start, discard_overlay, grown_storage, image_env_beside, kill_orphans, orphan_pids,
-    timed, updated_env, vmms_left, workload, Machine, Runtime, Update, GUEST_AGENT_PORT,
-    VMM_EXIT_WAIT,
+    clear_for_start, grown_storage, image_env_beside, kill_orphans, orphan_pids, timed,
+    updated_env, vmms_left, workload, Machine, Runtime, Update, GUEST_AGENT_PORT, VMM_EXIT_WAIT,
 };
 
 // UNIT_BOUNDARY_DESCRIPTION: the runtime backed by smolvm's embedding API. It keeps smolvm's own state — the machine database and the machine directories — where smolvm keeps it by default, under the runner's HOME, which is the runner's claim. Each call is synchronous and may block for as long as a boot takes, so the server runs them off its async threads.
@@ -331,12 +330,9 @@ impl Runtime for Smolvm {
 
     fn stop(&self, id: &str) -> anyhow::Result<()> {
         terminate_workload(id);
-        let dir = vm_data_dir(id);
-        let vmms = orphan_pids(&self.proc_root, &dir);
         timed("stop", id, &[], || {
             self.ended(id, || self.runtime.stop_machine(id))
         })?;
-        discard_overlay(id, &self.proc_root, &dir, vmms);
         Ok(())
     }
 

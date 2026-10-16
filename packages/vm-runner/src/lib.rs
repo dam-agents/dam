@@ -25,7 +25,6 @@ pub mod server;
 mod share;
 mod state;
 pub mod storage;
-pub mod templates;
 
 pub use platform_init::guest;
 

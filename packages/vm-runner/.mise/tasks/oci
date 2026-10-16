@@ -87,8 +87,9 @@ fetch() {
 
 # The smolvm release is refused unless it has the digest smolvm.pin records for
 # this architecture. It is already the layout the runner reads — the launcher,
-# with its libraries, the guest agent's rootfs and the compressed disk
-# templates beside it — so only those are unpacked, and the release's
+# with its libraries and the guest agent's rootfs beside it — so only those
+# are unpacked; its ext4 disk templates go unused, since the runner makes
+# every disk btrfs and its machines have no overlay disk, and the release's
 # Kubernetes shim, which the runner does not use, is left out.
 version="$(sed -n 's/^tag=v//p' smolvm.pin)"
 sha="$(sed -n "s/^sha256-linux-${arch}=//p" smolvm.pin)"
@@ -96,8 +97,7 @@ sha="$(sed -n "s/^sha256-linux-${arch}=//p" smolvm.pin)"
 release="smolvm-${version}-linux-${arch}"
 tar -xzf "$(fetch "https://github.com/smol-machines/smolvm/releases/download/v${version}/${release}.tar.gz" "$sha")" \
   -C "$b/opt/smolvm" --strip-components=1 --no-same-owner \
-  "${release}/smolvm" "${release}/smolvm-bin" "${release}/lib" "${release}/agent-rootfs" \
-  "${release}/storage-template.ext4.zst" "${release}/overlay-template.ext4.zst"
+  "${release}/smolvm" "${release}/smolvm-bin" "${release}/lib" "${release}/agent-rootfs"
 
 # libkrun is the release's own, rebuilt from the commit smolvm.pin names with
 # libkrun.patch applied: fixes for guest-reachable bugs in its virtio devices

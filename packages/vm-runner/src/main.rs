@@ -6,9 +6,9 @@ use std::time::Duration;
 use clap::Parser;
 use vm_runner::embedded::Smolvm;
 use vm_runner::forward::LOOPBACK_OFFSET;
+use vm_runner::http;
 use vm_runner::runtime::MAX_IMAGE_BYTES;
 use vm_runner::server::{Config, Server};
-use vm_runner::{http, templates};
 
 // UNIT_BOUNDARY_DESCRIPTION: every flag the runner defines. Each is set by exactly one of two callers, and neither relies on a default: the image's ENTRYPOINT sets the paths that are the image's own layout, and the controller sets everything it has chosen — the ports it opens in the runner's NetworkPolicy, where it mounts the runner's state and credentials and the runner's budgets. The controller builds those args in Go, so a rename is not a build failure on either side: it is a runner that rejects an argument its own Deployment sets, which surfaces as a pod that will not start. contract/runner-args.json holds the args the controller renders, and both sides test against it.
 #[derive(Parser, Debug)]
@@ -81,7 +81,7 @@ struct Args {
     tls_key: String,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: smolvm boots every VMM by spawning its own executable again with `_boot-vm` and a boot-config path, so this binary is also the VMM. The subcommand is checked before anything else runs: a boot process must never parse runner flags, bind the machine API or start a runtime of its own. Serving it here rather than pointing smolvm at a separate binary means the VMM is always the smolvm library this runner was built against.
+// UNIT_BOUNDARY_DESCRIPTION: smolvm boots every VMM by spawning its own executable again with `_boot-vm` and a boot-config path, so this binary is also the VMM. Its machines have no overlay disk, in this process and in every VMM: the root overlay of smolvm's guest agent was discarded before every boot anyway (runtime::OVERLAY_FILES), so the guest keeps it in RAM and each machine has one disk, its storage disk. The subcommand is checked before anything else runs: a boot process must never parse runner flags, bind the machine API or start a runtime of its own. Serving it here rather than pointing smolvm at a separate binary means the VMM is always the smolvm library this runner was built against.
 fn boot_config(mut args: impl Iterator<Item = std::ffi::OsString>) -> Option<Option<PathBuf>> {
     args.next();
     if args.next().as_deref() != Some(std::ffi::OsStr::new("_boot-vm")) {
@@ -182,6 +182,7 @@ fn reload_tls(tls: axum_server::tls_rustls::RustlsConfig, cert: String, key: Str
 }
 
 fn main() -> anyhow::Result<()> {
+    smolvm::internal_boot::ATTACH_OVERLAY_DISK.store(false, std::sync::atomic::Ordering::Relaxed);
     if let Some(config) = boot_config(std::env::args_os()) {
         let config =
             config.ok_or_else(|| anyhow::anyhow!("_boot-vm requires a boot-config path"))?;
@@ -189,6 +190,8 @@ fn main() -> anyhow::Result<()> {
             smolvm::network::launch::configure_guest_host_service(port, port)
                 .map_err(|e| anyhow::anyhow!("mapping the gateway host port: {e}"))?;
         }
+        smolvm::internal_boot::ATTACH_OVERLAY_DISK
+            .store(false, std::sync::atomic::Ordering::Relaxed);
         smolvm::internal_boot::run(config)?;
         return Ok(());
     }
@@ -306,11 +309,6 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
         runtime,
     )?;
 
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_default();
-    let kept = (!home.as_os_str().is_empty()).then(|| home.join(templates::KEPT_DIR));
-    server.background(move |cancel| templates::warm(&install, kept.as_deref(), &home, &cancel));
     let logs = server.clone();
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(vm_runner::console::TRIM_EVERY);

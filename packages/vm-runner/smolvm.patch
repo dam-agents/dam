@@ -12,10 +12,28 @@ index 1e63774..f4d719c 100644
  http-body = "1"
  rustls = { version = "0.23.45", default-features = false, features = ["ring"] }
 diff --git i/crates/smolvm-agent/src/main.rs w/crates/smolvm-agent/src/main.rs
-index 78da739..d92f244 100644
+index 78da739..95446a5 100644
 --- i/crates/smolvm-agent/src/main.rs
 +++ w/crates/smolvm-agent/src/main.rs
-@@ -1245,6 +1245,12 @@ fn setup_persistent_rootfs() {
+@@ -1228,12 +1228,11 @@ fn setup_persistent_rootfs() {
+         }
+     }
+ 
+-    // If overlay device doesn't exist, no overlay disk attached — skip.
+-    // On devtmpfs, the kernel creates /dev/vdb automatically when libkrun
+-    // attaches a second virtio-blk disk. No mknod needed.
+-    if !Path::new(OVERLAY_DEVICE).exists() {
+-        return;
+-    }
++    // Without an overlay disk the root's changes go to RAM: the shared rootfs
++    // under it is read-only, and an embedder that throws the overlay away at
++    // every boot gains nothing from a disk. On devtmpfs, the kernel creates
++    // /dev/vdb automatically when libkrun attaches a second virtio-blk disk.
++    let overlay_on_disk = Path::new(OVERLAY_DEVICE).exists();
+ 
+     ensure_mount_dir(OVERLAY_MOUNT);
+ 
+@@ -1245,6 +1244,12 @@ fn setup_persistent_rootfs() {
      let storage_handle = if Path::new(STORAGE_DEVICE).exists() {
          ensure_mount_dir(STORAGE_TEMP_MOUNT);
          Some(std::thread::spawn(|| {
@@ -28,7 +46,160 @@ index 78da739..d92f244 100644
              // Resize before mount — template may be smaller than device.
              // Skip if filesystem already fills the device (subsequent boots).
              // If resize fails (e.g. macOS-created template with incompatible features),
-@@ -1840,6 +1846,20 @@ fn mount_storage_disk() -> bool {
+@@ -1288,61 +1293,29 @@ fn setup_persistent_rootfs() {
+         None
+     };
+ 
+-    // Resize ext4 on the UNMOUNTED device before mounting. The host copies
+-    // from a small template (~512MB) then extends the sparse file. resize2fs
+-    // on a mounted device fails with "Resource busy" — must resize first.
+-    // Skip if filesystem already fills the device (subsequent boots).
+-    // If resize fails (macOS-created template), the mount+mkfs fallback below handles it.
+-    if !ext4_already_full_size(OVERLAY_DEVICE) {
+-        let _ = resize_ext4_if_needed(OVERLAY_DEVICE, "overlay");
+-    }
+-
+-    // Try to mount overlay disk (should be pre-formatted ext4)
+-    let dev = cstr(OVERLAY_DEVICE);
+-    let mnt = cstr(OVERLAY_MOUNT);
+-    let ext4 = cstr("ext4");
+-    // SAFETY: mount /dev/vdb as ext4 at /mnt/overlay with noatime
+-    let mounted = unsafe {
+-        libc::mount(
+-            dev.as_ptr(),
+-            mnt.as_ptr(),
+-            ext4.as_ptr(),
+-            libc::MS_NOATIME,
+-            std::ptr::null(),
+-        ) == 0
+-    };
+-
+-    if !mounted {
+-        // First boot — format the disk
+-        let _ = std::process::Command::new("mkfs.ext4")
+-            .args([
+-                "-F",
+-                "-q",
+-                "-O",
+-                "^has_journal",
+-                "-L",
+-                "smolvm-overlay",
+-                OVERLAY_DEVICE,
+-            ])
+-            .status();
+-
+-        let dev = cstr(OVERLAY_DEVICE);
++    if !overlay_on_disk {
++        let src = cstr("tmpfs");
+         let mnt = cstr(OVERLAY_MOUNT);
+-        let ext4 = cstr("ext4");
+-        // SAFETY: retry mount after formatting with noatime
++        let fstype = cstr("tmpfs");
++        let opts = cstr("mode=0755");
++        // SAFETY: mount a tmpfs at /mnt/overlay with NUL-terminated strings
+         if unsafe {
+             libc::mount(
+-                dev.as_ptr(),
++                src.as_ptr(),
+                 mnt.as_ptr(),
+-                ext4.as_ptr(),
+-                libc::MS_NOATIME,
+-                std::ptr::null(),
++                fstype.as_ptr(),
++                0,
++                opts.as_ptr().cast(),
+             )
+         } != 0
+         {
+-            boot_log("ERROR", "failed to mount overlay disk after formatting");
+-            // Clean up the parallel storage mount so mount_storage_disk() fallback
+-            // does not hit EBUSY from an already-mounted /dev/vda.
++            boot_log(
++                "ERROR",
++                &format!(
++                    "failed to mount tmpfs overlay ({})",
++                    std::io::Error::last_os_error()
++                ),
++            );
+             if let Some(handle) = storage_handle {
+                 if handle.join().unwrap_or(false) {
+                     let mnt = cstr(STORAGE_TEMP_MOUNT);
+@@ -1354,6 +1327,74 @@ fn setup_persistent_rootfs() {
+             }
+             return;
+         }
++    } else {
++        // Resize ext4 on the UNMOUNTED device before mounting. The host copies
++        // from a small template (~512MB) then extends the sparse file. resize2fs
++        // on a mounted device fails with "Resource busy" — must resize first.
++        // Skip if filesystem already fills the device (subsequent boots).
++        // If resize fails (macOS-created template), the mount+mkfs fallback below handles it.
++        if !ext4_already_full_size(OVERLAY_DEVICE) {
++            let _ = resize_ext4_if_needed(OVERLAY_DEVICE, "overlay");
++        }
++
++        // Try to mount overlay disk (should be pre-formatted ext4)
++        let dev = cstr(OVERLAY_DEVICE);
++        let mnt = cstr(OVERLAY_MOUNT);
++        let ext4 = cstr("ext4");
++        // SAFETY: mount /dev/vdb as ext4 at /mnt/overlay with noatime
++        let mounted = unsafe {
++            libc::mount(
++                dev.as_ptr(),
++                mnt.as_ptr(),
++                ext4.as_ptr(),
++                libc::MS_NOATIME,
++                std::ptr::null(),
++            ) == 0
++        };
++
++        if !mounted {
++            // First boot — format the disk
++            let _ = std::process::Command::new("mkfs.ext4")
++                .args([
++                    "-F",
++                    "-q",
++                    "-O",
++                    "^has_journal",
++                    "-L",
++                    "smolvm-overlay",
++                    OVERLAY_DEVICE,
++                ])
++                .status();
++
++            let dev = cstr(OVERLAY_DEVICE);
++            let mnt = cstr(OVERLAY_MOUNT);
++            let ext4 = cstr("ext4");
++            // SAFETY: retry mount after formatting with noatime
++            if unsafe {
++                libc::mount(
++                    dev.as_ptr(),
++                    mnt.as_ptr(),
++                    ext4.as_ptr(),
++                    libc::MS_NOATIME,
++                    std::ptr::null(),
++                )
++            } != 0
++            {
++                boot_log("ERROR", "failed to mount overlay disk after formatting");
++                // Clean up the parallel storage mount so mount_storage_disk() fallback
++                // does not hit EBUSY from an already-mounted /dev/vda.
++                if let Some(handle) = storage_handle {
++                    if handle.join().unwrap_or(false) {
++                        let mnt = cstr(STORAGE_TEMP_MOUNT);
++                        // SAFETY: umount /mnt/storage that the parallel thread mounted
++                        unsafe {
++                            libc::umount(mnt.as_ptr());
++                        }
++                    }
++                }
++                return;
++            }
++        }
+     }
+ 
+     // Create overlay directories
+@@ -1840,6 +1881,20 @@ fn mount_storage_disk() -> bool {
          return true;
      }
  
@@ -49,7 +220,7 @@ index 78da739..d92f244 100644
      // --- Attempt 1: resize (if needed) + mount (works on subsequent boots) ---
      let resized =
          ext4_already_full_size(STORAGE_DEVICE) || resize_ext4_if_needed(STORAGE_DEVICE, "storage");
-@@ -1861,7 +1881,8 @@ fn mount_storage_disk() -> bool {
+@@ -1861,7 +1916,8 @@ fn mount_storage_disk() -> bool {
          .status()
      {
          Ok(status) => {
@@ -59,7 +230,7 @@ index 78da739..d92f244 100644
              if code <= 1 {
                  info!(exit_code = code, "fsck completed");
                  true
-@@ -1887,6 +1908,17 @@ fn mount_storage_disk() -> bool {
+@@ -1887,6 +1943,17 @@ fn mount_storage_disk() -> bool {
      }
  
      // --- Attempt 3: mkfs (last resort, destroys data) ---
@@ -77,7 +248,7 @@ index 78da739..d92f244 100644
      info!("formatting storage disk (first boot or unrecoverable)");
      match Command::new("mkfs.ext4")
          .args(["-F", "-q", "-O", "^has_journal", STORAGE_DEVICE])
-@@ -1913,6 +1945,171 @@ fn mount_storage_disk() -> bool {
+@@ -1913,6 +1980,177 @@ fn mount_storage_disk() -> bool {
      false
  }
  
@@ -230,7 +401,10 @@ index 78da739..d92f244 100644
 +        fd: i64,
 +        name: [u8; 4088],
 +    }
-+    let mut args = VolArgs { fd: 0, name: [0; 4088] };
++    let mut args = VolArgs {
++        fd: 0,
++        name: [0; 4088],
++    };
 +    args.name[..3].copy_from_slice(b"max");
 +    let grown = std::fs::File::open(mount_point).and_then(|dir| {
 +        // SAFETY: BTRFS_IOC_RESIZE, _IOW(0x94, 3, struct btrfs_ioctl_vol_args),
@@ -241,7 +415,10 @@ index 78da739..d92f244 100644
 +        }
 +    });
 +    if let Err(e) = grown {
-+        boot_log("WARN", &format!("storage: growing btrfs to its device failed ({e})"));
++        boot_log(
++            "WARN",
++            &format!("storage: growing btrfs to its device failed ({e})"),
++        );
 +    }
 +    true
 +}
@@ -249,7 +426,7 @@ index 78da739..d92f244 100644
  /// Stub for non-Linux platforms.
  #[cfg(not(target_os = "linux"))]
  fn mount_storage_disk() -> bool {
-@@ -8230,6 +8427,53 @@ mod bg_reap_tests {
+@@ -8230,6 +8468,55 @@ mod bg_reap_tests {
  
  #[cfg(test)]
  mod tests {
@@ -281,7 +458,9 @@ index 78da739..d92f244 100644
 +        assert!(super::may_format_storage(path));
 +        file.write_all_at(&[0x53, 0xEF], 1024 + 56).unwrap();
 +        assert!(!super::may_format_storage(path));
-+        assert!(!super::may_format_storage(dir.path().join("missing").to_str().unwrap()));
++        assert!(!super::may_format_storage(
++            dir.path().join("missing").to_str().unwrap()
++        ));
 +        file.set_len(100).unwrap();
 +        assert!(!super::may_format_storage(path));
 +    }
@@ -396,3 +575,101 @@ index 95b89bf..dad5d21 100644
                  "virtio-net: using accepted host TCP socket for published port guest_destination={} peer_addr={:?} local_addr={:?}",
                  destination,
                  stream.peer_addr().ok(),
+diff --git i/src/agent/manager.rs w/src/agent/manager.rs
+index cffe2dd..507bb44 100644
+--- i/src/agent/manager.rs
++++ w/src/agent/manager.rs
+@@ -168,6 +168,9 @@ fn open_overlay_disk_for_manager(
+     format: DiskFormat,
+     access: DiskAccess,
+ ) -> Result<OverlayDisk> {
++    if !crate::internal_boot::ATTACH_OVERLAY_DISK.load(std::sync::atomic::Ordering::Relaxed) {
++        return Ok(OverlayDisk::absent_at(path));
++    }
+     match (format, access) {
+         (DiskFormat::Qcow2, _) => OverlayDisk::open_existing_with_format(path, format),
+         (DiskFormat::Raw, DiskAccess::Observe) if path.exists() => {
+@@ -2278,7 +2281,9 @@ impl AgentManager {
+         // A manager opened to observe a never-started machine has no disks to
+         // boot from; creating them here would be creating them at a guessed
+         // size. Launches go through a manager opened with the machine's sizes.
+-        if !self.storage_disk.exists() || !self.overlay_disk.exists() {
++        let attach_overlay =
++            crate::internal_boot::ATTACH_OVERLAY_DISK.load(std::sync::atomic::Ordering::Relaxed);
++        if !self.storage_disk.exists() || (attach_overlay && !self.overlay_disk.exists()) {
+             let mut inner = self.inner.lock();
+             inner.state = AgentState::Stopped;
+             return Err(Error::agent(
+@@ -2306,7 +2311,11 @@ impl AgentManager {
+             let overlay_disk = &self.overlay_disk;
+             std::thread::scope(|s| {
+                 let storage_handle = s.spawn(|| storage_disk.ensure_formatted());
+-                let overlay_result = overlay_disk.ensure_formatted();
++                let overlay_result = if attach_overlay {
++                    overlay_disk.ensure_formatted()
++                } else {
++                    Ok(())
++                };
+                 if let Err(e) = storage_handle.join().unwrap_or_else(|_| {
+                     Err(crate::Error::storage("format storage", "thread panicked"))
+                 }) {
+diff --git i/src/internal_boot.rs w/src/internal_boot.rs
+index 9550f0d..d3996d1 100644
+--- i/src/internal_boot.rs
++++ w/src/internal_boot.rs
+@@ -71,6 +71,13 @@ fn open_boot_disk<K: DiskType>(path: &Path, size_gb: u64) -> crate::Result<VmDis
+     }
+ }
+ 
++/// Whether machines have an overlay disk, attached as /dev/vdb. An embedder
++/// that clears it, in its own process and before `run` in the boot process,
++/// boots the guest with its root's changes in RAM (the guest agent mounts a
++/// tmpfs upper instead), and the disk is never made or opened.
++pub static ATTACH_OVERLAY_DISK: std::sync::atomic::AtomicBool =
++    std::sync::atomic::AtomicBool::new(true);
++
+ /// Run the boot subprocess.
+ ///
+ /// Reads the boot config from the given path, sets up libkrun, and calls
+@@ -604,25 +611,29 @@ pub fn run(config_path: PathBuf) -> crate::Result<()> {
+     };
+     proc_timing!("storage opened");
+ 
+-    let overlay_disk = match open_boot_disk::<crate::storage::Overlay>(
+-        &config.overlay_disk_path,
+-        config.overlay_size_gb,
+-    ) {
+-        Ok(d) => d,
+-        Err(e) => {
+-            let _ = std::fs::write(
+-                &config.startup_error_log,
+-                format!("failed to open overlay disk: {}", e),
+-            );
+-            crate::process::exit_child(1);
++    let overlay_disk = if ATTACH_OVERLAY_DISK.load(std::sync::atomic::Ordering::Relaxed) {
++        match open_boot_disk::<crate::storage::Overlay>(
++            &config.overlay_disk_path,
++            config.overlay_size_gb,
++        ) {
++            Ok(d) => Some(d),
++            Err(e) => {
++                let _ = std::fs::write(
++                    &config.startup_error_log,
++                    format!("failed to open overlay disk: {}", e),
++                );
++                crate::process::exit_child(1);
++            }
+         }
++    } else {
++        None
+     };
+     proc_timing!("overlay opened");
+ 
+     // Launch the VM (never returns on success)
+     let disks = VmDisks {
+         storage: &storage_disk,
+-        overlay: Some(&overlay_disk),
++        overlay: overlay_disk.as_ref(),
+     };
+ 
+     // Start DNS filter listener if configured

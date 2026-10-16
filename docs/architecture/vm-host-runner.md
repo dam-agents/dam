@@ -40,7 +40,6 @@ And the forwarded NodePort is open to any process on the Mac, which can use a ga
 The harness tools the default image boots with are installed on the k3s node, which this runner does not see, so starting the runner waits for that install and copies the node's directory onto a second such volume, adding new versions beside the old ones.
 The Mac's default filesystem folds names that differ only in case into one file, and agent images carry such names.
 Trees are unpacked without privilege, so a guest sees every image file owned by the runner's user rather than by the image's owners.
-smolvm needs ext4 tools the Mac lacks, so the disk templates are expanded inside the cluster's VM and carried back sparse.
 The runner makes a new disk btrfs from the runner image's template ([vm-runner](vm-runner.md)), which needs no filesystem tool on the Mac.
 The guest agent and the guest kernel are the runner image's, so the Mac's guests mount btrfs as the pods' do: the image build in the cluster's VM leaves its kernel wrapped for macOS, and `cluster:host-runner` compiles that into the release's libkrunfw.
 
