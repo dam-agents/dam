@@ -424,7 +424,7 @@ function ArtifactListRow({
             />
           </div>
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
-            <span className="min-w-12 shrink-[100] truncate">
+            <span className="min-w-12 shrink-[100000] truncate">
               {artifact.title}
             </span>
             {(artifact.expiresAt !== null ||
