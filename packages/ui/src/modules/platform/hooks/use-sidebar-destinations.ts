@@ -23,7 +23,6 @@ export function useSidebarDestinations() {
   const kitBrowserOpen = useStore((s) => s.kitBrowserOpen);
   const setKitBrowserOpen = useStore((s) => s.setKitBrowserOpen);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
-  const artifactsOpen = useStore((s) => s.sidePanelTab === "artifacts");
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
 
@@ -36,7 +35,7 @@ export function useSidebarDestinations() {
   const artifacts: SidebarDestination = {
     label: "Artifacts",
     icon: ArtifactIcon,
-    active: artifactsOpen,
+    active: false,
     navigate: () => {
       setSidePanelTab("artifacts");
       setMobileScreen("files");
