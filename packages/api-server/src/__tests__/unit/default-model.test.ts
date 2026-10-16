@@ -139,6 +139,25 @@ describe("convertedDefaultModel", () => {
   });
 });
 
+describe("convertedDefaultModel on a provider that prefixes its ids", () => {
+  // TEST_SCENARIO: Claude Code on IBM records a call's model without IBM's route prefix, so the harness default matches the one listed id ending in that name, and none when two routes list it.
+  it("matches the recorded name to the one listed id ending in it", () => {
+    const convert = (listed: string[]) =>
+      convertedDefaultModel({
+        setting: null,
+        alias: "ibm",
+        listed,
+        ran: ["claude-sonnet-5-5"],
+      });
+    expect(convert(["aws/claude-sonnet-5-5", "aws/claude-opus-5-5"])).toBe(
+      "ibm/aws/claude-sonnet-5-5",
+    );
+    expect(
+      convert(["aws/claude-sonnet-5-5", "gcp/claude-sonnet-5-5"]),
+    ).toBeNull();
+  });
+});
+
 describe("the one-time default conversion", () => {
   const view = (
     status: "listed" | "unavailable" | "unsupported",
