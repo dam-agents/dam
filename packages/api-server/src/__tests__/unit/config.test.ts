@@ -114,6 +114,8 @@ describe("agentsInstallSettings — what every agents module is built with", () 
     "VIRTUALIZATION_ENABLED",
     "FEATURE_MODES",
     "FEATURE_DEFAULT_MODE",
+    "PLATFORM_PROVIDER_BASE_URL",
+    "PLATFORM_PROVIDER_MODEL",
     "AGENT_DEFAULT_MOUNTS",
     "HARNESSES",
   ];
@@ -175,6 +177,19 @@ describe("agentsInstallSettings — what every agents module is built with", () 
       "agent-telemetry": "off",
       "custom-avatars": "off",
     });
+  });
+  // TEST_SCENARIO: the built-in provider is offered only where the operator named a model server; without a base URL the feature is off even when the chart pins it on, and a configured base URL loses its trailing slash.
+  it("turns the platform provider off without a base URL", () => {
+    process.env.FEATURE_MODES = JSON.stringify({ "platform-provider": "on" });
+    expect(loadConfig().platformProvider).toBeNull();
+    expect(loadConfig().featureModes["platform-provider"]).toBe("off");
+    process.env.PLATFORM_PROVIDER_BASE_URL = "http://llm.models.svc:8000/";
+    process.env.PLATFORM_PROVIDER_MODEL = "m";
+    expect(loadConfig().platformProvider).toEqual({
+      baseUrl: "http://llm.models.svc:8000",
+      model: "m",
+    });
+    expect(loadConfig().featureModes["platform-provider"]).toBe("on");
   });
 
   /** TEST_SCENARIO: The chart names the harness new agents start on, and any
