@@ -202,7 +202,7 @@ export function SessionRow({
             />
             <div
               className={cn(
-                "flex items-center hover-capable:w-0 hover-capable:overflow-hidden hover-capable:group-hover:w-auto hover-capable:has-[:focus-visible]:w-auto hover-capable:has-[[data-state=open]]:w-auto",
+                "-mr-1 flex items-center hover-capable:w-0 hover-capable:overflow-hidden hover-capable:group-hover:w-auto hover-capable:has-[:focus-visible]:w-auto hover-capable:has-[[data-state=open]]:w-auto",
                 HOVER_ACTION,
               )}
             >
@@ -340,7 +340,9 @@ function SessionIndicators({
   )
     return null;
   return (
-    <span className={cn("flex shrink-0 items-center gap-2 pl-2", HOVER_YIELD)}>
+    <span
+      className={cn("flex shrink-0 items-center gap-2.5 pl-2", HOVER_YIELD)}
+    >
       {terminal && (
         <Terminal size={16} className="text-foreground" aria-label="Terminal" />
       )}

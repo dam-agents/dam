@@ -27,6 +27,7 @@ function session(overrides: Partial<AttentionItem> = {}): AttentionItem {
     title: null,
     scheduleId: null,
     threadTs: null,
+    harness: null,
     createdAt: "2026-08-19T10:00:00Z",
     activityAt: null,
     seenAt: null,
