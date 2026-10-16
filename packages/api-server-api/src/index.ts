@@ -343,6 +343,11 @@ export {
   GETTING_STARTED_TASKS,
   gettingStartedTaskSchema,
 } from "./modules/getting-started/schemas.js";
+export type {
+  SidebarPins,
+  SidebarPinsService,
+} from "./modules/sidebar-pins/types.js";
+export { SIDEBAR_PINS_MAX } from "./modules/sidebar-pins/schemas.js";
 export { quietWindowSchema } from "./modules/schedules/schemas.js";
 export {
   ONCE_DELIVERY_WINDOW_MS,
@@ -393,6 +398,8 @@ export {
   bedrockEnvMappings,
   BEDROCK_REGION_PATTERN,
   BEDROCK_TEMPLATE_ID,
+  PLATFORM_LLM_TEMPLATE_ID,
+  platformLlmEnvMappings,
   BOB_CHAT_MODES,
   normalizeBobChatMode,
   IBM_LITELLM_HOST,
@@ -547,6 +554,7 @@ export type {
   AttentionService,
   DismissedEntry,
 } from "./modules/attention/types.js";
+export { ATTENTION_FEED_LIMIT } from "./modules/attention/types.js";
 export type { SessionCategory, SessionView } from "./modules/sessions/types.js";
 export type { SessionDirectoryService } from "./modules/session-directory/types.js";
 
