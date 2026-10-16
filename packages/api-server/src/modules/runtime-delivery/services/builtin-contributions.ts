@@ -5,10 +5,16 @@ import {
   type EnvVar,
 } from "api-server-api";
 
+export const AGENT_NAME_ENV = "PLATFORM_AGENT_NAME";
+
 export interface BuiltinContributions {
   for(
     agentId: string,
-    opts: { sharedKnowledgeBases: boolean; harnesses: readonly string[] },
+    opts: {
+      agentName: string | null;
+      sharedKnowledgeBases: boolean;
+      harnesses: readonly string[];
+    },
   ): Contribution[];
 }
 
@@ -26,6 +32,15 @@ export function createBuiltinContributions(opts: {
           name: PLATFORM_OUTBOUND_MCP_SERVER,
           url: `${agentPath}/mcp`,
         },
+        ...(contributionOpts.agentName !== null
+          ? [
+              {
+                kind: "env",
+                name: AGENT_NAME_ENV,
+                placeholder: contributionOpts.agentName,
+              } satisfies Contribution,
+            ]
+          : []),
         ...(contributionOpts.sharedKnowledgeBases
           ? [
               {

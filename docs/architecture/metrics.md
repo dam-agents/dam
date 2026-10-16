@@ -6,8 +6,7 @@ Last verified: 2026-10-15
 
 The **metrics** subsystem is the user-facing read path over agent telemetry: it answers *how much have my agents spent, and where* for the signed-in user.
 It backs the two **Usage** surfaces — the Settings tab spanning every agent the user owns, and the per-agent section narrowed to one — with per-model token/cost aggregates, monthly spend per day, spend per session kind, and (unnarrowed) a per-agent spend breakdown, reading live from the columnar telemetry store that [observability](observability.md) fills.
-Home's spend widget reads the same unnarrowed breakdown over a period the user picks.
-It asks for a fresh window every 30 seconds and keeps the last breakdown it has for the period on screen while one loads, so a return to Home shows numbers at once.
+Home's spend widget, the same view at the top of the Settings Usage tab, and each agent's spend summary read Metered Spend instead, which the gateway measures ([spend-limits](spend-limits.md#screens)).
 A separate **Session costs** read serves a different consumer — the cost-per-session line in the sidebar's list of an Agent's Sessions — not either Usage surface.
 It is almost entirely a query surface: it mutates nothing and emits no events.
 Spend is the only question it answers; the raw traces and log records behind those numbers are read by [agent-telemetry](agent-telemetry.md), which opens its own connection to the same store and shares this subsystem's owner scoping but inverts its fail-closed posture on an empty result.
@@ -191,8 +190,8 @@ The reader is the only component in this subsystem that speaks to the telemetry 
 It holds a process-wide read connection and translates each contract read into an aggregate query against the store, always gated on the owner allowlist plus the request's window filters.
 
 Its **spend** reads (every tRPC rollup and the agent-facing cost reads) take one log record per LLM call.
-On a runtime with the Model Router ([harness configuration](harness-config.md#the-model-router)) the router writes that record for every call on every harness: the token counts read off the response, the cost from the catalog's price in integer micro-dollars, the provider Connection and alias, the upstream model id and the harness; Claude Code keeps writing its own record beside it.
-The reader sums an agent from the router's records when it has any in the window, else from the harness's own (Claude Code's, and Pi's of the same shape), so a router export that never reached the store leaves the harness's count and no call is summed twice.
+On a runtime with the Model Router ([harness configuration](harness-config.md#the-model-router)) the router writes that record for every call on every harness: the token counts read off the response, the cost from the catalog's price in integer micro-dollars, the provider Connection and alias, the upstream model id and the harness; Claude Code and Codex keep writing their own record beside it.
+The reader sums an agent from the router's records when it has any in the window, else from the harness's own (Claude Code's, Pi's of the same shape, and Codex's, which the collector reshapes to it ([observability](observability.md#agent-export))), so a router export that never reached the store leaves the harness's count and no call is summed twice.
 The switch is per agent and invocation, at its own first router record, so an agent moved to a router image mid-window keeps the harness records from before, whenever the owner's other agents moved.
 A Claude Code call on a native Connection (Bedrock) has no router record; Claude Code's own record names the model without the `claude/` prefix and is always counted, with no provider.
 A call the router could not price is still a record: cut before its usage arrived, answered without usage, or on a model the catalog has no price for.
@@ -214,7 +213,7 @@ The telemetry store is optional (it ships with [observability](observability.md)
 When no store endpoint is configured, the metrics service is wired to a **disabled** variant whose every read fails loud with a `PRECONDITION_FAILED` error rather than returning empty results.
 Failing closed is deliberate: an empty success is indistinguishable from "no spend yet" and would silently misreport a bill as zero.
 Both Usage surfaces treat that error as *metrics unavailable on this deployment* and show an unavailable message, distinct from the empty-but-enabled state where a real store simply has no rows for the window.
-Because the verdict is deployment-wide rather than per-window, they withdraw the period control instead of offering months that would fail identically; the per-agent nav summary degrades to its neutral placeholder, and Home's spend widget leaves the page rather than occupy it with an error the user cannot act on.
+Because the verdict is deployment-wide rather than per-window, they withdraw the period control instead of offering months that would fail identically.
 The agent-facing read deliberately inverts this: it answers `available: false` with a reason, as a *success*, because its caller is unattended and needs to report "cost is not measured on this install" and carry on rather than treat a thrown error as a failed task.
 Both variants are chosen once at composition time from the same configuration, so neither can be reached on an install of the other kind.
 
@@ -223,10 +222,12 @@ Both variants are chosen once at composition time from the same configuration, s
 Attribution is trustworthy; the numbers are self-reported.
 The two guarantees are different and this subsystem inherits both from the export path — see [observability — trusted attribution](observability.md#trusted-attribution) for the mechanism.
 
-- **Counters are agent-reported.** Token and cost figures come from the agent's own telemetry: the Model Router's records are computed by platform code inside the agent's pod, and an agent runs untrusted code that can misreport them (inflate a token count, understate a cost, post records of its own to the rail).
+- **Counters are agent-reported.** Token and cost figures come from the agent's own telemetry: the Model Router's records are computed by platform code inside the agent's pod, and an agent runs untrusted code that can misreport them (inflate a token count, understate a cost, report a negative one, post records of its own to the rail).
   The read path does not attempt to independently verify them; it reports what was exported.
-- **Attribution is gateway-stamped and unforgeable.** The owner attribution attribute every query filters on is stamped by the agent's paired gateway, overwriting anything the agent set, and the collector drops any owner attribution the gateway did not stamp.
+- **Attribution is gateway-stamped and unforgeable.** The agent attribution every query filters on is stamped by the agent's paired gateway, overwriting anything the agent set, and the collector drops any agent attribution the gateway did not stamp; the owner follows from the agent.
   So an agent can only ever pollute *its own* spend — never make its telemetry appear under another user, and never read another user's.
   The guarantee is **attribution, not content integrity**: whose spend is bounded exactly; how much is self-declared.
+- **Metered Spend is a different number.** The agent's gateway measures every model call from the provider's reply, and the api-server prices it ([spend-limits](spend-limits.md)).
+  The agent cannot change that number, so spend limits use it; the figures on this page stay agent-reported and serve display only, and the two need not agree.
 - **Display identity is not attribution.** The agent's user-facing name travels in a separate, agent-exported attribute that exists only for finding an instance in the exploration UI.
   It is display-only and never used for scoping or ownership — the gateway-stamped id is the sole authority for whose data this is.

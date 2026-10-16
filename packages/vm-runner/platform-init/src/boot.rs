@@ -3895,7 +3895,7 @@ mod tests {
         }
     }
 
-    // TEST_SCENARIO: a tool that locks a file deep in its cache still needs it, so the whole entry holding it stays while the lock is held — a BSD lock or a POSIX one — however long the entry has gone unused, and an unlocked entry beside it goes. Once the lock is released, the entry is offered again. The lock table is the kernel's own, which this test process's locks are in. A child another test forks meanwhile shares a flock until its exec closes the descriptor, so the release is waited for.
+    // TEST_SCENARIO: a tool that locks a file deep in its cache still needs it, so the whole entry holding it stays while the lock is held — a BSD lock or a POSIX one — however long the entry has gone unused, and an unlocked entry beside it goes. Once the lock is released, the entry is offered again. The lock table is the kernel's own, which this test process's locks are in.
     #[test]
     fn an_entry_holding_a_locked_file_is_kept_whole() {
         let home = TempDir::new("evict-locked");
@@ -3948,16 +3948,21 @@ mod tests {
 
         drop(bsd);
         drop(posix);
-        let unlocked = [
-            h.join(".cache/plain"),
-            h.join(".cache/posix"),
-            h.join(".cache/tool"),
-        ];
+        // UNIT_BOUNDARY_DESCRIPTION: a BSD lock belongs to the open file, and a parallel test's child shares that file between its fork and its exec, so the lock can outlive the drop for a moment.
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while offered() != unlocked && std::time::Instant::now() < deadline {
-            std::thread::sleep(std::time::Duration::from_millis(20));
+        let mut shown = offered();
+        while shown.len() < 3 && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            shown = offered();
         }
-        assert_eq!(offered(), unlocked);
+        assert_eq!(
+            shown,
+            [
+                h.join(".cache/plain"),
+                h.join(".cache/posix"),
+                h.join(".cache/tool")
+            ]
+        );
     }
 
     // TEST_SCENARIO: the kernel's lock table names each locked file by device and inode, the device's numbers in hex, also on the lines of a process waiting for a lock.

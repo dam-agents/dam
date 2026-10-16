@@ -48,7 +48,11 @@ export function isFiltered(filters: ActivityFilters): boolean {
   );
 }
 
-export function channelTypeOfSession(session: AttentionItem): ChannelType {
+export function channelTypeOfSession(
+  session: Pick<AttentionItem, "type" | "mode"> & {
+    scheduleId?: string | null;
+  },
+): ChannelType {
   if (
     session.scheduleId ||
     session.type === SessionType.ScheduleCron ||

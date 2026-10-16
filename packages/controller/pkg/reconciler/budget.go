@@ -49,7 +49,7 @@ func (r *AgentReconciler) budgetAllows(ctx context.Context, agent *apiv1.Agent, 
 	totalMem.Add(candMem)
 	if totalCPU.Cmp(ceilCPU) > 0 || totalMem.Cmp(ceilMem) > 0 {
 		return fmt.Sprintf(
-			"starting this agent would take your running agents to %s/%s CPU and %s/%s memory — put agents you aren't using to sleep to free room",
+			"starting this agent would take your running agents to %s/%s CPU and %s/%s memory — disable agents you aren't using to free room",
 			totalCPU.String(), ceilCPU.String(), totalMem.String(), ceilMem.String()), nil
 	}
 	return "", nil

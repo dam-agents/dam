@@ -1,5 +1,6 @@
 import {
   jsonRpcErrorDetails,
+  nextUtcMidnight,
   platformUndeliveredMetaSchema,
   type PlatformUndeliveredPrompt,
   PROMPT_NOT_QUEUED_CODE,
@@ -9,6 +10,7 @@ import {
 } from "api-server-api";
 import { z } from "zod";
 
+import { localResetTime } from "../spend/lib/format.js";
 import { connectionWentAway } from "./close-race.js";
 
 export function describeJsonRpcError(
@@ -63,6 +65,7 @@ export function isQueueFullError(e: unknown): boolean {
 }
 
 interface SendErrorDescription {
+  title?: string;
   message: string;
   hint?: string;
 }
@@ -82,12 +85,30 @@ const SEND_ERROR_HINTS: ReadonlyArray<[RegExp, string]> = [
   ],
 ];
 
+function describeSpendRefusal(raw: string): SendErrorDescription | null {
+  if (!/spend quota exceeded/i.test(raw)) return null;
+  const reset = localResetTime(nextUtcMidnight());
+  return /platform operator/i.test(raw)
+    ? {
+        title: "Spend ceiling reached:",
+        message: `You reached the daily spend ceiling that your operator set, so paid model calls stop. Ask your operator for a higher ceiling, or wait until ${reset} your time.`,
+        hint: `Details: ${raw}`,
+      }
+    : {
+        title: "Spend limit reached:",
+        message: `This agent reached a daily spend limit, so its model calls stop. Continue it on Home, or wait until ${reset} your time.`,
+        hint: `Details: ${raw}`,
+      };
+}
+
 export function describeSendError(raw: string): SendErrorDescription {
   if (
     raw === QUEUE_FULL_DESCRIPTION.message ||
     raw.startsWith(PROMPT_QUEUE_FULL_MESSAGE)
   )
     return QUEUE_FULL_DESCRIPTION;
+  const spendRefusal = describeSpendRefusal(raw);
+  if (spendRefusal) return spendRefusal;
   for (const [pattern, hint] of SEND_ERROR_HINTS) {
     if (!pattern.test(raw)) continue;
     if (/credential secret/i.test(raw)) return { message: raw };

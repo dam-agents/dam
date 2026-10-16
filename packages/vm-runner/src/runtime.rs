@@ -505,9 +505,11 @@ mod tests {
     fn a_vmm_holding_the_machine_directory_is_found_and_ended_on_this_host() {
         let dir = TempDir::new("vmm-scan");
         let vm_dir = dir.path().join("m1");
+        // UNIT_BOUNDARY_DESCRIPTION: the stand-in VMM blocks in a shell builtin so it forks nothing; a forked child carries sh's command line until it execs, and a scan in that moment finds two VMMs.
         let mut vmm = std::process::Command::new("sh")
-            .args(["-c", "sleep 60; true", "_boot-vm"])
+            .args(["-c", "read _", "_boot-vm"])
             .arg(format!("{}/", vm_dir.display()))
+            .stdin(std::process::Stdio::piped())
             .spawn()
             .unwrap();
         let pid = i32::try_from(vmm.id()).unwrap();

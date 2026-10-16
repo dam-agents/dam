@@ -178,7 +178,7 @@ flowchart LR
   Filing works from the artifact's menu or by dragging it onto a folder; a drag held near the top or bottom edge of the list scrolls it, so a folder off screen can still take the drop.
   Nothing reads membership as a claim about provenance.
 - The chat file panel's toolbar carries a **Create artifact / Sync to artifact** action that publishes the open file as above and switches the dock to the resulting artifact; binary and oversized files are excluded.
-- The chat view carries the same library twice over: an **Artifacts section** in the chat view's side column, scoped to the sandbox's agent, grouped by folder and offering the same per-artifact actions plus drag-to-folder filing, and a **docked preview** beside the conversation that renders the selected artifact, hosts the same editor, and follows new versions as they are published.
+- The chat view carries the same library twice over: an **Artifacts tab** in the chat view's side panel, scoped to the sandbox's agent, grouped by folder and offering the same per-artifact actions plus drag-to-folder filing, and a **docked preview** in that same tab that renders the selected artifact, hosts the same editor, and follows new versions as they are published.
   That preview shares one slot with the sandbox file viewer, so opening either evicts the other; both ask before they displace an unsaved edit, and so does every dismissal of a surface holding one.
   Deleting the artifact a preview is showing closes that preview.
 - On the agent-scoped chat surface a folder shows only that agent's artifacts, and a folder that holds none of them is not listed, so the agent's artifacts stay in view.

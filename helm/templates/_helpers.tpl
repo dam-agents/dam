@@ -510,8 +510,9 @@ creates, so it has to match the ServiceAccount vm-runner.yaml renders.
      <name> is a harnessTemplates entry or a harnesses.catalog entry.
      Each harness reads its own export env, so `telemetry` names the rail:
      `true` (or "claude-code") for the Claude Code env, "bob" for Bob Shell's,
-     "pi" for the image's Pi exporter. All land on the same collector over the
-     agent's ordinary gateway egress — see docs/architecture/observability.md. */}}
+     "pi" for the image's Pi exporter, "codex" for the flags the Codex image
+     renders. All land on the same collector over the agent's ordinary gateway
+     egress — see docs/architecture/observability.md. */}}
 {{- define "platform.agentTelemetry.env" -}}
 {{- $rail := toString .rail }}
 {{- if or (eq $rail "true") (eq $rail "claude-code") }}
@@ -520,8 +521,10 @@ creates, so it has to match the ServiceAccount vm-runner.yaml renders.
 {{- include "platform.agentTelemetry.env.bob" . }}
 {{- else if eq $rail "pi" }}
 {{- include "platform.agentTelemetry.env.pi" . }}
+{{- else if eq $rail "codex" }}
+{{- include "platform.agentTelemetry.env.codex" . }}
 {{- else }}
-{{- fail (printf "%s.telemetry: %q is not a known export rail — use true/claude-code, bob or pi. An unknown name would silently render the wrong rail and the agent's spend would never reach Usage." .templateName $rail) }}
+{{- fail (printf "%s.telemetry: %q is not a known export rail — use true/claude-code, bob, pi or codex. An unknown name would silently render the wrong rail and the agent's spend would never reach Usage." .templateName $rail) }}
 {{- end }}
 {{- end }}
 
@@ -568,6 +571,21 @@ creates, so it has to match the ServiceAccount vm-runner.yaml renders.
 - name: OTEL_SERVICE_NAME
   value: {{ .templateName | quote }}
 - name: OTEL_LOGS_EXPORTER
+  value: "otlp"
+- name: OTEL_EXPORTER_OTLP_ENDPOINT
+  value: {{ printf "https://%s:4318" $host | quote }}
+{{- end }}
+
+{{/* Codex reads its OTLP exporters only from the [otel] table of its
+     config.toml, never from this env: the image's launch scripts turn it into
+     `-c otel.*` flags, logs to {ENDPOINT}/v1/logs while OTEL_LOGS_EXPORTER is
+     "otlp" and traces to {ENDPOINT}/v1/traces while OTEL_TRACES_EXPORTER is.
+     Codex fixes its own service name, so OTEL_SERVICE_NAME would be inert. */}}
+{{- define "platform.agentTelemetry.env.codex" -}}
+{{- $host := include "platform.clickstack.collector.host" .root }}
+- name: OTEL_LOGS_EXPORTER
+  value: "otlp"
+- name: OTEL_TRACES_EXPORTER
   value: "otlp"
 - name: OTEL_EXPORTER_OTLP_ENDPOINT
   value: {{ printf "https://%s:4318" $host | quote }}

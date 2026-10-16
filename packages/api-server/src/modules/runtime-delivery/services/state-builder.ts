@@ -57,16 +57,19 @@ export function createStateBuilder(deps: {
   db: Db;
   outboxRepo: OutboxRepo;
   builtin: BuiltinContributions;
+  agentName: (agentId: string) => Promise<string | null>;
   egressDenies: (agentId: string) => EgressDenies;
 }): StateBuilder {
   return {
     async build(agentId, capabilities): Promise<StatePayload> {
-      const [userEnv, granted, skills] = await Promise.all([
+      const [userEnv, granted, skills, agentName] = await Promise.all([
         readUserEnvContributions(deps.db, agentId),
         readGrantedContributions(deps.db, agentId),
         readSkillRefContributions(deps.db, agentId, deps.egressDenies(agentId)),
+        deps.agentName(agentId),
       ]);
       const builtin = deps.builtin.for(agentId, {
+        agentName,
         sharedKnowledgeBases: granted.templateIds.has(SHARED_KB_TEMPLATE_ID),
         harnesses: capabilities.harnesses ?? [],
       });

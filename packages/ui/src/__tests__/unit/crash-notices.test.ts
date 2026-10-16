@@ -183,7 +183,7 @@ describe("nextCrashNotices", () => {
     ).toEqual([
       [],
       [
-        "Your VM agents ran out of memory together, so Ada, Bo and Cy restarted. Put agents you aren't using to sleep to free memory.",
+        "Your VM agents ran out of memory together, so Ada, Bo and Cy restarted. Disable agents you aren't using to free memory.",
       ],
     ]);
   });

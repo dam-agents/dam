@@ -14,13 +14,19 @@ import { match } from "ts-pattern";
 import { cn } from "@/lib/utils";
 
 import { getUser } from "../../../../auth.js";
+import type { AgentView } from "../../../../types.js";
 import type { AgentDisplayState } from "../../utils/agent-resolver.js";
+
+export type AgentAvatarMood = AvatarMood | "disabled";
 
 export function avatarMood(
   state: AgentDisplayState | undefined,
-  stopped: boolean | undefined,
-): AvatarMood {
-  return stopped || state === "hibernated" || state === "hibernating"
+  agent: Pick<AgentView, "stopRequested" | "disabled"> | null | undefined,
+): AgentAvatarMood {
+  if (agent?.disabled || state === "disabled") return "disabled";
+  return agent?.stopRequested ||
+    state === "hibernated" ||
+    state === "hibernating"
     ? "asleep"
     : "awake";
 }
@@ -40,7 +46,7 @@ interface Props {
   name: string;
   avatar?: string | null;
   size?: number;
-  mood?: AvatarMood;
+  mood?: AgentAvatarMood;
   playing?: boolean;
   className?: string;
 }
@@ -61,7 +67,9 @@ export function AgentAvatar({
   const svg = useMemo(
     () =>
       match(parsed)
-        .with({ kind: "character" }, (p) => avatarSvg(p.character, mood))
+        .with({ kind: "character" }, (p) =>
+          avatarSvg(p.character, mood === "awake" ? "awake" : "asleep"),
+        )
         .with({ kind: "emoji" }, (p) => emojiSvg(p.emoji))
         .with({ kind: "image" }, () => null)
         .exhaustive(),
