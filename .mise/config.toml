@@ -1,6 +1,6 @@
 # 2026.10.4 (2026-10-07) is under the 7-day floor: it builds pipx venvs on
 # mise's own Python, not whichever one uv finds. Floor passes 2026-10-14.
-min_version = "2026.10.4"
+min_version = "2026.10.5"
 monorepo_root = true
 
 [monorepo]
@@ -57,10 +57,6 @@ auto = true
 "npm:knip" = "latest"
 crane = "latest"
 gh = "latest"
-# go1.27.2 (2026-10-08) is locked under the 7-day floor: it fixes the
-# stdlib CVEs in the controller image. Until it ages past the floor
-# (2026-10-15), a re-lock with --bump --minimum-release-age 7d drops it to
-# 1.27.1: re-lock go alone without the flag afterwards.
 go = "1.27"
 gum = "latest"
 helm = "latest"
