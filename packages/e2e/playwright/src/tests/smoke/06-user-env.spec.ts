@@ -13,7 +13,7 @@ const userEnvEdited = "user-value-edited-4a7b";
 const shadowValue = "user-overrides-connection-1c8e";
 
 test("user env rides the contribution rail", async () => {
-  test.setTimeout(420_000);
+  test.setTimeout(300_000);
 
   const token = await getAccessToken();
   const api = createApiClient(token);

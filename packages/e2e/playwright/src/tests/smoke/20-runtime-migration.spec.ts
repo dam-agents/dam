@@ -66,7 +66,7 @@ async function migrationProgress(): Promise<string> {
 }
 
 test.beforeAll(async () => {
-  test.setTimeout(900_000);
+  test.setTimeout(300_000);
   api = createRefreshingApiClient(token);
   await requireBackend(api, "vm");
   await acceptTerms(api);
@@ -83,7 +83,7 @@ test.afterAll(async () => {
 
 // TEST_SCENARIO: the Agent to migrate. It is a container Agent that can be migrated, it holds a file in HOME written through the files API, and it holds a Session from one chat turn. The later scenarios check each of these again on the vm Backend. For about a second after the pod turns Ready, the mesh may not route to it yet. A write whose connection was reset may have reached the agent, so the proxy answers it 502 and does not retry it; the write of the same bytes is idempotent, so the helper retries it.
 test("a container agent holds a HOME file and a session", async ({ page }) => {
-  test.setTimeout(900_000);
+  test.setTimeout(300_000);
   await waitAgentState(api, agentId, "running");
   const agent = await api.agents.get.query({ id: agentId });
   expect(agent.vm, "the agent to migrate starts on the container Backend").toBe(
@@ -134,7 +134,7 @@ test("offers no Migrate button with the experiment off", async ({ page }) => {
 
 // TEST_SCENARIO: the user opts in and migrates through the Migrate button and its confirm dialog, which shows the plan, retention window included. The request switches nothing: the Agent keeps reading as a container Agent with a migration under way, which can still be aborted, while the controller prepares the machine beside it. It is settled once the controller has copied HOME and booted the machine from the copy, the api-server has switched the Backend, the migration's state is cleared, and the machine is running.
 test("migrates to the vm Backend from the Migrate button", async ({ page }) => {
-  test.setTimeout(1_200_000);
+  test.setTimeout(300_000);
   await setVmSandboxes(api, true);
   await page.goto(baseUrl);
   const row = agentRow(page, agentName);
@@ -172,7 +172,7 @@ test("migrates to the vm Backend from the Migrate button", async ({ page }) => {
     .toBe("container");
   await expect
     .poll(migrationProgress, {
-      timeout: 900_000,
+      timeout: 180_000,
       intervals: [5_000],
       message: "the runtime migration did not settle with the machine running",
     })
@@ -183,7 +183,7 @@ test("migrates to the vm Backend from the Migrate button", async ({ page }) => {
 test("keeps its id, HOME and sessions, and chats on the vm Backend", async ({
   page,
 }) => {
-  test.setTimeout(600_000);
+  test.setTimeout(300_000);
   const named = (await api.agents.list.query()).filter(
     (a) => a.name === agentName,
   );
