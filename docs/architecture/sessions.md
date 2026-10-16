@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-10-15
+Last verified: 2026-10-16
 
 ## Session inside the pod
 
@@ -126,6 +126,9 @@ A session on a removed provider or an unknown harness closes with the reason.
 Scrollback is tracked so that reattaching while the PTY lives replays it.
 A detached PTY is reaped on idleness, not on viewer loss: after a short detach grace it is killed only once the harness has also gone quiet.
 Liveness keys on harness output rather than viewer presence, so in-flight work (a running build, a streaming response) survives switching away and can be reattached live, while an abandoned idle prompt is cleaned up.
+Background work the session reports holds that reap back, as it holds a chat session's: a background command prints to its own output file, not to the screen, so a quiet screen does not mean the work is done.
+While the report is not empty the PTY is never reaped; once it is empty, the quiet clock applies again.
+When the PTY ends, the session's report goes with it, so a dead terminal cannot keep the agent busy.
 There is no append-only log, no fan-out, and no `session/resume` — terminal sessions belong to one viewer at a time, and the harness's own on-disk session store is the only durable record.
 
 SSH sessions are unrelated to the session machinery above: they carry no session identity, no metadata entry, and no harness involvement — a per-connection in-pod OpenSSH the platform relays bytes to, with its own authentication and its own shell, several coexisting per agent.
