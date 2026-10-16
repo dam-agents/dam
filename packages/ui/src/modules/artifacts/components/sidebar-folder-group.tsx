@@ -1,5 +1,5 @@
 import { Folder, FolderOpen } from "@carbon/icons-react";
-import type { CSSProperties, ReactNode } from "react";
+import { Children, type CSSProperties, type ReactNode } from "react";
 
 import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { TREE_GUIDE, treeGuideX } from "@/components/ui/tree-guide";
@@ -68,11 +68,10 @@ export function SidebarFolderGroup({
         {actions && <div className={cn("pr-2", HOVER_ACTION)}>{actions}</div>}
       </div>
       {!collapsed && (
-        <div
-          className={TREE_GUIDE}
-          style={{ "--tree-guide-x": treeGuideX(0) } as CSSProperties}
-        >
-          {children}
+        <div style={{ "--tree-guide-x": treeGuideX(0) } as CSSProperties}>
+          {Children.map(children, (child) => (
+            <div className={TREE_GUIDE}>{child}</div>
+          ))}
         </div>
       )}
     </div>

@@ -385,6 +385,7 @@ function ToggleRow({
       className={cn(
         labelVariants(),
         TREE_GUIDE,
+        "[--tree-guide-end:15px]",
         "flex h-[30px] shrink-0 items-center gap-1 rounded-lg pl-9 text-left text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
         !more && ["sticky bottom-0 z-raised", stickyClassName],
       )}
