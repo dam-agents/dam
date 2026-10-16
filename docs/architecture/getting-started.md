@@ -1,6 +1,6 @@
 # Getting started
 
-Last verified: 2026-10-15
+Last verified: 2026-10-16
 
 ## Overview
 
@@ -28,8 +28,9 @@ The Agent whose create is that first meeting does not count.
 
 ## In the browser
 
-The UI reads the user's progress and renders it as a dock in the lower right corner; it starts as a collapsed pill and opens once the first Agent's task is done.
-On a page the dock floats in the lower right corner of the window; in an Agent's chat it sits inside the message area, so it never covers the composer.
+The UI reads the user's progress and renders it as a progress ring beside the approvals bell; it starts collapsed and opens once the first Agent's task is done.
+On a wide screen the ring sits in the icon bar along the right edge, above the bell, on every page and in an Agent's chat, and the checklist opens to its left; on a phone it sits in the top bar and the checklist opens below it.
+Collapsed, it takes no room from the page, so it never covers a chat, its composer or the bell.
 Each row opens the place where the task is done; tasks on an Agent open the newest one, and the chat tasks leave a starting line in its composer.
 Every unlock is pushed to the owner's open tabs as a [live hint](platform-topology.md), and the dock plays a short celebration for each unlock the user has not seen, one at a time, then records it as seen.
 

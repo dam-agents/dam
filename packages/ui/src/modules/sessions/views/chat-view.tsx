@@ -279,7 +279,6 @@ export function ChatView() {
   const hasPendingPermission = useHasPendingPermission();
   const mobileScreen = useStore((s) => s.mobileScreen);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
-  const setApprovalsOpen = useStore((s) => s.setApprovalsOpen);
   const terminalPaused = useStore((s) => s.terminalPaused);
   const setTerminalPaused = useStore((s) => s.setTerminalPaused);
 
@@ -714,11 +713,6 @@ export function ChatView() {
     navigateToSandboxHome(selectedAgent);
   }, [selectedAgent, navigateToSandboxHome]);
 
-  const openApprovals = useCallback(
-    () => setApprovalsOpen(true),
-    [setApprovalsOpen],
-  );
-
   const handleBack = useCallback(() => {
     resetSession();
     goBack();
@@ -816,8 +810,9 @@ export function ChatView() {
               >
                 <Document size={16} />
               </Button>
-              <div className="md:hidden">
-                <ApprovalsButton onOpen={openApprovals} />
+              <div className="flex items-center gap-1 md:hidden">
+                <GettingStartedDock placement="header" />
+                <ApprovalsButton />
               </div>
             </div>
           </header>
@@ -1072,7 +1067,6 @@ export function ChatView() {
                   </ChatColumn>
                 </div>
 
-                <GettingStartedDock placement="chat" />
                 {showJump && (
                   <button
                     onClick={scrollToBottom}
@@ -1334,7 +1328,12 @@ export function ChatView() {
                   }
                 : undefined
             }
-            footer={<ApprovalsButton onOpen={openApprovals} />}
+            footer={
+              <div className="flex flex-col items-center gap-1">
+                <GettingStartedDock placement="rail" />
+                <ApprovalsButton />
+              </div>
+            }
           />
         </div>
       </div>
