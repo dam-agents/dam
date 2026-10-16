@@ -1,13 +1,4 @@
-import {
-  ChevronLeft,
-  Close,
-  Download,
-  Edit,
-  Launch,
-  NewTab,
-  Save,
-  Share,
-} from "@carbon/icons-react";
+import { ChevronLeft, Close, Save } from "@carbon/icons-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -25,10 +16,9 @@ import { useStartArtifactSession } from "../hooks/use-start-artifact-session.js"
 import { canUseArtifactBridge } from "../lib/artifact-bridge.js";
 import { isEditableArtifact } from "../lib/editable.js";
 import { isRenderedKind } from "../lib/kinds.js";
-import { downloadArtifact } from "../lib/transfer.js";
 import { ArtifactVisibilityButton } from "./artifact-badges.js";
+import { ArtifactBarActions } from "./artifact-bar-actions.js";
 import { ArtifactSourceView } from "./artifact-source-view.js";
-import { CopyLinkButton } from "./copy-link-button.js";
 import { DeferredFrame } from "./deferred-frame.js";
 import { RenameArtifactDialog } from "./rename-artifact-dialog.js";
 import { ShareDialog } from "./share-dialog.js";
@@ -163,7 +153,7 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
               <Close size={14} /> Cancel
             </Button>
             <Button
-              variant="outline"
+              variant="ghost"
               size="xs"
               onClick={editor.save}
               disabled={!editor.dirty || editor.saving}
@@ -183,73 +173,17 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
                 onChange={(v) => setPinnedVersion(v === latest ? null : v)}
               />
             )}
-            {editor.editable && (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Edit"
-                tooltip="Edit"
-                onClick={editor.startEdit}
-              >
-                <Edit size={16} />
-              </Button>
-            )}
             {artifact && (
-              <>
-                {artifact.shareUrl && (
-                  <CopyLinkButton
-                    url={artifact.shareUrl}
-                    variant="ghost"
-                    restricted={artifact.visibility === "restricted"}
-                  />
-                )}
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Share"
-                  tooltip="Share"
-                  onClick={() => setShareOpen(true)}
-                >
-                  <Share size={16} />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Download"
-                  tooltip="Download"
-                  onClick={() => void downloadArtifact(artifact.id)}
-                >
-                  <Download size={16} />
-                </Button>
-                {artifact.shareUrl && (
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Open in new tab"
-                    tooltip="Open in new tab"
-                    asChild
-                  >
-                    <a
-                      href={artifact.shareUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <Launch size={16} />
-                    </a>
-                  </Button>
-                )}
-              </>
-            )}
-            {startSession.available && shownVersion === latest && (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Start a new session"
-                tooltip="Start a new session"
-                onClick={() => void startSession.start()}
-              >
-                <NewTab size={16} />
-              </Button>
+              <ArtifactBarActions
+                artifact={artifact}
+                onEdit={editor.editable ? editor.startEdit : undefined}
+                onShare={() => setShareOpen(true)}
+                onStartSession={
+                  startSession.available && shownVersion === latest
+                    ? () => void startSession.start()
+                    : undefined
+                }
+              />
             )}
           </>
         )}

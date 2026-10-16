@@ -1,4 +1,4 @@
-import { FolderAdd, Link, OverflowMenuVertical } from "@carbon/icons-react";
+import { FolderAdd, OverflowMenuVertical } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
 import {
   type CSSProperties,
@@ -73,8 +73,7 @@ export function ChatArtifactsPanel({
   const { dropCallbacks, hotFolderId, dragInProgress } =
     useFolderDragOrchestration(artifacts);
   const groups = useMemo(
-    () =>
-      groupArtifactsByFolder(artifacts, folders, { omitEmptyFolders: true }),
+    () => groupArtifactsByFolder(artifacts, folders),
     [artifacts, folders],
   );
   const rootDrop = useFolderDropTarget(null, dropCallbacks);
@@ -250,18 +249,6 @@ function ArtifactListRow({
         />
       </div>
       <span className="min-w-0 flex-1 truncate">{artifact.title}</span>
-      <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          className={HOVER_ACTION}
-          aria-label="Share"
-          tooltip="Share"
-          onClick={() => onShare(artifact)}
-        >
-          <Link size={16} />
-        </Button>
-      </div>
       <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
         <DropdownMenu>
           {}

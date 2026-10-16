@@ -1,22 +1,8 @@
-import {
-  Close,
-  Download,
-  Edit,
-  Launch,
-  Maximize,
-  Save,
-  Share,
-} from "@carbon/icons-react";
+import { Close, Maximize, Save } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useId, useRef, useState } from "react";
 
-import {
-  DialogBody,
-  DialogFooter,
-  DialogHeader,
-  Modal,
-} from "@/components/modal";
-import { RenderToggle } from "@/components/render-toggle";
+import { DialogBody, DialogHeader, Modal } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { formatBytes } from "@/lib/format-size";
 
@@ -31,11 +17,11 @@ import { useArtifactEditor } from "../hooks/use-artifact-editor.js";
 import { useStartArtifactSession } from "../hooks/use-start-artifact-session.js";
 import { isEditableArtifact } from "../lib/editable.js";
 import { isRenderedKind } from "../lib/kinds.js";
-import { downloadArtifact } from "../lib/transfer.js";
-import { ArtifactStatusBadge } from "./artifact-badges.js";
+import { ArtifactVisibilityButton } from "./artifact-badges.js";
+import { ArtifactBarActions } from "./artifact-bar-actions.js";
 import { ArtifactSourceView } from "./artifact-source-view.js";
-import { CopyLinkButton } from "./copy-link-button.js";
 import { DeferredFrame } from "./deferred-frame.js";
+import { RenameArtifactDialog } from "./rename-artifact-dialog.js";
 import { ShareDialog } from "./share-dialog.js";
 import { VersionSwitcher } from "./version-switcher.js";
 
@@ -52,9 +38,10 @@ export function ArtifactPreviewDialog({
 }: Props) {
   const artifact = useArtifact(initialArtifact.id).data ?? initialArtifact;
   const renderable = isRenderedKind(artifact.kind);
-  const [showSource, setShowSource] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const renameHintId = useId();
   const [pinnedVersion, setPinnedVersion] = useState<number | null>(null);
 
   const head = artifact.version;
@@ -66,7 +53,7 @@ export function ArtifactPreviewDialog({
   const preview = useArtifactPreview(renderable ? artifact.id : null, version);
   const couldEdit = isEditableArtifact(artifact);
   const content = useArtifactContent(
-    !renderable || showSource || couldEdit ? artifact.id : null,
+    !renderable || couldEdit ? artifact.id : null,
     version,
   );
 
@@ -76,7 +63,7 @@ export function ArtifactPreviewDialog({
     isHeadVersion: pinnedVersion === null,
     initialEdit,
   });
-  const wantSource = !renderable || showSource || editor.editing;
+  const wantSource = !renderable || editor.editing;
   const startSession = useStartArtifactSession(artifact);
 
   const { confirmDiscard } = editor;
@@ -97,39 +84,37 @@ export function ArtifactPreviewDialog({
     <>
       <Modal size="lg" onClose={dismiss}>
         <DialogHeader
-          title={editor.dirty ? `● ${artifact.title}` : artifact.title}
-          onClose={dismiss}
-        />
-        <DialogBody>
-          <div className="mb-3 flex items-center gap-2 font-mono text-xs text-muted-foreground">
-            <ArtifactStatusBadge artifact={artifact} />
-            <span className="truncate">{artifact.fileName}</span>
-            <span>·</span>
-            <span>{formatBytes(artifact.sizeBytes)}</span>
-            <span className="flex-1" />
-            {!editor.editing && (
-              <VersionSwitcher
-                artifact={artifact}
-                versions={versions}
-                current={version}
-                total={total}
-                onChange={(v) => setPinnedVersion(v === head ? null : v)}
-              />
-            )}
-            {artifact.shareUrl && (
-              <CopyLinkButton
-                url={artifact.shareUrl}
-                variant="outline"
-                restricted={artifact.visibility === "restricted"}
-              />
-            )}
-            {editor.editing ? (
+          icon={
+            <ArtifactVisibilityButton
+              artifact={artifact}
+              onShare={() => setSharing(true)}
+            />
+          }
+          title={
+            <button
+              type="button"
+              className="max-w-full truncate rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              title={artifact.title}
+              aria-describedby={renameHintId}
+              onClick={() => setRenaming(true)}
+            >
+              {editor.dirty ? `● ${artifact.title}` : artifact.title}
+            </button>
+          }
+          titleAccessory={
+            <span id={renameHintId} hidden>
+              Rename artifact
+            </span>
+          }
+          truncateTitle
+          actions={
+            editor.editing ? (
               <>
                 <Button variant="ghost" size="xs" onClick={editor.cancelEdit}>
                   <Close size={14} /> Cancel
                 </Button>
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="xs"
                   onClick={editor.save}
                   disabled={!editor.dirty || editor.saving}
@@ -139,37 +124,45 @@ export function ArtifactPreviewDialog({
                 </Button>
               </>
             ) : (
-              <>
-                {editor.editable && (
+              <div className="flex items-center gap-1">
+                <VersionSwitcher
+                  artifact={artifact}
+                  versions={versions}
+                  current={version}
+                  total={total}
+                  onChange={(v) => setPinnedVersion(v === head ? null : v)}
+                />
+                <ArtifactBarActions
+                  artifact={artifact}
+                  onEdit={editor.editable ? editor.startEdit : undefined}
+                  onShare={() => setSharing(true)}
+                  onStartSession={
+                    startSession.available && version === head
+                      ? () => void startSession.start()
+                      : undefined
+                  }
+                />
+                {renderable && (
                   <Button
-                    variant="outline"
-                    size="xs"
-                    onClick={editor.startEdit}
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Fullscreen"
+                    tooltip="Fullscreen"
+                    onClick={() => setFullscreen(true)}
                   >
-                    <Edit size={14} /> Edit
+                    <Maximize size={16} />
                   </Button>
                 )}
-                {renderable && (
-                  <>
-                    <RenderToggle
-                      rendered={!showSource}
-                      onToggle={() => setShowSource((s) => !s)}
-                    />
-                    {!showSource && (
-                      <Button
-                        variant="outline"
-                        size="icon-sm"
-                        aria-label="Fullscreen"
-                        tooltip="Fullscreen"
-                        onClick={() => setFullscreen(true)}
-                      >
-                        <Maximize size={14} />
-                      </Button>
-                    )}
-                  </>
-                )}
-              </>
-            )}
+              </div>
+            )
+          }
+          onClose={dismiss}
+        />
+        <DialogBody>
+          <div className="mb-3 flex items-center gap-2 font-mono text-xs text-muted-foreground">
+            <span className="truncate">{artifact.fileName}</span>
+            <span>·</span>
+            <span>{formatBytes(artifact.sizeBytes)}</span>
           </div>
 
           {!wantSource ? (
@@ -203,29 +196,17 @@ export function ArtifactPreviewDialog({
             </div>
           )}
         </DialogBody>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setSharing(true)}>
-            <Share size={16} />
-            Share
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => void downloadArtifact(artifact.id)}
-          >
-            <Download size={16} />
-            Download
-          </Button>
-          {startSession.available && version === head && !editor.editing && (
-            <Button onClick={() => void startSession.start()}>
-              <Launch size={16} />
-              Start a new session
-            </Button>
-          )}
-        </DialogFooter>
       </Modal>
 
       {sharing && (
         <ShareDialog artifact={artifact} onClose={() => setSharing(false)} />
+      )}
+
+      {renaming && (
+        <RenameArtifactDialog
+          artifact={artifact}
+          onClose={() => setRenaming(false)}
+        />
       )}
 
       {fullscreen && preview.data && (
