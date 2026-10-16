@@ -1,6 +1,10 @@
 import type { ApprovalView } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
+import {
+  approvalGroupKey,
+  groupBy,
+} from "../../modules/approvals/lib/group-approvals.js";
 import { egressApprovalsWaiting } from "../../modules/approvals/lib/waiting-egress.js";
 import { approvalDetail } from "../../modules/home/lib/approval-copy.js";
 import { approvalToastChanges } from "../../modules/home/lib/approval-toasts.js";
@@ -99,5 +103,43 @@ describe("approvalDetail", () => {
       ),
     ).toBe("pi.dev (any path)");
     expect(approvalDetail(egress())).toBe("GET s3.example.com/bucket");
+  });
+});
+
+describe("approvalGroupKey", () => {
+  // TEST_SCENARIO: a browser opens several connections to one host at once, and each files its own approval. They merge into one card, oldest first, while another host, another path or another agent stays its own card.
+  it("merges the agent's waiting requests for one host and scope", () => {
+    const https = (id: string, host: string, agentId = "a-1") =>
+      egress({
+        id,
+        agentId,
+        payload: { kind: "ext_authz", host, method: "*", path: "*" },
+      });
+    const rows = [
+      https("d1", "d27-a.sdn.cz"),
+      https("other-host", "h.seznam.cz"),
+      https("d2", "D27-A.sdn.cz"),
+      https("other-agent", "d27-a.sdn.cz", "a-2"),
+      egress({ id: "path-1" }),
+      egress({
+        id: "path-2",
+        payload: {
+          kind: "ext_authz",
+          host: "s3.example.com",
+          method: "GET",
+          path: "/other",
+        },
+      }),
+      https("d3", "d27-a.sdn.cz"),
+    ];
+    expect(
+      groupBy(rows, approvalGroupKey).map((g) => g.map((a) => a.id)),
+    ).toEqual([
+      ["d1", "d2", "d3"],
+      ["other-host"],
+      ["other-agent"],
+      ["path-1"],
+      ["path-2"],
+    ]);
   });
 });
