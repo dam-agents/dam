@@ -25,12 +25,12 @@ GIT_PREFIX = false
 
 [vars]
 repo_root = "{{config_root}}"
-base_image_api_server = "registry.access.redhat.com/hi/nodejs:26@sha256:dffe609fba03be24faf352015d3f2e3950e18a82922b39f8b3828b9696cc6fcf"
-base_image_controller = "registry.access.redhat.com/hi/core-runtime:latest@sha256:4730fe5f23bec7eb86b9736bc1458d58862372b1d1555ca9da77d21d4fffea17"
+base_image_api_server = "registry.access.redhat.com/hi/nodejs:26@sha256:c46573a1d159c05370bada02d6049f38fbdcfa6418c0868ad404f4b92743475c"
+base_image_controller = "registry.access.redhat.com/hi/core-runtime:latest@sha256:12ebc4493ccbb80fd47175c9c670ea590c4e7140a7c4858e038ac2df42be8ca8"
 # 26.8.1 (2026-10-13) is under the 7-day floor: it fixes the pcre2 CVEs
 # in 26.8.0 and Keycloak's own advisories. The exception can go 2026-10-20.
 base_image_keycloak = "quay.io/keycloak/keycloak:26.8.1@sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244"
-base_image_ui = "registry.access.redhat.com/hi/nginx:1.30@sha256:7c88ec5f1177a2ab937e3fb99c3e42c367c629a7632e5c90a9dc607a9e4d1dcc"
+base_image_ui = "registry.access.redhat.com/hi/nginx:1.30@sha256:63ef79903a967e6bf45ed76e7c5f8bf28fb7457931162e0d645e75bcdeee0c49"
 base_image_debian = "mirror.gcr.io/library/debian:trixie-slim"
 
 [deps.pnpm]
