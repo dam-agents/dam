@@ -47,6 +47,7 @@ export function GettingStartedDock({ placement }: Props) {
   const progress = useGettingStarted().data;
   const expanded = useStore((s) => s.checklistExpanded);
   const setExpanded = useStore((s) => s.setChecklistExpanded);
+  const setApprovalsOpen = useStore((s) => s.setApprovalsOpen);
   const markSeen = useMarkUnlockSeen();
   const setDismissed = useSetChecklistDismissed();
   const startTask = useStartTask();
@@ -85,7 +86,10 @@ export function GettingStartedDock({ placement }: Props) {
           pulse={justUnlocked !== null}
           expanded={open}
           tooltipSide={at.tooltip}
-          onToggle={() => setExpanded(!open)}
+          onToggle={() => {
+            if (!open) setApprovalsOpen(false);
+            setExpanded(!open);
+          }}
         />
       )}
       {(celebrating || open) && (

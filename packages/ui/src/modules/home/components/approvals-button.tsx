@@ -10,11 +10,15 @@ export function ApprovalsButton() {
   const waiting = useWaitingApprovals().length;
   const open = useStore((s) => s.approvalsOpen);
   const setOpen = useStore((s) => s.setApprovalsOpen);
+  const setChecklistExpanded = useStore((s) => s.setChecklistExpanded);
 
   return (
     <button
       type="button"
-      onClick={() => setOpen(!open)}
+      onClick={() => {
+        if (!open) setChecklistExpanded(false);
+        setOpen(!open);
+      }}
       aria-expanded={open}
       data-testid="open-approvals"
       aria-label={
