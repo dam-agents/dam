@@ -53,11 +53,11 @@ cleanup() {
         done
     echo ""
     echo "--- VM runner VMM processes (threads, smolvm-tcp-* relay threads, CPU seconds) and runner metrics ---"
-    # A VMM is a session leader smolvm forks off the runner; a spinning relay shows as many smolvm-tcp-* threads and climbing CPU.
+    # A VMM is a `smolvm _boot-vm` process (the bracket keeps this script's own text from matching); a spinning relay shows as many smolvm-tcp-* threads and climbing CPU.
     vmm_procs='port=$1 tck=$(getconf CLK_TCK) n=0
       for d in /proc/[0-9]*; do
+        case "$(tr "\0" " " < "$d/cmdline" 2>/dev/null)" in *[_]boot-vm*) ;; *) continue ;; esac
         p=${d#/proc/}; s=$(cat "$d/stat" 2>/dev/null) || continue; set -- ${s##*)}
-        [ "$4" = "$p" ] && [ "$p" != 1 ] && [ "$p" != $$ ] || continue
         n=$((n + 1)); [ "$n" -le 20 ] || { echo "(more VMMs not shown)"; break; }
         echo "pid=$p ppid=$2 comm=$(cat "$d/comm") threads=$(ls "$d/task" | wc -l) smolvm_tcp_threads=$(cat "$d"/task/*/comm 2>/dev/null | grep -c "^smolvm-tcp-") cpu_seconds=$(( (${12} + ${13}) / tck ))"
       done
