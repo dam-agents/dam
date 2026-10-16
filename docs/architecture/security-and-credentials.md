@@ -240,6 +240,7 @@ Each one that joins raises the approval's in-session prompt again, to every sess
 That re-published prompt is for attached ACP clients such as the CLI.
 The web chat does not read it: a held request belongs to the agent, not to a session, so every open conversation of the agent shows the agent's waiting network approvals from the approvals list, with their verdict controls.
 The list is the api-server's own state, refreshed by the approvals live hint, so a conversation opened after the hold — or a retry that joined it — still shows the prompt, and a verdict given in one place clears it from every conversation, from Home and from its toast.
+Requests that arrive together, as a browser's parallel connections to one host do, can each file their own approval before any of them is there to join, so the UI shows an Agent's waiting approvals for the same host, port, method and path as one approval with a count, and a verdict on it answers every one of them.
 
 At most three rules speak for a host — itself, its `*.parent` wildcard, and the bare `*` — most specific first; a wildcard covers the one label its SNI chain and SAN do.
 Host names compare in any letter case, as DNS does: the agent writes the Host header and SNI, and a deny for `api.github.com` must also stop `API.GitHub.com`, which the gateway would resolve and forward all the same.
