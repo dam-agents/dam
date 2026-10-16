@@ -84,7 +84,7 @@ mkdir -p "$cache"
 fetch() {
   local f="$cache/$2"
   if ! echo "$2  $f" | sha256sum -c --status - 2>/dev/null; then
-    curl -fsSL "$1" -o "$f.part"
+    curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors "$1" -o "$f.part"
     echo "$2  $f.part" | sha256sum -c --quiet - || { rm -f "$f.part"; exit 1; }
     mv "$f.part" "$f"
   fi
@@ -171,9 +171,20 @@ if [ ! -f "$fw_so" ]; then
     timeout 600 git -C "$fw" fetch -q --depth 1 https://github.com/smol-machines/libkrunfw "$fw_commit"
     git -C "$fw" checkout -q FETCH_HEAD
   fi
-  # The kernel tarball (tarballs/) stays between builds; the tree is made again.
+  # The Makefile downloads its kernel as a snapshot git.kernel.org generates on
+  # the fly, with no checksum, and keeps whatever arrived in tarballs/, so one
+  # truncated download fails every later build. The same release comes from
+  # kernel.org's static tarball instead, checked against smolvm.pin; tar reads
+  # it whatever the Makefile's file name says.
+  kv="$(sed -n 's/^KERNEL_VERSION = //p' "$fw/Makefile")"
+  ksha="$(sed -n 's/^libkrunfw-kernel-sha256=//p' smolvm.pin)"
+  [ -n "$kv" ] && [ -n "$ksha" ] || { echo "no kernel version in libkrunfw's Makefile, or no libkrunfw-kernel-sha256 in smolvm.pin" >&2; exit 1; }
+  kmajor="${kv#linux-}"
+  ktar="$(fetch "https://cdn.kernel.org/pub/linux/kernel/v${kmajor%%.*}.x/$kv.tar.xz" "$ksha")"
   git -C "$fw" checkout -q -- .
-  git -C "$fw" clean -qfdx -e tarballs
+  git -C "$fw" clean -qfdx
+  mkdir -p "$fw/tarballs"
+  cp "$ktar" "$fw/tarballs/$kv.tar.xz"
   git -C "$fw" apply "$pkg/libkrunfw.patch"
   make -C "$fw" --no-print-directory -j"$(nproc)" >/dev/null
   # The same arm64 kernel, wrapped for macOS, is what the Mac host runner

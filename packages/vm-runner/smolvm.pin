@@ -15,10 +15,14 @@
 # was built from (smolvm's libkrunfw submodule at commit=). The image build
 # rebuilds it from that commit with libkrunfw.patch applied, and refuses a
 # kernel whose version differs from the release's.
+# libkrunfw-kernel-sha256= is the kernel.org release tarball of the kernel that
+# commit's Makefile names (KERNEL_VERSION), as kernel.org's signed sha256sums
+# list it; the build fetches it instead of the Makefile's on-the-fly snapshot.
 tag=v1.28.1
 commit=9dea943a0da86fe3baf2487dcfacde27875c919c
 libkrun-commit=85e015ca7a66942c73062747660584c2f9087063
 libkrunfw-commit=8ba5fe2219b5c407ce1824d1c2dcf39adff84d8e
+libkrunfw-kernel-sha256=f410638061a165c12f42ab871d2f3fcd525515359b5faeee80969cff84524df9
 sha256-linux-x86_64=ea2ce8ee7c9c1fcad1f594b74644ea7b6e04f9be70e07eba92b18c8cb27ca548
 sha256-linux-arm64=02b4fb02e9eaf85e22e7e13eb26643db34bddd5e43e8d38a1e82b864da5914d5
 sha256-darwin-arm64=ef1147b798791b564b44bbaa69783df81bedcd151fe620a25be42b5290b51727
