@@ -20,7 +20,7 @@ resources:
   storage: 10Gi
   note: >-
     A run clones the target repository and drives claude and codex as
-    subprocesses for 30-45 minutes per module.
+    subprocesses for 20-45 minutes per module.
 install:
   # uv puts the CLIs in ~/.local/bin, which is not on the image's PATH;
   # ~/.local/share/aube/bin is, and it is in the home, so the links last.
@@ -42,12 +42,16 @@ onboarding:
     before you go on. Then ask the user for the target repository and the
     optimization objective. If they are unsure about the objective, run
     `/spotlights-objective-setting` with them. Clone the repository under the
-    work directory and confirm with the user which modules to include. Pin
-    the models with `--claude-model "$ANTHROPIC_DEFAULT_OPUS_MODEL"
-    --codex-model "$OPENAI_MODEL"`. Tell the user that one
-    module takes about 30-45 minutes and a few dollars in model cost before
-    you start a run, and start it with `platform-keep` so it finishes after
-    your turn ends.
+    work directory and confirm with the user which modules to include.
+    `--include` takes the extractor's qualified names, which start at the
+    repository root (`pkg/sub`, not `sub`); a run whose names match nothing
+    logs the available ones and stops after extraction. Pin the models with
+    `--claude-model "$ANTHROPIC_DEFAULT_OPUS_MODEL" --codex-model
+    "$OPENAI_MODEL"`. A run resumes from its `--artifacts-dir`, and refuses
+    to resume once any option has changed, so pass a fresh `--artifacts-dir`
+    whenever you change one. Tell the user that one module takes about 20-45
+    minutes and $15-20 in model cost before you start a run, and start it
+    with `platform-keep` so it finishes after your turn ends.
 connections:
   - accepts: [github, github-enterprise]
     note: Needed to clone private target repositories.
