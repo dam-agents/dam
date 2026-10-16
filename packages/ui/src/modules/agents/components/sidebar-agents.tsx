@@ -62,6 +62,7 @@ export function SidebarAgents({
         open={open}
         current={open && !sessionOpen}
         unread={unreadAgentIds.has(agent.id)}
+        orderReady={orderActions.ready}
         onMove={(id, drop) => orderActions.moveAgent(shownAgentIds, id, drop)}
         onStep={(id, step) => orderActions.stepAgent(shownAgentIds, id, step)}
         onSelect={navigate(() => startSession(agent.id))}

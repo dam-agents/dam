@@ -121,7 +121,8 @@ function SessionPreview({
     (item) => item.session.createdAt,
   );
   if (sessions.length === 0) return null;
-  const shown = sessions.map((item) => item.session.sessionId);
+  const visible = sidebarSessionWindow(sessions, false, () => false);
+  const shown = visible.map((item) => item.session.sessionId);
   const toggle = sessionListToggle({
     total: sessions.length,
     expanded: false,
@@ -133,7 +134,7 @@ function SessionPreview({
       className="flex flex-col gap-px pb-1"
       data-testid="sidebar-agent-sessions"
     >
-      {sidebarSessionWindow(sessions, false, () => false).map((item) => (
+      {visible.map((item) => (
         <OrderedRow
           key={item.id}
           agentId={agentId}
@@ -226,12 +227,12 @@ function AgentSessionList({
     (row) => row.session.sessionId,
     (row) => row.session.createdAt,
   );
-  const shown = rows.map((row) => row.session.sessionId);
   const visible = sidebarSessionWindow(
     rows,
     expanded,
     (row) => row.state.active,
   );
+  const shown = visible.map((row) => row.session.sessionId);
   const toggle = sessionListToggle({
     total: rows.length,
     expanded,
@@ -346,6 +347,7 @@ function OrderedRow({
   const drag = useOrderDrag({
     scope: `sessions:${agentId}`,
     id: sessionId,
+    ready: orderActions.ready,
     onMove: (id, drop) => orderActions.moveSession(agentId, shown, id, drop),
     onStep: (id, step) => orderActions.stepSession(agentId, shown, id, step),
   });

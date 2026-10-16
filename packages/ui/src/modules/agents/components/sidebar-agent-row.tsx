@@ -14,6 +14,7 @@ interface Props {
   open: boolean;
   current: boolean;
   unread: boolean;
+  orderReady: boolean;
   onMove: (agentId: string, drop: OrderDrop) => void;
   onStep: (agentId: string, step: -1 | 1) => void;
   onSelect: () => void;
@@ -26,6 +27,7 @@ export function SidebarAgentRow({
   open,
   current,
   unread,
+  orderReady,
   onMove,
   onStep,
   onSelect,
@@ -33,7 +35,13 @@ export function SidebarAgentRow({
   children,
 }: Props) {
   const mood = avatarMood(agent.state, agent);
-  const drag = useOrderDrag({ scope: "agents", id: agent.id, onMove, onStep });
+  const drag = useOrderDrag({
+    scope: "agents",
+    id: agent.id,
+    ready: orderReady,
+    onMove,
+    onStep,
+  });
   return (
     <li>
       <div
