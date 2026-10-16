@@ -11,6 +11,7 @@ import { useAgents } from "../api/queries.js";
 import { useSidebarPins } from "../api/sidebar-pins.js";
 import {
   groupSessionsByAgent,
+  openFirst,
   orderByLatestSession,
 } from "../lib/sidebar-agent-order.js";
 import { pinnedFirst } from "../lib/sidebar-pins.js";
@@ -39,7 +40,7 @@ export function useSidebarAgents() {
     [activity.items, filters],
   );
 
-  const { items: agents, pinned: pinnedAgentIds } = useMemo(
+  const { items: ordered, pinned: pinnedAgentIds } = useMemo(
     () =>
       pinnedFirst(
         orderByLatestSession(
@@ -50,6 +51,10 @@ export function useSidebarAgents() {
         (agent) => agent.id,
       ),
     [list, sessionsByAgent, pins.agents],
+  );
+  const agents = useMemo(
+    () => openFirst(ordered, openAgentId),
+    [ordered, openAgentId],
   );
 
   const unreadAgentIds = new Set(

@@ -4,8 +4,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   groupSessionsByAgent,
+  openFirst,
   orderByLatestSession,
 } from "../../modules/agents/lib/sidebar-agent-order.js";
+import { pinnedFirst } from "../../modules/agents/lib/sidebar-pins.js";
 import { defaultActivityFilters } from "../../modules/home/lib/activity-filter.js";
 import {
   matchesActivityFilters,
@@ -17,7 +19,7 @@ import {
   sidebarSessionWindow,
 } from "../../modules/sessions/lib/sidebar-session-window.js";
 
-// TEST_OVERVIEW: The sidebar lists each Agent's Sessions under the Agent, and no Session twice. Agents are ordered by their newest Session, and each Agent shows its newest Sessions first. An Agent shows three Sessions, or all its pinned Sessions when there are more, until the user clicks More, which lists the rest and turns into Less. The session filter in the Agents header applies to the attention record and to an Agent's own session list alike.
+// TEST_OVERVIEW: The sidebar lists each Agent's Sessions under the Agent, and no Session twice. Agents are ordered by their newest Session, after the pinned Agents, and the Agent the user has open comes first of all. Each Agent shows its newest Sessions first. An Agent shows three Sessions, or all its pinned Sessions when there are more, until the user clicks More, which lists the rest and turns into Less. The session filter in the Agents header applies to the attention record and to an Agent's own session list alike.
 
 function attention(
   agentId: string,
@@ -71,6 +73,18 @@ describe("sessions grouped by agent", () => {
       "idle-1",
       "idle-2",
     ]);
+  });
+
+  it("TEST_SCENARIO: the open Agent comes first, above the pinned Agents, and the others keep their order", () => {
+    const agents = ["b", "a", "idle-1", "idle-2"].map((id) => ({ id }));
+    const ordered = pinnedFirst(agents, ["a"], (agent) => agent.id).items;
+    const ids = (openAgentId: string | null) =>
+      openFirst(ordered, openAgentId).map((a) => a.id);
+    expect(ids("idle-2")).toEqual(["idle-2", "a", "b", "idle-1"]);
+    expect(ids("idle-1")).toEqual(["idle-1", "a", "b", "idle-2"]);
+    expect(ids("a")).toEqual(["a", "b", "idle-1", "idle-2"]);
+    expect(ids(null)).toEqual(["a", "b", "idle-1", "idle-2"]);
+    expect(ids("deleted")).toEqual(["a", "b", "idle-1", "idle-2"]);
   });
 });
 
