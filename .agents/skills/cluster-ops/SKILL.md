@@ -58,7 +58,9 @@ Unset it to try the mesh anyway.
 
 ## vm backend (KVM only)
 
-On a Mac, `cluster:install --set=virtualization.enabled=true` runs vm agents on one runner on the Mac's own hypervisor, outside the cluster ([host runner](../../../docs/architecture/vm-host-runner.md)): `cluster:host-runner` rebuilds and restarts it (after a reboot too), its log is `~/.local/state/platform-vm-runner/runner.log`, and `PLATFORM_NESTED_VIRT=1` picks the runner pods instead.
+`cluster:install` turns the vm backend (`virtualization.enabled`) on by default on an Apple silicon Mac and in a sandbox that can open `/dev/kvm`; elsewhere (a Linux host outside a sandbox, an Intel Mac) it leaves it off and warns at the start and the end of the install, and under CI it is off unless asked for.
+`--set=virtualization.enabled=false` turns it off, on every run you want it off (`cluster:helm` included), as does the same key in `helm/values-dev.yaml`.
+On a Mac it runs vm agents on one runner on the Mac's own hypervisor, outside the cluster ([host runner](../../../docs/architecture/vm-host-runner.md)): `cluster:host-runner` rebuilds and restarts it (after a reboot too), its log is `~/.local/state/platform-vm-runner/runner.log`, and `PLATFORM_NESTED_VIRT=1` picks the runner pods instead.
 Everywhere else, and in the e2e lane, the vm backend needs a usable `/dev/kvm` on the k3s node: nested virtualization in the lima VM (Apple silicon M3+, macOS 15+), or a KVM host in sandbox mode.
 `E2E_VIRTUALIZATION=1 mise run e2e` (or `e2e:loop` bootstrapping a fresh test VM) installs with `virtualization.enabled=true` — `cluster:install` then applies the KVM device plugin (`helm/extra/kvm-device-plugin.yaml`), and values-local.yaml names its `squat.ai/kvm` and the runner's `egressCidrs` — stages the mock image for the VM runners, and runs the smoke suite with every agent on the vm Backend ([`src/lib/lane.ts`](../../../packages/e2e/playwright/src/lib/lane.ts)).
 The auth project's last test opts the e2e user into the `vm-sandboxes` experiment, so the agents the UI creates are machines, and the specs' API creates go through `onLaneBackend` (`src/lib/backend.ts`), which asks for vm.

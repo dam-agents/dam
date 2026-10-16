@@ -6,6 +6,7 @@ On a Mac, the local cluster's `vm` Backend runs on **one runner outside the clus
 A nested guest boots several times slower, a busy laptop pushes it past smolvm's fixed ready window, and only recent Apple chips nest at all.
 The host runner is the same vm-runner and machine API, built for the Mac.
 It is a local-development shape only: an install turns it on by naming the address pods reach the Mac at (`virtualization.runner.hostAddress`), and `cluster:install` does so on a Mac unless told to nest.
+`cluster:install` turns the `vm` Backend on by default on an Apple silicon Mac, so a local cluster there runs this runner unless the install turns the Backend off.
 
 **One runner serves every owner.** There is no per-owner boundary.
 A guest that escapes its hypervisor reaches every owner's machines and the Mac itself, as the user who started the runner.
