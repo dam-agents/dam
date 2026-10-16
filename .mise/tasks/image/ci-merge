@@ -3,7 +3,7 @@
 #MISE hide=true
 #USAGE arg "<digests-dir>" help="Holds <component>/ with one empty file per arch, named by the digest's hex, as image:ci-build writes them; a component without one is reused and only tagged"
 #USAGE arg "<component>..." var=#true
-# cd.yml merges every image of one kind in one job instead of one job per
+# build.yml merges every image of one kind in one job instead of one job per
 # image; see image:ci-build.
 #
 # Env: IMAGE_PREFIX, GITHUB_SHA, GITHUB_REF, GITHUB_REF_NAME,
