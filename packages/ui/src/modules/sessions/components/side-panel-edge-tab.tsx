@@ -16,7 +16,6 @@ export function SidePanelEdgeTab({
       <button
         type="button"
         aria-label={label}
-        aria-pressed={maximized}
         data-testid="side-panel-maximize"
         onClick={onToggle}
         className={cn(
