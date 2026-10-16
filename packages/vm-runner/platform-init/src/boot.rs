@@ -1,4 +1,4 @@
-// UNIT_BOUNDARY_DESCRIPTION: the init of every vm-backend machine, its PID 1. It sets the VM up as smolvm's guest agent and crun did (vm.rs), mounts the machine's storage disk, boots the image on a root of its own that lasts as long as the image does, mounts the agent's home from the disk, puts the temporary folders on the disk, and starts the image's own entrypoint, which it then supervises. It exists so persistence is the platform's to guarantee rather than the image's to implement: the runner supplies this binary, so an image that has never heard of this platform still keeps its agent's home across a stop, and a machine that cannot mount its disk does not boot at all rather than losing its work at the first stop.
+// UNIT_BOUNDARY_DESCRIPTION: the init of every vm-backend machine, its PID 1. It sets the VM up as smolvm's guest agent and crun did (vm.rs), mounts the machine's storage disk, boots the image on a root of its own that lasts as long as the image does, mounts the agent's home from the disk, gives it empty temporary folders, and starts the image's own entrypoint, which it then supervises. It exists so persistence is the platform's to guarantee rather than the image's to implement: the runner supplies this binary, so an image that has never heard of this platform still keeps its agent's home across a stop, and a machine that cannot mount its disk does not boot at all rather than losing its work at the first stop.
 use std::collections::HashSet;
 use std::ffi::{CString, OsStr, OsString};
 use std::fs::{self, DirBuilder, File, OpenOptions};
@@ -117,7 +117,7 @@ pub fn run() -> ! {
         fs::metadata(guest::SEEDED_PATH).is_ok(),
         expected.as_ref(),
     );
-    mount_scratch(&root);
+    tidy_scratch(&root);
     let trust = offer_trust_cache();
     show_boot_log(&root);
     let guard = pool_guard(&root);
@@ -533,6 +533,9 @@ fn fresh_root(disk: &Path, machine: &vm::Machine) {
         }
         (Some(reason), None) => logf!("booting on a fresh root: {reason}"),
     }
+    if let Err(e) = layers.fresh_scratch(&machine.image, stamp) {
+        fatal!("{e}");
+    }
     if let Err(e) = layers.mount(&machine.image) {
         fatal!(
             "mounting the platform's root at {}: {e}",
@@ -701,16 +704,68 @@ impl FreshRoot {
         Ok(())
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: gives the root an empty /tmp and /var/tmp for this boot, as plain directories of its upper layer: what the last boot left there is moved aside into the store, out of the root, and deleted in the background with the other discarded layers, and each comes back empty, root's, with its mode, and opaque, so it starts empty whatever the image ships there. A parent the upper layer lacks takes the image's owner and mode, which is what the root shows for it.
+    fn fresh_scratch(&self, lower: &Path, stamp: u64) -> io::Result<()> {
+        for (dir, mode) in SCRATCH_DIRS {
+            let relative = dir.trim_start_matches('/');
+            let path = self.upper.join(relative);
+            if fs::symlink_metadata(&path).is_ok() {
+                let aside = self
+                    .store
+                    .join(format!("{}{DISCARDED_INFIX}{stamp}", scratch_name(dir)));
+                fs::rename(&path, &aside).map_err(|e| {
+                    io::Error::new(e.kind(), format!("moving the last boot's {dir} aside: {e}"))
+                })?;
+            }
+            if let Some(parent) = Path::new(relative)
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+            {
+                let upper_parent = self.upper.join(parent);
+                if fs::symlink_metadata(&upper_parent).is_err() {
+                    mkdir_all(&upper_parent)?;
+                    if let Ok(image) = fs::metadata(lower.join(parent)) {
+                        std::os::unix::fs::chown(
+                            &upper_parent,
+                            Some(image.uid()),
+                            Some(image.gid()),
+                        )?;
+                        fs::set_permissions(
+                            &upper_parent,
+                            fs::Permissions::from_mode(image.mode() & 0o7777),
+                        )?;
+                    }
+                }
+            }
+            DirBuilder::new().mode(0o700).create(&path)?;
+            std::os::unix::fs::chown(&path, Some(0), Some(0))?;
+            fs::set_permissions(&path, fs::Permissions::from_mode(mode))?;
+            let at = cstring(path.as_os_str())?;
+            // SAFETY: `at` and the attribute's name are NUL-terminated, and the value is readable for its length; all outlive the call.
+            let set = unsafe {
+                libc::setxattr(
+                    at.as_ptr(),
+                    c"trusted.overlay.opaque".as_ptr(),
+                    b"y".as_ptr().cast(),
+                    1,
+                    0,
+                )
+            };
+            succeeded(set == 0)
+                .map_err(|e| io::Error::new(e.kind(), format!("making {dir} start empty: {e}")))?;
+        }
+        Ok(())
+    }
+
     // UNIT_BOUNDARY_DESCRIPTION: deletes the layers fresh_root moved aside, in the background. A kept upper can hold millions of files, which would hold up the boot for minutes. leave_disk detaches the disk's root before the delete is done, so the store is reached through a descriptor opened now.
     fn purge_discarded(&self) {
         match File::open(&self.store) {
             Err(e) => logf!("WARNING: opening the root's store ({e}); the old root's layers stay on the disk until a later boot"),
             Ok(store) => {
                 std::thread::spawn(move || {
-                    purge_discarded(
-                        Path::new(&format!("/proc/self/fd/{}", store.as_raw_fd())),
-                        &DISCARDED_LAYERS,
-                    );
+                    let store = PathBuf::from(format!("/proc/self/fd/{}", store.as_raw_fd()));
+                    purge_discarded(&store, &DISCARDED_LAYERS);
+                    purge_discarded(&store, &scratch_layers());
                 });
             }
         }
@@ -968,37 +1023,23 @@ fn bind_ca() {
 
 // UNIT_BOUNDARY_DESCRIPTION: the folders that only ever hold temporary files or caches. The system ones are each a directory of the disk bound in place, empty on every boot, owned by root with the mode the image expects of them. Being plain directories of the disk rather than part of the root, they are bounded by the disk and not by the guest's memory, and nothing under them is the image's own. /var/cache is not one of them: an image ships its font, package and linker caches there, and an empty bind over them had every boot rebuild them, so it is part of the kept root, which lasts as long as the image's root generation. In the agent's home, npm's cache directory and the XDG cache directory are ordinary directories of the home and last as it does. evict_scratch deletes from all of them when the disk runs short.
 const SCRATCH_DIRS: [(&str, u32); 2] = [("/tmp", 0o1777), ("/var/tmp", 0o1777)];
-// UNIT_BOUNDARY_DESCRIPTION: scratch folders an earlier platform-init bound, whose stores on the disk are discarded at boot so the disk gets their space back.
-const RETIRED_SCRATCH: [&str; 1] = ["/var/cache"];
+// UNIT_BOUNDARY_DESCRIPTION: scratch folders an earlier platform-init bound from a store of their own on the disk; the stores are discarded at boot so the disk gets their space back. /tmp and /var/tmp are now plain directories of the root (FreshRoot::fresh_scratch).
+const RETIRED_SCRATCH: [&str; 3] = ["/var/cache", "/tmp", "/var/tmp"];
 const HOME_CACHES: [&str; 2] = [".cache", ".npm"];
 const SCRATCH_STORE: &str = "scratch";
 
-// UNIT_BOUNDARY_DESCRIPTION: binds every system scratch folder from its store on the disk. It runs once the root is in place and the home is mounted. The last boot's folders, and the store of /var/cache an earlier platform-init bound, are moved aside and deleted in the background, so the disk gets its space back without holding up the boot. A home cache that is a symlink — a home moved here from a container may have ~/.cache pointing at /tmp/agent-cache — is removed, so the tool makes a directory of the home there. Home caches that earlier boots moved aside are deleted the same way. A bind that fails is a warning: the folder then stays on the root, and the agent still runs.
-fn mount_scratch(root: &Path) {
+// UNIT_BOUNDARY_DESCRIPTION: tidies the scratch folders once the root is in place and the home is mounted. /tmp and /var/tmp are already the root's own (FreshRoot::fresh_scratch); the stores an earlier platform-init bound them and /var/cache from are moved aside and deleted in the background, so the disk gets their space back without holding up the boot. A home cache that is a symlink — a home moved here from a container may have ~/.cache pointing at /tmp/agent-cache — is removed, so the tool makes a directory of the home there. Home caches that earlier boots moved aside are deleted the same way.
+fn tidy_scratch(root: &Path) {
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |since| since.as_secs());
     let store = guest::system_store(root, SCRATCH_STORE);
-    for (dir, mode) in SCRATCH_DIRS {
-        let from = store.join(scratch_name(dir));
-        match discard(&from, stamp) {
-            Ok(Some(aside)) => logf!("discarding the last boot's {dir} at {}", aside.display()),
-            Ok(None) => {}
-            Err(e) => logf!("WARNING: moving the last boot's {dir} aside ({e}); it is kept"),
-        }
-        let bound = mkdir_all(&from)
-            .and_then(|()| std::os::unix::fs::chown(&from, Some(0), Some(0)))
-            .and_then(|()| fs::set_permissions(&from, fs::Permissions::from_mode(mode)))
-            .and_then(|()| mkdir_all(Path::new(dir)))
-            .and_then(|()| mount(&from, Path::new(dir), libc::MS_BIND));
-        if let Err(e) = bound {
-            logf!("WARNING: binding {dir} from the disk ({e}); it stays on the root");
-        }
-    }
     for dir in RETIRED_SCRATCH {
-        if let Err(e) = discard(&store.join(scratch_name(dir)), stamp) {
+        let retired = store.join(scratch_name(dir));
+        if let Err(e) = discard(&retired, stamp) {
             logf!("WARNING: moving an earlier boot's {dir} aside ({e}); it is kept");
         }
+        let _ = fs::remove_dir(&retired);
     }
     let home = PathBuf::from(guest::AGENT_HOME);
     for name in HOME_CACHES {
@@ -1016,12 +1057,7 @@ fn mount_scratch(root: &Path) {
         match store {
             Err(e) => logf!("WARNING: opening the scratch store ({e}); the last boot's folders stay on the disk until a later boot"),
             Ok(store) => {
-            let names: Vec<String> = SCRATCH_DIRS
-                .map(|(dir, _)| dir)
-                .into_iter()
-                .chain(RETIRED_SCRATCH)
-                .map(scratch_name)
-                .collect();
+            let names: Vec<String> = RETIRED_SCRATCH.into_iter().map(scratch_name).collect();
             purge_discarded(
                 Path::new(&format!("/proc/self/fd/{}", store.as_raw_fd())),
                 &names,
@@ -1040,17 +1076,21 @@ fn out_of_room(e: &io::Error) -> bool {
 fn free_room_for_boot(disk: &Path) {
     let layers = FreshRoot::on(disk);
     purge_discarded(&layers.store, &DISCARDED_LAYERS);
+    purge_discarded(&layers.store, &scratch_layers());
+    for (dir, _) in SCRATCH_DIRS {
+        let _ = remove_all(&layers.upper.join(dir.trim_start_matches('/')));
+    }
     let scratch = guest::system_store(disk, SCRATCH_STORE);
-    let names: Vec<String> = SCRATCH_DIRS
-        .map(|(dir, _)| dir)
-        .into_iter()
-        .chain(RETIRED_SCRATCH)
-        .map(scratch_name)
-        .collect();
+    let names: Vec<String> = RETIRED_SCRATCH.into_iter().map(scratch_name).collect();
     for name in &names {
         let _ = remove_all(&scratch.join(name));
     }
     purge_discarded(&scratch, &names);
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the names /tmp and /var/tmp are moved aside under in the root's store (FreshRoot::fresh_scratch).
+fn scratch_layers() -> Vec<String> {
+    SCRATCH_DIRS.map(|(dir, _)| scratch_name(dir)).to_vec()
 }
 
 fn scratch_name(dir: &str) -> String {
@@ -1118,6 +1158,7 @@ struct ScratchRoot {
     dir: File,
     shown: PathBuf,
     mount: u64,
+    dev: u64,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the scratch folders eviction serves, each with the mount it is on at boot, before the agent runs: /tmp's own bind, and a home cache's home, or the cache itself when it already exists. A folder whose mount cannot be read is not served.
@@ -1149,16 +1190,17 @@ fn open_scratch_roots(dirs: &[(PathBuf, u64)]) -> Vec<ScratchRoot> {
                 .read(true)
                 .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
                 .open(shown)
-                .and_then(|dir| Ok((statx(dir.as_raw_fd(), Path::new(""))?.stx_mnt_id, dir)))
+                .and_then(|dir| Ok((statx(dir.as_raw_fd(), Path::new(""))?, dir)))
             {
-                Ok((mount, _)) if mount != *boot_mount => {
+                Ok((info, _)) if info.stx_mnt_id != *boot_mount => {
                     logf!("WARNING: not evicting from {}, which is a mount it was not at boot: what is mounted there is not scratch", shown.display());
                     None
                 }
-                Ok((mount, dir)) => Some(ScratchRoot {
+                Ok((info, dir)) => Some(ScratchRoot {
                     dir,
                     shown: shown.clone(),
-                    mount,
+                    mount: info.stx_mnt_id,
+                    dev: libc::makedev(info.stx_dev_major, info.stx_dev_minor),
                 }),
                 Err(e) if e.kind() == io::ErrorKind::NotFound => None,
                 Err(_) if fs::symlink_metadata(shown).is_ok_and(|info| info.is_symlink()) => {
@@ -1176,13 +1218,6 @@ fn open_scratch_roots(dirs: &[(PathBuf, u64)]) -> Vec<ScratchRoot> {
 
 fn evict_scratch(dirs: &[(PathBuf, u64)]) {
     let home = Path::new(guest::AGENT_HOME);
-    let disk = match fs::metadata(home) {
-        Ok(info) => info.dev(),
-        Err(e) => {
-            logf!("WARNING: reading the disk of {} ({e}); scratch is not evicted when the disk runs short", home.display());
-            return;
-        }
-    };
     let (mut stuck, mut served) = (false, None::<String>);
     loop {
         std::thread::sleep(EVICT_INTERVAL);
@@ -1207,7 +1242,7 @@ fn evict_scratch(dirs: &[(PathBuf, u64)]) {
             }
         };
         let roots = open_scratch_roots(dirs);
-        for entry in scratch_entries(&roots, disk, &locked, now, pass.youngest) {
+        for entry in scratch_entries(&roots, &locked, now, pass.youngest) {
             if !pass.continues(free_percent(home), freed) {
                 break;
             }
@@ -1248,7 +1283,6 @@ fn evict_scratch(dirs: &[(PathBuf, u64)]) {
 // UNIT_BOUNDARY_DESCRIPTION: every entry of the scratch folders that may be evicted at `now`, in the order to evict them: by the first EVICT_AGES pass it is old enough for, then rebuildable before not, then oldest first. An entry is left out when it was used within `youngest` seconds, when it holds a socket or fifo a process may still listen on, a mount, or a file in `locked`, or when it cannot be read.
 fn scratch_entries(
     roots: &[ScratchRoot],
-    disk: u64,
     locked: &HashSet<(u32, u32, u64)>,
     now: u64,
     youngest: u64,
@@ -1260,12 +1294,17 @@ fn scratch_entries(
             Some((root, fs::read_dir(&at).ok()?))
         })
         .flat_map(|(root, names)| {
-            names
-                .flatten()
-                .map(|name| (name.path(), root.shown.join(name.file_name()), root.mount))
+            names.flatten().map(|name| {
+                (
+                    name.path(),
+                    root.shown.join(name.file_name()),
+                    root.mount,
+                    root.dev,
+                )
+            })
         })
-        .filter_map(|(path, shown, mount)| {
-            let (used, bytes) = tree_use(&path, disk, mount, locked)?;
+        .filter_map(|(path, shown, mount, dev)| {
+            let (used, bytes) = tree_use(&path, dev, mount, locked)?;
             let leftover = path
                 .file_name()
                 .is_some_and(|name| name.to_string_lossy().contains(EVICTED_INFIX));
@@ -3739,8 +3778,10 @@ mod tests {
             .unwrap()
             .as_secs();
         let dirs = open_scratch_roots(&[(s.to_path_buf(), mount_of(s))]);
-        let names = |now, disk| -> Vec<String> {
-            scratch_entries(&dirs, disk, &HashSet::new(), now, EVICT_AGES[3])
+        let names = |now, dev| -> Vec<String> {
+            let mut roots = open_scratch_roots(&[(s.to_path_buf(), mount_of(s))]);
+            roots.iter_mut().for_each(|root| root.dev = dev);
+            scratch_entries(&roots, &HashSet::new(), now, EVICT_AGES[3])
                 .iter()
                 .map(|entry| {
                     entry
@@ -3766,7 +3807,6 @@ mod tests {
         assert_eq!(
             scratch_entries(
                 &dirs,
-                disk,
                 &HashSet::new(),
                 now + 2 * EVICT_AGES[3],
                 CLAIM_EVICT_AGE
@@ -3777,7 +3817,6 @@ mod tests {
         );
         assert!(scratch_entries(
             &dirs,
-            disk,
             &HashSet::new(),
             now + 2 * EVICT_AGES[3],
             EVICT_AGES[3]
@@ -3801,7 +3840,6 @@ mod tests {
         std::os::unix::fs::symlink("work", h.join(".cache")).unwrap();
         fs::create_dir_all(h.join(".npm/_cacache")).unwrap();
         fs::write(h.join(".npm/main.rs"), b"cache").unwrap();
-        let disk = fs::metadata(h).unwrap().dev();
         let later = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -3812,7 +3850,7 @@ mod tests {
             (h.join(".cache"), mount_of(h)),
             (h.join(".npm"), mount_of(h)),
         ]);
-        let offered = scratch_entries(&roots, disk, &HashSet::new(), later, EVICT_AGES[3]);
+        let offered = scratch_entries(&roots, &HashSet::new(), later, EVICT_AGES[3]);
         let mut shown: Vec<_> = offered.iter().map(|entry| entry.shown.clone()).collect();
         shown.sort();
         assert_eq!(shown, [h.join(".npm/_cacache"), h.join(".npm/main.rs")]);
@@ -3890,7 +3928,6 @@ mod tests {
         )
         .unwrap();
         mount(&h.join("notes"), &h.join(".npm"), libc::MS_BIND).unwrap();
-        let disk = fs::metadata(h).unwrap().dev();
         let later = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -3898,7 +3935,7 @@ mod tests {
             + 2 * EVICT_AGES[0];
 
         let roots = open_scratch_roots(&boot);
-        let offered = scratch_entries(&roots, disk, &HashSet::new(), later, EVICT_AGES[3]);
+        let offered = scratch_entries(&roots, &HashSet::new(), later, EVICT_AGES[3]);
         let shown: Vec<_> = offered.iter().map(|entry| entry.shown.clone()).collect();
         assert_eq!(shown, [h.join(".cache/plain")]);
         for entry in &offered {
@@ -3936,7 +3973,6 @@ mod tests {
             fs::write(h.join(file), b"x").unwrap();
         }
         let roots = open_scratch_roots(&[(h.join(".cache"), mount_of(h))]);
-        let disk = fs::metadata(h).unwrap().dev();
         let later = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -3944,7 +3980,7 @@ mod tests {
             + 2 * EVICT_AGES[0];
         let offered = || {
             let locked = locked_files(&fs::read_to_string("/proc/locks").unwrap());
-            let mut shown: Vec<_> = scratch_entries(&roots, disk, &locked, later, EVICT_AGES[3])
+            let mut shown: Vec<_> = scratch_entries(&roots, &locked, later, EVICT_AGES[3])
                 .into_iter()
                 .map(|entry| entry.shown)
                 .collect();

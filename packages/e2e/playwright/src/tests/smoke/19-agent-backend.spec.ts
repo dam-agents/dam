@@ -141,6 +141,19 @@ test("shows the boot log read-only at /var/log/platform", async () => {
   expect(guest).toContain("read-only");
 });
 
+// TEST_SCENARIO: /tmp and /var/tmp are plain directories of the machine's root, not mounts of their own, and are open to every user as a temporary folder is; platform-init empties them at each boot.
+test("keeps /tmp and /var/tmp as directories of the root", async () => {
+  test.skip(
+    laneBackend !== "vm",
+    "only a vm machine has platform-init as its init",
+  );
+  const guest = inGuest(
+    agentId,
+    "grep -cE ' /(var/)?tmp ' /proc/self/mountinfo; stat -c '%a %U' /tmp /var/tmp",
+  );
+  expect(guest.split("\n")).toEqual(["0", "1777 root", "1777 root"]);
+});
+
 // TEST_SCENARIO: on the vm Backend the home dashboard shows the owner's memory and storage pools as meters read from the owner's runner, with this agent's own share in each.
 test("shows its owner's pools on the home dashboard", async ({ page }) => {
   test.skip(laneBackend !== "vm", "only vm agents draw on a per-user pool");
