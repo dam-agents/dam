@@ -1,11 +1,6 @@
 import { Checkmark, Edit } from "@carbon/icons-react";
 import { useRef, useState } from "react";
 
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../types.js";
@@ -16,13 +11,10 @@ import {
   type AgentAvatarMood,
   resolveCharacter,
 } from "./avatar/agent-avatar.js";
-import { AvatarGrid } from "./avatar/avatar-picker.js";
+import { AvatarPicker } from "./avatar/avatar-picker.js";
 import { NewAvatarDot } from "./avatar/new-avatar-dot.js";
 
-const PENCIL_BADGE =
-  "flex shrink-0 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:text-foreground";
-const REVEAL_ON_HOVER =
-  "opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100";
+const ICON_BUTTON = "shrink-0 text-muted-foreground hover:text-foreground";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The agent's avatar and name, each editable in
@@ -64,7 +56,6 @@ export function EditableAgentIdentity({
 interface IdentityDisplay {
   avatarSize: number;
   mood: AgentAvatarMood;
-  avatarClassName?: string;
   nameClassName?: string;
   nameTag?: "h1" | "h2";
 }
@@ -80,7 +71,6 @@ export function EditableIdentity({
   onAvatarChange,
   avatarSize,
   mood,
-  avatarClassName,
   nameClassName,
   nameTag: NameTag = "h1",
 }: {
@@ -89,7 +79,6 @@ export function EditableIdentity({
   onRename: (name: string) => void;
   onAvatarChange: (avatar: string) => void;
 } & IdentityDisplay) {
-  const [pickerOpen, setPickerOpen] = useState(false);
   const hasNewAvatar = useFreshAvatars().length > 0;
   const [draft, setDraft] = useState<string | null>(null);
   const editEnded = useRef(false);
@@ -116,55 +105,25 @@ export function EditableIdentity({
 
   return (
     <>
-      <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
-        <PopoverTrigger
-          type="button"
-          aria-label={`Avatar: ${current}. Choose an avatar`}
-          className={cn("group relative shrink-0 rounded-md", avatarClassName)}
-        >
-          <AgentAvatar
-            name={name}
-            avatar={avatar}
-            size={avatarSize}
-            mood={mood}
-          />
-          <span
-            className={cn(
-              PENCIL_BADGE,
-              REVEAL_ON_HOVER,
-              "absolute -right-1 -bottom-1 size-4",
-            )}
-          >
-            <Edit size={10} />
-          </span>
-          {hasNewAvatar && <NewAvatarDot className="-top-1 -right-1" />}
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-auto p-3">
-          <AvatarGrid
-            value={current}
-            onPick={(next) => {
-              setPickerOpen(false);
-              if (next !== current) onAvatarChange(next);
-            }}
-            onLeave={() => setPickerOpen(false)}
-          />
-        </PopoverContent>
-      </Popover>
+      <AvatarPicker value={current} onChange={onAvatarChange}>
+        <AgentAvatar
+          name={name}
+          avatar={avatar}
+          size={avatarSize}
+          mood={mood}
+        />
+        {hasNewAvatar && <NewAvatarDot className="-top-1 -right-1" />}
+      </AvatarPicker>
       {draft === null ? (
         <NameTag className={cn("flex min-w-0", nameClassName)}>
           <button
             type="button"
             onClick={startEdit}
             title={`Rename ${name}`}
-            className="group flex min-w-0 items-center gap-1.5 text-left"
+            className="flex min-w-0 items-center gap-1.5 text-left"
           >
             <span className="truncate">{name}</span>
-            <span
-              aria-hidden
-              className={cn(PENCIL_BADGE, REVEAL_ON_HOVER, "size-5")}
-            >
-              <Edit size={12} />
-            </span>
+            <Edit aria-hidden size={16} className={ICON_BUTTON} />
           </button>
         </NameTag>
       ) : (
@@ -190,9 +149,9 @@ export function EditableIdentity({
             aria-label="Save name"
             onMouseDown={(e) => e.preventDefault()}
             onClick={commitName}
-            className={cn(PENCIL_BADGE, "size-5")}
+            className={ICON_BUTTON}
           >
-            <Checkmark size={12} />
+            <Checkmark size={16} />
           </button>
         </span>
       )}
