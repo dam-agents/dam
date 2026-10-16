@@ -59,6 +59,7 @@ function render(message: Message, withTurn: boolean) {
         isLast: false,
         hasPendingPermission: false,
         timeLabel: "just now",
+        timeTitle: "Today 10:00",
         onRetry: vi.fn(),
         onFileClick: vi.fn(),
         onDelete: vi.fn(),
