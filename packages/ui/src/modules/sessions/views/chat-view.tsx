@@ -702,7 +702,12 @@ export function ChatView() {
       void toggleChanges(selectedAgent);
     else void openBrowser(selectedAgent);
   };
-  const maximizable = maximizableView(activeTab, dockedShown, openFilePath);
+  const maximizable = maximizableView(
+    activeTab,
+    dockedShown,
+    openFilePath,
+    openArtifactId,
+  );
   const maximized = maximizable !== null && sidePanelMaximized === maximizable;
   const sidePanelMinW = sidePanelMinWidth(activeTab);
   const columnsDoNotFit =

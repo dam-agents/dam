@@ -11,7 +11,7 @@ interface Props {
   disabled: boolean;
 }
 
-const OPTIONS: {
+export const VISIBILITY_OPTIONS: {
   value: ArtifactVisibility;
   label: string;
   description: string;
@@ -36,7 +36,7 @@ export function ShareVisibilityChoice({ value, onChange, disabled }: Props) {
         if (parsed.success) onChange(parsed.data);
       }}
     >
-      {OPTIONS.map((option) => (
+      {VISIBILITY_OPTIONS.map((option) => (
         <div key={option.value} className="flex flex-col gap-1">
           <RadioGroupItem
             value={option.value}

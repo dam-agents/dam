@@ -1,12 +1,18 @@
-import { Calendar, Flash } from "@carbon/icons-react";
-import type { ArtifactKind, LibraryArtifact } from "api-server-api";
+import { Calendar, Earth, Flash, Link, Locked } from "@carbon/icons-react";
+import type {
+  ArtifactKind,
+  ArtifactVisibility,
+  LibraryArtifact,
+} from "api-server-api";
 import { match } from "ts-pattern";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { HintTooltip, Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { deletionState, deletionTooltip } from "../lib/format.js";
+import { VISIBILITY_OPTIONS } from "./share-visibility-choice.js";
 
 const KIND_PRESENTATION: Record<
   ArtifactKind,
@@ -82,6 +88,41 @@ export function ArtifactStatusBadge({
         </button>
       </Badge>
     </Tooltip>
+  );
+}
+
+const VISIBILITY_ICON = {
+  private: Locked,
+  restricted: Link,
+  public: Earth,
+} satisfies Record<ArtifactVisibility, unknown>;
+
+export function ArtifactVisibilityButton({
+  artifact,
+  onShare,
+}: {
+  artifact: LibraryArtifact;
+  onShare: () => void;
+}) {
+  const option = VISIBILITY_OPTIONS.find(
+    (o) => o.value === artifact.visibility,
+  );
+  const label = option
+    ? `${option.label} — ${option.description.toLowerCase()}`
+    : artifact.visibility;
+  const Icon = VISIBILITY_ICON[artifact.visibility];
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      className="shrink-0"
+      aria-haspopup="dialog"
+      aria-label={label}
+      tooltip={label}
+      onClick={onShare}
+    >
+      <Icon size={16} />
+    </Button>
   );
 }
 

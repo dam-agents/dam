@@ -154,10 +154,12 @@ describe("the panel width", () => {
 });
 
 describe("the maximizable views", () => {
-  it("TEST_SCENARIO: only the browser and an open file maximize, and each file is its own view", () => {
-    expect(maximizableView("browser", true, null)).toBe("browser");
-    expect(maximizableView("files", true, "/a.md")).toBe("file:/a.md");
-    expect(maximizableView("files", false, "/a.md")).toBe(null);
-    expect(maximizableView("artifacts", true, null)).toBe(null);
+  it("TEST_SCENARIO: only the browser, an open file and an open artifact maximize, and each file or artifact is its own view", () => {
+    expect(maximizableView("browser", true, null, null)).toBe("browser");
+    expect(maximizableView("files", true, "/a.md", null)).toBe("file:/a.md");
+    expect(maximizableView("files", false, "/a.md", null)).toBe(null);
+    expect(maximizableView("artifacts", true, null, "a1")).toBe("artifact:a1");
+    expect(maximizableView("artifacts", false, null, "a1")).toBe(null);
+    expect(maximizableView("artifacts", true, null, null)).toBe(null);
   });
 });
