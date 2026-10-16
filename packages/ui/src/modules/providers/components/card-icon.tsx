@@ -1,4 +1,4 @@
-import { Cloud } from "@carbon/icons-react";
+import { Cloud, DataCenter } from "@carbon/icons-react";
 import type { ComponentType, SVGProps } from "react";
 
 import {
@@ -35,6 +35,7 @@ const STYLES: Record<
   },
   bob: { Icon: BobIcon, bg: "bg-icon-violet" },
   bedrock: { Icon: Cloud, bg: "bg-icon-ochre" },
+  platform: { Icon: DataCenter, bg: "bg-icon-blue" },
 };
 
 const TILE_SIZE_CLASS: Record<"lg" | "md" | "sm", string> = {

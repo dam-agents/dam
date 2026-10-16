@@ -4,7 +4,7 @@ import {
   SessionMode,
   TELEMETRY_MAX_SINCE_HOURS,
 } from "api-server-api";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 import { labelVariants } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
@@ -12,6 +12,11 @@ import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
+import { useIsAgentAnswerableSoon } from "../../agents/api/queries.js";
+import { PinDropIndicator } from "../../agents/components/pin-drop-indicator.js";
+import { usePinDrag } from "../../agents/hooks/use-pin-drag.js";
+import type { useSidebarPinActions } from "../../agents/hooks/use-sidebar-pin-actions.js";
+import { pinnedFirst } from "../../agents/lib/sidebar-pins.js";
 import { useFeatures } from "../../features/api/queries.js";
 import type { AgentActivitySession } from "../../home/hooks/use-activity-sessions.js";
 import { isFiltered } from "../../home/lib/activity-filter.js";
@@ -20,6 +25,7 @@ import { downloadTelemetryExport } from "../../telemetry/api/download-export.js"
 import {
   prefetchSessionHistory,
   provisionalSessionView,
+  useSessionsById,
 } from "../api/queries.js";
 import { useAgentSessionList } from "../hooks/use-agent-session-list.js";
 import { useOpenSession } from "../hooks/use-open-session.js";
@@ -34,11 +40,15 @@ import { SessionRow } from "./session-row.js";
 
 const ROW_CLASS = "rounded-lg border-b-0 py-1.5 pr-2 pl-9";
 
+type PinActions = ReturnType<typeof useSidebarPinActions>;
+
 interface Props {
   agentId: string;
   open: boolean;
   preview: readonly AgentActivitySession[];
   previewComplete: boolean;
+  pins: readonly string[];
+  pinActions: PinActions;
   conversationOf: (session: AttentionItem) => string | undefined;
   stickyClassName: string;
   onNavigate?: () => void;
@@ -49,15 +59,20 @@ export function SidebarAgentSessions({
   open,
   preview,
   previewComplete,
+  pins,
+  pinActions,
   conversationOf,
   stickyClassName,
   onNavigate,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
-  if (open || expanded)
+  const answerable = useIsAgentAnswerableSoon(agentId);
+  if (open || expanded || (pins.length > 0 && answerable))
     return (
       <AgentSessionList
         agentId={agentId}
+        pins={pins}
+        pinActions={pinActions}
         expanded={expanded}
         onExpandedChange={setExpanded}
         stickyClassName={stickyClassName}
@@ -69,6 +84,8 @@ export function SidebarAgentSessions({
       agentId={agentId}
       sessions={preview}
       complete={previewComplete}
+      pins={pins}
+      pinActions={pinActions}
       conversationOf={conversationOf}
       onExpand={() => setExpanded(true)}
       onNavigate={onNavigate}
@@ -78,8 +95,10 @@ export function SidebarAgentSessions({
 
 function SessionPreview({
   agentId,
-  sessions,
+  sessions: recent,
   complete,
+  pins,
+  pinActions,
   conversationOf,
   onExpand,
   onNavigate,
@@ -87,16 +106,24 @@ function SessionPreview({
   agentId: string;
   sessions: readonly AgentActivitySession[];
   complete: boolean;
+  pins: readonly string[];
+  pinActions: PinActions;
   conversationOf: Props["conversationOf"];
   onExpand: () => void;
   onNavigate?: () => void;
 }) {
   const openSession = useOpenSession();
+  const { items: sessions, pinned } = pinnedFirst(
+    recent,
+    pins,
+    (item) => item.session.sessionId,
+  );
   if (sessions.length === 0) return null;
   const toggle = sessionListToggle({
     total: sessions.length,
     expanded: false,
     hasNextPage: !complete,
+    pinned: pinned.size,
   });
 
   return (
@@ -104,25 +131,38 @@ function SessionPreview({
       className="flex flex-col gap-px pb-1"
       data-testid="sidebar-agent-sessions"
     >
-      {sidebarSessionWindow(sessions, false, () => false).map((item) => (
-        <SessionRow
-          key={item.id}
-          session={provisionalSessionView(item.session)}
-          active={false}
-          working={item.working}
-          needsApproval={false}
-          unread={item.unread}
-          provisional
-          conversation={conversationOf(item.session)}
-          className={ROW_CLASS}
-          onResume={() => {
-            openSession(agentId, item.session.sessionId, item.session.mode);
-            onNavigate?.();
-          }}
-          onRename={() => {}}
-          onDelete={() => {}}
-        />
-      ))}
+      {sidebarSessionWindow(sessions, false, () => false, pinned.size).map(
+        (item) => (
+          <PinnableRow
+            key={item.id}
+            agentId={agentId}
+            sessionId={item.session.sessionId}
+            pinActions={pinActions}
+          >
+            <SessionRow
+              session={provisionalSessionView(item.session)}
+              active={false}
+              working={item.working}
+              needsApproval={false}
+              unread={item.unread}
+              provisional
+              conversation={conversationOf(item.session)}
+              pinned={pinned.has(item.session.sessionId)}
+              {...(pinActions.ready && {
+                onTogglePin: () =>
+                  pinActions.toggleSession(agentId, item.session.sessionId),
+              })}
+              className={ROW_CLASS}
+              onResume={() => {
+                openSession(agentId, item.session.sessionId, item.session.mode);
+                onNavigate?.();
+              }}
+              onRename={() => {}}
+              onDelete={() => {}}
+            />
+          </PinnableRow>
+        ),
+      )}
       {toggle && <ToggleRow toggle={toggle} onClick={onExpand} />}
     </div>
   );
@@ -130,12 +170,16 @@ function SessionPreview({
 
 function AgentSessionList({
   agentId,
+  pins,
+  pinActions,
   expanded,
   onExpandedChange,
   stickyClassName,
   onNavigate,
 }: {
   agentId: string;
+  pins: readonly string[];
+  pinActions: PinActions;
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
   stickyClassName: string;
@@ -166,23 +210,35 @@ function AgentSessionList({
     fetchNextPage,
   ]);
 
-  const rows = list.sessions
-    .map((session) => ({ session, state: list.rowState(session) }))
-    .filter(({ session, state }) =>
-      matchesActivityFilters(
-        { session, working: state.working, unread: state.unread },
-        filters,
+  const listed = new Set(list.sessions.map((session) => session.sessionId));
+  const unlisted = useSessionsById(
+    agentId,
+    pins.filter((id) => !listed.has(id)),
+    { enabled: list.operable },
+  );
+  const { items: rows, pinned } = pinnedFirst(
+    [...unlisted, ...list.sessions]
+      .map((session) => ({ session, state: list.rowState(session) }))
+      .filter(({ session, state }) =>
+        matchesActivityFilters(
+          { session, working: state.working, unread: state.unread },
+          filters,
+        ),
       ),
-    );
+    pins,
+    (row) => row.session.sessionId,
+  );
   const visible = sidebarSessionWindow(
     rows,
     expanded,
     (row) => row.state.active,
+    pinned.size,
   );
   const toggle = sessionListToggle({
     total: rows.length,
     expanded,
     hasNextPage,
+    pinned: pinned.size,
   });
 
   const confirmDelete = async (s: SessionView) => {
@@ -194,7 +250,8 @@ function AgentSessionList({
         { kind: "destructive", confirmLabel: "Delete session" },
       )
     ) {
-      void deleteSession(s.sessionId, agentId);
+      if (await deleteSession(s.sessionId, agentId))
+        pinActions.unpinSession(agentId, s.sessionId);
     }
   };
 
@@ -214,31 +271,41 @@ function AgentSessionList({
         </p>
       )}
       {visible.map(({ session: s, state }) => (
-        <SessionRow
+        <PinnableRow
           key={s.sessionId}
-          session={s}
-          {...state}
-          className={ROW_CLASS}
-          onResume={() => {
-            openSession(agentId, s.sessionId, s.mode);
-            onNavigate?.();
-          }}
-          {...(list.operable &&
-            s.mode !== SessionMode.Terminal && {
-              onPrefetch: () => prefetchSessionHistory(agentId, s.sessionId),
+          agentId={agentId}
+          sessionId={s.sessionId}
+          pinActions={pinActions}
+        >
+          <SessionRow
+            session={s}
+            {...state}
+            pinned={pinned.has(s.sessionId)}
+            {...(pinActions.ready && {
+              onTogglePin: () => pinActions.toggleSession(agentId, s.sessionId),
             })}
-          onRename={() => setRenaming(s)}
-          onDelete={() => void confirmDelete(s)}
-          {...(telemetryEnabled && {
-            onExportTimeline: () =>
-              void downloadTelemetryExport({
-                agentId,
-                sessionId: s.sessionId,
-                signal: "logs",
-                sinceHours: TELEMETRY_MAX_SINCE_HOURS,
-              }),
-          })}
-        />
+            className={ROW_CLASS}
+            onResume={() => {
+              openSession(agentId, s.sessionId, s.mode);
+              onNavigate?.();
+            }}
+            {...(list.operable &&
+              s.mode !== SessionMode.Terminal && {
+                onPrefetch: () => prefetchSessionHistory(agentId, s.sessionId),
+              })}
+            onRename={() => setRenaming(s)}
+            onDelete={() => void confirmDelete(s)}
+            {...(telemetryEnabled && {
+              onExportTimeline: () =>
+                void downloadTelemetryExport({
+                  agentId,
+                  sessionId: s.sessionId,
+                  signal: "logs",
+                  sinceHours: TELEMETRY_MAX_SINCE_HOURS,
+                }),
+            })}
+          />
+        </PinnableRow>
       ))}
       {expanded && hasNextPage && fetchNextPageFailed && (
         <button
@@ -264,6 +331,30 @@ function AgentSessionList({
           onClose={() => setRenaming(null)}
         />
       )}
+    </div>
+  );
+}
+
+function PinnableRow({
+  agentId,
+  sessionId,
+  pinActions,
+  children,
+}: {
+  agentId: string;
+  sessionId: string;
+  pinActions: PinActions;
+  children: ReactNode;
+}) {
+  const drag = usePinDrag({
+    scope: `sessions:${agentId}`,
+    id: sessionId,
+    onMove: (id, drop) => pinActions.moveSession(agentId, id, drop),
+  });
+  return (
+    <div {...drag.dragProps} className="relative">
+      {children}
+      <PinDropIndicator at={drag.indicator} />
     </div>
   );
 }
