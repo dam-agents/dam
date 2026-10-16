@@ -10,6 +10,7 @@ import {
   spendSessionsInputSchema,
   spendSetLimitInputSchema,
   spendStatusInputSchema,
+  spendTurnsInputSchema,
 } from "./schemas.js";
 
 export const spendRouter = t.router({
@@ -32,6 +33,13 @@ export const spendRouter = t.router({
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.agentId);
       return ctx.spend.sessions(input);
+    }),
+
+  turns: readAgentProcedure
+    .input(spendTurnsInputSchema)
+    .query(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.agentId);
+      return ctx.spend.turns(input);
     }),
 
   metering: readAgentProcedure.query(({ ctx }) => ctx.spend.metering()),

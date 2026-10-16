@@ -1141,6 +1141,32 @@ export const spendDaily = pgTable(
   ],
 );
 
+export const spendCalls = pgTable(
+  "spend_calls",
+  {
+    callingAgentId: text("calling_agent_id").notNull(),
+    callId: text("call_id").notNull(),
+    ownerSub: text("owner_sub").notNull(),
+    payerAgentId: text("payer_agent_id").notNull(),
+    sessionId: text("session_id").notNull().default(""),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    unit: text("unit").notNull(),
+    costMicros: bigint("cost_micros", { mode: "number" }).notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "spend_calls_pk",
+      columns: [table.callingAgentId, table.callId],
+    }),
+    index("spend_calls_session_started_idx").on(
+      table.callingAgentId,
+      table.sessionId,
+      table.startedAt,
+    ),
+    index("spend_calls_started_idx").on(table.startedAt),
+  ],
+);
+
 export const spendMetering = pgTable(
   "spend_metering",
   {

@@ -8,6 +8,7 @@ import type {
   spendLimitStateSchema,
   spendSessionsInputSchema,
   spendSetLimitInputSchema,
+  spendTurnsInputSchema,
   spendStatusInputSchema,
   spendUnitSchema,
 } from "./schemas.js";
@@ -16,6 +17,7 @@ export type SpendUnit = z.infer<typeof spendUnitSchema>;
 export type SpendDailyInput = z.infer<typeof spendDailyInputSchema>;
 export type SpendBreakdownInput = z.infer<typeof spendBreakdownInputSchema>;
 export type SpendSessionsInput = z.infer<typeof spendSessionsInputSchema>;
+export type SpendTurnsInput = z.infer<typeof spendTurnsInputSchema>;
 export type SpendLimitScope = z.infer<typeof spendLimitScopeSchema>;
 export type SpendLimitState = z.infer<typeof spendLimitStateSchema>;
 export type SpendCeilingSource = z.infer<typeof spendCeilingSourceSchema>;
@@ -132,6 +134,15 @@ export interface SpendSessions {
   truncated: boolean;
 }
 
+export interface SpendTurns {
+  windows: {
+    from: string;
+    to: string;
+    amounts: SpendAmount[];
+    calls: number;
+  }[];
+}
+
 export interface SpendMetering {
   startedAt: string;
   startDay: string;
@@ -143,6 +154,7 @@ export interface SpendService {
   daily(input: SpendDailyInput): Promise<SpendDailyRow[]>;
   breakdown(input: SpendBreakdownInput): Promise<SpendBreakdown>;
   sessions(input: SpendSessionsInput): Promise<SpendSessions>;
+  turns(input: SpendTurnsInput): Promise<SpendTurns>;
   metering(): Promise<SpendMetering>;
   status(input: SpendStatusInput): Promise<SpendStatus>;
   setLimit(input: SpendSetLimitInput): Promise<void>;

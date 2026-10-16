@@ -73,6 +73,41 @@ export const spendSessionsInputSchema = z
     }
   });
 
+export const SPEND_TURNS_MAX_WINDOWS = 200;
+export const SPEND_TURNS_MAX_SPAN_DAYS = 31;
+
+const instantSchema = z.string().datetime({ offset: true });
+
+export const spendTurnsInputSchema = z
+  .object({
+    agentId: z.string().min(1),
+    sessionId: z.string().min(1).optional(),
+    windows: z
+      .array(z.object({ from: instantSchema, to: instantSchema }))
+      .min(1)
+      .max(SPEND_TURNS_MAX_WINDOWS),
+  })
+  .superRefine((input, ctx) => {
+    const froms = input.windows.map((w) => Date.parse(w.from));
+    const tos = input.windows.map((w) => Date.parse(w.to));
+    if (input.windows.some((_, i) => tos[i]! < froms[i]!)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["windows"],
+        message: "a window ends before it starts",
+      });
+    } else if (
+      Math.max(...tos) - Math.min(...froms) >
+      SPEND_TURNS_MAX_SPAN_DAYS * 86_400_000
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["windows"],
+        message: `the windows span at most ${SPEND_TURNS_MAX_SPAN_DAYS} days`,
+      });
+    }
+  });
+
 export const spendLimitScopeSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("agent"), agentId: z.string().min(1) }),
   z.object({ kind: z.literal("owner") }),

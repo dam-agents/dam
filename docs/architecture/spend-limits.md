@@ -125,6 +125,11 @@ A call's Session counts only when the calling agent reported that Session to the
 The agent's own pod writes the directory, so the check stops stray and wrong ids, not a deliberate agent: such rows stay under that agent's own spend.
 The check keeps a Session that it found for ten minutes and never keeps a miss, because a new Session's report can arrive after its first call.
 
+**Call rows.** Postgres also keeps one row per call: the calling agent, the Session, the start time, the unit and the cost.
+The ingest writes it once, when the call is settled by its final record or by an estimate, and a real record that arrives later overwrites the estimate.
+It serves only the cost of each turn in the chat, which sums the calls of a Session that start inside the turn; no total and no limit reads it.
+A periodic job deletes rows older than 30 days, the window from which the chat reads turns.
+
 **Measuring start.** Postgres keeps one moment, T: the start of the measured spend on this deployment.
 A migration sets it once and never changes it.
 When the rollup already has rows, T is 00:00 UTC of the first day in it; else T is the time of the upgrade.

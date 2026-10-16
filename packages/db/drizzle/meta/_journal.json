@@ -631,6 +631,13 @@
       "when": 1792178919134,
       "tag": "0089_spend_daily_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1792179950526,
+      "tag": "0090_spend_calls",
+      "breakpoints": true
     }
   ]
 }

@@ -152,6 +152,8 @@ export {
   SPEND_LIMIT_MAX_MICROS,
   SPEND_SESSIONS_DEFAULT_LIMIT,
   SPEND_SESSIONS_MAX,
+  SPEND_TURNS_MAX_SPAN_DAYS,
+  SPEND_TURNS_MAX_WINDOWS,
   spendBreakdownInputSchema,
   spendCeilingSourceSchema,
   spendCeilingUsdTextSchema,
@@ -163,6 +165,7 @@ export {
   spendSessionsInputSchema,
   spendSetLimitInputSchema,
   spendStatusInputSchema,
+  spendTurnsInputSchema,
   spendUnitSchema,
 } from "./modules/spend/schemas.js";
 export {
@@ -198,6 +201,8 @@ export type {
   SpendStatus,
   SpendStatusInput,
   SpendTotal,
+  SpendTurns,
+  SpendTurnsInput,
   SpendUnit,
 } from "./modules/spend/types.js";
 export type { AgentSpecCR } from "./crd-types.gen.js";
