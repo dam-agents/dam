@@ -168,7 +168,6 @@ import { carriesInspectorRole } from "./modules/usage/infrastructure/actor-role-
 import {
   composeMetricsReader,
   createAgentTelemetry,
-  createUnavailableAgentTelemetry,
 } from "./modules/metrics/index.js";
 import { composeCaseStudiesModule } from "./modules/case-studies/index.js";
 import { composeAuditModule } from "./modules/audit/index.js";
@@ -1909,9 +1908,10 @@ export async function bootstrap() {
     caseStudySubmissions: caseStudies.submissions,
     caseStudyInspection: caseStudies.inspection,
     carriesInspectorRole: carriesInspectorRole(db, subPseudonymizer),
-    agentTelemetry: metricsReader
-      ? createAgentTelemetry({ reader: metricsReader })
-      : createUnavailableAgentTelemetry(),
+    agentTelemetry: createAgentTelemetry({
+      reader: metricsReader,
+      spend: spend.agentSpend,
+    }),
     wakeAgent: wakeAgentFor,
     readHarnessConfigSupport,
     markOnboardingComplete: (agentId: string, owner: string) =>

@@ -180,6 +180,8 @@ export {
   type ConnectionLimitRule,
 } from "./modules/spend/units.js";
 export type {
+  AgentSpend,
+  AgentSpendQuery,
   SpendAmount,
   SpendBreakdown,
   SpendBreakdownInput,
@@ -198,6 +200,7 @@ export type {
   SpendSessions,
   SpendSessionsInput,
   SpendSetLimitInput,
+  SubAgentSpendRow,
   SpendStatus,
   SpendStatusInput,
   SpendTotal,
@@ -503,6 +506,7 @@ export {
 export {
   AGENT_TELEMETRY_MAX_DAYS,
   AGENT_TELEMETRY_MAX_LIMIT,
+  METRICS_MAX_SINCE_HOURS,
 } from "./modules/metrics/constants.js";
 
 export type {

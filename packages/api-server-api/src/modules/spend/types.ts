@@ -134,6 +134,41 @@ export interface SpendSessions {
   truncated: boolean;
 }
 
+export interface AgentSpendQuery {
+  agentId: string;
+  from: string;
+  to: string;
+  sessionId?: string;
+  sessionLimit?: number;
+  subAgentLimit?: number;
+}
+
+export interface SubAgentSpendRow {
+  agentId: string;
+  models: string[];
+  amounts: SpendAmount[];
+  calls: number;
+  durationMs: number;
+  uncachedInputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWrite5mTokens: number;
+  cacheWrite1hTokens: number;
+  firstDay: string;
+  lastDay: string;
+}
+
+export interface AgentSpend {
+  measuredSince: string;
+  scope: "payer" | "caller";
+  totals: (SpendAmount & SpendCounts)[];
+  byModel: (SpendAmount & SpendCounts & { model: string })[];
+  modelTimeMs: number;
+  sessionCount: number;
+  sessions?: SpendSessions;
+  subAgents?: { rows: SubAgentSpendRow[]; truncated: boolean };
+}
+
 export interface SpendTurns {
   windows: {
     from: string;
