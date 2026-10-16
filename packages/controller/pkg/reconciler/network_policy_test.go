@@ -176,19 +176,22 @@ func TestGatewayEgressAdmitsThePlatformPodsItDialsOnTheirPortsOnly(t *testing.T)
 	}, ports)
 }
 
-func TestGatewayEgressAdmitsOperatorPeersOnTheirPortsAndHBONE(t *testing.T) {
+func TestGatewayEgressAdmitsOperatorPeersOnTheirPortsAndHBONEOnlyInMesh(t *testing.T) {
 	cfg := *testConfig
-	cfg.GatewayEgress.Peers = []config.GatewayEgressPeer{{Namespace: "gpu", PodLabels: map[string]string{"app": "llm"}, Ports: []int32{8000}}}
-	np := BuildGatewayEgressNetworkPolicy("my-instance", &cfg, configMapOwnerRef(testOwnerCM))
+	peer := config.GatewayEgressPeer{Namespace: "gpu", PodLabels: map[string]string{"app": "llm"}, Ports: []int32{8000}}
 	tcp := corev1.ProtocolTCP
 	port, hbone := intstr.FromInt(8000), intstr.FromInt(hbonePort)
-	assert.Contains(t, np.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
-		To: []networkingv1.NetworkPolicyPeer{{
-			NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": "gpu"}},
-			PodSelector:       &metav1.LabelSelector{MatchLabels: map[string]string{"app": "llm"}},
-		}},
-		Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &hbone}, {Protocol: &tcp, Port: &port}},
-	})
+	to := []networkingv1.NetworkPolicyPeer{{
+		NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": "gpu"}},
+		PodSelector:       &metav1.LabelSelector{MatchLabels: map[string]string{"app": "llm"}},
+	}}
+	cfg.GatewayEgress.Peers = []config.GatewayEgressPeer{peer}
+	np := BuildGatewayEgressNetworkPolicy("my-instance", &cfg, configMapOwnerRef(testOwnerCM))
+	assert.Contains(t, np.Spec.Egress, networkingv1.NetworkPolicyEgressRule{To: to, Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &port}}})
+	peer.Mesh = true
+	cfg.GatewayEgress.Peers = []config.GatewayEgressPeer{peer}
+	assert.Contains(t, BuildGatewayEgressNetworkPolicy("my-instance", &cfg, configMapOwnerRef(testOwnerCM)).Spec.Egress,
+		networkingv1.NetworkPolicyEgressRule{To: to, Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &port}, {Protocol: &tcp, Port: &hbone}}})
 	cfg.GatewayEgress.Peers = nil
 	assert.Len(t, BuildGatewayEgressNetworkPolicy("my-instance", &cfg, configMapOwnerRef(testOwnerCM)).Spec.Egress, len(np.Spec.Egress)-1, "no peer adds no rule")
 }
