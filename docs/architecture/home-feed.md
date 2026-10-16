@@ -40,6 +40,8 @@ It offers more only when the record may hold more: a feed shorter than its row l
 
 The user's **pins** order the sidebar on top of that.
 Pinned Agents come first, and so do pinned Sessions within their own Agent, in the order the user dragged them into or moved them to with Alt+Up and Alt+Down; everything else keeps the recency order.
+The pin button on a row puts the item at the end of the pinned ones; a drag puts it where it is dropped, and pins it.
+Only the pinned rows and, while nothing in that list is pinned, a "Drop to pin" area at its top take a drop, so a drop among the unpinned rows moves nothing and pins nothing.
 The Agent the user has open, in its chat or on its configuration page, comes before all of them, so it is easy to find however old its last activity is; once another Agent is open, it goes back to its place, and opening an Agent moves nothing else.
 The move waits until the pointer leaves the list, so no row moves under the cursor, and then the list scrolls to its top.
 The api-server keeps the pins per user, so the order follows the user to every browser, and drops an Agent's pins when the Agent is deleted.

@@ -28,6 +28,12 @@ const reply = "pins-reply";
 let api: ApiClient;
 const agentIds = new Map<string, string>();
 
+async function openSidebar(page: Page): Promise<void> {
+  await page.goto(baseUrl);
+  await expect(page.getByTestId("app-sidebar")).toBeVisible();
+  await ensureSidebarExpanded(page);
+}
+
 function agentRows(page: Page): Locator {
   return page.getByTestId("sidebar-agents").getByTestId("sidebar-agent-row");
 }
@@ -133,8 +139,7 @@ test.afterAll(async () => {
 test("drag pins and orders Agents, and a drop on an unpinned row cancels", async ({
   page,
 }) => {
-  await page.goto(baseUrl);
-  await ensureSidebarExpanded(page);
+  await openSidebar(page);
   await expect.poll(() => shownAgents(page)).toHaveLength(AGENTS.length);
   const order = await shownAgents(page);
   const row = (name: string) =>
@@ -166,6 +171,7 @@ test("drag pins and orders Agents, and a drop on an unpinned row cancels", async
 
   await test.step("the order survives a reload", async () => {
     await page.reload();
+    await expect(page.getByTestId("app-sidebar")).toBeVisible();
     await ensureSidebarExpanded(page);
     await expect
       .poll(() => shownAgents(page))
@@ -178,8 +184,7 @@ test("drag pins and orders Agents, and a drop on an unpinned row cancels", async
 test("the hover pin button pins an Agent at the end of the pinned rows", async ({
   page,
 }) => {
-  await page.goto(baseUrl);
-  await ensureSidebarExpanded(page);
+  await openSidebar(page);
   await expect.poll(() => shownAgents(page)).toHaveLength(AGENTS.length);
   const [, , last] = await shownAgents(page);
   const before = await pinnedAgents(page);
@@ -263,6 +268,7 @@ test("drag pins and orders Sessions within their Agent", async ({ page }) => {
 
   await test.step("the order survives a reload", async () => {
     await page.reload();
+    await expect(page.getByTestId("app-sidebar")).toBeVisible();
     await ensureSidebarExpanded(page);
     await expect
       .poll(() => shownSessions(page))
