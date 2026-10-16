@@ -24,6 +24,7 @@ import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import {
   HOVER_ACTION,
   HOVER_ROOM,
+  HOVER_ROOM_PAIR,
   HOVER_YIELD,
 } from "@/components/ui/hover-action";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
@@ -204,7 +205,9 @@ export function SessionRow({
         <div
           className={cn(
             "relative flex items-center gap-1.5",
-            onboarding && !hasIndicators && !s.harness && HOVER_ROOM,
+            onTogglePin
+              ? HOVER_ROOM_PAIR
+              : onboarding && !hasIndicators && !s.harness && HOVER_ROOM,
           )}
         >
           <span className={`text-sm min-w-0 truncate ${titleClass}`}>
@@ -232,6 +235,7 @@ export function SessionRow({
             draft={draft}
             backgroundWork={backgroundWork}
             harness={s.harness ?? null}
+            reserveActionRoom={!onTogglePin}
           />
           {}
           {onTogglePin && (
@@ -365,6 +369,7 @@ function SessionIndicators({
   draft,
   backgroundWork,
   harness,
+  reserveActionRoom,
 }: {
   scheduled: boolean;
   terminal: boolean;
@@ -374,6 +379,7 @@ function SessionIndicators({
   draft: boolean;
   backgroundWork: readonly BackgroundWorkItemView[];
   harness: string | null;
+  reserveActionRoom: boolean;
 }) {
   const hasBackgroundWork = backgroundWork.length > 0;
   if (
@@ -390,7 +396,8 @@ function SessionIndicators({
   return (
     <span
       className={cn(
-        "ml-auto flex shrink-0 items-center gap-2 pl-2 pr-6 hover-capable:pr-0",
+        "ml-auto flex shrink-0 items-center gap-2 pl-2",
+        reserveActionRoom && "pr-6 hover-capable:pr-0",
         HOVER_YIELD,
       )}
     >
