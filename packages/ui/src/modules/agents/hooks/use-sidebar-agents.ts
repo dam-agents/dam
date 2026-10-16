@@ -26,8 +26,13 @@ export function useSidebarAgents() {
   const { pins } = useSidebarPins();
   const filters = useStore((s) => s.sidebarActivityFilters);
   const openAgentId = useStore((s) =>
-    s.view === "chat" ? s.selectedAgent : null,
+    s.view === "chat"
+      ? s.selectedAgent
+      : s.view === "sandbox-home"
+        ? s.agentId
+        : null,
   );
+  const sessionOpen = useStore((s) => s.view === "chat" && !!s.sessionId);
 
   const sessionsByAgent = useMemo(
     () => groupSessionsByAgent(filterActivitySessions(activity.items, filters)),
@@ -63,8 +68,10 @@ export function useSidebarAgents() {
     agents,
     pinnedAgentIds,
     openAgentId,
+    sessionOpen,
     unreadAgentIds,
     sessionsOf,
     pinnedSessionsOf,
+    previewComplete: activity.complete,
   };
 }

@@ -1,4 +1,4 @@
-import { Add, NewTab, Pin, PinFilled, Tools } from "@carbon/icons-react";
+import { AddAlt, NewTab, Pin, PinFilled, Tools } from "@carbon/icons-react";
 import { type ReactNode, useMemo } from "react";
 
 import { SectionLabel } from "@/components/ui/section-label";
@@ -29,9 +29,11 @@ export function SidebarAgents({
     agents,
     pinnedAgentIds,
     openAgentId,
+    sessionOpen,
     unreadAgentIds,
     sessionsOf,
     pinnedSessionsOf,
+    previewComplete,
   } = useSidebarAgents();
   const pinActions = useSidebarPinActions();
   const activity = useActivitySessions();
@@ -43,7 +45,6 @@ export function SidebarAgents({
   const conversationOf = useActivityConversations(attention, allAgents);
   const filters = useStore((s) => s.sidebarActivityFilters);
   const setFilters = useStore((s) => s.setSidebarActivityFilters);
-  const selectAgent = useStore((s) => s.selectAgent);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const startSession = useStartSession();
 
@@ -59,13 +60,12 @@ export function SidebarAgents({
       <SidebarAgentRow
         key={agent.id}
         agent={agent}
-        selected={open}
+        open={open}
+        current={open && !sessionOpen}
         unread={unreadAgentIds.has(agent.id)}
         pinned={pinned}
         onMovePin={pinActions.moveAgent}
-        onSelect={() => {
-          if (!open) selectAgent(agent.id);
-        }}
+        onSelect={navigate(() => startSession(agent.id))}
         actions={
           <>
             <RowIconButton
@@ -94,6 +94,7 @@ export function SidebarAgents({
           agentId={agent.id}
           open={open}
           preview={sessionsOf(agent.id)}
+          previewComplete={previewComplete}
           pins={pinnedSessionsOf(agent.id)}
           pinActions={pinActions}
           conversationOf={conversationOf}
@@ -166,9 +167,9 @@ function CreateAgentButton({ onCreate }: { onCreate?: () => void }) {
           void defaultAgent.create();
           onCreate?.();
         }}
-        className="flex size-6 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+        className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
       >
-        <Add size={14} />
+        <AddAlt size={16} />
       </button>
     </Tooltip>
   );

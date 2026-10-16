@@ -46,6 +46,7 @@ interface Props {
   agentId: string;
   open: boolean;
   preview: readonly AgentActivitySession[];
+  previewComplete: boolean;
   pins: readonly string[];
   pinActions: PinActions;
   conversationOf: (session: AttentionItem) => string | undefined;
@@ -57,6 +58,7 @@ export function SidebarAgentSessions({
   agentId,
   open,
   preview,
+  previewComplete,
   pins,
   pinActions,
   conversationOf,
@@ -81,6 +83,7 @@ export function SidebarAgentSessions({
     <SessionPreview
       agentId={agentId}
       sessions={preview}
+      complete={previewComplete}
       pins={pins}
       pinActions={pinActions}
       conversationOf={conversationOf}
@@ -93,6 +96,7 @@ export function SidebarAgentSessions({
 function SessionPreview({
   agentId,
   sessions: recent,
+  complete,
   pins,
   pinActions,
   conversationOf,
@@ -101,6 +105,7 @@ function SessionPreview({
 }: {
   agentId: string;
   sessions: readonly AgentActivitySession[];
+  complete: boolean;
   pins: readonly string[];
   pinActions: PinActions;
   conversationOf: Props["conversationOf"];
@@ -117,7 +122,7 @@ function SessionPreview({
   const toggle = sessionListToggle({
     total: sessions.length,
     expanded: false,
-    hasNextPage: true,
+    hasNextPage: !complete,
     pinned: pinned.size,
   });
 
