@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { load } from "js-yaml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { agentsInstallSettings, loadConfig } from "../../config.js";
 
@@ -198,6 +200,29 @@ describe("agentsInstallSettings — what every agents module is built with", () 
     process.env.PLATFORM_PROVIDER_BASE_URL = "http://llm.models.svc:8000";
     expect(loadConfig().platformProvider).toBeNull();
     expect(loadConfig().featureModes["platform-provider"]).toBe("off");
+  });
+
+  // TEST_SCENARIO: the chart's own price list is what every install boots with, so each row must pass the config schema, the built-in provider's DeepSeek row included.
+  it("accepts the chart's price list", () => {
+    const values = load(
+      readFileSync(
+        new URL("../../../../../helm/values.yaml", import.meta.url),
+        "utf8",
+      ),
+    ) as { apiServer: { spend: { priceOverrides: unknown[] } } };
+    process.env.SPEND_PRICE_OVERRIDES = JSON.stringify(
+      values.apiServer.spend.priceOverrides,
+    );
+    try {
+      expect(loadConfig().spendPriceOverrides).toContainEqual(
+        expect.objectContaining({
+          provider: "platform-llm",
+          model: "deepseek-v4.1-flash",
+        }),
+      );
+    } finally {
+      delete process.env.SPEND_PRICE_OVERRIDES;
+    }
   });
 
   /** TEST_SCENARIO: The chart names the harness new agents start on, and any
