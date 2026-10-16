@@ -55,15 +55,12 @@ export function AvatarPicker({
   const gridRef = useRef<HTMLDivElement>(null);
   const refocusing = useRef(false);
   const focusInside = useRef(false);
-  const [focusRequest, setFocusRequest] = useState(0);
-  useEffect(() => {
-    if (focusRequest === 0) return;
-    const grid = gridRef.current;
+  const focusOnMount = useRef(false);
+  const focusGrid = (grid: HTMLDivElement) =>
     (
-      grid?.querySelector<HTMLElement>("[aria-pressed=true]") ??
-      grid?.querySelector<HTMLElement>("button")
+      grid.querySelector<HTMLElement>("[aria-pressed=true]") ??
+      grid.querySelector<HTMLElement>("button")
     )?.focus();
-  }, [focusRequest]);
   useEffect(() => () => clearTimeout(timer.current), []);
   const later = (next: boolean, ms: number) => {
     clearTimeout(timer.current);
@@ -102,7 +99,8 @@ export function AvatarPicker({
           }}
           onClick={() => {
             set(true);
-            setFocusRequest((n) => n + 1);
+            if (gridRef.current) focusGrid(gridRef.current);
+            else focusOnMount.current = true;
           }}
         >
           {children}
@@ -126,7 +124,12 @@ export function AvatarPicker({
         {...hover}
       >
         <div
-          ref={gridRef}
+          ref={(el) => {
+            gridRef.current = el;
+            if (!el || !focusOnMount.current) return;
+            focusOnMount.current = false;
+            focusGrid(el);
+          }}
           onFocus={() => (focusInside.current = true)}
           onBlur={(e) => {
             if (!e.currentTarget.contains(e.relatedTarget))
