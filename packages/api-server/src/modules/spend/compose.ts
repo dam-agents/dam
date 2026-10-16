@@ -39,9 +39,13 @@ import {
   type ConnectionNames,
   type OwnedAgentAges,
   type SessionCategories,
-  type SpawnedSubAgents,
   type SpendQuestionCloser,
 } from "./services/spend-service.js";
+import type { SpawnedSubAgents } from "./services/session-spend.js";
+import {
+  createAgentSpend,
+  type AgentSpendReader,
+} from "./services/agent-spend.js";
 
 const CALL_ROWS_RETENTION_DAYS = 30;
 
@@ -58,6 +62,7 @@ export interface SpendSystem {
   ingest: SpendIngest;
   check: SpendCheck;
   extendSaga: Subscription;
+  agentSpend: AgentSpendReader;
   callRowsRetentionTick(): Promise<void>;
   forOwner(deps: {
     ownerSub: string;
@@ -107,6 +112,13 @@ export function composeSpendSystem(deps: {
   });
   return {
     ingest,
+    agentSpend: createAgentSpend({
+      ledger,
+      payers: deps.payers,
+      owners: deps.owners,
+      subAgents: deps.subAgents,
+      meteringStart,
+    }),
     async callRowsRetentionTick() {
       const deleted = await ledger.deleteCallsBefore(
         new Date(Date.now() - CALL_ROWS_RETENTION_DAYS * 86_400_000),

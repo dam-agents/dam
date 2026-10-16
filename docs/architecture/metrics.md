@@ -85,17 +85,18 @@ A key that may not read its own figures — a LiteLLM key without access to its 
 
 ## Agent-facing read
 
-A second surface serves an agent rather than a signed-in user: three MCP tools over the same reader, each **pinned server-side to the calling agent** — the agent names no id, so it can only ever read its own runs.
+A second surface serves an agent rather than a signed-in user: three MCP tools, each **pinned server-side to the calling agent** — the agent names no id, so it can only ever read its own runs.
 That pinning is the whole isolation model.
-It rests on the same gateway-stamped attribution every other read scopes by ([observability — trusted attribution](observability.md#trusted-attribution)), which an agent cannot forge and which platform telemetry never carries, so no widening of the body shapes below can reach another agent's records or the platform's own.
+It rests on the gateway's identity, the same one that the spend ledger keys its rows by and that every telemetry read scopes by ([observability — trusted attribution](observability.md#trusted-attribution)), which an agent cannot forge, so no widening of the body shapes below can reach another agent's records or the platform's own.
+The cost figures come from Metered Spend ([spend-limits](spend-limits.md#ledger)) and answer on every deployment; the per-call rows, the logs and the spans come from the telemetry store, and without it those parts answer `available=false`.
 
 The surface is cut **by signal, not by question** — one read per thing the store holds, with the variation expressed as arguments.
 An agent then asks its own questions of them rather than looking for the tool whose name matches its question, and a new question costs no new tool.
 
 - **`get_metrics`** — the numbers.
-  Window totals and the per-model split, and at coarser-to-finer **granularity** a row per session (call count, model time, tokens, cost, first/last activity) or a row per LLM call (model, request latency, tokens, context size, cost).
+  Window totals per unit and the per-model split, over whole UTC days (today and the days before it) with the measuring start beside them, and at coarser-to-finer **granularity** a row per session (its spend with the part of the sub-agents spawned from it, calls, model time, tokens, first/last day) or a row per LLM call from telemetry (model, request latency, tokens, context size, and no cost).
   The per-session level is what turns *this got slower* into a comparison between runs; the summary level is the default because it is the cheapest and answers the commonest question.
-  A further granularity gives a row per **sub-agent** — keyed by the id the spawn returned, with the models it ran, its calls, model time, tokens and cost — so a Driver can tell which piece of delegated work cost what and compare models or harnesses on cost.
+  A further granularity gives a row per **sub-agent** — keyed by the id the spawn returned, with the models it ran, its spend, calls, model time and tokens — so a Driver can tell which piece of delegated work cost what and compare models or harnesses on cost.
 - **`get_logs`** — every record the agent emitted, not only the LLM-call shape the spend reads narrow to, so errors and tool decisions are reachable.
   Content bodies are never exported ([observability — agent export](observability.md#agent-export)), so this is structural throughout; the read needs no redaction because there is nothing to redact.
 - **`get_spans`** — the span structure of a run, read from the **trace** store rather than the log records.
@@ -106,21 +107,19 @@ Every capped list carries a **truncation flag**, because a short list and a comp
 The flag is never inferred from the page being full — a list holding exactly the page size is not evidence that more exist — so each read establishes it against a count the page cannot fix.
 
 The sub-agent rows need no scope of their own.
-A sub-agent's records already carry its root Driver's id as their owner attribution, with the sub-agent's own id beside it in the invocation stamp ([observability — trusted attribution](observability.md#trusted-attribution)), so the read pinned to the caller holds exactly its own delegation tree and the rows are that read grouped by the invocation stamp.
-Both stamps are gateway-set, so a Driver can neither reach another Driver's sub-agents nor make its own appear elsewhere.
-The figures are the ones the delegation view shows for each target, summed from the same call records.
+Each ledger row names its payer, the root Driver, and its calling agent, both from the gateway, so a root Driver's read holds exactly its own delegation tree, and the rows are that read grouped by calling agent.
+A Driver can neither reach another Driver's sub-agents nor make its own appear elsewhere.
 Each row is one sub-agent's own spend: a grandchild is a row of its own rather than folded into the sub-agent that spawned it, as on its delegation card.
-The Driver's own calls carry no invocation stamp and have no row, so the totals stay the Driver's spend plus every sub-agent's — what the result says it covers.
-A target is not a spend principal, so a sub-agent that itself spawns reads none of this; only the root Driver of a tree sees its sub-agents' spend.
-A sub-agent runs in a Session of its own, so a session narrowing reaches it only when its calls share that Session's trace, and the result says so rather than present a short list as complete.
+The Driver's own calls have no row, so the totals stay the Driver's spend plus every sub-agent's — what the result says it covers.
+A sub-agent reads the calls that it made itself, and its rows are the sub-agents below it.
 
 The cost read alone reports **totals beside its rows**, and it states what they cover in the result rather than in a fixed sentence — because what they cover changes with the arguments.
-Unnarrowed they span the window; narrowed they span the session fold below; and at the coarsest granularity there are no rows to mistake them for.
+Unnarrowed they span the window; narrowed they span the session and the sub-agents spawned from it; and at the coarsest granularity there are no rows to mistake them for.
 Where rows are returned the result says outright that they are only the most recent and will not sum to the totals, which is what stops an agent reconciling the two and concluding one is wrong.
 
-Every read also takes an optional **session**, and all three resolve it through the same trace-aware fold the Overview uses — so *this run* means one thing across the surface: the session named, plus any harness run it spawned.
-That consistency is the point rather than a detail.
-A session that starts another session is exactly where the reads could disagree, and a cost that counts the spawned run beside a span list that omits it would be read as the run having done nothing, rather than as two reads meaning different things by the same argument.
+Every read also takes an optional **session**.
+The cost figures narrow to the session that the gateway recorded for each call, with the sub-agents spawned from it; the telemetry reads resolve it through the same trace-aware fold the Overview uses, the session named plus any harness run it spawned.
+The two differ only for a harness run that a session starts in its own shell, such as `claude -p`, which the gateway records with no session.
 
 Spans carry no session id of their own, so a narrowed span read reaches the fold through the call records that do — the one place this read depends on the log shape it otherwise escapes, and a dependency that can fail, since a traces-only harness has no call records to resolve through.
 The read therefore **reports an unresolved narrowing as unresolved** rather than returning an empty list: a session it cannot identify is not a session that ran nothing, and a quiet answer would read as the latter.

@@ -24,12 +24,12 @@ import {
   type SpendLimit,
 } from "../domain/limits.js";
 import { meteringNoticeEnd, meteringView } from "../domain/metering.js";
-import { foldSessions } from "../domain/sessions.js";
 import { foldTurns } from "../domain/turns.js";
 import type { SpendUnit } from "../domain/units.js";
 import type { SpendLedger } from "../infrastructure/spend-ledger.js";
 import type { SpendLimits } from "../infrastructure/spend-limits.js";
 import type { SpendCeilings } from "../infrastructure/user-spend-ceilings.js";
+import { readSessionSpend, type SpawnedSubAgents } from "./session-spend.js";
 import type { DayTotals, GrantedConnections } from "./spend-check.js";
 
 export interface SpendQuestionCloser {
@@ -53,10 +53,6 @@ export interface SessionCategories {
     agentIds: readonly string[],
     sessionIds: readonly string[],
   ): Promise<ReadonlyMap<string, SessionCategory>>;
-}
-
-export interface SpawnedSubAgents {
-  spawnSessions(agentId: string): Promise<ReadonlyMap<string, string | null>>;
 }
 
 export function createSpendService(deps: {
@@ -203,34 +199,11 @@ export function createSpendService(deps: {
     },
 
     async sessions({ agentId, from, to, sessionIds, limit }) {
-      const range = {
+      return readSessionSpend(deps, {
+        ownerSub: deps.ownerSub,
+        agentId,
         from: from ?? utcDay(await deps.meteringStart()),
         to: to ?? utcDay(new Date()),
-      };
-      const [own, spawnSessions] = await Promise.all([
-        deps.ledger.sessionRows({
-          ownerSub: deps.ownerSub,
-          callingAgentIds: [agentId],
-          ...(sessionIds && { sessionIds }),
-          withSessionOnly: true,
-          ...range,
-        }),
-        deps.subAgents.spawnSessions(agentId),
-      ]);
-      const wanted = sessionIds ? new Set(sessionIds) : null;
-      const subAgentIds = [...spawnSessions]
-        .filter(([, session]) => session && (!wanted || wanted.has(session)))
-        .map(([id]) => id);
-      const subAgents = await deps.ledger.sessionRows({
-        ownerSub: deps.ownerSub,
-        callingAgentIds: subAgentIds,
-        withSessionOnly: false,
-        ...range,
-      });
-      return foldSessions({
-        own,
-        subAgents,
-        spawnSessions,
         ...(sessionIds && { sessionIds }),
         limit: limit ?? SPEND_SESSIONS_DEFAULT_LIMIT,
       });
