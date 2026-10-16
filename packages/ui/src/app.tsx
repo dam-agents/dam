@@ -125,7 +125,7 @@ function MainApp() {
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <Sidebar />
         <ArtifactsSidePanel>
-          <main className="flex flex-1 flex-col overflow-y-auto">
+          <main className="flex flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable]">
             {!desktop && (
               <AppTopBar
                 actions={
