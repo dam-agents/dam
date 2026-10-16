@@ -15,66 +15,83 @@ const isChatRoute = (route: Route): route is Extract<Route, { view: "chat" }> =>
   isChatView(route.view);
 
 export function useBrowserHistory(): void {
-  useEffect(() => {
-    let shownPath = window.location.pathname;
-    const unsubscribe = useStore.subscribe(() => {
-      shownPath = window.location.pathname;
-    });
+  useEffect(installBrowserHistory, []);
+}
 
-    const applyRoute = () => {
-      if (RETIRED_PATHS.has(window.location.pathname)) {
-        if (window.location.pathname === "/artifacts") {
-          useStore.getState().setSidePanelTab("artifacts");
-          useStore.getState().setMobileScreen("files");
-        }
-        window.history.replaceState({}, "", "/");
+export function installBrowserHistory(): () => void {
+  const snapshot = () => ({
+    url: `${location.pathname}${location.search}${location.hash}`,
+    state: history.state as unknown,
+  });
+  let shown = snapshot();
+  let confirming = false;
+  const refresh = () => {
+    if (!confirming) shown = snapshot();
+  };
+  const unsubscribe = useStore.subscribe(() => {
+    refresh();
+    setTimeout(refresh);
+  });
+
+  const applyRoute = () => {
+    if (RETIRED_PATHS.has(window.location.pathname)) {
+      if (window.location.pathname === "/artifacts") {
+        useStore.getState().setSidePanelTab("artifacts");
+        useStore.getState().setMobileScreen("files");
       }
-      const route = parseRoute(window.location.pathname);
-      const wasChat = isChatView(useStore.getState().view);
+      window.history.replaceState({}, "", "/");
+    }
+    const route = parseRoute(window.location.pathname);
+    const wasChat = isChatView(useStore.getState().view);
 
-      if (isChatRoute(route)) {
-        useStore.getState().resetChatContext();
-        useStore.setState({
-          ...routeToNavigationState(route),
-          kitBrowserOpen: false,
-          selectedAgent: route.agent,
-          ...("session" in route && route.session
-            ? {
-                pendingResumeSessionId: route.session,
-                mobileScreen: "chat" as const,
-              }
-            : {}),
-        });
-        return;
-      }
-
-      if (wasChat) useStore.getState().resetChatContext();
+    if (isChatRoute(route)) {
+      useStore.getState().resetChatContext();
       useStore.setState({
         ...routeToNavigationState(route),
         kitBrowserOpen: false,
-        ...(wasChat ? { selectedAgent: null } : {}),
+        selectedAgent: route.agent,
+        ...("session" in route && route.session
+          ? {
+              pendingResumeSessionId: route.session,
+              mobileScreen: "chat" as const,
+            }
+          : {}),
       });
-    };
+      return;
+    }
 
-    const onPopState = () => {
-      const state = useStore.getState();
-      const resetsDock =
-        isChatView(state.view) ||
-        isChatRoute(parseRoute(window.location.pathname));
-      if (!resetsDock || (!state.openArtifactDirty && !state.openFileDirty))
-        return applyRoute();
-      const leftPath = shownPath;
-      void state.confirmDockDiscard().then((discard) => {
-        if (discard) applyRoute();
-        else window.history.pushState(null, "", leftPath);
-      });
-    };
+    if (wasChat) useStore.getState().resetChatContext();
+    useStore.setState({
+      ...routeToNavigationState(route),
+      kitBrowserOpen: false,
+      ...(wasChat ? { selectedAgent: null } : {}),
+    });
+  };
 
-    applyRoute();
-    window.addEventListener("popstate", onPopState);
-    return () => {
-      window.removeEventListener("popstate", onPopState);
-      unsubscribe();
-    };
-  }, []);
+  const onPopState = () => {
+    const state = useStore.getState();
+    const resetsDock =
+      isChatView(state.view) ||
+      isChatRoute(parseRoute(window.location.pathname));
+    if (confirming) return;
+    if (!resetsDock || (!state.openArtifactDirty && !state.openFileDirty))
+      return applyRoute();
+    const left = shown;
+    confirming = true;
+    void state.confirmDockDiscard().then((discard) => {
+      confirming = false;
+      if (discard) applyRoute();
+      else {
+        window.history.pushState(left.state, "", left.url);
+        shown = left;
+      }
+    });
+  };
+
+  applyRoute();
+  window.addEventListener("popstate", onPopState);
+  return () => {
+    window.removeEventListener("popstate", onPopState);
+    unsubscribe();
+  };
 }
