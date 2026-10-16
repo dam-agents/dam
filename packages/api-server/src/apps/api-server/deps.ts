@@ -62,6 +62,7 @@ import type { SessionPresence } from "./agent-proxies/session-presence.js";
 
 import type { ApiVariables } from "../../core/http-context.js";
 import type { GettingStartedModule } from "../../modules/getting-started/index.js";
+import type { SidebarPinsModule } from "../../modules/sidebar-pins/index.js";
 export type { ApiVariables };
 
 export interface ApiServerDeps {
@@ -132,6 +133,7 @@ export interface ApiServerDeps {
   shareHostGate: MiddlewareHandler;
   publicAgentPageService: PublicAgentPageService;
   gettingStarted: GettingStartedModule;
+  sidebarPins: SidebarPinsModule;
   sessionPresence: SessionPresence;
   wakeAgent: (agentId: string) => Promise<void>;
   artifactLibraryFor: ArtifactLibraryFor;

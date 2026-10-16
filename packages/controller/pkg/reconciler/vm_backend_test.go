@@ -2015,8 +2015,8 @@ func TestTheRunnerAsksSmolvmToAccountForItself(t *testing.T) {
 	assert.Equal(t, "json", env["SMOLVM_LOG_FORMAT"], "and the platform's logs stay machine-readable")
 }
 
-// TEST_SCENARIO: smolvm checks a VMM against the syscalls a running microVM needs only when its embedder asks, and the runner is the embedder. It asks for audit, so every call outside the allowlist is logged while the filter is not yet trusted to refuse it.
-func TestTheRunnerAuditsItsVMMsSyscalls(t *testing.T) {
+// TEST_SCENARIO: smolvm checks a VMM against the syscalls a running microVM needs only when its embedder asks, and the runner is the embedder. It asks for enforce, so a VMM that makes a call outside the allowlist is killed.
+func TestTheRunnerEnforcesItsVMMsSyscalls(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
 	require.NoError(t, r.Reconcile(context.Background(), agent))
@@ -2028,14 +2028,14 @@ func TestTheRunnerAuditsItsVMMsSyscalls(t *testing.T) {
 	for _, e := range dep.Spec.Template.Spec.Containers[0].Env {
 		env[e.Name] = e.Value
 	}
-	assert.Equal(t, "audit", env["SMOLVM_SECCOMP"], "unset checks nothing, and enforce kills a VMM on a call outside the allowlist")
+	assert.Equal(t, "enforce", env["SMOLVM_SECCOMP"], "unset checks nothing, and audit lets a call outside the allowlist through")
 }
 
-// TEST_SCENARIO: an install switches its VMMs' syscall filter to enforce, or back, through its values, without a release.
+// TEST_SCENARIO: an install switches its VMMs' syscall filter to audit, or back, through its values, without a release.
 func TestTheRunnerChecksItsVMMsSyscallsInTheInstallsMode(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
-	r.config.VM.Runner.Seccomp = "enforce"
+	r.config.VM.Runner.Seccomp = "audit"
 	require.NoError(t, r.Reconcile(context.Background(), agent))
 
 	dep, err := r.client.AppsV1().Deployments("test-agents").Get(
@@ -2045,7 +2045,7 @@ func TestTheRunnerChecksItsVMMsSyscallsInTheInstallsMode(t *testing.T) {
 	for _, e := range dep.Spec.Template.Spec.Containers[0].Env {
 		env[e.Name] = e.Value
 	}
-	assert.Equal(t, "enforce", env["SMOLVM_SECCOMP"])
+	assert.Equal(t, "audit", env["SMOLVM_SECCOMP"])
 }
 
 // TEST_SCENARIO: smolvm confines a VMM's filesystem only when its embedder asks, and the runner is the embedder. Unconfined, a guest writes through its root virtiofs export into the agent rootfs every sibling machine boots from.

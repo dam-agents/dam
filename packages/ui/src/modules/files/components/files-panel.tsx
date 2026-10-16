@@ -1,5 +1,5 @@
 import {
-  Add,
+  AddAlt,
   DocumentAdd,
   FolderAdd,
   Folders,
@@ -65,13 +65,13 @@ export function FilesPanel({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
-            variant="outline"
-            size="xs"
-            className="text-sm"
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Add"
             disabled={controller.isUploading}
-            tooltip={controller.isUploading ? "Upload in progress…" : undefined}
+            tooltip={controller.isUploading ? "Upload in progress…" : "Add"}
           >
-            <Add size={14} /> Add
+            <AddAlt size={16} />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">

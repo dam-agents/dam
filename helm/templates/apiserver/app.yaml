@@ -252,6 +252,14 @@ spec:
               value: {{ include "platform.featureModes" . | quote }}
             - name: FEATURE_DEFAULT_MODE
               value: {{ include "platform.featureDefault" . | quote }}
+            {{- with .Values.apiServer.platformProvider }}
+            {{- if .baseUrl }}
+            - name: PLATFORM_PROVIDER_BASE_URL
+              value: {{ .baseUrl | quote }}
+            - name: PLATFORM_PROVIDER_MODEL
+              value: {{ .model | quote }}
+            {{- end }}
+            {{- end }}
             - name: HARNESSES
               value: {{ include "platform.harnesses" . | quote }}
             {{- if .Values.virtualization.enabled }}
