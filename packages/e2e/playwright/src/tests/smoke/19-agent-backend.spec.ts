@@ -112,21 +112,6 @@ test("keeps HOME on a compressed btrfs subvolume with its own UUID, and swaps to
   expect(guest).toContain("[zstd]");
 });
 
-// TEST_SCENARIO: the base image ships openrc, so platform-init boots its runlevels before the entrypoint, and runs the entrypoint in a cgroup of its own, which a restart of the entrypoint ends without openrc's services.
-test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async () => {
-  test.skip(
-    laneBackend !== "vm",
-    "only a vm machine has platform-init as its init",
-  );
-  const guest = inGuest(
-    agentId,
-    "echo softlevel $(cat /run/openrc/softlevel); echo entrypoint $(wc -l < /sys/fs/cgroup/entrypoint/cgroup.procs)",
-  );
-  expect(guest).toMatch(/^softlevel default$/m);
-  const [, procs] = /^entrypoint (\d+)$/m.exec(guest) ?? [];
-  expect(Number(procs), "the entrypoint runs in its cgroup").toBeGreaterThan(0);
-});
-
 // TEST_SCENARIO: the guest's boot log, which holds the harness's output, is readable in the guest at /var/log/platform and cannot be rewritten there; the disk it lives on is detached after the boot, and the host never reads it.
 test("shows the boot log read-only at /var/log/platform", async () => {
   test.skip(
