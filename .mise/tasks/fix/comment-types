@@ -3,13 +3,16 @@
 
 /* UNIT_BOUNDARY_DESCRIPTION: The comment gate for TS/JS/Go/Rust sources.
  * `-- --check` reports every comment without a registered type prefix
- * (check:comment-types); by default the files are rewritten, and `-- --dry-run`
+ * (check:comment-types) after asserting the PRESERVE_GO directive patterns and
+ * the scope guard; by default the files are rewritten, and `-- --dry-run`
  * only lists what stripping would remove. Only typed comments and tool directives
  * (PRESERVE_TS, PRESERVE_GO, PRESERVE_RUST) survive. Exempt: files whose header
  * marks them generated, cgo preambles, and packages/controller/api/ (its doc
  * comments compile into the CRD descriptions). Files come from `git ls-files`,
  * falling back from the NUL-safe `-z --` form to the plain form the locki
- * sandbox's git bridge admits; extensionless Node task files under .mise/tasks
+ * sandbox's git bridge admits only when git exits non-zero there; a scope
+ * starting with `-` or a path git quotes aborts the run instead of being read
+ * as an option or dropped. Extensionless Node task files under .mise/tasks
  * are selected by shebang. A multi-line block comment is replaced by a newline,
  * because ASI treats a comment containing a line break as one, and every
  * stripped TS/JS or Rust file is re-tokenized to prove its token stream is
@@ -18,6 +21,7 @@
  * string, raw string or char literal, and a char literal from a lifetime, or
  * the strip deletes code. A Rust file it cannot lex fails the check rather than
  * passing unread. */
+import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -62,7 +66,11 @@ const PRESERVE_GO = [
   /^\/\/line /,
   /^\/\/export /,
   /^\/\/sys/,
-  /^\/\/nolint/,
+  /^\/\/\s*nolint\b/,
+  /^\/\/\s*#nosec\b/,
+  /^\/\/lint:(file-)?ignore /,
+  /^\/\/revive:/,
+  /^\/\/\s*Deprecated:/,
 ];
 const PRESERVE_RUST = [TYPED_RUST_COMMENT, /^\/[/*]\s*SAFETY:/];
 
@@ -94,21 +102,25 @@ function isNodeTaskFile(f) {
 
 function listFiles(scopes) {
   const paths = scopes.length ? scopes : ['.'];
-  let out;
-  let sep = '\0';
-  const opts = { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024 };
+  const dashed = paths.find((p) => p.startsWith('-'));
+  if (dashed) throw new Error(`scope "${dashed}" starts with "-"; pass it as ./${dashed}`);
+  let files;
+  const opts = { cwd: repoRoot, maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] };
   try {
-    out = execFileSync('git', ['ls-files', '-z', '--', ...paths], {
-      ...opts,
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-  } catch {
-    out = execFileSync('git', ['ls-files', ...paths], opts);
-    sep = '\n';
+    files = execFileSync('git', ['ls-files', '-z', '--', ...paths], opts).toString('utf8').split('\0');
+  } catch (primary) {
+    if (primary.status == null) throw primary;
+    let out;
+    try {
+      out = execFileSync('git', ['ls-files', ...paths], opts).toString('utf8');
+    } catch (fallback) {
+      throw new Error(`git ls-files failed: ${primary.stderr}${fallback.stderr}`, { cause: fallback });
+    }
+    files = out.split('\n');
+    const quoted = files.find((f) => f.startsWith('"'));
+    if (quoted) throw new Error(`git quoted ${quoted}; the plain ls-files fallback cannot list it`);
   }
-  return out
-    .toString('utf8')
-    .split(sep)
+  return files
     .filter(Boolean)
     .filter((f) => {
       const ext = path.extname(f);
@@ -544,6 +556,24 @@ if (write) {
 }
 }
 
+function selfCheck() {
+  const kept = [
+    '//go:build linux',
+    '// #nosec G401',
+    '//nolint:gosec',
+    '// nolint',
+    '//lint:ignore SA1019 why',
+    '//revive:disable',
+    '// Deprecated: use X',
+  ];
+  const prose = ['// nolinting here', '// see #nosecret', '//lint:ignored', '// deprecated: lower case is prose'];
+  for (const c of kept) assert.ok(shouldPreserve(c, PRESERVE_GO), c);
+  for (const c of prose) assert.ok(!shouldPreserve(c, PRESERVE_GO), c);
+  assert.throws(() => listFiles(['-o']), /starts with "-"/);
+}
+
 const argv = process.argv.slice(2);
-if (argv.includes('--check')) check(argv.filter((a) => !a.startsWith('--')));
-else strip(argv);
+if (argv.includes('--check')) {
+  selfCheck();
+  check(argv.filter((a) => !a.startsWith('--')));
+} else strip(argv);

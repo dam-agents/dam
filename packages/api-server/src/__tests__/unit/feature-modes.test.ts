@@ -27,6 +27,7 @@ describe("feature modes", () => {
         "vm-sandboxes": "experimental",
         "chat-forms": "experimental",
         "custom-avatars": "experimental",
+        "platform-provider": "experimental",
       },
     });
     expect(await service.flags()).toMatchObject({
