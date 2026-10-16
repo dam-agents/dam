@@ -2098,3 +2098,25 @@ func TestRenderEnvoyBootstrap_SigningSecretMissingKeyStillBoots(t *testing.T) {
 		"envoy.filters.http.router",
 	}, httpFilterNamesForHost(t, mustParseBootstrap(t, got), "s3.example.cloud"))
 }
+
+// TEST_SCENARIO: the built-in provider's Connection Secret, on its own model server's port, yields a metered chain that dials that port, like any other model-provider Connection; a Connection of a template that is no model provider stays unmetered.
+func TestChainsFromSecrets_PlatformProviderChainIsMetered(t *testing.T) {
+	for _, tc := range []struct {
+		template string
+		metered  bool
+	}{{"platform-llm", true}, {"ibm-litellm", true}, {"github", false}} {
+		s := ownerSecret("platform-conn-"+tc.template, "connection", "conn-"+tc.template)
+		delete(s.Annotations, envoyHostPatternAnn)
+		s.Annotations[envoySecretPurposeAnn] = "connection:" + tc.template
+		s.Annotations[envoyInjectionHostsAnn] = `[{"host":"llm.models.svc","port":8443,"headerName":"Authorization","valueFormat":"Bearer {value}"}]`
+		s = withHostSDS(s, "llm.models.svc")
+
+		chains := chainsFromSecrets([]corev1.Secret{s}, nil)
+		require.Len(t, chains, 1, tc.template)
+		assert.Equal(t, 8443, chains[0].UpstreamPort, tc.template)
+		assert.Equal(t, tc.metered, chains[0].Metered(), tc.template)
+		if tc.metered {
+			assert.Equal(t, map[string]string{"conn-" + tc.template: tc.template}, chains[0].MeteredConnectionTemplates())
+		}
+	}
+}
