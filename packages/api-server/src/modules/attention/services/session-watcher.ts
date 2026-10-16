@@ -73,6 +73,7 @@ function toRow(
     title: session.title,
     scheduleId: session.scheduleId,
     threadTs: session.threadTs ?? null,
+    harness: session.harness ?? null,
     createdAt: toDate(session.createdAt) ?? new Date(),
     activityAt: toDate(session.updatedAt),
     seenAt: toDate(session.seenAt),

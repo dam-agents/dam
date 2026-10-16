@@ -29,6 +29,7 @@ function attention(
     title: null,
     scheduleId: null,
     threadTs: null,
+    harness: null,
     createdAt: "2026-10-01T08:00:00Z",
     activityAt,
     seenAt: activityAt,

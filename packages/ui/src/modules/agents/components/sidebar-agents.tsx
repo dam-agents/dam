@@ -102,12 +102,12 @@ export function SidebarAgents({
     <section aria-label="Agents" data-testid="sidebar-agents">
       <div
         className={cn(
-          "sticky top-0 z-raised flex items-center justify-between py-1 pl-2.5",
+          "sticky top-0 z-raised flex items-center justify-between py-1 pr-1 pl-2.5",
           stickyHeaderClassName,
         )}
       >
         <SectionLabel>Agents</SectionLabel>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5">
           <ActivityFilterMenu filters={filters} onChange={setFilters} />
           <CreateAgentButton onCreate={onNavigate} />
         </div>
