@@ -51,10 +51,6 @@ interface BaseProps {
   onFileClick: (path: string) => void;
   onDelete: (id: string) => void;
   onLoadOlder?: (before: string) => Promise<LoadOlderOutcome>;
-  /**
-   * The reply's turn, in the session of the agent named. Its telemetry strip
-   * is the message's last row, so nothing the message draws can cover it.
-   */
   turn?: TurnSummary;
   agentId?: string;
   sessionId?: string;
