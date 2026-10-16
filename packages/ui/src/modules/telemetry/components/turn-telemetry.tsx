@@ -1,29 +1,35 @@
 import { ChevronDown, ChevronRight } from "@carbon/icons-react";
-import type { TurnSummary } from "api-server-api";
+import type { SpendAmount, TurnSummary } from "api-server-api";
 import { useMemo, useState } from "react";
 
 import { formatDurationMs } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
-import { formatTokens, formatUsdCell } from "../../metrics/lib/format.js";
+import { formatTokens } from "../../metrics/lib/format.js";
+import { amountsLabel } from "../../spend/lib/amounts-label.js";
 import { useTurn } from "../api/queries.js";
 import { RecordDetail, SpanDetail } from "./record-detail.js";
 import { TraceWaterfall } from "./trace-waterfall.js";
 
-function summaryBits(turn: TurnSummary): string[] {
+function summaryBits(
+  turn: TurnSummary,
+  spend: readonly SpendAmount[] | undefined,
+): string[] {
   const bits = [formatDurationMs(turn.durationMs)];
   if (turn.calls > 0) {
     bits.push(turn.calls === 1 ? "1 call" : `${turn.calls} calls`);
   }
   const tokens = turn.inputTokens + turn.outputTokens;
   if (tokens > 0) bits.push(`${formatTokens(tokens)} tokens`);
-  if (turn.costUsd > 0) bits.push(formatUsdCell(turn.costUsd));
+  const cost = spend ? amountsLabel(spend) : null;
+  if (cost) bits.push(cost);
   return bits;
 }
 
 type Props = {
   agentId: string;
   turn: TurnSummary;
+  spend?: readonly SpendAmount[] | undefined;
   className?: string;
   triggerClassName?: string;
 } & ({ sessionId: string } | { invocationId: string });
@@ -31,6 +37,7 @@ type Props = {
 export function TurnTelemetry({
   agentId,
   turn,
+  spend,
   className = "-mt-7",
   triggerClassName,
   ...scope
@@ -75,7 +82,7 @@ export function TurnTelemetry({
       >
         {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         <span className="font-mono tabular-nums">
-          {summaryBits(turn).join(" · ")}
+          {summaryBits(turn, spend).join(" · ")}
         </span>
         {turn.errorCount > 0 && (
           <span className="font-mono text-danger">{turn.errorCount} err</span>

@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 import { Card } from "@/components/ui/card";
 
-import { formatTokens } from "../lib/format.js";
+import { durationSegments, formatTokens } from "../lib/format.js";
 
 function Sub({ children }: { children: ReactNode }) {
   return <span className="text-sm text-muted-foreground/70">{children}</span>;
@@ -42,6 +42,20 @@ export function TokensInOut({
           {formatTokens(tokensOut)}
         </span>
       </Sub>
+    </>
+  );
+}
+
+export function Duration({ ms }: { ms: number }) {
+  return (
+    <>
+      {durationSegments(ms).map((segment, i) =>
+        segment.unit ? (
+          <Sub key={i}>{segment.text}</Sub>
+        ) : (
+          <span key={i}>{segment.text}</span>
+        ),
+      )}
     </>
   );
 }

@@ -19,6 +19,7 @@ import {
 } from "../lib/copy.js";
 import { bareSpend, formatSpend } from "../lib/format.js";
 import type { RowAmount, SpendRow } from "../lib/spend-rows.js";
+import { HelpTip } from "./help-tip.js";
 
 function AmountText({ amount }: { amount: RowAmount }) {
   return match(amount)
@@ -53,6 +54,7 @@ function SpendRowItem({ row, icon }: { row: SpendRow; icon?: ReactNode }) {
           <span className="truncate" title={row.label}>
             {row.label}
           </span>
+          {row.help && <HelpTip content={row.help} />}
         </span>
         <span className="shrink-0 whitespace-nowrap text-muted-foreground tabular-nums">
           <AmountText amount={row.amount} />

@@ -55,16 +55,19 @@ export function MeasuredUsage({ agentId, period, onPeriodChange }: Props) {
         breakdown={breakdown}
         showPlanUse={showPlanUse}
       />
-      <MeasuredStatCards totals={breakdown.totals} />
+      <MeasuredStatCards
+        totals={breakdown.totals}
+        modelTimeMs={breakdown.modelTimeMs}
+      />
       {estimatedCalls > 0 && (
         <p className="text-sm text-muted-foreground">
           {estimatedCallsNote(estimatedCalls)}
         </p>
       )}
       <MeasuredBreakdownCards
+        {...(agentId !== undefined && { agentId })}
         breakdown={breakdown}
         showPlanUse={showPlanUse}
-        showAgents={agentId === undefined}
       />
     </div>
   );

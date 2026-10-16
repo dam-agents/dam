@@ -10,6 +10,7 @@ export type RowAmount =
 export interface RowSource {
   key: string;
   label: string;
+  help?: string;
   amounts: UnitAmounts;
   freeCalls: number;
   notPriced: boolean;
@@ -18,6 +19,7 @@ export interface RowSource {
 export interface SpendRow {
   key: string;
   label: string;
+  help?: string;
   amount: RowAmount;
   paidPct: number;
   planPct: number;
@@ -63,6 +65,7 @@ export function spendRows(
     .map(({ source, amount }) => ({
       key: source.key,
       label: source.label,
+      ...(source.help && { help: source.help }),
       amount,
       paidPct: pct(source.amounts.usd),
       planPct: showPlanUse ? pct(source.amounts.usd_list) : 0,

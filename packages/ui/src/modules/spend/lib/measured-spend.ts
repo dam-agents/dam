@@ -14,11 +14,11 @@ export function unitTotals(rows: readonly SpendAmount[]): UnitAmounts {
   return totals;
 }
 
-export function amountsBy<T extends SpendAmount>(
+export function amountsBy<T extends SpendAmount, K extends string>(
   rows: readonly T[],
-  keyOf: (row: T) => string,
-): Map<string, UnitAmounts> {
-  const byKey = new Map<string, UnitAmounts>();
+  keyOf: (row: T) => K,
+): Map<K, UnitAmounts> {
+  const byKey = new Map<K, UnitAmounts>();
   for (const row of rows) {
     const key = keyOf(row);
     const amounts = byKey.get(key) ?? noAmounts();

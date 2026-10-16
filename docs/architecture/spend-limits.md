@@ -319,4 +319,8 @@ Every surface uses the same names: the agent spend limit, the user's spend limit
 The Claude subscription's unit shows as "subscription value", in dollars.
 In the chat, a refused call shows as "Spend limit reached" or "Spend ceiling reached" with what to do and the local reset time; the harness's own error text stays below it as detail.
 Every text that a person reads gives the reset in that person's own time, on the screens, in the CLI and in the channel notices; texts for agents give it in UTC.
-The cost of each session in the sidebar still shows the spend that the harnesses report ([metrics](metrics.md)).
+**Per Session and per turn.** Each Session in the sidebar shows its Metered Spend: paid dollars, else the plan use as "covered", else Bobcoins.
+The figure includes the sub-agents spawned from that Session, and its tooltip names their part.
+The Usage pages also show the model time and the spend by session type, with a "Sub-agents" row for the calls of sub-agents and a "No session" row for calls with no Session.
+A driver's Usage section lists the driver and each sub-agent that spent in the period, and a sub-agent's own Usage section shows the calls that it made.
+The line under each chat turn shows the measured cost of the calls that started in that turn, from the call rows.

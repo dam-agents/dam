@@ -49,6 +49,23 @@ export function agentSources(
   );
 }
 
+export function sessionTypeSources(
+  bySessionType: SpendBreakdown["bySessionType"],
+  describe: (category: SessionType) => { label: string; help?: string },
+): RowSource[] {
+  return [...amountsBy(bySessionType, (row) => row.category)].map(
+    ([category, amounts]) => ({
+      key: category,
+      amounts,
+      freeCalls: 0,
+      notPriced: false,
+      ...describe(category),
+    }),
+  );
+}
+
+export type SessionType = SpendBreakdown["bySessionType"][number]["category"];
+
 export function modelSources(byModel: SpendBreakdown["byModel"]): RowSource[] {
   return sourcesBy(
     byModel,

@@ -10,6 +10,7 @@ import { framesToMessages } from "../../acp/frames-to-messages.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { ChatMessage } from "../../sessions/components/chat-message.js";
+import { useTurnSpend } from "../../spend/api/queries.js";
 import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
 import {
   useDelegationTranscript,
@@ -109,6 +110,8 @@ function PanelBody({
     node.status === "running",
   );
   const turn = telemetry?.available ? telemetry.turns[node.id] : undefined;
+  const spendTurns = useMemo(() => (turn ? [turn] : []), [turn]);
+  const { data: turnSpend } = useTurnSpend(node.id, null, spendTurns);
   const finished = node.status !== "running";
   const transcript = useDelegationTranscript(
     driverAgentId,
@@ -130,6 +133,7 @@ function PanelBody({
             agentId={driverAgentId}
             invocationId={node.id}
             turn={turn}
+            spend={turnSpend?.get(turn.turnId)}
             className="w-full"
           />
         )}

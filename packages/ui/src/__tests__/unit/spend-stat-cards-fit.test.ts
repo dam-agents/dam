@@ -21,12 +21,13 @@ const html = renderToStaticMarkup(
         webSearches: 0,
       },
     ],
+    modelTimeMs: 5_025_000,
   }),
 );
 
 it("lets every card shrink below its content", () => {
   const cards = html.match(/<div data-slot="card" class="[^"]*"/g) ?? [];
-  expect(cards).toHaveLength(2);
+  expect(cards).toHaveLength(3);
   for (const card of cards) expect(card).toContain("min-w-0");
 });
 

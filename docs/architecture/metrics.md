@@ -7,7 +7,7 @@ Last verified: 2026-10-16
 The **metrics** subsystem is the user-facing read path over agent telemetry: it answers *how much have my agents spent, and where* for the signed-in user.
 It backs the **earlier estimates** on the Settings Usage tab: for 30 days after the measuring start, the user can open the spend that each agent reported about itself, with per-model token/cost aggregates, monthly spend per day, spend per session kind and a per-agent spend breakdown, read live from the columnar telemetry store that [observability](observability.md) fills.
 Every other figure on the Usage surfaces — the Settings tab, the per-agent section, Home's spend card and each agent's spend summary — reads Metered Spend, which the gateway measures ([spend-limits](spend-limits.md#screens)).
-A separate **Session costs** read serves a different consumer — the cost-per-session line in the sidebar's list of an Agent's Sessions — not either Usage surface.
+The cost of each Session in the sidebar and of each chat turn reads Metered Spend too ([spend-limits](spend-limits.md#screens)).
 It is almost entirely a query surface: it mutates nothing and emits no events.
 Spend is the only question it answers; the raw traces and log records behind those numbers are read by [agent-telemetry](agent-telemetry.md), which opens its own connection to the same store and shares this subsystem's owner scoping but inverts its fail-closed posture on an empty result.
 The one thing it does own is a **session directory** — a projection of which kind each Session was, without which spend cannot be attributed to how the work was started (see [session directory](#session-directory)).
@@ -34,7 +34,7 @@ flowchart LR
 
 ## Contract
 
-Three read-only tRPC procedures make up the surface; all are query-only and all are scoped to the caller's own agents.
+Two read-only tRPC procedures make up the surface; both are query-only and both are scoped to the caller's own agents.
 The field-level shapes live in the contract package [`packages/api-server-api/`](../../packages/api-server-api/) — this page describes what each *means*, not its literal type.
 
 - **Overview** — the everything-for-a-window read.
@@ -43,13 +43,6 @@ The field-level shapes live in the contract package [`packages/api-server-api/`]
   The root is resolved as the earliest session on a shared trace (the parent's turn calls the LLM before any child it spawns exists), independently of any session filter the caller applied, and always inside the caller's ownership scope; a session with no traced rows simply keeps its own id.
   It composes three independent filters — an optional lookback window (capped at 30 days), an optional exact session, and a row limit on the unaggregated per-call rows — plus an optional narrowing to a single owned agent.
   Omitting all filters means *all of the caller's agents, all time*.
-- **Session costs** — the read behind the sidebar's per-Agent Session list.
-  It takes one owned agent, a bounded list of Session ids and an optional lower time bound, and returns the per-session rollup of the Overview for those Sessions only, folded under the same trace-family root.
-  The sidebar asks for one page of Sessions at a time, matching the pages it lists, and bounds each read by the earliest start among that page's Sessions, since a Session has no spend before it began.
-  A page that holds a Session whose start the list does not know — a session only the harness knows, whose listed start is its last activity, or one just opened and not listed yet — is read with no bound, so its earlier calls are still counted.
-  The id list narrows only what is summed: roots are still resolved from every call in the time bound, as the Overview does.
-  Only the newest page is polled; older pages hold Sessions that saw no recent activity, so their cost is read once and kept for a few minutes.
-  The read exists so that the sidebar does not ask the Overview for all-time spend of every Session on a timer.
 - **Spend breakdown** — the whole earlier-estimates view in one read.
   Over an absolute half-open `[from, to)` instant range, it returns four rollups together: token/cost **per model**, spend **per agent** (sorted highest cost first, no top-N cap), spend **per day** for the spend-over-time chart, and spend **per session kind**.
   The range is instants rather than calendar fields on purpose: the client decides what a "month" means in its own timezone, and the server never reasons about calendars.
@@ -65,7 +58,7 @@ The field-level shapes live in the contract package [`packages/api-server-api/`]
     The rollup additionally guarantees an **Invocation target never appears as a spend row**: a bucket with **no live agent** whose telemetry name is a minted target name (recognized by the invocations context) can only be a pre-cutover target whose Driver is unrecoverable — its records predate the durable delegation record — so the row is excluded from the per-agent breakdown rather than shown under a throwaway identity; its spend still counts in the per-model and per-day rollups.
     The live-agent gate keeps the guard off real agents: a live agent a user happened to name like a target keeps its row.
     The attribution itself is a **cutover, not a migration**: rows written before the change keep their old attribution and are not backfilled.
-  - The **per-session-kind** rollup answers *what started this work* — a person chatting, a Channel, a Schedule, a terminal — the same question the per-session cost beside each row of the sidebar's Session list answers for one Session.
+  - The **per-session-kind** rollup answers *what started this work* — a person chatting, a Channel, a Schedule, a terminal.
     Telemetry cannot answer it alone: a call record names its Session but never what kind of Session that is, and the resource attributes that would carry it are stamped once per pod, while one pod serves Sessions of every kind at once.
     The rollup therefore joins per-Session cost against the session directory below.
     It reuses the same **trace-family root** the Overview's per-session rollup groups on, so a child harness run counts under the kind of the Session that spawned it rather than as a kind of its own.
@@ -89,14 +82,6 @@ The figure is the provider's, not the platform's, and the two are deliberately k
 It covers everything the credential was used for, in or outside the platform, and comes in the provider's own unit (Bobcoins for Bob), so it is never summed with or reconciled against the Usage surfaces.
 A provider that does not answer reads as *unavailable*, never as zero, for the same reason the disabled backend fails loud.
 A key that may not read its own figures — a LiteLLM key without access to its key info — shows none, and so do providers that expose no budget to their credential at all, such as Anthropic and OpenAI.
-
-## Harness-reported spend
-
-A harness that does not export telemetry can still keep its own account of what each conversation cost.
-Bob does, in Bobcoins.
-The pod's session list carries that figure beside each session ([platform-topology](platform-topology.md)), and the per-agent Usage section shows its total over the month in which the selected period starts, for the sessions that started in that month.
-It is read from the running agent and never reaches the telemetry store, so a hibernated agent shows nothing until it starts, and a deleted agent's figure is gone with its volume.
-It is in the harness's unit and stays apart from the LLM spend the rest of this page describes.
 
 ## Agent-facing read
 

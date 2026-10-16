@@ -2,6 +2,7 @@ import type { SpendUnit } from "api-server-api";
 import { match } from "ts-pattern";
 
 import { getBrand } from "../../../brand.js";
+import { formatTokens } from "../../metrics/lib/format.js";
 import type { SpendBucket } from "./day-buckets.js";
 import { bareSpend, formatSpend } from "./format.js";
 import { formatDay, formatRange } from "./range-label.js";
@@ -167,4 +168,69 @@ export const EARLIER_ESTIMATES_HEADING =
 
 export function earlierEstimatesText(closesOn: string): string {
   return `Each agent reported these figures about itself. They are estimates at list prices, and they include use that a plan covers. No spend limit uses them. This view closes on ${formatDay(closesOn)}.`;
+}
+
+export const MODEL_TIME = "Model time";
+
+export const SPEND_BY_SESSION_TYPE = "Spend by session type";
+
+export const SUB_AGENTS = "Sub-agents";
+
+export const SUB_AGENTS_HELP =
+  "Calls of the sub-agents that your agents started. They count for the agent that started them.";
+
+export const NO_SESSION = "No session";
+
+export function noSessionHelp(): string {
+  return `Calls that ${getBrand().name} cannot link to a session, such as Bedrock calls and calls that do not pass the model router.`;
+}
+
+export function thisAgent(name: string): string {
+  return `${name} (this agent)`;
+}
+
+export function subAgentOwnCalls(rootName: string): string {
+  return `These are this sub-agent's own calls. They count for the limits of ${rootName}.`;
+}
+
+function units(micros: number, decimals: number): string {
+  const value = micros / 1_000_000;
+  const smallest = 10 ** -decimals;
+  return value > 0 && value < smallest
+    ? `<${smallest.toFixed(decimals)}`
+    : value.toFixed(decimals);
+}
+
+export function paidCell(micros: number): string {
+  const text = units(micros, 2);
+  return text.startsWith("<") ? `<$${text.slice(1)}` : `$${text}`;
+}
+
+export function coveredCell(micros: number): string {
+  return `${paidCell(micros)} covered`;
+}
+
+export function bobcoinCell(micros: number): string {
+  return `${units(micros, 2)} Bobcoins`;
+}
+
+export function callsAndTokens(
+  calls: number,
+  tokensIn: number,
+  tokensOut: number,
+): string {
+  const callText = calls === 1 ? "1 API call" : `${calls} API calls`;
+  return `${callText} · ${formatTokens(tokensIn)} tokens in / ${formatTokens(tokensOut)} out`;
+}
+
+export function paidDetail(micros: number): string {
+  return `$${(micros / 1_000_000).toFixed(4)} paid`;
+}
+
+export function coveredDetail(micros: number): string {
+  return `${paidCell(micros)} covered by your plan, at no extra cost`;
+}
+
+export function subAgentPart(amounts: string): string {
+  return `incl. ${amounts} by sub-agents started in this session`;
 }
