@@ -1,3 +1,13 @@
+import {
+  Calendar,
+  Download,
+  Edit,
+  FolderMoveTo,
+  NewTab,
+  Share,
+  TextCreation,
+  TrashCan,
+} from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
 
 import {
@@ -59,18 +69,40 @@ export function ArtifactRowMenuItems({
   return (
     <>
       {isEditableArtifact(artifact) && (
-        <Item onSelect={() => onEdit(artifact)}>Edit</Item>
+        <Item onSelect={() => onEdit(artifact)}>
+          <Edit size={14} />
+          Edit
+        </Item>
       )}
-      <Item onSelect={() => onRename(artifact)}>Rename</Item>
-      <Item onSelect={() => onMove(artifact)}>Move</Item>
-      <Item onSelect={() => onShare(artifact)}>Share</Item>
-      <Item onSelect={() => void downloadArtifact(artifact.id)}>Download</Item>
+      <Item onSelect={() => onRename(artifact)}>
+        <TextCreation size={14} />
+        Rename
+      </Item>
+      <Item onSelect={() => onMove(artifact)}>
+        <FolderMoveTo size={14} />
+        Move
+      </Item>
+      <Item onSelect={() => onShare(artifact)}>
+        <Share size={14} />
+        Share
+      </Item>
+      <Item onSelect={() => void downloadArtifact(artifact.id)}>
+        <Download size={14} />
+        Download
+      </Item>
       {startSession.available && (
-        <Item onSelect={startSession.start}>Discuss with agent</Item>
+        <Item onSelect={startSession.start}>
+          <NewTab size={14} />
+          Discuss with agent
+        </Item>
       )}
       <Separator />
-      <Item onSelect={() => onSetRetention(artifact)}>Set expiration</Item>
+      <Item onSelect={() => onSetRetention(artifact)}>
+        <Calendar size={14} />
+        Set expiration
+      </Item>
       <Item tone="danger" onSelect={() => void confirmAndDelete()}>
+        <TrashCan size={14} />
         Delete artifact
       </Item>
     </>

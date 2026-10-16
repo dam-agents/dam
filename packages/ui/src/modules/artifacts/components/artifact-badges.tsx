@@ -1,9 +1,5 @@
-import { Calendar, Earth, Flash, Link, Locked } from "@carbon/icons-react";
-import type {
-  ArtifactKind,
-  ArtifactVisibility,
-  LibraryArtifact,
-} from "api-server-api";
+import { Calendar, Flash } from "@carbon/icons-react";
+import type { ArtifactKind, LibraryArtifact } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,12 +34,6 @@ export function ArtifactKindBadge({ kind }: { kind: ArtifactKind }) {
   );
 }
 
-const VISIBILITY_ICON = {
-  private: Locked,
-  restricted: Link,
-  public: Earth,
-} satisfies Record<ArtifactVisibility, unknown>;
-
 export function ArtifactVisibilityButton({
   artifact,
   onShare,
@@ -51,13 +41,9 @@ export function ArtifactVisibilityButton({
   artifact: LibraryArtifact;
   onShare: () => void;
 }) {
-  const option = VISIBILITY_OPTIONS.find(
-    (o) => o.value === artifact.visibility,
-  );
-  const label = option
-    ? `${option.label} — ${option.description.toLowerCase()}`
-    : artifact.visibility;
-  const Icon = VISIBILITY_ICON[artifact.visibility];
+  const option = VISIBILITY_OPTIONS[artifact.visibility];
+  const label = `${option.label} — ${option.description.toLowerCase()}`;
+  const { Icon } = option;
   return (
     <Button
       variant="ghost"
