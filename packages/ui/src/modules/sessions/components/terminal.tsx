@@ -98,6 +98,7 @@ export function Terminal({
           selectionBackground: "#44403c",
         },
         scrollback: 1000,
+        macOptionClickForcesSelection: true,
       });
       term.open(container);
       termRef.current = term;
