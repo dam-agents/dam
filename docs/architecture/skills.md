@@ -104,7 +104,7 @@ A user creating a custom source for the same URL and path shadows the system ent
 
 The owner can **hide** a source on one agent (`agent_hidden_skill_sources`), whatever its kind, so a system or template source that cannot be removed stops cluttering that agent's skills page.
 A hide is keyed by `(agentId, gitUrl, path)`, the same identity listing dedupes on, so it survives the source row being deleted and re-added; the agent's source list still returns the source, marked `hidden`, and the agent-delete cleanup removes the rows.
-The UI does not scan a hidden source, offers to hide a source only while none of its skills are on, and lists hidden sources in the Add source dialog to show them again.
+The UI does not scan a hidden source, offers to hide a source only once its scan and the agent's skills state have loaded without an error and none of its skills are on, and lists hidden sources in the Add source dialog to show them again.
 
 A source may carry an optional repo-relative **path** — a subdirectory the scanner walks instead of the defaults.
 When set, that directory is scanned (and skills resolved) exclusively, bypassing the [Source Roots](#source-roots) union and top-level fallback — and failing by name when it resolves to nothing, whichever scanner answers: no such directory, or no skill under it; when absent, resolution is unchanged.
@@ -392,14 +392,15 @@ The cost is an out-of-band deletion noticed one read later.
 ## Persistence touchpoints
 
 Skills are entirely an **Application State** subsystem ([persistence](persistence.md)).
-Four Postgres tables in [`packages/db/src/schema.ts`](../../packages/db/src/schema.ts):
+Five Postgres tables in [`packages/db/src/schema.ts`](../../packages/db/src/schema.ts):
 
-| Table                   | Key                                       | Owner     |
-| ----------------------- | ----------------------------------------- | --------- |
-| `skill_sources`         | `(id)`, unique on `(owner, gitUrl, path)` | per-user  |
-| `skill_sets`            | `(id)`, unique on `(owner, name)`         | per-user  |
-| `agent_skills`          | `(agentId, source, name)`                 | per-agent |
-| `agent_skill_publishes` | `(id)`, indexed by `agentId`              | per-agent |
+| Table                        | Key                                       | Owner     |
+| ---------------------------- | ----------------------------------------- | --------- |
+| `skill_sources`              | `(id)`, unique on `(owner, gitUrl, path)` | per-user  |
+| `skill_sets`                 | `(id)`, unique on `(owner, name)`         | per-user  |
+| `agent_skills`               | `(agentId, source, name)`                 | per-agent |
+| `agent_skill_publishes`      | `(id)`, indexed by `agentId`              | per-agent |
+| `agent_hidden_skill_sources` | `(agentId, gitUrl, path)`                 | per-agent |
 
 System and template sources do **not** persist — system sources come from `SKILL_SOURCES_SEED`, template sources from the template's `spec.skillSources`.
 Both are computed at request time.

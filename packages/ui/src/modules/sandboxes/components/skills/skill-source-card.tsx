@@ -145,6 +145,13 @@ export function SkillSourceCard({
     bulkList.length > 0 && bulkList.every((s) => installedRef(s) !== undefined);
 
   const canRemove = !source.system && !source.fromTemplate;
+  const hideBlocker = error
+    ? "Re-scan it first"
+    : !loaded || !stateLoaded
+      ? "Still reading this source…"
+      : enabled.length > 0
+        ? "Turn its skills off first"
+        : null;
 
   return (
     <div>
@@ -222,19 +229,19 @@ export function SkillSourceCard({
             </DropdownMenuItem>
             {onHide && !readOnly && (
               <DropdownMenuItem
-                disabled={disabled || enabled.length > 0}
+                disabled={disabled || hideBlocker !== null}
                 onSelect={onHide}
-                className={cn(enabled.length > 0 && "h-auto items-start py-2")}
+                className={cn(hideBlocker && "h-auto items-start py-2")}
               >
                 <ViewOff
                   size={14}
-                  className={cn("shrink-0", enabled.length > 0 && "mt-0.5")}
+                  className={cn("shrink-0", hideBlocker && "mt-0.5")}
                 />
                 <span className="flex-1">
                   Hide for this agent
-                  {enabled.length > 0 && (
+                  {hideBlocker && (
                     <span className="mt-0.5 block text-xs text-muted-foreground">
-                      Turn its skills off first
+                      {hideBlocker}
                     </span>
                   )}
                 </span>
