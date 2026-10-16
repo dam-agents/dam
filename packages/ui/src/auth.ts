@@ -11,12 +11,28 @@ let currentUser: User | null = null;
 let renewal: Promise<User | null> | null = null;
 
 const RENEW_BEFORE_EXPIRY_S = 45;
+const INIT_RETRY_DELAYS_MS = [500, 1000, 2000];
 
 function signinExtraParams(): Record<string, string> {
   return { kc_theme: readStoredTheme() };
 }
 
 export async function initAuth(): Promise<User | null> {
+  for (const delayMs of INIT_RETRY_DELAYS_MS) {
+    try {
+      return await startAuth();
+    } catch (err) {
+      console.warn(
+        `[auth] sign-in setup failed, retrying in ${delayMs} ms`,
+        err,
+      );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  return startAuth();
+}
+
+async function startAuth(): Promise<User | null> {
   const res = await fetch("/api/auth/config");
   if (!res.ok) throw new Error("Failed to fetch auth config");
   const config = authConfigSchema.parse(await res.json());
