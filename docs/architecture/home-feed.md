@@ -1,6 +1,6 @@
 # Home feed
 
-Last verified: 2026-10-15
+Last verified: 2026-10-16
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
@@ -36,6 +36,11 @@ It shows its owner the rows filed for that Agent as a **provisional** list, disp
 The UI asks the Agent for that list once the Agent shows as starting, not first at Ready: the agent's tRPC relay holds the ask while the wake runs, and an ask it refuses, or a hold that fails, is asked again when the Agent turns Ready.
 Nothing acts on a provisional row as proof the session exists: opening one asks the Agent, which still decides.
 The sidebar shows the record's rows the same way under every Agent that is not open, three at most, and asks the Agent for its own list only when the user opens the Agent or asks for more.
+
+The user's **pins** order the sidebar on top of that.
+Pinned Agents come first, and so do pinned Sessions within their own Agent, in the order the user dragged them into; everything else keeps the recency order.
+The api-server keeps the pins per user, so the order follows the user to every browser, and drops an Agent's pins when the Agent is deleted.
+A pin is only an id: it never decides that an Agent or a Session exists, and a pin that names nothing listed shows nothing.
 
 That boundary is what makes the record safe to rebuild or discard.
 Dropping it costs a user their feed history and nothing else; the next capture refills it from the pods.
