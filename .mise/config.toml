@@ -1,6 +1,6 @@
 # 2026.10.4 (2026-10-07) is under the 7-day floor: it builds pipx venvs on
 # mise's own Python, not whichever one uv finds. Floor passes 2026-10-14.
-min_version = "2026.10.4"
+min_version = "2026.10.5"
 monorepo_root = true
 
 [monorepo]
@@ -8,12 +8,6 @@ config_roots = ["packages/*", "packages/agents/*", "packages/e2e/*", "packages/e
 lockfile = true
 
 [env]
-CC_x86_64_unknown_linux_gnu = "{{config_root}}/.mise/zig/cc"
-AR_x86_64_unknown_linux_gnu = "{{config_root}}/.mise/zig/ar"
-CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER = "{{config_root}}/.mise/zig/cc"
-CC_aarch64_unknown_linux_gnu = "{{config_root}}/.mise/zig/cc"
-AR_aarch64_unknown_linux_gnu = "{{config_root}}/.mise/zig/ar"
-CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER = "{{config_root}}/.mise/zig/cc"
 # A git hook exports these, and they point every git command at the committing
 # worktree whatever the cwd: a task's git ls-files lists paths from the wrong
 # directory, and the smolvm clone checks out into the worktree's index. Unset,
@@ -27,7 +21,9 @@ GIT_PREFIX = false
 repo_root = "{{config_root}}"
 base_image_api_server = "registry.access.redhat.com/hi/nodejs:26@sha256:c46573a1d159c05370bada02d6049f38fbdcfa6418c0868ad404f4b92743475c"
 base_image_controller = "registry.access.redhat.com/hi/core-runtime:latest@sha256:12ebc4493ccbb80fd47175c9c670ea590c4e7140a7c4858e038ac2df42be8ca8"
-base_image_keycloak = "quay.io/keycloak/keycloak:26.8.0@sha256:27b3230fbabb8c9ff3c66c864cf09dcd8a41aca82e5100679d109ef0eeb05741"
+# 26.8.1 (2026-10-13) is under the 7-day floor: it fixes the pcre2 CVEs
+# in 26.8.0 and Keycloak's own advisories. The exception can go 2026-10-20.
+base_image_keycloak = "quay.io/keycloak/keycloak:26.8.1@sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244"
 base_image_ui = "registry.access.redhat.com/hi/nginx:1.30@sha256:63ef79903a967e6bf45ed76e7c5f8bf28fb7457931162e0d645e75bcdeee0c49"
 base_image_debian = "mirror.gcr.io/library/debian:trixie-slim"
 
@@ -55,10 +51,6 @@ auto = true
 "npm:knip" = "latest"
 crane = "latest"
 gh = "latest"
-# go1.27.2 (2026-10-08) is locked under the 7-day floor: it fixes the
-# stdlib CVEs in the controller image. Until it ages past the floor
-# (2026-10-15), a re-lock with --bump --minimum-release-age 7d drops it to
-# 1.27.1: re-lock go alone without the flag afterwards.
 go = "1.27"
 gum = "latest"
 helm = "latest"
@@ -75,7 +67,6 @@ trivy = "latest"
 usage = "latest"
 uv = "latest"
 yq = "latest"
-zig = { version = "latest", os = ["linux"] }
 zizmor = "latest"
 
 [settings]

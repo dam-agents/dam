@@ -400,3 +400,25 @@ func TestAPendingResizeIsReportedOnce(t *testing.T) {
 	r.resizeNotices.Range(func(any, any) bool { notices++; return true })
 	assert.Equal(t, 1, notices)
 }
+
+// TEST_SCENARIO: a node short of disk evicts first the pods over their ephemeral-storage request, and a runner with none is over it at any use, so every machine of its owner dies with it. The runner asks for 1Gi unless the install sets its own request, which is kept.
+func TestARunnerPodRequestsEphemeralStorageSoDiskPressureEvictsItLast(t *testing.T) {
+	render := func(install *corev1.ResourceRequirements) resource.Quantity {
+		agent := vmAgentCR()
+		r, _, _ := setupVMReconciler(t, agent)
+		if install != nil {
+			r.config.VM.Runner.Resources = install
+		}
+		require.NoError(t, r.Reconcile(context.Background(), agent))
+		dep, err := r.client.AppsV1().Deployments("test-agents").Get(context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+		require.NoError(t, err)
+		return dep.Spec.Template.Spec.Containers[0].Resources.Requests[corev1.ResourceEphemeralStorage]
+	}
+	got := render(nil)
+	assert.Equal(t, "1Gi", got.String())
+	got = render(&corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceEphemeralStorage: resource.MustParse("5Gi")},
+		Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("8Gi")},
+	})
+	assert.Equal(t, "5Gi", got.String())
+}

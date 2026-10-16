@@ -60,6 +60,7 @@ import {
   buildConnectionSdsFields,
   connectionSecretAnnotations,
   CONNECTION_TOKEN_PLACEHOLDER,
+  UPSTREAM_CA_SECRET_FIELD,
 } from "../domain/connection-sds.js";
 import {
   awsCredentialsFile,
@@ -160,6 +161,8 @@ export function createConnectionsService(deps: {
   } | null>;
   maxSharedKbConnections?: number;
   platformProviderEnabled: () => Promise<boolean>;
+  platformProviderKey: string | null;
+  platformProviderCa?: string | null;
 }): ConnectionsService & PlatformLlmConnections {
   const maxSharedKbConnections =
     deps.maxSharedKbConnections ?? MAX_SHARED_KB_CONNECTIONS_PER_OWNER;
@@ -342,6 +345,28 @@ export function createConnectionsService(deps: {
       ),
       ...pinned,
     ];
+  }
+
+  async function putConnectionSecret(
+    connectionId: string,
+    templateId: string,
+    path: string,
+    fields: Record<string, string>,
+    contributions: Contribution[],
+  ): Promise<void> {
+    await deps.secretStore.put(
+      { storeId: deps.secretStore.storeId, path, field: "" },
+      fields,
+      {
+        owner: deps.ownerId,
+        purpose: `connection:${templateId}`,
+        extraLabels: {
+          "agent-platform.ai/secret-type": "connection",
+          "agent-platform.ai/connection": connectionId,
+        },
+        extraAnnotations: connectionSecretAnnotations(contributions),
+      },
+    );
   }
 
   async function rotateHeaderValue(
@@ -1303,18 +1328,12 @@ export function createConnectionsService(deps: {
           contributions,
           CONNECTION_TOKEN_PLACEHOLDER,
         );
-        await deps.secretStore.put(
-          { storeId: deps.secretStore.storeId, path: secretPath, field: "" },
+        await putConnectionSecret(
+          id,
+          template.id,
+          secretPath,
           { ...placeholderSds, ...(built.secrets.get(secretPath) ?? {}) },
-          {
-            owner: deps.ownerId,
-            purpose: `connection:${template.id}`,
-            extraLabels: {
-              "agent-platform.ai/secret-type": "connection",
-              "agent-platform.ai/connection": id,
-            },
-            extraAnnotations: connectionSecretAnnotations(contributions),
-          },
+          contributions,
         );
       }
 
@@ -1566,25 +1585,41 @@ export function createConnectionsService(deps: {
 
   async function platformState() {
     const template = deps.templates.get(PLATFORM_LLM_TEMPLATE_ID);
-    const wanted = template !== null && (await deps.platformProviderEnabled());
+    const key = deps.platformProviderKey;
+    const ca = deps.platformProviderCa ?? null;
+    const wanted =
+      template !== null &&
+      key !== null &&
+      (await deps.platformProviderEnabled());
     const owned = await deps.repo.listByOwner(deps.ownerId);
     const held = owned.filter(isPlatform);
-    const [keep, ...extra] = wanted ? held : [];
-    const remove = wanted ? extra : held;
+    const [keep] = wanted ? held.filter((c) => c.auth.kind === "header") : [];
+    const remove = held.filter((c) => c !== keep);
     const name = platformConnectionName(
       deps.brandName,
       new Set(owned.filter((c) => !isPlatform(c)).map((c) => c.name)),
     );
+    const rotated =
+      keep?.auth.kind === "header" &&
+      ((await deps.secretStore.getField(keep.auth.valueRef)) !== key ||
+        (await deps.secretStore.getField({
+          ...keep.auth.valueRef,
+          field: UPSTREAM_CA_SECRET_FIELD,
+        })) !== ca);
     const stale =
       keep !== undefined &&
       (keep.name !== name ||
+        rotated ||
         !isDeepStrictEqual(keep.contributions, template?.contributions));
     return {
       owned,
       template: wanted ? template : null,
+      key,
+      ca,
       keep,
       remove,
       name,
+      rotated,
       settled: !remove.length && (!wanted || (keep !== undefined && !stale)),
     };
   }
@@ -1598,24 +1633,49 @@ export function createConnectionsService(deps: {
    * because a user can record a flag that the install's mode overrides. Flag
    * changes, listings and the boot sweep can all reconcile at once, on any
    * replica, so the flag and the user's Connections are read only under one
-   * per-owner lock: whichever runs last sees the last flag.
+   * per-owner lock: whichever runs last sees the last flag. Its Secret holds
+   * a copy of the operator's key, and the operator's CA for the server when
+   * one is configured, and is rewritten whole when the key, the CA or the
+   * endpoint changes, since the endpoint names the hosts the gateway injects
+   * on. A keyless one from before the provider was metered has no Secret to
+   * rewrite, so it is replaced.
    */
   async function reconcilePlatformConnection(): Promise<void> {
     await deps.connectionLock(`platform-llm:${deps.ownerId}`, async () => {
-      const { owned, template, keep, remove, name } = await platformState();
+      const { owned, template, key, ca, keep, remove, name, rotated } =
+        await platformState();
       for (const conn of remove) await service.deleteConnection(conn.id);
-      if (!template) return;
+      if (!template || key === null) return;
       if (!keep) {
         await service.createFromTemplate({
           templateId: PLATFORM_LLM_TEMPLATE_ID,
           name,
-          authKind: "none",
+          authKind: "header",
+          value: key,
+          ...(ca ? { caData: ca } : {}),
         });
         return;
       }
       if (keep.name !== name) await deps.repo.updateName(keep.id, name);
-      if (!isDeepStrictEqual(keep.contributions, template.contributions)) {
-        await deps.repo.updateContributions(keep.id, template.contributions);
+      const moved = !isDeepStrictEqual(
+        keep.contributions,
+        template.contributions,
+      );
+      if ((moved || rotated) && keep.auth.kind === "header") {
+        await putConnectionSecret(
+          keep.id,
+          PLATFORM_LLM_TEMPLATE_ID,
+          keep.auth.valueRef.path,
+          {
+            value: key,
+            ...(ca ? { [UPSTREAM_CA_SECRET_FIELD]: ca } : {}),
+            ...buildConnectionSdsFields(template.contributions, key),
+          },
+          template.contributions,
+        );
+        if (moved) {
+          await deps.repo.updateContributions(keep.id, template.contributions);
+        }
         await fanOutToAgents(
           keep.id,
           await deps.repo.listAgentsForConnection(keep.id),
@@ -1662,6 +1722,13 @@ export function createConnectionsService(deps: {
         throw refuseUserManaged();
       }
       return service.deleteConnection(id);
+    },
+    async update(id, credential) {
+      const conn = await deps.repo.get(id, deps.ownerId);
+      if (conn?.templateId === PLATFORM_LLM_TEMPLATE_ID) {
+        throw refuseUserManaged();
+      }
+      return service.update(id, credential);
     },
     reconcilePlatformConnection,
   };

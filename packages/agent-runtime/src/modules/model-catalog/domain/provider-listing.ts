@@ -65,9 +65,9 @@ export const BOB_LISTING_USER_AGENT = "platform-bob-catalog/1";
  * its Connection's env layer. IBM's virtual keys get 403 on every model-info
  * route, so the LiteLLM proxies are read through `/v1/models` and take their
  * metadata from the price table; Bob's gateway is the one provider-sourced
- * listing. The platform's self-hosted vLLM is listed without a key, and its
- * models cost nothing. Null for a template the router does not serve
- * (Bedrock).
+ * listing. The catalog shows the platform's self-hosted vLLM at no cost; the
+ * spend meter prices its calls with the operator's price instead. Null for
+ * a template the router does not serve (Bedrock).
  */
 export function listingForTemplate(templateId: string): ProviderListing | null {
   switch (templateId) {
@@ -84,6 +84,8 @@ export function listingForTemplate(templateId: string): ProviderListing | null {
       return {
         spec: {
           urlEnv: ["PLATFORM_LLM_BASE_URL", "OPENAI_BASE_URL"],
+          tokenEnv: ["OPENAI_API_KEY", "ANTHROPIC_AUTH_TOKEN"],
+          credentialHeader: "authorization",
           shape: "openai-models",
         },
         prices: FREE,

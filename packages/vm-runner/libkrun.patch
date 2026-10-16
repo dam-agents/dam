@@ -1,5 +1,5 @@
 diff --git i/src/devices/src/virtio/balloon/device.rs w/src/devices/src/virtio/balloon/device.rs
-index 2a1b8947..5f7a43d8 100644
+index 3e36adb3..d51108c4 100644
 --- i/src/devices/src/virtio/balloon/device.rs
 +++ w/src/devices/src/virtio/balloon/device.rs
 @@ -122,6 +122,9 @@ pub struct FreePageHintProgress {
@@ -22,31 +22,36 @@ index 2a1b8947..5f7a43d8 100644
                  if let Err(e) = mem.read_slice(&mut buf[at..], desc.addr) {
                      error!("balloon: unreadable stats buffer: {e:?}");
                      buf.truncate(at);
-@@ -575,6 +579,12 @@ impl Balloon {
- /// [`super::owned_ram`].
- fn release_guest_range(mem: &GuestMemoryMmap, gpa: u64, len: u64) {
+@@ -579,6 +583,12 @@ impl Balloon {
+ /// drops the mapping, and the next read faults the file's page back in.
+ fn release_guest_range(mem: &GuestMemoryMmap, gpa: u64, len: u64) -> bool {
      use vm_memory::{GuestAddress, GuestMemoryRegion};
 +    // Both ends are guest-chosen: the whole range must be guest memory, and it
 +    // is released per region since adjacent regions need not be host-adjacent.
 +    if !mem.check_range(GuestAddress(gpa), len as usize) {
 +        error!("balloon: inflate range outside guest memory: 0x{gpa:x}+{len}");
-+        return;
++        return false;
 +    }
      let host_addr = match mem.get_host_address(GuestAddress(gpa)) {
          Ok(p) => p,
          Err(e) => {
-@@ -603,8 +613,6 @@ fn release_guest_range(mem: &GuestMemoryMmap, gpa: u64, len: u64) {
-                 return;
+@@ -607,8 +617,6 @@ fn release_guest_range(mem: &GuestMemoryMmap, gpa: u64, len: u64) -> bool {
+                 return true;
              }
          }
 -        hvf::balloon_reclaim_range(gpa, host_addr as u64, len, None);
--        return;
+-        return true;
      }
      #[cfg(target_os = "linux")]
      if let Some((file, _)) = backing {
-@@ -619,19 +627,31 @@ fn release_guest_range(mem: &GuestMemoryMmap, gpa: u64, len: u64) {
+@@ -623,23 +631,45 @@ fn release_guest_range(mem: &GuestMemoryMmap, gpa: u64, len: u64) -> bool {
          }
      }
+     #[cfg(target_os = "linux")]
+-    let zeroed = backing.is_none();
++    let mut zeroed = true;
+     #[cfg(not(target_os = "linux"))]
+     let zeroed = true;
      #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 -    let _ = backing;
 -    #[cfg(target_os = "linux")]
@@ -64,14 +69,24 @@ index 2a1b8947..5f7a43d8 100644
 +    let _ = (backing, host_addr);
 +    let mut next_gpa = gpa;
 +    for slice in mem.get_slices(GuestAddress(gpa), len as usize).flatten() {
-+        // Only the macOS reclaim path needs the slice's guest address.
-+        #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
++        // Only the Linux and macOS paths need the slice's guest address.
++        #[cfg_attr(
++            not(any(target_os = "linux", target_os = "macos")),
++            allow(unused_variables)
++        )]
 +        let (gpa, host_addr, len) = (next_gpa, slice.ptr_guard_mut().as_ptr(), slice.len());
 +        next_gpa += len as u64;
 +        #[cfg(target_os = "macos")]
 +        if hvf::balloon_reclaim_enabled() {
 +            hvf::balloon_reclaim_range(gpa, host_addr as u64, len as u64, None);
 +            continue;
++        }
++        // A file-backed slice keeps the file's contents under MADV_DONTNEED.
++        #[cfg(target_os = "linux")]
++        {
++            zeroed &= mem
++                .find_region(GuestAddress(gpa))
++                .is_some_and(|region| region.file_offset().is_none());
 +        }
 +        #[cfg(target_os = "linux")]
 +        let advice = libc::MADV_DONTNEED;
@@ -86,10 +101,72 @@ index 2a1b8947..5f7a43d8 100644
 +            DiscardVirtualMemory(host_addr as *mut core::ffi::c_void, len)
 +        };
 +    }
+     zeroed
  }
  
- /// Make a hinted block read back as zeros, which is what lets a checkpoint
-@@ -1158,3 +1178,87 @@ mod checkpoint_quiescence_tests {
+@@ -652,27 +682,28 @@ fn release_guest_range(mem: &GuestMemoryMmap, gpa: u64, len: u64) -> bool {
+ /// the mapping changes; KVM follows the new pages through its MMU notifier.
+ #[cfg(target_os = "linux")]
+ fn zero_hinted_private_range(mem: &GuestMemoryMmap, gpa: u64, len: u64) {
+-    let Ok(host_addr) = mem.get_host_address(vm_memory::GuestAddress(gpa)) else {
+-        return;
+-    };
+-    // Safety: the range lies inside a live guest-memory mapping this VMM owns
+-    // and stays mapped (MAP_FIXED replaces it in place with the same
+-    // protection); the guest is not using it while the round holds it.
+-    let mapped = unsafe {
+-        libc::mmap(
+-            host_addr.cast(),
+-            len as usize,
+-            libc::PROT_READ | libc::PROT_WRITE,
+-            libc::MAP_PRIVATE | libc::MAP_ANONYMOUS | libc::MAP_FIXED | libc::MAP_NORESERVE,
+-            -1,
+-            0,
+-        )
+-    };
+-    if mapped == libc::MAP_FAILED {
+-        debug!(
+-            "balloon: could not zero hinted range 0x{gpa:x}+{len}: {}",
+-            std::io::Error::last_os_error()
+-        );
++    // Per region, like release_guest_range: adjacent regions need not be
++    // host-adjacent, and MAP_FIXED would replace whatever lies between.
++    for slice in mem.get_slices(vm_memory::GuestAddress(gpa), len as usize).flatten() {
++        // Safety: the slice lies inside a live guest-memory mapping this VMM
++        // owns and stays mapped (MAP_FIXED replaces it in place with the same
++        // protection); the guest is not using it while the round holds it.
++        let mapped = unsafe {
++            libc::mmap(
++                slice.ptr_guard_mut().as_ptr().cast(),
++                slice.len(),
++                libc::PROT_READ | libc::PROT_WRITE,
++                libc::MAP_PRIVATE | libc::MAP_ANONYMOUS | libc::MAP_FIXED | libc::MAP_NORESERVE,
++                -1,
++                0,
++            )
++        };
++        if mapped == libc::MAP_FAILED {
++            debug!(
++                "balloon: could not zero hinted range 0x{gpa:x}+{len}: {}",
++                std::io::Error::last_os_error()
++            );
++        }
+     }
+ }
+ 
+@@ -680,6 +711,11 @@ fn zero_hinted_private_range(mem: &GuestMemoryMmap, gpa: u64, len: u64) {
+ /// skip it, and hand it back to the host where that is cheap. The guest holds
+ /// the block until the round is done, so nothing races with this.
+ fn clear_hinted_range(mem: &GuestMemoryMmap, gpa: u64, len: u64) {
++    // The guest picks both ends; every path below writes the host mapping.
++    if !mem.check_range(vm_memory::GuestAddress(gpa), len as usize) {
++        error!("balloon: hinted range outside guest memory: 0x{gpa:x}+{len}");
++        return;
++    }
+     // Linux's MADV_DONTNEED zeroes anonymous RAM as it releases, and punching
+     // RAM this VMM owns clears it from the file. A private view of a file
+     // (every machine after its first checkpoint, every restore and branch)
+@@ -1206,3 +1242,123 @@ mod checkpoint_quiescence_tests {
          }
      }
  }
@@ -112,6 +189,42 @@ index 2a1b8947..5f7a43d8 100644
 +    /// end of guest memory must not reach whatever the host mapped next.
 +    #[test]
 +    fn a_release_past_guest_memory_leaves_the_next_host_mapping_alone() {
++        past_guest_memory_leaves_the_next_host_mapping_alone(|mem, gpa, len| {
++            release_guest_range(mem, gpa, len);
++        });
++    }
++
++    /// A hinted range runs the same risk, and the private-view fallback
++    /// maps over it with MAP_FIXED.
++    #[test]
++    fn a_hint_past_guest_memory_leaves_the_next_host_mapping_alone() {
++        past_guest_memory_leaves_the_next_host_mapping_alone(clear_hinted_range);
++    }
++
++    /// MADV_DONTNEED leaves a file-backed page in place, so a range that
++    /// reaches into a file-backed region does not read back as zeros, even
++    /// when it starts in anonymous RAM.
++    #[test]
++    fn a_release_into_a_file_backed_region_is_not_reported_zeroed() {
++        use std::os::fd::FromRawFd;
++        use vm_memory::{Bytes, FileOffset};
++        let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
++        let anon = GuestRegionMmap::new(MmapRegion::new(page).unwrap(), GuestAddress(0)).unwrap();
++        let fd = unsafe { libc::memfd_create(c"guest-ram".as_ptr(), 0) };
++        assert!(fd >= 0);
++        let file = unsafe { std::fs::File::from_raw_fd(fd) };
++        file.set_len(page as u64).unwrap();
++        let region = MmapRegion::from_file(FileOffset::new(file, 0), page).unwrap();
++        let backed = GuestRegionMmap::new(region, GuestAddress(page as u64)).unwrap();
++        let mem = GuestMemoryMmap::from_regions(vec![anon, backed]).unwrap();
++        mem.write_obj(0xa5u8, GuestAddress(page as u64)).unwrap();
++
++        assert!(!release_guest_range(&mem, 0, 2 * page as u64));
++        assert_eq!(mem.read_obj::<u8>(GuestAddress(page as u64)).unwrap(), 0xa5);
++    }
++    fn past_guest_memory_leaves_the_next_host_mapping_alone(
++        release: impl Fn(&GuestMemoryMmap, u64, u64),
++    ) {
 +        let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
 +        let prot = libc::PROT_READ | libc::PROT_WRITE;
 +        let flags = libc::MAP_PRIVATE | libc::MAP_ANONYMOUS;
@@ -127,11 +240,11 @@ index 2a1b8947..5f7a43d8 100644
 +        ])
 +        .unwrap();
 +
-+        release_guest_range(&mem, page as u64, 2 * page as u64);
++        release(&mem, page as u64, 2 * page as u64);
 +
 +        assert!(
 +            beyond.iter().all(|&b| b == 0xa5),
-+            "madvise reached past the end of guest memory"
++            "the release reached past the end of guest memory"
 +        );
 +        drop(mem);
 +        unsafe { libc::munmap(host as *mut libc::c_void, 3 * page) };
@@ -364,7 +477,7 @@ index 84327612..4d1b3b06 100644
          for index in 0..requests {
              io.submit_read(AsyncJob {
 diff --git i/src/devices/src/virtio/fs/linux/passthrough.rs w/src/devices/src/virtio/fs/linux/passthrough.rs
-index 111f5475..53198516 100644
+index 110835cb..624cce86 100644
 --- i/src/devices/src/virtio/fs/linux/passthrough.rs
 +++ w/src/devices/src/virtio/fs/linux/passthrough.rs
 @@ -61,6 +61,15 @@ struct HandleData {
@@ -383,7 +496,7 @@ index 111f5475..53198516 100644
  #[repr(C, packed)]
  #[derive(Clone, Copy, Debug, Default)]
  struct LinuxDirent64 {
-@@ -1630,14 +1639,10 @@ impl FileSystem for PassthroughFs {
+@@ -1758,14 +1767,10 @@ impl FileSystem for PassthroughFs {
          F: FnMut(DirEntry, Entry) -> io::Result<usize>,
      {
          self.do_readdir(inode, handle, size, offset, |dir_entry| {
@@ -402,7 +515,7 @@ index 111f5475..53198516 100644
  
              add_entry(dir_entry, entry)
          })
-@@ -1843,8 +1848,11 @@ impl FileSystem for PassthroughFs {
+@@ -1971,8 +1976,11 @@ impl FileSystem for PassthroughFs {
          }
  
          // If we have a handle then use it otherwise get a new fd from the inode.
@@ -415,7 +528,7 @@ index 111f5475..53198516 100644
                  .handles
                  .read()
                  .unwrap()
-@@ -1861,6 +1869,11 @@ impl FileSystem for PassthroughFs {
+@@ -1989,6 +1997,11 @@ impl FileSystem for PassthroughFs {
              Data::ProcPath(pathname)
          };
  
@@ -427,8 +540,8 @@ index 111f5475..53198516 100644
          if self.cfg.override_stat
              && valid.intersects(SetattrValid::MODE | SetattrValid::UID | SetattrValid::GID)
          {
-@@ -3229,6 +3242,155 @@ mod tests {
-         Ok(())
+@@ -3492,6 +3505,155 @@ mod tests {
+         fs::remove_dir_all(root).unwrap();
      }
  
 +    // A RELEASE racing a setattr must not close the handle's fd before the

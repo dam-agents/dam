@@ -1,5 +1,5 @@
 diff --git i/Cargo.toml w/Cargo.toml
-index d0a7a42..3f008b0 100644
+index 1e63774..f4d719c 100644
 --- i/Cargo.toml
 +++ w/Cargo.toml
 @@ -96,7 +96,7 @@ axum = { version = "0.8", features = ["macros", "ws"] }
@@ -12,10 +12,10 @@ index d0a7a42..3f008b0 100644
  http-body = "1"
  rustls = { version = "0.23.45", default-features = false, features = ["ring"] }
 diff --git i/crates/smolvm-agent/src/main.rs w/crates/smolvm-agent/src/main.rs
-index 208a954..0343740 100644
+index 78da739..95446a5 100644
 --- i/crates/smolvm-agent/src/main.rs
 +++ w/crates/smolvm-agent/src/main.rs
-@@ -1227,12 +1227,11 @@ fn setup_persistent_rootfs() {
+@@ -1228,12 +1228,11 @@ fn setup_persistent_rootfs() {
          }
      }
  
@@ -33,7 +33,7 @@ index 208a954..0343740 100644
  
      ensure_mount_dir(OVERLAY_MOUNT);
  
-@@ -1244,6 +1243,12 @@ fn setup_persistent_rootfs() {
+@@ -1245,6 +1244,12 @@ fn setup_persistent_rootfs() {
      let storage_handle = if Path::new(STORAGE_DEVICE).exists() {
          ensure_mount_dir(STORAGE_TEMP_MOUNT);
          Some(std::thread::spawn(|| {
@@ -46,7 +46,7 @@ index 208a954..0343740 100644
              // Resize before mount — template may be smaller than device.
              // Skip if filesystem already fills the device (subsequent boots).
              // If resize fails (e.g. macOS-created template with incompatible features),
-@@ -1287,61 +1292,29 @@ fn setup_persistent_rootfs() {
+@@ -1288,61 +1293,29 @@ fn setup_persistent_rootfs() {
          None
      };
  
@@ -124,7 +124,7 @@ index 208a954..0343740 100644
              if let Some(handle) = storage_handle {
                  if handle.join().unwrap_or(false) {
                      let mnt = cstr(STORAGE_TEMP_MOUNT);
-@@ -1353,6 +1326,74 @@ fn setup_persistent_rootfs() {
+@@ -1354,6 +1327,74 @@ fn setup_persistent_rootfs() {
              }
              return;
          }
@@ -199,7 +199,7 @@ index 208a954..0343740 100644
      }
  
      // Create overlay directories
-@@ -1818,6 +1859,20 @@ fn mount_storage_disk() -> bool {
+@@ -1840,6 +1881,20 @@ fn mount_storage_disk() -> bool {
          return true;
      }
  
@@ -220,7 +220,7 @@ index 208a954..0343740 100644
      // --- Attempt 1: resize (if needed) + mount (works on subsequent boots) ---
      let resized =
          ext4_already_full_size(STORAGE_DEVICE) || resize_ext4_if_needed(STORAGE_DEVICE, "storage");
-@@ -1839,7 +1894,8 @@ fn mount_storage_disk() -> bool {
+@@ -1861,7 +1916,8 @@ fn mount_storage_disk() -> bool {
          .status()
      {
          Ok(status) => {
@@ -230,7 +230,7 @@ index 208a954..0343740 100644
              if code <= 1 {
                  info!(exit_code = code, "fsck completed");
                  true
-@@ -1865,6 +1921,17 @@ fn mount_storage_disk() -> bool {
+@@ -1887,6 +1943,17 @@ fn mount_storage_disk() -> bool {
      }
  
      // --- Attempt 3: mkfs (last resort, destroys data) ---
@@ -248,7 +248,7 @@ index 208a954..0343740 100644
      info!("formatting storage disk (first boot or unrecoverable)");
      match Command::new("mkfs.ext4")
          .args(["-F", "-q", "-O", "^has_journal", STORAGE_DEVICE])
-@@ -1891,6 +1958,177 @@ fn mount_storage_disk() -> bool {
+@@ -1913,6 +1980,177 @@ fn mount_storage_disk() -> bool {
      false
  }
  
@@ -426,7 +426,7 @@ index 208a954..0343740 100644
  /// Stub for non-Linux platforms.
  #[cfg(not(target_os = "linux"))]
  fn mount_storage_disk() -> bool {
-@@ -8150,6 +8388,55 @@ mod bg_reap_tests {
+@@ -8230,6 +8468,55 @@ mod bg_reap_tests {
  
  #[cfg(test)]
  mod tests {
@@ -479,9 +479,9 @@ index 208a954..0343740 100644
 +        assert!(!super::may_format_storage(path));
 +    }
 +
-     /// A listing is what a caller uses to decide where to recurse and what to
-     /// download, so the shape matters: names only, sorted, with sizes only
-     /// where they mean something.
+     #[cfg(target_os = "linux")]
+     #[test]
+     fn workspace_is_shared_on_creation_without_changing_existing_permissions() {
 diff --git i/crates/smolvm-agent/src/shutdown_freeze.rs w/crates/smolvm-agent/src/shutdown_freeze.rs
 index ff3e95a..02b72a6 100644
 --- i/crates/smolvm-agent/src/shutdown_freeze.rs
@@ -576,10 +576,10 @@ index 95b89bf..dad5d21 100644
                  destination,
                  stream.peer_addr().ok(),
 diff --git i/src/agent/manager.rs w/src/agent/manager.rs
-index d80845f..1cebeb4 100644
+index cffe2dd..507bb44 100644
 --- i/src/agent/manager.rs
 +++ w/src/agent/manager.rs
-@@ -92,6 +92,9 @@ fn open_overlay_disk_for_manager(
+@@ -168,6 +168,9 @@ fn open_overlay_disk_for_manager(
      format: DiskFormat,
      access: DiskAccess,
  ) -> Result<OverlayDisk> {
@@ -589,7 +589,7 @@ index d80845f..1cebeb4 100644
      match (format, access) {
          (DiskFormat::Qcow2, _) => OverlayDisk::open_existing_with_format(path, format),
          (DiskFormat::Raw, DiskAccess::Observe) if path.exists() => {
-@@ -2162,7 +2165,9 @@ impl AgentManager {
+@@ -2278,7 +2281,9 @@ impl AgentManager {
          // A manager opened to observe a never-started machine has no disks to
          // boot from; creating them here would be creating them at a guessed
          // size. Launches go through a manager opened with the machine's sizes.
@@ -600,7 +600,7 @@ index d80845f..1cebeb4 100644
              let mut inner = self.inner.lock();
              inner.state = AgentState::Stopped;
              return Err(Error::agent(
-@@ -2190,7 +2195,11 @@ impl AgentManager {
+@@ -2306,7 +2311,11 @@ impl AgentManager {
              let overlay_disk = &self.overlay_disk;
              std::thread::scope(|s| {
                  let storage_handle = s.spawn(|| storage_disk.ensure_formatted());
@@ -614,7 +614,7 @@ index d80845f..1cebeb4 100644
                      Err(crate::Error::storage("format storage", "thread panicked"))
                  }) {
 diff --git i/src/internal_boot.rs w/src/internal_boot.rs
-index 5347752..3f7fb1f 100644
+index 9550f0d..d3996d1 100644
 --- i/src/internal_boot.rs
 +++ w/src/internal_boot.rs
 @@ -71,6 +71,13 @@ fn open_boot_disk<K: DiskType>(path: &Path, size_gb: u64) -> crate::Result<VmDis
@@ -631,7 +631,7 @@ index 5347752..3f7fb1f 100644
  /// Run the boot subprocess.
  ///
  /// Reads the boot config from the given path, sets up libkrun, and calls
-@@ -603,25 +610,29 @@ pub fn run(config_path: PathBuf) -> crate::Result<()> {
+@@ -604,25 +611,29 @@ pub fn run(config_path: PathBuf) -> crate::Result<()> {
      };
      proc_timing!("storage opened");
  

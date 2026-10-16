@@ -9,8 +9,9 @@ export interface DbTlsOptions {
 export function postgresOptions(
   max: number,
   tls?: DbTlsOptions,
-): { max: number; ssl?: { ca: string } } {
-  return tls?.ca ? { max, ssl: { ca: tls.ca } } : { max };
+): { max: number; idle_timeout: number; ssl?: { ca: string } } {
+  const pool = { max, idle_timeout: 30 };
+  return tls?.ca ? { ...pool, ssl: { ca: tls.ca } } : pool;
 }
 
 interface DbOptions {
