@@ -12,6 +12,7 @@ import { createDelegationsQuery } from "./services/delegations-query.js";
 import {
   createInvocationsService,
   type InvocationsService,
+  type SpendHoldGate,
 } from "./services/invocations-service.js";
 import {
   createInvocationLivenessSweep,
@@ -65,6 +66,7 @@ export function composeInvocationsForOwner(opts: {
   frames: DelegationFramesPort;
   readHarnessConfigSupport: ReadHarnessConfigSupport;
   targetAdmission?: TargetAdmission;
+  spendHold?: SpendHoldGate;
   skills?: Pick<SkillsService, "applyEntries">;
   pinDriver?: (driverAgentId: string) => Promise<void>;
 }): InvocationsService {
@@ -79,6 +81,7 @@ export function composeInvocationsForOwner(opts: {
     wakeAgent: opts.wakeAgent,
     readHarnessConfigSupport: opts.readHarnessConfigSupport,
     ...(opts.targetAdmission ? { targetAdmission: opts.targetAdmission } : {}),
+    ...(opts.spendHold ? { spendHold: opts.spendHold } : {}),
     ...(opts.skills ? { skills: opts.skills } : {}),
     ...(opts.pinDriver ? { pinDriver: opts.pinDriver } : {}),
   });

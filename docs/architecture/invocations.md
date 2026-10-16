@@ -66,6 +66,7 @@ Network reach needs no grant of its own: a target has no egress identity and run
 **Admission.** A target sized past its owner's [budget](budgets.md) Ceiling could never start, so the spawn fails at once with the figures.
 A vm target stands outside the budget and is never refused here.
 One that fits the Ceiling but not the room free now queues and starts when room frees; the wait counts against its deadline.
+A spawn whose root Driver is at a [spend limit or the Spend Ceiling](spend-limits.md#unattended-work) is refused before anything is created, with a reason of its own that says which one and when it lifts, because the target could only fail its first model call.
 
 ## Outcomes
 

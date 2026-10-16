@@ -77,6 +77,7 @@ function infraAgent(overrides?: Partial<InfraAgent>): InfraAgent {
     ready: false,
     hibernated: true,
     stopRequested: false,
+    disabled: false,
     overBudget: false,
     podRestarts: 0,
     ...overrides,

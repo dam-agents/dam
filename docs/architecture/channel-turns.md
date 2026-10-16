@@ -43,6 +43,7 @@ A few observations the diagram glosses over:
 
 - **The gates are the binding check plus the binding owner's Terms-of-Use acceptance** — no sender identity is resolved.
   Both messengers behave identically here.
+  An Agent at a [spend limit or the Spend Ceiling](spend-limits.md#unattended-work) starts no turn either and is not woken; whoever addressed it gets a notice.
   An unallowed host is refused, not held ([egress](security-and-credentials.md)).
 - **An attachment is a picture the agent is shown or a file it is handed**, by what the sender sent, not what the bytes are.
   Slack only: Telegram drops one at its gateway.

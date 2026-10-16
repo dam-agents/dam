@@ -235,7 +235,7 @@ describe("modelIndicatorLabel", () => {
       },
     ];
     expect(modelIndicatorLabel(groups, "ibm/aws/claude-opus-4-5")).toBe(
-      "aws/claude-opus-4-5 · IBM ETE LiteLLM Proxy",
+      "aws/claude-opus-4-5 (IBM ETE LiteLLM Proxy)",
     );
     expect(sameModel("claude/ibm/aws/x", "ibm/aws/x")).toBe(true);
     expect(sameModel("ibm/aws/x", null)).toBe(false);

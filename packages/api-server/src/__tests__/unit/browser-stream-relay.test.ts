@@ -268,7 +268,7 @@ describe("browser stream relay", () => {
     const { ws, messages } = await open(
       `ws://127.0.0.1:${port}/api/public/browser-stream/agent-1/api/websockets?token=secret`,
     );
-    await until(() => agent.sockets.length === 1);
+    await until(() => agent.sockets.length === 1 && held === 1);
     expect(ensured).toBe(1);
     expect(held).toBe(1);
     expect(agent.paths).toEqual([UPSTREAM_PATH]);

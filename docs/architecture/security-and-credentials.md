@@ -245,6 +245,9 @@ At most three rules speak for a host — itself, its `*.parent` wildcard, and th
 Host names compare in any letter case, as DNS does: the agent writes the Host header and SNI, and a deny for `api.github.com` must also stop `API.GitHub.com`, which the gateway would resolve and forward all the same.
 `failure_mode_allow: false` — a blocked Check fails closed: agent gets 403, no approval prompt.
 
+**Spend limits.** On a metered model call, the gate also checks the payer's spend limits, after identity and before the rules ([spend-limits](spend-limits.md#limits)).
+At a limit it refuses at once, with a response shaped for the call's API path instead of the bare 403, and files a spend-limit question instead of an egress approval; it never holds such a call.
+
 The HTTP filter on TLS-terminated chains sees method/path; the network filter on the catch-all chain sees SNI only.
 
 **Paths.** A rule's path pattern matches the path as the agent sent it, query included, and the gateway forwards that path unchanged.

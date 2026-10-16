@@ -96,6 +96,10 @@ The prefix and marker are dropped on the way upstream.
 A request naming no Connection on a contested scope is refused by that same step, not served from whichever credential sorted first.
 The gate reads the path with the prefix removed, so egress rules and approvals keep naming real paths.
 
+**Model-provider chains.** A chain whose credential comes from a model-provider Connection also carries the spend meter, directly after the address step and before the gate.
+On such a chain the gateway gives each call an id the agent cannot set, removes the request's compression offer so that the reply stays readable, reads the usage in the reply without changing it, and sends a spend record per call to the api-server.
+The depth is on [spend-limits](spend-limits.md).
+
 ## Request signing
 
 S3-compatible storage (IBM Cloud Object Storage, AWS S3, MinIO, Ceph) authenticates with SigV4: the client signs each request with its secret key, and the key itself never travels.

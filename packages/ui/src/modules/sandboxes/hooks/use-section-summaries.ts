@@ -16,6 +16,7 @@ import {
   useSkillSourceCount,
   useSkillsState,
 } from "../../agents/api/skills.js";
+import { useRootDriver } from "../../agents/hooks/use-root-driver.js";
 import { useBudgetReserved } from "../../budgets/api/queries.js";
 import {
   formatSizeLabel,
@@ -28,13 +29,15 @@ import {
 } from "../../connections/api/queries.js";
 import { catalogProviderTitle } from "../../connections/lib/catalog-providers.js";
 import { useCurrentPreset } from "../../egress-rules/api/queries.js";
-import { useAgentMonthSpend } from "../../metrics/api/queries.js";
-import { formatUsdCents } from "../../metrics/lib/format.js";
 import type { SandboxSection } from "../../platform/lib/routes.js";
 import { NO_SATELLITES, useSatellites } from "../../satellites/api/queries.js";
 import { useSchedules } from "../../schedules/api/queries.js";
 import { isUpcoming } from "../../schedules/lib/once-schedule.js";
 import { useProviderConnections } from "../../sessions/api/session-pair.js";
+import { useAgentSpendStatus } from "../../spend/api/queries.js";
+import { agentLimitOf } from "../../spend/lib/agent-limit.js";
+import { agentLimitCoverage } from "../../spend/lib/coverage.js";
+import { formatSpend, formatSpendOf } from "../../spend/lib/format.js";
 import { useTelegramChats } from "../../telegram/api/queries.js";
 
 type SectionSummaries = Partial<Record<SandboxSection, string>>;
@@ -192,16 +195,41 @@ export function useSectionSummaries(agent: AgentView | null): {
       : providers.granted.map((p) => p.name).join(", ")
     : undefined;
 
-  const { data: monthSpend, isError: spendUnavailable } = useAgentMonthSpend(
-    agent?.id ?? null,
+  const limitCoverage = agentLimitCoverage(
+    providers.granted.map((p) => p.templateId),
+  );
+  const root = useRootDriver(agentId ?? null);
+  const rootName = root?.name;
+  const { data: spendStatus, isError: spendUnavailable } = useAgentSpendStatus(
+    agentId && root === null ? agentId : null,
   );
   const usageSummary = useMemo(() => {
+    if (rootName !== undefined) return `Counts toward ${rootName}`;
     if (spendUnavailable) return "Not available";
-    if (monthSpend === undefined) return undefined;
-    return monthSpend > 0
-      ? `${formatUsdCents(monthSpend)} this month`
-      : "No spend this month";
-  }, [monthSpend, spendUnavailable]);
+    if (!spendStatus || !agentId) return undefined;
+    const usdMicros =
+      spendStatus.spent.find((total) => total.unit === "usd")?.costMicros ?? 0;
+    const limit = agentLimitOf(spendStatus, agentId);
+    const paid = !providers.loaded || limitCoverage.paid;
+    const parts = [
+      ...(limit && paid
+        ? [formatSpendOf(usdMicros, limit.effectiveMicros, "usd")]
+        : usdMicros > 0
+          ? [formatSpend(usdMicros, "usd")]
+          : []),
+      ...spendStatus.spent
+        .filter((total) => total.unit !== "usd" && total.costMicros > 0)
+        .map((total) => formatSpend(total.costMicros, total.unit)),
+    ];
+    return parts.length > 0 ? `${parts.join(" · ")} today` : "No spend today";
+  }, [
+    rootName,
+    spendUnavailable,
+    spendStatus,
+    agentId,
+    providers.loaded,
+    limitCoverage.paid,
+  ]);
 
   return {
     summaries: {

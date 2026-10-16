@@ -47,6 +47,7 @@ function agent(id: string, owner: string): InfraAgent {
     ready: true,
     hibernated: false,
     stopRequested: false,
+    disabled: false,
     overBudget: false,
     sweepable: false,
     lifetimeMs: 0,
@@ -348,17 +349,51 @@ describe("createSessionWatcher", () => {
 });
 
 describe("createPodSessionClient", () => {
+  const dials: string[] = [];
+
+  class UnreachablePodSocket extends EventTarget {
+    static readonly CONNECTING = 0;
+    static readonly OPEN = 1;
+    static readonly CLOSING = 2;
+    static readonly CLOSED = 3;
+    readyState = UnreachablePodSocket.CONNECTING;
+    binaryType = "blob";
+
+    constructor(url: string) {
+      super();
+      dials.push(url);
+      setTimeout(() => {
+        this.readyState = UnreachablePodSocket.CLOSED;
+        this.dispatchEvent(new Event("error"));
+        this.dispatchEvent(new Event("close"));
+      }, 0);
+    }
+
+    send() {}
+
+    close() {
+      this.readyState = UnreachablePodSocket.CLOSED;
+    }
+  }
+
+  beforeEach(() => {
+    dials.length = 0;
+  });
+
   /*
    * TEST_SCENARIO: a one-off read targets an Agent whose pod cannot be
    * reached. Once the caller gives up, the read must fail and its socket must
    * stop retrying, rather than keep dialling a name that no longer resolves.
    * A dial already in flight at the abort may still fail once, so the count
-   * is taken after it settles.
+   * is taken after it settles. The socket is a fake that fails every dial, so
+   * the test opens no network connection and does not depend on a proxy.
    */
   it("stops a read and its retries when the caller aborts", async () => {
     const errors: string[] = [];
-    const pods = createPodSessionClient("no-such-namespace.invalid", (m) =>
-      errors.push(m),
+    const pods = createPodSessionClient(
+      "no-such-namespace.invalid",
+      (m) => errors.push(m),
+      UnreachablePodSocket as unknown as typeof WebSocket,
     );
     const reads = new AbortController();
 
@@ -368,8 +403,13 @@ describe("createPodSessionClient", () => {
     await expect(read).rejects.toThrow();
     await new Promise((resolve) => setTimeout(resolve, 1_000));
 
-    const seen = errors.length;
+    expect(dials[0]).toBe(
+      "ws://agent-gone.no-such-namespace.invalid.svc:8080/api/trpc-ws",
+    );
+    const seenErrors = errors.length;
+    const seenDials = dials.length;
     await new Promise((resolve) => setTimeout(resolve, 4_500));
-    expect(errors.length).toBe(seen);
+    expect(errors.length).toBe(seenErrors);
+    expect(dials.length).toBe(seenDials);
   }, 15_000);
 });

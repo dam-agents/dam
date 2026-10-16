@@ -60,6 +60,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     telegramBindFlows,
     slackBindFlows,
     seedSources,
+    spendForOwner,
     wrapperFrameSender,
     presetSeeder,
     trustedHosts,
@@ -389,6 +390,12 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       satellites,
       satelliteWorker: satellitesBoot.workerOps,
       budgets,
+      spend: spendForOwner({
+        ownerSub: user.sub,
+        agentBinding: user.agentIds,
+        isAgentOwnedBy: (agentId, ownerSub) =>
+          agentsRepo.isOwnedBy(agentId, ownerSub),
+      }),
       user,
       e2eEnabled: config.e2eEnabled,
       virtualizationEnabled: config.virtualizationEnabled,

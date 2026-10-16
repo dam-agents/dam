@@ -51,6 +51,7 @@ import {
   RUNTIME_MIGRATION_SNAPSHOT_KEY,
   RUNTIME_MIGRATION_SOURCE_KEY,
   RUNTIME_MIGRATION_TARGET_KEY,
+  DISABLED_KEY,
   STOP_REQUESTED_KEY,
   STORAGE_MIGRATION_KEY,
   VERSION,
@@ -137,6 +138,7 @@ export interface InfraAgent {
   ready: boolean;
   hibernated: boolean;
   stopRequested: boolean;
+  disabled: boolean;
   runtimeMigration?: RuntimeMigration;
   runtimeMigrationHold?: RuntimeMigrationHold;
   runtimeMigrationTarget?: string;
@@ -356,6 +358,7 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     ready: ready?.status === "True",
     hibernated,
     stopRequested: !!annotations[STOP_REQUESTED_KEY],
+    disabled: !!annotations[DISABLED_KEY],
     ...(runtimeMigration ? { runtimeMigration } : {}),
     runtimeMigrationHold: runtimeMigrationHold(
       runtimeMigration,
@@ -456,6 +459,7 @@ export function assembleAgent(
     ),
     error: infra.error,
     stopRequested: infra.stopRequested,
+    disabled: infra.disabled,
     overBudget: infra.overBudget,
     overBudgetMessage: infra.overBudgetMessage,
     ...(infra.reclaimed ? { reclaimed: infra.reclaimed } : {}),

@@ -42,3 +42,11 @@ Opening the PR is the `pr-open` skill's; each fix round is the `review-remediati
   Non-trivial merge → label for another guardian review.
 - Approved + green + mergeable → notify the user.
   Merge only if told to.
+- `main` merges through GitHub's merge queue; its one required check is `verify`.
+  A branch from before the queue reports no `verify`: merge the base branch.
+  Merging is enqueueing: `gh pr merge <n> --squash --auto`, or `gh stack merge <top> --yes --squash` for a stack, which enqueues the whole stack.
+  Being behind `main` needs no merge; the queue tests the PR on top of `main` and the PRs ahead of it.
+- Enqueued → wait until `gh pr view <n> --json state` is `MERGED`.
+  The queue's run is a `merge_group` run on a `gh-readonly-queue/main/...` branch: `gh run list --workflow cd.yml --event merge_group`.
+  The PR leaves the queue when that run fails; its timeline says so.
+  Read the failed run: a flake or an infra failure → enqueue again; a real failure against what merged ahead → fix on the branch, wait for green, enqueue again.

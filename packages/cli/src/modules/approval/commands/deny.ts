@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { formatLocalResetTime, nextUtcMidnight } from "api-server-api";
 import { exitOnServiceError } from "../../shared/trpc/print.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
@@ -24,7 +25,7 @@ export function buildDenyCommand(deps: {
     .option("--json", "emit the raw action outcome as JSON")
     .addHelpText(
       "after",
-      "\nBare `deny` is durable: for a network (ext_authz) request it writes a\npermanent deny rule — future requests of that shape are blocked without\nprompting, and the rule appears in `dam network list <agent>`. Use --once to\ndeny only the held call. Tool-call (acp_native) denials never write an egress\nrule; the verdict goes to the harness.\n",
+      "\nBare `deny` is durable: for a network (ext_authz) request it writes a\npermanent deny rule — future requests of that shape are blocked without\nprompting, and the rule appears in `dam network list <agent>`. Use --once to\ndeny only the held call. Tool-call (acp_native) denials never write an egress\nrule; the verdict goes to the harness. On a spend-limit question (spend_limit),\ndeny stops the Agent for today and writes no rule.\n",
     )
     .action(
       async (
@@ -42,6 +43,7 @@ export function buildDenyCommand(deps: {
         printOutcomeAndExit(result.value, opts, {
           pastTense: "Denied",
           onceLine: "Denied this call only — re-prompts next time.",
+          spendLimitLine: `Stopped for today — the spend limit stays reached, and you get no new question until ${formatLocalResetTime(nextUtcMidnight())}.`,
           expiredEffect: "future requests of this shape are blocked.",
         });
       },

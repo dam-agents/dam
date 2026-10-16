@@ -15,6 +15,8 @@ import { routeToPath } from "../../platform/lib/routes.js";
 import { useProcesses } from "../../processes/api/queries.js";
 import { useApplyPendingRestartWithConfirm } from "../../processes/components/pending-restart-banner.js";
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
+import { AgentManagementActions } from "../components/agent-management-actions.js";
+import { AgentUsageActions } from "../components/agent-usage-actions.js";
 import { ConnectionsSection } from "../components/connections-section.js";
 import { SandboxChannelsSection } from "../components/sandbox-channels-section.js";
 import {
@@ -24,10 +26,11 @@ import {
 import { SandboxProvidersSection } from "../components/sandbox-providers-section.js";
 import {
   SandboxSectionNav,
-  sectionsFor,
+  SECTIONS,
 } from "../components/sandbox-section-nav.js";
 import { SandboxSetupSection } from "../components/sandbox-setup-section.js";
 import { SandboxSkillsSection } from "../components/sandbox-skills-section.js";
+import { ConnectionAddressingSection } from "../components/setup/setup-sections.js";
 import { useSectionSummaries } from "../hooks/use-section-summaries.js";
 
 export function SandboxHomeView() {
@@ -47,8 +50,7 @@ export function SandboxHomeView() {
   useHarnessConfigWatch(agentId);
 
   const { summaries, warnings } = useSectionSummaries(agent);
-  const sections = sectionsFor(!!agent?.vm);
-  const sectionEntry = sections.find((e) => e.section === section);
+  const sectionEntry = SECTIONS.find((e) => e.section === section);
 
   if (!agent || !display) {
     return (
@@ -67,7 +69,7 @@ export function SandboxHomeView() {
     <>
       <div className="flex flex-col gap-6 md:flex-row md:gap-10">
         <SandboxSectionNav
-          sections={sections}
+          sections={SECTIONS}
           header={<SandboxIdentity agent={agent} display={display} />}
           active={section}
           onNavigate={(s) => navigateToSandboxHome(agent.id, s)}
@@ -77,13 +79,16 @@ export function SandboxHomeView() {
         <div className="min-w-0 flex-1 md:max-w-[760px]">
           <SandboxHomeHeader
             agent={agent}
-            display={display}
             title={sectionEntry?.title ?? ""}
             description={sectionEntry?.description}
           />
           <HomeRepairedNotice agent={agent} />
           {section === "setup" ? (
-            <SandboxSetupSection agent={agent} />
+            <>
+              <AgentUsageActions agent={agent} />
+              <SandboxSetupSection agent={agent} />
+              <AgentManagementActions agent={agent} display={display} />
+            </>
           ) : section === "providers" ? (
             <SandboxProvidersSection agentId={agent.id} />
           ) : section === "network" ? (
@@ -104,14 +109,17 @@ export function SandboxHomeView() {
           ) : section === "usage" ? (
             <SandboxUsageSection agentId={agent.id} />
           ) : (
-            <ConnectionsSection
-              agentId={agent.id}
-              oauthReturnView={routeToPath({
-                view: "sandbox-home",
-                agentId: agent.id,
-                sandboxSection: "connections",
-              })}
-            />
+            <>
+              <ConnectionAddressingSection agent={agent} />
+              <ConnectionsSection
+                agentId={agent.id}
+                oauthReturnView={routeToPath({
+                  view: "sandbox-home",
+                  agentId: agent.id,
+                  sandboxSection: "connections",
+                })}
+              />
+            </>
           )}
         </div>
       </div>

@@ -6,6 +6,7 @@ const STATE_LABEL: Record<AgentDisplayState, string> = {
   preparing_workspace: "Preparing workspace",
   hibernating: "Falling asleep",
   hibernated: "Sleeping",
+  disabled: "Disabled",
   error: "Error",
   over_budget: "Over budget",
   migrating: "Migrating",

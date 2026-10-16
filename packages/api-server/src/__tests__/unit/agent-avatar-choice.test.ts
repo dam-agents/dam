@@ -70,6 +70,7 @@ function setup() {
     readTemplateSpec: async () => null,
     runtimeMutator: unused<AgentsDeps["runtimeMutator"]>({
       bump: async () => 1,
+      enqueueAfterCommit: async () => {},
     }),
     contributionsProgress: unused(),
     podStatus: unused(),
