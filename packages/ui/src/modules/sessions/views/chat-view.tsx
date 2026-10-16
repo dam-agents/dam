@@ -290,6 +290,7 @@ export function ChatView() {
   const [columnsEl, setColumnsEl] = useState<HTMLDivElement | null>(null);
   const [columnsW, setColumnsW] = useState<number | null>(null);
   const [dockSlot, setDockSlot] = useState<HTMLDivElement | null>(null);
+  const [dockSlotW, setDockSlotW] = useState(0);
   useEffect(() => {
     if (!columnsEl) return;
     const ro = new ResizeObserver(([entry]) =>
@@ -298,6 +299,14 @@ export function ChatView() {
     ro.observe(columnsEl);
     return () => ro.disconnect();
   }, [columnsEl]);
+  useEffect(() => {
+    if (!dockSlot) return;
+    const ro = new ResizeObserver(([entry]) =>
+      setDockSlotW(entry.contentRect.width),
+    );
+    ro.observe(dockSlot);
+    return () => ro.disconnect();
+  }, [dockSlot]);
   const filePanelRef = useRef<HTMLDivElement>(null);
   const terminalFreshRef = useRef(false);
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -708,10 +717,12 @@ export function ChatView() {
   const sidePanelMinW = sidePanelMinWidth(activeTab);
   const columnsDoNotFit =
     columnsW !== null &&
-    columnsW < CHAT_MIN_W + sidePanelMinW + SIDE_PANEL_BAR_W;
+    columnsW < CHAT_MIN_W + sidePanelMinW + SIDE_PANEL_BAR_W + dockSlotW;
   const sidePanelFills = maximized || (sidePanelOpen && columnsDoNotFit);
   const sidePanelMaxW =
-    columnsW === null ? null : columnsW - CHAT_MIN_W - SIDE_PANEL_BAR_W;
+    columnsW === null
+      ? null
+      : columnsW - CHAT_MIN_W - SIDE_PANEL_BAR_W - dockSlotW;
   const sidePanelW =
     rightW === null
       ? null
