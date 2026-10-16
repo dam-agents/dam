@@ -31,6 +31,7 @@ A new kind of comment starts by registering its type in `COMMENT_TYPES` — an u
 ## Tool directives
 
 `@ts-expect-error`, `eslint-disable`, `prettier-ignore`, `//go:build`, `// +kubebuilder:...` and similar are instructions to tools, not comments — the stripper keeps them.
+In Go that includes the linter suppressions `//nolint`, `// #nosec`, `//lint:ignore` and `//revive:`, and the `// Deprecated:` marker that `go doc` and staticcheck read.
 The pattern lists (`PRESERVE_TS`, `PRESERVE_GO`, `PRESERVE_RUST`) live in [`.mise/tasks/fix/comment-types`](../../.mise/tasks/fix/comment-types); a new directive pattern is added there.
 
 In Rust the one directive is a `// SAFETY:` comment (or `/* SAFETY: … */`) justifying an `unsafe` block or impl — clippy's `undocumented_unsafe_blocks` reads it.
