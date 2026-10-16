@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-import { usePinDragActive, usePinDropZone } from "../hooks/use-pin-drag.js";
+import { usePinDropZone } from "../hooks/use-pin-drag.js";
 import type { PinDrop } from "../lib/sidebar-pins.js";
 
 export function PinDropIndicator({ at }: { at: "before" | "after" | null }) {
@@ -26,9 +26,8 @@ export function PinDropZone({
   onMove: (id: string, drop: PinDrop) => void;
   className?: string;
 }) {
-  const active = usePinDragActive(scope);
   const zone = usePinDropZone({ scope, onMove });
-  if (!active) return null;
+  if (!zone.shown) return null;
   return (
     <div
       {...zone.dropProps}

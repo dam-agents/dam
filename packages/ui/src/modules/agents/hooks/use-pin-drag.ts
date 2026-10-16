@@ -1,18 +1,23 @@
 import {
   type DragEvent,
   type KeyboardEvent,
-  useState,
   useSyncExternalStore,
 } from "react";
 
 import type { PinDrop } from "../lib/sidebar-pins.js";
 
-let dragging: { scope: string; id: string } | null = null;
-let shownScope: string | null = null;
+interface PinDrag {
+  scope: string;
+  id: string;
+  shown: boolean;
+  over: PinDrop | null;
+}
+
+let drag: PinDrag | null = null;
 const listeners = new Set<() => void>();
 
-function showScope(scope: string | null) {
-  shownScope = scope;
+function update(next: PinDrag | null) {
+  drag = next;
   for (const listener of listeners) listener();
 }
 
@@ -21,46 +26,52 @@ function subscribe(listener: () => void) {
   return () => listeners.delete(listener);
 }
 
+function usePinDragState<T>(read: (drag: PinDrag | null) => T): T {
+  return useSyncExternalStore(subscribe, () => read(drag));
+}
+
+function sameDrop(a: PinDrop | null, b: PinDrop | null): boolean {
+  if (a === "top" || b === "top" || a === null || b === null) return a === b;
+  return a.id === b.id && a.after === b.after;
+}
+
+function hover(over: PinDrop | null) {
+  if (drag && !sameDrop(drag.over, over)) update({ ...drag, over });
+}
+
+function hoverNothing() {
+  hover(null);
+}
+
 function lowerHalf(event: DragEvent<HTMLElement>): boolean {
   const box = event.currentTarget.getBoundingClientRect();
   return event.clientY > box.top + box.height / 2;
 }
 
-function leftTarget(event: DragEvent<HTMLElement>): boolean {
-  return !(
-    event.relatedTarget instanceof Node &&
-    event.currentTarget.contains(event.relatedTarget)
-  );
-}
-
 function dropTarget(
-  accepts: () => boolean,
-  setOver: (over: boolean) => void,
-  onDrop: (id: string, event: DragEvent<HTMLElement>) => void,
+  scope: string,
+  accepts: (dragged: string) => boolean,
+  dropAt: (event: DragEvent<HTMLElement>) => PinDrop,
+  onMove: (id: string, drop: PinDrop) => void,
 ) {
+  const taken = (event: DragEvent<HTMLElement>) => {
+    if (drag?.scope !== scope || !accepts(drag.id)) return null;
+    event.preventDefault();
+    event.stopPropagation();
+    return drag;
+  };
   return {
     onDragOver: (event: DragEvent<HTMLElement>) => {
-      if (!accepts()) return;
-      event.preventDefault();
-      event.stopPropagation();
+      if (!taken(event)) return;
       event.dataTransfer.dropEffect = "move";
-      setOver(true);
-    },
-    onDragLeave: (event: DragEvent<HTMLElement>) => {
-      if (leftTarget(event)) setOver(false);
+      hover(dropAt(event));
     },
     onDrop: (event: DragEvent<HTMLElement>) => {
-      setOver(false);
-      if (!accepts() || dragging === null) return;
-      event.preventDefault();
-      event.stopPropagation();
-      onDrop(dragging.id, event);
+      const dropped = taken(event);
+      if (dropped) onMove(dropped.id, dropAt(event));
+      hover(null);
     },
   };
-}
-
-export function usePinDragActive(scope: string): boolean {
-  return useSyncExternalStore(subscribe, () => shownScope === scope);
 }
 
 export function usePinDropZone({
@@ -70,13 +81,16 @@ export function usePinDropZone({
   scope: string;
   onMove: (id: string, drop: PinDrop) => void;
 }) {
-  const [over, setOver] = useState(false);
+  const shown = usePinDragState((d) => d?.scope === scope && d.shown);
+  const over = usePinDragState((d) => d?.scope === scope && d.over === "top");
   return {
+    shown,
     over,
     dropProps: dropTarget(
-      () => dragging?.scope === scope,
-      setOver,
-      (id) => onMove(id, "top"),
+      scope,
+      () => true,
+      () => "top",
+      onMove,
     ),
   };
 }
@@ -95,16 +109,11 @@ export function usePinDrag({
   onMove: (id: string, drop: PinDrop) => void;
   onStep: (id: string, step: -1 | 1) => void;
 }) {
-  const [indicator, setIndicator] = useState<"before" | "after" | null>(null);
-  const accepts = () =>
-    pinned && dragging?.scope === scope && dragging.id !== id;
-  const target = dropTarget(
-    accepts,
-    (over) => {
-      if (!over) setIndicator(null);
-    },
-    (dragged, event) => onMove(dragged, { id, after: lowerHalf(event) }),
-  );
+  const indicator = usePinDragState((d): "before" | "after" | null => {
+    const over = d?.scope === scope ? d.over : null;
+    if (over === null || over === "top" || over.id !== id) return null;
+    return over.after ? "after" : "before";
+  });
 
   return {
     indicator,
@@ -112,19 +121,21 @@ export function usePinDrag({
       draggable: true,
       onDragStart: (event: DragEvent<HTMLElement>) => {
         event.stopPropagation();
-        dragging = { scope, id };
         event.dataTransfer.effectAllowed = "move";
         event.dataTransfer.setData("text/plain", id);
+        update({ scope, id, shown: false, over: null });
+        document.addEventListener("dragover", hoverNothing);
         setTimeout(() => {
-          if (dragging?.scope === scope && dragging.id === id) showScope(scope);
+          if (drag?.scope === scope && drag.id === id)
+            update({ ...drag, shown: true });
         });
       },
-      ...target,
-      onDragOver: (event: DragEvent<HTMLElement>) => {
-        target.onDragOver(event);
-        if (event.defaultPrevented)
-          setIndicator(lowerHalf(event) ? "after" : "before");
-      },
+      ...dropTarget(
+        scope,
+        (dragged) => pinned && dragged !== id,
+        (event) => ({ id, after: lowerHalf(event) }),
+        onMove,
+      ),
       onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
         if (!event.altKey) return;
         if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
@@ -142,8 +153,8 @@ export function usePinDrag({
       },
       onDragEnd: (event: DragEvent<HTMLElement>) => {
         event.stopPropagation();
-        dragging = null;
-        showScope(null);
+        document.removeEventListener("dragover", hoverNothing);
+        update(null);
       },
     },
   };
