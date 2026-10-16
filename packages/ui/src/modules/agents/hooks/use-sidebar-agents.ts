@@ -7,6 +7,7 @@ import {
   useActivitySessions,
 } from "../../home/hooks/use-activity-sessions.js";
 import { filterActivitySessions } from "../../home/lib/activity-sessions.js";
+import { shownSessionId } from "../../sessions/lib/shown-session.js";
 import { useAgents } from "../api/queries.js";
 import { useSidebarOrder } from "../api/sidebar-order.js";
 import { groupSessionsByAgent } from "../lib/sidebar-agent-order.js";
@@ -29,7 +30,7 @@ export function useSidebarAgents() {
         ? s.agentId
         : null,
   );
-  const sessionOpen = useStore((s) => s.view === "chat" && !!s.sessionId);
+  const sessionOpen = useStore((s) => s.view === "chat" && !!shownSessionId(s));
 
   const sessionsByAgent = useMemo(
     () => groupSessionsByAgent(filterActivitySessions(activity.items, filters)),

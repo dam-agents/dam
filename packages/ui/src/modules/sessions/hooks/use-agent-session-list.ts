@@ -14,12 +14,13 @@ import { useSessionCosts } from "../../metrics/api/queries.js";
 import { useAgentBackgroundWork } from "../api/background-work.js";
 import { useProvisionalSessions, useSessionPages } from "../api/queries.js";
 import { draftKey, keysWithDraftContent } from "../lib/draft-key.js";
+import { shownSessionId } from "../lib/shown-session.js";
 import { useSessionConversations } from "../lib/use-session-conversations.js";
 
 const EMPTY: never[] = [];
 
 export function useAgentSessionList(agentId: string) {
-  const sessionId = useStore((s) => s.sessionId);
+  const sessionId = useStore(shownSessionId);
   const busy = useStore((s) => s.busy);
   const pendingPermissions = useStore((s) => s.pendingPermissions);
   const sessionFilter = useStore((s) => s.sessionFilter);
