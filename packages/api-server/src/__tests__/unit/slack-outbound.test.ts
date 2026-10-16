@@ -366,12 +366,31 @@ describe("slack outbound — an agent bound to several conversations (#3086)", (
   it("refuses an omitted chatId and names the candidates — there is no single default", async () => {
     const h = multi();
     expect(await h.post("hello")).toMatchObject({
-      error: expect.stringContaining("pass chatId"),
+      error: expect.stringContaining("as chatId"),
     });
     expect(await h.post("hello")).toMatchObject({
       error: expect.stringContaining(SECOND),
     });
     expect(h.messages()).toHaveLength(0);
+  });
+
+  it("a reply into a thread no live turn knows asks for one of the bound ids as chatId, and goes out once given one (#3753)", async () => {
+    const h = multi();
+    await h.worker.start("agent-1");
+    const stale = { text: "late answer", threadTs: "1700000000.000200" };
+    const refused = await h.worker.reply("agent-1", stale);
+    expect(refused).toMatchObject({
+      error: expect.stringContaining("as chatId"),
+    });
+    expect(refused).toMatchObject({
+      error: expect.stringContaining(`${BOUND}, ${SECOND}`),
+    });
+    expect(
+      await h.worker.reply("agent-1", { ...stale, conversationId: SECOND }),
+    ).toEqual({ ok: true });
+    expect(h.messages()).toMatchObject([
+      { channel: SECOND, threadTs: stale.threadTs },
+    ]);
   });
 
   it("either bound conversation is a valid chatId", async () => {

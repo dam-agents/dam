@@ -6,7 +6,8 @@
  * session's provider, then the harness's default provider, then the single
  * provider listing it, and is refused when several do. A dialect the provider
  * does not serve is refused. Responses stream back with only the model field
- * rewritten to the name the harness asked for, on every dialect.
+ * rewritten to the name the harness asked for, on every dialect. The
+ * platform's self-hosted endpoint takes no key, so its calls carry none.
  */
 import { createServer, type Server } from "node:http";
 import { once } from "node:events";
@@ -183,6 +184,12 @@ beforeAll(async () => {
     template: "anthropic",
     dialects: ["anthropic-messages"] as const,
   };
+  const platform = {
+    alias: "platform" as const,
+    connectionId: "conn-platform",
+    template: "platform-llm",
+    dialects: all,
+  };
   const providers: CatalogProvider[] = [
     {
       ...cb,
@@ -213,6 +220,13 @@ beforeAll(async () => {
       listedAt: null,
       entries: [entry(anthropic, "claude-opus-4-8")],
     },
+    {
+      ...platform,
+      displayName: "Platform",
+      status: "listed",
+      listedAt: null,
+      entries: [entry(platform, "deepseek-v4.1-flash")],
+    },
   ];
   router = createModelRouter({
     catalog: { providers: () => providers },
@@ -242,6 +256,16 @@ beforeAll(async () => {
           env: {
             ANTHROPIC_BASE_URL: `${upstreamBase}/ant`,
             ANTHROPIC_API_KEY: "platform:conn:conn-ant",
+          },
+        },
+        {
+          id: "conn-platform",
+          template: "platform-llm",
+          env: {
+            PLATFORM_LLM_BASE_URL: `${upstreamBase}/platform`,
+            OPENAI_BASE_URL: `${upstreamBase}/elsewhere/v1`,
+            OPENAI_API_KEY: "placeholder",
+            ANTHROPIC_AUTH_TOKEN: "placeholder",
           },
         },
       ],
@@ -372,6 +396,35 @@ describe("routing by qualified name", () => {
     expect(seen.length).toBe(2);
   });
 
+  /** TEST_SCENARIO: The platform's self-hosted endpoint takes no key: a call
+   * on each of the three dialects leaves for its root with neither an
+   * `authorization` nor an `x-api-key` header, although its env layer holds
+   * placeholder tokens and the client sent its own. */
+  it("sends no credential to the platform's endpoint on any dialect", async () => {
+    seen.length = 0;
+    for (const [path, harness] of [
+      ["/v1/messages", "pi"],
+      ["/v1/chat/completions", "pi"],
+      ["/v1/responses", "codex"],
+    ] as const) {
+      const r = await call(
+        path,
+        { model: "platform/deepseek-v4.1-flash", messages: [] },
+        { [HARNESS_HEADER]: harness, "x-api-key": "client-key" },
+      );
+      expect(r.status).toBe(200);
+    }
+    expect(seen.map((s) => s.path)).toEqual([
+      "/platform/v1/messages",
+      "/platform/v1/chat/completions",
+      "/platform/v1/responses",
+    ]);
+    for (const s of seen) {
+      expect(s.headers.authorization).toBeUndefined();
+      expect(s.headers["x-api-key"]).toBeUndefined();
+      expect(s.body.model).toBe("deepseek-v4.1-flash");
+    }
+  });
   /** TEST_SCENARIO: An unknown qualified name is refused naming the granted
    * aliases, and a body with no model is refused; nothing reaches upstream. */
   it("refuses unknown names without calling upstream", async () => {
@@ -382,7 +435,9 @@ describe("routing by qualified name", () => {
       { [HARNESS_HEADER]: "codex" },
     );
     expect(unknown.status).toBe(404);
-    expect(unknown.text).toContain("granted providers: cb, ibm, anthropic");
+    expect(unknown.text).toContain(
+      "granted providers: cb, ibm, anthropic, platform",
+    );
     const none = await call(
       "/v1/responses",
       { input: [] },

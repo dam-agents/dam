@@ -3,10 +3,12 @@ import type { ReactNode } from "react";
 
 import { HarnessIcons } from "@/components/harness-icons";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
+import { Card, CARD_SURFACE } from "@/components/ui/card";
 import { CardButton } from "@/components/ui/card-button";
+import { cn } from "@/lib/utils";
 
-import { type ProviderPresetType, PROVIDERS } from "../../../types.js";
+import type { ProviderPresetType } from "../../../types.js";
+import { providerName } from "../lib/provider-rows.js";
 import { CardIcon } from "./card-icon.js";
 
 interface Props {
@@ -14,7 +16,7 @@ interface Props {
   harnesses?: readonly HarnessFamily[];
   connected: boolean;
   balance?: ReactNode;
-  onOpen: () => void;
+  onOpen?: () => void;
   connectedAction?: string;
 }
 
@@ -26,14 +28,9 @@ export function ProviderRow({
   onOpen,
   connectedAction = "Edit",
 }: Props) {
-  const name = PROVIDERS[type].displayName;
-
-  return (
-    <CardButton
-      onClick={onOpen}
-      aria-label={connected ? `${connectedAction} ${name}` : `Connect ${name}`}
-      className="flex w-full items-center gap-3 p-4"
-    >
+  const name = providerName(type);
+  const body = (
+    <>
       <CardIcon provider={type} />
       <div className="min-w-0 flex-1">
         <div className="flex h-8 items-center gap-2">
@@ -68,7 +65,20 @@ export function ProviderRow({
           <div className="min-w-0 text-right">{balance}</div>
         </div>
       </div>
+    </>
+  );
+  const layout = "flex w-full items-center gap-3 p-4";
+
+  return onOpen ? (
+    <CardButton
+      onClick={onOpen}
+      aria-label={connected ? `${connectedAction} ${name}` : `Connect ${name}`}
+      className={layout}
+    >
+      {body}
     </CardButton>
+  ) : (
+    <div className={cn(CARD_SURFACE, layout)}>{body}</div>
   );
 }
 

@@ -216,6 +216,26 @@ func TestLoadFromEnv_UnknownFieldRejected(t *testing.T) {
 	assert.Contains(t, err.Error(), "AGENT_BASE")
 }
 
+func TestLoadFromEnv_GatewayEgressPeers(t *testing.T) {
+	for egress, want := range map[string]string{
+		`{"peers": [{"namespace": "gpu", "podLabels": {"app": "llm"}, "ports": [8000]}]}`:  "",
+		`{"peers": [{"podLabels": {"app": "llm"}, "ports": [8000]}]}`:                      "peers[0] needs a namespace",
+		`{"peers": [{"namespace": "gpu"}]}`:                                                "peers[0] needs a namespace and at least one port",
+		`{"peers": [{"namespace": "gpu", "podLabels": {"app": "llm"}, "ports": [70000]}]}`: "out of range",
+		`{"peers": [{"namespace": "gpu", "podLabels": {}, "ports": [8000]}]}`:              "peers[0] needs podLabels",
+		`{"peers": {"namespace": "gpu"}}`:                                                  "GATEWAY_EGRESS: invalid JSON",
+	} {
+		setEnv(t, map[string]string{"PLATFORM_RELEASE_NAME": "platform", "POD_NAME": "controller-0", "GATEWAY_EGRESS": egress})
+		cfg, err := LoadFromEnv()
+		if want != "" {
+			require.ErrorContains(t, err, want, egress)
+			continue
+		}
+		require.NoError(t, err)
+		assert.Equal(t, []GatewayEgressPeer{{Namespace: "gpu", PodLabels: map[string]string{"app": "llm"}, Ports: []int32{8000}}}, cfg.GatewayEgress.Peers)
+	}
+}
+
 const (
 	minAgentBaseJSON             = `{"terminationGracePeriod": 5, "containerSecurityContext": {"capabilities": {"drop": ["ALL"]}}}`
 	minAgentTemplateDefaultsJSON = `{"storageSize": "10Gi", "resources": {"limits": {"cpu": "1", "memory": "1Gi"}}}`
