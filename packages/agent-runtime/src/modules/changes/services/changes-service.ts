@@ -288,14 +288,21 @@ export function createChangesService(deps: {
 
   function pusherOf(
     at: number,
+    branch: string,
     worktreePaths: readonly string[],
+    pushedPath: string | null,
   ): string | null {
     const running = windows.sessionsAt(at);
     if (running.length === 1) return running[0]!;
     const tied = running.filter((sessionId) =>
       deps.touched
         .repositoriesOf(sessionId)
-        .some((repository) => worktreePaths.includes(repository.path)),
+        .some((repository) =>
+          pushedPath
+            ? repository.path === pushedPath
+            : worktreePaths.includes(repository.path) &&
+              repository.branch === branch,
+        ),
     );
     return tied.length === 1 ? tied[0]! : null;
   }
@@ -307,9 +314,14 @@ export function createChangesService(deps: {
       { toplevel, commonDir: push.commonDir },
     ]);
     const worktrees = repository?.worktrees ?? [];
+    const pushedPath =
+      worktrees.find((worktree) => worktree.branch === push.branch)?.path ??
+      null;
     const sessionId = pusherOf(
       push.at,
+      push.branch,
       worktrees.map((worktree) => worktree.path),
+      pushedPath,
     );
     if (!sessionId) {
       deps.log(
@@ -317,9 +329,7 @@ export function createChangesService(deps: {
       );
       return;
     }
-    const path =
-      worktrees.find((worktree) => worktree.branch === push.branch)?.path ??
-      toplevel;
+    const path = pushedPath ?? toplevel;
     const remote = await deps.git(toplevel, [
       "config",
       "--get",
