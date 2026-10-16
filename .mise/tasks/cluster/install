@@ -878,8 +878,8 @@ done
 # built 2026-10-07 and has no upstream release or chart yet; it fixes the
 # libxml2 (CVE-2026-74860, CVE-2026-86138, CVE-2026-86140, CVE-2026-86142,
 # CVE-2026-86143, CVE-2026-86144) and gawk (CVE-2026-40467, CVE-2026-40468,
-# CVE-2026-40553) findings of 1.13.0. It is under the 7-day age floor until
-# 2026-10-14. Drop operator.version once a chart ships 1.13.1 or later.
+# CVE-2026-40553) findings of 1.13.0. Drop operator.version once a chart ships
+# 1.13.1 or later.
 if [ -n "${CLICKSTACK:-}" ]; then
   echo "Installing ClickStack operators (ClickHouse + MongoDB)..."
   # A cluster installed with the umbrella: its CRDs outlive the uninstall (resource-policy

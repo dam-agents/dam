@@ -63,6 +63,7 @@ function setup(
 ) {
   const connections = createConnectionsService({
     platformProviderEnabled: async () => false,
+    platformProviderKey: null,
     isOwnedAgent: async () => true,
     ownerId: "owner-1",
     repo: unused<ConnectionsDeps["repo"]>({

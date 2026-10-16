@@ -1,5 +1,5 @@
 diff --git i/Cargo.toml w/Cargo.toml
-index d0a7a42..3f008b0 100644
+index 1e63774..f4d719c 100644
 --- i/Cargo.toml
 +++ w/Cargo.toml
 @@ -96,7 +96,7 @@ axum = { version = "0.8", features = ["macros", "ws"] }
@@ -80,7 +80,7 @@ index 95b89bf..dad5d21 100644
                  destination,
                  stream.peer_addr().ok(),
 diff --git i/src/agent/launcher.rs w/src/agent/launcher.rs
-index 3f46386..fdf61aa 100644
+index 6851407..48fee7a 100644
 --- i/src/agent/launcher.rs
 +++ w/src/agent/launcher.rs
 @@ -37,6 +37,11 @@ use std::path::{Path, PathBuf};
@@ -95,7 +95,7 @@ index 3f46386..fdf61aa 100644
  /// Maximum number of CIDR entries held in the live egress allow-list.
  /// Protects the muxer's per-packet O(n) scan from unbounded growth when
  /// a host resolves to many IPs across many refresh cycles.
-@@ -2379,13 +2384,22 @@ pub fn launch_agent_vm(config: &LaunchConfig<'_>) -> Result<()> {
+@@ -2416,13 +2421,22 @@ pub fn launch_agent_vm(config: &LaunchConfig<'_>) -> Result<()> {
          if packed_layers_dir.is_some_and(|d| d.exists()) {
              env_strings.push(cstr("SMOLVM_PACKED_LAYERS=smolvm_layers:/packed_layers"));
          }
@@ -122,10 +122,10 @@ index 3f46386..fdf61aa 100644
          argv.push(std::ptr::null());
  
 diff --git i/src/agent/manager.rs w/src/agent/manager.rs
-index d80845f..ebeb6eb 100644
+index cffe2dd..abdb75d 100644
 --- i/src/agent/manager.rs
 +++ w/src/agent/manager.rs
-@@ -92,6 +92,9 @@ fn open_overlay_disk_for_manager(
+@@ -168,6 +168,9 @@ fn open_overlay_disk_for_manager(
      format: DiskFormat,
      access: DiskAccess,
  ) -> Result<OverlayDisk> {
@@ -135,7 +135,7 @@ index d80845f..ebeb6eb 100644
      match (format, access) {
          (DiskFormat::Qcow2, _) => OverlayDisk::open_existing_with_format(path, format),
          (DiskFormat::Raw, DiskAccess::Observe) if path.exists() => {
-@@ -2162,7 +2165,9 @@ impl AgentManager {
+@@ -2278,7 +2281,9 @@ impl AgentManager {
          // A manager opened to observe a never-started machine has no disks to
          // boot from; creating them here would be creating them at a guessed
          // size. Launches go through a manager opened with the machine's sizes.
@@ -146,7 +146,7 @@ index d80845f..ebeb6eb 100644
              let mut inner = self.inner.lock();
              inner.state = AgentState::Stopped;
              return Err(Error::agent(
-@@ -2190,7 +2195,11 @@ impl AgentManager {
+@@ -2306,7 +2311,11 @@ impl AgentManager {
              let overlay_disk = &self.overlay_disk;
              std::thread::scope(|s| {
                  let storage_handle = s.spawn(|| storage_disk.ensure_formatted());
@@ -160,10 +160,10 @@ index d80845f..ebeb6eb 100644
                      Err(crate::Error::storage("format storage", "thread panicked"))
                  }) {
 diff --git i/src/embedded/handle.rs w/src/embedded/handle.rs
-index 842a302..3654aa7 100644
+index fe6c2c1..02c600a 100644
 --- i/src/embedded/handle.rs
 +++ w/src/embedded/handle.rs
-@@ -102,6 +102,9 @@ impl VmHandle {
+@@ -78,6 +78,9 @@ impl VmHandle {
          let Some(image) = record.image.as_deref() else {
              return Ok(());
          };
@@ -174,7 +174,7 @@ index 842a302..3654aa7 100644
          client.pull_with_registry_config(image)?;
          let mut env = record.env.clone();
 diff --git i/src/internal_boot.rs w/src/internal_boot.rs
-index 5347752..1c44eeb 100644
+index 9550f0d..03475e9 100644
 --- i/src/internal_boot.rs
 +++ w/src/internal_boot.rs
 @@ -71,6 +71,14 @@ fn open_boot_disk<K: DiskType>(path: &Path, size_gb: u64) -> crate::Result<VmDis
@@ -192,7 +192,7 @@ index 5347752..1c44eeb 100644
  /// Run the boot subprocess.
  ///
  /// Reads the boot config from the given path, sets up libkrun, and calls
-@@ -603,25 +611,29 @@ pub fn run(config_path: PathBuf) -> crate::Result<()> {
+@@ -604,25 +612,29 @@ pub fn run(config_path: PathBuf) -> crate::Result<()> {
      };
      proc_timing!("storage opened");
  

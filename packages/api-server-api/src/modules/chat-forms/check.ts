@@ -1,4 +1,10 @@
-import { buildConversation, type RendererError } from "./conversation.js";
+import {
+  buildConversation,
+  forEachRenderedComponent,
+  type RendererError,
+  type SurfaceState,
+} from "./conversation.js";
+import type { ChatFormPreferences } from "./preferences.js";
 import { hasA2uiBlock, splitA2uiBlocks } from "./split-blocks.js";
 
 export interface ChatFormCheck {
@@ -41,8 +47,72 @@ function blockSources(reply: string): {
   };
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: validates a reply the way the web chat replays it, except that a surface the reply updates without creating is taken to come from an earlier reply, and agent function calls are checked but not run.
-export function checkChatForm(reply: string): ChatFormCheck {
+const TEXT_INPUTS = new Set(["TextField"]);
+const CHOICE_INPUTS = new Set([
+  "CheckBox",
+  "ChoicePicker",
+  "Slider",
+  "DateTimeInput",
+  "Switch",
+]);
+const RECOMMENDED = /\(recommended\)\s*$/i;
+
+function preferenceProblems(
+  surface: SurfaceState,
+  preferences: ChatFormPreferences,
+): RendererError[] {
+  let textInputs = 0;
+  let choiceInputs = 0;
+  let eventButtons = 0;
+  let recommendedLabels = 0;
+  forEachRenderedComponent(surface, (component) => {
+    if (TEXT_INPUTS.has(component.component)) textInputs += 1;
+    if (CHOICE_INPUTS.has(component.component)) choiceInputs += 1;
+    if (component.component === "Button" && "event" in component.action)
+      eventButtons += 1;
+    const labels = [
+      "label" in component ? component.label : undefined,
+      ...("options" in component ? component.options.map((o) => o.label) : []),
+    ];
+    for (const label of labels)
+      if (typeof label === "string" && RECOMMENDED.test(label))
+        recommendedLabels += 1;
+  });
+  const problems: string[] = [];
+  if (
+    preferences.forms === "input" &&
+    textInputs + choiceInputs + eventButtons === 0
+  )
+    problems.push(
+      `Surface "${surface.id}" only shows content, and the user wants forms only when you need an answer. Write it as text.`,
+    );
+  if (
+    preferences.pacing === "one-at-a-time" &&
+    (choiceInputs > 1 || textInputs > 1)
+  )
+    problems.push(
+      `Surface "${surface.id}" asks ${textInputs + choiceInputs} things at once, and the user wants one question per form (one input, plus an optional text field for "Other"). Ask the first question, then update this surface with the next one after the answer.`,
+    );
+  if (preferences.recommend === "off" && recommendedLabels > 0)
+    problems.push(
+      `Surface "${surface.id}" marks options as recommended, and the user does not want recommendations. Remove the "(Recommended)" marks and leave the inputs empty.`,
+    );
+  if (!preferences.lockComposer && surface.lockComposer)
+    problems.push(
+      `Surface "${surface.id}" locks the chat input, and the user does not allow that. Remove lockComposer.`,
+    );
+  return problems.map((message) => ({
+    code: "USER_PREFERENCE",
+    surfaceId: surface.id,
+    message,
+  }));
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: validates a reply the way the web chat replays it, except that a surface the reply updates without creating is taken to come from an earlier reply, and agent function calls are checked but not run; with the user's preferences it also reports the forms they asked the agent not to send.
+export function checkChatForm(
+  reply: string,
+  preferences?: ChatFormPreferences,
+): ChatFormCheck {
   const { sources, problems } = blockSources(reply);
   const { surfaces, blocks } = buildConversation(
     sources.map((source, index) => ({
@@ -62,6 +132,10 @@ export function checkChatForm(reply: string): ChatFormCheck {
           message: `callRendererFunction "${call.name}": ${call.response.error.message}`,
         });
   }
+  if (preferences)
+    for (const surface of surfaces.values())
+      if (!surface.assumed && !surface.deleted)
+        problems.push(...preferenceProblems(surface, preferences));
   return {
     ok: problems.length === 0,
     surfaces: [...surfaces.values()].map((surface) => ({

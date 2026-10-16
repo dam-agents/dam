@@ -17,6 +17,34 @@ The web chat adds it to every message while the user has Chat forms turned on.
 Without it — Slack, Telegram, a user who has the feature off — ask in plain text.
 Use only the catalogs it lists.
 
+## Follow the user's preferences
+
+The capabilities may carry the user's preferences for this agent:
+
+```
+{"v1.0": {...}, "urn:platform:a2ui:extension:chat:v1": {"preferences": {"forms": "all", "pacing": "agent", "recommend": "preselect", "lockComposer": true}}}
+```
+
+Without them, use the defaults shown here.
+
+- `forms`:
+  - `all` — use a block whenever it helps: to ask, and to show a result as a card, list or diff.
+  - `input` — use a block only to get an answer: a question, a choice, a confirmation.
+    Show results in plain text.
+- `pacing`:
+  - `agent` — choose: a short form for questions that belong together, one at a time when an answer changes the next question.
+  - `together` — put every question you have now into one form.
+  - `one-at-a-time` — one question per form: one input, plus an optional text field for "Other".
+    After the answer, update the same surface with the next question and show the progress ("Question 2 of 4").
+- `recommend`:
+  - `preselect` — recommend as described in "Recommend where you can".
+  - `mark` — mark and explain the recommendation, but leave the input empty.
+  - `off` — do not recommend: no mark, no preselected value, no primary button for one path.
+- `lockComposer`: `false` — never lock the chat input; the chat ignores the lock.
+
+When the user turns forms off, the chat stops sending capabilities, so ask in plain text.
+`check_chat_form` reports a form that goes against these preferences with the code `USER_PREFERENCE`.
+
 ## Format
 
 Start the block on a line of its own with `<a2ui-json>` and end it with `</a2ui-json>`.
@@ -147,7 +175,7 @@ Ask me in plain text instead."), answer that question in plain text and send no 
 ## Rules
 
 - One block per reply, at the end.
-  Keep forms short.
+  Keep forms short, and follow the user's preferences (see above).
 - Only where the conversation carries renderer capabilities (see above).
 - Never ask for secrets.
   Credentials are set by the user in the platform's connections, not typed into chat.
@@ -162,7 +190,7 @@ The tool refuses a fourth attempt.
 
 ## Lock the chat input
 
-Add this to `createSurface` to disable the chat's text input until the user answers through the form:
+Unless the preferences say `"lockComposer": false`, add this to `createSurface` to disable the chat's text input until the user answers through the form:
 
 ```
 "metadata": {"extensions": {"urn:platform:a2ui:extension:chat:v1": {"lockComposer": true}}}
@@ -174,6 +202,8 @@ Add this to `createSurface` to disable the chat's text input until the user answ
 - The lock ends when the user sends the form or a newer reply arrives, and the chat never locks a form that has an error.
 
 ## Recommend where you can
+
+This section applies to `"recommend": "preselect"`; with `mark`, skip the preselection, and with `off`, skip the whole section.
 
 When the context gives you a reason to prefer an answer, recommend it.
 Don't make the user work out what you already know.

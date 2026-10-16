@@ -49,6 +49,12 @@ export const SECTIONS: SectionEntry[] = [
       "Channels let people message this agent from Slack or Telegram.",
   },
   {
+    section: "chat-forms",
+    title: "Chat forms",
+    description:
+      "How this agent may use forms, choices and cards in its web chat replies.",
+  },
+  {
     section: "skills",
     title: "Skills",
     description:

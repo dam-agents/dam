@@ -5,6 +5,7 @@ export * from "./conversation.js";
 export * from "./data-model.js";
 export * from "./icon-names.js";
 export * from "./limits.js";
+export * from "./preferences.js";
 export * from "./renderer-blocks.js";
 export * from "./schema.js";
 export * from "./split-blocks.js";
