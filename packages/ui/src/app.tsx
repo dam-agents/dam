@@ -106,11 +106,6 @@ function MainApp() {
         <div className="flex h-dvh bg-background overflow-hidden">
           <Sidebar />
           <div className="relative z-content flex-1 min-w-0">
-            <div className="pointer-events-none absolute top-0 right-0 z-raised px-4 pt-2.5 md:px-6 md:pt-3">
-              <div className="pointer-events-auto">
-                <ApprovalsButton onOpen={() => setApprovalsOpen(true)} />
-              </div>
-            </div>
             <ChatView />
           </div>
         </div>

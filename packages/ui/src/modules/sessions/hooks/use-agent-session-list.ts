@@ -1,8 +1,4 @@
-import {
-  SESSION_CATEGORIES,
-  sessionCategoryOf,
-  SessionMode,
-} from "api-server-api";
+import { sessionCategoryOf, SessionMode } from "api-server-api";
 import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 
@@ -36,6 +32,7 @@ export function useAgentSessionList(agentId: string) {
     isFetching,
     hasNextPage,
     isFetchingNextPage,
+    isFetchNextPageError,
     fetchNextPage,
   } = useSessionPages(agentId, sessionFilter, {
     enabled: answerableSoon,
@@ -95,9 +92,9 @@ export function useAgentSessionList(agentId: string) {
     operable,
     loading,
     provisional,
-    filtered: sessionFilter.length < SESSION_CATEGORIES.length,
     hasNextPage,
     isFetchingNextPage,
+    fetchNextPageFailed: isFetchNextPageError,
     fetchNextPage,
   };
 }

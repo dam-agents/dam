@@ -2,6 +2,33 @@ import type { BrowserSnapshot, TabState } from "agent-runtime-api";
 
 const BLANK_URLS = new Set(["", "about:blank", "chrome://newtab/"]);
 
+export const READABLE_TAB_WIDTH = 176;
+export const SHRUNK_TAB_WIDTH = 64;
+export const TAB_GAP = 4;
+
+export function tabWidths(
+  barWidth: number,
+  count: number,
+  activeIndex: number,
+): number[] {
+  const room = barWidth - TAB_GAP * (count - 1);
+  const even = Math.max(Math.floor(room / count), 0);
+  const all = (width: number) => Array.from({ length: count }, () => width);
+  if (even >= READABLE_TAB_WIDTH || count === 1) return all(even);
+  if (activeIndex < 0 || activeIndex >= count)
+    return all(Math.max(even, SHRUNK_TAB_WIDTH));
+  const active = Math.min(READABLE_TAB_WIDTH, room);
+  const inactive = Math.max(
+    SHRUNK_TAB_WIDTH,
+    Math.floor((room - active) / (count - 1)),
+  );
+  return all(inactive).map((w, i) => (i === activeIndex ? active : w));
+}
+
+export function showsTabBar(tabs: TabState[] | undefined): tabs is TabState[] {
+  return (tabs?.length ?? 0) > 1;
+}
+
 export function tabLabel(tab: TabState): string {
   if (tab.title && tab.title !== tab.url && tab.title !== "about:blank")
     return tab.title;

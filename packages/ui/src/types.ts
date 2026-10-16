@@ -168,6 +168,7 @@ export interface AgentView {
   state: AgentState;
   error?: string;
   stopRequested: boolean;
+  disabled: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
   reclaimed?: { at: string; for: "memory" | "compute" };

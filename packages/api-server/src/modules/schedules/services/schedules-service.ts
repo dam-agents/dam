@@ -13,7 +13,7 @@ import type {
 } from "api-server-api";
 import { OnceResult, SPEC_VERSION } from "api-server-api";
 import type { SchedulesRepository } from "../infrastructure/schedules-repository.js";
-import type { SchedulerRunner } from "./scheduler-runner.js";
+import type { RunNowResult, SchedulerRunner } from "./scheduler-runner.js";
 import {
   nextFire,
   validateCron,
@@ -23,6 +23,14 @@ import {
 import { resolveOnceMoment } from "../domain/once.js";
 import { securityLog } from "../../../core/security-log.js";
 import { emit, EventType } from "../../../events.js";
+
+const RUN_NOW_REFUSAL: Record<Exclude<RunNowResult, "started">, string> = {
+  "onboarding-pending": "the agent has not finished onboarding yet",
+  "spend-limit":
+    "the agent reached its spend limit for today. Continue the limit, or wait until midnight UTC",
+  "spend-ceiling":
+    "the agent's owner reached the spend ceiling for today. The platform operator can raise it; otherwise wait until midnight UTC",
+};
 
 export interface AgentOnceLimits {
   maxOpen: number;
@@ -597,10 +605,10 @@ export function createSchedulesService(deps: {
           message: "a one-time task runs only at its own moment",
         });
       const outcome = await deps.runner.runNow(id);
-      if (outcome === "onboarding-pending")
+      if (outcome !== "started")
         throw new TRPCError({
           code: "CONFLICT",
-          message: "the agent has not finished onboarding yet",
+          message: RUN_NOW_REFUSAL[outcome],
         });
       securityLog("info", "schedule.run-now", {
         category: "privileged",

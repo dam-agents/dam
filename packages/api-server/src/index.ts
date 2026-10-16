@@ -12,7 +12,9 @@ const {
   closeRelays,
 } = startApiServerApp(apiServerDeps);
 const { server: harnessApiServer } = startHarnessApiServerApp(harnessDeps);
-const { server: extAuthzGrpcServer } = await startExtAuthzGrpcApp(extAuthzDeps);
+const extAuthzGrpc = await startExtAuthzGrpcApp(extAuthzDeps);
+
+const EXT_AUTHZ_STOP_DEADLINE_MS = 20_000;
 
 const closed = (s: { close(cb?: () => void): unknown }) =>
   new Promise<void>((resolve) => void s.close(() => resolve()));
@@ -26,8 +28,8 @@ const onSignal = (): void => {
     const listenersClosed = Promise.all([
       closed(apiServer),
       closed(harnessApiServer),
+      extAuthzGrpc.stop(EXT_AUTHZ_STOP_DEADLINE_MS),
     ]);
-    extAuthzGrpcServer.tryShutdown(() => {});
     trpcWs.drain();
     const wsClosed = Promise.resolve(trpcWs.close()).catch(() => {});
     closeRelays();

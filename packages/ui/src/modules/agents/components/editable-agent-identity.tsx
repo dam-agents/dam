@@ -1,5 +1,4 @@
 import { Checkmark, Edit } from "@carbon/icons-react";
-import type { AvatarMood } from "api-server-api/avatar/svg";
 import { useRef, useState } from "react";
 
 import {
@@ -12,7 +11,11 @@ import { cn } from "@/lib/utils";
 import type { AgentView } from "../../../types.js";
 import { useFreshAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
 import { useUpdateAgent } from "../api/mutations.js";
-import { AgentAvatar, resolveCharacter } from "./avatar/agent-avatar.js";
+import {
+  AgentAvatar,
+  type AgentAvatarMood,
+  resolveCharacter,
+} from "./avatar/agent-avatar.js";
 import { AvatarGrid } from "./avatar/avatar-picker.js";
 import { NewAvatarDot } from "./avatar/new-avatar-dot.js";
 
@@ -61,7 +64,7 @@ export function EditableAgentIdentity({
 
 interface IdentityDisplay {
   avatarSize: number;
-  mood: AvatarMood;
+  mood: AgentAvatarMood;
   avatarClassName?: string;
   nameClassName?: string;
   nameTag?: "h1" | "h2";

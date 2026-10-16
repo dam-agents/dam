@@ -1292,12 +1292,15 @@ export function createAgentsService(deps: {
     },
 
     async update(input: AgentUpdateInput) {
+      let renamed = false;
       if (input.secretRef || input.name !== undefined) {
         const current = await deps.repo.get(input.id, deps.owner);
         if (!current) return null;
         await assertOwnSecretRef(input.secretRef, current.owner, input.id);
-        if (input.name !== undefined && input.name !== current.name)
+        if (input.name !== undefined && input.name !== current.name) {
+          renamed = true;
           await assertNameFree(input.name, current.owner, input.id);
+        }
       }
       const patch: Record<string, unknown> = {};
       if (input.name !== undefined) patch.name = input.name;
@@ -1367,8 +1370,8 @@ export function createAgentsService(deps: {
           await deps.agentEnvRepo.list(input.id),
           input.name,
         );
-        if (refreshed) {
-          await deps.agentEnvRepo.replace(input.id, refreshed);
+        if (refreshed) await deps.agentEnvRepo.replace(input.id, refreshed);
+        if (refreshed || renamed) {
           await deps.runtimeMutator.bump(input.id, []);
           await deps.runtimeMutator.enqueueAfterCommit(input.id);
         }
@@ -1457,8 +1460,9 @@ export function createAgentsService(deps: {
       const hold = (await deps.repo.get(id))?.runtimeMigrationHold ?? "none";
       if (hold !== "none")
         return err({ type: "RuntimeMigrating", failed: hold === "failed" });
-      const infra = await deps.repo.wake(id);
-      if (!infra) return err({ type: "AgentNotFound" });
+      const woke = await deps.repo.wake(id);
+      if (!woke.ok) return err(woke.error);
+      const infra = woke.value;
       securityLog("info", "agent.wake", {
         category: "privileged",
         actor: deps.owner ?? null,
@@ -1516,6 +1520,30 @@ export function createAgentsService(deps: {
         result: "success",
       });
       return project(infra);
+    },
+
+    async setDisabled(id, disabled) {
+      if (!(await ownsOrDeny(id, "agent.setDisabled")))
+        return err({ type: "AgentNotFound" });
+      const current = await deps.repo.get(id, deps.owner);
+      if (!current) return err({ type: "AgentNotFound" });
+      if ((current.runtimeMigrationHold ?? "none") !== "none")
+        return err({ type: "RuntimeMigrating" });
+      const infra = await deps.repo.setDisabled(id, disabled);
+      if (!infra) return err({ type: "AgentNotFound" });
+      securityLog("info", disabled ? "agent.disable" : "agent.enable", {
+        category: "privileged",
+        actor: deps.owner ?? null,
+        actorKind: "user",
+        agentId: id,
+        result: "success",
+      });
+      emit({
+        type: EventType.AgentUpdated,
+        agentId: id,
+        ...(deps.owner ? { ownerSub: deps.owner } : {}),
+      });
+      return ok(await project(infra));
     },
 
     async upgrade(id, expectedToImage) {

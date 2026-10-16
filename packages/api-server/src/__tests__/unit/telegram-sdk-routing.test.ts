@@ -173,6 +173,7 @@ async function harness(opts: {
     pendingOAuthFlows: createMemoryTtlStore<TelegramOAuthPending>(60_000),
     isTermsAccepted: async () => opts.termsAccepted ?? true,
     uiBaseUrl: "https://app.example",
+    brandName: "Platform",
     botUsername: () => "krodo_bot",
     relay: opts.relay as never,
   });
