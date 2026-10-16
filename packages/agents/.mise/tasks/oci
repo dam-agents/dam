@@ -299,6 +299,8 @@ stage_default() {
     [ "$a" != harness.default ] || continue
     tools_tables < "$f" > "$etc/conf.d/${a#harness.}.toml"
   done
+  # The image's mise settings, which the installer runs under too.
+  cp "$stage/mise/conf.d/settings.toml" "$etc/conf.d/settings.toml"
   cp "$stage/mise/mise.lock" "$etc/mise.lock"
   [ ! -d "$stage/mise/.mise/locks" ] || { mkdir -p "$etc/.mise" && cp -R "$stage/mise/.mise/locks" "$etc/.mise/locks"; }
   mapfile -t flags < <(cd "$stage" && pack_flags mise/conf.d/base.toml $(for a in $bare_harnesses default; do echo "mise/conf.d/harness.$a.toml"; done))
