@@ -830,6 +830,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 					EnableServiceLinks:            new(false),
 					NodeSelector:                  spec.NodeSelector,
 					Tolerations:                   spec.Tolerations,
+					Affinity:                      spec.Affinity,
 					ImagePullSecrets:              spec.ImagePullSecrets,
 					Containers: []corev1.Container{{
 						Name:            vmRunnerComponent,

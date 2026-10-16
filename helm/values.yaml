@@ -257,9 +257,12 @@ virtualization:
     storage: 100Gi
     storageClass: ""
     # Placement: a node with KVM (e.g. KubeVirt's virt nodes and their
-    # taints).
+    # taints). `affinity` is a pod affinity, for what a selector cannot say,
+    # e.g. keeping runners off GPU nodes whose large images fill the disk.
+    # The node image cache and release stager DaemonSets follow all three.
     nodeSelector: {}
     tolerations: []
+    # affinity: {}  # unset by default; an empty one would roll every runner
     # REQUIRED when virtualization.enabled — the install fails without
     # limits.memory. Machines are processes of this pod, so that limit is also
     # what the runner admits them against (it refuses one that does not fit,
