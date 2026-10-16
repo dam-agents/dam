@@ -189,7 +189,7 @@ fn xattr_set(path: &Path, name: &CString, value: &[u8]) -> io::Result<()> {
 pub const CONVERTED_FILE: &str = "converted";
 const CONVERTING: &str = ".converting";
 
-// UNIT_BOUNDARY_DESCRIPTION: copies an ext4 disk's platform root in the directory layout, mounted read-only at `old`, into a fresh btrfs disk mounted at `top`, in the subvolume layout. Each store is copied into a subvolume staged under a CONVERTING name, which a retry deletes and starts again; the system store leaves out what every boot makes again (the root's work and merged layers, the legacy upper, layers a boot discarded, and the scratch folders) and keeps the kept root, the boot log, the trust cache and the seed record. The commit is the system subvolume's layout mark and CONVERTED_FILE, flushed, then both renames into place, so the disk names complete subvolumes or none. Returns None when `nonce` is already recorded as done.
+// UNIT_BOUNDARY_DESCRIPTION: copies an ext4 disk's platform root in the directory layout, mounted read-only at `old`, into a fresh btrfs disk mounted at `top`, in the subvolume layout. Each store is copied into a subvolume staged under a CONVERTING name (a disk with no home gets no agent subvolume, so its boot seeds one), which a retry deletes and starts again; the system store leaves out what every boot makes again (the root's work and merged layers, the legacy upper, layers a boot discarded, and the scratch folders) and keeps the kept root, the boot log, the trust cache and the seed record. The commit is the system subvolume's layout mark and CONVERTED_FILE, flushed, then both renames into place, so the disk names complete subvolumes or none. Returns None when `nonce` is already recorded as done.
 pub fn convert_into_subvolumes(old: &Path, top: &Path, nonce: &str) -> io::Result<Option<Copied>> {
     let marker = guest::system_store(top, CONVERTED_FILE);
     if fs::read_to_string(&marker).is_ok_and(|text| text.trim() == nonce) {
@@ -221,9 +221,13 @@ pub fn convert_into_subvolumes(old: &Path, top: &Path, nonce: &str) -> io::Resul
     let mut total = Copied::default();
     for store in stores {
         let staged = format!("{store}{CONVERTING}");
-        vm::ensure_subvolume(top, &staged)?;
         let from = old.join(store);
-        if fs::symlink_metadata(&from).is_err() {
+        let present = fs::symlink_metadata(&from).is_ok();
+        if store == guest::AGENT_DIR && !present {
+            continue;
+        }
+        vm::ensure_subvolume(top, &staged)?;
+        if !present {
             continue;
         }
         let copied = copy_exact(&from, &top.join(&staged), &|name| {
@@ -245,7 +249,10 @@ pub fn convert_into_subvolumes(old: &Path, top: &Path, nonce: &str) -> io::Resul
     )?;
     flush_filesystem(top)?;
     for store in stores {
-        fs::rename(top.join(format!("{store}{CONVERTING}")), top.join(store))?;
+        let staged = top.join(format!("{store}{CONVERTING}"));
+        if staged.exists() {
+            fs::rename(staged, top.join(store))?;
+        }
     }
     flush_filesystem(top)?;
     Ok(Some(total))
