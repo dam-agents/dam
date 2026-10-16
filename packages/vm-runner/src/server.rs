@@ -1777,10 +1777,15 @@ impl Server {
     // UNIT_BOUNDARY_DESCRIPTION: whether the machine has been quiet past its limit. A guest that answered is remembered in this process's memory and also in the share's seeded record, which outlives the process. After a hand-off, a runner restart or a crash the memory is empty, so the record is what lets the new runner restart a guest that answered before and went quiet before or during the change.
     fn dead_for_long(&self, id: &str) -> bool {
         let foreign = self.foreign(id);
-        let seeded = machine_dir(&self.config.state_dir, id)
-            .is_some_and(|dir| share::seeded(&dir.join(SHARE_DIR)));
+        let share = machine_dir(&self.config.state_dir, id).map(|dir| dir.join(SHARE_DIR));
+        let seeded = share.as_deref().is_some_and(share::seeded);
+        let converting = share.as_deref().is_some_and(crate::convert::requested);
         locked(&self.machines).entries.get(id).is_some_and(|e| {
-            let limit = quiet_limit(foreign, e.boot.is_none(), e.gave_up.map(|at| at.elapsed()));
+            let limit = if converting && e.boot.is_some() {
+                crate::plan::CONVERTING_RESTART
+            } else {
+                quiet_limit(foreign, e.boot.is_none(), e.gave_up.map(|at| at.elapsed()))
+            };
             let health = Health {
                 ever_ready: e.health.ever_ready || seeded,
                 ..e.health
