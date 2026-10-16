@@ -1,5 +1,5 @@
 import { AddAlt, NewTab, Pin, PinFilled, Tools } from "@carbon/icons-react";
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo, useRef } from "react";
 
 import { SectionLabel } from "@/components/ui/section-label";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -47,6 +47,11 @@ export function SidebarAgents({
   const setFilters = useStore((s) => s.setSidebarActivityFilters);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const startSession = useStartSession();
+
+  const listTop = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (openAgentId) listTop.current?.scrollIntoView({ block: "start" });
+  }, [openAgentId]);
 
   const navigate = (go: () => void) => () => {
     go();
@@ -107,7 +112,7 @@ export function SidebarAgents({
   };
 
   return (
-    <section aria-label="Agents" data-testid="sidebar-agents">
+    <section ref={listTop} aria-label="Agents" data-testid="sidebar-agents">
       <div
         className={cn(
           "sticky top-0 z-raised flex items-center justify-between py-1 pl-2.5",
