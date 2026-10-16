@@ -1,5 +1,5 @@
 diff --git i/Cargo.toml w/Cargo.toml
-index 1e63774..f4d719c 100644
+index d0a7a42c..3f008b0e 100644
 --- i/Cargo.toml
 +++ w/Cargo.toml
 @@ -96,7 +96,7 @@ axum = { version = "0.8", features = ["macros", "ws"] }
@@ -12,10 +12,10 @@ index 1e63774..f4d719c 100644
  http-body = "1"
  rustls = { version = "0.23.45", default-features = false, features = ["ring"] }
 diff --git i/crates/smolvm-agent/src/main.rs w/crates/smolvm-agent/src/main.rs
-index 78da739..2499181 100644
+index 208a9541..c1b52ba9 100644
 --- i/crates/smolvm-agent/src/main.rs
 +++ w/crates/smolvm-agent/src/main.rs
-@@ -1245,6 +1245,9 @@ fn setup_persistent_rootfs() {
+@@ -1244,6 +1244,9 @@ fn setup_persistent_rootfs() {
      let storage_handle = if Path::new(STORAGE_DEVICE).exists() {
          ensure_mount_dir(STORAGE_TEMP_MOUNT);
          Some(std::thread::spawn(|| {
@@ -25,7 +25,7 @@ index 78da739..2499181 100644
              // Resize before mount — template may be smaller than device.
              // Skip if filesystem already fills the device (subsequent boots).
              // If resize fails (e.g. macOS-created template with incompatible features),
-@@ -1840,6 +1843,10 @@ fn mount_storage_disk() -> bool {
+@@ -1818,6 +1821,10 @@ fn mount_storage_disk() -> bool {
          return true;
      }
  
@@ -36,7 +36,7 @@ index 78da739..2499181 100644
      // --- Attempt 1: resize (if needed) + mount (works on subsequent boots) ---
      let resized =
          ext4_already_full_size(STORAGE_DEVICE) || resize_ext4_if_needed(STORAGE_DEVICE, "storage");
-@@ -1861,7 +1868,8 @@ fn mount_storage_disk() -> bool {
+@@ -1839,7 +1846,8 @@ fn mount_storage_disk() -> bool {
          .status()
      {
          Ok(status) => {
@@ -46,7 +46,7 @@ index 78da739..2499181 100644
              if code <= 1 {
                  info!(exit_code = code, "fsck completed");
                  true
-@@ -1887,6 +1895,17 @@ fn mount_storage_disk() -> bool {
+@@ -1865,6 +1873,17 @@ fn mount_storage_disk() -> bool {
      }
  
      // --- Attempt 3: mkfs (last resort, destroys data) ---
@@ -64,7 +64,7 @@ index 78da739..2499181 100644
      info!("formatting storage disk (first boot or unrecoverable)");
      match Command::new("mkfs.ext4")
          .args(["-F", "-q", "-O", "^has_journal", STORAGE_DEVICE])
-@@ -1913,6 +1932,104 @@ fn mount_storage_disk() -> bool {
+@@ -1891,6 +1910,104 @@ fn mount_storage_disk() -> bool {
      false
  }
  
@@ -169,7 +169,7 @@ index 78da739..2499181 100644
  /// Stub for non-Linux platforms.
  #[cfg(not(target_os = "linux"))]
  fn mount_storage_disk() -> bool {
-@@ -8230,6 +8347,39 @@ mod bg_reap_tests {
+@@ -8150,6 +8267,39 @@ mod bg_reap_tests {
  
  #[cfg(test)]
  mod tests {
@@ -206,11 +206,11 @@ index 78da739..2499181 100644
 +        assert!(!super::may_format_storage(path));
 +    }
 +
-     #[cfg(target_os = "linux")]
-     #[test]
-     fn workspace_is_shared_on_creation_without_changing_existing_permissions() {
+     /// A listing is what a caller uses to decide where to recurse and what to
+     /// download, so the shape matters: names only, sorted, with sizes only
+     /// where they mean something.
 diff --git i/crates/smolvm-network/src/stack.rs w/crates/smolvm-network/src/stack.rs
-index 527a9ae..0584f5e 100644
+index 527a9ae2..0584f5ef 100644
 --- i/crates/smolvm-network/src/stack.rs
 +++ w/crates/smolvm-network/src/stack.rs
 @@ -862,7 +862,7 @@ fn relay_accepted_tcp_connection(
@@ -223,7 +223,7 @@ index 527a9ae..0584f5e 100644
                          connection.peer_addr,
                          connection.host_port,
 diff --git i/crates/smolvm-network/src/tcp_relay.rs w/crates/smolvm-network/src/tcp_relay.rs
-index 95b89bf..dad5d21 100644
+index 95b89bf7..dad5d21e 100644
 --- i/crates/smolvm-network/src/tcp_relay.rs
 +++ w/crates/smolvm-network/src/tcp_relay.rs
 @@ -867,7 +867,7 @@ pub fn spawn_tcp_relay(
