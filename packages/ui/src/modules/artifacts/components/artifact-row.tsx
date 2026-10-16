@@ -3,6 +3,11 @@ import type { LibraryArtifact } from "api-server-api";
 import { useCallback, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { Tooltip } from "@/components/ui/tooltip";
 import { clickableProps } from "@/lib/clickable";
@@ -75,67 +80,73 @@ export function ArtifactRow({
     onEnd: endDrag,
   });
 
+  const menuActions = { onEdit, onRename, onMove, onShare, onSetRetention };
+
   return (
-    <div
-      {...clickableProps(() => onPreview(artifact))}
-      {...(drag ? dragProps : {})}
-      onMouseEnter={warmPreview}
-      onFocus={warmPreview}
-      className={cn(
-        "group flex w-full cursor-pointer items-center gap-3 border-t border-border px-4 py-3 text-left transition-colors hover:bg-muted/60",
-        deletion.state === "expired" && "opacity-55",
-        dragging && "opacity-50",
-      )}
-      data-testid="artifact-row"
-    >
-      <ArtifactKindBadge kind={artifact.kind} />
-      <div className="min-w-0 flex flex-col gap-0.5">
-        <span className="flex items-center gap-1.5 truncate text-md font-medium text-foreground">
-          {artifact.title}
-        </span>
-        <span className="flex min-w-0 items-center gap-2.5 overflow-hidden text-xs text-muted-foreground">
-          {showAgent && <CreatorChip agentId={artifact.agentId} />}
-          {artifact.viewCount > 0 && (
-            <span className="hidden shrink-0 items-center gap-1 sm:inline-flex">
-              <View size={12} />
-              {artifact.viewCount}
-            </span>
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div
+          {...clickableProps(() => onPreview(artifact))}
+          {...(drag ? dragProps : {})}
+          onMouseEnter={warmPreview}
+          onFocus={warmPreview}
+          className={cn(
+            "group flex w-full cursor-pointer items-center gap-3 border-t border-border px-4 py-3 text-left transition-colors hover:bg-muted/60",
+            deletion.state === "expired" && "opacity-55",
+            dragging && "opacity-50",
           )}
-          <ArtifactDeletionChip
-            expiresAt={artifact.expiresAt}
-            className="order-first sm:order-none"
-          />
-          <span className="hidden whitespace-nowrap sm:inline">
-            {timeAgo(artifact.createdAt)}
-          </span>
-        </span>
-      </div>
-      <div
-        draggable={false}
-        className="ml-auto flex shrink-0 items-center gap-1.5"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {artifact.interactive && <ArtifactInteractiveBadge />}
-        {artifact.shareUrl && (
-          <CopyLinkButton
-            url={artifact.shareUrl}
-            variant="ghost"
-            restricted={artifact.visibility === "restricted"}
-          />
-        )}
-        <ArtifactStatusBadge artifact={artifact} onShare={onShare} />
-        <RowActionsMenu label="More actions">
-          <ArtifactRowMenuItems
-            artifact={artifact}
-            onEdit={onEdit}
-            onRename={onRename}
-            onMove={onMove}
-            onShare={onShare}
-            onSetRetention={onSetRetention}
-          />
-        </RowActionsMenu>
-      </div>
-    </div>
+          data-testid="artifact-row"
+        >
+          <ArtifactKindBadge kind={artifact.kind} />
+          <div className="min-w-0 flex flex-col gap-0.5">
+            <span className="flex items-center gap-1.5 truncate text-md font-medium text-foreground">
+              {artifact.title}
+            </span>
+            <span className="flex min-w-0 items-center gap-2.5 overflow-hidden text-xs text-muted-foreground">
+              {showAgent && <CreatorChip agentId={artifact.agentId} />}
+              {artifact.viewCount > 0 && (
+                <span className="hidden shrink-0 items-center gap-1 sm:inline-flex">
+                  <View size={12} />
+                  {artifact.viewCount}
+                </span>
+              )}
+              <ArtifactDeletionChip
+                expiresAt={artifact.expiresAt}
+                className="order-first sm:order-none"
+              />
+              <span className="hidden whitespace-nowrap sm:inline">
+                {timeAgo(artifact.createdAt)}
+              </span>
+            </span>
+          </div>
+          <div
+            draggable={false}
+            className="ml-auto flex shrink-0 items-center gap-1.5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {artifact.interactive && <ArtifactInteractiveBadge />}
+            {artifact.shareUrl && (
+              <CopyLinkButton
+                url={artifact.shareUrl}
+                variant="ghost"
+                restricted={artifact.visibility === "restricted"}
+              />
+            )}
+            <ArtifactStatusBadge artifact={artifact} onShare={onShare} />
+            <RowActionsMenu label="More actions">
+              <ArtifactRowMenuItems artifact={artifact} {...menuActions} />
+            </RowActionsMenu>
+          </div>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ArtifactRowMenuItems
+          artifact={artifact}
+          {...menuActions}
+          menu="context"
+        />
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 

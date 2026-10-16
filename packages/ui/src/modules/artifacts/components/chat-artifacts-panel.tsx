@@ -10,6 +10,11 @@ import {
 
 import { Button } from "@/components/ui/button";
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
@@ -231,49 +236,55 @@ function ArtifactListRow({
     onEnd: endDrag,
   });
 
+  const menuActions = { onEdit, onRename, onMove, onShare, onSetRetention };
+
   return (
-    <div
-      {...clickableProps(onClick)}
-      {...(drag ? dragProps : {})}
-      title={artifact.title}
-      className={cn(
-        "group flex h-8 w-full cursor-pointer items-center gap-1.5 py-1 pl-3.5 pr-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted",
-        active && "bg-muted text-foreground",
-        dragging && "opacity-50",
-      )}
-    >
-      <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
-        <ArtifactVisibilityButton
-          artifact={artifact}
-          onShare={() => onShare(artifact)}
-        />
-      </div>
-      <span className="min-w-0 flex-1 truncate">{artifact.title}</span>
-      <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
-        <DropdownMenu>
-          {}
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className={HOVER_ACTION}
-              aria-label="More actions"
-            >
-              <OverflowMenuVertical size={13} />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <ArtifactRowMenuItems
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div
+          {...clickableProps(onClick)}
+          {...(drag ? dragProps : {})}
+          title={artifact.title}
+          className={cn(
+            "group flex h-8 w-full cursor-pointer items-center gap-1.5 py-1 pl-3.5 pr-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted",
+            active && "bg-muted text-foreground",
+            dragging && "opacity-50",
+          )}
+        >
+          <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+            <ArtifactVisibilityButton
               artifact={artifact}
-              onEdit={onEdit}
-              onRename={onRename}
-              onMove={onMove}
-              onShare={onShare}
-              onSetRetention={onSetRetention}
+              onShare={() => onShare(artifact)}
             />
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </div>
+          </div>
+          <span className="min-w-0 flex-1 truncate">{artifact.title}</span>
+          <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+            <DropdownMenu>
+              {}
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className={HOVER_ACTION}
+                  aria-label="More actions"
+                >
+                  <OverflowMenuVertical size={13} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <ArtifactRowMenuItems artifact={artifact} {...menuActions} />
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ArtifactRowMenuItems
+          artifact={artifact}
+          {...menuActions}
+          menu="context"
+        />
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }

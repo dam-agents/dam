@@ -64,8 +64,8 @@ export function ArtifactBarActions({
         <Button
           variant="ghost"
           size="icon-sm"
-          aria-label="Start a new session"
-          tooltip="Start a new session"
+          aria-label="Discuss with agent"
+          tooltip="Discuss with agent"
           onClick={onStartSession}
         >
           <NewTab size={16} />
