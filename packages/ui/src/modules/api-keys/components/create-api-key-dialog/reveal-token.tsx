@@ -3,12 +3,14 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
 import type { CopyState } from "@/hooks/use-copy";
+import { externalLinkProps } from "@/lib/external-link";
 
 import {
   DialogBody,
   DialogFooter,
   DialogHeader,
 } from "../../../../components/modal.js";
+import { CLI_REFERENCE_URL } from "../../../../constants.js";
 
 interface Props {
   plaintext: string;
@@ -42,8 +44,16 @@ export function RevealToken({ plaintext, onClose }: Props) {
           </p>
         )}
         <p className="text-xs text-muted-foreground mt-3">
-          Use as the bearer credential when calling the API. See the CLI
-          documentation for the exact environment variable name.
+          The{" "}
+          <a
+            href={CLI_REFERENCE_URL}
+            {...externalLinkProps}
+            className="text-primary underline-offset-2 hover:underline"
+          >
+            CLI reference
+          </a>{" "}
+          shows how to sign in with it. Scripts can also send it as a bearer
+          token to the API.
         </p>
       </DialogBody>
       <DialogFooter>
