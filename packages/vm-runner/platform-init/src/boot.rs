@@ -144,7 +144,8 @@ pub fn run() -> ! {
     std::thread::spawn(move || evict_scratch(&scratch));
     std::thread::spawn(trim_freed_blocks);
     if let Some(guard) = guard {
-        std::thread::spawn(move || guard_pool(guard));
+        *POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner()) = Some(guard);
+        std::thread::spawn(guard_pool);
     }
     let openrc = Path::new(OPENRC).exists();
     if openrc {
@@ -1503,11 +1504,13 @@ fn eviction_pass(
     })
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a guest's disk is a sparse file sized at the owner's whole claim, which every other disk of the owner shares, so the guest sees room the claim no longer has, and a write past the claim's last block fails as a broken disk would, for every agent of the owner at once. So platform-init holds the guest to the room the runner grants it (guest::STORAGE_ROOM_PATH): every POOL_GUARD_INTERVAL it sizes a file it preallocates on the disk so that what the guest can still write is the grant, less what the guest wrote since the grant came, or, once that is below POOL_GUARD_FLOOR, the floor once per shortage (PoolGuard). A write past it then fails inside the guest with "no space left on device", which the agent and its tools handle and the runner reports as a full home, and the claim stays writable for the other agents. Preallocated blocks are only marked in the guest's filesystem and never written, so the file takes nothing from the claim. It is an unnamed temporary file: no older platform-init, no image and no agent can find it, and the guest's filesystem frees it whenever the guest stops, however it stops. The floor keeps room for SSH keys, a shell and the agent's own state while every agent of an owner is held near zero, so with N agents running the claim can pass the runner's level by N times the floor.
+// UNIT_BOUNDARY_DESCRIPTION: a guest's disk is a sparse file sized at the owner's whole claim, which every other disk of the owner shares, so the guest sees room the claim no longer has, and a write past the claim's last block fails as a broken disk would, for every agent of the owner at once. So platform-init holds the guest to the room the runner grants it (guest::STORAGE_ROOM_PATH): every POOL_GUARD_INTERVAL it sizes a file it preallocates on the disk so that what the guest can still write is the grant, less what the guest wrote since the grant came, or, once that is below POOL_GUARD_FLOOR, the floor once per shortage (PoolGuard). A write past it then fails inside the guest with "no space left on device", which the agent and its tools handle and the runner reports as a full home, and the claim stays writable for the other agents. Preallocated blocks are only marked in the guest's filesystem and never written, so the file takes nothing from the claim. It is an unnamed temporary file: no older platform-init, no image and no agent can find it, and the guest's filesystem frees it whenever the guest stops, however it stops; a clean stop empties it before the disk is synced and frozen (release_pool_guard), so the next boot does not find its blocks still taken. btrfs counts an allocation in the free space statvfs reports only at its next transaction commit, about every 30 s, so the guard reads its own size from its blocks, syncs the filesystem before and after it moves, so the free space it reads counts what is pending and its own move, and moves at most once per POOL_GUARD_BACKOFF and only by more than POOL_GUARD_STEP (guard_look). The floor keeps room for SSH keys, a shell and the agent's own state while every agent of an owner is held near zero, so with N agents running the claim can pass the runner's level by N times the floor.
 const POOL_GUARD_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
 const POOL_GUARD_FLOOR: u64 = 256 << 20;
 const POOL_GUARD_STEP: u64 = 16 << 20;
+const POOL_GUARD_BACKOFF: std::time::Duration = std::time::Duration::from_secs(30);
 
+static POOL_GUARD: std::sync::Mutex<Option<File>> = std::sync::Mutex::new(None);
 static POOL_GUARD_HELD: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 fn pool_guard(root: &Path) -> Option<File> {
@@ -1570,38 +1573,74 @@ fn read_grant(text: &str) -> Option<(String, u64)> {
     Some((id, words.next()?.parse().ok()?))
 }
 
-fn guard_pool(guard: File) {
+// UNIT_BOUNDARY_DESCRIPTION: one look of the guard: what the guard file is to be resized to, or None to leave it. `used` and `avail` are what statvfs reports, the guard's own blocks included, and `held` is what those blocks are now. The guard moves only by more than POOL_GUARD_STEP, or to nothing, and only once `backed_off`, a commit interval after its last move, so a look that statvfs answers from before that move does not move it again.
+fn guard_look(
+    state: &mut PoolGuard,
+    grant: Option<(String, u64)>,
+    used: u64,
+    avail: u64,
+    held: u64,
+    backed_off: bool,
+) -> Option<u64> {
+    let want = state.size(grant, avail.saturating_add(held), used.saturating_sub(held));
+    (backed_off && (want.abs_diff(held) > POOL_GUARD_STEP || (want == 0 && held > 0)))
+        .then_some(want)
+}
+
+fn guard_pool() {
     let home = Path::new(guest::AGENT_HOME);
     let mut state = PoolGuard::default();
-    let mut held = 0u64;
+    let mut moved: Option<std::time::Instant> = None;
     loop {
         std::thread::sleep(POOL_GUARD_INTERVAL);
-        let Some(stat) = statvfs(home) else {
-            continue;
+        let slot = POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(guard) = slot.as_ref() else {
+            return;
         };
-        #[allow(clippy::unnecessary_cast)]
-        let (size, blocks, free, avail) = (
-            stat.f_frsize as u64,
-            stat.f_blocks as u64,
-            stat.f_bfree as u64,
-            stat.f_bavail as u64,
+        let held = guard.metadata().map_or_else(
+            |_| POOL_GUARD_HELD.load(std::sync::atomic::Ordering::Relaxed),
+            |info| info.blocks() * 512,
         );
-        let used = blocks
-            .saturating_sub(free)
-            .saturating_mul(size)
-            .saturating_sub(held);
-        let avail = avail.saturating_mul(size).saturating_add(held);
+        POOL_GUARD_HELD.store(held, std::sync::atomic::Ordering::Relaxed);
         let grant = fs::read_to_string(guest::STORAGE_ROOM_PATH)
             .ok()
             .as_deref()
             .and_then(read_grant);
-        let want = state.size(grant, avail, used);
-        if want.abs_diff(held) < POOL_GUARD_STEP && !(want == 0 && held > 0) {
+        let backed_off = moved.is_none_or(|at| at.elapsed() >= POOL_GUARD_BACKOFF);
+        let look = |state: &mut PoolGuard| {
+            let stat = statvfs(home)?;
+            #[allow(clippy::unnecessary_cast)]
+            let (size, blocks, free, avail) = (
+                stat.f_frsize as u64,
+                stat.f_blocks as u64,
+                stat.f_bfree as u64,
+                stat.f_bavail as u64,
+            );
+            let avail = avail.saturating_mul(size);
+            guard_look(
+                state,
+                grant.clone(),
+                blocks.saturating_sub(free).saturating_mul(size),
+                avail,
+                held,
+                backed_off,
+            )
+            .map(|want| (want, avail.saturating_add(held)))
+        };
+        if look(&mut state).is_none() {
             continue;
         }
+        if let Err(e) = flush_filesystem(home) {
+            logf!("WARNING: syncing the disk before sizing the storage guard: {e}");
+            continue;
+        }
+        let Some((want, avail)) = look(&mut state) else {
+            continue;
+        };
         let Ok(length) = libc::off_t::try_from(want) else {
             continue;
         };
+        moved = Some(std::time::Instant::now());
         // SAFETY: the descriptor is open for the call, and neither call takes a pointer.
         let rc = unsafe {
             if want > held {
@@ -1610,8 +1649,11 @@ fn guard_pool(guard: File) {
                 libc::ftruncate(guard.as_raw_fd(), length)
             }
         };
+        if let Err(e) = flush_filesystem(home) {
+            logf!("WARNING: syncing the disk after sizing the storage guard: {e}");
+        }
         let was = held;
-        held = match guard.metadata() {
+        let held = match guard.metadata() {
             Ok(info) => info.blocks() * 512,
             Err(_) if rc == 0 => want,
             Err(_) => held,
@@ -1632,6 +1674,16 @@ fn guard_pool(guard: File) {
             });
         }
     }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: empties and closes the guard file on a clean stop, before the disk is synced and frozen. An unnamed file is freed only once the filesystem gets to it, which on btrfs once lasted 35 s into the next boot, holding that boot's guest to room it did not have. The guard thread finds no file after this and ends, so it cannot grow the file again.
+fn release_pool_guard() {
+    if let Some(guard) = POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner()).take() {
+        if let Err(e) = guard.set_len(0) {
+            logf!("WARNING: emptying the storage guard before the stop: {e}");
+        }
+    }
+    POOL_GUARD_HELD.store(0, std::sync::atomic::Ordering::Relaxed);
 }
 
 fn statvfs(path: &Path) -> Option<libc::statvfs> {
@@ -2825,6 +2877,67 @@ mod tests {
         );
         let want = guard.size(Some(("room".into(), 1 << 30)), disk - used, used);
         assert_eq!(disk - used - want, 1 << 30);
+    }
+
+    // TEST_SCENARIO: btrfs reports a resize of the guard in statvfs only at its next commit, so a look between the two counts the guard's blocks once from the file and not at all from statvfs, and once moved on that, the guard climbed and fell with every commit (0, 136, 272, 0 GB on one guest under a steady grant). Synced before and after it moves and backed off for a commit after, it moves once and stays; without either it keeps moving under the same lag.
+    #[test]
+    fn the_storage_guard_settles_when_statvfs_lags_a_commit() {
+        let gib = 1u64 << 30;
+        let (disk, data, commit) = (300 * gib, 25 * gib, 15u64);
+        let run = |synced: bool| {
+            let mut state = PoolGuard::default();
+            let (mut held, mut seen, mut moves, mut moved_at) = (0u64, 0u64, 0, None::<u64>);
+            for tick in 0..120u64 {
+                if tick % commit == 0 {
+                    seen = held;
+                }
+                let backed_off = !synced || moved_at.is_none_or(|at| tick - at >= commit);
+                let look = |state: &mut PoolGuard, seen: u64| {
+                    let grant = Some(("1".to_string(), 161 * gib));
+                    guard_look(
+                        state,
+                        grant,
+                        data + seen,
+                        disk - data - seen,
+                        held,
+                        backed_off,
+                    )
+                };
+                let Some(mut want) = look(&mut state, seen) else {
+                    continue;
+                };
+                if synced {
+                    seen = held;
+                    let Some(again) = look(&mut state, seen) else {
+                        continue;
+                    };
+                    want = again;
+                }
+                held = want.min(disk - data);
+                if synced {
+                    seen = held;
+                }
+                (moves, moved_at) = (moves + 1, Some(tick));
+            }
+            (held, moves)
+        };
+        assert_eq!(run(true), (disk - data - 161 * gib, 1));
+        let (_, moves) = run(false);
+        assert!(moves > 5, "the unsynced guard moved only {moves} times");
+    }
+
+    // TEST_SCENARIO: a guard that held room when the guest stopped is emptied and closed first, so the stop's sync frees its blocks and the next boot does not find them still taken; the guard thread then finds no file and ends.
+    #[test]
+    fn a_clean_stop_empties_the_storage_guard() {
+        let disk = TempDir::new("guard-stop");
+        fs::create_dir_all(disk.path().join(guest::SYSTEM_DIR)).unwrap();
+        let guard = pool_guard(disk.path()).expect("an unnamed file on the disk");
+        guard.set_len(1 << 20).unwrap();
+        let probe = guard.try_clone().unwrap();
+        *POOL_GUARD.lock().unwrap() = Some(guard);
+        release_pool_guard();
+        assert!(POOL_GUARD.lock().unwrap().is_none());
+        assert_eq!(probe.metadata().unwrap().len(), 0);
     }
 
     // TEST_SCENARIO: the guard file has no name, so no older platform-init, image or agent can find it, and the filesystem frees it once the guest stops; a disk where it cannot be made boots without it.

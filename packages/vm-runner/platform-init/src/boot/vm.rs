@@ -1097,6 +1097,7 @@ fn quiesce(conn: &mut File, grace: Duration) -> AgentResponse {
         }
     }
     drop(stopped);
+    release_pool_guard();
     // SAFETY: sync(2) takes no arguments.
     unsafe { libc::sync() };
     let frozen = File::open(guest::AGENT_HOME).and_then(|home| {
