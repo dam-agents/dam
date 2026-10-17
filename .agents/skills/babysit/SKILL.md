@@ -55,4 +55,11 @@ Opening the PR is the `pr-open` skill's; each fix round is the `review-remediati
   `verify` only aggregates: it fails when any job it needs failed or was cancelled, so read the jobs, not `verify`: `gh run view <run> --json jobs --jq '.jobs[]|select(.conclusion!="success" and .conclusion!="skipped")|"\(.name) \(.conclusion) \(.startedAt) \(.completedAt) \(.databaseId)"'`.
   A `cancelled` job whose run time equals its `timeout-minutes` timed out: `--json jobs` lists its steps with times, and `gh run view <run> --log --job <job-id>` shows the step it hung in.
   The queue builds the agent images for arm64, which a PR run never does, so an arm64-only agent build can fail there first.
-  A flake or an infra failure (a download stall, a runner timeout) → enqueue again; a real failure against what merged ahead → fix on the branch, wait for green, enqueue again.
+  Infra or flake when the failed job's log shows one of:
+  - a download failing or timing out from a third-party host (S3, `archive.apache.org`, `registry.access.redhat.com`, the npm registry), often ending in `EOF`, `timeout` or a `mise install` that hangs;
+  - the job `cancelled` at its `timeout-minutes`;
+  - `ERR_NETWORK_CHANGED`;
+  - a failure in a spec or area the PR does not touch, in a job that passed on the PR's own run.
+- Infra or flake → enqueue again at once with `gh pr merge <n> --squash --auto`; do not wait or ask.
+  At most twice per PR: a third ejection → stop and report to the user.
+  A real failure, caused by the PR or by what merged ahead → fix on the branch, wait for green, enqueue again.
