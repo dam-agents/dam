@@ -13,7 +13,8 @@ Its path below `.github/settings/` is the endpoint's path below `repos/<owner>/<
   The rulesets are the only branch and tag protection: there is no legacy branch protection.
 - `topics.yaml`, `automated-security-fixes.yaml` (Dependabot security updates) and `actions/permissions*` (Actions, the default workflow token, fork pull request approval, retention) hold the rest.
 
-A file names only the fields it manages, and only those fields are compared.
+Outside `rulesets/`, a file names only the fields it manages, and only those fields are compared; an array, such as the topic names, is compared as one value.
+A ruleset is compared as a whole: its name, target, enforcement, conditions, rules and bypass actors, the full `PUT` body, so a field that the file leaves out is drift.
 The task reads each file as JSON with sorted keys, so key order and comments never count as drift.
 Write a comment beside a setting whose reason is not obvious.
 Out of scope: secrets and variables, webhooks, deploy keys, team and collaborator access, environments, labels and autolinks.
