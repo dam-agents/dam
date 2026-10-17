@@ -49,6 +49,7 @@ Opening the PR is the `pr-open` skill's; each fix round is the `review-remediati
   Being behind `main` needs no merge; the queue tests the PR on top of `main` and the PRs ahead of it.
 - Enqueued → wait until `gh pr view <n> --json state` is `MERGED`.
   The queue's run is a `merge_group` run on a `gh-readonly-queue/main/pr-<n>-<base-sha>` branch; `gh pr checks <n>` never shows it.
+  The queue groups by `HEADGREEN`: a group's failed run does not eject the PR when a later group that contains it passes, so a red `merge_group` run alone is no ejection; only `state` and the timeline below say so.
 - Kicked out → the PR is `OPEN` again with no `autoMergeRequest`, and nothing on the PR page names the failed check.
   The timeline does: `gh api graphql -f query='{repository(owner:"<owner>",name:"<repo>"){pullRequest(number:<n>){timelineItems(last:10,itemTypes:[REMOVED_FROM_MERGE_QUEUE_EVENT]){nodes{... on RemovedFromMergeQueueEvent{createdAt reason beforeCommit{oid}}}}}}}'`; `reason` is `failed_checks`, a conflict, or a manual removal.
   Find the run: `gh run list --event merge_group --limit 100 --json databaseId,headBranch,conclusion,createdAt --jq '.[]|select(.headBranch|contains("pr-<n>-"))'`; it may show `cancelled`, not `failure`.
