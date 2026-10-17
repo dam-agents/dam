@@ -345,7 +345,7 @@ jobs:
       # A run that builds the vm-runner builds it here, from main's
       # release-build cache (see build.yml's build-images); one that does not
       # pulls the published image. Decided as e2e:ci-images decides it, for
-      # the reason mock-build gives: without the cache a build takes 15 min,
+      # the reason agents-build gives: without the cache a build takes 15 min,
       # not 3. After setup-mise, for image:resolve's crane.
       - id: vm-runner-build
         if: inputs.verify
