@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/cache"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
@@ -223,7 +224,7 @@ func TestTheRolloutSweepDoesNotBringBackARemovedRunner(t *testing.T) {
 	}
 }
 
-// TEST_SCENARIO: a runner nobody can reach — its TLS Secret is gone — whose owner has no Agent of any kind. It is kept through the grace, since only an agent's reconcile creates a runner and one may be on its way, and removed after it even though nobody could ask it what it holds.
+// TEST_SCENARIO: a runner nobody can reach — its TLS Secret is gone — whose owner has no Agent of any kind. It is kept through the grace, since only an agent's reconcile creates a runner and one may be on its way, and removed after it, but its claim is kept and marked: nobody could ask the runner what it holds.
 func TestAnUnreachableRunnerOfNoAgentIsRemovedAfterTheGrace(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -242,5 +243,48 @@ func TestAnUnreachableRunnerOfNoAgentIsRemovedAfterTheGrace(t *testing.T) {
 	r.ownerless.Store(testOwner, time.Now().Add(-orphanRunnerGrace-time.Minute))
 	r.ReconcileOrphanMachines(ctx)
 	assert.False(t, runnerDeploymentExists(t, r, testOwner))
-	assert.False(t, runnerClaimExists(t, r, testOwner))
+	require.True(t, runnerClaimExists(t, r, testOwner), "a claim nobody could see into is never deleted")
+	claim, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Contains(t, claim.Annotations, annRunnerClaimKept)
+}
+
+// TEST_SCENARIO: on a cluster that shares its CRDs, a CRD event or a stale informer can make the owner's Agents read as none for a while, both in the cache and in a live List. An unreachable runner removed in that window must lose no disk: its claim is kept, and the Agent that shows up again builds its runner on that same claim, which drops the mark.
+func TestAnEmptyListNeverCostsAnUnreachableRunnerItsDisks(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.NoError(t, r.client.CoreV1().Secrets("test-agents").Delete(ctx, r.runnerTLSName(testOwner), metav1.DeleteOptions{}))
+	endpoint := r.runnerEndpoint
+	r.runnerEndpoint = nil
+	before, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+
+	r.WithAgentCache(cache.NewGenericLister(cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}), AgentsGVR.GroupResource()))
+	r.ownerless.Store(testOwner, time.Now().Add(-orphanRunnerGrace-time.Minute))
+	r.ReconcileOrphanMachines(ctx)
+	assert.True(t, runnerDeploymentExists(t, r, testOwner), "an empty cache beside a live List that has the Agent removes nothing")
+	assert.True(t, runnerClaimExists(t, r, testOwner))
+
+	dyn := r.dynamic.(interface {
+		PrependReactor(verb, resource string, reaction k8stesting.ReactionFunc)
+	})
+	dyn.PrependReactor("list", "agents", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, &unstructured.UnstructuredList{}, nil
+	})
+	r.ownerless.Store(testOwner, time.Now().Add(-orphanRunnerGrace-time.Minute))
+	r.ReconcileOrphanMachines(ctx)
+	assert.False(t, runnerDeploymentExists(t, r, testOwner), "the runner itself goes")
+	require.True(t, runnerClaimExists(t, r, testOwner), "the claim does not")
+
+	r.agentCache, r.runnerEndpoint = nil, endpoint
+	_, err = r.client.CoreV1().Secrets("test-agents").Create(ctx, runnerTLSSecret(), metav1.CreateOptions{})
+	require.NoError(t, err)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	after, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, before.UID, after.UID, "the runner is built again on the same claim")
+	assert.NotContains(t, after.Annotations, annRunnerClaimKept)
+	assert.True(t, runnerDeploymentExists(t, r, testOwner))
 }
