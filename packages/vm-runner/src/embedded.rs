@@ -28,9 +28,7 @@ pub struct Smolvm {
     db: SmolvmDb,
     proc_root: PathBuf,
     nested: bool,
-    tools: Option<PathBuf>,
     btrfs: PathBuf,
-    convert: bool,
 }
 
 const USER: &str = "root";
@@ -58,34 +56,20 @@ const GUEST_DNS_SINK: std::net::Ipv4Addr = std::net::Ipv4Addr::LOCALHOST;
 const MANAGED_BY: (&str, &str) = ("app.kubernetes.io/managed-by", "vm-runner");
 
 impl Smolvm {
-    pub fn open(allow_nesting: bool, tools: Option<&Path>, btrfs: PathBuf) -> anyhow::Result<Self> {
+    pub fn open(allow_nesting: bool, btrfs: PathBuf) -> anyhow::Result<Self> {
         let nested = allow_nesting && host_nests(Path::new("/sys"));
         tracing::info!(
             allow_nesting,
             nested,
             "nested virtualization for this runner's machines"
         );
-        let tools = tools
-            .map(|dir| {
-                dir.canonicalize()
-                    .with_context(|| format!("the tools dir {}", dir.display()))
-            })
-            .transpose()?;
         Ok(Self {
             runtime: EmbeddedRuntime::new().context("opening the smolvm runtime")?,
             db: SmolvmDb::open().context("opening the smolvm database")?,
             proc_root: PathBuf::from("/proc"),
             nested,
-            tools,
             btrfs,
-            convert: false,
         })
-    }
-
-    // UNIT_BOUNDARY_DESCRIPTION: lets this runner convert its machines' ext4 storage disks to btrfs (see convert).
-    pub fn converting(mut self, on: bool) -> Self {
-        self.convert = on;
-        self
     }
 
     fn record(&self, id: &str) -> anyhow::Result<Option<VmRecord>> {
@@ -245,8 +229,8 @@ impl Runtime for Smolvm {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the guest agent's root overlay — and the image this boot runs is named in the share, so platform-init keeps the machine's root only for the image that wrote it. A record with no allowlist is never booted: smolvm reads none as no filter, and only a record edited or migrated outside the runner holds none, since every running spec the runner admits names one. A start that fails kills any VMM it left half-booted, so the next attempt does not inherit it. A VMM that survives even its kill fails the start, since booting beside it would put two VMMs on one disk. A record that names no resolver, or names the sink, gets the sink and its empty name list on every start, so a machine created by an earlier runner never boots onto smolvm's default, the runner's own resolver, nor relays to whatever answers on the runner's loopback. Nesting is the one thing a start may only take away: the record holds what the machine's spec asked for, as its create or last update wrote it, and a start keeps it only while this runner still nests, so a machine never boots with more than the runner grants. The mounts are decided at every start too, from what this runner holds and what the image asks for now: runner pods roll across owners one at a time, so a machine moved to an image that asks for the node's tools before its runner had them still gets them on its next boot, and one whose runner or image stopped offering them boots without.
-    fn start(&self, id: &str, boot_mib: i32, memory_mib: i32) -> anyhow::Result<()> {
+    // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the guest agent's root overlay — and the image this boot runs is named in the share, so platform-init keeps the machine's root only for the image that wrote it. A record with no allowlist is never booted: smolvm reads none as no filter, and only a record edited or migrated outside the runner holds none, since every running spec the runner admits names one. A start that fails kills any VMM it left half-booted, so the next attempt does not inherit it. A VMM that survives even its kill fails the start, since booting beside it would put two VMMs on one disk. A record that names no resolver, or names the sink, gets the sink and its empty name list on every start, so a machine created by an earlier runner never boots onto smolvm's default, the runner's own resolver, nor relays to whatever answers on the runner's loopback. Nesting is the one thing a start may only take away: the record holds what the machine's spec asked for, as its create or last update wrote it, and a start keeps it only while this runner still nests, so a machine never boots with more than the runner grants. Every start keeps only the share among the recorded mounts, so a machine an earlier runner booted with the node's harness tools boots without them.
+    fn start(&self, id: &str, boot_mib: i32, _memory_mib: i32) -> anyhow::Result<()> {
         let dir = vm_data_dir(id);
         if dir.is_dir() {
             let vmms = orphan_pids(&self.proc_root, &dir);
@@ -258,31 +242,11 @@ impl Runtime for Smolvm {
         if record.as_ref().is_some_and(|r| r.allowed_cidrs.is_none()) {
             anyhow::bail!("smolvm machine start: {id} records no egress allowlist, which smolvm reads as no filter");
         }
-        let image_env = record
-            .as_ref()
-            .and_then(|r| recorded_image_env(r.image.as_deref()));
         if let Some(record) = &record {
             write_boot_image(record)?;
             write_launch(record)?;
         }
-        let share = record.as_ref().and_then(|r| {
-            r.mounts
-                .iter()
-                .find(|(_, target, _)| target == SHARE_PATH)
-                .map(|(share, _, _)| PathBuf::from(share))
-        });
-        let gib = record.as_ref().and_then(|r| r.storage_gb).unwrap_or(0);
-        let fits = |need| crate::storage::measure(&dir).is_some_and(|claim| claim.takes(need));
-        let conversion =
-            crate::convert::before_start(&dir, share.as_deref(), self.convert, fits, |next| {
-                format_btrfs(next, gib, &self.btrfs)
-            })?;
-        let boot = u32::try_from(if conversion.is_some() {
-            memory_mib
-        } else {
-            boot_mib
-        })
-        .context("boot memory")?;
+        let boot = u32::try_from(boot_mib).context("boot memory")?;
         let rootfs = AgentManager::default_rootfs_path()?;
         crate::files::write(
             &dir.join(crate::runtime::AGENT_ROOTFS_FILE),
@@ -294,8 +258,7 @@ impl Runtime for Smolvm {
             r.mem = boot;
             guest_dns(r, r.dns.unwrap_or(GUEST_DNS_SINK));
             r.nested_virt = Some(r.nested_virt == Some(true) && self.nested);
-            r.mounts = boot_mounts(id, &r.mounts, self.tools.as_deref(), image_env.as_deref());
-            r.disks = conversion.clone().into_iter().collect();
+            r.mounts = boot_mounts(&r.mounts);
         })?;
         let result = timed("start", id, &[], || Ok(self.runtime.start_machine(id)?));
         if result.is_err() {
@@ -305,21 +268,6 @@ impl Runtime for Smolvm {
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: grows the guest's RAM through the virtio-mem area smolvm gives every machine, as smolvm's own resize does, but without its two host checks: it refuses a VMM that is not in a cgroup of its own, and every VMM of a runner shares the runner pod's, and it admits the growth against the host's free memory, while a runner admits its machines by what they use (see capacity). The VMM maps the added RAM, the guest agent puts each memory block online as the guest's virtio-mem driver adds it (the driver adds no more once 1 GiB of it waits offline), and the grow ends once the VMM reports all of it plugged, the order smolvm's own resize takes. Each step is idempotent, so a retry of a grow that stopped part-way finishes it. The record is set to the size the guest now has.
-    // UNIT_BOUNDARY_DESCRIPTION: swaps in the btrfs disk a converting guest filled, on its word over the agent socket (convert::after_ready), and detaches the old ext4 disk from the record, so the next boot neither attaches nor converts it. The manager is detached at once: dropped attached, it would shut the machine down.
-    fn answered(&self, id: &str) -> anyhow::Result<()> {
-        let dir = vm_data_dir(id);
-        let swapped = crate::convert::after_ready(&dir, |capability| {
-            let manager = AgentManager::for_vm(id)?;
-            manager.detach();
-            let mut client = AgentClient::connect_for_state_probe(manager.vsock_socket())?;
-            Ok(client.supports_capability(capability)?)
-        })?;
-        if swapped {
-            self.db.update_vm(id, |r| r.disks.clear())?;
-        }
-        Ok(())
-    }
-
     fn grow(&self, id: &str, memory_mib: i32) -> anyhow::Result<()> {
         let target = u32::try_from(memory_mib).context("memoryMiB")?;
         timed("grow", id, &[], || {
@@ -396,10 +344,6 @@ impl Runtime for Smolvm {
 
     fn console_tail(&self, id: &str) -> String {
         console::machine_tail(&vm_data_dir(id))
-    }
-
-    fn console_lines(&self, id: &str, needle: &str) -> String {
-        console::machine_lines(&vm_data_dir(id), needle)
     }
 
     fn nests(&self) -> bool {
@@ -645,46 +589,13 @@ fn recorded_image_env(image: Option<&str>) -> Option<Vec<String>> {
 // UNIT_BOUNDARY_DESCRIPTION: the image env var that declares which generation of root an image boots, as a decimal integer its build bumps on a change that breaks what an older image's root kept: a new base distribution release, or a file the boot rewrites that the new image changes too. Images of one generation keep each other's root.
 pub const ROOT_COMPAT_ENV: &str = "PLATFORM_ROOT_COMPAT";
 
-// UNIT_BOUNDARY_DESCRIPTION: the image env var that asks for the node's harness tools, naming the absolute guest path they are mounted at. Only the image's own env is read for it, never the spec's, which carries the owner's values: an owner cannot mount the node's tools over a path of their choosing.
-pub const TOOLS_VOLUME_ENV: &str = "PLATFORM_TOOLS_VOLUME";
-
-// UNIT_BOUNDARY_DESCRIPTION: the mounts a machine boots with: the share its create recorded, and the runner's tools dir, read-only, when the runner has one and the image names where it goes. Any other recorded mount is dropped. A path that is not absolute and plain, or that holds or sits inside the share, is refused with a warning, since mounting there would hide the share or a part of it from platform-init.
-fn boot_mounts(
-    id: &str,
-    recorded: &[(String, String, bool)],
-    tools: Option<&Path>,
-    image_env: Option<&[String]>,
-) -> Vec<(String, String, bool)> {
-    let mut mounts: Vec<_> = recorded
+// UNIT_BOUNDARY_DESCRIPTION: the mounts a machine boots with: the share its create recorded. Any other recorded mount is dropped, such as the node's harness tools an earlier runner mounted for an image from before the default image baked them.
+fn boot_mounts(recorded: &[(String, String, bool)]) -> Vec<(String, String, bool)> {
+    recorded
         .iter()
         .filter(|(_, target, _)| target == SHARE_PATH)
         .cloned()
-        .collect();
-    let asked = image_env
-        .unwrap_or_default()
-        .iter()
-        .rev()
-        .find_map(|var| var.strip_prefix(TOOLS_VOLUME_ENV)?.strip_prefix('='));
-    let (Some(tools), Some(target)) = (tools, asked) else {
-        return mounts;
-    };
-    let path = Path::new(target);
-    let plain = path.is_absolute()
-        && path
-            .components()
-            .skip(1)
-            .all(|c| matches!(c, std::path::Component::Normal(_)));
-    let share = Path::new(SHARE_PATH);
-    if !plain || path.starts_with(share) || share.starts_with(path) {
-        tracing::warn!(machine = id, path = target, "the image asks for the node's tools at a path they cannot be mounted at; booting without them");
-        return mounts;
-    }
-    mounts.push((
-        tools.to_string_lossy().into_owned(),
-        target.to_string(),
-        true,
-    ));
-    mounts
+        .collect()
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the allowlist as a create records it: none for a spec that names none, and each range in smolvm's own normal form otherwise, so an update writes what a create of the same spec would. A gateway on the host's loopback denies every range, which smolvm records as an empty list; the one port the guest keeps is the host service its VMM maps.
@@ -892,7 +803,7 @@ mod tests {
         }
     }
 
-    // TEST_SCENARIO: the record a create writes is the machine: what it boots, how big it is, where it may send traffic, which port it is published on and what it runs. Each field is read back from smolvm's own database rather than from what this code meant to write.
+    // TEST_SCENARIO: the record a create writes is the machine: what it boots, how big it is, where it may send traffic, which port it is published on and what it runs. Each field is read back from smolvm's own database rather than from what this code meant to write. A start keeps the share as the only mount, dropping the node's harness tools that an earlier runner recorded.
     #[test]
     fn a_created_machine_is_recorded_as_its_spec_says() {
         let home = Home::new("create");
@@ -900,7 +811,7 @@ mod tests {
         let tree = home.path.join("images/quay.io_x_vm_1/rootfs");
         fs::create_dir_all(&share).unwrap();
         fs::create_dir_all(&tree).unwrap();
-        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let spec = spec();
         let launch = launch();
 
@@ -987,15 +898,16 @@ mod tests {
             "with no resolver named, the gateway relays guest DNS past the allowlist, so it must answer every query itself"
         );
 
-        let tools = home.path.join("tools");
-        fs::create_dir_all(&tools).unwrap();
-        fs::write(
-            tree.parent().unwrap().join(crate::launch::LAUNCH_FILE),
-            format!(r#"{{"env":["{TOOLS_VOLUME_ENV}=/usr/local/share/mise"]}}"#),
-        )
-        .unwrap();
-        let mut smolvm = smolvm;
-        smolvm.tools = Some(tools.canonicalize().unwrap());
+        smolvm
+            .db
+            .update_vm("m1", |r| {
+                r.mounts.push((
+                    "/var/lib/platform/tools".into(),
+                    "/usr/share/mise".into(),
+                    true,
+                ))
+            })
+            .unwrap();
         let _ = smolvm.start("m1", 1024, 1024);
         assert_eq!(
             smolvm.record("m1").unwrap().unwrap().mem,
@@ -1003,13 +915,9 @@ mod tests {
             "a start boots the RAM it is given, not the size the record held"
         );
         assert_eq!(
-            smolvm.record("m1").unwrap().unwrap().mounts[1],
-            (
-                tools.canonicalize().unwrap().to_string_lossy().into_owned(),
-                "/usr/local/share/mise".to_string(),
-                true
-            ),
-            "a start must mount the node's tools where the image the record boots asks"
+            smolvm.record("m1").unwrap().unwrap().mounts,
+            record.mounts,
+            "a start must drop the node's tools an earlier runner mounted, keeping the share alone"
         );
         assert_eq!(
             fs::read_to_string(share.join(crate::share::IMAGE_FILE)).unwrap(),
@@ -1068,83 +976,13 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: a machine boots with the node's tools only when its runner has a tools dir and its image names a guest path for them, and then read-only at that path beside the share. A mount an earlier start recorded is dropped once either side stops offering it, and a path that is relative, climbs with `..`, is the root, or holds or sits inside the share is refused, since it would hide the share from platform-init.
-    #[test]
-    fn the_nodes_tools_are_mounted_only_where_the_image_asks() {
-        let share = ("/m/share".to_string(), SHARE_PATH.to_string(), true);
-        let tools = Path::new("/var/lib/platform/tools");
-        let asks = |path: &str| {
-            vec![
-                "PATH=/bin".to_string(),
-                format!("{TOOLS_VOLUME_ENV}={path}"),
-            ]
-        };
-        let mounted = |path: &str| {
-            vec![
-                share.clone(),
-                (tools.display().to_string(), path.to_string(), true),
-            ]
-        };
-        let mise = asks("/usr/local/share/mise");
-        assert_eq!(
-            boot_mounts("m1", std::slice::from_ref(&share), Some(tools), Some(&mise)),
-            mounted("/usr/local/share/mise")
-        );
-        let earlier = mounted("/old");
-        assert_eq!(
-            boot_mounts("m1", &earlier, Some(tools), Some(&mise)),
-            mounted("/usr/local/share/mise")
-        );
-        assert_eq!(
-            boot_mounts("m1", &earlier, None, Some(&mise)),
-            vec![share.clone()]
-        );
-        assert_eq!(
-            boot_mounts(
-                "m1",
-                &earlier,
-                Some(tools),
-                Some(&["PATH=/bin".to_string()])
-            ),
-            vec![share.clone()]
-        );
-        assert_eq!(
-            boot_mounts("m1", &earlier, Some(tools), None),
-            vec![share.clone()]
-        );
-        let prefixed = vec![format!("{TOOLS_VOLUME_ENV}_X=/opt")];
-        assert_eq!(
-            boot_mounts("m1", &earlier, Some(tools), Some(&prefixed)),
-            vec![share.clone()]
-        );
-        for refused in [
-            "",
-            "opt/mise",
-            "/",
-            "/opt/../etc",
-            SHARE_PATH,
-            &format!("{SHARE_PATH}/ca"),
-        ] {
-            assert_eq!(
-                boot_mounts(
-                    "m1",
-                    std::slice::from_ref(&share),
-                    Some(tools),
-                    Some(&asks(refused))
-                ),
-                vec![share.clone()],
-                "{refused:?} must be refused"
-            );
-        }
-    }
-
     // TEST_SCENARIO: a runner outside the cluster reaches the machine's gateway on its own loopback. Allowing the gateway address would open every loopback port, so the record denies every range and the VMM is told the one port it maps; an update that drops the port drops the mapping too, and the machine is back on its allowlist.
     #[test]
     fn a_gateway_on_the_hosts_loopback_is_the_machines_only_egress() {
         let home = Home::new("loopback");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let looped = MachineSpec {
             allow_cidrs: Vec::new(),
             gateway_host_port: 30100,
@@ -1222,7 +1060,7 @@ mod tests {
         let home = Home::new("nested");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let mut smolvm = Smolvm::open(false, None, test_template()).unwrap();
+        let mut smolvm = Smolvm::open(false, test_template()).unwrap();
         smolvm.nested = true;
         let plain = MachineSpec {
             gateway_host_port: 30100,
@@ -1278,7 +1116,7 @@ mod tests {
         let home = Home::new("open");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let launch = launch();
         smolvm
             .create(
@@ -1305,62 +1143,13 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: a start that converts the machine's disk boots it with all its RAM, since its guest copies before it answers and would fail the grow, whose reboot cuts the copy short. Every other start boots at the boot size and grows. The record holds the RAM a start boots with, written before the VMM is asked to boot, so it is read even though the boot itself fails here.
-    #[test]
-    fn a_converting_start_boots_whole() {
-        use std::os::unix::fs::FileExt;
-        let home = Home::new("convert-whole");
-        let share = home.path.join("share");
-        fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
-        let launch = launch();
-        for id in ["m1", "m2"] {
-            smolvm
-                .create(
-                    id,
-                    &Machine {
-                        spec: &spec(),
-                        image: "quay.io/x/vm:1",
-                        host_port: 32000,
-                        share: &share,
-                        launch: &launch,
-                    },
-                )
-                .unwrap();
-        }
-        let dir = vm_data_dir("m1");
-        let disk = |name: &str, at: u64, magic: &[u8]| {
-            let file = fs::File::create(dir.join(name)).unwrap();
-            file.set_len(1 << 20).unwrap();
-            file.write_all_at(magic, at).unwrap();
-        };
-        disk(
-            smolvm::storage::STORAGE_DISK_FILENAME,
-            1024 + 56,
-            &[0x53, 0xEF],
-        );
-        disk("storage.next.raw", 0x1_0040, b"_BHRfS_M");
-        fs::write(
-            dir.join("disk-conversion"),
-            r#"{"nonce":"n1","committed":false,"attempts":0}"#,
-        )
-        .unwrap();
-
-        let _ = smolvm.start("m1", 1024, 2048);
-        let _ = smolvm.start("m2", 1024, 2048);
-
-        let mem = |id| smolvm.record(id).unwrap().unwrap().mem;
-        assert_eq!(mem("m1"), 2048, "the converting start boots whole");
-        assert_eq!(mem("m2"), 1024, "a start that converts nothing boots small");
-    }
-
     // TEST_SCENARIO: a machine recorded by an earlier runner carries smolvm's default resolver and no name list, so its gateway would relay the guest's DNS to a real resolver — on a Mac, the one on its own loopback. Its next start pins the sink and the empty list before anything boots, even when, as here, the boot itself then fails, and the policy smolvm builds from that record, a gateway-port machine's included, forwards no name at all.
     #[test]
     fn every_start_without_a_resolver_resolves_no_guest_name() {
         let home = Home::new("dns");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let spec = MachineSpec {
             gateway_host_port: 30100,
             ..spec()
@@ -1404,7 +1193,7 @@ mod tests {
         let home = Home::new("resolver");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let named = MachineSpec {
             guest_resolver: "10.96.0.7".into(),
             ..spec()
@@ -1479,7 +1268,7 @@ mod tests {
         let home = Home::new("raw");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let spec = spec();
         let launch = launch();
         smolvm
@@ -1531,7 +1320,7 @@ mod tests {
             &home.path.join(".smolvm/storage-template.ext4"),
             b"TEMPLATE",
         );
-        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let spec = spec();
         let launch = launch();
         for id in ["used", "fresh"] {
@@ -1660,7 +1449,7 @@ mod tests {
         let home = Home::new("no-template");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None, PathBuf::from("/nonexistent/template.zst")).unwrap();
+        let smolvm = Smolvm::open(false, PathBuf::from("/nonexistent/template.zst")).unwrap();
         let spec = spec();
         let launch = launch();
         let created = smolvm.create(
@@ -1749,7 +1538,7 @@ mod tests {
         let home = Home::new("update");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let applied = spec();
         let launch = launch();
         smolvm
@@ -1805,7 +1594,7 @@ mod tests {
         let home = Home::new("grow-unknown");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let created = spec();
         let launch = launch();
         smolvm
@@ -1844,7 +1633,7 @@ mod tests {
     #[test]
     fn a_failed_create_does_not_repeat_the_agents_secrets() {
         let home = Home::new("redact");
-        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let mut spec = spec();
         spec.env.insert("TOKEN".into(), "hunter22".into());
         spec.cpus = 0;
@@ -1878,7 +1667,7 @@ mod tests {
         let home = Home::new("zombie");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let spec = spec();
         let launch = launch();
         smolvm
@@ -1938,7 +1727,7 @@ mod tests {
         let home = Home::new("unconfirmed");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let spec = spec();
         let launch = launch();
         smolvm
@@ -1996,7 +1785,7 @@ mod tests {
         let home = Home::new("delete");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         smolvm.delete("never-created").unwrap();
 
         let spec = spec();
@@ -2024,7 +1813,7 @@ mod tests {
         let home = Home::new("leftover");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let spec = spec();
         let launch = launch();
         let machine = Machine {
@@ -2062,7 +1851,7 @@ mod tests {
         for dir in [&share, &old_tree, &new_tree] {
             fs::create_dir_all(dir).unwrap();
         }
-        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
+        let smolvm = Smolvm::open(false, test_template()).unwrap();
         let old = spec();
         let old_launch = launch();
         smolvm

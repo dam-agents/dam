@@ -35,6 +35,8 @@ const token = refreshingToken();
 let agentId = "";
 let agentName = "";
 const marker = `home-survives-${randomUUID()}`;
+const probeService = "e2e-probe";
+const probeStopped = `/home/agent/${probeService}.stopped`;
 
 async function chatTurn(
   page: Page,
@@ -139,6 +141,70 @@ test("keeps /tmp and /var/tmp as directories of the root", async () => {
   expect(guest.split("\n")).toEqual(["0", "1777 root", "1777 root"]);
 });
 
+// TEST_SCENARIO: the base image ships openrc, so platform-init boots its runlevels before the entrypoint, and runs the entrypoint in a cgroup of its own, which a restart of the entrypoint ends without openrc's services. A fresh machine's runlevels hold no service. The test then adds one of its own to the default runlevel and starts it, as an agent does; openrc stops only a started service, and the hibernate-and-wake test reads back both its stop and its start at the boot.
+test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async () => {
+  test.skip(
+    laneBackend !== "vm",
+    "only a vm machine has platform-init as its init",
+  );
+  const guest = inGuest(
+    agentId,
+    "echo softlevel $(cat /run/openrc/softlevel); echo entrypoint $(wc -l < /sys/fs/cgroup/entrypoint/cgroup.procs)",
+  );
+  expect(guest).toMatch(/^softlevel default$/m);
+  const [, procs] = /^entrypoint (\d+)$/m.exec(guest) ?? [];
+  expect(Number(procs), "the entrypoint runs in its cgroup").toBeGreaterThan(0);
+  expect(
+    inGuest(agentId, "find /etc/runlevels -mindepth 2 | wc -l").trim(),
+    "a fresh machine starts no openrc service",
+  ).toBe("0");
+  inGuest(
+    agentId,
+    [
+      `cat > /etc/init.d/${probeService} <<'EOF'`,
+      "#!/sbin/openrc-run",
+      "command=/bin/sleep",
+      "command_args=infinity",
+      "command_background=yes",
+      `pidfile=/run/${probeService}.pid`,
+      `stop_post() { touch ${probeStopped}; }`,
+      "EOF",
+      `chmod 755 /etc/init.d/${probeService}`,
+      `rm -f ${probeStopped}`,
+      `/sbin/rc-update add ${probeService} default >/dev/null`,
+      `/sbin/rc-service ${probeService} start >/dev/null`,
+    ].join("\n"),
+  );
+});
+
+// TEST_SCENARIO: the image's docker is an openrc service the agent starts from its own shell. The daemon answers, gets the agent's gateway but no other variable of the agent's environment, has platform-runc first on its PATH, and openrc stops it again.
+test("starts docker as an openrc service with only the gateway of the agent's environment", async () => {
+  test.skip(
+    laneBackend !== "vm",
+    "only a vm machine has platform-init as its init",
+  );
+  test.setTimeout(120_000);
+  const guest = inGuest(
+    agentId,
+    [
+      "agent=$(head -1 /sys/fs/cgroup/entrypoint/cgroup.procs)",
+      "xargs -0 sh -c 'exec env -i \"$@\" /sbin/rc-service docker start' _ < /proc/$agent/environ >/dev/null",
+      "docker=$(dirname $(readlink /proc/$(cat /run/dockerd.pid)/exe))/docker",
+      "for i in $(seq 60); do $docker info >/dev/null 2>&1 && break; sleep 1; done",
+      "echo info $($docker info --format '{{.DockerRootDir}}')",
+      "env=$(tr '\\0' '\\n' < /proc/$(cat /run/dockerd.pid)/environ)",
+      'echo "$env" | grep -q ^HTTPS_PROXY= && echo proxy',
+      'echo "$env" | grep -q ^PLATFORM_AGENT_ID= && echo agent-id',
+      'echo "$env" | grep -q ^PATH=/run/platform/bin: && echo runc-first',
+      "/sbin/rc-service docker stop >/dev/null; echo stopped $(/sbin/rc-service docker status 2>&1 | grep -c stopped)",
+    ].join("\n"),
+  );
+  expect(guest).toMatch(/^info \/home\/agent\/\.local\/share\/docker$/m);
+  expect(guest, "dockerd pulls through the gateway").toMatch(/^proxy$/m);
+  expect(guest, "no other variable reaches dockerd").not.toMatch(/^agent-id$/m);
+  expect(guest, "dockerd runs platform-runc").toMatch(/^runc-first$/m);
+  expect(guest).toMatch(/^stopped 1$/m);
+});
 // TEST_SCENARIO: on the vm Backend the home dashboard shows the owner's memory and storage pools as meters read from the owner's runner, with this agent's own share in each.
 test("shows its owner's pools on the home dashboard", async ({ page }) => {
   test.skip(laneBackend !== "vm", "only vm agents draw on a per-user pool");
@@ -200,7 +266,7 @@ test("takes a scheduled fire", async () => {
   }
 });
 
-// TEST_SCENARIO: sleep hibernates the agent, and wake brings it back. On the vm Backend that is a stop and a boot of the same machine, and HOME is its disk, so the marker must read back and the chat must answer after the boot.
+// TEST_SCENARIO: sleep hibernates the agent, and wake brings it back. On the vm Backend that is a stop and a boot of the same machine, and HOME is its disk, so the marker must read back and the chat must answer after the boot. The openrc service the agent added to the default runlevel ran its stop_post on the stop, and runs again after the boot.
 test("hibernates and wakes with HOME intact", async ({ page }) => {
   test.setTimeout(300_000);
   await api.agents.sleep.mutate({ id: agentId });
@@ -208,6 +274,20 @@ test("hibernates and wakes with HOME intact", async ({ page }) => {
   await api.agents.wake.mutate({ id: agentId });
   await waitAgentState(api, agentId, "running");
   await expectHomeFile(token, agentId, markerPath, marker);
+  if (laneBackend === "vm") {
+    const guest = inGuest(
+      agentId,
+      `test -e ${probeStopped} && echo stopped; /sbin/rc-service ${probeService} status 2>&1; true`,
+    );
+    expect(guest, "openrc ran the service's stop_post on the stop").toMatch(
+      /^stopped$/m,
+    );
+    expect(
+      guest,
+      "the service in the default runlevel started at the boot",
+    ).toMatch(/status: started/);
+    inGuest(agentId, `/sbin/rc-update del ${probeService} default >/dev/null`);
+  }
   await chatTurn(page, "hello-after-wake", "backend-reply-after-wake");
 });
 

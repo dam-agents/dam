@@ -7,7 +7,6 @@ import { ChatFormSettings } from "../../a2ui/components/chat-form-settings.js";
 import { useChatFormsEnabled } from "../../a2ui/hooks/use-chat-forms-enabled.js";
 import { useAgents, useIsAgentInaccessible } from "../../agents/api/queries.js";
 import { EnvTab } from "../../agents/components/configure-agent/env-tab.js";
-import { HomeRepairedNotice } from "../../agents/components/home-repaired-notice.js";
 import { useHarnessConfigWatch } from "../../agents/hooks/use-harness-config-watch.js";
 import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fallback.js";
 import { useResolvedAgentDisplay } from "../../agents/hooks/use-resolved-agent-display.js";
@@ -103,7 +102,6 @@ export function SandboxHomeView() {
         />
         <div className="min-w-0 flex-1 md:max-w-[760px]">
           {!SECTIONS_WITH_ACTIONS.has(section) && header()}
-          <HomeRepairedNotice agent={agent} />
           {section === "setup" ? (
             <>
               <AgentUsageActions agent={agent} />

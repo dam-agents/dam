@@ -1,6 +1,6 @@
 # VM host runner
 
-Last verified: 2026-10-16
+Last verified: 2026-10-17
 
 On a Mac, the local cluster's `vm` Backend runs on **one runner outside the cluster**, on the Mac's own hypervisor, instead of on the per-owner [runner pods](vm-runner.md) inside the cluster's VM, which would need a hypervisor nested in that VM.
 A nested guest boots several times slower, a busy laptop pushes it past smolvm's fixed ready window, and only recent Apple chips nest at all.
@@ -38,11 +38,9 @@ No kernel gate stands behind that smolvm filter, since a Mac process has no Netw
 And the forwarded NodePort is open to any process on the Mac, which can use a gateway's credentials: the same trust as the laptop's own user.
 
 **Images and disks.** With no registry, the install stages image trees onto a case-sensitive volume the runner owns.
-The harness tools that images from before the tools were baked boot with are installed on the k3s node ([agent images](agent-images.md)), which this runner does not see, so starting the runner waits for that install and copies the node's directory onto a second such volume, adding new versions beside the old ones.
 The Mac's default filesystem folds names that differ only in case into one file, and agent images carry such names.
 Trees are unpacked without privilege, so a guest sees every image file owned by the runner's user rather than by the image's owners.
 The runner makes a new disk btrfs from the runner image's template ([vm-runner](vm-runner.md)), which needs no filesystem tool on the Mac.
-`PLATFORM_CONVERT_EXT4_DISKS=1 mise run cluster:host-runner` starts it converting its machines' ext4 disks to btrfs, as `virtualization.runner.convertExt4Disks` does for the runner pods ([vm-runner](vm-runner.md)).
 platform-init and the guest kernel are the runner image's, so the Mac's guests mount btrfs as the pods' do: the image build in the cluster's VM leaves its kernel wrapped for macOS, and `cluster:host-runner` compiles that into the release's libkrunfw.
 
 **Lifecycle.** The runner is a process on the Mac, not a supervised service.

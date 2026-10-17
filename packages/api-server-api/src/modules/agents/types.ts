@@ -27,7 +27,6 @@ export const TerminationCode = {
   RunnerOutOfMemory: "RunnerOutOfMemory",
   HomeVolumeFull: "HomeVolumeFull",
   MachineStorageFull: "MachineStorageFull",
-  MachineHomeDamaged: "MachineHomeDamaged",
   MachineImageUnavailable: "MachineImageUnavailable",
   MachineBootFailed: "MachineBootFailed",
   MachineRunnerUnschedulable: "MachineRunnerUnschedulable",
@@ -39,7 +38,6 @@ export const TerminationCode = {
 // UNIT_BOUNDARY_DESCRIPTION: termination codes that mean the agent was refused a start rather than crashed, so every client says it "can't start" for the same codes.
 const START_REFUSAL_CODES: ReadonlySet<string> = new Set([
   TerminationCode.MachineStorageFull,
-  TerminationCode.MachineHomeDamaged,
   TerminationCode.HomeVolumeFull,
   TerminationCode.MachineImageUnavailable,
   TerminationCode.MachineBootFailed,
@@ -154,7 +152,6 @@ export interface Agent {
   notReadyMessage?: string;
   podRestarts: number;
   podRestartReason?: string;
-  homeRepaired?: string;
   gatewayFailure?: string;
   contributionFailures: { kind: string; message: string }[];
   unsupportedContributionKinds: string[];
