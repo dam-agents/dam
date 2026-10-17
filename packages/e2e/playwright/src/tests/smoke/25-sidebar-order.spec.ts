@@ -270,6 +270,9 @@ test("Sessions are listed newest first, and a turn moves its Session to the top"
     await sendMessageToAgent(page, "order-working");
     const working = sessionRows(page).and(page.locator('[data-active="true"]'));
     await expect(working.getByTestId("working-dots")).toBeAttached();
+    await expect
+      .poll(() => shownSessions(page), { timeout: 30_000 })
+      .toEqual([oldest, newest, middle]);
     await working.hover();
     await expectFullHitArea(working.getByTestId("session-menu-button"));
     const menu = await working.getByTestId("session-menu-button").boundingBox();
@@ -279,9 +282,7 @@ test("Sessions are listed newest first, and a turn moves its Session to the top"
     await expect(page.getByText("order-long-tail")).toBeVisible({
       timeout: 60_000,
     });
-    await expect
-      .poll(() => shownSessions(page), { timeout: 30_000 })
-      .toEqual([oldest, newest, middle]);
+    expect(await shownSessions(page)).toEqual([oldest, newest, middle]);
   });
 
   await test.step("the order survives a reload", async () => {
