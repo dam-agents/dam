@@ -37,7 +37,7 @@ export function SidebarSection({
     >
       <div
         className={cn(
-          "flex items-center gap-1 pl-3 pr-2 h-11 shrink-0 border-border",
+          "flex items-center gap-1 pl-3 pr-2 h-12 shrink-0 border-border",
           open && "border-b",
           headerClassName,
         )}
