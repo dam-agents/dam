@@ -265,6 +265,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       kitUpstream,
       kitUpdateMarks: createKitUpdateMarks(agentsRepo),
       virtualizationEnabled: config.virtualizationEnabled,
+      prefersVm: async () => (await features.flags())["vm-sandboxes"],
       chatFormPreferences: (agentId) =>
         readChatFormPreferences(
           agentId,
