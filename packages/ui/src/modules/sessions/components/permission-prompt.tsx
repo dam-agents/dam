@@ -38,6 +38,21 @@ function toolLocation(toolCall: unknown): string | null {
   return null;
 }
 
+function optionLabel(opt: PermissionOption): string {
+  switch (opt.kind) {
+    case "allow_once":
+      return "Allow once";
+    case "allow_always":
+      return "Always allow…";
+    case "reject_once":
+      return "Deny";
+    case "reject_always":
+      return "Always deny…";
+    default:
+      return opt.name;
+  }
+}
+
 function verdictLabel(opt: PermissionOption): string {
   switch (opt.kind) {
     case "allow_once":
@@ -240,7 +255,7 @@ export function PermissionPrompt({
                 className="bg-background max-w-full"
                 tooltip={`${opt.name} — press ${i + 1}`}
               >
-                <span className="truncate">{opt.name}</span>
+                <span className="truncate">{optionLabel(opt)}</span>
               </Button>
             ))}
           </div>
