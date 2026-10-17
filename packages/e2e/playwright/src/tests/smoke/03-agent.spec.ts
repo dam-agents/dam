@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { baseUrl } from "../../config.js";
 import {
+  expectAgentEnv,
   waitForAgentIdRunning,
   waitForAgentRunning,
 } from "../../lib/agents.js";
@@ -9,7 +10,12 @@ import { createApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
 import { onLaneBackend } from "../../lib/backend.js";
 import { getConnectionId } from "../../lib/connections.js";
-import { agentName, connectionName, harnessName } from "../../lib/fixtures.js";
+import {
+  agentName,
+  connectionName,
+  harnessName,
+  mockDefaultReply,
+} from "../../lib/fixtures.js";
 
 test("one-click create from the Generalist kit, then the mock agent with the connection and default provider", async ({
   page,
@@ -112,7 +118,14 @@ test("one-click create from the Generalist kit, then the mock agent with the con
         connectionIds: [await getConnectionId(api, connectionName)],
       }),
     );
-    await waitForAgentRunning(api, agentName);
+    const agentId = await waitForAgentRunning(api, agentName);
+    await expectAgentEnv(
+      api,
+      agentId,
+      "MOCK_DEFAULT_REPLY",
+      mockDefaultReply,
+      "the mock agent's harness never ran with its env",
+    );
   });
 
   await test.step("the default provider was granted at create", async () => {
