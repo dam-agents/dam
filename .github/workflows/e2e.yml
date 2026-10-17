@@ -166,7 +166,7 @@ jobs:
             ~/.cache/go-build
             ~/.cache/staticcheck
             ~/go/pkg/mod
-          key: &go-key go-${{ runner.os }}-check-test-${{ hashFiles('mise.lock', 'packages/controller/go.sum') }}
+          key: &go-key go-${{ runner.os }}-check-test-${{ hashFiles('mise.lock', 'packages/controller/go.sum', 'packages/controller/.mise/tasks/test', 'packages/controller/.mise/tasks/check/lint') }}
           restore-keys: &go-restore-keys |
             go-${{ runner.os }}-check-test-
             go-${{ runner.os }}-

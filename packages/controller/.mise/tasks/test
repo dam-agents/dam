@@ -14,4 +14,7 @@
 #MISE outputs=[]
 #MISE cache.enabled=true
 set -euo pipefail
-go test -count=1 ./... "$@"
+# Without cgo, as the image's build compiles: in CI, the Go cache this run
+# fills is the one the image builds restore, and a cgo build of net and every
+# package above it is a different build there.
+CGO_ENABLED=0 go test -count=1 ./... "$@"
