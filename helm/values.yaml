@@ -215,7 +215,10 @@ virtualization:
     # (`devices.kubevirt.io/kvm`, present on every node virt-handler runs on).
     # The chart ships no plugin of its own: a plugin is per node, so on nodes
     # several installs share it is the cluster's, run once. Any plugin
-    # exposing /dev/kvm works — e.g. squat's generic-device-plugin, as
+    # exposing /dev/kvm works, if the node's /dev/kvm is mode 0666: the
+    # runner pod runs in a user namespace, where the device keeps its host
+    # owner unmapped, so a 0660 root:kvm device does not open (systemd's own
+    # default is 0666; Debian and Ubuntu lower it). E.g. squat's generic-device-plugin, as
     # `squat.ai/kvm`, which local dev applies from helm/extra/kvm-device-plugin.yaml;
     # a cluster with none cannot host vm agents, and the controller says so at
     # startup when no schedulable node matching `nodeSelector` advertises it.
@@ -255,6 +258,9 @@ virtualization:
     # controller log and leaves that runner at the size it has. Kubernetes
     # never shrinks a claim: lowering this changes no claim that exists.
     storage: 100Gi
+    # The runner pod runs in a user namespace, so its claim needs a filesystem
+    # that supports idmapped mounts (ext4, xfs, btrfs, e.g. on Ceph RBD);
+    # CephFS and NFS do not, and a runner on one never starts.
     storageClass: ""
     # Placement: a node with KVM (e.g. KubeVirt's virt nodes and their
     # taints). `affinity` is a pod affinity, for what a selector cannot say,

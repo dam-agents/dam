@@ -237,6 +237,19 @@ func TestTheRunnerPodHasRoomToCloseBeforeItIsKilled(t *testing.T) {
 	assert.Greater(t, *grace, int64(30+40+5))
 }
 
+// TEST_SCENARIO: smolvm enforces a machine's egress allowlist inside the VMM, the process an escaped guest would own, and the runner runs as uid 0. So the runner pod runs in a user namespace: uid 0 there is an unprivileged uid on the node, and its capabilities stop at the namespace.
+func TestTheRunnerPodRunsInAUserNamespace(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	require.NotNil(t, dep.Spec.Template.Spec.HostUsers)
+	assert.False(t, *dep.Spec.Template.Spec.HostUsers)
+}
+
 // TEST_SCENARIO: an install serving agent images from inside the cluster leaves that range reachable, and then the runner does need Service names — so the choice is the install's, and asking for cluster resolution has to actually produce it.
 func TestAnInstallCanAskForClusterResolution(t *testing.T) {
 	agent := vmAgentCR()

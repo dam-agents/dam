@@ -673,7 +673,7 @@ func runnerCapabilities(spec config.VMRunnerSpec) []corev1.Capability {
 	return caps
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner holds exactly the capabilities above and none of the runtime's defaults, cannot gain more through exec, and runs under the runtime's default seccomp profile — the shape the chart's OpenShift SCC already forces on it. None of the dropped defaults is used: every VMM runs as the runner's own uid, so signalling one needs no KILL, and smolvm's own default runs each VMM on a uid with no capabilities at all, so virtiofs needs no SETUID. The default seccomp profile allows every ioctl, so KVM works; what it refuses without CAP_SYS_ADMIN is new namespaces, mounts and keyrings, which smolvm only reaches for when it gives each VMM a uid of its own, and the runner turns that off. AppArmor alone stays unconfined: the container runtime's default profile denies mount and more, and under it no guest boots.
+// UNIT_BOUNDARY_DESCRIPTION: the runner is uid 0 only inside its pod's user namespace (hostUsers false), so a guest that escapes into it is an unprivileged uid on the node and its capabilities stop at the namespace. It holds exactly the capabilities above and none of the runtime's defaults, cannot gain more through exec, and runs under the runtime's default seccomp profile — the shape the chart's OpenShift SCC already forces on it. None of the dropped defaults is used: every VMM runs as the runner's own uid, so signalling one needs no KILL, and smolvm's own default runs each VMM on a uid with no capabilities at all, so virtiofs needs no SETUID. The default seccomp profile allows every ioctl, so KVM works; what it refuses without CAP_SYS_ADMIN is new namespaces, mounts and keyrings, which smolvm only reaches for when it gives each VMM a uid of its own, and the runner turns that off. AppArmor alone stays unconfined: the container runtime's default profile denies mount and more, and under it no guest boots.
 func runnerSecurityContext(spec config.VMRunnerSpec) *corev1.SecurityContext {
 	root := int64(0)
 	return &corev1.SecurityContext{
@@ -827,6 +827,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 				ObjectMeta: metav1.ObjectMeta{Labels: podLabels},
 				Spec: corev1.PodSpec{
 					DNSPolicy:                     runnerDNSPolicy(spec.DNSPolicy),
+					HostUsers:                     new(false),
 					TerminationGracePeriodSeconds: new(int64(vmRunnerTerminationGraceSeconds)),
 					ServiceAccountName:            spec.ServiceAccountName,
 					AutomountServiceAccountToken:  new(false),

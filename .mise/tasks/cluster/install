@@ -329,6 +329,19 @@ else
   fi
 fi
 
+# VM runner pods run in a user namespace, where the runtime bind-mounts
+# /dev/kvm with its host owner unmapped: a 0660 root:kvm device, Ubuntu's
+# mode, opens for nobody in the pod. Open it to all, as systemd's own rule
+# does; the udev rule keeps the mode across a reboot of the lima VM.
+if [ -n "$VIRT_ENABLED" ] && [ -z "$HOST_RUNNER" ]; then
+  KVM_RULE='KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"'
+  if [ -n "${IS_SANDBOX:-}" ]; then
+    as_root chmod 0666 /dev/kvm
+  else
+    limactl shell "$LIMA_INSTANCE" sudo sh -c "echo '$KVM_RULE' > /etc/udev/rules.d/99-kvm-all.rules && chmod 0666 /dev/kvm"
+  fi
+fi
+
 # 1c. Pull every third-party image the rest of the install runs, side by side,
 # while the steps below wait on other things. Otherwise the kubelet pulls each
 # only once its chart is applied: the Istio charts install one after another,

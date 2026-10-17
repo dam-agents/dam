@@ -246,6 +246,13 @@ test("drag reorders Sessions within their Agent, and a new Session goes to the b
     await expect(sessionRows(page)).toHaveCount(PROMPTS.length, {
       timeout: 30_000,
     });
+    await expect
+      .poll(async () => (await shownSessions(page)).sort(), {
+        timeout: 30_000,
+        message:
+          "each Session is titled by its first message, not '(no title · <id>)'",
+      })
+      .toEqual([...PROMPTS].sort());
   });
 
   const start = await shownSessions(page);

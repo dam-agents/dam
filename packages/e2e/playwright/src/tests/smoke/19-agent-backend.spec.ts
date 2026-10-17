@@ -139,6 +139,49 @@ test("keeps /tmp and /var/tmp as directories of the root", async () => {
   expect(guest.split("\n")).toEqual(["0", "1777 root", "1777 root"]);
 });
 
+// TEST_SCENARIO: the base image ships openrc, so platform-init boots its runlevels before the entrypoint, and runs the entrypoint in a cgroup of its own, which a restart of the entrypoint ends without openrc's services.
+test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async () => {
+  test.skip(
+    laneBackend !== "vm",
+    "only a vm machine has platform-init as its init",
+  );
+  const guest = inGuest(
+    agentId,
+    "echo softlevel $(cat /run/openrc/softlevel); echo entrypoint $(wc -l < /sys/fs/cgroup/entrypoint/cgroup.procs)",
+  );
+  expect(guest).toMatch(/^softlevel default$/m);
+  const [, procs] = /^entrypoint (\d+)$/m.exec(guest) ?? [];
+  expect(Number(procs), "the entrypoint runs in its cgroup").toBeGreaterThan(0);
+});
+
+// TEST_SCENARIO: the image's docker is an openrc service the agent starts from its own shell. The daemon answers, gets the agent's gateway but no other variable of the agent's environment, has platform-runc first on its PATH, and openrc stops it again.
+test("starts docker as an openrc service with only the gateway of the agent's environment", async () => {
+  test.skip(
+    laneBackend !== "vm",
+    "only a vm machine has platform-init as its init",
+  );
+  test.setTimeout(120_000);
+  const guest = inGuest(
+    agentId,
+    [
+      "agent=$(head -1 /sys/fs/cgroup/entrypoint/cgroup.procs)",
+      "xargs -0 sh -c 'exec env -i \"$@\" /sbin/rc-service docker start' _ < /proc/$agent/environ >/dev/null",
+      "docker=$(dirname $(readlink /proc/$(cat /run/dockerd.pid)/exe))/docker",
+      "for i in $(seq 60); do $docker info >/dev/null 2>&1 && break; sleep 1; done",
+      "echo info $($docker info --format '{{.DockerRootDir}}')",
+      "env=$(tr '\\0' '\\n' < /proc/$(cat /run/dockerd.pid)/environ)",
+      'echo "$env" | grep -q ^HTTPS_PROXY= && echo proxy',
+      'echo "$env" | grep -q ^PLATFORM_AGENT_ID= && echo agent-id',
+      'echo "$env" | grep -q ^PATH=/run/platform/bin: && echo runc-first',
+      "/sbin/rc-service docker stop >/dev/null; echo stopped $(/sbin/rc-service docker status 2>&1 | grep -c stopped)",
+    ].join("\n"),
+  );
+  expect(guest).toMatch(/^info \/home\/agent\/\.local\/share\/docker$/m);
+  expect(guest, "dockerd pulls through the gateway").toMatch(/^proxy$/m);
+  expect(guest, "no other variable reaches dockerd").not.toMatch(/^agent-id$/m);
+  expect(guest, "dockerd runs platform-runc").toMatch(/^runc-first$/m);
+  expect(guest).toMatch(/^stopped 1$/m);
+});
 // TEST_SCENARIO: on the vm Backend the home dashboard shows the owner's memory and storage pools as meters read from the owner's runner, with this agent's own share in each.
 test("shows its owner's pools on the home dashboard", async ({ page }) => {
   test.skip(laneBackend !== "vm", "only vm agents draw on a per-user pool");
