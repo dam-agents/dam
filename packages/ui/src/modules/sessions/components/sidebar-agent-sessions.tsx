@@ -4,7 +4,7 @@ import {
   SessionMode,
   TELEMETRY_MAX_SINCE_HOURS,
 } from "api-server-api";
-import { Fragment, type ReactNode, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 
 import { labelVariants } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
@@ -278,14 +278,26 @@ function AgentSessionList({
   const unpinnedRows = rows.filter((row) => !isPinned(row.session.sessionId));
   const visible = [
     ...pinnedRows,
-    ...sidebarSessionWindow(unpinnedRows, expanded, (row) => row.state.active),
+    ...(flat
+      ? unpinnedRows
+      : sidebarSessionWindow(
+          unpinnedRows,
+          expanded,
+          (row) => row.state.active,
+        )),
   ];
   const shown = visible.map((row) => row.session.sessionId);
-  const { more, less } = sessionListControls({
+  const controls = sessionListControls({
     total: unpinnedRows.length,
     expanded,
     hasNextPage,
   });
+  const more = !flat && controls.more;
+  const less = !flat && controls.less;
+  const endRef = useLoadOnReach(
+    flat && hasNextPage && !isFetchingNextPage && !fetchNextPageFailed,
+    () => void fetchNextPage(),
+  );
   const onMore = () => {
     const click = moreClick({
       total: unpinnedRows.length,
@@ -366,13 +378,16 @@ function AgentSessionList({
           </OrderedRow>
         </Fragment>
       ))}
-      {expanded && hasNextPage && fetchNextPageFailed && (
+      {flat && hasNextPage && <div ref={endRef} aria-hidden className="h-px" />}
+      {flat && isFetchingNextPage && <SessionListSkeleton />}
+      {(expanded || flat) && hasNextPage && fetchNextPageFailed && (
         <button
           type="button"
           onClick={() => void fetchNextPage()}
           className={cn(
-            TREE_GUIDE,
-            "flex h-[30px] items-center rounded-lg pl-9 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+            !flat && TREE_GUIDE,
+            "flex h-[30px] items-center rounded-lg text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+            flat ? "pl-2" : "pl-9",
           )}
         >
           Couldn't load the rest. Retry
@@ -469,4 +484,21 @@ function PinLabel({ children }: { children: ReactNode }) {
       <span className={labelVariants()}>{children}</span>
     </div>
   );
+}
+
+function useLoadOnReach(enabled: boolean, load: () => void) {
+  const ref = useRef<HTMLDivElement>(null);
+  const loadRef = useRef(load);
+  loadRef.current = load;
+  useEffect(() => {
+    const el = ref.current;
+    if (!enabled || !el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => entry?.isIntersecting && loadRef.current(),
+      { rootMargin: "200px" },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [enabled]);
+  return ref;
 }

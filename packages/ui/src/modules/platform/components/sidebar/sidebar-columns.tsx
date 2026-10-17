@@ -38,7 +38,6 @@ import {
 } from "../../../sessions/lib/pinned-sessions.js";
 
 const ROW = "min-w-0 rounded-lg border-b-0 px-2 py-2";
-const RECENT_LIMIT = 40;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The sidebar's two columns. The left column is a
@@ -342,7 +341,7 @@ function AllColumn({
   const unread = shown.filter((item) => item.unread);
   const read = shown.filter((item) => !item.unread);
   const pinned = read.filter((item) => pins.has(item.id));
-  const rest = read.filter((item) => !pins.has(item.id)).slice(0, RECENT_LIMIT);
+  const rest = read.filter((item) => !pins.has(item.id));
   const row = (item: AgentActivitySession) => (
     <ActivityRow
       key={item.id}
