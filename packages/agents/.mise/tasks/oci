@@ -418,8 +418,7 @@ build_thin() (
   done
   [ ! -d build-links ] || layers+=("--layer=0:0=/=build-links")
   mapfile -t flags < <(pack_flags "$f")
-  # The mock runs without the node's tools: its agent-runtime runs the node it
-  # carries.
+  # The mock's agent-runtime runs the node it carries.
   if [ "$agent" = mock ]; then
     install -d build/opt && cp -a "$(mise -E "$envs" where node)" build/opt/node
     flags+=("--env=PATH=/opt/node/bin:$(default_path)")

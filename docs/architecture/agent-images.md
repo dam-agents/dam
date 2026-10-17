@@ -35,19 +35,9 @@ The build installs them there with the image's own installer, run in the image's
 mise's own data dir stays the image's, writable, so `mise use -g` still installs there.
 A node holds the tools as it holds any image: the kubelet's image collection and the [vm image cache](vm-image-cache.md)'s eviction drop the versions no agent runs.
 
-Images before the tools were baked boot on a node directory instead, which the same installer fills while agents may still run them: a DaemonSet on every node an agent or a VM runner may land on runs the current image's installer into it, and then idles.
-On the container Backend every agent pod mounts that directory read-only at the system data dir's path, whatever its image: no other image uses the path, and it holds the same versions the baked image does.
-On the `vm` Backend each runner mounts it read-only and shares it read-only into every machine whose image's env names `PLATFORM_TOOLS_VOLUME`, which a baked image does not ([vm-runner](vm-runner.md)), DAX-mapped on x86 so a guest reads the node's page cache rather than copying every file a harness start loads into its own memory.
-DAX needs a guest kernel with [smol-machines/libkrunfw#31](https://github.com/smol-machines/libkrunfw/pull/31), which the pinned smolvm release ships ([vm-runner-upgrades](vm-runner-upgrades.md)): without it, from Linux 6.15 on, a process that runs a large binary from a DAX mount dies of SIGBUS once another process opens that binary ([smol-machines/smolvm#1741](https://github.com/smol-machines/smolvm/issues/1741)).
-A deploy with a new image rolls the DaemonSet on every node at once, which installs the new versions **in place**, beside the old ones: an agent still on an older image keeps the versions it names, and nothing is pruned.
-Playwright's browsers sit with the tools, in the image and in the node directory alike, each image naming its own.
-An install cut short (the installer killed, a node drained) is redone on the next run rather than taken as done: mise records a version as mid-install only in its cache, so the installer keeps that cache in the node directory too, and it removes any version directory left empty.
-On OpenShift, the node configuration in [`etc/openshift-node-config/`](../../etc/openshift-node-config/) has the nodes create the directory with the label confined pods can read.
-
-The node directory is in the boot path of a container agent: one that starts on a node before its installer has finished has no harness until its next start.
-A download host that stalls or trickles fails the install in bounded time, after mise's own retries, and the kubelet restarts the installer until it succeeds, each run keeping what the last one installed.
-CI's vm lane seeds the node directory with the tools tree its image build cached, which holds the same versions at the same path, so the installer reaches no download host.
-On a Mac, whose [host runner](vm-host-runner.md) runs outside the cluster, the tools are copied from the k3s node onto a case-sensitive volume of the runner's.
+Playwright's browsers sit with the tools in the same layer.
+An image of the default family from before the tools were baked read them from a node directory, which no install provides any more, so it boots without its tools.
+The [template upgrade](agent-lifecycle.md#template-upgrade) moves every Agent off such an image, and a vm machine boots its Agent's image on its next start.
 
 Only the agent-runtime and the two driver SDKs (JavaScript and Python) come from the rest of the repo; the build compiles them into each image.
 
@@ -129,7 +119,7 @@ A vm machine keeps its root when the new image declares the same root generation
 
 It never interrupts work.
 A hibernated, stopped or over-budget Agent moves at once and takes the image on its next wake.
-That wake costs nothing extra for the default image: the harness tools' DaemonSet has already pulled it onto every node, and the [image cache](vm-image-cache.md) preloads and pins the harness images the install ships, which an older image no longer is.
+That wake costs nothing extra for the default image on the `vm` Backend: the [image cache](vm-image-cache.md) preloads and pins the harness images the install ships, which an older image no longer is.
 A Template on an image the cache does not preload is fetched on its first wake, as its old image would be on a node that lacks it.
 A running Agent waits for the [idle checker](agent-lifecycle.md#hibernate) to hibernate it.
 An always-on Agent never hibernates, so it is restarted onto the new image once the idle checker's own signals agree it is idle: no open connection, no Invocation pin, no activity for an hour, and its pod reporting idle, which covers a running turn, an open terminal and kept background work.
