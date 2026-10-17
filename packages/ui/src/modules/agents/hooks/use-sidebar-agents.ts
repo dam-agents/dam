@@ -16,7 +16,6 @@ import { splitTemporarySandboxes } from "../utils/temporary-sandboxes.js";
 
 const NO_AGENTS: AgentView[] = [];
 const NO_SESSIONS: AgentActivitySession[] = [];
-const NO_ORDER: string[] = [];
 
 export function useSidebarAgents() {
   const list = useAgents().data?.list ?? NO_AGENTS;
@@ -57,16 +56,12 @@ export function useSidebarAgents() {
   const sessionsOf = (agentId: string) =>
     sessionsByAgent.get(agentId) ?? NO_SESSIONS;
 
-  const sessionOrderOf = (agentId: string) =>
-    order.sessions[agentId] ?? NO_ORDER;
-
   return {
     agents,
     openAgentId,
     sessionOpen,
     unreadAgentIds,
     sessionsOf,
-    sessionOrderOf,
     previewComplete: activity.complete,
   };
 }
