@@ -510,8 +510,12 @@ fn write_launch(record: &VmRecord) -> anyhow::Result<()> {
             record.name
         );
     };
+    // UNIT_BOUNDARY_DESCRIPTION: the strip goes once no runner logs this line: every update rewrites the record without platform-init in front, so only a machine no update has reached since its runner booted it as a container still holds that form.
     let command = match record.cmd.split_first() {
-        Some((first, rest)) if first == crate::guest::INIT_PATH => rest.to_vec(),
+        Some((first, rest)) if first == crate::guest::INIT_PATH => {
+            tracing::info!(machine = %record.name, "the machine's record still runs platform-init in front of the image's command, as an older runner recorded it; the launch record drops it");
+            rest.to_vec()
+        }
         _ => record.cmd.clone(),
     };
     let launch = crate::guest::Launch {
