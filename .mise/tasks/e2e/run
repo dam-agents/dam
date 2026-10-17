@@ -27,6 +27,24 @@ cleanup() {
     echo "--- Events (recent, all namespaces) ---"
     kubectl get events -A --sort-by=.lastTimestamp 2>&1 | tail -50 || true
     echo ""
+    for ns in default platform-agents; do
+      echo "--- Events in $ns (last 150, oldest first: last seen, first seen, count, type, reason, object, message) ---"
+      kubectl get events -n "$ns" -o json 2>/dev/null \
+        | jq -r '.items | sort_by(.lastTimestamp // .eventTime) | .[] | [.lastTimestamp // .eventTime, .firstTimestamp // .eventTime, .count // 1, .type, .reason, "\(.involvedObject.kind)/\(.involvedObject.name)", .message] | map(tostring) | join("  ")' \
+        | tail -150 || true
+      echo ""
+    done
+    echo "--- Platform pods recreated during the suite or not Ready (projected fields only) ---"
+    for ns in default platform-agents; do
+      kubectl get pods -n "$ns" -o json 2>/dev/null \
+        | jq -r --arg since "${suite_started:-9999}" '.items[]
+            | select(.status.phase != "Succeeded") | select(.metadata.creationTimestamp > $since or .metadata.deletionTimestamp or ([.status.conditions[]? | select(.type == "Ready") | .status] != ["True"]))
+            | "### \(.metadata.namespace)/\(.metadata.name) created=\(.metadata.creationTimestamp) deleting=\(.metadata.deletionTimestamp) phase=\(.status.phase) node=\(.spec.nodeName)",
+              (.status.conditions[]? | "  condition \(.type)=\(.status) since \(.lastTransitionTime) \(.reason // "")"),
+              ((.status.initContainerStatuses // []) + (.status.containerStatuses // []) | .[] | "  container \(.name) ready=\(.ready) restarts=\(.restartCount) state=\(.state | tojson) lastState=\(.lastState | tojson)")' \
+        | head -200 || true
+    done
+    echo ""
     echo "--- Describe not-ready pods ---"
     kubectl get pods -A -o json 2>/dev/null \
       | jq -r '.items[] | select(.status.phase != "Running" or ([.status.containerStatuses[]?.ready] | all | not)) | "\(.metadata.namespace) \(.metadata.name)"' \
@@ -142,6 +160,7 @@ mise run e2e:install
 rm -f packages/e2e/playwright/.auth/*.json
 
 e2e_mark "suite started"
+suite_started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 suite_rc=0
 PLATFORM_BASE_URL="http://localhost:5555" \
 PLATFORM_KEYCLOAK_URL="http://keycloak.localhost:5555" \
