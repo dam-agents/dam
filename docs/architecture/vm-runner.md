@@ -1,6 +1,6 @@
 # VM runner
 
-Last verified: 2026-10-16
+Last verified: 2026-10-17
 
 The pods behind the `vm` Backend: **one runner per owner**, each a single-replica Deployment in the agent namespace running smolvm and the platform's **vm-runner** agent.
 A local cluster on a Mac runs one [host runner](vm-host-runner.md) outside the cluster instead.
@@ -16,6 +16,10 @@ The install picks the allowlist's mode in `virtualization.runner.seccomp`: `enfo
 An audit record is a kernel one (`type=1326`), so it is in the node's audit log, or its kernel log where no auditd runs, and never in the runner's own log.
 The chart refuses any other mode, since smolvm reads one as `off`.
 The runner is the one long-lived workload in the agent namespace that asks for capabilities at all.
+Every runner pod runs in a user namespace (`hostUsers: false`): the runner and its VMMs are uid 0 in the pod and an unprivileged uid on the node, and the capabilities below hold only inside that namespace.
+smolvm enforces a machine's egress allowlist in the VMM, the very process an escaped guest would own, so without the namespace an escape would be root on the node.
+The runtime idmaps each of the pod's volumes, the node directories included, so the runner reads and writes them as it would as root, and a node whose filesystems cannot be idmapped cannot host a runner.
+A device is the exception: the runtime binds the node's /dev/kvm in with its owner unmapped, so the runner opens it only when its mode admits everyone, as systemd's own rule makes it.
 Every runner holds DAC_OVERRIDE, because its VMMs serve the image tree to their guests with the runner's own credentials and an image keeps some files from root.
 Only a runner that caches images on its own claim also holds CHOWN, FOWNER and FSETID, which unpacking an image faithfully costs: a rootfs carries the owners and modes its files were built with, so the runner restores each owner and then sets a mode, setgid bits included, on a file it no longer owns.
 The runner drops every other capability, cannot gain one through exec, and runs under the runtime's default seccomp profile.
@@ -30,7 +34,7 @@ A resolver still recurses for any name, so that runner keeps one narrow channel;
 It reaches the host's virtualization devices only as device-plugin resources, never as a privileged pod — so a cluster with no device plugin cannot host vm agents — and it stays off the ambient mesh, whose redirect would break the per-machine network.
 Its gates are not all kernel gates: a machine's egress allowlist is exactly the paired gateway's ClusterIP, or, on a runner outside the cluster, one gateway port on the host's loopback in place of any allowlist — the runner refuses to run a machine with neither, since smolvm reads an empty allowlist as no filter, or one that spans every address — and a guest's DNS, which smolvm's gateway relays whatever the allowlist says, is relayed only to the paired gateway's resolver, or, on a runner outside the cluster, nowhere.
 But smolvm enforces that allowlist in the very process an escaped guest would own, so the runner's own NetworkPolicy is the kernel gate on where an escaped guest goes, and each gateway's ingress policy, admitting only its paired agent and its owner's runner, the gate on whose credentials it reaches.
-So a gateway is never a container of the runner pod, where an escaped guest is root.
+So a gateway is never a container of the runner pod, where an escaped guest is root in the pod's user namespace.
 That is why an install has to state `egressCidrs` rather than inherit an open pod.
 Ingress is a NetworkPolicy, admitting the machine API and the published ports only from the api-server and the controller, and the machine API alone from the owner's own migration copy Job — the runner adds no source check of its own — and a token-less scrape port only from the platform's collector ([observability](observability.md#vm-runner)).
 
