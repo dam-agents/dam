@@ -1066,7 +1066,7 @@ func TestEachOwnerGetsTheirOwnRunner(t *testing.T) {
 		assert.Equal(t, []string{r.runnerHost(owner)}, hosts)
 	}
 
-	r.deleteRunner(ctx, "owner-a")
+	r.deleteRunner(ctx, "owner-a", false)
 	_, err = r.client.AppsV1().Deployments("test-agents").Get(ctx, a, metav1.GetOptions{})
 	assert.True(t, k8serrors.IsNotFound(err), "an owner with no vm agents keeps no runner")
 	_, err = r.dynamic.Resource(certificateGVR).Namespace("test-agents").Get(ctx, r.runnerTLSName("owner-a"), metav1.GetOptions{})

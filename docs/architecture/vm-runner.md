@@ -127,7 +127,9 @@ So any connection lands on the gateway, which routes TLS by SNI and HTTP by Host
 The sweep removes a machine no Agent of that owner names, or one an aborted [runtime migration](vm-runtime-migration.md) marked as left, and removes the runner itself — its claim, and so every disk on it, with it — only when a fresh List of the owner's Agents and the controller's cache both show no vm Agent and the runner lists no machine.
 The Deployment is deleted only if it is still the one the sweep checked, by UID and version, and a refusal keeps everything else for the next sweep.
 A reconcile that finds any of the runner's objects still terminating from such a removal waits, and says so on the Agent, rather than building a runner on a claim that is going away.
-A runner that cannot be reached is kept while its owner has any Agent at all; once the owner has none for half an hour it is removed unseen, reported as an error.
+A runner that cannot be reached is kept while its owner has any Agent at all; once the owner has none for half an hour it is removed, but not its claim, which nobody could see into.
+The claim is marked as kept instead: on a cluster that shares its CRDs, a CRD event can make even a live List of Agents read empty for a while, so an owner who seems to have left is no proof that the disks are unused.
+The owner's next vm Agent builds its runner on that same claim, which drops the mark; a claim whose owner never comes back is left for an operator to find by the mark.
 
 **Credentials in place.** The runner re-reads its token file every few seconds and keeps the token it holds while the file is empty or unreadable, and the controller, refused, reads the token Secret once and tries again; a refusal that stands is reported as one, apart from an unreachable runner.
 Neither side rotates the token on its own, but one that changes — a Secret deleted and minted again — is honoured without restarting the pod.

@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
@@ -40,6 +41,7 @@ const (
 	vmRunnerImagesPath   = vmRunnerStatePath + "/images"
 	vmRunnerPort         = 4600
 	vmRunnerUsageLabel   = "agent-platform.ai/vm-runner-usage"
+	annRunnerClaimKept   = "agent-platform.ai/vm-runner-claim-kept"
 
 	// UNIT_BOUNDARY_DESCRIPTION: where a runner pod's loader finds the runner releases. The node's staged releases are read-only, the release the controller names is a ConfigMap, and the loader's own emptyDir holds its copies of the release it runs and the status the runner serves.
 	vmRunnerReleasesPath    = vmRunnerStatePath + "/releases"
@@ -431,12 +433,17 @@ func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string) erro
 		})
 		disowned := len(kept) != len(existing.OwnerReferences)
 		existing.OwnerReferences = kept
-		if repairRunnerMeta(&existing.ObjectMeta, vmRunnerLabels(owner, r.config.ReleaseName), nil) || disowned {
+		_, reclaimed := existing.Annotations[annRunnerClaimKept]
+		delete(existing.Annotations, annRunnerClaimKept)
+		if repairRunnerMeta(&existing.ObjectMeta, vmRunnerLabels(owner, r.config.ReleaseName), nil) || disowned || reclaimed {
 			updated, err := r.client.CoreV1().PersistentVolumeClaims(ns).Update(ctx, existing, metav1.UpdateOptions{})
 			if err != nil {
 				return fmt.Errorf("restoring the runner claim's labels and removing its owner: %w", err)
 			}
 			existing = updated
+		}
+		if reclaimed {
+			slog.Info("vm runner: the owner's runner is built again on the claim an unreachable runner left", "owner", owner, "claim", name)
 		}
 		if sizeErr != nil {
 			slog.Warn("vm runner: the claim's size cannot be worked out, it keeps the size it has", "owner", owner, "error", sizeErr)
@@ -926,8 +933,9 @@ func (r *AgentReconciler) knownRunners(ctx context.Context) ([]runnerRef, error)
 	return out, nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: everything a runner owns is named after it, so this removes the lot. The caller holds the owner's lock and has just found the runner holding no machine. The Deployment goes first and only if it is still the one the caller checked — its UID and resourceVersion are preconditions — so a runner that a roll or a reconcile changed since is kept, with its claim, and looked at again on the next sweep.
-func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string) bool {
+// UNIT_BOUNDARY_DESCRIPTION: everything a runner owns is named after it, so this removes the lot. The caller holds the owner's lock and has just found the runner holding no machine, or could not ask it and passes keepClaim. The Deployment goes first and only if it is still the one the caller checked — its UID and resourceVersion are preconditions — so a runner that a roll or a reconcile changed since is kept, with its claim, and looked at again on the next sweep.
+// UNIT_BOUNDARY_DESCRIPTION: a claim nobody could see into is kept and marked with annRunnerClaimKept, never deleted: on a cluster that shares its CRDs, a CRD event can make even a live List of Agents read empty, so "the owner has no Agents" is never proof that its disks are unused. The owner's next vm Agent builds its runner on that same claim, which drops the mark, and the sweep removes it as usual once that runner lists no machine. An owner who never comes back leaves the claim to an operator, who finds it by the mark.
+func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string, keepClaim bool) bool {
 	r.unwatchRunnerPressure(owner)
 	name, ns := r.runnerName(owner), r.config.Namespace
 	opts := metav1.DeleteOptions{}
@@ -956,7 +964,14 @@ func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string) bool {
 		func() error {
 			return r.client.NetworkingV1().NetworkPolicies(ns).Delete(ctx, name+"-ingress", opts)
 		},
-		func() error { return r.client.CoreV1().PersistentVolumeClaims(ns).Delete(ctx, name, opts) },
+		func() error {
+			if keepClaim {
+				patch := fmt.Sprintf(`{"metadata":{"annotations":{%q:%q}}}`, annRunnerClaimKept, time.Now().UTC().Format(time.RFC3339))
+				_, err := r.client.CoreV1().PersistentVolumeClaims(ns).Patch(ctx, name, types.MergePatchType, []byte(patch), metav1.PatchOptions{})
+				return err
+			}
+			return r.client.CoreV1().PersistentVolumeClaims(ns).Delete(ctx, name, opts)
+		},
 	} {
 		if err := del(); err != nil && !k8serrors.IsNotFound(err) {
 			slog.Warn("removing a VM runner", "owner", owner, "error", err)
