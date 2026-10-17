@@ -41,7 +41,7 @@ install:
     fi
     PATH="${PATH//"$(dirname "$0")":/}"
     case " $* " in
-    *" --output-format stream-json "* | *" --output-format json "*) exec claude "$@" > >(awk '/^\{"type":"result"/ { r = $0; next } /^\{/ { print } END { if (r != "") print r }') ;;
+    *" --output-format stream-json "* | *" --output-format json "*) exec claude "$@" > >(awk '/^\{"type":"result"/ { r = $0; next } /^\{/ { print; fflush() } END { if (r != "") print r }') ;;
     *) exec claude "$@" ;;
     esac
     SHIM
