@@ -344,7 +344,8 @@ virtualization:
     # A runner whose owner has an agent in the middle of a turn does not take
     # a free place in the roll: it is offered again on the next pass, and
     # other owners roll meanwhile. `idleWait` bounds that wait; past it, the
-    # runner rolls even with an agent busy.
+    # runner rolls even with an agent busy. It outlasts a multi-hour kept job
+    # and only stops an owner who is never idle from missing every release.
     # With `releaseHostPath` set, a new runner image is handed to each pod in
     # place instead, and each hand-off takes a place in the same width until
     # the runner runs the release and its machines answer again; a hand-off
@@ -353,7 +354,7 @@ virtualization:
     rollout:
       maxConcurrent: 1
       settleTimeout: 10m
-      idleWait: 1h
+      idleWait: 24h
     # A directory on the node holding pre-flattened image trees (each with
     # its launch record; `mise run image:stage-vm` makes one), named after the
     # image reference and mounted read-only into every runner. The key keeps
