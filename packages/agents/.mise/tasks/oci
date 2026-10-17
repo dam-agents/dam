@@ -192,10 +192,10 @@ for k, v in env.items():
 PY
 }
 
-agent_owned=(--own=65532:0=home/agent --own=65532:0=etc/mise --own=65532:0=usr/local/share/mise --own-dir=65532:0=app)
+agent_owned=(--own=65532:0=home/agent --own=65532:0=etc/mise --own-dir=65532:0=app)
 # Packs <tree> onto <base layout> as <agent>'s layout; the rest are pack's
 # flags. The image is root's but for the paths the agent must write: its home,
-# mise's data dir and system config, and the runtime's directory itself, which
+# mise's system config, and the runtime's directory itself, which
 # an image over the default one ships again (the trust store is the apt
 # base's, a workload's Python its own layer's).
 pack_image() {
@@ -216,8 +216,7 @@ build_default() (
   install_tools
   b="$stage/build"
   install -d "$b"/{app,home/agent,etc/logrotate.d,opt/ms-playwright,usr/local/bin} \
-    "$b"/usr/local/lib/platform-python "$b"/usr/local/lib/docker/cli-plugins \
-    "$b"/usr/local/share/mise
+    "$b"/usr/local/lib/platform-python "$b"/usr/local/lib/docker/cli-plugins
   for a in $bare_harnesses; do
     h="$(sed -n 's/^PLATFORM_HARNESS = "\(.*\)"$/\1/p' "$agents/$a/image.toml")"
     r="$stage/$a/rootfs"
@@ -280,8 +279,7 @@ build_default() (
   # their pins, are layers of their own under the rest, which every
   # agent-runtime change rewrites: a deploy pulls that top layer alone.
   pack_image default "$apt_base" build --root-layer=build-selkies --root-layer=build-mise \
-    "--root-layer=$tools" --root-layer=build-claude-adapter "${flags[@]}" "--env=PATH=$path:$base_path" \
-    --env=MISE_DATA_DIR=/usr/local/share/mise --env=MISE_CONFIG_DIR=/etc/mise
+    "--root-layer=$tools" --root-layer=build-claude-adapter "${flags[@]}" "--env=PATH=$path:$base_path"
 )
 
 # The default image's mise project, the tool configs and lockfile it ships in
@@ -327,7 +325,7 @@ install_tools() {
   ${sudo[@]+"${sudo[@]}"} cp -a "$stage/etc/." "$r/etc/"
   ${sudo[@]+"${sudo[@]}"} cp -a "$stage/build-mise/." "$r/"
   ${sudo[@]+"${sudo[@]}"} install -m 755 "$installer" "$r/usr/local/bin/install-harness-tools"
-  mapfile -t envv < <(printf '%s\n' "${flags[@]#--env=}" MISE_DATA_DIR=/usr/local/share/mise MISE_CONFIG_DIR=/etc/mise | grep -E '^[A-Z_][A-Z0-9_]*=')
+  mapfile -t envv < <(printf '%s\n' "${flags[@]#--env=}" | grep -E '^[A-Z_][A-Z0-9_]*=')
   # The GitHub token stays out of every command line, where any user on the
   # host reads it: sudo keeps it in the environment, and it crosses env -i in a
   # root-only file the chroot's shell reads into the installer's environment.
@@ -337,7 +335,7 @@ install_tools() {
     mount --rbind /dev "$r/dev"
     mount -t proc proc "$r/proc"
     mount -t sysfs sys "$r/sys"
-    mkdir -p "$r/usr/share/mise" "$r/home/agent" "$r/usr/local/share/mise"
+    mkdir -p "$r/usr/share/mise" "$r/home/agent"
     mount --bind "$tools" "$r/usr/share/mise"
     cp -L /etc/resolv.conf "$r/etc/resolv.conf"
     (umask 077 && printf %s "${MISE_GITHUB_TOKEN:-${GITHUB_TOKEN:-}}" > "$r/run/mise-github-token")
