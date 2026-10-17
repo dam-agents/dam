@@ -12,6 +12,7 @@ import type {
   AcpRuntime,
   AcpRuntimeStatus,
 } from "./acp-runtime/acp-runtime.js";
+import type { AgentRequestObserver } from "./acp-runtime/pending-agent-requests.js";
 import {
   CONFIGURE_SESSION_METHOD,
   PIN_MODEL_METHOD,
@@ -58,6 +59,7 @@ export interface LeaseRouterDeps {
   sessionMetadata: SessionMetadataStore;
   backgroundWork: BackgroundWorkRegistry;
   keepPolicy: Pick<KeepPolicy, "keptProcessCount">;
+  agentRequests?: AgentRequestObserver;
   createRuntime: (
     pair: LeasePair,
     scoped: {
@@ -65,6 +67,7 @@ export interface LeaseRouterDeps {
       backgroundWork: BackgroundWorkRegistry;
       onHarnessExited: () => void;
       harnessSpawned: () => void;
+      agentRequests?: AgentRequestObserver;
     },
   ) => AcpRuntime;
   idleCheckMs?: number;
@@ -99,12 +102,12 @@ interface VirtualChannel extends ClientChannel {
 interface Attachment {
   viewer: boolean;
   initialize: unknown;
-  inbound: Map<string, { lease: Lease; id: unknown }>;
 }
 
 const DEFAULT_IDLE_CHECK_MS = 30_000;
 const DEFAULT_LEASE_IDLE_MS = 10 * 60_000;
 const SWALLOWED_ID_PREFIX = "platform-lease-";
+const ROUTED_ID = /^platform-lease-in-(\d+)-(.+)$/s;
 
 const keyOf = (pair: LeasePair): string =>
   JSON.stringify([
@@ -133,7 +136,11 @@ export function canonicalModel(model: string): string {
  * away once idle, so frames naming no session (`initialize`, `session/list`)
  * are answered here from the manifest and the session metadata. Each lease
  * is an unchanged ACP runtime behind a virtual channel per real client, with
- * agent-request ids kept apart across leases.
+ * agent-request ids kept apart across leases: a client sees each request
+ * under an id that names the harness process that asked it. An answer under
+ * that id reaches that process from any connection, because the platform
+ * answers a request from its own record, on a connection of its own; a
+ * request no client can answer is reported to the platform under that id.
  */
 export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
   const leases = new Map<string, Lease>();
@@ -188,6 +195,9 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       harnessSpawned: () => {
         lease.process = nextProcess++;
       },
+      ...(deps.agentRequests && {
+        agentRequests: unwatchedRequestsOf(() => self!, deps.agentRequests),
+      }),
     });
     const lease: Lease = {
       key,
@@ -204,6 +214,54 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     return lease;
   }
 
+  function unwatchedRequestsOf(
+    lease: () => Lease,
+    report: AgentRequestObserver,
+  ): AgentRequestObserver {
+    const routed = new Map<unknown, string>();
+    const settled = (id: unknown): string | undefined => {
+      const clientId = routed.get(id);
+      routed.delete(id);
+      return clientId;
+    };
+    return {
+      waiting(id, sessionId, line) {
+        const clientId = routedId(lease(), id);
+        routed.set(id, clientId);
+        report.waiting(clientId, sessionId, line);
+      },
+      answered(id, sessionId, result) {
+        const clientId = settled(id);
+        if (clientId !== undefined)
+          report.answered(clientId, sessionId, result);
+      },
+      abandoned(id, sessionId) {
+        const clientId = settled(id);
+        if (clientId !== undefined) report.abandoned(clientId, sessionId);
+      },
+    };
+  }
+
+  function routedId(lease: Lease, id: unknown): string {
+    return `${SWALLOWED_ID_PREFIX}in-${String(lease.process)}-${JSON.stringify(id)}`;
+  }
+
+  function askedBy(
+    clientId: string,
+  ): { lease: Lease; id: unknown } | "unknown" | null {
+    const match = ROUTED_ID.exec(clientId);
+    if (!match) return null;
+    const lease = [...leases.values()].find(
+      (l) => String(l.process) === match[1],
+    );
+    if (!lease) return "unknown";
+    try {
+      return { lease, id: JSON.parse(match[2]!) };
+    } catch {
+      return "unknown";
+    }
+  }
+
   function notifyPendingRestart(): void {
     for (const cb of pendingRestartListeners) cb();
   }
@@ -215,9 +273,6 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     for (const v of lease.channels.values()) v.quiet = true;
     for (const v of lease.channels.values()) v.fireClose();
     lease.channels.clear();
-    for (const attachment of attachments.values())
-      for (const [id, inbound] of attachment.inbound)
-        if (inbound.lease === lease) attachment.inbound.delete(id);
   }
 
   /**
@@ -285,11 +340,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     return alias && !deps.providerAliases().includes(alias) ? alias : null;
   }
 
-  function virtualChannel(
-    real: ClientChannel,
-    lease: Lease,
-    attachment: Attachment,
-  ): VirtualChannel {
+  function virtualChannel(real: ClientChannel, lease: Lease): VirtualChannel {
     const messageHandlers: ((data: string) => void)[] = [];
     const closeHandlers: (() => void)[] = [];
     let open = true;
@@ -311,9 +362,9 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
         if (line.includes('"method"') && line.includes('"id"')) {
           const frame = parseFrame(line);
           if (frame && isRequest(frame)) {
-            const routed = `${SWALLOWED_ID_PREFIX}in-${String(lease.process)}-${JSON.stringify(frame.id)}`;
-            attachment.inbound.set(routed, { lease, id: frame.id });
-            real.send(JSON.stringify({ ...frame, id: routed }));
+            real.send(
+              JSON.stringify({ ...frame, id: routedId(lease, frame.id) }),
+            );
             return;
           }
         }
@@ -352,7 +403,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     const existing = lease.channels.get(real);
     if (existing) return existing;
     const attachment = attachments.get(real)!;
-    const v = virtualChannel(real, lease, attachment);
+    const v = virtualChannel(real, lease);
     lease.channels.set(real, v);
     lease.runtime.attach(v, { viewer: attachment.viewer });
     if (attachment.initialize !== undefined) {
@@ -402,12 +453,11 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       return;
     }
     if (isResponse(frame) && typeof frame.id === "string") {
-      const inbound = attachment.inbound.get(frame.id);
-      if (inbound) {
-        attachment.inbound.delete(frame.id);
-        if (leases.get(inbound.lease.key) !== inbound.lease) return;
-        channelOn(real, inbound.lease).deliver(
-          JSON.stringify({ ...frame, id: inbound.id }),
+      const asked = askedBy(frame.id);
+      if (asked === "unknown") return;
+      if (asked) {
+        channelOn(real, asked.lease).deliver(
+          JSON.stringify({ ...frame, id: asked.id }),
         );
         return;
       }
@@ -680,7 +730,6 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       attachments.set(real, {
         viewer: opts?.viewer !== false,
         initialize: undefined,
-        inbound: new Map(),
       });
       real.onMessage((data) => route(real, data));
       real.onClose(() => {

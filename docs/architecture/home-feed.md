@@ -1,6 +1,6 @@
 # Home feed
 
-Last verified: 2026-10-16
+Last verified: 2026-10-17
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
@@ -13,6 +13,10 @@ Three sources sit behind the feed, and they are deliberately different kinds of 
 
 **Approvals** come from their own table: a decision is genuinely pending until someone makes it, so it is durable state the api-server owns outright.
 A spend-limit question is an approval too, but it belongs to no session: its card offers only "Continue" and "Stop for today", and it stays open until the next UTC midnight ([spend-limits](spend-limits.md#continue)).
+A tool approval — the harness asking to run a tool — is written by two paths into one row.
+The chat relay mirrors the prompt while a client engages the session, and the agent-runtime reports it over the runtime channel when no client does, so a request in a session nobody has open is on Home as soon as the agent asks.
+Both use the same row id, so a client that engages later joins the row and it keeps the time the agent asked.
+The runtime reports the end too: an answer resolves the row with the chosen verdict, and a request the runtime dropped unanswered — its ten-minute wait ran out, or the session was reset ([sessions](sessions.md)) — expires it.
 **Live agent state** says which Agents are awake right now, and comes from the same Agent watch that feeds every other surface.
 **Sessions** come from the attention record — a per-owner, server-side account of the sessions that have asked for attention.
 

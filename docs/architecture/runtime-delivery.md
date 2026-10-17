@@ -1,6 +1,6 @@
 # Runtime delivery and the runtime channel
 
-Last verified: 2026-10-16
+Last verified: 2026-10-17
 
 ## Overview
 
@@ -12,10 +12,10 @@ What a Connection is and which rail each Contribution kind takes is [connections
 The subsystem cuts across two bounded contexts:
 
 - **api-server — Runtime Delivery context** owns the outbox table, the events table, the delivery worker, the `runtime.applyState` call into agents, and the `runtime.hello` and `runtime.reportArtifactTouch` callbacks from agents.
-  The session-directory report rides the same channel but belongs to [metrics](metrics.md#session-directory), and the event report below is generic to the channel.
+  The session-directory report rides the same channel but belongs to [metrics](metrics.md#session-directory), the tool-approval report to [home-feed](home-feed.md#what-home-reads), and the event report below is generic to the channel.
 - **agent-runtime — Runtime Channel context** receives `applyState`, dispatches Contributions to per-kind drivers, processes events in order through per-kind event handlers, reconciles on-disk state to match the snapshot, calls back to `hello` on boot.
 
-The runtime channel is five routes between api-server and agent-runtime — `applyState` inward, `hello`, the artifact-touch report, the session-directory report and the event report outward:
+The runtime channel is six routes between api-server and agent-runtime — `applyState` inward, `hello`, the artifact-touch report, the session-directory report, the tool-approval report and the event report outward:
 
 ```mermaid
 flowchart LR
@@ -33,6 +33,7 @@ flowchart LR
   rt -->|hello| api
   rt -->|reportArtifactTouch| api
   rt -->|session-directory report| api
+  rt -->|tool-approval report| api
   rt -->|event report| api
 ```
 
@@ -458,7 +459,7 @@ Capabilities also gate whole flows, not only payload items: `hello` carries a nu
   The sweep and a plain `hello` catch-up enqueue without a bump, and both fire only for a row the agent is behind — the sweep additionally only for an agent that is running — so a caught-up row cannot start a dispatch under a reader.
 - **Events fire once per dedupe key and fire time.** The agent's local state store (a per-key last-run timestamp, persisted on the PVC) settles redelivered events without re-firing; the worker's `dispatched_at` stamp stops redelivery once acked.
 - **Events settle per id, contributions per version.** The worker stamps `dispatched_at` for the events the agent reports it ran, whatever the contribution outcome.
-- **The api-server is the only caller of `applyState` from the cluster.** The harness port admits ingress only from api-server pods; the agent's only outbound channel is the paired gateway, which routes back to the harness API server's callbacks: `hello`, the artifact-touch report — the agent-runtime saying which session produced an artifact version, having seen the platform tool's marked result in that session's ACP stream — the session-directory report below, and the event report.
+- **The api-server is the only caller of `applyState` from the cluster.** The harness port admits ingress only from api-server pods; the agent's only outbound channel is the paired gateway, which routes back to the harness API server's callbacks: `hello`, the artifact-touch report — the agent-runtime saying which session produced an artifact version, having seen the platform tool's marked result in that session's ACP stream — the session-directory report below, the tool-approval report — a permission request no client can answer, and how it ended — and the event report.
   The receiving side verifies the artifact belongs to the calling agent and never overwrites another session's attribution; the semantics live with [the artifact library](artifact-library.md).
 - **Capabilities are honored end-to-end, and never silently.** A Contribution or Event kind not in the agent's advertised set is dropped at send time, never silently delivered.
   A grant that requires unsupported kinds still succeeds and the unsupported parts simply don't appear in the agent's payload — but the Agent carries an owner-visible warning naming what its runtime refused, and keeps it until the runtime advertises those kinds.
