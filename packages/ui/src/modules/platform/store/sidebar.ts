@@ -19,10 +19,12 @@ export interface SidebarSlice {
   setSidebarActivityFilters: (filters: ActivityFilters) => void;
   mobileNavOpen: boolean;
   setMobileNavOpen: (open: boolean) => void;
+  sidebarAgentId: string | null;
+  setSidebarAgentId: (agentId: string | null) => void;
 }
 
 function readStoredSidebarExpanded(): boolean {
-  return readPersistedFlag(SIDEBAR_EXPANDED_STORAGE_KEY, false);
+  return readPersistedFlag(SIDEBAR_EXPANDED_STORAGE_KEY, true);
 }
 
 export const createSidebarSlice: StateCreator<
@@ -41,4 +43,6 @@ export const createSidebarSlice: StateCreator<
     set({ sidebarActivityFilters: filters }),
   mobileNavOpen: false,
   setMobileNavOpen: (open) => set({ mobileNavOpen: open }),
+  sidebarAgentId: null,
+  setSidebarAgentId: (agentId) => set({ sidebarAgentId: agentId }),
 });

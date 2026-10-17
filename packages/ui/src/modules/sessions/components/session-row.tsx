@@ -14,7 +14,13 @@ import {
   SessionType,
   type SessionView,
 } from "api-server-api";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { HarnessIcons } from "@/components/harness-icons";
 import { Badge } from "@/components/ui/badge";
@@ -55,6 +61,7 @@ interface Props {
   cost?: SessionRuntime;
   conversation?: string;
   reorderable?: boolean;
+  leading?: ReactNode;
   onResume: () => void;
   onPrefetch?: () => void;
   onRename: () => void;
@@ -74,6 +81,7 @@ export function SessionRow({
   cost,
   conversation,
   reorderable = false,
+  leading,
   onResume,
   onPrefetch,
   onRename,
@@ -166,6 +174,7 @@ export function SessionRow({
         setMenuOpen(true);
       }}
     >
+      {leading}
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
         <div className="flex items-center gap-1.5">
           <span className={`text-sm min-w-0 truncate ${titleClass}`}>

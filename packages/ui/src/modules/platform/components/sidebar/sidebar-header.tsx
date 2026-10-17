@@ -7,14 +7,14 @@ import { getBrand } from "../../../../brand.js";
 
 interface Props {
   pinned: boolean;
-  onTogglePin?: () => void;
+  onTogglePin: () => void;
   onHome: () => void;
 }
 
 export function SidebarHeader({ pinned, onTogglePin, onHome }: Props) {
   const pinLabel = pinned ? "Unpin navigation" : "Pin navigation";
   return (
-    <div className="flex w-full items-center justify-between gap-2 pt-2">
+    <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border px-2">
       <button
         type="button"
         onClick={onHome}
@@ -23,19 +23,17 @@ export function SidebarHeader({ pinned, onTogglePin, onHome }: Props) {
       >
         <BrandLogo />
       </button>
-      {onTogglePin && (
-        <Tooltip content={pinLabel} side="right">
-          <button
-            type="button"
-            onClick={onTogglePin}
-            aria-label={pinLabel}
-            aria-pressed={pinned}
-            className="flex items-center justify-center rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            {pinned ? <PinFilled size={16} /> : <Pin size={16} />}
-          </button>
-        </Tooltip>
-      )}
+      <Tooltip content={pinLabel} side="bottom">
+        <button
+          type="button"
+          onClick={onTogglePin}
+          aria-label={pinLabel}
+          aria-pressed={pinned}
+          className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          {pinned ? <PinFilled size={14} /> : <Pin size={14} />}
+        </button>
+      </Tooltip>
     </div>
   );
 }

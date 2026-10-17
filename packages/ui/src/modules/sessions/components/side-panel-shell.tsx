@@ -52,7 +52,6 @@ export function SidePanelShell({
   mobileTitle,
   mobileBackLabel,
   mainClassName,
-  mainMinWidth = MAIN_MIN_W,
   children,
 }: {
   activeTab: SidePanelTab | null;
@@ -67,7 +66,6 @@ export function SidePanelShell({
   mobileTitle: ReactNode;
   mobileBackLabel: string;
   mainClassName?: string;
-  mainMinWidth?: number;
   children: ReactNode;
 }) {
   const openFilePath = useStore((s) => s.openFilePath);
@@ -107,10 +105,10 @@ export function SidePanelShell({
   const sidePanelMinW = sidePanelMinWidth(activeTab);
   const columnsDoNotFit =
     columnsW !== null &&
-    columnsW < mainMinWidth + sidePanelMinW + SIDE_PANEL_BAR_W;
+    columnsW < MAIN_MIN_W + sidePanelMinW + SIDE_PANEL_BAR_W;
   const sidePanelFills = maximized || (sidePanelOpen && columnsDoNotFit);
   const sidePanelMaxW =
-    columnsW === null ? null : columnsW - mainMinWidth - SIDE_PANEL_BAR_W;
+    columnsW === null ? null : columnsW - MAIN_MIN_W - SIDE_PANEL_BAR_W;
   const sidePanelW =
     rightW === null
       ? null

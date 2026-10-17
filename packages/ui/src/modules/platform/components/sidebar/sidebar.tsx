@@ -1,111 +1,109 @@
-import { OpenPanelLeft } from "@carbon/icons-react";
+import { Maximize, OpenPanelLeft } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { ResizeHandle } from "@/components/resize-handle";
-import { PANE_MOTION } from "@/lib/pane-motion";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
-import { HomeWidgets } from "../../../home/components/home-widgets.js";
 import { useActivitySessions } from "../../../home/hooks/use-activity-sessions.js";
-import { useSidebarDestinations } from "../../hooks/use-sidebar-destinations.js";
 import { useSidebarWidth } from "../../hooks/use-sidebar-layout.js";
 import { SidebarContent } from "./sidebar-content.js";
 import { SidebarHeader } from "./sidebar-header.js";
 
+const SLIDE =
+  "transition-[translate] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none";
+
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The navigation pane, which is also Home. On Home
- * it fills the width beside the side panel. Elsewhere it is the sidebar:
- * pinned, it holds its place in the layout; unpinned, it leaves the layout and
+ * UNIT_BOUNDARY_DESCRIPTION: The desktop navigation pane. Pinned, it holds its
+ * place beside the page and can be resized. Unpinned, it leaves the layout and
  * slides over the page when the pointer reaches the left edge or the floating
  * button is pressed, which is the only way in on a touch screen.
  */
-export function Sidebar({ home = false }: { home?: boolean }) {
+export function Sidebar() {
   const pinned = useStore((s) => s.sidebarExpanded);
   const setPinned = useStore((s) => s.setSidebarExpanded);
-  const destinations = useSidebarDestinations();
-  const { width, resizing, resize, endResize } = useSidebarWidth();
+  const view = useStore((s) => s.view);
+  const setView = useStore((s) => s.setView);
+  const { width, resize, endResize } = useSidebarWidth();
   const [peek, setPeek] = useState(false);
-  const docked = home || pinned;
-  const shown = docked || peek;
+  const shown = pinned || peek;
 
   return (
     <>
-      <div
-        className={cn(
-          "relative hidden md:flex min-w-0",
-          !resizing && PANE_MOTION,
-        )}
-        style={{ flex: `${home ? 1 : 0} 0 ${docked ? width : 0}px` }}
-      >
-        {!docked && (
-          <div
-            aria-hidden
-            className="absolute inset-y-0 left-0 z-nav w-2"
-            onMouseEnter={() => setPeek(true)}
-          />
-        )}
-        <nav
-          className={cn(
-            "flex flex-col h-full overflow-hidden px-2 bg-card border-border",
-            !home && "border-r",
-            docked
-              ? "relative w-full"
-              : "absolute inset-y-0 left-0 z-overlay shadow-2xl",
-            !resizing && PANE_MOTION,
-            !shown && "-translate-x-full",
-          )}
-          style={docked ? undefined : { width }}
-          onMouseLeave={(e) => {
-            if (e.clientX > e.currentTarget.getBoundingClientRect().right)
-              setPeek(false);
-          }}
-          inert={!shown}
-          data-testid="app-sidebar"
-          data-home={home || undefined}
-          data-pinned={pinned || undefined}
-        >
-          <div
-            className={cn(
-              "mx-auto flex min-h-0 w-full flex-1 flex-col",
-              PANE_MOTION,
-              home ? "max-w-[960px] px-4 pt-6 lg:px-[5%]" : "max-w-full",
-            )}
-          >
-            <SidebarHeader
-              pinned={pinned}
-              onTogglePin={
-                home
-                  ? undefined
-                  : () => {
-                      setPinned(!pinned);
-                      setPeek(false);
-                    }
-              }
-              onHome={destinations.home.navigate}
-            />
-            <SidebarContent
-              stickyHeaderClassName="bg-card"
-              onNavigate={() => setPeek(false)}
-              lead={<HomeWidgets open={home} />}
-            />
-          </div>
-        </nav>
-      </div>
-      {pinned && !home && (
-        <div className="hidden md:flex" data-testid="app-sidebar-resize">
-          <ResizeHandle side="left" onResize={resize} onDragEnd={endResize} />
-        </div>
+      {!pinned && (
+        <div
+          aria-hidden
+          className="fixed inset-y-0 left-0 z-nav hidden w-2 md:block"
+          onMouseEnter={() => setPeek(true)}
+        />
       )}
-      {peek && !docked && (
+      {peek && !pinned && (
         <div
           aria-hidden
           className="fixed inset-0 z-nav hidden md:block"
           onClick={() => setPeek(false)}
         />
       )}
-      {!docked && !peek && <PeekButton onOpen={() => setPeek(true)} />}
+      <nav
+        className={cn(
+          "hidden md:flex relative flex-col h-full shrink-0 bg-card border-r border-border",
+          !pinned && ["fixed inset-y-0 left-0 z-overlay shadow-2xl", SLIDE],
+          !shown && "-translate-x-full",
+        )}
+        style={{ width }}
+        inert={!shown}
+        onMouseLeave={(e) => {
+          if (e.clientX > e.currentTarget.getBoundingClientRect().right)
+            setPeek(false);
+        }}
+        data-testid="app-sidebar"
+        data-pinned={pinned || undefined}
+      >
+        <SidebarHeader
+          pinned={pinned}
+          onTogglePin={() => {
+            setPinned(!pinned);
+            setPeek(false);
+          }}
+          onHome={() => {
+            setView("home");
+            setPeek(false);
+          }}
+        />
+        <SidebarContent onNavigate={() => setPeek(false)} />
+        {pinned && view !== "home" && (
+          <HomeEdgeTab
+            onHome={() => {
+              setView("home");
+              setPeek(false);
+            }}
+          />
+        )}
+      </nav>
+      {pinned && (
+        <div className="hidden md:flex" data-testid="app-sidebar-resize">
+          <ResizeHandle side="left" onResize={resize} onDragEnd={endResize} />
+        </div>
+      )}
+      {!shown && <PeekButton onOpen={() => setPeek(true)} />}
     </>
+  );
+}
+
+function HomeEdgeTab({ onHome }: { onHome: () => void }) {
+  return (
+    <Tooltip content="Home" side="right">
+      <button
+        type="button"
+        aria-label="Home"
+        data-testid="sidebar-home-tab"
+        onClick={onHome}
+        className="absolute top-1/2 left-full z-raised flex h-12 w-5 -translate-y-1/2 items-center justify-center rounded-r-lg border-y border-r border-border bg-background text-muted-foreground shadow-sm transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+      >
+        <Maximize size={12} />
+      </button>
+    </Tooltip>
   );
 }
 
@@ -116,11 +114,11 @@ function PeekButton({ onOpen }: { onOpen: () => void }) {
       type="button"
       aria-label="Show navigation"
       onClick={onOpen}
-      className="fixed bottom-4 left-4 z-nav hidden md:flex size-10 items-center justify-center rounded-full border border-border bg-card text-foreground/80 shadow-lg transition-colors anim-in hover:bg-muted hover:text-foreground"
+      className="fixed bottom-4 left-4 z-nav hidden size-10 items-center justify-center rounded-full border border-border bg-card text-foreground/80 shadow-lg transition-colors anim-in hover:bg-muted hover:text-foreground md:flex"
     >
       <OpenPanelLeft size={16} />
       {hasUnread && (
-        <span className="absolute top-1.5 right-1.5 size-2 rounded-full bg-primary" />
+        <span className="absolute top-1.5 right-1.5 size-2 rounded-full bg-warning" />
       )}
     </button>
   );

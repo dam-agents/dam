@@ -42,6 +42,7 @@ import { SessionListSkeleton } from "./session-list-skeleton.js";
 import { SessionRow } from "./session-row.js";
 
 const ROW_CLASS = "rounded-lg border-b-0 py-1.5 pr-2 pl-9";
+const FLAT_ROW_CLASS = "min-w-0 rounded-lg border-b-0 px-2 py-2";
 
 type OrderActions = ReturnType<typeof useSidebarOrderActions>;
 
@@ -59,6 +60,7 @@ interface Props {
   orderActions: OrderActions;
   conversationOf: (session: AttentionItem) => string | undefined;
   stickyClassName: string;
+  flat?: boolean;
   onNavigate?: () => void;
 }
 
@@ -71,6 +73,7 @@ export function SidebarAgentSessions({
   orderActions,
   conversationOf,
   stickyClassName,
+  flat = false,
   onNavigate,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
@@ -109,6 +112,7 @@ export function SidebarAgentSessions({
           expanded={expanded}
           onExpandedChange={setExpanded}
           stickyClassName={stickyClassName}
+          flat={flat}
           onNavigate={onNavigate}
         />
       ) : (
@@ -219,6 +223,7 @@ function AgentSessionList({
   expanded,
   onExpandedChange,
   stickyClassName,
+  flat,
   onNavigate,
 }: {
   agentId: string;
@@ -228,6 +233,7 @@ function AgentSessionList({
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
   stickyClassName: string;
+  flat: boolean;
   onNavigate?: () => void;
 }) {
   const list = useAgentSessionList(agentId);
@@ -292,7 +298,12 @@ function AgentSessionList({
     >
       {list.loading && <SessionListSkeleton />}
       {!list.loading && rows.length === 0 && !hasNextPage && (
-        <p className="py-1.5 pl-9 text-xs text-muted-foreground">
+        <p
+          className={cn(
+            "py-1.5 text-xs text-muted-foreground",
+            flat ? "pl-2" : "pl-9",
+          )}
+        >
           {isFiltered(filters)
             ? "No sessions match the filter."
             : "No sessions yet."}
@@ -305,12 +316,13 @@ function AgentSessionList({
           sessionId={s.sessionId}
           shown={shown}
           orderActions={orderActions}
+          flat={flat}
         >
           <SessionRow
             session={s}
             {...state}
             reorderable={orderActions.ready}
-            className={ROW_CLASS}
+            className={flat ? FLAT_ROW_CLASS : ROW_CLASS}
             onResume={() => {
               openSession(agentId, s.sessionId, s.mode);
               onNavigate?.();
@@ -346,11 +358,17 @@ function AgentSessionList({
         </button>
       )}
       {more && !(expanded && fetchNextPageFailed) && (
-        <ToggleRow more busy={isFetchingNextPage} onClick={onMore} />
+        <ToggleRow
+          more
+          flat={flat}
+          busy={isFetchingNextPage}
+          onClick={onMore}
+        />
       )}
       {less && (
         <ToggleRow
           more={false}
+          flat={flat}
           stickyClassName={stickyClassName}
           onClick={() => onExpandedChange(false)}
         />
@@ -364,12 +382,14 @@ function OrderedRow({
   sessionId,
   shown,
   orderActions,
+  flat = false,
   children,
 }: {
   agentId: string;
   sessionId: string;
   shown: readonly string[];
   orderActions: OrderActions;
+  flat?: boolean;
   children: ReactNode;
 }) {
   const drag = useOrderDrag({
@@ -380,7 +400,7 @@ function OrderedRow({
     onStep: (id, step) => orderActions.stepSession(agentId, shown, id, step),
   });
   return (
-    <div {...drag.dragProps} className={TREE_GUIDE}>
+    <div {...drag.dragProps} className={flat ? "relative" : TREE_GUIDE}>
       {children}
       <OrderDropIndicator at={drag.indicator} />
     </div>
@@ -389,11 +409,13 @@ function OrderedRow({
 
 function ToggleRow({
   more,
+  flat = false,
   busy = false,
   stickyClassName,
   onClick,
 }: {
   more: boolean;
+  flat?: boolean;
   busy?: boolean;
   stickyClassName?: string;
   onClick: () => void;
@@ -407,9 +429,9 @@ function ToggleRow({
       data-testid="sidebar-agent-sessions-toggle"
       className={cn(
         labelVariants(),
-        TREE_GUIDE,
-        "[--tree-guide-end:15px]",
-        "flex h-[30px] shrink-0 items-center gap-1 rounded-lg pl-9 text-left text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+        !flat && [TREE_GUIDE, "[--tree-guide-end:15px]"],
+        "flex h-[30px] shrink-0 items-center gap-1 rounded-lg text-left text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+        flat ? "pl-2" : "pl-9",
         !more && ["sticky bottom-0 z-raised", stickyClassName],
       )}
     >

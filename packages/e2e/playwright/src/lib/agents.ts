@@ -128,7 +128,7 @@ export async function ensureSidebarExpanded(page: Page): Promise<void> {
       .getByRole("button", { name: "Pin navigation" })
       .click();
   }
-  await expect(page.getByTestId("sidebar-agents")).toBeVisible();
+  await expect(page.getByTestId("sidebar-avatar-strip")).toBeVisible();
 }
 
 export function sidebarAgentRow(page: Page, agentName: string): Locator {

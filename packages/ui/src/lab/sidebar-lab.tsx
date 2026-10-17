@@ -2,6 +2,7 @@ import "../App.css";
 
 import {
   Add,
+  Book,
   ChevronDown,
   ChevronRight,
   Filter,
@@ -10,7 +11,6 @@ import {
   OverflowMenuHorizontal,
   Search,
   Settings,
-  Book,
 } from "@carbon/icons-react";
 import { type ReactNode, useState } from "react";
 import { createRoot } from "react-dom/client";
