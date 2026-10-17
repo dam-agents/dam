@@ -64,8 +64,9 @@ export function OnceScheduleForm({
       defaultValues: { ...onceFormDefaults(existing), ...draft },
     });
   const { errors, isDirty } = formState;
-  const close = useGuardedClose(isDirty, onClose);
-  useEffect(() => onDirtyChange?.(isDirty), [isDirty, onDirtyChange]);
+  const unsaved = isDirty || !!draft?.name || !!draft?.task;
+  const close = useGuardedClose(unsaved, onClose);
+  useEffect(() => onDirtyChange?.(unsaved), [unsaved, onDirtyChange]);
 
   useEffect(() => {
     if (!onDraftChange) return;
