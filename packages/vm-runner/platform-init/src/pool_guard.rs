@@ -3,11 +3,6 @@ pub const POOL_GUARD_FLOOR: u64 = 256 << 20;
 pub const POOL_GUARD_STEP: u64 = 16 << 20;
 pub const POOL_GUARD_TRIES: u32 = 8;
 
-// UNIT_BOUNDARY_DESCRIPTION: what the guard leaves free on the disk beyond the guest's use, whatever the grant. btrfs needs free blocks of its own to commit: its global block reserve (up to 512 MiB) and, with the mixed block groups of the guest's disk, metadata chunks taken from the same free space as data. A guard that took them would fail every commit, a delete included, so the guest could not free its own files. 1 GiB covers the reserve twice over on a small disk, and 1% scales it with the metadata of a large one.
-pub fn margin(disk: u64) -> u64 {
-    (1u64 << 30).max(disk / 100)
-}
-
 // UNIT_BOUNDARY_DESCRIPTION: what the guard knows between two looks: the latest grant, as its id and bytes and what the guest had written when it came, and, once the guest is held below the floor, what it had written then. The floor is one allowance per shortage and not per look: it counts down from that point across every grant too small to hold it, and is given again only once a grant arrives that holds it, which means the claim has room again. So a guest past its grant adds at most the floor in all, however many grants of nothing the runner renews. A guest that used it up gets room back once the claim has room, or with the fresh floor of its next boot, which is how its user gets in to free its own files. `ceiling` is the largest guard the disk took when it refused a larger one, and what the guest had written then: what the disk holds beyond the guest's use, which the guard counts on, less what the guest wrote since, until the guest frees more than POOL_GUARD_STEP, so a refused size is not asked again at every look. `keep` is the room the last look left the guest, and `short` whether a refusal was warned of since the last move that fit whole.
 #[derive(Default)]
 pub struct PoolGuard {
@@ -87,7 +82,7 @@ pub fn read_grant(text: &str) -> Option<(String, u64)> {
     Some((id, words.next()?.parse().ok()?))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: one look of the guard: what the guard file is to be resized to, or None to leave it. `used` and `avail` are what statvfs reports, the guard's own blocks included, `held` is what those blocks are now, and `disk` is the filesystem's size. On btrfs `avail` is an estimate that counts unallocated device space and does not drop by a preallocated file's full size, so `avail + held` can pass the whole disk; the guard counts on no more free than the disk holds beyond the guest's use and the margin, nor than the disk last took, and leaves the guest its room out of that. It moves only by more than POOL_GUARD_STEP, or to nothing, and only once `backed_off`, a commit interval after its last move, so a look that statvfs answers from before that move does not move it again.
+// UNIT_BOUNDARY_DESCRIPTION: one look of the guard: what the guard file is to be resized to, or None to leave it. `used` and `avail` are what statvfs reports, the guard's own blocks included, `held` is what those blocks are now, and `disk` is the filesystem's size. On btrfs `avail` is an estimate that counts unallocated device space and does not drop by a preallocated file's full size, so `avail + held` can pass the whole disk; the guard counts on no more free than the disk holds beyond the guest's use, nor than the disk last took, and leaves the guest its room out of that. It keeps no margin of its own beyond that: one taken off the guest's free space would be given back at every look, so a guest held at nothing could still write without end. btrfs keeps its global reserve out of what a preallocation can take, and what else it needs for metadata the refused preallocation finds (PoolGuard::grow). It moves only by more than POOL_GUARD_STEP, or to nothing, and only once `backed_off`, a commit interval after its last move, so a look that statvfs answers from before that move does not move it again.
 pub fn guard_look(
     state: &mut PoolGuard,
     grant: Option<(String, u64)>,
@@ -107,10 +102,7 @@ pub fn guard_look(
     let fits = state.ceiling.map_or(u64::MAX, |(fitted, at)| {
         fitted.saturating_sub(mine.saturating_sub(at))
     });
-    let room = disk
-        .saturating_sub(mine)
-        .saturating_sub(margin(disk))
-        .min(fits);
+    let room = disk.saturating_sub(mine).min(fits);
     let want = state.size(grant, avail.saturating_add(held).min(room), mine);
     (backed_off && (want.abs_diff(held) > POOL_GUARD_STEP || (want == 0 && held > 0)))
         .then_some(want)
@@ -209,12 +201,12 @@ mod tests {
             }
             (held, moves)
         };
-        assert_eq!(run(true), (disk - data - margin(disk) - 161 * GIB, 1));
+        assert_eq!(run(true), (disk - data - 161 * GIB, 1));
         let (_, moves) = run(false);
         assert!(moves > 1, "the unsynced guard moved only {moves} times");
     }
 
-    // TEST_SCENARIO: on a 100 GiB btrfs disk a guest's statvfs reported free space that, with the guard's own blocks added, passed the whole disk, and the guard asked for 104 to 165 GB at every look, each refused. The guard counts on no more than the disk holds beyond the guest's own use and the margin, and leaves the guest its grant out of that.
+    // TEST_SCENARIO: on a 100 GiB btrfs disk a guest's statvfs reported free space that, with the guard's own blocks added, passed the whole disk, and the guard asked for 104 to 165 GB at every look, each refused. The guard counts on no more than the disk holds beyond the guest's own use, and leaves the guest its grant out of that.
     #[test]
     fn the_storage_guard_never_asks_for_more_than_the_disk() {
         let (disk, mine, held) = (100 * GIB, 20 * GIB, 40 * GIB);
@@ -228,9 +220,26 @@ mod tests {
             disk,
             true,
         );
-        assert_eq!(want, Some(disk - mine - margin(disk) - 10 * GIB));
-        assert_eq!(margin(disk), GIB);
-        assert_eq!(margin(1000 * GIB), 10 * GIB);
+        assert_eq!(want, Some(disk - mine - 10 * GIB));
+    }
+
+    // TEST_SCENARIO: a guest that writes everything the guard leaves it, past a grant of nothing, on a disk whose statvfs reports far more free than the disk holds, adds at most the floor in all: the clamp to the disk leaves it no room of its own that comes back at every look.
+    #[test]
+    fn a_clamped_guard_holds_a_writer_past_its_grant() {
+        let (disk, start) = (100 * GIB, 20 * GIB);
+        let (mut state, mut mine, mut held) = (PoolGuard::default(), start, 0u64);
+        for tick in 0..200u64 {
+            let room = Some((tick.to_string(), 0));
+            if let Some(want) = guard_look(&mut state, room, mine + held, disk, held, disk, true) {
+                held = want;
+            }
+            mine += (disk - mine).saturating_sub(held).min(GIB);
+        }
+        assert!(
+            mine - start <= POOL_GUARD_FLOOR + POOL_GUARD_STEP,
+            "wrote {} bytes past a grant of nothing",
+            mine - start
+        );
     }
 
     // TEST_SCENARIO: when the disk takes less than the guard asks for, which btrfs's estimate of free space makes common, the guard finds the largest size that fits within a bounded number of preallocations, settles at that less the guest's grant so the guest keeps its room, warns once for the shortage, and asks no more at later looks. Once the guest frees room it asks again.
