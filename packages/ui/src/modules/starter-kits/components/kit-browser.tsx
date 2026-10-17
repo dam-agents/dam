@@ -149,6 +149,7 @@ export function KitFilterBar({
             variant="ghost"
             size="icon-xs"
             aria-label="Clear search"
+            tooltip="Clear search"
             onClick={() => {
               onQueryChange("");
               inputRef.current?.focus();

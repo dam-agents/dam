@@ -224,7 +224,7 @@ export function SkillSourceCard({
                 window.open(source.gitUrl, "_blank", "noopener,noreferrer")
               }
             >
-              <span className="flex-1">View repo</span>
+              <span className="flex-1">View on GitHub</span>
               <Launch size={14} />
             </DropdownMenuItem>
             {onHide && !readOnly && (

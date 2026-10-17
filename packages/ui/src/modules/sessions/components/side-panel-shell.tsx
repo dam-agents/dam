@@ -211,6 +211,7 @@ export function SidePanelShell({
                 variant="ghost"
                 size="icon-sm"
                 aria-label={mobileBackLabel}
+                tooltip={mobileBackLabel}
                 onClick={closeMobilePanel}
               >
                 <ArrowLeft size={16} />

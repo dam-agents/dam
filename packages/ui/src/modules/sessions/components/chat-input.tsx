@@ -1,9 +1,9 @@
 import {
-  Add,
-  Close,
+  Attachment as AttachmentIcon,
   Document,
   SendAltFilled,
   StopFilledAlt,
+  TrashCan,
 } from "@carbon/icons-react";
 import {
   type KeyboardEvent,
@@ -260,7 +260,7 @@ export function ChatInput({
               aria-label="Attach file"
               tooltip="Attach file"
             >
-              <Add size={16} />
+              <AttachmentIcon size={16} />
             </Button>
             <Textarea
               ref={textareaRef}
@@ -340,12 +340,13 @@ function AttachmentChip({
         size="icon"
         onClick={onRemove}
         aria-label={`Remove ${name}`}
+        tooltip="Remove"
         className={cn(
           "absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full",
           HOVER_ACTION,
         )}
       >
-        <Close size={10} />
+        <TrashCan size={10} />
       </Button>
     </div>
   );

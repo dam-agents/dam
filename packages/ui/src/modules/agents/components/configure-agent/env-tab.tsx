@@ -1,8 +1,8 @@
 import {
   Add,
-  Edit,
   Locked,
   Password,
+  RequestQuote,
   View,
   ViewOff,
   WarningAlt,
@@ -181,10 +181,11 @@ export function EnvTab({
               disabled={saving}
               onClick={() => setEditing(i)}
             >
-              <Edit size={14} />
+              <RequestQuote size={14} />
             </Button>
             <RemoveButton
               label={`Remove ${v.name}`}
+              tooltip="Remove"
               onClick={() => setEnvVars(envVars.filter((_, idx) => idx !== i))}
               disabled={saving}
             />

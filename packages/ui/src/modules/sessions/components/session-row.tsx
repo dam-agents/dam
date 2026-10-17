@@ -1,8 +1,8 @@
 import {
   Download,
   Edit,
+  Pen,
   Terminal,
-  TextCreation,
   Time,
   TrashCan,
 } from "@carbon/icons-react";
@@ -249,7 +249,7 @@ export function SessionRow({
                     afterMenu.current = onRename;
                   }}
                 >
-                  <TextCreation size={14} /> Rename session
+                  <Edit size={14} /> Rename session
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   data-testid="session-delete-button"
@@ -368,7 +368,7 @@ function SessionIndicators({
           title="Has a draft"
           className="inline-flex text-muted-foreground shrink-0"
         >
-          <Edit size={16} />
+          <Pen size={16} />
         </span>
       ) : harness ? (
         <span

@@ -1,19 +1,14 @@
-import { OverflowMenuVertical, View } from "@carbon/icons-react";
+import { View } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { HOVER_ACTION } from "@/components/ui/hover-action";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { Tooltip } from "@/components/ui/tooltip";
 import { treeIndent } from "@/components/ui/tree-guide";
 import { clickableProps } from "@/lib/clickable";
@@ -133,22 +128,9 @@ export function ArtifactListRow({
           </div>
           {showCreator && <CreatorByline agentId={artifact.agentId} />}
           <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
-            <DropdownMenu>
-              {}
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  className={HOVER_ACTION}
-                  aria-label="More actions"
-                >
-                  <OverflowMenuVertical size={13} />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <ArtifactRowMenuItems artifact={artifact} {...menuActions} />
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <RowActionsMenu label="More actions" dense className={HOVER_ACTION}>
+              <ArtifactRowMenuItems artifact={artifact} {...menuActions} />
+            </RowActionsMenu>
           </div>
         </div>
       </ContextMenuTrigger>

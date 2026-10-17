@@ -3,7 +3,7 @@ import {
   Download,
   Edit,
   FolderAdd,
-  TextCreation,
+  RequestQuote,
   TrashCan,
   Upload,
 } from "@carbon/icons-react";
@@ -58,7 +58,7 @@ export function FileRowMenuItems({
         <>
           {path !== PLATFORM_INSTRUCTIONS_PATH && (
             <Item onSelect={() => onAction("edit")}>
-              <Edit size={14} />
+              <RequestQuote size={14} />
               Edit
             </Item>
           )}
@@ -69,7 +69,7 @@ export function FileRowMenuItems({
         </>
       )}
       <Item onSelect={() => onAction("rename")}>
-        <TextCreation size={14} />
+        <Edit size={14} />
         Rename
       </Item>
       <Item tone="danger" onSelect={() => onAction("delete")}>

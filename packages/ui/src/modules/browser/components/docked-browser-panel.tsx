@@ -101,6 +101,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
           variant="ghost"
           size="icon-sm"
           aria-label="Back"
+          tooltip="Back"
           disabled={!stream.page.canGoBack}
           onClick={stream.back}
         >
@@ -110,6 +111,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
           variant="ghost"
           size="icon-sm"
           aria-label="Forward"
+          tooltip="Forward"
           disabled={!stream.page.canGoForward}
           onClick={stream.forward}
         >
@@ -153,6 +155,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
             type="button"
             className="absolute top-1/2 right-1 -translate-y-1/2"
             aria-label={stream.page.loading ? "Stop loading" : "Reload"}
+            tooltip={stream.page.loading ? "Stop loading" : "Reload"}
             onClick={stream.page.loading ? stream.stop : stream.reload}
           >
             {stream.page.loading ? <Close size={14} /> : <Renew size={14} />}

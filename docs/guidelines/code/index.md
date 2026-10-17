@@ -7,3 +7,4 @@ Read a page when its trigger matches the code in front of you.
 | Rule                                          | Trigger                                                                           |
 | --------------------------------------------- | --------------------------------------------------------------------------------- |
 | [Exhaustive matching](exhaustive-matching.md) | Branching on a closed union (string-literal or discriminated union) in TypeScript |
+| [Icons and tooltips](icons-and-tooltips.md)   | Adding or changing a button, link or menu item with an icon in `packages/ui`      |

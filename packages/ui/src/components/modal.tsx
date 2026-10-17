@@ -152,6 +152,7 @@ export function DialogHeader({
                   onClick={onClose}
                   disabled={closeDisabled}
                   aria-label="Close"
+                  tooltip="Close"
                   data-dialog-close
                   data-testid={closeTestId}
                   className="shrink-0 text-muted-foreground"

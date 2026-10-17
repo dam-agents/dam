@@ -503,6 +503,7 @@ function RuleRow({
       )}
       <RemoveButton
         label={`Revoke rule for ${host}`}
+        tooltip="Revoke rule"
         onClick={onRevoke}
         disabled={disabled}
       />

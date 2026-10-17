@@ -117,7 +117,7 @@ export function PermissionVerdictLine({ verdict }: { verdict: VerdictPart }) {
       </div>
       <CopyButton
         value={`${verdict.label} — ${verdict.subject}`}
-        label="Copy"
+        label="Copy decision"
         stopPropagation
         className={HOVER_ACTION}
       />

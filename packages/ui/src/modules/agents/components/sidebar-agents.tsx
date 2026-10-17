@@ -1,4 +1,9 @@
-import { AddAlt, DataEnrichmentAdd, NewTab, Tools } from "@carbon/icons-react";
+import {
+  AddAlt,
+  AddComment,
+  DataEnrichmentAdd,
+  Tools,
+} from "@carbon/icons-react";
 import { type ReactNode, useMemo } from "react";
 
 import { SectionLabel } from "@/components/ui/section-label";
@@ -72,7 +77,7 @@ export function SidebarAgents({
               label="New session"
               onClick={navigate(() => startSession(agent.id))}
             >
-              <NewTab size={14} />
+              <AddComment size={14} />
             </RowIconButton>
             <RowIconButton
               label="Configure agent"

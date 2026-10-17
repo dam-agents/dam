@@ -1,4 +1,4 @@
-import { Launch, Renew } from "@carbon/icons-react";
+import { ChevronRight, Renew } from "@carbon/icons-react";
 
 import { DialogBody, DialogHeader, Modal } from "@/components/modal";
 import { Button } from "@/components/ui/button";
@@ -30,7 +30,7 @@ function ResultRow({ session, onOpen }: RowProps) {
         {summary}
       </span>
       <span className="shrink-0 text-sm text-muted-foreground">{when}</span>
-      <Launch size={14} className="shrink-0 text-muted-foreground" />
+      <ChevronRight size={14} className="shrink-0 text-muted-foreground" />
     </button>
   );
 }

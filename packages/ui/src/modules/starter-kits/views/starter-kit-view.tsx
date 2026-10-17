@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { SectionLabel } from "@/components/ui/section-label";
 import { TextSkeleton } from "@/components/ui/text-skeleton";
+import { Tooltip } from "@/components/ui/tooltip";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { emitToast } from "../../../lib/toast.js";
@@ -480,15 +481,17 @@ function KitDetail({
                 title={`${kit.name} knowledge base skills`}
                 detail="Installed by the kit's own bootstrap from its repository, so they are not listed under Skills."
                 action={
-                  <a
-                    href={kbSeed.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label={`Open the ${kit.name} repository`}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <Launch size={16} />
-                  </a>
+                  <Tooltip content="Open repository">
+                    <a
+                      href={kbSeed.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={`Open the ${kit.name} repository`}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <Launch size={16} />
+                    </a>
+                  </Tooltip>
                 }
               />
             </Section>
@@ -546,15 +549,17 @@ function KitDetail({
                     : ""
                 } before the first session`}
                 action={
-                  <a
-                    href={kit.seed.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label="Open the repository"
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <Launch size={16} />
-                  </a>
+                  <Tooltip content="Open repository">
+                    <a
+                      href={kit.seed.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label="Open the repository"
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <Launch size={16} />
+                    </a>
+                  </Tooltip>
                 }
               />
             </Section>

@@ -1,10 +1,4 @@
-import {
-  ChevronDown,
-  ChevronUp,
-  Launch,
-  Time,
-  WarningAlt,
-} from "@carbon/icons-react";
+import { ChevronDown, ChevronUp, Time, WarningAlt } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -191,7 +185,7 @@ export function ScheduleCard({
         </div>
 
         <Button variant="outline" size="sm" onClick={onViewResults}>
-          <Launch size={14} /> View results
+          View results
         </Button>
 
         {onceState === null && (

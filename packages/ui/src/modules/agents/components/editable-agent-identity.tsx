@@ -1,6 +1,7 @@
-import { Checkmark, TextCreation } from "@carbon/icons-react";
+import { Checkmark, Edit } from "@carbon/icons-react";
 import { useId, useRef, useState } from "react";
 
+import { Tooltip } from "@/components/ui/tooltip";
 import { getErrorMessage } from "@/lib/errors";
 import { cn } from "@/lib/utils";
 
@@ -135,15 +136,17 @@ export function EditableIdentity({
       </AvatarPicker>
       {draft === null ? (
         <NameTag className={cn("flex min-w-0", nameClassName)}>
-          <button
-            type="button"
-            onClick={startEdit}
-            title={`Rename ${name}`}
-            className="flex min-w-0 items-center gap-1.5 text-left"
-          >
-            <span className="truncate">{name}</span>
-            <TextCreation aria-hidden size={16} className={ICON_BUTTON} />
-          </button>
+          <Tooltip content="Rename">
+            <button
+              type="button"
+              onClick={startEdit}
+              aria-label={`Rename ${name}`}
+              className="flex min-w-0 items-center gap-1.5 text-left"
+            >
+              <span className="truncate">{name}</span>
+              <Edit aria-hidden size={16} className={ICON_BUTTON} />
+            </button>
+          </Tooltip>
         </NameTag>
       ) : (
         <span className="relative flex min-w-0 items-center gap-1.5">
@@ -169,15 +172,17 @@ export function EditableIdentity({
               nameClassName,
             )}
           />
-          <button
-            type="button"
-            aria-label="Save name"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => void commitName()}
-            className={ICON_BUTTON}
-          >
-            <Checkmark size={16} />
-          </button>
+          <Tooltip content="Save name">
+            <button
+              type="button"
+              aria-label="Save name"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => void commitName()}
+              className={ICON_BUTTON}
+            >
+              <Checkmark size={16} />
+            </button>
+          </Tooltip>
           {error && (
             <span
               id={errorId}
