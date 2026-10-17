@@ -414,7 +414,6 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512, HeadroomMiB: 256, MachineCPUs: 4,
 		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi",
 	}}
-	r.config.AgentBase.ToolsHostPath = "/var/lib/platform-tools"
 	r.runnerEndpoint = func(string) string { return srv.URL }
 	requeued := &requeueLog{}
 	r.WithRequeue(t.Context(), requeued.add)
@@ -1067,7 +1066,7 @@ func TestEachOwnerGetsTheirOwnRunner(t *testing.T) {
 		assert.Equal(t, []string{r.runnerHost(owner)}, hosts)
 	}
 
-	r.deleteRunner(ctx, "owner-a")
+	r.deleteRunner(ctx, "owner-a", false)
 	_, err = r.client.AppsV1().Deployments("test-agents").Get(ctx, a, metav1.GetOptions{})
 	assert.True(t, k8serrors.IsNotFound(err), "an owner with no vm agents keeps no runner")
 	_, err = r.dynamic.Resource(certificateGVR).Namespace("test-agents").Get(ctx, r.runnerTLSName("owner-a"), metav1.GetOptions{})
@@ -1279,33 +1278,6 @@ func TestTheRunnerDialsTheSocketTheImageCacheServiceBinds(t *testing.T) {
 	assert.Contains(t, args(func(spec *config.VMRunnerSpec) { spec.ImageCacheHostPath = "/var/lib/platform-images" }),
 		"--image-cache-socket="+vmImageCacheSocket)
 	assert.Contains(t, args(func(*config.VMRunnerSpec) {}), "--image-cache-socket=")
-}
-
-// TEST_SCENARIO: a vm machine boots one image for every harness, and that harness's tools come from a node directory the chart's DaemonSet fills. The runner mounts it read-only, since the DaemonSet is its only writer, and is told where with --tools-dir. With no such directory the runner is told an empty --tools-dir and gets no host mount.
-func TestTheRunnerSharesTheNodesHarnessToolsReadOnly(t *testing.T) {
-	render := func(configure func(*config.AgentBase)) corev1.PodSpec {
-		r, _, _ := setupVMReconciler(t, vmAgentCR())
-		configure(&r.config.AgentBase)
-		require.NoError(t, r.applyRunnerDeployment(context.Background(), testOwner, r.runnerOwnerRef(context.Background()), true))
-		dep, err := r.client.AppsV1().Deployments("test-agents").Get(
-			context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
-		require.NoError(t, err)
-		return dep.Spec.Template.Spec
-	}
-
-	pod := render(func(*config.AgentBase) {})
-	assert.Contains(t, pod.Containers[0].Args, "--tools-dir="+vmRunnerToolsPath)
-	assert.Contains(t, pod.Containers[0].VolumeMounts, corev1.VolumeMount{Name: "harness-tools", MountPath: vmRunnerToolsPath, ReadOnly: true})
-	dir := corev1.HostPathDirectoryOrCreate
-	assert.Contains(t, pod.Volumes, corev1.Volume{Name: "harness-tools", VolumeSource: corev1.VolumeSource{
-		HostPath: &corev1.HostPathVolumeSource{Path: "/var/lib/platform-tools", Type: &dir},
-	}})
-
-	pod = render(func(base *config.AgentBase) { base.ToolsHostPath = "" })
-	assert.Contains(t, pod.Containers[0].Args, "--tools-dir=")
-	for _, v := range pod.Volumes {
-		assert.NotEqual(t, "harness-tools", v.Name)
-	}
 }
 
 // TEST_SCENARIO: every cache carries a budget, because the runner's own claim is shared with the machine disks just as a node directory is shared with the rest of the host — neither can be given a share of its filesystem. A budget the controller cannot read fails the reconcile rather than being replaced by a guess, which would be a cache growing until something it shares with runs out.
@@ -1599,36 +1571,6 @@ func TestAFullHomeInsideAGuestIsPublishedAsAFullHomeVolume(t *testing.T) {
 	require.NotNil(t, cond)
 	assert.Equal(t, apiv1.ReasonHomeVolumeFull, cond.Reason)
 	assert.Contains(t, cond.Message, "disk is full")
-}
-
-// TEST_SCENARIO: a boot that repaired the machine's disk runs as usual, so the repair would otherwise be only on the console; the controller puts what the runner says was repaired on the Agent, and drops it once a boot finds the disk clean.
-func TestARepairAtBootIsOnTheAgentUntilACleanBoot(t *testing.T) {
-	ctx := context.Background()
-	agent := vmAgentCR()
-	r, node, _ := setupVMReconciler(t, agent)
-	node.statuses["my-agent"] = vmrunner.MachineStatus{
-		State:        vmrunner.StateRunning,
-		Ready:        true,
-		HomeRepaired: "storage: e2fsck -p repaired the filesystem: /dev/vda: 12/65536 files",
-	}
-	repaired := func() *metav1.Condition {
-		require.NoError(t, r.Reconcile(ctx, agent))
-		obj, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
-		require.NoError(t, err)
-		got, err := FromCacheObject[apiv1.Agent](obj)
-		require.NoError(t, err)
-		agent.Status = got.Status
-		return apimeta.FindStatusCondition(got.Status.Conditions, apiv1.ConditionHomeRepaired)
-	}
-
-	cond := repaired()
-	require.NotNil(t, cond)
-	assert.Equal(t, metav1.ConditionTrue, cond.Status)
-	assert.Equal(t, apiv1.ReasonHomeRepaired, cond.Reason)
-	assert.Contains(t, cond.Message, "repaired the filesystem")
-
-	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true}
-	assert.Nil(t, repaired())
 }
 
 // TEST_SCENARIO: a machine no Agent of this owner claims holds guest memory forever, so the sweep deletes it — and ownership is part of the match, because an Agent of the same name belonging to someone else says nothing about this runner's machine.

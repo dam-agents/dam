@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the browser panel shows every tab of the agent's one browser and keeps the user and the agent on the same tab; as in Safari, its tab bar shows only while the browser has two tabs or more, and the new-tab button sits in the top bar, which always shows. The spec boots its own container agent on the default Template, whose browser and agent-browser come from the node's harness tools — the mock agents of the rest of the suite carry neither — so only the vm lane, which installs both, runs it. It opens the agent's panel and drives the browser from both sides: agent-browser in the agent's pod, as the agent's own commands do, and the panel's tab bar, as the user does. After each step the tab the panel marks active — the one on the user's screen — is the tab agent-browser reports as its own, compared by CDP target id, never by position.
+// TEST_OVERVIEW: the browser panel shows every tab of the agent's one browser and keeps the user and the agent on the same tab; as in Safari, its tab bar shows only while the browser has two tabs or more, and the new-tab button sits in the top bar, which always shows. The spec boots its own container agent on the default Template, whose browser and agent-browser come from the harness tools the default image bakes — the mock agents of the rest of the suite carry neither — so only the vm lane, which enables the Template, runs it. It opens the agent's panel and drives the browser from both sides: agent-browser in the agent's pod, as the agent's own commands do, and the panel's tab bar, as the user does. After each step the tab the panel marks active — the one on the user's screen — is the tab agent-browser reports as its own, compared by CDP target id, never by position.
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
 import { baseUrl } from "../../config.js";
@@ -6,7 +6,7 @@ import { deleteAgentIfPresent } from "../../lib/agents.js";
 import { type ApiClient, createApiClient } from "../../lib/api-client.js";
 import { acceptTerms, getAccessToken } from "../../lib/auth.js";
 import { createAgentOn, waitAgentState } from "../../lib/backend.js";
-import { AGENT_NS, kubectl, waitHarnessTools } from "../../lib/cluster.js";
+import { AGENT_NS, kubectl } from "../../lib/cluster.js";
 
 test.describe.configure({ mode: "serial" });
 
@@ -93,7 +93,6 @@ test.beforeAll(async () => {
   api = createApiClient(await getAccessToken());
   await acceptTerms(api);
   await deleteAgentIfPresent(api, AGENT);
-  await waitHarnessTools();
   agentId = await createAgentOn(api, "container", AGENT, "default");
   await waitAgentState(api, agentId, "running");
 });
