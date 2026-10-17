@@ -35,6 +35,8 @@ const token = refreshingToken();
 let agentId = "";
 let agentName = "";
 const marker = `home-survives-${randomUUID()}`;
+const probeService = "e2e-probe";
+const probeStopped = `/home/agent/${probeService}.stopped`;
 
 async function chatTurn(
   page: Page,
@@ -139,7 +141,7 @@ test("keeps /tmp and /var/tmp as directories of the root", async () => {
   expect(guest.split("\n")).toEqual(["0", "1777 root", "1777 root"]);
 });
 
-// TEST_SCENARIO: the base image ships openrc, so platform-init boots its runlevels before the entrypoint, and runs the entrypoint in a cgroup of its own, which a restart of the entrypoint ends without openrc's services.
+// TEST_SCENARIO: the base image ships openrc, so platform-init boots its runlevels before the entrypoint, and runs the entrypoint in a cgroup of its own, which a restart of the entrypoint ends without openrc's services. A fresh machine's runlevels hold no service. The test then adds one of its own to the default runlevel and starts it, as an agent does; openrc stops only a started service, and the hibernate-and-wake test reads back both its stop and its start at the boot.
 test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async () => {
   test.skip(
     laneBackend !== "vm",
@@ -152,6 +154,27 @@ test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async
   expect(guest).toMatch(/^softlevel default$/m);
   const [, procs] = /^entrypoint (\d+)$/m.exec(guest) ?? [];
   expect(Number(procs), "the entrypoint runs in its cgroup").toBeGreaterThan(0);
+  expect(
+    inGuest(agentId, "find /etc/runlevels -mindepth 2 | wc -l").trim(),
+    "a fresh machine starts no openrc service",
+  ).toBe("0");
+  inGuest(
+    agentId,
+    [
+      `cat > /etc/init.d/${probeService} <<'EOF'`,
+      "#!/sbin/openrc-run",
+      "command=/bin/sleep",
+      "command_args=infinity",
+      "command_background=yes",
+      `pidfile=/run/${probeService}.pid`,
+      `stop_post() { touch ${probeStopped}; }`,
+      "EOF",
+      `chmod 755 /etc/init.d/${probeService}`,
+      `rm -f ${probeStopped}`,
+      `/sbin/rc-update add ${probeService} default >/dev/null`,
+      `/sbin/rc-service ${probeService} start >/dev/null`,
+    ].join("\n"),
+  );
 });
 
 // TEST_SCENARIO: the image's docker is an openrc service the agent starts from its own shell. The daemon answers, gets the agent's gateway but no other variable of the agent's environment, has platform-runc first on its PATH, and openrc stops it again.
@@ -243,7 +266,7 @@ test("takes a scheduled fire", async () => {
   }
 });
 
-// TEST_SCENARIO: sleep hibernates the agent, and wake brings it back. On the vm Backend that is a stop and a boot of the same machine, and HOME is its disk, so the marker must read back and the chat must answer after the boot.
+// TEST_SCENARIO: sleep hibernates the agent, and wake brings it back. On the vm Backend that is a stop and a boot of the same machine, and HOME is its disk, so the marker must read back and the chat must answer after the boot. The openrc service the agent added to the default runlevel ran its stop_post on the stop, and runs again after the boot.
 test("hibernates and wakes with HOME intact", async ({ page }) => {
   test.setTimeout(300_000);
   await api.agents.sleep.mutate({ id: agentId });
@@ -251,6 +274,20 @@ test("hibernates and wakes with HOME intact", async ({ page }) => {
   await api.agents.wake.mutate({ id: agentId });
   await waitAgentState(api, agentId, "running");
   await expectHomeFile(token, agentId, markerPath, marker);
+  if (laneBackend === "vm") {
+    const guest = inGuest(
+      agentId,
+      `test -e ${probeStopped} && echo stopped; /sbin/rc-service ${probeService} status 2>&1; true`,
+    );
+    expect(guest, "openrc ran the service's stop_post on the stop").toMatch(
+      /^stopped$/m,
+    );
+    expect(
+      guest,
+      "the service in the default runlevel started at the boot",
+    ).toMatch(/status: started/);
+    inGuest(agentId, `/sbin/rc-update del ${probeService} default >/dev/null`);
+  }
   await chatTurn(page, "hello-after-wake", "backend-reply-after-wake");
 });
 
