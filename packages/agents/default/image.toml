@@ -1,7 +1,8 @@
 # The image every harness Template boots: base's environment and the files of
 # every harness, with base's tools and every harness's in a layer of their own
 # at mise's system data dir, installed at build time by the image's own
-# installer. mise's own data dir stays writable for the agent's `mise use -g`.
+# installer. The agent's own `mise use -g` installs into mise's default data
+# dir, in the home.
 # Until every agent runs a baked image, each node's installer still fills the
 # directory container agents mount over that path, with the same versions.
 # The oci task stages it apart from the other images (see `bare` there): the
