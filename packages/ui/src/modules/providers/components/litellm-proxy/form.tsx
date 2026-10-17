@@ -124,6 +124,7 @@ export function LiteLlmProxyForm({
           data-lpignore="true"
           data-form-type="other"
           placeholder="sk-…"
+          aria-label={`${PROVIDERS[provider].displayName} API key`}
           {...register("value")}
         />
         <Button type="submit" disabled={submitDisabled} className="shrink-0">
