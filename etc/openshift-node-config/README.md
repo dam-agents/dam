@@ -1,6 +1,6 @@
 # OpenShift node configuration
 
-Node configuration for an OpenShift cluster that runs the platform with VM agents and the harness tools.
+Node configuration for an OpenShift cluster that runs the platform with VM agents.
 Applying either file drains and reboots every node of the pools it reaches, one node at a time per pool, so a cluster admin applies them at a scheduled time.
 [`cluster-owner-requests.md`](cluster-owner-requests.md) lists what else the platform asks of the cluster owner.
 
@@ -15,11 +15,14 @@ Applying either file drains and reboots every node of the pools it reaches, one 
 
 The chart's defaults and the values an OpenShift install uses for them:
 
-| Path                                   | Chart value                             | Writer                      | Readers                                                 |
-| -------------------------------------- | --------------------------------------- | --------------------------- | ------------------------------------------------------- |
-| `/var/lib/platform-vm-runner-releases` | `virtualization.runner.releaseHostPath` | the release stager          | VM runners, read-only                                   |
-| `/var/lib/platform-images`             | `virtualization.imageCache.hostPath`    | the image cache service     | VM runners, read-only, and the cache's socket inside it |
-| `/var/lib/platform-harness-tools`      | `harnessTools.hostPath`                 | the harness tools installer | container agents and VM runners, read-only              |
+| Path                                   | Chart value                             | Writer                  | Readers                                                 |
+| -------------------------------------- | --------------------------------------- | ----------------------- | ------------------------------------------------------- |
+| `/var/lib/platform-vm-runner-releases` | `virtualization.runner.releaseHostPath` | the release stager      | VM runners, read-only                                   |
+| `/var/lib/platform-images`             | `virtualization.imageCache.hostPath`    | the image cache service | VM runners, read-only, and the cache's socket inside it |
+| `/var/lib/platform-harness-tools`      | none                                    | none                    | none                                                    |
+
+`/var/lib/platform-harness-tools` held the harness tools before the default image baked them, and no pod mounts it any more.
+The MachineConfig still creates it, because a change to the MachineConfig drains and reboots every node; drop it the next time the MachineConfig changes for another reason.
 
 If an install sets other paths in its values, change the paths in the MachineConfig to match: the tmpfiles entry is URL-encoded in the file's `source`, decoded in the comment above it.
 
@@ -42,7 +45,6 @@ Why this label and mechanism:
 
 | Host path                                                                        | Mounted by                                                                                                     | Label and mode it needs                                                           | Created by this MachineConfig                                                                                          |
 | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `harnessTools.hostPath` (`/var/lib/platform-harness-tools`)                      | harness tools installer (writes); container agents and VM runners (read-only, from the controller)             | `container_file_t:s0`, `root:root 0755`                                           | yes                                                                                                                    |
 | `virtualization.imageCache.hostPath` (`/var/lib/platform-images`)                | image cache service (writes); VM runners (read-only, from the controller)                                      | `container_file_t:s0`, `root:root 0755`                                           | yes                                                                                                                    |
 | `virtualization.runner.releaseHostPath` (`/var/lib/platform-vm-runner-releases`) | release stager (writes); VM runners (read-only, from the controller)                                           | `container_file_t:s0`, `root:root 0755`                                           | yes                                                                                                                    |
 | `virtualization.runner.imageArchiveHostPath` (empty by default)                  | VM runners (read-only, from the controller)                                                                    | `container_file_t:s0` on OpenShift; staged by hand with `mise run image:stage-vm` | no: it is for clusters without a registry, such as local dev, and is left to `DirectoryOrCreate` and whoever stages it |
@@ -165,7 +167,7 @@ Deleting the MachineConfig removes the tmpfiles entry and the unit, but leaves t
 ## Follow-up chart changes
 
 Make these only after every node of every reached pool passes the spot-check.
-All three writers keep the SCC that admits a host directory and leaves SELinux options to the pod (`seLinuxContext: RunAsAny`): the hostPath needs it, and so does pinning `level: s0`, without which a pod gets its namespace's category pair and writes files other namespaces cannot read.
+Both writers keep the SCC that admits a host directory and leaves SELinux options to the pod (`seLinuxContext: RunAsAny`): the hostPath needs it, and so does pinning `level: s0`, without which a pod gets its namespace's category pair and writes files other namespaces cannot read.
 
 **Release stager** ([`vm-runner-releases.yaml`](../../helm/templates/controller/vm-runner-releases.yaml)):
 
@@ -182,13 +184,7 @@ All three writers keep the SCC that admits a host directory and leaves SELinux o
 - On OpenShift, change the hostPath type to `Directory`.
 - Test on a dev install first: runners then connect to the cache's socket held by a confined process at `s0`, instead of an unconfined one.
 
-**Harness tools installer** ([`harness-tools.yaml`](../../helm/templates/harness-tools.yaml)):
-
-- Drop `seLinuxOptions.type: spc_t`, keep `level: s0`, and drop the label argument the installer passes to `chcon`.
-- Keep `DAC_OVERRIDE`: mise writes its own directories as root under an SCC that drops every capability.
-- On OpenShift, change the hostPath type to `Directory`.
-
-The controller mounts the same three directories into agents and runners as `DirectoryOrCreate`; on OpenShift, switch those to `Directory` in the same change, so a pod on a node without them fails visibly.
+The controller mounts the same two directories into runners as `DirectoryOrCreate`; on OpenShift, switch those to `Directory` in the same change, so a pod on a node without them fails visibly.
 Update the text that says the writers run as `spc_t`: the `values.yaml` comments, the `_validators.tpl` messages and the architecture pages ([VM runner upgrades](../../docs/architecture/vm-runner-upgrades.md), [VM image cache](../../docs/architecture/vm-image-cache.md), [agent images](../../docs/architecture/agent-images.md)).
 
 **Runner image file modes, so the stager can drop `DAC_OVERRIDE`.**

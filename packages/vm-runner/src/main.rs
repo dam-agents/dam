@@ -30,9 +30,9 @@ struct Args {
     // UNIT_BOUNDARY_DESCRIPTION: bytes the cached images may occupy; 0 evicts nothing, and the controller refuses to start a runner without a positive budget.
     #[arg(long = "image-budget-bytes", default_value_t = 0)]
     image_budget_bytes: i64,
-    // UNIT_BOUNDARY_DESCRIPTION: the node's harness tools — mise's system data dir that a per-node installer fills — mounted read-only; every machine whose image asks for them gets them read-only at the path it names. Empty shares none.
-    #[arg(long = "tools-dir", default_value = "")]
-    tools_dir: String,
+    // UNIT_BOUNDARY_DESCRIPTION: retired and ignored: the node's harness tools directory. A hand-off starts a new release with the args the pod was created with, so a pod a controller from before the retirement rendered still passes it.
+    #[arg(long = "tools-dir", default_value = "", hide = true)]
+    _tools_dir: String,
     // UNIT_BOUNDARY_DESCRIPTION: the smolvm release's launcher. The runner drives smolvm as a library and forks no CLI, but the release is still where the libraries the VMM loads, the guest agent's root filesystem and the disk templates live — all beside this path, as the release's own launcher script finds them.
     #[arg(long, default_value = "/opt/smolvm/smolvm")]
     smolvm: PathBuf,
@@ -302,17 +302,14 @@ fn prepare_host(args: &Args) -> anyhow::Result<()> {
 
 async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
     let nested = args.nested_virtualization;
-    let tools = (!args.tools_dir.is_empty()).then(|| PathBuf::from(&args.tools_dir));
     let install = args
         .smolvm
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_default();
     let btrfs = install.join(vm_runner::embedded::BTRFS_TEMPLATE);
-    let runtime = Arc::new(
-        tokio::task::spawn_blocking(move || Smolvm::open(nested, tools.as_deref(), btrfs))
-            .await??,
-    );
+    let runtime =
+        Arc::new(tokio::task::spawn_blocking(move || Smolvm::open(nested, btrfs)).await??);
     let server = Server::start(
         Config {
             state_dir: args.state_dir.clone(),
@@ -386,7 +383,6 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
         listen = %args.listen,
         state_dir = %args.state_dir.display(),
         image_dir = %args.image_dir.display(),
-        tools_dir = %args.tools_dir,
         platform_init = %args.platform_init.display(),
         platform_runc = %args.platform_runc.display(),
         metrics = %args.metrics_listen,
@@ -669,22 +665,13 @@ mod tests {
         assert!(!args.nested_virtualization);
     }
 
-    // TEST_SCENARIO: an install that sets no harness tools directory renders `--tools-dir=` with nothing after it, as it renders an empty `--image-cache-socket=`. The runner must start from that argv and share no tools, or every runner of such an install exits on start.
+    // TEST_SCENARIO: a pod that a controller from before the retirement of the node's harness tools rendered passes `--tools-dir`, and a hand-off starts the new release with those args. The runner must still start from them, or every hand-off onto it from such a pod fails.
     #[test]
-    fn a_runner_without_harness_tools_starts_and_shares_none() {
-        let argv: Vec<String> = base_argv()
-            .into_iter()
-            .map(|arg| {
-                if arg.starts_with("--tools-dir=") {
-                    "--tools-dir=".to_string()
-                } else {
-                    arg
-                }
-            })
-            .collect();
-        let args = Args::try_parse_from(&argv)
+    fn a_runner_handed_the_retired_tools_dir_still_starts() {
+        let mut argv = base_argv();
+        argv.push("--tools-dir=/var/lib/platform/tools".to_string());
+        Args::try_parse_from(&argv)
             .unwrap_or_else(|e| panic!("the pod's arguments {argv:?} are rejected: {e}"));
-        assert!(args.tools_dir.is_empty());
     }
 
     // TEST_SCENARIO: a flag nobody passes runs on its default, and a default is a second copy of a value its owner already holds — the port range the controller opens in the runner's NetworkPolicy, the path the image installs platform-init at. So every flag is set by the image or by the controller, and a new flag fails here until one of them sets it.
@@ -701,7 +688,7 @@ mod tests {
         for flag in command
             .get_arguments()
             .filter_map(|arg| arg.get_long())
-            .filter(|flag| !matches!(*flag, "help" | "version"))
+            .filter(|flag| !matches!(*flag, "help" | "version" | "tools-dir"))
         {
             assert!(
                 passed.contains(&flag),

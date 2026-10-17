@@ -2097,8 +2097,8 @@ controller:
 # `$HOME` in mount paths is substituted at chart render time with the fixed
 # agent home, /home/agent.
 # The built-in `default` entry boots quay.io/dam-agents/default, which carries
-# every harness in `harnesses` and bakes no tools: it runs on the node's
-# `harnessTools`. Its sessions choose the harness, so the template names none.
+# every harness in `harnesses` and bakes their tools. Its sessions choose the
+# harness, so the template names none.
 # Workload images (research frameworks and other pre-built agents) are starter
 # kits in the built-in catalog (`starterKits`), not templates.
 # `aliases` lists retired template ids that resolve to this one, so agents
@@ -2204,56 +2204,6 @@ harnesses:
       # Code writes, so it rides its own env rail.
       telemetry: bob
       tags: ["Anthropic", "Mistral", "Granite"]
-
-# -- The harnesses' tools for the image every harness Template boots
-# (quay.io/dam-agents/default), which bakes none: mise's system data dir with
-# the tools of every harness and the common ones, kept in a directory on each
-# node. Every container agent pod mounts it read-only, whatever its image, at a
-# path no other image uses; every VM runner mounts it read-only too and shares
-# it into each machine whose image asks for it. A DaemonSet fills it: its init
-# container runs that same image's installer, so the tools and the image agree
-# on every version, and then it idles. A deploy that changes the image rolls
-# the DaemonSet and installs the new versions beside the old ones, in place,
-# so an agent still on an older image keeps its own. Nothing is pruned: each
-# image's versions stay on the node until it is cleaned by hand. Empty
-# `hostPath` mounts nothing and renders no installer, which leaves the harness
-# Templates' image without its tools.
-#
-# It is in the boot path: an agent that starts on a node before the installer
-# has finished there has no harness until its next start. The installer
-# reaches the tools' download hosts (npm, GitHub, the language runtimes' and
-# Playwright's CDNs) from the node.
-#
-# The DaemonSet runs on `nodeSelector` with `tolerations`, plus the agents'
-# (`controller.agent.base.tolerations`) and, with virtualization, the runners'
-# tolerations: it must reach every node an agent or a runner may land on.
-#
-# OpenShift: the installer runs as uid 0 and as `spc_t`, to label the directory
-# `container_file_t` at `s0` for the confined agents and runners to read, so
-# `scc` must name an SCC that admits a hostPath and leaves the SELinux type to
-# the pod (seLinuxContext RunAsAny); empty falls back to
-# `virtualization.runner.scc`. The chart's own agent SCC then admits the
-# hostPath the agents mount.
-harnessTools:
-  hostPath: /var/lib/platform-harness-tools
-  image:
-    repository: quay.io/dam-agents/default
-    tag: "" # @ci-pin default-image-tag
-    pullPolicy: IfNotPresent
-  nodeSelector: {}
-  tolerations: []
-  scc: ""
-  # A GitHub token for the installer's API lookups, which otherwise share the
-  # node address's anonymous limit. Any token works; it needs no scope.
-  githubToken: ""
-  # The installer's; the idling container that keeps the pod scheduled asks
-  # for almost nothing.
-  resources:
-    requests:
-      cpu: 200m
-      memory: 512Mi
-    limits:
-      memory: 2Gi
 
 # -- E2E test affordances. Gated test-only surface: the api-server
 # registers a control tRPC namespace that drives the mock Agent harness over

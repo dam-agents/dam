@@ -95,15 +95,6 @@ if [ -n "${IS_SANDBOX:-}" ] && [ -f "$OUTER_GATEWAY_CA" ]; then
     HELM_EXTRA_ARGS+=("--set=controller.gatewayEgress.extraCidrs[0]=$OUTER_GATEWAY_IP/32")
   fi
 fi
-# CI hands the harness tools installer its job token, so the installer's GitHub
-# lookups do not share the runner address's anonymous limit. Through a file, so
-# the token stays off helm's command line.
-if [ -n "${HARNESS_TOOLS_GITHUB_TOKEN:-}" ]; then
-  token_file=$(mktemp)
-  trap 'rm -f "$token_file"' EXIT
-  printf '%s' "$HARNESS_TOOLS_GITHUB_TOKEN" >"$token_file"
-  HELM_EXTRA_ARGS+=("--set-file=harnessTools.githubToken=$token_file")
-fi
 NO_RESTART="${usage_no_restart:-false}"
 DEV_VALUES="helm/values-dev.yaml"
 

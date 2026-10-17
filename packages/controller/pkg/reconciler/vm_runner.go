@@ -38,7 +38,6 @@ const (
 	vmRunnerDisksPath    = vmRunnerStatePath + "/disks"
 	vmRunnerMachinesPath = vmRunnerStatePath + "/machines"
 	vmRunnerImagesPath   = vmRunnerStatePath + "/images"
-	vmRunnerToolsPath    = vmRunnerStatePath + "/tools"
 	vmRunnerPort         = 4600
 	vmRunnerUsageLabel   = "agent-platform.ai/vm-runner-usage"
 
@@ -777,15 +776,6 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 	default:
 		mounts = append(mounts, corev1.VolumeMount{Name: "state", MountPath: vmRunnerImagesPath, SubPath: "images"})
 	}
-	toolsDir := ""
-	if r.config.AgentBase.ToolsHostPath != "" {
-		dir := corev1.HostPathDirectoryOrCreate
-		toolsDir = vmRunnerToolsPath
-		mounts = append(mounts, corev1.VolumeMount{Name: "harness-tools", MountPath: vmRunnerToolsPath, ReadOnly: true})
-		volumes = append(volumes, corev1.Volume{Name: "harness-tools", VolumeSource: corev1.VolumeSource{
-			HostPath: &corev1.HostPathVolumeSource{Path: r.config.AgentBase.ToolsHostPath, Type: &dir},
-		}})
-	}
 	env := []corev1.EnvVar{{
 		Name: "SMOLVM_VM_UID_DROP", Value: "off",
 	}, {
@@ -859,7 +849,6 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 							"--image-dir=" + vmRunnerImagesPath,
 							"--image-cache-socket=" + imageCacheSocket,
 							fmt.Sprintf("--image-budget-bytes=%d", imageBudget),
-							"--tools-dir=" + toolsDir,
 							"--memory-mib=$(RUNNER_MEMORY_MIB)",
 							fmt.Sprintf("--reserve-mib=%d", spec.ReserveMiB),
 							fmt.Sprintf("--headroom-mib=%d", spec.HeadroomMiB),

@@ -82,12 +82,6 @@ virtualization:
       - 169.254.0.0/16
 
 
-harnessTools:
-  image:
-    repository: platform-default
-    tag: latest
-    pullPolicy: Never
-
 # Merges over the values.yaml catalog. Every template gets a local image
 # override so enabling one later never pulls from quay.
 harnessTemplates:

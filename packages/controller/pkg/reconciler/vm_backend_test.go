@@ -401,7 +401,6 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512, HeadroomMiB: 256, MachineCPUs: 4,
 		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi",
 	}}
-	r.config.AgentBase.ToolsHostPath = "/var/lib/platform-tools"
 	r.runnerEndpoint = func(string) string { return srv.URL }
 	requeued := &requeueLog{}
 	r.WithRequeue(t.Context(), requeued.add)
@@ -1266,33 +1265,6 @@ func TestTheRunnerDialsTheSocketTheImageCacheServiceBinds(t *testing.T) {
 	assert.Contains(t, args(func(spec *config.VMRunnerSpec) { spec.ImageCacheHostPath = "/var/lib/platform-images" }),
 		"--image-cache-socket="+vmImageCacheSocket)
 	assert.Contains(t, args(func(*config.VMRunnerSpec) {}), "--image-cache-socket=")
-}
-
-// TEST_SCENARIO: a vm machine boots one image for every harness, and that harness's tools come from a node directory the chart's DaemonSet fills. The runner mounts it read-only, since the DaemonSet is its only writer, and is told where with --tools-dir. With no such directory the runner is told an empty --tools-dir and gets no host mount.
-func TestTheRunnerSharesTheNodesHarnessToolsReadOnly(t *testing.T) {
-	render := func(configure func(*config.AgentBase)) corev1.PodSpec {
-		r, _, _ := setupVMReconciler(t, vmAgentCR())
-		configure(&r.config.AgentBase)
-		require.NoError(t, r.applyRunnerDeployment(context.Background(), testOwner, r.runnerOwnerRef(context.Background()), true))
-		dep, err := r.client.AppsV1().Deployments("test-agents").Get(
-			context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
-		require.NoError(t, err)
-		return dep.Spec.Template.Spec
-	}
-
-	pod := render(func(*config.AgentBase) {})
-	assert.Contains(t, pod.Containers[0].Args, "--tools-dir="+vmRunnerToolsPath)
-	assert.Contains(t, pod.Containers[0].VolumeMounts, corev1.VolumeMount{Name: "harness-tools", MountPath: vmRunnerToolsPath, ReadOnly: true})
-	dir := corev1.HostPathDirectoryOrCreate
-	assert.Contains(t, pod.Volumes, corev1.Volume{Name: "harness-tools", VolumeSource: corev1.VolumeSource{
-		HostPath: &corev1.HostPathVolumeSource{Path: "/var/lib/platform-tools", Type: &dir},
-	}})
-
-	pod = render(func(base *config.AgentBase) { base.ToolsHostPath = "" })
-	assert.Contains(t, pod.Containers[0].Args, "--tools-dir=")
-	for _, v := range pod.Volumes {
-		assert.NotEqual(t, "harness-tools", v.Name)
-	}
 }
 
 // TEST_SCENARIO: every cache carries a budget, because the runner's own claim is shared with the machine disks just as a node directory is shared with the rest of the host — neither can be given a share of its filesystem. A budget the controller cannot read fails the reconcile rather than being replaced by a guess, which would be a cache growing until something it shares with runs out.
