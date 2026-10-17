@@ -1,24 +1,33 @@
 import {
   BareMetalServer,
   Link,
+  LogoKubernetes,
   LogoSlack,
+  LogoYoutube,
   Password,
 } from "@carbon/icons-react";
 import type { ComponentType, SVGProps } from "react";
 
-import { GithubIcon, TelegramIcon } from "@/components/brand-icons";
+import {
+  GithubIcon,
+  SpotifyIcon,
+  TelegramIcon,
+} from "@/components/brand-icons";
 
 const MONOCHROME_BY_SLUG = new Map<
   string,
   ComponentType<SVGProps<SVGSVGElement>>
 >([
   ["github", GithubIcon],
+  ["github-enterprise", GithubIcon],
+  ["kubernetes", LogoKubernetes],
   ["slack", LogoSlack],
+  ["spotify", SpotifyIcon],
   ["telegram", TelegramIcon],
+  ["youtube", LogoYoutube],
 ]);
 
 const SVG_BY_SLUG = new Set([
-  "github-enterprise",
   "gmail",
   "google-admin",
   "google-analytics",
@@ -34,9 +43,6 @@ const SVG_BY_SLUG = new Set([
   "google-sheets",
   "google-slides",
   "google-tasks",
-  "kubernetes",
-  "spotify",
-  "youtube",
 ]);
 
 interface Props {
