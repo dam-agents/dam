@@ -58,7 +58,7 @@ const themeOptions = [
 ];
 
 export function SettingsView() {
-  const { data: flags, isPending: flagsPending } = useFeatures();
+  const { data: flags, isSuccess: flagsLoaded } = useFeatures();
   const featuresMenuRevealed = useStore((s) => s.featuresMenuRevealed);
   const showFeatures =
     featuresMenuRevealed || Object.values(flags ?? {}).some(Boolean);
@@ -87,10 +87,11 @@ export function SettingsView() {
   const activeTab = hiddenTab ? "account" : rawTab;
   const tabStrip = useRef<HTMLDivElement>(null);
   const hiddenTabSettled =
-    hiddenTab &&
-    !flagsPending &&
-    !slackInstall.isPending &&
-    !usageInspect.isPending;
+    (rawTab === "features" && !showFeatures && flagsLoaded) ||
+    (rawTab === "slack-workspaces" &&
+      slackInstall.isSuccess &&
+      !showSlackWorkspaces) ||
+    (rawTab === "analytics" && usageInspect.isSuccess && !showAnalytics);
   useEffect(() => {
     if (!hiddenTabSettled) return;
     history.replaceState(

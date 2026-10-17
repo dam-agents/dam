@@ -133,7 +133,7 @@ export function AgentEgressEditor({
         isEmpty={rules.length === 0}
         empty="No rules yet. Every outbound request will need your approval."
       >
-        {rules.length > 10 && (
+        {(rules.length > 10 || query !== "") && (
           <div className="px-4 py-2.5">
             <Input
               type="search"
