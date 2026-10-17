@@ -88,23 +88,12 @@ The guest's init is platform-init, not smolvm's guest agent: smolvm boots it fro
 An image that ships `/sbin/openrc` opts in to its services: platform-init runs openrc's `sysinit`, `boot` and `default` runlevels before the entrypoint and openrc's `shutdown` on a stop, and starts the entrypoint in a cgroup of its own, so a restart of the entrypoint ends what it left and keeps the services.
 That disk is made once, by the runner when it creates the machine: btrfs from the runner image's template, at its full size, under a UUID of its own, which the guest mounts compressed with zstd.
 A create whose disk cannot be made fails and leaves no machine, since smolvm would make a disk of its own at the next start.
-Disks made before btrfs are ext4.
 A new btrfs disk holds two subvolumes: `agent`, mounted as `HOME`, and `system`, the platform state and the root's layers.
 The home is then a tree btrfs can snapshot, send or put a quota on alone.
 The root's upper and work layers stay in one subvolume: btrfs refuses a rename between subvolumes, and overlayfs renames from the work layer into the upper layer.
-A btrfs disk made before subvolumes moves to them at its next boot, inside the guest: each subvolume starts as a snapshot of the whole disk, which copies nothing, and becomes its store by renames inside it.
-The old directory layout is changed only once both subvolumes are complete, so a boot cut short keeps it and tries again; what the move set aside, smolvm's old guest-agent directories among it, is deleted in the background.
-A move that fails leaves the disk in the directory layout, which still boots, and the layout mark records which of the two a disk is in.
-An ext4 disk keeps the directory layout until the install turns on `virtualization.runner.convertExt4Disks`.
-Then the runner converts it at the machine's next start, one machine at a time and only while the owner's claim has room for a copy of the disk beside it and still stays under 90%: it attaches a fresh btrfs disk, made from the template with a UUID of its own, as the machine's second disk, and the share asks the guest to copy into it.
-platform-init mounts the btrfs disk first: a copy it already holds for this conversion boots at once, and a btrfs disk that does not mount fails the boot, since the ext4 disk may be older than a copy that booted.
-Otherwise it checks the ext4 disk, mounts it read-only, copies its home and kept root into the btrfs disk's subvolumes with every owner, mode, time, extended attribute, hard link and hole, and boots this boot on the copy.
-The guest names the conversion's nonce in its answer to the runner's ping, over the socket only its init holds; only then does the runner swap the two disk files in one rename, recorded first, so a crash on either side of the swap is finished from what each file's superblock magic says.
-The old ext4 disk stays untouched, and is deleted at the next start, once the copy has booted; once started, a conversion's disk is attached at every start until the swap, so a copy that booted is never hidden by a boot on the ext4 disk; a copy that fails boots the ext4 disk as before, and three boots that answer on the ext4 disk give the conversion up.
-A boot that copies a disk before its first answer — a converting one, or one that restores a [runtime migration](vm-runtime-migration.md)'s seed — may stay quiet for six hours, so a large home's copy is not restarted from nothing.
+A disk from before that layout — ext4, or btrfs that holds `workspace/` at its top — fails its boot with one console line saying it predates the subvolume layout, and is never formatted or rewritten, so an operator can recover it.
+A boot that restores a [runtime migration](vm-runtime-migration.md)'s seed copies a disk before its first answer, so it may stay quiet for six hours, and a large home's copy is not restarted from nothing.
 Until the guest answers, its status says so under a reason of its own, `MachineCopyingDisk`, which the controller reads as a boot in progress, never as a failed start, and leaves to the runner's bound.
-It also boots with all its RAM rather than growing into it, since a guest that copies cannot take added RAM, and a failed grow reboots the machine ([vm-memory](vm-memory.md)).
-A disk already in the subvolume layout that also holds `workspace/` was booted by a rolled-back platform-init, which made a fresh one; it is set aside and kept, never moved, and the home in the subvolume boots.
 A btrfs disk that does not mount fails the boot and stays as it is, since btrfs has no repair a boot may run unattended.
 A start never copies smolvm's template over a disk that already holds a filesystem — not even one whose first format stopped short of resizing it to the size asked for.
 A stop has platform-init send the workload SIGTERM and give it a few seconds, as a pod's container gets, then sync and freeze that disk, and a guest that does not confirm it did is powered off anyway, so a stop or a delete always ends the machine.

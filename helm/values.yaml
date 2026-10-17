@@ -323,13 +323,6 @@ virtualization:
     # escapes. Changing this value rolls every runner, which reboots its
     # owner's machines; an Agent changing its ask restarts only its own.
     nestedVirtualization: false
-    # true = runners convert their machines' ext4 storage disks, which older
-    # installs made, to btrfs: each at the machine's next start, which then
-    # takes as long as copying its home, one machine per runner at a time.
-    # The ext4 disk is kept until the btrfs copy has booted, and three failed
-    # attempts leave a disk ext4. A rollout switch; changing it rolls every
-    # runner, which reboots its owner's machines.
-    convertExt4Disks: false
     # Machines are processes of their runner, so any change to the runner pod
     # — a new `image`, or a controller release that renders the pod
     # differently — reboots every machine that owner has. The controller rolls

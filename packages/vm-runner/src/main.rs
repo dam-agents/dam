@@ -71,9 +71,6 @@ struct Args {
     // UNIT_BOUNDARY_DESCRIPTION: whether the install lets machines run KVM themselves. The runner nests a guest only when this is set and the node's KVM allows it. Nesting is the kernel's default on Intel and AMD, and turning it off on a node takes a module reload, so the node alone is no choice at all: the install makes it, and only one that sets `virtualization.runner.nestedVirtualization` passes this flag.
     #[arg(long = "nested-virtualization")]
     nested_virtualization: bool,
-    // UNIT_BOUNDARY_DESCRIPTION: whether this runner converts its machines' ext4 storage disks to btrfs, each at its next start (see convert). The install sets it with `virtualization.runner.convertExt4Disks` for a rollout.
-    #[arg(long = "convert-ext4-disks")]
-    convert_ext4_disks: bool,
     #[arg(long = "token-file", default_value = "/etc/vm-runner/token")]
     token_file: PathBuf,
     // UNIT_BOUNDARY_DESCRIPTION: the serving certificate and key cert-manager issues for the runner's Service host. The machine API carries the runner's token, so it is served over TLS only.
@@ -305,7 +302,6 @@ fn prepare_host(args: &Args) -> anyhow::Result<()> {
 
 async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
     let nested = args.nested_virtualization;
-    let convert = args.convert_ext4_disks;
     let tools = (!args.tools_dir.is_empty()).then(|| PathBuf::from(&args.tools_dir));
     let install = args
         .smolvm
@@ -314,10 +310,8 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
         .unwrap_or_default();
     let btrfs = install.join(vm_runner::embedded::BTRFS_TEMPLATE);
     let runtime = Arc::new(
-        tokio::task::spawn_blocking(move || {
-            Smolvm::open(nested, tools.as_deref(), btrfs).map(|smolvm| smolvm.converting(convert))
-        })
-        .await??,
+        tokio::task::spawn_blocking(move || Smolvm::open(nested, tools.as_deref(), btrfs))
+            .await??,
     );
     let server = Server::start(
         Config {
@@ -653,10 +647,6 @@ mod tests {
     fn pod_argv() -> Vec<String> {
         let mut argv = base_argv();
         argv.extend(nested_args());
-        argv.extend(contract_args(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/contract/runner-args-convert.json"
-        )));
         argv
     }
 
@@ -668,7 +658,6 @@ mod tests {
             .unwrap_or_else(|e| panic!("the pod's arguments {argv:?} are rejected: {e}"));
         assert!(args.memory_mib > 0 && args.port_min <= args.port_max);
         assert!(args.nested_virtualization);
-        assert!(args.convert_ext4_disks);
     }
 
     // TEST_SCENARIO: an install that does not set `virtualization.runner.nestedVirtualization` renders the runner without the nesting args. The runner must still start from that argv, and must then not nest, whatever the node allows: nesting is the kernel's default, so a runner that nested on its own would expose every guest on a stock node to the host's nested-virtualization code.
@@ -678,10 +667,6 @@ mod tests {
         let args = Args::try_parse_from(&argv)
             .unwrap_or_else(|e| panic!("the pod's arguments {argv:?} are rejected: {e}"));
         assert!(!args.nested_virtualization);
-        assert!(
-            !args.convert_ext4_disks,
-            "a runner converts disks only when the install asks"
-        );
     }
 
     // TEST_SCENARIO: an install that sets no harness tools directory renders `--tools-dir=` with nothing after it, as it renders an empty `--image-cache-socket=`. The runner must start from that argv and share no tools, or every runner of such an install exits on start.

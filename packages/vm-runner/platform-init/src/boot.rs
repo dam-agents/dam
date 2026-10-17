@@ -85,7 +85,6 @@ fn exit(code: i32) -> ! {
     std::process::exit(code)
 }
 
-mod copy;
 mod vm;
 
 pub use vm::stage0;
@@ -103,7 +102,7 @@ pub fn run() -> ! {
     open_boot_log(&disk);
 
     logf!("storage disk mounted at {}", disk.display());
-    claim_layout(&disk, machine.layout);
+    claim_layout(&disk);
     fresh_root(&disk, &machine);
     vm::serve();
     let root = PathBuf::from(guest::DISK_PATH);
@@ -142,7 +141,6 @@ pub fn run() -> ! {
     std::thread::spawn(move || reclaim_cold_cache(swapping));
     let scratch = scratch_folders();
     std::thread::spawn(move || evict_scratch(&scratch));
-    std::thread::spawn(trim_freed_blocks);
     if let Some(guard) = guard {
         *POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner()) = Some(guard);
         std::thread::spawn(guard_pool);
@@ -364,76 +362,6 @@ fn swap_header(page: usize, size: u64) -> Vec<u8> {
     header
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the disk is a sparse file on the owner's claim, and a block the agent frees stays allocated there until it is trimmed. smolvm's guest agent trims only once free space has risen by a quarter GiB since its last trim, so a file rewritten in place or replaced by a renamed copy — free space back where it was, the new copy on other blocks — keeps the old copy's blocks counted for up to half an hour. Every TRIM_INTERVAL the disk is trimmed regardless: ext4 skips every block group that has freed nothing since its last trim, so a trim with nothing to return costs little. Machines boot at different times, so their trims do not run in step.
-const TRIM_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
-// UNIT_BOUNDARY_DESCRIPTION: whether the filesystem holding the agent's home sends a discard for each extent it frees, as btrfs does by itself (discard=async) on a disk that supports discard; the trim loop then has nothing left to return.
-fn discards_on_its_own(mounts: &str) -> bool {
-    mounts.lines().any(|line| {
-        let mut fields = line.split_whitespace();
-        fields.nth(1) == Some(guest::AGENT_HOME)
-            && fields.nth(1).is_some_and(|options| {
-                options
-                    .split(',')
-                    .any(|option| option.starts_with("discard"))
-            })
-    })
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: _IOWR('X', 121, struct fstrim_range), the same on every architecture a guest runs; the libc crate does not export it.
-const FITRIM: libc::c_ulong = 0xC018_5879;
-// UNIT_BOUNDARY_DESCRIPTION: free extents smaller than this are skipped, so a minute's trim sends no stream of tiny discards to the claim's storage.
-const TRIM_MIN_BYTES: u64 = 1 << 20;
-
-#[repr(C)]
-struct FstrimRange {
-    start: u64,
-    len: u64,
-    minlen: u64,
-}
-
-fn trim_freed_blocks() {
-    if discards_on_its_own(&fs::read_to_string("/proc/self/mounts").unwrap_or_default()) {
-        logf!("the disk discards freed blocks on its own; no periodic trim");
-        return;
-    }
-    let home = match File::open(guest::AGENT_HOME) {
-        Ok(home) => home,
-        Err(e) => {
-            logf!(
-                "WARNING: opening {} ({e}); blocks the agent frees are not trimmed",
-                guest::AGENT_HOME
-            );
-            return;
-        }
-    };
-    let mut failing = false;
-    loop {
-        std::thread::sleep(TRIM_INTERVAL);
-        let mut range = FstrimRange {
-            start: 0,
-            len: u64::MAX,
-            minlen: TRIM_MIN_BYTES,
-        };
-        // SAFETY: `home` is an open file on the disk, and `range` is a live fstrim_range the kernel reads and writes back.
-        let rc = unsafe { libc::ioctl(home.as_raw_fd(), FITRIM as _, &mut range) };
-        if rc == 0 {
-            failing = false;
-            continue;
-        }
-        let error = io::Error::last_os_error();
-        if matches!(error.raw_os_error(), Some(libc::EOPNOTSUPP | libc::ENOTTY)) {
-            logf!("WARNING: the disk cannot be trimmed ({error}); blocks the agent frees stay counted until smolvm trims");
-            return;
-        }
-        if !failing {
-            logf!(
-                "WARNING: trimming the disk ({error}); retrying every {} s",
-                TRIM_INTERVAL.as_secs()
-            );
-        }
-        failing = true;
-    }
-}
 // UNIT_BOUNDARY_DESCRIPTION: the kernel refuses to move a mount out of a shared parent, and refuses pivot_root when either root's parent is shared. So the tree is made a slave before the disk is moved: mounts made elsewhere in the guest still arrive, and nothing this boot does leaves it. A private tree is left as it is.
 fn stop_propagation() {
     if let Err(e) = mount(Path::new(""), Path::new("/"), libc::MS_REC | libc::MS_SLAVE) {
@@ -443,9 +371,9 @@ fn stop_propagation() {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: holds the boot to a disk whose layout this platform-init knows, before anything else is read from the disk or written to it. A disk marked with a newer layout was written by a newer platform-init — a runner rolled back past it — and this one would misread it, so the boot stops rather than seed or mount by the wrong names. A disk with no mark is in the layout the storage mount found it in (vm::mount_storage), and gets the mark now; a mark that names the other layout means the disk is not what its mark says, and the boot stops rather than guess. A mark that is empty or only zeros counts as no mark: a disk with no journal can lose a file's data to an unclean stop and keep its name, and the home under it is still intact.
-fn claim_layout(root: &Path, layout: u32) {
-    match mark_layout(root, layout) {
+// UNIT_BOUNDARY_DESCRIPTION: holds the boot to a disk whose layout this platform-init knows, before anything else is read from the disk or written to it. A disk marked with a newer layout was written by a newer platform-init — a runner rolled back past it — and this one would misread it, so the boot stops rather than seed or mount by the wrong names. A disk with no mark is in the one layout the storage mount boots (vm::mount_storage), and gets the mark now; a mark that names an older layout means the disk is not what its mark says, and the boot stops rather than guess. A mark that is empty or only zeros counts as no mark: a disk with no journal can lose a file's data to an unclean stop and keep its name, and the home under it is still intact.
+fn claim_layout(root: &Path) {
+    match mark_layout(root, guest::LAYOUT_VERSION) {
         Ok(Some(version)) => logf!("marked the disk as layout {version}"),
         Ok(None) => {}
         Err(e) => fatal!("reading the disk's layout: {e}"),
@@ -1695,7 +1623,7 @@ fn statvfs(path: &Path) -> Option<libc::statvfs> {
     (rc == 0).then_some(stat)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the smaller of the disk's free share of blocks and of inodes. A disk gets one inode per 16 KiB, so a home of many small files (dependency trees, checkouts) runs out of inodes with most of its space free, and a write then fails with "no space left on device" all the same.
+// UNIT_BOUNDARY_DESCRIPTION: the smaller of the disk's free share of blocks and of inodes. A filesystem with a fixed inode count can run out of inodes with most of its space free under a home of many small files (dependency trees, checkouts), and a write then fails with "no space left on device" all the same; btrfs reports no inode count, and is judged by its blocks.
 // UNIT_BOUNDARY_DESCRIPTION: the storage guard's blocks count as free here: they hold the guest to the owner's storage, which the runner's claim requests already shed for, so they must not have the disk read as its own disk short and evict every few minutes.
 fn free_percent(path: &Path) -> Option<u64> {
     let mut stat = statvfs(path)?;
@@ -2570,7 +2498,7 @@ fn stop(openrc: bool) -> ! {
     vm::stopped()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: writes the agent's home out to the disk once the workload has stopped, before the guest is quiesced and powered off. A stop asks smolvm to quiesce the disk, and a runner may be stopping a machine an older smolvm started, whose guest agent may not confirm it; the runner then powers the guest off. Flushing here makes that power-off cost at most a journal replay, never what the agent last wrote, whatever version the host runs.
+// UNIT_BOUNDARY_DESCRIPTION: writes the agent's home out to the disk once the workload has stopped, before the guest is quiesced and powered off. A stop asks smolvm to quiesce the disk, and a runner may be stopping a machine an older smolvm started, whose guest agent may not confirm it; the runner then powers the guest off. Flushing here means that power-off never costs what the agent last wrote, whatever version the host runs.
 fn flush_home_on_stop() {
     if let Err(e) = flush_filesystem(Path::new(guest::AGENT_HOME)) {
         announce(&format!(
@@ -4150,18 +4078,6 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: a home on btrfs mounted with discard=async gives freed blocks back by itself, so the trim loop stands down; an ext4 home, or a btrfs one on a disk without discard, keeps it.
-    #[test]
-    fn the_trim_loop_stands_down_for_a_discarding_home() {
-        assert!(discards_on_its_own("/dev/vda / btrfs rw 0 0\n/dev/vda /home/agent btrfs rw,noatime,compress=zstd:1,discard=async,space_cache=v2,subvol=/agent 0 0\n"));
-        assert!(!discards_on_its_own(
-            "/dev/vda /home/agent btrfs rw,noatime,compress=zstd:1,space_cache=v2 0 0\n"
-        ));
-        assert!(!discards_on_its_own(
-            "/dev/vda /home/agent ext4 rw,noatime 0 0\n/dev/vdb /data btrfs rw,discard=async 0 0\n"
-        ));
-    }
-
     // TEST_SCENARIO: the kernel's lock table names each locked file by device and inode, the device's numbers in hex, also on the lines of a process waiting for a lock.
     #[test]
     fn the_lock_table_is_read_for_device_and_inode() {
@@ -4263,7 +4179,7 @@ mod tests {
         assert!(!must_seed(&store, false).unwrap());
     }
 
-    // TEST_SCENARIO: every disk leaves its first boot marked with the layout the storage mount found it in, and a disk from before the mark existed is marked on its next boot. A disk already marked with its layout boots without being written; one whose mark names the other layout is refused, since its names are not what the mark says.
+    // TEST_SCENARIO: every disk leaves its first boot marked with its layout, and a disk from before the mark existed is marked on its next boot. A disk already marked with its layout boots without being written; one whose mark names an older layout is refused, since its names are not what the mark says.
     #[test]
     fn a_disk_is_marked_with_its_layout_once() {
         let disk = TempDir::new("disk");
@@ -4281,23 +4197,13 @@ mod tests {
             mark_layout(disk.path(), guest::LAYOUT_VERSION).unwrap(),
             None
         );
-        let marked = mark_layout(disk.path(), guest::LAYOUT_DIRECTORY)
+        fs::write(&mark, "1\n").unwrap();
+        let marked = mark_layout(disk.path(), guest::LAYOUT_VERSION)
             .unwrap_err()
             .to_string();
         assert!(
-            marked.contains("marked as layout 2, but holds layout 1"),
+            marked.contains("marked as layout 1, but holds layout 2"),
             "{marked}"
-        );
-
-        let older = TempDir::new("older");
-        assert_eq!(
-            mark_layout(older.path(), guest::LAYOUT_DIRECTORY).unwrap(),
-            Some(guest::LAYOUT_DIRECTORY),
-            "an ext4 disk, or a btrfs disk from before subvolumes, is marked with the directory layout"
-        );
-        assert_eq!(
-            mark_layout(older.path(), guest::LAYOUT_DIRECTORY).unwrap(),
-            None
         );
     }
 

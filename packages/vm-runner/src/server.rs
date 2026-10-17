@@ -1780,9 +1780,8 @@ impl Server {
         let foreign = self.foreign(id);
         let share = machine_dir(&self.config.state_dir, id).map(|dir| dir.join(SHARE_DIR));
         let seeded = share.as_deref().is_some_and(share::seeded);
-        let converting = share.as_deref().is_some_and(crate::convert::requested);
         locked(&self.machines).entries.get(id).is_some_and(|e| {
-            let limit = if copies_disk(e, converting) {
+            let limit = if copies_disk(e) {
                 crate::plan::COPYING_RESTART
             } else {
                 quiet_limit(foreign, e.boot.is_none(), e.gave_up.map(|at| at.elapsed()))
@@ -1854,9 +1853,6 @@ impl Server {
             if let Some(seed) = ending {
                 self.record_seeded(id, seed.as_deref());
                 self.record_repair(id);
-                if let Err(e) = self.runtime.answered(id) {
-                    tracing::warn!(machine = %id, error = %format!("{e:#}"), "acting on the guest's first answer");
-                }
             }
         }
         let mut machines = locked(&self.machines);
@@ -2031,8 +2027,6 @@ impl Server {
     }
 
     fn report(&self, id: &str) -> (State, MachineStatus) {
-        let converting = machine_dir(&self.config.state_dir, id)
-            .is_some_and(|dir| crate::convert::requested(&dir.join(SHARE_DIR)));
         let unseen = locked(&self.machines)
             .entries
             .get(id)
@@ -2083,10 +2077,7 @@ impl Server {
             .and_then(|e| e.boot.as_ref())
             .and_then(|boot| boot.note.as_ref())
             .filter(|_| failed.is_none() && !status.ready && reads_ready(state));
-        if failed.is_none()
-            && !status.ready
-            && reads_ready(state)
-            && entry.is_some_and(|e| copies_disk(e, converting))
+        if failed.is_none() && !status.ready && reads_ready(state) && entry.is_some_and(copies_disk)
         {
             status.reason = REASON_COPYING_DISK.into();
             status.message = COPYING_DISK.into();
@@ -2115,12 +2106,9 @@ impl Server {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the boot the runner waits on copies a disk before its guest first answers: its share asks the guest to convert its disk (`converting`), or its spec expects a migration's seed, which platform-init restores before it starts the image. Such a boot is held up to plan::COPYING_RESTART and reported as REASON_COPYING_DISK, so neither the runner nor the controller takes its silence for a failed start.
-fn copies_disk(entry: &MachineEntry, converting: bool) -> bool {
-    entry
-        .boot
-        .as_ref()
-        .is_some_and(|boot| converting || boot.seed.is_some())
+// UNIT_BOUNDARY_DESCRIPTION: whether the boot the runner waits on copies a disk before its guest first answers: its spec expects a migration's seed, which platform-init restores before it starts the image. Such a boot is held up to plan::COPYING_RESTART and reported as REASON_COPYING_DISK, so neither the runner nor the controller takes its silence for a failed start.
+fn copies_disk(entry: &MachineEntry) -> bool {
+    entry.boot.as_ref().is_some_and(|boot| boot.seed.is_some())
 }
 
 const COPYING_DISK: &str =

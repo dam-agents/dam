@@ -866,7 +866,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 							fmt.Sprintf("--boot-mib=%d", spec.BootMiB),
 							"--tls-cert=/etc/vm-runner/tls.crt",
 							"--tls-key=/etc/vm-runner/tls.key",
-						}, append(nestedRunnerArgs(spec), convertRunnerArgs(spec)...)...),
+						}, nestedRunnerArgs(spec)...),
 						Env: env,
 						Ports: []corev1.ContainerPort{
 							{Name: "machine-api", ContainerPort: vmRunnerPort},
@@ -1042,14 +1042,6 @@ func (r *AgentReconciler) certificateNotReady(ctx context.Context, name string) 
 		return msg
 	}
 	return ""
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the arg that lets a runner convert its machines' ext4 storage disks to btrfs, one at each machine's next start. The install turns it on with virtualization.runner.convertExt4Disks for a rollout; an install that does not gets no extra arg, so its runner pods stay as they were.
-func convertRunnerArgs(spec config.VMRunnerSpec) []string {
-	if !spec.ConvertExt4Disks {
-		return nil
-	}
-	return []string{"--convert-ext4-disks"}
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the args that let a runner give its machines the node's virtualization extensions. Nesting is the kernel's default on Intel and AMD and turning it off takes a module reload, so the install chooses it with virtualization.runner.nestedVirtualization. An install that does not gets no extra args, so its runner pods, and the machines they host, stay as they were.
