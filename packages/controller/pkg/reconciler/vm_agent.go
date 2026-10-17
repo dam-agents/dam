@@ -201,7 +201,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 			return st, false, fmt.Errorf("applying agent service: %w", err)
 		}
 	}
-	if running && !st.Ready && (st.Reason == "" || st.Reason == vmrunner.ReasonNotReady) || !running && !machineStopped(st) {
+	if running && !st.Ready && (st.Reason == "" || st.Reason == vmrunner.ReasonNotReady || st.Reason == vmrunner.ReasonCopyingDisk) || !running && !machineStopped(st) {
 		r.watchMachine(runner, name, st.Version)
 	} else {
 		r.unwatchMachine(name)

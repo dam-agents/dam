@@ -1,6 +1,6 @@
 # VM runner
 
-Last verified: 2026-10-16
+Last verified: 2026-10-17
 
 The pods behind the `vm` Backend: **one runner per owner**, each a single-replica Deployment in the agent namespace running smolvm and the platform's **vm-runner** agent.
 A local cluster on a Mac runs one [host runner](vm-host-runner.md) outside the cluster instead.
@@ -101,7 +101,8 @@ platform-init mounts the btrfs disk first: a copy it already holds for this conv
 Otherwise it checks the ext4 disk, mounts it read-only, copies its home and kept root into the btrfs disk's subvolumes with every owner, mode, time, extended attribute, hard link and hole, and boots this boot on the copy.
 The guest names the conversion's nonce in its answer to the runner's ping, over the socket only its init holds; only then does the runner swap the two disk files in one rename, recorded first, so a crash on either side of the swap is finished from what each file's superblock magic says.
 The old ext4 disk stays untouched, and is deleted at the next start, once the copy has booted; once started, a conversion's disk is attached at every start until the swap, so a copy that booted is never hidden by a boot on the ext4 disk; a copy that fails boots the ext4 disk as before, and three boots that answer on the ext4 disk give the conversion up.
-A converting boot may stay quiet for six hours before its first answer, so a large home's copy is not restarted from nothing.
+A boot that copies a disk before its first answer — a converting one, or one that restores a [runtime migration](vm-runtime-migration.md)'s seed — may stay quiet for six hours, so a large home's copy is not restarted from nothing.
+Until the guest answers, its status says so under a reason of its own, `MachineCopyingDisk`, which the controller reads as a boot in progress, never as a failed start, and leaves to the runner's bound.
 It also boots with all its RAM rather than growing into it, since a guest that copies cannot take added RAM, and a failed grow reboots the machine ([vm-memory](vm-memory.md)).
 A disk already in the subvolume layout that also holds `workspace/` was booted by a rolled-back platform-init, which made a fresh one; it is set aside and kept, never moved, and the home in the subvolume boots.
 A btrfs disk that does not mount fails the boot and stays as it is, since btrfs has no repair a boot may run unattended.

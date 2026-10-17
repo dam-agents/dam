@@ -84,8 +84,8 @@ impl Health {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how long a boot that converts its storage disk to btrfs (see convert) may stay quiet before its first answer. The guest copies the whole home before it serves, and a restart would start the copy again from nothing, so a home that takes longer than UNHEALTHY_RESTART to copy would never be converted.
-pub const CONVERTING_RESTART: Duration = Duration::from_secs(6 * 3600);
+// UNIT_BOUNDARY_DESCRIPTION: how long a boot that copies a disk before its first answer may stay quiet: one that converts its storage disk to btrfs (see convert), or one that restores a runtime migration's seed. The guest copies the whole home before it serves, and a restart would start the copy again from nothing, so a home that takes longer than UNHEALTHY_RESTART to copy would never boot. The controller reads the status reason REASON_COPYING_DISK as such a boot and leaves its bound to this one.
+pub const COPYING_RESTART: Duration = Duration::from_secs(6 * 3600);
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a machine may stay quiet before the runner restarts it. A foreign machine gets FOREIGN_UNHEALTHY_RESTART. A boot that has answered gets STALLED_RESTART, unless the runner restarted the machine for going quiet less than UNHEALTHY_RESTART ago: a guest that stalls again so soon is not cured by a reboot, so it is restarted at most once per UNHEALTHY_RESTART instead of every minute. A boot that has not answered is a slow boot, and gets UNHEALTHY_RESTART.
 pub fn quiet_limit(

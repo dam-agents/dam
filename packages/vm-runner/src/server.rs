@@ -11,8 +11,8 @@ use tokio_util::task::TaskTracker;
 
 use crate::api::{
     CpuUsage, MachineSpec, MachineStatus, MachineUsage, MemoryUsage, RunnerPressure, RunnerUsage,
-    SeedResult, State, StorageUsage, REASON_BOOT_FAILED, REASON_HOME_DAMAGED, REASON_HOME_FULL,
-    REASON_OUT_OF_CAPACITY, REASON_STORAGE_FULL, STATE_RUNNING,
+    SeedResult, State, StorageUsage, REASON_BOOT_FAILED, REASON_COPYING_DISK, REASON_HOME_DAMAGED,
+    REASON_HOME_FULL, REASON_OUT_OF_CAPACITY, REASON_STORAGE_FULL, STATE_RUNNING,
 };
 use crate::cache::{self, pinned_digest};
 use crate::cacheapi::CacheClient;
@@ -1782,8 +1782,8 @@ impl Server {
         let seeded = share.as_deref().is_some_and(share::seeded);
         let converting = share.as_deref().is_some_and(crate::convert::requested);
         locked(&self.machines).entries.get(id).is_some_and(|e| {
-            let limit = if converting && e.boot.is_some() {
-                crate::plan::CONVERTING_RESTART
+            let limit = if copies_disk(e, converting) {
+                crate::plan::COPYING_RESTART
             } else {
                 quiet_limit(foreign, e.boot.is_none(), e.gave_up.map(|at| at.elapsed()))
             };
@@ -2031,6 +2031,8 @@ impl Server {
     }
 
     fn report(&self, id: &str) -> (State, MachineStatus) {
+        let converting = machine_dir(&self.config.state_dir, id)
+            .is_some_and(|dir| crate::convert::requested(&dir.join(SHARE_DIR)));
         let unseen = locked(&self.machines)
             .entries
             .get(id)
@@ -2081,6 +2083,14 @@ impl Server {
             .and_then(|e| e.boot.as_ref())
             .and_then(|boot| boot.note.as_ref())
             .filter(|_| failed.is_none() && !status.ready && reads_ready(state));
+        if failed.is_none()
+            && !status.ready
+            && reads_ready(state)
+            && entry.is_some_and(|e| copies_disk(e, converting))
+        {
+            status.reason = REASON_COPYING_DISK.into();
+            status.message = COPYING_DISK.into();
+        }
         if let Some((note, _, reason)) = note {
             if let Some(reason) = reason {
                 status.reason = reason.to_string();
@@ -2104,6 +2114,17 @@ impl Server {
         (state, status)
     }
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the boot the runner waits on copies a disk before its guest first answers: its share asks the guest to convert its disk (`converting`), or its spec expects a migration's seed, which platform-init restores before it starts the image. Such a boot is held up to plan::COPYING_RESTART and reported as REASON_COPYING_DISK, so neither the runner nor the controller takes its silence for a failed start.
+fn copies_disk(entry: &MachineEntry, converting: bool) -> bool {
+    entry
+        .boot
+        .as_ref()
+        .is_some_and(|boot| converting || boot.seed.is_some())
+}
+
+const COPYING_DISK: &str =
+    "the guest is copying its disk before it starts the agent; a large home can take hours";
 
 // UNIT_BOUNDARY_DESCRIPTION: what the owner is told when the disk check at boot left the agent's disk damaged: that the disk is kept, that the next start tries the repair again and helps when the damage came from a cause that has passed, and the two ways out when it keeps failing, as the persistence architecture page gives them.
 const HOME_DAMAGED: &str = "This agent's disk has file system errors that the check at start could not repair, so the agent was not started and its files are kept as they are. Start it again: when the errors came from storage that was full or a passing disk error, the next start can repair them. If it keeps failing, ask an admin to check the agent's disk, or delete the agent and create it again, which gives it an empty disk and loses its files";

@@ -61,13 +61,13 @@ type vmStartClock struct {
 	notReadySince time.Time
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how the vm machine is failing on the current spec, and the clock to keep for the next read. The runner restarts a guest that answered and then went quiet, and counts it, but never restarts one that never answered, so the first is a crash loop counted from this generation on and the second is a machine that runs past the bound without becoming ready. A count below the one remembered means the runner restarted and forgot, so the count starts again. Only the running state starts the not-ready clock: a create, a start or a restart in flight is the runner's own work, an image pull included.
+// UNIT_BOUNDARY_DESCRIPTION: how the vm machine is failing on the current spec, and the clock to keep for the next read. The runner restarts a guest that answered and then went quiet, and counts it, but never restarts one that never answered, so the first is a crash loop counted from this generation on and the second is a machine that runs past the bound without becoming ready. A count below the one remembered means the runner restarted and forgot, so the count starts again. Only the running state starts the not-ready clock: a create, a start or a restart in flight is the runner's own work, an image pull included, and so is a boot the runner reports copying a disk, which it bounds itself.
 func vmStartFailure(prev vmStartClock, generation int64, st vmrunner.MachineStatus, now time.Time) (vmStartClock, startFailure) {
 	if prev.generation != generation || st.Restarts < prev.restartsAtGen {
 		prev = vmStartClock{generation: generation, restartsAtGen: st.Restarts}
 	}
 	switch {
-	case st.Ready || st.State != vmrunner.StateRunning:
+	case st.Ready || st.State != vmrunner.StateRunning || st.Reason == vmrunner.ReasonCopyingDisk:
 		prev.notReadySince = time.Time{}
 	case prev.notReadySince.IsZero():
 		prev.notReadySince = now
