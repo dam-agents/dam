@@ -1,7 +1,6 @@
 import { cn } from "@/lib/utils";
 
 import { useBudgetReserved } from "../../../budgets/api/queries.js";
-import { formatCores } from "../../../budgets/lib/format.js";
 import { formatBytes } from "../../../budgets/lib/pools.js";
 
 interface Pool {
@@ -23,27 +22,15 @@ const share = (used: number, total: number) =>
 export function SidebarUsage({ onOpen }: { onOpen: () => void }) {
   const { data: budget } = useBudgetReserved();
   if (!budget) return null;
-  const pools: Pool[] = budget.vm
-    ? [
-        {
+  const vm = budget.vm;
+  const pools: Pool[] = [
+    vm
+      ? {
           label: "Memory",
-          value: `${formatBytes(budget.vm.memory.usedBytes)} / ${formatBytes(budget.vm.memory.limitBytes)}`,
-          fraction: share(
-            budget.vm.memory.usedBytes,
-            budget.vm.memory.limitBytes,
-          ),
-        },
-        {
-          label: "Storage",
-          value: `${formatBytes(budget.vm.storage.usedBytes)} / ${formatBytes(budget.vm.storage.usableBytes)}`,
-          fraction: share(
-            budget.vm.storage.usedBytes,
-            budget.vm.storage.usableBytes,
-          ),
-        },
-      ]
-    : [
-        {
+          value: `${formatBytes(vm.memory.usedBytes)} / ${formatBytes(vm.memory.limitBytes)}`,
+          fraction: share(vm.memory.usedBytes, vm.memory.limitBytes),
+        }
+      : {
           label: "Memory",
           value: `${formatBytes(budget.memory.reservedBytes)} / ${formatBytes(budget.memory.ceilingBytes)}`,
           fraction: share(
@@ -51,12 +38,14 @@ export function SidebarUsage({ onOpen }: { onOpen: () => void }) {
             budget.memory.ceilingBytes,
           ),
         },
-        {
-          label: "CPU",
-          value: `${formatCores(budget.cpu.reservedMilli)} / ${formatCores(budget.cpu.ceilingMilli)}`,
-          fraction: share(budget.cpu.reservedMilli, budget.cpu.ceilingMilli),
-        },
-      ];
+    {
+      label: "Storage",
+      value: vm
+        ? `${formatBytes(vm.storage.usedBytes)} / ${formatBytes(vm.storage.usableBytes)}`
+        : "—",
+      fraction: vm ? share(vm.storage.usedBytes, vm.storage.usableBytes) : 0,
+    },
+  ];
   return (
     <button
       type="button"
