@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -11,10 +12,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
+	"github.com/dam-agents/dam/packages/controller/pkg/config"
 )
 
 // TEST_OVERVIEW: with virtualization.gateway.perOwner on, an owner's vm Agents share one gateway pod beside the owner's runner, each on a slot of ports recorded on its own gateway Service. The pod and every object it is made of are named after the owner, never after an agent, and go away when the owner's last vm Agent does.
@@ -251,4 +254,64 @@ func TestOwnerGateway_HibernateAndWakeLeaveTheOwnGatewayAtZero(t *testing.T) {
 	up, _, _ = r.servedDesiredUp(ctx, "my-agent")
 	assert.True(t, up)
 	assert.Equal(t, int32(0), agentSSReplicas(t, r, GatewayName("my-agent")), "a wake starts no gateway pod")
+}
+
+// TEST_SCENARIO: one release that changes the owner gateway's template would restart every owner's egress at the same moment, so a changed template waits for a place: with one place, the first owner gateway rolls and the second waits until the first has rolled out, then rolls on the next sweep. A gateway whose template is unchanged is never touched.
+func TestOwnerGateway_TemplateChangesRollOneOwnerAtATime(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupReconciler(t, agentCR())
+	r.config.VM = config.VMConfig{Enabled: true, Gateway: config.VMGateway{PerOwner: true}, Runner: config.VMRunnerSpec{Rollout: config.VMRunnerRollout{MaxConcurrent: 1}}}
+	for _, owner := range []string{"owner-a", "owner-b"} {
+		require.NoError(t, r.applyOwnerGatewayDeployment(ctx, buildOwnerGatewayDeployment(owner, r.config, nil)))
+	}
+	image := func(owner string) string {
+		dep, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, ownerGatewayName("platform", owner), metav1.GetOptions{})
+		require.NoError(t, err)
+		return dep.Spec.Template.Spec.Containers[0].Image
+	}
+	r.config.EnvoyImage = "envoy:next"
+	r.rollOwnerGateways(ctx)
+	first, second := "owner-a", "owner-b"
+	if image(first) != "envoy:next" {
+		first, second = second, first
+	}
+	assert.Equal(t, "envoy:next", image(first))
+	assert.NotEqual(t, "envoy:next", image(second), "the second owner waits while the first is mid-roll")
+	r.rollOwnerGateways(ctx)
+	assert.NotEqual(t, "envoy:next", image(second), "it keeps waiting until the first has rolled out")
+
+	dep, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, ownerGatewayName("platform", first), metav1.GetOptions{})
+	require.NoError(t, err)
+	dep.Status = appsv1.DeploymentStatus{ObservedGeneration: dep.Generation, Replicas: 1, UpdatedReplicas: 1, ReadyReplicas: 1}
+	_, err = r.client.AppsV1().Deployments(r.config.Namespace).UpdateStatus(ctx, dep, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	r.rollOwnerGateways(ctx)
+	assert.Equal(t, "envoy:next", image(second))
+}
+
+// TEST_SCENARIO: when the owner gateway pod crash-loops, every agent it serves has no gateway, so each one's gateway readiness carries the pod's own reason, the account the UI shows as a failed gateway, rather than a stale listener.
+func TestOwnerGateway_ACrashLoopingPodIsEachAgentsGatewayFailure(t *testing.T) {
+	ctx := context.Background()
+	r, _, agent := servedVMReconciler(t)
+	pod, err := r.client.CoreV1().Pods("test-agents").Get(ctx, "owner-gw-1", metav1.GetOptions{})
+	require.NoError(t, err)
+	pod.Status.Conditions = nil
+	pod.Status.ContainerStatuses = []corev1.ContainerStatus{{Name: "envoy", State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff", Message: "back-off restarting"}}, LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "OOMKilled", ExitCode: 137}}}}
+	_, err = r.client.CoreV1().Pods("test-agents").UpdateStatus(ctx, pod, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	r.ownerProbeClient = &http.Client{Transport: &http.Transport{DialContext: func(context.Context, string, string) (net.Conn, error) { return nil, errors.New("refused") }}}
+	ready, reason, _ := r.gatewayReadiness(ctx, agent)
+	assert.False(t, ready)
+	assert.NotEqual(t, apiv1.ReasonOwnerGatewayListenerStale, reason)
+	assert.NotEmpty(t, reason)
+}
+
+// TEST_SCENARIO: Envoy exits at once on SIGTERM, so a roll would cut every stream the old pod holds. The old pod sleeps before it is signalled, inside its grace, so streams shorter than the sleep finish on it while the new pod takes new connections.
+func TestOwnerGateway_OldPodServesItsStreamsBeforeItStops(t *testing.T) {
+	dep := buildOwnerGatewayDeployment(testOwner, testConfig, nil)
+	envoy := dep.Spec.Template.Spec.Containers[0]
+	require.NotNil(t, envoy.Lifecycle)
+	require.NotNil(t, envoy.Lifecycle.PreStop.Sleep)
+	assert.Less(t, envoy.Lifecycle.PreStop.Sleep.Seconds, *dep.Spec.Template.Spec.TerminationGracePeriodSeconds)
+	assert.GreaterOrEqual(t, envoy.Lifecycle.PreStop.Sleep.Seconds, int64(20))
 }

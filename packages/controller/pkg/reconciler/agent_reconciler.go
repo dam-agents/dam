@@ -634,6 +634,9 @@ func (r *AgentReconciler) gatewayReadiness(ctx context.Context, agent *apiv1.Age
 				if r.requeue != nil {
 					r.requeue(agent.Name, ownerListenerRecheck)
 				}
+				if reason, failure, failed := r.ownerGatewayFailure(ctx, agent.Labels[envoyOwnerLabel]); failed {
+					return false, reason, failure
+				}
 				return false, apiv1.ReasonOwnerGatewayListenerStale, msg
 			}
 			return true, "", ""

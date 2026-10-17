@@ -83,7 +83,7 @@ Read first: [security-and-credentials](../../architecture/security-and-credentia
 | 04  | Owner gateway workload behind a flag (done)     | Deployment, SA, ConfigMap, policies, mesh policies, lifecycle with runner, sizing              | 01, 02, 03 |
 | 05  | Agent ports, Service cut-over, readiness (done) | Port allocation, Service retarget, revision probe, host runner                                 | 04         |
 | 06  | Hibernation and wake without the gateway (done) | Desired-up record, idle checker, budget, wake publishing                                       | 05         |
-| 07  | Owner gateway rolls and restarts                | Surge roll, paced across owners, superseded-pod eviction, failure surfacing                    | 04         |
+| 07  | Owner gateway rolls and restarts (done)         | Surge roll, paced across owners, superseded-pod eviction, failure surfacing                    | 04         |
 | 08  | Migration on dev and cleanup                    | Move existing vm Agents, delete per-agent objects, rollback, runtime-migration switch          | 06, 07     |
 | 09  | Architecture pages                              | Rewrite the gateway parts of the pages listed above                                            | 08         |
 
@@ -131,6 +131,12 @@ graph LR
   A served agent's own gateway StatefulSet is kept at zero.
   Local warm wake on one clock: last-activity 14:01:14, machine started 14:01:15.6, GatewayPodReady at :15, Ready at :16.
   The first hello succeeded, and no gateway pod started.
+
+- **Rolls** (07) use the runner roll's `maxConcurrent` and lock: an owner gateway is mid-roll from its template update until its Deployment has rolled out, and the rollout sweep offers every owner gateway its turn.
+  Envoy exits at once on SIGTERM, so the old pod sleeps 25 s in preStop inside a 30 s grace (Q4).
+  A Deployment needs no forced eviction of a pod stuck on a superseded template.
+  Local: an 18 s stream ran across an Envoy image roll without a cut.
+  A crash-looping owner pod showed `GatewayPodReady=False/ContainerTerminated` on the agent until it recovered.
 
 ## Conventions & glossary
 

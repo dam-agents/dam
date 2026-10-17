@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -32,6 +33,8 @@ const (
 	annOwnerGatewaySlot      = "agent-platform.ai/owner-gateway-slot"
 	ownerGatewayCredsVolume  = "credentials"
 	ownerGatewayConfigBudget = 1 << 20
+	// UNIT_BOUNDARY_DESCRIPTION: an owner gateway that stops cuts every agent's model streams at once. Envoy exits at once on SIGTERM, so the old pod first sleeps in preStop, out of its Services' endpoints and still serving what it holds, while the surged new pod takes every new connection; a stream that ends within the sleep is not cut. The cost is only how long a roll takes, and a stream longer than that is still reset.
+	ownerGatewayTerminationGrace int64 = 30
 )
 
 func (r *AgentReconciler) ownerGatewayServes(spec *apiv1.AgentSpec) bool {
@@ -103,11 +106,12 @@ func buildOwnerGatewayDeployment(owner string, cfg *config.Config, ownerRefs []m
 		{Name: envoyLeafTLSVolume, MountPath: envoyLeafTLSMount, ReadOnly: true},
 	}
 	envoy.Resources.Requests[corev1.ResourceMemory] = resource.MustParse("96Mi")
+	envoy.Lifecycle = &corev1.Lifecycle{PreStop: &corev1.LifecycleHandler{Sleep: &corev1.SleepAction{Seconds: ownerGatewayTerminationGrace - 5}}}
 	dns := machineDNSContainer(cfg, "")
 	dns.Env = nil
 	dns.Ports = nil
 	falseVal := false
-	grace := gatewayTerminationGracePeriod
+	grace := ownerGatewayTerminationGrace
 	one := int32(1)
 	surge, unavailable := intstr.FromInt(1), intstr.FromInt(0)
 	return &appsv1.Deployment{
@@ -364,11 +368,14 @@ func (r *AgentReconciler) ensureOwnerGatewayServiceAccount(ctx context.Context, 
 	return err
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a template change of an owner gateway (its Envoy or resolver image, the install's trust settings) restarts egress for every running agent of the owner, and one controller release would restart every owner at the same moment. The surge keeps the old pod serving until the new one is ready, so each roll costs the owner its open connections only; and a changed template waits for a place in the same roll budget runner rolls use, `rollout.maxConcurrent` owner gateways mid-roll at once, under the same lock. A gateway is mid-roll from its update until its Deployment has rolled out. Listener, resolver, credential and leaf changes never touch the template, so they never roll. A Deployment never deadlocks on a pod stuck on a superseded template the way a StatefulSet does, so it needs no forced eviction: the old pod keeps serving and the stuck new one is replaced by the next template change.
 func (r *AgentReconciler) applyOwnerGatewayDeployment(ctx context.Context, desired *appsv1.Deployment) error {
 	cli := r.client.AppsV1().Deployments(desired.Namespace)
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		hash := templateHash(desired.Spec.Template, desired.Spec.Strategy)
 		existing, err := cli.Get(ctx, desired.Name, metav1.GetOptions{})
 		if k8serrors.IsNotFound(err) {
+			metav1.SetMetaDataAnnotation(&desired.ObjectMeta, annStatefulSetTemplate, hash)
 			_, err = cli.Create(ctx, desired, metav1.CreateOptions{})
 			if err == nil {
 				slog.Info("owner gateway: created", "deployment", desired.Name)
@@ -378,10 +385,21 @@ func (r *AgentReconciler) applyOwnerGatewayDeployment(ctx context.Context, desir
 		if err != nil {
 			return err
 		}
-		hash := templateHash(desired.Spec.Template, desired.Spec.Strategy)
 		if existing.Annotations[annStatefulSetTemplate] == hash {
+			return r.settleOwnerGatewayRoll(ctx, existing)
+		}
+		r.runnerRollMu.Lock()
+		defer r.runnerRollMu.Unlock()
+		rolling, err := r.ownerGatewaysMidRoll(ctx)
+		if err != nil {
+			return err
+		}
+		limit, _ := runnerRolloutLimits(r.config.VM.Runner)
+		if others := slices.DeleteFunc(rolling, func(n string) bool { return n == existing.Name }); len(others) >= limit {
+			slog.Info("owner gateway: the template changed, waiting for other owner gateways to finish rolling", "deployment", existing.Name, "rolling", others)
 			return nil
 		}
+		metav1.SetMetaDataAnnotation(&existing.ObjectMeta, annRunnerRolledAt, time.Now().UTC().Format(time.RFC3339))
 		existing.Spec.Template = desired.Spec.Template
 		existing.Spec.Strategy = desired.Spec.Strategy
 		existing.Spec.Replicas = desired.Spec.Replicas
@@ -389,6 +407,48 @@ func (r *AgentReconciler) applyOwnerGatewayDeployment(ctx context.Context, desir
 		_, err = cli.Update(ctx, existing, metav1.UpdateOptions{})
 		return err
 	})
+}
+
+func (r *AgentReconciler) ownerGatewaysMidRoll(ctx context.Context) ([]string, error) {
+	list, err := r.client.AppsV1().Deployments(r.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "app.kubernetes.io/component=" + ownerGatewayComponent})
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, dep := range list.Items {
+		if dep.Annotations[annRunnerRolledAt] != "" && !runnerPodRolledOut(&dep) {
+			out = append(out, dep.Name)
+		}
+	}
+	return out, nil
+}
+
+func (r *AgentReconciler) settleOwnerGatewayRoll(ctx context.Context, dep *appsv1.Deployment) error {
+	if dep.Annotations[annRunnerRolledAt] == "" || !runnerPodRolledOut(dep) {
+		return nil
+	}
+	delete(dep.Annotations, annRunnerRolledAt)
+	_, err := r.client.AppsV1().Deployments(dep.Namespace).Update(ctx, dep, metav1.UpdateOptions{})
+	return err
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an owner gateway pod that cannot serve — crash-looping, out of memory, an image that does not pull — is the reason every agent of the owner has no gateway, so each agent's GatewayPodReady carries that pod's own account, the warning the UI already shows for a failed gateway pod.
+func (r *AgentReconciler) ownerGatewayFailure(ctx context.Context, owner string) (string, string, bool) {
+	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "app.kubernetes.io/component=" + ownerGatewayComponent + "," + envoyOwnerLabel + "=" + owner})
+	if err != nil {
+		return "", "", false
+	}
+	for i := range pods.Items {
+		if pods.Items[i].DeletionTimestamp == nil && isPodReady(pods.Items[i]) {
+			return "", "", false
+		}
+	}
+	for i := range pods.Items {
+		if reason, msg, ok := terminationReason(&pods.Items[i]); ok {
+			return reason, msg, true
+		}
+	}
+	return "", "", false
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: removes everything an owner gateway is made of, once the owner has no vm Agent left. Its objects all carry the owner gateway's labels and name, so this is one delete each.
@@ -575,4 +635,28 @@ func (r *AgentReconciler) scaleOwnGatewayDown(ctx context.Context, name string) 
 		_, err = r.client.AppsV1().StatefulSets(r.config.Namespace).Update(ctx, ss, metav1.UpdateOptions{})
 		return err
 	})
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an owner whose agents all sleep has no reconcile to carry a new owner gateway template, so the rollout sweep offers every existing owner gateway its turn, in name order, under its owner's lock. It only updates a gateway that exists, so it never brings back one the orphan sweep removed.
+func (r *AgentReconciler) rollOwnerGateways(ctx context.Context) {
+	list, err := r.client.AppsV1().Deployments(r.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "app.kubernetes.io/component=" + ownerGatewayComponent})
+	if err != nil {
+		slog.Warn("owner gateway rollout: listing owner gateways failed", "error", err)
+		return
+	}
+	slices.SortFunc(list.Items, func(a, b appsv1.Deployment) int { return strings.Compare(a.Name, b.Name) })
+	refs := r.runnerOwnerRef(ctx)
+	for _, dep := range list.Items {
+		owner := dep.Labels[envoyOwnerLabel]
+		if owner == "" || dep.DeletionTimestamp != nil {
+			continue
+		}
+		lock := r.ownerLock(owner)
+		lock.Lock()
+		err := r.applyOwnerGatewayDeployment(ctx, buildOwnerGatewayDeployment(owner, r.config, refs))
+		lock.Unlock()
+		if err != nil {
+			slog.Warn("owner gateway rollout: applying an owner gateway failed", "owner", owner, "error", err)
+		}
+	}
 }
