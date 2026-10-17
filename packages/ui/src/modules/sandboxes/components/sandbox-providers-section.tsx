@@ -101,6 +101,7 @@ export function SandboxProvidersSection({
               <ConnectionSpendLimit
                 agentId={agentId}
                 connectionId={p.id}
+                connectionName={p.name}
                 templateId={p.templateId}
               />
             )}
