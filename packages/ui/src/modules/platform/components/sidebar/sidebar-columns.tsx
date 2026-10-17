@@ -1,10 +1,11 @@
-import { AddAlt, Tools } from "@carbon/icons-react";
+import { AddAlt, Book, Settings, Tools } from "@carbon/icons-react";
 import { useMemo, useState } from "react";
 
 import { SectionLabel } from "@/components/ui/section-label";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
+import { DOCS_URL } from "../../../../constants.js";
 import { useStore } from "../../../../store.js";
 import type { AgentView } from "../../../../types.js";
 import { useAgentsList } from "../../../agents/api/queries.js";
@@ -41,7 +42,13 @@ const RECENT_LIMIT = 40;
  * All, the sessions that need the user and then every session by latest
  * activity; under one agent, that agent's own session list.
  */
-export function SidebarColumns({ onNavigate }: { onNavigate?: () => void }) {
+export function SidebarColumns({
+  onNavigate,
+  footer,
+}: {
+  onNavigate?: () => void;
+  footer?: React.ReactNode;
+}) {
   const { agents, openAgentId } = useSidebarAgents();
   const activity = useActivitySessions();
   const approvals = useWaitingApprovals();
@@ -67,6 +74,7 @@ export function SidebarColumns({ onNavigate }: { onNavigate?: () => void }) {
         current={openAgentId}
         needsYou={needsYou}
         onSelect={setSelected}
+        onNavigate={onNavigate}
       />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {shownAgentId ? (
@@ -82,6 +90,7 @@ export function SidebarColumns({ onNavigate }: { onNavigate?: () => void }) {
             onNavigate={onNavigate}
           />
         )}
+        {footer}
       </div>
     </div>
   );
@@ -93,60 +102,98 @@ function AvatarStrip({
   current,
   needsYou,
   onSelect,
+  onNavigate,
 }: {
   agents: readonly AgentView[];
   selected: string | null;
   current: string | null;
   needsYou: ReadonlyMap<string, number>;
   onSelect: (agentId: string | null) => void;
+  onNavigate?: () => void;
 }) {
   const defaultAgent = useCreateDefaultAgent();
+  const settingsOpen = useStore((s) => s.view === "settings");
+  const navigateToSettings = useStore((s) => s.navigateToSettings);
   const total = [...needsYou.values()].reduce((a, b) => a + b, 0);
   return (
-    <div
-      className="flex w-[60px] shrink-0 flex-col items-center gap-2 overflow-y-auto overflow-x-hidden border-r border-border py-3 [scrollbar-width:none]"
-      role="tablist"
-      aria-orientation="vertical"
-      aria-label="Agents"
-      data-testid="sidebar-avatar-strip"
-    >
-      <StripButton
-        label="All agents"
-        active={selected === null}
-        badge={total}
-        onClick={() => onSelect(null)}
+    <div className="flex w-[60px] shrink-0 flex-col border-r border-border">
+      <div
+        className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-x-hidden overflow-y-auto pt-3 pb-4 [scrollbar-width:none]"
+        role="tablist"
+        aria-orientation="vertical"
+        aria-label="Agents"
+        data-testid="sidebar-avatar-strip"
       >
-        <span className="text-2xs font-semibold">All</span>
-      </StripButton>
-      <span className="h-px w-6 shrink-0 bg-border" />
-      {agents.map((agent) => (
         <StripButton
-          key={agent.id}
-          label={agent.name}
-          active={selected === agent.id}
-          current={current === agent.id}
-          badge={needsYou.get(agent.id) ?? 0}
-          onClick={() => onSelect(agent.id)}
+          label="All agents"
+          active={selected === null}
+          badge={total}
+          onClick={() => onSelect(null)}
         >
-          <AgentAvatar
-            name={agent.name}
-            avatar={agent.avatar}
-            size={28}
-            mood={avatarMood(agent.state, agent)}
-          />
+          <span className="text-2xs font-semibold">All</span>
         </StripButton>
-      ))}
-      <Tooltip content="Create agent" side="right">
-        <button
-          type="button"
-          aria-label="Create agent"
-          disabled={!defaultAgent.ready}
-          onClick={() => void defaultAgent.create()}
-          className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-dashed border-border text-muted-foreground transition-colors hover:border-border-ui hover:text-foreground disabled:opacity-50"
-        >
-          <AddAlt size={16} />
-        </button>
-      </Tooltip>
+        <span className="h-px w-6 shrink-0 bg-border" />
+        {agents.map((agent) => (
+          <StripButton
+            key={agent.id}
+            label={agent.name}
+            active={selected === agent.id}
+            current={current === agent.id}
+            badge={needsYou.get(agent.id) ?? 0}
+            onClick={() => onSelect(agent.id)}
+          >
+            <AgentAvatar
+              name={agent.name}
+              avatar={agent.avatar}
+              size={28}
+              mood={avatarMood(agent.state, agent)}
+            />
+          </StripButton>
+        ))}
+        <Tooltip content="Create agent" side="right">
+          <button
+            type="button"
+            aria-label="Create agent"
+            disabled={!defaultAgent.ready}
+            onClick={() => void defaultAgent.create()}
+            className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-dashed border-border text-muted-foreground transition-colors hover:border-border-ui hover:text-foreground disabled:opacity-50"
+          >
+            <AddAlt size={16} />
+          </button>
+        </Tooltip>
+      </div>
+      <div className="relative z-raised flex h-[106px] shrink-0 flex-col items-center justify-center gap-1 border-t border-border bg-card">
+        <Tooltip content="Documentation" side="right">
+          <a
+            href={DOCS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Documentation"
+            className="flex size-10 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+          >
+            <Book size={18} />
+          </a>
+        </Tooltip>
+        <Tooltip content="Settings" side="right">
+          <button
+            type="button"
+            aria-label="Settings"
+            aria-current={settingsOpen ? "page" : undefined}
+            onClick={() => {
+              navigateToSettings();
+              onNavigate?.();
+            }}
+            className={cn(
+              "flex size-10 items-center justify-center rounded-xl transition-colors",
+              settingsOpen
+                ? "bg-muted text-foreground ring-1 ring-border-ui"
+                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+            )}
+          >
+            <Settings size={18} />
+          </button>
+        </Tooltip>
+      </div>
     </div>
   );
 }
