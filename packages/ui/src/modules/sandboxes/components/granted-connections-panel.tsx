@@ -25,6 +25,7 @@ interface Props {
   title?: string;
   leading?: React.ReactNode;
   extraGroups?: React.ReactNode;
+  newInHeader?: boolean;
 }
 
 export function GrantedConnectionsPanel({
@@ -39,6 +40,7 @@ export function GrantedConnectionsPanel({
   title,
   leading,
   extraGroups,
+  newInHeader = false,
 }: Props) {
   const maintenance = useConnectionMaintenance();
 
@@ -66,7 +68,7 @@ export function GrantedConnectionsPanel({
       {leading && <div className="mb-4">{leading}</div>}
       <ListSection
         label={title}
-        onNew={onOpenCatalog}
+        onNew={newInHeader ? undefined : onOpenCatalog}
         newTestId="open-connection-catalog"
         isEmpty={groups.length === 0 && !extraGroups}
         empty="No connections added to this agent yet."

@@ -1,3 +1,4 @@
+import { Add } from "@carbon/icons-react";
 import {
   type EgressPreset,
   type EgressRuleView,
@@ -25,6 +26,7 @@ import { Select } from "@/components/ui/select";
 import { getUser } from "../../../auth.js";
 import { useStore } from "../../../store.js";
 import { useAppConnections } from "../../connections/api/queries.js";
+import type { SectionHeaderSlot } from "../../sandboxes/components/sandbox-home-header.js";
 import { useGuardedClose } from "../../sandboxes/hooks/use-guarded-close.js";
 import {
   useApplyEgressPreset,
@@ -63,7 +65,13 @@ const EMPTY_DRAFT: RuleDraft = {
   verdict: "allow",
 };
 
-export function AgentEgressEditor({ agentId }: { agentId: string }) {
+export function AgentEgressEditor({
+  agentId,
+  header,
+}: {
+  agentId: string;
+  header: SectionHeaderSlot;
+}) {
   const {
     data: rules = EMPTY,
     isLoading,
@@ -98,10 +106,8 @@ export function AgentEgressEditor({ agentId }: { agentId: string }) {
 
   return (
     <>
-      <ListSection
-        onNew={() => setAdding(true)}
-        newTestId="egress-rule-new"
-        headerExtra={
+      {header(
+        <>
           <Button
             variant="outline"
             size="sm"
@@ -110,7 +116,18 @@ export function AgentEgressEditor({ agentId }: { agentId: string }) {
           >
             Use preset…
           </Button>
-        }
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setAdding(true)}
+            data-testid="egress-rule-new"
+          >
+            <Add size={16} />
+            Add rule
+          </Button>
+        </>,
+      )}
+      <ListSection
         loading={isLoading}
         error={isError && "Couldn't load the rules."}
         isEmpty={rules.length === 0}

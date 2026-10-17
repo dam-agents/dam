@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import { PageHeader } from "@/components/ui/page-header";
 
 import { AlwaysOnTag } from "../../../components/status-indicator.js";
@@ -34,14 +36,18 @@ export function SandboxIdentity({ agent, display }: Props) {
   );
 }
 
+export type SectionHeaderSlot = (actions?: ReactNode) => ReactNode;
+
 export function SandboxHomeHeader({
   agent,
   title,
   description,
+  actions,
 }: {
   agent: AgentView;
   title: string;
   description?: string;
+  actions?: ReactNode;
 }) {
   const { updateOne, updatingId } = useUpdateSandbox();
   return (
@@ -49,12 +55,15 @@ export function SandboxHomeHeader({
       title={title}
       description={description}
       actions={
-        <UpdateAvailableAction
-          agent={agent}
-          pending={updatingId === agent.id}
-          busy={updatingId !== null}
-          onUpdate={() => void updateOne(agent)}
-        />
+        <>
+          <UpdateAvailableAction
+            agent={agent}
+            pending={updatingId === agent.id}
+            busy={updatingId !== null}
+            onUpdate={() => void updateOne(agent)}
+          />
+          {actions}
+        </>
       }
     />
   );

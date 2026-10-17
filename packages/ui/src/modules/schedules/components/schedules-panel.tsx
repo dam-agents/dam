@@ -1,11 +1,14 @@
+import { Add } from "@carbon/icons-react";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DisclosureToggle } from "@/components/ui/disclosure";
 import { ListSection } from "@/components/ui/list-section";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import type { Schedule } from "../../../types.js";
+import type { SectionHeaderSlot } from "../../sandboxes/components/sandbox-home-header.js";
 import { useSchedules } from "../api/queries.js";
 import { ScheduleFormModal } from "../forms/schedule-form-modal.js";
 import { isPastOnce } from "../lib/once-schedule.js";
@@ -17,9 +20,11 @@ type FormState =
 
 export function SchedulesPanel({
   agentId,
+  header,
   onResumeSession,
 }: {
   agentId: string;
+  header: SectionHeaderSlot;
   onResumeSession: (sessionId: string) => void;
 }) {
   const schedulesQuery = useSchedules(agentId);
@@ -53,12 +58,22 @@ export function SchedulesPanel({
 
   return (
     <>
+      {header(
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setForm({ mode: "create" })}
+          data-testid="schedule-new"
+        >
+          <Add size={16} />
+          Add schedule
+        </Button>,
+      )}
       <ListSection
-        onNew={() => setForm({ mode: "create" })}
         loading={schedulesQuery.isPending}
         error={schedulesQuery.isError && "Couldn't load schedules."}
         isEmpty={upcoming.length === 0}
-        empty="No schedules yet."
+        empty="No schedules yet. Add one to run a task on a timetable or once."
       >
         {upcoming.map(card)}
       </ListSection>

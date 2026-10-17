@@ -1,4 +1,5 @@
 import {
+  Add,
   Edit,
   Locked,
   Password,
@@ -30,6 +31,7 @@ import {
   isValidEnvName,
 } from "../../../../types.js";
 import { useAppConnections } from "../../../connections/api/queries.js";
+import type { SectionHeaderSlot } from "../../../sandboxes/components/sandbox-home-header.js";
 import { useGuardedClose } from "../../../sandboxes/hooks/use-guarded-close.js";
 import {
   type InheritedEnv,
@@ -58,7 +60,13 @@ function shadowWarnings(
   );
 }
 
-export function EnvTab({ agent }: { agent: AgentView }) {
+export function EnvTab({
+  agent,
+  header,
+}: {
+  agent: AgentView;
+  header: SectionHeaderSlot;
+}) {
   const updateAgent = useUpdateAgent();
   const { data: apps = [] } = useAppConnections();
   const { data: agentConnections } = useAgentConnections(agent.id);
@@ -99,6 +107,18 @@ export function EnvTab({ agent }: { agent: AgentView }) {
     });
   return (
     <>
+      {header(
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={saving}
+          onClick={() => setEditing("new")}
+          data-testid="env-var-new"
+        >
+          <Add size={16} />
+          Add variable
+        </Button>,
+      )}
       {warnings.length > 0 && (
         <Callout
           tone="warning"
@@ -121,11 +141,8 @@ export function EnvTab({ agent }: { agent: AgentView }) {
       )}
 
       <ListSection
-        onNew={() => setEditing("new")}
-        newDisabled={saving}
-        newTestId="env-var-new"
         isEmpty={envVars.length === 0}
-        empty="No variables yet."
+        empty="No variables yet. Add one for configuration the agent reads from its environment."
       >
         {envVars.map((v, i) => (
           <div key={`${v.name}:${i}`} className={cn(LIST_ROW, "text-xs")}>
