@@ -38,7 +38,7 @@ export function AppSidePanelButtons() {
       )}
       active={null}
       onSelect={openSidePanel}
-      tooltipSide="bottom"
+      placement="top-bar"
       {...tabs}
     />
   );

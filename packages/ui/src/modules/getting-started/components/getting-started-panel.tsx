@@ -7,10 +7,7 @@ import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import { SidebarSection } from "../../sessions/components/sidebar-section.js";
-import {
-  useMarkUnlockSeen,
-  useSetChecklistDismissed,
-} from "../api/mutations.js";
+import { useMarkUnlockSeen } from "../api/mutations.js";
 import { useGettingStarted } from "../api/queries.js";
 import { useStartTask } from "../hooks/use-start-task.js";
 import { deriveChecklist } from "../lib/derive-checklist.js";
@@ -22,16 +19,12 @@ import { UnlockCelebration } from "./unlock-celebration.js";
  * that unlock the avatar characters and plays the celebration for each unlock
  * the user has not seen, one at a time, at its top, then records it as seen.
  * An unlock only plays while the panel is open, so it never covers the page;
- * until then the panel's icon counts it. Dismissing the checklist closes the
- * panel and hides its icon until the next unlock or until the avatar picker
- * asks for it.
+ * until then the panel's icon counts it.
  */
 export function GettingStartedPanel({ className }: { className?: string }) {
   const progress = useGettingStarted().data;
-  const setSidePanelTab = useStore((s) => s.setSidePanelTab);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const markSeen = useMarkUnlockSeen();
-  const setDismissed = useSetChecklistDismissed();
   const startTask = useStartTask();
   const [justUnlocked, setJustUnlocked] = useState<AvatarCharacter | null>(
     null,
@@ -67,10 +60,6 @@ export function GettingStartedPanel({ className }: { className?: string }) {
               rows={checklist.rows}
               unlocked={checklist.unlocked}
               justUnlocked={justUnlocked}
-              onDismiss={() => {
-                setDismissed.mutate({ dismissed: true });
-                setSidePanelTab(null);
-              }}
               onStart={(task) => {
                 setMobileScreen("chat");
                 void startTask(task);

@@ -1,4 +1,4 @@
-import { ArrowUpRight } from "@carbon/icons-react";
+import { Launch } from "@carbon/icons-react";
 
 import { externalLinkProps } from "@/lib/external-link";
 
@@ -19,7 +19,7 @@ export function SlackInstallRequest({
         {...externalLinkProps}
         className="inline-flex items-center gap-1 font-medium text-accent hover:underline"
       >
-        Request it <ArrowUpRight size={14} />
+        Request it <Launch size={14} />
       </a>
     </p>
   );

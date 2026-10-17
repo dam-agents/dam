@@ -1,4 +1,4 @@
-import { ChevronLeft, Close, Save } from "@carbon/icons-react";
+import { ArrowLeft, Close, Save } from "@carbon/icons-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -127,7 +127,7 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
           tooltip="Back to artifacts"
           onClick={() => void closePanel()}
         >
-          <ChevronLeft size={16} />
+          <ArrowLeft size={16} />
         </Button>
         {artifact && (
           <ArtifactVisibilityButton
