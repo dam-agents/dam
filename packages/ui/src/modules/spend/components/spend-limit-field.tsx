@@ -3,7 +3,7 @@ import {
   type SpendLimitScope,
   type SpendUnit,
 } from "api-server-api";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,7 @@ export function SpendLimitField({
 }: Props) {
   const setLimit = useSetSpendLimit();
   const [draft, setDraft] = useState<string | null>(null);
+  const refocus = useRef(false);
   const save = (next: number | null) =>
     setLimit.mutate(
       { scope, amountMicros: next },
@@ -60,7 +61,7 @@ export function SpendLimitField({
       </span>
       <span
         className={cn(
-          "font-mono text-sm tabular-nums",
+          "text-sm tabular-nums",
           amountMicros === null ? "text-muted-foreground" : "text-foreground",
         )}
       >
@@ -70,12 +71,18 @@ export function SpendLimitField({
       </span>
       <div className="ml-auto flex items-center gap-1">
         <Button
+          ref={(button) => {
+            if (!button || !refocus.current) return;
+            refocus.current = false;
+            button.focus();
+          }}
           variant="outline"
           size="sm"
           disabled={setLimit.isPending}
-          onClick={() =>
-            setDraft(amountMicros === null ? "" : amountText(amountMicros))
-          }
+          onClick={() => {
+            refocus.current = true;
+            setDraft(amountMicros === null ? "" : amountText(amountMicros));
+          }}
         >
           {amountMicros === null ? "Set limit" : "Edit"}
         </Button>
@@ -130,7 +137,7 @@ function SpendLimitEditor({
           <label htmlFor={id}>{label}</label>
           {help && <HelpTip content={help} />}
         </span>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="flex items-center gap-2">
           <Input
             id={id}
             autoFocus
@@ -149,6 +156,8 @@ function SpendLimitEditor({
           <span className="text-xs text-muted-foreground">
             {UNIT_NAMES[unit]}
           </span>
+        </div>
+        <div className="ml-auto flex items-center gap-1">
           <Button size="sm" type="submit" disabled={!parsed.success || pending}>
             Save
           </Button>

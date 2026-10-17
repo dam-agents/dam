@@ -76,7 +76,7 @@ export function microsToUsd(micros: number): number {
 
 export function localResetTime(resetsAt: string | Date): string {
   return new Date(resetsAt).toLocaleTimeString([], {
-    hour: "2-digit",
+    hour: "numeric",
     minute: "2-digit",
   });
 }
