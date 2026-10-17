@@ -30,7 +30,7 @@ export function SidebarUsage({ onOpen }: { onOpen: () => void }) {
   const agents = useAgentsList();
   if (!budget) return null;
   return (
-    <div className="flex flex-col" data-testid="sidebar-usage">
+    <div className="grid grid-cols-2 gap-1" data-testid="sidebar-usage">
       {sidebarPools(budget, agents).map((pool) => (
         <PoolMeter key={pool.label} pool={pool} onOpen={onOpen} />
       ))}
@@ -59,9 +59,7 @@ function PoolMeter({
           <div className="flex items-baseline justify-between gap-1.5 text-2xs">
             <span className="text-muted-foreground">{pool.label}</span>
             <span className="truncate text-foreground/80 tabular-nums">
-              {measured
-                ? `${formatBytes(pool.usedBytes)} of ${formatBytes(pool.totalBytes)}`
-                : "—"}
+              {measured ? formatBytes(pool.usedBytes) : "—"}
             </span>
           </div>
           <div className="h-1 overflow-hidden rounded-full bg-muted">
@@ -83,7 +81,6 @@ function PoolMeter({
             </span>
           )}
         </div>
-        <p className="mb-2 text-xs text-muted-foreground">{pool.note}</p>
         {pool.rows.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             No agent uses any right now.

@@ -1,8 +1,7 @@
-import { Maximize, OpenPanelLeft } from "@carbon/icons-react";
+import { OpenPanelLeft } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { ResizeHandle } from "@/components/resize-handle";
-import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
@@ -23,7 +22,6 @@ const SLIDE =
 export function Sidebar() {
   const pinned = useStore((s) => s.sidebarExpanded);
   const setPinned = useStore((s) => s.setSidebarExpanded);
-  const view = useStore((s) => s.view);
   const setView = useStore((s) => s.setView);
   const { width, resize, endResize } = useSidebarWidth();
   const [peek, setPeek] = useState(false);
@@ -72,14 +70,6 @@ export function Sidebar() {
           }}
         />
         <SidebarContent onNavigate={() => setPeek(false)} />
-        {pinned && view !== "home" && (
-          <HomeEdgeTab
-            onHome={() => {
-              setView("home");
-              setPeek(false);
-            }}
-          />
-        )}
       </nav>
       {pinned && (
         <div className="hidden md:flex" data-testid="app-sidebar-resize">
@@ -88,22 +78,6 @@ export function Sidebar() {
       )}
       {!shown && <PeekButton onOpen={() => setPeek(true)} />}
     </>
-  );
-}
-
-function HomeEdgeTab({ onHome }: { onHome: () => void }) {
-  return (
-    <Tooltip content="Home" side="right">
-      <button
-        type="button"
-        aria-label="Home"
-        data-testid="sidebar-home-tab"
-        onClick={onHome}
-        className="absolute top-1/2 left-full z-raised flex h-12 w-5 -translate-y-1/2 items-center justify-center rounded-r-lg border-y border-r border-border bg-background text-muted-foreground shadow-sm transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-      >
-        <Maximize size={12} />
-      </button>
-    </Tooltip>
   );
 }
 

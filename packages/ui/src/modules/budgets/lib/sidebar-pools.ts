@@ -14,7 +14,6 @@ export interface SidebarPool {
   label: string;
   usedBytes: number;
   totalBytes: number;
-  note: string;
   rows: SidebarPoolRow[];
 }
 
@@ -39,7 +38,6 @@ export function sidebarPools(
         label: "Memory",
         usedBytes: vm.memory.usedBytes,
         totalBytes: vm.memory.limitBytes,
-        note: "Memory your VM agents use now.",
         rows: vm.agents.flatMap((a) => {
           const agent = byId.get(a.id);
           return agent && a.memoryUsedBytes > 0
@@ -51,7 +49,6 @@ export function sidebarPools(
         label: "Memory",
         usedBytes: budget.memory.reservedBytes,
         totalBytes: budget.memory.ceilingBytes,
-        note: "Memory reserved by your awake container agents.",
         rows: agents
           .filter((a) => !a.vm && a.state !== "hibernated" && !a.overBudget)
           .map((agent) => ({
@@ -66,14 +63,12 @@ export function sidebarPools(
         label: "Storage",
         usedBytes: vm.storage.usedBytes,
         totalBytes: vm.storage.usableBytes,
-        note: "Disk your VM agents and their runner take.",
         rows: storageRows(vm, agents),
       }
     : {
         label: "Storage",
         usedBytes: 0,
         totalBytes: 0,
-        note: "Storage is measured for VM agents only.",
         rows: [],
       };
   return [memory, storage].map((pool) => ({

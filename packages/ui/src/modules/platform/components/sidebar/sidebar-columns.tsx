@@ -1,4 +1,4 @@
-import { AddAlt, Book, Settings, Tools } from "@carbon/icons-react";
+import { AddAlt, Book, Home, Settings, Tools } from "@carbon/icons-react";
 import { useMemo, useState } from "react";
 
 import { SectionLabel } from "@/components/ui/section-label";
@@ -54,6 +54,14 @@ export function SidebarColumns({
   const approvals = useWaitingApprovals();
   const selected = useStore((s) => s.sidebarAgentId);
   const setSelected = useStore((s) => s.setSidebarAgentId);
+  const setView = useStore((s) => s.setView);
+  const startSession = useStartSession();
+  const select = (agentId: string | null) => {
+    setSelected(agentId);
+    if (agentId) startSession(agentId);
+    else setView("home");
+    onNavigate?.();
+  };
   const shownAgentId =
     selected && agents.some((a) => a.id === selected) ? selected : null;
 
@@ -73,7 +81,7 @@ export function SidebarColumns({
         selected={shownAgentId}
         current={openAgentId}
         needsYou={needsYou}
-        onSelect={setSelected}
+        onSelect={select}
         onNavigate={onNavigate}
       />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -125,12 +133,12 @@ function AvatarStrip({
         data-testid="sidebar-avatar-strip"
       >
         <StripButton
-          label="All agents"
+          label="Home"
           active={selected === null}
           badge={total}
           onClick={() => onSelect(null)}
         >
-          <span className="text-2xs font-semibold">All</span>
+          <Home size={18} />
         </StripButton>
         <span className="h-px w-6 shrink-0 bg-border" />
         {agents.map((agent) => (
