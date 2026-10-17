@@ -4,7 +4,7 @@ import {
   Warning,
   WarningAlt,
 } from "@carbon/icons-react";
-import type { AnimationEvent, ReactNode } from "react";
+import { type AnimationEvent, type ReactNode, useRef } from "react";
 
 import {
   AlertDialog,
@@ -59,6 +59,7 @@ export function ConfirmDialog({
   const destructive = kind === "destructive";
   const Icon = icon ?? KIND_ICON[kind];
   const resolvedConfirmLabel = confirmLabel ?? (showCancel ? "Confirm" : "OK");
+  const opener = useRef<HTMLElement | null>(null);
 
   function handleAnimationEnd(event: AnimationEvent<HTMLDivElement>) {
     if (!open && event.currentTarget === event.target) onCloseAnimationEnd?.();
@@ -74,6 +75,13 @@ export function ConfirmDialog({
     >
       <AlertDialogContent
         onAnimationEnd={handleAnimationEnd}
+        onOpenAutoFocus={() => {
+          opener.current = document.activeElement as HTMLElement | null;
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          opener.current?.focus();
+        }}
         onBackdropClick={() => {
           onCancel?.();
           onOpenChange(false);
