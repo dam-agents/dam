@@ -32,7 +32,7 @@ The agent-runtime loads every manifest there and runs each harness's drivers, so
 The harness is chosen per session ([sessions](sessions.md#session-inside-the-pod)); the Agent's own harness, seeded at create and handed to the pod or machine in its environment, is the default for a session that names none.
 The tools, the base's and every harness's, are named in the image's system mise config with the lockfile, and its `PATH` names each tool's versioned install directory under mise's system data dir.
 The build installs them there with the image's own installer, run in the image's root under chroot with the image's env, so every path an install records is the one the image runs it from, and packs that directory as one root-owned layer, rebuilt only when the tool config or the installer changes.
-mise's user directories keep its defaults, in the home: `mise use -g` writes `~/.config/mise/config.toml` and installs under `~/.local/share/mise`, and both persist with the home.
+mise's user config and data directories keep their defaults, in the home, so what `mise use -g` pins and installs persists with the home.
 A node holds the tools as it holds any image: the kubelet's image collection and the [vm image cache](vm-image-cache.md)'s eviction drop the versions no agent runs.
 
 Playwright's browsers sit with the tools in the same layer.
@@ -66,7 +66,7 @@ CI calls it from [`image:ci-build`](../../.mise/tasks/image/ci-build) and pushes
 
 ## Ownership and the two Backends
 
-The image is root's, but for the paths the agent must write, which each layer is packed with already owned by the agent: its home, the mise data dir and system config, a workload's Python, the runtime's directory and the trust store.
+The image is root's, but for the paths the agent must write, which each layer is packed with already owned by the agent: its home, the mise system config, a workload's Python, the runtime's directory and the trust store.
 Everything else stays root's, including the shipped skills, the working-dir seed and Claude Code's managed settings, so an agent cannot rewrite what the platform ships.
 Layers are packed as plain tars: a local cluster imports them as they are, and CI gzips a published image's layers with parallel gzip as it pushes.
 
@@ -108,7 +108,7 @@ Platform code a harness loads at runtime, such as Pi's provider extension, ships
 - aube stands in for pnpm; npm stays for tools that call it.
   An agent's own `mise use -g`, `aube add -g` and `pip install --user` land in the home and last; `npm i -g` and a plain `pip install` install into the image: in a container they last until the agent restarts, on a machine until its root generation, which the base declares, is bumped ([persistence](persistence.md)).
   A plain `mise use -g <tool>` names `latest`, which an image's tool of that name already satisfies, so it installs nothing; `mise use -g <tool>@latest` or a version installs into the home, and a login shell then puts it ahead of the image's.
-  A tool pin an image from before mise's directories moved to their defaults wrote in the home applies again; one the home no longer holds shows as missing until `mise install`.
+  A tool pin in the home applies whenever the home holds it; a pinned tool the home has not installed shows as missing until `mise install`.
 
 ## Image updates
 
