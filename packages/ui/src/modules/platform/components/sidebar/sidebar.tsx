@@ -43,7 +43,13 @@ export function Sidebar() {
       </nav>
       {expanded && (
         <div className="hidden md:flex" data-testid="app-sidebar-resize">
-          <ResizeHandle side="left" onResize={resize} onDragEnd={endResize} />
+          <ResizeHandle
+            side="left"
+            label="Resize sidebar"
+            value={width}
+            onResize={resize}
+            onDragEnd={endResize}
+          />
         </div>
       )}
     </>

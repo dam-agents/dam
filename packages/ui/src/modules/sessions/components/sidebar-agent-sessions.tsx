@@ -39,7 +39,7 @@ import {
 } from "../lib/sidebar-session-window.js";
 import { RenameSessionDialog } from "./rename-session-dialog.js";
 import { SessionListSkeleton } from "./session-list-skeleton.js";
-import { SessionRow } from "./session-row.js";
+import { SessionRow, sessionTitleLabel } from "./session-row.js";
 
 const ROW_CLASS = "rounded-lg border-b-0 py-1.5 pr-2 pl-9";
 
@@ -83,11 +83,11 @@ export function SidebarAgentSessions({
   const sessionActions: SessionActions = {
     rename: (s) => actWhenAwake(`rename:${s.sessionId}`, () => setRenaming(s)),
     delete: async (s) => {
-      const label = s.title || s.sessionId.slice(0, 12);
+      const label = s.title ? `“${s.title}”` : sessionTitleLabel(s);
       if (
         await showConfirm(
           "Its transcript is deleted and cannot be recovered.",
-          `Delete session “${label}”?`,
+          `Delete session ${label}?`,
           { kind: "destructive", confirmLabel: "Delete session" },
         )
       )
@@ -168,6 +168,7 @@ function SessionPreview({
   const shown = visible.map((item) => item.session.sessionId);
   const { more } = sessionListControls({
     total: sessions.length,
+    collapsed: visible.length,
     expanded: false,
     hasNextPage: !complete,
   });
@@ -261,20 +262,22 @@ function AgentSessionList({
     (row) => row.session.sessionId,
     (row) => row.session.createdAt,
   );
-  const visible = sidebarSessionWindow(
-    rows,
-    expanded,
-    (row) => row.state.active,
-  );
+  const isActive = (row: (typeof rows)[number]) => row.state.active;
+  const visible = sidebarSessionWindow(rows, expanded, isActive);
+  const collapsed = expanded
+    ? sidebarSessionWindow(rows, false, isActive).length
+    : visible.length;
   const shown = visible.map((row) => row.session.sessionId);
   const { more, less } = sessionListControls({
     total: rows.length,
+    collapsed,
     expanded,
     hasNextPage,
   });
   const onMore = () => {
     const click = moreClick({
       total: rows.length,
+      collapsed,
       expanded,
       hasNextPage,
       isFetchingNextPage,

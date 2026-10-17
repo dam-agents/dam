@@ -1,4 +1,4 @@
-import { AddAlt, NewTab, Tools } from "@carbon/icons-react";
+import { AddAlt, DataEnrichmentAdd, NewTab, Tools } from "@carbon/icons-react";
 import { type ReactNode, useMemo } from "react";
 
 import { SectionLabel } from "@/components/ui/section-label";
@@ -109,6 +109,7 @@ export function SidebarAgents({
         <SectionLabel>Agents</SectionLabel>
         <div className="flex items-center gap-0.5">
           <ActivityFilterMenu filters={filters} onChange={setFilters} />
+          <CreateFromKitButton onOpen={onNavigate} />
           <CreateAgentButton onCreate={onNavigate} />
         </div>
       </div>
@@ -163,6 +164,25 @@ function CreateAgentButton({ onCreate }: { onCreate?: () => void }) {
         className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
       >
         <AddAlt size={16} />
+      </button>
+    </Tooltip>
+  );
+}
+
+function CreateFromKitButton({ onOpen }: { onOpen?: () => void }) {
+  const setKitBrowserOpen = useStore((s) => s.setKitBrowserOpen);
+  return (
+    <Tooltip content="Create agent from starter kit" side="right">
+      <button
+        type="button"
+        aria-label="Create agent from starter kit"
+        onClick={() => {
+          setKitBrowserOpen(true);
+          onOpen?.();
+        }}
+        className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        <DataEnrichmentAdd size={16} />
       </button>
     </Tooltip>
   );
