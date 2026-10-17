@@ -112,7 +112,7 @@ export function ConfirmDialog({
           )}
           <AlertDialogAction
             onClick={() => onConfirm()}
-            autoFocus
+            autoFocus={!showCancel}
             className={cn(
               destructive && buttonVariants({ variant: "destructive" }),
             )}
