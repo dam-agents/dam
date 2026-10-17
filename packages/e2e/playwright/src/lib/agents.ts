@@ -120,10 +120,14 @@ export function chatInput(page: Page): Locator {
 }
 
 export async function ensureSidebarExpanded(page: Page): Promise<void> {
-  const expand = page
-    .getByTestId("app-sidebar")
-    .getByRole("button", { name: "Expand navigation" });
-  if (await expand.isVisible()) await expand.click();
+  const show = page.getByRole("button", { name: "Show navigation" });
+  if (await show.isVisible()) {
+    await show.click();
+    await page
+      .getByTestId("app-sidebar")
+      .getByRole("button", { name: "Pin navigation" })
+      .click();
+  }
   await expect(page.getByTestId("sidebar-agents")).toBeVisible();
 }
 

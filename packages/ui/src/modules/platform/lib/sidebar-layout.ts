@@ -1,4 +1,3 @@
-export const SIDEBAR_COLLAPSED_W = 56;
 export const SIDEBAR_DEFAULT_W = 260;
 const SIDEBAR_MIN_W = 220;
 const SIDEBAR_MAX_W = 520;
