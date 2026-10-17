@@ -7,15 +7,12 @@ pub struct StorageUse {
     pub usable: u64,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: past SHORT_PERCENT the runner sheds what it can fetch again — the image trees no machine holds, and the scratch every guest keeps — until use is back under SHORT_UNTIL_PERCENT. Past CRITICAL_PERCENT it takes no write that adds much: it creates no machine, grows no disk, fetches no image onto its own claim and takes no seed. A machine that already exists still starts and restarts, because a boot writes little and an owner whose agents are all asleep must be able to get into one to clean it up; only past START_LIMIT_PERCENT does the runner start or restart no machine. It never stops one.
+// UNIT_BOUNDARY_DESCRIPTION: the claim's three levels. Past SHORT_PERCENT the runner sheds what it can fetch again — the image trees no machine holds, and the scratch every guest keeps — until use is SHED_STEP_PERCENT back under it. Past CRITICAL_PERCENT it takes no write that adds much: it creates no machine, grows no disk, fetches no image onto its own claim and takes no seed. A machine that already exists still starts and restarts, because a boot writes little and an owner whose agents are all asleep must be able to get into one to clean it up. FULL_PERCENT is the emergency: running guests may write into the claim only up to it (guest::STORAGE_ROOM_PATH), so their writes fail inside the guest past it, and the runner starts or restarts no machine. The last FULL_PERCENT short of the whole claim holds what guests write between two looks and the floor every guest keeps. The runner never stops a machine.
 pub const SHORT_PERCENT: u64 = 75;
-pub const SHORT_UNTIL_PERCENT: u64 = 70;
-pub const RESHED_STEP_PERCENT: u64 = 5;
-// UNIT_BOUNDARY_DESCRIPTION: the use up to which running guests may write into the claim (guest::STORAGE_ROOM_PATH). It sits below START_LIMIT_PERCENT and the level where writes start to fail, so what a guest writes between two looks, and the floor every guest keeps, still fit.
-pub const GUEST_ROOM_PERCENT: u64 = 95;
 pub const CRITICAL_PERCENT: u64 = 90;
-pub const START_LIMIT_PERCENT: u64 = 97;
-const WRITES_FAILING_PERCENT: u64 = 98;
+pub const FULL_PERCENT: u64 = 95;
+// UNIT_BOUNDARY_DESCRIPTION: how far the claim must fall back under SHORT_PERCENT before it stops being short, and how far it must fill past the last request before the runner asks the guests again. Use that sits on a level then does not turn shedding on and off, nor have every guest delete its scratch again, at every look.
+pub const SHED_STEP_PERCENT: u64 = 5;
 
 impl StorageUse {
     pub fn percent(&self) -> u64 {
@@ -29,20 +26,22 @@ impl StorageUse {
         self.percent() >= CRITICAL_PERCENT
     }
 
-    pub fn refuses_starts(&self) -> bool {
-        self.percent() >= START_LIMIT_PERCENT
+    pub fn full(&self) -> bool {
+        self.percent() >= FULL_PERCENT
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: whether the claim is short, given whether it was at the last look: it turns short at SHORT_PERCENT and stays short until SHORT_UNTIL_PERCENT, so use that sits on the threshold does not turn shedding on and off at every look.
+    // UNIT_BOUNDARY_DESCRIPTION: whether the claim is short, given whether it was at the last look: it turns short at SHORT_PERCENT and stays short until SHED_STEP_PERCENT under it.
     pub fn short(&self, was: bool) -> bool {
         let percent = self.percent();
-        percent >= SHORT_PERCENT || (was && percent >= SHORT_UNTIL_PERCENT)
+        percent >= SHORT_PERCENT || (was && percent >= SHORT_PERCENT - SHED_STEP_PERCENT)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the bytes each of `machines` running guests is asked to give back so the claim is back under SHORT_UNTIL_PERCENT, an even part of the whole; a guest frees only what it can, so this bounds a pass and is no promise.
+    // UNIT_BOUNDARY_DESCRIPTION: the bytes each of `machines` running guests is asked to give back so the claim is SHED_STEP_PERCENT back under SHORT_PERCENT, an even part of the whole; a guest frees only what it can, so this bounds a pass and is no promise.
     pub fn to_shed(&self, machines: usize) -> u64 {
-        let target = u64::try_from(u128::from(self.usable) * u128::from(SHORT_UNTIL_PERCENT) / 100)
-            .unwrap_or(u64::MAX);
+        let target = u64::try_from(
+            u128::from(self.usable) * u128::from(SHORT_PERCENT - SHED_STEP_PERCENT) / 100,
+        )
+        .unwrap_or(u64::MAX);
         self.used.saturating_sub(target) / u64::try_from(machines.max(1)).unwrap_or(1)
     }
 
@@ -65,25 +64,25 @@ impl StorageUse {
             < u128::from(self.usable) * u128::from(CRITICAL_PERCENT)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the bytes each of `running` guests may still add to the claim before it reaches GUEST_ROOM_PERCENT, an even part of what is left. The guests share the claim and write at once, so a grant of the whole room to each could add up past it; a grant of a part is renewed at every look, so one guest that writes alone still reaches the level within a few looks. No running guest reads as one.
+    // UNIT_BOUNDARY_DESCRIPTION: the bytes each of `running` guests may still add to the claim before it reaches FULL_PERCENT, an even part of what is left. The guests share the claim and write at once, so a grant of the whole room to each could add up past it; a grant of a part is renewed at every look, so one guest that writes alone still reaches the level within a few looks. No running guest reads as one.
     pub fn guest_room(&self, running: usize) -> u64 {
-        let limit = u64::try_from(u128::from(self.usable) * u128::from(GUEST_ROOM_PERCENT) / 100)
+        let limit = u64::try_from(u128::from(self.usable) * u128::from(FULL_PERCENT) / 100)
             .unwrap_or(u64::MAX);
         limit.saturating_sub(self.used) / u64::try_from(running.max(1)).unwrap_or(1)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: what the owner is told when the runner refuses a machine for want of storage, word for word the api-server's storage-full message: what is refused at this level, that a sleeping VM agent can still be opened to clean up below START_LIMIT_PERCENT, and the ways to free space.
+    // UNIT_BOUNDARY_DESCRIPTION: what the owner is told when the runner refuses a machine for want of storage, word for word the api-server's storage-full message: what is refused at this level, that a sleeping VM agent can still be opened to clean up below FULL_PERCENT, that running ones may be failing to write from it, and the ways to free space.
     pub fn refusal(&self) -> String {
-        let percent = self.percent();
-        let failing = if percent >= WRITES_FAILING_PERCENT {
-            "Your running VM agents may be failing to write files now. "
+        let (failing, starts) = if self.full() {
+            (
+                "Your running VM agents may be failing to write files now. ",
+                "Sleeping VM agents can't be started until space is freed.",
+            )
         } else {
-            ""
-        };
-        let starts = if self.refuses_starts() {
-            "Sleeping VM agents can't be started until space is freed."
-        } else {
-            "Sleeping VM agents can still be started until storage is nearly full, so you can open one and ask it to clear its caches."
+            (
+                "",
+                "Sleeping VM agents can still be started until storage is nearly full, so you can open one and ask it to clear its caches.",
+            )
         };
         format!(
             "{failing}Your VM agents have used {} of {} GiB of their shared storage, so new VM agents can't be created and their disks can't grow. {starts} To free space, delete a VM agent you no longer need, open an agent and ask it to clear its caches, or request more storage.",
@@ -133,11 +132,11 @@ mod tests {
         }
     }
 
-    // TEST_SCENARIO: the claim turns critical at 90%, refuses starts at 97% and turns short at 75%, and once short stays short down to 70%, so a claim whose use hovers on a threshold does not shed and stop shedding at every look. An empty claim reads as full rather than dividing by zero.
+    // TEST_SCENARIO: the claim turns critical at 90%, full at 95% and short at 75%, and once short stays short down to 70%, so a claim whose use hovers on a threshold does not shed and stop shedding at every look. An empty claim reads as full rather than dividing by zero.
     #[test]
     fn the_thresholds_hold_and_shedding_has_hysteresis() {
         assert!(!at(89).critical() && at(90).critical());
-        assert!(!at(96).refuses_starts() && at(97).refuses_starts());
+        assert!(!at(94).full() && at(95).full());
         assert!(!at(74).short(false) && at(75).short(false));
         assert!(at(71).short(true) && !at(69).short(true) && !at(71).short(false));
         assert_eq!(StorageUse { used: 0, usable: 0 }.percent(), 100);
@@ -157,12 +156,12 @@ mod tests {
         assert!(refusal.contains("50.0 of 100.0 GiB free"), "{refusal}");
     }
 
-    // TEST_SCENARIO: each running guest may add its even part of what is left below 95%, and nothing once the claim is there.
+    // TEST_SCENARIO: each running guest may add its even part of what is left below 95%, and nothing once the claim is full.
     #[test]
     fn each_running_guest_may_add_its_part_of_the_room() {
         assert_eq!(at(55).guest_room(2), 20);
         assert_eq!(at(55).guest_room(0), 40);
-        assert_eq!(at(96).guest_room(1), 0);
+        assert_eq!(at(95).guest_room(1), 0);
     }
 
     // TEST_SCENARIO: what the runner asks each guest to give back is its even part of what brings the claim back under 70%, and nothing once it is there; no machine at all reads as one.
@@ -173,7 +172,7 @@ mod tests {
         assert_eq!(at(60).to_shed(3), 0);
     }
 
-    // TEST_SCENARIO: the refusal is what the owner reads on the agent, so it says how much storage is used, whether a stopped agent can still be opened to clean up, and what to do; once writes may be failing it says that first.
+    // TEST_SCENARIO: the refusal is what the owner reads on the agent, so it says how much storage is used, whether a stopped agent can still be opened to clean up, and what to do; once the claim is full, starts are refused and writes may be failing, which it says first.
     #[test]
     fn a_refusal_names_the_use_and_the_fixes() {
         let message = StorageUse {
@@ -184,7 +183,8 @@ mod tests {
         assert!(message.contains("used 93.0 of 100.0 GiB"), "{message}");
         assert!(message.contains("delete a VM agent"), "{message}");
         assert!(message.contains("can still be started"), "{message}");
-        let nearly_full = at(98).refusal();
+        assert!(!message.contains("failing"), "{message}");
+        let nearly_full = at(95).refusal();
         assert!(nearly_full.contains("can't be started"), "{nearly_full}");
         assert!(
             nearly_full.starts_with("Your running VM agents may be failing"),
