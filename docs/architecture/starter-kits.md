@@ -210,6 +210,7 @@ Neither sits behind a flag: kits are how an agent is set up here, so the catalog
 The widget renders nothing when the install has no catalog.
 
 **Kit Onboarding** is the briefing the onboarding event carries — **visible** in the session where the knowledge-base bootstrap is hidden.
+The chat shows it as a collapsed "Setup instructions" card at the top of the initialization session rather than as a message the user wrote: the platform composed it, and the user opens it to read what the agent was told.
 That one sends a bare slash command, a mechanical trigger with nothing to read; a kit sends a briefing the user needs, because the agent's first act is to ask them for what only they can supply, and the answers only make sense against what the platform already set up.
 The prompt is **platform-composed from the kit and the Agent's state, read when the turn is composed** rather than snapshotted at create: the definition repository and the commit it is checked out at, each connection requirement with whether it is required or suggested *and whether it is actually connected right now*, the Agent's real schedules and which are disabled, the bound channel — then "follow `ONBOARDING.md`", or the kit's own `onboarding.prompt` as the instruction.
 What onboarding asks for is `ONBOARDING.md`'s to say; the platform declares nothing about it.
