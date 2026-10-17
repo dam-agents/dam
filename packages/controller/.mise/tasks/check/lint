@@ -4,5 +4,7 @@
 #MISE outputs=[]
 #MISE cache.enabled=true
 set -euo pipefail
+# Without cgo, for the reason the test task gives.
+export CGO_ENABLED=0
 go vet ./...
 staticcheck ./...
