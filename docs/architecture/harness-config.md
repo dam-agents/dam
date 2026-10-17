@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-10-16
+Last verified: 2026-10-18
 
 ## Overview
 
@@ -135,6 +135,7 @@ Each call is reported once with its Connection, upstream model, dialect, harness
 
 **Replay rules** apply by target, since the router cannot know which model wrote a history: for a Claude model, every assistant message but the last has its thinking blocks turned into `<thinking>…</thinking>` text; for a Responses target other than OpenAI, reasoning items and `client_metadata` are dropped and a tool-less request's tool items become text; for OpenAI only reasoning items with a non-empty `content` array are dropped; chat completions replay unchanged.
 The router also fits the output budget to the catalog's limit, drops a reasoning effort sent to a model that does not reason, and adds `include_usage` to a streamed chat completion so its final chunk carries the usage.
+The effort level Claude Code persists, sent as `output_config.effort`, is rewritten to the nearest level a DeepSeek target's chat template knows, since that template refuses the whole call on a level it does not: Claude Code's `medium` default becomes `high`.
 
 Beyond the model routes the router serves each harness's **catalog endpoint** from its view: `/v1/models` in the OpenAI list shape (`display_name` and `description` for Claude Code's picker, a `metadata` extension Pi registers its provider from), `/codex/models` in Codex's `ModelInfo` shape (a missing field makes Codex drop the catalog silently), `/inference/v1/model/info` in LiteLLM's shape for Bob, `HEAD /api/hello` for Claude Code's probe; Bob's `/admin/v1/*` calls get a JSON 404.
 A catalog request waits up to ten seconds for the pod's first listing and answers 503 while a provider has not listed, which a harness retries rather than caches.

@@ -856,6 +856,30 @@ describe("replay rules", () => {
     expect(applyReplayRules(ok, ibm)).toBe(ok);
   });
 
+  /** TEST_SCENARIO: Claude Code sends its persisted effort level, `medium` by
+   * default, as `output_config.effort`; DeepSeek's chat template behind vLLM
+   * refuses that level on the whole call, so a DeepSeek target gets the
+   * nearest one it knows, and every other value and target is left alone. */
+  it("maps an effort level onto the DeepSeek template's own", () => {
+    const deepseek = {
+      dialect: "anthropic-messages" as const,
+      alias: "platform" as const,
+      upstreamId: "deepseek-v4.1-flash",
+    };
+    expect(
+      applyReplayRules(
+        { output_config: { effort: "medium", format: "x" } },
+        deepseek,
+      ),
+    ).toEqual({ output_config: { effort: "high", format: "x" } });
+    const low = { output_config: { effort: "low" } };
+    expect(applyReplayRules(low, deepseek)).toBe(low);
+    const other = { output_config: { effort: "medium" } };
+    expect(
+      applyReplayRules(other, { ...deepseek, upstreamId: "azure/gpt-5.5" }),
+    ).toBe(other);
+  });
+
   /** TEST_SCENARIO: Bob asks every model for 64000 output tokens. OpenAI
    * refuses that on gpt-4o (16384 at most) and refuses max_tokens itself on
    * its reasoning models, so a chat call to OpenAI carries the budget as
