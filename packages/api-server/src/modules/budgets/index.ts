@@ -15,5 +15,5 @@ export {
   storagePercent,
   poolLevel,
   storageFullMessage,
-  STORAGE_WRITES_FAILING_PERCENT,
+  STORAGE_NEARLY_FULL_PERCENT,
 } from "./domain/vm-usage.js";
