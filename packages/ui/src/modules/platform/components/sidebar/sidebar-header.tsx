@@ -8,7 +8,7 @@ import { getBrand } from "../../../../brand.js";
 
 interface Props {
   expanded: boolean;
-  onToggle: () => void;
+  onToggle?: () => void;
   onHome: () => void;
 }
 
@@ -33,6 +33,7 @@ export function SidebarHeader({ expanded, onToggle, onHome }: Props) {
       )}
       <Tooltip content={toggleLabel} side="right">
         <button
+          hidden={!onToggle}
           type="button"
           onClick={onToggle}
           aria-label={toggleLabel}

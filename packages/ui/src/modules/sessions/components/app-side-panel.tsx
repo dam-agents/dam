@@ -51,7 +51,13 @@ export function AppSidePanelButtons() {
  * docks the artifact it opens, without the interactive bridge, because no chat
  * is open to receive a prompt.
  */
-export function AppSidePanelHost({ children }: { children: ReactNode }) {
+export function AppSidePanelHost({
+  mainHidden = false,
+  children,
+}: {
+  mainHidden?: boolean;
+  children: ReactNode;
+}) {
   const openArtifactId = useStore((s) => s.openArtifactId);
   const artifactDirty = useStore((s) => s.openArtifactDirty);
   const sidePanelTab = useStore((s) => s.sidePanelTab);
@@ -69,6 +75,7 @@ export function AppSidePanelHost({ children }: { children: ReactNode }) {
   return (
     <SidePanelShell
       mainClassName="z-content"
+      mainMinWidth={mainHidden ? 0 : undefined}
       activeTab={activeTab}
       hiddenTabs={hidden}
       onSelectTab={(tab) =>

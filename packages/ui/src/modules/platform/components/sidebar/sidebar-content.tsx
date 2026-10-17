@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import { SidebarAgents } from "../../../agents/components/sidebar-agents.js";
 import {
   type SidebarDestination,
@@ -8,9 +10,11 @@ import { SidebarNavItem } from "./sidebar-nav-item.js";
 export function SidebarContent({
   stickyHeaderClassName,
   onNavigate,
+  lead,
 }: {
   stickyHeaderClassName: string;
   onNavigate?: () => void;
+  lead?: ReactNode;
 }) {
   const { primary, secondary } = useSidebarDestinations();
   const item = (destination: SidebarDestination) => (
@@ -32,6 +36,7 @@ export function SidebarContent({
         className="-mx-2 mt-6 mb-4 min-h-0 flex-1 overflow-y-auto px-2"
         data-testid="sidebar-agents-section"
       >
+        {lead}
         <SidebarAgents
           stickyHeaderClassName={stickyHeaderClassName}
           onNavigate={onNavigate}

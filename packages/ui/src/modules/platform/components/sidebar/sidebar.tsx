@@ -1,10 +1,12 @@
 import { Bot } from "@carbon/icons-react";
 
 import { ResizeHandle } from "@/components/resize-handle";
+import { PANE_MOTION } from "@/lib/pane-motion";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
 import { SidebarAgents } from "../../../agents/components/sidebar-agents.js";
+import { HomeWidgets } from "../../../home/components/home-widgets.js";
 import { useActivitySessions } from "../../../home/hooks/use-activity-sessions.js";
 import { useSidebarDestinations } from "../../hooks/use-sidebar-destinations.js";
 import { useSidebarWidth } from "../../hooks/use-sidebar-layout.js";
@@ -14,34 +16,57 @@ import { SidebarFlyout } from "./sidebar-flyout.js";
 import { SidebarHeader } from "./sidebar-header.js";
 import { SidebarNavItem } from "./sidebar-nav-item.js";
 
-export function Sidebar() {
+export function Sidebar({ home = false }: { home?: boolean }) {
   const expanded = useStore((s) => s.sidebarExpanded);
   const setExpanded = useStore((s) => s.setSidebarExpanded);
-  const { home } = useSidebarDestinations();
+  const destinations = useSidebarDestinations();
   const { width, resizing, resize, endResize } = useSidebarWidth();
+  const wide = home || expanded;
 
   return (
     <>
       <nav
         className={cn(
-          "hidden md:flex flex-col h-full px-2 bg-card border-r border-border shrink-0",
-          !resizing && "transition-[width]",
+          "hidden md:flex flex-col h-full min-w-0 overflow-hidden px-2 bg-card border-border",
+          !home && "border-r",
+          !resizing && PANE_MOTION,
         )}
-        style={{ width: expanded ? width : SIDEBAR_COLLAPSED_W }}
+        style={{
+          flex: `${home ? 1 : 0} 0 ${wide ? width : SIDEBAR_COLLAPSED_W}px`,
+        }}
         data-testid="app-sidebar"
+        data-home={home || undefined}
       >
-        <SidebarHeader
-          expanded={expanded}
-          onToggle={() => setExpanded(!expanded)}
-          onHome={home.navigate}
-        />
-        {expanded ? (
-          <SidebarContent stickyHeaderClassName="bg-card" />
+        {wide ? (
+          <div
+            className={cn(
+              "mx-auto flex min-h-0 w-full flex-1 flex-col",
+              PANE_MOTION,
+              home ? "max-w-[960px] px-4 pt-6 lg:px-[5%]" : "max-w-full",
+            )}
+          >
+            <SidebarHeader
+              expanded
+              onToggle={home ? undefined : () => setExpanded(!expanded)}
+              onHome={destinations.home.navigate}
+            />
+            <SidebarContent
+              stickyHeaderClassName="bg-card"
+              lead={<HomeWidgets open={home} />}
+            />
+          </div>
         ) : (
-          <CollapsedRail />
+          <>
+            <SidebarHeader
+              expanded={false}
+              onToggle={() => setExpanded(true)}
+              onHome={destinations.home.navigate}
+            />
+            <CollapsedRail />
+          </>
         )}
       </nav>
-      {expanded && (
+      {expanded && !home && (
         <div className="hidden md:flex" data-testid="app-sidebar-resize">
           <ResizeHandle side="left" onResize={resize} onDragEnd={endResize} />
         </div>
