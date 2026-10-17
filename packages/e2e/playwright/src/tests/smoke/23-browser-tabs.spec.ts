@@ -6,7 +6,7 @@ import { deleteAgentIfPresent } from "../../lib/agents.js";
 import { type ApiClient, createApiClient } from "../../lib/api-client.js";
 import { acceptTerms, getAccessToken } from "../../lib/auth.js";
 import { createAgentOn, waitAgentState } from "../../lib/backend.js";
-import { AGENT_NS, kubectl } from "../../lib/cluster.js";
+import { AGENT_NS, kubectl, waitHarnessTools } from "../../lib/cluster.js";
 
 test.describe.configure({ mode: "serial" });
 
@@ -93,16 +93,7 @@ test.beforeAll(async () => {
   api = createApiClient(await getAccessToken());
   await acceptTerms(api);
   await deleteAgentIfPresent(api, AGENT);
-  kubectl(
-    "-n",
-    AGENT_NS,
-    "wait",
-    "pod",
-    "-l",
-    "app.kubernetes.io/component=harness-tools",
-    "--for=condition=Ready",
-    "--timeout=240s",
-  );
+  await waitHarnessTools();
   agentId = await createAgentOn(api, "container", AGENT, "default");
   await waitAgentState(api, agentId, "running");
 });

@@ -2119,7 +2119,7 @@ fn boot_and_grow(
     size: i32,
     answered: impl Fn() -> bool,
 ) -> anyhow::Result<bool> {
-    runtime.start(id, boot)?;
+    runtime.start(id, boot, size)?;
     if boot == size {
         return Ok(false);
     }
@@ -2132,7 +2132,7 @@ fn boot_and_grow(
     }
     tracing::warn!(machine = id, error = %format!("{e:#}"), boot_mib = boot, memory_mib = size, "the guest could not grow to its size; booting it again whole");
     runtime.stop(id)?;
-    runtime.start(id, size)?;
+    runtime.start(id, size, size)?;
     Ok(true)
 }
 

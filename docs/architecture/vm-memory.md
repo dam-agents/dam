@@ -1,6 +1,6 @@
 # VM memory
 
-Last verified: 2026-10-15
+Last verified: 2026-10-16
 
 An owner's machines share the memory of their [runner](vm-runner.md), and it is counted by what they use rather than by their sizes.
 That memory is the owner's whole pool for vm agents, which have no size of their own and stand outside the [budget](budgets.md)'s Ceiling.
@@ -23,7 +23,7 @@ A machine's size is the most its guest can see; the host commits only the pages 
 **A machine boots small and grows.** A guest's kernel writes a page descriptor for every page of its RAM before it runs anything, and under nested virtualization that costs 65 to 85 ms per GiB: most of a second for a 12 GiB machine.
 So the runner boots each machine with the warm-up floor below (`virtualization.runner.bootMiB`), or its size when that is smaller, and grows it to its size as soon as the start returns, through the virtio-mem area smolvm gives every guest.
 The VMM maps the added RAM, platform-init puts each memory block online as the guest's virtio-mem driver adds it (the driver adds no more once 1 GiB of it waits offline), and the start ends once the guest has plugged it all.
-Every boot does this again, since each boots from the floor, except a machine the runner has recorded as unable to grow (below).
+Every boot does this again, since each boots from the floor, except a machine the runner has recorded as unable to grow (below), and a boot that converts the machine's disk ([vm-runner](vm-runner.md)): its guest copies the disk before it answers anything, so a grow would fail and its reboot would cut the copy short at every start, and it boots whole instead.
 Readiness does not wait for the grow, which runs while the workload starts, because waiting would put the same page work back on the path; a guest that allocates past the floor before the grow ends meets its own OOM killer.
 A machine that cannot grow is stopped and booted again whole within the same start, unless its guest has already answered: the agent reads ready by then, and a reboot would drop a prompt sent to it, so that guest runs at the floor until its next start.
 Either way the runner records beside the machine that it cannot grow, under its own VM runtime, and boots it whole from then on; a runner release with another runtime tries the grow again.

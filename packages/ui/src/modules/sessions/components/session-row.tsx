@@ -18,7 +18,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { HarnessIcons } from "@/components/harness-icons";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { HOVER_ACTION, HOVER_YIELD } from "@/components/ui/hover-action";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
@@ -52,7 +51,6 @@ interface Props {
   needsApproval: boolean;
   unread?: boolean;
   draft?: boolean;
-  provisional?: boolean;
   backgroundWork?: readonly BackgroundWorkItemView[];
   cost?: SessionRuntime;
   conversation?: string;
@@ -72,7 +70,6 @@ export function SessionRow({
   needsApproval,
   unread = false,
   draft = false,
-  provisional = false,
   backgroundWork = NO_WORK,
   cost,
   conversation,
@@ -87,16 +84,14 @@ export function SessionRow({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didLongPress = useRef(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
 
   const startPress = useCallback(() => {
     didLongPress.current = false;
-    if (provisional) return;
     timerRef.current = setTimeout(() => {
       didLongPress.current = true;
       setMenuOpen(true);
     }, LONG_PRESS_MS);
-  }, [provisional]);
+  }, []);
 
   const dwellRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startDwell = useCallback(() => {
@@ -121,22 +116,8 @@ export function SessionRow({
       didLongPress.current = false;
       return;
     }
-    if (menuOpen) {
-      setMenuOpen(false);
-      return;
-    }
     onResume();
-  }, [onResume, menuOpen]);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node))
-        setMenuOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [menuOpen]);
+  }, [onResume]);
 
   const titleLabel = s.title || `(no title · ${s.sessionId.slice(0, 8)})`;
   const titleClass = !s.title
@@ -181,7 +162,6 @@ export function SessionRow({
       onTouchEnd={endPress}
       onTouchCancel={endPress}
       onContextMenu={(e) => {
-        if (provisional) return;
         e.preventDefault();
         setMenuOpen(true);
       }}
@@ -218,6 +198,8 @@ export function SessionRow({
                 testId="session-menu-button"
                 dense
                 stopPropagation
+                open={menuOpen}
+                onOpenChange={setMenuOpen}
                 contentProps={{ onClick: (event) => event.stopPropagation() }}
               >
                 {onExportTimeline && (
@@ -230,14 +212,12 @@ export function SessionRow({
                 )}
                 <DropdownMenuItem
                   data-testid="session-rename-button"
-                  disabled={provisional}
                   onSelect={onRename}
                 >
                   <TextCreation size={14} /> Rename session
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   data-testid="session-delete-button"
-                  disabled={provisional}
                   tone="danger"
                   onSelect={onDelete}
                 >
@@ -278,39 +258,6 @@ export function SessionRow({
           <SessionRepositoryBadges repositories={s.repositories} />
         )}
       </div>
-      {}
-      {menuOpen && (
-        <div
-          ref={menuRef}
-          className="absolute right-3 top-2 z-popover rounded-lg border border-border bg-popover py-1 anim-scale-in shadow-md"
-        >
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start"
-            onClick={(e) => {
-              e.stopPropagation();
-              setMenuOpen(false);
-              onRename();
-            }}
-          >
-            <TextCreation size={14} /> Rename session
-          </Button>
-          <Button
-            variant="ghost"
-            tone="danger"
-            size="sm"
-            className="w-full justify-start"
-            onClick={(e) => {
-              e.stopPropagation();
-              setMenuOpen(false);
-              onDelete();
-            }}
-          >
-            <TrashCan size={14} /> Delete session
-          </Button>
-        </div>
-      )}
     </div>
   );
 }

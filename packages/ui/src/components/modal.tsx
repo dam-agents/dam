@@ -176,7 +176,7 @@ export function DialogBody({
   return (
     <div
       className={cn(
-        "flex-1 min-h-0 overflow-y-auto py-5 md:py-6",
+        "flex-1 min-h-0 overflow-y-auto [scrollbar-gutter:stable] py-5 md:py-6",
         !flush && "px-5 md:px-6",
         className,
       )}

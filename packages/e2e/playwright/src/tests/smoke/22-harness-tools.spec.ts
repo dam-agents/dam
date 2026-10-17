@@ -12,7 +12,7 @@ import {
   requireBackend,
   waitAgentState,
 } from "../../lib/backend.js";
-import { AGENT_NS, kubectl } from "../../lib/cluster.js";
+import { AGENT_NS, kubectl, waitHarnessTools } from "../../lib/cluster.js";
 import { baseUrl } from "../../config.js";
 
 test.describe.configure({ mode: "serial" });
@@ -68,16 +68,7 @@ test.beforeAll(async () => {
   api = createRefreshingApiClient(token);
   await requireBackend(api, "vm");
   await acceptTerms(api);
-  kubectl(
-    "-n",
-    AGENT_NS,
-    "wait",
-    "pod",
-    "-l",
-    "app.kubernetes.io/component=harness-tools",
-    "--for=condition=Ready",
-    "--timeout=240s",
-  );
+  await waitHarnessTools();
   agentId = await createAgentOn(api, "vm", "e2e-harness-tools", "claude-code");
 });
 

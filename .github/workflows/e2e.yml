@@ -212,9 +212,11 @@ jobs:
           CI_IMAGES_IMAGES_JOB: build / build-images (amd64)
           CI_IMAGES_MOCK_JOB: build / build mock (e2e fixture)
           CI_IMAGES_AGENTS_JOB: build / build-agents (amd64)
-          # As build.yml's `changes` job sets it, so both resolve the same
-          # images stale.
+          # As build.yml's `changes` job sets them, so both resolve the same
+          # images stale. EVENT lets a merge group reuse an earlier group's
+          # build; see image:resolve.
           RESOLVE_NO_REUSE: ${{ inputs.fresh && '1' || '' }}
+          EVENT: ${{ github.event_name }}
         run: nohup .mise/tasks/e2e/ci-images /tmp/ci-images.status > /tmp/ci-images.log 2>&1 &
       # Keyed by the Playwright the lockfile resolves, which fixes the browser
       # build it downloads: a lockfile change elsewhere keeps the entry.
@@ -380,19 +382,19 @@ jobs:
       - *e2e-ci-images
       - *e2e-playwright-version
       - *e2e-playwright-cache
-      # The node directory the harness tools installer fills, so on a hit it
-      # finds every version installed and reaches no download host: one host
-      # that stalled for minutes failed this lane. Keyed by what fixes the
-      # versions, the installer included. Restored as the runner's user, then
-      # given to root, who owns every install there.
-      - name: Create the node's harness tools directory
-        run: sudo install -d -o "$USER" /var/lib/platform-harness-tools
-      - id: harness-tools-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: /var/lib/platform-harness-tools
-          key: &harness-tools-key harness-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/agents/base/image.lock', 'packages/agents/base/image-locks/**', 'packages/agents/base/miserc.toml', 'packages/agents/base/base.toml', 'packages/agents/base/rootfs/etc/mise/conf.d/settings.toml', 'packages/agents/*/image.toml', 'packages/agents/default/rootfs/usr/local/bin/install-harness-tools') }}
-      - run: sudo chown -R root:root /var/lib/platform-harness-tools
+      # The node directory the harness tools installer fills, seeded with the
+      # tools tree the agent-tools step built the default image's tools layer
+      # from: the same config and installer, at the same path, so the installer
+      # finds every version installed and reaches no download host. One host
+      # that stalled for minutes failed this lane. A run that does not verify
+      # has no tree, and its installer downloads every tool. Root owns every
+      # install there.
+      - name: Seed the node's harness tools directory
+        run: |
+          sudo install -d /var/lib/platform-harness-tools
+          tree=~/.cache/platform-agent-oci/harness-tools/current/usr/share/mise
+          if [ -d "$tree" ]; then sudo cp -a "$tree/." /var/lib/platform-harness-tools/; fi
+          sudo chown -R root:root /var/lib/platform-harness-tools
       # Twice the container lane's budget: the vm-runner build above on a PR,
       # the node staging of the mock image, every agent's boots, each a machine
       # start under nested virtualization, and the backend and runtime
@@ -401,23 +403,13 @@ jobs:
         timeout-minutes: 70
         env: *e2e-run-env
       - *e2e-playwright-save
-      # On a cache hit the installer finds every version installed, so its log
+      # When seeded, the installer finds every version installed, so its log
       # shows no download.
       - name: Harness tools install log
         if: ${{ !cancelled() }}
         env:
           KUBECONFIG: /etc/rancher/k3s/k3s.yaml
         run: kubectl -n platform-agents logs ds/platform-harness-tools -c install --timestamps || true
-      # Only main writes it, and only once the suite passed, which waits for the
-      # installer: an entry is a whole install of one lockfile. It is about the
-      # size of the agent-tools entry, and a PR reads main's.
-      - if: ${{ success() && inputs.save-caches && steps.harness-tools-cache.outputs.cache-hit != 'true' }}
-        run: sudo chown -R "$USER" /var/lib/platform-harness-tools
-      - if: ${{ success() && inputs.save-caches && steps.harness-tools-cache.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: /var/lib/platform-harness-tools
-          key: *harness-tools-key
       - *e2e-image-log
       - *e2e-provision-log
       # smolvm's VMM seccomp filter reports to the kernel, never to a pod log: a

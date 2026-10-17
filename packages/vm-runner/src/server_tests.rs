@@ -42,6 +42,7 @@ struct Fake {
     fail_start_once: Mutex<Option<String>>,
     fail_grow_once: Mutex<Option<String>>,
     booted_mib: Mutex<Vec<i32>>,
+    start_sizes: Mutex<Vec<i32>>,
     console: Mutex<String>,
     panic_on_state: AtomicBool,
     nests: AtomicBool,
@@ -117,9 +118,10 @@ impl Runtime for Fake {
         Ok(())
     }
 
-    fn start(&self, id: &str, boot_mib: i32) -> anyhow::Result<()> {
+    fn start(&self, id: &str, boot_mib: i32, memory_mib: i32) -> anyhow::Result<()> {
         self.record(format!("start {id}"));
         locked(&self.booted_mib).push(boot_mib);
+        locked(&self.start_sizes).push(memory_mib);
         std::thread::sleep(*locked(&self.start_delay));
         if let Some(message) = locked(&self.fail_start_once).take() {
             anyhow::bail!(message);
@@ -494,7 +496,7 @@ async fn a_stopped_machine_starts_again_on_the_same_port() {
     );
 }
 
-// TEST_SCENARIO: a guest's boot costs time for every GiB of RAM it boots with, so a machine boots with the runner's boot estimate and is grown to its spec's size as soon as its start returns, on every boot: the first, and one after a stop, whose record the update set back to the spec. The grow is part of the start, so the action ends only once the machine has its size.
+// TEST_SCENARIO: a guest's boot costs time for every GiB of RAM it boots with, so a machine boots with the runner's boot estimate and is grown to its spec's size as soon as its start returns, on every boot: the first, and one after a stop, whose record the update set back to the spec. The grow is part of the start, so the action ends only once the machine has its size. Every start is also told that size, so a runtime that knows the boot cannot grow (a disk conversion) boots at it.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_machine_boots_small_and_is_grown_to_its_size_on_every_boot() {
     let h = Harness::with("boot-small", |c| c.boot_mib = 1024);
@@ -519,6 +521,7 @@ async fn a_machine_boots_small_and_is_grown_to_its_size_on_every_boot() {
         ]
     );
     assert_eq!(*locked(&h.fake.booted_mib), vec![1024, 1024]);
+    assert_eq!(*locked(&h.fake.start_sizes), vec![2048, 2048]);
 }
 
 // TEST_SCENARIO: a machine no larger than the boot estimate boots whole and is never grown, and so is every machine of a runner given no estimate.
