@@ -141,7 +141,7 @@ test("keeps /tmp and /var/tmp as directories of the root", async () => {
   expect(guest.split("\n")).toEqual(["0", "1777 root", "1777 root"]);
 });
 
-// TEST_SCENARIO: the base image ships openrc, so platform-init boots its runlevels before the entrypoint, and runs the entrypoint in a cgroup of its own, which a restart of the entrypoint ends without openrc's services. A fresh machine's runlevels hold no service. The test then adds one of its own to the default runlevel, which the hibernate-and-wake test reads back.
+// TEST_SCENARIO: the base image ships openrc, so platform-init boots its runlevels before the entrypoint, and runs the entrypoint in a cgroup of its own, which a restart of the entrypoint ends without openrc's services. A fresh machine's runlevels hold no service. The test then adds one of its own to the default runlevel and starts it, as an agent does; openrc stops only a started service, and the hibernate-and-wake test reads back both its stop and its start at the boot.
 test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async () => {
   test.skip(
     laneBackend !== "vm",
@@ -172,6 +172,7 @@ test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async
       `chmod 755 /etc/init.d/${probeService}`,
       `rm -f ${probeStopped}`,
       `/sbin/rc-update add ${probeService} default >/dev/null`,
+      `/sbin/rc-service ${probeService} start >/dev/null`,
     ].join("\n"),
   );
 });
