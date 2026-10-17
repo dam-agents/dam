@@ -1,72 +1,70 @@
-import { PageHeader } from "@/components/ui/page-header";
-
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { EntryPointButtons } from "../../agents/components/entry-point-buttons.js";
-import { SandboxList } from "../../agents/components/sandbox-list.js";
 import { WelcomeEntryPoints } from "../../agents/components/welcome-entry-points.js";
 import { useAgentRows } from "../../agents/hooks/use-agent-rows.js";
 import { splitTemporarySandboxes } from "../../agents/utils/temporary-sandboxes.js";
-import { ResourcesCard } from "../../budgets/components/resources-card.js";
 import { SpendWidget } from "../../spend/components/spend-widget.js";
-import { useFeed } from "../api/queries.js";
 import { ApprovalsBanner } from "../components/approvals-banner.js";
-import { WidgetSkeleton } from "../components/home-skeletons.js";
+import {
+  ActivityCard,
+  AgentStatesCard,
+  ApiKeysCard,
+  ArtifactsCard,
+  BusiestCard,
+  ChannelsCard,
+  ConnectionsCard,
+  HarnessCard,
+  HeroCard,
+  ModelsCard,
+  ResourcesBarsCard,
+  SchedulesCard,
+  SpendByKindCard,
+  TipCard,
+  TokensCard,
+} from "../components/home-cards.js";
 
 export function HomeView() {
-  const { agentsData, initialLoaded, rowProps } = useAgentRows();
-  const { workingAgentIds, workingByAgent } = useFeed();
+  const { agentsData, initialLoaded } = useAgentRows();
+  const { visible } = splitTemporarySandboxes(agentsData?.list ?? []);
 
-  const allAgents = agentsData?.list ?? [];
-  const { visible, drawByDriver } = splitTemporarySandboxes(allAgents);
-
-  if (!initialLoaded) {
-    return (
-      <div>
-        <PageHeader title="Home" />
-        <div className="@container mb-8">
-          <div className="grid grid-cols-1 gap-4 @3xl:grid-cols-2">
-            <WidgetSkeleton rows={2} />
-            <WidgetSkeleton rows={2} />
-          </div>
-        </div>
-        <ListSkeleton rows={3} rowHeight={70} />
-      </div>
-    );
-  }
-
-  if (visible.length === 0) {
-    return (
-      <div>
-        <PageHeader title="Home" />
-        <WelcomeEntryPoints />
-      </div>
-    );
-  }
+  if (!initialLoaded) return <ListSkeleton rows={4} rowHeight={140} />;
 
   return (
-    <div>
-      <PageHeader title="Home" />
+    <div className="flex flex-col gap-4">
       <ApprovalsBanner />
-      <div className="@container mb-8">
-        <div className="grid grid-cols-1 gap-4 @3xl:grid-cols-2">
-          <div className="rounded-lg border border-border bg-card p-6">
-            <ResourcesCard
-              agents={allAgents}
-              workingAgentIds={workingAgentIds}
-            />
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <HeroCard />
+        {visible.length === 0 ? (
+          <div className="col-span-full">
+            <WelcomeEntryPoints />
           </div>
-          <SpendWidget />
+        ) : (
+          <>
+            <ResourcesBarsCard />
+            <div className="md:col-span-1 xl:col-span-2 [&>div]:h-full [&>div]:rounded-xl">
+              <SpendWidget />
+            </div>
+            <TipCard />
+            <ActivityCard />
+            <ChannelsCard />
+            <AgentStatesCard />
+            <SchedulesCard />
+            <HarnessCard />
+            <BusiestCard />
+            <ConnectionsCard />
+            <ArtifactsCard />
+            <ApiKeysCard />
+            <SpendByKindCard />
+            <ModelsCard />
+            <TokensCard />
+          </>
+        )}
+      </div>
+      {visible.length > 0 && (
+        <div className="flex flex-wrap justify-end gap-2">
+          <EntryPointButtons />
         </div>
-      </div>
-      <div className="mb-4 flex flex-wrap justify-end gap-2">
-        <EntryPointButtons />
-      </div>
-      <SandboxList
-        agents={visible}
-        drawByDriver={drawByDriver}
-        rowProps={rowProps}
-        workingByAgent={workingByAgent}
-      />
+      )}
     </div>
   );
 }
