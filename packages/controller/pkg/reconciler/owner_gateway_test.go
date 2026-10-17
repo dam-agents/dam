@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -188,4 +189,66 @@ func TestOwnerGateway_CutOverWaitsForTheCurrentListener(t *testing.T) {
 	ready, reason, _ := r.gatewayReadiness(ctx, agent)
 	assert.False(t, ready)
 	assert.Equal(t, apiv1.ReasonOwnerGatewayListenerStale, reason)
+}
+
+func servedVMReconciler(t *testing.T) (*AgentReconciler, *fakeNode, *apiv1.Agent) {
+	t.Helper()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Gateway.PerOwner = true
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		rev, _ := r.ownerGatewayRevisions.Load("my-agent")
+		s, _ := rev.(string)
+		_, _ = w.Write([]byte(s))
+	}))
+	t.Cleanup(srv.Close)
+	r.ownerProbeClient = &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, srv.Listener.Addr().String())
+	}}}
+	_, err := r.client.CoreV1().Pods("test-agents").Create(context.Background(), ownerGatewayPod("10.42.0.9"), metav1.CreateOptions{})
+	require.NoError(t, err)
+	for range 3 {
+		require.NoError(t, r.Reconcile(context.Background(), agent))
+	}
+	svc, err := r.client.CoreV1().Services("test-agents").Get(context.Background(), GatewayName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Equal(t, "true", svc.Annotations[annOwnerGatewayServed])
+	return r, node, agent
+}
+
+// TEST_SCENARIO: an agent its owner gateway serves hibernates and wakes without its own gateway pod: the idle checker stops the machine and records the agent down on its Service, the agent still reads hibernated only once the machine stopped, and a wake records it up and starts the machine while its own gateway stays at zero. Its listener stays configured the whole time, so a wake needs no configuration change.
+func TestOwnerGateway_HibernateAndWakeLeaveTheOwnGatewayAtZero(t *testing.T) {
+	ctx := context.Background()
+	r, node, agent := servedVMReconciler(t)
+	assert.Equal(t, int32(0), agentSSReplicas(t, r, GatewayName("my-agent")), "a served agent's own gateway is not needed")
+	up, ok, err := r.servedDesiredUp(ctx, "my-agent")
+	require.NoError(t, err)
+	assert.True(t, ok)
+	assert.True(t, up)
+
+	agent.Annotations[annLastActivity] = time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339)
+	stored, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	stored.SetAnnotations(agent.Annotations)
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Update(ctx, stored, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	checker := NewIdleChecker(r.client, r.dynamic, r.config).WithMachineHalt(r.HaltMachine)
+	checker.busyProbe = func(context.Context, string) bool { return false }
+	checker.check(ctx)
+	assert.False(t, node.spec("my-agent").Running)
+	up, _, _ = r.servedDesiredUp(ctx, "my-agent")
+	assert.False(t, up)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.False(t, node.spec("my-agent").Running, "a lapsed idle timeout with the agent recorded down keeps the machine stopped")
+	assert.Equal(t, apiv1.ReasonHibernated, readyCondition(t, r, "my-agent").Reason)
+	cm, err := r.client.CoreV1().ConfigMaps("test-agents").Get(ctx, ownerGatewayName("platform", testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Contains(t, cm.Data[ownerGatewayLDSKey], "agent_egress_my-agent", "a hibernated agent keeps its listener")
+
+	agent.Annotations[annLastActivity] = time.Now().UTC().Format(time.RFC3339)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.True(t, node.spec("my-agent").Running)
+	up, _, _ = r.servedDesiredUp(ctx, "my-agent")
+	assert.True(t, up)
+	assert.Equal(t, int32(0), agentSSReplicas(t, r, GatewayName("my-agent")), "a wake starts no gateway pod")
 }

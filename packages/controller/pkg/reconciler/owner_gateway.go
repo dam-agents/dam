@@ -19,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
@@ -517,4 +518,61 @@ func (r *AgentReconciler) cutOverToOwnerGateway(ctx context.Context, owner strin
 		}
 		slog.Info("owner gateway: the agent's Service now selects its owner gateway", "agent", name, "owner", owner, "slot", m.slot)
 	}
+}
+
+const annDesiredUp = "agent-platform.ai/desired-up"
+
+// UNIT_BOUNDARY_DESCRIPTION: whether a vm Agent served by its owner gateway should be up. Its own gateway pod no longer scales with it, so the decision its reconcile and the idle checker make is kept on its gateway Service instead, which lives as long as the agent. ok is false for an agent its owner gateway does not serve, which keeps reading its gateway's replica count.
+func desiredUpRecord(svc *corev1.Service) (up, ok bool) {
+	if svc == nil || svc.Annotations[annOwnerGatewayServed] != "true" {
+		return false, false
+	}
+	return svc.Annotations[annDesiredUp] == "true", true
+}
+
+func recordDesiredUp(ctx context.Context, kube kubernetes.Interface, namespace, name string, up bool) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		svc, err := kube.CoreV1().Services(namespace).Get(ctx, GatewayName(name), metav1.GetOptions{})
+		if k8serrors.IsNotFound(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if _, served := desiredUpRecord(svc); !served || svc.Annotations[annDesiredUp] == strconv.FormatBool(up) {
+			return nil
+		}
+		svc.Annotations[annDesiredUp] = strconv.FormatBool(up)
+		_, err = kube.CoreV1().Services(namespace).Update(ctx, svc, metav1.UpdateOptions{})
+		return err
+	})
+}
+
+func (r *AgentReconciler) servedDesiredUp(ctx context.Context, name string) (up, ok bool, err error) {
+	svc, err := r.client.CoreV1().Services(r.config.Namespace).Get(ctx, GatewayName(name), metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, err
+	}
+	up, ok = desiredUpRecord(svc)
+	return up, ok, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an agent its owner gateway serves no longer needs its own gateway pod, which then holds only a copy of the agent's credentials, so it is scaled to zero and stays there. Its objects stay until the migration removes them, so turning the flag off brings it back as it was.
+func (r *AgentReconciler) scaleOwnGatewayDown(ctx context.Context, name string) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		ss, err := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, GatewayName(name), metav1.GetOptions{})
+		if k8serrors.IsNotFound(err) {
+			return nil
+		}
+		if err != nil || (ss.Spec.Replicas != nil && *ss.Spec.Replicas == 0) {
+			return err
+		}
+		zero := int32(0)
+		ss.Spec.Replicas = &zero
+		_, err = r.client.AppsV1().StatefulSets(r.config.Namespace).Update(ctx, ss, metav1.UpdateOptions{})
+		return err
+	})
 }

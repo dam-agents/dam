@@ -345,7 +345,18 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	}
 
 	hardStop := migration.stopHolds(agent.Annotations) || agent.Annotations[annStorageMigration] != ""
+	_, served := desiredUpRecord(liveGatewaySvc)
+	served = served && r.ownerGatewayServes(agentSpec)
 	applyGateway := func() error {
+		if served {
+			if err := recordDesiredUp(ctx, r.client, r.config.Namespace, name, running && !hardStop); err != nil {
+				return r.setError(ctx, name, fmt.Sprintf("recording whether the agent should run: %v", err))
+			}
+			if err := r.scaleOwnGatewayDown(ctx, name); err != nil {
+				return r.setError(ctx, name, fmt.Sprintf("scaling down the agent's own gateway: %v", err))
+			}
+			return nil
+		}
 		machineGatewayIP := ""
 		if agentSpec.IsVM() {
 			machineGatewayIP = gatewayIP
@@ -371,7 +382,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	// UNIT_BOUNDARY_DESCRIPTION: a waking gateway pod takes longer to start than the machine or agent pod beside it, mostly for the pod network and the kubelet's relist once a second, so it is scaled up before the agent side rather than after the runner call. The runner can still refuse a vm machine for lack of room, so a vm agent whose last start was refused, or one with no status yet, keeps the old order: a parked agent retried every 30 s must not start and stop a gateway pod each time. A runtime migration and a gateway going down also keep their place after the agent side, because a vm agent that is not running reads from its gateway whether it was hibernated.
 	lastReady := apimeta.FindStatusCondition(agent.Status.Conditions, apiv1.ConditionReady)
 	runnerAccepted := !agentSpec.IsVM() || (lastReady != nil && lastReady.Reason != apiv1.ReasonOverBudget)
-	gatewayUp := running && !hardStop && !migration.active() && runnerAccepted
+	gatewayUp := running && !hardStop && !migration.active() && runnerAccepted && !served
 	if gatewayUp {
 		if err := applyGateway(); err != nil {
 			return err
@@ -495,7 +506,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		}
 	}
 
-	if !gatewayUp || !running {
+	if !gatewayUp || !running || served {
 		if err := applyGateway(); err != nil {
 			return err
 		}
@@ -536,6 +547,9 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 
 // UNIT_BOUNDARY_DESCRIPTION: whether the idle checker has yet to hibernate the Agent, read off its gateway, which the checker scales to zero with the machine. A lapsed idle timeout alone must not stop a vm machine, as it never scales a container down: only the checker also asks agent-runtime whether it is busy. A gateway at zero whose machine did not stop, because the runner was unreachable, is stopped here on the next reconcile. It is read live: the checker scales the gateway down and then writes the status that requeues the Agent, and a cache that has not seen the scale yet would start the machine the checker just stopped.
 func (r *AgentReconciler) pairAwake(ctx context.Context, name string) (bool, error) {
+	if up, ok, err := r.servedDesiredUp(ctx, name); err != nil || ok {
+		return up, err
+	}
 	ss, err := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, GatewayName(name), metav1.GetOptions{})
 	if errors.IsNotFound(err) {
 		return false, nil

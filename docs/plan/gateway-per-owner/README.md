@@ -82,7 +82,7 @@ Read first: [security-and-credentials](../../architecture/security-and-credentia
 | 03  | Per-owner credential Secret and leaf (done)     | Aggregate granted credential keys, union-SAN leaf, rotation stamp                              | —          |
 | 04  | Owner gateway workload behind a flag (done)     | Deployment, SA, ConfigMap, policies, mesh policies, lifecycle with runner, sizing              | 01, 02, 03 |
 | 05  | Agent ports, Service cut-over, readiness (done) | Port allocation, Service retarget, revision probe, host runner                                 | 04         |
-| 06  | Hibernation and wake without the gateway        | Desired-up record, idle checker, budget, wake publishing                                       | 05         |
+| 06  | Hibernation and wake without the gateway (done) | Desired-up record, idle checker, budget, wake publishing                                       | 05         |
 | 07  | Owner gateway rolls and restarts                | Surge roll, paced across owners, superseded-pod eviction, failure surfacing                    | 04         |
 | 08  | Migration on dev and cleanup                    | Move existing vm Agents, delete per-agent objects, rollback, runtime-migration switch          | 06, 07     |
 | 09  | Architecture pages                              | Rewrite the gateway parts of the pages listed above                                            | 08         |
@@ -125,6 +125,12 @@ graph LR
   On the local host runner, 10 agents moved with no machine restart.
   A guest egresses through its own listener, its own harness path passes, and a sibling's path gets 403 at the guard.
   With the owner principal, the mesh refuses a request that has no header, or a header naming the wrong agent.
+
+- **Desired-up** (06) is `agent-platform.ai/desired-up` on the served agent's gateway Service.
+  The reconcile and every scale-to-zero write it; `pairAwake`, `agentDesiredUp` and the idle checker's `agentsAtZero` read it.
+  A served agent's own gateway StatefulSet is kept at zero.
+  Local warm wake on one clock: last-activity 14:01:14, machine started 14:01:15.6, GatewayPodReady at :15, Ready at :16.
+  The first hello succeeded, and no gateway pod started.
 
 ## Conventions & glossary
 
