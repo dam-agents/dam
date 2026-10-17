@@ -6,9 +6,9 @@
 # A file under .github/settings is the body of a write to the endpoint at its
 # path below repos/<repo>/, as YAML (repository.yaml: the repo itself, by
 # PATCH; the rest by PUT). Each is read as JSON with sorted keys, so its
-# comments and key order never count as drift. Only the fields a file names
-# are compared, so a field GitHub adds later is not drift.
-# rulesets/<slug>.yaml is one ruleset, matched by name; a live ruleset without a file is left alone, with a warning.
+# comments and key order never count as drift. Outside rulesets/, only the
+# fields a file names are compared, so a field GitHub adds later is not drift.
+# rulesets/<slug>.yaml is one ruleset, matched by name and compared as its whole PUT body; a live ruleset without a file is left alone, with a warning.
 # automated-security-fixes.yaml is the one endpoint without a body: PUT
 # enables it, DELETE disables it.
 #
