@@ -2,14 +2,18 @@
 #MISE description="CI only: build or fetch this run's amd64 images as the dist/oci tars the e2e cluster loads"
 #MISE hide=true
 # Writes ok|fail to the file named by its argument.
-# cd.yml's e2e job starts with the run instead of after the builds, because
+# e2e.yml's lanes start with the run instead of after the builds, because
 # bringing the cluster up (k3s, cert-manager, Istio) needs no image. It runs
 # this in the background, and cluster:install waits on the status file
 # (CI_IMAGES_STATUS) right before it loads the images into k3s.
 #
 # An image whose effective source is already published (image:resolve says
-# REUSE) is pulled right away. The rest are built on this runner on a PR
-# (CI_IMAGES_BUILD=1), while the cluster comes up; see image:ci-build. A
+# REUSE) is pulled right away; in a merge group, so is one an earlier group's
+# build-images pushed to its cache tag. A merge group does not wait for that
+# push: the groups of a queue start together, and the group building it
+# takes as long to push it as this runner takes to build it. The rest are
+# built on this runner on a PR (CI_IMAGES_BUILD=1), while the cluster comes
+# up; see image:ci-build. A
 # separate build job would first wait for a runner of its own, and then e2e
 # would pull what it pushed. On every other run they come from this run's
 # build jobs, which build the same set: the `changes` job resolves it the same
@@ -67,12 +71,13 @@ if [ "${CI_IMAGES_BUILD:-}" = 1 ]; then
   exit 0
 fi
 
-# The jobs that build what is stale, by their cd.yml names: CI_IMAGES_IMAGES_JOB
-# builds controller, api-server, ui, keycloak and the vm-runner;
-# CI_IMAGES_MOCK_JOB the mock; CI_IMAGES_AGENTS_JOB the default image.
-# `detect stale images` is always waited on: when it fails, the build jobs that
-# need it never start under their names, and nothing else would end the wait.
-JOBS=("detect stale images")
+# The jobs that build what is stale, by the names the jobs API gives them:
+# CI_IMAGES_IMAGES_JOB builds controller, api-server, ui, keycloak and the
+# vm-runner; CI_IMAGES_MOCK_JOB the mock; CI_IMAGES_AGENTS_JOB the default
+# image. CI_IMAGES_CHANGES_JOB, which detects the stale images, is always
+# waited on: when it fails, the build jobs that need it never start under
+# their names, and nothing else would end the wait.
+JOBS=("${CI_IMAGES_CHANGES_JOB:?}")
 for c in ${stale[@]+"${stale[@]}"}; do
   case "$c" in
     mock) JOBS+=("${CI_IMAGES_MOCK_JOB:?}") ;;

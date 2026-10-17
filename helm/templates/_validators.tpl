@@ -10,7 +10,6 @@ add it to the include list in `platform.validate`.
 
 {{- define "platform.validate" -}}
 {{- include "platform.validate.anyuidCapNetRequiresAgentNamespace" . -}}
-{{- include "platform.validate.harnessToolsScc" . -}}
 {{- include "platform.validate.vmRunnerNeedsAMemoryLimit" . -}}
 {{- include "platform.validate.vmRunnerNeedsAnEgressDecision" . -}}
 {{- include "platform.validate.vmRunnerReachesOnlyItsResolver" . -}}
@@ -160,17 +159,6 @@ The anyuid-cap-net RoleBinding is namespaced to `agentNamespace` and
 grants SCC access via the `system:serviceaccounts:<agentNamespace>`
 group. Both are meaningless if `agentNamespace` is empty.
 */}}
-{{- /*
-On OpenShift the harness tools installer runs as uid 0 and spc_t to label the
-node directory for the confined pods that read it, which no SCC the chart
-renders admits.
-*/ -}}
-{{- define "platform.validate.harnessToolsScc" -}}
-{{- if and .Values.openshift.scc.anyuidCapNet.enabled .Values.harnessTools.hostPath (not (.Values.harnessTools.scc | default .Values.virtualization.runner.scc)) -}}
-{{- fail "on OpenShift, harnessTools.hostPath needs harnessTools.scc (or virtualization.runner.scc): an SCC that admits a hostPath and leaves the SELinux type to the pod (seLinuxContext RunAsAny), for the installer that runs as uid 0 and spc_t. Without the tools, the harness Templates' default image cannot run." -}}
-{{- end -}}
-{{- end -}}
-
 {{- define "platform.validate.anyuidCapNetRequiresAgentNamespace" -}}
 {{- if .Values.openshift.scc.anyuidCapNet.enabled -}}
 {{- if not (.Values.agentNamespace | default "" | trim) -}}
@@ -311,7 +299,7 @@ signal that this is an OpenShift cluster.
 
 {{/*
 Both values back the same directory in the runner — the node cache the runners
-on a node write to, the archive path a read-only directory staged on the host —
+on a node write to, the staged-image path a read-only directory staged on the host —
 and only one volume can be mounted there. Rather than silently preferring one,
 say so.
 */}}
@@ -319,7 +307,7 @@ say so.
 {{- if .Values.virtualization.enabled -}}
 {{- $v := .Values.virtualization -}}
 {{- if and ($v.imageCache | default dict).hostPath $v.runner.imageArchiveHostPath -}}
-{{- fail "virtualization.imageCache.hostPath and virtualization.runner.imageArchiveHostPath both back the runner's image directory, and only one can be mounted there. Keep the node cache the runners fetch into, or keep the read-only archives staged for an install with no registry." -}}
+{{- fail "virtualization.imageCache.hostPath and virtualization.runner.imageArchiveHostPath both back the runner's image directory, and only one can be mounted there. Keep the node cache the runners fetch into, or keep the read-only images staged for an install with no registry." -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

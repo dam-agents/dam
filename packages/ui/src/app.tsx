@@ -2,14 +2,12 @@ import { useEffect } from "react";
 
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
+import { Button } from "./components/ui/button.js";
 import { useIsDesktop } from "./hooks/use-is-desktop.js";
 import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
-import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
-import { GettingStartedDock } from "./modules/getting-started/components/getting-started-dock.js";
-import { ApprovalsButton } from "./modules/home/components/approvals-button.js";
-import { ApprovalsPanel } from "./modules/home/components/approvals-panel.js";
+import { ArtifactIcon } from "./modules/artifacts/lib/artifact-icon.js";
 import { useApprovalToasts } from "./modules/home/hooks/use-approval-toasts.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
@@ -18,9 +16,13 @@ import { MobileNavDrawer } from "./modules/platform/components/sidebar/mobile-na
 import { Sidebar } from "./modules/platform/components/sidebar/sidebar.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
 import { parseRoute } from "./modules/platform/lib/routes.js";
-import { isDarkTheme } from "./modules/platform/store/theme.js";
+import { applyTheme } from "./modules/platform/store/theme.js";
 import { NotFoundView } from "./modules/platform/views/not-found-view.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
+import {
+  AppSidePanelButtons,
+  AppSidePanelHost,
+} from "./modules/sessions/components/app-side-panel.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
 import { SlackBindView } from "./modules/slack/views/slack-bind-view.js";
@@ -38,12 +40,7 @@ export default function App() {
   useBrowserHistory();
 
   useEffect(() => {
-    const apply = () => {
-      document.documentElement.classList.toggle(
-        "dark",
-        isDarkTheme(useStore.getState().theme),
-      );
-    };
+    const apply = () => applyTheme(useStore.getState().theme);
     apply();
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     mq.addEventListener("change", apply);
@@ -71,9 +68,9 @@ export default function App() {
 
 function MainApp() {
   const view = useStore((s) => s.view);
-  const approvalsOpen = useStore((s) => s.approvalsOpen);
-  const setApprovalsOpen = useStore((s) => s.setApprovalsOpen);
   const kitBrowserOpen = useStore((s) => s.kitBrowserOpen);
+  const setSidePanelTab = useStore((s) => s.setSidePanelTab);
+  const setMobileScreen = useStore((s) => s.setMobileScreen);
   const desktop = useIsDesktop();
 
   useLiveEvents();
@@ -111,9 +108,6 @@ function MainApp() {
             <ChatView />
           </div>
         </div>
-        {approvalsOpen && (
-          <ApprovalsPanel onClose={() => setApprovalsOpen(false)} />
-        )}
         {kitBrowserOpen && <BrowseKitsModal />}
         <MobileNavDrawer />
         <DialogOverlay />
@@ -125,56 +119,54 @@ function MainApp() {
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <Sidebar />
-        <main className="relative z-content flex flex-1 flex-col overflow-y-auto">
-          {!desktop && (
-            <AppTopBar
-              actions={
+        <AppSidePanelHost>
+          <main className="flex flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable]">
+            {!desktop && (
+              <AppTopBar
+                actions={
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Artifacts"
+                      onClick={() => {
+                        setSidePanelTab("artifacts");
+                        setMobileScreen("files");
+                      }}
+                    >
+                      <ArtifactIcon size={16} />
+                    </Button>
+                    <AppSidePanelButtons />
+                  </>
+                }
+              />
+            )}
+            <div
+              className={cn(
+                "mx-auto w-full flex-1 px-4 md:px-[5%] py-6 md:py-10",
+                view === "home" || view === "starter-kit"
+                  ? "max-w-[1200px]"
+                  : view === "settings" || view === "sandbox-home"
+                    ? "max-w-[1040px]"
+                    : "max-w-[960px]",
+              )}
+            >
+              {view === "sandbox-home" ? (
+                <SandboxHomeView />
+              ) : view === "home" || view === "starter-kit" ? (
                 <>
-                  <GettingStartedDock placement="header" />
-                  <ApprovalsButton />
+                  <HomeView />
+                  {view === "starter-kit" && <StarterKitDetailView />}
                 </>
-              }
-            />
-          )}
-          <div
-            className={cn(
-              "mx-auto w-full flex-1 px-4 md:px-[5%] py-6 md:py-10",
-              view === "home" || view === "starter-kit"
-                ? "max-w-[1200px]"
-                : view === "settings" || view === "sandbox-home"
-                  ? "max-w-[1040px]"
-                  : "max-w-[960px]",
-            )}
-          >
-            {view === "sandbox-home" ? (
-              <SandboxHomeView />
-            ) : view === "home" || view === "starter-kit" ? (
-              <>
-                <HomeView />
-                {view === "starter-kit" && <StarterKitDetailView />}
-              </>
-            ) : view === "settings" ? (
-              <SettingsView />
-            ) : view === "artifacts" ? (
-              <ArtifactsView />
-            ) : (
-              <NotFoundView />
-            )}
-          </div>
-        </main>
-        {desktop && (
-          <aside
-            aria-label="Notifications"
-            className="flex w-11 shrink-0 flex-col items-center justify-end gap-1 border-l border-border bg-background py-2"
-          >
-            <GettingStartedDock placement="rail" />
-            <ApprovalsButton />
-          </aside>
-        )}
+              ) : view === "settings" ? (
+                <SettingsView />
+              ) : (
+                <NotFoundView />
+              )}
+            </div>
+          </main>
+        </AppSidePanelHost>
       </div>
-      {approvalsOpen && (
-        <ApprovalsPanel onClose={() => setApprovalsOpen(false)} />
-      )}
       {kitBrowserOpen && <BrowseKitsModal />}
       <MobileNavDrawer />
       <DialogOverlay />

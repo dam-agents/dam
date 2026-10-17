@@ -40,7 +40,6 @@
       "scheme": "http",
       "ingress": { "catchAllAppHost": true },
       "istio": { "enforce": false },
-      "harnessTools": { "hostPath": "" },
       "terms": { "version": "qa", "text": "Nested QA environment." },
       "keycloak": {
         "admin": { "password": "{{secret:keycloak_admin}}" },

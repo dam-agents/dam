@@ -237,6 +237,19 @@ func TestTheRunnerPodHasRoomToCloseBeforeItIsKilled(t *testing.T) {
 	assert.Greater(t, *grace, int64(30+40+5))
 }
 
+// TEST_SCENARIO: smolvm enforces a machine's egress allowlist inside the VMM, the process an escaped guest would own, and the runner runs as uid 0. So the runner pod runs in a user namespace: uid 0 there is an unprivileged uid on the node, and its capabilities stop at the namespace.
+func TestTheRunnerPodRunsInAUserNamespace(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	require.NotNil(t, dep.Spec.Template.Spec.HostUsers)
+	assert.False(t, *dep.Spec.Template.Spec.HostUsers)
+}
+
 // TEST_SCENARIO: an install serving agent images from inside the cluster leaves that range reachable, and then the runner does need Service names — so the choice is the install's, and asking for cluster resolution has to actually produce it.
 func TestAnInstallCanAskForClusterResolution(t *testing.T) {
 	agent := vmAgentCR()
@@ -401,7 +414,6 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512, HeadroomMiB: 256, MachineCPUs: 4,
 		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi",
 	}}
-	r.config.AgentBase.ToolsHostPath = "/var/lib/platform-tools"
 	r.runnerEndpoint = func(string) string { return srv.URL }
 	requeued := &requeueLog{}
 	r.WithRequeue(t.Context(), requeued.add)
@@ -1213,7 +1225,7 @@ func TestTheMachineDiskIsNoSmallerThanAnyMountAsksFor(t *testing.T) {
 	}), "a size on a path the machine never keeps buys nothing, since nothing is written there across a stop")
 }
 
-// TEST_SCENARIO: images/ is the directory that may not be on the runner's claim at all — a node cache the runners there share, or a read-only host directory of staged archives — so it gets a mount of its own rather than being a directory inside a parent mount. The other two always live on the claim and are mounted by subPath, so the claim's root is never exposed.
+// TEST_SCENARIO: images/ is the directory that may not be on the runner's claim at all — a node cache the runners there share, or a read-only host directory of staged images — so it gets a mount of its own rather than being a directory inside a parent mount. The other two always live on the claim and are mounted by subPath, so the claim's root is never exposed.
 func TestRunnerMountsTheImageCacheAsItsOwnSource(t *testing.T) {
 	mounts := func(configure func(*config.VMRunnerSpec)) (map[string]corev1.VolumeMount, map[string]corev1.Volume) {
 		r, _, _ := setupVMReconciler(t, vmAgentCR())
@@ -1266,33 +1278,6 @@ func TestTheRunnerDialsTheSocketTheImageCacheServiceBinds(t *testing.T) {
 	assert.Contains(t, args(func(spec *config.VMRunnerSpec) { spec.ImageCacheHostPath = "/var/lib/platform-images" }),
 		"--image-cache-socket="+vmImageCacheSocket)
 	assert.Contains(t, args(func(*config.VMRunnerSpec) {}), "--image-cache-socket=")
-}
-
-// TEST_SCENARIO: a vm machine boots one image for every harness, and that harness's tools come from a node directory the chart's DaemonSet fills. The runner mounts it read-only, since the DaemonSet is its only writer, and is told where with --tools-dir. With no such directory the runner is told an empty --tools-dir and gets no host mount.
-func TestTheRunnerSharesTheNodesHarnessToolsReadOnly(t *testing.T) {
-	render := func(configure func(*config.AgentBase)) corev1.PodSpec {
-		r, _, _ := setupVMReconciler(t, vmAgentCR())
-		configure(&r.config.AgentBase)
-		require.NoError(t, r.applyRunnerDeployment(context.Background(), testOwner, r.runnerOwnerRef(context.Background()), true))
-		dep, err := r.client.AppsV1().Deployments("test-agents").Get(
-			context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
-		require.NoError(t, err)
-		return dep.Spec.Template.Spec
-	}
-
-	pod := render(func(*config.AgentBase) {})
-	assert.Contains(t, pod.Containers[0].Args, "--tools-dir="+vmRunnerToolsPath)
-	assert.Contains(t, pod.Containers[0].VolumeMounts, corev1.VolumeMount{Name: "harness-tools", MountPath: vmRunnerToolsPath, ReadOnly: true})
-	dir := corev1.HostPathDirectoryOrCreate
-	assert.Contains(t, pod.Volumes, corev1.Volume{Name: "harness-tools", VolumeSource: corev1.VolumeSource{
-		HostPath: &corev1.HostPathVolumeSource{Path: "/var/lib/platform-tools", Type: &dir},
-	}})
-
-	pod = render(func(base *config.AgentBase) { base.ToolsHostPath = "" })
-	assert.Contains(t, pod.Containers[0].Args, "--tools-dir=")
-	for _, v := range pod.Volumes {
-		assert.NotEqual(t, "harness-tools", v.Name)
-	}
 }
 
 // TEST_SCENARIO: every cache carries a budget, because the runner's own claim is shared with the machine disks just as a node directory is shared with the rest of the host — neither can be given a share of its filesystem. A budget the controller cannot read fails the reconcile rather than being replaced by a guess, which would be a cache growing until something it shares with runs out.
@@ -1915,7 +1900,7 @@ func TestASweepWakeRefusedForMemoryStartsOnTheRetryTick(t *testing.T) {
 	assert.NotContains(t, r.ParkedForRetry(), "my-agent", "and the agent left the retry queue")
 }
 
-// TEST_SCENARIO: a runner that caches images on its own claim unpacks them itself, and tar restores each file's owner and then sets a mode on a file it no longer owns, keeping a setgid bit only with FSETID — so that runner holds CHOWN, FOWNER and FSETID. A runner on the node cache or on staged archives unpacks nothing, so it holds neither. Every runner holds DAC_OVERRIDE for its VMMs, which read the image tree with the runner's own credentials to serve it to the guest, including files the image keeps from root.
+// TEST_SCENARIO: a runner that caches images on its own claim unpacks them itself, and tar restores each file's owner and then sets a mode on a file it no longer owns, keeping a setgid bit only with FSETID — so that runner holds CHOWN, FOWNER and FSETID. A runner on the node cache or on staged images unpacks nothing, so it holds neither. Every runner holds DAC_OVERRIDE for its VMMs, which read the image tree with the runner's own credentials to serve it to the guest, including files the image keeps from root.
 func TestOnlyARunnerThatUnpacksImagesCanChownThem(t *testing.T) {
 	capsFor := func(configure func(*config.VMRunnerSpec)) []corev1.Capability {
 		r, _, _ := setupVMReconciler(t, vmAgentCR())
@@ -1936,7 +1921,7 @@ func TestOnlyARunnerThatUnpacksImagesCanChownThem(t *testing.T) {
 		"the node's image cache service unpacks, and this runner only reads")
 	assert.ElementsMatch(t, []corev1.Capability{"DAC_OVERRIDE"},
 		capsFor(func(spec *config.VMRunnerSpec) { spec.ImageArchiveHostPath = "/var/lib/platform-archives" }),
-		"a staged archive is flattened inside the guest")
+		"a staged image is unpacked before the runner reads it")
 }
 
 // TEST_SCENARIO: service links would put one set of env vars per sibling agent Service into the runner, and the runner reads none of them.

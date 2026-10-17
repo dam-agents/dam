@@ -26,6 +26,7 @@ import {
   useAgentLacksLiveUpdates,
 } from "../../agents/api/queries.js";
 import { askAgainWhenReady } from "../../agents/lib/agent-start.js";
+import { nextSessionCursor } from "../lib/sidebar-session-window.js";
 import {
   findAgentSession,
   listAgentSessionPage,
@@ -231,7 +232,8 @@ export function useSessionPages(
         }
       : skipToken,
     initialPageParam: null as SessionListCursor | null,
-    getNextPageParam: (last) => last.nextCursor,
+    getNextPageParam: (_last, pages, lastCursor) =>
+      nextSessionCursor(pages, lastCursor),
     refetchOnMount: "always",
     refetchInterval: live && compat ? 5_000 : false,
     staleTime: 5_000,
@@ -343,6 +345,7 @@ export function provisionalSessionView(item: AttentionItem): SessionView {
     scheduleId: item.scheduleId,
     title: item.title,
     threadTs: item.threadTs,
+    harness: item.harness,
     updatedAt: item.activityAt,
     running: item.working,
     seenAt: item.seenAt,

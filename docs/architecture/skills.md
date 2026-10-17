@@ -104,7 +104,8 @@ A user creating a custom source for the same URL and path shadows the system ent
 
 The owner can **hide** a source on one agent (`agent_hidden_skill_sources`), whatever its kind, so a system or template source that cannot be removed stops cluttering that agent's skills page.
 A hide is keyed by `(agentId, gitUrl, path)`, the same identity listing dedupes on, so it survives the source row being deleted and re-added; the agent's source list still returns the source, marked `hidden`, and the agent-delete cleanup removes the rows.
-The UI does not scan a hidden source, offers to hide a source only once its scan and the agent's skills state have loaded without an error and none of its skills are on, and lists hidden sources in the Add source dialog to show them again.
+A hide is refused while the agent has an Installed Skill Ref from that source, judged from the refs and not from a scan, so a source that cannot be scanned (an account without access, an unreachable repository) can still be hidden.
+The UI does not scan a hidden source, offers the hide once the agent's skills state has loaded, and lists hidden sources in the Add source dialog to show them again.
 
 A source may carry an optional repo-relative **path** — a subdirectory the scanner walks instead of the defaults.
 When set, that directory is scanned (and skills resolved) exclusively, bypassing the [Source Roots](#source-roots) union and top-level fallback — and failing by name when it resolves to nothing, whichever scanner answers: no such directory, or no skill under it; when absent, resolution is unchanged.

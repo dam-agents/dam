@@ -17,8 +17,10 @@ import os
 import platform
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
+import time
 from pathlib import Path
 
 p = argparse.ArgumentParser()
@@ -49,8 +51,18 @@ if not (base / "index.json").is_file():
     base = cache / hashlib.sha256(f"{args.base} {arch}".encode()).hexdigest()[:32]
     if not (base / "index.json").is_file():
         tmp = Path(f"{base}.{os.getpid()}")
-        shutil.rmtree(tmp, ignore_errors=True)
-        subprocess.run(["crane", "pull", "--format=oci", "--platform", f"linux/{arch}", args.base, tmp], check=True)
+        # A registry can cut a layer download short ("error writing layer:
+        # unexpected EOF" from registry.access.redhat.com on a merge group), so
+        # a failed pull is retried, each time into an empty layout, as in
+        # image:pull.
+        for attempt in range(1, 4):
+            shutil.rmtree(tmp, ignore_errors=True)
+            if subprocess.run(["crane", "pull", "--format=oci", "--platform", f"linux/{arch}", args.base, tmp]).returncode == 0:
+                break
+            if attempt == 3:
+                raise SystemExit(f"image:pack: pull of {args.base} failed")
+            print(f"pull of {args.base} failed (attempt {attempt}); retrying in {attempt * 5}s", file=sys.stderr)
+            time.sleep(attempt * 5)
         try:
             tmp.rename(base)
         except OSError:

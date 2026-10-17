@@ -57,6 +57,7 @@ export interface SurfaceState {
   lockComposer: boolean;
   assumed: boolean;
   version: number;
+  generation: number;
   ownerKey: string;
   lastTouchKey: string;
   lastTouchMessageId: string;
@@ -331,6 +332,7 @@ class ConversationBuilder {
       lockComposer: false,
       assumed,
       version: 0,
+      generation: (this.surfaces.get(surfaceId)?.generation ?? -1) + 1,
       ownerKey: this.block.key,
       lastTouchKey: this.block.key,
       lastTouchMessageId: this.block.messageId,

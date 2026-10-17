@@ -3,8 +3,8 @@
 #MISE hide=true
 #USAGE flag "--serial" help="Build one at a time, for images too large to build side by side on one runner's disk"
 #USAGE arg "<arch>"
-#USAGE arg "<component>..." var=#true help="<component>[:<output>]; output is digest (default: push by digest and write /tmp/digests/<component>/<hex>), cacheonly (build without pushing, to prove it builds), source (push <component>:<source sha>, the tag image:resolve reuses) or load (write the component's dist/oci tar, named platform-<component>:latest)"
-# cd.yml builds all of one arch's images, agents or workloads in one job
+#USAGE arg "<component>..." var=#true help="<component>[:<output>]; output is digest (default: push by digest and write /tmp/digests/<component>/<hex>), cacheonly (build without pushing, to prove it builds), source (push <component>:<source sha>, the tag image:resolve reuses), mq (push <component>:mq-<content hash>, the cache tag only a merge group reuses) or load (write the component's dist/oci tar, named platform-<component>:latest)"
+# build.yml builds all of one arch's images, agents or workloads in one job
 # instead of one job per image. Each job costs a runner slot and a turn in the
 # shared queue, which is what a run waited on, not the builds.
 #
@@ -58,6 +58,12 @@ push_layout() {
       ref="$(jq -r '.manifests[0].digest' "$layout/index.json")" || return 1
       crane push "$layout" "$IMAGE_PREFIX/$c@$ref" || return 1
       jq -n --arg d "$ref" '{"containerimage.digest": $d}' > "/tmp/ci-build/meta/$c.json"
+      ;;
+    # Quay deletes the tag after two days, by its label: see image:resolve's mq_tag.
+    mq)
+      ref="$IMAGE_PREFIX/$c@$(jq -r '.manifests[0].digest' "$layout/index.json")" || return 1
+      crane push "$layout" "$ref" || return 1
+      crane mutate "$ref" --label quay.expires-after=2d -t "$IMAGE_PREFIX/$c:$(.mise/tasks/image/resolve mq-tag "$c")" || return 1
       ;;
     *) echo "ci-build: unknown output $kind" >&2; return 1 ;;
   esac

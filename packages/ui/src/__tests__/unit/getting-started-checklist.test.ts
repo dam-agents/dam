@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the Get started dock shows the user's progress through the eight tasks that unlock avatar characters. An unlock the user has not seen is celebrated before it counts as done, one at a time. A new agent gets an unlocked character, and a user with none unlocked yet gets the one their first agent will unlock.
+// TEST_OVERVIEW: the Get started checklist shows the user's progress through the eight tasks that unlock avatar characters. An unlock the user has not seen is celebrated before it counts as done, one at a time. A new agent gets an unlocked character, and a user with none unlocked yet gets the one their first agent will unlock.
 import type { AvatarUnlock, GettingStartedProgress } from "api-server-api";
 import { describe, expect, it, vi } from "vitest";
 
@@ -77,7 +77,7 @@ describe("deriveChecklist", () => {
     expect(c.unlocked).toEqual(["lens"]);
   });
 
-  // TEST_SCENARIO: the eighth unlock says the set is complete, and once it is seen the dock is gone for good.
+  // TEST_SCENARIO: the eighth unlock says the set is complete, and once it is seen the checklist is gone for good.
   it("marks the last unlock and then completes", () => {
     const tasks = [
       ["create-agent", "lens"],

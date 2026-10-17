@@ -27,10 +27,10 @@ The nested install is a fresh, single-user platform at `http://localhost:4444`, 
 - Agents answer through the **Mock** harness template (a scripted mock agent, the profile's `mock_image`): it replies "Hello from the mock agent."
   to every prompt and never calls a model.
   An AC about what an agent says or decides is judged only on what the UI shows around that reply; with `mock_image` set empty, an AC that needs an agent to reply or run is `blocked`, not failed.
-- Only the mock harness runs: the install leaves out the harness tools installer, so the
-  harness templates that need its tools (Claude Code, Codex, Pi, Bob) cannot start an agent.
-  An AC about such a harness's own behavior is `testable: no — no harness tools`; one that only
-  checks what the UI offers or records for it stays testable.
+- The harness templates (Claude Code, Codex, Pi, Bob) boot the default image, which bakes their
+  tools, but no real model provider is reachable (above), so an AC about such a harness's own
+  replies is `testable: no — external dependency`; one that only checks what the UI offers or
+  records for it stays testable.
 - What a user creates with a free-text field (a schedule's prompt) needs an agent first; the agent's name is itself free text and shows wherever the agent is listed.
   The injection canary therefore names one Mock agent with its text (`canary` in `profile.json`) and deletes it.
 - One user.

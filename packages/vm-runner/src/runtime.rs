@@ -15,15 +15,15 @@ pub trait Runtime: Send + Sync {
     fn state(&self, id: &str) -> anyhow::Result<State>;
     fn create(&self, id: &str, machine: &Machine<'_>) -> anyhow::Result<()>;
     fn update(&self, id: &str, update: &Update<'_>) -> anyhow::Result<()>;
-    // UNIT_BOUNDARY_DESCRIPTION: boots a stopped machine with `boot_mib` of guest RAM, which may be less than its size; `grow` adds the rest once the guest is up.
-    fn start(&self, id: &str, boot_mib: i32) -> anyhow::Result<()>;
+    // UNIT_BOUNDARY_DESCRIPTION: boots a stopped machine with `boot_mib` of guest RAM, which may be less than its size `memory_mib`; `grow` adds the rest once the guest is up.
+    fn start(&self, id: &str, boot_mib: i32, memory_mib: i32) -> anyhow::Result<()>;
     // UNIT_BOUNDARY_DESCRIPTION: adds guest RAM to a running machine until it has `memory_mib`, and has the guest put it to use. A runtime that cannot grow a machine fails, and the machine boots at its size from then on.
     fn grow(&self, _id: &str, _memory_mib: i32) -> anyhow::Result<()> {
         anyhow::bail!("this runtime cannot grow a running machine")
     }
     fn stop(&self, id: &str) -> anyhow::Result<()>;
     fn delete(&self, id: &str) -> anyhow::Result<()>;
-    // UNIT_BOUNDARY_DESCRIPTION: whether what the machine's record names to boot is still on the host. The record holds a path when the machine boots a cache tree or a staged archive, and the hypervisor reads that path at every start, so a tree evicted or relaid under a stopped machine fails every start until the record is rewritten. A registry reference is not a path and is always present.
+    // UNIT_BOUNDARY_DESCRIPTION: whether what the machine's record names to boot is still on the host. The record holds a path when the machine boots a cache tree or a staged tree, and the hypervisor reads that path at every start, so a tree evicted or relaid under a stopped machine fails every start until the record is rewritten. A registry reference is not a path and is always present.
     fn image_present(&self, id: &str) -> anyhow::Result<bool>;
     // UNIT_BOUNDARY_DESCRIPTION: the end of the machine's console as printable text, unredacted, or nothing when the runtime keeps none.
     fn console_tail(&self, _id: &str) -> String {
@@ -55,7 +55,7 @@ pub trait Runtime: Send + Sync {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: everything a create needs beyond the spec. `image` is what the machine boots: an unpacked cache tree or a staged archive, both absolute paths, or a registry reference when neither exists. `share` is the host directory the guest mounts read-only at the share path, and `host_port` the loopback port the guest's agent port is published on.
+// UNIT_BOUNDARY_DESCRIPTION: everything a create needs beyond the spec. `image` is what the machine boots: an unpacked cache tree or a staged tree, both absolute paths, or a registry reference when neither exists. `share` is the host directory the guest mounts read-only at the share path, and `host_port` the loopback port the guest's agent port is published on.
 pub struct Machine<'a> {
     pub spec: &'a MachineSpec,
     pub image: &'a str,
@@ -78,9 +78,6 @@ pub const GUEST_AGENT_PORT: u16 = 8080;
 pub const GATEWAY_HOST_PORT_FILE: &str = "platform-gateway-host-port";
 // UNIT_BOUNDARY_DESCRIPTION: the file in a machine's smolvm directory naming the guest agent root its VMM boots, which lies in the runtime the runner booted it on. The runner writes it before each start, beside the boot config the VMM deletes once read, so it lasts as long as the VMM; the loader reads it to keep that runtime in the pod (see release::booted_from).
 pub const AGENT_ROOTFS_FILE: &str = "platform-agent-rootfs";
-
-// UNIT_BOUNDARY_DESCRIPTION: the largest image archive a machine may boot from. smolvm refuses archives over 8 GiB by default, and agent images with their toolchains are bigger than that.
-pub const MAX_IMAGE_BYTES: u64 = 16 << 30;
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a stopped machine's VMM may keep its disks. Long enough for the guest to checkpoint its journal and let go, short enough that a VMM which will never exit is killed rather than waited on.
 pub const VMM_EXIT_WAIT: Duration = Duration::from_secs(10);
@@ -165,7 +162,7 @@ fn image_values(image_env: &[String]) -> BTreeMap<String, String> {
         .collect()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the env the image a machine boots names, read from the launch record beside the tree it boots — a cache entry or a staged tree, whose `rootfs` sits next to that record. A machine booted from an archive has no record beside its image, and gives nothing.
+// UNIT_BOUNDARY_DESCRIPTION: the env the image a machine boots names, read from the launch record beside the tree it boots — a cache entry or a staged tree, whose `rootfs` sits next to that record.
 pub fn image_env_beside(rootfs: &Path) -> Option<Vec<String>> {
     crate::launch::read_launch(rootfs.parent()?)
         .ok()
@@ -668,10 +665,6 @@ mod tests {
             image_env_beside(&dir.path().join("rootfs")),
             Some(vec!["PATH=/bin".to_string()])
         );
-        assert_eq!(
-            image_env_beside(&dir.path().join("archives/archive.tar")),
-            None
-        );
     }
 
     // TEST_SCENARIO: a disk can grow and cannot shrink, so an update names a storage size only when the request is larger than the disk actually is. Anything else would either fail the update or, worse, look like a shrink that silently did nothing. The disk's own size decides, so a disk a lost spec or a failed grow left smaller than its spec claims still grows.
@@ -849,12 +842,11 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the windows and sizes machines are run to. A shorter VMM wait kills a guest mid-checkpoint, a smaller archive cap refuses an image that booted before, and the guest agent's port is where every machine's guest listens; each is pinned so a change to it is deliberate.
+    // TEST_SCENARIO: the windows and sizes machines are run to. A shorter VMM wait kills a guest mid-checkpoint, and the guest agent's port is where every machine's guest listens; each is pinned so a change to it is deliberate.
     #[test]
     fn the_waits_and_caps_are_pinned() {
         assert_eq!(VMM_EXIT_WAIT, Duration::from_secs(10));
         assert_eq!(SLOW_OP, Duration::from_secs(2));
-        assert_eq!(MAX_IMAGE_BYTES, 16 * 1024 * 1024 * 1024);
         assert_eq!(GUEST_AGENT_PORT, 8080);
     }
 

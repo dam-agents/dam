@@ -31,14 +31,13 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: one claim, three directories, each its own mount. Two of them live and die with the claim — the machine disks under disks/ are an owner's agents, the bookkeeping under machines/ is rebuilt from the cluster after a pod restart — and what earns images/ a mount of its own is that it is often not on this claim at all: the install may put the cache on a node directory every runner there shares, or on a read-only host directory of staged archives. Mounting it explicitly even when it does fall back here keeps the layout one shape instead of a directory that is sometimes a volume, which is what mounting the parent and nesting the cache inside it would give.
+// UNIT_BOUNDARY_DESCRIPTION: one claim, three directories, each its own mount. Two of them live and die with the claim — the machine disks under disks/ are an owner's agents, the bookkeeping under machines/ is rebuilt from the cluster after a pod restart — and what earns images/ a mount of its own is that it is often not on this claim at all: the install may put the cache on a node directory every runner there shares, or on a read-only host directory of staged images. Mounting it explicitly even when it does fall back here keeps the layout one shape instead of a directory that is sometimes a volume, which is what mounting the parent and nesting the cache inside it would give.
 const (
 	vmRunnerComponent    = "vm-runner"
 	vmRunnerStatePath    = "/var/lib/platform"
 	vmRunnerDisksPath    = vmRunnerStatePath + "/disks"
 	vmRunnerMachinesPath = vmRunnerStatePath + "/machines"
 	vmRunnerImagesPath   = vmRunnerStatePath + "/images"
-	vmRunnerToolsPath    = vmRunnerStatePath + "/tools"
 	vmRunnerPort         = 4600
 	vmRunnerUsageLabel   = "agent-platform.ai/vm-runner-usage"
 
@@ -665,7 +664,7 @@ func runnerDNSPolicy(configured string) corev1.DNSPolicy {
 // UNIT_BOUNDARY_DESCRIPTION: the runner's env also has smolvm check every VMM against the syscalls a running microVM needs (SMOLVM_SECCOMP), from after the VMM's device setup, in the install's mode and by default in enforce: a call outside the allowlist kills the VMM, which stops its machine. Audit only logs such a call; it is the switch back for a node whose kernel or libc makes a call the allowlist lacks. The runtime's default profile still bounds every VMM in each mode. smolvm applies the filter under its own serve by default, and an embedder only when asked.
 // UNIT_BOUNDARY_DESCRIPTION: the runner's env also confines every VMM's filesystem with Landlock (SMOLVM_LANDLOCK=enforce), applied before the VMM loads libkrun: the shared guest rootfs and the image tree are read-only to it, and it may write only its own machine's disks, sockets and logs and its own readiness marker. Without it a guest's root virtiofs export writes through to the agent rootfs every machine of the owner boots from. smolvm refuses to boot a VMM it fails to confine.
 // UNIT_BOUNDARY_DESCRIPTION: smolvm can give each machine's VMM its own unprivileged uid, and the runner's env turns that off (SMOLVM_VM_UID_DROP=off). A VMM with its own uid reaches the image tree through an idmapped mount that maps on-disk uid 0 to it, so every file the image gives another uid reaches the guest as nobody, and the workload exits as it starts.
-// UNIT_BOUNDARY_DESCRIPTION: the capabilities the runner container adds. None is for the network: smolvm runs each machine's network in user space, over a socket pair to its VMM, with no tun device, route or NAT of its own. DAC_OVERRIDE is for the VMMs: each runs as the runner's uid and serves the image tree to its guest over virtiofs, opening every file with its own credentials, so a file the image keeps from root — a 0000 /etc/shadow, or anything under another uid's 0700 directory — cannot be read without it. CHOWN, FOWNER and FSETID are only for a runner that unpacks images into its own claim: tar restores each file's owner, then sets a mode on a file it no longer owns, and a setgid bit on a file whose group root is not in survives that mode only with FSETID. A runner on the node cache or on staged archives unpacks nothing, so it does not get them.
+// UNIT_BOUNDARY_DESCRIPTION: the capabilities the runner container adds. None is for the network: smolvm runs each machine's network in user space, over a socket pair to its VMM, with no tun device, route or NAT of its own. DAC_OVERRIDE is for the VMMs: each runs as the runner's uid and serves the image tree to its guest over virtiofs, opening every file with its own credentials, so a file the image keeps from root — a 0000 /etc/shadow, or anything under another uid's 0700 directory — cannot be read without it. CHOWN, FOWNER and FSETID are only for a runner that unpacks images into its own claim: tar restores each file's owner, then sets a mode on a file it no longer owns, and a setgid bit on a file whose group root is not in survives that mode only with FSETID. A runner on the node cache or on staged images unpacks nothing, so it does not get them.
 func runnerCapabilities(spec config.VMRunnerSpec) []corev1.Capability {
 	caps := []corev1.Capability{"DAC_OVERRIDE"}
 	if runnerOwnsImageCache(spec) {
@@ -674,7 +673,7 @@ func runnerCapabilities(spec config.VMRunnerSpec) []corev1.Capability {
 	return caps
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner holds exactly the capabilities above and none of the runtime's defaults, cannot gain more through exec, and runs under the runtime's default seccomp profile — the shape the chart's OpenShift SCC already forces on it. None of the dropped defaults is used: every VMM runs as the runner's own uid, so signalling one needs no KILL, and smolvm's own default runs each VMM on a uid with no capabilities at all, so virtiofs needs no SETUID. The default seccomp profile allows every ioctl, so KVM works; what it refuses without CAP_SYS_ADMIN is new namespaces, mounts and keyrings, which smolvm only reaches for when it gives each VMM a uid of its own, and the runner turns that off. AppArmor alone stays unconfined: the container runtime's default profile denies mount and more, and under it no guest boots.
+// UNIT_BOUNDARY_DESCRIPTION: the runner is uid 0 only inside its pod's user namespace (hostUsers false), so a guest that escapes into it is an unprivileged uid on the node and its capabilities stop at the namespace. It holds exactly the capabilities above and none of the runtime's defaults, cannot gain more through exec, and runs under the runtime's default seccomp profile — the shape the chart's OpenShift SCC already forces on it. None of the dropped defaults is used: every VMM runs as the runner's own uid, so signalling one needs no KILL, and smolvm's own default runs each VMM on a uid with no capabilities at all, so virtiofs needs no SETUID. The default seccomp profile allows every ioctl, so KVM works; what it refuses without CAP_SYS_ADMIN is new namespaces, mounts and keyrings, which smolvm only reaches for when it gives each VMM a uid of its own, and the runner turns that off. AppArmor alone stays unconfined: the container runtime's default profile denies mount and more, and under it no guest boots.
 func runnerSecurityContext(spec config.VMRunnerSpec) *corev1.SecurityContext {
 	root := int64(0)
 	return &corev1.SecurityContext{
@@ -689,7 +688,7 @@ func runnerSecurityContext(spec config.VMRunnerSpec) *corev1.SecurityContext {
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the runner's image directory is a cache on its own claim, with the runner as its only writer. It is not when the node image cache service writes a node directory, or when the install stages read-only archives.
+// UNIT_BOUNDARY_DESCRIPTION: whether the runner's image directory is a cache on its own claim, with the runner as its only writer. It is not when the node image cache service writes a node directory, or when the install stages read-only images.
 func runnerOwnsImageCache(spec config.VMRunnerSpec) bool {
 	return spec.ImageCacheHostPath == "" && spec.ImageArchiveHostPath == ""
 }
@@ -731,7 +730,11 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 		if resources.Requests == nil {
 			resources.Requests = corev1.ResourceList{}
 		}
-		resources.Requests[corev1.ResourceEphemeralStorage] = vmRunnerEphemeralRequest
+		request := vmRunnerEphemeralRequest
+		if limit, ok := resources.Limits[corev1.ResourceEphemeralStorage]; ok && limit.Cmp(request) < 0 {
+			request = limit
+		}
+		resources.Requests[corev1.ResourceEphemeralStorage] = request
 	}
 	for k, v := range spec.Devices {
 		q, err := resource.ParseQuantity(v)
@@ -772,15 +775,6 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 		}})
 	default:
 		mounts = append(mounts, corev1.VolumeMount{Name: "state", MountPath: vmRunnerImagesPath, SubPath: "images"})
-	}
-	toolsDir := ""
-	if r.config.AgentBase.ToolsHostPath != "" {
-		dir := corev1.HostPathDirectoryOrCreate
-		toolsDir = vmRunnerToolsPath
-		mounts = append(mounts, corev1.VolumeMount{Name: "harness-tools", MountPath: vmRunnerToolsPath, ReadOnly: true})
-		volumes = append(volumes, corev1.Volume{Name: "harness-tools", VolumeSource: corev1.VolumeSource{
-			HostPath: &corev1.HostPathVolumeSource{Path: r.config.AgentBase.ToolsHostPath, Type: &dir},
-		}})
 	}
 	env := []corev1.EnvVar{{
 		Name: "SMOLVM_VM_UID_DROP", Value: "off",
@@ -833,6 +827,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 				ObjectMeta: metav1.ObjectMeta{Labels: podLabels},
 				Spec: corev1.PodSpec{
 					DNSPolicy:                     runnerDNSPolicy(spec.DNSPolicy),
+					HostUsers:                     new(false),
 					TerminationGracePeriodSeconds: new(int64(vmRunnerTerminationGraceSeconds)),
 					ServiceAccountName:            spec.ServiceAccountName,
 					AutomountServiceAccountToken:  new(false),
@@ -855,7 +850,6 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 							"--image-dir=" + vmRunnerImagesPath,
 							"--image-cache-socket=" + imageCacheSocket,
 							fmt.Sprintf("--image-budget-bytes=%d", imageBudget),
-							"--tools-dir=" + toolsDir,
 							"--memory-mib=$(RUNNER_MEMORY_MIB)",
 							fmt.Sprintf("--reserve-mib=%d", spec.ReserveMiB),
 							fmt.Sprintf("--headroom-mib=%d", spec.HeadroomMiB),

@@ -1,4 +1,4 @@
-import { Asleep, Migrate, Play, Renew, Warning } from "@carbon/icons-react";
+import { Asleep, Migrate, Play, Restart, Warning } from "@carbon/icons-react";
 import { isStartRefusal } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
@@ -172,7 +172,7 @@ export function AgentUnavailableOverlay({
       )}
       {powerAction === "restart" && (
         <Button onClick={() => restart(agent.id)} disabled={restarting}>
-          <Renew size={14} /> Restart agent
+          <Restart size={14} /> Restart agent
         </Button>
       )}
     </OverlayFrame>

@@ -41,6 +41,7 @@ function runningRow(id: string): InvocationRow {
     transcriptCaptured: false,
     transcriptTruncated: false,
     harnessConfig: null,
+    driverSessionId: null,
   };
 }
 

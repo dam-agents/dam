@@ -88,6 +88,8 @@ export const sessionSettingsInputSchema = z.object({
   ref: z.string().min(1),
 });
 
+export const sessionByRefInputSchema = z.object({ ref: z.string().min(1) });
+
 export const sessionSpendInputSchema = z.object({
   from: z.string().datetime({ offset: true }),
   to: z.string().datetime({ offset: true }),

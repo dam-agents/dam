@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -18,30 +18,21 @@ export function Collapse({
   children: ReactNode;
 }) {
   const [mounted, setMounted] = useState(open);
-  const [expanded, setExpanded] = useState(false);
-  const expandedRef = useRef(false);
 
   useEffect(() => {
-    if (!open) {
-      const animatesClosed = expandedRef.current && !prefersReducedMotion();
-      expandedRef.current = false;
-      setExpanded(false);
-      if (!animatesClosed) {
-        setMounted(false);
-        return;
-      }
-      const timer = setTimeout(() => setMounted(false), CLOSE_MS);
-      return () => clearTimeout(timer);
+    if (open) {
+      setMounted(true);
+      return;
     }
-    setMounted(true);
-    const frame = requestAnimationFrame(() => {
-      expandedRef.current = true;
-      setExpanded(true);
-    });
-    return () => cancelAnimationFrame(frame);
+    if (prefersReducedMotion()) {
+      setMounted(false);
+      return;
+    }
+    const timer = setTimeout(() => setMounted(false), CLOSE_MS);
+    return () => clearTimeout(timer);
   }, [open]);
 
-  if (!mounted) return null;
+  if (!open && !mounted) return null;
   return (
     <div
       inert={!open}
@@ -50,7 +41,9 @@ export function Collapse({
       }}
       className={cn(
         "grid transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none",
-        expanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+        open
+          ? "grid-rows-[1fr] opacity-100 starting:grid-rows-[0fr] starting:opacity-0"
+          : "grid-rows-[0fr] opacity-0",
         className,
       )}
     >

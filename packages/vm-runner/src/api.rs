@@ -245,6 +245,8 @@ pub const REASON_SEED_MISSING: &str = "MachineSeedMissing";
 pub const REASON_STORAGE_FULL: &str = "MachineStorageFull";
 pub const REASON_HOME_FULL: &str = "MachineHomeFull";
 pub const REASON_HOME_DAMAGED: &str = "MachineHomeDamaged";
+// UNIT_BOUNDARY_DESCRIPTION: a boot that copies a disk before its guest first answers — a migration seed's restore — and is still at it. It is no failure: the runner holds the boot up to plan::COPYING_RESTART, so the controller counts no start failure and no idle time against it.
+pub const REASON_COPYING_DISK: &str = "MachineCopyingDisk";
 
 #[cfg(test)]
 mod tests {
@@ -432,6 +434,7 @@ mod tests {
                 REASON_STORAGE_FULL,
                 REASON_HOME_FULL,
                 REASON_HOME_DAMAGED,
+                REASON_COPYING_DISK,
             ])
         );
         assert_eq!(vocabulary["seedExitPermanent"], SEED_EXIT_PERMANENT);

@@ -308,7 +308,7 @@ pub fn name_resolution(root: &Path, machine: &Machine) {
 
 const STORAGE_DEVICE: &str = "/dev/vda";
 
-// UNIT_BOUNDARY_DESCRIPTION: where btrfs and ext4 keep their magic numbers: btrfs's primary superblock is 64 KiB into the disk with `_BHRfS_M` 64 bytes into it, ext4's superblock 1024 bytes in with 0xEF53 56 bytes into it.
+// UNIT_BOUNDARY_DESCRIPTION: where btrfs and ext4 keep their magic numbers: btrfs's primary superblock is 64 KiB into the disk with `_BHRfS_M` 64 bytes into it, ext4's superblock 1024 bytes in with 0xEF53 56 bytes into it. ext4 is read only to say why a disk is refused.
 fn magic_at(device: &str, offset: u64, magic: &[u8]) -> bool {
     use std::os::unix::fs::FileExt;
     let mut read = vec![0; magic.len()];
@@ -317,96 +317,81 @@ fn magic_at(device: &str, offset: u64, magic: &[u8]) -> bool {
         .is_ok_and(|()| read == magic)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: mounts the storage disk, which the runner formats before the first boot: btrfs compressed with zstd level 1 and grown online to its disk, or the ext4 of an older machine, checked and grown before the mount. A disk with neither filesystem is never formatted here, since the only disk that has none is one whose filesystem was lost, and formatting it would erase what is left; the boot stops with the reason on the console. The platform's part of the disk is its DISK_ROOT_DIR, made on a disk's first boot.
+// UNIT_BOUNDARY_DESCRIPTION: what a disk that predates the subvolume layout is told: it is never booted, formatted or rewritten, so what it holds is kept for an operator to recover.
+const PREDATES_SUBVOLUMES: &str = "predates the btrfs subvolume layout, which this platform-init alone boots; refusing to boot it, and the disk is kept as it is";
+
+// UNIT_BOUNDARY_DESCRIPTION: mounts the storage disk, which the runner formats as btrfs before the first boot, compressed with zstd level 1 and grown online to its disk, and returns the platform's root on it: the whole filesystem, with AGENT_DIR and SYSTEM_DIR as subvolumes. The system subvolume is made on the first boot; the agent's is the home's seed (see stage). A disk from before that layout — ext4, or btrfs that holds DISK_ROOT_DIR at its top — fails the boot. A disk with no filesystem is never formatted here either, since the only disk that has none is one whose filesystem was lost, and formatting it would erase what is left; the boot stops with the reason on the console.
 fn mount_storage(target: &Path) -> PathBuf {
     if let Err(e) = mkdir_all(target) {
         fatal!("creating {}: {e}", target.display());
     }
-    if magic_at(STORAGE_DEVICE, 0x1_0040, b"_BHRfS_M") {
-        if let Err(e) = mount_typed(
-            STORAGE_DEVICE,
-            target,
-            "btrfs",
-            libc::MS_NOATIME,
-            "compress=zstd:1",
-        ) {
-            fatal!("mounting the storage disk's btrfs: {e}; the disk is kept as it is");
-        }
-        if let Err(e) = grow_btrfs(target) {
-            logf!("WARNING: growing btrfs to the disk ({e}); it keeps the size it had");
-        }
-    } else if magic_at(STORAGE_DEVICE, 1024 + 56, &[0x53, 0xEF]) {
-        check_ext4();
-        match std::process::Command::new("/usr/sbin/resize2fs")
-            .arg(STORAGE_DEVICE)
-            .output()
-        {
-            Ok(out) if !out.status.success() => logf!(
-                "WARNING: growing ext4 to the disk: {}",
-                String::from_utf8_lossy(&out.stderr).trim()
-            ),
-            Err(e) => logf!("WARNING: growing ext4 to the disk: {e}"),
-            Ok(_) => {}
-        }
-        if let Err(e) = mount_typed(STORAGE_DEVICE, target, "ext4", libc::MS_NOATIME, "") {
-            fatal!("mounting the storage disk's ext4: {e}; the disk is kept as it is");
-        }
-    } else {
-        fatal!("the storage disk holds neither btrfs nor ext4, or could not be read; refusing to boot rather than format it, so what it holds is kept");
+    if magic_at(STORAGE_DEVICE, 1024 + 56, &[0x53, 0xEF]) {
+        fatal!("the storage disk is ext4, which {PREDATES_SUBVOLUMES}");
     }
-    let root = target.join(guest::DISK_ROOT_DIR);
-    if let Err(e) = mkdir_all(&root) {
-        fatal!("creating {}: {e}", root.display());
+    if !magic_at(STORAGE_DEVICE, 0x1_0040, b"_BHRfS_M") {
+        fatal!("the storage disk holds no btrfs, or could not be read; refusing to boot rather than format it, so what it holds is kept");
     }
-    root
+    if let Err(e) = mount_typed(
+        STORAGE_DEVICE,
+        target,
+        "btrfs",
+        libc::MS_NOATIME,
+        "compress=zstd:1",
+    ) {
+        fatal!("mounting the storage disk's btrfs: {e}; the disk is kept as it is");
+    }
+    if target.join(guest::DISK_ROOT_DIR).exists() {
+        fatal!(
+            "the storage disk holds {} at its top, so it {PREDATES_SUBVOLUMES}",
+            guest::DISK_ROOT_DIR
+        );
+    }
+    if let Err(e) = grow_btrfs(target) {
+        logf!("WARNING: growing btrfs to the disk ({e}); it keeps the size it had");
+    }
+    if let Err(e) = ensure_subvolume(target, guest::SYSTEM_DIR) {
+        fatal!("creating the subvolume {}: {e}", guest::SYSTEM_DIR);
+    }
+    target.to_path_buf()
 }
 
-fn grow_btrfs(mount: &Path) -> io::Result<()> {
-    // UNIT_BOUNDARY_DESCRIPTION: struct btrfs_ioctl_vol_args; "max" grows device 1, the disk's only one, to the end of the disk, and is a no-op when it already fills it.
-    #[repr(C)]
-    struct VolArgs {
-        fd: i64,
-        name: [u8; 4088],
-    }
+// UNIT_BOUNDARY_DESCRIPTION: struct btrfs_ioctl_vol_args, which the resize and the subvolume ioctls take: a NUL-terminated name in a fixed buffer.
+#[repr(C)]
+struct VolArgs {
+    fd: i64,
+    name: [u8; 4088],
+}
+
+fn btrfs_ioctl(dir: &Path, request: u8, name: &str) -> io::Result<()> {
     let mut args = VolArgs {
         fd: 0,
         name: [0; 4088],
     };
-    args.name[..3].copy_from_slice(b"max");
-    let dir = File::open(mount)?;
-    // SAFETY: BTRFS_IOC_RESIZE, _IOW(0x94, 3, struct btrfs_ioctl_vol_args), on an open directory of the mount, with `args` alive for the call.
-    succeeded(unsafe { libc::ioctl(dir.as_raw_fd(), libc::_IOW::<VolArgs>(0x94, 3), &args) } == 0)
+    args.name[..name.len()].copy_from_slice(name.as_bytes());
+    let dir = File::open(dir)?;
+    // SAFETY: _IOW(0x94, request, struct btrfs_ioctl_vol_args), on an open directory of the filesystem, with `args` alive for the call.
+    succeeded(
+        unsafe {
+            libc::ioctl(
+                dir.as_raw_fd(),
+                libc::_IOW::<VolArgs>(0x94, request.into()),
+                &args,
+            )
+        } == 0,
+    )
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: e2fsck's passes, from least to most invasive: a preen returns at once on a clean filesystem and fixes what is safe to fix unattended; what it leaves gets a full repair, then one that also rebuilds directories. Exit codes 0 to 3 mean clean or repaired; 4 means errors are left, which escalates; anything else, or a pass killed by a signal, stops the boot with the disk as it is.
-const FSCK_PASSES: [&[&str]; 3] = [&["-p"], &["-f", "-y"], &["-f", "-y", "-D"]];
+// UNIT_BOUNDARY_DESCRIPTION: BTRFS_IOC_RESIZE with "max" grows device 1, the disk's only one, to the end of the disk, and is a no-op when it already fills it.
+fn grow_btrfs(mount: &Path) -> io::Result<()> {
+    btrfs_ioctl(mount, 3, "max")
+}
 
-fn check_ext4() {
-    for (i, args) in FSCK_PASSES.iter().enumerate() {
-        let out = match std::process::Command::new("/sbin/e2fsck")
-            .args(*args)
-            .arg(STORAGE_DEVICE)
-            .output()
-        {
-            Ok(out) => out,
-            Err(e) => fatal!("running e2fsck: {e}; refusing to mount a disk that may be damaged"),
-        };
-        let said = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        match out.status.code() {
-            Some(0) => return,
-            Some(1..=3) => {
-                announce(&format!("storage: e2fsck {} repaired the filesystem: {said}", args.join(" ")));
-                return;
-            }
-            Some(code) if code & !3 == 4 && i + 1 < FSCK_PASSES.len() => {
-                announce(&format!("storage: e2fsck {} left errors; trying a fuller repair", args.join(" ")));
-            }
-            code => fatal!(
-                "storage: e2fsck {} (exit {code:?}): {said}; refusing to mount, and the disk is kept as it is",
-                args.join(" ")
-            ),
-        }
+// UNIT_BOUNDARY_DESCRIPTION: makes `parent/name` a subvolume (BTRFS_IOC_SUBVOL_CREATE) unless something is there already.
+pub(super) fn ensure_subvolume(parent: &Path, name: &str) -> io::Result<()> {
+    if fs::symlink_metadata(parent.join(name)).is_ok() {
+        return Ok(());
     }
+    btrfs_ioctl(parent, 14, name)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the guest agent protocol of smolvm's host side, as much of it as the runner's machines use: a liveness ping that names what this init can do, the quiesced stop, and onlining RAM the VMM plugged in. Each request is a big-endian u32 length and a JSON body on vsock port 6000, answered the same way, and a connection may carry several. Once it listens, the init rings the host's readiness doorbell, which is what a start waits for; it starts only once the image's root is in place, since the host grows the machine's RAM the moment it is ready, and onlining reads /sys, which moves into that root. A request this init does not serve is answered with an error, never with silence, so the host does not wait out its timeout.
@@ -521,10 +506,11 @@ fn respond(request: AgentRequest, conn: &mut File) -> AgentResponse {
     match request {
         AgentRequest::Ping => AgentResponse::Pong {
             version: smolvm_protocol::PROTOCOL_VERSION,
-            capabilities: vec![
+            capabilities: [
                 smolvm_protocol::QUIESCED_SHUTDOWN_CAPABILITY.to_string(),
                 smolvm_protocol::ONLINE_MEMORY_GROWTH_CAPABILITY.to_string(),
-            ],
+            ]
+            .into(),
         },
         AgentRequest::OnlineMemory {
             start_address,
@@ -609,7 +595,7 @@ fn exec(
     };
     let (lock, cvar) = &EXECS;
     let mut execs = lock.lock().unwrap_or_else(|e| e.into_inner());
-    let spawned = std::process::Command::new(program)
+    let spawned = super::unblocked(&mut std::process::Command::new(program))
         .args(args)
         .env_clear()
         .env("PATH", DEFAULT_PATH)
@@ -815,6 +801,7 @@ fn quiesce(conn: &mut File, grace: Duration) -> AgentResponse {
         }
     }
     drop(stopped);
+    release_pool_guard();
     // SAFETY: sync(2) takes no arguments.
     unsafe { libc::sync() };
     let frozen = File::open(guest::AGENT_HOME).and_then(|home| {
@@ -933,5 +920,67 @@ mod tests {
         assert!(capabilities
             .iter()
             .any(|c| c == smolvm_protocol::ONLINE_MEMORY_GROWTH_CAPABILITY));
+    }
+
+    // TEST_SCENARIO: on a new disk in the subvolume layout the home arrives with its seed: the agent's subvolume does not exist until the image's home is copied into a staged subvolume and renamed into place, so the home is the image's, with its owner and mode, and the root of a subvolume. A store that existed empty before its seed would be taken for a seeded home and never get the image's files. Needs root and mkfs.btrfs: `sudo -E cargo test -p platform-init -- --ignored seeds_a_home_subvolume`.
+    #[test]
+    #[ignore = "needs root and mkfs.btrfs"]
+    fn seeds_a_home_subvolume() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir =
+            std::env::temp_dir().join(format!("platform-init-seed-subvol-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        mkdir_all(&dir).unwrap();
+        let run = |program: &str, args: &[&std::ffi::OsStr]| {
+            let out = std::process::Command::new(program)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "{program}: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        };
+        let image = dir.join("disk.raw");
+        File::create(&image).unwrap().set_len(256 << 20).unwrap();
+        run(
+            "mkfs.btrfs",
+            &["-q".as_ref(), "-M".as_ref(), image.as_os_str()],
+        );
+        let top = dir.join("top");
+        mkdir_all(&top).unwrap();
+        run(
+            "mount",
+            &[
+                "-o".as_ref(),
+                "loop".as_ref(),
+                image.as_os_str(),
+                top.as_os_str(),
+            ],
+        );
+        let home = dir.join("image-home");
+        mkdir_all(&home.join(".config")).unwrap();
+        fs::write(home.join(".config/settings"), b"from the image").unwrap();
+        std::os::unix::fs::lchown(&home, Some(65532), Some(65532)).unwrap();
+        fs::set_permissions(&home, fs::Permissions::from_mode(0o750)).unwrap();
+        let checks = || {
+            ensure_subvolume(&top, guest::SYSTEM_DIR).unwrap();
+            let store = guest::agent_store(&top);
+            assert!(needs_seed(&store).unwrap(), "a new disk holds no home yet");
+            seed(&home, &store).unwrap();
+            let info = fs::metadata(&store).unwrap();
+            assert_eq!(info.ino(), 256, "the home is a subvolume's root");
+            assert_eq!((info.uid(), info.mode() & 0o777), (65532, 0o750));
+            assert_eq!(
+                fs::read(store.join(".config/settings")).unwrap(),
+                b"from the image"
+            );
+            assert!(!needs_seed(&store).unwrap());
+        };
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(checks));
+        run("umount", &[top.as_os_str()]);
+        let _ = fs::remove_dir_all(&dir);
+        result.unwrap();
     }
 }

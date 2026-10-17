@@ -84,8 +84,8 @@ export function SpendWidget({
   return (
     <MotionConfig reducedMotion="user">
       <div className="flex flex-col rounded-lg border border-border bg-card p-6">
-        <div className="mb-1 flex min-h-[32px] items-center justify-between">
-          <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+        <div className="mb-1 flex min-h-[32px] flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <p className="flex items-center gap-1.5 whitespace-nowrap text-sm text-muted-foreground">
             API spend
             <HelpTip content={apiSpendHelp()} />
             {query.isFetching && (

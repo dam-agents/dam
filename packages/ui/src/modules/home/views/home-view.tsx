@@ -23,9 +23,11 @@ export function HomeView() {
     return (
       <div>
         <PageHeader title="Home" />
-        <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2">
-          <WidgetSkeleton rows={2} />
-          <WidgetSkeleton rows={2} />
+        <div className="@container mb-8">
+          <div className="grid grid-cols-1 gap-4 @3xl:grid-cols-2">
+            <WidgetSkeleton rows={2} />
+            <WidgetSkeleton rows={2} />
+          </div>
         </div>
         <ListSkeleton rows={3} rowHeight={70} />
       </div>
@@ -43,13 +45,21 @@ export function HomeView() {
 
   return (
     <div>
-      <PageHeader title="Home" actions={<EntryPointButtons />} />
+      <PageHeader title="Home" />
       <ApprovalsBanner />
-      <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="rounded-lg border border-border bg-card p-6">
-          <ResourcesCard agents={allAgents} workingAgentIds={workingAgentIds} />
+      <div className="@container mb-8">
+        <div className="grid grid-cols-1 gap-4 @3xl:grid-cols-2">
+          <div className="rounded-lg border border-border bg-card p-6">
+            <ResourcesCard
+              agents={allAgents}
+              workingAgentIds={workingAgentIds}
+            />
+          </div>
+          <SpendWidget />
         </div>
-        <SpendWidget />
+      </div>
+      <div className="mb-4 flex flex-wrap justify-end gap-2">
+        <EntryPointButtons />
       </div>
       <SandboxList
         agents={visible}

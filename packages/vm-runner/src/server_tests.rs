@@ -6,9 +6,9 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use super::*;
 use crate::api::{
-    REASON_BOOT_FAILED, REASON_HOME_FULL, REASON_IMAGE_UNAVAILABLE, REASON_SEED_MISSING,
-    REASON_STORAGE_FULL, STATE_ABSENT, STATE_CREATING, STATE_RESTARTING, STATE_RUNNING,
-    STATE_STARTING, STATE_STOPPED, STATE_STOPPING,
+    REASON_BOOT_FAILED, REASON_COPYING_DISK, REASON_HOME_FULL, REASON_IMAGE_UNAVAILABLE,
+    REASON_SEED_MISSING, REASON_STORAGE_FULL, STATE_ABSENT, STATE_CREATING, STATE_RESTARTING,
+    STATE_RUNNING, STATE_STARTING, STATE_STOPPED, STATE_STOPPING,
 };
 use crate::cache::{archive_path, digest_path, staged_path, PARTIAL_PREFIX};
 use crate::cacheapi;
@@ -42,6 +42,7 @@ struct Fake {
     fail_start_once: Mutex<Option<String>>,
     fail_grow_once: Mutex<Option<String>>,
     booted_mib: Mutex<Vec<i32>>,
+    start_sizes: Mutex<Vec<i32>>,
     console: Mutex<String>,
     panic_on_state: AtomicBool,
     nests: AtomicBool,
@@ -117,9 +118,10 @@ impl Runtime for Fake {
         Ok(())
     }
 
-    fn start(&self, id: &str, boot_mib: i32) -> anyhow::Result<()> {
+    fn start(&self, id: &str, boot_mib: i32, memory_mib: i32) -> anyhow::Result<()> {
         self.record(format!("start {id}"));
         locked(&self.booted_mib).push(boot_mib);
+        locked(&self.start_sizes).push(memory_mib);
         std::thread::sleep(*locked(&self.start_delay));
         if let Some(message) = locked(&self.fail_start_once).take() {
             anyhow::bail!(message);
@@ -494,7 +496,7 @@ async fn a_stopped_machine_starts_again_on_the_same_port() {
     );
 }
 
-// TEST_SCENARIO: a guest's boot costs time for every GiB of RAM it boots with, so a machine boots with the runner's boot estimate and is grown to its spec's size as soon as its start returns, on every boot: the first, and one after a stop, whose record the update set back to the spec. The grow is part of the start, so the action ends only once the machine has its size.
+// TEST_SCENARIO: a guest's boot costs time for every GiB of RAM it boots with, so a machine boots with the runner's boot estimate and is grown to its spec's size as soon as its start returns, on every boot: the first, and one after a stop, whose record the update set back to the spec. The grow is part of the start, so the action ends only once the machine has its size. Every start is also told that size, so a runtime that knows the boot cannot grow (a disk conversion) boots at it.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_machine_boots_small_and_is_grown_to_its_size_on_every_boot() {
     let h = Harness::with("boot-small", |c| c.boot_mib = 1024);
@@ -519,6 +521,7 @@ async fn a_machine_boots_small_and_is_grown_to_its_size_on_every_boot() {
         ]
     );
     assert_eq!(*locked(&h.fake.booted_mib), vec![1024, 1024]);
+    assert_eq!(*locked(&h.fake.start_sizes), vec![2048, 2048]);
 }
 
 // TEST_SCENARIO: a machine no larger than the boot estimate boots whole and is never grown, and so is every machine of a runner given no estimate.
@@ -689,6 +692,33 @@ async fn a_seed_and_a_boot_never_overlap() {
 
     h.server.put("m1", spec(true)).unwrap();
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+}
+
+// TEST_SCENARIO: a boot that restores a migration's seed copies its disk before its guest answers, so it is still booting, not failing: it reports REASON_COPYING_DISK while the guest has not answered, also past the stuck-boot minute, so the controller neither counts it as a start that never became ready nor lets the image update move it back mid-copy. The reason goes once the guest answers, and a boot that copies nothing never carries it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_boot_that_copies_a_disk_reports_it_until_the_guest_answers() {
+    let h = Harness::new("copying");
+    h.server.put("m1", spec(true)).unwrap();
+    let plain = h.settle("m1").await;
+    assert_eq!(plain.reason, "", "{plain:?}");
+
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+    let seed = upload(&h, "m1", b"a home");
+    h.server.put("m1", expecting(true, &seed)).unwrap();
+    let seeding = h.settle("m1").await;
+    assert!(!seeding.ready);
+    assert_eq!(seeding.reason, REASON_COPYING_DISK, "{seeding:?}");
+    age_boot(&h, "m1");
+    h.server.probe("m1");
+    assert_eq!(
+        h.server.status("m1").reason,
+        REASON_COPYING_DISK,
+        "a slow copy is still a copy"
+    );
+    let _guest = guest(h.base);
+    let up = h.until("m1", "ready", |s| s.ready).await;
+    assert_eq!(up.reason, "", "{up:?}");
 }
 
 // TEST_SCENARIO: a machine deleted while its seed is uploaded must not have the seed put back into a directory that is gone, or recreated by the rename; the upload's commit is refused instead.
@@ -1392,9 +1422,9 @@ async fn an_image_is_fetched_once_for_every_machine_that_wants_it() {
     );
 }
 
-// TEST_SCENARIO: an install with no registry stages each image's archive in the image directory, mounted read-only. The staged archive boots without the registry being asked anything, with the launch read out of the archive's own config.
+// TEST_SCENARIO: an install with no registry once staged `docker save` archives in the image directory, and nothing boots one any more: smolvm flattens an archive inside the guest, which no guest does since platform-init became its init. An archive left there by hand is refused as an image problem whose message says how to restage it, rather than booted into a guest that never starts its agent, and the registry is not asked instead.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_staged_archive_boots_without_asking_the_registry() {
+async fn a_staged_archive_is_refused_with_how_to_restage_it() {
     let h = Harness::new("archive");
     fs::write(
         h.dir.join("crane"),
@@ -1403,21 +1433,23 @@ async fn a_staged_archive_boots_without_asking_the_registry() {
     .unwrap();
     let images = h.dir.join("images");
     fs::create_dir_all(&images).unwrap();
-    let archive = archive_path(&images, "quay.io/x/vm:1");
-    write_archive(&archive, r#"{"config":{"Entrypoint":["/from-archive"]}}"#);
+    fs::write(
+        archive_path(&images, "quay.io/x/vm:1"),
+        b"a docker save archive",
+    )
+    .unwrap();
     h.server.put("m1", spec(true)).unwrap();
-    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
-    let (image, launch) = locked(&h.fake.created).get("m1").cloned().unwrap();
-    assert_eq!(PathBuf::from(image), archive);
-    assert_eq!(launch.entrypoint, vec!["/from-archive"]);
-    assert_eq!(h.crane_calls(), 0);
+    let status = h.settle("m1").await;
+    assert_eq!(status.reason, REASON_IMAGE_UNAVAILABLE, "{status:?}");
     assert!(
-        !h.dir.join("machines/m1").join(IMAGE_DIGEST_FILE).exists(),
-        "a machine booted from an archive holds no cache entry"
+        status.message.contains("mise run image:stage-vm"),
+        "{status:?}"
     );
+    assert!(h.fake.calls().is_empty());
+    assert_eq!(h.crane_calls(), 0);
 }
 
-// TEST_SCENARIO: an install stages an image as a tree with its launch record beside it (image:stage-vm), so the machine boots the tree in place instead of flattening an archive inside the guest. The tree wins over an archive staged under the same name, which an earlier install left behind.
+// TEST_SCENARIO: an install stages an image as a tree with its launch record beside it (image:stage-vm), and the machine boots the tree in place. An archive left under the same name by an earlier install does not refuse the tree.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_staged_tree_boots_in_place_and_wins_over_the_archive() {
     let h = Harness::new("staged-tree");
@@ -1434,10 +1466,11 @@ async fn a_staged_tree_boots_in_place_and_wins_over_the_archive() {
         r#"{"entrypoint":["/from-tree"],"cmd":[],"env":[],"workingDir":"/"}"#,
     )
     .unwrap();
-    write_archive(
-        &archive_path(&images, "quay.io/x/vm:1"),
-        r#"{"config":{"Entrypoint":["/from-archive"]}}"#,
-    );
+    fs::write(
+        archive_path(&images, "quay.io/x/vm:1"),
+        b"a docker save archive",
+    )
+    .unwrap();
     h.server.put("m1", spec(true)).unwrap();
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
     let (image, launch) = locked(&h.fake.created).get("m1").cloned().unwrap();
@@ -1644,21 +1677,6 @@ async fn the_cache_never_evicts_an_image_a_machine_is_running() {
         "the running machine's image was evicted"
     );
     assert!(h.entry("m2").exists());
-}
-
-fn write_archive(path: &Path, config: &str) {
-    let mut builder = tar::Builder::new(fs::File::create(path).unwrap());
-    let manifest = br#"[{"Config":"config.json"}]"#;
-    for (name, body) in [
-        ("manifest.json", &manifest[..]),
-        ("config.json", config.as_bytes()),
-    ] {
-        let mut header = tar::Header::new_gnu();
-        header.set_size(body.len() as u64);
-        header.set_mode(0o644);
-        builder.append_data(&mut header, name, body).unwrap();
-    }
-    builder.finish().unwrap();
 }
 
 // TEST_SCENARIO: a reference pinned by digest cannot move, so it is never resolved — its entry is the digest it names, fetched by that digest.

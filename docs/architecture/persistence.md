@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-10-15
+Last verified: 2026-10-17
 
 ## Overview
 
@@ -240,7 +240,7 @@ The runner names it in the share at every start, and a new generation, or none n
 The agent runs as root there, and a tool that takes its home from the user database rather than `HOME`, as OpenSSH does for keys and known hosts, would write to `/root` on that root, so the entrypoint gives uid 0's entry the agent's `HOME` and moves what an older boot left in `/root/.ssh` into it, without overwriting a file the home already holds.
 The old upper is renamed aside with the record of its image and deleted in the background, so a root of millions of files does not hold up the boot; one a stop cut short is deleted on the next boot.
 smolvm keeps a root of its own and binds the whole disk into it; platform-init leaves both behind, and fails the boot rather than run on them.
-Temporary folders are kept off that root instead: `/tmp` and `/var/tmp` are directories of the disk bound in place, empty on every boot, and `HOME`'s `.cache` and `.npm` are ordinary directories of the home.
+Temporary folders are the exception: `/tmp` and `/var/tmp` are directories of that root that start empty on every boot, whatever the image ships there, and `HOME`'s `.cache` and `.npm` are ordinary directories of the home.
 `/var/cache` stays part of the root, because an image ships its font, package and linker caches there, and an empty folder over them had every boot rebuild them.
 They share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their least recently used entries, never anything outside them, and never through a link or a mount: a folder that is a link, such as a `~/.cache` an agent pointed at its work, or a mount it was not at boot, is skipped, an entry holding a mount stays whole, and no delete goes into a mount.
 An entry is one name directly in such a folder, such as `~/.cache/go-build` or `/tmp/pr-body.md`, and it goes whole or not at all, because a tool that keeps part of its cache takes it for complete and fails on it.
@@ -249,11 +249,10 @@ An entry used in the last ten minutes stays, and so does one that is or holds a 
 A short claim is mostly the agents' homes, which no eviction touches, so it does not bring that ten-minute rule on: each request the runner sends is served once, by one pass that keeps whatever was used in the last hour and stops at the bytes the runner asked of that machine.
 A cache tagged with `CACHEDIR.TAG` goes before an untagged entry of the same age, since its tool can rebuild it and an untagged one may be the agent's work in progress.
 Each eviction, and a disk still short once nothing is left to evict, is a line on the machine's console, which the runner reads.
-Short counts inodes as well as space: a disk gets one inode per 16 KiB, so a home of many small files runs out of them with most of its space free, and a write then fails as on a full disk.
-An agent that exits with its home nearly out of either is reported as a full home.
+An agent that exits with its home nearly out of space or inodes is reported as a full home.
 A boot that finds the disk with no space or inode left first deletes what earlier boots set aside and the last boot's temporary folders, which it would empty anyway, and tries again.
 A boot that still has no room stops, and its console line says the home is full, so the runner reports a full home and its fix: more storage, since a grown disk has more of both.
-Every minute platform-init trims the disk, so whatever the agent frees, by deleting or by rewriting a file in place, goes back to the runner's volume and stops counting against the owner's storage.
+btrfs discards what it frees on its own (`discard=async`, the kernel's default on a disk that supports discard), so whatever the agent frees, by deleting or by rewriting a file, goes back to the runner's volume and stops counting against the owner's storage.
 Once the image runs, the disk is reachable only through what platform-init mounted from it.
 
 Mounting the disk is the platform's job rather than the image's.
@@ -262,17 +261,12 @@ Any image therefore keeps its agent's home, even one that has never heard of thi
 An image that ships `HOME` as a symlink is seeded from what the link points at, and the link is replaced by a directory before the bind, so the home is on the disk and never on the root an image update discards; a disk an older platform-init gave a linked home is seeded again from what that home holds.
 The storage model is a constant; what varies is a migration's copy, whose entries the guest refuses when they would land outside `HOME`.
 **Nothing from `HOME` is ever run.** The home is the agent's to write, so every step platform-init takes as root comes from the share or from platform-init itself: neither an image that drops to an unprivileged user nor an old volume carried across can plant one, and a `.platform/boot.d` an older home carries is ignored.
-Beside the agent's home, in a namespace of its own so a `log` directory in that home cannot collide with it, the disk holds the platform state a machine's root cannot keep: the guest's boot log, where an agent's output goes since the harness never writes to the console, kept one boot deep so a machine that died still explains itself on the boot after, and bounded while it is written so an agent that logs without pause cannot fill its disk; and a directory an image's boot may keep its extracted trust store in rather than rebuilding it, which the platform's own images, whose rebuild is quick, leave unused.
-Both are rebuilt or resumed by the next boot rather than being state an Agent can lose.
+Beside the agent's home, in a namespace of its own so a `log` directory in that home cannot collide with it, the disk holds the platform state a machine's root cannot keep: the guest's boot log, where an agent's output goes since the harness never writes to the console, kept one boot deep so a machine that died still explains itself on the boot after, and bounded while it is written so an agent that logs without pause cannot fill its disk; an image's boot may keep its extracted trust store in a directory of its root rather than rebuilding it, which the platform's own images, whose rebuild is quick, leave unused.
+The log is rebuilt or resumed by the next boot rather than being state an Agent can lose.
 
 **A disk that holds a filesystem is never formatted at boot.** platform-init, the guest's init, mounts the storage disk itself and never formats it: a disk it cannot mount, or cannot read, fails the boot with the reason on the machine's console and stays as it was, for the next start to mount once the cause passes.
 smolvm's guest agent, which it replaces, formatted a disk it could not repair, which erased a home that only a passing I/O error, a killed repair or a kernel that lacks one of its features kept from mounting.
-platform-init checks an ext4 disk's filesystem before its first mount at every boot, since a write that failed, a full claim's among them, leaves it marked with errors that a mount alone keeps and lets grow.
-`e2fsck -p` returns at once on a clean filesystem and preens one marked with errors; what that cannot fix gets a full repair, and then one that also rebuilds directories.
-A repair is a line on the machine's console; a filesystem still damaged after all three, or an `e2fsck` that failed or was killed, fails the boot with the reason there, and the disk is not formatted.
-The runner reads those lines, so the result is on the Agent.
-A repair shows, until a later boot finds the disk clean, as a notice that files in the damaged folders may be missing.
-A refusal is a failed start with the ways out: start again, since a cause that has passed lets the next check repair it; if it keeps failing, have an admin check the disk, which stays as it is, or delete and recreate the agent, which loses its files.
+A btrfs disk that does not mount fails the boot and stays as it is, since btrfs has no repair a boot may run unattended.
 A Mac host runner runs the same agent, taken from the runner image.
 
 **A disk that has lost its home fails the boot.** A disk that was formatted anyway looks exactly like one never seeded.
@@ -281,7 +275,7 @@ A boot that finds the record but no home stops, with the reason on the machine's
 A migrated machine is held to its copy the same way: while a seed is expected, its home comes from exactly that seed or the boot fails, never from the image, and the record names the seed ([vm-runtime-migration](vm-runtime-migration.md)).
 The record is learned from the answer rather than read off the disk, because the host does not parse a filesystem a guest has had root on.
 The runner makes every new disk itself, btrfs at its full size, before any guest has touched it ([vm-runner](vm-runner.md)).
-Disks made before that are ext4, and those smolvm formatted have no journal; on those an unclean stop — a killed runner — is what brings that repair on.
+A disk from before that, ext4 or btrfs in the old directory layout, fails its boot and is kept as it is ([vm-runner](vm-runner.md)).
 On a Mac host runner the loss is refused, not prevented.
 
 **The claim those disks sit on is the owner's pool.** One claim per owner holds every machine disk they have, their bookkeeping, a [runtime migration](vm-runtime-migration.md)'s seed while it waits, and the image cache when the cache lives there, and every disk may grow to the pool, so the claim is created at the pool; the controller refuses an install whose image cache budget would take the whole of it.
@@ -296,8 +290,10 @@ A guest held below 256 MiB may still write 256 MiB in all, once, until a grant w
 The agent that used it up gets room again once the claim has room, through a grant that holds the floor: when another agent is deleted or frees files, or the storage grows, as the full-home message says; a sleep and wake also gives it the floor again, for one more way in to free its own files.
 A write past it fails inside the guest with "no space left on device", which the agent handles and the runner reports as a full home, and the claim stays writable for the owner's other agents.
 The file's blocks are only marked in the guest's filesystem and never written, so it takes nothing from the claim; it has no name, so the filesystem frees it whenever the guest stops, and an older platform-init never finds it.
+A clean stop empties it first, so the next boot does not start with its blocks taken.
+btrfs reports free space late, and as an estimate that can pass the disk's size, so the guard reads its own size from the file, syncs before it moves, moves past a margin once per commit at most, and grows only as far as the disk takes.
 Eviction does not count it as used, so a guest held to the claim does not read its own disk as short.
-The guard counts what the guest's filesystem reports as used, so it does not see all that the claim gives a disk: journal and inode table blocks are holes until first written, and blocks a guest frees take room on the claim until the next trim; the next look's grant accounts for them, and the 5% above 95% absorbs them between looks.
+The guard counts what the guest's filesystem reports as used, so it does not see all that the claim gives a disk: metadata blocks are holes until first written, and blocks a guest frees take room on the claim until btrfs discards them; the next look's grant accounts for them, and the 5% above 95% absorbs them between looks.
 Past 90% it creates no machine, fetches no image onto the claim and takes no seed, and a machine it starts boots at the disk size it has; past 97% it starts and restarts no machine either, so between the two an owner whose agents are all asleep can still get into one to clean it up.
 It reports each refusal as `MachineStorageFull` with how full the storage is and how to free it, and never stops a running machine, which would free nothing and lose what the guest holds in memory.
 An out-of-space error the runner meets anywhere on the claim is reported the same way, and so is a boot that fails while the claim is that full, since a guest whose writes fail fails its boot with nothing typed in the error.
@@ -307,10 +303,10 @@ Usage it cannot read refuses nothing, since the runner refuses the machine anywa
 The same read names, beside each machine's disk, what the runner's own image cache and the seeds of migrations not yet ended take of the claim, so a user whose storage is short is shown what fills it ([budgets](budgets.md)).
 Past 90%, and again past 98% when writes start failing, the owner also gets a Slack direct message with the same figures and ways out ([resource alerts](budgets.md#resource-alerts)).
 
-**A write the claim has no room for waits instead of failing.** virtio-blk can report a failed write to the guest only as an I/O error, and on that error the guest drops the data in its page cache that a write had accepted, aborts its journal and marks its filesystem with errors.
+**A write the claim has no room for waits instead of failing.** virtio-blk can report a failed write to the guest only as an I/O error, and on that error the guest drops the data in its page cache that a write had accepted, and btrfs aborts its transaction and turns the filesystem read-only.
 So the runner's libkrun holds a guest write that the claim refuses with no space, and tries it again every second until it fits, as QEMU does by default.
-The guest's I/O waits meanwhile, and continues with nothing lost once the claim has room: through the runner's shedding, another guest's trim, a deleted agent or a larger storage.
-A stop of the machine ends the wait: the write fails as before, or a kill ends the machine as a power cut would, which the journal recovers without errors.
+The guest's I/O waits meanwhile, and continues with nothing lost once the claim has room: through the runner's shedding, another guest's discards, a deleted agent or a larger storage.
+A stop of the machine ends the wait: the write fails as before, or a kill ends the machine as a power cut would, which btrfs's copy-on-write recovers from without errors.
 A flush is never tried again: after a failed fsync the host can have dropped the data, and a second fsync would report it written.
 
 ### The machine image cache

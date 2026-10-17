@@ -749,8 +749,8 @@ export const avatarUnlocks = pgTable(
   ],
 );
 
-export const sidebarAgentPins = pgTable(
-  "sidebar_agent_pins",
+export const sidebarAgentOrder = pgTable(
+  "sidebar_agent_order",
   {
     owner: text("owner").notNull(),
     agentId: text("agent_id").notNull(),
@@ -758,12 +758,12 @@ export const sidebarAgentPins = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.owner, table.agentId] }),
-    index("sidebar_agent_pins_agent_idx").on(table.agentId),
+    index("sidebar_agent_order_agent_idx").on(table.agentId),
   ],
 );
 
-export const sidebarSessionPins = pgTable(
-  "sidebar_session_pins",
+export const sidebarSessionOrder = pgTable(
+  "sidebar_session_order",
   {
     owner: text("owner").notNull(),
     agentId: text("agent_id").notNull(),
@@ -772,7 +772,7 @@ export const sidebarSessionPins = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.owner, table.agentId, table.sessionId] }),
-    index("sidebar_session_pins_agent_idx").on(table.agentId),
+    index("sidebar_session_order_agent_idx").on(table.agentId),
   ],
 );
 
@@ -945,6 +945,7 @@ export const invocations = pgTable(
       .default(false),
     harnessConfig: jsonb("harness_config"),
     origin: text("origin").notNull().default("script"),
+    driverSessionId: text("driver_session_id"),
     awaitedUntil: timestamp("awaited_until", { withTimezone: true }),
     claimedUntil: timestamp("claimed_until", { withTimezone: true }),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
@@ -1017,6 +1018,7 @@ export const attentionRecords = pgTable(
     title: text("title"),
     scheduleId: text("schedule_id"),
     threadTs: text("thread_ts"),
+    harness: text("harness"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
     activityAt: timestamp("activity_at", { withTimezone: true }),
     seenAt: timestamp("seen_at", { withTimezone: true }),

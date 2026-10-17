@@ -1,6 +1,6 @@
 # VM image cache
 
-Last verified: 2026-10-15
+Last verified: 2026-10-17
 
 A machine may reach only its gateway, so its image is fetched for it and unpacked into a tree every machine of that image mounts read-only.
 Where that tree lives is the one part of the runner's storage an install may move off its claim.
@@ -61,4 +61,4 @@ A runner's own cache serves one owner and checks nothing.
 
 **What a runner may read on a node cache is not gated.** Its mount is the whole directory, so any runner on the node — and any guest that escapes into one — reads every cached tree, other owners' private images included.
 The per-machine access check decides only what the service resolves and fetches for a caller.
-The socket cannot tell one runner from another either, since every runner is root on the node, so what a caller can make the service do is bounded instead of attributed: a hold names only trees on disk, at most a thousand per call, and once holds keep the cache past half again its budget, it refuses every fetch, as a capacity problem, and logs an error for the operator.
+The socket cannot tell one runner from another either, since the service checks no peer credentials on it, so what a caller can make the service do is bounded instead of attributed: a hold names only trees on disk, at most a thousand per call, and once holds keep the cache past half again its budget, it refuses every fetch, as a capacity problem, and logs an error for the operator.

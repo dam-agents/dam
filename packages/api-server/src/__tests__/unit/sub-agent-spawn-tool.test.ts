@@ -25,6 +25,7 @@ function setup(
   catalogModels?: (
     harness: string,
   ) => Promise<{ alias: string; upstreamId: string; name: string }[] | null>,
+  spawningSession?: () => Promise<string | null>,
 ) {
   const tools = new Map<string, Handler>();
   const server = {
@@ -33,10 +34,12 @@ function setup(
     },
   } as unknown as McpServer;
   const spawned: SpawnRequest[] = [];
+  const from: unknown[] = [];
   const ops = {
     harness: async () => "claude-code",
-    spawn: async (body: SpawnRequest) => {
+    spawn: async (body: SpawnRequest, origin: unknown) => {
       spawned.push(body);
+      from.push(origin);
       return { ok: true, id: "agent-child" };
     },
   } as unknown as DriverOps;
@@ -45,6 +48,7 @@ function setup(
     awaits: { markAwaited: async () => {}, markCollected: async () => {} },
     ...(subagentModel && { subagentModel }),
     ...(catalogModels && { catalogModels }),
+    spawningSession: spawningSession ?? (async () => null),
   });
   const spawn = tools.get("spawn_subagent")!;
   return {
@@ -60,6 +64,7 @@ function setup(
         { signal: new AbortController().signal },
       ),
     spawned,
+    from,
   };
 }
 
@@ -171,5 +176,21 @@ describe("spawn_subagent harness config", () => {
     };
     expect(result.content[0]!.text).toMatch(/refused/);
     expect(s.spawned).toEqual([]);
+  });
+});
+
+describe("spawn_subagent spawning session", () => {
+  // TEST_SCENARIO: the chat shows a running sub-agent only in the Session that spawned it, so a tool spawn records the Session its harness named.
+  it("records the session the call came from", async () => {
+    const s = setup(undefined, undefined, async () => "session-b");
+    await s.spawn({});
+    expect(s.from).toEqual([{ origin: "tool", driverSessionId: "session-b" }]);
+  });
+
+  // TEST_SCENARIO: a harness that names no Session spawns with none recorded, so the sub-agent shows in every chat of the Driver as before.
+  it("records no session when the harness names none", async () => {
+    const s = setup();
+    await s.spawn({});
+    expect(s.from).toEqual([{ origin: "tool", driverSessionId: null }]);
   });
 });
