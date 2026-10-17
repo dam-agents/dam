@@ -153,8 +153,9 @@ func (p runnerPodWant) moves() bool {
 	return p.currentLimit.Cmp(p.memoryLimit) != 0 || p.currentRequest.Cmp(p.memoryRequest) != 0 || !p.hasCPULimit || p.currentCPU.Cmp(p.cpu) != 0
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: only the runner's live pod is sized: Running and not terminating. The owner label also selects the pods a roll, an eviction or a stop left behind, Failed or Succeeded, which the Deployment keeps until they are collected, and each one would be resized again on every reconcile. The Recreate strategy stops every pod of an old ReplicaSet before the new one starts, so a Running pod that is not terminating is the current ReplicaSet's.
 func (r *AgentReconciler) runnerPodWants(ctx context.Context, owner string, pod *corev1.Pod, demand runnerDemand) (runnerPodWant, bool) {
-	if pod.DeletionTimestamp != nil || pod.Spec.NodeName == "" {
+	if pod.DeletionTimestamp != nil || pod.Spec.NodeName == "" || pod.Status.Phase != corev1.PodRunning {
 		return runnerPodWant{}, false
 	}
 	c := slices.IndexFunc(pod.Spec.Containers, func(c corev1.Container) bool { return c.Name == vmRunnerComponent })
