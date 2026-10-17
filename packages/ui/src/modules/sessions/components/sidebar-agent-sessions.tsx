@@ -19,7 +19,10 @@ import { useActWhenAwake } from "../../agents/hooks/use-act-when-awake.js";
 import { useOrderDrag } from "../../agents/hooks/use-order-drag.js";
 import type { useSidebarOrderActions } from "../../agents/hooks/use-sidebar-order-actions.js";
 import { manualOrder } from "../../agents/lib/sidebar-order.js";
-import { useFeatures } from "../../features/api/queries.js";
+import {
+  useFeatures,
+  useInstallCapabilities,
+} from "../../features/api/queries.js";
 import type { AgentActivitySession } from "../../home/hooks/use-activity-sessions.js";
 import { isFiltered } from "../../home/lib/activity-filter.js";
 import { matchesActivityFilters } from "../../home/lib/activity-sessions.js";
@@ -234,7 +237,10 @@ function AgentSessionList({
   const list = useAgentSessionList(agentId);
   const filters = useStore((s) => s.sidebarActivityFilters);
   const openSession = useOpenSession();
-  const telemetryEnabled = useFeatures().data?.["agent-telemetry"] ?? false;
+  const telemetryFlag = useFeatures().data?.["agent-telemetry"] ?? false;
+  const telemetryBackend =
+    useInstallCapabilities().data?.telemetryBackend ?? false;
+  const telemetryEnabled = telemetryFlag && telemetryBackend;
 
   const {
     hasNextPage,

@@ -423,6 +423,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       virtualizationEnabled: config.virtualizationEnabled,
       vmForced: agentsInstallSettings(config).vmForced,
       featureModes: config.featureModes,
+      telemetryBackend: telemetryReader !== null,
     };
   };
 }

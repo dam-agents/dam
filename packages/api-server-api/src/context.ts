@@ -92,4 +92,5 @@ export interface ApiContext {
   virtualizationEnabled: boolean;
   vmForced: boolean;
   featureModes: FeatureModes;
+  telemetryBackend: boolean;
 }
