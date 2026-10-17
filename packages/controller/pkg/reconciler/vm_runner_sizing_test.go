@@ -302,7 +302,7 @@ func TestARefusedResizeIsNotRetried(t *testing.T) {
 	assert.Equal(t, 1, resizeCalls(r))
 }
 
-// TEST_SCENARIO: the owner label also selects runner pods a roll or an eviction left behind, Failed or Succeeded, and a pod still terminating. Resizing them does nothing for the machines and repeats on every reconcile — 7,782 log lines in one day on dev — so only the live pod is resized.
+// TEST_SCENARIO: the owner label also selects runner pods a roll or an eviction left behind, Failed or Succeeded, and a pod still terminating. Resizing them does nothing for the machines and repeats on every reconcile, so only the live pod is resized.
 func TestADeadRunnerPodIsNeverResized(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
