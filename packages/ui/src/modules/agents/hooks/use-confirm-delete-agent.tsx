@@ -6,8 +6,8 @@ export function useConfirmDeleteAgent() {
   return (agent: AgentView): Promise<boolean> =>
     showConfirm(
       <>
-        This also deletes <strong>all its persistent data</strong> and cannot be
-        undone.
+        This also deletes <strong>its workspace and sessions</strong>. There is
+        no going back.
       </>,
       `Delete agent “${agent.name}”?`,
       { kind: "destructive", confirmLabel: "Delete agent" },

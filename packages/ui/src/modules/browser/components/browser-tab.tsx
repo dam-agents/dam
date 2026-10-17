@@ -77,6 +77,7 @@ export function BrowserTab({
         variant="ghost"
         size="icon-xs"
         aria-label={`Close tab ${label}`}
+        tooltip="Close tab"
         tabIndex={-1}
         onClick={onClose}
         className="absolute left-0.5 h-5 w-5 text-muted-foreground opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"

@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-10-16
+Last verified: 2026-10-17
 
 ## Overview
 
@@ -167,7 +167,7 @@ flowchart LR
 ## UI surfaces
 
 - The library lives in one place: the **Artifacts tab** of the side panel on the right, present on every page, with an Agent's chat or without one.
-  The sidebar's Artifacts destination (the drawer on a phone, where the panel opens full screen) opens that tab rather than a page of its own, and never marks itself as the current page; outside a chat it shares the panel with Get started and Approvals.
+  The sidebar's Artifacts destination (the drawer on a phone, where the panel opens full screen) opens that tab rather than a page of its own, and shows as the current destination while that tab is open; outside a chat it shares the panel with Get started and Approvals.
   In an Agent's chat the list starts on that Agent's artifacts and switches to the whole library, uploads included; anywhere else it is the whole library, and there each row names the Agent that published it, or the user for an upload.
   The tab offers search by title and file name, upload, folder management (rename, delete, copy the folder's public link), sharing controls and a separate delete-after (retention) control.
   Folders are listed first and unfiled artifacts after them at the top level; every user folder is listed, empty ones included, even when the list shows one Agent's artifacts, so a folder created there is in view at once and can take a drop.

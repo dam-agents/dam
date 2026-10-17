@@ -46,12 +46,12 @@ interface KitBadge {
   iconSlug?: string;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a kit's agent is created on the new sandbox runtime: the kit asks for a machine, or the install pins every create on it. Undefined while the install has not answered and the kit alone does not settle it. The card and the kit page read it from here so they never disagree.
+// UNIT_BOUNDARY_DESCRIPTION: whether a kit's agent is created on the new sandbox runtime: the kit asks for a machine, or a kit that names no backend gets the default — the install's pin or the owner's own opt-in. Undefined while that default is unknown and the kit alone does not settle it. The card and the kit page read it from here so they never disagree.
 export function kitRunsOnVm(
   kit: Pick<StarterKitView, "backend">,
-  vmForced: boolean | undefined,
+  defaultVm: boolean | undefined,
 ): boolean | undefined {
-  return kit.backend === "vm" || vmForced;
+  return kit.backend === "vm" || defaultVm;
 }
 export function kitBadges(
   kit: Pick<
@@ -67,14 +67,14 @@ export function kitBadges(
   >,
   templates: readonly ConnectionTemplateView[],
   templateById: ReadonlyMap<string, ConnectionTemplateView>,
-  vmForced: boolean | undefined,
+  defaultVm: boolean | undefined,
 ): KitBadge[] {
   const badges: KitBadge[] = [];
 
   if (kit.schedules.length > 0) {
     badges.push({
       key: "schedules",
-      label: `${kit.schedules.length} ${kit.schedules.length === 1 ? "Schedule" : "Schedules"}`,
+      label: `${kit.schedules.length} ${kit.schedules.length === 1 ? "schedule" : "schedules"}`,
     });
   }
 
@@ -101,7 +101,7 @@ export function kitBadges(
 
   if (kit.knowledgeBase) badges.push({ key: "kb", label: "Knowledge base" });
 
-  if (kitRunsOnVm(kit, vmForced) === true)
+  if (kitRunsOnVm(kit, defaultVm) === true)
     badges.push({ key: "backend", label: VM_BACKEND_LABEL });
 
   if (kit.egressPreset && kit.egressPreset !== "trusted")
@@ -114,7 +114,7 @@ export function kitBadges(
   if (skills > 0) {
     badges.push({
       key: "skills",
-      label: `${skills} ${skills === 1 ? "Skill" : "Skills"}`,
+      label: `${skills} ${skills === 1 ? "skill" : "skills"}`,
     });
   }
   return badges;

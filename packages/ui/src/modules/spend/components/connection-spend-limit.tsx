@@ -1,27 +1,26 @@
 import { connectionLimitRule } from "api-server-api";
 
+import { useAgentDisplayName } from "../../agents/api/queries.js";
 import { useAgentSpendStatus } from "../api/queries.js";
-import {
-  formatSpend,
-  NO_LIMIT_REASONS,
-  UNIT_EXPLANATIONS,
-} from "../lib/format.js";
-import { SpendLimitField } from "./spend-limit-field.js";
-import { SpendLimitMeter } from "./spend-limit-meter.js";
+import { NO_LIMIT_REASONS, UNIT_EXPLANATIONS } from "../lib/format.js";
+import { SpendLimitLine } from "./spend-limit-line.js";
 
 interface Props {
   agentId: string;
   connectionId: string;
+  connectionName: string;
   templateId: string;
 }
 
 export function ConnectionSpendLimit({
   agentId,
   connectionId,
+  connectionName,
   templateId,
 }: Props) {
   const rule = connectionLimitRule(templateId);
   const { data: status } = useAgentSpendStatus(rule.limitable ? agentId : null);
+  const agentName = useAgentDisplayName(agentId);
   if (!rule.limitable) {
     return (
       <p className="border-t border-border pt-3 text-xs text-muted-foreground">
@@ -47,27 +46,14 @@ export function ConnectionSpendLimit({
 
   return (
     <div className="flex flex-col gap-3 border-t border-border pt-3">
-      <SpendLimitField
-        label="Spend limit"
-        help={explanation}
+      <SpendLimitLine
         scope={{ kind: "connection", agentId, connectionId }}
         unit={rule.unit}
-        amountMicros={limit?.amountMicros ?? null}
+        spentMicros={spentMicros}
+        limit={limit}
+        subject={`${agentName} on ${connectionName}`}
+        help={explanation}
       />
-      {limit ? (
-        <SpendLimitMeter
-          label="Spend limit"
-          unit={rule.unit}
-          spentMicros={limit.spentMicros}
-          limitMicros={limit.effectiveMicros}
-          state={limit.state}
-          extensions={limit.extensions}
-        />
-      ) : (
-        <p className="text-xs text-muted-foreground">
-          {formatSpend(spentMicros, rule.unit)} today
-        </p>
-      )}
       {explanation && (
         <p className="text-xs text-muted-foreground">
           Only this limit stops calls on this provider. The agent spend limit

@@ -10,6 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import {
@@ -40,23 +41,24 @@ export function ActivityFilterMenu({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label={label}
-          title={label}
-          data-testid="sidebar-session-filter"
-          className={cn(
-            "relative flex size-6 items-center justify-center rounded-md transition-colors hover:bg-muted hover:text-foreground",
-            filtered ? "text-primary" : "text-muted-foreground",
-          )}
-        >
-          <Filter size={14} />
-          {filtered && (
-            <span className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-primary" />
-          )}
-        </button>
-      </DropdownMenuTrigger>
+      <Tooltip content={label}>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label={label}
+            data-testid="sidebar-session-filter"
+            className={cn(
+              "relative flex size-6 items-center justify-center rounded-md transition-colors hover:bg-muted hover:text-foreground",
+              filtered ? "text-primary" : "text-muted-foreground",
+            )}
+          >
+            <Filter size={14} />
+            {filtered && (
+              <span className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-primary" />
+            )}
+          </button>
+        </DropdownMenuTrigger>
+      </Tooltip>
       <DropdownMenuContent align="end">
         <DropdownMenuLabel>Show</DropdownMenuLabel>
         <DropdownMenuRadioGroup

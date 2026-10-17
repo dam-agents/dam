@@ -258,9 +258,9 @@ describe("narrowPolicyToTemplate", () => {
 });
 
 describe("families on the template view", () => {
-  test("describeAccepts names a family, then a template, then falls back to the id", () => {
+  test("describeAccepts names a family, then a template, then falls back to the capitalised id", () => {
     expect(describeAccepts(["github", "github-app", "nope"], templates)).toBe(
-      "GitHub or GitHub App or nope",
+      "GitHub or GitHub App or Nope",
     );
   });
 

@@ -38,10 +38,14 @@ interface Props {
  * An egg wobbles and cracks, the character pops out with confetti in its own
  * colors, and a short message says where the user can use it. After a few
  * seconds, or on "Nice", it shrinks into the checklist below, where the
- * character takes its place.
+ * character takes its place. The countdown waits while the pointer or focus is
+ * on it, so nobody loses it mid-read (WCAG 2.2.1), and restarts in full after.
  */
 export function UnlockCelebration({ character, variant, onFinished }: Props) {
   const [collecting, setCollecting] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const paused = hovered || focused;
   const finished = useRef(onFinished);
   const copy = COPY[variant];
 
@@ -50,9 +54,10 @@ export function UnlockCelebration({ character, variant, onFinished }: Props) {
   }, [onFinished]);
 
   useEffect(() => {
+    if (paused) return;
     const t = setTimeout(() => setCollecting(true), AUTO_COLLECT_MS);
     return () => clearTimeout(t);
-  }, []);
+  }, [paused]);
 
   useEffect(() => {
     if (!collecting) return;
@@ -64,6 +69,12 @@ export function UnlockCelebration({ character, variant, onFinished }: Props) {
     <div
       role="status"
       aria-live="polite"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false);
+      }}
       className={cn(
         "flex flex-col items-center gap-1 border-b border-border px-4 pt-2 pb-4 text-center",
         collecting && "animate-[unlock-collect_0.45s_ease-in_forwards]",

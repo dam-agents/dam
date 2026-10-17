@@ -121,7 +121,7 @@ export function FeedApprovalCard({
           <span
             className={cn(
               "text-sm",
-              /^(Denied|Stopped)/.test(resolved)
+              /^(Denied|Always denied|Stopped)/.test(resolved)
                 ? "text-danger"
                 : "text-success",
             )}

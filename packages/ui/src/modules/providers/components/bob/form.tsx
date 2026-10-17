@@ -131,6 +131,7 @@ export function BobForm({
           data-lpignore="true"
           data-form-type="other"
           placeholder="bob_prod_bob-apikey_…"
+          aria-label="Bob API key"
           {...register("value")}
         />
         <Button type="submit" disabled={submitDisabled} className="shrink-0">

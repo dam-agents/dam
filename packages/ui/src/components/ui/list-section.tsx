@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { SectionLabel } from "@/components/ui/section-label";
 import { TextSkeleton } from "@/components/ui/text-skeleton";
 import { cn } from "@/lib/utils";
@@ -85,10 +86,9 @@ export function ListSection({
             {error}
           </p>
         ) : isEmpty ? (
-          <div className="flex flex-col items-center gap-4 px-5 py-8 text-center">
-            <div className="text-sm text-muted-foreground">{empty}</div>
-            {newButton(newTestId)}
-          </div>
+          <EmptyState bordered={false} action={newButton(newTestId)}>
+            {empty}
+          </EmptyState>
         ) : (
           <div className="divide-y divide-border">{children}</div>
         )}

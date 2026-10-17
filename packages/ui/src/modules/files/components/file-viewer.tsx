@@ -1,4 +1,10 @@
-import { ArrowLeft, Close, Download, Edit, Save } from "@carbon/icons-react";
+import {
+  ArrowLeft,
+  Close,
+  Download,
+  RequestQuote,
+  Save,
+} from "@carbon/icons-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { RenderToggle } from "@/components/render-toggle";
@@ -214,7 +220,8 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
                 aria-label="Edit"
                 tooltip="Edit"
               >
-                <Edit size={14} /> <span className={TOOLBAR_LABEL}>Edit</span>
+                <RequestQuote size={14} />{" "}
+                <span className={TOOLBAR_LABEL}>Edit</span>
               </Button>
             )}
             {!tooLarge && (

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const ruleVerdictSchema = z.enum(["allow", "deny"]);
 
-const EGRESS_HOST =
+export const EGRESS_HOST =
   /^(?:\*|(?:\*\.)?[a-zA-Z0-9](?:[-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[-a-zA-Z0-9]{0,61}[a-zA-Z0-9])?)*)$/;
 const egressHostSchema = z
   .string()

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { useAgents } from "../api/queries.js";
-import { nextAgentName, nextSandboxName } from "../lib/sandbox-name.js";
+import { nextSandboxName } from "../lib/sandbox-name.js";
 
 type SuggestName = (
   takenNames: readonly string[],
@@ -32,13 +32,6 @@ function usePrefilledName(
   }, [suggest, takenNames, name, setName]);
 }
 
-function suggestAgentName(
-  takenNames: readonly string[],
-  previous: string | null,
-): string {
-  return nextAgentName(takenNames, { keep: previous });
-}
-
 export function usePrefilledSandboxName(
   prefix: string,
   name: string,
@@ -49,11 +42,4 @@ export function usePrefilledSandboxName(
     [prefix],
   );
   usePrefilledName(suggest, name, setName);
-}
-
-export function usePrefilledAgentName(
-  name: string,
-  setName: (name: string) => void,
-): void {
-  usePrefilledName(suggestAgentName, name, setName);
 }

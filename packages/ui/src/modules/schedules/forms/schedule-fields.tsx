@@ -363,7 +363,7 @@ export function ScheduleSessionTypeField<T extends FieldValues>({
 }
 
 const PRECHECK_HINT =
-  "A shell command run before each fire, from the agent's workspace root (/home/agent/work) — so a script in a repo cloned there is ./<repo>/scripts/check.sh. Exit 0 runs the task, exit 1 skips this occurrence without waking a model, and any other exit means the check itself broke — the task runs anyway. Whatever it prints is appended to the prompt.";
+  "A shell command run in the agent's workspace before each run. Exit 0 runs the task, exit 1 skips this run, and any other exit runs it anyway. What it prints is added to the prompt.";
 
 const PRECHECK_PLACEHOLDER =
   "git fetch -q && git log --oneline HEAD..origin/main | grep -q .";
@@ -625,7 +625,7 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
       </FormField>
       <FormField
         label="Model"
-        hint="Named with its provider. Agent default runs on the agent's default model for the harness."
+        hint="Each model is named with its provider. Agent default uses the agent's default model for the harness."
         {...(migrationNote ? { error: migrationNote } : {})}
       >
         <OptionPicker

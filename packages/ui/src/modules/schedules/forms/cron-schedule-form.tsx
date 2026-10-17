@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 
 import { FormField } from "@/components/form-field";
@@ -12,6 +12,7 @@ import { formatDateTime } from "@/lib/format-time";
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import type { Schedule } from "../../../types.js";
+import { useGuardedClose } from "../../sandboxes/hooks/use-guarded-close.js";
 import { useDeleteSchedule, useUpdateCronSchedule } from "../api/mutations.js";
 import {
   convertCron,
@@ -36,6 +37,7 @@ interface Props {
   agentId: string;
   existing: Schedule;
   onClose: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
   onConvert: (draft: Schedule, conversion: ExactCronConversion) => void;
 }
 
@@ -53,6 +55,7 @@ export function CronScheduleForm({
   existing,
   onClose,
   onConvert,
+  onDirtyChange,
 }: Props) {
   const updateSchedule = useUpdateCronSchedule();
   const deleteSchedule = useDeleteSchedule();
@@ -71,7 +74,9 @@ export function CronScheduleForm({
     resolver: zodResolver(cronFormSchema),
     defaultValues: cronFormDefaults(existing),
   });
-  const { errors } = formState;
+  const { errors, isDirty } = formState;
+  const close = useGuardedClose(isDirty, onClose);
+  useEffect(() => onDirtyChange?.(isDirty), [isDirty, onDirtyChange]);
   const cron = watch("cron").trim();
   const runs = errors.cron ? [] : nextCronRuns(cron, new Date(), PREVIEW_RUNS);
 
@@ -107,7 +112,7 @@ export function CronScheduleForm({
   const handleDelete = async () => {
     const confirmed = await showConfirm(
       "It stops running and cannot be recovered.",
-      `Delete ${existing.name}?`,
+      `Delete “${existing.name}”?`,
       { kind: "destructive", confirmLabel: "Delete schedule" },
     );
     if (!confirmed) return;
@@ -141,7 +146,7 @@ export function CronScheduleForm({
 
   return (
     <form onSubmit={onSubmit} className="flex min-h-0 flex-col">
-      <DialogHeader title="Edit schedule" onClose={onClose} />
+      <DialogHeader title="Edit schedule" onClose={() => void close()} />
 
       <DialogBody className="flex flex-col gap-4">
         <FormField label="Name" error={errors.name?.message}>
@@ -226,15 +231,16 @@ export function CronScheduleForm({
         leading={
           <Button
             type="button"
-            variant="ghost"
+            variant="outline"
             tone="danger"
+            className="text-danger"
             disabled={deleteSchedule.isPending}
             onClick={() => void handleDelete()}
           >
             Delete
           </Button>
         }
-        onCancel={onClose}
+        onCancel={() => void close()}
         label="Save"
         pendingLabel="Saving…"
         pending={updateSchedule.isPending}

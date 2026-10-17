@@ -1,7 +1,6 @@
 import "./getting-started.css";
 
-import type { AvatarCharacter } from "api-server-api/avatar/svg";
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -26,16 +25,12 @@ export function GettingStartedPanel({ className }: { className?: string }) {
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const markSeen = useMarkUnlockSeen();
   const startTask = useStartTask();
-  const [justUnlocked, setJustUnlocked] = useState<AvatarCharacter | null>(
-    null,
-  );
 
   const checklist = progress ? deriveChecklist(progress) : null;
   const celebrating = checklist?.celebrating ?? null;
 
   const finishCelebration = useCallback(() => {
     if (!celebrating) return;
-    setJustUnlocked(celebrating.unlock.character);
     markSeen.mutate({ task: celebrating.unlock.task });
   }, [celebrating, markSeen]);
 
@@ -58,8 +53,7 @@ export function GettingStartedPanel({ className }: { className?: string }) {
           {!checklist.dismissed && (
             <ChecklistPanel
               rows={checklist.rows}
-              unlocked={checklist.unlocked}
-              justUnlocked={justUnlocked}
+              showRewards={checklist.unlocked.length > 0}
               onStart={(task) => {
                 setMobileScreen("chat");
                 void startTask(task);

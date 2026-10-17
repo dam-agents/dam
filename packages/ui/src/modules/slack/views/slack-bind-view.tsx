@@ -7,6 +7,7 @@ import {
   type BindPickerCopy,
 } from "../../agents/components/bind/agent-bind-picker.js";
 import { BindTerminalPage } from "../../agents/components/bind/bind-terminal-page.js";
+import { withCommandChips } from "../../agents/components/bind/command-chip.js";
 import { isSlackDirectMessageId } from "../../sandboxes/lib/shared-channels.js";
 import { useBindSlackChannel } from "../api/mutations.js";
 import { useSlackBindFlow } from "../api/queries.js";
@@ -44,7 +45,7 @@ export function SlackBindView() {
       <TerminalError
         copy={{
           title: "This page is opened from Slack",
-          hint: `Run \`/${brandShort} bind\` in your channel to get a fresh link.`,
+          hint: `Run \`/${brandShort} bind\` in the channel to get a fresh link.`,
           terminal: true,
         }}
       />
@@ -55,6 +56,9 @@ export function SlackBindView() {
   }
   if (error?.terminal) {
     return <TerminalError copy={error} />;
+  }
+  if (flow.isSuccess && !flow.data) {
+    return <TerminalError copy={bindErrorCopy("BAD_REQUEST", brandShort)} />;
   }
 
   const pick = (agent: AgentView) => {
@@ -119,7 +123,7 @@ function pickerCopy(
 function TerminalError({ copy }: { copy: BindErrorCopy }) {
   return (
     <BindTerminalPage messenger="slack" title={copy.title}>
-      <p>{copy.hint}</p>
+      <p>{withCommandChips(copy.hint)}</p>
     </BindTerminalPage>
   );
 }

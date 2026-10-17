@@ -161,9 +161,10 @@ export const ChatMessage = memo(function ChatMessage({
           name={avatarAgent.name}
           avatar={avatarAgent.avatar}
           size={32}
+          className="shrink-0"
         />
       )}
-      <span className="text-sm font-semibold text-foreground">
+      <span className="truncate text-sm font-semibold text-foreground">
         {avatarAgent?.name ?? "Agent"}
       </span>
     </>
@@ -186,18 +187,18 @@ export const ChatMessage = memo(function ChatMessage({
       )}
     >
       {speaker && !continued && (
-        <div className="mb-0.5 flex">
+        <div className="mb-0.5 flex max-w-full">
           {onAgentClick ? (
             <button
               type="button"
               onClick={onAgentClick}
               aria-label={`Configure ${avatarAgent?.name ?? "agent"}`}
-              className="flex items-center gap-2 rounded-md hover:opacity-80"
+              className="flex min-w-0 items-center gap-2 rounded-md text-left hover:opacity-80"
             >
               {speaker}
             </button>
           ) : (
-            <div className="flex items-center gap-2">{speaker}</div>
+            <div className="flex min-w-0 items-center gap-2">{speaker}</div>
           )}
         </div>
       )}

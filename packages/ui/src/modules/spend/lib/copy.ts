@@ -3,6 +3,8 @@ import type { SpendUnit } from "api-server-api";
 import { getBrand } from "../../../brand.js";
 import { bareSpend, formatSpend } from "./format.js";
 
+export const DELETED_AGENT_NAME = "Deleted agent";
+
 export const AGENT_LIMIT_NAME = "Agent spend limit";
 
 export const OWN_LIMIT_NAME = "Your spend limit (all agents)";

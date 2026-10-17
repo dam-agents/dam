@@ -20,6 +20,7 @@ export function SkillsNeverRunPanel({
   revalidatingBySource,
   errorBySource,
   addSourceButton,
+  disabledNotice,
   comingUp,
   onStart,
   onRescan,
@@ -34,13 +35,14 @@ export function SkillsNeverRunPanel({
   revalidatingBySource: Record<string, boolean>;
   errorBySource: Record<string, ScanFailure | null>;
   addSourceButton: ReactNode;
+  disabledNotice?: ReactNode;
   comingUp: boolean;
   onStart: () => void;
   onRescan: (source: SkillSource) => void;
   onRemove: (source: SkillSource) => void;
   onManageConnections?: () => void;
 }) {
-  const startButton = (
+  const startButton = !disabledNotice && (
     <Button size="sm" disabled={comingUp} onClick={onStart}>
       {comingUp ? <Spinner size={14} /> : <Play size={14} />}
       {comingUp ? "Starting…" : "Start agent"}
@@ -49,14 +51,16 @@ export function SkillsNeverRunPanel({
 
   return (
     <div className="flex flex-col gap-8">
-      <Notice
-        icon={Information}
-        title="This agent hasn’t run yet"
-        action={startButton}
-      >
-        — its skills are resolved when it starts, so there&rsquo;s nothing
-        recorded to show. Start it once and this page fills in.
-      </Notice>
+      {disabledNotice ?? (
+        <Notice
+          icon={Information}
+          title="This agent hasn’t run yet"
+          action={startButton}
+        >
+          — its skills are resolved when it starts, so there&rsquo;s nothing
+          recorded to show. Start it once and this page fills in.
+        </Notice>
+      )}
 
       <section>
         <SectionLabel spaced>Skills</SectionLabel>
