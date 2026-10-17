@@ -1,6 +1,6 @@
 import { OverflowMenuVertical, View } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +37,7 @@ export function ArtifactListRow({
   artifact,
   depth,
   active,
+  highlighted = false,
   onClick,
   drag,
   showCreator,
@@ -49,6 +50,7 @@ export function ArtifactListRow({
   artifact: LibraryArtifact;
   depth: number;
   active: boolean;
+  highlighted?: boolean;
   onClick: () => void;
   drag?: ArtifactDragCallbacks;
   showCreator: boolean;
@@ -76,17 +78,23 @@ export function ArtifactListRow({
   });
 
   const menuActions = { onEdit, onRename, onMove, onShare, onSetRetention };
+  const rowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (highlighted) rowRef.current?.scrollIntoView({ block: "nearest" });
+  }, [highlighted]);
 
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <div
+          ref={rowRef}
           {...clickableProps(onClick)}
           {...(drag ? dragProps : {})}
           title={artifact.title}
           className={cn(
             "group flex h-8 w-full cursor-pointer items-center gap-1.5 pr-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted",
             active && "bg-muted text-foreground",
+            highlighted && "bg-accent-light text-foreground",
             dragging && "opacity-50",
           )}
           style={{ paddingLeft: treeIndent(depth) }}

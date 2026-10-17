@@ -1,5 +1,5 @@
 import { Upload } from "@carbon/icons-react";
-import type { ArtifactFolder } from "api-server-api";
+import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
 import { useRef, useState } from "react";
 
 import { FormError } from "@/components/form-error";
@@ -22,9 +22,10 @@ import { uploadArtifactFile } from "../lib/transfer.js";
 interface Props {
   folders: ArtifactFolder[];
   onClose: () => void;
+  onUploaded: (artifact: LibraryArtifact) => void;
 }
 
-export function UploadArtifactDialog({ folders, onClose }: Props) {
+export function UploadArtifactDialog({ folders, onClose, onUploaded }: Props) {
   const folderNames = folderDisplayNames(folders);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -47,7 +48,13 @@ export function UploadArtifactDialog({ folders, onClose }: Props) {
           fileName: file.name,
           ...(folderId ? { folderId } : {}),
         },
-        { onSuccess: onClose, onSettled: () => setUploading(false) },
+        {
+          onSuccess: (artifact) => {
+            onUploaded(artifact);
+            onClose();
+          },
+          onSettled: () => setUploading(false),
+        },
       );
     } catch (err) {
       setError(getErrorMessage(err, "Upload failed"));
