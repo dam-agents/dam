@@ -149,7 +149,7 @@ pub fn run() -> ! {
     if openrc {
         let mut stopping = false;
         for runlevel in ["sysinit", "boot", "default"] {
-            run_openrc(runlevel, &mut stopping);
+            run_openrc(runlevel, env, &mut stopping);
             if stopping {
                 break;
             }
@@ -164,13 +164,11 @@ pub fn run() -> ! {
 // UNIT_BOUNDARY_DESCRIPTION: an image that ships openrc opts in to its services: platform-init stays PID 1 and runs openrc's runlevels before the entrypoint, as an init that boots openrc would, and openrc's shutdown when the machine stops. An image without it boots its entrypoint alone.
 const OPENRC: &str = "/sbin/openrc";
 
-// UNIT_BOUNDARY_DESCRIPTION: a runlevel that fails is a line on the console and not a failed boot: the entrypoint, which is the agent, may not need the service that failed. It is waited for as the entrypoint is, reaping every orphan meanwhile: a service's daemon is an orphan of PID 1, and openrc stopping one waits until its process is gone, which a zombie never is. A stop that arrives meanwhile is passed on to openrc and noted in `stopping`.
-fn run_openrc(runlevel: &str, stopping: &mut bool) {
-    let spawned = unblocked(&mut std::process::Command::new(OPENRC))
-        .arg(runlevel)
-        .env_clear()
-        .env("PATH", DEFAULT_PATH)
-        .spawn();
+// UNIT_BOUNDARY_DESCRIPTION: a runlevel that fails is a line on the console and not a failed boot: the entrypoint, which is the agent, may not need the service that failed. It is waited for as the entrypoint is, reaping every orphan meanwhile: a service's daemon is an orphan of PID 1, and openrc stopping one waits until its process is gone, which a zombie never is. A stop that arrives meanwhile is passed on to openrc and noted in `stopping`. openrc runs in the entrypoint's environment, of which its rc_env_allow passes on only what the image names, such as the gateway a service pulls through.
+fn run_openrc(runlevel: &str, env: &[(String, String)], stopping: &mut bool) {
+    let mut openrc = std::process::Command::new(OPENRC);
+    openrc.arg(runlevel).env_clear().env("PATH", DEFAULT_PATH);
+    let spawned = unblocked(openrc.envs(env.iter().map(|(key, value)| (key, value)))).spawn();
     match spawned.map(|child| wait_for(child.id(), stopping)) {
         Ok(0) => logf!("openrc {runlevel} done"),
         Ok(status) => announce(&format!(
@@ -2491,7 +2489,7 @@ fn end_cgroup(stopping: &mut bool) {
 // UNIT_BOUNDARY_DESCRIPTION: the end of the workload once its entrypoint has exited on a stop: openrc's services are stopped by openrc first, so each gets its own stop, and whatever is left is ended after.
 fn stop(openrc: bool) -> ! {
     if openrc {
-        run_openrc("shutdown", &mut true);
+        run_openrc("shutdown", &[], &mut true);
         end_the_rest(&mut true);
     }
     flush_home_on_stop();
