@@ -1,3 +1,12 @@
+import {
+  DocumentAdd,
+  Download,
+  Edit,
+  FolderAdd,
+  TextCreation,
+  TrashCan,
+  Upload,
+} from "@carbon/icons-react";
 import type { ComponentType, ReactNode } from "react";
 
 import { PLATFORM_INSTRUCTIONS_PATH } from "../lib/platform-instructions.js";
@@ -32,23 +41,40 @@ export function FileRowMenuItems({
     <>
       {isDir ? (
         <>
-          <Item onSelect={() => onAction("new-file")}>New file…</Item>
-          <Item onSelect={() => onAction("new-folder")}>New folder…</Item>
+          <Item onSelect={() => onAction("new-file")}>
+            <DocumentAdd size={14} />
+            New file…
+          </Item>
+          <Item onSelect={() => onAction("new-folder")}>
+            <FolderAdd size={14} />
+            New folder…
+          </Item>
           <Item onSelect={() => onAction("upload-here")}>
+            <Upload size={14} />
             Upload files here…
           </Item>
         </>
       ) : (
         <>
           {path !== PLATFORM_INSTRUCTIONS_PATH && (
-            <Item onSelect={() => onAction("edit")}>Edit</Item>
+            <Item onSelect={() => onAction("edit")}>
+              <Edit size={14} />
+              Edit
+            </Item>
           )}
-          <Item onSelect={() => onAction("download")}>Download</Item>
+          <Item onSelect={() => onAction("download")}>
+            <Download size={14} />
+            Download
+          </Item>
         </>
       )}
-      <Item onSelect={() => onAction("rename")}>Rename</Item>
+      <Item onSelect={() => onAction("rename")}>
+        <TextCreation size={14} />
+        Rename
+      </Item>
       <Item tone="danger" onSelect={() => onAction("delete")}>
-        Delete
+        <TrashCan size={14} />
+        {isDir ? "Delete folder" : "Delete file"}
       </Item>
     </>
   );
