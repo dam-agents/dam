@@ -1,7 +1,6 @@
 // UNIT_BOUNDARY_DESCRIPTION: the storage guard's decisions, apart from the file and the disk it sizes (boot::guard_pool), so they build and are tested on every host the runner builds on and not only in a Linux guest: how large the guard file is to be at each look, when it moves, and what it settles at when the disk holds less than statvfs reports.
 pub const POOL_GUARD_FLOOR: u64 = 256 << 20;
 pub const POOL_GUARD_STEP: u64 = 16 << 20;
-pub const POOL_GUARD_TRIES: u32 = 8;
 
 // UNIT_BOUNDARY_DESCRIPTION: what the guard knows between two looks: the latest grant, as its id and bytes and what the guest had written when it came, and, once the guest is held below the floor, what it had written then. The floor is one allowance per shortage and not per look: it counts down from that point across every grant too small to hold it, and is given again only once a grant arrives that holds it, which means the claim has room again. So a guest past its grant adds at most the floor in all, however many grants of nothing the runner renews. A guest that used it up gets room back once the claim has room, or with the fresh floor of its next boot, which is how its user gets in to free its own files. `ceiling` is the largest guard the disk took when it refused a larger one, and what the guest had written then: what the disk holds beyond the guest's use, which the guard counts on, less what the guest wrote since, until the guest frees more than POOL_GUARD_STEP, so a refused size is not asked again at every look. `keep` is the room the last look left the guest, and `short` whether a refusal was warned of since the last move that fit whole.
 #[derive(Default)]
@@ -43,7 +42,7 @@ impl PoolGuard {
         avail.saturating_sub(self.keep)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: grows the guard from `held` toward `want` through `fits`, which resizes the file to the given size and says whether the disk took it: a preallocation takes all of it or nothing. When `want` does not fit, the disk holds less than statvfs reported, so it bisects between the two, POOL_GUARD_TRIES times at most or until within POOL_GUARD_STEP, for the largest guard that fits, which is what the guest could write without one. That is the ceiling until the guest frees room (guard_look), and the guard settles at it less the room the guest is to keep, in one more resize. Returns the size the guard settled at and whether this refusal starts a shortage, the one time it is worth a warning.
+    // UNIT_BOUNDARY_DESCRIPTION: grows the guard from `held` toward `want` through `fits`, which resizes the file to the given size and says whether the disk took it: a preallocation takes all of it or nothing. When `want` does not fit, the disk holds less than statvfs reported, so it bisects between the two until within POOL_GUARD_STEP, for the largest guard that fits, about 14 preallocations on a 200 GiB disk; which is what the guest could write without one. A coarser ceiling would hand its gap back to the guest at every look, past its grant. That is the ceiling until the guest frees room (guard_look), and the guard settles at it less the room the guest is to keep, in one more resize. Returns the size the guard settled at and whether this refusal starts a shortage, the one time it is worth a warning.
     pub fn grow(
         &mut self,
         held: u64,
@@ -56,10 +55,7 @@ impl PoolGuard {
             return (want, false);
         }
         let (mut low, mut high) = (held, want);
-        for _ in 0..POOL_GUARD_TRIES {
-            if high - low <= POOL_GUARD_STEP {
-                break;
-            }
+        while high - low > POOL_GUARD_STEP {
             let mid = low + (high - low) / 2;
             if fits(mid) {
                 low = mid;
@@ -242,7 +238,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: when the disk takes less than the guard asks for, which btrfs's estimate of free space makes common, the guard finds the largest size that fits within a bounded number of preallocations, settles at that less the guest's grant so the guest keeps its room, warns once for the shortage, and asks no more at later looks. Once the guest frees room it asks again.
+    // TEST_SCENARIO: when the disk takes less than the guard asks for, which btrfs's estimate of free space makes common, the guard finds the largest size that fits, to within POOL_GUARD_STEP, in a bounded number of preallocations, settles at that less the guest's grant so the guest keeps its room, warns once for the shortage, and asks no more at later looks. Once the guest frees room it asks again.
     #[test]
     fn a_refused_guard_settles_at_what_fits_and_warns_once() {
         let (disk, grant) = (100 * GIB, 10 * GIB);
@@ -278,11 +274,35 @@ mod tests {
             warnings += usize::from(warn);
             let free = fits_below(mine) - held;
             assert!(
-                free >= grant && free - grant <= GIB / 2,
+                free >= grant && free - grant <= POOL_GUARD_STEP,
                 "the guest keeps {free} bytes"
             );
         }
         assert_eq!(tries.len(), 2, "moves: {tries:?}");
-        assert!(tries.iter().all(|&n| n <= 2 + POOL_GUARD_TRIES));
+        assert!(tries.iter().all(|&n| n <= 20), "tries: {tries:?}");
+    }
+
+    // TEST_SCENARIO: a guest that writes everything the guard leaves it, past a grant of nothing, on a disk that takes less than statvfs reports, adds at most the floor and one step in all: the ceiling the refused preallocation finds is within POOL_GUARD_STEP of what fits, so no gap below it comes back to the guest at each look.
+    #[test]
+    fn a_refused_guard_holds_a_writer_past_its_grant() {
+        let (disk, start, hidden) = (100 * GIB, 20 * GIB, 30 * GIB);
+        let (mut state, mut mine, mut held) = (PoolGuard::default(), start, 0u64);
+        for tick in 0..200u64 {
+            let room = Some((tick.to_string(), 0));
+            if let Some(want) = guard_look(&mut state, room, mine + held, disk, held, disk, true) {
+                let fits = disk - hidden - mine;
+                held = if want > held {
+                    state.grow(held, want, mine, |size| size <= fits).0
+                } else {
+                    want
+                };
+            }
+            mine += (disk - hidden - mine).saturating_sub(held).min(GIB);
+        }
+        assert!(
+            mine - start <= POOL_GUARD_FLOOR + 2 * POOL_GUARD_STEP,
+            "wrote {} bytes past a grant of nothing",
+            mine - start
+        );
     }
 }
