@@ -11,6 +11,7 @@ import { match } from "ts-pattern";
 
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Tabs } from "@/components/ui/tabs";
 import { formatBytes } from "@/lib/format-size";
@@ -199,27 +200,31 @@ export function ChatArtifactsPanel({
         />
       </div>
       {failed ? (
-        <p className="px-4 py-5 text-xs text-muted-foreground">
-          Couldn't load artifacts.{" "}
-          <button
-            type="button"
-            className="underline hover:text-foreground"
-            onClick={() => {
-              void artifactsQuery.refetch();
-              void foldersQuery.refetch();
-            }}
-          >
-            Retry
-          </button>
-        </p>
+        <EmptyState
+          bordered={false}
+          action={
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void artifactsQuery.refetch();
+                void foldersQuery.refetch();
+              }}
+            >
+              Retry
+            </Button>
+          }
+        >
+          Couldn't load artifacts.
+        </EmptyState>
       ) : loading || groups.length === 0 ? (
-        <p className="px-4 py-5 text-xs text-muted-foreground">
+        <EmptyState bordered={false}>
           {loading
             ? "Loading…"
             : term
               ? "No matching artifacts."
               : "No artifacts yet."}
-        </p>
+        </EmptyState>
       ) : (
         <div
           {...rootDrop}

@@ -5,6 +5,7 @@ import {
 } from "agent-runtime-api";
 import { memo, useId, useRef, useState } from "react";
 
+import { EmptyState } from "@/components/ui/empty-state";
 import { Select } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
@@ -85,7 +86,7 @@ export const DockedChangesPanel = memo(function DockedChangesPanel({
       ) : isPending || !changeSets || !selection ? (
         <CenteredSpinner />
       ) : changeSets.length === 0 ? (
-        <Notice text="No git repositories found." />
+        <EmptyState bordered={false}>No git repositories found.</EmptyState>
       ) : selected ? (
         <ChangeSetBody
           agentId={agentId}

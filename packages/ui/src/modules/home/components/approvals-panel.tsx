@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { useNow } from "@/hooks/use-now";
 
 import { timeAgo } from "../../../lib/format-time.js";
@@ -62,9 +63,7 @@ export function ApprovalsPanel({ className }: { className?: string }) {
         {loadingFeed && approvals.length === 0 ? (
           <FeedCardSkeleton rows={3} />
         ) : approvals.length === 0 ? (
-          <p className="py-16 text-center text-sm text-muted-foreground">
-            No approvals waiting.
-          </p>
+          <EmptyState bordered={false}>No approvals waiting.</EmptyState>
         ) : (
           <div className="flex flex-col gap-1">
             {groups.map((group) => {
