@@ -29,7 +29,7 @@ const (
 	annRunnerBusy     = "agent-platform.ai/runner-busy-since"
 
 	defaultRunnerSettleTimeout = 10 * time.Minute
-	defaultRunnerIdleWait      = time.Hour
+	defaultRunnerIdleWait      = 24 * time.Hour
 
 	// UNIT_BOUNDARY_DESCRIPTION: how long the list of runners mid-roll is reused. The rollout sweep offers every runner its turn, and each turn asks which others are mid-roll; listing every runner Deployment and release ConfigMap on every turn is quadratic in owners. A roll this controller starts is added to the kept list at once, so the width still holds; what can be late is only a roll settling, by this much.
 	runnerRollViewTTL = 10 * time.Second

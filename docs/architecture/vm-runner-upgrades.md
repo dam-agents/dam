@@ -19,7 +19,7 @@ A new owner's runner is created at once, since there is nothing of theirs to pro
 A changed runner also waits for its owner's agents to be idle, since a roll ends the turn an agent is in.
 Before it takes a place in the roll, the controller asks each of the owner's ready machines the idle checker's own question, whether its agent's status says idle, and an agent that does not answer counts as idle.
 A runner with a busy agent holds no place, so other owners roll meanwhile, and the next pass offers it again.
-The install's idle wait, an hour by default, bounds this from the first pass that found the owner busy, and is recorded on the runner so a controller restart does not start it over; past it, the runner rolls with the agent busy, so an owner who is never idle still gets the release.
+The install's idle wait, a day by default so that a multi-hour kept job finishes, bounds this from the first pass that found the owner busy, and is recorded on the runner so a controller restart does not start it over; past it, the runner rolls with the agent busy, so an owner who is never idle still gets the release.
 Rolls advance as agents reconcile and on the periodic sweep, which offers every runner its turn in name order so owners whose agents all sleep still roll; which runners are mid-roll is read once every few seconds rather than on every turn, and a roll the controller starts counts at once.
 That read takes only what the runners' Deployments and release ConfigMaps record, and calls no runner, since every owner's decision waits on it.
 Whether a runner's machines came back is asked on its own owner's turn, an agent of theirs reconciling or the sweep reaching them, and so is the owner's own list of ready machines before it takes a place.
