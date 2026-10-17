@@ -22,7 +22,7 @@ Available:
   Its one browser is the one the user sees in the browser panel beside the chat, so the user watches what you do and shares its sign-ins: run it without `--session` or `--profile`, which would start another browser the user cannot see, and without `set viewport`, which squeezes the page into part of the panel.
   To show the user a page, open it and put a button for it in your reply; see the `agent-browser` skill
 - Playwright (`playwright`, `npx playwright`), sharing agent-browser's bundled Chromium in the read-only `/opt/ms-playwright`; a project's own Playwright of another version needs its browsers in the home: set `PLAYWRIGHT_BROWSERS_PATH=~/.local/share/ms-playwright` for both its `playwright install` and its runs
-- `mise` to install extra software: tools it installs are lost on restart, so declare them in a `mise.toml` in a folder of your own under `~/work` (`mise use <tool>` there), run them there with `mise exec -- <command>` or after `eval "$(mise env)"`, and run `mise install` in that folder again after a restart
+- `mise` to install extra software: `mise use -g <tool>@<version>` installs into your home and keeps it across restarts (plain `mise use -g <tool>` keeps the image's version when it has one); a project's tools go in a `mise.toml` in its folder under `~/work` (`mise use <tool>` there), run with `mise exec -- <command>` or after `eval "$(mise env)"`
 
 Additionally available if running in a root VM:
 
