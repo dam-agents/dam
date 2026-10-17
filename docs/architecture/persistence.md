@@ -297,7 +297,7 @@ The agent that used it up gets room again once the claim has room, through a gra
 A write past it fails inside the guest with "no space left on device", which the agent handles and the runner reports as a full home, and the claim stays writable for the owner's other agents.
 The file's blocks are only marked in the guest's filesystem and never written, so it takes nothing from the claim; it has no name, so the filesystem frees it whenever the guest stops, and an older platform-init never finds it.
 A clean stop empties it first, so the next boot does not start with its blocks taken.
-btrfs reports free space as of its last commit, so the guard reads its own size from the file, makes that figure current before it moves, and moves only past a margin, once per commit at most.
+btrfs reports free space late, and as an estimate that can pass the disk's size, so the guard reads its own size from the file, syncs before it moves, moves past a margin once per commit at most, and grows only as far as the disk takes.
 Eviction does not count it as used, so a guest held to the claim does not read its own disk as short.
 The guard counts what the guest's filesystem reports as used, so it does not see all that the claim gives a disk: journal and inode table blocks are holes until first written, and blocks a guest frees take room on the claim until the next trim; the next look's grant accounts for them, and the 5% above 95% absorbs them between looks.
 Past 90% it creates no machine, fetches no image onto the claim and takes no seed, and a machine it starts boots at the disk size it has; past 97% it starts and restarts no machine either, so between the two an owner whose agents are all asleep can still get into one to clean it up.
