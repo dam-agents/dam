@@ -43,47 +43,48 @@ type AgentReconciler struct {
 	dynamic dynamic.Interface
 	config  *config.Config
 
-	budgetMu        sync.Mutex
-	ownerLocks      map[string]*sync.Mutex
-	deniedWakes     map[string]string
-	parkedRetry     map[string]struct{}
-	busyProbe       func(ctx context.Context, agentName string) bool
-	podStatus       func(ctx context.Context, agentName string) (idle, answered bool)
-	runnerMu        sync.Mutex
-	runners         map[string]runnerConn
-	runnerEndpoint  func(owner string) string
-	runnerRollMu    sync.Mutex
-	runnerRoll      runnerRollView
-	rollViewTTL     time.Duration
-	requeue         func(name string, after time.Duration)
-	lifetime        context.Context
-	podResize       atomic.Int32
-	agentCache      cache.GenericLister
-	podCache        corelisters.PodLister
-	statefulSets    cache.MutationCache
-	runnerDeploys   cache.MutationCache
-	runnerPodCache  corelisters.PodLister
-	vmRunning       sync.Map
-	vmLive          sync.Map
-	vmDiskGrows     sync.Map
-	vmPools         sync.Map
-	usageSecrets    sync.Map
-	resizeNotices   sync.Map
-	runnerCapacity  sync.Map
-	poolLevels      sync.Map
-	notReadyPolls   sync.Map
-	vmStartClocks   sync.Map
-	ownerless       sync.Map
-	machineWatchMu  sync.Mutex
-	machineWatches  map[string]*machineWatch
-	pressureWatches map[string]*machineWatch
-	memoryPassMu    sync.Mutex
-	memoryPassing   map[string]bool
-	pressureFreed   map[string]time.Time
-	preflightMu     sync.Mutex
-	preflight       vmPreflightResult
-	preflightDone   bool
-	migrationCopyMu sync.Mutex
+	budgetMu              sync.Mutex
+	ownerLocks            map[string]*sync.Mutex
+	deniedWakes           map[string]string
+	parkedRetry           map[string]struct{}
+	busyProbe             func(ctx context.Context, agentName string) bool
+	podStatus             func(ctx context.Context, agentName string) (idle, answered bool)
+	runnerMu              sync.Mutex
+	runners               map[string]runnerConn
+	runnerEndpoint        func(owner string) string
+	runnerRollMu          sync.Mutex
+	runnerRoll            runnerRollView
+	rollViewTTL           time.Duration
+	requeue               func(name string, after time.Duration)
+	lifetime              context.Context
+	podResize             atomic.Int32
+	agentCache            cache.GenericLister
+	podCache              corelisters.PodLister
+	statefulSets          cache.MutationCache
+	runnerDeploys         cache.MutationCache
+	runnerPodCache        corelisters.PodLister
+	vmRunning             sync.Map
+	vmLive                sync.Map
+	vmDiskGrows           sync.Map
+	vmPools               sync.Map
+	usageSecrets          sync.Map
+	resizeNotices         sync.Map
+	runnerCapacity        sync.Map
+	poolLevels            sync.Map
+	notReadyPolls         sync.Map
+	vmStartClocks         sync.Map
+	ownerless             sync.Map
+	machineWatchMu        sync.Mutex
+	machineWatches        map[string]*machineWatch
+	pressureWatches       map[string]*machineWatch
+	memoryPassMu          sync.Mutex
+	memoryPassing         map[string]bool
+	pressureFreed         map[string]time.Time
+	preflightMu           sync.Mutex
+	preflight             vmPreflightResult
+	preflightDone         bool
+	migrationCopyMu       sync.Mutex
+	ownerGatewayRevisions sync.Map
 }
 
 func NewAgentReconciler(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *AgentReconciler {
@@ -221,13 +222,21 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			return nil
 		},
 		func() error {
-			if err := r.applyUnstructured(ctx, authzPolicyGVR, BuildHarnessAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)); err != nil {
+			policy := BuildHarnessAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)
+			if r.ownerGatewayServes(agentSpec) {
+				admitOwnerGateway(policy, name, r.config.PrincipalFor(ownerGatewayName(r.config.ReleaseName, owner)), true)
+			}
+			if err := r.applyUnstructured(ctx, authzPolicyGVR, policy); err != nil {
 				return fmt.Errorf("applying harness authz policy: %v", err)
 			}
 			return nil
 		},
 		func() error {
-			if err := r.applyUnstructured(ctx, authzPolicyGVR, BuildExtAuthzAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)); err != nil {
+			policy := BuildExtAuthzAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)
+			if r.ownerGatewayServes(agentSpec) {
+				admitOwnerGateway(policy, name, r.config.PrincipalFor(ownerGatewayName(r.config.ReleaseName, owner)), false)
+			}
+			if err := r.applyUnstructured(ctx, authzPolicyGVR, policy); err != nil {
 				return fmt.Errorf("applying ext-authz authz policy: %v", err)
 			}
 			return nil
@@ -977,12 +986,7 @@ func stampRollRev(ss *appsv1.StatefulSet, rollRev string) {
 
 // UNIT_BOUNDARY_DESCRIPTION: writes an agent's or gateway's StatefulSet only when it would change. Every reconcile renders both, and one agent worker serves many owners, so an update that waits holds up the start of every agent behind it on that worker. An update waits for every admission webhook that matches StatefulSets, even when it changes nothing, and a webhook whose service has no ready endpoint can hold it until the webhook's timeout (10-12 s measured). The stored template carries the API server's defaults and never equals the rendered one, so the rendered template and update strategy are hashed onto the StatefulSet, and an unchanged hash with the right replica count sends nothing. The cost: a hand edit to the template stays until the rendered template next changes.
 func (r *AgentReconciler) applyStatefulSet(ctx context.Context, desired *appsv1.StatefulSet, running bool) error {
-	raw, err := json.Marshal([]any{desired.Spec.Template, desired.Spec.UpdateStrategy})
-	if err != nil {
-		return err
-	}
-	sum := sha256.Sum256(raw)
-	hash := hex.EncodeToString(sum[:8])
+	hash := templateHash(desired.Spec.Template, desired.Spec.UpdateStrategy)
 	fromCache := r.statefulSets != nil
 	return retry.OnError(retry.DefaultRetry, func(err error) bool {
 		stale := fromCache && (errors.IsAlreadyExists(err) || errors.IsNotFound(err))
@@ -1020,6 +1024,12 @@ func (r *AgentReconciler) applyStatefulSet(ctx context.Context, desired *appsv1.
 		}
 		return err
 	})
+}
+
+func templateHash(template corev1.PodTemplateSpec, strategy any) string {
+	raw, _ := json.Marshal([]any{template, strategy})
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:8])
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the StatefulSet comes from the cache, and the pods from another one, so the pods can be newer: a pod the StatefulSet controller just created for a new revision looks stuck against a cached StatefulSet that has not seen that revision yet. A pod is deleted only after a live read of the StatefulSet still finds it stuck, which costs a GET only when there is a pod to delete.

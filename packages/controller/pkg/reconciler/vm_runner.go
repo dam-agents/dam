@@ -159,6 +159,9 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string) (*vmru
 	}
 	np := buildRunnerNetworkPolicy(owner, r.config.ReleaseName, r.config.APIServerInstanceLabel, ns, r.config.ReleaseNamespace, r.config.EnvoyPort, r.config.VM.Runner.EgressCIDRs, r.config.VM.Runner.EgressExceptCIDRs, runnerDNSRule(r.config.VM.Runner))
 	np.OwnerReferences = refs
+	if r.config.VM.Gateway.PerOwner {
+		admitOwnerGatewayEgress(np, ns, owner)
+	}
 	if err := concurrently(
 		func() error {
 			if err := r.applyCertificate(ctx, r.buildRunnerCertificate(owner, refs)); err != nil {

@@ -80,7 +80,7 @@ Read first: [security-and-credentials](../../architecture/security-and-credentia
 | 01  | Per-owner Envoy configuration render (done) | Static bootstrap plus LDS/CDS files, per-agent listener with harness guard and health revision | —          |
 | 02  | Per-owner resolver render (done)            | Corefile with one block per agent port and literal answer                                      | —          |
 | 03  | Per-owner credential Secret and leaf (done) | Aggregate granted credential keys, union-SAN leaf, rotation stamp                              | —          |
-| 04  | Owner gateway workload behind a flag        | Deployment, SA, ConfigMap, policies, mesh policies, lifecycle with runner, sizing              | 01, 02, 03 |
+| 04  | Owner gateway workload behind a flag (done) | Deployment, SA, ConfigMap, policies, mesh policies, lifecycle with runner, sizing              | 01, 02, 03 |
 | 05  | Agent ports, Service cut-over, readiness    | Port allocation, Service retarget, revision probe, host runner                                 | 04         |
 | 06  | Hibernation and wake without the gateway    | Desired-up record, idle checker, budget, wake publishing                                       | 05         |
 | 07  | Owner gateway rolls and restarts            | Surge roll, paced across owners, superseded-pod eviction, failure surfacing                    | 04         |
@@ -96,6 +96,24 @@ graph LR
   04 --> 07 --> 08
   08 --> 09
 ```
+
+## Implementation notes
+
+- **Identity gate (2026-10-17): pass.** On dam-cl, from a runner pod's network namespace, and on both local k3s clusters, an undeclared ClusterIP port carries no data.
+  Evidence is in the PR comments.
+- **Naming.** The owner gateway is `<release>-gateway-<owner suffix>`, not the runner's name: on a host runner, every owner shares one runner name.
+- **Slots.** Allocation moved from 05 into 04, because the listeners render on their final ports.
+  The slot is the annotation `agent-platform.ai/owner-gateway-slot` on the agent's gateway Service, since the target ports change only at cut-over.
+- **Harness header.** The guard stamps `x-platform-harness-agent`, and every other route strips it.
+  The owner principal's harness rule requires that header with the agent's name, so a harness request by another spelling of the address, outside the guard, is refused.
+- **Lua bodies are ConfigMap files** (Q1).
+  A metered host costs about 10 KB per agent, down from 32 KB.
+  About 15 agents with 3 metered hosts each fill 757 KB.
+  An owner past 1 MiB is refused with the reason, and its agents keep their own gateways.
+- **Memory** (Q2), Envoy: 23 MiB with 1 agent, 46 with 5, 98 with 15, with two hosts each and one of them metered.
+  That is about 5 MiB per agent.
+  On the local cluster, 10 real agents use 55 MiB, plus 11 MiB for CoreDNS.
+  The request stays a fixed 96Mi, because a request that follows the agent count would roll the pod on every agent added.
 
 ## Conventions & glossary
 
