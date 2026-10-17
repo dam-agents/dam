@@ -8,7 +8,8 @@
     "MachineSeedMissing",
     "MachineStorageFull",
     "MachineHomeFull",
-    "MachineHomeDamaged"
+    "MachineHomeDamaged",
+    "MachineCopyingDisk"
   ],
   "seedExitPermanent": 3,
   "releaseHolds": ["unstaged", "runtime", "failed"]

@@ -14,7 +14,7 @@ pub const CAPABILITY_PREFIX: &str = "dam-disk-converted:";
 // UNIT_BOUNDARY_DESCRIPTION: how many boots may answer without the copy before the runner gives the conversion up and leaves the disk ext4: a copy that keeps failing would otherwise make every start of the machine a long one.
 const ATTEMPTS: u32 = 3;
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the machine's share asks its guest to convert, which is what a boot that has not answered yet may be busy doing for as long as the copy takes (see plan::CONVERTING_RESTART).
+// UNIT_BOUNDARY_DESCRIPTION: whether the machine's share asks its guest to convert, which is what a boot that has not answered yet may be busy doing for as long as the copy takes (see plan::COPYING_RESTART).
 pub fn requested(share: &Path) -> bool {
     share.join(SHARE_RECORD).exists()
 }

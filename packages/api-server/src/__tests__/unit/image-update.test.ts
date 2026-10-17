@@ -594,8 +594,10 @@ describe("parseInfraAgent", () => {
   // TEST_SCENARIO: the pod a roll replaces exits on SIGTERM at the new
   // TEST_SCENARIO: generation, and memory fails on any image, so neither
   // TEST_SCENARIO: says the new image is bad without the controller's
-  // TEST_SCENARIO: StartFailed about the current pod.
-  it.each(["ContainerTerminated", "OutOfMemory"])(
+  // TEST_SCENARIO: StartFailed about the current pod. A vm boot that
+  // TEST_SCENARIO: copies its disk is still booting, and a move back
+  // TEST_SCENARIO: would stop the copy and start it again from nothing.
+  it.each(["ContainerTerminated", "OutOfMemory", "MachineCopyingDisk"])(
     "does not read %s as a failed start",
     (reason) => {
       expect(

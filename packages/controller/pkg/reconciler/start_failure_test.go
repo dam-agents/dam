@@ -149,6 +149,20 @@ func TestVMStartFailure(t *testing.T) {
 	assert.Empty(t, f.reason, "a new generation starts the clock again")
 }
 
+// TEST_SCENARIO: a first boot that copies a disk — a conversion or a migration seed's restore — runs for as long as the copy takes before the guest answers, and the runner bounds it at six hours. Past two minutes it is still no NeverReady, so the image update job does not move it back and stop the copy; once the runner stops reporting the copy, the clock starts from that read.
+func TestVMStartFailureDoesNotCountABootCopyingADisk(t *testing.T) {
+	copying := vmrunner.MachineStatus{State: vmrunner.StateRunning, Reason: vmrunner.ReasonCopyingDisk}
+	clock, _ := vmStartFailure(vmStartClock{}, 3, copying, startNow)
+	clock, f := vmStartFailure(clock, 3, copying, startNow.Add(time.Hour))
+	assert.Empty(t, f.reason, "a copy an hour in is not a failed start")
+
+	quiet := vmrunner.MachineStatus{State: vmrunner.StateRunning}
+	clock, f = vmStartFailure(clock, 3, quiet, startNow.Add(time.Hour))
+	assert.Empty(t, f.reason)
+	_, f = vmStartFailure(clock, 3, quiet, startNow.Add(time.Hour+2*time.Minute))
+	assert.Equal(t, apiv1.ReasonNeverReady, f.reason, "silence after the copy counts from when the copy ended")
+}
+
 // TEST_SCENARIO: the vm readiness publish keeps the machine's clock across reconciles of one generation, so a guest restarted three times since the generation was first seen is put on the Agent as StartFailed, and a status the runner did not answer leaves the clock and the condition as they were.
 func TestPublishVMReadinessReportsACrashLoopOnThisGeneration(t *testing.T) {
 	ctx := context.Background()

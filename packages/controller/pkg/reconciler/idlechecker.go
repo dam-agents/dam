@@ -163,7 +163,7 @@ func hibernationPublished(agent *unstructured.Unstructured) bool {
 	return false
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a cold first boot of a vm agent can outlast the idle timeout the wake started: an image no runner has cached, a fresh runner expanding its disk templates, a large nested guest. The idle clock therefore runs from the moment the agent turned ready, and a boot still in progress is never idle, so a scheduled fire is not lost to a hibernation mid-boot. A boot in progress is a machine not ready for no reason of its own and with no start failure decided; the start failure report ends the hold for a machine that runs without answering. The hold is capped at vmStartHold past the idle timeout, since a machine can read not ready for causes no start failure covers, such as an unreachable runner. It needs the pair awake, which the caller checks: a hibernation the runner has not confirmed reads not ready too.
+// UNIT_BOUNDARY_DESCRIPTION: a cold first boot of a vm agent can outlast the idle timeout the wake started: an image no runner has cached, a fresh runner expanding its disk templates, a large nested guest. The idle clock therefore runs from the moment the agent turned ready, and a boot still in progress is never idle, so a scheduled fire is not lost to a hibernation mid-boot. A boot in progress is a machine not ready for no reason of its own and with no start failure decided; the start failure report ends the hold for a machine that runs without answering. The hold is capped at vmStartHold past the idle timeout, since a machine can read not ready for causes no start failure covers, such as an unreachable runner. A boot the runner reports copying a disk is held without that cap: the runner bounds it, for up to six hours, and a hibernation would stop the copy and start it again from nothing. It needs the pair awake, which the caller checks: a hibernation the runner has not confirmed reads not ready too.
 func vmStartHolds(agent *unstructured.Unstructured, idleTimeout time.Duration, now time.Time) bool {
 	ready, _, failed := vmStartConditions(agent)
 	if !isVMObject(agent) || idleTimeout <= 0 || failed {
@@ -182,7 +182,10 @@ func vmBootInProgress(agent *unstructured.Unstructured, idleTimeout time.Duratio
 	if !isVMObject(agent) || idleTimeout <= 0 || failed || ready != nil && ready["status"] == string(metav1.ConditionTrue) {
 		return false
 	}
-	if podReady == nil || podReady["reason"] != vmrunner.ReasonNotReady {
+	if podReady["reason"] == vmrunner.ReasonCopyingDisk {
+		return true
+	}
+	if podReady["reason"] != vmrunner.ReasonNotReady {
 		return false
 	}
 	last, err := time.Parse(time.RFC3339, agent.GetAnnotations()[annLastActivity])

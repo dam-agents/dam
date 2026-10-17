@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-10-16
+Last verified: 2026-10-17
 
 ## Overview
 
@@ -224,6 +224,7 @@ An Agent that never sleeps carries an *Always on* tag.
 **A vm Agent has no per-agent timeout.** It boots in seconds, so it always takes the chart-wide vm idle timeout, ignores any override, and the UI does not offer the setting.
 A cold first boot can still outlast that timeout — an image no runner has cached, a fresh runner, a large nested guest — so for a vm Agent whose pair is awake the idle checker also counts the clock from the moment it turned `Ready`, and holds a boot still in progress: a machine not ready for no reason of its own, with no start failure reported.
 The hold ends at the start failure report, and a boot that has not finished a quarter of an hour past the timeout is hibernated anyway.
+A boot the runner reports as copying a disk, a conversion or a migration seed's restore, is held for as long as the runner says so, since the runner bounds it at six hours and a hibernation would start the copy again from nothing; reclaim counts it as booting for the same reason.
 A running Agent with no session running but [kept background work](agent-processes.md#keeping-work) holding it awake shows *Background work* rather than *Idle*.
 
 It's a blunt instrument: it keeps known off-session work alive without making it visible, and a long or disabled timeout holds CPU and memory until lowered by hand.

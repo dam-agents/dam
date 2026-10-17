@@ -366,7 +366,7 @@ func TestEffectiveIdleTimeout_VMIgnoresOverride(t *testing.T) {
 	assert.Equal(t, time.Hour, effectiveIdleTimeout(nil, false, base))
 }
 
-// TEST_SCENARIO: A vm agent woken five minutes ago is idle by its activity stamp, but its idle clock runs from the moment it turned ready, and a boot in progress is not idle; a decided start failure, a refused start, a boot past the cap, a hibernation the runner has not confirmed, and a ready that aged out are hibernated as before.
+// TEST_SCENARIO: A vm agent woken five minutes ago is idle by its activity stamp, but its idle clock runs from the moment it turned ready, and a boot in progress is not idle; a boot copying a disk is held past the cap, since the runner bounds it; a decided start failure, a refused start, a boot past the cap, a hibernation the runner has not confirmed, and a ready that aged out are hibernated as before.
 func TestIdleChecker_VMBootInProgressIsNotIdle(t *testing.T) {
 	now := time.Now().UTC()
 	at := func(ago time.Duration) string { return now.Add(-ago).Format(time.RFC3339) }
@@ -392,6 +392,7 @@ func TestIdleChecker_VMBootInProgressIsNotIdle(t *testing.T) {
 		{"start failed", 6 * time.Minute, []metav1.Condition{booting, notReady, cond(apiv1.ConditionStartFailed, true, apiv1.ReasonNeverReady, time.Minute)}, 1, true},
 		{"boot failed", 6 * time.Minute, []metav1.Condition{cond(apiv1.ConditionAgentPodReady, false, vmrunner.ReasonBootFailed, time.Hour), notReady}, 1, true},
 		{"boot past the cap", 21 * time.Minute, []metav1.Condition{booting, notReady}, 1, true},
+		{"copying a disk past the cap", 3 * time.Hour, []metav1.Condition{cond(apiv1.ConditionAgentPodReady, false, vmrunner.ReasonCopyingDisk, time.Hour), notReady}, 1, false},
 		{"halt unconfirmed", 6 * time.Minute, []metav1.Condition{booting, notReady}, 0, true},
 	}
 	for _, tt := range tests {
