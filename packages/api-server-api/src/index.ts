@@ -632,6 +632,11 @@ export type {
 } from "./modules/approvals/types.js";
 export { describeApprovalPayload } from "./modules/approvals/format.js";
 export { acpNativeRowId } from "./modules/approvals/format.js";
+export type {
+  ToolApprovalEndedInput,
+  ToolApprovalReports,
+  ToolApprovalWaitingInput,
+} from "./modules/approvals/harness.js";
 
 export type {
   RuleVerdict,

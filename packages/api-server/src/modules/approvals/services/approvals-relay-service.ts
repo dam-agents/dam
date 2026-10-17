@@ -33,6 +33,7 @@ export interface ApprovalsRelayService {
     rowId: string,
     outcome: { outcome?: unknown; optionId?: unknown },
   ): Promise<void>;
+  expireAcpNative(rowId: string): Promise<void>;
   subscribeFrameInjects(
     agentId: string,
     listener: (frame: string) => void,
@@ -157,6 +158,19 @@ export function createApprovalsRelayService(
           resolution: verdict,
         });
       }
+    },
+
+    async expireAcpNative(rowId) {
+      const row = await deps.repo.getPending(rowId);
+      if (!row || row.payload.kind !== "acp_native") return;
+      if (!(await deps.repo.expirePending(row.id))) return;
+      emit({
+        type: EventType.ApprovalResolved,
+        approvalId: row.id,
+        agentId: row.agentId,
+        ownerSub: row.ownerSub,
+        resolution: "expired",
+      });
     },
 
     subscribeFrameInjects(agentId, listener) {
