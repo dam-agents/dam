@@ -1,6 +1,20 @@
 import type { SVGProps } from "react";
 
-export { TrainSpeed as LiteLLMIcon } from "@carbon/icons-react";
+export function LiteLLMIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="6 5 633 633"
+      fill="currentColor"
+      xmlns="http://www.w3.org/2000/svg"
+      {...props}
+    >
+      <path
+        fillRule="evenodd"
+        d="m50 128-29 3-15 1v14h5a736 736 0 0 1 251 27q89 27 170 80c25 17 24 18-5 18-23 0-32-2-72-15a1221 1221 0 0 0-342-55H6v34h34c94 0 144 6 242 28l132 34c105 31 194 73 221 104l4 4v-17l-9-9c-37-35-159-119-239-164a579 579 0 0 0-341-87M6 276v28h85c84 0 85 0 90 2l85 117-131 2H6v13h133c150-1 136-1 143 8 6 9 22 8-137 9H6v60h252c245 0 253 0 273-2 50-5 77-13 101-30l7-5v-21l-5 4c-10 10-30 20-49 25-12 2-11 8-11-57 0-54 0-56-2-58-3-5-61-29-98-42-88-31-213-61-306-74-36-5-85-8-132-8H6zm382 141c-10 3-12 14-4 21 3 2 126 3 131 0 8-4 8-16 0-20-3-2-122-3-127-1"
+      />
+    </svg>
+  );
+}
 
 export function GithubIcon(props: SVGProps<SVGSVGElement>) {
   return (
