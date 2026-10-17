@@ -7,8 +7,4 @@ export type SidebarOrder = z.infer<typeof sidebarOrderSchema>;
 export interface SidebarOrderService {
   get(): Promise<SidebarOrder>;
   setAgents(agentIds: readonly string[]): Promise<SidebarOrder>;
-  setSessions(
-    agentId: string,
-    sessionIds: readonly string[],
-  ): Promise<SidebarOrder>;
 }

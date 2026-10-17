@@ -37,18 +37,18 @@ It shows its owner the rows filed for that Agent as a **provisional** list, and 
 The UI asks the Agent for that list once the Agent shows as starting, not first at Ready: the agent's tRPC relay holds the ask while the wake runs, and an ask it refuses, or a hold that fails, is asked again when the Agent turns Ready.
 Nothing acts on a provisional row as proof the session exists: opening one asks the Agent, which still decides.
 Rename and Delete on a provisional row wake the Agent and run once it answers, so the Agent still decides; a Delete asks its confirmation before the wake, and an Agent that stops before it answers changes nothing.
-The sidebar shows the record's rows the same way under every Agent that is not open, three at most, and asks the Agent for its own list only when the user opens the Agent (its chat or its configuration page), asks for more, or has put one of its Sessions in a manual order while it is awake.
+The sidebar shows the record's rows the same way under every Agent that is not open, three at most, and asks the Agent for its own list only when the user opens the Agent (its chat or its configuration page) or asks for more.
 It offers more only when the record may hold more: a feed shorter than its row limit lists every row filed for the owner.
 Once the list is expanded, each More asks the Agent for one more page of its list, and the list stops offering more when a page brings no new Session or the Agent's cursor does not move.
 
-The sidebar lists Agents, and the Sessions of each Agent, in one **manual order** per list, which the user sets by drag and drop or with Alt+Up and Alt+Down.
-A Session moves only within its own Agent's list.
-An item the order does not name yet, a new Agent or a new Session, goes to the bottom of its list, oldest first, and activity never moves anything.
-A move stores the whole list as the user sees it, so the rows the user did not touch keep their places too.
-The api-server keeps the order per user, so it follows the user to every browser, and drops an Agent's entries when the Agent is deleted.
-An Agent with a manual Session order asks for each of its first three Sessions its own list did not return.
-The order is only a list of ids: it never decides that an Agent or a Session exists, and an id that names nothing the Agent knows shows nothing.
-Until the user asks for more, an Agent's list orders only the Sessions it has loaded, the newest page of its own list or the record's rows, so an old Session the order does not name may show only after More.
+The sidebar lists Agents in one **manual order**, which the user sets by drag and drop or with Alt+Up and Alt+Down.
+An Agent the order does not name yet, a new Agent, goes to the bottom of the list, oldest first, and activity never moves an Agent.
+A move stores the whole list as the user sees it, so the Agents the user did not touch keep their places too.
+The api-server keeps the order per user, so it follows the user to every browser, and drops an Agent's entry when the Agent is deleted.
+The order is only a list of ids: it never decides that an Agent exists, and an id that names nothing shows nothing.
+
+The Sessions of each Agent are listed by **last activity, newest first**, and the user does not reorder them: a new Session, or a turn in an old one, puts that Session at the top.
+The record's rows and the Agent's own list are both newest first, and each More appends an older page, so the rows already shown keep their places.
 
 That boundary is what makes the record safe to rebuild or discard.
 Dropping it costs a user their feed history and nothing else; the next capture refills it from the pods.

@@ -12,12 +12,5 @@ export function createSidebarOrderService(deps: {
     async setAgents(agentIds) {
       await deps.repo.replaceAgents(deps.owner, [...new Set(agentIds)]);
       return get();
-    },
-    async setSessions(agentId, sessionIds) {
-      await deps.repo.replaceSessions(deps.owner, agentId, [
-        ...new Set(sessionIds),
-      ]);
-      return get();
-    },
-  };
+    },  };
 }
