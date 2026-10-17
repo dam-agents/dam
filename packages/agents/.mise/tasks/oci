@@ -460,6 +460,8 @@ build_apt_base() {
   # the distribution roots spares it reading them every boot; the host keys
   # openssh-server's postinst generated would be every image's. Every image
   # already shares one machine id, so it is one that follows the package list.
+  # openrc's runlevels start empty: the services Debian enables there (ssh,
+  # cgroups, procps) are the platform's to start, or platform-init's to set up.
   ${sudo[@]+"${sudo[@]}"} unshare --mount --propagation private sh -euc '
     r=$1 packages=$2 epoch=$3 machine_id=$4
     touch -d "@$(($(date +%s) - 1))" "$r/.apt-start"
@@ -473,6 +475,7 @@ build_apt_base() {
     umount -R "$r/dev" "$r/proc" "$r/sys"
     rm -rf "$r"/var/lib/apt/lists/* "$r/usr/sbin/policy-rc.d" "$r"/etc/ssh/ssh_host_* \
       "$r"/var/log/*.log "$r"/var/log/apt/* "$r"/var/cache/ldconfig/aux-cache "$r"/var/cache/debconf/*-old
+    find "$r/etc/runlevels" -mindepth 2 -delete
     for f in etc/machine-id var/lib/dbus/machine-id; do [ ! -e "$r/$f" ] || echo "$machine_id" > "$r/$f"; done
     find "$r/usr/share/ca-certificates" -type f -print0 | LC_ALL=C sort -z | xargs -0r cat | sha256sum |
       cut -c1-64 > "$r/usr/share/ca-certificates.sha256"

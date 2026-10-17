@@ -139,6 +139,21 @@ test("keeps /tmp and /var/tmp as directories of the root", async () => {
   expect(guest.split("\n")).toEqual(["0", "1777 root", "1777 root"]);
 });
 
+// TEST_SCENARIO: the base image ships openrc, so platform-init boots its runlevels before the entrypoint, and runs the entrypoint in a cgroup of its own, which a restart of the entrypoint ends without openrc's services.
+test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async () => {
+  test.skip(
+    laneBackend !== "vm",
+    "only a vm machine has platform-init as its init",
+  );
+  const guest = inGuest(
+    agentId,
+    "echo softlevel $(cat /run/openrc/softlevel); echo entrypoint $(wc -l < /sys/fs/cgroup/entrypoint/cgroup.procs)",
+  );
+  expect(guest).toMatch(/^softlevel default$/m);
+  const [, procs] = /^entrypoint (\d+)$/m.exec(guest) ?? [];
+  expect(Number(procs), "the entrypoint runs in its cgroup").toBeGreaterThan(0);
+});
+
 // TEST_SCENARIO: on the vm Backend the home dashboard shows the owner's memory and storage pools as meters read from the owner's runner, with this agent's own share in each.
 test("shows its owner's pools on the home dashboard", async ({ page }) => {
   test.skip(laneBackend !== "vm", "only vm agents draw on a per-user pool");
