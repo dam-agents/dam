@@ -77,9 +77,6 @@ pub struct MachineStatus {
     // UNIT_BOUNDARY_DESCRIPTION: the SHA-256 of the seed this machine's home was restored from, once a guest booted with that seed expected has answered. Empty for a home seeded from the image, and for one not yet known to be on the disk. The controller ends a runtime migration only when this is the seed it expects.
     #[serde(rename = "homeSeededFrom", skip_serializing_if = "String::is_empty")]
     pub home_seeded_from: String,
-    // UNIT_BOUNDARY_DESCRIPTION: what the filesystem check at the machine's last boot repaired on its disk, as the guest's console said it; empty when that boot found the disk clean, and before the first boot a guest answered from. The controller puts it on the Agent, so an owner learns that files in damaged folders may be gone.
-    #[serde(rename = "homeRepaired", skip_serializing_if = "String::is_empty")]
-    pub home_repaired: String,
     // UNIT_BOUNDARY_DESCRIPTION: whether the machine boots with the node's virtualization extensions: its spec asks for them and this runner grants them. The controller puts it on the Agent, so an owner who asked sees whether they got it.
     #[serde(skip_serializing_if = "is_zero")]
     pub nested: bool,
@@ -244,7 +241,6 @@ pub const REASON_BOOT_FAILED: &str = "MachineBootFailed";
 pub const REASON_SEED_MISSING: &str = "MachineSeedMissing";
 pub const REASON_STORAGE_FULL: &str = "MachineStorageFull";
 pub const REASON_HOME_FULL: &str = "MachineHomeFull";
-pub const REASON_HOME_DAMAGED: &str = "MachineHomeDamaged";
 // UNIT_BOUNDARY_DESCRIPTION: a boot that copies a disk before its guest first answers — a migration seed's restore — and is still at it. It is no failure: the runner holds the boot up to plan::COPYING_RESTART, so the controller counts no start failure and no idle time against it.
 pub const REASON_COPYING_DISK: &str = "MachineCopyingDisk";
 
@@ -336,8 +332,6 @@ mod tests {
                 version: 1,
                 home_seeded_from:
                     "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".into(),
-                home_repaired:
-                    "storage: e2fsck -p repaired the filesystem: /dev/vda: 12/65536 files".into(),
                 nested: true,
             },
         );
@@ -433,7 +427,6 @@ mod tests {
                 REASON_SEED_MISSING,
                 REASON_STORAGE_FULL,
                 REASON_HOME_FULL,
-                REASON_HOME_DAMAGED,
                 REASON_COPYING_DISK,
             ])
         );

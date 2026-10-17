@@ -1573,36 +1573,6 @@ func TestAFullHomeInsideAGuestIsPublishedAsAFullHomeVolume(t *testing.T) {
 	assert.Contains(t, cond.Message, "disk is full")
 }
 
-// TEST_SCENARIO: a boot that repaired the machine's disk runs as usual, so the repair would otherwise be only on the console; the controller puts what the runner says was repaired on the Agent, and drops it once a boot finds the disk clean.
-func TestARepairAtBootIsOnTheAgentUntilACleanBoot(t *testing.T) {
-	ctx := context.Background()
-	agent := vmAgentCR()
-	r, node, _ := setupVMReconciler(t, agent)
-	node.statuses["my-agent"] = vmrunner.MachineStatus{
-		State:        vmrunner.StateRunning,
-		Ready:        true,
-		HomeRepaired: "storage: e2fsck -p repaired the filesystem: /dev/vda: 12/65536 files",
-	}
-	repaired := func() *metav1.Condition {
-		require.NoError(t, r.Reconcile(ctx, agent))
-		obj, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
-		require.NoError(t, err)
-		got, err := FromCacheObject[apiv1.Agent](obj)
-		require.NoError(t, err)
-		agent.Status = got.Status
-		return apimeta.FindStatusCondition(got.Status.Conditions, apiv1.ConditionHomeRepaired)
-	}
-
-	cond := repaired()
-	require.NotNil(t, cond)
-	assert.Equal(t, metav1.ConditionTrue, cond.Status)
-	assert.Equal(t, apiv1.ReasonHomeRepaired, cond.Reason)
-	assert.Contains(t, cond.Message, "repaired the filesystem")
-
-	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true}
-	assert.Nil(t, repaired())
-}
-
 // TEST_SCENARIO: a machine no Agent of this owner claims holds guest memory forever, so the sweep deletes it — and ownership is part of the match, because an Agent of the same name belonging to someone else says nothing about this runner's machine.
 func TestOrphanSweepDeletesAMachineNoAgentOfThisOwnerClaims(t *testing.T) {
 	ctx := context.Background()
