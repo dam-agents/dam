@@ -6,10 +6,10 @@ Applying either file drains and reboots every node of the pools it reaches, one 
 
 ## Files
 
-| File                                                                     | Kind                          | What it does                                                                                                                                                                                                                     |
-| ------------------------------------------------------------------------ | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`99-worker-platform-host-dirs.yaml`](99-worker-platform-host-dirs.yaml) | MachineConfig, Ignition 3.5.0 | Creates the platform's node directories as `root:root 0755` through a tmpfiles.d entry, and labels each one `system_u:object_r:container_file_t:s0` on every boot through a oneshot unit that runs before CRI-O and the kubelet. |
-| [`worker-image-gc.yaml`](worker-image-gc.yaml)                           | KubeletConfig                 | Starts kubelet image garbage collection at 75% disk use and collects down to 65%, for images unused for at least 30 minutes.                                                                                                     |
+| File                                                                     | Kind                          | What it does                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------------------------ | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`99-worker-platform-host-dirs.yaml`](99-worker-platform-host-dirs.yaml) | MachineConfig, Ignition 3.5.0 | Creates the platform's node directories as `root:root`, `0755` and the image cache `0700`, through a tmpfiles.d entry, and labels each one `system_u:object_r:container_file_t:s0` on every boot through a oneshot unit that runs before CRI-O and the kubelet. |
+| [`worker-image-gc.yaml`](worker-image-gc.yaml)                           | KubeletConfig                 | Starts kubelet image garbage collection at 75% disk use and collects down to 65%, for images unused for at least 30 minutes.                                                                                                                                    |
 
 ### The node directories
 
@@ -45,7 +45,7 @@ Why this label and mechanism:
 
 | Host path                                                                        | Mounted by                                                                                                     | Label and mode it needs                                                           | Created by this MachineConfig                                                                                          |
 | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `virtualization.imageCache.hostPath` (`/var/lib/platform-images`)                | image cache service (writes); VM runners (read-only, from the controller)                                      | `container_file_t:s0`, `root:root 0755`                                           | yes                                                                                                                    |
+| `virtualization.imageCache.hostPath` (`/var/lib/platform-images`)                | image cache service (writes); VM runners (read-only, from the controller)                                      | `container_file_t:s0`, `root:root 0700`                                           | yes                                                                                                                    |
 | `virtualization.runner.releaseHostPath` (`/var/lib/platform-vm-runner-releases`) | release stager (writes); VM runners (read-only, from the controller)                                           | `container_file_t:s0`, `root:root 0755`                                           | yes                                                                                                                    |
 | `virtualization.runner.imageArchiveHostPath` (empty by default)                  | VM runners (read-only, from the controller)                                                                    | `container_file_t:s0` on OpenShift; staged by hand with `mise run image:stage-vm` | no: it is for clusters without a registry, such as local dev, and is left to `DirectoryOrCreate` and whoever stages it |
 | `/var/lib/kubelet/device-plugins`, `/dev`                                        | KVM device plugin ([`helm/extra/kvm-device-plugin.yaml`](../../helm/extra/kvm-device-plugin.yaml)), privileged | the host's own labels                                                             | no: system paths, and the pod is privileged                                                                            |
@@ -147,7 +147,7 @@ Expect 6 to 10 minutes per node (drain plus an RHCOS reboot), times the node cou
      grep -E "imageGC(High|Low)ThresholdPercent|imageMinimumGCAge" /etc/kubernetes/kubelet.conf'
    ```
 
-   Expected: each directory `root:root 755 system_u:object_r:container_file_t:s0`, the unit `active`, and the kubelet values `75`, `65` and `30m`.
+   Expected: each directory `root:root 755 system_u:object_r:container_file_t:s0`, `/var/lib/platform-images` at `700`, the unit `active`, and the kubelet values `75`, `65` and `30m`.
 
 ## Roll back
 
