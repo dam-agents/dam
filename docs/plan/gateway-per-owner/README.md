@@ -75,17 +75,17 @@ Read first: [security-and-credentials](../../architecture/security-and-credentia
 
 ## Sub-issues
 
-| #   | Title                                    | Scope                                                                                          | Depends on |
-| --- | ---------------------------------------- | ---------------------------------------------------------------------------------------------- | ---------- |
-| 01  | Per-owner Envoy configuration render     | Static bootstrap plus LDS/CDS files, per-agent listener with harness guard and health revision | —          |
-| 02  | Per-owner resolver render                | Corefile with one block per agent port and literal answer                                      | —          |
-| 03  | Per-owner credential Secret and leaf     | Aggregate granted credential keys, union-SAN leaf, rotation stamp                              | —          |
-| 04  | Owner gateway workload behind a flag     | Deployment, SA, ConfigMap, policies, mesh policies, lifecycle with runner, sizing              | 01, 02, 03 |
-| 05  | Agent ports, Service cut-over, readiness | Port allocation, Service retarget, revision probe, host runner                                 | 04         |
-| 06  | Hibernation and wake without the gateway | Desired-up record, idle checker, budget, wake publishing                                       | 05         |
-| 07  | Owner gateway rolls and restarts         | Surge roll, paced across owners, superseded-pod eviction, failure surfacing                    | 04         |
-| 08  | Migration on dev and cleanup             | Move existing vm Agents, delete per-agent objects, rollback, runtime-migration switch          | 06, 07     |
-| 09  | Architecture pages                       | Rewrite the gateway parts of the pages listed above                                            | 08         |
+| #   | Title                                       | Scope                                                                                          | Depends on |
+| --- | ------------------------------------------- | ---------------------------------------------------------------------------------------------- | ---------- |
+| 01  | Per-owner Envoy configuration render (done) | Static bootstrap plus LDS/CDS files, per-agent listener with harness guard and health revision | —          |
+| 02  | Per-owner resolver render                   | Corefile with one block per agent port and literal answer                                      | —          |
+| 03  | Per-owner credential Secret and leaf        | Aggregate granted credential keys, union-SAN leaf, rotation stamp                              | —          |
+| 04  | Owner gateway workload behind a flag        | Deployment, SA, ConfigMap, policies, mesh policies, lifecycle with runner, sizing              | 01, 02, 03 |
+| 05  | Agent ports, Service cut-over, readiness    | Port allocation, Service retarget, revision probe, host runner                                 | 04         |
+| 06  | Hibernation and wake without the gateway    | Desired-up record, idle checker, budget, wake publishing                                       | 05         |
+| 07  | Owner gateway rolls and restarts            | Surge roll, paced across owners, superseded-pod eviction, failure surfacing                    | 04         |
+| 08  | Migration on dev and cleanup                | Move existing vm Agents, delete per-agent objects, rollback, runtime-migration switch          | 06, 07     |
+| 09  | Architecture pages                          | Rewrite the gateway parts of the pages listed above                                            | 08         |
 
 ```mermaid
 graph LR

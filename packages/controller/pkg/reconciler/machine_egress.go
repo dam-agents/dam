@@ -68,7 +68,7 @@ func machineDNSContainer(cfg *config.Config, gatewayIP string) corev1.Container 
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the proxy listener also takes raw TLS, which is what a client with no proxy settings sends to the gateway's address. A TLS inspector peeks at the first bytes without consuming them: a TLS handshake takes the chain that hands the connection to the internal listener a CONNECT tunnel is unwrapped into, and anything else — a CONNECT or a plain HTTP request — takes the proxy's own chain as before. So it reaches exactly what a CONNECT reaches: every chain there that dials a host of the agent's choosing checks egress first, and the telemetry collector's chain, which has no check, reaches only the platform's own collector, as through a CONNECT. It adds a way in on the same port and no way around any check.
-func acceptTransparentTLS(listener ev) {
+func acceptTransparentTLS(listener ev, p bootstrapParams) {
 	listener["listener_filters"] = []any{ev{
 		"name":         "envoy.filters.listener.tls_inspector",
 		"typed_config": ev{"@type": "type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector"},
@@ -80,8 +80,8 @@ func acceptTransparentTLS(listener ev) {
 			"name": "envoy.filters.network.tcp_proxy",
 			"typed_config": ev{
 				"@type":       "type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy",
-				"stat_prefix": "transparent_tls",
-				"cluster":     "tls_inspect_internal",
+				"stat_prefix": p.named("transparent_tls"),
+				"cluster":     p.named("tls_inspect_internal"),
 			},
 		}},
 	}}, chains...)
