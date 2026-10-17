@@ -27,7 +27,7 @@ import { totalCostUsd } from "../lib/totals.js";
 
 const PAGE_DESCRIPTION = (
   <span className="block max-w-[460px]">
-    Spend limits, and what your agents spend on models.
+    Set spend limits and see what your agents spend on models.
   </span>
 );
 

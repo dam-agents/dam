@@ -30,7 +30,7 @@ export function ConnectionsView() {
     <div>
       <PageHeader
         title="Connections"
-        description="Connections are the services and credentials your agents can reach."
+        description="Give your agents access to services, without handing them the credentials."
       />
 
       <ListSection
