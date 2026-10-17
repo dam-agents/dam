@@ -1,6 +1,6 @@
 # Agent images
 
-Last verified: 2026-10-16
+Last verified: 2026-10-17
 
 The images an agent runs in: the **default image**, which the default Template boots, and the workloads and the e2e mock, each the default image under its own files.
 Each carries the agent-runtime and every harness.
@@ -35,19 +35,9 @@ The build installs them there with the image's own installer, run in the image's
 mise's own data dir stays the image's, writable, so `mise use -g` still installs there.
 A node holds the tools as it holds any image: the kubelet's image collection and the [vm image cache](vm-image-cache.md)'s eviction drop the versions no agent runs.
 
-Images before the tools were baked boot on a node directory instead, which the same installer fills while agents may still run them: a DaemonSet on every node an agent or a VM runner may land on runs the current image's installer into it, and then idles.
-On the container Backend every agent pod mounts that directory read-only at the system data dir's path, whatever its image: no other image uses the path, and it holds the same versions the baked image does.
-On the `vm` Backend each runner mounts it read-only and shares it read-only into every machine whose image's env names `PLATFORM_TOOLS_VOLUME`, which a baked image does not ([vm-runner](vm-runner.md)), DAX-mapped on x86 so a guest reads the node's page cache rather than copying every file a harness start loads into its own memory.
-DAX needs a guest kernel with [smol-machines/libkrunfw#31](https://github.com/smol-machines/libkrunfw/pull/31), which the pinned smolvm release ships ([vm-runner-upgrades](vm-runner-upgrades.md)): without it, from Linux 6.15 on, a process that runs a large binary from a DAX mount dies of SIGBUS once another process opens that binary ([smol-machines/smolvm#1741](https://github.com/smol-machines/smolvm/issues/1741)).
-A deploy with a new image rolls the DaemonSet on every node at once, which installs the new versions **in place**, beside the old ones: an agent still on an older image keeps the versions it names, and nothing is pruned.
-Playwright's browsers sit with the tools, in the image and in the node directory alike, each image naming its own.
-An install cut short (the installer killed, a node drained) is redone on the next run rather than taken as done: mise records a version as mid-install only in its cache, so the installer keeps that cache in the node directory too, and it removes any version directory left empty.
-On OpenShift, the node configuration in [`etc/openshift-node-config/`](../../etc/openshift-node-config/) has the nodes create the directory with the label confined pods can read.
-
-The node directory is in the boot path of a container agent: one that starts on a node before its installer has finished has no harness until its next start.
-A download host that stalls or trickles fails the install in bounded time, after mise's own retries, and the kubelet restarts the installer until it succeeds, each run keeping what the last one installed.
-CI's vm lane seeds the node directory with the tools tree its image build cached, which holds the same versions at the same path, so the installer reaches no download host.
-On a Mac, whose [host runner](vm-host-runner.md) runs outside the cluster, the tools are copied from the k3s node onto a case-sensitive volume of the runner's.
+Playwright's browsers sit with the tools in the same layer.
+An image of the default family from before the tools were baked read them from a node directory, which no install provides any more, so it boots without its tools.
+The [template upgrade](agent-lifecycle.md#template-upgrade) moves every Agent off such an image, and a vm machine boots its Agent's image on its next start.
 
 Only the agent-runtime and the two driver SDKs (JavaScript and Python) come from the rest of the repo; the build compiles them into each image.
 
@@ -113,7 +103,8 @@ Platform code a harness loads at runtime, such as Pi's provider extension, ships
   The image's `AGENT_BROWSER_*` defaults make agent-browser's browser the [browser panel](browser-panel.md)'s: the full Chromium, headed on the virtual display `platform-display` runs (Xvfb, i3, PipeWire and Selkies, which streams it to the panel), with its shared memory out of the container's small `/dev/shm`, which a heavy page would overflow and crash on.
   Selkies is installed into the base image from hash-pinned wheels, and streams only royalty-free codecs ([browser-panel](browser-panel.md)).
 - docker and k3s are baked in but not started.
-  The image's instructions tell the agent how to start them, and both keep their data under the home, the one path on a machine's disk that either can use.
+  On a machine each is an openrc service in no runlevel: the agent starts it with `rc-service`, or adds it to the `default` runlevel to start it at every boot, and both keep their data under the home, the one path on a machine's disk that either can use.
+  A service gets only `PATH` and the gateway's proxy and CA variables of the environment openrc starts in, which the image's openrc config names, so no credential reaches a daemon.
 - aube stands in for pnpm; npm stays for tools that call it.
   An agent's own `aube add -g` and `pip install --user` land in the home and last; `mise use -g`, `npm i -g` and a plain `pip install` install into the image: in a container they last until the agent restarts, on a machine until its root generation, which the base declares, is bumped ([persistence](persistence.md)).
   mise reads no config from the home, so a tool pin an older image persisted there is inert.
@@ -128,7 +119,7 @@ A vm machine keeps its root when the new image declares the same root generation
 
 It never interrupts work.
 A hibernated, stopped or over-budget Agent moves at once and takes the image on its next wake.
-That wake costs nothing extra for the default image: the harness tools' DaemonSet has already pulled it onto every node, and the [image cache](vm-image-cache.md) preloads and pins the harness images the install ships, which an older image no longer is.
+That wake costs nothing extra for the default image on the `vm` Backend: the [image cache](vm-image-cache.md) preloads and pins the harness images the install ships, which an older image no longer is.
 A Template on an image the cache does not preload is fetched on its first wake, as its old image would be on a node that lacks it.
 A running Agent waits for the [idle checker](agent-lifecycle.md#hibernate) to hibernate it.
 An always-on Agent never hibernates, so it is restarted onto the new image once the idle checker's own signals agree it is idle: no open connection, no Invocation pin, no activity for an hour, and its pod reporting idle, which covers a running turn, an open terminal and kept background work.
@@ -145,6 +136,7 @@ On the vm backend the runner's status names no spec, but a restart in flight rea
 The controller sets `StartFailed` for one of three reasons.
 Either the container, or a guest that answered and then went quiet, restarted three times on this spec and is not ready now.
 Or it ran on this spec and never became ready, not counting the time an image pull takes: for ten minutes in a container, or for two minutes in a vm machine.
+A vm boot the runner reports as copying a disk before its guest answers does not count either: the runner holds it for up to six hours, and a move back would restart the machine and the copy with it.
 Or, on the container backend, admission refused the agent StatefulSet with this spec's image, as a cluster policy that blocks images older than a year does.
 The old pod then keeps running and no pod of the new spec ever starts, so the refusal is the only failure there is to report.
 It counts only when the refused write changes the agent container's image: a refusal of a StatefulSet already on that image is not the new image's fault, and a move back would not cure it.

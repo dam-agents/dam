@@ -12,7 +12,6 @@ interface Props {
   rows: readonly ChecklistRow[];
   unlocked: readonly AvatarCharacter[];
   justUnlocked: AvatarCharacter | null;
-  onDismiss: () => void;
   onStart: (task: GettingStartedTask) => void;
 }
 
@@ -20,7 +19,6 @@ export function ChecklistPanel({
   rows,
   unlocked,
   justUnlocked,
-  onDismiss,
   onStart,
 }: Props) {
   const done = unlocked.length;
@@ -65,15 +63,6 @@ export function ChecklistPanel({
           />
         ))}
       </ul>
-      <div className="flex justify-end border-t border-border px-4 py-2">
-        <button
-          type="button"
-          className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-          onClick={onDismiss}
-        >
-          Dismiss
-        </button>
-      </div>
     </div>
   );
 }

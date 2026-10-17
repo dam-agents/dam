@@ -340,6 +340,19 @@ export function sendWaits(
   );
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Whether the session has nothing yet, so the chat
+ * shows the new-session hero. A send the runtime queues leaves the transcript
+ * for the queue below it (`platform/queueChanged`); a new session's first
+ * prompt waits there while its harness settings apply, and it still counts.
+ */
+export function conversationEmpty(
+  messages: readonly Message[],
+  queue: readonly QueuedPrompt[],
+): boolean {
+  return messages.length === 0 && queue.length === 0;
+}
+
 export function withoutQueuedSends(
   messages: Message[],
   items: QueuedPrompt[],

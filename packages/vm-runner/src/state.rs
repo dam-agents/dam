@@ -33,9 +33,6 @@ pub const PORT_FILE: &str = "port";
 // UNIT_BOUNDARY_DESCRIPTION: the digest a machine was created from, kept beside its spec. The spec keeps the reference the controller asked for, and a tag no longer says which tree a machine has mounted once it has moved, so the runner reads this file to know which digest it holds against the cache's eviction, including after a restart.
 pub const IMAGE_DIGEST_FILE: &str = "image-digest";
 
-// UNIT_BOUNDARY_DESCRIPTION: what the disk check at the machine's last answered boot repaired, as its console said it, kept beside the spec rather than in the share, because the guest must not be able to write it. A boot whose check repaired nothing removes it. It goes with the machine on delete.
-pub const HOME_REPAIRED_FILE: &str = "home-repaired";
-
 // UNIT_BOUNDARY_DESCRIPTION: the VM runtime the machine's running VMM booted, written at each start. A runner release may bring another runtime than the one that started a machine still running, and a machine on another runtime is managed on the assumption that the two are compatible, with any failure ending in a reboot onto the runner's own (see Server::foreign).
 pub const RUNTIME_FILE: &str = "runtime";
 

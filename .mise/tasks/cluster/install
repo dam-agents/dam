@@ -95,15 +95,6 @@ if [ -n "${IS_SANDBOX:-}" ] && [ -f "$OUTER_GATEWAY_CA" ]; then
     HELM_EXTRA_ARGS+=("--set=controller.gatewayEgress.extraCidrs[0]=$OUTER_GATEWAY_IP/32")
   fi
 fi
-# CI hands the harness tools installer its job token, so the installer's GitHub
-# lookups do not share the runner address's anonymous limit. Through a file, so
-# the token stays off helm's command line.
-if [ -n "${HARNESS_TOOLS_GITHUB_TOKEN:-}" ]; then
-  token_file=$(mktemp)
-  trap 'rm -f "$token_file"' EXIT
-  printf '%s' "$HARNESS_TOOLS_GITHUB_TOKEN" >"$token_file"
-  HELM_EXTRA_ARGS+=("--set-file=harnessTools.githubToken=$token_file")
-fi
 NO_RESTART="${usage_no_restart:-false}"
 DEV_VALUES="helm/values-dev.yaml"
 
@@ -335,6 +326,19 @@ else
     printf '%s' "$K3S_CONFIG_YAML" | limactl shell "$LIMA_INSTANCE" sudo tee "$K3S_LOGROT_DROPIN" >/dev/null
     limactl shell "$LIMA_INSTANCE" sudo systemctl restart k3s
     kubectl wait --for=condition=Ready node --all --timeout=120s
+  fi
+fi
+
+# VM runner pods run in a user namespace, where the runtime bind-mounts
+# /dev/kvm with its host owner unmapped: a 0660 root:kvm device, Ubuntu's
+# mode, opens for nobody in the pod. Open it to all, as systemd's own rule
+# does; the udev rule keeps the mode across a reboot of the lima VM.
+if [ -n "$VIRT_ENABLED" ] && [ -z "$HOST_RUNNER" ]; then
+  KVM_RULE='KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"'
+  if [ -n "${IS_SANDBOX:-}" ]; then
+    as_root chmod 0666 /dev/kvm
+  else
+    limactl shell "$LIMA_INSTANCE" sudo sh -c "echo '$KVM_RULE' > /etc/udev/rules.d/99-kvm-all.rules && chmod 0666 /dev/kvm"
   fi
 fi
 

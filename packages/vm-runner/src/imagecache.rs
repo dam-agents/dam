@@ -61,8 +61,11 @@ pub fn node_fetch_ceiling(budget: i64) -> Option<u64> {
     Some(budget.saturating_add(budget / 2))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how much larger an unpacked tree is taken to be than the compressed size its manifest names. OCI metadata gives no unpacked size, and agent images unpack to about two to three times their layers; this is a fixed guess. Reading each gzip layer's trailer would give a closer figure at one ranged read per layer.
-pub const UNPACKED_RATIO: u64 = 3;
+// UNIT_BOUNDARY_DESCRIPTION: how much larger an unpacked tree is taken to be than the compressed size its manifest names. OCI metadata gives no unpacked size, and the export streams of common agent and base images measured 2.2 to 3.2 times their manifest's size; this is a fixed guess above all of them. It is also the most a fetch may unpack, so an image that inflates past it is refused rather than let fill the disk. Reading each gzip layer's trailer would give a closer figure at one ranged read per layer.
+pub const UNPACKED_RATIO: u64 = 4;
+
+// UNIT_BOUNDARY_DESCRIPTION: the least a fetch may unpack, whatever its manifest weighs. A tar stream pads every file and the whole stream, so an image of a few small files streams many times what its layers weigh compressed. An image whose manifest cannot be read gets the whole budget instead, since nothing was reserved for it.
+pub const UNPACK_MIN: u64 = 16 << 20;
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a hold keeps an entry from eviction after the holder last named it. A runner names every digest its machines boot at least once a minute, so a hold lapses only for a runner that has stopped, and its machines stopped with it.
 pub const HOLD_LEASE: Duration = Duration::from_secs(5 * 60);
@@ -339,7 +342,7 @@ impl ImageCache {
             Ok(reserved) => reserved,
             Err(e) => return Lookup::failed(e),
         };
-        let fetched = self.fetch(&pinned, &entry, &digest, &prepared, deadline);
+        let fetched = self.fetch(&pinned, &entry, &digest, &prepared, need, deadline);
         drop(reserved);
         let mut report = Fetched {
             ms: elapsed_ms(started),
@@ -565,6 +568,7 @@ impl ImageCache {
         cached: &Path,
         digest: &str,
         prepared: &Prepared,
+        need: u64,
         deadline: Instant,
     ) -> anyhow::Result<ImageLaunch> {
         let crane = &self.config.crane;
@@ -572,12 +576,17 @@ impl ImageCache {
         let scratch = Scratch::new(&self.config.dir).map_err(|e| written(e, "a scratch tree"))?;
         let rootfs = scratch.path().join(ROOTFS_DIR);
         files::create_dir(&rootfs, 0o755).map_err(|e| written(e, "a scratch tree"))?;
+        let cap = Some(need)
+            .filter(|n| *n > 0)
+            .or_else(|| u64::try_from(self.config.budget).ok().filter(|b| *b > 0))
+            .map(|cap| cap.max(UNPACK_MIN));
         let started = Instant::now();
         fetch::unpack(
             crane,
             reference,
             &rootfs,
             &prepared.auth,
+            cap,
             deadline,
             lifetime,
         )?;

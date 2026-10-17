@@ -35,7 +35,8 @@ An unlock the user has not seen puts a count on the ring instead of opening the 
 Each row opens the place where the task is done; tasks on an Agent open the newest one, the chat tasks leave a starting line in its composer, and the artifact task opens the side panel's Artifacts tab.
 Every unlock is pushed to the owner's open tabs as a [live hint](platform-topology.md); the panel plays a short celebration at its top for each unlock the user has not seen, one at a time, while it is open, then records it as seen.
 
-Dismissing the checklist closes the panel and hides the ring until the next unlock, which brings the ring back, or until the user asks for the checklist from the avatar picker, which opens the panel.
+The ring stays in the icon bar until the checklist is done; closing the panel only closes it.
+A checklist dismissed through the API stays hidden until the next unlock, which brings the ring back, or until the user asks for the checklist from the avatar picker, which opens the panel.
 Once every character is unlocked and seen, the checklist is gone until the user resets their onboarding progress from the Experimental features tab.
 That reset deletes every unlock and reopens the checklist; characters already on Agents stay on them.
 The replica that serves the reset forgets the tasks it recorded for that user, so redoing one unlocks again; another replica skips a task it already recorded until it restarts.

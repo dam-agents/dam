@@ -6,9 +6,9 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use super::*;
 use crate::api::{
-    REASON_BOOT_FAILED, REASON_HOME_FULL, REASON_IMAGE_UNAVAILABLE, REASON_SEED_MISSING,
-    REASON_STORAGE_FULL, STATE_ABSENT, STATE_CREATING, STATE_RESTARTING, STATE_RUNNING,
-    STATE_STARTING, STATE_STOPPED, STATE_STOPPING,
+    REASON_BOOT_FAILED, REASON_COPYING_DISK, REASON_HOME_FULL, REASON_IMAGE_UNAVAILABLE,
+    REASON_SEED_MISSING, REASON_STORAGE_FULL, STATE_ABSENT, STATE_CREATING, STATE_RESTARTING,
+    STATE_RUNNING, STATE_STARTING, STATE_STOPPED, STATE_STOPPING,
 };
 use crate::cache::{archive_path, digest_path, staged_path, PARTIAL_PREFIX};
 use crate::cacheapi;
@@ -692,6 +692,33 @@ async fn a_seed_and_a_boot_never_overlap() {
 
     h.server.put("m1", spec(true)).unwrap();
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+}
+
+// TEST_SCENARIO: a boot that restores a migration's seed copies its disk before its guest answers, so it is still booting, not failing: it reports REASON_COPYING_DISK while the guest has not answered, also past the stuck-boot minute, so the controller neither counts it as a start that never became ready nor lets the image update move it back mid-copy. The reason goes once the guest answers, and a boot that copies nothing never carries it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_boot_that_copies_a_disk_reports_it_until_the_guest_answers() {
+    let h = Harness::new("copying");
+    h.server.put("m1", spec(true)).unwrap();
+    let plain = h.settle("m1").await;
+    assert_eq!(plain.reason, "", "{plain:?}");
+
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+    let seed = upload(&h, "m1", b"a home");
+    h.server.put("m1", expecting(true, &seed)).unwrap();
+    let seeding = h.settle("m1").await;
+    assert!(!seeding.ready);
+    assert_eq!(seeding.reason, REASON_COPYING_DISK, "{seeding:?}");
+    age_boot(&h, "m1");
+    h.server.probe("m1");
+    assert_eq!(
+        h.server.status("m1").reason,
+        REASON_COPYING_DISK,
+        "a slow copy is still a copy"
+    );
+    let _guest = guest(h.base);
+    let up = h.until("m1", "ready", |s| s.ready).await;
+    assert_eq!(up.reason, "", "{up:?}");
 }
 
 // TEST_SCENARIO: a machine deleted while its seed is uploaded must not have the seed put back into a directory that is gone, or recreated by the rename; the upload's commit is refused instead.
@@ -2924,44 +2951,6 @@ async fn the_usage_read_names_the_image_cache_and_the_seeds() {
     let storage = h.server.usage().unwrap().storage;
     assert!(storage.seed_bytes >= 1 << 20, "{storage:?}");
     assert!(storage.image_cache_bytes > 0, "{storage:?}");
-}
-
-// TEST_SCENARIO: the disk check at boot refuses to mount a disk it could not repair, which fails the boot with nothing typed in the error. The runner reads the refusal off the console and reports the damaged home with the way out, so the owner is not told only that the machine did not boot.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_boot_the_disk_check_refused_reports_a_damaged_home() {
-    let h = Harness::new("home-damaged");
-    *locked(&h.fake.fail_start_once) = Some("start machine: guest agent never became ready".into());
-    *locked(&h.fake.console) = r#"{"level":"ERROR","message":"storage: e2fsck -f -y -D Damaged (exit Some(4)): errors left; refusing to mount, and the disk is kept as it is","target":"smolvm_agent::boot"}"#.into();
-    h.server.put("m1", spec(true)).unwrap();
-    let failed = h.settle("m1").await;
-    assert_eq!(failed.reason, REASON_HOME_DAMAGED, "{failed:?}");
-    assert!(failed.message.contains("could not repair"), "{failed:?}");
-}
-
-// TEST_SCENARIO: a boot whose disk check repaired the filesystem comes up as usual, and the status says what was repaired, so the owner learns that files may be gone; the record outlives the boot it came from only until the next boot answers from a clean disk.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_repair_at_boot_is_reported_until_a_clean_boot() {
-    let h = Harness::new("home-repaired");
-    *locked(&h.fake.console) = r#"{"level":"WARN","message":"storage: e2fsck -p repaired the filesystem: /dev/vda: 12/65536 files","target":"smolvm_agent::boot"}"#.into();
-    *locked(&h.fake.start_delay) = Duration::from_millis(300);
-    h.server.put("m1", spec(true)).unwrap();
-    h.wait_for_call("start m1").await;
-    let _up = guest(h.base);
-    let ready = h.until("m1", "ready", |s| s.ready).await;
-    assert_eq!(
-        ready.home_repaired,
-        "storage: e2fsck -p repaired the filesystem: /dev/vda: 12/65536 files"
-    );
-    h.server.put("m1", spec(false)).unwrap();
-    h.settle("m1").await;
-    *locked(&h.fake.console) = "clean".into();
-    h.server.put("m1", spec(true)).unwrap();
-    let again = h
-        .until("m1", "ready after a clean boot", |s| {
-            s.ready && s.home_repaired.is_empty()
-        })
-        .await;
-    assert!(again.ready);
 }
 
 // TEST_SCENARIO: a machine's CPU share is what it used over its last two looks while running. Once it stops, the usage read reports no CPU for it, so the bars never name a paused agent among the heaviest CPU users.

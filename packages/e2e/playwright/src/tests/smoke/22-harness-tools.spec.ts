@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: a harness Template's agent runs on the node's harness tools. The Template boots the default image, which bakes none of the tools its harness runs: a per-node installer puts them in a host directory, the VM runner shares it read-only into the machine, and the agent's harness is picked from the Template. Only the vm lane runs it, with the Claude Code Template and the tools enabled; the mock agents of the rest of the suite bake their own tools. Nothing before the suite waits for the installer, which downloads the tools and can outlast the gate, so the spec waits for it before it boots the agent: a harness spawned before its tools are there exits at once. The same tools are what the guest kernel is held to: a guest that maps them with DAX must not corrupt the pages a running process maps, nor stall when its working set outgrows the DAX window.
+// TEST_OVERVIEW: a harness Template's agent runs on the harness tools the default image bakes. The Template boots the default image, and the agent's harness is picked from the Template. Only the vm lane runs it, with the Claude Code Template enabled; the mock agents of the rest of the suite carry their own tools. The same tools are what the guest kernel is held to: a guest that maps them with DAX must not corrupt the pages a running process maps, nor stall when its working set outgrows the DAX window.
 import { expect, test } from "@playwright/test";
 
 import {
@@ -12,7 +12,7 @@ import {
   requireBackend,
   waitAgentState,
 } from "../../lib/backend.js";
-import { AGENT_NS, kubectl, waitHarnessTools } from "../../lib/cluster.js";
+import { AGENT_NS, kubectl } from "../../lib/cluster.js";
 import { baseUrl } from "../../config.js";
 
 test.describe.configure({ mode: "serial" });
@@ -68,7 +68,6 @@ test.beforeAll(async () => {
   api = createRefreshingApiClient(token);
   await requireBackend(api, "vm");
   await acceptTerms(api);
-  await waitHarnessTools();
   agentId = await createAgentOn(api, "vm", "e2e-harness-tools", "claude-code");
 });
 
@@ -76,8 +75,8 @@ test.afterAll(async () => {
   if (agentId) await api.agents.delete.mutate({ id: agentId });
 });
 
-// TEST_SCENARIO: the machine boots the default image, whose agent-runtime runs on node from the shared tools, and the Template's harness answers over the relay: Claude Code's ACP adapter, which only the tools directory holds, initializes and opens a session. A second client connecting to the same harness process is answered too, as a second tab or a reconnect would be.
-test("boots on the node's tools and opens a Claude Code session, twice", async () => {
+// TEST_SCENARIO: the machine boots the default image, whose agent-runtime runs on node from the baked tools, and the Template's harness answers over the relay: Claude Code's ACP adapter, which only the tools hold, initializes and opens a session. A second client connecting to the same harness process is answered too, as a second tab or a reconnect would be.
+test("boots on the baked tools and opens a Claude Code session, twice", async () => {
   test.setTimeout(300_000);
   await waitAgentState(api, agentId, "running");
 
@@ -128,8 +127,8 @@ stuck=$(grep -l '^State:.*(disk sleep)' /proc/[0-9]*/status 2>/dev/null)
 for s in $stuck; do grep -qs '^State:.*(disk sleep)' $s && echo "stuck $(grep '^Name:' $s | cut -f2)"; done
 if dmesg | grep -qE 'Bad page map|Bad rss-counter|cut here'; then echo '--- guest kernel log ---'; dmesg; fi`;
 
-// TEST_SCENARIO: the guest kernel passes the DAX checks that Linux 6.18 failed until smol-machines/libkrunfw#31, so a smolvm release whose kernel lacks the fix fails here. A throwaway smolvm machine in the agent's runner boots the staged default image with the node's tools where the image reads them, and asks for DAX itself, so the checks hold whatever the runner sets for its own machines. The runner does set it: every mount of its own machines, the tools among them, is DAX-mapped. First check: node runs from the tools while other processes open its binary. On 6.18 each open drops DAX pages that node still maps: the kernel logs a WARN and Bad page map, and in a guest of 6 GiB or more node dies of SIGBUS, exit 135 (smol-machines/smolvm#1741). Second check: three processes map 3 GiB of the tools, more than the mount's 2 GiB DAX window, and touch every 2 MiB range, so the guest must reclaim ranges that processes still map. On 6.18 that reclaim waits forever: the processes stay in D state and the guest stalls. A 2 GiB guest shows only the WARN, so the guest is 6 GiB, and the checks time out inside the guest, since smolvm prints the guest's output only when it exits. It runs only on an x86 runner in the cluster: smolvm maps no DAX window on arm64, and the Mac's host runner has no pod.
-test("a 6 GiB guest passes the DAX checks on the node's tools, and the runner maps its machines' mounts with DAX", async () => {
+// TEST_SCENARIO: the guest kernel passes the DAX checks that Linux 6.18 failed until smol-machines/libkrunfw#31, so a smolvm release whose kernel lacks the fix fails here. A throwaway smolvm machine in the agent's runner boots the staged default image with its own tools mounted again where the image reads them, a mount of their own, and asks for DAX itself, so the checks hold whatever the runner sets for its own machines. The runner does set it: every mount of its own machines, the tools among them, is DAX-mapped. First check: node runs from the tools while other processes open its binary. On 6.18 each open drops DAX pages that node still maps: the kernel logs a WARN and Bad page map, and in a guest of 6 GiB or more node dies of SIGBUS, exit 135 (smol-machines/smolvm#1741). Second check: three processes map 3 GiB of the tools, more than the mount's 2 GiB DAX window, and touch every 2 MiB range, so the guest must reclaim ranges that processes still map. On 6.18 that reclaim waits forever: the processes stay in D state and the guest stalls. A 2 GiB guest shows only the WARN, so the guest is 6 GiB, and the checks time out inside the guest, since smolvm prints the guest's output only when it exits. It runs only on an x86 runner in the cluster: smolvm maps no DAX window on arm64, and the Mac's host runner has no pod.
+test("a 6 GiB guest passes the DAX checks on the image's tools, and the runner maps its machines' mounts with DAX", async () => {
   test.setTimeout(300_000);
   const owner = kubectl(
     "-n",
@@ -161,17 +160,11 @@ test("a 6 GiB guest passes the DAX checks on the node's tools, and the runner ma
     .split("\n")
     .find((entry) => entry.includes("default") && !entry.endsWith(".tar"));
   expect(image, "the staged default image").toBeDefined();
-  const bigTools = inRunner(
-    "find",
-    "/var/lib/platform/tools",
-    "-type",
-    "f",
-    "-size",
-    "+4M",
-  )
+  const tools = `/var/lib/platform/images/${image}/rootfs/usr/share/mise`;
+  const bigTools = inRunner("find", tools, "-type", "f", "-size", "+4M")
     .split("\n")
     .sort()
-    .map((path) => path.replace("/var/lib/platform/tools", "/usr/share/mise"));
+    .map((path) => path.replace(tools, "/usr/share/mise"));
   const guest = inRunner(
     "env",
     "HOME=/tmp/e2e-dax-guard",
@@ -188,7 +181,7 @@ test("a 6 GiB guest passes the DAX checks on the node's tools, and the runner ma
     "--image",
     `/var/lib/platform/images/${image}/rootfs`,
     "-v",
-    "/var/lib/platform/tools:/usr/share/mise:ro",
+    `${tools}:/usr/share/mise:ro`,
     "-e",
     `FILES=${bigTools.join(" ")}`,
     "--",

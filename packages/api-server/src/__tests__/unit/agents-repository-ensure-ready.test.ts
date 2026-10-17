@@ -314,39 +314,6 @@ describe("ensureReady", () => {
     );
   });
 
-  // TEST_SCENARIO: the disk check at boot refused a damaged disk. Waiting does not repair it, so the wake fails at once with the cause, as for a full storage.
-  it("fail-fast: a damaged disk rejects the wake immediately", async () => {
-    const { repo, store } = harness([agentObj("a1", HIBERNATED)]);
-    const p = repo.ensureReady("a1");
-    p.catch(() => {});
-    await vi.advanceTimersByTimeAsync(0);
-    store.set(
-      "a1",
-      agentObj("a1", [
-        { type: "Ready", status: "False", reason: "PodsNotReady" },
-        {
-          type: "AgentPodReady",
-          status: "False",
-          reason: "MachineHomeDamaged",
-          message: "the agent's disk has errors the check could not repair",
-        },
-      ]),
-    );
-    await advanceUntilSettled(p);
-    const err = await p.then(
-      () => null,
-      (e: unknown) => e,
-    );
-    expect(isAgentWakeTimeoutError(err)).toBe(true);
-    if (isAgentWakeTimeoutError(err)) {
-      expect(err.failure).toEqual({
-        kind: "agent-pod-failed",
-        terminationReason: "MachineHomeDamaged",
-      });
-      expect(err.durationMs).toBeLessThan(10_000);
-    }
-  });
-
   // TEST_SCENARIO: an awake agent already in error with a refused start. The first polls may read the previous attempt's refusal, so the wake waits out the short grace, then fails well before its timeout.
   it("fail-fast: a standing start refusal outlasting the grace window rejects", async () => {
     const { repo } = harness([agentObj("a1", STORAGE_FULL)]);

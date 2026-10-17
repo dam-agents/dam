@@ -48,6 +48,7 @@ The copy Job reports the seed the runner stored, its size and digest, once the r
 The Job is the only record of that seed, so it has no time to live and is deleted only once the seed is on the Agent: a controller that restarts or comes late finds one or the other, and the migration boots without another copy.
 The runner starts that machine only while its share holds exactly that seed, judged by the digest its upload was answered with, and otherwise refuses under a reason of its own; it also writes the expectation into the share, where the guest reads it and cannot change it.
 platform-init then restores the home from that seed, hashing it as it unpacks, or fails the boot — it never falls back to the image — and records on the disk which seed it used, so a reboot before the migration ends mounts that home again and refuses any other.
+Until the guest first answers, the runner reports the boot as copying a disk, so a large home's restore is held for up to six hours rather than restarted, and the controller counts it as neither a failed start nor idle.
 When the guest first answers, the runner records the expected seed as the one the home came from and reports it in the machine's status: platform-init let the image start only on a home from that seed, so the answer is the proof, and nothing is read off a disk the guest has had root on.
 A change in the expectation alone restarts no machine.
 The controller marks the migration verified only when the machine is ready and reports the seed it expects.

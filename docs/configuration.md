@@ -260,6 +260,9 @@ Turn it on with `virtualization.enabled=true`, which then requires two more valu
 It also needs cert-manager, which issues each runner's serving certificate from a CA of the runners' own that the chart renders beside them (`virtualization.runnerCA`).
 The devices reach the pod only as device-plugin resources, and the chart ships no plugin: a plugin is per node, so a cluster runs one for every install on it.
 By default the pod asks for KubeVirt's `devices.kubevirt.io/kvm`; `virtualization.runner.devices` names another plugin's resource instead — e.g. `squat.ai/kvm` from squat's generic-device-plugin, which local dev applies from `helm/extra/kvm-device-plugin.yaml`.
+The runner pod runs in a user namespace, which puts two demands on its nodes.
+The node's `/dev/kvm` must be mode 0666, systemd's own default, because the device keeps its host owner unmapped in the pod; Debian and Ubuntu lower it to 0660, which no runner can open.
+The runner's claim, `virtualization.runner.storageClass`, needs a filesystem that supports idmapped mounts, such as ext4 or xfs on Ceph RBD; on CephFS or NFS the runner never starts.
 Every other knob, and what each one costs, is documented per field under `virtualization` in [`helm/values.yaml`](../helm/values.yaml); the shape it produces is described in [vm-runner](architecture/vm-runner.md).
 A published chart pins the runner image by digest rather than by the release, and a rebuild that changes nothing in the image keeps its digest, so an upgrade that leaves that image unchanged does not roll the runner: a roll stops every machine of that owner at once, and each of those agents loses the turn it was running.
 A chart rendered straight from git keeps the appVersion fallback and rolls the runner on every deploy.

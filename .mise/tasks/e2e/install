@@ -55,14 +55,13 @@ if [ -n "${E2E_VIRTUALIZATION:-}" ]; then
     --set=harnessTemplates.mock.resources.limits.cpu=1000m
     --set=harnessTemplates.mock.resources.limits.memory=1Gi
   )
-  # The lane also boots one harness Template on the default image and the
-  # node's harness tools (smoke/22-harness-tools): the default Template,
-  # sized like the mock, and the per-node installer that fills its tools.
+  # The lane also boots one harness Template on the default image and its
+  # baked tools (smoke/22-harness-tools): the default Template, sized like the
+  # mock.
   INSTALL_ARGS+=(
     --set=harnessTemplates.default.enabled=true
     --set=harnessTemplates.default.resources.limits.cpu=1000m
     --set=harnessTemplates.default.resources.limits.memory=1Gi
-    --set=harnessTools.hostPath=/var/lib/platform-harness-tools
   )
   # E2E_GATEWAY_PER_OWNER=1 serves the lane's vm agents from one gateway pod
   # per owner (virtualization.gateway.perOwner), the path no other suite

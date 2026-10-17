@@ -1311,7 +1311,7 @@ func vmSideProblem(machine vmrunner.MachineStatus, runnerReached bool, vmErr err
 		}
 		return msg
 	}
-	if machine.Reason == "" || machine.Reason == vmrunner.ReasonNotReady {
+	if machine.Reason == "" || machine.Reason == vmrunner.ReasonNotReady || machine.Reason == vmrunner.ReasonCopyingDisk {
 		return ""
 	}
 	msg := machine.Message

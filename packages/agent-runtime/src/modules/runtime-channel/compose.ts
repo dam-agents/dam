@@ -345,7 +345,8 @@ export async function composeRuntimeChannel(
         liveUpdates: true,
         modelRouter: opts.modelRouter === true,
       };
-      for (let delay = 1_000; ; delay = Math.min(delay * 2, 30_000)) {
+      // UNIT_BOUNDARY_DESCRIPTION: the first retry comes fast because the usual first failure is a wake's own: the agent's gateway starts beside the guest and is often still coming up when the runtime first says hello, and a 1 s wait put that whole second on the agent's wake.
+      for (let delay = 100; ; delay = Math.min(delay * 2, 30_000)) {
         const harnessConfigCurrent = await harnessConfigPlugin?.readCurrent({
           discover: false,
         });

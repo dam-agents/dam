@@ -132,3 +132,19 @@ it("offers only the tabs that belong to no Agent outside a chat", () => {
   ].map((m) => m[1]);
   expect(tabs).toEqual(["artifacts", "getting-started", "approvals"]);
 });
+
+// TEST_SCENARIO: The rail reads like an activity bar: 48 px square buttons with 24 px icons, and only the open tab carries the bar on its inner edge.
+it("marks only the open tab with the inner-edge bar", () => {
+  const html = render();
+  const buttons = [
+    ...html.matchAll(
+      /<button[^>]*data-testid="side-panel-tab-([a-z-]+)"[^>]*>/g,
+    ),
+  ];
+  expect(buttons.length).toBeGreaterThan(1);
+  for (const [tag, tab] of buttons) {
+    expect(tag).toContain("h-12 w-12");
+    expect(tag.includes("before:bg-foreground")).toBe(tab === "files");
+  }
+  expect(html).toContain('width="24"');
+});

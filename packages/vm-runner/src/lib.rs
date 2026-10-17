@@ -6,7 +6,6 @@ mod capability;
 mod capacity;
 mod command;
 pub mod console;
-mod convert;
 mod cpu;
 pub mod embedded;
 mod fetch;
