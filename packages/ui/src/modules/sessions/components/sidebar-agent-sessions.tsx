@@ -4,7 +4,7 @@ import {
   SessionMode,
   TELEMETRY_MAX_SINCE_HOURS,
 } from "api-server-api";
-import { type ReactNode, useState } from "react";
+import { Fragment, type ReactNode, useState } from "react";
 
 import { labelVariants } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
@@ -31,6 +31,11 @@ import {
 } from "../api/queries.js";
 import { useAgentSessionList } from "../hooks/use-agent-session-list.js";
 import { useOpenSession } from "../hooks/use-open-session.js";
+import {
+  pinKey,
+  togglePinnedSession,
+  usePinnedSessions,
+} from "../lib/pinned-sessions.js";
 import {
   moreClick,
   sessionListControls,
@@ -267,20 +272,23 @@ function AgentSessionList({
     (row) => row.session.sessionId,
     (row) => row.session.createdAt,
   );
-  const visible = sidebarSessionWindow(
-    rows,
-    expanded,
-    (row) => row.state.active,
-  );
+  const pins = usePinnedSessions();
+  const isPinned = (id: string) => flat && pins.has(pinKey(agentId, id));
+  const pinnedRows = rows.filter((row) => isPinned(row.session.sessionId));
+  const unpinnedRows = rows.filter((row) => !isPinned(row.session.sessionId));
+  const visible = [
+    ...pinnedRows,
+    ...sidebarSessionWindow(unpinnedRows, expanded, (row) => row.state.active),
+  ];
   const shown = visible.map((row) => row.session.sessionId);
   const { more, less } = sessionListControls({
-    total: rows.length,
+    total: unpinnedRows.length,
     expanded,
     hasNextPage,
   });
   const onMore = () => {
     const click = moreClick({
-      total: rows.length,
+      total: unpinnedRows.length,
       expanded,
       hasNextPage,
       isFetchingNextPage,
@@ -309,41 +317,54 @@ function AgentSessionList({
             : "No sessions yet."}
         </p>
       )}
-      {visible.map(({ session: s, state }) => (
-        <OrderedRow
-          key={s.sessionId}
-          agentId={agentId}
-          sessionId={s.sessionId}
-          shown={shown}
-          orderActions={orderActions}
-          flat={flat}
-        >
-          <SessionRow
-            session={s}
-            {...state}
-            reorderable={orderActions.ready}
-            className={flat ? FLAT_ROW_CLASS : ROW_CLASS}
-            onResume={() => {
-              openSession(agentId, s.sessionId, s.mode);
-              onNavigate?.();
-            }}
-            {...(list.operable &&
-              s.mode !== SessionMode.Terminal && {
-                onPrefetch: () => prefetchSessionHistory(agentId, s.sessionId),
+      {visible.map(({ session: s, state }, index) => (
+        <Fragment key={s.sessionId}>
+          {flat && pinnedRows.length > 0 && index === 0 && (
+            <PinLabel>Pinned</PinLabel>
+          )}
+          {flat && pinnedRows.length > 0 && index === pinnedRows.length && (
+            <PinLabel>Recent</PinLabel>
+          )}
+          <OrderedRow
+            agentId={agentId}
+            sessionId={s.sessionId}
+            shown={shown}
+            orderActions={orderActions}
+            flat={flat}
+          >
+            <SessionRow
+              session={s}
+              {...state}
+              reorderable={orderActions.ready}
+              className={flat ? FLAT_ROW_CLASS : ROW_CLASS}
+              {...(flat && {
+                pinned: isPinned(s.sessionId),
+                onTogglePin: () =>
+                  togglePinnedSession(pinKey(agentId, s.sessionId)),
               })}
-            onRename={() => sessionActions.rename(s)}
-            onDelete={() => void sessionActions.delete(s)}
-            {...(telemetryEnabled && {
-              onExportTimeline: () =>
-                void downloadTelemetryExport({
-                  agentId,
-                  sessionId: s.sessionId,
-                  signal: "logs",
-                  sinceHours: TELEMETRY_MAX_SINCE_HOURS,
-                }),
-            })}
-          />
-        </OrderedRow>
+              onResume={() => {
+                openSession(agentId, s.sessionId, s.mode);
+                onNavigate?.();
+              }}
+              {...(list.operable &&
+                s.mode !== SessionMode.Terminal && {
+                  onPrefetch: () =>
+                    prefetchSessionHistory(agentId, s.sessionId),
+                })}
+              onRename={() => sessionActions.rename(s)}
+              onDelete={() => void sessionActions.delete(s)}
+              {...(telemetryEnabled && {
+                onExportTimeline: () =>
+                  void downloadTelemetryExport({
+                    agentId,
+                    sessionId: s.sessionId,
+                    signal: "logs",
+                    sinceHours: TELEMETRY_MAX_SINCE_HOURS,
+                  }),
+              })}
+            />
+          </OrderedRow>
+        </Fragment>
       ))}
       {expanded && hasNextPage && fetchNextPageFailed && (
         <button
@@ -439,5 +460,13 @@ function ToggleRow({
       <Chevron size={14} />
       {busy && <Spinner />}
     </button>
+  );
+}
+
+function PinLabel({ children }: { children: ReactNode }) {
+  return (
+    <div className="px-2 pt-3 pb-1.5 first:pt-0">
+      <span className={labelVariants()}>{children}</span>
+    </div>
   );
 }

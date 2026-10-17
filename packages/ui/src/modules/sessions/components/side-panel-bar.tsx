@@ -1,5 +1,6 @@
 import {
   Activity,
+  Book,
   Branch,
   type CarbonIconType,
   Folders,
@@ -14,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
+import { DOCS_URL } from "../../../constants.js";
 import { ArtifactIcon } from "../../artifacts/lib/artifact-icon.js";
 import type { SidePanelTab } from "../lib/side-panel.js";
 
@@ -141,8 +143,33 @@ export function SidePanelBar({
         {...props}
       />
       <div className="mt-auto flex flex-col">
-        <SidePanelTabButtons tabs={appSidePanelTabs(hidden)} {...props} />
+        <SidePanelTabButtons
+          tabs={appSidePanelTabs(hidden).filter((t) => t.tab !== "approvals")}
+          {...props}
+        />
+        <DocsLink />
+        <SidePanelTabButtons
+          tabs={appSidePanelTabs(hidden).filter((t) => t.tab === "approvals")}
+          {...props}
+        />
       </div>
     </nav>
+  );
+}
+
+function DocsLink() {
+  return (
+    <Tooltip content="Documentation" side="left">
+      <a
+        href={DOCS_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Documentation"
+        data-testid="side-panel-docs"
+        className="flex h-12 w-12 items-center justify-center text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+      >
+        <Book size={24} />
+      </a>
+    </Tooltip>
   );
 }

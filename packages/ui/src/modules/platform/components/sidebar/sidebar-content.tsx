@@ -12,7 +12,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       <SidebarColumns
         onNavigate={onNavigate}
         footer={
-          <div className="flex h-[106px] shrink-0 flex-col justify-center border-t border-border px-2">
+          <div className="flex h-[57px] shrink-0 flex-col justify-center border-t border-border px-2">
             <SidebarUsage
               onOpen={() => {
                 setView("home");

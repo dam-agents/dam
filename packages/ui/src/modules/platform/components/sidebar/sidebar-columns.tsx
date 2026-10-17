@@ -1,11 +1,10 @@
-import { AddAlt, Book, Home, Settings, Tools } from "@carbon/icons-react";
+import { AddAlt, Home, Settings, Tools } from "@carbon/icons-react";
 import { useMemo, useState } from "react";
 
 import { SectionLabel } from "@/components/ui/section-label";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-import { DOCS_URL } from "../../../../constants.js";
 import { useStore } from "../../../../store.js";
 import type { AgentView } from "../../../../types.js";
 import { useAgentsList } from "../../../agents/api/queries.js";
@@ -13,7 +12,9 @@ import {
   AgentAvatar,
   avatarMood,
 } from "../../../agents/components/avatar/agent-avatar.js";
+import { OrderDropIndicator } from "../../../agents/components/order-drop-indicator.js";
 import { useCreateDefaultAgent } from "../../../agents/hooks/use-create-default-agent.js";
+import { useOrderDrag } from "../../../agents/hooks/use-order-drag.js";
 import { useSidebarAgents } from "../../../agents/hooks/use-sidebar-agents.js";
 import { useSidebarOrderActions } from "../../../agents/hooks/use-sidebar-order-actions.js";
 import { ActivityFilterMenu } from "../../../home/components/activity-filter-menu.js";
@@ -31,6 +32,10 @@ import { SidebarAgentSessions } from "../../../sessions/components/sidebar-agent
 import { useOpenSession } from "../../../sessions/hooks/use-open-session.js";
 import { useOpenSidePanel } from "../../../sessions/hooks/use-open-side-panel.js";
 import { useStartSession } from "../../../sessions/hooks/use-start-session.js";
+import {
+  togglePinnedSession,
+  usePinnedSessions,
+} from "../../../sessions/lib/pinned-sessions.js";
 
 const ROW = "min-w-0 rounded-lg border-b-0 px-2 py-2";
 const RECENT_LIMIT = 40;
@@ -120,6 +125,8 @@ function AvatarStrip({
   onNavigate?: () => void;
 }) {
   const defaultAgent = useCreateDefaultAgent();
+  const orderActions = useSidebarOrderActions();
+  const shownIds = agents.map((agent) => agent.id);
   const settingsOpen = useStore((s) => s.view === "settings");
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const total = [...needsYou.values()].reduce((a, b) => a + b, 0);
@@ -142,21 +149,16 @@ function AvatarStrip({
         </StripButton>
         <span className="h-px w-6 shrink-0 bg-border" />
         {agents.map((agent) => (
-          <StripButton
+          <DraggableAgent
             key={agent.id}
-            label={agent.name}
+            agent={agent}
+            shown={shownIds}
+            orderActions={orderActions}
             active={selected === agent.id}
             current={current === agent.id}
             badge={needsYou.get(agent.id) ?? 0}
-            onClick={() => onSelect(agent.id)}
-          >
-            <AgentAvatar
-              name={agent.name}
-              avatar={agent.avatar}
-              size={28}
-              mood={avatarMood(agent.state, agent)}
-            />
-          </StripButton>
+            onSelect={() => onSelect(agent.id)}
+          />
         ))}
         <Tooltip content="Create agent" side="right">
           <button
@@ -170,18 +172,7 @@ function AvatarStrip({
           </button>
         </Tooltip>
       </div>
-      <div className="relative z-raised flex h-[106px] shrink-0 flex-col items-center justify-center gap-1 border-t border-border bg-card">
-        <Tooltip content="Documentation" side="right">
-          <a
-            href={DOCS_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="Documentation"
-            className="flex size-10 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-          >
-            <Book size={18} />
-          </a>
-        </Tooltip>
+      <div className="relative z-raised flex h-[57px] shrink-0 flex-col items-center justify-center gap-1 border-t border-border bg-card">
         <Tooltip content="Settings" side="right">
           <button
             type="button"
@@ -202,6 +193,56 @@ function AvatarStrip({
           </button>
         </Tooltip>
       </div>
+    </div>
+  );
+}
+
+function DraggableAgent({
+  agent,
+  shown,
+  orderActions,
+  active,
+  current,
+  badge,
+  onSelect,
+}: {
+  agent: AgentView;
+  shown: readonly string[];
+  orderActions: ReturnType<typeof useSidebarOrderActions>;
+  active: boolean;
+  current: boolean;
+  badge: number;
+  onSelect: () => void;
+}) {
+  const drag = useOrderDrag({
+    scope: "agents",
+    id: agent.id,
+    ready: orderActions.ready,
+    onMove: (id, drop) => orderActions.moveAgent(shown, id, drop),
+    onStep: (id, step) => orderActions.stepAgent(shown, id, step),
+  });
+  return (
+    <div
+      {...drag.dragProps}
+      aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+      data-testid="sidebar-strip-agent"
+      className="relative"
+    >
+      <StripButton
+        label={agent.name}
+        active={active}
+        current={current}
+        badge={badge}
+        onClick={onSelect}
+      >
+        <AgentAvatar
+          name={agent.name}
+          avatar={agent.avatar}
+          size={28}
+          mood={avatarMood(agent.state, agent)}
+        />
+      </StripButton>
+      <OrderDropIndicator at={drag.indicator} />
     </div>
   );
 }
@@ -296,9 +337,12 @@ function AllColumn({
   const agents = useAgentsList();
   const sessions = useMemo(() => items.map((item) => item.session), [items]);
   const conversationOf = useActivityConversations(sessions, agents);
+  const pins = usePinnedSessions();
   const shown = filterActivitySessions(items, filters);
   const unread = shown.filter((item) => item.unread);
-  const rest = shown.filter((item) => !item.unread).slice(0, RECENT_LIMIT);
+  const read = shown.filter((item) => !item.unread);
+  const pinned = read.filter((item) => pins.has(item.id));
+  const rest = read.filter((item) => !pins.has(item.id)).slice(0, RECENT_LIMIT);
   const row = (item: AgentActivitySession) => (
     <ActivityRow
       key={item.id}
@@ -345,6 +389,12 @@ function AllColumn({
             <div className="flex flex-col gap-px">{unread.map(row)}</div>
           </>
         )}
+        {pinned.length > 0 && (
+          <>
+            <ListLabel>Pinned</ListLabel>
+            <div className="flex flex-col gap-px">{pinned.map(row)}</div>
+          </>
+        )}
         <ListLabel>Recent</ListLabel>
         {rest.length === 0 ? (
           <p className="px-2 py-1.5 text-xs text-muted-foreground">
@@ -377,6 +427,7 @@ function ActivityRow({
       s.selectedAgent === item.session.agentId &&
       s.sessionId === item.session.sessionId,
   );
+  const pinned = usePinnedSessions().has(item.id);
   const session = provisionalSessionView(item.session);
   const label = session.title || session.sessionId.slice(0, 12);
   return (
@@ -391,6 +442,8 @@ function ActivityRow({
           .filter(Boolean)
           .join(" · ")}
         className={ROW}
+        pinned={pinned}
+        onTogglePin={() => togglePinnedSession(item.id)}
         leading={
           <AgentAvatar
             name={item.agent.name}
