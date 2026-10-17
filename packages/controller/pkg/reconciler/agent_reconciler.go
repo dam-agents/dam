@@ -774,6 +774,7 @@ func (r *AgentReconciler) Delete(ctx context.Context, name, owner string) error 
 	r.vmDiskGrows.Delete(name)
 	r.notReadyPolls.Delete(name)
 	r.vmStartClocks.Delete(name)
+	r.ownerGatewayRevisions.Delete(name)
 
 	r.clearDeniedWake(name)
 	r.clearParkedRetry(name)
