@@ -478,6 +478,9 @@ importers:
       '@trpc/server':
         specifier: ^11.19.0
         version: 11.19.0(typescript@6.0.3)
+      undici:
+        specifier: 8.10.2
+        version: 8.10.2
     devDependencies:
       '@types/node':
         specifier: ^26.6.4
