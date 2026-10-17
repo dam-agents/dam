@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -96,13 +97,14 @@ func ensureGatewayService(ctx context.Context, client kubernetes.Interface, desi
 	return created, nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: an existing gateway Service keeps its ClusterIP, which a machine's allowlist and resolver both name, so only its ports are brought to what is desired — an Agent that moves to the vm Backend, or a gateway created before machines reached it transparently, gains the transparent ports in place.
+// UNIT_BOUNDARY_DESCRIPTION: an existing gateway Service keeps its ClusterIP, which a machine's allowlist and resolver both name, so only its ports and selector are brought to what is desired — a vm Agent cut over to its owner gateway selects that pod on its own ports — an Agent that moves to the vm Backend, or a gateway created before machines reached it transparently, gains the transparent ports in place.
 func syncGatewayServicePorts(ctx context.Context, cli typedcorev1.ServiceInterface, existing, desired *corev1.Service) (*corev1.Service, error) {
-	if sameServicePorts(existing.Spec.Ports, desired.Spec.Ports) {
+	if sameServicePorts(existing.Spec.Ports, desired.Spec.Ports) && maps.Equal(existing.Spec.Selector, desired.Spec.Selector) {
 		return existing, nil
 	}
 	updated := existing.DeepCopy()
 	updated.Spec.Ports = desired.Spec.Ports
+	updated.Spec.Selector = desired.Spec.Selector
 	out, err := cli.Update(ctx, updated, metav1.UpdateOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("updating gateway Service ports: %w", err)

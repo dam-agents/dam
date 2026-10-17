@@ -32,6 +32,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/retry"
 	"log/slog"
+	"net/http"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
@@ -85,6 +86,7 @@ type AgentReconciler struct {
 	preflightDone         bool
 	migrationCopyMu       sync.Mutex
 	ownerGatewayRevisions sync.Map
+	ownerProbeClient      *http.Client
 }
 
 func NewAgentReconciler(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *AgentReconciler {
@@ -251,7 +253,14 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			return applyNetworkPolicy(ctx, r.client, BuildGatewayEgressNetworkPolicy(name, r.config, ownerRef))
 		},
 		func() (err error) {
-			if liveGatewaySvc, err = ensureGatewayService(ctx, r.client, BuildGatewayService(name, agentSpec.IsVM(), r.config, ownerRef), "agent", name); err != nil {
+			desired := BuildGatewayService(name, agentSpec.IsVM(), r.config, ownerRef)
+			if r.ownerGatewayServes(agentSpec) {
+				desired, err = r.ownerGatewayServiceFor(ctx, desired, owner)
+				if err != nil {
+					return fmt.Errorf("reading gateway service: %v", err)
+				}
+			}
+			if liveGatewaySvc, err = ensureGatewayService(ctx, r.client, desired, "agent", name); err != nil {
 				return fmt.Errorf("ensuring gateway service: %v", err)
 			}
 			return nil
@@ -565,13 +574,8 @@ func (r *AgentReconciler) publishReadiness(ctx context.Context, agent *apiv1.Age
 func (r *AgentReconciler) publishReadinessOf(ctx context.Context, agent *apiv1.Agent, agentReady bool, agentFailReason, agentFailMsg string, restartsObserved bool, agentRestarts int32, agentRestartReason string, also ...func(*apiv1.AgentStatus)) error {
 	name := agent.Name
 	gen := agent.Generation
-	gatewayReady := r.podCurrentAndReady(ctx, GatewayName(name))
+	gatewayReady, gatewayFailReason, gatewayFailMsg := r.gatewayReadiness(ctx, agent)
 	ready := agentReady && gatewayReady
-
-	gatewayFailReason, gatewayFailMsg := "PodNotReady", ""
-	if !gatewayReady {
-		gatewayFailReason, gatewayFailMsg = r.gatewayNotReadyCause(ctx, GatewayName(name))
-	}
 
 	return updateAgentStatus(ctx, r.dynamic, r.config.Namespace, name, func(s *apiv1.AgentStatus) {
 		setStatusCondition(s, apiv1.ConditionAgentPodReady, agentReady, "PodReady", agentFailReason, agentFailMsg, gen)
@@ -607,6 +611,25 @@ func (r *AgentReconciler) publishGatewayTurnedReady(ctx context.Context, agent *
 			setStatusCondition(s, apiv1.ConditionReady, true, "AllPodsReady", "", "", gen)
 		}
 	})
+}
+
+func (r *AgentReconciler) gatewayReadiness(ctx context.Context, agent *apiv1.Agent) (bool, string, string) {
+	if r.ownerGatewayServes(&agent.Spec) {
+		if svc, err := r.client.CoreV1().Services(r.config.Namespace).Get(ctx, GatewayName(agent.Name), metav1.GetOptions{}); err == nil && svc.Annotations[annOwnerGatewayServed] == "true" {
+			if ok, msg := r.ownerListenerCurrent(ctx, agent.Name, svc.Spec.ClusterIP, r.config.EnvoyPort); !ok {
+				if r.requeue != nil {
+					r.requeue(agent.Name, ownerListenerRecheck)
+				}
+				return false, apiv1.ReasonOwnerGatewayListenerStale, msg
+			}
+			return true, "", ""
+		}
+	}
+	if r.podCurrentAndReady(ctx, GatewayName(agent.Name)) {
+		return true, "", ""
+	}
+	reason, msg := r.gatewayNotReadyCause(ctx, GatewayName(agent.Name))
+	return false, reason, msg
 }
 
 func (r *AgentReconciler) publishReconciled(ctx context.Context, agent *apiv1.Agent) error {

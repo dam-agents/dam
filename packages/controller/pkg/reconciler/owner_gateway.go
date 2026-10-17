@@ -3,10 +3,14 @@ package reconciler
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"maps"
+	"net"
+	"net/http"
 	"slices"
 	"strconv"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -84,6 +88,7 @@ type ownerGatewayMember struct {
 	secrets   []corev1.Secret
 	slot      int
 	clusterIP string
+	served    bool
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the owner gateway pod. One replica, and a template change surges a new pod before the old one stops, so a roll never leaves the owner's agents without a gateway. Nothing about one agent is in the template: listeners, resolver blocks, credentials and the leaf are files the running pod watches, so a grant, a rotation or an agent added or removed never restarts it. The memory request is fixed for that reason: about 23 MiB with one agent and 5 MiB more per agent (measured with two hosts each, one metered), so the request covers a typical owner and the limit stays unset like the per-agent gateway's.
@@ -270,7 +275,7 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 		if err != nil {
 			return nil, err
 		}
-		members[agent.Name] = ownerGatewayMember{agent: agent, secrets: secrets, slot: slot, clusterIP: svc.Spec.ClusterIP}
+		members[agent.Name] = ownerGatewayMember{agent: agent, secrets: secrets, slot: slot, clusterIP: svc.Spec.ClusterIP, served: svc.Annotations[annOwnerGatewayServed] == "true"}
 		names = append(names, agent.Name)
 	}
 	slices.Sort(names)
@@ -324,6 +329,7 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 	for agentName, rev := range rendered.Revisions {
 		r.ownerGatewayRevisions.Store(agentName, rev)
 	}
+	r.cutOverToOwnerGateway(ctx, owner, members)
 	return members, nil
 }
 
@@ -405,5 +411,110 @@ func (r *AgentReconciler) deleteOwnerGateway(ctx context.Context, owner string) 
 		if err := del(); err != nil && !k8serrors.IsNotFound(err) {
 			slog.Warn("removing an owner gateway", "owner", owner, "error", err)
 		}
+	}
+}
+
+const (
+	annOwnerGatewayServed = "agent-platform.ai/owner-gateway"
+	ownerListenerRecheck  = 2 * time.Second
+)
+
+// UNIT_BOUNDARY_DESCRIPTION: the gateway Service of a vm Agent its owner gateway serves: it selects the owner gateway pod and maps each of its ports onto the agent's slot, the proxy, HTTP and TLS ports onto the proxy port and DNS onto the resolver port. Only these ports are declared, and a ClusterIP carries nothing on a port it does not declare (measured on OVN-Kubernetes and k3s), so a guest pinned to its own ClusterIP reaches only its own listener. The Service keeps its ClusterIP, so no machine spec changes. Until the agent is cut over its Service keeps selecting its own gateway pod.
+func (r *AgentReconciler) ownerGatewayServiceFor(ctx context.Context, desired *corev1.Service, owner string) (*corev1.Service, error) {
+	existing, err := r.client.CoreV1().Services(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		return desired, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	slot, err := strconv.Atoi(existing.Annotations[annOwnerGatewaySlot])
+	if err != nil || existing.Annotations[annOwnerGatewayServed] != "true" {
+		return desired, nil
+	}
+	return retargetedGatewayService(desired, owner, slot), nil
+}
+
+func retargetedGatewayService(svc *corev1.Service, owner string, slot int) *corev1.Service {
+	out := svc.DeepCopy()
+	out.Spec.Selector = map[string]string{"app.kubernetes.io/component": ownerGatewayComponent, envoyOwnerLabel: owner}
+	proxy, resolver := intstr.FromInt(ownerGatewayProxyPort(slot)), intstr.FromInt(ownerGatewayResolverPort(slot))
+	for i := range out.Spec.Ports {
+		if out.Spec.Ports[i].Name == "dns" || out.Spec.Ports[i].Name == "dns-tcp" {
+			out.Spec.Ports[i].TargetPort = resolver
+		} else {
+			out.Spec.Ports[i].TargetPort = proxy
+		}
+	}
+	return out
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an agent's listener is current when its health path answers with the revision rendered for it last. Envoy applies a changed file about a second after the kubelet syncs it, and a file that does not load leaves the last good one running, so a stale or missing listener reads as not current rather than as an outage. The controller probes through the same port the agent's traffic takes.
+func (r *AgentReconciler) ownerListenerCurrent(ctx context.Context, agent, host string, port int) (bool, string) {
+	want, ok := r.ownerGatewayRevisions.Load(agent)
+	if !ok {
+		return false, "the owner gateway has not rendered this agent's listener yet"
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://%s/__platform_healthz", net.JoinHostPort(host, strconv.Itoa(port))), nil)
+	if err != nil {
+		return false, err.Error()
+	}
+	resp, err := r.ownerGatewayProbe().Do(req)
+	if err != nil {
+		return false, "the owner gateway does not answer on this agent's listener: " + err.Error()
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+	if resp.StatusCode != http.StatusOK || string(body) != want.(string) {
+		return false, fmt.Sprintf("the owner gateway still serves an older listener for this agent (has %q, want %q)", body, want)
+	}
+	return true, ""
+}
+
+func (r *AgentReconciler) ownerGatewayProbe() *http.Client {
+	if r.ownerProbeClient != nil {
+		return r.ownerProbeClient
+	}
+	return &http.Client{Transport: &http.Transport{Proxy: nil, DisableKeepAlives: true}}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an agent moves to its owner gateway only once that pod serves its current listener, probed at the pod's own address because its Service still selects the agent's own gateway pod. The move rewrites only the Service's selector and target ports, keeps its ClusterIP and so changes no machine spec, and is marked on the Service, so every later reconcile renders the moved form. Readiness after the move is probed through the Service.
+func (r *AgentReconciler) cutOverToOwnerGateway(ctx context.Context, owner string, members map[string]ownerGatewayMember) {
+	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "app.kubernetes.io/component=" + ownerGatewayComponent + "," + envoyOwnerLabel + "=" + owner})
+	if err != nil {
+		return
+	}
+	podIP := ""
+	for _, p := range pods.Items {
+		if p.DeletionTimestamp == nil && isPodReady(p) && p.Status.PodIP != "" {
+			podIP = p.Status.PodIP
+		}
+	}
+	if podIP == "" {
+		return
+	}
+	for name, m := range members {
+		if m.served {
+			continue
+		}
+		if ok, _ := r.ownerListenerCurrent(ctx, name, podIP, ownerGatewayProxyPort(m.slot)); !ok {
+			continue
+		}
+		if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			svc, err := r.client.CoreV1().Services(r.config.Namespace).Get(ctx, GatewayName(name), metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
+			moved := retargetedGatewayService(svc, owner, m.slot)
+			metav1.SetMetaDataAnnotation(&moved.ObjectMeta, annOwnerGatewayServed, "true")
+			_, err = r.client.CoreV1().Services(r.config.Namespace).Update(ctx, moved, metav1.UpdateOptions{})
+			return err
+		}); err != nil {
+			slog.Warn("owner gateway: moving the agent's Service failed; it keeps its own gateway", "agent", name, "error", err)
+			continue
+		}
+		slog.Info("owner gateway: the agent's Service now selects its owner gateway", "agent", name, "owner", owner, "slot", m.slot)
 	}
 }

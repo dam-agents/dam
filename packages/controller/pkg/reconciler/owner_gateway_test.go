@@ -2,6 +2,9 @@ package reconciler
 
 import (
 	"context"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"testing"
 
@@ -9,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 )
 
 // TEST_OVERVIEW: with virtualization.gateway.perOwner on, an owner's vm Agents share one gateway pod beside the owner's runner, each on a slot of ports recorded on its own gateway Service. The pod and every object it is made of are named after the owner, never after an agent, and go away when the owner's last vm Agent does.
@@ -115,4 +120,72 @@ func TestOwnerGateway_SweptWithTheOwnersLastVMAgent(t *testing.T) {
 	assert.Error(t, err)
 	_, err = r.client.CoreV1().ServiceAccounts(ns).Get(ctx, name, metav1.GetOptions{})
 	assert.Error(t, err)
+}
+
+// TEST_SCENARIO: the cut-over keeps the Service's ClusterIP, which the machine's allowlist and resolver name, and changes only where it points: the owner gateway pod, with every port the Service declares mapped onto the agent's own slot and no other port declared.
+func TestOwnerGateway_RetargetMapsOnlyTheAgentsSlot(t *testing.T) {
+	svc := BuildGatewayService("agent-a", true, testConfig, metav1.OwnerReference{})
+	svc.Spec.ClusterIP = "10.43.0.7"
+	moved := retargetedGatewayService(svc, testOwner, 3)
+	assert.Equal(t, "10.43.0.7", moved.Spec.ClusterIP)
+	assert.Equal(t, map[string]string{"app.kubernetes.io/component": ownerGatewayComponent, envoyOwnerLabel: testOwner}, moved.Spec.Selector)
+	require.Len(t, moved.Spec.Ports, len(svc.Spec.Ports))
+	for _, p := range moved.Spec.Ports {
+		want := ownerGatewayProxyPort(3)
+		if p.Name == "dns" || p.Name == "dns-tcp" {
+			want = ownerGatewayResolverPort(3)
+		}
+		assert.Equal(t, want, p.TargetPort.IntValue(), p.Name)
+	}
+}
+
+func ownerGatewayPod(ip string) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "owner-gw-1", Namespace: "test-agents", Labels: map[string]string{"app.kubernetes.io/component": ownerGatewayComponent, envoyOwnerLabel: testOwner}},
+		Status:     corev1.PodStatus{PodIP: ip, Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}},
+	}
+}
+
+// TEST_SCENARIO: an agent moves to its owner gateway only once that pod answers its listener's health path with the revision rendered for it. A stale answer leaves it on its own gateway; the right answer moves it, every later reconcile keeps it moved, and its gateway readiness is then the probe through its own Service: true while current, false with the stale reason when not.
+func TestOwnerGateway_CutOverWaitsForTheCurrentListener(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	r.config.VM.Gateway.PerOwner = true
+	answer := "stale"
+	var asked []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		asked = append(asked, req.Host)
+		_, _ = w.Write([]byte(answer))
+	}))
+	t.Cleanup(srv.Close)
+	r.ownerProbeClient = &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, srv.Listener.Addr().String())
+	}}}
+	ctx, ns := context.Background(), "test-agents"
+	_, err := r.client.CoreV1().Pods(ns).Create(ctx, ownerGatewayPod("10.42.0.9"), metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	svc, err := r.client.CoreV1().Services(ns).Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Empty(t, svc.Annotations[annOwnerGatewayServed], "a stale listener must not take the agent's traffic")
+	assert.Contains(t, asked, "10.42.0.9:20000")
+
+	rev, _ := r.ownerGatewayRevisions.Load("my-agent")
+	answer = rev.(string)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.NoError(t, r.Reconcile(ctx, agent))
+	svc, err = r.client.CoreV1().Services(ns).Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "true", svc.Annotations[annOwnerGatewayServed])
+	assert.Equal(t, ownerGatewayComponent, svc.Spec.Selector["app.kubernetes.io/component"], "a later reconcile keeps the agent moved")
+	assert.Equal(t, 20000, svc.Spec.Ports[0].TargetPort.IntValue())
+
+	ready, _, _ := r.gatewayReadiness(ctx, agent)
+	assert.True(t, ready)
+	assert.Contains(t, asked, svc.Spec.ClusterIP+":10000", "after the move readiness is probed through the agent's own Service")
+	answer = "older"
+	ready, reason, _ := r.gatewayReadiness(ctx, agent)
+	assert.False(t, ready)
+	assert.Equal(t, apiv1.ReasonOwnerGatewayListenerStale, reason)
 }
