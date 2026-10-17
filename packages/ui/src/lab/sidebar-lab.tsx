@@ -759,12 +759,78 @@ function VariantE() {
   );
 }
 
+function VariantF() {
+  const open = new Set(["research-notes"]);
+  return (
+    <Shell label="F · Two-line + leak">
+      <SectionHead
+        right={
+          <IconBtn label="Filter">
+            <Filter size={14} />
+          </IconBtn>
+        }
+      >
+        Agents
+      </SectionHead>
+      <ul className="flex flex-col gap-0.5">
+        {AGENTS.map((a) => {
+          const isOpen = open.has(a.name);
+          const attn = a.sessions.filter((s) => s.attn);
+          const shown = isOpen ? a.sessions : attn;
+          return (
+            <li
+              key={a.name}
+              className={cn("rounded-lg", isOpen && "bg-muted/40 pb-1")}
+            >
+              <div className="group flex h-11 items-center gap-2.5 rounded-lg px-2 hover:bg-muted/60">
+                <Avatar a={a} size={26} />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium leading-4">
+                    {a.name}
+                  </div>
+                  <div className="truncate text-2xs text-muted-foreground">
+                    {a.sessions.length === 0
+                      ? "No sessions yet"
+                      : `${a.sessions.length} sessions · ${a.sessions[0].ago}`}
+                  </div>
+                </div>
+                {a.sessions.length > 0 && (
+                  <span className="flex size-5 items-center justify-center text-muted-foreground opacity-0 group-hover:opacity-100">
+                    {isOpen ? (
+                      <ChevronDown size={14} />
+                    ) : (
+                      <ChevronRight size={14} />
+                    )}
+                  </span>
+                )}
+              </div>
+              {shown.length > 0 && (
+                <div className="ml-[21px] border-l border-border pl-1.5">
+                  {shown.map((s) => (
+                    <SessionLine key={s.id} s={s} />
+                  ))}
+                  {!isOpen && a.sessions.length > attn.length && (
+                    <div className="px-2 py-1 text-2xs text-muted-foreground hover:text-foreground">
+                      +{a.sessions.length - attn.length} more
+                    </div>
+                  )}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </Shell>
+  );
+}
+
 const VARIANTS: Record<string, () => ReactNode> = {
   A: VariantA,
   B: VariantB,
   C: VariantC,
   D: VariantD,
   E: VariantE,
+  F: VariantF,
 };
 
 function Lab() {
