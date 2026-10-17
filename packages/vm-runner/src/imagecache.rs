@@ -61,7 +61,7 @@ pub fn node_fetch_ceiling(budget: i64) -> Option<u64> {
     Some(budget.saturating_add(budget / 2))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the least a fetch may unpack, whatever its manifest weighs. A tar stream pads every file and the whole stream, so an image of a few small files streams many times what its layers weigh compressed. An image whose manifest cannot be read gets the whole budget instead, since nothing was reserved for it.
+// UNIT_BOUNDARY_DESCRIPTION: the least a fetch may unpack, whatever its layers are taken to unpack to. A tar stream pads every file and the whole stream, so an image of a few small files streams many times what its layers weigh compressed. An image whose manifest cannot be read gets the whole budget instead, since nothing was reserved for it.
 pub const UNPACK_MIN: u64 = 16 << 20;
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a hold keeps an entry from eviction after the holder last named it. A runner names every digest its machines boot at least once a minute, so a hold lapses only for a runner that has stopped, and its machines stopped with it.

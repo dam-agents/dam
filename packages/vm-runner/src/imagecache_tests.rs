@@ -628,7 +628,7 @@ fn a_private_entry_is_checked_where_it_came_from() {
     assert!(!locked(&cache.memory).public.contains(&digest));
 }
 
-// TEST_SCENARIO: the node's fetch ceiling is what keeps runners that share its socket from filling the disk with trees nobody may evict. Fetches that start together must not each find the cache under its ceiling: a fetch reserves what its manifest weighs for as long as it runs, and the next is refused, as a capacity problem, while the reserved bytes take the cache past the ceiling. The reservation is given back when the fetch ends.
+// TEST_SCENARIO: the node's fetch ceiling is what keeps runners that share its socket from filling the disk with trees nobody may evict. Fetches that start together must not each find the cache under its ceiling: a fetch reserves what its image is taken to unpack to for as long as it runs, and the next is refused, as a capacity problem, while the reserved bytes take the cache past the ceiling. The reservation is given back when the fetch ends.
 #[test]
 fn fetches_under_way_count_against_the_ceiling() {
     let f = Fixture::new("in-flight", PUBLIC_CRANE);
