@@ -1,5 +1,7 @@
+import { Add } from "@carbon/icons-react";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { ListSection } from "@/components/ui/list-section";
 import { PageHeader } from "@/components/ui/page-header";
 
@@ -35,12 +37,21 @@ export function ApiKeysList() {
       <PageHeader
         title="API keys"
         description="Let the CLI and scripts sign in without a browser. A key is shown only once, when you create it."
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCreateOpen(true)}
+          >
+            <Add size={16} />
+            New API key
+          </Button>
+        }
       />
 
       <ListSection
         loading={isLoading}
         error={isError && "Couldn't load API keys."}
-        onNew={() => setCreateOpen(true)}
         isEmpty={(keys ?? []).length === 0}
         empty="No API keys yet. Create one to authenticate the CLI without a browser."
       >
