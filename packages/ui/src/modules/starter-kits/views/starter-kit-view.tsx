@@ -1,4 +1,10 @@
-import { ArrowLeft, Launch, Meter, PlayFilledAlt } from "@carbon/icons-react";
+import {
+  ArrowLeft,
+  DataEnrichmentAdd,
+  Launch,
+  Meter,
+  PlayFilledAlt,
+} from "@carbon/icons-react";
 import {
   type ConnectionTemplateView,
   formatEgressRuleInline,
@@ -39,7 +45,6 @@ import {
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { useFeatures } from "../../features/api/queries.js";
-import { useVmForced } from "../../features/hooks/use-vm-forced.js";
 import { useUnlockedAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
@@ -50,6 +55,7 @@ import { KitCategoryTag } from "../components/kit-category-tag.js";
 import { KitChannelsSection } from "../components/kit-channels-section.js";
 import { KitRequirementsList } from "../components/kit-requirements-list.js";
 import { KitScheduleCard } from "../components/kit-schedule-card.js";
+import { useKitDefaultVm } from "../hooks/use-kit-default-vm.js";
 import {
   EGRESS_PRESET_DETAIL,
   EGRESS_PRESET_LABEL,
@@ -303,8 +309,7 @@ function KitDetail({
   const selectAgent = useStore((s) => s.selectAgent);
   const templates = useConnectionTemplates();
   const budget = useBudgetReserved();
-  const vmForced = useVmForced();
-  const vm = kitRunsOnVm(kit, vmForced);
+  const vm = kitRunsOnVm(kit, useKitDefaultVm());
   const connections = useAppConnections();
   const agents = useAgents().data?.list;
   const apply = useApplyStarterKit();
@@ -673,6 +678,7 @@ function KitDetail({
             <ArrowLeft size={16} /> Back
           </Button>
           <Button onClick={() => void create()} disabled={!canCreate}>
+            <DataEnrichmentAdd size={16} aria-hidden />
             {apply.isPending ? "Creating…" : "Use this starter kit"}
           </Button>
         </DialogFooter>

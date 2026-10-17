@@ -12,6 +12,7 @@ import { useBindSharingConfirm } from "../../hooks/use-bind-sharing-confirm.js";
 import { useInlineAgentCreate } from "../../hooks/use-inline-agent-create.js";
 import { CreateAgentInline } from "../create-agent-inline.js";
 import { type BindMessenger, BindPage } from "./bind-page.js";
+import { withCommandChips } from "./command-chip.js";
 import { PickerFooter } from "./picker-footer.js";
 import { PickerSearch } from "./picker-search.js";
 import { PickerSectionList } from "./picker-section-list.js";
@@ -166,7 +167,7 @@ function PickerError({ error }: { error: Props["error"] }) {
   if (!error) return null;
   return (
     <p className="mt-4 text-sm text-danger">
-      {error.title} — {error.hint}
+      {error.title} — {withCommandChips(error.hint)}
     </p>
   );
 }

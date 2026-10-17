@@ -13,6 +13,7 @@ interface PublicAgentViewProps {
   state: PublicAgentPageState;
   brand: Brand;
   openPath: string;
+  fromApp?: boolean;
 }
 
 function Masthead({ brand }: { brand: Brand }) {
@@ -125,10 +126,20 @@ function pitch(brand: Brand, subject: "this-agent" | "platform"): string {
 function CallsToAction({
   brand,
   openPath,
+  fromApp,
 }: {
   brand: Brand;
   openPath: string;
+  fromApp: boolean;
 }) {
+  if (fromApp)
+    return (
+      <div className="mt-6 flex flex-wrap items-center gap-2">
+        <Button asChild>
+          <a href="/">Back to {brand.name}</a>
+        </Button>
+      </div>
+    );
   return (
     <div className="mt-6 flex flex-wrap items-center gap-2">
       <Button asChild>
@@ -148,10 +159,12 @@ function NamedAgent({
   agent,
   brand,
   openPath,
+  fromApp,
 }: {
   agent: PublicAgent;
   brand: Brand;
   openPath: string;
+  fromApp: boolean;
 }) {
   return (
     <>
@@ -174,24 +187,36 @@ function NamedAgent({
           <p className="mt-3 text-sm text-muted-foreground">
             {pitch(brand, "this-agent")}
           </p>
-          <CallsToAction brand={brand} openPath={openPath} />
+          <CallsToAction brand={brand} openPath={openPath} fromApp={fromApp} />
         </div>
       </div>
     </>
   );
 }
 
-function GenericPitch({ brand, openPath }: { brand: Brand; openPath: string }) {
+function GenericPitch({
+  brand,
+  openPath,
+  fromApp,
+}: {
+  brand: Brand;
+  openPath: string;
+  fromApp: boolean;
+}) {
   return (
     <div className="flex-1 px-6 pt-24">
       <div className="mx-auto w-full max-w-[640px]">
         <h1 className={cn(PAGE_TITLE, "text-balance")}>
-          Create your own agents with {brand.name}.
+          {fromApp
+            ? "This agent isn't available, or isn't shared with you."
+            : `Create your own agents with ${brand.name}.`}
         </h1>
         <p className="mt-5 text-sm text-muted-foreground">
-          {pitch(brand, "platform")}
+          {fromApp
+            ? "It may have been deleted, or it belongs to someone else."
+            : pitch(brand, "platform")}
         </p>
-        <CallsToAction brand={brand} openPath={openPath} />
+        <CallsToAction brand={brand} openPath={openPath} fromApp={fromApp} />
       </div>
     </div>
   );
@@ -203,20 +228,27 @@ function GenericPitch({ brand, openPath }: { brand: Brand; openPath: string }) {
  * paint before the public read resolves: the reader arrives from a Slack link
  * on an empty document, and waiting for the fetch would show them a white page.
  * The loading state carries no pitch, so a named agent never flashes the
- * generic copy first.
+ * generic copy first. A visitor the app itself redirected here is signed in,
+ * so it is not asked whether it has an account.
  */
 export function PublicAgentView({
   state,
   brand,
   openPath,
+  fromApp = false,
 }: PublicAgentViewProps) {
   return (
     <main className="flex min-h-dvh flex-col bg-background text-foreground">
       <Masthead brand={brand} />
       {state.status === "loading" ? null : state.agent ? (
-        <NamedAgent agent={state.agent} brand={brand} openPath={openPath} />
+        <NamedAgent
+          agent={state.agent}
+          brand={brand}
+          openPath={openPath}
+          fromApp={fromApp}
+        />
       ) : (
-        <GenericPitch brand={brand} openPath={openPath} />
+        <GenericPitch brand={brand} openPath={openPath} fromApp={fromApp} />
       )}
     </main>
   );

@@ -17,6 +17,8 @@ export function useStarterKit(catalog: string | null, id: string | null) {
       id: id ?? "",
     }),
     enabled: catalog !== null && id !== null,
+    retry: (failures, error) =>
+      error.data?.code !== "NOT_FOUND" && failures < 3,
   });
 }
 

@@ -18,19 +18,19 @@ export function callbackErrorCopy(code: string): BindErrorCopy {
     case "denied":
       return {
         title: "Login was cancelled",
-        hint: "Send `/bind` in the Telegram chat to try again.",
+        hint: "Send `/bind` in the chat to try again.",
         terminal: true,
       };
     case "expired":
       return {
         title: "This login link has expired",
-        hint: "Send `/bind` in the Telegram chat to get a fresh link.",
+        hint: "Send `/bind` in the chat to get a fresh link.",
         terminal: true,
       };
     default:
       return {
         title: "Login failed",
-        hint: "Send `/bind` in the Telegram chat to try again.",
+        hint: "Send `/bind` in the chat to try again.",
         terminal: true,
       };
   }
@@ -41,7 +41,7 @@ export function bindErrorCopy(code: string | undefined): BindErrorCopy {
     case "BAD_REQUEST":
       return {
         title: "This link is invalid or has expired",
-        hint: "Send `/bind` in the Telegram chat to get a fresh link.",
+        hint: "Send `/bind` in the chat to get a fresh link.",
         terminal: true,
       };
     case "CONFLICT":
