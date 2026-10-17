@@ -61,9 +61,6 @@ pub fn node_fetch_ceiling(budget: i64) -> Option<u64> {
     Some(budget.saturating_add(budget / 2))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how much larger an unpacked tree is taken to be than the compressed size its manifest names. OCI metadata gives no unpacked size, and the export streams of common agent and base images measured 2.2 to 3.2 times their manifest's size; this is a fixed guess above all of them. It is also the most a fetch may unpack, so an image that inflates past it is refused rather than let fill the disk. Reading each gzip layer's trailer would give a closer figure at one ranged read per layer.
-pub const UNPACKED_RATIO: u64 = 4;
-
 // UNIT_BOUNDARY_DESCRIPTION: the least a fetch may unpack, whatever its manifest weighs. A tar stream pads every file and the whole stream, so an image of a few small files streams many times what its layers weigh compressed. An image whose manifest cannot be read gets the whole budget instead, since nothing was reserved for it.
 pub const UNPACK_MIN: u64 = 16 << 20;
 
@@ -186,11 +183,11 @@ enum Reuse {
     Unproven,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what a fetch learned before it downloads anything: what the image says to run, the credential the registry accepted, and the compressed size its manifest names.
+// UNIT_BOUNDARY_DESCRIPTION: what a fetch learned before it downloads anything: what the image says to run, the credential the registry accepted, and the size it is taken to unpack to.
 struct Prepared {
     launch: ImageLaunch,
     auth: String,
-    floor: Option<u64>,
+    unpacked: Option<u64>,
 }
 
 impl ImageCache {
@@ -336,7 +333,7 @@ impl ImageCache {
                 }
             }
         };
-        let need = prepared.floor.unwrap_or(0).saturating_mul(UNPACKED_RATIO);
+        let need = prepared.unpacked.unwrap_or(0);
         let room = self.make_room(need);
         let reserved = match self.admit(need) {
             Ok(reserved) => reserved,
@@ -497,11 +494,11 @@ impl ImageCache {
             })?;
         let launch = launch_from_config(&config)
             .map_err(|e| unusable(format!("reading the config of {reference}: {e:#}")))?;
-        let floor = fetch::compressed_size(crane, reference, &auth, deadline, lifetime);
+        let unpacked = fetch::unpacked_size(crane, reference, &auth, deadline, lifetime);
         Ok(Prepared {
             launch,
             auth,
-            floor,
+            unpacked,
         })
     }
 

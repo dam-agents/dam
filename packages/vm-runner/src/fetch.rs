@@ -10,7 +10,7 @@ use crate::api::{
     REASON_BOOT_FAILED, REASON_IMAGE_UNAVAILABLE, REASON_OUT_OF_CAPACITY, REASON_SEED_MISSING,
     REASON_STORAGE_FULL,
 };
-use crate::cache::PULL_TIMEOUT;
+use crate::cache::{repository, PULL_TIMEOUT};
 use crate::command::{self, PipelineFailure};
 use crate::files;
 
@@ -199,8 +199,93 @@ pub fn read_config(
     )))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the bytes the registry says this platform's image is, from its manifest: the config and every layer, compressed. An unpacked tree is larger, so this is a floor and not a size. It is what a fetch reserves against the node's ceiling and checks the disk against before it downloads anything. A manifest that cannot be read, or is an index with no layers, gives nothing, and the fetch goes on with no floor.
-pub fn compressed_size(
+// UNIT_BOUNDARY_DESCRIPTION: how much larger an unpacked layer is taken to be than its blob when its real size cannot be read: a zstd layer, a registry that refuses a ranged read, a gzip trailer that may have wrapped. The export streams of common agent and base images measured 2.2 to 3.2 times their manifest's size; this is a fixed guess above all of them.
+pub const UNPACKED_RATIO: u64 = 4;
+
+// UNIT_BOUNDARY_DESCRIPTION: the compressed size from which a gzip trailer may have wrapped. The trailer holds what the layer inflates to mod 2^32, so a layer of 4 GiB or more reads small. Below 1 GiB compressed a layer reaches 4 GiB only past UNPACKED_RATIO, which the estimate would not admit either, so a trailer that wrapped there refuses only what the estimate refused; at or above it the estimate is used. A trailer well below the blob's own size is not trusted either: the empty last member of a multi-member gzip, such as eStargz's footer, reads 0, since a trailer counts only its own member. An incompressible layer, a tar of archives, reads a little below its blob, which the last sixteenth allows.
+pub const WRAP_PLAUSIBLE: u64 = (1 << 32) / UNPACKED_RATIO;
+
+// UNIT_BOUNDARY_DESCRIPTION: what a measured layer is given on top of its size. crane's export stream is the layers flattened with their tar headers written again, and on six common images it measured 0.97 to 1.00 of the summed trailers; a tenth covers headers written larger than the layer had them, and the fixed slack the end blocks and padding of a small layer.
+pub const LAYER_SLACK: u64 = 64 << 10;
+
+// UNIT_BOUNDARY_DESCRIPTION: how long the trailer reads of one image may take, all layers together. A registry that is slow to answer them costs the fetch this much at most, and the image is then sized by the estimate.
+pub const PROBE_BUDGET: Duration = Duration::from_secs(20);
+
+// UNIT_BOUNDARY_DESCRIPTION: how many trailer reads run at once. One at a time, an image of 28 layers took 14 s; all at once, 1.3 s. The bound keeps a manifest of thousands of layers from starting a thread for each.
+pub const PROBES_AT_ONCE: usize = 16;
+
+// UNIT_BOUNDARY_DESCRIPTION: a gzip layer, by the OCI or the Docker media type.
+pub fn is_gzip(media_type: &str) -> bool {
+    media_type.ends_with("tar+gzip") || media_type.ends_with("tar.gzip")
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the bytes an unpacked layer is taken to stream, with its margin when its size is known. An uncompressed layer's blob is its tar. A gzip layer's trailer is its tar's size when it cannot have wrapped (WRAP_PLAUSIBLE). Anything else is the estimate.
+pub fn layer_estimate(media_type: &str, size: u64, trailer: Option<u32>) -> u64 {
+    let measured = if media_type.ends_with(".tar") {
+        Some(size)
+    } else {
+        trailer
+            .filter(|_| is_gzip(media_type))
+            .map(u64::from)
+            .filter(|isize| *isize >= size - size / 16 && size < WRAP_PLAUSIBLE)
+    };
+    measured.map_or(size.saturating_mul(UNPACKED_RATIO), |bytes| {
+        bytes.saturating_add(bytes / 10).saturating_add(LAYER_SLACK)
+    })
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: where a repository's blobs are read over HTTP, named as crane names them: a first segment with no dot or port that is not localhost is a Docker Hub path, and only a loopback registry, localhost or a loopback address, speaks plain HTTP, since the read carries the caller's token. Every other registry is read over HTTPS, so an insecure one on a private network is sized by the estimate.
+pub fn blob_base(repository: &str) -> String {
+    let (host, path) = match repository.split_once('/') {
+        Some((head, rest)) if head.contains(['.', ':']) || head == "localhost" => (head, rest),
+        _ => ("docker.io", repository),
+    };
+    let (host, path) = match host {
+        "docker.io" if !path.contains('/') => ("index.docker.io", format!("library/{path}")),
+        "docker.io" => ("index.docker.io", path.to_string()),
+        _ => (host, path.to_string()),
+    };
+    let name = host.rsplit_once(':').map_or(host, |(name, _)| name);
+    let plain = name == "localhost"
+        || name
+            .trim_matches(['[', ']'])
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback());
+    let scheme = if plain { "http" } else { "https" };
+    format!("{scheme}://{host}/v2/{path}/blobs/")
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the last four bytes of a gzip blob, its trailer: the size it inflates to, mod 2^32. One ranged read; a registry that answers with anything but those four bytes, a whole blob included, gives nothing, and at most five bytes of its answer are read. A redirect to the registry's storage drops the Authorization header, as reqwest does across hosts.
+pub fn gzip_trailer(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    token: Option<&str>,
+    size: u64,
+    deadline: Instant,
+) -> Option<u32> {
+    use std::io::Read;
+    let first = size.checked_sub(4)?;
+    let mut request = client
+        .get(url)
+        .header(
+            reqwest::header::RANGE,
+            format!("bytes={first}-{}", size - 1),
+        )
+        .timeout(deadline.saturating_duration_since(Instant::now()));
+    if let Some(token) = token {
+        request = request.header(reqwest::header::AUTHORIZATION, token);
+    }
+    let response = request.send().ok()?;
+    if response.status() != reqwest::StatusCode::PARTIAL_CONTENT {
+        return None;
+    }
+    let mut body = Vec::new();
+    response.take(5).read_to_end(&mut body).ok()?;
+    Some(u32::from_le_bytes(body.try_into().ok()?))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the bytes this platform's image is taken to stream unpacked, from its manifest and each gzip layer's trailer. OCI metadata names only compressed sizes, so the real size is read from the end of each gzip blob, with the bearer token crane gets for the repository from the credential that read the config. A registry crane gets no token from, such as one that takes basic auth, is read anonymously. Every layer whose size cannot be read is taken at UNPACKED_RATIO, so a failed read never fails the fetch. It is what a fetch reserves against the node's ceiling, checks the disk against before it downloads anything, and may unpack at most. A manifest that cannot be read, or is an index with no layers, gives nothing, and the fetch goes on with the whole budget as its cap.
+pub fn unpacked_size(
     crane: &str,
     reference: &str,
     auth: &str,
@@ -208,13 +293,16 @@ pub fn compressed_size(
     cancel: &CancellationToken,
 ) -> Option<u64> {
     #[derive(serde::Deserialize)]
-    struct Blob {
+    struct Layer {
+        #[serde(rename = "mediaType", default)]
+        media_type: String,
+        #[serde(default)]
+        digest: String,
         size: u64,
     }
     #[derive(serde::Deserialize)]
     struct Manifest {
-        config: Blob,
-        layers: Vec<Blob>,
+        layers: Vec<Layer>,
     }
     let out = crane_output(
         crane,
@@ -226,14 +314,67 @@ pub fn compressed_size(
     )
     .ok()?;
     let manifest: Manifest = serde_json::from_slice(&out).ok()?;
-    Some(
-        manifest
-            .layers
-            .iter()
-            .fold(manifest.config.size, |sum, layer| {
-                sum.saturating_add(layer.size)
-            }),
-    )
+    let gzip = |layer: &Layer| {
+        is_gzip(&layer.media_type)
+            && layer.digest.starts_with("sha256:")
+            && layer.digest[7..].bytes().all(|b| b.is_ascii_hexdigit())
+    };
+    let probe = within(PROBE_BUDGET, deadline);
+    let mut trailers = vec![None; manifest.layers.len()];
+    if manifest.layers.iter().any(gzip) {
+        let repo = repository(reference);
+        let token = crane_output(crane, "auth", &["token", "-H", repo], auth, probe, cancel)
+            .ok()
+            .and_then(|out| {
+                String::from_utf8(out)
+                    .ok()?
+                    .trim()
+                    .strip_prefix("Authorization: ")
+                    .map(str::to_string)
+            });
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        if let Ok(client) = reqwest::blocking::Client::builder().build() {
+            let base = blob_base(repo);
+            for (layers, read) in manifest
+                .layers
+                .chunks(PROBES_AT_ONCE)
+                .zip(trailers.chunks_mut(PROBES_AT_ONCE))
+            {
+                std::thread::scope(|s| {
+                    for (layer, trailer) in layers.iter().zip(read.iter_mut()) {
+                        if gzip(layer) {
+                            let (client, base, token) = (&client, &base, token.as_deref());
+                            s.spawn(move || {
+                                *trailer = gzip_trailer(
+                                    client,
+                                    &format!("{base}{}", layer.digest),
+                                    token,
+                                    layer.size,
+                                    probe,
+                                );
+                            });
+                        }
+                    }
+                });
+            }
+        }
+    }
+    let measured = trailers.iter().flatten().count();
+    let bytes = manifest
+        .layers
+        .iter()
+        .zip(&trailers)
+        .fold(0u64, |sum, (layer, trailer)| {
+            sum.saturating_add(layer_estimate(&layer.media_type, layer.size, *trailer))
+        });
+    tracing::info!(
+        image = reference,
+        layers = manifest.layers.len(),
+        measured,
+        bytes,
+        "image unpacked size read"
+    );
+    Some(bytes)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the bytes free to this process on the filesystem holding `dir`, or nothing when it cannot be asked.
@@ -411,6 +552,114 @@ mod tests {
             ]
         );
         assert!(host_platform().starts_with("linux/"));
+    }
+
+    // TEST_SCENARIO: a gzip blob ends in its trailer, the size its member inflates to mod 2^32, little-endian. A real gzip of a known payload is read back through one ranged read of its last four bytes, with the token passed on; a registry that refuses the token, or ignores the range and sends the whole blob, gives no size rather than a wrong one.
+    #[test]
+    fn a_gzip_trailer_is_its_inflated_size() {
+        let payload = vec![7u8; 300_000];
+        let dir = crate::testdir::TempDir::new("isize");
+        fs::write(dir.path().join("layer"), &payload).unwrap();
+        let gz = Command::new("gzip")
+            .arg("-c")
+            .arg(dir.path().join("layer"))
+            .output()
+            .unwrap()
+            .stdout;
+        let size = gz.len() as u64;
+        let blob = gz.clone();
+        let honours = crate::testdir::http_stub(move |head| {
+            if head.contains("authorization: Bearer t0k")
+                || head.contains("Authorization: Bearer t0k")
+            {
+                crate::testdir::ranged(head, &blob)
+            } else {
+                b"HTTP/1.1 401 Unauthorized\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+                    .to_vec()
+            }
+        });
+        let ignores = crate::testdir::http_stub(move |_| crate::testdir::ranged("", &gz));
+        let client = reqwest::blocking::Client::new();
+        let soon = Instant::now() + Duration::from_secs(10);
+        let url = |port: u16| format!("http://127.0.0.1:{port}/v2/x/blobs/sha256:a");
+        assert_eq!(
+            gzip_trailer(&client, &url(honours), Some("Bearer t0k"), size, soon),
+            Some(300_000)
+        );
+        assert_eq!(gzip_trailer(&client, &url(honours), None, size, soon), None);
+        assert_eq!(
+            gzip_trailer(&client, &url(ignores), Some("Bearer t0k"), size, soon),
+            None,
+            "a whole blob was read as a trailer"
+        );
+    }
+
+    // TEST_SCENARIO: a layer whose size is read is reserved at that size and a tenth more, plus a fixed slack; one whose size cannot be read, at four times its blob. An uncompressed layer's blob is its size. A zstd layer, a gzip one whose trailer could not be read, and one large enough that its trailer may have wrapped past 4 GiB take the estimate, as does a trailer far below its blob, an eStargz footer's 0.
+    #[test]
+    fn a_layer_is_sized_by_its_trailer_unless_it_may_have_wrapped() {
+        const GZIP: &str = "application/vnd.oci.image.layer.v1.tar+gzip";
+        const DOCKER: &str = "application/vnd.docker.image.rootfs.diff.tar.gzip";
+        let margin = |bytes: u64| bytes + bytes / 10 + LAYER_SLACK;
+        assert_eq!(layer_estimate(GZIP, 1000, Some(32_000)), margin(32_000));
+        assert_eq!(layer_estimate(DOCKER, 1000, Some(32_000)), margin(32_000));
+        assert_eq!(
+            layer_estimate("application/vnd.oci.image.layer.v1.tar", 5000, None),
+            margin(5000)
+        );
+        assert_eq!(layer_estimate(GZIP, 1000, None), 4000);
+        assert_eq!(
+            layer_estimate(
+                "application/vnd.oci.image.layer.v1.tar+zstd",
+                1000,
+                Some(32_000)
+            ),
+            4000
+        );
+        assert_eq!(layer_estimate(GZIP, 1000, Some(0)), 4000);
+        assert_eq!(layer_estimate(GZIP, 1000, Some(990)), margin(990));
+        assert_eq!(WRAP_PLAUSIBLE, 1 << 30);
+        assert_eq!(
+            layer_estimate(GZIP, WRAP_PLAUSIBLE, Some(u32::MAX)),
+            WRAP_PLAUSIBLE * UNPACKED_RATIO,
+            "a trailer that may have wrapped was trusted"
+        );
+        assert_eq!(
+            layer_estimate(GZIP, WRAP_PLAUSIBLE - 1, Some(u32::MAX)),
+            margin(u64::from(u32::MAX))
+        );
+    }
+
+    // TEST_SCENARIO: a layer's trailer is read from the registry crane reads it from. A bare Docker Hub name is under library/, a host is the first segment only when it has a dot or a port or is localhost, and a loopback registry is read over plain HTTP, as crane reads it.
+    #[test]
+    fn blobs_are_read_where_crane_reads_them() {
+        assert_eq!(
+            blob_base("alpine"),
+            "https://index.docker.io/v2/library/alpine/blobs/"
+        );
+        assert_eq!(
+            blob_base("docker.io/jupyter/base"),
+            "https://index.docker.io/v2/jupyter/base/blobs/"
+        );
+        assert_eq!(blob_base("quay.io/x/vm"), "https://quay.io/v2/x/vm/blobs/");
+        assert_eq!(
+            blob_base("127.0.0.1:5000/x/vm"),
+            "http://127.0.0.1:5000/v2/x/vm/blobs/"
+        );
+        assert_eq!(
+            blob_base("localhost:5000/vm"),
+            "http://localhost:5000/v2/vm/blobs/"
+        );
+        assert_eq!(blob_base("[::1]:5000/vm"), "http://[::1]:5000/v2/vm/blobs/");
+        for lookalike in [
+            "127.evil.io/vm",
+            "localhost.evil.io/vm",
+            "127.0.0.1.nip.io/vm",
+        ] {
+            assert!(
+                blob_base(lookalike).starts_with("https://"),
+                "{lookalike} would get its token over plain HTTP"
+            );
+        }
     }
 
     // TEST_SCENARIO: an image is unpacked by a writer that holds no MKNOD, into a tree every machine of it boots. What is under /dev is skipped and the rest of the tree kept, the tree's own root keeps the mode the cache gave it, and a directory the image makes read-only still gets its files.
