@@ -6,10 +6,10 @@ Applying either file drains and reboots every node of the pools it reaches, one 
 
 ## Files
 
-| File                                                                     | Kind                          | What it does                                                                                                                                                                                                                     |
-| ------------------------------------------------------------------------ | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`99-worker-platform-host-dirs.yaml`](99-worker-platform-host-dirs.yaml) | MachineConfig, Ignition 3.5.0 | Creates the platform's node directories as `root:root 0755` through a tmpfiles.d entry, and labels each one `system_u:object_r:container_file_t:s0` on every boot through a oneshot unit that runs before CRI-O and the kubelet. |
-| [`worker-image-gc.yaml`](worker-image-gc.yaml)                           | KubeletConfig                 | Starts kubelet image garbage collection at 75% disk use and collects down to 65%, for images unused for at least 30 minutes.                                                                                                     |
+| File                                                                     | Kind                          | What it does                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------------------------ | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`99-worker-platform-host-dirs.yaml`](99-worker-platform-host-dirs.yaml) | MachineConfig, Ignition 3.5.0 | Creates the platform's node directories as `root:root`, `0755` and the image cache `0700`, through a tmpfiles.d entry, and labels each one `system_u:object_r:container_file_t:s0` on every boot through a oneshot unit that runs before CRI-O and the kubelet. |
+| [`worker-image-gc.yaml`](worker-image-gc.yaml)                           | KubeletConfig                 | Starts kubelet image garbage collection at 75% disk use and collects down to 65%, for images unused for at least 30 minutes.                                                                                                                                    |
 
 ### The node directories
 
