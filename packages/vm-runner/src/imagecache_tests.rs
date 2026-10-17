@@ -7,7 +7,7 @@ use crate::fetch::failure_reason;
 
 // TEST_OVERVIEW: the image cache's one writer — the node service, or a runner on its own claim. It resolves a reference to a digest, fetches that digest once for every caller, holds what callers name so eviction spares it, and on a shared cache serves a privately fetched entry only to a caller whose credentials read it. The node service reaches runners over a Unix socket, and the end-to-end tests drive that socket in-process.
 
-// UNIT_BOUNDARY_DESCRIPTION: a crane that answers the four questions the cache asks — which digest a tag names, what an image says to run, what its manifest says it weighs, and what its filesystem holds — and logs each call. A tag's digest is a hash of its repository, the platform asked for and the contents of `moved`, so a test moves a tag by writing that file; `registry-down` makes every resolution fail. The manifest weighs what `size` says, an export waits while `hold-export` exists, and fails while `export-fails` does.
+// UNIT_BOUNDARY_DESCRIPTION: a crane that answers the four questions the cache asks — which digest a tag names, what an image says to run, what its manifest says it weighs, and what its filesystem holds — and logs each call. A tag's digest is a hash of its repository, the platform asked for and the contents of `moved`, so a test moves a tag by writing that file; `registry-down` makes every resolution fail. The manifest weighs what `size` says, an export waits while `hold-export` exists, fails while `export-fails` does, and carries a file of as many zeros as `inflate` says.
 const PUBLIC_CRANE: &str = r#"#!/bin/sh
 here="$(dirname "$0")"
 echo "$@" >> "$here/crane.log"
@@ -22,7 +22,9 @@ case "$1" in
 esac
 while [ -f "$here/hold-export" ]; do sleep 0.02; done
 if [ -f "$here/export-fails" ]; then echo 'unexpected EOF' >&2; exit 1; fi
-d=$(mktemp -d); echo rootfs > "$d/hello"; tar -cf - -C "$d" .; rm -rf "$d"
+d=$(mktemp -d); echo rootfs > "$d/hello"
+if [ -f "$here/inflate" ]; then head -c "$(cat "$here/inflate")" /dev/zero > "$d/bomb"; fi
+tar -cf - -C "$d" .; rm -rf "$d"
 "#;
 
 // UNIT_BOUNDARY_DESCRIPTION: three registries holding one private image. quay.io/x/vm answers only the credential `c2VjcmV0`, mirror.io/x/vm only `b3RoZXI=`, and attacker.io answers every manifest read from anyone with the image's digest, while holding none of its bytes.
@@ -672,6 +674,32 @@ fn a_resolve_that_fails_holds_nothing() {
     );
     assert!(failed.fetched.is_some_and(|f| !f.ok));
     assert!(locked(&cache.memory).holds.is_empty());
+    assert_eq!(scratch_trees(&cache), 0);
+}
+
+// TEST_SCENARIO: what a fetch may unpack is what the cache reserved for it, so a small image whose layers inflate cannot fill the disk the cache shares with every machine. An image within its reservation unpacks whole; one past it is stopped, leaves no partial tree, and is reported as an image problem naming the cap, not as a boot to retry.
+#[test]
+fn an_image_that_inflates_past_its_reservation_is_refused() {
+    let f = Fixture::new("inflate", PUBLIC_CRANE);
+    fs::write(f.dir.path().join("size"), "8000000").unwrap();
+    fs::write(f.dir.path().join("inflate"), "16000000").unwrap();
+    let cache = f.cache(|_| {});
+    let fits = resolved(cache.resolve("quay.io/x/fits:1", &[]));
+    let rootfs = cache.digest_entry(&fits.digest).join(ROOTFS_DIR);
+    assert_eq!(fs::read(rootfs.join("hello")).unwrap(), b"rootfs\n");
+    assert_eq!(fs::metadata(rootfs.join("bomb")).unwrap().len(), 16_000_000);
+
+    fs::write(f.dir.path().join("inflate"), "48000000").unwrap();
+    let refused = cache.resolve("quay.io/x/bomb:1", &[]);
+    let error = refused.resolved.unwrap_err();
+    assert_eq!(failure_reason(&error), REASON_IMAGE_UNAVAILABLE);
+    let cap = (8_000_000 + 1) * UNPACKED_RATIO;
+    assert!(
+        error
+            .to_string()
+            .contains(&format!("more than {cap} bytes")),
+        "{error:#}"
+    );
     assert_eq!(scratch_trees(&cache), 0);
 }
 

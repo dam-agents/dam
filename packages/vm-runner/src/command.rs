@@ -34,10 +34,11 @@ pub fn output(
     Ok(stdout)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: runs `producer | consumer` and waits for both. Each side's stderr is kept apart, so a failure names the half that failed. Either side failing fails the pipeline, and a producer that fails first is reported even though the consumer then fails too on the short stream.
+// UNIT_BOUNDARY_DESCRIPTION: runs `producer | consumer` and waits for both. Each side's stderr is kept apart, so a failure names the half that failed. Either side failing fails the pipeline, and a producer that fails first is reported even though the consumer then fails too on the short stream. The stream passes through this process, which counts it: past `limit` bytes it closes both ends, so the producer fails on a broken pipe and the consumer on a cut stream, and the pipeline fails as over its limit whatever either then says.
 pub fn pipeline(
     producer: &mut Command,
     consumer: &mut Command,
+    limit: Option<u64>,
     deadline: Instant,
     cancel: &CancellationToken,
 ) -> Result<(), PipelineFailure> {
@@ -48,13 +49,8 @@ pub fn pipeline(
         .process_group(0)
         .spawn()
         .map_err(|e| PipelineFailure::Producer(e.to_string()))?;
-    let stream = first
-        .stdout
-        .take()
-        .map(Stdio::from)
-        .unwrap_or(Stdio::null());
     let mut second = match consumer
-        .stdin(stream)
+        .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .process_group(0)
@@ -66,13 +62,18 @@ pub fn pipeline(
             return Err(PipelineFailure::Consumer(e.to_string()));
         }
     };
+    let pump = pump(first.stdout.take(), second.stdin.take(), limit);
     let first_err = drain(first.stderr.take());
     let second_err = drain(second.stderr.take());
     let finished = wait(&mut [&mut first, &mut second], deadline, cancel);
+    let over = pump.join().unwrap_or_default();
     let first_err = String::from_utf8_lossy(&first_err.join().unwrap_or_default()).into_owned();
     let second_err = String::from_utf8_lossy(&second_err.join().unwrap_or_default()).into_owned();
     if let Err(e) = finished {
         return Err(PipelineFailure::Producer(format!("{e}: {first_err}")));
+    }
+    if over {
+        return Err(PipelineFailure::OverLimit);
     }
     if !succeeded(&mut first) {
         return Err(PipelineFailure::Producer(format!(
@@ -93,6 +94,23 @@ pub fn pipeline(
 pub enum PipelineFailure {
     Producer(String),
     Consumer(String),
+    OverLimit,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: copies the producer's stream to the consumer, at most `limit` bytes, and says whether the stream held more. Returning drops both pipes, which is what ends the two processes once the limit is passed. On Linux std copies pipe to pipe with splice where it can, so the stream need not pass through this process's memory.
+fn pump(
+    from: Option<std::process::ChildStdout>,
+    to: Option<std::process::ChildStdin>,
+    limit: Option<u64>,
+) -> JoinHandle<bool> {
+    std::thread::spawn(move || {
+        let (Some(mut from), Some(mut to)) = (from, to) else {
+            return false;
+        };
+        let limit = limit.unwrap_or(u64::MAX);
+        let copied = std::io::copy(&mut (&mut from).take(limit), &mut to).unwrap_or(0);
+        copied == limit && from.read(&mut [0]).is_ok_and(|n| n > 0)
+    })
 }
 
 fn drain<R: Read + Send + 'static>(source: Option<R>) -> JoinHandle<Vec<u8>> {
@@ -231,18 +249,46 @@ mod tests {
             pipeline(
                 &mut sh("printf data"),
                 &mut sh("cat >/dev/null"),
+                None,
                 soon(),
                 &CancellationToken::new()
             ),
             Ok(())
         );
         assert!(matches!(
-            pipeline(&mut sh("echo refused >&2; exit 1"), &mut sh("cat >/dev/null"), soon(), &CancellationToken::new()),
+            pipeline(&mut sh("echo refused >&2; exit 1"), &mut sh("cat >/dev/null"), None, soon(), &CancellationToken::new()),
             Err(PipelineFailure::Producer(e)) if e.contains("refused")
         ));
         assert!(matches!(
-            pipeline(&mut sh("printf data"), &mut sh("cat >/dev/null; echo full >&2; exit 2"), soon(), &CancellationToken::new()),
+            pipeline(&mut sh("printf data"), &mut sh("cat >/dev/null; echo full >&2; exit 2"), None, soon(), &CancellationToken::new()),
             Err(PipelineFailure::Consumer(e)) if e.contains("full")
         ));
+    }
+
+    // TEST_SCENARIO: an image whose layers inflate past what the cache reserved for it must not go on filling the disk. A stream of exactly its limit passes whole; one byte more ends both halves and fails the pipeline as over its limit, not as either half's own failure.
+    #[test]
+    fn a_pipeline_stops_a_stream_past_its_limit() {
+        assert_eq!(
+            pipeline(
+                &mut sh("printf 1234"),
+                &mut sh("test \"$(cat)\" = 1234"),
+                Some(4),
+                soon(),
+                &CancellationToken::new()
+            ),
+            Ok(())
+        );
+        let started = Instant::now();
+        assert_eq!(
+            pipeline(
+                &mut sh("yes"),
+                &mut sh("cat >/dev/null"),
+                Some(1 << 20),
+                soon(),
+                &CancellationToken::new()
+            ),
+            Err(PipelineFailure::OverLimit)
+        );
+        assert!(started.elapsed() < Duration::from_secs(5));
     }
 }

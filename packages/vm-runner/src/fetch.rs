@@ -292,12 +292,13 @@ pub fn tar_args(rootfs: &Path) -> Vec<OsString> {
     args
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: streams the image's flattened filesystem into `rootfs`. A registry that fails the export, or a stream tar cannot unpack, is a problem with the image; a disk that fills while it unpacks is a problem of capacity. Neither is a boot to retry at once, which would download the whole image again into the same state.
+// UNIT_BOUNDARY_DESCRIPTION: streams the image's flattened filesystem into `rootfs`, at most `cap` bytes of it. A registry that fails the export, a stream tar cannot unpack, or one larger than the cap is a problem with the image; a disk that fills while it unpacks is a problem of capacity. Neither is a boot to retry at once, which would download the whole image again into the same state. Past the cap the unpack is stopped and the caller's scratch tree goes with it, so a small image whose layers inflate cannot fill the disk the cache shares with every machine on it. Its ceiling: the cap counts the stream, not the blocks the tree takes, so a stream of many tiny files can take a few times the cap on disk; counting blocks would mean polling the tree as it grows.
 pub fn unpack(
     crane: &str,
     reference: &str,
     rootfs: &Path,
     auth: &str,
+    cap: Option<u64>,
     deadline: Instant,
     cancel: &CancellationToken,
 ) -> anyhow::Result<()> {
@@ -306,11 +307,19 @@ pub fn unpack(
     let result = command::pipeline(
         &mut crane_command(crane, "export", &[reference, "-"], &credentials),
         Command::new("tar").args(tar_args(rootfs)),
+        cap,
         within(PULL_TIMEOUT, deadline),
         cancel,
     );
     let (step, detail) = match result {
         Ok(()) => return Ok(()),
+        Err(PipelineFailure::OverLimit) => {
+            tracing::warn!(image = reference, cap, "image unpack passed its cap");
+            return Err(unusable(format!(
+                "{reference} unpacks to more than {} bytes, the most the image cache allows it",
+                cap.unwrap_or_default()
+            )));
+        }
         Err(PipelineFailure::Producer(detail)) => ("exporting", detail),
         Err(PipelineFailure::Consumer(detail)) => ("unpacking", detail),
     };
@@ -436,6 +445,56 @@ mod tests {
         assert!(!rootfs.join("dev/fake-node").exists());
         assert!(rootfs.join("usr/lib/dev/keep").exists());
         gnu_tar().unwrap();
+    }
+
+    // TEST_SCENARIO: an image is untrusted input unpacked by a writer that holds DAC_OVERRIDE, so no entry may land outside the tree. GNU tar has no flag that pins this, only `-P` that turns it off, so its default is pinned here with a crafted stream: a leading `/` is stripped into the tree, a member naming `..` is skipped and fails the unpack, and a file written through a symlink the image points out of the tree is refused.
+    #[test]
+    fn tar_never_writes_outside_the_tree() {
+        let dir = crate::testdir::TempDir::new("tar-escape");
+        let outside = dir.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        let rootfs = dir.path().join("rootfs");
+        fs::create_dir(&rootfs).unwrap();
+        let mut archive = tar::Builder::new(Vec::new());
+        let mut entry = |name: &str, kind: tar::EntryType, link: Option<&Path>| {
+            let mut header = tar::Header::new_gnu();
+            header.as_old_mut().name[..name.len()].copy_from_slice(name.as_bytes());
+            header.set_entry_type(kind);
+            if let Some(link) = link {
+                header.set_link_name(link).unwrap();
+            }
+            let body: &[u8] = if kind.is_file() { b"x" } else { b"" };
+            header.set_size(body.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            archive.append(&header, body).unwrap();
+        };
+        let absolute = outside.join("absolute");
+        entry(absolute.to_str().unwrap(), tar::EntryType::Regular, None);
+        entry("../outside/dotdot", tar::EntryType::Regular, None);
+        entry("ok/../../outside/inner", tar::EntryType::Regular, None);
+        entry("link", tar::EntryType::Symlink, Some(&outside));
+        entry("link/through", tar::EntryType::Regular, None);
+        entry("kept", tar::EntryType::Regular, None);
+        let stream = archive.into_inner().unwrap();
+        let mut tar = Command::new("tar")
+            .args(tar_args(&rootfs))
+            .stdin(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        std::io::Write::write_all(&mut tar.stdin.take().unwrap(), &stream).unwrap();
+        assert!(
+            !tar.wait().unwrap().success(),
+            "a `..` member did not fail the unpack"
+        );
+        assert_eq!(
+            fs::read_dir(&outside).unwrap().count(),
+            0,
+            "tar wrote outside the tree"
+        );
+        assert!(rootfs.join(absolute.strip_prefix("/").unwrap()).exists());
+        assert!(rootfs.join("kept").exists());
     }
 
     // TEST_SCENARIO: the reason is what the controller matches on to decide what the person is told — an image to fix, a runner that is full, or a boot to retry. A typed failure keeps its own reason, even under added context, and anything untyped is a boot to retry. The typed failures' own wording reaches the Agent's status, so it is pinned too. A disk that filled is a capacity problem, however the pipe reported it.
