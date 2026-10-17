@@ -1,0 +1,146 @@
+#!/usr/bin/env -S usage bash
+#MISE description="Export, check or apply the repository's GitHub settings, which .github/settings holds as the GitHub API's own request bodies, in YAML"
+#MISE raw=true
+#USAGE arg "<mode>" help="export: write the live settings into the files; check: fail if they differ; apply: make the live settings match the files" { choices "export" "check" "apply"; }
+#USAGE flag "--yes" help="apply without asking"
+# A file under .github/settings is the body of a write to the endpoint at its
+# path below repos/<repo>/, as YAML (repository.yaml: the repo itself, by
+# PATCH; the rest by PUT). Each is read as JSON with sorted keys, so its
+# comments and key order never count as drift. Only the fields a file names
+# are compared, so a field GitHub adds later is not drift.
+# rulesets/<slug>.yaml is one ruleset, matched by name; a live ruleset without a file is left alone, with a warning.
+# automated-security-fixes.yaml is the one endpoint without a body: PUT
+# enables it, DELETE disables it.
+#
+# A token that cannot read a field (a workflow's GITHUB_TOKEN reads no merge,
+# security or Actions settings, and no ruleset's bypass actors) skips it with
+# a notice: check compares what it can read. export and apply need an admin.
+#
+# By path too (the drift workflow), with gh, jq, yq and usage on PATH.
+set -euo pipefail
+settings=$(cd "$(dirname "$0")/../../../.github/settings" && pwd)
+mode=$usage_mode
+repo=${GITHUB_REPOSITORY:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+mkdir -p "$tmp/live/rulesets" "$tmp/files/rulesets"
+touch "$tmp/slugs"
+# The work runs on a JSON copy of the files. export edits the YAML only at
+# the paths whose value changed (an array of a new length as a whole), so the
+# comments elsewhere stay.
+cd "$settings"
+find . -name '*.yaml' | sed 's|^\./||; s|\.yaml$||' | while read -r f; do
+  mkdir -p "$tmp/src/$(dirname "$f")" && yq -o=json "$f.yaml" | jq -S . > "$tmp/src/$f.json"
+done
+mkdir -p "$tmp/src/rulesets"
+cd "$tmp/src"
+save() {
+  local y="$settings/${1%.json}.yaml"
+  [ -f "$y" ] || { yq -P -o=yaml "$tmp/live/$1" > "$y"; return; }
+  jq -r --slurpfile l "$tmp/live/$1" '
+    def ops($a; $b; $p):
+      if $a == $b then empty
+      elif ($a | type) == "object" and ($b | type) == "object" then
+        (($a + $b) | keys[]) as $k
+        | if $b | has($k) then ops($a[$k]; $b[$k]; $p + [$k]) else "delpaths([\($p + [$k] | tojson)])" end
+      elif ($a | type) == "array" and ($b | type) == "array" and ($a | length) == ($b | length) then
+        range($a | length) as $i | ops($a[$i]; $b[$i]; $p + [$i])
+      else "setpath(\($p | tojson); \($b | tojson))" end;
+    [ops(.; $l[0]; [])] | join(" | ")' "$1" > "$tmp/ops"
+  if [ -s "$tmp/ops" ]; then yq -i -P "$(cat "$tmp/ops")" "$y"; fi
+}
+note() { if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::notice::$*"; else echo "note: $*" >&2; fi; }
+
+if [ "$mode" != check ] && [ "$(gh api "repos/$repo" --jq .permissions.admin)" != true ]; then
+  echo "$mode needs admin access to $repo" >&2
+  exit 1
+fi
+
+gh api "repos/$repo/rulesets?includes_parents=false" --paginate --jq '.[] | .id' > "$tmp/ids"
+while read -r id; do
+  gh api "repos/$repo/rulesets/$id" > "$tmp/r"
+  slug=$(jq -r '.name | ascii_downcase | gsub("[^a-z0-9]+"; "-") | ltrimstr("-") | rtrimstr("-")' "$tmp/r")
+  jq -S '{name, target, enforcement, conditions, rules} + if has("bypass_actors") then {bypass_actors} else {} end' "$tmp/r" > "$tmp/live/rulesets/$slug.json"
+  echo "$id $slug" >> "$tmp/slugs"
+  if [ "$mode" = export ]; then
+    save "rulesets/$slug.json"
+  elif [ ! -f "rulesets/$slug.json" ]; then
+    echo "warning: ruleset '$(jq -r .name "$tmp/r")' has no file and is left as it is" >&2
+    rm "$tmp/live/rulesets/$slug.json"
+  elif ! jq -e 'has("bypass_actors")' "$tmp/r" > /dev/null; then
+    note "rulesets/$slug.yaml: this token cannot read bypass_actors, compared without them"
+  fi
+done < "$tmp/ids"
+while read -r f; do
+  [ "$(jq -r '.name | ascii_downcase | gsub("[^a-z0-9]+"; "-") | ltrimstr("-") | rtrimstr("-")' "$f").json" = "${f#rulesets/}" ] || { echo "${f%.json}.yaml: the file name must be its ruleset's name as a slug" >&2; exit 1; }
+  if [ -f "$tmp/live/$f" ]; then
+    jq -S --slurpfile l "$tmp/live/$f" 'if $l[0] | has("bypass_actors") then . else del(.bypass_actors) end' "$f" > "$tmp/files/$f"
+  else
+    jq -S . "$f" > "$tmp/files/$f"
+  fi
+done < <(find rulesets -name '*.json' | sort)
+
+endpoint() { [ "$1" = repository.json ] && echo "repos/$repo" || echo "repos/$repo/${1%.json}"; }
+while read -r f; do
+  mkdir -p "$tmp/live/$(dirname "$f")" "$tmp/files/$(dirname "$f")"
+  if ! gh api "$(endpoint "$f")" > "$tmp/r" 2> /dev/null; then
+    note "${f%.json}.yaml: this token cannot read $(endpoint "$f"), skipped"
+    continue
+  fi
+  # The live value of each field the file names; one this token reads as
+  # null is left out of both sides. An array is one value.
+  jq -S --slurpfile l "$tmp/r" 'def pick($l): if type == "object" and ($l | type) == "object" then with_entries(.key as $k | .value |= pick($l[$k]) | select(.value != null and .value != {})) else $l end; pick($l[0])' "$f" > "$tmp/live/$f"
+  jq -S --slurpfile l "$tmp/r" 'def keep($l): if type == "object" then with_entries(.key as $k | select($l[$k] != null) | .value |= keep($l[$k])) else . end; keep($l[0])' "$f" > "$tmp/files/$f"
+  if ! cmp -s <(jq -S . "$f") "$tmp/files/$f"; then
+    note "${f%.json}.yaml: this token cannot read every field, compared $(jq -c '[paths(scalars)] | length' "$tmp/files/$f") of $(jq -c '[paths(scalars)] | length' "$f")"
+    [ "$mode" != export ] || { echo "export needs every field of ${f%.json}.yaml" >&2; exit 1; }
+  fi
+  [ "$mode" != export ] || save "$f"
+done < <(find . -name '*.json' -not -path './rulesets/*' | sed 's|^\./||' | sort)
+
+# The rulesets are the only branch protection: the legacy kind is gone.
+branch=$(gh api "repos/$repo" --jq .default_branch)
+legacy=0
+if gh api "repos/$repo/branches/$branch/protection" > /dev/null 2> "$tmp/err"; then
+  legacy=1
+  echo "drift: $branch has legacy branch protection; the rulesets replace it. Delete it with:" >&2
+  echo "  gh api -X DELETE repos/$repo/branches/$branch/protection" >&2
+elif ! grep -q "Branch not protected" "$tmp/err"; then
+  note "this token cannot read $branch's legacy branch protection, skipped"
+fi
+
+[ "$mode" != export ] || { echo "Exported the live settings of $repo into .github/settings."; exit 0; }
+cd "$tmp"
+if diff -ru live files | sed 's/\.json/.yaml/g' > diff.txt; [ ! -s diff.txt ]; then
+  echo "OK: the live settings of $repo match .github/settings$( ((legacy)) && echo ", but for the legacy branch protection")."
+  [ "$mode" != check ] || exit "$legacy"
+  exit 0
+fi
+cat diff.txt
+if [ "$mode" = check ]; then
+  msg="The live settings of $repo differ from .github/settings (- live, + files). An admin applies the files with: mise run github:settings -- apply"
+  if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::error::$msg"; else echo "$msg" >&2; fi
+  exit 1
+fi
+if [ "${usage_yes:-false}" != true ]; then
+  read -p "Apply these changes to $repo? [y/N] " -r
+  [[ $REPLY =~ ^[Yy]$ ]] || { echo "Cancelled."; exit 0; }
+fi
+cd "$tmp/src"
+for f in $(cd "$tmp/files" && find . -name '*.json' | sed 's|^\./||' | sort); do
+  cmp -s "$tmp/live/$f" "$tmp/files/$f" && continue
+  case "$f" in
+    rulesets/*)
+      id=$(awk -v s="$(basename "$f" .json)" '$2 == s { print $1 }' "$tmp/slugs")
+      if [ -n "$id" ]; then
+        gh api -X PUT "repos/$repo/rulesets/$id" --input "$f" > /dev/null
+      else
+        gh api -X POST "repos/$repo/rulesets" --input "$f" > /dev/null
+      fi
+      ;;
+    automated-security-fixes.json) gh api -X "$(jq -r 'if .enabled then "PUT" else "DELETE" end' "$f")" "$(endpoint "$f")" > /dev/null ;;
+    repository.json) gh api -X PATCH "$(endpoint "$f")" --input "$f" > /dev/null ;;
+    *) gh api -X PUT "$(endpoint "$f")" --input "$f" > /dev/null ;;
+  esac
+  echo "applied ${f%.json}.yaml"
+done
