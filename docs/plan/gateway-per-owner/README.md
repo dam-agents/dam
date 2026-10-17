@@ -85,7 +85,7 @@ Read first: [security-and-credentials](../../architecture/security-and-credentia
 | 06  | Hibernation and wake without the gateway (done) | Desired-up record, idle checker, budget, wake publishing                                       | 05         |
 | 07  | Owner gateway rolls and restarts (done)         | Surge roll, paced across owners, superseded-pod eviction, failure surfacing                    | 04         |
 | 08  | Migration on dev and cleanup (done)             | Move existing vm Agents, delete per-agent objects, rollback, runtime-migration switch          | 06, 07     |
-| 09  | Architecture pages                              | Rewrite the gateway parts of the pages listed above                                            | 08         |
+| 09  | Architecture pages (done)                       | Rewrite the gateway parts of the pages listed above                                            | 08         |
 
 ```mermaid
 graph LR

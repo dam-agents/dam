@@ -1,6 +1,6 @@
 # VM runner
 
-Last verified: 2026-10-16
+Last verified: 2026-10-17
 
 The pods behind the `vm` Backend: **one runner per owner**, each a single-replica Deployment in the agent namespace running smolvm and the platform's **vm-runner** agent.
 A local cluster on a Mac runs one [host runner](vm-host-runner.md) outside the cluster instead.
@@ -31,6 +31,8 @@ It reaches the host's virtualization devices only as device-plugin resources, ne
 Its gates are not all kernel gates: a machine's egress allowlist is exactly the paired gateway's ClusterIP, or, on a runner outside the cluster, one gateway port on the host's loopback in place of any allowlist — the runner refuses to run a machine with neither, since smolvm reads an empty allowlist as no filter, or one that spans every address — and a guest's DNS, which smolvm's gateway relays whatever the allowlist says, is relayed only to the paired gateway's resolver, or, on a runner outside the cluster, nowhere.
 But smolvm enforces that allowlist in the very process an escaped guest would own, so the runner's own NetworkPolicy is the kernel gate on where an escaped guest goes, and each gateway's ingress policy, admitting only its paired agent and its owner's runner, the gate on whose credentials it reaches.
 So a gateway is never a container of the runner pod, where an escaped guest is root.
+With the [owner gateway](credential-gateway.md#owner-gateway) on, a machine's allowlist is unchanged, still its agent's own gateway ClusterIP, but that Service maps onto the agent's slot on the owner's one gateway pod; the gateway's ingress policy is the owner's, admitting the runner on the agent port range, and the runner's egress names that pod on the same range.
+An escaped guest reaches every gateway of its owner either way, and no other owner's.
 That is why an install has to state `egressCidrs` rather than inherit an open pod.
 Ingress is a NetworkPolicy, admitting the machine API and the published ports only from the api-server and the controller, and the machine API alone from the owner's own migration copy Job — the runner adds no source check of its own — and a token-less scrape port only from the platform's collector ([observability](observability.md#vm-runner)).
 

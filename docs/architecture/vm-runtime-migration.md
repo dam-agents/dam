@@ -1,6 +1,6 @@
 # VM runtime migration
 
-Last verified: 2026-10-15
+Last verified: 2026-10-17
 
 A **runtime migration** moves one container Agent onto the `vm` Backend's [runners](vm-runner.md) at the user's request, and can be undone until the Agent's machine has booted from the copy; the UI offers it only to users who opted into the new runtime.
 `HOME` is the only path a machine keeps whatever image it boots, and a container's root outside its persisted mounts is the image's and keeps nothing ([persistence](persistence.md#per-agent-pvcs)), so a migration carries exactly one thing: the volume that held `HOME`, copied as the machine's home.
@@ -17,6 +17,7 @@ Only then does it scale the container's StatefulSet to zero — keeping it, and 
 The machine boots once even for an Agent that was asleep or stopped when the move began, and that stop holds again once the guest has answered.
 No stop holds the boot, not even one asked for during the move, because every wake is refused until the move ends and nothing could release it; the api-server refuses a sleep while the move holds the Agent, and a stop from the preflight, whose own clear may have been missed, waits for the guest's answer like an older one.
 While it boots the gateway serves the machine, admitting the owner's runner, and the container stays down, so the Agent's Service routes to the machine instead, as a vm Agent's does; an abort before the verified boot gives the container its headless Service back.
+With the [owner gateway](credential-gateway.md#owner-gateway) on, the migrating Agent keeps its own gateway until its Backend switches, and moves to the owner gateway like any vm Agent after that.
 A guest that answers with its home from the copy's seed, as the next paragraph says, makes the migration **verified**, the point of no return; the api-server, which polls for verified Agents, then switches the Backend to the target shape and withdraws the request in one write, and only after that does the controller remove the StatefulSet and the seed and retain the old home volume.
 A copy that fails is reported with the copy Job's own error and retried, and so is one whose pod has not started ten minutes after its Job was made — a volume still attached to another node, a mount that fails — with the reason its pod's Events give; after three attempts, or once the migration has run for six hours, it is **failed**, with the reason on the Agent.
 A copy no fresh attempt can change — a home past the copy's walk limits, or larger than the machine's disk — fails it at the first attempt instead, saying what the user can change.
