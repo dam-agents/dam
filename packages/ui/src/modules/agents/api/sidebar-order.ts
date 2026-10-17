@@ -37,18 +37,3 @@ export function useSetAgentOrder() {
     }),
   );
 }
-
-export function useSetSessionOrder() {
-  return useMutation(
-    trpc.sidebarOrder.setSessions.mutationOptions({
-      scope: SCOPE,
-      onMutate: ({ agentId, sessionIds }) =>
-        patchOrder((order) => ({
-          ...order,
-          sessions: { ...order.sessions, [agentId]: sessionIds },
-        })),
-      onError: refetchOrder,
-      meta: { errorToast: "Couldn't save the order of your sessions" },
-    }),
-  );
-}

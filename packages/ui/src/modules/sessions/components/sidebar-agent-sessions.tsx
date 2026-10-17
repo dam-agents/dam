@@ -4,7 +4,7 @@ import {
   SessionMode,
   TELEMETRY_MAX_SINCE_HOURS,
 } from "api-server-api";
-import { type ReactNode, useState } from "react";
+import { useState } from "react";
 
 import { labelVariants } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
@@ -13,12 +13,7 @@ import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
-import { useIsAgentAnswerableSoon } from "../../agents/api/queries.js";
-import { OrderDropIndicator } from "../../agents/components/order-drop-indicator.js";
 import { useActWhenAwake } from "../../agents/hooks/use-act-when-awake.js";
-import { useOrderDrag } from "../../agents/hooks/use-order-drag.js";
-import type { useSidebarOrderActions } from "../../agents/hooks/use-sidebar-order-actions.js";
-import { manualOrder } from "../../agents/lib/sidebar-order.js";
 import { useFeatures } from "../../features/api/queries.js";
 import type { AgentActivitySession } from "../../home/hooks/use-activity-sessions.js";
 import { isFiltered } from "../../home/lib/activity-filter.js";
@@ -27,14 +22,13 @@ import { downloadTelemetryExport } from "../../telemetry/api/download-export.js"
 import {
   prefetchSessionHistory,
   provisionalSessionView,
-  useSessionsById,
 } from "../api/queries.js";
 import { useAgentSessionList } from "../hooks/use-agent-session-list.js";
 import { useOpenSession } from "../hooks/use-open-session.js";
 import {
   moreClick,
+  newestFirst,
   sessionListControls,
-  SIDEBAR_PREVIEW_SESSIONS,
   sidebarSessionWindow,
 } from "../lib/sidebar-session-window.js";
 import { RenameSessionDialog } from "./rename-session-dialog.js";
@@ -42,8 +36,6 @@ import { SessionListSkeleton } from "./session-list-skeleton.js";
 import { SessionRow } from "./session-row.js";
 
 const ROW_CLASS = "rounded-lg border-b-0 py-1.5 pr-2 pl-9";
-
-type OrderActions = ReturnType<typeof useSidebarOrderActions>;
 
 interface SessionActions {
   rename: (session: SessionView) => void;
@@ -55,8 +47,6 @@ interface Props {
   open: boolean;
   preview: readonly AgentActivitySession[];
   previewComplete: boolean;
-  order: readonly string[];
-  orderActions: OrderActions;
   conversationOf: (session: AttentionItem) => string | undefined;
   stickyClassName: string;
   onNavigate?: () => void;
@@ -67,15 +57,12 @@ export function SidebarAgentSessions({
   open,
   preview,
   previewComplete,
-  order,
-  orderActions,
   conversationOf,
   stickyClassName,
   onNavigate,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [renaming, setRenaming] = useState<SessionView | null>(null);
-  const answerable = useIsAgentAnswerableSoon(agentId);
   const deleteSession = useStore((s) => s.deleteSession);
   const showConfirm = useStore((s) => s.showConfirm);
   const actWhenAwake = useActWhenAwake(agentId);
@@ -91,20 +78,17 @@ export function SidebarAgentSessions({
           { kind: "destructive", confirmLabel: "Delete session" },
         )
       )
-        actWhenAwake(`delete:${s.sessionId}`, async () => {
-          if (await deleteSession(s.sessionId, agentId))
-            orderActions.forgetSession(agentId, s.sessionId);
-        });
+        actWhenAwake(`delete:${s.sessionId}`, () =>
+          deleteSession(s.sessionId, agentId),
+        );
     },
   };
 
   return (
     <>
-      {open || expanded || (order.length > 0 && answerable) ? (
+      {open || expanded ? (
         <AgentSessionList
           agentId={agentId}
-          order={order}
-          orderActions={orderActions}
           sessionActions={sessionActions}
           expanded={expanded}
           onExpandedChange={setExpanded}
@@ -116,8 +100,6 @@ export function SidebarAgentSessions({
           agentId={agentId}
           sessions={preview}
           complete={previewComplete}
-          order={order}
-          orderActions={orderActions}
           sessionActions={sessionActions}
           conversationOf={conversationOf}
           onExpand={() => setExpanded(true)}
@@ -137,10 +119,8 @@ export function SidebarAgentSessions({
 
 function SessionPreview({
   agentId,
-  sessions: recent,
+  sessions,
   complete,
-  order,
-  orderActions,
   sessionActions,
   conversationOf,
   onExpand,
@@ -149,23 +129,14 @@ function SessionPreview({
   agentId: string;
   sessions: readonly AgentActivitySession[];
   complete: boolean;
-  order: readonly string[];
-  orderActions: OrderActions;
   sessionActions: SessionActions;
   conversationOf: Props["conversationOf"];
   onExpand: () => void;
   onNavigate?: () => void;
 }) {
   const openSession = useOpenSession();
-  const sessions = manualOrder(
-    recent,
-    order,
-    (item) => item.session.sessionId,
-    (item) => item.session.createdAt,
-  );
   if (sessions.length === 0) return null;
   const visible = sidebarSessionWindow(sessions, false, () => false);
-  const shown = visible.map((item) => item.session.sessionId);
   const { more } = sessionListControls({
     total: sessions.length,
     expanded: false,
@@ -180,13 +151,7 @@ function SessionPreview({
       {visible.map((item) => {
         const session = provisionalSessionView(item.session);
         return (
-          <OrderedRow
-            key={item.id}
-            agentId={agentId}
-            sessionId={item.session.sessionId}
-            shown={shown}
-            orderActions={orderActions}
-          >
+          <div key={item.id} className={TREE_GUIDE}>
             <SessionRow
               session={session}
               active={false}
@@ -194,7 +159,6 @@ function SessionPreview({
               needsApproval={false}
               unread={item.unread}
               conversation={conversationOf(item.session)}
-              reorderable={orderActions.ready}
               className={ROW_CLASS}
               onResume={() => {
                 openSession(agentId, item.session.sessionId, item.session.mode);
@@ -203,7 +167,7 @@ function SessionPreview({
               onRename={() => sessionActions.rename(session)}
               onDelete={() => void sessionActions.delete(session)}
             />
-          </OrderedRow>
+          </div>
         );
       })}
       {more && <ToggleRow more onClick={onExpand} />}
@@ -213,8 +177,6 @@ function SessionPreview({
 
 function AgentSessionList({
   agentId,
-  order,
-  orderActions,
   sessionActions,
   expanded,
   onExpandedChange,
@@ -222,8 +184,6 @@ function AgentSessionList({
   onNavigate,
 }: {
   agentId: string;
-  order: readonly string[];
-  orderActions: OrderActions;
   sessionActions: SessionActions;
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
@@ -242,14 +202,8 @@ function AgentSessionList({
     fetchNextPage,
   } = list;
 
-  const listed = new Set(list.sessions.map((session) => session.sessionId));
-  const unlisted = useSessionsById(
-    agentId,
-    order.slice(0, SIDEBAR_PREVIEW_SESSIONS).filter((id) => !listed.has(id)),
-    { enabled: list.operable && !expanded },
-  );
-  const rows = manualOrder(
-    [...unlisted, ...list.sessions]
+  const rows = newestFirst(
+    list.sessions
       .map((session) => ({ session, state: list.rowState(session) }))
       .filter(({ session, state }) =>
         matchesActivityFilters(
@@ -257,16 +211,14 @@ function AgentSessionList({
           filters,
         ),
       ),
-    order,
+    (row) => row.session.updatedAt ?? row.session.createdAt,
     (row) => row.session.sessionId,
-    (row) => row.session.createdAt,
   );
   const visible = sidebarSessionWindow(
     rows,
     expanded,
     (row) => row.state.active,
   );
-  const shown = visible.map((row) => row.session.sessionId);
   const { more, less } = sessionListControls({
     total: rows.length,
     expanded,
@@ -299,17 +251,10 @@ function AgentSessionList({
         </p>
       )}
       {visible.map(({ session: s, state }) => (
-        <OrderedRow
-          key={s.sessionId}
-          agentId={agentId}
-          sessionId={s.sessionId}
-          shown={shown}
-          orderActions={orderActions}
-        >
+        <div key={s.sessionId} className={TREE_GUIDE}>
           <SessionRow
             session={s}
             {...state}
-            reorderable={orderActions.ready}
             className={ROW_CLASS}
             onResume={() => {
               openSession(agentId, s.sessionId, s.mode);
@@ -331,7 +276,7 @@ function AgentSessionList({
                 }),
             })}
           />
-        </OrderedRow>
+        </div>
       ))}
       {expanded && hasNextPage && fetchNextPageFailed && (
         <button
@@ -355,34 +300,6 @@ function AgentSessionList({
           onClick={() => onExpandedChange(false)}
         />
       )}
-    </div>
-  );
-}
-
-function OrderedRow({
-  agentId,
-  sessionId,
-  shown,
-  orderActions,
-  children,
-}: {
-  agentId: string;
-  sessionId: string;
-  shown: readonly string[];
-  orderActions: OrderActions;
-  children: ReactNode;
-}) {
-  const drag = useOrderDrag({
-    scope: `sessions:${agentId}`,
-    id: sessionId,
-    ready: orderActions.ready,
-    onMove: (id, drop) => orderActions.moveSession(agentId, shown, id, drop),
-    onStep: (id, step) => orderActions.stepSession(agentId, shown, id, step),
-  });
-  return (
-    <div {...drag.dragProps} className={TREE_GUIDE}>
-      {children}
-      <OrderDropIndicator at={drag.indicator} />
     </div>
   );
 }

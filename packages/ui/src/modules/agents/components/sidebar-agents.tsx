@@ -31,7 +31,6 @@ export function SidebarAgents({
     sessionOpen,
     unreadAgentIds,
     sessionsOf,
-    sessionOrderOf,
     previewComplete,
   } = useSidebarAgents();
   const orderActions = useSidebarOrderActions();
@@ -88,8 +87,6 @@ export function SidebarAgents({
           open={open}
           preview={sessionsOf(agent.id)}
           previewComplete={previewComplete}
-          order={sessionOrderOf(agent.id)}
-          orderActions={orderActions}
           conversationOf={conversationOf}
           stickyClassName={stickyHeaderClassName}
           onNavigate={onNavigate}

@@ -54,7 +54,6 @@ interface Props {
   backgroundWork?: readonly BackgroundWorkItemView[];
   cost?: SessionRuntime;
   conversation?: string;
-  reorderable?: boolean;
   onResume: () => void;
   onPrefetch?: () => void;
   onRename: () => void;
@@ -73,7 +72,6 @@ export function SessionRow({
   backgroundWork = NO_WORK,
   cost,
   conversation,
-  reorderable = false,
   onResume,
   onPrefetch,
   onRename,
@@ -154,7 +152,6 @@ export function SessionRow({
         className,
       )}
       {...clickableProps(handleClick)}
-      aria-keyshortcuts={reorderable ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
       onPointerEnter={startDwell}
       onPointerLeave={endDwell}
       onFocus={onPrefetch}
