@@ -233,6 +233,16 @@ func (c *IdleChecker) agentsAtZero(ctx context.Context) map[string]bool {
 	for name := range seen {
 		atZero[name] = !scaledUp[name]
 	}
+	svcs, err := c.client.CoreV1().Services(c.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: LabelRole + "=" + RoleGateway})
+	if err != nil {
+		slog.ErrorContext(ctx, "idle checker: listing gateway services", "error", err)
+		return atZero
+	}
+	for i := range svcs.Items {
+		if up, ok := desiredUpRecord(&svcs.Items[i]); ok {
+			atZero[svcs.Items[i].Labels[LabelAgent]] = !up
+		}
+	}
 	return atZero
 }
 
@@ -328,6 +338,9 @@ func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, halt M
 		if err := halt(ctx, owner, name); err != nil && !errors.Is(err, errMachineStopping) {
 			slog.WarnContext(ctx, "stopping the agent's machine failed; scaling the rest down, the next reconcile stops the machine", "agent", name, "owner", owner, "error", err)
 		}
+	}
+	if err := recordDesiredUp(ctx, kube, namespace, name, false); err != nil {
+		return fmt.Errorf("recording %s down: %w", name, err)
 	}
 	sss, err := kube.AppsV1().StatefulSets(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: LabelAgent + "=" + name,

@@ -501,6 +501,12 @@ virtualization:
     concurrency: 10
     ownerConcurrency: 1
     cloneSource: true
+  # One gateway pod per owner serves every vm Agent of that owner, each on
+  # ports of its own behind the agent's own gateway Service, so a wake starts
+  # no gateway pod. Off: each vm Agent keeps a gateway pod of its own, which
+  # hibernation scales to zero.
+  gateway:
+    perOwner: false
   # The CA the controller trusts a runner's serving certificate by. It is the
   # runners' own and signs nothing else: the envoyMitm CA signs gateway leaves
   # for hostnames taken from users' credential hosts, so a leaf naming a

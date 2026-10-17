@@ -85,6 +85,9 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		func() error { sec, secErr = r.ownedSecretRef(ctx, agent); return nil },
 		func() error {
 			leaf, leafErr = r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, EnvoyLeafSecretName(name), metav1.GetOptions{})
+			if k8serrors.IsNotFound(leafErr) && r.config.VM.Enabled {
+				leaf, leafErr = r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, ownerGatewayName(r.config.ReleaseName, owner)+ownerGatewayLeafSuffix, metav1.GetOptions{})
+			}
 			return nil
 		},
 		func() error {
@@ -105,6 +108,11 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 			msg += "; this install cannot run VM runners as configured: " + problems
 		}
 		return vmrunner.MachineStatus{Reason: reason, Message: msg}, false, nil
+	}
+	if r.ownerGatewayServes(spec) {
+		if _, err := r.ensureOwnerGateway(ctx, owner); err != nil {
+			slog.Warn("owner gateway: not applied; the agent keeps its own gateway", "owner", owner, "agent", name, "error", err)
+		}
 	}
 	defaults := r.config.AgentTemplateDefaults
 
@@ -356,6 +364,7 @@ func (r *AgentReconciler) sweepRunner(ctx context.Context, runner runnerRef) {
 	if anyVMAgent(agents.Items) || r.cachedOwnerAgents(ctx, owner, true) > 0 {
 		return
 	}
+	r.deleteOwnerGateway(ctx, owner)
 	left, err := runner.client.List(ctx)
 	if err != nil || len(left) > 0 {
 		slog.Info("orphan machine GC: runner kept, it is not empty", "owner", owner, "machines", len(left), "error", err)

@@ -73,6 +73,12 @@ type VMConfig struct {
 	Enabled          bool               `json:"enabled,omitempty"`
 	Runner           VMRunnerSpec       `json:"runner,omitempty"`
 	RuntimeMigration VMRuntimeMigration `json:"runtimeMigration,omitempty"`
+	Gateway          VMGateway          `json:"gateway,omitempty"`
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether vm Agents egress through one gateway pod per owner instead of a gateway pod each. Off by default, so an install switches to it on purpose and can switch back.
+type VMGateway struct {
+	PerOwner bool `json:"perOwner,omitempty"`
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long the volumes a runtime migration copied from are kept once the machine has booted from the copy, and how many copy Jobs may run at once in the install and for one owner. Zero means the controller's default for each. `CloneSource` says whether the copy reads a CSI clone of a single-node home volume rather than the volume itself; unset means it does.

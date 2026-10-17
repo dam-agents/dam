@@ -63,6 +63,10 @@ if [ -n "${E2E_VIRTUALIZATION:-}" ]; then
     --set=harnessTemplates.default.resources.limits.cpu=1000m
     --set=harnessTemplates.default.resources.limits.memory=1Gi
   )
+  # E2E_GATEWAY_PER_OWNER=1 serves the lane's vm agents from one gateway pod
+  # per owner (virtualization.gateway.perOwner), the path no other suite
+  # reaches; CI's vm lane sets it.
+  [ -z "${E2E_GATEWAY_PER_OWNER:-}" ] || INSTALL_ARGS+=(--set=virtualization.gateway.perOwner=true)
 else
   # The container lane says so: outside CI cluster:install turns the vm
   # backend on by itself on an Apple silicon Mac and in a sandbox that can
