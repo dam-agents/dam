@@ -481,6 +481,7 @@ const (
 )
 
 // UNIT_BOUNDARY_DESCRIPTION: the gateway Service of a vm Agent its owner gateway serves: it selects the owner gateway pod and maps each of its ports onto the agent's slot, the proxy, HTTP and TLS ports onto the proxy port and DNS onto the resolver port. Only these ports are declared, and a ClusterIP carries nothing on a port it does not declare (measured on OVN-Kubernetes and k3s), so a guest pinned to its own ClusterIP reaches only its own listener. The Service keeps its ClusterIP, so no machine spec changes. Until the agent is cut over its Service keeps selecting its own gateway pod.
+// UNIT_BOUNDARY_DESCRIPTION: with the flag turned off, a moved agent goes back only once its own gateway pod is ready again, so its traffic is never sent to a pod that does not exist: until then its Service keeps the moved form, and the move back clears the mark, which drops the agent from its owner gateway on the owner's next render.
 func (r *AgentReconciler) ownerGatewayServiceFor(ctx context.Context, desired *corev1.Service, owner string) (*corev1.Service, error) {
 	existing, err := r.client.CoreV1().Services(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
 	if k8serrors.IsNotFound(err) {
@@ -493,7 +494,62 @@ func (r *AgentReconciler) ownerGatewayServiceFor(ctx context.Context, desired *c
 	if err != nil || existing.Annotations[annOwnerGatewayServed] != "true" {
 		return desired, nil
 	}
+	agent := desired.Labels[LabelAgent]
+	if !r.config.VM.Gateway.PerOwner && r.podCurrentAndReady(ctx, desired.Name) {
+		if err := r.clearOwnerGatewayMark(ctx, desired.Name); err != nil {
+			return nil, err
+		}
+		slog.Info("owner gateway: the agent's Service selects its own gateway again", "agent", agent, "owner", owner)
+		return desired, nil
+	}
 	return retargetedGatewayService(desired, owner, slot), nil
+}
+
+func (r *AgentReconciler) clearOwnerGatewayMark(ctx context.Context, svcName string) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		svc, err := r.client.CoreV1().Services(r.config.Namespace).Get(ctx, svcName, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		delete(svc.Annotations, annOwnerGatewayServed)
+		delete(svc.Annotations, annOwnerGatewaySlot)
+		delete(svc.Annotations, annDesiredUp)
+		_, err = r.client.CoreV1().Services(r.config.Namespace).Update(ctx, svc, metav1.UpdateOptions{})
+		return err
+	})
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the agent's own gateway is no longer needed: its Service selects the owner gateway and the flag is on. Its own gateway objects are then removed rather than applied, its policies admit only the owner gateway, and turning the flag off renders them again before the agent moves back.
+func (r *AgentReconciler) movedToOwnerGateway(ctx context.Context, spec *apiv1.AgentSpec, name string) (bool, error) {
+	if !r.ownerGatewayServes(spec) {
+		return false, nil
+	}
+	_, ok, err := r.servedDesiredUp(ctx, name)
+	return ok, err
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: removes what an agent's own gateway was made of once its owner gateway serves it. The gateway Service and the ext-authz Service stay: the first is the agent's identity, the second is how the api-server knows the agent. The ServiceAccount goes once the agent's policies no longer name it, which they stop doing on the same reconcile.
+func (r *AgentReconciler) deleteOwnGateway(ctx context.Context, name string) {
+	ns, opts := r.config.Namespace, metav1.DeleteOptions{}
+	for _, del := range []func() error{
+		func() error { return r.client.AppsV1().StatefulSets(ns).Delete(ctx, GatewayName(name), opts) },
+		func() error { return r.client.CoreV1().ConfigMaps(ns).Delete(ctx, EnvoyBootstrapName(name), opts) },
+		func() error {
+			return r.dynamic.Resource(certificateGVR).Namespace(ns).Delete(ctx, EnvoyLeafSecretName(name), opts)
+		},
+		func() error { return r.client.CoreV1().Secrets(ns).Delete(ctx, EnvoyLeafSecretName(name), opts) },
+		func() error {
+			return r.client.NetworkingV1().NetworkPolicies(ns).Delete(ctx, name+"-gateway-ingress", opts)
+		},
+		func() error {
+			return r.client.NetworkingV1().NetworkPolicies(ns).Delete(ctx, name+"-gateway-egress", opts)
+		},
+		func() error { return r.client.CoreV1().ServiceAccounts(ns).Delete(ctx, name, opts) },
+	} {
+		if err := del(); err != nil && !k8serrors.IsNotFound(err) {
+			slog.Warn("owner gateway: removing the agent's own gateway", "agent", name, "error", err)
+		}
+	}
 }
 
 func retargetedGatewayService(svc *corev1.Service, owner string, slot int) *corev1.Service {
@@ -618,23 +674,6 @@ func (r *AgentReconciler) servedDesiredUp(ctx context.Context, name string) (up,
 	}
 	up, ok = desiredUpRecord(svc)
 	return up, ok, nil
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: an agent its owner gateway serves no longer needs its own gateway pod, which then holds only a copy of the agent's credentials, so it is scaled to zero and stays there. Its objects stay until the migration removes them, so turning the flag off brings it back as it was.
-func (r *AgentReconciler) scaleOwnGatewayDown(ctx context.Context, name string) error {
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		ss, err := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, GatewayName(name), metav1.GetOptions{})
-		if k8serrors.IsNotFound(err) {
-			return nil
-		}
-		if err != nil || (ss.Spec.Replicas != nil && *ss.Spec.Replicas == 0) {
-			return err
-		}
-		zero := int32(0)
-		ss.Spec.Replicas = &zero
-		_, err = r.client.AppsV1().StatefulSets(r.config.Namespace).Update(ctx, ss, metav1.UpdateOptions{})
-		return err
-	})
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: an owner whose agents all sleep has no reconcile to carry a new owner gateway template, so the rollout sweep offers every existing owner gateway its turn, in name order, under its owner's lock. It only updates a gateway that exists, so it never brings back one the orphan sweep removed.

@@ -84,7 +84,7 @@ Read first: [security-and-credentials](../../architecture/security-and-credentia
 | 05  | Agent ports, Service cut-over, readiness (done) | Port allocation, Service retarget, revision probe, host runner                                 | 04         |
 | 06  | Hibernation and wake without the gateway (done) | Desired-up record, idle checker, budget, wake publishing                                       | 05         |
 | 07  | Owner gateway rolls and restarts (done)         | Surge roll, paced across owners, superseded-pod eviction, failure surfacing                    | 04         |
-| 08  | Migration on dev and cleanup                    | Move existing vm Agents, delete per-agent objects, rollback, runtime-migration switch          | 06, 07     |
+| 08  | Migration on dev and cleanup (done)             | Move existing vm Agents, delete per-agent objects, rollback, runtime-migration switch          | 06, 07     |
 | 09  | Architecture pages                              | Rewrite the gateway parts of the pages listed above                                            | 08         |
 
 ```mermaid
@@ -137,6 +137,14 @@ graph LR
   A Deployment needs no forced eviction of a pod stuck on a superseded template.
   Local: an 18 s stream ran across an Envoy image roll without a cut.
   A crash-looping owner pod showed `GatewayPodReady=False/ContainerTerminated` on the agent until it recovered.
+
+- **Migration** (08): once moved, an agent's own StatefulSet, Envoy ConfigMap, leaf Certificate and Secret, gateway policies and ServiceAccount are deleted, and its policies admit only the owner principal.
+  The machine's CA falls back to the owner leaf, which has the same issuer and so the same `ca.crt`.
+  Flag off: the own gateway renders again, and the Service moves back only once that pod is ready.
+  A hibernated agent moves back on its next wake.
+  Local flips done through the controller env alone, both ways, caused 0 machine operations.
+  `cluster:install` restarts the host runner on its own, which does reboot machines.
+  A runtime migration keeps its own gateway until its Backend switches, because the owner gateway serves only `IsVM()` agents.
 
 ## Conventions & glossary
 

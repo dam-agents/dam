@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
@@ -210,6 +211,11 @@ func servedVMReconciler(t *testing.T) (*AgentReconciler, *fakeNode, *apiv1.Agent
 	}}}
 	_, err := r.client.CoreV1().Pods("test-agents").Create(context.Background(), ownerGatewayPod("10.42.0.9"), metav1.CreateOptions{})
 	require.NoError(t, err)
+	_, err = r.client.CoreV1().Secrets("test-agents").Create(context.Background(), &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: ownerGatewayName("platform", testOwner) + ownerGatewayLeafSuffix, Namespace: "test-agents"},
+		Data:       map[string][]byte{"ca.crt": []byte("MITM-CA")},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
 	for range 3 {
 		require.NoError(t, r.Reconcile(context.Background(), agent))
 	}
@@ -223,7 +229,8 @@ func servedVMReconciler(t *testing.T) (*AgentReconciler, *fakeNode, *apiv1.Agent
 func TestOwnerGateway_HibernateAndWakeLeaveTheOwnGatewayAtZero(t *testing.T) {
 	ctx := context.Background()
 	r, node, agent := servedVMReconciler(t)
-	assert.Equal(t, int32(0), agentSSReplicas(t, r, GatewayName("my-agent")), "a served agent's own gateway is not needed")
+	_, err := r.client.AppsV1().StatefulSets("test-agents").Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "a served agent's own gateway is removed")
 	up, ok, err := r.servedDesiredUp(ctx, "my-agent")
 	require.NoError(t, err)
 	assert.True(t, ok)
@@ -253,7 +260,8 @@ func TestOwnerGateway_HibernateAndWakeLeaveTheOwnGatewayAtZero(t *testing.T) {
 	assert.True(t, node.spec("my-agent").Running)
 	up, _, _ = r.servedDesiredUp(ctx, "my-agent")
 	assert.True(t, up)
-	assert.Equal(t, int32(0), agentSSReplicas(t, r, GatewayName("my-agent")), "a wake starts no gateway pod")
+	_, err = r.client.AppsV1().StatefulSets("test-agents").Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "a wake starts no gateway pod")
 }
 
 // TEST_SCENARIO: one release that changes the owner gateway's template would restart every owner's egress at the same moment, so a changed template waits for a place: with one place, the first owner gateway rolls and the second waits until the first has rolled out, then rolls on the next sweep. A gateway whose template is unchanged is never touched.
@@ -314,4 +322,71 @@ func TestOwnerGateway_OldPodServesItsStreamsBeforeItStops(t *testing.T) {
 	require.NotNil(t, envoy.Lifecycle.PreStop.Sleep)
 	assert.Less(t, envoy.Lifecycle.PreStop.Sleep.Seconds, *dep.Spec.Template.Spec.TerminationGracePeriodSeconds)
 	assert.GreaterOrEqual(t, envoy.Lifecycle.PreStop.Sleep.Seconds, int64(20))
+}
+
+// TEST_SCENARIO: once its owner gateway serves an agent, the agent's own gateway objects are removed and its policies admit only the owner gateway. Its gateway Service, with the same ClusterIP, and its ext-authz Service stay, so the machine keeps its allowlist and the api-server keeps knowing the agent. Turning the flag off renders the own gateway again, and the agent moves back only once that pod is ready, after which its owner gateway no longer lists it.
+func TestOwnerGateway_MigrationRemovesTheOwnGatewayAndRollsBack(t *testing.T) {
+	ctx, ns := context.Background(), "test-agents"
+	r, _, agent := servedVMReconciler(t)
+	before, err := r.client.CoreV1().Services(ns).Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	for _, get := range []func() error{
+		func() error {
+			_, err := r.client.CoreV1().ConfigMaps(ns).Get(ctx, EnvoyBootstrapName("my-agent"), metav1.GetOptions{})
+			return err
+		},
+		func() error {
+			_, err := r.client.CoreV1().ServiceAccounts(ns).Get(ctx, "my-agent", metav1.GetOptions{})
+			return err
+		},
+		func() error {
+			_, err := r.client.CoreV1().Secrets(ns).Get(ctx, EnvoyLeafSecretName("my-agent"), metav1.GetOptions{})
+			return err
+		},
+		func() error {
+			_, err := r.client.NetworkingV1().NetworkPolicies(ns).Get(ctx, "my-agent-gateway-ingress", metav1.GetOptions{})
+			return err
+		},
+	} {
+		assert.True(t, k8serrors.IsNotFound(get()))
+	}
+	policy, err := r.dynamic.Resource(authzPolicyGVR).Namespace("default").Get(ctx, "my-agent-harness-allow", metav1.GetOptions{})
+	require.NoError(t, err)
+	rules := policy.Object["spec"].(map[string]interface{})["rules"].([]interface{})
+	require.Len(t, rules, 1, "only the owner gateway is admitted")
+	assert.Contains(t, rules[0], "when")
+	_, err = r.client.CoreV1().Services("default").Get(ctx, r.config.ExtAuthzServiceName("my-agent"), metav1.GetOptions{})
+	assert.NoError(t, err)
+
+	r.config.VM.Gateway.PerOwner = false
+	require.NoError(t, r.Reconcile(ctx, agent))
+	svc, err := r.client.CoreV1().Services(ns).Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, ownerGatewayComponent, svc.Spec.Selector["app.kubernetes.io/component"], "the agent stays on its owner gateway until its own gateway is ready")
+	_, err = r.client.AppsV1().StatefulSets(ns).Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err, "the own gateway is rendered again")
+
+	markGatewayPodReady(t, r, "my-agent")
+	require.NoError(t, r.Reconcile(ctx, agent))
+	svc, err = r.client.CoreV1().Services(ns).Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "my-agent", svc.Spec.Selector[LabelPair])
+	assert.Equal(t, before.Spec.ClusterIP, svc.Spec.ClusterIP)
+	assert.Empty(t, svc.Annotations[annOwnerGatewayServed])
+	assert.Equal(t, 10000, svc.Spec.Ports[0].TargetPort.IntValue())
+}
+
+func markGatewayPodReady(t *testing.T, r *AgentReconciler, agent string) {
+	t.Helper()
+	ctx, ns := context.Background(), "test-agents"
+	ss, err := r.client.AppsV1().StatefulSets(ns).Get(ctx, GatewayName(agent), metav1.GetOptions{})
+	require.NoError(t, err)
+	ss.Status = appsv1.StatefulSetStatus{ObservedGeneration: ss.Generation, UpdateRevision: "rev-1"}
+	_, err = r.client.AppsV1().StatefulSets(ns).UpdateStatus(ctx, ss, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	_, err = r.client.CoreV1().Pods(ns).Create(ctx, &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: GatewayName(agent) + "-0", Namespace: ns, Labels: map[string]string{"controller-revision-hash": "rev-1"}},
+		Status:     corev1.PodStatus{Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
 }

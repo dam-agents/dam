@@ -195,14 +195,24 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	}
 	migration := runtimeMigrationOf(agent.Annotations, agent.Status)
 	var liveGatewaySvc *corev1.Service
+	moved, err := r.movedToOwnerGateway(ctx, agentSpec, name)
+	if err != nil {
+		return r.setError(ctx, name, fmt.Sprintf("reading gateway service: %v", err))
+	}
+	ownGateway := func(apply func() error) func() error {
+		if moved {
+			return func() error { return nil }
+		}
+		return apply
+	}
 	err = concurrently(
-		func() error {
+		ownGateway(func() error {
 			if err := r.applyConfigMap(ctx, bootstrapCM); err != nil {
 				return fmt.Errorf("applying envoy bootstrap: %v", err)
 			}
 			return nil
-		},
-		func() error {
+		}),
+		ownGateway(func() error {
 			cert := BuildEnvoyLeafCertificate(name, r.config, ownerRef, credentialSecrets, agentSpec.L7Hosts)
 			if cert == nil {
 				return nil
@@ -215,8 +225,8 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 					"agent", name, "error", err)
 			}
 			return nil
-		},
-		func() error { return r.ensureServiceAccount(ctx, name, ownerRef) },
+		}),
+		ownGateway(func() error { return r.ensureServiceAccount(ctx, name, ownerRef) }),
 		func() error {
 			if err := r.applyExtAuthzService(ctx, BuildExtAuthzService(name, r.config)); err != nil {
 				return fmt.Errorf("applying ext-authz service: %v", err)
@@ -225,8 +235,11 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		},
 		func() error {
 			policy := BuildHarnessAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)
-			if r.ownerGatewayServes(agentSpec) {
+			if r.ownerGatewayServes(agentSpec) || moved {
 				admitOwnerGateway(policy, name, r.config.PrincipalFor(ownerGatewayName(r.config.ReleaseName, owner)), true)
+			}
+			if moved {
+				dropOwnPrincipal(policy)
 			}
 			if err := r.applyUnstructured(ctx, authzPolicyGVR, policy); err != nil {
 				return fmt.Errorf("applying harness authz policy: %v", err)
@@ -235,8 +248,11 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		},
 		func() error {
 			policy := BuildExtAuthzAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)
-			if r.ownerGatewayServes(agentSpec) {
+			if r.ownerGatewayServes(agentSpec) || moved {
 				admitOwnerGateway(policy, name, r.config.PrincipalFor(ownerGatewayName(r.config.ReleaseName, owner)), false)
+			}
+			if moved {
+				dropOwnPrincipal(policy)
 			}
 			if err := r.applyUnstructured(ctx, authzPolicyGVR, policy); err != nil {
 				return fmt.Errorf("applying ext-authz authz policy: %v", err)
@@ -246,15 +262,15 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		func() error {
 			return applyNetworkPolicy(ctx, r.client, BuildAgentEgressNetworkPolicy(name, r.config, ownerRef))
 		},
-		func() error {
+		ownGateway(func() error {
 			return applyNetworkPolicy(ctx, r.client, BuildGatewayIngressNetworkPolicy(name, owner, agentSpec.IsVM() || migration.vmSideRuns(), r.config, ownerRef))
-		},
-		func() error {
+		}),
+		ownGateway(func() error {
 			return applyNetworkPolicy(ctx, r.client, BuildGatewayEgressNetworkPolicy(name, r.config, ownerRef))
-		},
+		}),
 		func() (err error) {
 			desired := BuildGatewayService(name, agentSpec.IsVM(), r.config, ownerRef)
-			if r.ownerGatewayServes(agentSpec) {
+			if agentSpec.IsVM() {
 				desired, err = r.ownerGatewayServiceFor(ctx, desired, owner)
 				if err != nil {
 					return fmt.Errorf("reading gateway service: %v", err)
@@ -352,8 +368,8 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			if err := recordDesiredUp(ctx, r.client, r.config.Namespace, name, running && !hardStop); err != nil {
 				return r.setError(ctx, name, fmt.Sprintf("recording whether the agent should run: %v", err))
 			}
-			if err := r.scaleOwnGatewayDown(ctx, name); err != nil {
-				return r.setError(ctx, name, fmt.Sprintf("scaling down the agent's own gateway: %v", err))
+			if moved {
+				r.deleteOwnGateway(ctx, name)
 			}
 			return nil
 		}

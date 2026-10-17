@@ -85,6 +85,9 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		func() error { sec, secErr = r.ownedSecretRef(ctx, agent); return nil },
 		func() error {
 			leaf, leafErr = r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, EnvoyLeafSecretName(name), metav1.GetOptions{})
+			if k8serrors.IsNotFound(leafErr) && r.config.VM.Enabled {
+				leaf, leafErr = r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, ownerGatewayName(r.config.ReleaseName, owner)+ownerGatewayLeafSuffix, metav1.GetOptions{})
+			}
 			return nil
 		},
 		func() error {

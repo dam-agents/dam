@@ -144,3 +144,8 @@ func admitOwnerGateway(policy *unstructured.Unstructured, agentName, principal s
 	spec := policy.Object["spec"].(map[string]interface{})
 	spec["rules"] = append(spec["rules"].([]interface{}), rule)
 }
+
+func dropOwnPrincipal(policy *unstructured.Unstructured) {
+	spec := policy.Object["spec"].(map[string]interface{})
+	spec["rules"] = spec["rules"].([]interface{})[1:]
+}
