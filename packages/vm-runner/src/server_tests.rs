@@ -694,7 +694,7 @@ async fn a_seed_and_a_boot_never_overlap() {
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
 }
 
-// TEST_SCENARIO: a boot that copies a disk before its guest answers — a conversion its share asks for, or a migration's seed to restore — is still booting, not failing: it reports REASON_COPYING_DISK while the guest has not answered, so the controller neither counts it as a start that never became ready nor lets the image update move it back mid-copy. The reason goes once the guest answers, and a boot that copies nothing never carries it.
+// TEST_SCENARIO: a boot that restores a migration's seed copies its disk before its guest answers, so it is still booting, not failing: it reports REASON_COPYING_DISK while the guest has not answered, also past the stuck-boot minute, so the controller neither counts it as a start that never became ready nor lets the image update move it back mid-copy. The reason goes once the guest answers, and a boot that copies nothing never carries it.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_boot_that_copies_a_disk_reports_it_until_the_guest_answers() {
     let h = Harness::new("copying");
@@ -704,15 +704,11 @@ async fn a_boot_that_copies_a_disk_reports_it_until_the_guest_answers() {
 
     h.server.put("m1", spec(false)).unwrap();
     h.settle("m1").await;
-    fs::write(
-        h.dir.join("machines/m1").join(SHARE_DIR).join("convert"),
-        "n\n",
-    )
-    .unwrap();
-    h.server.put("m1", spec(true)).unwrap();
-    let converting = h.settle("m1").await;
-    assert!(!converting.ready);
-    assert_eq!(converting.reason, REASON_COPYING_DISK, "{converting:?}");
+    let seed = upload(&h, "m1", b"a home");
+    h.server.put("m1", expecting(true, &seed)).unwrap();
+    let seeding = h.settle("m1").await;
+    assert!(!seeding.ready);
+    assert_eq!(seeding.reason, REASON_COPYING_DISK, "{seeding:?}");
     age_boot(&h, "m1");
     h.server.probe("m1");
     assert_eq!(
@@ -723,14 +719,6 @@ async fn a_boot_that_copies_a_disk_reports_it_until_the_guest_answers() {
     let _guest = guest(h.base);
     let up = h.until("m1", "ready", |s| s.ready).await;
     assert_eq!(up.reason, "", "{up:?}");
-
-    let h = Harness::new("copying-seed");
-    h.server.put("m1", spec(false)).unwrap();
-    h.settle("m1").await;
-    let seed = upload(&h, "m1", b"a home");
-    h.server.put("m1", expecting(true, &seed)).unwrap();
-    let seeding = h.settle("m1").await;
-    assert_eq!(seeding.reason, REASON_COPYING_DISK, "{seeding:?}");
 }
 
 // TEST_SCENARIO: a machine deleted while its seed is uploaded must not have the seed put back into a directory that is gone, or recreated by the rename; the upload's commit is refused instead.

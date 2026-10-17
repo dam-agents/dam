@@ -30,7 +30,6 @@ pub struct Smolvm {
     nested: bool,
     tools: Option<PathBuf>,
     btrfs: PathBuf,
-    convert: bool,
 }
 
 const USER: &str = "root";
@@ -78,14 +77,7 @@ impl Smolvm {
             nested,
             tools,
             btrfs,
-            convert: false,
         })
-    }
-
-    // UNIT_BOUNDARY_DESCRIPTION: lets this runner convert its machines' ext4 storage disks to btrfs (see convert).
-    pub fn converting(mut self, on: bool) -> Self {
-        self.convert = on;
-        self
     }
 
     fn record(&self, id: &str) -> anyhow::Result<Option<VmRecord>> {
@@ -246,7 +238,7 @@ impl Runtime for Smolvm {
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: a start is always a fresh boot. Whatever the last VMM left is cleared first — a stop issued to a machine that died with its runner, a VMM that outlived its stop, its sockets and lock files, the guest agent's root overlay — and the image this boot runs is named in the share, so platform-init keeps the machine's root only for the image that wrote it. A record with no allowlist is never booted: smolvm reads none as no filter, and only a record edited or migrated outside the runner holds none, since every running spec the runner admits names one. A start that fails kills any VMM it left half-booted, so the next attempt does not inherit it. A VMM that survives even its kill fails the start, since booting beside it would put two VMMs on one disk. A record that names no resolver, or names the sink, gets the sink and its empty name list on every start, so a machine created by an earlier runner never boots onto smolvm's default, the runner's own resolver, nor relays to whatever answers on the runner's loopback. Nesting is the one thing a start may only take away: the record holds what the machine's spec asked for, as its create or last update wrote it, and a start keeps it only while this runner still nests, so a machine never boots with more than the runner grants. The mounts are decided at every start too, from what this runner holds and what the image asks for now: runner pods roll across owners one at a time, so a machine moved to an image that asks for the node's tools before its runner had them still gets them on its next boot, and one whose runner or image stopped offering them boots without.
-    fn start(&self, id: &str, boot_mib: i32, memory_mib: i32) -> anyhow::Result<()> {
+    fn start(&self, id: &str, boot_mib: i32, _memory_mib: i32) -> anyhow::Result<()> {
         let dir = vm_data_dir(id);
         if dir.is_dir() {
             let vmms = orphan_pids(&self.proc_root, &dir);
@@ -265,24 +257,7 @@ impl Runtime for Smolvm {
             write_boot_image(record)?;
             write_launch(record)?;
         }
-        let share = record.as_ref().and_then(|r| {
-            r.mounts
-                .iter()
-                .find(|(_, target, _)| target == SHARE_PATH)
-                .map(|(share, _, _)| PathBuf::from(share))
-        });
-        let gib = record.as_ref().and_then(|r| r.storage_gb).unwrap_or(0);
-        let fits = |need| crate::storage::measure(&dir).is_some_and(|claim| claim.takes(need));
-        let conversion =
-            crate::convert::before_start(&dir, share.as_deref(), self.convert, fits, |next| {
-                format_btrfs(next, gib, &self.btrfs)
-            })?;
-        let boot = u32::try_from(if conversion.is_some() {
-            memory_mib
-        } else {
-            boot_mib
-        })
-        .context("boot memory")?;
+        let boot = u32::try_from(boot_mib).context("boot memory")?;
         let rootfs = AgentManager::default_rootfs_path()?;
         crate::files::write(
             &dir.join(crate::runtime::AGENT_ROOTFS_FILE),
@@ -295,7 +270,6 @@ impl Runtime for Smolvm {
             guest_dns(r, r.dns.unwrap_or(GUEST_DNS_SINK));
             r.nested_virt = Some(r.nested_virt == Some(true) && self.nested);
             r.mounts = boot_mounts(id, &r.mounts, self.tools.as_deref(), image_env.as_deref());
-            r.disks = conversion.clone().into_iter().collect();
         })?;
         let result = timed("start", id, &[], || Ok(self.runtime.start_machine(id)?));
         if result.is_err() {
@@ -305,21 +279,6 @@ impl Runtime for Smolvm {
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: grows the guest's RAM through the virtio-mem area smolvm gives every machine, as smolvm's own resize does, but without its two host checks: it refuses a VMM that is not in a cgroup of its own, and every VMM of a runner shares the runner pod's, and it admits the growth against the host's free memory, while a runner admits its machines by what they use (see capacity). The VMM maps the added RAM, the guest agent puts each memory block online as the guest's virtio-mem driver adds it (the driver adds no more once 1 GiB of it waits offline), and the grow ends once the VMM reports all of it plugged, the order smolvm's own resize takes. Each step is idempotent, so a retry of a grow that stopped part-way finishes it. The record is set to the size the guest now has.
-    // UNIT_BOUNDARY_DESCRIPTION: swaps in the btrfs disk a converting guest filled, on its word over the agent socket (convert::after_ready), and detaches the old ext4 disk from the record, so the next boot neither attaches nor converts it. The manager is detached at once: dropped attached, it would shut the machine down.
-    fn answered(&self, id: &str) -> anyhow::Result<()> {
-        let dir = vm_data_dir(id);
-        let swapped = crate::convert::after_ready(&dir, |capability| {
-            let manager = AgentManager::for_vm(id)?;
-            manager.detach();
-            let mut client = AgentClient::connect_for_state_probe(manager.vsock_socket())?;
-            Ok(client.supports_capability(capability)?)
-        })?;
-        if swapped {
-            self.db.update_vm(id, |r| r.disks.clear())?;
-        }
-        Ok(())
-    }
-
     fn grow(&self, id: &str, memory_mib: i32) -> anyhow::Result<()> {
         let target = u32::try_from(memory_mib).context("memoryMiB")?;
         timed("grow", id, &[], || {
@@ -1303,55 +1262,6 @@ mod tests {
             format!("{err:#}").contains("no egress allowlist"),
             "{err:#}"
         );
-    }
-
-    // TEST_SCENARIO: a start that converts the machine's disk boots it with all its RAM, since its guest copies before it answers and would fail the grow, whose reboot cuts the copy short. Every other start boots at the boot size and grows. The record holds the RAM a start boots with, written before the VMM is asked to boot, so it is read even though the boot itself fails here.
-    #[test]
-    fn a_converting_start_boots_whole() {
-        use std::os::unix::fs::FileExt;
-        let home = Home::new("convert-whole");
-        let share = home.path.join("share");
-        fs::create_dir_all(&share).unwrap();
-        let smolvm = Smolvm::open(false, None, test_template()).unwrap();
-        let launch = launch();
-        for id in ["m1", "m2"] {
-            smolvm
-                .create(
-                    id,
-                    &Machine {
-                        spec: &spec(),
-                        image: "quay.io/x/vm:1",
-                        host_port: 32000,
-                        share: &share,
-                        launch: &launch,
-                    },
-                )
-                .unwrap();
-        }
-        let dir = vm_data_dir("m1");
-        let disk = |name: &str, at: u64, magic: &[u8]| {
-            let file = fs::File::create(dir.join(name)).unwrap();
-            file.set_len(1 << 20).unwrap();
-            file.write_all_at(magic, at).unwrap();
-        };
-        disk(
-            smolvm::storage::STORAGE_DISK_FILENAME,
-            1024 + 56,
-            &[0x53, 0xEF],
-        );
-        disk("storage.next.raw", 0x1_0040, b"_BHRfS_M");
-        fs::write(
-            dir.join("disk-conversion"),
-            r#"{"nonce":"n1","committed":false,"attempts":0}"#,
-        )
-        .unwrap();
-
-        let _ = smolvm.start("m1", 1024, 2048);
-        let _ = smolvm.start("m2", 1024, 2048);
-
-        let mem = |id| smolvm.record(id).unwrap().unwrap().mem;
-        assert_eq!(mem("m1"), 2048, "the converting start boots whole");
-        assert_eq!(mem("m2"), 1024, "a start that converts nothing boots small");
     }
 
     // TEST_SCENARIO: a machine recorded by an earlier runner carries smolvm's default resolver and no name list, so its gateway would relay the guest's DNS to a real resolver — on a Mac, the one on its own loopback. Its next start pins the sink and the empty list before anything boots, even when, as here, the boot itself then fails, and the policy smolvm builds from that record, a gateway-port machine's included, forwards no name at all.

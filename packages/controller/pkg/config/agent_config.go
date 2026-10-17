@@ -98,7 +98,6 @@ type VMRunnerSpec struct {
 	BootMiB              int                           `json:"bootMiB,omitempty"`
 	MachineCPUs          int                           `json:"machineCPUs,omitempty"`
 	NestedVirtualization bool                          `json:"nestedVirtualization,omitempty"`
-	ConvertExt4Disks     bool                          `json:"convertExt4Disks,omitempty"`
 	EgressCIDRs          []string                      `json:"egressCidrs,omitempty"`
 	EgressExceptCIDRs    []string                      `json:"egressExceptCidrs,omitempty"`
 	ImageArchiveHostPath string                        `json:"imageArchiveHostPath,omitempty"`

@@ -101,7 +101,6 @@ pub struct Machine {
     pub image: PathBuf,
     pub shares: Vec<(PathBuf, PathBuf)>,
     pub launch: guest::Launch,
-    pub layout: u32,
     pub hostname: Option<String>,
     pub dns: Option<String>,
 }
@@ -128,7 +127,7 @@ pub fn prepare() -> Machine {
         Ok(dns) => dns,
         Err(e) => fatal!("configuring the guest's network: {e}"),
     };
-    let (disk, layout) = mount_storage(&Path::new(STAGE).join("disk"));
+    let disk = mount_storage(&Path::new(STAGE).join("disk"));
     let Some(tag) = std::env::var("SMOLVM_PACKED_LAYERS")
         .ok()
         .and_then(|value| value.split_once(':').map(|(tag, _)| tag.to_string()))
@@ -172,7 +171,6 @@ pub fn prepare() -> Machine {
         image,
         shares,
         launch,
-        layout,
         hostname,
         dns,
     }
@@ -310,7 +308,7 @@ pub fn name_resolution(root: &Path, machine: &Machine) {
 
 const STORAGE_DEVICE: &str = "/dev/vda";
 
-// UNIT_BOUNDARY_DESCRIPTION: where btrfs and ext4 keep their magic numbers: btrfs's primary superblock is 64 KiB into the disk with `_BHRfS_M` 64 bytes into it, ext4's superblock 1024 bytes in with 0xEF53 56 bytes into it.
+// UNIT_BOUNDARY_DESCRIPTION: where btrfs and ext4 keep their magic numbers: btrfs's primary superblock is 64 KiB into the disk with `_BHRfS_M` 64 bytes into it, ext4's superblock 1024 bytes in with 0xEF53 56 bytes into it. ext4 is read only to say why a disk is refused.
 fn magic_at(device: &str, offset: u64, magic: &[u8]) -> bool {
     use std::os::unix::fs::FileExt;
     let mut read = vec![0; magic.len()];
@@ -319,167 +317,42 @@ fn magic_at(device: &str, offset: u64, magic: &[u8]) -> bool {
         .is_ok_and(|()| read == magic)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: mounts the storage disk, which the runner formats before the first boot: btrfs compressed with zstd level 1 and grown online to its disk, or the ext4 of an older machine, checked and grown before the mount. A disk with neither filesystem is never formatted here, since the only disk that has none is one whose filesystem was lost, and formatting it would erase what is left; the boot stops with the reason on the console. Returns the platform's root on the disk and its layout (guest::LAYOUT_DIRECTORY or guest::LAYOUT_SUBVOLUMES): a btrfs disk that holds no DISK_ROOT_DIR is in the subvolume layout, and gets its system subvolume on its first boot (the agent's is the home's seed, see stage); every other disk's root is its DISK_ROOT_DIR, made on its first boot.
-fn mount_storage(target: &Path) -> (PathBuf, u32) {
+// UNIT_BOUNDARY_DESCRIPTION: what a disk that predates the subvolume layout is told: it is never booted, formatted or rewritten, so what it holds is kept for an operator to recover.
+const PREDATES_SUBVOLUMES: &str = "predates the btrfs subvolume layout, which this platform-init alone boots; refusing to boot it, and the disk is kept as it is";
+
+// UNIT_BOUNDARY_DESCRIPTION: mounts the storage disk, which the runner formats as btrfs before the first boot, compressed with zstd level 1 and grown online to its disk, and returns the platform's root on it: the whole filesystem, with AGENT_DIR and SYSTEM_DIR as subvolumes. The system subvolume is made on the first boot; the agent's is the home's seed (see stage). A disk from before that layout — ext4, or btrfs that holds DISK_ROOT_DIR at its top — fails the boot. A disk with no filesystem is never formatted here either, since the only disk that has none is one whose filesystem was lost, and formatting it would erase what is left; the boot stops with the reason on the console.
+fn mount_storage(target: &Path) -> PathBuf {
     if let Err(e) = mkdir_all(target) {
         fatal!("creating {}: {e}", target.display());
     }
     if magic_at(STORAGE_DEVICE, 1024 + 56, &[0x53, 0xEF]) {
-        if let Some(converted) = convert_storage(target) {
-            return converted;
-        }
+        fatal!("the storage disk is ext4, which {PREDATES_SUBVOLUMES}");
     }
-    if magic_at(STORAGE_DEVICE, 0x1_0040, b"_BHRfS_M") {
-        if let Err(e) = mount_typed(
-            STORAGE_DEVICE,
-            target,
-            "btrfs",
-            libc::MS_NOATIME,
-            "compress=zstd:1",
-        ) {
-            fatal!("mounting the storage disk's btrfs: {e}; the disk is kept as it is");
-        }
-        if let Err(e) = grow_btrfs(target) {
-            logf!("WARNING: growing btrfs to the disk ({e}); it keeps the size it had");
-        }
-        settle_directory_layout(target);
-        if !target.join(guest::DISK_ROOT_DIR).exists() {
-            delete_migrated(target);
-            if let Err(e) = ensure_subvolume(target, guest::SYSTEM_DIR) {
-                fatal!("creating the subvolume {}: {e}", guest::SYSTEM_DIR);
-            }
-            return (target.to_path_buf(), guest::LAYOUT_SUBVOLUMES);
-        }
-    } else if magic_at(STORAGE_DEVICE, 1024 + 56, &[0x53, 0xEF]) {
-        check_ext4();
-        match std::process::Command::new("/usr/sbin/resize2fs")
-            .arg(STORAGE_DEVICE)
-            .output()
-        {
-            Ok(out) if !out.status.success() => logf!(
-                "WARNING: growing ext4 to the disk: {}",
-                String::from_utf8_lossy(&out.stderr).trim()
-            ),
-            Err(e) => logf!("WARNING: growing ext4 to the disk: {e}"),
-            Ok(_) => {}
-        }
-        if let Err(e) = mount_typed(STORAGE_DEVICE, target, "ext4", libc::MS_NOATIME, "") {
-            fatal!("mounting the storage disk's ext4: {e}; the disk is kept as it is");
-        }
-    } else {
-        fatal!("the storage disk holds neither btrfs nor ext4, or could not be read; refusing to boot rather than format it, so what it holds is kept");
+    if !magic_at(STORAGE_DEVICE, 0x1_0040, b"_BHRfS_M") {
+        fatal!("the storage disk holds no btrfs, or could not be read; refusing to boot rather than format it, so what it holds is kept");
     }
-    let root = target.join(guest::DISK_ROOT_DIR);
-    if let Err(e) = mkdir_all(&root) {
-        fatal!("creating {}: {e}", root.display());
+    if let Err(e) = mount_typed(
+        STORAGE_DEVICE,
+        target,
+        "btrfs",
+        libc::MS_NOATIME,
+        "compress=zstd:1",
+    ) {
+        fatal!("mounting the storage disk's btrfs: {e}; the disk is kept as it is");
     }
-    (root, guest::LAYOUT_DIRECTORY)
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: what a btrfs disk that holds DISK_ROOT_DIR at its top becomes. One already marked as in the subvolume layout was booted by a rolled-back platform-init, and its DISK_ROOT_DIR is set aside (ROLLED_BACK_INFIX); any other moves to the subvolume layout, or stays in the directory layout when the move fails.
-fn settle_directory_layout(target: &Path) {
-    if target.join(guest::DISK_ROOT_DIR).exists()
-        && guest::system_store(target, guest::LAYOUT_FILE).exists()
-    {
-        let stamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |since| since.as_secs());
-        let aside = format!("{}{ROLLED_BACK_INFIX}{stamp}", guest::DISK_ROOT_DIR);
-        match rename_noreplace(&target.join(guest::DISK_ROOT_DIR), &target.join(&aside)) {
-            Ok(()) => announce(&format!(
-                "WARNING: the disk is in the subvolume layout but also holds {}, which a rolled-back platform-init made; it is kept as {aside}, and the home in the subvolume boots",
-                guest::DISK_ROOT_DIR
-            )),
-            Err(e) => fatal!("setting aside the {} a rolled-back platform-init made: {e}", guest::DISK_ROOT_DIR),
-        }
-    } else if target.join(guest::DISK_ROOT_DIR).exists() {
-        match migrate_to_subvolumes(target) {
-            Ok(()) => announce("moved the storage disk to the subvolume layout"),
-            Err(e) => announce(&format!(
-                "WARNING: moving the storage disk to the subvolume layout ({e}); it boots in the directory layout, and the next boot tries again"
-            )),
-        }
-    }
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the share record that asks this boot to convert its ext4 storage disk to btrfs, holding the conversion's nonce, and the fresh btrfs disk the runner attached for it as the second disk.
-const CONVERT_RECORD: &str = "convert";
-const CONVERT_DEVICE: &str = "/dev/vdb";
-
-// UNIT_BOUNDARY_DESCRIPTION: the nonce of the conversion this boot committed, which Pong names as a capability (CONVERTED_CAPABILITY_PREFIX) so the runner swaps the disks only on the guest's word, over the socket only PID 1 holds; a console line any root process can forge.
-static CONVERTED: Mutex<Option<String>> = Mutex::new(None);
-const CONVERTED_CAPABILITY_PREFIX: &str = "dam-disk-converted:";
-
-// UNIT_BOUNDARY_DESCRIPTION: converts the ext4 storage disk to btrfs when the runner asks (CONVERT_RECORD) and attached the btrfs disk (CONVERT_DEVICE): the ext4 disk is checked, then mounted read-only and never written again, and copied into the btrfs disk's subvolumes (copy::convert_into_subvolumes). The copy can outlast smolvm's start timeout, so the doorbell rings first, and the runner waits on the guest's answer instead. This boot then runs on the btrfs disk. The btrfs disk is mounted first, and a copy it already holds for this nonce boots at once, without the ext4 disk: a guest whose committed copy booted must never boot the ext4 disk again, which would hide that boot's writes. A btrfs disk that does not mount fails the boot for the same reason. A failure before the commit is a console warning and a boot on the ext4 disk as before, and only then may the runner, which sees no capability, count a failed boot. None when no conversion was asked for or it failed.
-fn convert_storage(target: &Path) -> Option<(PathBuf, u32)> {
-    let nonce = fs::read_to_string(Path::new(guest::STAGE0_SHARE).join(CONVERT_RECORD)).ok()?;
-    let nonce = nonce.trim().to_string();
-    if nonce.is_empty() || !magic_at(CONVERT_DEVICE, 0x1_0040, b"_BHRfS_M") {
-        return None;
-    }
-    ring_doorbell();
-    let committed = |copied: Option<copy::Copied>| {
-        match copied {
-            Some(c) => announce(&format!(
-                "converted the storage disk to btrfs: {} entries, {} bytes, {} hard links, {} skipped",
-                c.entries, c.bytes, c.hard_links, c.skipped
-            )),
-            None => announce("the storage disk was converted to btrfs by an earlier boot"),
-        }
-        *CONVERTED.lock().unwrap_or_else(|e| e.into_inner()) = Some(nonce.clone());
-        Some((target.to_path_buf(), guest::LAYOUT_SUBVOLUMES))
-    };
-    if let Err(e) = mkdir_all(target).and_then(|()| {
-        mount_typed(
-            CONVERT_DEVICE,
-            target,
-            "btrfs",
-            libc::MS_NOATIME,
-            "compress=zstd:1",
-        )
-    }) {
-        fatal!("mounting the btrfs disk this disk is being converted to: {e}; refusing to boot the ext4 disk, which may be older than a copy that booted. Both disks are kept as they are");
+    if target.join(guest::DISK_ROOT_DIR).exists() {
+        fatal!(
+            "the storage disk holds {} at its top, so it {PREDATES_SUBVOLUMES}",
+            guest::DISK_ROOT_DIR
+        );
     }
     if let Err(e) = grow_btrfs(target) {
         logf!("WARNING: growing btrfs to the disk ({e}); it keeps the size it had");
     }
-    if copy::committed(target, &nonce) {
-        return committed(None);
+    if let Err(e) = ensure_subvolume(target, guest::SYSTEM_DIR) {
+        fatal!("creating the subvolume {}: {e}", guest::SYSTEM_DIR);
     }
-    check_ext4();
-    let old = Path::new(STAGE).join("ext4");
-    let result = mkdir_all(&old)
-        .and_then(|()| {
-            mount_typed(
-                STORAGE_DEVICE,
-                &old,
-                "ext4",
-                libc::MS_RDONLY | libc::MS_NOATIME,
-                "",
-            )
-        })
-        .and_then(|()| {
-            let copied =
-                copy::convert_into_subvolumes(&old.join(guest::DISK_ROOT_DIR), target, &nonce);
-            let _ = umount(&old);
-            copied
-        });
-    match result {
-        Ok(copied) => committed(copied),
-        Err(e) => {
-            let _ = umount(target);
-            announce(&format!(
-                "WARNING: converting the storage disk to btrfs: {e}; nothing was committed, so it boots on its ext4 disk"
-            ));
-            None
-        }
-    }
-}
-
-fn umount(path: &Path) -> io::Result<()> {
-    let path = cstring(path.as_os_str())?;
-    // SAFETY: a NUL-terminated path that outlives the call.
-    succeeded(unsafe { libc::umount2(path.as_ptr(), 0) } == 0)
+    target.to_path_buf()
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: struct btrfs_ioctl_vol_args, which the resize and the subvolume ioctls take: a NUL-terminated name in a fixed buffer.
@@ -490,12 +363,8 @@ struct VolArgs {
 }
 
 fn btrfs_ioctl(dir: &Path, request: u8, name: &str) -> io::Result<()> {
-    btrfs_ioctl_fd(dir, request, 0, name)
-}
-
-fn btrfs_ioctl_fd(dir: &Path, request: u8, fd: i64, name: &str) -> io::Result<()> {
     let mut args = VolArgs {
-        fd,
+        fd: 0,
         name: [0; 4088],
     };
     args.name[..name.len()].copy_from_slice(name.as_bytes());
@@ -523,163 +392,6 @@ pub(super) fn ensure_subvolume(parent: &Path, name: &str) -> io::Result<()> {
         return Ok(());
     }
     btrfs_ioctl(parent, 14, name)
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: deletes the subvolume `parent/name` and everything in it (BTRFS_IOC_SNAP_DESTROY).
-pub(super) fn delete_subvolume(parent: &Path, name: &str) -> io::Result<()> {
-    btrfs_ioctl(parent, 15, name)
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: makes `parent/name` a snapshot of the subvolume at `parent` (BTRFS_IOC_SNAP_CREATE). It shares every extent with its source, so it takes no copy and no space until either side changes.
-fn snapshot(parent: &Path, name: &str) -> io::Result<()> {
-    let source = File::open(parent)?;
-    btrfs_ioctl_fd(parent, 1, source.as_raw_fd().into(), name)
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: where a migration puts the disk's directory layout, at the top of the disk and inside the system subvolume, until the background delete is through with it. Every boot in the subvolume layout deletes what is left of it, so a delete cut short by a stop goes on at the next boot.
-const MIGRATED: &str = "workspace.migrated";
-
-// UNIT_BOUNDARY_DESCRIPTION: a disk in the subvolume layout that also holds DISK_ROOT_DIR was booted by a platform-init from before subvolumes, which found no DISK_ROOT_DIR and made a fresh one. What that boot wrote there may be the agent's work, so it is renamed aside under this infix and kept, never migrated: a migration would delete the live subvolumes first.
-const ROLLED_BACK_INFIX: &str = ".rolled-back-";
-const MIGRATING: &str = ".migrating";
-
-// UNIT_BOUNDARY_DESCRIPTION: moves a btrfs disk from the directory layout, everything under DISK_ROOT_DIR, to the subvolume layout. What else is at the top of the disk is set aside first: a disk smolvm's guest agent once booted holds its image and container directories, which nothing uses since platform-init replaced it. Each subvolume starts as a snapshot of the whole disk, which copies nothing, and becomes its store by renames inside it: the store's entries move up to its root, which takes the store's owner and mode, the rest is set aside, and the empty directories a snapshot shows for the subvolumes beside its source go. Nothing of the old tree is changed until both subvolumes are complete and the system one is marked with its layout; moving DISK_ROOT_DIR aside is then the one step that switches the disk. A boot cut short before it finds the directory layout and starts again, deleting the subvolumes the last attempt left. The home's subvolume must not show the rest to the agent, so its share of it is deleted before the switch; the system's, a copy of the home, is deleted in the background afterwards. A disk that never held a home gets no agent subvolume, so its first boot seeds one (see stage). A home entry named MIGRATED fails the move, and the disk stays in the directory layout.
-fn migrate_to_subvolumes(top: &Path) -> io::Result<()> {
-    let stores = [guest::AGENT_DIR, guest::SYSTEM_DIR];
-    let ours = |name: &str| {
-        stores
-            .iter()
-            .any(|store| name == *store || name == format!("{store}{MIGRATING}"))
-    };
-    let aside = top.join(MIGRATED);
-    mkdir_all(&aside)?;
-    for entry in fs::read_dir(top)? {
-        let name = entry?.file_name();
-        let text = name.to_string_lossy();
-        if ours(&text) {
-            delete_subvolume(top, &text)?;
-        } else if name != guest::DISK_ROOT_DIR && name != MIGRATED {
-            rename_noreplace(&top.join(&name), &aside.join(&name))?;
-        }
-    }
-    for store in stores {
-        let staged = format!("{store}{MIGRATING}");
-        if store == guest::AGENT_DIR
-            && fs::symlink_metadata(top.join(guest::DISK_ROOT_DIR).join(store)).is_err()
-        {
-            continue;
-        }
-        snapshot(top, &staged)?;
-        let root = top.join(&staged);
-        for entry in fs::read_dir(&root)? {
-            let entry = entry?;
-            if ours(&entry.file_name().to_string_lossy()) {
-                fs::remove_dir(entry.path())?;
-            }
-        }
-        let old = root.join(MIGRATED).join(guest::DISK_ROOT_DIR);
-        fs::rename(root.join(guest::DISK_ROOT_DIR), &old)?;
-        let from = old.join(store);
-        if let Ok(info) = fs::symlink_metadata(&from) {
-            for entry in fs::read_dir(&from)? {
-                let entry = entry?;
-                rename_noreplace(&entry.path(), &root.join(entry.file_name()))?;
-            }
-            std::os::unix::fs::lchown(&root, Some(info.uid()), Some(info.gid()))?;
-            fs::set_permissions(&root, info.permissions())?;
-        }
-        if store == guest::AGENT_DIR {
-            remove_all(&root.join(MIGRATED))?;
-        }
-    }
-    let staged_system = top.join(format!("{}{MIGRATING}", guest::SYSTEM_DIR));
-    write_record(
-        &staged_system.join(guest::LAYOUT_FILE),
-        format!("{}\n", guest::LAYOUT_SUBVOLUMES).as_bytes(),
-    )?;
-    flush_filesystem(top)?;
-    for store in stores {
-        let staged = top.join(format!("{store}{MIGRATING}"));
-        if staged.exists() {
-            fs::rename(staged, top.join(store))?;
-        }
-    }
-    rename_noreplace(
-        &top.join(guest::DISK_ROOT_DIR),
-        &aside.join(guest::DISK_ROOT_DIR),
-    )?;
-    flush_filesystem(top)
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: deletes in the background what a migration set aside (MIGRATED). The directories are opened now and reached through /proc/self/fd, because the disk's root is detached once the boot is through with it.
-fn delete_migrated(top: &Path) {
-    for dir in [top.to_path_buf(), top.join(guest::SYSTEM_DIR)] {
-        if !dir.join(MIGRATED).exists() {
-            continue;
-        }
-        match File::open(&dir) {
-            Ok(dir) => {
-                std::thread::spawn(move || {
-                    let path =
-                        PathBuf::from(format!("/proc/self/fd/{}", dir.as_raw_fd())).join(MIGRATED);
-                    if let Err(e) = remove_all(&path) {
-                        logf!("WARNING: deleting the disk's old directory layout ({e}); a later boot tries again");
-                    }
-                });
-            }
-            Err(e) => logf!(
-                "WARNING: opening {} ({e}); its old directory layout stays until a later boot",
-                dir.display()
-            ),
-        }
-    }
-}
-
-fn rename_noreplace(from: &Path, to: &Path) -> io::Result<()> {
-    let from = cstring(from.as_os_str())?;
-    let to = cstring(to.as_os_str())?;
-    // SAFETY: both paths are NUL-terminated strings that outlive the call, and AT_FDCWD resolves them as rename(2) would.
-    let rc = unsafe {
-        libc::renameat2(
-            libc::AT_FDCWD,
-            from.as_ptr(),
-            libc::AT_FDCWD,
-            to.as_ptr(),
-            libc::RENAME_NOREPLACE,
-        )
-    };
-    succeeded(rc == 0)
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: e2fsck's passes, from least to most invasive: a preen returns at once on a clean filesystem and fixes what is safe to fix unattended; what it leaves gets a full repair, then one that also rebuilds directories. Exit codes 0 to 3 mean clean or repaired; 4 means errors are left, which escalates; anything else, or a pass killed by a signal, stops the boot with the disk as it is.
-const FSCK_PASSES: [&[&str]; 3] = [&["-p"], &["-f", "-y"], &["-f", "-y", "-D"]];
-
-fn check_ext4() {
-    for (i, args) in FSCK_PASSES.iter().enumerate() {
-        let out = match std::process::Command::new("/sbin/e2fsck")
-            .args(*args)
-            .arg(STORAGE_DEVICE)
-            .output()
-        {
-            Ok(out) => out,
-            Err(e) => fatal!("running e2fsck: {e}; refusing to mount a disk that may be damaged"),
-        };
-        let said = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        match out.status.code() {
-            Some(0) => return,
-            Some(1..=3) => {
-                announce(&format!("storage: e2fsck {} repaired the filesystem: {said}", args.join(" ")));
-                return;
-            }
-            Some(code) if code & !3 == 4 && i + 1 < FSCK_PASSES.len() => {
-                announce(&format!("storage: e2fsck {} left errors; trying a fuller repair", args.join(" ")));
-            }
-            code => fatal!(
-                "storage: e2fsck {} (exit {code:?}): {said}; refusing to mount, and the disk is kept as it is",
-                args.join(" ")
-            ),
-        }
-    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the guest agent protocol of smolvm's host side, as much of it as the runner's machines use: a liveness ping that names what this init can do, the quiesced stop, and onlining RAM the VMM plugged in. Each request is a big-endian u32 length and a JSON body on vsock port 6000, answered the same way, and a connection may carry several. Once it listens, the init rings the host's readiness doorbell, which is what a start waits for; it starts only once the image's root is in place, since the host grows the machine's RAM the moment it is ready, and onlining reads /sys, which moves into that root. A request this init does not serve is answered with an error, never with silence, so the host does not wait out its timeout.
@@ -798,15 +510,7 @@ fn respond(request: AgentRequest, conn: &mut File) -> AgentResponse {
                 smolvm_protocol::QUIESCED_SHUTDOWN_CAPABILITY.to_string(),
                 smolvm_protocol::ONLINE_MEMORY_GROWTH_CAPABILITY.to_string(),
             ]
-            .into_iter()
-            .chain(
-                CONVERTED
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .as_ref()
-                    .map(|nonce| format!("{CONVERTED_CAPABILITY_PREFIX}{nonce}")),
-            )
-            .collect(),
+            .into(),
         },
         AgentRequest::OnlineMemory {
             start_address,
@@ -1216,223 +920,6 @@ mod tests {
         assert!(capabilities
             .iter()
             .any(|c| c == smolvm_protocol::ONLINE_MEMORY_GROWTH_CAPABILITY));
-    }
-
-    // TEST_SCENARIO: the runner swaps an ext4 disk for its btrfs copy only when a ping names that conversion's nonce, which the guest adds once the copy is committed and never before.
-    #[test]
-    fn a_ping_names_a_committed_conversion() {
-        let ping = || {
-            let mut conn = File::open("/dev/null").unwrap();
-            match respond(AgentRequest::Ping, &mut conn) {
-                AgentResponse::Pong { capabilities, .. } => capabilities,
-                other => panic!("{other:?}"),
-            }
-        };
-        assert!(!ping()
-            .iter()
-            .any(|c| c.starts_with(CONVERTED_CAPABILITY_PREFIX)));
-        *CONVERTED.lock().unwrap() = Some("n1".into());
-        assert!(ping().contains(&format!("{CONVERTED_CAPABILITY_PREFIX}n1")));
-        *CONVERTED.lock().unwrap() = None;
-    }
-
-    // TEST_SCENARIO: a btrfs disk in the directory layout moves to the subvolume layout at boot: the home becomes the root of its own subvolume with its owner, mode and every entry, one named like the old layout's directory included, the platform state keeps its kept root and is marked with the new layout, and the old tree is set aside for the background delete, with what smolvm's guest agent left at the top. What an attempt cut short left is deleted first. A DISK_ROOT_DIR a rolled-back platform-init then makes beside the subvolumes is set aside and kept, and the live home stays. Needs root and mkfs.btrfs, for a loop-mounted filesystem: `sudo -E cargo test -p platform-init -- --ignored migrates`.
-    #[test]
-    #[ignore = "needs root and mkfs.btrfs"]
-    fn migrates_a_directory_layout_disk_to_subvolumes() {
-        use std::os::unix::fs::{MetadataExt, PermissionsExt};
-        let dir =
-            std::env::temp_dir().join(format!("platform-init-migrate-{}", std::process::id()));
-        mkdir_all(&dir).unwrap();
-        let image = dir.join("disk.raw");
-        File::create(&image).unwrap().set_len(256 << 20).unwrap();
-        let run = |program: &str, args: &[&std::ffi::OsStr]| {
-            let out = std::process::Command::new(program)
-                .args(args)
-                .output()
-                .unwrap();
-            assert!(
-                out.status.success(),
-                "{program}: {}",
-                String::from_utf8_lossy(&out.stderr)
-            );
-        };
-        run(
-            "mkfs.btrfs",
-            &["-q".as_ref(), "-M".as_ref(), image.as_os_str()],
-        );
-        let top = dir.join("top");
-        mkdir_all(&top).unwrap();
-        run(
-            "mount",
-            &[
-                "-o".as_ref(),
-                "loop".as_ref(),
-                image.as_os_str(),
-                top.as_os_str(),
-            ],
-        );
-        let old = top.join(guest::DISK_ROOT_DIR);
-        let home = guest::agent_store(&old);
-        mkdir_all(&home.join(".cache")).unwrap();
-        fs::write(home.join(".cache/file"), b"cache").unwrap();
-        fs::write(home.join(guest::DISK_ROOT_DIR), b"the agent's own file").unwrap();
-        std::os::unix::fs::lchown(&home, Some(65532), Some(65532)).unwrap();
-        fs::set_permissions(&home, fs::Permissions::from_mode(0o750)).unwrap();
-        let kept = guest::system_store(&old, "rootfs/kept/upper/etc");
-        mkdir_all(&kept).unwrap();
-        fs::write(kept.join("installed"), b"kept").unwrap();
-        fs::write(guest::system_store(&old, guest::LAYOUT_FILE), b"1\n").unwrap();
-        mkdir_all(&top.join("containers/crun")).unwrap();
-        snapshot(&top, &format!("{}{MIGRATING}", guest::AGENT_DIR)).unwrap();
-
-        let migrated = migrate_to_subvolumes(&top);
-        let agent = top.join(guest::AGENT_DIR);
-        let system = top.join(guest::SYSTEM_DIR);
-        let checks = || -> Result<(), String> {
-            migrated.as_ref().map_err(|e| e.to_string())?;
-            let info = fs::metadata(&agent).unwrap();
-            assert_eq!(info.ino(), 256, "the home is a subvolume's root");
-            assert_eq!((info.uid(), info.mode() & 0o777), (65532, 0o750));
-            assert_eq!(fs::read(agent.join(".cache/file")).unwrap(), b"cache");
-            assert_eq!(
-                fs::read(agent.join(guest::DISK_ROOT_DIR)).unwrap(),
-                b"the agent's own file"
-            );
-            assert!(
-                !agent.join(MIGRATED).exists(),
-                "the agent does not see the old tree"
-            );
-            assert_eq!(fs::metadata(&system).unwrap().ino(), 256);
-            assert_eq!(
-                fs::read(system.join("rootfs/kept/upper/etc/installed")).unwrap(),
-                b"kept"
-            );
-            assert_eq!(
-                fs::read_to_string(system.join(guest::LAYOUT_FILE)).unwrap(),
-                "2\n"
-            );
-            assert!(!old.exists());
-            assert!(top
-                .join(MIGRATED)
-                .join(guest::DISK_ROOT_DIR)
-                .join(guest::AGENT_DIR)
-                .exists());
-            assert!(
-                top.join(MIGRATED).join("containers/crun").exists(),
-                "smolvm's directories are set aside"
-            );
-            assert!(!system.join("containers").exists() && !agent.join("containers").exists());
-            let mut names: Vec<_> = fs::read_dir(&top)
-                .unwrap()
-                .map(|e| e.unwrap().file_name())
-                .collect();
-            names.sort();
-            assert_eq!(names, [guest::AGENT_DIR, guest::SYSTEM_DIR, MIGRATED]);
-            mkdir_all(&guest::agent_store(&old)).unwrap();
-            fs::write(
-                guest::agent_store(&old).join("rolled-back"),
-                b"written while rolled back",
-            )
-            .unwrap();
-            settle_directory_layout(&top);
-            assert_eq!(
-                fs::read(agent.join(".cache/file")).unwrap(),
-                b"cache",
-                "the live home stays"
-            );
-            let aside: Vec<_> = fs::read_dir(&top)
-                .unwrap()
-                .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-                .filter(|name| name.contains(ROLLED_BACK_INFIX))
-                .collect();
-            assert_eq!(aside.len(), 1, "the rolled-back tree is set aside");
-            assert_eq!(
-                fs::read(guest::agent_store(&top.join(&aside[0])).join("rolled-back")).unwrap(),
-                b"written while rolled back"
-            );
-            assert!(!old.exists());
-            Ok(())
-        };
-        let result = checks();
-        run("umount", &[top.as_os_str()]);
-        let _ = fs::remove_dir_all(&dir);
-        result.unwrap();
-    }
-
-    // TEST_SCENARIO: a platform-init from before subvolumes, booting a disk in the subvolume layout, makes a fresh workspace/ beside the subvolumes. The next boot sets it aside and keeps it, so the subvolume's home boots and what the rolled-back boot wrote is not lost. Needs root and mkfs.btrfs: `sudo -E cargo test -p platform-init -- --ignored rolled_back`.
-    #[test]
-    #[ignore = "needs root and mkfs.btrfs"]
-    fn a_rolled_back_workspace_is_set_aside() {
-        let dir =
-            std::env::temp_dir().join(format!("platform-init-rollback-{}", std::process::id()));
-        mkdir_all(&dir).unwrap();
-        let run = |program: &str, args: &[&std::ffi::OsStr]| {
-            let out = std::process::Command::new(program)
-                .args(args)
-                .output()
-                .unwrap();
-            assert!(
-                out.status.success(),
-                "{program}: {}",
-                String::from_utf8_lossy(&out.stderr)
-            );
-        };
-        let image = dir.join("disk.raw");
-        File::create(&image).unwrap().set_len(256 << 20).unwrap();
-        run(
-            "mkfs.btrfs",
-            &["-q".as_ref(), "-M".as_ref(), image.as_os_str()],
-        );
-        let top = dir.join("top");
-        mkdir_all(&top).unwrap();
-        run(
-            "mount",
-            &[
-                "-o".as_ref(),
-                "loop".as_ref(),
-                image.as_os_str(),
-                top.as_os_str(),
-            ],
-        );
-        let checks = || {
-            for name in [guest::AGENT_DIR, guest::SYSTEM_DIR] {
-                ensure_subvolume(&top, name).unwrap();
-            }
-            fs::write(top.join(guest::AGENT_DIR).join("work"), b"the agent's work").unwrap();
-            fs::write(guest::system_store(&top, guest::LAYOUT_FILE), b"2\n").unwrap();
-            let old = top.join(guest::DISK_ROOT_DIR);
-            mkdir_all(&guest::agent_store(&old)).unwrap();
-            fs::write(
-                guest::agent_store(&old).join("later"),
-                b"written while rolled back",
-            )
-            .unwrap();
-
-            settle_directory_layout(&top);
-
-            assert!(!old.exists(), "the subvolumes are no longer hidden");
-            assert_eq!(
-                fs::read(top.join(guest::AGENT_DIR).join("work")).unwrap(),
-                b"the agent's work"
-            );
-            let aside: Vec<_> = fs::read_dir(&top)
-                .unwrap()
-                .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-                .filter(|name| {
-                    name.starts_with(&format!("{}{ROLLED_BACK_INFIX}", guest::DISK_ROOT_DIR))
-                })
-                .collect();
-            assert_eq!(aside.len(), 1);
-            assert_eq!(
-                fs::read(guest::agent_store(&top.join(&aside[0])).join("later")).unwrap(),
-                b"written while rolled back"
-            );
-        };
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(checks));
-        run("umount", &[top.as_os_str()]);
-        let _ = fs::remove_dir_all(&dir);
-        result.unwrap();
     }
 
     // TEST_SCENARIO: on a new disk in the subvolume layout the home arrives with its seed: the agent's subvolume does not exist until the image's home is copied into a staged subvolume and renamed into place, so the home is the image's, with its owner and mode, and the root of a subvolume. A store that existed empty before its seed would be taken for a seeded home and never get the image's files. Needs root and mkfs.btrfs: `sudo -E cargo test -p platform-init -- --ignored seeds_a_home_subvolume`.
