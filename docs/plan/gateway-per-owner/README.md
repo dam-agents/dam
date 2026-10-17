@@ -78,7 +78,7 @@ Read first: [security-and-credentials](../../architecture/security-and-credentia
 | #   | Title                                       | Scope                                                                                          | Depends on |
 | --- | ------------------------------------------- | ---------------------------------------------------------------------------------------------- | ---------- |
 | 01  | Per-owner Envoy configuration render (done) | Static bootstrap plus LDS/CDS files, per-agent listener with harness guard and health revision | —          |
-| 02  | Per-owner resolver render                   | Corefile with one block per agent port and literal answer                                      | —          |
+| 02  | Per-owner resolver render (done)            | Corefile with one block per agent port and literal answer                                      | —          |
 | 03  | Per-owner credential Secret and leaf        | Aggregate granted credential keys, union-SAN leaf, rotation stamp                              | —          |
 | 04  | Owner gateway workload behind a flag        | Deployment, SA, ConfigMap, policies, mesh policies, lifecycle with runner, sizing              | 01, 02, 03 |
 | 05  | Agent ports, Service cut-over, readiness    | Port allocation, Service retarget, revision probe, host runner                                 | 04         |
