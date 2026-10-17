@@ -1,4 +1,5 @@
 import { useStore } from "../../../store.js";
+import type { AgentView } from "../../../types.js";
 import { useVmRuntime } from "../../features/hooks/use-vm-runtime.js";
 import { useUnlockedAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
 import {
@@ -25,7 +26,9 @@ export function useCreateDefaultAgent() {
       templates !== undefined &&
       vmRuntime.answered &&
       !createAgent.isPending,
-    create: async () => {
+    create: async ({ navigate = true } = {}): Promise<
+      AgentView | undefined
+    > => {
       if (!list || !templates) return;
       const templateId = defaultHarnessId(imageCatalogue(templates).harnesses);
       try {
@@ -37,9 +40,14 @@ export function useCreateDefaultAgent() {
           ...(vmRuntime.vm ? { vm: true } : {}),
           avatar: defaultAvatar(name, unlocked, list),
         });
-        setKitBrowserOpen(false);
-        selectAgent(agent.id);
-      } catch {}
+        if (navigate) {
+          setKitBrowserOpen(false);
+          selectAgent(agent.id);
+        }
+        return agent;
+      } catch {
+        return undefined;
+      }
     },
   };
 }

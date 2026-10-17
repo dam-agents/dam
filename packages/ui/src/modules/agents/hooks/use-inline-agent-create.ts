@@ -1,20 +1,21 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
 import type { AgentView } from "../../../types.js";
 import { useAgents, useAgentsList } from "../api/queries.js";
+import { useCreateDefaultAgent } from "./use-create-default-agent.js";
 
 interface InlineAgentCreate {
   isLoading: boolean;
   displayedAgents: readonly AgentView[];
-  justCreatedId: string | null;
   creating: boolean;
-  openCreateForm: () => void;
-  markCreated: (agent: AgentView) => void;
+  canCreate: boolean;
+  create: () => Promise<AgentView | undefined>;
 }
 
 export function useInlineAgentCreate(): InlineAgentCreate {
   const agents = useAgents();
   const list = useAgentsList();
+  const defaultAgent = useCreateDefaultAgent();
   const [creating, setCreating] = useState(false);
   const [justCreated, setJustCreated] = useState<AgentView | null>(null);
 
@@ -23,24 +24,19 @@ export function useInlineAgentCreate(): InlineAgentCreate {
     return [...list, justCreated];
   }, [list, justCreated]);
 
-  const seededCreate = useRef(false);
-  useEffect(() => {
-    if (seededCreate.current || agents.isLoading) return;
-    seededCreate.current = true;
-    if (list.length === 0) setCreating(true);
-  }, [agents.isLoading, list.length]);
-
-  const markCreated = (agent: AgentView) => {
-    setJustCreated(agent);
+  const create = async () => {
+    setCreating(true);
+    const agent = await defaultAgent.create({ navigate: false });
     setCreating(false);
+    if (agent) setJustCreated(agent);
+    return agent;
   };
 
   return {
     isLoading: agents.isLoading,
     displayedAgents,
-    justCreatedId: justCreated?.id ?? null,
     creating,
-    openCreateForm: () => setCreating(true),
-    markCreated,
+    canCreate: defaultAgent.ready && !creating,
+    create,
   };
 }
