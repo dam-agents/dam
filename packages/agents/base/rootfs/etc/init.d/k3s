@@ -1,0 +1,12 @@
+#!/sbin/openrc-run
+# The image's k3s on a vm machine. In no runlevel: the agent starts it, or adds
+# it to the default runlevel to start it at every boot.
+description="k3s server"
+command=$(command -v k3s)
+command_args=server
+command_background=yes
+pidfile=/run/k3s.pid
+output_log=/var/log/k3s.log
+error_log=/var/log/k3s.log
+# A tighter umask makes image layers CoreDNS and traefik cannot traverse.
+umask=022

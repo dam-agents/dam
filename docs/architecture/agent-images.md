@@ -1,6 +1,6 @@
 # Agent images
 
-Last verified: 2026-10-16
+Last verified: 2026-10-17
 
 The images an agent runs in: the **default image**, which the default Template boots, and the workloads and the e2e mock, each the default image under its own files.
 Each carries the agent-runtime and every harness.
@@ -113,7 +113,8 @@ Platform code a harness loads at runtime, such as Pi's provider extension, ships
   The image's `AGENT_BROWSER_*` defaults make agent-browser's browser the [browser panel](browser-panel.md)'s: the full Chromium, headed on the virtual display `platform-display` runs (Xvfb, i3, PipeWire and Selkies, which streams it to the panel), with its shared memory out of the container's small `/dev/shm`, which a heavy page would overflow and crash on.
   Selkies is installed into the base image from hash-pinned wheels, and streams only royalty-free codecs ([browser-panel](browser-panel.md)).
 - docker and k3s are baked in but not started.
-  The image's instructions tell the agent how to start them, and both keep their data under the home, the one path on a machine's disk that either can use.
+  On a machine each is an openrc service in no runlevel: the agent starts it with `rc-service`, or adds it to the `default` runlevel to start it at every boot, and both keep their data under the home, the one path on a machine's disk that either can use.
+  A service gets only `PATH` and the gateway's proxy and CA variables of the environment openrc starts in, which the image's `/etc/rc.conf.d` names, so no credential reaches a daemon.
 - aube stands in for pnpm; npm stays for tools that call it.
   An agent's own `aube add -g` and `pip install --user` land in the home and last; `mise use -g`, `npm i -g` and a plain `pip install` install into the image: in a container they last until the agent restarts, on a machine until its root generation, which the base declares, is bumped ([persistence](persistence.md)).
   mise reads no config from the home, so a tool pin an older image persisted there is inert.

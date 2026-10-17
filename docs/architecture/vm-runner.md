@@ -1,6 +1,6 @@
 # VM runner
 
-Last verified: 2026-10-16
+Last verified: 2026-10-17
 
 The pods behind the `vm` Backend: **one runner per owner**, each a single-replica Deployment in the agent namespace running smolvm and the platform's **vm-runner** agent.
 A local cluster on a Mac runs one [host runner](vm-host-runner.md) outside the cluster instead.
@@ -86,6 +86,7 @@ What a machine keeps across a stop is its storage disk on the runner's one PVC: 
 It is the machine's one disk.
 The guest's init is platform-init, not smolvm's guest agent: smolvm boots it from the agent root as PID 1, and it sets up the network, mounts the disk and the shares, boots the image on one overlay over the image tree, and answers the runner's host side (ping, quiesced stop, memory onlining, an operator's `vm-runner exec`), so no container runtime and no second root stand between the VM and the image.
 An image that ships `/sbin/openrc` opts in to its services: platform-init runs openrc's `sysinit`, `boot` and `default` runlevels before the entrypoint and openrc's `shutdown` on a stop, and starts the entrypoint in a cgroup of its own, so a restart of the entrypoint ends what it left and keeps the services.
+The runlevels run in the entrypoint's environment, of which openrc passes a service only what the image's `rc_env_allow` names; the default image's docker and k3s services are in no runlevel until the agent adds them ([agent images](agent-images.md#what-the-agent-gets)).
 That disk is made once, by the runner when it creates the machine: btrfs from the runner image's template, at its full size, under a UUID of its own, which the guest mounts compressed with zstd.
 A create whose disk cannot be made fails and leaves no machine, since smolvm would make a disk of its own at the next start.
 Disks made before btrfs are ext4.
