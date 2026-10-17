@@ -36,9 +36,9 @@ export function useRuntimeMigrationControls() {
       const msg = (
         <>
           Stop moving agent{" "}
-          <strong className="text-foreground">"{agent.name}"</strong> to the new
-          sandbox runtime? The copy made so far is discarded and the agent
-          restarts on its previous runtime with its home directory as it was.
+          <strong className="text-foreground">“{agent.name}”</strong> to the new
+          runtime? The copy made so far is discarded and the agent restarts on
+          its previous runtime with its home directory as it was.
         </>
       );
       if (

@@ -107,9 +107,7 @@ export function useSectionSummaries(agent: AgentView | null): {
 
   const { data: budget } = useBudgetReserved();
   const setup = agent?.vm
-    ? agent.requireConnectionAddress
-      ? "Credentials: addressed only"
-      : "Credentials: every request"
+    ? "Editor, CLI and model"
     : agent && budget
       ? formatSizeLabel(sizeInMi(agent.size), slotUnitOf(budget))
       : undefined;
@@ -147,11 +145,14 @@ export function useSectionSummaries(agent: AgentView | null): {
         (s) => agentId !== undefined && s.grantedAgentIds.includes(agentId),
       )
       .map((s) => s.name);
-    return (
+    const names =
       formatNameList([...new Set(titles), ...satelliteNames]) ??
-      "No connections added"
-    );
+      "No connections added";
+    return agent?.requireConnectionAddress
+      ? `${names} · addressed only`
+      : names;
   }, [
+    agent?.requireConnectionAddress,
     connectionsQuery.data,
     apps,
     providerAppIds,

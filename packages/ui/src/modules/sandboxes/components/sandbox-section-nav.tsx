@@ -1,6 +1,7 @@
 import { WarningAltFilled } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
+import { Select } from "@/components/ui/select";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -93,19 +94,37 @@ export function SandboxSectionNav({
   return (
     <nav
       aria-label="Agent sections"
-      className="flex shrink-0 flex-col gap-1 md:sticky md:top-12 md:w-[245px] md:self-start"
+      className="flex shrink-0 flex-col gap-1 md:sticky md:top-10 md:w-[245px] md:self-start"
     >
       {header}
-      {sections.map((entry) => (
-        <SectionNavItem
-          key={entry.section}
-          title={entry.title}
-          summary={summaries?.[entry.section]}
-          warning={warnings?.[entry.section]}
-          active={entry.section === active}
-          onClick={() => onNavigate(entry.section)}
-        />
-      ))}
+      <div className="px-3 md:hidden">
+        <Select
+          aria-label="Section"
+          value={active}
+          onChange={(e) => {
+            const next = sections.find((s) => s.section === e.target.value);
+            if (next) onNavigate(next.section);
+          }}
+        >
+          {sections.map((entry) => (
+            <option key={entry.section} value={entry.section}>
+              {warnings?.[entry.section] ? `${entry.title} (!)` : entry.title}
+            </option>
+          ))}
+        </Select>
+      </div>
+      <div className="hidden flex-col gap-1 md:flex">
+        {sections.map((entry) => (
+          <SectionNavItem
+            key={entry.section}
+            title={entry.title}
+            summary={summaries?.[entry.section]}
+            warning={warnings?.[entry.section]}
+            active={entry.section === active}
+            onClick={() => onNavigate(entry.section)}
+          />
+        ))}
+      </div>
     </nav>
   );
 }
@@ -127,6 +146,7 @@ function SectionNavItem({
     <button
       type="button"
       onClick={onClick}
+      aria-current={active ? "page" : undefined}
       className={cn(
         "flex w-full flex-col gap-0.5 rounded-lg px-3 py-2.5 text-left transition-colors",
         active ? "bg-muted" : "hover:bg-muted/60",
@@ -143,7 +163,7 @@ function SectionNavItem({
           </Tooltip>
         )}
       </span>
-      <span className="truncate text-sm text-muted-foreground">
+      <span title={summary} className="truncate text-sm text-muted-foreground">
         {summary ?? "—"}
       </span>
     </button>

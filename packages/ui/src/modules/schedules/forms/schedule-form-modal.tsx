@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Modal } from "@/components/modal";
 
 import type { Schedule } from "../../../types.js";
+import { useGuardedClose } from "../../sandboxes/hooks/use-guarded-close.js";
 import type { ExactCronConversion } from "../lib/cron-conversion.js";
 import { ConvertCronStep } from "./convert-cron-step.js";
 import { CronScheduleForm } from "./cron-schedule-form.js";
@@ -33,10 +34,13 @@ export function ScheduleFormModal({ agentId, existing, onClose }: Props) {
   const [editing, setEditing] = useState(existing);
   const [converting, setConverting] = useState<Converting | null>(null);
   const [cronDraft, setCronDraft] = useState<Schedule | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const guardedClose = useGuardedClose(dirty, onClose);
+  const onModalClose = () => void guardedClose();
 
   if (editing?.type === "cron")
     return (
-      <Modal onClose={onClose}>
+      <Modal onClose={onModalClose}>
         {converting ? (
           <ConvertCronStep
             schedule={converting.draft}
@@ -56,6 +60,7 @@ export function ScheduleFormModal({ agentId, existing, onClose }: Props) {
             agentId={agentId}
             existing={cronDraft ?? editing}
             onClose={onClose}
+            onDirtyChange={setDirty}
             onConvert={(draft, conversion) =>
               setConverting({ draft, conversion })
             }
@@ -65,17 +70,18 @@ export function ScheduleFormModal({ agentId, existing, onClose }: Props) {
     );
 
   const formProps = editing
-    ? { agentId, existing: editing, onClose }
+    ? { agentId, existing: editing, onClose, onDirtyChange: setDirty }
     : {
         agentId,
         draft,
         onDraftChange: setDraft,
         leadingFields: <ScheduleKindField value={kind} onChange={setKind} />,
         onClose,
+        onDirtyChange: setDirty,
       };
 
   return (
-    <Modal onClose={onClose}>
+    <Modal onClose={onModalClose}>
       {kind === "once" ? (
         <OnceScheduleForm {...formProps} />
       ) : (

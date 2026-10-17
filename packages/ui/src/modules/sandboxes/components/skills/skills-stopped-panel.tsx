@@ -62,6 +62,7 @@ export function SkillsStoppedPanel({
   errorBySource,
   addSourceButton,
   callout,
+  disabledNotice,
   comingUp,
   onStart,
   onRescan,
@@ -79,6 +80,7 @@ export function SkillsStoppedPanel({
   errorBySource: Record<string, ScanFailure | null>;
   addSourceButton: ReactNode;
   callout?: ReactNode;
+  disabledNotice?: ReactNode;
   comingUp: boolean;
   onStart: () => void;
   onRescan: (source: SkillSource) => void;
@@ -88,10 +90,12 @@ export function SkillsStoppedPanel({
   return (
     <div className="flex flex-col gap-8">
       {callout && <div className="-mb-4">{callout}</div>}
-      <AgentSleepingCallout comingUp={comingUp} onStart={onStart}>
-        — its skills are read-only until it wakes. Wake the agent to change
-        them.
-      </AgentSleepingCallout>
+      {disabledNotice ?? (
+        <AgentSleepingCallout comingUp={comingUp} onStart={onStart}>
+          — its skills are read-only until it wakes. Wake the agent to change
+          them.
+        </AgentSleepingCallout>
+      )}
 
       <section>
         <SectionHeader label="Skills at next start" />
@@ -121,10 +125,6 @@ export function SkillsStoppedPanel({
             </SnapshotRow>
           ))}
         </Card>
-        <p className="mt-2.5 text-sm text-muted-foreground">
-          Search, bulk actions and per-skill toggles need the agent running —
-          they&rsquo;re left out here rather than shown greyed out.
-        </p>
       </section>
 
       <section>

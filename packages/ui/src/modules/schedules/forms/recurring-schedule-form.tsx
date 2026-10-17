@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import type { Schedule } from "../../../types.js";
+import { useGuardedClose } from "../../sandboxes/hooks/use-guarded-close.js";
 import {
   useCreateSchedule,
   useDeleteSchedule,
@@ -39,6 +40,7 @@ interface Props {
   onDraftChange?: (draft: ScheduleDraft) => void;
   leadingFields?: ReactNode;
   onClose: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 export function RecurringScheduleForm({
@@ -48,6 +50,7 @@ export function RecurringScheduleForm({
   onDraftChange,
   leadingFields,
   onClose,
+  onDirtyChange,
 }: Props) {
   const createSchedule = useCreateSchedule();
   const updateSchedule = useUpdateSchedule();
@@ -59,7 +62,7 @@ export function RecurringScheduleForm({
     if (!existing) return;
     const confirmed = await showConfirm(
       "It stops running and cannot be recovered.",
-      `Delete ${existing.name}?`,
+      `Delete “${existing.name}”?`,
       { kind: "destructive", confirmLabel: "Delete schedule" },
     );
     if (!confirmed) return;
@@ -72,7 +75,9 @@ export function RecurringScheduleForm({
       resolver: zodResolver(scheduleFormSchema),
       defaultValues: { ...scheduleFormDefaults(existing), ...draft },
     });
-  const { errors } = formState;
+  const { errors, isDirty } = formState;
+  const close = useGuardedClose(isDirty, onClose);
+  useEffect(() => onDirtyChange?.(isDirty), [isDirty, onDirtyChange]);
 
   useEffect(() => {
     if (!onDraftChange) return;
@@ -146,7 +151,7 @@ export function RecurringScheduleForm({
     <form onSubmit={onSubmit} className="flex min-h-0 flex-col">
       <DialogHeader
         title={existing ? "Edit schedule" : "New schedule"}
-        onClose={onClose}
+        onClose={() => void close()}
       />
 
       <DialogBody className="flex flex-col gap-4">
@@ -208,8 +213,9 @@ export function RecurringScheduleForm({
           existing ? (
             <Button
               type="button"
-              variant="ghost"
+              variant="outline"
               tone="danger"
+              className="text-danger"
               disabled={deleteSchedule.isPending}
               onClick={() => void handleDelete()}
             >
@@ -217,7 +223,7 @@ export function RecurringScheduleForm({
             </Button>
           ) : undefined
         }
-        onCancel={onClose}
+        onCancel={() => void close()}
         label={existing ? "Save" : "Create"}
         pendingLabel={existing ? "Saving…" : "Creating…"}
         pending={mutation.isPending}

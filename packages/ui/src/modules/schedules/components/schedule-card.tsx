@@ -75,7 +75,7 @@ export function ScheduleCard({
     if (
       await showConfirm(
         "It stops running and cannot be recovered.",
-        `Delete ${name}?`,
+        `Delete “${name}”?`,
         { kind: "destructive", confirmLabel: "Delete schedule" },
       )
     )
@@ -200,7 +200,7 @@ export function ScheduleCard({
             onCheckedChange={(checked) =>
               toggleSchedule.mutate({ id, enabled: checked })
             }
-            label={enabled ? "Disable schedule" : "Enable schedule"}
+            label="Schedule enabled"
           />
         )}
 

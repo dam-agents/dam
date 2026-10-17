@@ -15,6 +15,7 @@ import { useWakeAgent } from "../../../agents/hooks/use-wake-agent.js";
 import { useSkillsConfirms } from "../../hooks/use-skills-confirms.js";
 import { useSkillsDerivations } from "../../hooks/use-skills-derivations.js";
 import { useSkillsSurface } from "../../hooks/use-skills-surface.js";
+import { AgentDisabledNotice } from "./agent-disabled-notice.js";
 import { LocalSkillsGroup } from "./local-skills-group.js";
 import { PlatformSkillsGroup } from "./platform-skills-group.js";
 import { SkillDriftBanner } from "./skill-drift-banner.js";
@@ -30,11 +31,13 @@ import { StandaloneSkillsGroup } from "./standalone-skills-group.js";
 export function SkillsSurface({
   agentId,
   agentState,
+  agentDisabled = false,
   readOnly,
   comingUp,
 }: {
   agentId: string | null;
   agentState: AgentState | undefined;
+  agentDisabled?: boolean;
   readOnly: boolean;
   comingUp?: boolean;
 }) {
@@ -90,6 +93,10 @@ export function SkillsSurface({
     : undefined;
 
   const ran = hasRun || surface.standaloneSnapshot !== undefined;
+  const disabledNotice =
+    agentDisabled && agentId ? (
+      <AgentDisabledNotice agentId={agentId} />
+    ) : undefined;
 
   const stoppedPanel = (
     <SkillsStoppedPanel
@@ -103,8 +110,9 @@ export function SkillsSurface({
       revalidatingBySource={surface.revalidatingBySource}
       errorBySource={surface.errorBySource}
       addSourceButton={addSourceButton}
+      disabledNotice={disabledNotice}
       callout={
-        staleModel.stale && staleModel.model ? (
+        !agentDisabled && staleModel.stale && staleModel.model ? (
           <StaleModelNotice
             model={staleModel.model}
             comingUp={!!comingUp}
@@ -156,6 +164,7 @@ export function SkillsSurface({
       revalidatingBySource={surface.revalidatingBySource}
       errorBySource={surface.errorBySource}
       addSourceButton={addSourceButton}
+      disabledNotice={disabledNotice}
       comingUp={!!comingUp}
       onStart={() => agentId && wakeAgent.wake(agentId)}
       onRescan={(src) => void surface.refreshSource(src.id)}

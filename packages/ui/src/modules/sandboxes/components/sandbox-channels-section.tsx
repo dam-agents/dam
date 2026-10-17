@@ -1,3 +1,5 @@
+import { Card } from "@/components/ui/card";
+
 import { useAgents } from "../../agents/api/queries.js";
 import { SlackChannelCard } from "./channels/slack-channel-card.js";
 import { TelegramChannelCard } from "./channels/telegram-channel-card.js";
@@ -10,10 +12,10 @@ export function SandboxChannelsSection({ agentId }: { agentId: string }) {
 
   if (!available.slack && !available.telegram)
     return (
-      <p className="text-sm text-muted-foreground">
+      <Card className="px-5 py-8 text-center text-sm text-muted-foreground">
         No messenger is set up on this platform, so there is nothing to connect
-        yet. Ask your operator to configure Slack or Telegram.
-      </p>
+        yet. Ask your administrator to configure Slack or Telegram.
+      </Card>
     );
   return (
     <>

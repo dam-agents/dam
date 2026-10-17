@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import type { Schedule } from "../../../types.js";
+import { useGuardedClose } from "../../sandboxes/hooks/use-guarded-close.js";
 import {
   useCreateOnceSchedule,
   useDeleteSchedule,
@@ -39,6 +40,7 @@ interface Props {
   onDraftChange?: (draft: ScheduleDraft) => void;
   leadingFields?: ReactNode;
   onClose: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 export function OnceScheduleForm({
@@ -48,6 +50,7 @@ export function OnceScheduleForm({
   onDraftChange,
   leadingFields,
   onClose,
+  onDirtyChange,
 }: Props) {
   const createOnce = useCreateOnceSchedule();
   const updateOnce = useUpdateOnceSchedule();
@@ -60,7 +63,9 @@ export function OnceScheduleForm({
       resolver: zodResolver(onceFormSchema),
       defaultValues: { ...onceFormDefaults(existing), ...draft },
     });
-  const { errors } = formState;
+  const { errors, isDirty } = formState;
+  const close = useGuardedClose(isDirty, onClose);
+  useEffect(() => onDirtyChange?.(isDirty), [isDirty, onDirtyChange]);
 
   useEffect(() => {
     if (!onDraftChange) return;
@@ -75,7 +80,7 @@ export function OnceScheduleForm({
     if (!existing) return;
     const confirmed = await showConfirm(
       "It will not run.",
-      `Delete ${existing.name}?`,
+      `Delete “${existing.name}”?`,
       { kind: "destructive", confirmLabel: "Delete task" },
     );
     if (!confirmed) return;
@@ -125,7 +130,7 @@ export function OnceScheduleForm({
     <form onSubmit={onSubmit} className="flex min-h-0 flex-col">
       <DialogHeader
         title={existing ? "Edit one-time task" : "New schedule"}
-        onClose={onClose}
+        onClose={() => void close()}
       />
 
       <DialogBody className="flex flex-col gap-4">
@@ -227,8 +232,9 @@ export function OnceScheduleForm({
           existing ? (
             <Button
               type="button"
-              variant="ghost"
+              variant="outline"
               tone="danger"
+              className="text-danger"
               disabled={deleteSchedule.isPending}
               onClick={() => void handleDelete()}
             >
@@ -236,7 +242,7 @@ export function OnceScheduleForm({
             </Button>
           ) : undefined
         }
-        onCancel={onClose}
+        onCancel={() => void close()}
         label={existing ? "Save" : when === "now" ? "Run now" : "Schedule"}
         pendingLabel={existing ? "Saving…" : "Creating…"}
         pending={mutation.isPending}
