@@ -104,12 +104,8 @@ type VMRunnerSpec struct {
 	NestedVirtualization bool                          `json:"nestedVirtualization,omitempty"`
 	EgressCIDRs          []string                      `json:"egressCidrs,omitempty"`
 	EgressExceptCIDRs    []string                      `json:"egressExceptCidrs,omitempty"`
-	ImageArchiveHostPath string                        `json:"imageArchiveHostPath,omitempty"`
 	ImageCacheHostPath   string                        `json:"imageCacheHostPath,omitempty"`
 	ImageCacheBudget     string                        `json:"imageCacheBudget,omitempty"`
-	DNSPolicy            string                        `json:"dnsPolicy,omitempty"`
-	DNSCIDRs             []string                      `json:"dnsCidrs,omitempty"`
-	ClusterDNS           VMRunnerClusterDNS            `json:"clusterDns,omitempty"`
 	NodeSelector         map[string]string             `json:"nodeSelector,omitempty"`
 	Tolerations          []corev1.Toleration           `json:"tolerations,omitempty"`
 	Affinity             *corev1.Affinity              `json:"affinity,omitempty"`

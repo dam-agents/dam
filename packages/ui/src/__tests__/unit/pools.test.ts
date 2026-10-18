@@ -27,7 +27,6 @@ const usage: BudgetVmUsage = {
   storage: {
     usedBytes: 95 * GiB,
     usableBytes: 100 * GiB,
-    imageCacheBytes: 3 * GiB,
     seedBytes: 0,
     level: "critical",
   },
@@ -86,7 +85,6 @@ describe("pool bars", () => {
       "asleep",
       "a",
       "1 more",
-      "Image cache",
       "Logs and system",
     ]);
     expect(bar.segments.reduce((sum, s) => sum + s.fraction, 0)).toBeCloseTo(
@@ -103,10 +101,9 @@ describe("pool bars", () => {
       ["b", 60],
       ["asleep", 20],
       ["a", 10],
-      ["Image cache", 3],
+      ["Logs and system", 3.25],
       ["Agents moving to VMs", 1.25],
       ["tiny", 0.5],
-      ["Logs and system", 0.25],
     ]);
     expect(rows.find((r) => r.label === "b")?.agent?.id).toBe("b");
   });

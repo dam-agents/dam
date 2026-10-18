@@ -1,6 +1,6 @@
 # VM host runner
 
-Last verified: 2026-10-17
+Last verified: 2026-10-18
 
 On a Mac, the local cluster's `vm` Backend runs on **one runner outside the cluster**, on the Mac's own hypervisor, instead of on the per-owner [runner pods](vm-runner.md) inside the cluster's VM, which would need a hypervisor nested in that VM.
 A nested guest boots several times slower, a busy laptop pushes it past smolvm's fixed ready window, and only recent Apple chips nest at all.
@@ -38,7 +38,7 @@ Both sides hold the gateway address to the [guest contract](../../packages/vm-ru
 No kernel gate stands behind that smolvm filter, since a Mac process has no NetworkPolicy.
 And the forwarded NodePort is open to any process on the Mac, which can use a gateway's credentials: the same trust as the laptop's own user.
 
-**Images and disks.** With no registry, the install stages image trees onto a case-sensitive volume the runner owns.
+**Images and disks.** The host runner is the one runner with no node image cache: no cache service runs beside it, so it fetches nothing from a registry and boots only the image trees the install stages onto a case-sensitive volume it owns.
 The Mac's default filesystem folds names that differ only in case into one file, and agent images carry such names.
 Trees are unpacked without privilege, so a guest sees every image file owned by the runner's user rather than by the image's owners.
 The runner makes a new disk btrfs from the runner image's template ([vm-runner](vm-runner.md)), which needs no filesystem tool on the Mac.

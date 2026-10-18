@@ -25,7 +25,6 @@ describe("the runner's usage read", () => {
       storage: {
         usedBytes: 32212254720,
         usableBytes: 107374182400,
-        imageCacheBytes: 4294967296,
         seedBytes: 2147483648,
       },
       memory: { limitMiB: 12288, committedMiB: 3072 },

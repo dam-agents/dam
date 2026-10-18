@@ -284,12 +284,12 @@ The runner makes every new disk itself, btrfs at its full size, before any guest
 A disk from before that, ext4 or btrfs in the old directory layout, fails its boot and is kept as it is ([vm-runner](vm-runner.md)).
 On a Mac host runner the loss is refused, not prevented.
 
-**The claim those disks sit on is the owner's pool.** One claim per owner holds every machine disk they have, their bookkeeping, a [runtime migration](vm-runtime-migration.md)'s seed while it waits, and the image cache when the cache lives there, and every disk may grow to the pool, so the claim is created at the pool; the controller refuses an install whose image cache budget would take the whole of it.
+**The claim those disks sit on is the owner's pool.** One claim per owner holds every machine disk they have, their bookkeeping, and a [runtime migration](vm-runtime-migration.md)'s seed while it waits, and every disk may grow to the pool, so the claim is created at the pool; the image trees are on the node, not the claim.
 It grows in place when the pool rises and is never shrunk, so a lowered pool only stops its growth.
 A refused growth is reported and reconciliation continues: the runner still serves every agent at the size it has.
 
 **The runner guards the claim by its use.** The disks are sparse, so they can add up to more than the claim holds, and a guest sees its own disk as free while the claim under it fills; once the claim has no block left, a guest's write into its disk has nowhere to go.
-So the runner measures the claim itself: past 75% used it sheds what it can fetch again — every image tree no machine holds, when the cache is on the claim — and asks every machine's guest, through its share, to give back scratch: each running one its even part of what would bring use back under 70%.
+So the runner measures the claim itself: past 75% used it asks every machine's guest, through its share, to give back scratch: each running one its even part of what would bring use back under 70%.
 It asks again only once the claim has filled five points further, and clears the request once use is back under 70%, so a claim the homes keep full does not have every guest delete its scratch again every minute.
 Every guest is held to the claim's room as well: at each look the runner grants each running guest an even part of what is left below 95% of the claim, the level at which it counts the claim full, through its share, and platform-init sizes a preallocated file on the disk so that the guest can write only what is left of its grant.
 A guest held below 256 MiB may still write 256 MiB in all, once, until a grant with room comes, so with N agents running the claim can pass 95% by at most N times that.
@@ -300,25 +300,24 @@ A clean stop empties it first, so the next boot does not start with its blocks t
 btrfs reports free space late, and as an estimate that can pass the disk's size, so the guard reads its own size from the file, syncs before it moves, moves past a margin once per commit at most, and grows only as far as the disk takes.
 Eviction does not count it as used, so a guest held to the claim does not read its own disk as short.
 The guard counts what the guest's filesystem reports as used, so it does not see all that the claim gives a disk: metadata blocks are holes until first written, and blocks a guest frees take room on the claim until btrfs discards them; the next look's grant accounts for them, and the 5% above 95% absorbs them between looks.
-Past 90% it creates no machine, fetches no image onto the claim and takes no seed, and a machine it starts boots at the disk size it has; past 95%, where guests' writes start to fail, it starts and restarts no machine either, so between the two an owner whose agents are all asleep can still get into one to clean it up.
+Past 90% it creates no machine and takes no seed, and a machine it starts boots at the disk size it has; past 95%, where guests' writes start to fail, it starts and restarts no machine either, so between the two an owner whose agents are all asleep can still get into one to clean it up.
 It reports each refusal as `MachineStorageFull` with how full the storage is and how to free it, and never stops a running machine, which would free nothing and lose what the guest holds in memory.
 An out-of-space error the runner meets anywhere on the claim is reported the same way, and so is a boot that fails while the claim is that full, since a guest whose writes fail fails its boot with nothing typed in the error.
 A storage refusal does not park the Agent the way a memory refusal does: parking would halt a machine, and nothing an idle agent holds in memory frees disk.
 The api-server says the same before an Agent is written: it reads the owner's runner through its read-only usage capability, and refuses a new vm agent — a create, a kit applied, a spawn, a move onto the vm backend — once the claim is 90% used, with the figures and the same three ways out.
 Usage it cannot read refuses nothing, since the runner refuses the machine anyway.
-The same read names, beside each machine's disk, what the runner's own image cache and the seeds of migrations not yet ended take of the claim, so a user whose storage is short is shown what fills it ([budgets](budgets.md)).
+The same read names, beside each machine's disk, what the seeds of migrations not yet ended take of the claim, so a user whose storage is short is shown what fills it ([budgets](budgets.md)).
 Past 90%, and again past 95% when writes start failing, the owner also gets a Slack direct message with the same figures and ways out ([resource alerts](budgets.md#resource-alerts)).
 
 **A write the claim has no room for waits instead of failing.** virtio-blk can report a failed write to the guest only as an I/O error, and on that error the guest drops the data in its page cache that a write had accepted, and btrfs aborts its transaction and turns the filesystem read-only.
 So the runner's libkrun holds a guest write that the claim refuses with no space, and tries it again every second until it fits, as QEMU does by default.
-The guest's I/O waits meanwhile, and continues with nothing lost once the claim has room: through the runner's shedding, another guest's discards, a deleted agent or a larger storage.
+The guest's I/O waits meanwhile, and continues with nothing lost once the claim has room: through another guest's discards, a deleted agent or a larger storage.
 A stop of the machine ends the wait: the write fails as before, or a kill ends the machine as a power cut would, which btrfs's copy-on-write recovers from without errors.
 A flush is never tried again: after a failed fsync the host can have dropped the data, and a second fsync would report it written.
 
 ### The machine image cache
 
-A machine may reach only its gateway, so its image is fetched for it and unpacked once into a tree every machine of that image mounts read-only, on the runner's own claim by default or on a node directory an install shares.
-It is the one part of the runner's storage an install may move off its claim; [vm-image-cache](vm-image-cache.md) owns it.
+A machine may reach only its gateway, so its image is fetched for it and unpacked once into a tree every machine of that image mounts read-only, on a node directory every runner on the node shares, never on the runner's claim; [vm-image-cache](vm-image-cache.md) owns it.
 
 ### Warm PVC pool
 

@@ -100,13 +100,11 @@ export function memoryBar(
 }
 
 export const STORAGE_PARTS = {
-  imageCache: "Image cache",
   seeds: "Agents moving to VMs",
   rest: "Logs and system",
 } as const;
 
 const storageParts = (usage: BudgetVmUsage): PoolPart[] => [
-  { label: STORAGE_PARTS.imageCache, bytes: usage.storage.imageCacheBytes },
   { label: STORAGE_PARTS.seeds, bytes: usage.storage.seedBytes },
 ];
 
@@ -130,7 +128,7 @@ export interface StorageRow {
   bytes: number;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what fills the owner's shared storage, largest first: each agent's disk, the image cache, the copies of homes that runtime migrations still hold, and the runner's own logs and records as what is left. A part that takes nothing is left out.
+// UNIT_BOUNDARY_DESCRIPTION: what fills the owner's shared storage, largest first: each agent's disk, the copies of homes that runtime migrations still hold, and the runner's own logs and records as what is left. A part that takes nothing is left out.
 export function storageRows(
   usage: BudgetVmUsage,
   agents: readonly AgentView[],

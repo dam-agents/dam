@@ -68,23 +68,6 @@ pub fn seed_missing(detail: impl std::fmt::Display) -> anyhow::Error {
     .into()
 }
 
-pub fn storage_full(detail: impl std::fmt::Display) -> anyhow::Error {
-    Refusal {
-        reason: REASON_STORAGE_FULL,
-        message: detail.to_string(),
-    }
-    .into()
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the runner's own image cache sits on the owner's claim, beside every machine disk, so a cache that ran out of disk is that owner's storage running out, not memory. The cache reports it as out of capacity, which is right for a node cache, whose disk is the node's; the runner names it again here for its own.
-pub fn on_own_claim(err: anyhow::Error) -> anyhow::Error {
-    match err.downcast::<Refusal>() {
-        Ok(refusal) if refusal.reason == REASON_OUT_OF_CAPACITY => storage_full(refusal.message),
-        Ok(refusal) => refusal.into(),
-        Err(err) => err,
-    }
-}
-
 // UNIT_BOUNDARY_DESCRIPTION: the reason a failed operation is reported under: a typed refusal's own, a full disk for a write the filesystem refused for want of room, and a failed boot for anything else. Every file a runner writes for a machine is on the owner's claim, so a full disk anywhere in the chain is that claim filling.
 pub fn failure_reason(err: &anyhow::Error) -> &'static str {
     if let Some(refusal) = err.downcast_ref::<Refusal>() {
@@ -793,7 +776,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: every file a runner writes for a machine is on its owner's claim, so a write the filesystem refused for want of room is that owner's storage filling, under any context the error gathered on the way up, and not a boot to retry. The runner's own image cache sits on the same claim, so its full disk is named the same; any other refusal it makes keeps its reason.
+    // TEST_SCENARIO: every file a runner writes for a machine is on its owner's claim, so a write the filesystem refused for want of room is that owner's storage filling, under any context the error gathered on the way up, and not a boot to retry. The node image cache's disk is the node's, so a cache that ran out of it keeps its own reason.
     #[test]
     fn a_full_disk_is_reported_as_the_owners_storage_full() {
         let full = anyhow::Error::from(std::io::Error::from_raw_os_error(libc::ENOSPC))
@@ -804,12 +787,9 @@ mod tests {
         assert_eq!(failure_reason(&quota), REASON_STORAGE_FULL);
         let denied = anyhow::Error::from(std::io::Error::from_raw_os_error(libc::EACCES));
         assert_eq!(failure_reason(&denied), REASON_BOOT_FAILED);
-        let cache = on_own_claim(out_of_capacity("the image cache ran out of disk"));
-        assert_eq!(failure_reason(&cache), REASON_STORAGE_FULL);
-        assert_eq!(cache.to_string(), "the image cache ran out of disk");
         assert_eq!(
-            failure_reason(&on_own_claim(unusable("x"))),
-            REASON_IMAGE_UNAVAILABLE
+            failure_reason(&out_of_capacity("the image cache ran out of disk")),
+            REASON_OUT_OF_CAPACITY
         );
     }
 

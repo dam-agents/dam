@@ -82,11 +82,8 @@ spec:
                   "storage" $r.storage "storageClass" $r.storageClass
                   "devices" $devices
                   "reserveMiB" $r.reserveMiB "headroomMiB" $r.headroomMiB "bootMiB" $r.bootMiB "machineCPUs" $r.machineCPUs "nestedVirtualization" ($r.nestedVirtualization | default false) "egressCidrs" $r.egressCidrs "egressExceptCidrs" $r.egressExceptCidrs
-                  "imageArchiveHostPath" $r.imageArchiveHostPath
                   "releaseHostPath" (include "platform.vmRunner.releaseDir" .)
                   "seccomp" (include "platform.vmRunner.seccomp" .)
-                  "dnsPolicy" ($r.dnsPolicy | default "Default")
-                  "dnsCidrs" ($r.dnsCidrs | default list) "clusterDns" ($r.clusterDns | default dict)
                   "imageCacheHostPath" ($cache.hostPath | default "") "imageCacheBudget" ($cache.budget | default "" | toString)
                   "nodeSelector" $r.nodeSelector "tolerations" $r.tolerations "affinity" $r.affinity
                   "resources" $r.resources
