@@ -47,13 +47,3 @@ export function useSessionBackgroundWork(
   if (!sessionId) return NO_WORK;
   return sessions.find((s) => s.sessionId === sessionId)?.items ?? NO_WORK;
 }
-
-export function useKeptWorkCount(agentId: string | null): number {
-  const work = useBackgroundWorkQuery(agentId);
-  if (!work) return 0;
-  const keptTasks = work.sessions.reduce(
-    (sum, session) => sum + session.items.length,
-    0,
-  );
-  return keptTasks + work.keptProcesses;
-}

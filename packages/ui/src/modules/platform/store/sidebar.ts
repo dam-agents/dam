@@ -21,6 +21,8 @@ export interface SidebarSlice {
   setMobileNavOpen: (open: boolean) => void;
   sidebarAgentId: string | null;
   setSidebarAgentId: (agentId: string | null) => void;
+  sidebarPeek: boolean;
+  setSidebarPeek: (peek: boolean) => void;
 }
 
 function readStoredSidebarExpanded(): boolean {
@@ -45,4 +47,6 @@ export const createSidebarSlice: StateCreator<
   setMobileNavOpen: (open) => set({ mobileNavOpen: open }),
   sidebarAgentId: null,
   setSidebarAgentId: (agentId) => set({ sidebarAgentId: agentId }),
+  sidebarPeek: false,
+  setSidebarPeek: (peek) => set({ sidebarPeek: peek }),
 });

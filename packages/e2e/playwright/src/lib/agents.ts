@@ -161,11 +161,11 @@ export async function gotoAgentChat(
   agentName: string,
   agentId: string,
 ): Promise<void> {
-  await page.getByRole("heading", { name: agentName, exact: true }).click();
+  await ensureSidebarExpanded(page);
+  await sidebarAgentAvatar(page, agentName).getByRole("tab").click();
   await expect(page).toHaveURL(
     new RegExp(`/chat/${encodeURIComponent(agentId)}`),
   );
-  await ensureSidebarExpanded(page);
 }
 
 export async function openAgentChat(
@@ -176,7 +176,7 @@ export async function openAgentChat(
 ): Promise<void> {
   await page.goto(baseUrl);
   await expect(page.getByTestId("app-sidebar")).toBeVisible();
-  await expect(agentCardStatus(page, agentName, AGENT_UP)).toBeVisible({
+  await expect(sidebarAgentAvatar(page, agentName)).toBeVisible({
     timeout: cardTimeoutMs,
   });
   await gotoAgentChat(page, agentName, agentId);
@@ -298,17 +298,3 @@ export async function readChatMessages(
   return rows;
 }
 
-export const AGENT_UP = /^(Running|Working|Idle)$/;
-
-export function agentCardStatus(
-  page: Page,
-  agentName: string,
-  label: string | RegExp,
-): Locator {
-  return page
-    .getByTestId("agent-row")
-    .filter({
-      has: page.getByRole("heading", { name: agentName, exact: true }),
-    })
-    .getByText(label, { exact: true });
-}

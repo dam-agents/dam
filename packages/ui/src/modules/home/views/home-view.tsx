@@ -1,10 +1,8 @@
 import { ListSkeleton } from "../../../components/list-skeleton.js";
-import { SandboxList } from "../../agents/components/sandbox-list.js";
+import { useAgents } from "../../agents/api/queries.js";
 import { WelcomeEntryPoints } from "../../agents/components/welcome-entry-points.js";
-import { useAgentRows } from "../../agents/hooks/use-agent-rows.js";
 import { splitTemporarySandboxes } from "../../agents/utils/temporary-sandboxes.js";
 import { SpendWidget } from "../../spend/components/spend-widget.js";
-import { useFeed } from "../api/queries.js";
 import { ApprovalsBanner } from "../components/approvals-banner.js";
 import {
   ActivityCard,
@@ -25,11 +23,9 @@ import {
 } from "../components/home-cards.js";
 
 export function HomeView() {
-  const { agentsData, initialLoaded, rowProps } = useAgentRows();
-  const { workingByAgent } = useFeed();
-  const { visible, drawByDriver } = splitTemporarySandboxes(
-    agentsData?.list ?? [],
-  );
+  const { data: agentsData } = useAgents();
+  const initialLoaded = agentsData !== undefined;
+  const { visible } = splitTemporarySandboxes(agentsData?.list ?? []);
 
   if (!initialLoaded) return <ListSkeleton rows={4} rowHeight={140} />;
 
@@ -61,18 +57,6 @@ export function HomeView() {
             <SpendByKindCard />
             <ModelsCard />
             <TokensCard />
-            <section
-              aria-label="All agents"
-              className="col-span-full flex flex-col rounded-xl border border-border bg-card p-5"
-            >
-              <h2 className="mb-4 text-sm text-muted-foreground">All agents</h2>
-              <SandboxList
-                agents={visible}
-                drawByDriver={drawByDriver}
-                rowProps={rowProps}
-                workingByAgent={workingByAgent}
-              />
-            </section>
           </>
         )}
       </div>

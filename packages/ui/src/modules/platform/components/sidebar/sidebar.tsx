@@ -1,5 +1,4 @@
 import { ChevronLeft, Home, Settings } from "@carbon/icons-react";
-import { useState } from "react";
 
 import { ResizeHandle } from "@/components/resize-handle";
 import { cn } from "@/lib/utils";
@@ -29,7 +28,8 @@ export function Sidebar() {
   const setPinned = useStore((s) => s.setSidebarExpanded);
   const setView = useStore((s) => s.setView);
   const { width, resize, endResize } = useSidebarWidth();
-  const [peek, setPeek] = useState(false);
+  const peek = useStore((s) => s.sidebarPeek);
+  const setPeek = useStore((s) => s.setSidebarPeek);
   const shown = pinned || peek;
 
   return (
@@ -51,7 +51,8 @@ export function Sidebar() {
       <nav
         className={cn(
           "hidden md:flex relative flex-col h-full shrink-0 bg-card border-r border-border",
-          !pinned && ["fixed inset-y-0 left-0 z-overlay shadow-2xl", SLIDE],
+          !pinned && ["fixed inset-y-0 left-0 z-overlay", SLIDE],
+          !pinned && shown && "shadow-[4px_0_16px_-4px_rgb(0_0_0/0.18)] dark:shadow-[6px_0_20px_-4px_rgb(0_0_0/0.6)]",
           !shown && "-translate-x-full",
         )}
         style={{ width }}
@@ -69,12 +70,9 @@ export function Sidebar() {
             setPinned(!pinned);
             setPeek(false);
           }}
-          onHome={() => {
-            setView("home");
-            setPeek(false);
-          }}
+          onHome={() => setView("home")}
         />
-        <SidebarContent onNavigate={() => setPeek(false)} />
+        <SidebarContent />
       </nav>
       {pinned && (
         <div className="hidden md:flex" data-testid="app-sidebar-resize">
@@ -103,7 +101,7 @@ function PeekButton({ onOpen }: { onOpen: () => void }) {
       aria-label="Show navigation"
       onClick={onOpen}
       data-testid="sidebar-peek-button"
-      className="fixed bottom-4 left-4 z-nav hidden h-10 items-center gap-1.5 rounded-full border border-border bg-card pr-2.5 pl-2 text-foreground/80 shadow-lg transition-colors anim-in hover:bg-muted hover:text-foreground md:flex"
+      className="fixed top-3 left-3 z-nav hidden h-10 items-center gap-1.5 rounded-full border border-border bg-card pr-3.5 pl-2 text-foreground/80 shadow-lg transition-colors anim-in hover:bg-muted hover:text-foreground md:flex"
     >
       <ChevronLeft size={16} className="text-muted-foreground" />
       {agent ? (
@@ -118,6 +116,9 @@ function PeekButton({ onOpen }: { onOpen: () => void }) {
       ) : (
         <Home size={18} />
       )}
+      <span className="ml-0.5 max-w-48 truncate text-sm font-medium text-foreground">
+        {agent ? agent.name : view === "settings" ? "Settings" : "Home"}
+      </span>
       {hasUnread && (
         <span className="absolute top-1 right-1 size-2 rounded-full bg-warning ring-2 ring-card" />
       )}

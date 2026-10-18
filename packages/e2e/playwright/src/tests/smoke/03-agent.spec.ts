@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { baseUrl } from "../../config.js";
 import {
   expectAgentEnv,
+  sidebarAgentAvatar,
   waitForAgentIdRunning,
   waitForAgentRunning,
 } from "../../lib/agents.js";
@@ -85,13 +86,8 @@ test("one-click create from the Generalist kit, then the mock agent with the con
       (a) => a.id === oneClickId,
     );
     await page.goto(baseUrl);
-    await page
-      .getByTestId("agent-row")
-      .filter({
-        has: page.getByRole("heading", { name: agent!.name, exact: true }),
-      })
-      .getByRole("button", { name: "Configure agent" })
-      .press("Enter");
+    await sidebarAgentAvatar(page, agent!.name).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Configure" }).click();
     await page
       .getByRole("button", { name: "Delete", exact: true })
       .press("Enter");
