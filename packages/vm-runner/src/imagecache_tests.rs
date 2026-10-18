@@ -1,5 +1,3 @@
-use std::os::unix::fs::PermissionsExt;
-
 use super::*;
 use crate::api::REASON_IMAGE_UNAVAILABLE;
 use crate::cacheapi::{self, CacheClient};
@@ -80,9 +78,7 @@ impl Fixture {
     }
 
     fn crane(&self, script: &str) {
-        let path = self.dir.path().join("crane");
-        fs::write(&path, script).unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        crate::testdir::exec_script(&self.dir.path().join("crane"), script);
     }
 
     fn cache(&self, tune: impl FnOnce(&mut CacheConfig)) -> ImageCache {
