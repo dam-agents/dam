@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-10-17
+Last verified: 2026-10-18
 
 ## Overview
 
@@ -71,7 +71,9 @@ A spawn whose root Driver is at a [spend limit or the Spend Ceiling](spend-limit
 
 ## Outcomes
 
-**One result, validated structurally.** The target calls the `report_result` platform tool; the api-server validates the value against the stored schema — shape only, never truth — flips the Invocation to done and reaps the target a few seconds later, so the last telemetry the target exported lands before its pod goes.
+**One result, validated structurally.** The target calls the `report_result` platform tool; the api-server validates the value against the stored schema — shape only, never truth — flips the Invocation to done and reaps the target 30 seconds later, so the target's closing reply and the last telemetry it exported land before its pod goes.
+The harness still sends the accepted answer back to the model, which costs one more model call; the answer tells the target to end its turn at once, so that call stays short.
+A closing call that runs longer is cut, and the spend ledger counts it as an estimate ([spend-limits](spend-limits.md#ledger)).
 The schema lives on the Invocation record and never on a Kubernetes resource.
 
 **Failure says why.** A failed Invocation carries the platform's reason, because the target is gone by the time the Driver sees it.
