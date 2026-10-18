@@ -5,7 +5,7 @@ use crate::api::REASON_IMAGE_UNAVAILABLE;
 use crate::cacheapi::{self, CacheClient};
 use crate::fetch::failure_reason;
 
-// TEST_OVERVIEW: the image cache's one writer — the node service, or a runner on its own claim. It resolves a reference to a digest, fetches that digest once for every caller, holds what callers name so eviction spares it, and on a shared cache serves a privately fetched entry only to a caller whose credentials read it. The node service reaches runners over a Unix socket, and the end-to-end tests drive that socket in-process.
+// TEST_OVERVIEW: the image cache's one writer, the node service. It resolves a reference to a digest, fetches that digest once for every caller, holds what callers name so eviction spares it, and on a shared cache serves a privately fetched entry only to a caller whose credentials read it. The node service reaches runners over a Unix socket, and the end-to-end tests drive that socket in-process.
 
 // UNIT_BOUNDARY_DESCRIPTION: a crane that answers the four questions the cache asks — which digest a tag names, what an image says to run, what its manifest says it weighs, and what its filesystem holds — and logs each call. A tag's digest is a hash of its repository, the platform asked for and the contents of `moved`, so a test moves a tag by writing that file; `registry-down` makes every resolution fail. The manifest is `manifest` when a test wrote one, and otherwise one layer of no media type that weighs what `size` says; every token crane is asked for is `Bearer t0k`. An export waits while `hold-export` exists, fails while `export-fails` does, and carries a file of as many zeros as `inflate` says.
 const PUBLIC_CRANE: &str = r#"#!/bin/sh
@@ -92,7 +92,6 @@ impl Fixture {
             crane: self.dir.path().join("crane").to_string_lossy().into_owned(),
             pins: Vec::new(),
             lifetime: CancellationToken::new(),
-            check_access: true,
             ref_fresh: Duration::from_secs(600),
             hold_lease: HOLD_LEASE,
             hold_grace: Duration::ZERO,
@@ -240,26 +239,6 @@ fn eviction_spares_what_is_held_until_the_hold_lapses() {
         trim.used.is_some_and(|used| used > 1),
         "over budget, and reported"
     );
-}
-
-// TEST_SCENARIO: a runner whose claim runs short sheds every tree no machine holds, far inside its budget, because a tree can be fetched again and the room it frees can keep a guest's write from failing. A held tree stays, as it does for any eviction.
-#[test]
-fn shedding_frees_every_tree_no_machine_holds_whatever_the_budget() {
-    let f = Fixture::new("shed", PUBLIC_CRANE);
-    let cache = f.cache(|c| c.hold_lease = Duration::from_millis(500));
-    let first = digest_of(&cache, "quay.io/x/a:1");
-    let second = digest_of(&cache, "quay.io/x/b:1");
-    std::thread::sleep(Duration::from_millis(600));
-    cache.hold(&[second.clone()].into()).unwrap();
-    assert!(
-        cache.evict(None).freed.is_empty(),
-        "inside its budget, nothing is evicted"
-    );
-
-    let shed = Images::shed(&cache);
-    assert_eq!(shed.freed.len(), 1);
-    assert!(!cache.digest_entry(&first).exists());
-    assert!(cache.digest_entry(&second).exists(), "a held tree was shed");
 }
 
 // TEST_SCENARIO: a hold only extends. A runner that names fewer digests than another holds — a short list, or a compromised runner's empty one — cannot free a tree another owner's machine is running from.
@@ -422,7 +401,7 @@ fn a_private_entry_is_served_only_to_credentials_that_read_it() {
     assert!(restarted.resolve(&pinned, &credential).resolved.is_ok());
 }
 
-// TEST_SCENARIO: an image fetched with a credential that an anonymous read also reaches is public, so any caller boots it, even with the registry down. A cache that is not shared, a runner's own, never checks at all.
+// TEST_SCENARIO: an image fetched with a credential that an anonymous read also reaches is public, so any caller boots it, even with the registry down.
 #[test]
 fn a_public_entry_boots_for_anyone_without_asking_the_registry() {
     let f = Fixture::new("public", PUBLIC_CRANE);
@@ -433,14 +412,6 @@ fn a_public_entry_boots_for_anyone_without_asking_the_registry() {
         .is_ok());
     fs::write(f.dir.path().join("registry-down"), "").unwrap();
     assert!(cache.resolve(IMAGE, &[]).resolved.is_ok());
-
-    let own = Fixture::new("unshared", PRIVATE_CRANE);
-    let unshared = own.cache(|c| c.check_access = false);
-    assert!(unshared
-        .resolve(IMAGE, &[CREDENTIAL.to_string()])
-        .resolved
-        .is_ok());
-    assert!(unshared.resolve(IMAGE, &[]).resolved.is_ok());
 }
 
 // TEST_SCENARIO: a runner reaches the node service over a Unix socket in the cache directory. A resolve comes back with the digest and launch the service unpacked, a hold is accepted, and a refusal keeps its reason across the socket, so the controller still tells the person to fix the image. A client with no service behind the socket says it was unreachable, as an image problem.

@@ -591,9 +591,8 @@ mod tests {
             Config {
                 state_dir: dir.path().join("machines"),
                 image_dir: dir.path().join("images"),
-                image_cache_socket: None,
+                images: None,
                 image_budget: 0,
-                crane: String::new(),
                 init: None,
                 runc: None,
                 ports: 31000..=31099,

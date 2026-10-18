@@ -5,7 +5,6 @@ export interface RunnerUsage {
   storage: {
     usedBytes: number;
     usableBytes: number;
-    imageCacheBytes: number;
     seedBytes: number;
   };
   memory: { limitMiB: number; committedMiB: number };
@@ -77,7 +76,6 @@ export function vmUsageView(
     storage: {
       usedBytes: storage.usedBytes,
       usableBytes: storage.usableBytes,
-      imageCacheBytes: storage.imageCacheBytes,
       seedBytes: storage.seedBytes,
       level: levelOf(storage.usedBytes, storage.usableBytes),
     },

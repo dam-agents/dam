@@ -107,7 +107,7 @@ pub struct CpuUsage {
     pub pressure_percent: Option<u32>,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the claim's use as the storage guard measures it; both zero when it could not be measured. Beside each machine's disk, the parts of that use an owner did not write themselves, so a user whose storage is short is told what fills it: the image trees the runner's own cache holds on the claim, and the seeds runtime migrations uploaded that nothing removed yet. What is left is the runner's bookkeeping, its logs and the filesystem's own overhead.
+// UNIT_BOUNDARY_DESCRIPTION: the claim's use as the storage guard measures it; both zero when it could not be measured. Beside each machine's disk, the part of that use an owner did not write themselves, so a user whose storage is short is told what fills it: the seeds runtime migrations uploaded that nothing removed yet. Image trees are on the node's disk, not the claim. What is left is the runner's bookkeeping, its logs and the filesystem's own overhead.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct StorageUsage {
@@ -115,8 +115,6 @@ pub struct StorageUsage {
     pub used_bytes: u64,
     #[serde(rename = "usableBytes")]
     pub usable_bytes: u64,
-    #[serde(rename = "imageCacheBytes", skip_serializing_if = "is_zero")]
-    pub image_cache_bytes: u64,
     #[serde(rename = "seedBytes", skip_serializing_if = "is_zero")]
     pub seed_bytes: u64,
 }
@@ -363,7 +361,6 @@ mod tests {
                 storage: StorageUsage {
                     used_bytes: 32212254720,
                     usable_bytes: 107374182400,
-                    image_cache_bytes: 4294967296,
                     seed_bytes: 2147483648,
                 },
                 memory: MemoryUsage {

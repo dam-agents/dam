@@ -16,7 +16,7 @@ import {
  */
 
 const usage = (over: Partial<RunnerUsage> = {}): RunnerUsage => ({
-  storage: { usedBytes: 0, usableBytes: 100, imageCacheBytes: 0, seedBytes: 0 },
+  storage: { usedBytes: 0, usableBytes: 100, seedBytes: 0 },
   memory: { limitMiB: 1000, committedMiB: 100 },
   machines: [],
   observedAt: "2026-10-13T12:00:00.000Z",
@@ -53,7 +53,6 @@ describe("pool levels", () => {
         storage: {
           usedBytes,
           usableBytes: 100,
-          imageCacheBytes: 0,
           seedBytes: 0,
         },
       });
