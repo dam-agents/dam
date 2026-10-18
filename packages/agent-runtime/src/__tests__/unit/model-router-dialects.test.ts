@@ -4,7 +4,8 @@
  * Claude Code and Pi, Codex's catalog with every field its 0.158 ModelInfo
  * requires, Bob's LiteLLM-shaped model-info under `/inference/v1`), the
  * session handle each harness stamps on its calls, Bob's per-session model
- * rewrite and tier-alias mapping, the three replay rules, the usage
+ * rewrite and tier-alias mapping, the replay rules and the effort level a
+ * DeepSeek target's chat template takes, the usage
  * chunk injection for streamed chat completions, and the Anthropic
  * subscription token routed for Claude Code alone with its OAuth beta flag.
  */
