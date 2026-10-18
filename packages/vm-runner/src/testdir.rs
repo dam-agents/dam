@@ -30,12 +30,18 @@ impl Drop for TempDir {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a script another process execs, written under a private name beside it and renamed into place once the write is closed. Executing a file that a process holds open for writing fails with ETXTBSY on Linux, and a fork on another test thread copies the write descriptor into a child that holds it until it execs, which is the flake this keeps away. Staging leaves no write descriptor on the path that is executed.
+// UNIT_BOUNDARY_DESCRIPTION: a script another process execs, created by a child process so this one never holds a descriptor on the inode that is executed. Linux fails an exec with ETXTBSY while any process holds the file open for writing, and a fork on another test thread copies such a descriptor into a child that keeps it until it execs, so the body goes to a staged name nothing execs and `cp` writes the script itself.
 pub(crate) fn exec_script(path: &Path, body: &str) {
     let staged = path.with_file_name(format!(".{}", path.file_name().unwrap().to_string_lossy()));
     fs::write(&staged, body).unwrap();
-    fs::set_permissions(&staged, fs::Permissions::from_mode(0o755)).unwrap();
-    fs::rename(&staged, path).unwrap();
+    let copied = std::process::Command::new("cp")
+        .arg(&staged)
+        .arg(path)
+        .status()
+        .unwrap();
+    assert!(copied.success(), "cp {staged:?} into {path:?}: {copied}");
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::remove_file(&staged).unwrap();
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a registry's blob endpoint on a loopback port, for the reads that size an image. Every request gets the response `respond` makes from its head: the request line and headers. The thread serves for as long as the test process lives.
