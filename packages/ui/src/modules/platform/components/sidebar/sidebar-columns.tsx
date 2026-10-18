@@ -1,18 +1,43 @@
-import { AddAlt, Home, Settings, Tools } from "@carbon/icons-react";
+import {
+  Add,
+  AddAlt,
+  Bot,
+  Box,
+  Chat,
+  Home,
+  Settings,
+  Tools,
+  TrashCan,
+} from "@carbon/icons-react";
 import { useMemo, useState } from "react";
 
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
 import type { AgentView } from "../../../../types.js";
+import { useDeleteAgent } from "../../../agents/api/mutations.js";
 import { useAgentsList } from "../../../agents/api/queries.js";
 import {
   AgentAvatar,
   avatarMood,
 } from "../../../agents/components/avatar/agent-avatar.js";
 import { OrderDropIndicator } from "../../../agents/components/order-drop-indicator.js";
+import { useConfirmDeleteAgent } from "../../../agents/hooks/use-confirm-delete-agent.js";
 import { useCreateDefaultAgent } from "../../../agents/hooks/use-create-default-agent.js";
 import { useOrderDrag } from "../../../agents/hooks/use-order-drag.js";
 import { useSidebarAgents } from "../../../agents/hooks/use-sidebar-agents.js";
@@ -124,6 +149,7 @@ function AvatarStrip({
   onNavigate?: () => void;
 }) {
   const defaultAgent = useCreateDefaultAgent();
+  const setKitBrowserOpen = useStore((s) => s.setKitBrowserOpen);
   const orderActions = useSidebarOrderActions();
   const shownIds = agents.map((agent) => agent.id);
   const settingsOpen = useStore((s) => s.view === "settings");
@@ -157,19 +183,34 @@ function AvatarStrip({
             current={current === agent.id}
             badge={needsYou.get(agent.id) ?? 0}
             onSelect={() => onSelect(agent.id)}
+            onNavigate={onNavigate}
           />
         ))}
-        <Tooltip content="Create agent" side="right">
-          <button
-            type="button"
-            aria-label="Create agent"
-            disabled={!defaultAgent.ready}
-            onClick={() => void defaultAgent.create()}
-            className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-dashed border-border text-muted-foreground transition-colors hover:border-border-ui hover:text-foreground disabled:opacity-50"
-          >
-            <AddAlt size={16} />
-          </button>
-        </Tooltip>
+        <DropdownMenu>
+          <Tooltip content="Create agent" side="right">
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label="Create agent"
+                data-testid="sidebar-create-agent"
+                className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-dashed border-border text-muted-foreground transition-colors hover:border-border-ui hover:text-foreground data-[state=open]:border-border-ui data-[state=open]:text-foreground"
+              >
+                <Add size={20} />
+              </button>
+            </DropdownMenuTrigger>
+          </Tooltip>
+          <DropdownMenuContent side="right" align="end" sideOffset={8}>
+            <DropdownMenuItem
+              disabled={!defaultAgent.ready}
+              onSelect={() => void defaultAgent.create()}
+            >
+              <Bot size={14} /> New agent
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setKitBrowserOpen(true)}>
+              <Box size={14} /> Use a starter kit
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       <div className="relative z-raised flex h-[57px] shrink-0 flex-col items-center justify-center gap-1 border-t border-border bg-card">
         <Tooltip content="Settings" side="right">
@@ -204,6 +245,7 @@ function DraggableAgent({
   current,
   badge,
   onSelect,
+  onNavigate,
 }: {
   agent: AgentView;
   shown: readonly string[];
@@ -212,7 +254,12 @@ function DraggableAgent({
   current: boolean;
   badge: number;
   onSelect: () => void;
+  onNavigate?: () => void;
 }) {
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const setView = useStore((s) => s.setView);
+  const confirmDelete = useConfirmDeleteAgent();
+  const deleteAgent = useDeleteAgent();
   const drag = useOrderDrag({
     scope: "agents",
     id: agent.id,
@@ -221,28 +268,58 @@ function DraggableAgent({
     onStep: (id, step) => orderActions.stepAgent(shown, id, step),
   });
   return (
-    <div
-      {...drag.dragProps}
-      aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-      data-testid="sidebar-strip-agent"
-      className="relative"
-    >
-      <StripButton
-        label={agent.name}
-        active={active}
-        current={current}
-        badge={badge}
-        onClick={onSelect}
-      >
-        <AgentAvatar
-          name={agent.name}
-          avatar={agent.avatar}
-          size={28}
-          mood={avatarMood(agent.state, agent)}
-        />
-      </StripButton>
-      <OrderDropIndicator at={drag.indicator} />
-    </div>
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div
+          {...drag.dragProps}
+          aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+          data-testid="sidebar-strip-agent"
+          className="relative"
+        >
+          <StripButton
+            label={agent.name}
+            active={active}
+            current={current}
+            badge={badge}
+            onClick={onSelect}
+          >
+            <AgentAvatar
+              name={agent.name}
+              avatar={agent.avatar}
+              size={28}
+              mood={avatarMood(agent.state, agent)}
+            />
+          </StripButton>
+          <OrderDropIndicator at={drag.indicator} />
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onSelect={onSelect}>
+          <Chat size={14} /> Chat
+        </ContextMenuItem>
+        <ContextMenuItem
+          onSelect={() => {
+            navigateToSandboxHome(agent.id);
+            onNavigate?.();
+          }}
+        >
+          <Tools size={14} /> Configure
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          tone="danger"
+          onSelect={() =>
+            void confirmDelete(agent).then((ok) => {
+              if (!ok) return;
+              deleteAgent.mutate({ id: agent.id });
+              if (current) setView("home");
+            })
+          }
+        >
+          <TrashCan size={14} /> Remove
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 

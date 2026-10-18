@@ -109,12 +109,12 @@ export function HeroCard() {
         aria-hidden
         className="pointer-events-none absolute inset-0 opacity-60 [background:radial-gradient(60%_120%_at_100%_0%,var(--color-accent-light),transparent_60%)]"
       />
-      <div className="relative flex flex-wrap items-end justify-between gap-6">
+      <div className="relative grid items-end gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,38%)]">
         <div className="min-w-0">
           <p className="text-sm font-semibold tracking-tight text-muted-foreground">
             {getBrand().name}
           </p>
-          <h1 className="mt-1 text-4xl font-light tracking-[-0.03em] text-foreground md:text-6xl">
+          <h1 className="mt-1 text-4xl font-light tracking-[-0.03em] text-foreground lg:text-5xl 2xl:text-6xl">
             Deploy Agents Massively
           </h1>
           <div className="mt-6 flex flex-wrap gap-8">
@@ -123,7 +123,7 @@ export function HeroCard() {
             <Big value={sessionsToday(sessions, now)} label="sessions today" />
           </div>
         </div>
-        <DamGraphic className="hidden h-44 w-auto shrink-0 text-foreground/70 md:block" />
+        <DamGraphic className="hidden max-h-44 w-full text-foreground/70 md:block" />
       </div>
     </section>
   );
@@ -140,9 +140,9 @@ export function ResourcesBarsCard() {
           const fraction = usageShare(pool.usedBytes, pool.totalBytes);
           return (
             <div key={pool.label} className="flex flex-col gap-1.5">
-              <div className="flex items-baseline justify-between text-sm">
+              <div className="flex items-baseline justify-between gap-2 text-sm">
                 <span className="text-foreground">{pool.label}</span>
-                <span className="text-muted-foreground tabular-nums">
+                <span className="truncate whitespace-nowrap text-muted-foreground tabular-nums">
                   {pool.totalBytes > 0
                     ? `${formatBytes(pool.usedBytes)} of ${formatBytes(pool.totalBytes)}`
                     : "Not measured"}
