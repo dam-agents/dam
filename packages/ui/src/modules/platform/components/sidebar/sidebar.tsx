@@ -1,10 +1,15 @@
-import { OpenPanelLeft } from "@carbon/icons-react";
+import { ChevronLeft, Home, Settings } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { ResizeHandle } from "@/components/resize-handle";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
+import { useAgentsList } from "../../../agents/api/queries.js";
+import {
+  AgentAvatar,
+  avatarMood,
+} from "../../../agents/components/avatar/agent-avatar.js";
 import { useActivitySessions } from "../../../home/hooks/use-activity-sessions.js";
 import { useSidebarWidth } from "../../hooks/use-sidebar-layout.js";
 import { SidebarContent } from "./sidebar-content.js";
@@ -83,16 +88,38 @@ export function Sidebar() {
 
 function PeekButton({ onOpen }: { onOpen: () => void }) {
   const hasUnread = useActivitySessions().items.some((item) => item.unread);
+  const view = useStore((s) => s.view);
+  const openAgentId = useStore((s) =>
+    s.view === "chat"
+      ? s.selectedAgent
+      : s.view === "sandbox-home"
+        ? s.agentId
+        : null,
+  );
+  const agent = useAgentsList().find((a) => a.id === openAgentId);
   return (
     <button
       type="button"
       aria-label="Show navigation"
       onClick={onOpen}
-      className="fixed bottom-4 left-4 z-nav hidden size-10 items-center justify-center rounded-full border border-border bg-card text-foreground/80 shadow-lg transition-colors anim-in hover:bg-muted hover:text-foreground md:flex"
+      data-testid="sidebar-peek-button"
+      className="fixed bottom-4 left-4 z-nav hidden h-10 items-center gap-1.5 rounded-full border border-border bg-card pr-2.5 pl-2 text-foreground/80 shadow-lg transition-colors anim-in hover:bg-muted hover:text-foreground md:flex"
     >
-      <OpenPanelLeft size={16} />
+      <ChevronLeft size={16} className="text-muted-foreground" />
+      {agent ? (
+        <AgentAvatar
+          name={agent.name}
+          avatar={agent.avatar}
+          size={22}
+          mood={avatarMood(agent.state, agent)}
+        />
+      ) : view === "settings" ? (
+        <Settings size={18} />
+      ) : (
+        <Home size={18} />
+      )}
       {hasUnread && (
-        <span className="absolute top-1.5 right-1.5 size-2 rounded-full bg-warning" />
+        <span className="absolute top-1 right-1 size-2 rounded-full bg-warning ring-2 ring-card" />
       )}
     </button>
   );
