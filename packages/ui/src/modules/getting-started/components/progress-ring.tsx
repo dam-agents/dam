@@ -15,7 +15,7 @@ export function ProgressRing({ done, total }: Props) {
   return (
     <svg
       viewBox="0 0 32 32"
-      className="size-6 shrink-0"
+      className="size-[22px] shrink-0"
       fill="none"
       stroke="currentColor"
       aria-hidden

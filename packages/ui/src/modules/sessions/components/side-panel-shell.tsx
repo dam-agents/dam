@@ -29,7 +29,7 @@ import { SidePanelEdgeTab } from "./side-panel-edge-tab.js";
 
 const FILE_PANEL_WIDTH_KEY = "platform-file-w";
 const MAIN_MIN_W = 320;
-const SIDE_PANEL_BAR_W = 49;
+const SIDE_PANEL_BAR_W = 61;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The side panel beside a page's main column, with
@@ -149,7 +149,7 @@ export function SidePanelShell({
       <div
         data-testid="side-panel"
         className={cn(
-          "flex bg-background relative z-content max-md:fixed max-md:inset-0 max-md:z-overlay",
+          "flex bg-chrome relative z-content max-md:fixed max-md:inset-0 max-md:z-overlay",
           !mobilePanelOpen && "max-md:hidden",
           sidePanelFills
             ? "md:flex-1 md:min-w-0"

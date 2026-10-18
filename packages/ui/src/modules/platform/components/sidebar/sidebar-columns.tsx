@@ -24,6 +24,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { RAIL_BADGE, railIndicator, railTile } from "@/components/ui/rail-tile";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -164,7 +165,7 @@ function AvatarStrip({
       >
         <StripButton
           label="Home"
-          active={selected === null}
+          active={!settingsOpen && selected === null}
           badge={total}
           onClick={() => onSelect(null)}
         >
@@ -177,7 +178,7 @@ function AvatarStrip({
             agent={agent}
             shown={shownIds}
             orderActions={orderActions}
-            active={selected === agent.id}
+            active={!settingsOpen && selected === agent.id}
             current={current === agent.id}
             badge={needsYou.get(agent.id) ?? 0}
             onSelect={() => onSelect(agent.id)}
@@ -210,7 +211,7 @@ function AvatarStrip({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      <div className="relative z-raised flex shrink-0 flex-col items-center justify-center gap-1 border-t border-border bg-card py-2">
+      <div className="relative z-raised flex shrink-0 flex-col items-center justify-center gap-1 bg-chrome py-2">
         <Tooltip content="Settings" side="right">
           <button
             type="button"
@@ -220,13 +221,9 @@ function AvatarStrip({
               navigateToSettings();
               onNavigate?.();
             }}
-            className={cn(
-              "flex size-10 items-center justify-center rounded-xl transition-colors",
-              settingsOpen
-                ? "bg-muted text-foreground ring-1 ring-border-ui"
-                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-            )}
+            className={railTile(settingsOpen)}
           >
+            <span aria-hidden className={railIndicator("left", settingsOpen)} />
             <Settings size={18} />
           </button>
         </Tooltip>
@@ -344,23 +341,12 @@ function StripButton({
         aria-selected={active}
         aria-label={badge > 0 ? `${label}, ${badge} need you` : label}
         onClick={onClick}
-        className={cn(
-          "group relative flex size-10 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-all",
-          active
-            ? "bg-muted text-foreground ring-1 ring-border-ui"
-            : "hover:bg-muted/60 hover:text-foreground",
-        )}
+        className={railTile(active)}
       >
-        <span
-          aria-hidden
-          className={cn(
-            "absolute -left-2.5 w-1 rounded-r-full bg-foreground transition-all",
-            active ? "h-6" : current ? "h-2" : "h-0 group-hover:h-2",
-          )}
-        />
+        <span aria-hidden className={railIndicator("left", active, current)} />
         {children}
         {badge > 0 && (
-          <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-warning px-1 text-[10px] leading-none font-bold text-background ring-2 ring-card tabular-nums">
+          <span className={cn(RAIL_BADGE, "bg-warning")}>
             {badge > 9 ? "9+" : badge}
           </span>
         )}
@@ -388,7 +374,7 @@ function ColumnHeader({
 
 function ListLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="sticky top-0 z-raised bg-card px-2 pt-3 pb-1.5 first:pt-0">
+    <div className="sticky top-0 z-raised bg-chrome px-2 pt-3 pb-1.5 first:pt-0">
       <SectionLabel>{children}</SectionLabel>
     </div>
   );
@@ -606,7 +592,7 @@ function AgentColumn({
           order={sessionOrderOf(agent.id)}
           orderActions={orderActions}
           conversationOf={conversationOf}
-          stickyClassName="bg-card"
+          stickyClassName="bg-chrome"
           flat
           onNavigate={onNavigate}
         />

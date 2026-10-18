@@ -1,8 +1,4 @@
-import {
-  ChevronRight,
-  NextOutline,
-  WarningAltFilled,
-} from "@carbon/icons-react";
+import { NextOutline, WarningAltFilled } from "@carbon/icons-react";
 import {
   Calendar,
   Conversation,
@@ -34,6 +30,7 @@ import { useAppConnections } from "../../connections/api/queries.js";
 import { useMonthlySpend } from "../../metrics/hooks/use-monthly-spend.js";
 import { formatTokens, formatUsd } from "../../metrics/lib/format.js";
 import { useOwnerSchedules } from "../../schedules/api/queries.js";
+import { useOpenSidePanel } from "../../sessions/hooks/use-open-side-panel.js";
 import { useAttention, useFeed } from "../api/queries.js";
 import {
   CHANNEL_TYPE_LABELS,
@@ -56,15 +53,17 @@ export function Card({
   title,
   pictogram,
   className,
+  onOpen,
   children,
 }: {
   title: string;
   pictogram?: ReactNode;
   className?: string;
+  onOpen?: () => void;
   children: ReactNode;
 }) {
-  return (
-    <section className={cn(CARD, className)} aria-label={title}>
+  const body = (
+    <>
       <header className="mb-4 flex items-start justify-between gap-3">
         <h2 className="text-sm text-muted-foreground">{title}</h2>
         {pictogram && (
@@ -74,7 +73,27 @@ export function Card({
         )}
       </header>
       {children}
-    </section>
+    </>
+  );
+  if (!onOpen)
+    return (
+      <section className={cn(CARD, className)} aria-label={title}>
+        {body}
+      </section>
+    );
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={title}
+      className={cn(
+        CARD,
+        "text-left transition-colors hover:border-border-ui hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-ring",
+        className,
+      )}
+    >
+      {body}
+    </button>
   );
 }
 
@@ -371,6 +390,7 @@ export function BusiestCard() {
 }
 
 export function SchedulesCard() {
+  const navigateToSettings = useStore((s) => s.navigateToSettings);
   const { data } = useOwnerSchedules();
   const agents = useAgentsList();
   const summary = scheduleSummary(data ?? [], new Date());
@@ -378,7 +398,11 @@ export function SchedulesCard() {
     ? agents.find((a) => a.id === summary.next!.schedule.agentId)
     : undefined;
   return (
-    <Card title="Schedules" pictogram={<Calendar size={48} aria-hidden />}>
+    <Card
+      title="Schedules"
+      pictogram={<Calendar size={48} aria-hidden />}
+      onOpen={() => navigateToSettings("schedules")}
+    >
       <div className="flex gap-8">
         <Big value={summary.enabled} label={`on, of ${summary.total}`} />
         {summary.failing > 0 && (
@@ -417,23 +441,21 @@ export function ConnectionsCard() {
   const active = connections.filter((c) => c.status === "active").length;
   const broken = connections.length - active;
   return (
-    <Card title="Connections" pictogram={<Slack size={48} aria-hidden />}>
+    <Card
+      title="Connections"
+      pictogram={<Slack size={48} aria-hidden />}
+      onOpen={() => navigateToSettings("connections")}
+    >
       <div className="flex gap-8">
         <Big value={active} label="active" />
         {broken > 0 && <Big value={broken} label="need reconnecting" />}
       </div>
-      <button
-        type="button"
-        onClick={() => navigateToSettings("connections")}
-        className="mt-auto flex items-center gap-1 self-start pt-4 text-xs text-muted-foreground transition-colors hover:text-foreground"
-      >
-        Manage connections <ChevronRight size={12} />
-      </button>
     </Card>
   );
 }
 
 export function ArtifactsCard() {
+  const openSidePanel = useOpenSidePanel();
   const { data } = useArtifacts();
   const artifacts = data ?? [];
   const bytes = artifacts.reduce((n, a) => n + (a.sizeBytes ?? 0), 0);
@@ -441,7 +463,11 @@ export function ArtifactsCard() {
     (a, b) => (b.viewCount ?? 0) - (a.viewCount ?? 0),
   )[0];
   return (
-    <Card title="Artifacts" pictogram={<DataStorage size={48} aria-hidden />}>
+    <Card
+      title="Artifacts"
+      pictogram={<DataStorage size={48} aria-hidden />}
+      onOpen={() => openSidePanel("artifacts")}
+    >
       <div className="flex gap-8">
         <Big value={artifacts.length} label="published" />
         <Big value={formatBytes(bytes)} label="in total" />
@@ -457,6 +483,7 @@ export function ArtifactsCard() {
 }
 
 export function ApiKeysCard() {
+  const navigateToSettings = useStore((s) => s.navigateToSettings);
   const { data } = useApiKeys();
   const keys = data ?? [];
   const now = Date.now();
@@ -469,7 +496,7 @@ export function ApiKeysCard() {
     .sort()
     .reverse()[0];
   return (
-    <Card title="API keys">
+    <Card title="API keys" onOpen={() => navigateToSettings("api-keys")}>
       <div className="flex gap-8">
         <Big value={keys.length} label="keys" />
         {soon > 0 && <Big value={soon} label="expire this week" />}
@@ -495,6 +522,7 @@ function useMonth() {
 }
 
 export function SpendByKindCard() {
+  const navigateToSettings = useStore((s) => s.navigateToSettings);
   const { data, state, label } = useMonth();
   if (state === "unavailable") return null;
   const rows = [...(data?.bySessionType ?? [])].sort(
@@ -502,7 +530,10 @@ export function SpendByKindCard() {
   );
   const total = rows.reduce((n, r) => n + r.costUsd, 0);
   return (
-    <Card title={`Spend by kind of session, ${label}`}>
+    <Card
+      title={`Spend by kind of session, ${label}`}
+      onOpen={() => navigateToSettings("usage")}
+    >
       <ul className="flex flex-col gap-2.5 text-sm">
         {rows.map((r) => (
           <li key={r.category} className="flex flex-col gap-1">
@@ -533,13 +564,14 @@ export function SpendByKindCard() {
 }
 
 export function ModelsCard() {
+  const navigateToSettings = useStore((s) => s.navigateToSettings);
   const { data, state, label } = useMonth();
   if (state === "unavailable") return null;
   const models = [...(data?.byModel ?? [])]
     .sort((a, b) => b.calls - a.calls)
     .slice(0, 5);
   return (
-    <Card title={`Models, ${label}`}>
+    <Card title={`Models, ${label}`} onOpen={() => navigateToSettings("usage")}>
       <ul className="flex flex-col gap-2 text-sm">
         {models.map((m) => (
           <li key={m.model} className="flex items-baseline gap-2">
@@ -565,6 +597,7 @@ export function ModelsCard() {
 }
 
 export function TokensCard() {
+  const navigateToSettings = useStore((s) => s.navigateToSettings);
   const { data, state, label } = useMonth();
   if (state === "unavailable") return null;
   const models = data?.byModel ?? [];
@@ -575,7 +608,7 @@ export function TokensCard() {
   const calls = models.reduce((n, m) => n + m.calls, 0);
   const ms = models.reduce((n, m) => n + m.durationMs, 0);
   return (
-    <Card title={`Tokens, ${label}`}>
+    <Card title={`Tokens, ${label}`} onOpen={() => navigateToSettings("usage")}>
       <div className="grid grid-cols-2 gap-4">
         <Big value={formatTokens(input + cached)} label="read" />
         <Big value={formatTokens(sum("outputTokens"))} label="written" />

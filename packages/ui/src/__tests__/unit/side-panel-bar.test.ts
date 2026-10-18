@@ -58,7 +58,7 @@ it("shows the waiting approvals in the warning colour", () => {
     ),
   );
   expect(html).toMatch(
-    /class="[^"]*bg-warning[^"]*"[^>]*data-testid="side-panel-badge-approvals"[^>]*>3<\/span>/,
+    /data-testid="side-panel-badge-approvals"[^>]*class="[^"]*bg-warning[^"]*"[^>]*>3<\/span>/,
   );
   expect(html).toContain('aria-label="Approvals, 3 waiting"');
 });
@@ -133,18 +133,21 @@ it("offers only the tabs that belong to no Agent outside a chat", () => {
   expect(tabs).toEqual(["artifacts", "getting-started", "approvals"]);
 });
 
-// TEST_SCENARIO: The rail reads like an activity bar: 48 px square buttons with 24 px icons, and only the open tab carries the bar on its inner edge.
-it("marks only the open tab with the inner-edge bar", () => {
+// TEST_SCENARIO: The right rail matches the left sidebar strip: 40 px rounded tiles with 20 px icons, and only the open tab is filled and carries the bar, mirrored onto the rail's outer right edge.
+it("marks only the open tab, with the bar on its right edge", () => {
   const html = render();
   const buttons = [
     ...html.matchAll(
-      /<button[^>]*data-testid="side-panel-tab-([a-z-]+)"[^>]*>/g,
+      /<button[^>]*data-testid="side-panel-tab-([a-z-]+)"[^>]*>(<span[^>]*><\/span>)/g,
     ),
   ];
   expect(buttons.length).toBeGreaterThan(1);
-  for (const [tag, tab] of buttons) {
-    expect(tag).toContain("h-12 w-12");
-    expect(tag.includes("before:bg-foreground")).toBe(tab === "files");
+  for (const [, tab, bar] of buttons) {
+    expect(bar).toContain("-right-2.5");
+    expect(bar.includes(" h-6")).toBe(tab === "files");
   }
-  expect(html).toContain('width="24"');
+  const open = buttons.find(([, tab]) => tab === "files")![0];
+  expect(open).toContain("size-10");
+  expect(open).toContain("bg-muted");
+  expect(html).toContain('width="20"');
 });

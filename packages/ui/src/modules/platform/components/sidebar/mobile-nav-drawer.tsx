@@ -25,7 +25,7 @@ function OpenDrawer() {
       closing={closing}
       onClose={close}
       onClosed={() => setMobileNavOpen(false)}
-      className="max-w-[340px] bg-card px-2 safe-bottom"
+      className="max-w-[340px] bg-chrome px-2 safe-bottom"
     >
       <div className="flex items-center justify-between pt-3 pb-1 pl-1">
         <BrandLogo />

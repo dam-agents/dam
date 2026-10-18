@@ -50,9 +50,11 @@ export function Sidebar() {
       )}
       <nav
         className={cn(
-          "hidden md:flex relative flex-col h-full shrink-0 bg-card border-r border-border",
+          "hidden md:flex relative flex-col h-full shrink-0 bg-chrome border-r border-border",
           !pinned && ["fixed inset-y-0 left-0 z-overlay", SLIDE],
-          !pinned && shown && "shadow-[4px_0_16px_-4px_rgb(0_0_0/0.18)] dark:shadow-[6px_0_20px_-4px_rgb(0_0_0/0.6)]",
+          !pinned &&
+            shown &&
+            "shadow-[4px_0_16px_-4px_rgb(0_0_0/0.18)] dark:shadow-[6px_0_20px_-4px_rgb(0_0_0/0.6)]",
           !shown && "-translate-x-full",
         )}
         style={{ width }}
@@ -101,7 +103,7 @@ function PeekButton({ onOpen }: { onOpen: () => void }) {
       aria-label="Show navigation"
       onClick={onOpen}
       data-testid="sidebar-peek-button"
-      className="fixed top-3 left-3 z-nav hidden h-10 items-center gap-1.5 rounded-full border border-border bg-card pr-3.5 pl-2 text-foreground/80 shadow-lg transition-colors anim-in hover:bg-muted hover:text-foreground md:flex"
+      className="fixed top-3 left-3 z-nav hidden h-10 items-center gap-1.5 rounded-full border border-border bg-chrome pr-3.5 pl-2 text-foreground/80 shadow-lg transition-colors anim-in hover:bg-muted hover:text-foreground md:flex"
     >
       <ChevronLeft size={16} className="text-muted-foreground" />
       {agent ? (
@@ -120,7 +122,7 @@ function PeekButton({ onOpen }: { onOpen: () => void }) {
         {agent ? agent.name : view === "settings" ? "Settings" : "Home"}
       </span>
       {hasUnread && (
-        <span className="absolute top-1 right-1 size-2 rounded-full bg-warning ring-2 ring-card" />
+        <span className="absolute top-1 right-1 size-2 rounded-full bg-warning ring-2 ring-chrome" />
       )}
     </button>
   );
