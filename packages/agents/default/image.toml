@@ -10,4 +10,3 @@
 [oci.env]
 PLATFORM_HARNESS = "claude-code"
 MISE_SYSTEM_DATA_DIR = "/usr/share/mise"
-
