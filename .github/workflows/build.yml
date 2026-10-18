@@ -448,6 +448,9 @@ jobs:
           ARCH: ${{ matrix.arch }}
           AGENTS: ${{ join(fromJSON(needs.changes.outputs.agents), ' ') }}
           PR: ${{ inputs.verify }}
+          # A tool that the agent-tools cache lacks installs in this step, and
+          # mise reads the token from MISE_GITHUB_TOKEN.
+          MISE_GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           # A PR or a merge group only proves its agents build.
@@ -521,6 +524,8 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}
           WORKLOADS: ${{ join(fromJSON(needs.changes.outputs.workloads), ' ') }}
+          # k-search's tools are never cached, so its build always installs.
+          MISE_GITHUB_TOKEN: ${{ github.token }}
         run: |
           read -r -a workloads <<< "$WORKLOADS"
           .mise/tasks/image/ci-build --serial "$ARCH" "${workloads[@]}"
@@ -581,6 +586,8 @@ jobs:
           quay-password: ${{ secrets.QUAY_PASSWORD }}
       - uses: ./.github/actions/agent-tools # zizmor: ignore[self-repository]
       - name: Build
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
         run: .mise/tasks/image/ci-build amd64 mock:source
 
   mirror-images:
