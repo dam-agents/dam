@@ -117,6 +117,13 @@ jobs:
       E2E_SCOPE: ${{ inputs.pr-scope && 'pr' || '' }}
       E2E_TIMINGS: &e2e-timings /tmp/e2e-timings
       E2E_REPORT_JSON: &e2e-report-json /tmp/playwright-report.json
+      # mise-action's cache holds every tool but rust, which installs into
+      # ~/.rustup, outside the directory it caches. So setup-mise's
+      # `mise install` costs this lane a rustup channel sync and two component
+      # downloads on every run, 9-13 s, for a toolchain no step here invokes:
+      # only e2e-vm builds Rust. That lane leaves rust enabled, because it
+      # builds the vm-runner whenever a change reaches it.
+      MISE_DISABLE_TOOLS: rust
     steps:
       - &e2e-timing-start
         name: Record the job start
