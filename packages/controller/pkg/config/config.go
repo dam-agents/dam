@@ -242,6 +242,9 @@ func LoadFromEnv() (*Config, error) {
 	if cfg.VM.Enabled && (cfg.VM.Runner.Resources == nil || cfg.VM.Runner.Resources.Limits.Memory().IsZero()) {
 		return nil, fmt.Errorf("AGENT_VM: enabled needs runner.resources.limits.memory — the runner admits machines against it, and without one it reads the node's allocatable")
 	}
+	if cfg.VM.Enabled && cfg.VM.Runner.HostAddress == "" && cfg.VM.Runner.ReleaseHostPath == "" {
+		return nil, fmt.Errorf("AGENT_VM: enabled needs runner.releaseHostPath — a new runner image reaches the runner pods only as a hand-off from there")
+	}
 	if cfg.VM.RuntimeMigration.Retention < 0 {
 		return nil, fmt.Errorf("AGENT_VM: runtimeMigration.retention is %s, it must not be negative", cfg.VM.RuntimeMigration.Retention.AsDuration())
 	}

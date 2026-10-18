@@ -10,7 +10,7 @@ use tokio_util::sync::CancellationToken;
 use vm_runner::api::{RunnerRelease, HELD_FAILED, HELD_RUNTIME, HELD_UNSTAGED};
 use vm_runner::release::{self, Choice, Releases, RUNNER};
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner pod's entrypoint, and the node's stager. The pod's image is fixed for as long as the pod lives, and the runner's machines are processes of the pod, so a new runner release would otherwise reboot every machine with the pod. Run, the loader supervises one runner process and replaces it with the release the controller names, which the stager has copied onto the node; the machines outlive the runner process and the next one adopts them. Stage, it is the DaemonSet that does that copying.
+// UNIT_BOUNDARY_DESCRIPTION: the runner pod's entrypoint, and the node's stager. The pod's image is fixed for as long as the pod lives, and the runner's machines are processes of the pod, so a new runner release would otherwise reboot every machine with the pod. Run, the loader supervises one runner process and replaces it with the release the controller names over the runner's machine API, which the stager has copied onto the node; the machines outlive the runner process and the next one adopts them. Stage, it is the DaemonSet that does that copying.
 #[derive(Parser, Debug)]
 #[command(
     name = "vm-runner-loader",
@@ -51,8 +51,8 @@ enum Mode {
     },
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how often the loader reads the release the controller names. The kubelet refreshes a mounted ConfigMap within about a minute, so a faster read buys nothing. VM_RUNNER_LOADER_POLL_MS overrides it so the hand-off test does not wait out five seconds per release.
-const POLL: Duration = Duration::from_secs(5);
+// UNIT_BOUNDARY_DESCRIPTION: how often the loader reads the release the runner wrote into the loader directory when the controller named it. The file is local, so a read costs nothing and a hand-off starts within this of the controller's call. VM_RUNNER_LOADER_POLL_MS overrides it so the hand-off test does not wait out a second per release.
+const POLL: Duration = Duration::from_secs(1);
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a runner that took over must keep running before the loader trusts the release. One that exits sooner is a broken release, and the loader goes back to the one it replaced rather than restarting the broken one in a loop.
 const SETTLE: Duration = Duration::from_secs(60);
@@ -116,10 +116,9 @@ async fn main() -> anyhow::Result<()> {
                     builtin_runtime,
                     builtin_release: env(release::BUILTIN_RELEASE_ENV),
                     staged: PathBuf::from(staged),
-                    same_runtime_only: env(release::SAME_RUNTIME_ONLY_ENV) == "true",
                 },
                 args,
-                target_file: PathBuf::from(env(release::RELEASE_FILE_ENV)),
+                target_file: release::target_file(&loader_dir),
                 status_file: release::status_file(&loader_dir),
                 copies,
                 runtimes,
@@ -164,9 +163,7 @@ const LOAD_CHECK: Duration = Duration::from_secs(10);
 
 impl Loader {
     fn target(&self) -> String {
-        std::fs::read_to_string(&self.target_file)
-            .map(|t| t.trim().to_string())
-            .unwrap_or_default()
+        release::read_target(&self.target_file)
     }
 
     fn builtin(&self) -> Release {

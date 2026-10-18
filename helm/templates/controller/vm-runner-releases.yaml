@@ -76,7 +76,7 @@ spec:
           {{- /*
           The runner image, whose ENTRYPOINT starts a runner pod's loader —
           replaced here. The release is named by the very reference the
-          controller writes into each runner's release ConfigMap. The runtime
+          controller names to each runner over its machine API. The runtime
           is the smolvm tree the image installs.
           */}}
           command: ["vm-runner-loader", "stage"]

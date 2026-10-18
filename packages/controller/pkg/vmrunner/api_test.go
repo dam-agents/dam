@@ -96,6 +96,7 @@ func TestTheWireTypesWriteAndReadWhatTheContractSays(t *testing.T) {
 		Held:    HeldRuntime,
 		Message: "built against another runtime",
 	})
+	matchesTheContract(t, "runner-release-name", RunnerReleaseName{Release: "quay.io/x/vm-runner@sha256:2"})
 	matchesTheContract(t, "runner-pressure", RunnerPressure{
 		Version:       7,
 		Pressured:     true,

@@ -192,14 +192,15 @@ The stager holds `DAC_OVERRIDE` on OpenShift (`DAC_READ_SEARCH` elsewhere) only 
 Make those files owner-readable in the runner image build, then drop the capability from the stager on every platform.
 The stager copies the guest agent's root filesystem with its modes, so check that the guest does not rely on the restrictive mode before changing it.
 
-## Turn on runner release hand-offs
+## Runner release hand-offs
 
-Do this after the chart changes above, on an install whose nodes all have the release directory.
+Every install with runner pods has a release directory: `virtualization.runner.releaseHostPath` defaults to `/var/lib/platform-vm-runner-releases`, and the chart refuses an empty one.
+Give the nodes that directory first, with the chart changes above.
 
-1. Set `virtualization.runner.releaseHostPath: /var/lib/platform-vm-runner-releases` in the install's values and upgrade the release.
-   The chart then deploys the release stager on the runners' nodes.
+1. Set `virtualization.runner.releaseHostPath` in the install's values if the default does not fit, and upgrade the release.
+   The chart deploys the release stager on the runners' nodes.
    Installs that share nodes each take their own subdirectory, such as `/var/lib/platform-vm-runner-releases/<release>`: every stager keeps only the newest few releases in its directory, so in a shared one an install that releases often removes another's.
-2. The new hostPath changes every runner pod's shape, so the controller rolls every runner once, and each roll reboots all of that owner's machines.
+2. On an install that had no release directory before, the new hostPath changes every runner pod's shape, so the controller rolls every runner once, and each roll reboots all of that owner's machines.
    The roll follows `virtualization.runner.rollout`: `maxConcurrent` runners at a time, and a runner whose owner has an agent in the middle of a turn waits for it to go idle, at most `idleWait`.
    Expect the whole roll to take about owners / `maxConcurrent` × (runner restart + machine boot), plus the idle waits.
 3. From then on, a new runner image reaches each runner pod in place: the loader hands the machines to the new release, and no machine reboots.
@@ -218,6 +219,6 @@ A good hand-off logs `handing the machines off to another runner release`, then 
 The runner pods keep their start time and restart count, and the agents' sessions keep running: their machines did not reboot.
 A line with `going back to the one it replaced` means the new release failed and the loader returned to the old one; the machines keep running on it, and the controller rolls that runner's pod onto the new image only when the release was built for another pod.
 
-To roll back, unset `releaseHostPath` and upgrade the release.
-That removes the stager and changes every runner pod's shape again, so every runner rolls once more and reboots its owner's machines; after that, each new runner image rolls the pods as before.
+To leave a runner release, configure the previous runner image again and upgrade: the same hand-off takes the machines back to it.
+A hand-off the controller finds in trouble is marked with the `agent-platform.ai/runner-handoff-stalled` annotation on that runner's Deployment and halts the release; remove the annotation to let it go on.
 The directory and its staged releases stay on the nodes until removed by hand.

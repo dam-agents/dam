@@ -33,8 +33,7 @@ helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set virtualization.imageCache.hostPath=/var/lib/platform-images \
   --set agentNamespace=platform-agents \
   | "${KUBECONFORM[@]}" "$@"
-# Staged runner releases add the stager DaemonSet, which only an install that
-# names a release directory renders.
+# The stager DaemonSet with the node image cache beside it.
 helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set virtualization.runner.resources.limits.memory=8Gi \
   --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0' \
@@ -92,9 +91,18 @@ helm template platform . "${COMMON[@]}" "${VM[@]}" \
 # A runner on the node cache resolves nothing, so it needs no resolver named.
 helm template platform . "${COMMON[@]}" "${VM[@]}" \
   --set virtualization.imageCache.hostPath=/var/lib/platform-images >/dev/null
+# Runner pods take a new runner image only from the node's release directory,
+# so an install that clears it fails the render.
+if helm template platform . "${COMMON[@]}" "${VM[@]}" \
+  --set virtualization.imageCache.hostPath=/var/lib/platform-images \
+  --set virtualization.runner.releaseHostPath= >/dev/null 2>&1; then
+  echo "a render with runner pods and no releaseHostPath succeeded, but no runner could take a new release" >&2
+  exit 1
+fi
 # Virtualization keys the chart no longer reads fail the render rather than
 # being dropped without a word.
 for removed in 'virtualization.imageCache.preload.enabled=false' \
+  'virtualization.runner.releaseSameRuntimeOnly=true' \
   'virtualization.runner.ingressCidrs[0]=10.0.0.0/8' \
   'virtualization.runner.canaryImage=quay.io/x/vm-runner:canary'; do
   if helm template platform . "${COMMON[@]}" --set "$removed" >/dev/null 2>&1; then

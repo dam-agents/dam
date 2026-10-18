@@ -101,7 +101,7 @@ func TestTheAgentsGuestPathsAreTheOnesPlatformInitLaysOut(t *testing.T) {
 	assert.Equal(t, filepath.Dir(guest.CAFile), env["SSL_CERT_DIR"])
 }
 
-// TEST_SCENARIO: an install that stages runner releases on the node gives each runner pod's loader its environment. A name the loader does not read is a pod that silently runs only the release its image carries, so the names rendered here are held to the fixture the loader's tests read, and an install that stages nothing renders none of them.
+// TEST_SCENARIO: every runner pod's loader gets its environment. A name the loader does not read is a pod that silently runs only the release its image carries, so the names rendered here are held to the fixture the loader's tests read.
 func TestTheLoaderGetsTheEnvironmentItsContractNames(t *testing.T) {
 	var want []string
 	readRunnerContract(t, "loader-env.json", &want)
@@ -121,6 +121,5 @@ func TestTheLoaderGetsTheEnvironmentItsContractNames(t *testing.T) {
 		}
 		return loader
 	}
-	assert.Equal(t, want, names(func(spec *config.VMRunnerSpec) { spec.ReleaseHostPath = "/var/lib/platform-runner-releases" }))
-	assert.Empty(t, names(func(*config.VMRunnerSpec) {}))
+	assert.Equal(t, want, names(func(*config.VMRunnerSpec) {}))
 }
