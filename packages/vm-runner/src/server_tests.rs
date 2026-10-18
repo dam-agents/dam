@@ -389,14 +389,12 @@ impl Drop for Harness {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: two published ports held by this test until the runner takes them, with both guest ports at the loopback offset free. A port proven free and released is only a port that used to be free, so the published ones are handed over bound.
+// UNIT_BOUNDARY_DESCRIPTION: two published ports held by this test until the runner takes them, with both guest ports at the loopback offset free. A port proven free and released is only a port that used to be free, so the published ones are handed over bound. Blocks come from `testdir`'s band, not from the kernel: an ephemeral base in the top 1000 of the range has no free block to find, and a retry from there fails every time.
 fn port_block() -> (u16, HashMap<u16, TcpListener>) {
-    for _ in 0..200 {
-        let first = TcpListener::bind("127.0.0.1:0").unwrap();
-        let base = first.local_addr().unwrap().port();
-        if base > u16::MAX - LOOPBACK_OFFSET - 2 {
+    for base in crate::testdir::PORT_BLOCK_BASE..crate::testdir::PORT_BLOCK_TOP {
+        let Ok(first) = TcpListener::bind(("127.0.0.1", base)) else {
             continue;
-        }
+        };
         let Ok(second) = TcpListener::bind(("127.0.0.1", base + 1)) else {
             continue;
         };
@@ -407,7 +405,11 @@ fn port_block() -> (u16, HashMap<u16, TcpListener>) {
             return (base, HashMap::from([(base, first), (base + 1, second)]));
         }
     }
-    panic!("no free port block");
+    panic!(
+        "no free port block in {}..{}",
+        crate::testdir::PORT_BLOCK_BASE,
+        crate::testdir::PORT_BLOCK_TOP
+    );
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a guest answering its health endpoint on the loopback port behind a published one, until the returned flag is cleared.
@@ -2132,7 +2134,7 @@ async fn a_scrape_counts_what_a_create_did() {
     );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the node image cache service in this test's process, serving the harness's image directory on the socket the runner was told, with the harness's crane. Its holds lapse in `lease`, so a test can see whether the runner renews them.
+// UNIT_BOUNDARY_DESCRIPTION: the node image cache service in this test's process, serving the harness's image directory on the socket the runner was told, with the harness's crane. Its holds lapse in `lease`, so a test can see whether the runner renews them. The test waits until the service accepts a connection: the socket file appears a syscall before the listen, and on a loaded machine the serving task waits for a core between the two, long enough for the runner's first connect to be refused.
 async fn node_service(h: &Harness, lease: Duration) -> (Arc<ImageCache>, CancellationToken) {
     let cache = Arc::new(ImageCache::open(CacheConfig {
         dir: h.dir.join("images"),
@@ -2151,7 +2153,7 @@ async fn node_service(h: &Harness, lease: Duration) -> (Arc<ImageCache>, Cancell
         let (cache, stop, socket) = (cache.clone(), stop.clone(), socket.clone());
         async move { cacheapi::serve(&socket, cache, async move { stop.cancelled().await }).await }
     });
-    while !socket.exists() {
+    while tokio::net::UnixStream::connect(&socket).await.is_err() {
         if served.is_finished() {
             panic!("the node's service did not start: {:?}", served.await);
         }
