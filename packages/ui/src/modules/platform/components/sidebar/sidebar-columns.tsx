@@ -518,15 +518,6 @@ function ActivityRow({
         className={ROW}
         pinned={pinned}
         onTogglePin={() => togglePinnedSession(item.id)}
-        leading={
-          <AgentAvatar
-            name={item.agent.name}
-            avatar={item.agent.avatar}
-            size={22}
-            mood={avatarMood(item.agent.state, item.agent)}
-            className="mt-0.5 mr-1.5 shrink-0 self-start"
-          />
-        }
         onResume={() => {
           openSession(
             item.session.agentId,

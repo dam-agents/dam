@@ -101,18 +101,18 @@ export function HeroCard() {
   return (
     <section
       aria-label="Overview"
-      className="relative col-span-full overflow-hidden rounded-xl border border-border bg-card p-6 md:p-8"
+      className="relative col-span-full overflow-hidden rounded-xl border border-border bg-card p-6 @2xl:p-8"
     >
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 opacity-60 [background:radial-gradient(60%_120%_at_100%_0%,var(--color-accent-light),transparent_60%)]"
       />
-      <div className="relative grid items-end gap-6 md:grid-cols-[minmax(0,1fr)_auto]">
+      <div className="relative grid items-end gap-6 @2xl:grid-cols-[minmax(0,1fr)_auto]">
         <div className="min-w-0">
           <p className="text-sm font-semibold tracking-tight text-muted-foreground">
             {getBrand().name}
           </p>
-          <h1 className="mt-1 text-4xl font-light tracking-[-0.03em] text-foreground lg:text-5xl 2xl:text-6xl">
+          <h1 className="mt-1 text-3xl font-light tracking-[-0.03em] text-balance text-foreground @2xl:text-5xl @6xl:text-6xl">
             Deploy Agents Massively
           </h1>
           <div className="mt-6 flex flex-wrap gap-8">
@@ -123,7 +123,7 @@ export function HeroCard() {
         </div>
         <MachineLearning_03
           aria-hidden
-          className="hidden h-44 w-auto justify-self-end text-foreground/80 md:block"
+          className="hidden h-44 w-auto justify-self-end text-foreground/80 @2xl:block"
         />
       </div>
     </section>
@@ -134,7 +134,7 @@ export function ResourcesBarsCard() {
   const agents = useAgentsList();
   const { workingAgentIds } = useFeed();
   return (
-    <section aria-label="Resources" className={cn(CARD, "md:col-span-2")}>
+    <section aria-label="Resources" className={cn(CARD, "@xl:col-span-2")}>
       <ResourcesCard agents={agents} workingAgentIds={workingAgentIds} />
     </section>
   );
@@ -193,7 +193,7 @@ export function ChannelsCard() {
     <Card
       title="Where conversations happen"
       pictogram={<Conversation size={48} aria-hidden />}
-      className="md:col-span-2"
+      className="@xl:col-span-2"
     >
       <div className="mb-4 flex h-3 w-full gap-px overflow-hidden rounded-full bg-muted">
         {total > 0 &&
@@ -304,7 +304,7 @@ export function ActivityCard() {
   const max = Math.max(1, ...days.map((d) => d.count));
   const total = days.reduce((n, d) => n + d.count, 0);
   return (
-    <Card title="Activity, last 14 days" className="md:col-span-2">
+    <Card title="Activity, last 14 days" className="@xl:col-span-2">
       <div className="flex items-end gap-6">
         <Big value={total} label="sessions active" />
         <div
@@ -335,7 +335,7 @@ export function BusiestCard() {
   const startSession = useStore((s) => s.selectAgent);
   const top = busiestAgents(sessions, agents);
   return (
-    <Card title="Busiest agents" className="md:col-span-2">
+    <Card title="Busiest agents" className="@xl:col-span-2">
       <ol className="flex flex-col gap-1">
         {top.map(({ agent, count }, i) => (
           <li key={agent.id}>

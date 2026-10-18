@@ -34,9 +34,9 @@ export function HomeView() {
   if (!initialLoaded) return <ListSkeleton rows={4} rowHeight={140} />;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="@container flex flex-col gap-4">
       <ApprovalsBanner />
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-flow-row-dense grid-cols-1 gap-4 @xl:grid-cols-2 @5xl:grid-cols-4">
         <HeroCard />
         {visible.length === 0 ? (
           <div className="col-span-full">
@@ -47,7 +47,7 @@ export function HomeView() {
             <TipCard />
             <ResourcesBarsCard />
             <AgentStatesCard />
-            <div className="md:col-span-2 [&>div]:h-full [&>div]:rounded-xl">
+            <div className="@xl:col-span-2 [&>div]:h-full [&>div]:rounded-xl">
               <SpendWidget />
             </div>
             <ChannelsCard />
