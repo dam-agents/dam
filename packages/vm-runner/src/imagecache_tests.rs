@@ -7,7 +7,7 @@ use crate::fetch::failure_reason;
 
 // TEST_OVERVIEW: the image cache's one writer — the node service, or a runner on its own claim. It resolves a reference to a digest, fetches that digest once for every caller, holds what callers name so eviction spares it, and on a shared cache serves a privately fetched entry only to a caller whose credentials read it. The node service reaches runners over a Unix socket, and the end-to-end tests drive that socket in-process.
 
-// UNIT_BOUNDARY_DESCRIPTION: a crane that answers the four questions the cache asks — which digest a tag names, what an image says to run, what its manifest says it weighs, and what its filesystem holds — and logs each call. A tag's digest is a hash of its repository, the platform asked for and the contents of `moved`, so a test moves a tag by writing that file; `registry-down` makes every resolution fail. The manifest weighs what `size` says, an export waits while `hold-export` exists, fails while `export-fails` does, and carries a file of as many zeros as `inflate` says.
+// UNIT_BOUNDARY_DESCRIPTION: a crane that answers the four questions the cache asks — which digest a tag names, what an image says to run, what its manifest says it weighs, and what its filesystem holds — and logs each call. A tag's digest is a hash of its repository, the platform asked for and the contents of `moved`, so a test moves a tag by writing that file; `registry-down` makes every resolution fail. The manifest is `manifest` when a test wrote one, and otherwise one layer of no media type that weighs what `size` says; every token crane is asked for is `Bearer t0k`. An export waits while `hold-export` exists, fails while `export-fails` does, and carries a file of as many zeros as `inflate` says.
 const PUBLIC_CRANE: &str = r#"#!/bin/sh
 here="$(dirname "$0")"
 echo "$@" >> "$here/crane.log"
@@ -18,7 +18,10 @@ case "$1" in
     printf 'sha256:%s\n' "$(printf '%s%s%s' "${2%@*}" "$4" "$moved" | sha256sum | cut -c1-64)"
     exit 0;;
   config) printf '{"config":{"Entrypoint":["/entry"],"Cmd":["serve"]}}'; exit 0;;
-  manifest) printf '{"config":{"size":1},"layers":[{"size":%s}]}' "$(cat "$here/size" 2>/dev/null || echo 1)"; exit 0;;
+  manifest)
+    if [ -f "$here/manifest" ]; then cat "$here/manifest"; exit 0; fi
+    printf '{"config":{"size":1},"layers":[{"size":%s}]}' "$(cat "$here/size" 2>/dev/null || echo 1)"; exit 0;;
+  auth) printf 'Authorization: Bearer t0k'; exit 0;;
 esac
 while [ -f "$here/hold-export" ]; do sleep 0.02; done
 if [ -f "$here/export-fails" ]; then echo 'unexpected EOF' >&2; exit 1; fi
@@ -625,7 +628,7 @@ fn a_private_entry_is_checked_where_it_came_from() {
     assert!(!locked(&cache.memory).public.contains(&digest));
 }
 
-// TEST_SCENARIO: the node's fetch ceiling is what keeps runners that share its socket from filling the disk with trees nobody may evict. Fetches that start together must not each find the cache under its ceiling: a fetch reserves what its manifest weighs for as long as it runs, and the next is refused, as a capacity problem, while the reserved bytes take the cache past the ceiling. The reservation is given back when the fetch ends.
+// TEST_SCENARIO: the node's fetch ceiling is what keeps runners that share its socket from filling the disk with trees nobody may evict. Fetches that start together must not each find the cache under its ceiling: a fetch reserves what its image is taken to unpack to for as long as it runs, and the next is refused, as a capacity problem, while the reserved bytes take the cache past the ceiling. The reservation is given back when the fetch ends.
 #[test]
 fn fetches_under_way_count_against_the_ceiling() {
     let f = Fixture::new("in-flight", PUBLIC_CRANE);
@@ -693,13 +696,111 @@ fn an_image_that_inflates_past_its_reservation_is_refused() {
     let refused = cache.resolve("quay.io/x/bomb:1", &[]);
     let error = refused.resolved.unwrap_err();
     assert_eq!(failure_reason(&error), REASON_IMAGE_UNAVAILABLE);
-    let cap = (8_000_000 + 1) * UNPACKED_RATIO;
+    let cap = 8_000_000 * fetch::UNPACKED_RATIO;
     assert!(
         error
             .to_string()
             .contains(&format!("more than {cap} bytes")),
         "{error:#}"
     );
+    assert_eq!(scratch_trees(&cache), 0);
+}
+
+// TEST_SCENARIO: an image is reserved and capped at what its layers unpack to, read from each gzip layer's trailer, not at a multiple of what they weigh. A layer of 100 KB whose trailer says 20 MB unpacks 20 MB within its reservation, where four times its blob, floored at 16 MiB, would refuse it; 30 MB is refused, naming the measured cap. A registry that refuses the ranged read, sending the whole blob, leaves the estimate, and the same image is refused under it. The trailer read carries the token crane got from the credential that read the config.
+#[test]
+fn an_image_is_reserved_at_what_its_gzip_trailers_say() {
+    let f = Fixture::new("isize", PUBLIC_CRANE);
+    let mut blob = vec![0u8; 100_000];
+    blob[100_000 - 4..].copy_from_slice(&20_000_000u32.to_le_bytes());
+    let honoured = Arc::new(Mutex::new(0usize));
+    let port = {
+        let (blob, honoured) = (blob.clone(), honoured.clone());
+        crate::testdir::http_stub(move |head| {
+            assert!(
+                head.to_ascii_lowercase()
+                    .contains("authorization: bearer t0k"),
+                "{head}"
+            );
+            *locked(&honoured) += 1;
+            crate::testdir::ranged(head, &blob)
+        })
+    };
+    let refuses = crate::testdir::http_stub(move |_| crate::testdir::ranged("", &blob));
+    fs::write(
+        f.dir.path().join("manifest"),
+        format!(
+            r#"{{"config":{{"size":1}},"layers":[{{"mediaType":"application/vnd.oci.image.layer.v1.tar+gzip","digest":"sha256:{}","size":100000}}]}}"#,
+            "a".repeat(64)
+        ),
+    )
+    .unwrap();
+    fs::write(f.dir.path().join("inflate"), "20000000").unwrap();
+    let cache = f.cache(|_| {});
+    let fits = resolved(cache.resolve(&format!("127.0.0.1:{port}/x/fits:1"), &[]));
+    let rootfs = cache.digest_entry(&fits.digest).join(ROOTFS_DIR);
+    assert_eq!(fs::metadata(rootfs.join("bomb")).unwrap().len(), 20_000_000);
+    assert_eq!(*locked(&honoured), 1);
+
+    let unmeasured = cache.resolve(&format!("127.0.0.1:{refuses}/x/fits:1"), &[]);
+    let error = unmeasured.resolved.unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains(&format!("more than {UNPACK_MIN} bytes")),
+        "{error:#}"
+    );
+
+    fs::write(f.dir.path().join("inflate"), "30000000").unwrap();
+    let refused = cache.resolve(&format!("127.0.0.1:{port}/x/bomb:1"), &[]);
+    let error = refused.resolved.unwrap_err();
+    assert_eq!(failure_reason(&error), REASON_IMAGE_UNAVAILABLE);
+    let cap = fetch::layer_estimate(
+        "application/vnd.oci.image.layer.v1.tar+gzip",
+        100_000,
+        Some(20_000_000),
+    );
+    assert!(
+        error
+            .to_string()
+            .contains(&format!("more than {cap} bytes")),
+        "{error:#}"
+    );
+    assert_eq!(scratch_trees(&cache), 0);
+}
+// TEST_SCENARIO: a trailer counts only the last member of a gzip stream, so a layer of several members reads short of what it unpacks to. Its fetch passes the measured cap and is fetched again at four times its blob, which holds it; an image that passes that too is refused after the one retry.
+#[test]
+fn an_image_that_unpacks_past_its_trailers_is_fetched_again_at_the_estimate() {
+    let f = Fixture::new("short-isize", PUBLIC_CRANE);
+    let mut blob = vec![0u8; 8_000_000];
+    blob[8_000_000 - 4..].copy_from_slice(&8_000_000u32.to_le_bytes());
+    let port = crate::testdir::http_stub(move |head| crate::testdir::ranged(head, &blob));
+    fs::write(
+        f.dir.path().join("manifest"),
+        format!(
+            r#"{{"config":{{"size":1}},"layers":[{{"mediaType":"application/vnd.oci.image.layer.v1.tar+gzip","digest":"sha256:{}","size":8000000}}]}}"#,
+            "a".repeat(64)
+        ),
+    )
+    .unwrap();
+    fs::write(f.dir.path().join("inflate"), "20000000").unwrap();
+    let cache = f.cache(|_| {});
+    let fits = resolved(cache.resolve(&format!("127.0.0.1:{port}/x/multi:1"), &[]));
+    let rootfs = cache.digest_entry(&fits.digest).join(ROOTFS_DIR);
+    assert_eq!(fs::metadata(rootfs.join("bomb")).unwrap().len(), 20_000_000);
+    assert_eq!(f.calls("export"), 2, "the short fetch was not retried");
+
+    fs::write(f.dir.path().join("inflate"), "40000000").unwrap();
+    let refused = cache.resolve(&format!("127.0.0.1:{port}/x/huge:1"), &[]);
+    let error = refused.resolved.unwrap_err();
+    assert_eq!(failure_reason(&error), REASON_IMAGE_UNAVAILABLE);
+    assert!(
+        error.to_string().contains(&format!(
+            "more than {} bytes",
+            8_000_000 * fetch::UNPACKED_RATIO
+        )),
+        "{error:#}"
+    );
+    assert_eq!(f.calls("export"), 4);
     assert_eq!(scratch_trees(&cache), 0);
 }
 

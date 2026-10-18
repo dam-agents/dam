@@ -1,6 +1,6 @@
 # VM image cache
 
-Last verified: 2026-10-17
+Last verified: 2026-10-18
 
 A machine may reach only its gateway, so its image is fetched for it and unpacked into a tree every machine of that image mounts read-only.
 Where that tree lives is the one part of the runner's storage an install may move off its claim.
@@ -37,13 +37,18 @@ On a runner's own volume that disk is the owner's claim, so there it is reported
 
 **Eviction never frees a tree a machine is running from.** It takes the oldest write first, down to a byte count the install states, sparing what is held.
 A fetch evicts before it downloads, until both the budget and the filesystem have room for the tree it unpacks.
-OCI metadata names only compressed sizes, so that tree is taken to be four times the compressed size the manifest names, above the 2.2 to 3.2 that common images unpack to.
-That estimate is also the most the fetch may unpack, with a floor of 16 MiB for a tiny image and the whole budget for one whose manifest cannot be read: the writer counts the stream between crane and tar and stops the fetch past it, so an image whose layers inflate is refused rather than fill the disk every machine on the node shares.
+OCI metadata names only compressed sizes, so the writer reads the size each gzip layer unpacks to from the last four bytes of its blob, its gzip trailer, with one ranged read per layer and the token crane gets for the caller's credential.
+On common images the summed trailers came within 3% of what crane exports, so a measured layer is taken at its trailer and a tenth more, plus 64 KiB for tar's end blocks and padding.
+An uncompressed layer is its blob's size.
+Any other layer is taken at four times its compressed size, above the 2.2 to 3.2 that common images unpack to: a zstd layer, one whose registry refuses the ranged read or does not answer it within 20 seconds, and one whose trailer reads well below its blob, such as an eStargz footer.
+A failed read only falls back to that estimate and never fails the fetch.
+That size is also the most the fetch may unpack, with a floor of 16 MiB for a tiny image and the whole budget for one whose manifest cannot be read: the writer counts the stream between crane and tar and stops the fetch past it, so an image whose layers inflate is refused rather than fill the disk every machine on the node shares.
+A trailer counts only the last gzip member of its blob and holds its size mod 4 GiB, so a layer of several members or past 4 GiB can read short; a fetch stopped at a measured size is tried once more, reserved and capped at the larger of each layer's measured size and four times its blob.
 A runner holds the digests its running machines boot by naming them again every minute, and a hold lapses only once nobody names it — a runner that stopped has no machines left.
 A runner names every machine its runtime finds running from the moment it starts, so one that took the machines over in a hand-off or a restart holds their trees before the controller has sent it a spec.
 A stopped machine holds nothing, so a hibernated agent never keeps an image a deploy retired; its start fetches the tree again when it is gone, and holds it before it checks it is there.
 A hold only extends, so no runner can release what another holds, and only a tree on disk is held, so a resolve that fails holds nothing; past half again its budget, the service fetches nothing.
-Each fetch under way counts toward that ceiling at that unpacked estimate, so fetches that start together cannot each find the cache under it.
+Each fetch under way counts toward that ceiling at that unpacked size, so fetches that start together cannot each find the cache under it.
 A service that restarts has forgotten every hold, so it evicts nothing until the runners have had time to name theirs again.
 A runner whose own claim runs short sheds every tree no machine holds, however far inside its budget the cache is, because a tree can be fetched again and a machine disk on the same claim cannot.
 
