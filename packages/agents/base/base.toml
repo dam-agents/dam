@@ -48,8 +48,10 @@ cmd = ["node", "dist/main.js"]
 # agent's mise shims in the home. The agent's own aube globals come last.
 PATH = "/home/agent/.local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/agent/.local/share/aube/bin"
 HOME = "/home/agent"
-SSL_CERT_FILE = "/etc/ssl/certs/ca-certificates.crt"
-REQUESTS_CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
+# The bundle the entrypoint builds at every boot: the image's roots and the
+# platform CAs. The distribution's bundle path links to it too.
+SSL_CERT_FILE = "/run/platform/ca-certificates.crt"
+REQUESTS_CA_BUNDLE = "/run/platform/ca-certificates.crt"
 PYTHONPATH = "/usr/local/lib/platform-python"
 PORT = "8080"
 # apt-get on a machine never waits on a prompt nobody can answer.
@@ -79,9 +81,3 @@ AGENT_BROWSER_ARGS = "--no-sandbox,--disable-dev-shm-usage,--kiosk,--hide-scroll
 DISPLAY = ":99"
 XDG_RUNTIME_DIR = "/tmp/platform-display"
 PULSE_SERVER = "unix:/tmp/platform-display/pulse/native"
-# A vm machine keeps its whole root while it boots images of one generation,
-# so a deploy keeps what the agent installed outside HOME. Bump it only for a
-# change that breaks a root an older image left: a new Debian release, or a
-# file the entrypoint rewrites on every boot (/etc/passwd) changing in the
-# image. A bump starts every machine on an empty root.
-PLATFORM_ROOT_COMPAT = "1"

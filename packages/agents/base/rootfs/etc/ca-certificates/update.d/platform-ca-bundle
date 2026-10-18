@@ -1,0 +1,6 @@
+#!/bin/sh
+# update-ca-certificates replaces the bundle path's link with a file of its
+# own, which a machine's kept root would keep, stale, over the next image's
+# link. The bundle under /run takes the local CAs it was run for instead.
+ln -sf /run/platform/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+exec /usr/local/bin/platform-ca-bundle

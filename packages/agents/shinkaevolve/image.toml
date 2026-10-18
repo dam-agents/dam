@@ -8,5 +8,7 @@ uvx_args = "--with pillow>=12.3.0 --overrides {{config_root}}/shinkaevolve/overr
 postinstall = '"$MISE_TOOL_INSTALL_PATH/shinka-evolve/bin/python" -c "import shinka, hydra"'
 
 [oci.env]
+# Its root generation segment, after the default image's key (oci's build_thin).
+PLATFORM_ROOT_GENERATION = "shinkaevolve-1"
 SHINKA_VENV = "/opt/shinka-venv"
 SHINKA_OUTPUT_ROOT = "/home/agent/work/shinka-runs"

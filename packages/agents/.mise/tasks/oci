@@ -351,12 +351,12 @@ install_tools() {
   touch "$tools.done"
 }
 
-# The env the default image was packed with, PATH's value.
-default_path() {
+# The value of $1 in the env the default image was packed with.
+default_env() {
   local m
   m="$(jq -r '.manifests[0].digest | sub(":"; "/")' "$oci_out/default/index.json")"
   jq -r '.config.digest | sub(":"; "/")' "$oci_out/default/blobs/$m" |
-    xargs -I{} jq -r '.config.Env[] | select(startswith("PATH=")) | sub("^PATH="; "")' "$oci_out/default/blobs/{}"
+    xargs -I{} jq -r --arg k "$1=" '.config.Env[] | select(startswith($k)) | ltrimstr($k)' "$oci_out/default/blobs/{}"
 }
 
 # A pipx tool's venv as a whole Python of its own, at <dest> for <image path>:
@@ -416,10 +416,18 @@ build_thin() (
   done
   [ ! -d build-links ] || layers+=("--layer=0:0=/=build-links")
   mapfile -t flags < <(pack_flags "$f")
+  # Its root generation is its own segment after the default image's key, so
+  # it never keeps a root the default image wrote, and a new default key is a
+  # new key for it too.
+  segment="$(printf '%s\n' "${flags[@]}" | sed -n 's|^--env=PLATFORM_ROOT_GENERATION=||p')"
+  [ -n "$segment" ] && [[ "$segment" != */* ]] || { echo "$agent names no root generation segment of its own" >&2; exit 1; }
+  generation="$(default_env PLATFORM_ROOT_GENERATION)"
+  [ -n "$generation" ] || { echo "the default image names no root generation" >&2; exit 1; }
+  flags+=("--env=PLATFORM_ROOT_GENERATION=$generation/$segment")
   # The mock's agent-runtime runs the node it carries.
   if [ "$agent" = mock ]; then
     install -d build/opt && cp -a "$(mise -E "$envs" where node)" build/opt/node
-    flags+=("--env=PATH=/opt/node/bin:$(default_path)")
+    flags+=("--env=PATH=/opt/node/bin:$(default_env PATH)")
   fi
   pack_image "$agent" "$oci_out/default" build ${layers[@]+"${layers[@]}"} ${flags[@]+"${flags[@]}"}
 )
@@ -427,8 +435,8 @@ build_thin() (
 sudo=(); [ "$(id -u)" = 0 ] || sudo=(sudo --preserve-env env "PATH=$PATH")
 
 # base/apt.txt's packages on the root config's Debian base, as a one-layer
-# image layout every agent image is packed onto: rebuilt when either changes
-# and once a day for updates. The base's root is exported, and its own apt-get
+# image layout every agent image is packed onto: rebuilt when either or this
+# function changes, and once a day for updates. The base's root is exported, and its own apt-get
 # runs in it under chroot, in a mount namespace of its own, as a Dockerfile's
 # RUN would; the root is then one layer, with the owners its packages gave it.
 # The layer follows the packages alone, so a rebuild with no package update
@@ -442,7 +450,7 @@ build_apt_base() {
   local key from r packages layer d config manifest platform epoch
   apt_base="$state/apt-base"
   from="$(mise config get -f .mise/config.toml vars.base_image_debian)"
-  key="$({ cat "$agents/base/apt.txt"; echo "$from"; } | sha256sum | cut -c1-16)-$(date -u +%F)"
+  key="$({ cat "$agents/base/apt.txt"; echo "$from"; declare -f build_apt_base; } | sha256sum | cut -c1-16)-$(date -u +%F)"
   [ "$(cat "$apt_base.key" 2>/dev/null)" != "$key" ] || return 0
   r="$work/apt-root"
   ${sudo[@]+"${sudo[@]}"} rm -rf "$r" "$apt_base"
@@ -453,8 +461,14 @@ build_apt_base() {
     ${sudo[@]+"${sudo[@]}"} tar -xf - -C "$r"
   packages="$(grep -v '^#' "$agents/base/apt.txt" | xargs)"
   # policy-rc.d keeps a package's postinst from starting its service here. The
-  # trust store is the agent's, which the entrypoint fills, and the digest of
-  # the distribution roots spares it reading them every boot; the host keys
+  # distribution's bundle moves aside, and its path and a local CA name what
+  # the entrypoint builds under /run at every boot, so no boot writes the trust
+  # store. The image ships the distribution's roots there, for what runs
+  # without the entrypoint, such as the node's tool installer; a container's
+  # entrypoint replaces them, and a machine's /run tmpfs hides them; an
+  # update-ca-certificates hook links the path again. uid 0's
+  # home is the agent's, so OpenSSH keeps root's keys and known hosts in the
+  # home on a machine, where the agent is root. The host keys
   # openssh-server's postinst generated would be every image's. Every image
   # already shares one machine id, so it is one that follows the package list.
   # openrc's runlevels start empty: the services Debian enables there (ssh,
@@ -474,9 +488,15 @@ build_apt_base() {
       "$r"/var/log/*.log "$r"/var/log/apt/* "$r"/var/cache/ldconfig/aux-cache "$r"/var/cache/debconf/*-old
     find "$r/etc/runlevels" -mindepth 2 -delete
     for f in etc/machine-id var/lib/dbus/machine-id; do [ ! -e "$r/$f" ] || echo "$machine_id" > "$r/$f"; done
-    find "$r/usr/share/ca-certificates" -type f -print0 | LC_ALL=C sort -z | xargs -0r cat | sha256sum |
-      cut -c1-64 > "$r/usr/share/ca-certificates.sha256"
-    chown -R 65532:0 "$r/etc/ssl/certs" "$r/usr/local/share/ca-certificates"
+    mkdir -p "$r/usr/share/platform"
+    mv "$r/etc/ssl/certs/ca-certificates.crt" "$r/usr/share/platform/ca-certificates.crt"
+    ln -s /run/platform/ca-certificates.crt "$r/etc/ssl/certs/ca-certificates.crt"
+    ln -s /run/platform/ca.crt "$r/usr/local/share/ca-certificates/platform-ca.crt"
+    install -d -o 65532 -g 0 "$r/run/platform"
+    install -o 65532 -g 0 -m 644 "$r/usr/share/platform/ca-certificates.crt" "$r/run/platform/ca-certificates.crt"
+    sed -i "s|^\(root:[^:]*:0:0:[^:]*:\)/root:|\1/home/agent:|" "$r/etc/passwd"
+    grep -q "^root:[^:]*:0:0:[^:]*:/home/agent:" "$r/etc/passwd"
+
     : > "$r/etc/resolv.conf"
     find "$r" -xdev -newer "$r/.apt-start" -exec touch -h -d "@$epoch" {} +
     rm "$r/.apt-start"
