@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-10-17
+Last verified: 2026-10-18
 
 ## Overview
 
@@ -338,7 +338,7 @@ What changes in the boundaries:
 - **Agent identity is a Service port, not a pod.** Each agent keeps its own gateway Service and ClusterIP, the only destination its machine may reach, and that Service declares only the ports that map onto the agent's own listener.
   A ClusterIP carries nothing on an undeclared port, measured on OVN-Kubernetes and k3s, so a guest that has not escaped reaches no sibling's listener.
   SNI, Host, headers and source address are never identity: every machine's traffic arrives from the runner.
-- **Kernel gates are per owner.** One ingress policy admits the owner's runner on the agent port range and the controller there for readiness; one egress policy, with the per-agent content above, replaces the per-agent ones; a confined runner's egress names the owner gateway on that range.
+- **Kernel gates are per owner.** One ingress policy admits the owner's runner on the agent port range and the controller there for readiness; one egress policy, with the per-agent content above, replaces the per-agent ones; the runner's egress names the owner gateway on that range.
 - **Mesh identity is the owner's.** The owner gateway runs as a ServiceAccount of its own, and each agent's harness and ext-authz policies admit that principal.
   Because that principal is shared, each agent's listener guards harness paths to the agent's own and stamps the agent's name in a header no other route lets through, and the harness policy admits the owner principal only with that header naming the agent.
   The harness boundary between one owner's agents therefore rests on the rendered gateway configuration, not on the mesh alone.

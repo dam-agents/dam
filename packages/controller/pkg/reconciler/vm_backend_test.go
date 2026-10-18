@@ -1306,7 +1306,7 @@ func TestEveryCacheIsBounded(t *testing.T) {
 
 // TEST_SCENARIO: the runner now sits in the agent namespace while the api-server and controller stay in the release namespace, so its ingress peers have to name that namespace — a bare pod selector matches only the policy's own namespace, which would admit nobody and strand every vm agent. The one peer that does sit in the agent namespace is the owner's own runtime-migration Job.
 func TestRunnerPolicyAdmitsItsCallersAcrossNamespaces(t *testing.T) {
-	np := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "release-ns", testConfig.EnvoyPort, nil, nil)
+	np := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "release-ns", testConfig.EnvoyPort)
 
 	require.Len(t, np.Spec.Ingress, 3, "the machine API and published ports, the migration Job's machine API, and the scrape port")
 	for _, rule := range np.Spec.Ingress {
@@ -1323,7 +1323,7 @@ func TestRunnerPolicyAdmitsItsCallersAcrossNamespaces(t *testing.T) {
 
 // TEST_SCENARIO: the scrape port carries no token, so the NetworkPolicy is its only gate — it must admit the platform's collector to that port alone, and nothing else may reach it, while the collector reaches nothing but it.
 func TestRunnerPolicyAdmitsOnlyTheCollectorToTheScrapePort(t *testing.T) {
-	np := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "release-ns", testConfig.EnvoyPort, nil, nil)
+	np := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "release-ns", testConfig.EnvoyPort)
 
 	var scrapers []string
 	for _, rule := range np.Spec.Ingress {
@@ -1348,7 +1348,7 @@ func TestRunnerPolicyAdmitsOnlyTheCollectorToTheScrapePort(t *testing.T) {
 
 // TEST_SCENARIO: the release is not called `platform`, so the chart's fullname and the Helm release name diverge; the runner's ingress policy must still select the api-server and controller pods, which carry the release name — selecting on the fullname would admit nobody and strand every vm agent.
 func TestRunnerPolicyAdmitsPeersWhenTheReleaseNameDiffersFromTheFullname(t *testing.T) {
-	np := buildRunnerNetworkPolicy(testOwner, "dam-platform", "dam", "test-agents", "default", testConfig.EnvoyPort, nil, nil)
+	np := buildRunnerNetworkPolicy(testOwner, "dam-platform", "dam", "test-agents", "default", testConfig.EnvoyPort)
 
 	var instances []string
 	for _, rule := range np.Spec.Ingress {
@@ -1662,96 +1662,26 @@ func TestVMBackendWaitsForTheRunnerCertificate(t *testing.T) {
 	require.NoError(t, err, "the certificate is asked for on the same pass")
 }
 
-// TEST_SCENARIO: an install says where its runner may go; the policy then confines the pod as well as admitting callers, which is the only kernel gate behind a guest's egress allowlist — smolvm enforces that allowlist inside the process an escaped guest would already own.
-func TestRunnerPolicyConfinesTheRunnerWhenEgressIsConfigured(t *testing.T) {
-	open := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "default", testConfig.EnvoyPort, nil, nil)
-	assert.Equal(t, []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}, open.Spec.PolicyTypes,
-		"with nowhere named, the policy only admits callers")
-	assert.Empty(t, open.Spec.Egress)
-
-	confined := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "default", testConfig.EnvoyPort, []string{"0.0.0.0/0"}, []string{"10.128.0.0/14"})
-	assert.Contains(t, confined.Spec.PolicyTypes, networkingv1.PolicyTypeEgress)
-	require.Len(t, confined.Spec.Egress, 2, "the owner's gateways and what the install named; a runner given no resolver gets no DNS")
-
-	var sawGateway, sawCIDR bool
-	for _, rule := range confined.Spec.Egress {
-		for _, to := range rule.To {
-			if to.PodSelector != nil && to.PodSelector.MatchLabels[LabelRole] == RoleGateway {
-				sawGateway = true
-				assert.Equal(t, testOwner, to.PodSelector.MatchLabels[envoyOwnerLabel],
-					"only this owner's gateways — another owner's hold credentials this runner's guests must never borrow")
-				var ports []string
-				for _, p := range rule.Ports {
-					ports = append(ports, fmt.Sprintf("%s/%d", *p.Protocol, p.Port.IntVal))
-				}
-				assert.ElementsMatch(t, []string{fmt.Sprintf("TCP/%d", testConfig.EnvoyPort), "UDP/10053", "TCP/10053"}, ports,
-					"the proxy port and the machine resolver: nothing else on a gateway is meant for a guest")
-				assert.Equal(t, "test-agents", to.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"],
-					"gateways are reached in the agent namespace, not the release namespace")
-			}
-			if to.IPBlock != nil && to.IPBlock.CIDR == "0.0.0.0/0" {
-				sawCIDR = true
-				assert.Equal(t, []string{"10.128.0.0/14", "169.254.0.0/16", "100.100.100.200/32"}, to.IPBlock.Except,
-					"an open block matches in-cluster addresses too, so the cluster's own ranges are subtracted, and the metadata endpoints always are")
-			}
-		}
+// TEST_SCENARIO: the policy confines the runner pod as well as admitting callers, which is the only kernel gate behind a guest's egress allowlist — smolvm enforces that allowlist inside the process an escaped guest would already own. The runner dials nothing but its owner's gateways, so that is all it may reach: no other address, and no resolver, since port 53 open anywhere is a two-way channel from an escaped guest to any host that answers there.
+func TestTheRunnerReachesOnlyItsOwnersGateways(t *testing.T) {
+	np := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "default", testConfig.EnvoyPort)
+	assert.ElementsMatch(t, []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress}, np.Spec.PolicyTypes)
+	require.Len(t, np.Spec.Egress, 1)
+	rule := np.Spec.Egress[0]
+	require.Len(t, rule.To, 1)
+	to := rule.To[0]
+	assert.Nil(t, to.IPBlock)
+	assert.Equal(t, RoleGateway, to.PodSelector.MatchLabels[LabelRole])
+	assert.Equal(t, testOwner, to.PodSelector.MatchLabels[envoyOwnerLabel],
+		"only this owner's gateways — another owner's hold credentials this runner's guests must never borrow")
+	assert.Equal(t, "test-agents", to.NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"],
+		"gateways are reached in the agent namespace, not the release namespace")
+	var ports []string
+	for _, p := range rule.Ports {
+		ports = append(ports, fmt.Sprintf("%s/%d", *p.Protocol, p.Port.IntVal))
 	}
-	assert.True(t, sawGateway, "a guest can still reach its own gateway")
-	assert.True(t, sawCIDR, "and the runner can still reach the registry, minus the cluster itself")
-}
-
-// TEST_SCENARIO: an install names a narrow registry and, as the guidance says, subtracts the cluster's own ranges. Kubernetes rejects a whole NetworkPolicy whose exception falls outside the block it belongs to, so that pairing has to render as a policy the API server will actually accept.
-func TestEgressExceptionsAreKeptOnlyWhereTheyFit(t *testing.T) {
-	rules := runnerEgress("test-agents", testOwner, testConfig.EnvoyPort,
-		[]string{"203.0.113.0/24", "0.0.0.0/0"},
-		[]string{"10.128.0.0/14", "172.30.0.0/16"})
-
-	blocks := map[string][]string{}
-	for _, rule := range rules {
-		for _, to := range rule.To {
-			if to.IPBlock != nil {
-				blocks[to.IPBlock.CIDR] = to.IPBlock.Except
-			}
-		}
-	}
-
-	assert.Empty(t, blocks["203.0.113.0/24"],
-		"a registry block carries no cluster exception, because the API server would reject the policy")
-	assert.Equal(t, []string{"10.128.0.0/14", "172.30.0.0/16", "169.254.0.0/16", "100.100.100.200/32"}, blocks["0.0.0.0/0"],
-		"an open block carries them, which is where they do the work")
-}
-
-// TEST_SCENARIO: the metadata endpoint hands out the node's own credentials, so an install that opens the runner wide must not open it too. Every block containing a metadata range has it subtracted even when the install forgot to, an exception the install already wrote is not repeated, and a block that names the endpoint itself is not rendered at all.
-func TestTheMetadataEndpointIsNeverReachable(t *testing.T) {
-	rules := runnerEgress("test-agents", testOwner, testConfig.EnvoyPort,
-		[]string{"0.0.0.0/0", "::/0", "169.254.0.0/15", "169.254.169.254/32", "203.0.113.0/24", "fd00::/8"},
-		[]string{"169.254.0.0/16"})
-
-	blocks := map[string][]string{}
-	for _, rule := range rules {
-		for _, to := range rule.To {
-			if to.IPBlock != nil {
-				blocks[to.IPBlock.CIDR] = to.IPBlock.Except
-			}
-		}
-	}
-	assert.Equal(t, []string{"169.254.0.0/16", "100.100.100.200/32"}, blocks["0.0.0.0/0"],
-		"the install's own exception covers link-local, so only the rest is added")
-	assert.Equal(t, []string{"fe80::/10", "fd00:ec2::254/128"}, blocks["::/0"], "an IPv6 block loses the IPv6 endpoints")
-	assert.Equal(t, []string{"169.254.0.0/16"}, blocks["169.254.0.0/15"])
-	assert.NotContains(t, blocks, "169.254.169.254/32", "a block inside link-local names the endpoint itself")
-	assert.Empty(t, blocks["203.0.113.0/24"], "a block holding no endpoint keeps no exception, which Kubernetes would reject")
-	assert.Equal(t, []string{"fd00:ec2::254/128"}, blocks["fd00::/8"])
-}
-
-// TEST_SCENARIO: port 53 open to every address is a two-way channel from an escaped guest to any host that answers there. The runner resolves nothing — the node's image cache service resolves and fetches its images — so a confined runner's policy admits no DNS port at all.
-func TestTheRunnerReachesNoResolver(t *testing.T) {
-	confined := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "default", testConfig.EnvoyPort, []string{"0.0.0.0/0"}, nil)
-	for _, r := range confined.Spec.Egress {
-		for _, p := range r.Ports {
-			assert.NotEqual(t, int32(53), p.Port.IntVal, "the runner's egress admits DNS")
-		}
-	}
+	assert.ElementsMatch(t, []string{fmt.Sprintf("TCP/%d", testConfig.EnvoyPort), "UDP/10053", "TCP/10053"}, ports,
+		"the proxy port and the machine resolver: nothing else on a gateway is meant for a guest")
 }
 
 // TEST_SCENARIO: a runner hosts untrusted guests, so its container holds only the capabilities it adds and none of the runtime's defaults, cannot raise them through exec, and runs under the runtime's default seccomp profile. AppArmor stays unconfined, because the runtime's default profile keeps every guest from booting.

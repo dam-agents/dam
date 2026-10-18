@@ -81,7 +81,7 @@ spec:
                   "serviceAccountName" (include "platform.vmRunner.serviceAccountName" .)
                   "storage" $r.storage "storageClass" $r.storageClass
                   "devices" $devices
-                  "reserveMiB" $r.reserveMiB "headroomMiB" $r.headroomMiB "bootMiB" $r.bootMiB "machineCPUs" $r.machineCPUs "nestedVirtualization" ($r.nestedVirtualization | default false) "egressCidrs" $r.egressCidrs "egressExceptCidrs" $r.egressExceptCidrs
+                  "reserveMiB" $r.reserveMiB "headroomMiB" $r.headroomMiB "bootMiB" $r.bootMiB "machineCPUs" $r.machineCPUs "nestedVirtualization" ($r.nestedVirtualization | default false)
                   "releaseHostPath" (include "platform.vmRunner.releaseDir" .)
                   "seccomp" (include "platform.vmRunner.seccomp" .)
                   "imageCacheHostPath" ($cache.hostPath | default "") "imageCacheBudget" ($cache.budget | default "" | toString)

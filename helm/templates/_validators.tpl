@@ -11,8 +11,6 @@ add it to the include list in `platform.validate`.
 {{- define "platform.validate" -}}
 {{- include "platform.validate.anyuidCapNetRequiresAgentNamespace" . -}}
 {{- include "platform.validate.vmRunnerNeedsAMemoryLimit" . -}}
-{{- include "platform.validate.vmRunnerNeedsAnEgressDecision" . -}}
-{{- include "platform.validate.vmRunnerReachesNoMetadata" . -}}
 {{- include "platform.validate.openShiftSccForPrivilegedVMPieces" . -}}
 {{- include "platform.validate.vmRunnersHaveANodeImageCache" . -}}
 {{- include "platform.validate.vmValuesTheControllerCanUse" . -}}
@@ -219,42 +217,6 @@ first evicted — taking every machine with it.
 {{- end -}}
 
 {{/*
-A machine's egress allowlist is enforced by smolvm inside the very process an
-escaped guest would own. The runner's own NetworkPolicy is the kernel gate on
-where such a guest may go (each gateway's ingress policy separately decides whose
-credentials it can reach), and it cannot default to closed because the runner
-pulls agent images — so an install has to say, rather than inherit an open pod
-by omission.
-*/}}
-{{- define "platform.validate.vmRunnerNeedsAnEgressDecision" -}}
-{{- if .Values.virtualization.enabled -}}
-{{- if not .Values.virtualization.runner.egressCidrs -}}
-{{- fail "virtualization.enabled=true requires virtualization.runner.egressCidrs — the only kernel gate behind a guest's own egress allowlist. See virtualization.runner.egressCidrs in values.yaml for what to set; to leave the runner unconfined, say so out loud with [0.0.0.0/0] and no exceptions." -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-
-{{/*
-The metadata endpoint is link-local on every cloud; the controller subtracts it
-from any wider entry, so an egress entry lying inside link-local can only mean
-the endpoint itself.
-*/}}
-{{- define "platform.validate.vmRunnerReachesNoMetadata" -}}
-{{- if .Values.virtualization.enabled -}}
-{{- range (.Values.virtualization.runner.egressCidrs | default list) -}}
-{{- $parts := splitList "/" (toString .) -}}
-{{- if eq (len $parts) 2 -}}
-{{- $addr := lower (first $parts) -}}
-{{- $bits := atoi (last $parts) -}}
-{{- if or (and (hasPrefix "169.254." $addr) (ge $bits 16)) (and (hasPrefix "fe80:" $addr) (ge $bits 10)) -}}
-{{- fail (printf "virtualization.runner.egressCidrs entry %q lies inside link-local, where every cloud serves the node's metadata endpoint and its credentials. The runner never reaches it." (toString .)) -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-
-{{/*
 On OpenShift the chart's own SCC is the only one the runner gets, and it
 admits no hostPath volume. Without a built-in SCC bound as well, admission
 refuses the pod. `openshift.scc.anyuidCapNet.enabled` is the chart's existing
@@ -287,28 +249,15 @@ anything. The Mac's host runner runs outside the cluster with a cache of its own
 
 {{/*
 Values the controller would otherwise take in and fail on later, one agent at a
-time: a range that is not a CIDR makes Kubernetes reject the runner's
-NetworkPolicy on every reconcile, and an exception that is not one is dropped
-without a word, leaving the range it was meant to close open. A DNS policy
-the image cache service does not take is refused by Kubernetes, and a
-seccomp mode smolvm does not know installs no filter. A budget
-that is not a positive quantity refuses every runner. `0.0.0.0/0` with no
-exceptions is not refused here: the values name it as the way to leave the
-runner unconfined on purpose, and the controller warns about it at startup.
+time: a DNS policy the image cache service does not take is refused by
+Kubernetes, and a seccomp mode smolvm does not know installs no filter. A budget
+that is not a positive quantity refuses every runner.
 */}}
 {{- define "platform.validate.vmValuesTheControllerCanUse" -}}
 {{- if .Values.virtualization.enabled -}}
 {{- $v := .Values.virtualization -}}
 {{- if ($v.devicePlugin | default dict).enabled -}}
 {{- fail "virtualization.devicePlugin is gone: the chart no longer ships a KVM device plugin, because a plugin is per node and a cluster runs one for every install on it. Run one on the cluster (e.g. squat's generic-device-plugin, as helm/extra/kvm-device-plugin.yaml does for local dev), set virtualization.runner.devices to the resource it publishes (squat.ai/kvm: \"1\"), and drop virtualization.devicePlugin." -}}
-{{- end -}}
-{{- $cidr := `^(((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])|[0-9a-fA-F:.]*:[0-9a-fA-F:.]*/([0-9]|[1-9][0-9]|1[01][0-9]|12[0-8]))$` -}}
-{{- range $field := list "egressCidrs" "egressExceptCidrs" -}}
-{{- range (index $v.runner $field | default list) -}}
-{{- if not (regexMatch $cidr (toString .)) -}}
-{{- fail (printf "virtualization.runner.%s entry %q is not a CIDR (address/prefix, e.g. 10.128.0.0/14). The controller renders these into the runner's NetworkPolicy, which Kubernetes rejects outright — and an exception it cannot read is dropped, leaving open the range it was meant to close." $field (toString .)) -}}
-{{- end -}}
-{{- end -}}
 {{- end -}}
 {{- $dns := ($v.imageCache | default dict).dnsPolicy | default "Default" -}}
 {{- if not (has $dns (list "Default" "ClusterFirst")) -}}
@@ -347,8 +296,8 @@ reads without a word, so an install that still sets one would be quietly given
 something else: the node image cache service can no longer be switched off and
 runs where the runners do, the runner admits sources by its NetworkPolicy
 alone, every owner's runner runs `runner.image`, and a runner neither caches
-on its own claim nor resolves any name. Fail at render instead, naming what
-took each one's place.
+on its own claim, resolves any name, nor reaches anything but its gateways.
+Fail at render instead, naming what took each one's place.
 */}}
 {{- define "platform.validate.vmValuesThisChartNoLongerReads" -}}
 {{- $v := .Values.virtualization | default dict -}}
@@ -368,6 +317,9 @@ took each one's place.
 {{- end -}}
 {{- if hasKey $runner "dnsPolicy" -}}
 {{- fail "virtualization.runner.dnsPolicy is no longer read. A runner never resolves a name; the image cache service, which fetches every image, takes virtualization.imageCache.dnsPolicy instead. Move the value there." -}}
+{{- end -}}
+{{- if or (hasKey $runner "egressCidrs") (hasKey $runner "egressExceptCidrs") -}}
+{{- fail "virtualization.runner.egressCidrs and virtualization.runner.egressExceptCidrs are no longer read. A runner dials nothing but its owner's gateways, so its NetworkPolicy admits those alone, always. Remove the keys." -}}
 {{- end -}}
 {{- if hasKey $runner "imageArchiveHostPath" -}}
 {{- fail "virtualization.runner.imageArchiveHostPath is no longer read. Staged image trees live in the node image cache directory (virtualization.imageCache.hostPath), beside the trees its service fetches; `mise run image:stage-vm` stages there. Remove the key, or move its directory to imageCache.hostPath." -}}
