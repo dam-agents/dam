@@ -387,9 +387,12 @@ export -f pull_one as_root
 prepull_images > >(sed -u 's/^/[prepull] /') 2>&1 &
 PREPULL_PID=$!
 
-# Step 6b's staging, which runs beside the chart install (see step 1d).
+# Step 6b's staging, which runs beside the chart install (see step 1d). It
+# marks nothing with no vm image to stage: the container lane stages none, and
+# a phase that did nothing would read as an instant one in its timings.
 stage_vm_images() {
   local image comp
+  [ ${#VM_IMAGES[@]} -gt 0 ] || return 0
   e2e_mark "vm images staging started"
   for image in ${VM_IMAGES[@]+"${VM_IMAGES[@]}"}; do
     echo "Staging $image for the VM runners..."
