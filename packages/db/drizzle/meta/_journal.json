@@ -610,6 +610,13 @@
       "when": 1792170544141,
       "tag": "0086_attention_harness",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1792228899422,
+      "tag": "0087_drop_sidebar_session_order",
+      "breakpoints": true
     }
   ]
 }

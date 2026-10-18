@@ -66,7 +66,7 @@ function lowerHalf(event: DragEvent<HTMLElement>): boolean {
   return event.clientY > box.top + box.height / 2;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: drag and drop, and Alt+Up and Alt+Down, for the sidebar's manual order. Rows drag only once the stored order has loaded, since a move edits it. A row only takes a drop from its own scope: Agents from the Agents list, Sessions from the same Agent's list, so a Session never moves under another Agent. A drop on a row puts the dragged item before or after it, by the half of the row the pointer is in. Alt+Up and Alt+Down move the focused row one place. The drag ends on the document's dragend, drop or next pointer move, so it also ends when the row it started on is gone.
+// UNIT_BOUNDARY_DESCRIPTION: drag and drop, and Alt+Up and Alt+Down, for the sidebar's manual order. Rows drag only once the stored order has loaded, since a move edits it. A row only takes a drop from its own scope, the Agents list, so a drag from anywhere else moves nothing. A drop on a row puts the dragged item before or after it, by the half of the row the pointer is in. Alt+Up and Alt+Down move the focused row one place. The drag ends on the document's dragend, drop or next pointer move, so it also ends when the row it started on is gone.
 export function useOrderDrag({
   scope,
   id,
