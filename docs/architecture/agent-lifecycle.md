@@ -81,6 +81,7 @@ The api-server writes a new Agent custom resource whose spec carries the Agent's
 There is no stored desired state — running-vs-hibernated is observed status the controller derives from activity.
 The controller reconciles a paired set of owned resources: two StatefulSets (the agent and its gateway), two Services (the agent's headless ACP and the `<agent>-gateway` proxy), agent-egress and gateway-ingress NetworkPolicies, and a per-Agent Envoy bootstrap ConfigMap + leaf TLS Certificate.
 On the `vm` Backend the agent StatefulSet and its workspace PVC are not rendered at all: the Agent's storage is one disk on the owner's [VM runner](vm-runner.md), holding `HOME` and the machine's root ([persistence](persistence.md#per-agent-pvcs)), and the agent Service selects that runner rather than a pod of its own.
+With the [owner gateway](credential-gateway.md#owner-gateway) on, a moved `vm` Agent also has no gateway StatefulSet, bootstrap ConfigMap, leaf or gateway NetworkPolicies of its own: it keeps its `<agent>-gateway` Service, which selects the owner's gateway pod, and its ext-authz Service.
 
 When the create request carries a private-registry credential, the api-server writes an agent-scoped `dockerconfigjson` pull Secret *before* the Agent CR and rolls it back if that write fails; the controller hands that Secret first, ahead of any install-wide default, to whatever pulls the image — the kubelet, or on the vm Backend the owner's runner.
 It never enters the agent, and a bad one surfaces as a pull failure rather than a create-time error.
@@ -178,6 +179,7 @@ A `vm` Agent whose last start the runner refused for lack of room, or one with n
 When the status already holds the agent side ready and only the gateway was missing, the reconcile that sees the gateway pod ready publishes `Ready` right after it applies the gateway, before the runner call and the remaining applies.
 Only the idle checker or [reclaim](vm-memory.md) hibernates it, not a lapsed timeout.
 An unreachable runner does not hold the gateway up, but the Agent is published hibernated only once its runner has confirmed the machine stopped.
+With the [owner gateway](credential-gateway.md#owner-gateway) on, a `vm` Agent has no gateway pod of its own once it is moved: whether it should be up is recorded on its gateway Service instead of a replica count, its listener stays configured while it sleeps, and hibernation stops only the machine, so a wake is ready when the guest answers.
 Until then its readiness is down and it reads as starting, the Agent's next reconcile stops the machine once the runner answers, and the idle checker tries the hibernation again on each sweep.
 A runner that took the stop answers before its guest has powered off, so while the machine is stopping its readiness is down too, but the Agent reads as pausing rather than starting, and its reconcile publishes hibernation once the runner reports the machine stopped.
 Whether an Agent is "idle" is **derived from observed activity, never stored** — there is no desired-state flag — and the derivation is split across two independent checks.

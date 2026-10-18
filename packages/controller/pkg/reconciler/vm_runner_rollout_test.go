@@ -381,7 +381,7 @@ func TestTheRolloutSweepListsRunnersOncePerPass(t *testing.T) {
 			lists++
 		}
 	}
-	assert.Equal(t, 2, lists, "one List for the sweep's own order, one for the runners mid-roll")
+	assert.Equal(t, 3, lists, "one List for the owner gateways, one for the sweep's own order, one for the runners mid-roll")
 }
 
 // TEST_SCENARIO: every runner is rolled when this hash changes, which reboots every vm machine of the install. A change to how the controller renders the runner pod must therefore be deliberate: this pins the hash for a fixed configuration, so an unintended rendering change fails here rather than in a fleet-wide reboot.

@@ -28,6 +28,7 @@ A runtime migration's copy Job reaches the runner the same way, pinned by addres
 
 **A machine reaches its gateway through a NodePort.** Guest egress leaves from the Mac, where a gateway's ClusterIP does not route.
 The controller exposes each vm Agent's gateway as a NodePort, and the cluster's VM forwards NodePorts to the Mac's loopback.
+With the [owner gateway](credential-gateway.md#owner-gateway) on, the NodePort follows the agent's Service onto its slot on the owner's gateway pod, so nothing else changes here.
 The guest's proxy is smolvm's gateway address, which smolvm relays to the host's loopback.
 Allowing that address would open every loopback port: other machines' published ports, the runner's API, and whatever the user runs locally.
 So the machine is given its gateway's loopback port in place of an allowlist.

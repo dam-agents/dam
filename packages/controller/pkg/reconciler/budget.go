@@ -156,6 +156,9 @@ func (r *AgentReconciler) reservedByOwner(ctx context.Context, owner, self strin
 
 func (r *AgentReconciler) agentDesiredUp(ctx context.Context, name string, vm bool) (bool, error) {
 	if vm {
+		if up, ok, err := r.servedDesiredUp(ctx, name); err != nil || ok {
+			return up, err
+		}
 		name = GatewayName(name)
 	}
 	ss, err := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})

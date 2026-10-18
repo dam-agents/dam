@@ -482,6 +482,9 @@ func runnerPodRolledOut(dep *appsv1.Deployment) bool {
 
 // UNIT_BOUNDARY_DESCRIPTION: a changed runner pod is applied when one of that owner's agents reconciles, and a hibernated owner's agents may not reconcile for days. The sweep offers every runner its turn, so a roll reaches the whole install even where nothing else would ask. Each turn holds the owner's lock and only updates a runner that still exists, so it cannot race the orphan sweep into recreating a runner that sweep has just removed. As many turns run at once as the roll is wide, `rollout.maxConcurrent`, handed out in name order: a turn that names a release waits for it to settle, and a turn that finds no free place returns at once, so the width is what bounds the waiting and a pass over the install takes about owners / width hand-offs rather than one hand-off per owner.
 func (r *AgentReconciler) ReconcileRunnerRollout(ctx context.Context) {
+	if r.config.VM.Enabled {
+		r.rollOwnerGateways(ctx)
+	}
 	if !r.config.VM.Enabled || r.config.VM.Runner.HostAddress != "" {
 		return
 	}

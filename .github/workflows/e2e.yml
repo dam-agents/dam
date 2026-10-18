@@ -319,6 +319,7 @@ jobs:
     env:
       IS_SANDBOX: "1"
       E2E_VIRTUALIZATION: "1"
+      E2E_GATEWAY_PER_OWNER: "1"
       E2E_TIMINGS: /tmp/e2e-timings
       E2E_REPORT_JSON: /tmp/playwright-report.json
     steps:
