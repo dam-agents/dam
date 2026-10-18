@@ -169,12 +169,13 @@ impl Runtime for Fake {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a crane that answers the two questions the runner asks — what an image says to run, and what its filesystem holds — and logs each call, so a test can count fetches. A fake that answered only one would let a change that stopped asking the other pass.
+// UNIT_BOUNDARY_DESCRIPTION: a crane that answers the two questions the runner asks — what an image says to run, and what its filesystem holds — and logs each call, so a test can count fetches. A fake that answered only one would let a change that stopped asking the other pass. It reads its own directory from `$0` once instead of forking `dirname` at each use: a resolve runs it four times, a stress run resolves one image per test, and the runner always runs it by the absolute path it was given.
 const FAKE_CRANE: &str = r#"#!/bin/sh
-echo "$@" >> "$(dirname "$0")/crane.log"
+here=${0%/*}
+echo "$@" >> "$here/crane.log"
 if [ "$1" = digest ]; then
-  if [ -f "$(dirname "$0")/registry-down" ]; then echo 'connection refused' >&2; exit 1; fi
-  moved=$(cat "$(dirname "$0")/moved" 2>/dev/null)
+  if [ -f "$here/registry-down" ]; then echo 'connection refused' >&2; exit 1; fi
+  moved=$(cat "$here/moved" 2>/dev/null)
   printf 'sha256:%s\n' "$(printf '%s%s' "${2%@*}" "$moved" | sha256sum | cut -c1-64)"
   exit 0
 fi
@@ -205,6 +206,9 @@ fn node_cache_in(dir: &Path, budget: i64) -> Arc<dyn Images> {
         fetch_ceiling: None,
     }))
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: how long a test waits for the work it watches before it calls that work stuck: one resolve of the image, the boot, the health dial after it and a second action all fit inside it. That work is real — a resolve runs the fake crane four times, and every run spawns processes and unpacks a tree — and its cost belongs to the host, not the runner: on this suite a create resolves in about 0.4 s with 4 test threads, and in 3 s, with a tail past 10 s, with 64. Only a failing test reaches the deadline.
+const ACTION_DEADLINE: Duration = Duration::from_secs(30);
 
 // UNIT_BOUNDARY_DESCRIPTION: one server on a fake runtime, in a directory of its own. The name is short for the same reason as testdir's: the node cache's socket sits in it.
 struct Harness {
@@ -312,9 +316,9 @@ impl Harness {
             .unwrap_or_default()
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: waits until no worker is converging the machine, then reads its status.
+    // UNIT_BOUNDARY_DESCRIPTION: waits until no worker is converging the machine, then reads its status. It waits `ACTION_DEADLINE`, as `until` does: what it waits out is the same action, and a worker that is slow is not a worker that is stuck.
     async fn settle(&self, id: &str) -> MachineStatus {
-        let deadline = Instant::now() + Duration::from_secs(10);
+        let deadline = Instant::now() + ACTION_DEADLINE;
         loop {
             let status = self.server.status(id);
             if !self.server.converging(id)
@@ -333,14 +337,14 @@ impl Harness {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: waits on the machine's status version, as the controller does, until the status satisfies `done`. The deadline is long because a boot runs the fake crane several times, and on a loaded Mac each run of a fresh script takes up to a second; only a failing test waits it out.
+    // UNIT_BOUNDARY_DESCRIPTION: waits on the machine's status version, as the controller does, until the status satisfies `done`. Only a failing test waits `ACTION_DEADLINE` out.
     async fn until(
         &self,
         id: &str,
         what: &str,
         done: impl Fn(&MachineStatus) -> bool,
     ) -> MachineStatus {
-        let deadline = Instant::now() + Duration::from_secs(30);
+        let deadline = Instant::now() + ACTION_DEADLINE;
         let mut status = self.server.status(id);
         while !done(&status) {
             assert!(
@@ -362,7 +366,7 @@ impl Harness {
 
     // UNIT_BOUNDARY_DESCRIPTION: waits until the runtime has been called with `call`, so a test can act while that call is still running. Its deadline is as long as `until`'s, for the same reason.
     async fn wait_for_call(&self, call: &str) {
-        let deadline = Instant::now() + Duration::from_secs(30);
+        let deadline = Instant::now() + ACTION_DEADLINE;
         while !self.fake.calls().iter().any(|c| c == call) {
             assert!(
                 Instant::now() < deadline,
