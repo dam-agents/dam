@@ -17,6 +17,7 @@ import {
   writePersistedNumber,
 } from "../../../lib/persisted-prefs.js";
 import { useStore } from "../../../store.js";
+import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 import { GettingStartedPanel } from "../../getting-started/components/getting-started-panel.js";
 import { ApprovalsPanel } from "../../home/components/approvals-panel.js";
 import {
@@ -31,6 +32,7 @@ import { SidePanelEdgeTab } from "./side-panel-edge-tab.js";
 const FILE_PANEL_WIDTH_KEY = "platform-file-w";
 const MAIN_MIN_W = 360;
 const SIDE_PANEL_BAR_W = 49;
+const SIDE_PANEL_TILE_BAR_W = 60;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The side panel beside a page's main column, with
@@ -69,6 +71,8 @@ export function SidePanelShell({
   mainClassName?: string;
   children: ReactNode;
 }) {
+  const tiles = useNewLayout();
+  const barW = tiles ? SIDE_PANEL_TILE_BAR_W : SIDE_PANEL_BAR_W;
   const openFilePath = useStore((s) => s.openFilePath);
   const openArtifactId = useStore((s) => s.openArtifactId);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
@@ -107,11 +111,9 @@ export function SidePanelShell({
   const maximized = maximizable !== null && sidePanelMaximized === maximizable;
   const sidePanelMinW = sidePanelMinWidth(activeTab);
   const columnsDoNotFit =
-    columnsW !== null &&
-    columnsW < MAIN_MIN_W + sidePanelMinW + SIDE_PANEL_BAR_W;
+    columnsW !== null && columnsW < MAIN_MIN_W + sidePanelMinW + barW;
   const sidePanelFills = maximized || (sidePanelOpen && columnsDoNotFit);
-  const sidePanelMaxW =
-    columnsW === null ? null : columnsW - MAIN_MIN_W - SIDE_PANEL_BAR_W;
+  const sidePanelMaxW = columnsW === null ? null : columnsW - MAIN_MIN_W - barW;
   const sidePanelW =
     rightW === null
       ? null
@@ -177,7 +179,7 @@ export function SidePanelShell({
       <div
         data-testid="side-panel"
         className={cn(
-          "flex bg-background relative z-content max-md:fixed max-md:inset-0 max-md:z-overlay",
+          "flex bg-chrome relative z-content max-md:fixed max-md:inset-0 max-md:z-overlay",
           !mobilePanelOpen && "max-md:hidden",
           sidePanelFills
             ? "md:flex-1 md:min-w-0"
@@ -246,6 +248,7 @@ export function SidePanelShell({
           />
         )}
         <SidePanelBar
+          tiles={tiles}
           active={activeTab}
           hidden={hiddenTabs}
           onSelect={onSelectTab}

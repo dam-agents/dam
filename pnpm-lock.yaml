@@ -599,6 +599,9 @@ importers:
       '@carbon/icons-react':
         specifier: ^11.90.0
         version: 11.90.0(react@19.3.0)
+      '@carbon/pictograms-react':
+        specifier: ^11.112.0
+        version: 11.112.0(react@19.3.0)
       '@codemirror/commands':
         specifier: ^6.11.1
         version: 6.11.1
@@ -972,6 +975,11 @@ packages:
 
   '@carbon/icons-react@11.90.0':
     resolution: {integrity: sha512-WcYBnIJNEuLXpNxibe1ltVe1HAsTDuGanRVdzRYK/gN+adayDmHplMnXXDNjNlwB4PjSKesqhvt7UAZlLs7uYg==}
+    peerDependencies:
+      react: '>=16'
+
+  '@carbon/pictograms-react@11.112.0':
+    resolution: {integrity: sha512-Z8o5qfbjVwFylc52Wnt1ycuoV9Zke7DSGgT0gH8d2CkCQxByFFQy+yODmSkrfhV2BgsFEx+QyIg7j4ra/P4mxQ==}
     peerDependencies:
       react: '>=16'
 
@@ -6636,6 +6644,13 @@ snapshots:
       '@ibm/telemetry-js': 1.11.0
 
   '@carbon/icons-react@11.90.0(react@19.3.0)':
+    dependencies:
+      '@carbon/icon-helpers': 10.84.0
+      '@ibm/telemetry-js': 1.11.0
+      prop-types: 15.8.1
+      react: 19.3.0
+
+  '@carbon/pictograms-react@11.112.0(react@19.3.0)':
     dependencies:
       '@carbon/icon-helpers': 10.84.0
       '@ibm/telemetry-js': 1.11.0

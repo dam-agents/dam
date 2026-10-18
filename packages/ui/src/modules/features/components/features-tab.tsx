@@ -85,6 +85,12 @@ const FEATURE_ROWS: FeatureRow[] = [
     description:
       "Give an agent an emoji or an uploaded JPG or PNG as its avatar, in the UI and in Slack.",
   },
+  {
+    id: "new-layout",
+    label: "New layout",
+    description:
+      "A sidebar of agent avatars beside your conversations, with pinned sessions and a dashboard Home. Turn it off to return to the current layout.",
+  },
 ];
 
 function FeatureRowCard({

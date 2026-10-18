@@ -78,6 +78,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
+  --color-chrome: var(--chrome);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
@@ -171,6 +172,7 @@ body:has([role="alertdialog"], [aria-modal="true"]) [data-sonner-toaster] {
   --background: #ffffff;
   --foreground: #121619;
   --card: #ffffff;
+  --chrome: var(--background);
   --card-foreground: #121619;
   --popover: #ffffff;
   --popover-foreground: #121619;
@@ -220,6 +222,7 @@ body:has([role="alertdialog"], [aria-modal="true"]) [data-sonner-toaster] {
   --background: #161616;
   --foreground: #fafaf9;
   --card: #161616;
+  --chrome: var(--background);
   --card-foreground: #fafaf9;
   --popover: #161616;
   --popover-foreground: #fafaf9;
@@ -235,6 +238,14 @@ body:has([role="alertdialog"], [aria-modal="true"]) [data-sonner-toaster] {
   --border-ui: #393939;
   --input: #393939;
   --ring: #ffffff;
+}
+
+/* The new layout sets its side chrome apart from the page. */
+:root[data-layout="new"] {
+  --chrome: #fafafa;
+}
+:root.dark[data-layout="new"] {
+  --chrome: #0e0e0e;
 }
 
 @layer base {

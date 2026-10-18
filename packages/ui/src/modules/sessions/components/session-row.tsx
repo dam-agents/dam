@@ -2,6 +2,8 @@ import {
   Download,
   Edit,
   Pen,
+  Pin,
+  PinFilled,
   Terminal,
   Time,
   TrashCan,
@@ -14,7 +16,14 @@ import {
   SessionType,
   type SessionView,
 } from "api-server-api";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 
 import { HarnessIcons } from "@/components/harness-icons";
 import { Badge } from "@/components/ui/badge";
@@ -58,6 +67,9 @@ interface Props {
   cost?: SessionRuntime;
   conversation?: string;
   reorderable?: boolean;
+  leading?: ReactNode;
+  pinned?: boolean;
+  onTogglePin?: () => void;
   onResume: () => void;
   onPrefetch?: () => void;
   onRename: () => void;
@@ -77,6 +89,9 @@ export function SessionRow({
   cost,
   conversation,
   reorderable = false,
+  leading,
+  pinned = false,
+  onTogglePin,
   onResume,
   onPrefetch,
   onRename,
@@ -172,6 +187,7 @@ export function SessionRow({
         setMenuOpen(true);
       }}
     >
+      {leading}
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
         <div className="flex items-center gap-1.5">
           <button
@@ -199,7 +215,19 @@ export function SessionRow({
               </Badge>
             )}
           </button>
-          <div className="ml-auto flex shrink-0 items-center gap-1 hover-capable:grid hover-capable:justify-items-end hover-capable:*:[grid-area:1/1]">
+          {pinned && (
+            <PinFilled
+              size={12}
+              aria-label="Pinned"
+              className="ml-auto shrink-0 text-muted-foreground"
+            />
+          )}
+          <div
+            className={cn(
+              "flex shrink-0 items-center gap-1 hover-capable:grid hover-capable:justify-items-end hover-capable:*:[grid-area:1/1]",
+              pinned ? "ml-1" : "ml-auto",
+            )}
+          >
             <SessionIndicators
               scheduled={scheduled}
               terminal={terminal}
@@ -216,6 +244,21 @@ export function SessionRow({
                 HOVER_ACTION,
               )}
             >
+              {onTogglePin && (
+                <button
+                  type="button"
+                  aria-label={pinned ? "Unpin session" : "Pin to top"}
+                  aria-pressed={pinned}
+                  data-testid="session-pin-button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onTogglePin();
+                  }}
+                  className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                >
+                  {pinned ? <PinFilled size={14} /> : <Pin size={14} />}
+                </button>
+              )}
               <RowActionsMenu
                 label="More actions"
                 testId="session-menu-button"
