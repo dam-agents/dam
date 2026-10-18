@@ -1,7 +1,4 @@
-import { Add } from "@carbon/icons-react";
 import { type ReactNode, useMemo, useState } from "react";
-
-import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
 import { useSetAgentConnections } from "../../agents/api/mutations.js";
@@ -76,17 +73,7 @@ export function ConnectionsSection({
 
   return (
     <>
-      {header(
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setCatalogOpen(true)}
-          data-testid="open-connection-catalog"
-        >
-          <Add size={16} />
-          Add connection
-        </Button>,
-      )}
+      {header()}
       {leading}
       <GrantedConnectionsPanel
         groups={groups}
@@ -94,7 +81,6 @@ export function ConnectionsSection({
         templateById={templateById}
         onToggleGrant={toggleGrant}
         onOpenCatalog={() => setCatalogOpen(true)}
-        newInHeader
         grants={grants}
         onPreferConnection={(connectionId) =>
           setPreferred.mutate({ agentId, connectionId })

@@ -20,7 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { Input } from "@/components/ui/input";
-import { LIST_ROW, ListSection } from "@/components/ui/list-section";
+import { AddRow, LIST_ROW, ListSection } from "@/components/ui/list-section";
 import { RemoveButton } from "@/components/ui/remove-button";
 import { cn } from "@/lib/utils";
 
@@ -107,18 +107,7 @@ export function EnvTab({
     });
   return (
     <>
-      {header(
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={saving}
-          onClick={() => setEditing("new")}
-          data-testid="env-var-new"
-        >
-          <Add size={16} />
-          Add variable
-        </Button>,
-      )}
+      {header()}
       {warnings.length > 0 && (
         <Callout
           tone="warning"
@@ -142,7 +131,27 @@ export function EnvTab({
 
       <ListSection
         isEmpty={envVars.length === 0}
-        empty="No variables yet. Add one for configuration the agent reads from its environment."
+        empty="No variables yet. Create one for configuration the agent reads from its environment."
+        onNew={() => setEditing("new")}
+        newLabel="Create variable"
+        newTestId="env-var-new"
+        newDisabled={saving}
+        addRow={
+          <AddRow
+            onClick={() => setEditing("new")}
+            disabled={saving}
+            testId="env-var-new"
+            className="text-xs"
+          >
+            <Add size={14} className="shrink-0" />
+            <span className="font-mono font-semibold text-foreground">
+              Create variable
+            </span>
+            <span className="flex-1 truncate text-muted-foreground">
+              Name and value the agent reads from its environment.
+            </span>
+          </AddRow>
+        }
       >
         {envVars.map((v, i) => (
           <div key={`${v.name}:${i}`} className={cn(LIST_ROW, "text-xs")}>
@@ -297,7 +306,7 @@ function EnvVarModal({
           onCancel={() => void close()}
           cancelDisabled={pending}
           pending={pending}
-          label={initial ? "Save" : "Add variable"}
+          label={initial ? "Save" : "Create variable"}
           pendingLabel="Saving…"
           disabled={!canSave}
           testId="env-var-save"

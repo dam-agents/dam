@@ -1,4 +1,9 @@
 import { Asleep, Light, Logout, Screen } from "@carbon/icons-react";
+import {
+  ColorContrast,
+  FoundationModel,
+  UserProfile,
+} from "@carbon/pictograms-react";
 import { useEffect, useRef } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -112,7 +117,7 @@ export function SettingsView() {
   const user = getUser();
 
   return (
-    <div className="flex gap-6 md:gap-10 flex-col md:flex-row">
+    <div className="flex gap-6 md:gap-10 flex-col md:flex-row md:pt-5">
       <div ref={tabStrip} className="contents">
         <Tabs
           ariaLabel="Settings sections"
@@ -130,6 +135,7 @@ export function SettingsView() {
         {activeTab === "appearance" && (
           <div>
             <PageHeader
+              pictogram={<ColorContrast aria-hidden />}
               title="Appearance"
               description="Choose how the interface looks."
             />
@@ -176,6 +182,7 @@ export function SettingsView() {
         {activeTab === "account" && (
           <div>
             <PageHeader
+              pictogram={<UserProfile aria-hidden />}
               title="Account"
               description="See who you are signed in as, and sign out."
             />
@@ -206,6 +213,7 @@ export function SettingsView() {
           <div>
             <div>
               <PageHeader
+                pictogram={<FoundationModel aria-hidden />}
                 title="Providers"
                 description="Connect an LLM provider to give agents access to its models."
               />

@@ -1,4 +1,4 @@
-import { Edit } from "@carbon/icons-react";
+import { Edit, InfinitySymbol } from "@carbon/icons-react";
 import {
   spendLimitAmountTextSchema,
   type SpendLimitScope,
@@ -75,12 +75,12 @@ export function SpendLimitLine({
           <Button
             variant="link"
             size="inline"
-            className="gap-1 font-mono tabular-nums"
+            className="gap-1 font-mono tabular-nums text-inherit underline decoration-1 underline-offset-2 hover:decoration-2"
             aria-label={`Set daily limit for ${subject}`}
             tooltip="Set daily limit"
             onClick={() => setOpen(true)}
           >
-            {amount}
+            {amount === "∞" ? <InfinitySymbol size={16} /> : amount}
             <Edit size={14} />
           </Button>
         ) : (

@@ -19,7 +19,7 @@ import { AgentDisabledNotice } from "./agent-disabled-notice.js";
 import { LocalSkillsGroup } from "./local-skills-group.js";
 import { PlatformSkillsGroup } from "./platform-skills-group.js";
 import { SkillDriftBanner } from "./skill-drift-banner.js";
-import { SkillSourcesSection } from "./skill-sources-section.js";
+import { AddSourceRow, SkillSourcesSection } from "./skill-sources-section.js";
 import { type SkillsModal, SkillsModals } from "./skills-modals.js";
 import { SkillsNeverRunPanel } from "./skills-never-run-panel.js";
 import { SkillsSearchHeader } from "./skills-search-header.js";
@@ -76,17 +76,14 @@ export function SkillsSurface({
     snapshotOnCount,
   } = derived;
 
+  const openAddSource = () =>
+    setOpenModal({ kind: "add-source", mode: "github", files: [] });
   const addSourceButton = (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={() =>
-        setOpenModal({ kind: "add-source", mode: "github", files: [] })
-      }
-    >
+    <Button variant="outline" size="sm" onClick={openAddSource}>
       <Add size={16} /> Add source
     </Button>
   );
+  const addSourceRow = <AddSourceRow onClick={openAddSource} />;
 
   const manageConnections = agentId
     ? () => navigateToSandboxHome(agentId, "connections")
@@ -109,7 +106,7 @@ export function SkillsSurface({
       loadingBySource={surface.loadingBySource}
       revalidatingBySource={surface.revalidatingBySource}
       errorBySource={surface.errorBySource}
-      addSourceButton={addSourceButton}
+      addSourceRow={addSourceRow}
       disabledNotice={disabledNotice}
       callout={
         !agentDisabled && staleModel.stale && staleModel.model ? (
@@ -164,6 +161,7 @@ export function SkillsSurface({
       revalidatingBySource={surface.revalidatingBySource}
       errorBySource={surface.errorBySource}
       addSourceButton={addSourceButton}
+      addSourceRow={addSourceRow}
       disabledNotice={disabledNotice}
       comingUp={!!comingUp}
       onStart={() => agentId && wakeAgent.wake(agentId)}

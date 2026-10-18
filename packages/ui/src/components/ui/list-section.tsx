@@ -10,10 +10,11 @@ import { cn } from "@/lib/utils";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The one layout for every "manage a list of
- * things" block: a label with a "+ New" button above a rounded card whose rows
- * are split by dividers. An empty list shows its empty text in the card, with
- * the same "+ New" button inside it. Adding and editing happen in a modal the
- * caller opens from onNew.
+ * things" block: a label above a rounded card whose rows are split by
+ * dividers. Adding a row is itself a row: addRow sits below the card, in the
+ * same shape as the page's own rows, and an empty list shows its empty text
+ * with the same action button inside the card instead. Adding and editing
+ * happen in a modal the caller opens from onNew.
  */
 export function ListSection({
   label,
@@ -24,6 +25,7 @@ export function ListSection({
   newDisabled,
   headerExtra,
   empty,
+  addRow,
   isEmpty,
   error,
   loading = false,
@@ -40,6 +42,7 @@ export function ListSection({
   newDisabled?: boolean;
   headerExtra?: ReactNode;
   empty: ReactNode;
+  addRow?: ReactNode;
   isEmpty: boolean;
   error?: ReactNode;
   loading?: boolean;
@@ -63,11 +66,8 @@ export function ListSection({
     );
   return (
     <section className={cn("mb-8", className)}>
-      {(label || headerExtra || (onNew && !isEmpty && !loading)) && (
-        <SectionHeader label={label}>
-          {headerExtra}
-          {!isEmpty && !loading && newButton(newTestId)}
-        </SectionHeader>
+      {(label || headerExtra) && (
+        <SectionHeader label={label}>{headerExtra}</SectionHeader>
       )}
       {description && (
         <p className="mb-3 text-sm text-muted-foreground">{description}</p>
@@ -108,6 +108,9 @@ export function ListSection({
           {footer}
         </Card>
       )}
+      {addRow && !loading && !isEmpty && (
+        <Card className="mt-3 overflow-hidden">{addRow}</Card>
+      )}
     </section>
   );
 }
@@ -133,3 +136,39 @@ export function SectionHeader({
 }
 
 export const LIST_ROW = "flex items-center gap-3 px-4 py-3";
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The row that stands in for a list's missing
+ * entries: it reads as one more row of the card and opens the caller's create
+ * flow. Its children carry the page's own row anatomy, so an add row looks
+ * like the rows it sits under.
+ */
+export function AddRow({
+  onClick,
+  disabled,
+  testId,
+  className,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  testId?: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      data-testid={testId}
+      className={cn(
+        LIST_ROW,
+        "w-full text-left text-muted-foreground transition-colors hover:bg-muted/40 disabled:pointer-events-none disabled:opacity-50",
+        className,
+      )}
+    >
+      {children}
+    </button>
+  );
+}
