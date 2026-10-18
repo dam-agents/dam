@@ -2838,7 +2838,7 @@ async fn a_short_claim_marks_every_share_until_it_has_room_again() {
     }
 }
 
-// TEST_SCENARIO: a guest's disk is sized at the whole claim, so the runner grants every machine's guest, at each look, its part of what is left below 95% of the claim, with an id new at every look so the guest counts its writes from the latest grant; a claim that cannot be measured grants nothing, so no guest is held to a grant nobody renews.
+// TEST_SCENARIO: a guest's disk is sized at the whole claim, so the runner grants every machine's guest, at each look, its part of what is left below 95% of the claim, with an id new at every look so the guest counts its writes from the latest grant; a claim that cannot be measured grants nothing, so no guest is held to a grant nobody renews, and the runner records that it is no longer holding them, for its log.
 #[tokio::test(flavor = "multi_thread")]
 async fn every_look_grants_each_guest_its_room_on_the_claim() {
     let (h, claim) = with_claim("storage-room");
@@ -2859,9 +2859,54 @@ async fn every_look_grants_each_guest_its_room_on_the_claim() {
     );
     h.server.check_storage();
     assert_ne!(std::fs::read_to_string(&grant).unwrap(), first);
+    assert!(!h.server.storage_unmeasured.load(Ordering::Relaxed));
     *locked(&claim) = None;
     h.server.check_storage();
     assert!(!grant.exists());
+    assert!(h.server.storage_unmeasured.load(Ordering::Relaxed));
+    *locked(&claim) = filled(55);
+    h.server.check_storage();
+    assert!(!h.server.storage_unmeasured.load(Ordering::Relaxed));
+}
+
+// TEST_SCENARIO: machines woken together boot together and write together, so the room below 95% is split between every machine that is running or on its way up. Split between the running ones alone, none of them is running yet when the group boots, and each holds a grant for the whole room until the next look, so their writes together pass the level the claim is held to.
+#[tokio::test(flavor = "multi_thread")]
+async fn machines_woken_together_share_the_room_between_them() {
+    let (h, claim) = with_claim("storage-woken-together");
+    let grants = |h: &Harness| -> Vec<u64> {
+        ["m1", "m2"]
+            .iter()
+            .map(|id| {
+                let grant = h
+                    .dir
+                    .join("machines")
+                    .join(id)
+                    .join(SHARE_DIR)
+                    .join(share::STORAGE_ROOM_FILE);
+                let text = std::fs::read_to_string(grant).unwrap();
+                text.split_whitespace().nth(1).unwrap().parse().unwrap()
+            })
+            .collect()
+    };
+    for id in ["m1", "m2"] {
+        h.server.put(id, spec(true)).unwrap();
+        h.until(id, "running", |s| s.state == STATE_RUNNING).await;
+        h.server.put(id, spec(false)).unwrap();
+        h.until(id, "stopped", |s| s.state == STATE_STOPPED).await;
+    }
+    *locked(&claim) = filled(55);
+    *locked(&h.fake.start_delay) = Duration::from_millis(500);
+    for id in ["m1", "m2"] {
+        assert_eq!(h.server.put(id, spec(true)).unwrap().state, STATE_STARTING);
+    }
+    h.wait_for_call("start m2").await;
+    h.server.check_storage();
+    assert_eq!(grants(&h), vec![20u64 << 30; 2]);
+    for id in ["m1", "m2"] {
+        h.until(id, "running", |s| s.state == STATE_RUNNING).await;
+    }
+    h.server.check_storage();
+    assert_eq!(grants(&h), vec![20u64 << 30; 2]);
 }
 
 // TEST_SCENARIO: a guest serves each request to give back scratch once, and only a running guest frees anything, so the shortage is split among the running machines alone. The runner keeps the same request while the claim stays short at about the same use, and sends a new one, with a new id and its part of the new shortage, only once the claim has filled SHED_STEP_PERCENT further; a claim that has room again clears it, and the next shortage is a new request.

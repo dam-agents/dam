@@ -195,6 +195,7 @@ pub struct Server {
     admission: Mutex<()>,
     ports: Mutex<()>,
     storage_short: std::sync::atomic::AtomicBool,
+    storage_unmeasured: std::sync::atomic::AtomicBool,
     shed_request: Mutex<Option<(u64, String)>>,
     lifetime: CancellationToken,
     work: TaskTracker,
@@ -293,6 +294,7 @@ impl Server {
             admission: Mutex::new(()),
             ports: Mutex::new(()),
             storage_short: std::sync::atomic::AtomicBool::new(false),
+            storage_unmeasured: std::sync::atomic::AtomicBool::new(false),
             shed_request: Mutex::new(None),
             lifetime,
             work: TaskTracker::new(),
@@ -1528,7 +1530,7 @@ impl Server {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: one look at the claim, every STORAGE_CHECK. Every machine's share gets a new grant of the bytes its guest may still add to the claim (StorageUse::guest_room), which platform-init holds the guest to; a claim that cannot be measured grants nothing, and the guests are then held to nothing. While it is short, every machine's share carries a request that its guest give back scratch: an id and the bytes asked of each running machine, its even part of what brings the claim SHED_STEP_PERCENT back under SHORT_PERCENT. A guest serves each request once, so a new one goes out only when the claim has filled SHED_STEP_PERCENT further since the last: the claim is mostly the agents' homes, which no guest gives back, and repeating the request would only have every guest delete its scratch again and again. What the guests keep beyond that is not the runner's to free.
+    // UNIT_BOUNDARY_DESCRIPTION: one look at the claim, every STORAGE_CHECK. Every machine's share gets a new grant of the bytes its guest may still add to the claim (StorageUse::guest_room), which platform-init holds the guest to, split between the machines that are running or on their way up: a group woken together writes at once, so an even part of the room for the running ones alone would give each of them the whole room until the next look, and their writes together would pass the level the claim is held to. A claim that cannot be measured grants nothing, so no guest is held to the claim at all: the runner says so in the log, once per change, and its storage gauges read as no level rather than as an empty claim. While it is short, every machine's share carries a request that its guest give back scratch: an id and the bytes asked of each running machine, its even part of what brings the claim SHED_STEP_PERCENT back under SHORT_PERCENT. A guest serves each request once, so a new one goes out only when the claim has filled SHED_STEP_PERCENT further since the last: the claim is mostly the agents' homes, which no guest gives back, and repeating the request would only have every guest delete its scratch again and again. What the guests keep beyond that is not the runner's to free.
     fn check_storage(&self) {
         let shares: Vec<(String, PathBuf)> = state::machine_ids(&self.config.state_dir)
             .unwrap_or_default()
@@ -1538,20 +1540,41 @@ impl Server {
                 share.is_dir().then_some((id, share))
             })
             .collect();
-        let running = locked(&self.machines)
+        let states: Vec<Option<State>> = locked(&self.machines)
             .entries
             .values()
-            .filter(|e| e.seen.as_ref().is_some_and(|s| s.state == State::Running))
+            .map(|e| {
+                e.action
+                    .map(Action::state)
+                    .or(e.seen.as_ref().map(|s| s.state))
+            })
+            .collect();
+        let up = states
+            .iter()
+            .filter(|state| !matches!(state, Some(State::Stopped | State::Absent)))
+            .count();
+        let running = states
+            .iter()
+            .filter(|state| **state == Some(State::Running))
             .count();
         let storage = (self.config.measure_storage)();
         let grant = storage.map(|storage| {
             let id = self.versions.fetch_add(1, Ordering::Relaxed);
-            format!("{id} {}\n", storage.guest_room(running))
+            format!("{id} {}\n", storage.guest_room(up))
         });
         for (id, share) in &shares {
             if let Err(e) = share::grant_storage_room(share, grant.as_deref()) {
                 tracing::warn!(machine = %id, error = %e, "vm runner: cannot grant the machine's guest its room on the claim");
             }
+        }
+        let was_unmeasured = self
+            .storage_unmeasured
+            .swap(storage.is_none(), Ordering::Relaxed);
+        if storage.is_none() != was_unmeasured {
+            tracing::warn!(
+                unmeasured = storage.is_none(),
+                "vm runner: the owner's storage claim changed between measurable and not; an unmeasurable claim grants no guest anything, so no guest's writes are held to it"
+            );
         }
         let Some(storage) = storage else {
             return;

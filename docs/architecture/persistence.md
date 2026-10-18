@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-10-18
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -291,7 +291,8 @@ A refused growth is reported and reconciliation continues: the runner still serv
 **The runner guards the claim by its use.** The disks are sparse, so they can add up to more than the claim holds, and a guest sees its own disk as free while the claim under it fills; once the claim has no block left, a guest's write into its disk has nowhere to go.
 So the runner measures the claim itself: past 75% used it asks every machine's guest, through its share, to give back scratch: each running one its even part of what would bring use back under 70%.
 It asks again only once the claim has filled five points further, and clears the request once use is back under 70%, so a claim the homes keep full does not have every guest delete its scratch again every minute.
-Every guest is held to the claim's room as well: at each look the runner grants each running guest an even part of what is left below 95% of the claim, the level at which it counts the claim full, through its share, and platform-init sizes a preallocated file on the disk so that the guest can write only what is left of its grant.
+Every guest is held to the claim's room as well: at each look the runner grants each machine that is running or starting an even part of what is left below 95% of the claim, the level at which it counts the claim full, through its share, and platform-init sizes a preallocated file on the disk so that the guest can write only what is left of its grant.
+A claim the runner cannot measure grants nothing at all, so no guest is held to it, and it says so in its log each time it loses the measure and each time it gets it back.
 A guest held below 256 MiB may still write 256 MiB in all, once, until a grant with room comes, so with N agents running the claim can pass 95% by at most N times that.
 The agent that used it up gets room again once the claim has room, through a grant that holds the floor: when another agent is deleted or frees files, or the storage grows, as the full-home message says; a sleep and wake also gives it the floor again, for one more way in to free its own files.
 A write past it fails inside the guest with "no space left on device", which the agent handles and the runner reports as a full home, and the claim stays writable for the owner's other agents.
