@@ -44,6 +44,10 @@ pub(crate) fn exec_script(path: &Path, body: &str) {
     fs::remove_file(&staged).unwrap();
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the loopback ports a test's port block is drawn from: a published port, its neighbour, and the guest ports 1000 above them. The band lies below every platform's ephemeral range (Linux 32768, macOS 49152), because a port asked of the kernel is whichever one its allocator sits on next, and a base in the top 1000 of the range has no block at all: its guest ports would pass 65535. A retry loop there walks the allocator through that band, and every attempt fails. No block is drawn above PORT_BLOCK_TOP, so the guest ports of one block are never the published ports of another.
+pub(crate) const PORT_BLOCK_BASE: u16 = 20000;
+pub(crate) const PORT_BLOCK_TOP: u16 = 20900;
+
 // UNIT_BOUNDARY_DESCRIPTION: a registry's blob endpoint on a loopback port, for the reads that size an image. Every request gets the response `respond` makes from its head: the request line and headers. The thread serves for as long as the test process lives.
 pub(crate) fn http_stub(respond: impl Fn(&str) -> Vec<u8> + Send + 'static) -> u16 {
     use std::io::{BufRead, BufReader, Write};

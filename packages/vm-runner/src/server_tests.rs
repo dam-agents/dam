@@ -389,14 +389,12 @@ impl Drop for Harness {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: two published ports held by this test until the runner takes them, with both guest ports at the loopback offset free. A port proven free and released is only a port that used to be free, so the published ones are handed over bound.
+// UNIT_BOUNDARY_DESCRIPTION: two published ports held by this test until the runner takes them, with both guest ports at the loopback offset free. A port proven free and released is only a port that used to be free, so the published ones are handed over bound. Blocks come from `testdir`'s band, not from the kernel: an ephemeral base in the top 1000 of the range has no free block to find, and a retry from there fails every time.
 fn port_block() -> (u16, HashMap<u16, TcpListener>) {
-    for _ in 0..200 {
-        let first = TcpListener::bind("127.0.0.1:0").unwrap();
-        let base = first.local_addr().unwrap().port();
-        if base > u16::MAX - LOOPBACK_OFFSET - 2 {
+    for base in crate::testdir::PORT_BLOCK_BASE..crate::testdir::PORT_BLOCK_TOP {
+        let Ok(first) = TcpListener::bind(("127.0.0.1", base)) else {
             continue;
-        }
+        };
         let Ok(second) = TcpListener::bind(("127.0.0.1", base + 1)) else {
             continue;
         };
