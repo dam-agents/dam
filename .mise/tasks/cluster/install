@@ -387,10 +387,9 @@ export -f pull_one as_root
 prepull_images > >(sed -u 's/^/[prepull] /') 2>&1 &
 PREPULL_PID=$!
 
-# Step 6b's staging, which runs beside the imports and the chart install (see
-# step 1d). It marks nothing with no vm image to stage: the container lane
-# stages none, and a phase that did nothing would read as an instant one in its
-# timings.
+# Step 6b's staging, which runs beside the chart install (see step 1d). It
+# marks nothing with no vm image to stage: the container lane stages none, and
+# a phase that did nothing would read as an instant one in its timings.
 stage_vm_images() {
   local image comp
   [ ${#VM_IMAGES[@]} -gt 0 ] || return 0
@@ -401,20 +400,6 @@ stage_vm_images() {
     mise run image:stage-vm -- "$(.mise/tasks/image/resolve import-path "${comp#platform-}")" || return 1
   done
   e2e_mark "vm images staging done"
-}
-
-# An image is e2e:ci-images' business: it touches a marker in the ready
-# directory as each of this run's images lands, and off CI the images were built
-# above. Waits for one so the staging can start on it, and names the fetch's
-# failure rather than the staging error a missing image would raise.
-wait_for_image() {
-  [ -n "${CI_IMAGES_STATUS:-}" ] || return 0
-  local marker="${CI_BUILD_READY_DIR:-$CI_IMAGES_STATUS.ready}/$1"
-  until [ -e "$marker" ] || [ -s "$CI_IMAGES_STATUS" ]; do sleep 2; done
-  if [ ! -e "$marker" ] && [ "$(cat "$CI_IMAGES_STATUS")" != ok ]; then
-    echo "FATAL: fetching this run's images failed, so $1's image never landed; see the e2e job's image fetch log" >&2
-    return 1
-  fi
 }
 
 # 1d. Load images into k3s (built at the top, or out-of-band in CI).
@@ -529,28 +514,28 @@ else
     exit "$rc"
   } > >(sed -u 's/^/[images] /') 2>&1 &
   IMAGE_LOAD_PID=$!
+  AGENT_IMAGES_LOADED=$(mktemp)
   if [ ${#AGENT_TASKS[@]} -gt 0 ]; then
     {
       until [ -s "$PLATFORM_IMAGES_LOADED" ]; do sleep 1; done
-      load_images "${AGENT_TASKS[@]}"
+      rc=0
+      load_images "${AGENT_TASKS[@]}" || rc=$?
+      echo "$rc" > "$AGENT_IMAGES_LOADED"
+      exit "$rc"
     } > >(sed -u 's/^/[agent images] /') 2>&1 &
     AGENT_LOAD_PID=$!
   fi
-  # The vm-backend images (step 6b) are staged as soon as each of them exists,
-  # beside the imports and the chart install: the staging needs only an image
-  # and the node's image directory, not the chart, its rollout or the import.
-  # Waiting for the agent images' import instead, as it did, put the staging
-  # after the deployments in six of the eight green vm-lane runs measured,
-  # 25-97 s of the critical path (median 50 s over all eight). The staging
-  # costs what the same work costs after that import: on the lane it staged in
-  # 20-97 s from the snapshot the import had unpacked, and in 51-74 s from an
-  # image tar, before a built agent image was kept as its OCI layout.
+  # The vm-backend images (step 6b) are staged as soon as the agent images are
+  # loaded, beside the chart install and the wait for its deployments: the
+  # staging needs only the image tars and the node, not the chart. It starts
+  # only then, not beside the imports, for the reason the agent images load
+  # after the platform ones: the host's cores are shared, and the staging is
+  # the heavier job. Measured on the CI vm lane, it took 18-30 s off the
+  # install, where it had run after the deployments were ready.
   if [ ${#VM_IMAGES[@]} -gt 0 ]; then
     {
-      for image in "${VM_IMAGES[@]}"; do
-        comp="${image##*/}"; comp="${comp%%:*}"
-        wait_for_image "${comp#platform-}" || exit 1
-      done
+      until [ -s "$AGENT_IMAGES_LOADED" ]; do sleep 1; done
+      [ "$(cat "$AGENT_IMAGES_LOADED")" = 0 ] || exit 1
       stage_vm_images
     } > >(sed -u 's/^/[stage-vm] /') 2>&1 &
     STAGE_VM_PID=$!

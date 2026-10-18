@@ -78,7 +78,7 @@ On a pull request both lanes run a reduced set of the specs, the ones that fail 
 The vm lane's runner exposes `/dev/kvm`, which a udev rule opens to the runner user, and builds or pulls the vm-runner beside the other images.
 A failure in the vm lane alone is the vm Backend's.
 
-In a vm install, `cluster:install` stages the vm images beside the imports and the chart install, as soon as each image's tar exists, not after the deployments are ready.
+In a vm install, `cluster:install` stages the vm images beside the chart install, as soon as the agent images are loaded, not after the deployments are ready.
 `e2e:install` gives the vm lane's machines one vCPU, as its 1-CPU mock Size gave them before, and a 1Gi boot estimate: each runner's memory request follows its booting machines' estimates plus a 512Mi reserve, while the 16 GB CI node has little room beside the control plane.
 Both lanes' job summary shows where their time went: with `E2E_TIMINGS=<file>`, `cluster:install`, `e2e:install` and `e2e:run` append phase marks to it (`e2e_mark` in `.mise/lib/cluster.sh`), and `.mise/tasks/e2e/timings` renders them as Markdown, with the per-project spans from the Playwright JSON report that `E2E_REPORT_JSON` names.
 A lane that never reached a phase prints `n/a` for its rows, so one lane's table compares with the other's.
