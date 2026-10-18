@@ -7,6 +7,7 @@ import {
   vmUsageView,
   type RunnerUsage,
 } from "../domain/vm-usage.js";
+import type { VmPoolCapacity } from "../../agents/domain/runtime-migration.js";
 
 export interface BudgetedAgent {
   id: string;
@@ -112,6 +113,7 @@ export function createSpawnSizeGate(
 
 export interface StorageGate {
   assertCanCreateVm(): Promise<void>;
+  readCapacity(): Promise<VmPoolCapacity | null>;
 }
 
 export function createStorageGate(
@@ -121,6 +123,21 @@ export function createStorageGate(
     async assertCanCreateVm() {
       const refusal = storageRefusal(await deps.readVmUsage());
       if (refusal) throw refusal;
+    },
+    async readCapacity() {
+      const usage = await deps.readVmUsage();
+      return usage
+        ? {
+            storage: {
+              usedBytes: usage.storage.usedBytes,
+              usableBytes: usage.storage.usableBytes,
+            },
+            memory: {
+              committedMiB: usage.memory.committedMiB,
+              limitMiB: usage.memory.limitMiB,
+            },
+          }
+        : null;
     },
   };
 }

@@ -59,6 +59,8 @@ export function toAgentView(agent: Agent, spawnedBy: string | null = null) {
   };
 }
 
+const gib = (bytes: number) => (bytes / 1024 ** 3).toFixed(1);
+
 // UNIT_BOUNDARY_DESCRIPTION: the words for why an agent cannot move to the new runtime, one sentence per reason. The plan shows them before the user asks, and the migrate mutation refuses with the same sentences, so the two never disagree.
 export function runtimeMigrationRefusalReasons(
   refusal: RuntimeMigrationRefusal,
@@ -81,6 +83,14 @@ export function runtimeMigrationRefusalReasons(
     case "HomeNotPersisted":
       return [
         "This agent does not keep its home directory, so there is nothing for the new runtime to carry over",
+      ];
+    case "VmStorageInsufficient":
+      return [
+        `Moving this agent needs about ${gib(refusal.neededBytes)} GiB free on your VM storage — twice its home directory, one copy while it moves and one on its new disk — and ${gib(refusal.usableBytes - refusal.usedBytes)} GiB of ${gib(refusal.usableBytes)} GiB is free: request more storage, or move an agent with a smaller home directory`,
+      ];
+    case "VmMemoryInsufficient":
+      return [
+        `Your VM agents have committed ${gib(refusal.committedMiB * 1024 ** 2)} GiB of their ${gib(refusal.limitMiB * 1024 ** 2)} GiB of memory, leaving no room for another machine: pause or delete a VM agent, or request more memory`,
       ];
     case "ConcurrentUpdate":
       return [

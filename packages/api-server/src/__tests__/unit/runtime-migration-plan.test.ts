@@ -32,6 +32,7 @@ const WEEK_MS = 7 * 24 * 3600_000;
 const INPUTS = {
   virtualizationEnabled: true,
   defaultMounts: [{ path: "/home/agent", persist: true }],
+  defaultStorageSize: "10Gi",
   retentionMs: WEEK_MS,
 };
 
@@ -164,6 +165,23 @@ describe("the runtime migration plan", () => {
     });
     expect(plan.unmovable.map((u) => u.path)).toEqual(["/data"]);
     expect(plan.refusal?.type).toBe("PersistsUnmovablePaths");
+  });
+
+  // TEST_SCENARIO: a pool too small for the move is refused in the plan, in the request's own words, so the user reads how much the move needs and how much is free before the confirm dialog rather than after the storage is filled.
+  it("refuses a move the pool cannot hold, in the request's words", () => {
+    const plan = runtimeMigrationPlan(agent({}), {
+      ...INPUTS,
+      capacity: {
+        storage: { usedBytes: 4 * 1024 ** 3, usableBytes: 20 * 1024 ** 3 },
+        memory: { committedMiB: 0, limitMiB: 12 * 1024 },
+      },
+    });
+    const view = toRuntimeMigrationPlanView(plan);
+    expect(view.allowed).toBe(false);
+    expect(view.refusal?.type).toBe("VmStorageInsufficient");
+    expect(view.refusal?.reasons).toEqual([
+      "Moving this agent needs about 20.0 GiB free on your VM storage — twice its home directory, one copy while it moves and one on its new disk — and 16.0 GiB of 20.0 GiB is free: request more storage, or move an agent with a smaller home directory",
+    ]);
   });
 });
 
