@@ -466,6 +466,9 @@ else
   load_images() {
     local c remaining=("$@") left tars=()
     if [ -n "${CI_IMAGES_STATUS:-}" ]; then
+      # e2e:ci-images writes each image's file here, as CI_BUILD_READY_DIR:
+      # e2e.yml sets that to this same directory, since one run of it builds
+      # only one family of the images.
       echo "Waiting for this run's images (e2e:ci-images): ${remaining[*]}"
       while [ ${#remaining[@]} -gt 0 ]; do
         left=() tars=()

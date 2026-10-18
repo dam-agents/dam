@@ -11,6 +11,11 @@
 # Env: IMAGE_PREFIX. Every build runs even after one fails; the
 # exit status names the failures.
 #
+# Two of these can run side by side on one runner, as e2e:ci-images runs one
+# per image family, and they share /tmp/ci-build and /tmp/digests. Ceiling:
+# the log dump at the end prints every log file in that directory, so each run
+# also prints the other's; a state directory per run is the upgrade path.
+#
 # By path, like image:resolve, with usage and pigz installed. image.toml
 # agents build with //packages/agents:oci and need mise, node, pnpm and crane;
 # every other component with its package's :oci task, which writes its image
