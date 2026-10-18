@@ -540,6 +540,11 @@ export interface StorageGatePort {
   readCapacity(): Promise<VmPoolCapacity | null>;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: what an Agent's home holds, read from the Agent's own runtime, which measures the volume it has mounted. Null when it cannot be read — the Agent is asleep or stopped, or its runtime does not answer — so a move is judged on the home's contents only where they are known.
+export interface HomeUsagePort {
+  read(agentId: string): Promise<number | null>;
+}
+
 export function createAgentsService(deps: {
   repo: AgentsRepository;
   agentEnvRepo: AgentEnvRepository;
@@ -565,6 +570,7 @@ export function createAgentsService(deps: {
   runtimeMigrationRetentionMs?: number | null;
   resizeGate?: ResizeGatePort;
   storageGate?: StorageGatePort;
+  homeUsage?: HomeUsagePort;
   resizeLock: <T>(key: string, fn: () => Promise<T>) => Promise<T>;
   grantProvisioner?: {
     resolveSpecGrants(sel: {
@@ -633,11 +639,18 @@ export function createAgentsService(deps: {
     defaultStorageSize: deps.agentDefaultStorageSize ?? "10Gi",
   };
 
-  // UNIT_BOUNDARY_DESCRIPTION: the context a move is decided from, with the pool read live: the plan and the request must agree about whether the owner has room for it.
-  async function migrationContext(): Promise<RuntimeMigrationContext> {
+  // UNIT_BOUNDARY_DESCRIPTION: the context a move is decided from, with the pool and the home read live: the plan and the request must agree about whether the owner has room for it, and about how much of that room the home takes.
+  async function migrationContext(
+    agentId: string,
+  ): Promise<RuntimeMigrationContext> {
+    const [capacity, homeBytes] = await Promise.all([
+      deps.storageGate?.readCapacity() ?? null,
+      deps.homeUsage?.read(agentId) ?? null,
+    ]);
     return {
       ...runtimeMigrationContext,
-      capacity: (await deps.storageGate?.readCapacity()) ?? null,
+      capacity: capacity ?? null,
+      homeBytes: homeBytes ?? null,
     };
   }
 
@@ -1577,7 +1590,7 @@ export function createAgentsService(deps: {
     async migrateRuntime(id) {
       const result = await executeRuntimeMigration({
         ...runtimeMigrationWrites,
-        migration: await migrationContext(),
+        migration: await migrationContext(id),
       })(id);
       if (!result.ok) return result;
       return ok(await migrationUpdated(result.value));
@@ -1604,7 +1617,7 @@ export function createAgentsService(deps: {
       if (!infra) return err({ type: "AgentNotFound" as const });
       return ok(
         runtimeMigrationPlan(infra, {
-          ...(await migrationContext()),
+          ...(await migrationContext(id)),
           retentionMs: deps.runtimeMigrationRetentionMs ?? null,
         }),
       );

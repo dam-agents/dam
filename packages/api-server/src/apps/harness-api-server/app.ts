@@ -242,6 +242,10 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         defaultCeiling,
         slotSize: defaultLimits,
         isSlackUnlinked: async () => false,
+        vmPool: {
+          storage: config.vmPoolStorage,
+          memory: config.vmPoolMemory,
+        },
       }).budgets,
     defaultLimits,
   };

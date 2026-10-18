@@ -141,6 +141,10 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         channelManager.availableChannels()[ChannelType.Slack] === true &&
         (await findExternalUsersByIdentity(db)(ChannelType.Slack, user.sub))
           .length === 0,
+      vmPool: {
+        storage: config.vmPoolStorage,
+        memory: config.vmPoolMemory,
+      },
     });
     const { agents, isOwnedAgent } = composeAgentsModule({
       api,

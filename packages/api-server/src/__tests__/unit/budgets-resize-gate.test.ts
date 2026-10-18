@@ -1,11 +1,15 @@
 import { describe, it, expect } from "vitest";
 import { TRPCError } from "@trpc/server";
 import {
+  configuredPool,
   createResizeGate,
   createBudgetsService,
   createStorageGate,
   type BudgetedAgent,
 } from "../../modules/budgets/services/budgets-service.js";
+
+// TEST_OVERVIEW: the pools the api-server judges a vm agent against: the install's, as the chart sizes it, and one owner's own.
+const INSTALL = { storage: "20Gi", memory: "12Gi" };
 
 function agent(
   id: string,
@@ -229,8 +233,15 @@ function usage(usedGi: number, usableGi: number) {
 }
 
 describe("storage gate (#4757)", () => {
+  const noPool = {
+    readConfiguredPool: async () => configuredPool(INSTALL, null),
+  };
+
   it("refuses a vm create once storage is 90% used, with the figures", async () => {
-    const gate = createStorageGate({ readVmUsage: async () => usage(90, 100) });
+    const gate = createStorageGate({
+      readVmUsage: async () => usage(90, 100),
+      ...noPool,
+    });
     await expect(gate.assertCanCreateVm()).rejects.toMatchObject({
       code: "PRECONDITION_FAILED",
       cause: {
@@ -245,8 +256,58 @@ describe("storage gate (#4757)", () => {
 
   it("refuses nothing below 90%, nor on unknown or unmeasured use", async () => {
     for (const read of [usage(89, 100), null, usage(0, 0)]) {
-      const gate = createStorageGate({ readVmUsage: async () => read });
+      const gate = createStorageGate({
+        readVmUsage: async () => read,
+        ...noPool,
+      });
       await expect(gate.assertCanCreateVm()).resolves.toBeUndefined();
     }
+  });
+});
+
+describe("the pool a move is judged against (#5344)", () => {
+  // TEST_SCENARIO: a runner that answered is the pool, in its own measured figures: what it has written and what its claim can hold.
+  it("reads the runner's own figures where it answered", async () => {
+    const gate = createStorageGate({
+      readVmUsage: async () => usage(30, 100),
+      readConfiguredPool: async () => configuredPool(INSTALL, null),
+    });
+    expect(await gate.readCapacity()).toEqual({
+      storage: { usedBytes: 30 * 1024 ** 3, usableBytes: 100 * 1024 ** 3 },
+      memory: { committedMiB: 3072, limitMiB: 12288 },
+    });
+  });
+
+  // TEST_SCENARIO: an owner with no runner yet — their first move — is judged against the pool they are about to be created at, with nothing written to it, rather than against nothing at all.
+  it("reads the install's pool when there is no runner to ask", async () => {
+    const gate = createStorageGate({
+      readVmUsage: async () => null,
+      readConfiguredPool: async () => configuredPool(INSTALL, null),
+    });
+    expect(await gate.readCapacity()).toEqual({
+      storage: { usedBytes: 0, usableBytes: 20 * 1024 ** 3 },
+      memory: { committedMiB: 0, limitMiB: 12 * 1024 },
+    });
+  });
+});
+
+// TEST_SCENARIO: the owner's UserBudget replaces the install's pool, each field on its own, and a memory the install does not set is zero — which refuses no machine rather than every one.
+describe("the configured pool", () => {
+  it("takes the owner's sizes over the install's, field by field", () => {
+    expect(
+      configuredPool(INSTALL, { storage: "50Gi", memory: "64Gi" }),
+    ).toEqual({
+      storage: { usedBytes: 0, usableBytes: 50 * 1024 ** 3 },
+      memory: { committedMiB: 0, limitMiB: 64 * 1024 },
+    });
+    expect(
+      configuredPool(INSTALL, { memory: "64Gi" }).storage.usableBytes,
+    ).toBe(20 * 1024 ** 3);
+  });
+
+  it("reads an unset memory as zero", () => {
+    expect(
+      configuredPool({ storage: "20Gi", memory: "" }, null).memory,
+    ).toEqual({ committedMiB: 0, limitMiB: 0 });
   });
 });

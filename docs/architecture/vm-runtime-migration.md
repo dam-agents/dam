@@ -1,12 +1,15 @@
 # VM runtime migration
 
-Last verified: 2026-10-17
+Last verified: 2026-10-18
 
 A **runtime migration** moves one container Agent onto the `vm` Backend's [runners](vm-runner.md) at the user's request, and can be undone until the Agent's machine has booted from the copy; the UI offers it only to users who opted into the new runtime.
 `HOME` is the only path a machine keeps whatever image it boots, and a container's root outside its persisted mounts is the image's and keeps nothing ([persistence](persistence.md#per-agent-pvcs)), so a migration carries exactly one thing: the volume that held `HOME`, copied as the machine's home.
 An Agent whose mounts persist any other path — outside `HOME`, or a volume of its own inside it — is refused with each such path named, rather than moved without it; a mount that is not persisted, such as `/tmp`, is carried by nothing and refuses nothing.
 The api-server plans from the mounts the controller renders — the Agent's own, or the install's template defaults when it names none — and refuses such a path, an Agent that does not persist `HOME`, which leaves nothing to carry, an Agent already being moved or still clearing up an earlier move, and one mid-way through a storage migration; the UI offers the move from that same refusal.
-Starting the move is also refused when the owner's [VM pool](budgets.md#what-is-counted) cannot hold it: the move needs about twice the home's size on that pool's storage — the seed until the switch, and as much again on the machine's first disk — up to the level the runner itself refuses a seed at, and the pool needs the memory for one more machine, which may grow to half of it.
+Starting the move is also refused when the owner's [VM pool](budgets.md#what-is-counted) cannot hold it: the move needs about twice what `HOME` holds on that pool's storage — the seed until the switch, and as much again on the machine's first disk — up to the level the runner itself refuses a seed at, and the pool needs the memory for one more machine, which may grow to half of it.
+What `HOME` holds is what the Agent's own runtime measured on its volume: the volume's size is the most it may hold, and a home judged by that would never move off a workspace it is nowhere near filling.
+An Agent that is not running cannot be measured — its volume has nothing mounted on it to ask — so it is refused on nothing there and the runner stops a copy that does not fit on its own.
+The pool is the figures the owner's runner last reported, and, for an owner with no runner yet, the sizes the install creates it at, each replaced by the owner's [UserBudget](budgets.md#the-ceiling) where it names one.
 Those figures come from the runner's own [usage read](vm-runner.md), so the plan says them before the user agrees, and an unreadable pool refuses nothing, since the runner refuses what it has no room for on its own.
 Otherwise it writes a request and no spec: the **target** shape and a **snapshot** of every field the switch will change.
 That write, and every later one — an abort, a retry, the switch — is conditioned on the version of the Agent it was decided from, so a change in between — a storage migration starting, a second request, the controller's status — fails it as a conflict, decided again from a fresh read and reported to retry if it keeps losing.
