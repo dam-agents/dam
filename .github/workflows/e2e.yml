@@ -30,6 +30,12 @@ on:
           nightly run.
         type: boolean
         required: true
+      pr-scope:
+        description: >-
+          A pull request: run the reduced smoke set, the specs that fail for
+          real there, rather than all of them.
+        type: boolean
+        required: true
     secrets:
       QUAY_USERNAME:
         required: false
@@ -100,6 +106,10 @@ jobs:
       actions: read
     env:
       IS_SANDBOX: "1"
+      # A pull request runs the specs that fail for real on one; the merge
+      # queue, the nightly run and a tag run them all. The Playwright config
+      # applies it; see docs/architecture/e2e.md.
+      E2E_SCOPE: ${{ inputs.pr-scope && 'pr' || '' }}
     steps:
       - &e2e-checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -322,6 +332,7 @@ jobs:
       E2E_GATEWAY_PER_OWNER: "1"
       E2E_TIMINGS: /tmp/e2e-timings
       E2E_REPORT_JSON: /tmp/playwright-report.json
+      E2E_SCOPE: ${{ inputs.pr-scope && 'pr' || '' }}
     steps:
       - name: Record the job start
         run: printf '%s\tjob started\n' "$(date +%s)" >> "$E2E_TIMINGS"

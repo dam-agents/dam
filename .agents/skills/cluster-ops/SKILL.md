@@ -74,6 +74,7 @@ Two specs are tied to a Backend.
 It turns the experiment off and on again, which is why nothing else may run beside it.
 
 CI runs the smoke suite as two lanes on every run but a tag and a docs-only PR (e2e.yml's `docs-only` job): `e2e / mise e2e (container)` (e2e.yml's `e2e` job) and `e2e / mise e2e (vm)` (`e2e-vm`, the same steps through YAML anchors, plus `E2E_VIRTUALIZATION=1`), each on its own GitHub-hosted x64 runner.
+On a pull request both lanes run a reduced set of the specs, the ones that fail for real there; a merge group, the nightly run and a dispatch run all of them ([e2e architecture](../../../docs/architecture/e2e.md)).
 The vm lane's runner exposes `/dev/kvm`, which a udev rule opens to the runner user, and builds or pulls the vm-runner beside the other images.
 A failure in the vm lane alone is the vm Backend's.
 

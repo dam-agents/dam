@@ -94,6 +94,7 @@ Each page is the authoritative, self-contained description of its subsystem.
 - [spend-limits](architecture/spend-limits.md) — Metered Spend: each agent's gateway meters every model call, out of the agent's reach.
 - [logging](architecture/logging.md) — Pino structured logging to stdout, and the real-identity security audit trail built on it (the forensic counterpart to pseudonymized usage-tracking).
 - [observability](architecture/observability.md) — the optional, bundled agent-telemetry backend: an OTLP collector writing OpenTelemetry signals into a columnar store, gated by the mesh rather than ingestion tokens.
+- [e2e](architecture/e2e.md) — the smoke suite that proves an install end to end: its two lanes, the order the projects run in, and the specs a pull request defers to the merge queue and the nightly run.
 - [supply-chain](security/supply-chain.md) — how each external dependency type is scanned for CVEs and defended against supply-chain attacks.
 - [code](security/code.md) — CodeQL SAST and pre-commit hardening.
 - [secrets](security/secrets.md) — GitHub secret storage, scanning, and push protection.
