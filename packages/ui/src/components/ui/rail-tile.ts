@@ -1,0 +1,25 @@
+import { cn } from "@/lib/utils";
+
+export function railTile(active: boolean): string {
+  return cn(
+    "group relative flex size-10 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    active
+      ? "bg-muted text-foreground ring-1 ring-border-ui"
+      : "hover:bg-muted/60 hover:text-foreground",
+  );
+}
+
+export function railIndicator(
+  side: "left" | "right",
+  active: boolean,
+  current = false,
+): string {
+  return cn(
+    "pointer-events-none absolute w-1 bg-foreground transition-all",
+    side === "left" ? "-left-2.5 rounded-r-full" : "-right-2.5 rounded-l-full",
+    active ? "h-6" : current ? "h-2" : "h-0 group-hover:h-2",
+  );
+}
+
+export const RAIL_BADGE =
+  "absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-bold text-background ring-2 ring-chrome tabular-nums";

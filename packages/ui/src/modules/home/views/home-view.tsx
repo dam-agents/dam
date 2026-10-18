@@ -7,12 +7,19 @@ import { WelcomeEntryPoints } from "../../agents/components/welcome-entry-points
 import { useAgentRows } from "../../agents/hooks/use-agent-rows.js";
 import { splitTemporarySandboxes } from "../../agents/utils/temporary-sandboxes.js";
 import { ResourcesCard } from "../../budgets/components/resources-card.js";
+import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 import { SpendWidget } from "../../spend/components/spend-widget.js";
 import { useFeed } from "../api/queries.js";
 import { ApprovalsBanner } from "../components/approvals-banner.js";
 import { WidgetSkeleton } from "../components/home-skeletons.js";
+import { DashboardHomeView } from "./dashboard-home-view.js";
 
 export function HomeView() {
+  if (useNewLayout()) return <DashboardHomeView />;
+  return <CurrentHomeView />;
+}
+
+function CurrentHomeView() {
   const { agentsData, initialLoaded, rowProps } = useAgentRows();
   const { workingAgentIds, workingByAgent } = useFeed();
 

@@ -958,6 +958,7 @@ export function ChatView() {
                             <AgentUsageActions
                               agent={agentView}
                               showChat={false}
+                              showConfigure
                               onNewTerminal={handleNewTerminal}
                             />
                           </div>

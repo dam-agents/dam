@@ -19,12 +19,6 @@ import {
   useSkillsState,
 } from "../../agents/api/skills.js";
 import { useRootDriver } from "../../agents/hooks/use-root-driver.js";
-import { useBudgetReserved } from "../../budgets/api/queries.js";
-import {
-  formatSizeLabel,
-  sizeInMi,
-  slotUnitOf,
-} from "../../budgets/lib/slots.js";
 import {
   useAppConnections,
   useConnectionTemplates,
@@ -105,12 +99,7 @@ export function useSectionSummaries(agent: AgentView | null): {
     agent?.id ?? null,
   );
 
-  const { data: budget } = useBudgetReserved();
-  const setup = agent?.vm
-    ? "Editor, CLI and model"
-    : agent && budget
-      ? formatSizeLabel(sizeInMi(agent.size), slotUnitOf(budget))
-      : undefined;
+  const setup = "Manage this agent";
 
   const { data: currentPreset } = useCurrentPreset(agent?.id ?? null);
   const network = currentPreset ? PRESET_SUMMARY[currentPreset] : undefined;

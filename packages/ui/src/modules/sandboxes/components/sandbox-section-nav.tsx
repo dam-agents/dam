@@ -17,7 +17,7 @@ export const SECTIONS: SectionEntry[] = [
   {
     section: "setup",
     title: "General",
-    description: "Ways to use this agent, its settings, and managing it.",
+    description: "Use and manage this agent.",
   },
   {
     section: "providers",

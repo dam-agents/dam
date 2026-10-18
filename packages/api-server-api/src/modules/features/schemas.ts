@@ -9,6 +9,7 @@ export const featureIdSchema = z.enum([
   "chat-forms",
   "custom-avatars",
   "platform-provider",
+  "new-layout",
 ]);
 
 export const featureModeSchema = z.enum(["off", "experimental", "on"]);

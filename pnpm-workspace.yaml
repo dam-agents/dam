@@ -42,6 +42,7 @@ trustPolicyExclude:
 allowBuilds:
   '@carbon/icon-helpers': false
   '@carbon/icons-react': false
+  '@carbon/pictograms-react': false
   '@google/genai': true
   '@ibm/plex': false
   esbuild: true
