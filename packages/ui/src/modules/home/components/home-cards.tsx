@@ -1,8 +1,8 @@
 import { NextOutline, WarningAltFilled } from "@carbon/icons-react";
 import {
   CalendarEvent,
+  Cardboard,
   ConnectApplications,
-  DataStorage,
   GrowthMindset,
   KeystoresExternal,
   MachineLearning_03,
@@ -463,7 +463,7 @@ export function ArtifactsCard() {
   return (
     <Card
       title="Artifacts"
-      pictogram={<DataStorage size={48} aria-hidden />}
+      pictogram={<Cardboard size={48} aria-hidden />}
       onOpen={() => openSidePanel("artifacts")}
     >
       <div className="flex gap-8">
