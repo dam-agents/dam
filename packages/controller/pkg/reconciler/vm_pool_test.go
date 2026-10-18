@@ -9,10 +9,13 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	dynfake "k8s.io/client-go/dynamic/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
@@ -37,6 +40,55 @@ func applyUserBudget(t *testing.T, r *AgentReconciler, owner string, spec apiv1.
 	}
 	_, err = budgets.Create(context.Background(), u, metav1.CreateOptions{})
 	require.NoError(t, err)
+}
+
+// TEST_SCENARIO: a controller that has never read an owner's UserBudget — a cold start, or an API server that will not serve them — knows nothing about that owner's pool, and the install's default is smaller than some owners' pools and larger than others. Sized from that default, a claim grows to it and can never shrink again, and a memory limit falls under the machines already running on it and reclaims their owner's idle agents. Every decision that sets a size is refused and retried until the budget can be read; a pool read once is kept when a later read fails, so a moment of trouble does not undo it.
+func TestAnUnreadUserBudgetRefusesEverySizeItCannotUndo(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "8Gi")
+	applyUserBudget(t, r, testOwner, apiv1.UserBudgetSpec{
+		Storage: new(resource.MustParse("12Gi")),
+		Memory:  new(resource.MustParse("4Gi")),
+	})
+	unread := true
+	r.dynamic.(*dynfake.FakeDynamicClient).PrependReactor("get", "userbudgets", func(k8stesting.Action) (bool, runtime.Object, error) {
+		if !unread {
+			return false, nil, nil
+		}
+		return true, nil, k8serrors.NewServiceUnavailable("the API server is not serving UserBudgets")
+	})
+
+	_, err := r.runnerStorageCeiling(ctx, testOwner)
+	require.ErrorIs(t, err, errVMPoolUnread)
+
+	require.ErrorIs(t, r.applyRunnerPVC(ctx, testOwner), errVMPoolUnread)
+	_, err = r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "a claim was built at the install's 100Gi and can never come down to the owner's 12Gi")
+
+	require.ErrorIs(t, r.applyRunnerDeployment(ctx, testOwner, r.runnerOwnerRef(ctx), true), errVMPoolUnread)
+
+	pod, err := r.client.CoreV1().Pods("test-agents").Get(ctx, r.runnerName(testOwner)+"-abc", metav1.GetOptions{})
+	require.NoError(t, err)
+	_, sized := r.runnerPodWants(ctx, testOwner, pod, runnerDemand{memoryMiB: 2048, vCPUs: 4})
+	assert.False(t, sized, "the runner's memory limit was cut to the install's default under the machines running on it")
+
+	require.Error(t, r.Reconcile(ctx, agent))
+	assert.Zero(t, node.spec(agent.Name).MemoryMiB, "a machine was sized from the install's default and started")
+
+	unread = false
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner), "the claim is built once the budget can be read, rather than refused for good")
+	assert.Equal(t, "12Gi", runnerClaim(t, r))
+
+	r.vmPools.Delete(testOwner)
+	applyUserBudget(t, r, testOwner, apiv1.UserBudgetSpec{Storage: new(resource.MustParse("30Gi"))})
+	r.refreshVMPool(ctx, testOwner)
+	unread = true
+	ceiling, err := r.runnerStorageCeiling(ctx, testOwner)
+	require.NoError(t, err, "a pool read once is kept when a later read fails")
+	assert.Equal(t, "30Gi", ceiling.String())
 }
 
 // TEST_SCENARIO: an owner's UserBudget `storage` is the ceiling of their runner's claim. An owner without one keeps `runner.storage`, and a budget read before the change is read again by refreshVMPool, which the memory pass calls every 30 seconds.
@@ -124,7 +176,9 @@ func TestAUserBudgetMemoryResizesTheRunnerPodInPlace(t *testing.T) {
 	require.NoError(t, r.Reconcile(ctx, agent))
 	limit = runnerPodResources(t, r).Limits[corev1.ResourceMemory]
 	assert.Equal(t, "11Gi", limit.String(), "the limit stops at the measured machine plus headroom and reserve")
-	assert.Equal(t, (4096-512)/2, r.machineMemoryMiB(ctx, testOwner, &agent.Spec))
+	size, err := r.machineMemoryMiB(ctx, testOwner, &agent.Spec)
+	require.NoError(t, err)
+	assert.Equal(t, (4096-512)/2, size)
 }
 
 // TEST_SCENARIO: runners rendered before the roll left their memory out carry a hash that covers the memory limit and request they were rendered with — the install's, even for an owner whose UserBudget already set `memory`. They have the pod the controller renders now in all but the memory the resize sets in place, so they must be recognised from their own template rather than rolled, which would reboot every machine of the owner. A pool below the install's request clamps the rendered request, which must not change the hash either.
@@ -213,7 +267,9 @@ func TestAMachineWokenAfterAPoolChangeIsSizedFromTheNewPool(t *testing.T) {
 	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("24Gi")}}
 	agent.Annotations[annLastActivity] = time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
 	require.NoError(t, r.Reconcile(ctx, agent))
-	assert.Equal(t, (24576-512)/2, r.machineMemoryMiB(ctx, testOwner, &agent.Spec), "the pool was read while the agent slept")
+	size, err := r.machineMemoryMiB(ctx, testOwner, &agent.Spec)
+	require.NoError(t, err)
+	assert.Equal(t, (24576-512)/2, size, "the pool was read while the agent slept")
 
 	applyUserBudget(t, r, testOwner, apiv1.UserBudgetSpec{Memory: new(resource.MustParse("8Gi"))})
 	agent.Annotations[annLastActivity] = time.Now().UTC().Format(time.RFC3339)

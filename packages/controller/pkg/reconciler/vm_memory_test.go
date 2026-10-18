@@ -147,7 +147,9 @@ func TestAHostRunnerMachineTakesItsMemoryFromTheSpec(t *testing.T) {
 	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("12Gi")}}
 	r.config.VM.Runner.HostAddress = "192.168.5.2"
 
-	assert.Equal(t, 3072, r.machineMemoryMiB(context.Background(), testOwner, &agent.Spec), "the host runner's machine was sized from the chart's pod limit")
+	size, err := r.machineMemoryMiB(context.Background(), testOwner, &agent.Spec)
+	require.NoError(t, err)
+	assert.Equal(t, 3072, size, "the host runner's machine was sized from the chart's pod limit")
 }
 
 // TEST_SCENARIO: a new size reaches a running machine only at its next start, so until then the machine may hold more than its new size says. Memory and vCPUs count it at the larger of the size it runs at and the one it will start with, so a shrink never lowers the request or the CPU limit under a guest still running large.

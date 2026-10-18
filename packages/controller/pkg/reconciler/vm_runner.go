@@ -590,10 +590,14 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 	if resources.Limits == nil {
 		resources.Limits = corev1.ResourceList{}
 	}
-	if pool := r.vmPoolOf(ctx, owner).memory; pool != nil {
-		resources.Limits[corev1.ResourceMemory] = *pool
-		if req, ok := resources.Requests[corev1.ResourceMemory]; ok && req.Cmp(*pool) > 0 {
-			resources.Requests[corev1.ResourceMemory] = *pool
+	pool, err := r.vmPoolOf(ctx, owner)
+	if err != nil {
+		return err
+	}
+	if pool.memory != nil {
+		resources.Limits[corev1.ResourceMemory] = *pool.memory
+		if req, ok := resources.Requests[corev1.ResourceMemory]; ok && req.Cmp(*pool.memory) > 0 {
+			resources.Requests[corev1.ResourceMemory] = *pool.memory
 		}
 	}
 	if _, ok := resources.Requests[corev1.ResourceEphemeralStorage]; !ok {
