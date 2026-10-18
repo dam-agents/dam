@@ -4,7 +4,7 @@ import {
   Warning,
   WarningAlt,
 } from "@carbon/icons-react";
-import type { AnimationEvent, ReactNode } from "react";
+import { type AnimationEvent, type ReactNode, useState } from "react";
 
 import {
   AlertDialog,
@@ -59,6 +59,12 @@ export function ConfirmDialog({
   const destructive = kind === "destructive";
   const Icon = icon ?? KIND_ICON[kind];
   const resolvedConfirmLabel = confirmLabel ?? (showCancel ? "Confirm" : "OK");
+  const [wasOpen, setWasOpen] = useState(open);
+  const [opener, setOpener] = useState<HTMLElement | null>(null);
+  if (wasOpen !== open) {
+    setWasOpen(open);
+    if (open) setOpener(document.activeElement as HTMLElement | null);
+  }
 
   function handleAnimationEnd(event: AnimationEvent<HTMLDivElement>) {
     if (!open && event.currentTarget === event.target) onCloseAnimationEnd?.();
@@ -74,6 +80,12 @@ export function ConfirmDialog({
     >
       <AlertDialogContent
         onAnimationEnd={handleAnimationEnd}
+        onCloseAutoFocus={(event) => {
+          if (!opener?.isConnected) return;
+          event.preventDefault();
+          opener.focus();
+          setOpener(null);
+        }}
         onBackdropClick={() => {
           onCancel?.();
           onOpenChange(false);
@@ -112,7 +124,7 @@ export function ConfirmDialog({
           )}
           <AlertDialogAction
             onClick={() => onConfirm()}
-            autoFocus
+            autoFocus={!showCancel}
             className={cn(
               destructive && buttonVariants({ variant: "destructive" }),
             )}

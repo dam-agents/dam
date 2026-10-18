@@ -100,7 +100,8 @@
 
   /* ── z-index ladder — the ordered source of truth for stacking.
      Use the matching z-* utilities below; never raw z numbers.
-     The Sonner toaster manages its own (higher) z-index and sits above z-toast. ── */
+     The Sonner toaster manages its own (higher) z-index and sits above z-toast,
+     except under a modal, where it drops below the backdrop: the modal makes the rest of the page inert, so a toast above it would be a dead control. ── */
   --z-content: 10;
   --z-raised: 20;
   --z-nav: 30;
@@ -109,6 +110,10 @@
   --z-popover: 60;
   --z-tooltip: 70;
   --z-toast: 80;
+}
+
+body:has([role="alertdialog"], [aria-modal="true"]) [data-sonner-toaster] {
+  z-index: calc(var(--z-overlay) - 1);
 }
 
 @utility z-content {

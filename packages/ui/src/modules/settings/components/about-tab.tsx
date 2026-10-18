@@ -31,7 +31,7 @@ export function AboutTab() {
     <div>
       <PageHeader
         title={`About ${name}`}
-        description="Documentation, source code and terms for this installation."
+        description="Find the documentation, source code and terms for this installation."
       />
       <Card className="divide-y divide-border overflow-hidden">
         <a href={DOCS_URL} {...externalLinkProps} className={ROW}>

@@ -1,4 +1,4 @@
-import { Help } from "@carbon/icons-react";
+import { Information } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -98,7 +98,10 @@ export function ComputeUsage({ agents, workingAgentIds }: Props) {
             content="What your running agents reserve, not what they are using. Disable an agent you aren't using to free up compute."
             side="bottom"
           >
-            <Help size={14} className="cursor-help text-muted-foreground/60" />
+            <Information
+              size={14}
+              className="cursor-help text-muted-foreground/60"
+            />
           </Tooltip>
         </span>
       </div>

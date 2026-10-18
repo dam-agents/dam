@@ -1,4 +1,5 @@
 import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionLabel } from "@/components/ui/section-label";
 
@@ -17,7 +18,6 @@ import { UncountedCallsNote } from "../components/uncounted-calls-note.js";
 import {
   HarnessReportsLead,
   readFailureMessage,
-  UsageNotice,
   UsageStaleLabel,
 } from "../components/usage-notice.js";
 import { useMonthlySpend } from "../hooks/use-monthly-spend.js";
@@ -27,7 +27,7 @@ import { totalCostUsd } from "../lib/totals.js";
 
 const PAGE_DESCRIPTION = (
   <span className="block max-w-[460px]">
-    Spend limits, and what your agents spend on models.
+    Set spend limits and see what your agents spend on models.
   </span>
 );
 
@@ -56,7 +56,7 @@ export function UsageView() {
         <MeasuredSpend />
         <OwnSpendLimitCard />
         <HarnessReportsLead />
-        <UsageNotice>{readFailureMessage(true, label)}</UsageNotice>
+        <EmptyState>{readFailureMessage(true, label)}</EmptyState>
       </div>
     );
   }
@@ -83,7 +83,7 @@ export function UsageView() {
 
       {}
       {state === "failed" && (
-        <UsageNotice>{readFailureMessage(false, label)}</UsageNotice>
+        <EmptyState>{readFailureMessage(false, label)}</EmptyState>
       )}
       {state === "loading" && <UsageSkeleton />}
       {state === "ready" && data && (
@@ -98,9 +98,7 @@ export function UsageView() {
           {data.byModel.length === 0 ? (
             <section>
               <SectionLabel spaced>Spend by day</SectionLabel>
-              <UsageNotice>
-                No LLM calls in {monthLabel(shownMonth)}.
-              </UsageNotice>
+              <EmptyState>No LLM calls in {monthLabel(shownMonth)}.</EmptyState>
             </section>
           ) : (
             <>

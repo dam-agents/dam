@@ -11,6 +11,7 @@ import { useStore } from "../../../store.js";
 import { useCreateDefaultAgent } from "../../agents/hooks/use-create-default-agent.js";
 import { useConnectionTemplates } from "../../connections/api/queries.js";
 import { useStarterKits } from "../api/queries.js";
+import { CATEGORY_LABEL } from "../lib/catalog-cards.js";
 import { KitCard, KitFilterBar, useKitFilter } from "./kit-browser.js";
 
 const DEFAULT_KIT = {
@@ -45,7 +46,7 @@ export function BrowseKitsModal() {
       .includes(query.trim().toLowerCase());
 
   return (
-    <Modal size="lg" onClose={onClose}>
+    <Modal size="lg" heightClass="h-[95dvh] md:h-[85vh]" onClose={onClose}>
       <DialogHeader
         title="Browse starter kits"
         subtitle="Pick a starter kit to create your agent from"
@@ -80,9 +81,22 @@ export function BrowseKitsModal() {
               tabs={tabs}
             />
             {shown.length === 0 && !showDefault ? (
-              <p className="py-8 text-sm text-muted-foreground">
-                No starter kits match &quot;{query}&quot;
-              </p>
+              <div className="flex flex-wrap items-center gap-2 py-8 text-sm text-muted-foreground">
+                <p>
+                  No starter kits
+                  {filter !== "all" && ` in ${CATEGORY_LABEL[filter]}`} match
+                  &quot;{query}&quot;
+                </p>
+                {filter !== "all" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setFilter("all")}
+                  >
+                    Show all
+                  </Button>
+                )}
+              </div>
             ) : (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {showDefault && (
@@ -96,7 +110,7 @@ export function BrowseKitsModal() {
                     <h3 className="text-base font-semibold text-foreground">
                       {DEFAULT_KIT.name}
                     </h3>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="flex-1 text-sm text-muted-foreground">
                       {DEFAULT_KIT.text}
                     </p>
                     <div className="flex flex-wrap items-center gap-2">

@@ -161,3 +161,10 @@ export function userRunsOf(items: readonly ThreadItem[]): UserRuns {
   }
   return { runs, inner };
 }
+
+export function setupMessageOf(
+  messages: readonly Message[],
+): string | undefined {
+  const first = messages[0];
+  return first?.role === "user" && !first.notice ? first.id : undefined;
+}

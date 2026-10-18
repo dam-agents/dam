@@ -1,5 +1,7 @@
+import { Add } from "@carbon/icons-react";
 import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { ListSection } from "@/components/ui/list-section";
 import { PageHeader } from "@/components/ui/page-header";
 
@@ -30,16 +32,25 @@ export function ConnectionsView() {
     <div>
       <PageHeader
         title="Connections"
-        description="Connections are the services and credentials your agents can reach."
+        description="Give your agents access to services, without handing them the credentials."
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCatalogOpen(true)}
+            data-testid="open-connection-catalog"
+          >
+            <Add size={16} />
+            New connection
+          </Button>
+        }
       />
 
       <ListSection
         loading={connectionsQ.isPending}
         error={connectionsQ.isError && "Couldn't load connections."}
-        onNew={() => setCatalogOpen(true)}
-        newTestId="open-connection-catalog"
         isEmpty={groups.length === 0 && satellites.length === 0}
-        empty="No connections set up yet."
+        empty="No connections yet. Add one to let your agents reach a service."
       >
         {groups.map((group) => (
           <ConnectionGroup

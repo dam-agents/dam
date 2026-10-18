@@ -88,13 +88,40 @@ describe("an agent's session window", () => {
 
   it("TEST_SCENARIO: More shows while there is more to list, and Less once expanded", () => {
     const n = SIDEBAR_PREVIEW_SESSIONS;
-    const controls = (total: number, expanded: boolean, hasNextPage: boolean) =>
-      sessionListControls({ total, expanded, hasNextPage });
+    const controls = (
+      total: number,
+      expanded: boolean,
+      hasNextPage: boolean,
+      collapsed = n,
+    ) => sessionListControls({ total, collapsed, expanded, hasNextPage });
     expect(controls(n, false, false)).toEqual({ more: false, less: false });
     expect(controls(n, false, true)).toEqual({ more: true, less: false });
     expect(controls(n + 1, false, false)).toEqual({ more: true, less: false });
     expect(controls(n + 1, true, false)).toEqual({ more: false, less: true });
     expect(controls(n + 1, true, true)).toEqual({ more: true, less: true });
+  });
+
+  it("TEST_SCENARIO: an active Session past the first three joins the window without a More that reveals nothing", () => {
+    const n = SIDEBAR_PREVIEW_SESSIONS;
+    const rows = Array.from({ length: n + 1 }, (_, i) => `s${i + 1}`);
+    const collapsed = sidebarSessionWindow(
+      rows,
+      false,
+      (s) => s === `s${n + 1}`,
+    );
+    expect(collapsed).toEqual(rows);
+    const args = { total: rows.length, collapsed: collapsed.length };
+    expect(
+      sessionListControls({ ...args, expanded: false, hasNextPage: false }),
+    ).toEqual({ more: false, less: false });
+    expect(
+      moreClick({
+        ...args,
+        expanded: false,
+        hasNextPage: true,
+        isFetchingNextPage: false,
+      }),
+    ).toEqual({ expand: true, fetchNextPage: true });
   });
 
   it("TEST_SCENARIO: one click on More fetches at most one page", () => {
@@ -104,7 +131,14 @@ describe("an agent's session window", () => {
       expanded: boolean,
       hasNextPage: boolean,
       isFetchingNextPage = false,
-    ) => moreClick({ total, expanded, hasNextPage, isFetchingNextPage });
+    ) =>
+      moreClick({
+        total,
+        collapsed: n,
+        expanded,
+        hasNextPage,
+        isFetchingNextPage,
+      });
     expect(click(n + 1, false, true)).toEqual({
       expand: true,
       fetchNextPage: false,

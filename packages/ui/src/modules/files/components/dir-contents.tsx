@@ -1,7 +1,7 @@
 import type { DirEntry } from "agent-runtime-api";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
-import { TREE_GUIDE, treeGuideX } from "@/components/ui/tree-guide";
+import { TREE_GUIDE, treeGuideX, treeIndent } from "@/components/ui/tree-guide";
 
 import { useStore } from "../../../store.js";
 import { useDirSnapshot } from "../api/queries.js";
@@ -19,21 +19,52 @@ export function DirContents({ path, depth }: DirContentsProps) {
   const { data: snapshot } = useDirSnapshot(panel.agentId, path);
   const showHiddenFiles = useStore((s) => s.showHiddenFiles);
 
-  if (!snapshot || !snapshot.ok) return null;
+  if (!snapshot) return null;
+  if (!snapshot.ok)
+    return (
+      <PlaceholderRow depth={depth} tone="error">
+        {snapshot.error === "forbidden"
+          ? "Couldn't open this folder: permission denied"
+          : "This folder no longer exists"}
+      </PlaceholderRow>
+    );
+
+  const shown = snapshot.entries.filter(
+    (entry) => showHiddenFiles || !entry.name.startsWith("."),
+  );
+  if (shown.length === 0 && depth > 0 && panel.pendingNew?.dir !== path)
+    return <PlaceholderRow depth={depth}>Empty folder</PlaceholderRow>;
 
   return (
     <>
-      {snapshot.entries
-        .filter((entry) => showHiddenFiles || !entry.name.startsWith("."))
-        .map((entry) => (
-          <DirEntryRow
-            key={entry.name}
-            entry={entry}
-            parentPath={path}
-            depth={depth}
-          />
-        ))}
+      {shown.map((entry) => (
+        <DirEntryRow
+          key={entry.name}
+          entry={entry}
+          parentPath={path}
+          depth={depth}
+        />
+      ))}
     </>
+  );
+}
+
+function PlaceholderRow({
+  depth,
+  tone,
+  children,
+}: {
+  depth: number;
+  tone?: "error";
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={`flex h-8 items-center text-xs italic ${tone === "error" ? "text-destructive" : "text-muted-foreground"}`}
+      style={{ paddingLeft: treeIndent(depth) + 22, paddingRight: 12 }}
+    >
+      {children}
+    </div>
   );
 }
 

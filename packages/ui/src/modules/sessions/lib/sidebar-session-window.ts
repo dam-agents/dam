@@ -14,14 +14,16 @@ export function sidebarSessionWindow<T>(
 
 export function sessionListControls({
   total,
+  collapsed,
   expanded,
   hasNextPage,
 }: {
   total: number;
+  collapsed: number;
   expanded: boolean;
   hasNextPage: boolean;
 }): { more: boolean; less: boolean } {
-  const overflow = total > SIDEBAR_PREVIEW_SESSIONS;
+  const overflow = total > collapsed;
   return {
     more: expanded ? hasNextPage : overflow || hasNextPage,
     less: expanded && (overflow || hasNextPage),
@@ -30,11 +32,13 @@ export function sessionListControls({
 
 export function moreClick({
   total,
+  collapsed,
   expanded,
   hasNextPage,
   isFetchingNextPage,
 }: {
   total: number;
+  collapsed: number;
   expanded: boolean;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
@@ -42,9 +46,7 @@ export function moreClick({
   return {
     expand: !expanded,
     fetchNextPage:
-      hasNextPage &&
-      !isFetchingNextPage &&
-      (expanded || total <= SIDEBAR_PREVIEW_SESSIONS),
+      hasNextPage && !isFetchingNextPage && (expanded || total <= collapsed),
   };
 }
 

@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-10-15
+Last verified: 2026-10-17
 
 ## Overview
 
@@ -114,7 +114,7 @@ flowchart LR
   **Whether the install can run one is a capability, not a preference, and it decides visibility**: a `vm` kit is left out of the listing and reads as absent on a read when `virtualization.enabled` is off, for the same reason a disabled built-in kit never reaches the UI — a catalog that offers what this install cannot run wastes the user's time and ends in a parked agent.
   The **per-user** flag is treated the opposite way.
   `vm-sandboxes` is progressive disclosure rather than authorization ([features](features.md)), so it hides nothing here and shows a **New sandbox runtime** badge instead: the kit's own declaration is what makes the agent a microVM, the user is told which runtime they are getting before they create it, and the same kit is on offer to everyone on the install rather than appearing and disappearing with a settings toggle.
-  A kit that names no backend is created as a container, even for an owner who opted into the new runtime, unless the install pins the new runtime on: that pin is the install's choice, not a preference, and makes every create a microVM ([features](features.md)), so every kit then carries the badge.
+  A kit that names no backend gets its owner's default runtime: a microVM when the owner opted into the new runtime on an install that can run one, or when the install pins the new runtime on, and a container otherwise ([features](features.md)); the kit then carries the badge whenever that default is a microVM.
 - **Kit Egress** — optional `egressPreset` (`none`, `trusted` or `all`, the presets an agent's egress settings offer) and `egressRules`, a list of host rules in the shape a hand-written rule takes (`host`, optional `port`, `method`, `pathPattern`, `verdict`, which defaults to `allow`).
   Apply passes the preset to the create, which seeds from it exactly as when the user picks one; a kit that names none gets the create's default (`trusted`).
   The rules are then written with source `kit`, before anything else the apply queues, so the first session already runs under them.
@@ -139,7 +139,7 @@ flowchart LR
   It is stated in the user-facing vocabulary and nothing else: limits are what an agent's power and its owner's Ceiling are measured in, so a kit never states requests — the controller derives those from the limits.
   Each dimension is independent and a stated one wins over the harness Template's own value, so a kit sizes its workload whether it brings an image or runs on a harness Template; an omitted dimension inherits the Template's, then the install default.
   CPU and memory stay editable on the Agent afterwards like any other Size; disk is fixed at create.
-  A kit on the `vm` backend, or any kit on an install that pins the new runtime on, gets none of it and shows no size: a machine has no CPU, memory or disk size of its own and shares its owner's [memory](vm-memory.md) and [storage](persistence.md) pools.
+  A kit on the `vm` backend, or a kit that names no backend whose default runtime is a microVM, gets none of it and shows no size: a machine has no CPU, memory or disk size of its own and shares its owner's [memory](vm-memory.md) and [storage](persistence.md) pools.
   This is where the sizing the `preconfigured` Templates used to carry now lives.
 - **Seed** — optional `seed: { url, ref, into }`: the kit's definition repository.
   The catalog refresh resolves the ref to a commit and records it beside the declared ref (`seed.commit`), and apply hands both to the agent create as its workspace seed, so the `workspace-seed` event brings the repository in at that commit **on that branch**, tracking `origin/<ref>` — the same rail a plain create's `gitRepo` rides — ahead of `install` and the initialization session.
@@ -202,7 +202,7 @@ Apply — the `create` procedure of the starter-kits router, since tRPC reserves
    This step waits for the Agent to be reachable, like every skill install, so a kit with external skills returns once the Agent is up; its verdicts ride back on the apply result, and a failure here is reported, never compensated by deleting the Agent — the requirements that justify a refusal were all checked before create.
    The apply is recorded in the security log last, once the outcome including the skill verdicts is known, and recorded once more as usage activity naming the kit it applied, so which kits people take up and what they do with the Agent afterwards are answerable from one log ([usage tracking](usage-tracking.md)).
 
-The catalog lives in one place, the **Browse Kits modal**, opened from the sidebar's **Starter kits** entry and from Home's browse button.
+The catalog lives in one place, the **Browse Kits modal**, opened from the sidebar's **Starter kits** entry, from the "Create agent from starter kit" button beside the sidebar's create button, and from Home's browse button.
 Its first card, **Default**, is no kit: it creates a plain agent at once.
 A kit pick opens the **kit modal** at the kit's own URL over Home, which shows what the kit brings and takes the only input apply needs — the agent's name and avatar (generated, editable), the required connections, the schedules to adjust or skip, and the Slack channel — then applies without a further page.
 Every kit shows at one size.
@@ -210,6 +210,7 @@ Neither sits behind a flag: kits are how an agent is set up here, so the catalog
 The widget renders nothing when the install has no catalog.
 
 **Kit Onboarding** is the briefing the onboarding event carries — **visible** in the session where the knowledge-base bootstrap is hidden.
+The chat shows it as a collapsed "Setup instructions" card at the top of the initialization session rather than as a message the user wrote: the platform composed it, and the user opens it to read what the agent was told.
 That one sends a bare slash command, a mechanical trigger with nothing to read; a kit sends a briefing the user needs, because the agent's first act is to ask them for what only they can supply, and the answers only make sense against what the platform already set up.
 The prompt is **platform-composed from the kit and the Agent's state, read when the turn is composed** rather than snapshotted at create: the definition repository and the commit it is checked out at, each connection requirement with whether it is required or suggested *and whether it is actually connected right now*, the Agent's real schedules and which are disabled, the bound channel — then "follow `ONBOARDING.md`", or the kit's own `onboarding.prompt` as the instruction.
 What onboarding asks for is `ONBOARDING.md`'s to say; the platform declares nothing about it.

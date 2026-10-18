@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs } from "@/components/ui/tabs";
 
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
-import { useVmForced } from "../../features/hooks/use-vm-forced.js";
+import { useKitDefaultVm } from "../hooks/use-kit-default-vm.js";
 import {
   categoriesPresent,
   CATEGORY_LABEL,
@@ -29,10 +29,10 @@ function KitBadges({
   templates: readonly ConnectionTemplateView[];
   templateById: ReadonlyMap<string, ConnectionTemplateView>;
 }) {
-  const vmForced = useVmForced();
+  const defaultVm = useKitDefaultVm();
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {kitBadges(kit, templates, templateById, vmForced).map((badge) => (
+      {kitBadges(kit, templates, templateById, defaultVm).map((badge) => (
         <Badge key={badge.key} variant="muted" size="sm">
           <span className="flex items-center gap-1.5">
             {badge.iconSlug && (
@@ -149,6 +149,7 @@ export function KitFilterBar({
             variant="ghost"
             size="icon-xs"
             aria-label="Clear search"
+            tooltip="Clear search"
             onClick={() => {
               onQueryChange("");
               inputRef.current?.focus();
@@ -167,7 +168,7 @@ export function KitFilterBar({
           variant="pill"
           size="sm"
           ariaLabel="Filter kits by category"
-          className="mb-5"
+          className="mb-5 flex-wrap"
         />
       )}
     </>

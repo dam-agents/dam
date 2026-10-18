@@ -1,10 +1,17 @@
 import { FolderAdd, Upload } from "@carbon/icons-react";
 import type { ArtifactFolder, LibraryArtifact } from "api-server-api";
-import { type CSSProperties, type Ref, useMemo, useState } from "react";
+import {
+  type CSSProperties,
+  type Ref,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { match } from "ts-pattern";
 
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Tabs } from "@/components/ui/tabs";
 import { formatBytes } from "@/lib/format-size";
@@ -30,6 +37,7 @@ import { SidebarFolderGroup } from "./sidebar-folder-group.js";
 import { UploadArtifactDialog } from "./upload-artifact-dialog.js";
 
 const ALL_SCOPE = "__all__";
+const UPLOAD_HIGHLIGHT_MS = 3000;
 
 type ArtifactScope = "agent" | "all";
 
@@ -108,6 +116,12 @@ export function ChatArtifactsPanel({
     useState<LibraryArtifact | null>(null);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!highlightId) return;
+    const timer = setTimeout(() => setHighlightId(null), UPLOAD_HIGHLIGHT_MS);
+    return () => clearTimeout(timer);
+  }, [highlightId]);
   const [editFolder, setEditFolder] = useState<ArtifactFolder | null>(null);
   const [deleteFolderTarget, setDeleteFolderTarget] =
     useState<ArtifactFolder | null>(null);
@@ -119,6 +133,7 @@ export function ChatArtifactsPanel({
       artifact={artifact}
       depth={depth}
       active={artifact.id === openArtifactId}
+      highlighted={artifact.id === highlightId}
       onClick={() => void openRow(artifact.id)}
       drag={dropCallbacks}
       showCreator={scopeAgentId === null}
@@ -185,27 +200,31 @@ export function ChatArtifactsPanel({
         />
       </div>
       {failed ? (
-        <p className="px-4 py-5 text-xs text-muted-foreground">
-          Couldn't load artifacts.{" "}
-          <button
-            type="button"
-            className="underline hover:text-foreground"
-            onClick={() => {
-              void artifactsQuery.refetch();
-              void foldersQuery.refetch();
-            }}
-          >
-            Retry
-          </button>
-        </p>
+        <EmptyState
+          bordered={false}
+          action={
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void artifactsQuery.refetch();
+                void foldersQuery.refetch();
+              }}
+            >
+              Retry
+            </Button>
+          }
+        >
+          Couldn't load artifacts.
+        </EmptyState>
       ) : loading || groups.length === 0 ? (
-        <p className="px-4 py-5 text-xs text-muted-foreground">
+        <EmptyState bordered={false}>
           {loading
             ? "Loading…"
             : term
               ? "No matching artifacts."
               : "No artifacts yet."}
-        </p>
+        </EmptyState>
       ) : (
         <div
           {...rootDrop}
@@ -251,8 +270,8 @@ export function ChatArtifactsPanel({
           })}
         </div>
       )}
-      {!loading && shown.length > 0 && (
-        <p className="shrink-0 border-t border-border px-4 py-2 text-xs text-muted-foreground">
+      {!loading && !failed && artifacts.length > 0 && (
+        <p className="mt-auto shrink-0 border-t border-border px-4 py-2 text-xs text-muted-foreground">
           {shown.length} artifact{shown.length === 1 ? "" : "s"} ·{" "}
           {formatBytes(shownBytes)} stored
         </p>
@@ -291,6 +310,17 @@ export function ChatArtifactsPanel({
         <UploadArtifactDialog
           folders={folders}
           onClose={() => setUploading(false)}
+          onUploaded={(artifact) => {
+            if (artifact.agentId !== scopeAgentId) setScope("all");
+            setSearch("");
+            if (artifact.folderId)
+              setFolderCollapsed(
+                artifact.agentId === scopeAgentId ? collapseScope : ALL_SCOPE,
+                artifact.folderId,
+                false,
+              );
+            setHighlightId(artifact.id);
+          }}
         />
       )}
       <ConfirmDialog

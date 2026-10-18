@@ -62,8 +62,17 @@ export function formatSpendOf(
   return `${bareSpend(spentMicros, unit)} of ${bareSpend(limitMicros, unit)}${UNIT_SUFFIXES[unit]}`;
 }
 
-export function formatDailyAmount(micros: number, unit: SpendUnit): string {
-  return `${formatSpend(micros, unit)} a day`;
+export function spendLimitSentence(
+  spentMicros: number,
+  amountMicros: number | null,
+  unit: SpendUnit,
+  subject: string,
+): [before: string, amount: string, after: string] {
+  return [
+    `Spent ${formatSpend(spentMicros, unit)} today of `,
+    amountMicros === null ? "∞" : bareSpend(amountMicros, unit),
+    ` daily limit for ${subject}.`,
+  ];
 }
 
 export function amountText(micros: number): string {
@@ -76,7 +85,7 @@ export function microsToUsd(micros: number): number {
 
 export function localResetTime(resetsAt: string | Date): string {
   return new Date(resetsAt).toLocaleTimeString([], {
-    hour: "2-digit",
+    hour: "numeric",
     minute: "2-digit",
   });
 }

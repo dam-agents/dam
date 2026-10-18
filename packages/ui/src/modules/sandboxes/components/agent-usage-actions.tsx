@@ -106,7 +106,7 @@ export function AgentUsageActions({
       icon: <Code />,
       kind: "expand",
       title: "VS Code and Zed",
-      description: "Work in the agent's sandbox from your own editor.",
+      description: "Work in the agent's workspace from your own editor.",
       content: (
         <div className="flex flex-col gap-2 text-sm text-muted-foreground">
           <p>
@@ -115,7 +115,7 @@ export function AgentUsageActions({
             remote <DocLink href={VS_CODE_REMOTE_URL}>VS Code</DocLink> (or{" "}
             <DocLink href={ZED_REMOTE_URL}>Zed</DocLink> with{" "}
             <code className="font-mono">-x zed</code>) session and work directly
-            in the agent's sandbox:
+            in the agent's workspace:
           </p>
           <CopyableCommand
             command={`${brand.short} ssh connect -x code ${ref}`}

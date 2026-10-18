@@ -35,6 +35,7 @@ export function InlineNameRow({
       )}
       <InlineNameInput
         initial={initial}
+        selectExtension={kind === "dir"}
         placeholder={placeholder}
         onCommit={onCommit}
         onCancel={onCancel}
@@ -45,6 +46,7 @@ export function InlineNameRow({
 
 interface InputProps {
   initial: string;
+  selectExtension: boolean;
   placeholder?: string;
   onCommit: (next: string) => void;
   onCancel: () => void;
@@ -52,6 +54,7 @@ interface InputProps {
 
 function InlineNameInput({
   initial,
+  selectExtension,
   placeholder,
   onCommit,
   onCancel,
@@ -69,14 +72,16 @@ function InlineNameInput({
     const tick = () => {
       if (document.activeElement !== el) {
         el.focus();
-        el.select();
+        const dot = el.value.lastIndexOf(".");
+        if (selectExtension || dot <= 0) el.select();
+        else el.setSelectionRange(0, dot);
       }
       if (++ticks < 30) raf = requestAnimationFrame(tick);
       else grabbingRef.current = false;
     };
     tick();
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [selectExtension]);
 
   const commit = () => {
     if (committedRef.current) return;

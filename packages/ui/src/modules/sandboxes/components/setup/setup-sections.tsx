@@ -4,6 +4,7 @@ import { Switch } from "@/components/ui/switch";
 import { useStore } from "../../../../store.js";
 import type { AgentView } from "../../../../types.js";
 import { useUpdateAgent } from "../../../agents/api/mutations.js";
+import { GATEWAY_RESTART_TITLE } from "../../../egress-rules/gateway-restart.js";
 
 export function ConnectionAddressingSection({ agent }: { agent: AgentView }) {
   const showConfirm = useStore((s) => s.showConfirm);
@@ -16,9 +17,9 @@ export function ConnectionAddressingSection({ agent }: { agent: AgentView }) {
   const onChange = async (next: boolean) => {
     if (
       await showConfirm(
-        "This restarts the agent's gateway to change how it injects credentials — requests in flight through it fail.",
-        "Restart gateway?",
-        { confirmLabel: "Change & restart" },
+        "Network access restarts (~5–15s) to change how credentials are injected. The agent keeps running — its requests in flight fail.",
+        GATEWAY_RESTART_TITLE,
+        { confirmLabel: "Change and restart" },
       )
     )
       update.mutate({ id: agent.id, requireConnectionAddress: next });

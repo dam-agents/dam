@@ -332,7 +332,7 @@ describe("session pair model choices", () => {
         onConnectProviders: state.connectProviders,
       }),
     );
-    expect(html).toContain("</span>IBM</button>");
+    expect(html).toContain(">IBM</span></button>");
     expect(html).toContain("Loading models…");
     expect(html).not.toContain("Configure");
     expect(html).not.toContain("Connect an LLM provider");
@@ -384,7 +384,7 @@ describe("session pair model choices", () => {
         onConnectProviders: state.connectProviders,
       }),
     );
-    expect(html).toContain("</span>glm (Curve)</button>");
+    expect(html).toContain(">glm (Curve)</span></button>");
   });
 
   it("warns before the agent answers when no provider is connected", () => {

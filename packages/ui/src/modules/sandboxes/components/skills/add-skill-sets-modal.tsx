@@ -106,6 +106,7 @@ function SetRow({
       ) : (
         <RemoveButton
           label={`Delete ${set.name}`}
+          tooltip="Delete"
           onClick={() => setConfirming(true)}
         />
       )}

@@ -1,4 +1,4 @@
-import { TextCreation, Upload } from "@carbon/icons-react";
+import { Edit, Upload } from "@carbon/icons-react";
 import { useRef, useState } from "react";
 
 import { DialogActions, DialogBody } from "@/components/modal";
@@ -202,7 +202,7 @@ function StagedSkillRow({
         onClick={onStartRename}
         className="shrink-0 text-muted-foreground"
       >
-        <TextCreation size={16} />
+        <Edit size={16} />
       </Button>
       <RemoveButton label="Remove skill" onClick={onRemove} />
     </div>

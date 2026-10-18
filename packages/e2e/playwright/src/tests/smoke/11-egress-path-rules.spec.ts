@@ -41,7 +41,7 @@ test("path-scoped HTTPS rules are enforced and approvals stay narrow", async ({
     await dialog.getByLabel("Path").fill("/status/*");
     await dialog.getByLabel("Verdict").selectOption("allow");
     await dialog.getByRole("button", { name: "Add rule" }).click();
-    await page.getByRole("button", { name: "Add & restart" }).click();
+    await page.getByRole("button", { name: "Add and restart" }).click();
     await expect
       .poll(
         async () =>
@@ -74,7 +74,7 @@ test("path-scoped HTTPS rules are enforced and approvals stay narrow", async ({
       .filter({ hasText: `GET ${host}/get` });
     await expect(card).toBeVisible({ timeout: 30_000 });
     await card.getByRole("button", { name: "More approval actions" }).click();
-    await page.getByRole("menuitem", { name: "Allow permanently" }).click();
+    await page.getByRole("menuitem", { name: "Always allow…" }).click();
   });
 
   await test.step("the approval unlocks exactly the approved path", async () => {

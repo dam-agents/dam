@@ -19,10 +19,10 @@ const render = (path: string) =>
 
 describe("FileRowMenuItems", () => {
   it("offers Edit for an ordinary file", () => {
-    expect(render("work/AGENTS.md")).toContain("<li>Edit</li>");
+    expect(render("work/AGENTS.md")).toContain(">Edit</li>");
   });
 
   it("does not offer Edit for the root AGENTS.md", () => {
-    expect(render("AGENTS.md")).not.toContain("<li>Edit</li>");
+    expect(render("AGENTS.md")).not.toContain(">Edit</li>");
   });
 });

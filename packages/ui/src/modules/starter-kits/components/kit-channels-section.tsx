@@ -18,7 +18,7 @@ const CHANNELS = [
   },
   {
     type: "telegram" as const,
-    title: "Telegram Chat",
+    title: "Telegram chat",
     blurb: "Your team can interact with the agent in a Telegram group or DM.",
   },
 ];
@@ -109,8 +109,8 @@ export function KitChannelsSection({
 
               {channel.type === "telegram" && (
                 <p className="mt-2 pl-7 text-xs text-muted-foreground">
-                  Bound in chat with /platform bind once the agent is running —
-                  no form can do it.
+                  Once the agent is running, send <code>/bind</code> to the bot
+                  in the Telegram chat to connect it.
                 </p>
               )}
             </li>

@@ -1,4 +1,10 @@
-import { Download, Edit, Launch, NewTab, Share } from "@carbon/icons-react";
+import {
+  AddComment,
+  Download,
+  Launch,
+  RequestQuote,
+  Share,
+} from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
@@ -26,7 +32,7 @@ export function ArtifactBarActions({
           tooltip="Edit"
           onClick={onEdit}
         >
-          <Edit size={16} />
+          <RequestQuote size={16} />
         </Button>
       )}
       <Button
@@ -68,7 +74,7 @@ export function ArtifactBarActions({
           tooltip="Discuss with agent"
           onClick={onStartSession}
         >
-          <NewTab size={16} />
+          <AddComment size={16} />
         </Button>
       )}
     </>

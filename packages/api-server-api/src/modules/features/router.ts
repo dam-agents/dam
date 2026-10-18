@@ -12,6 +12,7 @@ export const featuresRouter = t.router({
     virtualization: ctx.virtualizationEnabled,
     vmForced: ctx.vmForced,
     features: ctx.featureModes,
+    telemetryBackend: ctx.telemetryBackend,
   })),
 
   setFlag: browserOnlyProcedure

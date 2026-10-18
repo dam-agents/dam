@@ -7,7 +7,7 @@ export function CopyableCommand({ command }: { command: string }) {
   return (
     <div>
       <div className="flex items-center gap-2 rounded-lg border border-border bg-muted p-2">
-        <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-sm text-foreground">
+        <code className="min-w-0 flex-1 break-all font-mono text-sm text-foreground">
           <span className="select-none text-muted-foreground">$ </span>
           {command}
         </code>

@@ -27,6 +27,7 @@ import {
 import { useStore } from "../../../store.js";
 import { useBrowserControl } from "../hooks/use-browser-control.js";
 import { addressUrl } from "../lib/address.js";
+import { browserLinkLabel } from "../lib/browser-link.js";
 import { showsTabBar } from "../lib/tabs.js";
 import { BrowserTabBar } from "./browser-tab-bar.js";
 import { StreamView } from "./stream-view.js";
@@ -61,7 +62,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
   useEffect(() => {
     if (editing) addressRef.current?.select();
   }, [editing]);
-  const showsTitle = !editing && stream.page.title !== "";
+  const showsHost = !editing && shownUrl !== "";
 
   const { navigate } = stream;
   useEffect(() => {
@@ -100,6 +101,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
           variant="ghost"
           size="icon-sm"
           aria-label="Back"
+          tooltip="Back"
           disabled={!stream.page.canGoBack}
           onClick={stream.back}
         >
@@ -109,6 +111,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
           variant="ghost"
           size="icon-sm"
           aria-label="Forward"
+          tooltip="Forward"
           disabled={!stream.page.canGoForward}
           onClick={stream.forward}
         >
@@ -117,7 +120,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
         <form onSubmit={submit} className="relative min-w-0 flex-1">
           <Input
             ref={addressRef}
-            value={showsTitle ? stream.page.title : address}
+            value={showsHost ? browserLinkLabel(shownUrl) : address}
             onChange={(e) => setAddress(e.target.value)}
             onFocus={() => setEditing(true)}
             onBlur={() => setEditing(false)}
@@ -127,7 +130,10 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
               e.currentTarget.blur();
             }}
             placeholder="Search or enter address"
-            title={shownUrl || undefined}
+            title={
+              [stream.page.title, shownUrl].filter(Boolean).join("\n") ||
+              undefined
+            }
             type="text"
             name="browser-address"
             autoComplete="off"
@@ -140,7 +146,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
             aria-label="Address in the agent's browser"
             className={cn(
               "h-8 pr-8 text-xs",
-              showsTitle ? "truncate text-center" : "font-mono",
+              showsHost ? "truncate" : "font-mono",
             )}
           />
           <Button
@@ -149,6 +155,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
             type="button"
             className="absolute top-1/2 right-1 -translate-y-1/2"
             aria-label={stream.page.loading ? "Stop loading" : "Reload"}
+            tooltip={stream.page.loading ? "Stop loading" : "Reload"}
             onClick={stream.page.loading ? stream.stop : stream.reload}
           >
             {stream.page.loading ? <Close size={14} /> : <Renew size={14} />}
