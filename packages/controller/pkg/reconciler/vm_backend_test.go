@@ -55,8 +55,11 @@ type fakeNode struct {
 	version  uint64
 	waits    int
 	release  vmrunner.RunnerRelease
-	usage    vmrunner.RunnerUsage
-	onPut    func(vmrunner.MachineSpec)
+	// UNIT_BOUNDARY_DESCRIPTION: every release the controller named over the machine API, in order. A named release becomes the reported target, as the loader reports it once it reads the name.
+	named  []string
+	onName func()
+	usage  vmrunner.RunnerUsage
+	onPut  func(vmrunner.MachineSpec)
 	// UNIT_BOUNDARY_DESCRIPTION: every ensure is refused with a 500, as a runner release that runs but cannot manage machines refuses them.
 	refusesEnsures bool
 	// UNIT_BOUNDARY_DESCRIPTION: a stop answers stopping, as the real runner's does, and the machine stays so until a test sets it stopped. Without it a stop takes effect at once.
@@ -75,6 +78,19 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 		}
 		n.mu.Lock()
 		defer n.mu.Unlock()
+		if r.URL.Path == "/release" && r.Method == http.MethodPost {
+			var named vmrunner.RunnerReleaseName
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&named))
+			n.named = append(n.named, named.Release)
+			if n.release.Target != named.Release && n.release.Running != named.Release {
+				n.release.Target = named.Release
+			}
+			if n.onName != nil {
+				n.onName()
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if r.URL.Path == "/release" {
 			require.NoError(t, json.NewEncoder(w).Encode(n.release))
 			return
@@ -286,6 +302,7 @@ func TestAnUnschedulableRunnerSaysWhyOnTheAgent(t *testing.T) {
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512, HeadroomMiB: 256, MachineCPUs: 4,
 		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi",
+		ReleaseHostPath: "/var/lib/platform-runner-releases",
 	}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
 
@@ -330,6 +347,7 @@ func TestARunnerWaitingForItsNewVolumeIsStillStarting(t *testing.T) {
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512, HeadroomMiB: 256, MachineCPUs: 4,
 		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi",
+		ReleaseHostPath: "/var/lib/platform-runner-releases",
 	}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
 
@@ -413,6 +431,7 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512, HeadroomMiB: 256, MachineCPUs: 4,
 		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi",
+		ReleaseHostPath: "/var/lib/platform-runner-releases",
 	}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
 	requeued := &requeueLog{}

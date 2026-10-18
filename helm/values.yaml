@@ -330,8 +330,9 @@ virtualization:
     # owner's machines; an Agent changing its ask restarts only its own.
     nestedVirtualization: false
     # Machines are processes of their runner, so any change to the runner pod
-    # — a new `image`, or a controller release that renders the pod
-    # differently — reboots every machine that owner has. The controller rolls
+    # — a controller release that renders the pod differently, or a runner
+    # image the pod's loader cannot take in place — reboots every machine
+    # that owner has. The controller rolls
     # such a change across owners rather than all at once: at most
     # `maxConcurrent` runners are mid-roll at a time, and a runner stays
     # mid-roll until its new pod is ready and every machine that was ready
@@ -346,11 +347,12 @@ virtualization:
     # other owners roll meanwhile. `idleWait` bounds that wait; past it, the
     # runner rolls even with an agent busy. It outlasts a multi-hour kept job
     # and only stops an owner who is never idle from missing every release.
-    # With `releaseHostPath` set, a new runner image is handed to each pod in
-    # place instead, and each hand-off takes a place in the same width until
-    # the runner runs the release and its machines answer again; a hand-off
-    # that fails, sees an ensure refused, or outlasts `settleTimeout` halts
-    # the release.
+    # A new runner image is handed to each pod in place instead, and each
+    # hand-off takes a place in the same width until the runner runs the
+    # release and its machines answer again; a hand-off that fails, sees an
+    # ensure refused, or outlasts `settleTimeout` halts the release. Time
+    # spent waiting for the node's stager to stage the release does not
+    # count. The controller's sweep follows that many hand-offs at once.
     rollout:
       maxConcurrent: 1
       settleTimeout: 10m
@@ -364,24 +366,23 @@ virtualization:
     imageArchiveHostPath: ""
     # A directory on each node where a stager DaemonSet copies the runner
     # release this chart's runner image carries: the runner and the two guest
-    # binaries it hands every machine. Set, a runner pod keeps the image it was
-    # created with, and a new runner image reaches it without a restart: the
-    # pod's loader drains the old runner, starts the new one from this
-    # directory, and the new runner adopts every machine still running, so no
-    # machine reboots. A release built against another VM runtime (a new
-    # smolvm, libkrun or crane) brings its runtime along: machines already
-    # running keep the runtime they booted, and machines started after the
-    # hand-off boot the new one. Only a release that cannot load in the pod
-    # (a newer base image's libc) still rolls the pods, through `rollout`, as
-    # every runner image does when this is empty. The stager is the only
-    # writer; runners mount it read-only. On OpenShift it needs `scc`, as
+    # binaries it hands every machine. Required with runner pods. A runner
+    # pod keeps the image it was created with, and a new runner image reaches
+    # it without a restart: the controller names the release over the
+    # runner's machine API, the pod's loader drains the old runner, starts
+    # the new one from this directory, and the new runner adopts every
+    # machine still running, so no machine reboots. A release built against
+    # another VM runtime (a new smolvm, libkrun or crane) brings its runtime
+    # along: machines already running keep the runtime they booted, and
+    # machines started after the hand-off boot the new one. Only a release
+    # that cannot load in the pod (a newer base image's libc) still rolls the
+    # pods, through `rollout`. The stager is the only writer; runners mount
+    # it read-only. Each install stages into its own subdirectory, named
+    # after `agentNamespace`, because every stager keeps only the newest few
+    # releases in its directory. On OpenShift it needs `scc`, as
     # `imageCache.hostPath` does: the stager labels the directory for
     # containers, as spc_t, so the confined runners can read it.
-    releaseHostPath: ""
-    # Roll the pods for every release built against another VM runtime, rather
-    # than letting a new runtime manage machines an older one started. The
-    # switch back if a runtime turns out not to.
-    releaseSameRuntimeOnly: false
+    releaseHostPath: /var/lib/platform-vm-runner-releases
     # How smolvm checks every VMM's syscalls, from after its device setup,
     # against the allowlist a running microVM needs. `audit` logs a call
     # outside it as a kernel audit record (`type=1326`, in the node's audit

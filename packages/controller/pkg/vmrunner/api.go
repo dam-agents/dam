@@ -144,6 +144,11 @@ type RunnerRelease struct {
 	Message string `json:"message,omitempty"`
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the release the controller names for the pod's loader to run: the runner image reference the stager staged it under.
+type RunnerReleaseName struct {
+	Release string `json:"release"`
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: how close the runner's own memory is to its limit: the working set the kernel kills the runner by, read off its cgroup, and whether it is past the pressure threshold. Version moves when pressure starts or ends and again while it lasts.
 type RunnerPressure struct {
 	Version       uint64 `json:"version,omitempty"`
@@ -164,7 +169,7 @@ type RunnerUsage struct {
 	} `json:"memory"`
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Unstaged passes once the node's stager copies the release; the other two never pass in that pod, so only a new pod takes the release.
+// UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Unstaged passes once the node's stager copies the release; the other two never pass in that pod, so only a new pod takes the release. Runtime means the release's runner does not load in this pod; the name is older than that meaning.
 const (
 	HeldUnstaged = "unstaged"
 	HeldRuntime  = "runtime"

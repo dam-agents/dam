@@ -13,7 +13,6 @@ import (
 	"maps"
 	"net/netip"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -43,18 +42,14 @@ const (
 	vmRunnerUsageLabel   = "agent-platform.ai/vm-runner-usage"
 	annRunnerClaimKept   = "agent-platform.ai/vm-runner-claim-kept"
 
-	// UNIT_BOUNDARY_DESCRIPTION: where a runner pod's loader finds the runner releases. The node's staged releases are read-only, the release the controller names is a ConfigMap, and the loader's own emptyDir holds its copies of the release it runs and the status the runner serves.
-	vmRunnerReleasesPath    = vmRunnerStatePath + "/releases"
-	vmRunnerReleaseFilePath = "/etc/vm-runner-release"
-	vmRunnerLoaderPath      = "/run/vm-runner-loader"
+	// UNIT_BOUNDARY_DESCRIPTION: where a runner pod's loader finds the runner releases. The node's staged releases are read-only, and the loader's own emptyDir holds the release the controller named over the machine API, its copies of the release it runs, and the status the runner serves.
+	vmRunnerReleasesPath = vmRunnerStatePath + "/releases"
+	vmRunnerLoaderPath   = "/run/vm-runner-loader"
 
 	// UNIT_BOUNDARY_DESCRIPTION: the loader's environment, which contract/loader-env.json holds the loader to.
-	vmRunnerReleasesEnv    = "VM_RUNNER_RELEASES"
-	vmRunnerReleaseFileEnv = "VM_RUNNER_RELEASE_FILE"
-	vmRunnerLoaderDirEnv   = "VM_RUNNER_LOADER_DIR"
-	vmRunnerBuiltinEnv     = "VM_RUNNER_BUILTIN_RELEASE"
-
-	vmRunnerSameRuntimeOnlyEnv = "VM_RUNNER_SAME_RUNTIME_ONLY"
+	vmRunnerReleasesEnv  = "VM_RUNNER_RELEASES"
+	vmRunnerLoaderDirEnv = "VM_RUNNER_LOADER_DIR"
+	vmRunnerBuiltinEnv   = "VM_RUNNER_BUILTIN_RELEASE"
 
 	// UNIT_BOUNDARY_DESCRIPTION: the runner's scrape port, apart from the machine API because it carries no token, and the component of the one pod its NetworkPolicy admits to it. The collector is the platform's own and scrapes the runners because they cannot push to it: a runner is off the mesh, and the collector's export port admits only mesh identities.
 	vmRunnerMetricsPort    = 4601
@@ -799,31 +794,22 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 			ContainerName: vmRunnerComponent, Resource: "limits.memory", Divisor: resource.MustParse("1Mi"),
 		}},
 	}}
-	if spec.ReleaseHostPath != "" {
-		dir := corev1.HostPathDirectoryOrCreate
-		mounts = append(mounts,
-			corev1.VolumeMount{Name: "releases", MountPath: vmRunnerReleasesPath, ReadOnly: true},
-			corev1.VolumeMount{Name: "release", MountPath: vmRunnerReleaseFilePath, ReadOnly: true},
-			corev1.VolumeMount{Name: "loader", MountPath: vmRunnerLoaderPath},
-		)
-		volumes = append(volumes,
-			corev1.Volume{Name: "releases", VolumeSource: corev1.VolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{Path: spec.ReleaseHostPath, Type: &dir},
-			}},
-			corev1.Volume{Name: "release", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{
-				LocalObjectReference: corev1.LocalObjectReference{Name: r.runnerReleaseName(owner)},
-				Optional:             new(true),
-			}}},
-			corev1.Volume{Name: "loader", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
-		)
-		env = append(env,
-			corev1.EnvVar{Name: vmRunnerReleasesEnv, Value: vmRunnerReleasesPath},
-			corev1.EnvVar{Name: vmRunnerReleaseFileEnv, Value: vmRunnerReleaseFilePath + "/" + runnerReleaseKey},
-			corev1.EnvVar{Name: vmRunnerLoaderDirEnv, Value: vmRunnerLoaderPath},
-			corev1.EnvVar{Name: vmRunnerBuiltinEnv, Value: spec.Image},
-			corev1.EnvVar{Name: vmRunnerSameRuntimeOnlyEnv, Value: strconv.FormatBool(spec.ReleaseSameRuntimeOnly)},
-		)
-	}
+	releasesDir := corev1.HostPathDirectoryOrCreate
+	mounts = append(mounts,
+		corev1.VolumeMount{Name: "releases", MountPath: vmRunnerReleasesPath, ReadOnly: true},
+		corev1.VolumeMount{Name: "loader", MountPath: vmRunnerLoaderPath},
+	)
+	volumes = append(volumes,
+		corev1.Volume{Name: "releases", VolumeSource: corev1.VolumeSource{
+			HostPath: &corev1.HostPathVolumeSource{Path: spec.ReleaseHostPath, Type: &releasesDir},
+		}},
+		corev1.Volume{Name: "loader", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+	)
+	env = append(env,
+		corev1.EnvVar{Name: vmRunnerReleasesEnv, Value: vmRunnerReleasesPath},
+		corev1.EnvVar{Name: vmRunnerLoaderDirEnv, Value: vmRunnerLoaderPath},
+		corev1.EnvVar{Name: vmRunnerBuiltinEnv, Value: spec.Image},
+	)
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: labels, OwnerReferences: refs},
 		Spec: appsv1.DeploymentSpec{
@@ -886,10 +872,10 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 			},
 		},
 	}
-	if err := r.rollRunnerDeployment(ctx, owner, dep, create); err != nil || spec.ReleaseHostPath == "" {
+	if err := r.rollRunnerDeployment(ctx, owner, dep, create); err != nil {
 		return err
 	}
-	return r.applyRunnerRelease(ctx, owner)
+	return r.applyRunnerRelease(ctx, owner, dep)
 }
 
 type runnerRef struct {

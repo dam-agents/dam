@@ -16,6 +16,7 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.openShiftSccForPrivilegedVMPieces" . -}}
 {{- include "platform.validate.oneBackingForTheRunnerImages" . -}}
 {{- include "platform.validate.vmValuesTheControllerCanUse" . -}}
+{{- include "platform.validate.vmRunnerPodsNeedAReleaseDirectory" . -}}
 {{- include "platform.validate.vmValuesThisChartNoLongerReads" . -}}
 {{- include "platform.validate.egressLockdownModeExclusive" . -}}
 {{- include "platform.validate.termsRequired" . -}}
@@ -288,8 +289,8 @@ signal that this is an OpenShift cluster.
 {{- if and $v.runner.imageArchiveHostPath (not $v.runner.scc) -}}
 {{- fail "on OpenShift, virtualization.runner.imageArchiveHostPath needs virtualization.runner.scc — the chart's own agent SCC sets allowHostDirVolumePlugin=false, so it refuses the hostPath volume that value mounts. Set an SCC that admits a hostPath, or drop imageArchiveHostPath and give the runner a registry to pull from." -}}
 {{- end -}}
-{{- if and $v.runner.releaseHostPath (not $v.runner.scc) -}}
-{{- fail "on OpenShift, virtualization.runner.releaseHostPath needs virtualization.runner.scc — the chart's own agent SCC sets allowHostDirVolumePlugin=false, so it refuses the hostPath volume the runners and the release stager mount, and the stager labels the directory as spc_t. Set an SCC that admits a hostPath and leaves the SELinux type to the pod (seLinuxContext RunAsAny), or leave releaseHostPath empty so every new runner image rolls the runner pods." -}}
+{{- if and $v.runner.releaseHostPath (not $v.runner.hostAddress) (not $v.runner.scc) -}}
+{{- fail "on OpenShift, virtualization.runner.releaseHostPath needs virtualization.runner.scc — the chart's own agent SCC sets allowHostDirVolumePlugin=false, so it refuses the hostPath volume the runners and the release stager mount, and the stager labels the directory as spc_t. Set an SCC that admits a hostPath and leaves the SELinux type to the pod (seLinuxContext RunAsAny)." -}}
 {{- end -}}
 {{- if and ($v.imageCache | default dict).hostPath (not $v.runner.scc) -}}
 {{- fail "on OpenShift, virtualization.imageCache.hostPath needs virtualization.runner.scc — the chart's own agent SCC sets allowHostDirVolumePlugin=false, so it refuses the hostPath volume the node cache mounts. Set an SCC that admits a hostPath, or clear imageCache.hostPath and let each runner cache on its own claim." -}}
@@ -356,6 +357,19 @@ runner unconfined on purpose, and the controller warns about it at startup.
 {{- end -}}
 
 {{/*
+A runner pod takes a new runner image only as a hand-off from the node
+directory the release stager writes, so an install with runner pods must name
+one. The host runner of a local Mac cluster runs outside any pod and needs
+none.
+*/}}
+{{- define "platform.validate.vmRunnerPodsNeedAReleaseDirectory" -}}
+{{- $v := .Values.virtualization -}}
+{{- if and $v.enabled (not $v.runner.hostAddress) (not $v.runner.releaseHostPath) -}}
+{{- fail "virtualization.runner.releaseHostPath is required with virtualization.enabled: the release stager copies each runner release there, and every runner pod's loader takes a new runner image from it without rebooting a machine. Set it to a node directory such as /var/lib/platform-vm-runner-releases; each install stages into its own subdirectory of it." -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Virtualization values the chart no longer reads. Helm keeps a value nothing
 reads without a word, so an install that still sets one would be quietly given
 something else: the node image cache service can no longer be switched off and
@@ -372,6 +386,9 @@ naming what took each one's place.
 {{- end -}}
 {{- if hasKey $runner "ingressCidrs" -}}
 {{- fail "virtualization.runner.ingressCidrs is no longer read. The runner's NetworkPolicy is the only gate on its published ports, admitting the api-server and the controller. Remove the key." -}}
+{{- end -}}
+{{- if hasKey $runner "releaseSameRuntimeOnly" -}}
+{{- fail "virtualization.runner.releaseSameRuntimeOnly is no longer read: a runner release built against another VM runtime is always handed off in place, and a machine whose runtime errors, or whose guest goes quiet, is rebooted onto the runner's own runtime. To leave the new runtime, configure the previous runner image again. Remove the key." -}}
 {{- end -}}
 {{- if or (hasKey $runner "canaryImage") (hasKey $runner "canary") -}}
 {{- fail "virtualization.runner.canaryImage and virtualization.runner.canary are no longer read: every runner runs virtualization.runner.image, rolled across owners by virtualization.runner.rollout. Remove the keys." -}}
