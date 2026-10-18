@@ -76,3 +76,24 @@ export function measuredRange(
   if (range.to < startDay) return null;
   return { from: range.from < startDay ? startDay : range.from, to: range.to };
 }
+
+export interface ShownRange {
+  range: DayRange;
+  cutAtStart: boolean;
+  soFar: boolean;
+}
+
+export function shownRange(
+  range: DayRange,
+  startDay: string,
+  today: string,
+): ShownRange | null {
+  const measured = measuredRange(range, startDay);
+  if (!measured) return null;
+  const soFar = measured.from <= today && today <= measured.to;
+  return {
+    range: { from: measured.from, to: soFar ? today : measured.to },
+    cutAtStart: measured.from !== range.from,
+    soFar,
+  };
+}

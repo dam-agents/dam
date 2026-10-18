@@ -11,13 +11,14 @@ import {
 import { cn } from "@/lib/utils";
 
 import {
-  CALENDAR_FOOTER,
+  calendarFooter,
   CHOOSE_DATES,
   DONE,
   NEXT_PERIOD,
   PERIOD_LABELS,
   PREVIOUS_PERIOD,
 } from "../lib/copy.js";
+import { localDayStart } from "../lib/format.js";
 import { formatRange } from "../lib/range-label.js";
 import {
   periodOfRange,
@@ -130,7 +131,7 @@ export function PeriodPicker({
             />
             <div className="flex items-center justify-between gap-3">
               <span className="text-xs text-muted-foreground">
-                {CALENDAR_FOOTER}
+                {calendarFooter(localDayStart(today))}
               </span>
               <PopoverClose asChild>
                 <Button size="sm">{DONE}</Button>

@@ -7,6 +7,7 @@ import { WelcomeEntryPoints } from "../../agents/components/welcome-entry-points
 import { useAgentRows } from "../../agents/hooks/use-agent-rows.js";
 import { splitTemporarySandboxes } from "../../agents/utils/temporary-sandboxes.js";
 import { ResourcesCard } from "../../budgets/components/resources-card.js";
+import { MeteringNotice } from "../../spend/components/metering-notice.js";
 import { SpendWidget } from "../../spend/components/spend-widget.js";
 import { useFeed } from "../api/queries.js";
 import { ApprovalsBanner } from "../components/approvals-banner.js";
@@ -49,6 +50,7 @@ export function HomeView() {
       <ApprovalsBanner />
       <div className="@container mb-8">
         <div className="grid grid-cols-1 gap-4 @3xl:grid-cols-2">
+          <MeteringNotice className="@3xl:col-span-2" />
           <div className="rounded-lg border border-border bg-card p-6">
             <ResourcesCard
               agents={allAgents}

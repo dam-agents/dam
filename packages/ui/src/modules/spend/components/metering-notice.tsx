@@ -5,10 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { cn } from "@/lib/utils";
 
-import { useMeteringNotice } from "../hooks/use-metering-notice.js";
+import {
+  useEarlierEstimatesUntil,
+  useMeteringNotice,
+} from "../hooks/use-metering-notice.js";
 import { useDismissMeteringNotice } from "../hooks/use-spend-preferences.js";
 import {
   DISMISS_NOTICE,
+  dismissNoticeHelp,
   METERING_NOTICE_DETAIL,
   meteringNoticeTitle,
 } from "../lib/copy.js";
@@ -21,6 +25,7 @@ interface Props {
 export function MeteringNotice({ className, children }: Props) {
   const metering = useMeteringNotice();
   const dismiss = useDismissMeteringNotice();
+  const earlierEstimatesOpen = useEarlierEstimatesUntil() !== null;
   if (!metering) return null;
   return (
     <Callout
@@ -41,6 +46,7 @@ export function MeteringNotice({ className, children }: Props) {
         variant="ghost"
         size="icon-xs"
         aria-label={DISMISS_NOTICE}
+        tooltip={dismissNoticeHelp(earlierEstimatesOpen)}
         onClick={dismiss}
         className="shrink-0 text-muted-foreground"
       >

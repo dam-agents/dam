@@ -5,7 +5,12 @@ import {
   Stat,
   TokensInOut,
 } from "../../metrics/components/spend-stat-cards.js";
-import { API_CALLS, MODEL_TIME, TOKENS_IN_OUT } from "../lib/copy.js";
+import {
+  API_CALLS,
+  MODEL_TIME,
+  MODEL_TIME_HELP,
+  TOKENS_IN_OUT,
+} from "../lib/copy.js";
 
 export function MeasuredStatCards({
   totals,
@@ -34,7 +39,7 @@ export function MeasuredStatCards({
           tokensOut={sum((row) => row.outputTokens)}
         />
       </Stat>
-      <Stat label={MODEL_TIME}>
+      <Stat label={MODEL_TIME} help={MODEL_TIME_HELP}>
         <Duration ms={modelTimeMs} />
       </Stat>
     </dl>

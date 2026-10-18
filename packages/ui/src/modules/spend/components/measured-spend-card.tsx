@@ -36,7 +36,11 @@ export function MeasuredSpendCard({
         {measured ? <AnimatedUsd value={microsToUsd(totals.usd)} /> : "—"}
       </p>
       <div className="mt-1 flex flex-col gap-1">
-        <SpendRangeLine range={range} startDay={metering.startDay} />
+        <SpendRangeLine
+          range={range}
+          startDay={metering.startDay}
+          today={today}
+        />
         {measured && (
           <SpendSideLines totals={totals} showPlanUse={showPlanUse} />
         )}

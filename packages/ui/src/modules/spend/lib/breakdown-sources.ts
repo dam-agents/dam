@@ -5,6 +5,7 @@ import {
   type SpendBreakdown,
 } from "api-server-api";
 
+import { DELETED_AGENT_NAME } from "./copy.js";
 import { amountsBy } from "./measured-spend.js";
 import type { RowSource } from "./spend-rows.js";
 
@@ -45,7 +46,10 @@ export function agentSources(
   return sourcesBy(
     byAgent,
     (row) => row.agentId,
-    (agentId) => ({ label: nameOf(agentId) ?? agentId, notPriced: false }),
+    (agentId) => ({
+      label: nameOf(agentId) ?? DELETED_AGENT_NAME,
+      notPriced: false,
+    }),
   );
 }
 

@@ -30,10 +30,8 @@ export function UsageView() {
     <div>
       <PageHeader title="Usage" description={PAGE_DESCRIPTION} />
       <EarlierEstimatesAccess />
-      <div className="mb-10">
-        <MeasuredUsage period={period} onPeriodChange={handlePeriodChange} />
-      </div>
       <OwnSpendLimitCard />
+      <MeasuredUsage period={period} onPeriodChange={handlePeriodChange} />
     </div>
   );
 }

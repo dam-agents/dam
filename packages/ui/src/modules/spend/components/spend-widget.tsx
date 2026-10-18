@@ -7,20 +7,15 @@ import { Tabs } from "@/components/ui/tabs";
 import { TextSkeleton } from "@/components/ui/text-skeleton";
 import { useNow } from "@/hooks/use-now";
 
-import {
-  useOwnerSpendStatus,
-  useSpendBreakdown,
-  useSpendMetering,
-} from "../api/queries.js";
+import { useSpendBreakdown, useSpendMetering } from "../api/queries.js";
 import { useShowPlanUse } from "../hooks/use-spend-preferences.js";
 import {
   API_SPEND_TITLE,
   apiSpendHelp,
-  OWN_LIMIT_NAME,
   PERIOD_LABELS,
   SPEND_LOAD_ERROR,
 } from "../lib/copy.js";
-import { microsToUsd } from "../lib/format.js";
+import { localDayStart, microsToUsd } from "../lib/format.js";
 import { unitTotals } from "../lib/measured-spend.js";
 import { measuredRange } from "../lib/range-label.js";
 import {
@@ -32,11 +27,13 @@ import {
 import { utcDayOf } from "../lib/utc-day.js";
 import { AnimatedUsd } from "./animated-usd.js";
 import { HelpTip } from "./help-tip.js";
-import { MeteringNotice } from "./metering-notice.js";
 import { PlanUseCheckbox } from "./plan-use-checkbox.js";
-import { SpendLimitMeter } from "./spend-limit-meter.js";
-import { SpendRangeLine, SpendSideLines } from "./spend-total-lines.js";
-import { TopSpenders, TopSpendersSkeleton } from "./top-spenders.js";
+import { SpendDetailLine, SpendRangeLine } from "./spend-total-lines.js";
+import {
+  SpenderRowsSizer,
+  TopSpenders,
+  TopSpendersSkeleton,
+} from "./top-spenders.js";
 import { ViewDetailsLink } from "./view-details-link.js";
 
 const REFRESH_MS = 30_000;
@@ -53,8 +50,6 @@ export function SpendWidget() {
   const { data: metering } = useSpendMetering();
   const query = useSpendBreakdown(range);
   const showPlanUse = useShowPlanUse();
-  const { data: status } = useOwnerSpendStatus();
-  const ownLimit = status?.limits.find((view) => view.scope.kind === "owner");
   const data = query.data;
   const totals = unitTotals(data?.totals ?? []);
   const measured = metering
@@ -67,7 +62,7 @@ export function SpendWidget() {
         <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
           <p className="flex items-center gap-1.5 whitespace-nowrap text-sm text-foreground">
             {API_SPEND_TITLE}
-            <HelpTip content={apiSpendHelp()} />
+            <HelpTip content={apiSpendHelp(localDayStart(today))} />
             {query.isFetching && (
               <Spinner
                 size={12}
@@ -94,38 +89,32 @@ export function SpendWidget() {
             measured={measured}
           />
         </p>
-        {metering && (
-          <div className="mb-5 mt-0.5 flex flex-col gap-1">
-            <SpendRangeLine range={range} startDay={metering.startDay} />
-            {measured && (
-              <SpendSideLines totals={totals} showPlanUse={showPlanUse} />
-            )}
-          </div>
-        )}
+        <div className="mb-5 mt-0.5 flex flex-col gap-1">
+          {metering ? (
+            <SpendRangeLine
+              range={range}
+              startDay={metering.startDay}
+              today={today}
+            />
+          ) : (
+            <div className="min-h-lh text-sm" />
+          )}
+          <SpendDetailLine
+            totals={data && measured ? totals : null}
+            showPlanUse={showPlanUse}
+          />
+        </div>
 
-        {period === "today" && ownLimit && (
-          <div className="mb-5">
-            <SpendLimitMeter
-              label={OWN_LIMIT_NAME}
-              showLabel
-              unit="usd"
-              spentMicros={ownLimit.spentMicros}
-              limitMicros={ownLimit.effectiveMicros}
-              state={ownLimit.state}
-              extensions={ownLimit.extensions}
+        <div className="relative">
+          <SpenderRowsSizer />
+          <div className="absolute inset-x-0 top-0">
+            <SpendersArea
+              byAgent={data?.byAgent}
+              failed={query.isError}
+              showPlanUse={showPlanUse}
+              measured={measured}
             />
           </div>
-        )}
-
-        <MeteringNotice className="mb-5" />
-
-        <div className="relative min-h-[132px]">
-          <SpendersArea
-            byAgent={data?.byAgent}
-            failed={query.isError}
-            showPlanUse={showPlanUse}
-            measured={measured}
-          />
         </div>
 
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border-hairline pt-4">

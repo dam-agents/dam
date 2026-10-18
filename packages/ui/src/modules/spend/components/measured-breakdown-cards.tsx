@@ -16,6 +16,7 @@ import {
   sessionTypeSources,
 } from "../lib/breakdown-sources.js";
 import {
+  DELETED_AGENT_NAME,
   NO_SESSION,
   noSessionHelp,
   SPEND_BY_AGENT,
@@ -79,8 +80,9 @@ export function MeasuredBreakdownCards({
     const agent = agentOf(agentId);
     return (
       <AgentAvatar
-        name={agent?.name ?? agentId}
+        name={agent?.name ?? DELETED_AGENT_NAME}
         avatar={agent?.avatar}
+        mood={agent ? "awake" : "disabled"}
         size={16}
       />
     );

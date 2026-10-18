@@ -10,7 +10,7 @@ import {
 } from "../../budgets/lib/pool-colors.js";
 import { SpendBarTrack } from "../../metrics/components/spend-bar.js";
 import {
-  COVERED_BY_PLAN,
+  COVERED_VALUE_HELP,
   NO_COST,
   NO_SPEND_IN_PERIOD,
   NOT_PRICED,
@@ -28,7 +28,12 @@ function AmountText({ amount }: { amount: RowAmount }) {
         ? bareSpend(paidMicros, "usd")
         : paidWithPlanUse(paidMicros, planMicros),
     )
-    .with({ kind: "plan-only" }, () => COVERED_BY_PLAN)
+    .with({ kind: "plan-only" }, ({ micros }) => (
+      <span className="inline-flex items-center gap-1.5">
+        {bareSpend(micros, "usd_list")}
+        <HelpTip content={COVERED_VALUE_HELP} />
+      </span>
+    ))
     .with({ kind: "bobcoin" }, ({ micros }) => formatSpend(micros, "bobcoin"))
     .with({ kind: "no-cost" }, () => NO_COST)
     .with({ kind: "not-priced" }, () => (

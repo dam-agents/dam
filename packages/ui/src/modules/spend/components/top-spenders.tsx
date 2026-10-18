@@ -140,6 +140,22 @@ function SpenderRow({
   );
 }
 
+export function SpenderRowsSizer() {
+  return (
+    <div aria-hidden="true" className="invisible flex flex-col gap-3">
+      {Array.from({ length: TOP_SPENDERS }, (_, i) => (
+        <div key={i}>
+          <div className="mb-1 flex items-center text-sm">
+            <AgentAvatar name="" size={16} />
+            <span>&nbsp;</span>
+          </div>
+          <div className="h-3" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function TopSpendersSkeleton() {
   return (
     <div className="space-y-3">

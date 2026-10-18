@@ -39,7 +39,11 @@ import { useProviderConnections } from "../../sessions/api/session-pair.js";
 import { useAgentSpendStatus } from "../../spend/api/queries.js";
 import { agentLimitOf } from "../../spend/lib/agent-limit.js";
 import { agentLimitCoverage } from "../../spend/lib/coverage.js";
-import { formatSpend, formatSpendOf } from "../../spend/lib/format.js";
+import {
+  formatSpend,
+  formatSpendOf,
+  formatSpent,
+} from "../../spend/lib/format.js";
 import { useTelegramChats } from "../../telegram/api/queries.js";
 
 type SectionSummaries = Partial<Record<SandboxSection, string>>;
@@ -228,7 +232,7 @@ export function useSectionSummaries(agent: AgentView | null): {
           : []),
       ...spendStatus.spent
         .filter((total) => total.unit !== "usd" && total.costMicros > 0)
-        .map((total) => formatSpend(total.costMicros, total.unit)),
+        .map((total) => formatSpent(total.costMicros, total.unit)),
     ];
     return parts.length > 0 ? `${parts.join(" · ")} today` : "No spend today";
   }, [

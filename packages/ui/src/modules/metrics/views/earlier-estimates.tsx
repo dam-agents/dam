@@ -86,7 +86,7 @@ function EarlierEstimatesBody({
   return (
     <div aria-busy={freshness === "updating"} className="space-y-10">
       <section>
-        <SectionLabel spaced>Total spend</SectionLabel>
+        <SectionLabel spaced>Estimated total</SectionLabel>
         <div className="font-mono text-5xl font-bold leading-none tracking-[-0.02em] tabular-nums text-foreground">
           {formatUsdCents(total)}
         </div>
@@ -145,7 +145,7 @@ function UsageSkeleton() {
   return (
     <div className="space-y-10">
       <section>
-        <SectionLabel spaced>Total spend</SectionLabel>
+        <SectionLabel spaced>Estimated total</SectionLabel>
         <div className="h-12 w-40 animate-pulse rounded bg-muted" />
       </section>
       <section>

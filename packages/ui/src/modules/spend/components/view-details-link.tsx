@@ -3,7 +3,7 @@ import type { MouseEvent } from "react";
 
 import { useStore } from "../../../store.js";
 import { routeToPath } from "../../platform/lib/routes.js";
-import { VIEW_DETAILS } from "../lib/copy.js";
+import { USAGE_DETAILS } from "../lib/copy.js";
 import { formatPeriod, type SpendPeriod } from "../lib/spend-period.js";
 
 function opensElsewhere(event: MouseEvent): boolean {
@@ -37,7 +37,7 @@ export function ViewDetailsLink({ period }: { period: SpendPeriod }) {
       onClick={handleClick}
       className="flex items-center gap-1 text-sm text-accent hover:underline"
     >
-      {VIEW_DETAILS}
+      {USAGE_DETAILS}
       <ChevronRight size={14} aria-hidden="true" />
     </a>
   );

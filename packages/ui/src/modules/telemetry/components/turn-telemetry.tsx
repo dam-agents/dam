@@ -2,26 +2,24 @@ import { ChevronDown, ChevronRight } from "@carbon/icons-react";
 import type { SpendAmount, TurnSummary } from "api-server-api";
 import { useMemo, useState } from "react";
 
+import { Tooltip } from "@/components/ui/tooltip";
 import { formatDurationMs } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 import { formatTokens } from "../../metrics/lib/format.js";
 import { amountsLabel } from "../../spend/lib/amounts-label.js";
+import { turnLineHelp } from "../../spend/lib/copy.js";
 import { useTurn } from "../api/queries.js";
 import { RecordDetail, SpanDetail } from "./record-detail.js";
 import { TraceWaterfall } from "./trace-waterfall.js";
 
-function summaryBits(
-  turn: TurnSummary,
-  spend: readonly SpendAmount[] | undefined,
-): string[] {
+function summaryBits(turn: TurnSummary, cost: string | null): string[] {
   const bits = [formatDurationMs(turn.durationMs)];
   if (turn.calls > 0) {
     bits.push(turn.calls === 1 ? "1 call" : `${turn.calls} calls`);
   }
   const tokens = turn.inputTokens + turn.outputTokens;
   if (tokens > 0) bits.push(`${formatTokens(tokens)} tokens`);
-  const cost = spend ? amountsLabel(spend) : null;
   if (cost) bits.push(cost);
   return bits;
 }
@@ -44,6 +42,7 @@ export function TurnTelemetry({
 }: Props) {
   const [open, setOpen] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const cost = spend ? amountsLabel(spend) : null;
 
   const detail = useTurn(
     agentId,
@@ -70,24 +69,26 @@ export function TurnTelemetry({
 
   return (
     <div className={className}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className={cn(
-          "group inline-flex items-center gap-1.5 rounded-sm py-0.5 text-2xs text-muted-foreground/70",
-          "hover:text-foreground focus-visible:text-foreground",
-          triggerClassName,
-        )}
-      >
-        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        <span className="font-mono tabular-nums">
-          {summaryBits(turn, spend).join(" · ")}
-        </span>
-        {turn.errorCount > 0 && (
-          <span className="font-mono text-danger">{turn.errorCount} err</span>
-        )}
-      </button>
+      <Tooltip content={turnLineHelp(cost !== null)}>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className={cn(
+            "group inline-flex items-center gap-1.5 rounded-sm py-0.5 text-2xs text-muted-foreground/70",
+            "hover:text-foreground focus-visible:text-foreground",
+            triggerClassName,
+          )}
+        >
+          {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          <span className="font-mono tabular-nums">
+            {summaryBits(turn, cost).join(" · ")}
+          </span>
+          {turn.errorCount > 0 && (
+            <span className="font-mono text-danger">{turn.errorCount} err</span>
+          )}
+        </button>
+      </Tooltip>
 
       {open && (
         <div className="mt-1 overflow-hidden rounded-md border border-border bg-muted/20">

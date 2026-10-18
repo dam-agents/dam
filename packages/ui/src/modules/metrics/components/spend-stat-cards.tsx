@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { Card } from "@/components/ui/card";
 
+import { HelpTip } from "../../spend/components/help-tip.js";
 import { durationSegments, formatTokens } from "../lib/format.js";
 
 function Sub({ children }: { children: ReactNode }) {
@@ -10,14 +11,19 @@ function Sub({ children }: { children: ReactNode }) {
 
 export function Stat({
   label,
+  help,
   children,
 }: {
   label: string;
+  help?: string;
   children: ReactNode;
 }) {
   return (
     <Card className="min-w-0 p-4">
-      <dt className="text-sm text-muted-foreground">{label}</dt>
+      <dt className="flex items-center gap-1.5 text-sm text-muted-foreground">
+        {label}
+        {help && <HelpTip content={help} />}
+      </dt>
       <dd className="mt-1.5 font-mono text-2xl font-semibold leading-none tracking-[-0.02em] tabular-nums text-foreground">
         {children}
       </dd>
