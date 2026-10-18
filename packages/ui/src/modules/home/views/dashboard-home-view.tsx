@@ -26,7 +26,12 @@ export function DashboardHomeView() {
   const initialLoaded = agentsData !== undefined;
   const { visible } = splitTemporarySandboxes(agentsData?.list ?? []);
 
-  if (!initialLoaded) return <ListSkeleton rows={4} rowHeight={140} />;
+  if (!initialLoaded)
+    return (
+      <div className="md:pt-5">
+        <ListSkeleton rows={4} rowHeight={140} />
+      </div>
+    );
 
   return (
     <div className="@container flex flex-col gap-4 md:pt-5">
