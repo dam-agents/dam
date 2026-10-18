@@ -55,7 +55,6 @@ import { provisionalSessionView } from "../../../sessions/api/queries.js";
 import { RenameSessionDialog } from "../../../sessions/components/rename-session-dialog.js";
 import { SessionRow } from "../../../sessions/components/session-row.js";
 import { useOpenSession } from "../../../sessions/hooks/use-open-session.js";
-import { useOpenSidePanel } from "../../../sessions/hooks/use-open-side-panel.js";
 import { useStartSession } from "../../../sessions/hooks/use-start-session.js";
 import {
   togglePinnedSession,
@@ -122,7 +121,6 @@ export function SidebarColumns({ onNavigate }: { onNavigate?: () => void }) {
         ) : (
           <AllColumn
             items={activity.items}
-            approvalCount={approvals.length}
             unreadable={activity.unreadable}
             onNavigate={onNavigate}
           />
@@ -382,18 +380,15 @@ function ListLabel({ children }: { children: React.ReactNode }) {
 
 function AllColumn({
   items,
-  approvalCount,
   unreadable,
   onNavigate,
 }: {
   items: readonly AgentActivitySession[];
-  approvalCount: number;
   unreadable: boolean;
   onNavigate?: () => void;
 }) {
   const filters = useStore((s) => s.sidebarActivityFilters);
   const setFilters = useStore((s) => s.setSidebarActivityFilters);
-  const openSidePanel = useOpenSidePanel();
   const agents = useAgentsList();
   const sessions = useMemo(() => items.map((item) => item.session), [items]);
   const conversationOf = useActivityConversations(sessions, agents);
@@ -424,28 +419,9 @@ function AllColumn({
             Recent sessions can't be loaded right now.
           </p>
         )}
-        {(approvalCount > 0 || unread.length > 0) && (
+        {unread.length > 0 && (
           <>
             <ListLabel>Needs you</ListLabel>
-            {approvalCount > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  openSidePanel("approvals");
-                  onNavigate?.();
-                }}
-                className="mb-px flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted"
-              >
-                <span className="flex size-[22px] shrink-0 items-center justify-center">
-                  <span className="size-2 rounded-full bg-warning" />
-                </span>
-                <span className="min-w-0 flex-1 truncate font-medium">
-                  {approvalCount === 1
-                    ? "1 approval waiting"
-                    : `${approvalCount} approvals waiting`}
-                </span>
-              </button>
-            )}
             <div className="flex flex-col gap-px">{unread.map(row)}</div>
           </>
         )}

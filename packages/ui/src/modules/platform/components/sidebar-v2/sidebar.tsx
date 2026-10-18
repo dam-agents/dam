@@ -27,7 +27,10 @@ export function SidebarV2() {
   const pinned = useStore((s) => s.sidebarPinned);
   const setPinned = useStore((s) => s.setSidebarPinned);
   const setView = useStore((s) => s.setView);
-  const { width, resize, endResize } = useSidebarWidth();
+  const { width, resize, endResize } = useSidebarWidth({
+    key: "platform-sidebar-v2-w",
+    fallback: 325,
+  });
   const peek = useStore((s) => s.sidebarPeek);
   const setPeek = useStore((s) => s.setSidebarPeek);
   const shown = pinned || peek;
