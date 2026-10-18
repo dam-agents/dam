@@ -199,8 +199,9 @@ Give the nodes that directory first, with the chart changes above.
 
 1. Set `virtualization.runner.releaseHostPath` in the install's values if the default does not fit, and upgrade the release.
    The chart deploys the release stager on the runners' nodes.
-   Installs that share nodes each take their own subdirectory, such as `/var/lib/platform-vm-runner-releases/<release>`: every stager keeps only the newest few releases in its directory, so in a shared one an install that releases often removes another's.
-2. On an install that had no release directory before, the new hostPath changes every runner pod's shape, so the controller rolls every runner once, and each roll reboots all of that owner's machines.
+   Each install stages into its own subdirectory, named after its agent namespace, because every stager keeps only the newest few releases in its directory.
+   A chart from before the subdirectories staged releases at the top of the directory; nothing reads those any more, and they can be removed by hand.
+2. The upgrade to a chart that names releases over the machine API changes every runner pod's shape, whether or not the install had a release directory before, so the controller rolls every runner once, and each roll reboots all of that owner's machines.
    The roll follows `virtualization.runner.rollout`: `maxConcurrent` runners at a time, and a runner whose owner has an agent in the middle of a turn waits for it to go idle, at most `idleWait`.
    Expect the whole roll to take about owners / `maxConcurrent` × (runner restart + machine boot), plus the idle waits.
 3. From then on, a new runner image reaches each runner pod in place: the loader hands the machines to the new release, and no machine reboots.

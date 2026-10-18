@@ -35,6 +35,9 @@ const (
 	// UNIT_BOUNDARY_DESCRIPTION: how often the sweep asks a runner with nothing running whether it took its release yet. The loader reads the release it is named every second.
 	runnerHandoffFollowPoll = time.Second
 
+	// UNIT_BOUNDARY_DESCRIPTION: a release the node's stager has not staged yet is no fault of the release, and a chart upgrade stages it on every node at once, each after its own image pull. While the runner reports it not staged, the hand-off's start moves up to now, at most this often, so the settle timeout counts from about when the release reached the node rather than from when it was named. A stager that never stages it keeps the hand-off waiting, and its place, without a stall.
+	runnerHandoffUnstagedRestart = time.Minute
+
 	// UNIT_BOUNDARY_DESCRIPTION: the ConfigMap a controller before the machine API's release call named each runner's release in, owned by the runner's Deployment. Only a pod that controller rendered mounts it, and that pod rolls once onto the pod this controller renders, so the roll deletes it. Remove this once every install has run a controller with this change.
 	legacyRunnerReleaseSuffix = "-release"
 )
@@ -135,13 +138,21 @@ func (r *AgentReconciler) runnerHandoffHolds(dep *appsv1.Deployment) bool {
 	return err == nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: settles or stalls the owner's own hand-off, on the owner's turn and outside the roll lock, so the runner it calls holds up only this owner. It settles once the runner reports the release running, every machine that was ready before is ready again, stopped, or gone with its agent, and, if there were such machines, runnerHandoffObserve has passed without an ensure refused; a release the pod cannot take ends the hand-off too, since the pod roll that follows holds its own place. It stalls when the runner holds the release as failed, or when it has not settled within `rollout.settleTimeout`; an ensure the runner refuses stalls it from the agent's reconcile (stallRunnerHandoffOnEnsure).
+// UNIT_BOUNDARY_DESCRIPTION: settles or stalls the owner's own hand-off, on the owner's turn and outside the roll lock, so the runner it calls holds up only this owner. It settles once the runner reports the release running, every machine that was ready before is ready again, stopped, or gone with its agent, and, if there were such machines, runnerHandoffObserve has passed without an ensure refused; a release the pod cannot take ends the hand-off too, since the pod roll that follows holds its own place. It stalls when the runner holds the release as failed, or when it has not settled within `rollout.settleTimeout`, less the time the release waited to be staged (runnerHandoffUnstagedRestart); an ensure the runner refuses stalls it from the agent's reconcile (stallRunnerHandoffOnEnsure).
 func (r *AgentReconciler) settleRunnerHandoff(ctx context.Context, owner string, dep *appsv1.Deployment) {
 	started, err := time.Parse(time.RFC3339, dep.Annotations[annRunnerHandoffAt])
 	if err != nil || dep.Annotations[annRunnerHandoffStalled] != "" {
 		return
 	}
-	settled, trouble := r.runnerHandoffSettled(ctx, owner, dep, started)
+	settled, unstaged, trouble := r.runnerHandoffSettled(ctx, owner, dep, started)
+	if unstaged && time.Since(started) > runnerHandoffUnstagedRestart {
+		slog.Warn("vm runner: the release is not staged on the runner's node yet; the hand-off waits for the stager", "owner", owner, "release", dep.Annotations[annRunnerRelease], "handoffAt", dep.Annotations[annRunnerHandoffAt])
+		dep.Annotations[annRunnerHandoffAt] = time.Now().UTC().Format(time.RFC3339)
+		if err := r.updateRunnerDeployment(ctx, dep); err != nil {
+			slog.Warn("vm runner: moving up the start of a hand-off waiting for its release to be staged", "runner", dep.Name, "error", err)
+		}
+		return
+	}
 	if settled {
 		delete(dep.Annotations, annRunnerHandoffAt)
 		delete(dep.Annotations, annRunnerHandoffAwaiting)
@@ -152,7 +163,7 @@ func (r *AgentReconciler) settleRunnerHandoff(ctx context.Context, owner string,
 		r.resetRunnerRollView()
 		return
 	}
-	if _, timeout := runnerRolloutLimits(r.config.VM.Runner); trouble == "" && time.Since(started) > timeout {
+	if _, timeout := runnerRolloutLimits(r.config.VM.Runner); trouble == "" && !unstaged && time.Since(started) > timeout {
 		trouble = "the runner did not settle on the release within the settle timeout of " + timeout.String()
 	}
 	if trouble != "" {
@@ -160,12 +171,14 @@ func (r *AgentReconciler) settleRunnerHandoff(ctx context.Context, owner string,
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: an owner with no ready machine has no agent reconcile to settle their hand-off, so it would hold its place until the next sweep, ten minutes on, and a release would reach one such owner per sweep. The sweep instead waits here, on its turn for the owner, until the runner has taken the release, the hand-off stalls, or it is over the settle timeout. The sweep runs as many such turns at once as the roll is wide, so the hand-offs it waits on are exactly the ones holding a place. A hand-off with ready machines is left to the owner's agents.
+// UNIT_BOUNDARY_DESCRIPTION: an owner with no ready machine has no agent reconcile to settle their hand-off, so it would hold its place until the next sweep, ten minutes on, and a release would reach one such owner per sweep. The sweep instead waits here, on its turn for the owner, until the runner has taken the release, the hand-off stalls, or one settle timeout has passed, which a hand-off waiting for its release to be staged outlasts; the next sweep follows that one again. The sweep runs as many such turns at once as the roll is wide, so the hand-offs it waits on are exactly the ones holding a place. A hand-off with ready machines is left to the owner's agents. The Deployment is read from the cache, which every hand-off write updates, so a poll costs the API server no read of it.
 func (r *AgentReconciler) followIdleRunnerHandoff(ctx context.Context, owner string) {
 	lock := r.ownerLock(owner)
-	for {
+	_, timeout := runnerRolloutLimits(r.config.VM.Runner)
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
 		lock.Lock()
-		dep, err := r.runnerDeployment(ctx, r.runnerName(owner), false)
+		dep, err := r.runnerDeployment(ctx, r.runnerName(owner), true)
 		following := err == nil && dep.Annotations[annRunnerHandoffAt] != "" && dep.Annotations[annRunnerHandoffAwaiting] == "" && dep.Annotations[annRunnerHandoffStalled] == ""
 		if following {
 			r.settleRunnerHandoff(ctx, owner, dep)
@@ -183,27 +196,29 @@ func (r *AgentReconciler) followIdleRunnerHandoff(ctx context.Context, owner str
 	}
 }
 
-func (r *AgentReconciler) runnerHandoffSettled(ctx context.Context, owner string, dep *appsv1.Deployment, started time.Time) (settled bool, trouble string) {
+func (r *AgentReconciler) runnerHandoffSettled(ctx context.Context, owner string, dep *appsv1.Deployment, started time.Time) (settled, unstaged bool, trouble string) {
 	want, awaiting := dep.Annotations[annRunnerRelease], dep.Annotations[annRunnerHandoffAwaiting]
 	client, err := r.runnerFor(ctx, owner)
 	if err != nil {
-		return false, ""
+		return false, false, ""
 	}
 	release, err := client.Release(ctx)
 	switch {
 	case err != nil:
-		return false, ""
+		return false, false, ""
 	case release.Target == want && release.Held == vmrunner.HeldFailed:
-		return false, "the runner holds the release as failed and went back to " + release.Running
+		return false, false, "the runner holds the release as failed and went back to " + release.Running
 	case release.Target == want && release.Held == vmrunner.HeldRuntime:
-		return true, ""
+		return true, false, ""
+	case release.Target == want && release.Held == vmrunner.HeldUnstaged:
+		return false, true, ""
 	case release.Running != want && release.Target != want:
 		if err := client.NameRelease(ctx, want); err != nil {
 			slog.Warn("vm runner: naming the release to the runner again failed", "owner", owner, "error", err)
 		}
-		return false, ""
+		return false, false, ""
 	case release.Running != want, awaiting != "" && time.Since(started) < runnerHandoffObserve:
-		return false, ""
+		return false, false, ""
 	}
 	for _, id := range strings.Split(awaiting, ",") {
 		if id == "" {
@@ -215,9 +230,9 @@ func (r *AgentReconciler) runnerHandoffSettled(ctx context.Context, owner string
 		if _, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, id, metav1.GetOptions{}); k8serrors.IsNotFound(err) {
 			continue
 		}
-		return false, ""
+		return false, false, ""
 	}
-	return true, ""
+	return true, false, ""
 }
 
 func (r *AgentReconciler) stallRunnerHandoff(ctx context.Context, dep *appsv1.Deployment, trouble string) {

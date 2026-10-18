@@ -532,7 +532,7 @@ func TestARunnerHandOffInTroubleHaltsTheRelease(t *testing.T) {
 			n.release = vmrunner.RunnerRelease{Running: runnerV1, Target: runnerV2, Held: vmrunner.HeldFailed}
 		},
 		"never settles": func(t *testing.T, r *AgentReconciler, n *fakeNode) {
-			n.release = vmrunner.RunnerRelease{Running: runnerV1, Target: runnerV2, Held: vmrunner.HeldUnstaged}
+			n.release = vmrunner.RunnerRelease{Running: runnerV1, Target: runnerV2}
 			backdateHandoff(t, r, "owner-a", defaultRunnerSettleTimeout+time.Minute)
 		},
 	} {
@@ -558,6 +558,34 @@ func TestARunnerHandOffInTroubleHaltsTheRelease(t *testing.T) {
 			assert.Equal(t, runnerV3, namedRelease(t, r, "owner-a"), "a newer release resumes the roll at the runner that stalled")
 		})
 	}
+}
+
+// TEST_SCENARIO: a chart upgrade names the release before every node's stager has staged it. A runner that reports the release not staged past the settle timeout is waiting on its node, not failing, so its hand-off is not stalled: its start moves up, it keeps its place, so the next owner still waits, and it settles once the runner takes the release.
+func TestAHandOffWaitingForItsReleaseToBeStagedDoesNotStall(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t)
+	for _, owner := range []string{"owner-a", "owner-b"} {
+		createRolloutRunner(t, r, owner)
+		require.NoError(t, r.applyRunnerDeployment(ctx, owner, r.runnerOwnerRef(ctx), true))
+	}
+	r.config.VM.Runner.Image = runnerV2
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	nodes["owner-a"].release = vmrunner.RunnerRelease{Running: runnerV1, Target: runnerV2, Held: vmrunner.HeldUnstaged}
+	backdateHandoff(t, r, "owner-a", defaultRunnerSettleTimeout+time.Minute)
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	ann := runnerAnnotations(t, r, "owner-a")
+	assert.NotContains(t, ann, annRunnerHandoffStalled)
+	at, err := time.Parse(time.RFC3339, ann[annRunnerHandoffAt])
+	require.NoError(t, err)
+	assert.WithinDuration(t, time.Now(), at, 5*time.Second, "the settle timeout counts from the last time the release was found not staged")
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, namedRelease(t, r, "owner-b"), "the waiting hand-off keeps its place")
+
+	nodes["owner-a"].release = vmrunner.RunnerRelease{Running: runnerV2, Target: runnerV2}
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV2, namedRelease(t, r, "owner-b"))
 }
 
 func runnerAnnotations(t *testing.T, r *AgentReconciler, owner string) map[string]string {

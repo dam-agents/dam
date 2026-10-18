@@ -365,7 +365,7 @@ none.
 {{- define "platform.validate.vmRunnerPodsNeedAReleaseDirectory" -}}
 {{- $v := .Values.virtualization -}}
 {{- if and $v.enabled (not $v.runner.hostAddress) (not $v.runner.releaseHostPath) -}}
-{{- fail "virtualization.runner.releaseHostPath is required with virtualization.enabled: the release stager copies each runner release there, and every runner pod's loader takes a new runner image from it without rebooting a machine. Set it to a node directory such as /var/lib/platform-vm-runner-releases/<release>, one per install that shares the nodes." -}}
+{{- fail "virtualization.runner.releaseHostPath is required with virtualization.enabled: the release stager copies each runner release there, and every runner pod's loader takes a new runner image from it without rebooting a machine. Set it to a node directory such as /var/lib/platform-vm-runner-releases; each install stages into its own subdirectory of it." -}}
 {{- end -}}
 {{- end -}}
 

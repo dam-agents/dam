@@ -350,8 +350,9 @@ virtualization:
     # A new runner image is handed to each pod in place instead, and each
     # hand-off takes a place in the same width until the runner runs the
     # release and its machines answer again; a hand-off that fails, sees an
-    # ensure refused, or outlasts `settleTimeout` halts the release. The
-    # controller's sweep follows that many hand-offs at once.
+    # ensure refused, or outlasts `settleTimeout` halts the release. Time
+    # spent waiting for the node's stager to stage the release does not
+    # count. The controller's sweep follows that many hand-offs at once.
     rollout:
       maxConcurrent: 1
       settleTimeout: 10m
@@ -376,11 +377,11 @@ virtualization:
     # machines started after the hand-off boot the new one. Only a release
     # that cannot load in the pod (a newer base image's libc) still rolls the
     # pods, through `rollout`. The stager is the only writer; runners mount
-    # it read-only. Installs that share nodes each take their own
-    # subdirectory: every stager keeps only the newest few releases. On
-    # OpenShift it needs `scc`, as `imageCache.hostPath` does: the stager
-    # labels the directory for containers, as spc_t, so the confined runners
-    # can read it.
+    # it read-only. Each install stages into its own subdirectory, named
+    # after `agentNamespace`, because every stager keeps only the newest few
+    # releases in its directory. On OpenShift it needs `scc`, as
+    # `imageCache.hostPath` does: the stager labels the directory for
+    # containers, as spc_t, so the confined runners can read it.
     releaseHostPath: /var/lib/platform-vm-runner-releases
     # How smolvm checks every VMM's syscalls, from after its device setup,
     # against the allowlist a running microVM needs. `audit` logs a call

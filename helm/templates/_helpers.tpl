@@ -462,6 +462,15 @@ creates, so it has to match the ServiceAccount vm-runner.yaml renders.
 {{- $i := .Values.virtualization.runner.image }}
 {{- if $i.digest }}{{ printf "%s@%s" $i.repository $i.digest }}{{ else }}{{ printf "%s:%s" $i.repository ($i.tag | default .Chart.AppVersion) }}{{ end }}
 {{- end }}
+{{/*
+The node directory this install stages runner releases in: its own
+subdirectory of `runner.releaseHostPath`, named after the agent namespace,
+because every stager keeps only the newest few releases in its directory and
+installs that share nodes would otherwise remove each other's.
+*/}}
+{{- define "platform.vmRunner.releaseDir" -}}
+{{- with .Values.virtualization.runner.releaseHostPath }}{{ printf "%s/%s" (trimSuffix "/" .) $.Values.agentNamespace }}{{ end }}
+{{- end }}
 
 {{/* Platform-owned OTel collector for the ClickStack telemetry backend. */}}
 {{- define "platform.clickstack.collector.fullname" -}}

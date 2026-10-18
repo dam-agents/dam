@@ -83,7 +83,7 @@ spec:
                   "devices" $devices
                   "reserveMiB" $r.reserveMiB "headroomMiB" $r.headroomMiB "bootMiB" $r.bootMiB "machineCPUs" $r.machineCPUs "nestedVirtualization" ($r.nestedVirtualization | default false) "egressCidrs" $r.egressCidrs "egressExceptCidrs" $r.egressExceptCidrs
                   "imageArchiveHostPath" $r.imageArchiveHostPath
-                  "releaseHostPath" ($r.releaseHostPath | default "")
+                  "releaseHostPath" (include "platform.vmRunner.releaseDir" .)
                   "seccomp" (include "platform.vmRunner.seccomp" .)
                   "dnsPolicy" ($r.dnsPolicy | default "Default")
                   "dnsCidrs" ($r.dnsCidrs | default list) "clusterDns" ($r.clusterDns | default dict)

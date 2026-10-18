@@ -47,11 +47,11 @@ The vm e2e lane boots a 6 GiB guest with the runner's kernel and checks both, so
 The Mac's host runner has the same kernel, and its guests have no FUSE DAX.
 The pod's libc does not: a release whose runner does not load in the pod can take it over only as a new pod.
 
-**The stager** is a DaemonSet on the runners' nodes, and the only writer of the release directory.
+**The stager** is a DaemonSet on the runners' nodes, and the only writer of the release directory, or rather of the install's own subdirectory of it, named after the agent namespace, so installs that share nodes do not prune each other's releases.
 It runs the chart's runner image and copies the release that image carries under the image reference, with the runtime it names once per runtime, each appearing whole or not at all, and keeps the newest few releases and the runtimes they name.
 Runner pods mount the directory read-only, so a guest that escapes into its runner cannot replace a release another owner's runner takes next.
 It runs as root with no capability: root owns every file it copies and prunes, and the image build gives root read access to each of them, and write and search access to each directory.
-A chart upgrade rolls the stager, which stages the new release.
+A chart upgrade replaces every stager at once, since a stager serves nothing once it has staged, so the new release reaches each node after that node's own image pull.
 
 **The loader** is the runner pod's entrypoint.
 It supervises one runner process and runs the release the controller names over the runner's own machine API, with its token: the runner writes the name into the loader's directory in the pod, which the loader reads every second, so a hand-off starts seconds after the call.
@@ -89,6 +89,7 @@ The sweep runs as many such turns at once as the roll is wide, so one pass takes
 The rollout sweep runs apart from the orphan sweep, so a long pass delays no cleanup.
 A runner with ready machines stays mid-hand-off for at least two health polls, so each running agent has had an ensure against the new release before the next owner is named it.
 A hand-off is in trouble when the runner holds the release as failed, when the runner refuses an ensure, or when it has not settled within the settle timeout; a runner that cannot be reached, or answers that it is shutting down, is the hand-off itself and does not count.
+Time the runner reports the release not staged on its node does not count either: the hand-off's start moves up while it waits, so the settle timeout runs from about when the stager reached the node, and a stager that never does keeps the hand-off waiting in its place rather than stalled.
 A hand-off in trouble is marked stalled on the runner's Deployment, reported as an error and counted, and keeps its place, so the release goes no further, as with a pod that is never ready.
 A newer configured image resumes the release, starting with the runner that stalled, and so does an operator removing the stall annotation.
 A runner that needs a pod for the release ends its hand-off, and the pod roll that follows takes its own place.
