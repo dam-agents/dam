@@ -347,6 +347,13 @@ jobs:
       # pulls the published image. Decided as e2e:ci-images decides it, for
       # the reason agents-build gives: without the cache a build takes 15 min,
       # not 3. After setup-mise, for image:resolve's crane.
+      # Both restores fall back to main's newest entry, unlike build.yml's:
+      # a change to Cargo.lock or a patch has no exact entry until main's push
+      # saves one, and a cold build took 12-15 min of this lane's critical
+      # path. This job never saves, so the stale crates and the older kernel
+      # it restores go with the runner. The oci task checks each dependency
+      # against its pin: the smolvm clone by its stamp, downloads by digest,
+      # the patched libkrunfw by the commit and patch hash in its file name.
       - id: vm-runner-build
         if: inputs.verify
         env: *e2e-resolve-env
@@ -369,11 +376,13 @@ jobs:
             ~/.cargo/git/db
             packages/vm-runner/target
           key: &rust-release-key rust-release-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-release-key.outputs.rust }}-${{ hashFiles('packages/vm-runner/Cargo.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/smolvm.pin', 'packages/vm-runner/smolvm.patch', 'packages/vm-runner/libkrun.patch', 'packages/vm-runner/libkrunfw.patch') }}
+          restore-keys: rust-release-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-release-key.outputs.rust }}-
       - if: steps.vm-runner-build.outputs.build == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: &vm-runner-deps-paths ~/.cache/platform-vm-runner
           key: &vm-runner-deps-key vm-runner-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/vm-runner/smolvm.pin', 'packages/vm-runner/smolvm.patch', 'packages/vm-runner/libkrun.patch', 'packages/vm-runner/libkrunfw.patch') }}
+          restore-keys: vm-runner-deps-${{ runner.os }}-${{ runner.arch }}-
       - *e2e-keycloak-theme
       - *e2e-pnpm-install
       # The default image, which smoke/22-harness-tools boots, bakes its tools
