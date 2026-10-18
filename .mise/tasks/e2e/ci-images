@@ -12,7 +12,8 @@
 # e2e.yml's lanes start with the run instead of after the builds, because
 # bringing the cluster up (k3s, cert-manager, Istio) needs no image. It runs
 # this in the background, and cluster:install waits on the status file
-# (CI_IMAGES_STATUS) right before it loads the images into k3s.
+# (CI_IMAGES_STATUS) right before it loads the images into k3s, and on a
+# ready marker before it stages each vm-backend image.
 #
 # An image whose effective source is already published (image:resolve says
 # REUSE) is pulled right away; in a merge group, so is one an earlier group's
