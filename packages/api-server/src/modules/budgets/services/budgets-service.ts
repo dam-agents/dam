@@ -149,10 +149,10 @@ export function createStorageGate(deps: {
       const refusal = storageRefusal(await deps.readVmUsage());
       if (refusal) throw refusal;
     },
-    // UNIT_BOUNDARY_DESCRIPTION: the runner's own figures where it answered, and otherwise the pool the owner is configured to get, with nothing written to it yet — a user's first move is judged against the pool their runner is about to be created at, rather than against nothing.
+    // UNIT_BOUNDARY_DESCRIPTION: the runner's own figures where it answered, and otherwise the pool the owner is configured to get, with nothing written to it yet — a user's first move is judged against the pool their runner is about to be created at, rather than against nothing. A pool that cannot be read is null, as an unreadable runner is: the move is then judged on nothing there, not failed.
     async readCapacity() {
       const usage = await deps.readVmUsage();
-      if (!usage) return deps.readConfiguredPool();
+      if (!usage) return deps.readConfiguredPool().catch(() => null);
       return {
         storage: {
           usedBytes: usage.storage.usedBytes,
