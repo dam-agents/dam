@@ -1,24 +1,32 @@
 #!/usr/bin/env bash
-#MISE description="Stage an image tar on the node for the VM runners, as a flattened tree plus its launch record"
-#USAGE arg "<tar>" help="An image tar, as the :oci tasks write"
+#MISE description="Stage an image tar or OCI layout on the node for the VM runners, as a flattened tree plus its launch record"
+#USAGE arg "<image>" help="An image tar, as the :oci tasks write, or the OCI layout a layout-only build leaves"
 # It lands under the read-only image directory the runners mount, by the name
-# the tar carries.
+# the image carries.
 # The runner boots a staged tree as a shared read-only lower layer, so a
 # machine starts in seconds. The runner refuses a `docker save` archive
 # staged instead: no guest flattens one since platform-init became its init.
 set -euo pipefail
-IMAGE="$(tar -xOf "$usage_tar" manifest.json | jq -r '.[0].RepoTags[0]')"
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 IMAGE_DIR=/var/lib/platform-vm-images
-name="$(printf '%s' "$IMAGE" | tr '/:@' '___')"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
+# A layout is linked in, not unpacked: the e2e lane leaves a built agent image as
+# its layout, and its blobs are the image's. The link needs both under /tmp, where
+# the lane and this work directory live. gzip-layout and name-layout replace the
+# files they rewrite, which leaves the layout they read alone.
+layout="$work/layout"
+mkdir -p "$layout"
+if [ -d "$usage_image" ]; then cp -al "$usage_image/." "$layout"; else tar -xf "$usage_image" -C "$layout"; fi
+IMAGE="$(jq -r '.[0].RepoTags[0]' "$layout/manifest.json")"
+name="$(printf '%s' "$IMAGE" | tr '/:@' '___')"
+
 # The record the runner reads beside the tree: what the image says to run.
-config="$(tar -xOf "$usage_tar" manifest.json | jq -r '.[0].Config')"
-tar -xOf "$usage_tar" "$config" | jq \
+config="$(jq -r '.[0].Config' "$layout/manifest.json")"
+jq \
   '.config | {"entrypoint": (.Entrypoint // []), "cmd": (.Cmd // []), "env": (.Env // []), "workingDir": (.WorkingDir // "")}' \
-  > "$work/launch.json"
+  "$layout/$config" > "$work/launch.json"
 
 # Runs as root on the node: fills a tree beside the live entry, moves the old
 # entry aside and the new one in, so a runner looking the entry up finds a
@@ -86,12 +94,9 @@ fi
 # by the first layer alone, and a built image mixes the two: the layers its
 # build writes are plain tars, the ones it takes from its base stay gzip. Read
 # as plain, a gzip layer is a truncated tar ("reading tar: unexpected EOF"),
-# so the tar is unpacked to its OCI layout, every plain layer gzipped and the
-# docker-save manifest written again before crane flattens it. An image
-# pulled from a registry is gzip throughout and passes through unchanged.
-layout="$work/layout"
-mkdir -p "$layout"
-tar -xf "$usage_tar" -C "$layout"
+# so every plain layer is gzipped and the docker-save manifest written again
+# before crane flattens it. An image pulled from a registry is gzip throughout
+# and passes through unchanged.
 "$MISE_CONFIG_ROOT/.mise/tasks/image/gzip-layout" "$layout"
 "$MISE_CONFIG_ROOT/.mise/tasks/image/name-layout" "$layout" "$IMAGE"
 entries=()

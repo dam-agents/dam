@@ -394,7 +394,7 @@ stage_vm_images() {
   for image in ${VM_IMAGES[@]+"${VM_IMAGES[@]}"}; do
     echo "Staging $image for the VM runners..."
     comp="${image##*/}"; comp="${comp%%:*}"
-    mise run image:stage-vm -- "$(.mise/tasks/image/resolve tar-path "${comp#platform-}")" || return 1
+    mise run image:stage-vm -- "$(.mise/tasks/image/resolve import-path "${comp#platform-}")" || return 1
   done
   e2e_mark "vm images staging done"
 }
@@ -402,7 +402,7 @@ stage_vm_images() {
 # 1d. Load images into k3s (built at the top, or out-of-band in CI).
 # SKIP_IMAGE_LOAD skips the containerd import — cluster:helm reuses the SHAs
 # already loaded, so pods keep their pinned images. SKIP_IMAGE_BUILD alone (CI)
-# does NOT skip the load: e2e:ci-images wrote the tars out-of-band, and they
+# does NOT skip the load: e2e:ci-images wrote the images out-of-band, and they
 # still have to be imported into k3s's containerd.
 if [ -n "${SKIP_IMAGE_LOAD:-}" ]; then
   echo "Skipping image load (SKIP_IMAGE_LOAD set)"
@@ -464,26 +464,26 @@ else
   # imported while the rest are still on their way, so only the last to land
   # is imported after the wait.
   load_images() {
-    local c remaining=("$@") left tars=()
+    local c remaining=("$@") left images=()
     if [ -n "${CI_IMAGES_STATUS:-}" ]; then
       # e2e:ci-images writes each image's file here, as CI_BUILD_READY_DIR:
       # e2e.yml sets that to this same directory, since one run of it builds
       # only one family of the images.
       echo "Waiting for this run's images (e2e:ci-images): ${remaining[*]}"
       while [ ${#remaining[@]} -gt 0 ]; do
-        left=() tars=()
+        left=() images=()
         for c in "${remaining[@]}"; do
           if [ -e "$CI_IMAGES_STATUS.ready/$c" ]; then
-            tars+=("$(.mise/tasks/image/resolve tar-path "$c")")
+            images+=("$(.mise/tasks/image/resolve import-path "$c")")
           else
             left+=("$c")
           fi
         done
-        if [ ${#tars[@]} -gt 0 ]; then
-          echo "Loading into k3s: ${tars[*]}"
-          mise run cluster:import -- "${tars[@]}" || return 1
+        if [ ${#images[@]} -gt 0 ]; then
+          echo "Loading into k3s: ${images[*]}"
+          mise run cluster:import -- "${images[@]}" || return 1
         fi
-        tars=()
+        images=()
         remaining=(${left[@]+"${left[@]}"})
         if [ ${#remaining[@]} -gt 0 ] && [ -s "$CI_IMAGES_STATUS" ]; then
           [ "$(cat "$CI_IMAGES_STATUS")" = ok ] || { echo "FATAL: fetching this run's images failed; see the e2e job's image fetch log" >&2; return 1; }
@@ -494,8 +494,8 @@ else
     fi
     [ ${#remaining[@]} -gt 0 ] || return 0
     echo "Loading images into k3s: ${remaining[*]}"
-    for c in "${remaining[@]}"; do tars+=("$(.mise/tasks/image/resolve tar-path "$c")"); done
-    mise run cluster:import -- "${tars[@]}" || return 1
+    for c in "${remaining[@]}"; do images+=("$(.mise/tasks/image/resolve import-path "$c")"); done
+    mise run cluster:import -- "${images[@]}" || return 1
   }
   # Both loads run beside the mesh install below, which spends most of its time
   # waiting, and the chart install waits only for the platform images: no pod
