@@ -49,7 +49,7 @@ export function SidebarV2() {
       {!pinned && (
         <div
           aria-hidden
-          className="fixed inset-y-0 left-0 z-nav hidden w-2 md:block"
+          className="fixed inset-y-0 left-0 z-nav hidden w-[18px] md:block"
           onMouseEnter={() => setPeek(true)}
         />
       )}
