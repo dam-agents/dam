@@ -1,4 +1,5 @@
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -27,6 +28,14 @@ impl Drop for TempDir {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a script another process execs, written under a private name beside it and renamed into place once the write is closed. Executing a file that a process holds open for writing fails with ETXTBSY on Linux, and a fork on another test thread copies the write descriptor into a child that holds it until it execs, which is the flake this keeps away. Staging leaves no write descriptor on the path that is executed.
+pub(crate) fn exec_script(path: &Path, body: &str) {
+    let staged = path.with_file_name(format!(".{}", path.file_name().unwrap().to_string_lossy()));
+    fs::write(&staged, body).unwrap();
+    fs::set_permissions(&staged, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::rename(&staged, path).unwrap();
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a registry's blob endpoint on a loopback port, for the reads that size an image. Every request gets the response `respond` makes from its head: the request line and headers. The thread serves for as long as the test process lives.

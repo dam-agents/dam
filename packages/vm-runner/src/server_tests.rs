@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::net::TcpListener;
-use std::os::unix::fs::PermissionsExt;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use super::*;
@@ -224,9 +223,7 @@ impl Harness {
         let dir = std::env::temp_dir().join(format!("vmr-{}-{name}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        let crane = dir.join("crane");
-        fs::write(&crane, FAKE_CRANE).unwrap();
-        fs::set_permissions(&crane, fs::Permissions::from_mode(0o755)).unwrap();
+        crate::testdir::exec_script(&dir.join("crane"), FAKE_CRANE);
         let init = dir.join("platform-init");
         fs::write(&init, "#!/bin/sh\nexec \"$@\"\n").unwrap();
         let (base, held) = port_block();
@@ -1092,11 +1089,10 @@ async fn a_new_image_that_cannot_be_fetched_leaves_the_machine_running() {
     let h = Harness::new("new-image-fails");
     h.server.put("m1", spec(true)).unwrap();
     h.settle("m1").await;
-    fs::write(
-        h.dir.join("crane"),
+    crate::testdir::exec_script(
+        &h.dir.join("crane"),
         "#!/bin/sh\necho 'MANIFEST_UNKNOWN' >&2\nexit 1\n",
-    )
-    .unwrap();
+    );
     let mut upgraded = spec(true);
     upgraded.image = "quay.io/x/vm:2".into();
     h.server.put("m1", upgraded).unwrap();
@@ -1446,11 +1442,10 @@ async fn an_image_is_fetched_once_for_every_machine_that_wants_it() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_staged_archive_is_refused_with_how_to_restage_it() {
     let h = Harness::new("archive");
-    fs::write(
-        h.dir.join("crane"),
+    crate::testdir::exec_script(
+        &h.dir.join("crane"),
         "#!/bin/sh\necho unreachable >&2\nexit 1\n",
-    )
-    .unwrap();
+    );
     let images = h.dir.join("images");
     fs::create_dir_all(&images).unwrap();
     fs::write(
@@ -1473,11 +1468,10 @@ async fn a_staged_archive_is_refused_with_how_to_restage_it() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_staged_tree_boots_in_place_and_wins_over_the_archive() {
     let h = Harness::new("staged-tree");
-    fs::write(
-        h.dir.join("crane"),
+    crate::testdir::exec_script(
+        &h.dir.join("crane"),
         "#!/bin/sh\necho unreachable >&2\nexit 1\n",
-    )
-    .unwrap();
+    );
     let images = h.dir.join("images");
     let tree = staged_path(&images, "quay.io/x/vm:1");
     fs::create_dir_all(tree.join(ROOTFS_DIR)).unwrap();
@@ -1503,11 +1497,10 @@ async fn a_staged_tree_boots_in_place_and_wins_over_the_archive() {
 #[tokio::test(flavor = "multi_thread")]
 async fn an_image_that_cannot_be_read_is_reported_as_such() {
     let h = Harness::new("unreadable");
-    fs::write(
-        h.dir.join("crane"),
+    crate::testdir::exec_script(
+        &h.dir.join("crane"),
         "#!/bin/sh\necho 'MANIFEST_UNKNOWN' >&2\nexit 1\n",
-    )
-    .unwrap();
+    );
     h.server.put("m1", spec(true)).unwrap();
     let status = h.settle("m1").await;
     assert_eq!(status.reason, REASON_IMAGE_UNAVAILABLE);
@@ -1735,7 +1728,7 @@ fn files_under(dir: &Path) -> Vec<PathBuf> {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_registry_credential_reaches_crane_alone() {
     let h = Harness::new("pull-auth");
-    fs::write(h.dir.join("crane"), PRIVATE_CRANE).unwrap();
+    crate::testdir::exec_script(&h.dir.join("crane"), PRIVATE_CRANE);
     h.server.put("m1", with_credential(true)).unwrap();
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
 
@@ -1768,7 +1761,7 @@ async fn a_registry_credential_reaches_crane_alone() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_bare_digest_reference_cannot_boot_a_cached_private_tree() {
     let h = Harness::new("bare-digest");
-    fs::write(h.dir.join("crane"), PRIVATE_CRANE).unwrap();
+    crate::testdir::exec_script(&h.dir.join("crane"), PRIVATE_CRANE);
     h.server.put("m1", with_credential(true)).unwrap();
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
     let hex = "f".repeat(64);
@@ -1792,7 +1785,7 @@ const STALE: &str = r#"{"auths":{"quay.io":{"auth":"c3RhbGU="}}}"#;
 #[tokio::test(flavor = "multi_thread")]
 async fn a_stale_credential_does_not_hide_a_good_one_listed_after_it() {
     let h = Harness::new("pull-auth-fallback");
-    fs::write(h.dir.join("crane"), PRIVATE_CRANE).unwrap();
+    crate::testdir::exec_script(&h.dir.join("crane"), PRIVATE_CRANE);
     let spec = MachineSpec {
         pull_auths: vec![STALE.into(), CREDENTIAL.into()],
         ..spec(true)
@@ -2293,11 +2286,10 @@ async fn a_spec_that_needs_nothing_clears_the_failure_before_it() {
 
 // UNIT_BOUNDARY_DESCRIPTION: a crane whose layer fetch never ends, as a pull of a huge image over a slow registry does.
 fn stall_fetches(h: &Harness) {
-    fs::write(
-        h.dir.join("crane"),
+    crate::testdir::exec_script(
+        &h.dir.join("crane"),
         "#!/bin/sh\nif [ \"$1\" = config ]; then printf '{\"config\":{\"Cmd\":[\"x\"]}}'; exit 0; fi\nsleep 60\n",
-    )
-    .unwrap();
+    );
 }
 
 // TEST_SCENARIO: a delete of a machine whose create is waiting on a fetch must not wait out the fetch's twenty minutes. The delete cancels the machine's own token, the create stops waiting at once, and the machine is gone well inside the controller's request timeout.
