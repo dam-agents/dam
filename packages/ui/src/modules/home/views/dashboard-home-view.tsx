@@ -13,13 +13,15 @@ import {
   ConnectionsCard,
   HarnessCard,
   HeroCard,
-  ModelsCard,
   ResourcesBarsCard,
   SchedulesCard,
-  SpendByKindCard,
   TipCard,
   TokensCard,
 } from "../components/home-cards.js";
+import {
+  ModelsCard,
+  SpendByKindCard,
+} from "../components/measured-spend-cards.js";
 
 export function DashboardHomeView() {
   const { data: agentsData } = useAgents();
