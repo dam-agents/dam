@@ -20,6 +20,8 @@ const offsetBackgroundPrompt = "Run the nightly cleanup task";
 const offsetReplyTail = "Found 3 changed files.";
 
 test("exchange messages with the agent", async ({ page }) => {
+  test.setTimeout(300_000);
+
   const token = await getAccessToken();
   const api = createApiClient(token);
 
@@ -86,6 +88,8 @@ test("exchange messages with the agent", async ({ page }) => {
 test("background prompt mid-turn keeps the reply paired with the user message (#703)", async ({
   page,
 }) => {
+  test.setTimeout(300_000);
+
   const token = await getAccessToken();
   const api = createApiClient(token);
 

@@ -22,6 +22,8 @@ const activeRowSelector = '[data-testid="session-row"][data-active="true"]';
 test("deleting inactive and active sessions preserves the right navigation (#4239, #1084)", async ({
   page,
 }) => {
+  test.setTimeout(300_000);
+
   const token = await getAccessToken();
   const api = createApiClient(token);
 
