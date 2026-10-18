@@ -1,6 +1,7 @@
 package reconciler
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -39,6 +40,11 @@ const (
 
 func (r *AgentReconciler) ownerGatewayServes(spec *apiv1.AgentSpec) bool {
 	return r.config.VM.Enabled && r.config.VM.Gateway.PerOwner && spec.IsVM()
+}
+
+func (r *AgentReconciler) ownerGatewayOn(owner string) bool {
+	_, refused := r.ownerGatewayRefused.Load(owner)
+	return r.config.VM.Enabled && r.config.VM.Gateway.PerOwner && !refused
 }
 
 func ownerGatewayProxyPort(slot int) int    { return ownerGatewayPortBase + 2*slot }
@@ -95,7 +101,7 @@ type ownerGatewayMember struct {
 	served    bool
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the owner gateway pod. One replica, and a template change surges a new pod before the old one stops, so a roll never leaves the owner's agents without a gateway. Nothing about one agent is in the template: listeners, resolver blocks, credentials and the leaf are files the running pod watches, so a grant, a rotation or an agent added or removed never restarts it. The memory request is fixed for that reason: about 23 MiB with one agent and 5 MiB more per agent (measured with two hosts each, one metered), so the request covers a typical owner and the limit stays unset like the per-agent gateway's.
+// UNIT_BOUNDARY_DESCRIPTION: the owner gateway pod. One replica, and a template change surges a new pod before the old one stops, so a roll never leaves the owner's agents without a gateway. The surge holds only because the new pod turns ready on Envoy's health listener, which Envoy opens only once its first load of the agents' listener and cluster files is done. Nothing about one agent is in the template: listeners, resolver blocks, credentials and the leaf are files the running pod watches, so a grant, a rotation or an agent added or removed never restarts it. The memory request is fixed for that reason: about 23 MiB with one agent and 5 MiB more per agent (measured with two hosts each, one metered), so the request covers a typical owner and the limit stays unset like the per-agent gateway's.
 func buildOwnerGatewayDeployment(owner string, cfg *config.Config, ownerRefs []metav1.OwnerReference) *appsv1.Deployment {
 	name := ownerGatewayName(cfg.ReleaseName, owner)
 	labels := ownerGatewayLabels(cfg.ReleaseName, owner)
@@ -107,6 +113,10 @@ func buildOwnerGatewayDeployment(owner string, cfg *config.Config, ownerRefs []m
 	}
 	envoy.Resources.Requests[corev1.ResourceMemory] = resource.MustParse("96Mi")
 	envoy.Lifecycle = &corev1.Lifecycle{PreStop: &corev1.LifecycleHandler{Sleep: &corev1.SleepAction{Seconds: ownerGatewayTerminationGrace - 5}}}
+	envoy.ReadinessProbe = &corev1.Probe{
+		ProbeHandler:  corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: platformGatewayHealthPath, Port: intstr.FromInt(cfg.EnvoyPort)}},
+		PeriodSeconds: 1,
+	}
 	dns := machineDNSContainer(cfg, "")
 	dns.Env = nil
 	dns.Ports = nil
@@ -233,10 +243,14 @@ func (r *AgentReconciler) ownerGatewayServices(ctx context.Context, agents []str
 	return out, nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: renders and applies the owner gateway for every vm Agent of the owner, from an agent's reconcile while it holds the owner's lock. Every agent gets its slot first, recorded on its own gateway Service, so the listeners render on their final ports. The ConfigMap must fit in 1 MiB, the limit of one object; a larger owner is refused here with the reason, and its agents keep their own gateways, until an xDS server in the controller replaces the files.
+// UNIT_BOUNDARY_DESCRIPTION: renders and applies the owner gateway for every vm Agent of the owner, from an agent's reconcile while it holds the owner's lock. Every agent gets its slot first, recorded on its own gateway Service, so the listeners render on their final ports. The ConfigMap must fit in 1 MiB, the limit of one object; a larger owner is refused, until an xDS server in the controller replaces the files. A refused owner, or one whose flag is off, renders only the agents still on it, so their grants stay current while each moves back to its own gateway, and the owner gateway goes once none is left on it.
 func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) (map[string]ownerGatewayMember, error) {
 	refs := r.runnerOwnerRef(ctx)
 	items, err := r.ownerAgents(ctx, owner)
+	if err != nil {
+		return nil, err
+	}
+	ownerSecrets, err := listOwnerCredentialSecrets(ctx, r.client, r.config.Namespace, owner)
 	if err != nil {
 		return nil, err
 	}
@@ -259,10 +273,14 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 		byName[svc.Name] = svc
 	}
 	members := map[string]ownerGatewayMember{}
-	var names []string
+	var names, onIt []string
 	for _, agent := range vmAgents {
 		svc, ok := byName[GatewayName(agent.Name)]
 		if !ok || svc.Spec.ClusterIP == "" || svc.Spec.ClusterIP == corev1.ClusterIPNone {
+			continue
+		}
+		served := svc.Annotations[annOwnerGatewayServed] == "true"
+		if !served && !r.config.VM.Gateway.PerOwner {
 			continue
 		}
 		slot, ok := allocateOwnerGatewaySlot(agent.Name, services)
@@ -276,36 +294,64 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 			svc.Annotations = map[string]string{annOwnerGatewaySlot: strconv.Itoa(slot)}
 			services = append(services, svc)
 		}
-		secrets, err := listAgentCredentialSecrets(ctx, r.client, r.config.Namespace, agent.Name, owner, agent.Spec.GrantedSecretIDs, agent.Spec.GrantedConnectionIDs)
-		if err != nil {
-			return nil, err
-		}
-		members[agent.Name] = ownerGatewayMember{agent: agent, secrets: secrets, slot: slot, clusterIP: svc.Spec.ClusterIP, served: svc.Annotations[annOwnerGatewayServed] == "true"}
+		secrets := filterByGrants(agent.Name, ownerSecrets, agent.Spec.GrantedSecretIDs, agent.Spec.GrantedConnectionIDs)
+		members[agent.Name] = ownerGatewayMember{agent: agent, secrets: secrets, slot: slot, clusterIP: svc.Spec.ClusterIP, served: served}
 		names = append(names, agent.Name)
+		if served {
+			onIt = append(onIt, agent.Name)
+		}
 	}
 	slices.Sort(names)
-	var agents []ownerGatewayAgent
-	var blocks []ownerResolverBlock
-	var granted [][]corev1.Secret
-	var leafAgents []ownerLeafAgent
-	for _, name := range names {
-		m := members[name]
-		chains := chainsFromSecrets(m.secrets, m.agent.Spec.L7Hosts)
-		for i := range chains {
-			chains[i].RequireAddress = m.agent.Spec.RequireConnectionAddress
+	slices.Sort(onIt)
+	var (
+		rendered   ownerGatewayConfig
+		cm         *corev1.ConfigMap
+		granted    [][]corev1.Secret
+		leafAgents []ownerLeafAgent
+	)
+	render := func(names []string) error {
+		var agents []ownerGatewayAgent
+		var blocks []ownerResolverBlock
+		granted, leafAgents = nil, nil
+		for _, name := range names {
+			m := members[name]
+			chains := chainsFromSecrets(m.secrets, m.agent.Spec.L7Hosts)
+			for i := range chains {
+				chains[i].RequireAddress = m.agent.Spec.RequireConnectionAddress
+			}
+			agents = append(agents, ownerGatewayAgent{Name: name, AttributionID: m.agent.Spec.TelemetryAttributionID, ProxyPort: ownerGatewayProxyPort(m.slot), Chains: chains})
+			blocks = append(blocks, ownerResolverBlock{Port: ownerGatewayResolverPort(m.slot), ClusterIP: m.clusterIP})
+			granted = append(granted, m.secrets)
+			leafAgents = append(leafAgents, ownerLeafAgent{Secrets: m.secrets, L7Hosts: m.agent.Spec.L7Hosts})
 		}
-		agents = append(agents, ownerGatewayAgent{Name: name, AttributionID: m.agent.Spec.TelemetryAttributionID, ProxyPort: ownerGatewayProxyPort(m.slot), Chains: chains})
-		blocks = append(blocks, ownerResolverBlock{Port: ownerGatewayResolverPort(m.slot), ClusterIP: m.clusterIP})
-		granted = append(granted, m.secrets)
-		leafAgents = append(leafAgents, ownerLeafAgent{Secrets: m.secrets, L7Hosts: m.agent.Spec.L7Hosts})
+		var err error
+		if rendered, err = renderOwnerGateway(agents, r.config); err != nil {
+			return err
+		}
+		cm = buildOwnerGatewayConfigMap(owner, r.config, rendered, ownerResolverCorefile(blocks), refs)
+		return nil
 	}
-	rendered, err := renderOwnerGateway(agents, r.config)
-	if err != nil {
+	if err := render(names); err != nil {
 		return nil, err
 	}
-	cm := buildOwnerGatewayConfigMap(owner, r.config, rendered, ownerResolverCorefile(blocks), refs)
-	if size := configMapSize(cm); size > ownerGatewayConfigBudget-4096 {
-		return nil, fmt.Errorf("the owner gateway's configuration for %d agents is %d KiB, past the 1 MiB a ConfigMap holds", len(agents), size>>10)
+	budget := cmp.Or(r.ownerGatewayBudget, ownerGatewayConfigBudget) - 4096
+	if r.config.VM.Gateway.PerOwner {
+		if size := configMapSize(cm); size > budget {
+			r.ownerGatewayRefused.Store(owner, true)
+			slog.Warn("owner gateway: refused, past the 1 MiB a ConfigMap holds; its agents move back to their own gateways", "owner", owner, "agents", len(names), "KiB", size>>10)
+			if err := render(onIt); err != nil {
+				return nil, err
+			}
+		} else {
+			r.ownerGatewayRefused.Delete(owner)
+		}
+	}
+	if len(onIt) == 0 && !r.ownerGatewayOn(owner) {
+		r.deleteOwnerGateway(ctx, owner)
+		return nil, nil
+	}
+	if size := configMapSize(cm); size > budget {
+		return nil, fmt.Errorf("the owner gateway's configuration for the %d agents still on it is %d KiB, past the 1 MiB a ConfigMap holds; they keep its last configuration until each moves back", len(onIt), size>>10)
 	}
 	name := ownerGatewayName(r.config.ReleaseName, owner)
 	err = concurrently(
@@ -334,7 +380,9 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 	for agentName, rev := range rendered.Revisions {
 		r.ownerGatewayRevisions.Store(agentName, rev)
 	}
-	r.cutOverToOwnerGateway(ctx, owner, members)
+	if r.ownerGatewayOn(owner) {
+		r.cutOverToOwnerGateway(ctx, owner, members)
+	}
 	return members, nil
 }
 
@@ -481,7 +529,7 @@ const (
 )
 
 // UNIT_BOUNDARY_DESCRIPTION: the gateway Service of a vm Agent its owner gateway serves: it selects the owner gateway pod and maps each of its ports onto the agent's slot, the proxy, HTTP and TLS ports onto the proxy port and DNS onto the resolver port. Only these ports are declared, and a ClusterIP carries nothing on a port it does not declare (measured on OVN-Kubernetes and k3s), so a guest pinned to its own ClusterIP reaches only its own listener. The Service keeps its ClusterIP, so no machine spec changes. Until the agent is cut over its Service keeps selecting its own gateway pod.
-// UNIT_BOUNDARY_DESCRIPTION: with the flag turned off, a moved agent goes back only once its own gateway pod is ready again, so its traffic is never sent to a pod that does not exist: until then its Service keeps the moved form, and the move back clears the mark, which drops the agent from its owner gateway on the owner's next render.
+// UNIT_BOUNDARY_DESCRIPTION: with the flag turned off, or its owner refused, a moved agent goes back only once its own gateway pod is ready again, so its traffic is never sent to a pod that does not exist: until then its Service keeps the moved form, and the move back clears the mark, which drops the agent from its owner gateway on the owner's next render.
 func (r *AgentReconciler) ownerGatewayServiceFor(ctx context.Context, desired *corev1.Service, owner string) (*corev1.Service, error) {
 	existing, err := r.client.CoreV1().Services(desired.Namespace).Get(ctx, desired.Name, metav1.GetOptions{})
 	if k8serrors.IsNotFound(err) {
@@ -495,7 +543,7 @@ func (r *AgentReconciler) ownerGatewayServiceFor(ctx context.Context, desired *c
 		return desired, nil
 	}
 	agent := desired.Labels[LabelAgent]
-	if !r.config.VM.Gateway.PerOwner && r.podCurrentAndReady(ctx, desired.Name) {
+	if !r.ownerGatewayOn(owner) && r.podCurrentAndReady(ctx, desired.Name) {
 		if err := r.clearOwnerGatewayMark(ctx, desired.Name); err != nil {
 			return nil, err
 		}
@@ -519,9 +567,9 @@ func (r *AgentReconciler) clearOwnerGatewayMark(ctx context.Context, svcName str
 	})
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the agent's own gateway is no longer needed: its Service selects the owner gateway and the flag is on. Its own gateway objects are then removed rather than applied, its policies admit only the owner gateway, and turning the flag off renders them again before the agent moves back.
-func (r *AgentReconciler) movedToOwnerGateway(ctx context.Context, spec *apiv1.AgentSpec, name string) (bool, error) {
-	if !r.ownerGatewayServes(spec) {
+// UNIT_BOUNDARY_DESCRIPTION: whether the agent's Service selects its owner gateway, whatever the flag says: until the agent has moved back, its policies must keep admitting the owner gateway, or the pod its traffic still reaches is refused at the harness and at ext-authz.
+func (r *AgentReconciler) onOwnerGateway(ctx context.Context, spec *apiv1.AgentSpec, name string) (bool, error) {
+	if !r.config.VM.Enabled || !spec.IsVM() {
 		return false, nil
 	}
 	_, ok, err := r.servedDesiredUp(ctx, name)
@@ -574,7 +622,7 @@ func (r *AgentReconciler) ownerListenerCurrent(ctx context.Context, agent, host 
 	}
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://%s/__platform_healthz", net.JoinHostPort(host, strconv.Itoa(port))), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://%s%s", net.JoinHostPort(host, strconv.Itoa(port)), platformGatewayHealthPath), nil)
 	if err != nil {
 		return false, err.Error()
 	}
@@ -676,7 +724,7 @@ func (r *AgentReconciler) servedDesiredUp(ctx context.Context, name string) (up,
 	return up, ok, nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: an owner whose agents all sleep has no reconcile to carry a new owner gateway template, so the rollout sweep offers every existing owner gateway its turn, in name order, under its owner's lock. It only updates a gateway that exists, so it never brings back one the orphan sweep removed.
+// UNIT_BOUNDARY_DESCRIPTION: an owner whose agents all sleep has no reconcile to carry a new owner gateway template, so the rollout sweep offers every existing owner gateway its turn, in name order, under its owner's lock. It only updates a gateway that exists, so it never brings back one the orphan sweep removed. With the flag off it renders the gateway for the agents still on it instead, which removes a gateway none is left on, such as one whose last agent was deleted before it moved back.
 func (r *AgentReconciler) rollOwnerGateways(ctx context.Context) {
 	list, err := r.client.AppsV1().Deployments(r.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "app.kubernetes.io/component=" + ownerGatewayComponent})
 	if err != nil {
@@ -692,7 +740,12 @@ func (r *AgentReconciler) rollOwnerGateways(ctx context.Context) {
 		}
 		lock := r.ownerLock(owner)
 		lock.Lock()
-		err := r.applyOwnerGatewayDeployment(ctx, buildOwnerGatewayDeployment(owner, r.config, refs))
+		var err error
+		if r.config.VM.Gateway.PerOwner {
+			err = r.applyOwnerGatewayDeployment(ctx, buildOwnerGatewayDeployment(owner, r.config, refs))
+		} else {
+			_, err = r.ensureOwnerGateway(ctx, owner)
+		}
 		lock.Unlock()
 		if err != nil {
 			slog.Warn("owner gateway rollout: applying an owner gateway failed", "owner", owner, "error", err)

@@ -86,6 +86,8 @@ type AgentReconciler struct {
 	preflightDone         bool
 	migrationCopyMu       sync.Mutex
 	ownerGatewayRevisions sync.Map
+	ownerGatewayRefused   sync.Map
+	ownerGatewayBudget    int
 	ownerProbeClient      *http.Client
 }
 
@@ -195,10 +197,12 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	}
 	migration := runtimeMigrationOf(agent.Annotations, agent.Status)
 	var liveGatewaySvc *corev1.Service
-	moved, err := r.movedToOwnerGateway(ctx, agentSpec, name)
+	onOwnerGateway, err := r.onOwnerGateway(ctx, agentSpec, name)
 	if err != nil {
 		return r.setError(ctx, name, fmt.Sprintf("reading gateway service: %v", err))
 	}
+	ownerGatewayOn := agentSpec.IsVM() && r.ownerGatewayOn(owner)
+	moved := onOwnerGateway && ownerGatewayOn
 	ownGateway := func(apply func() error) func() error {
 		if moved {
 			return func() error { return nil }
@@ -235,7 +239,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		},
 		func() error {
 			policy := BuildHarnessAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)
-			if r.ownerGatewayServes(agentSpec) || moved {
+			if ownerGatewayOn || onOwnerGateway {
 				admitOwnerGateway(policy, name, r.config.PrincipalFor(ownerGatewayName(r.config.ReleaseName, owner)), true)
 			}
 			if moved {
@@ -248,7 +252,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		},
 		func() error {
 			policy := BuildExtAuthzAuthorizationPolicy(name, r.config, agent.Namespace, ownerRef)
-			if r.ownerGatewayServes(agentSpec) || moved {
+			if ownerGatewayOn || onOwnerGateway {
 				admitOwnerGateway(policy, name, r.config.PrincipalFor(ownerGatewayName(r.config.ReleaseName, owner)), false)
 			}
 			if moved {
@@ -284,6 +288,15 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	)
 	if err != nil {
 		return r.setError(ctx, name, err.Error())
+	}
+	if onOwnerGateway && !r.config.VM.Gateway.PerOwner {
+		lock := r.ownerLock(owner)
+		lock.Lock()
+		_, err := r.ensureOwnerGateway(ctx, owner)
+		lock.Unlock()
+		if err != nil {
+			slog.Warn("owner gateway: not applied for the agents still on it", "owner", owner, "agent", name, "error", err)
+		}
 	}
 	timer.mark("agentObjects")
 
@@ -362,7 +375,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 
 	hardStop := migration.stopHolds(agent.Annotations) || agent.Annotations[annStorageMigration] != ""
 	_, served := desiredUpRecord(liveGatewaySvc)
-	served = served && r.ownerGatewayServes(agentSpec)
+	served = served && ownerGatewayOn
 	applyGateway := func() error {
 		if served {
 			if err := recordDesiredUp(ctx, r.client, r.config.Namespace, name, running && !hardStop); err != nil {
@@ -644,7 +657,7 @@ func (r *AgentReconciler) publishGatewayTurnedReady(ctx context.Context, agent *
 }
 
 func (r *AgentReconciler) gatewayReadiness(ctx context.Context, agent *apiv1.Agent) (bool, string, string) {
-	if r.ownerGatewayServes(&agent.Spec) {
+	if agent.Spec.IsVM() && r.ownerGatewayOn(agent.Labels[envoyOwnerLabel]) {
 		if svc, err := r.client.CoreV1().Services(r.config.Namespace).Get(ctx, GatewayName(agent.Name), metav1.GetOptions{}); err == nil && svc.Annotations[annOwnerGatewayServed] == "true" {
 			if ok, msg := r.ownerListenerCurrent(ctx, agent.Name, svc.Spec.ClusterIP, r.config.EnvoyPort); !ok {
 				if r.requeue != nil {

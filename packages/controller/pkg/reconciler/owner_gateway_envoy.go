@@ -63,7 +63,7 @@ func renderOwnerGateway(agents []ownerGatewayAgent, cfg *config.Config) (ownerGa
 			"name":         "envoy.bootstrap.internal_listener",
 			"typed_config": ev{"@type": "type.googleapis.com/envoy.extensions.bootstrap.internal_listener.v3.InternalListener"},
 		}},
-		"static_resources": ev{"clusters": ownerSharedClusters(shared)},
+		"static_resources": ev{"clusters": ownerSharedClusters(shared), "listeners": []any{ownerHealthListener(cfg.EnvoyPort)}},
 		"dynamic_resources": ev{
 			"lds_config": watchedConfigSource(ownerGatewayLDSKey),
 			"cds_config": watchedConfigSource(ownerGatewayCDSKey),
@@ -135,6 +135,25 @@ func ownerAgentRevision(listeners, clusters []any) string {
 	return hex.EncodeToString(sum[:8])
 }
 
+func ownerHealthListener(port int) ev {
+	return ev{
+		"name":    "owner_gateway_health",
+		"address": ev{"socket_address": ev{"address": envoyListenAddress, "port_value": port}},
+		"filter_chains": []any{ev{"filters": []any{ev{
+			"name": "envoy.filters.network.http_connection_manager",
+			"typed_config": ev{
+				"@type":        "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
+				"stat_prefix":  "owner_gateway_health",
+				"http_filters": []any{routerHTTPFilter()},
+				"route_config": ev{"virtual_hosts": []any{ev{
+					"name":    "health",
+					"domains": []any{"*"},
+					"routes":  []any{ev{"match": ev{"path": platformGatewayHealthPath}, "direct_response": ev{"status": 200}}},
+				}}},
+			},
+		}}}},
+	}
+}
 func ownerSharedClusters(p bootstrapParams) []any {
 	clusters := []any{
 		dynamicForwardProxyCluster("dynamic_forward_proxy_https", true, p.UpstreamTrustedCA),

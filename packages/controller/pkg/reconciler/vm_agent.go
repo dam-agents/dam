@@ -109,10 +109,13 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		}
 		return vmrunner.MachineStatus{Reason: reason, Message: msg}, false, nil
 	}
+	// UNIT_BOUNDARY_DESCRIPTION: the owner gateway is rendered after the runner call, still under the owner's lock: a machine reaches its gateway through its own Service's address whichever pod that selects, so a start never waits for the owner's render, a few reads and writes per agent of the owner.
 	if r.ownerGatewayServes(spec) {
-		if _, err := r.ensureOwnerGateway(ctx, owner); err != nil {
-			slog.Warn("owner gateway: not applied; the agent keeps its own gateway", "owner", owner, "agent", name, "error", err)
-		}
+		defer func() {
+			if _, err := r.ensureOwnerGateway(ctx, owner); err != nil {
+				slog.Warn("owner gateway: not applied", "owner", owner, "agent", name, "error", err)
+			}
+		}()
 	}
 	defaults := r.config.AgentTemplateDefaults
 

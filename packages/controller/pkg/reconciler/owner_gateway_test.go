@@ -66,11 +66,15 @@ func TestOwnerGateway_FlagOnRendersOneOwnerGateway(t *testing.T) {
 	assert.Equal(t, int32(0), dep.Spec.Strategy.RollingUpdate.MaxUnavailable.IntVal)
 	assert.Equal(t, int32(1), dep.Spec.Strategy.RollingUpdate.MaxSurge.IntVal)
 	assert.Equal(t, name, dep.Spec.Template.Spec.ServiceAccountName)
+	probe := dep.Spec.Template.Spec.Containers[0].ReadinessProbe
+	require.NotNil(t, probe, "the surge holds only if the new pod turns ready once Envoy has loaded the agents' files")
+	assert.Equal(t, r.config.EnvoyPort, probe.HTTPGet.Port.IntValue())
 
 	cm, err := r.client.CoreV1().ConfigMaps(ns).Get(ctx, name, metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.Contains(t, cm.Data[ownerGatewayLDSKey], "agent_egress_my-agent")
 	assert.Contains(t, cm.Data[machineDNSCorefileKey], ".:20001 {")
+	assert.Contains(t, cm.Data[ownerGatewayBootstrap], "owner_gateway_health")
 	for _, obj := range []func() error{
 		func() error {
 			_, err := r.client.CoreV1().Secrets(ns).Get(ctx, name+"-credentials", metav1.GetOptions{})
@@ -365,6 +369,11 @@ func TestOwnerGateway_MigrationRemovesTheOwnGatewayAndRollsBack(t *testing.T) {
 	assert.Equal(t, ownerGatewayComponent, svc.Spec.Selector["app.kubernetes.io/component"], "the agent stays on its owner gateway until its own gateway is ready")
 	_, err = r.client.AppsV1().StatefulSets(ns).Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
 	require.NoError(t, err, "the own gateway is rendered again")
+	for _, name := range []string{"my-agent-harness-allow", "my-agent-extauthz-allow"} {
+		policy, err := r.dynamic.Resource(authzPolicyGVR).Namespace("default").Get(ctx, name, metav1.GetOptions{})
+		require.NoError(t, err)
+		assert.Len(t, policy.Object["spec"].(map[string]interface{})["rules"], 2, "%s admits the agent and, while its Service still selects it, the owner gateway", name)
+	}
 
 	markGatewayPodReady(t, r, "my-agent")
 	require.NoError(t, r.Reconcile(ctx, agent))
@@ -374,6 +383,33 @@ func TestOwnerGateway_MigrationRemovesTheOwnGatewayAndRollsBack(t *testing.T) {
 	assert.Equal(t, before.Spec.ClusterIP, svc.Spec.ClusterIP)
 	assert.Empty(t, svc.Annotations[annOwnerGatewayServed])
 	assert.Equal(t, 10000, svc.Spec.Ports[0].TargetPort.IntValue())
+	_, err = r.client.AppsV1().Deployments(ns).Get(ctx, ownerGatewayName("platform", testOwner), metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "an owner gateway no agent is left on is removed with its copy of the credentials")
+	_, err = r.client.CoreV1().Secrets(ns).Get(ctx, ownerGatewayName("platform", testOwner)+"-credentials", metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err))
+}
+
+// TEST_SCENARIO: an owner whose configuration outgrows one ConfigMap after its agents moved is refused: its moved agents get their own gateways back and move back once those are ready, the same way as with the flag off, and the owner gateway goes once none is left on it, rather than serving them a configuration that no longer changes.
+func TestOwnerGateway_RefusedOwnerMovesItsAgentsBack(t *testing.T) {
+	ctx, ns := context.Background(), "test-agents"
+	r, _, agent := servedVMReconciler(t)
+	r.ownerGatewayBudget = 1
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.False(t, r.ownerGatewayOn(testOwner))
+	require.NoError(t, r.Reconcile(ctx, agent))
+	_, err := r.client.AppsV1().StatefulSets(ns).Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err, "the refused agent's own gateway is rendered again")
+	svc, err := r.client.CoreV1().Services(ns).Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, ownerGatewayComponent, svc.Spec.Selector["app.kubernetes.io/component"], "the agent stays on its owner gateway until its own gateway is ready")
+
+	markGatewayPodReady(t, r, "my-agent")
+	require.NoError(t, r.Reconcile(ctx, agent))
+	svc, err = r.client.CoreV1().Services(ns).Get(ctx, GatewayName("my-agent"), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "my-agent", svc.Spec.Selector[LabelPair])
+	_, err = r.client.AppsV1().Deployments(ns).Get(ctx, ownerGatewayName("platform", testOwner), metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err))
 }
 
 func markGatewayPodReady(t *testing.T, r *AgentReconciler, agent string) {
@@ -389,4 +425,9 @@ func markGatewayPodReady(t *testing.T, r *AgentReconciler, agent string) {
 		Status:     corev1.PodStatus{Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}},
 	}, metav1.CreateOptions{})
 	require.NoError(t, err)
+	_, err = r.client.CoreV1().Secrets(ns).Create(ctx, &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: EnvoyLeafSecretName(agent), Namespace: ns},
+		Data:       map[string][]byte{"ca.crt": []byte("MITM-CA")},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err, "a gateway pod starts only once its leaf is issued")
 }

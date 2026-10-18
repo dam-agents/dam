@@ -1,6 +1,6 @@
 # Credential gateway
 
-Last verified: 2026-10-17
+Last verified: 2026-10-18
 
 ## Overview
 
@@ -143,7 +143,7 @@ A ClusterIP carries nothing on a port it does not declare (measured on OVN-Kuber
 Each agent's listener, internal listener and clusters, every name suffixed with the agent, are files Envoy watches beside it, along with the Lua bodies the chains read and the leaf's file source.
 Each listener carries exactly that agent's chains, credentials, egress checks, spend meter, attribution and ext_authz destination, rendered as above.
 A change to one agent replaces only its own listener, which drains only its own connections; a file that does not load leaves the last good one serving.
-The whole set must fit one ConfigMap of 1 MiB; an owner past it is refused with that reason, and its agents keep their own gateways.
+The whole set must fit one ConfigMap of 1 MiB; an owner past it is refused with that reason, and its agents go back to their own gateways as they do with the flag off.
 
 **Harness guard.** The mesh sees one principal for all of the owner's agents, so it cannot keep one agent off a sibling's harness paths.
 Each agent's listener sends the harness authority, by CONNECT or plain HTTP, into a guard that admits only that agent's own path prefix, normalizing the path and refusing escaped slashes first, and refuses anything else with a 403.
@@ -157,8 +157,12 @@ The resolver is one CoreDNS with one block per agent's resolver port, each answe
 
 **Readiness.** An agent's listener answers the gateway health path with a revision of what was rendered for it.
 An agent moves onto the owner gateway only once the owner pod answers its revision; after the move its gateway readiness is that probe through its own Service, a stale listener reads as starting, and a failing owner pod gives every agent it serves that pod's failure.
-Once moved, the agent's own gateway pod and the objects around it are removed; turning the flag off renders them again, and each agent moves back once its own gateway pod is ready.
+Once moved, the agent's own gateway pod and the objects around it are removed.
+Turning the flag off, or a refused owner, renders them again, and each agent moves back once its own gateway pod is ready.
+Until then its policies still admit the owner gateway and the owner gateway still renders it, so its grants stay current; the owner gateway goes once no agent is left on it.
+The controller renders the owner gateway after the runner call, so a machine's start never waits for it.
 
 **Rolls.** The owner gateway is a one-replica Deployment that surges a new pod before the old one stops.
+The new pod turns ready on a health listener that Envoy opens only once its first load of the agents' files is done.
 The old pod sleeps out most of its grace before Envoy is signalled, serving the streams it holds while the new one takes new connections.
 Only a template change (an image, the install's trust settings) rolls it, paced across owners by the same concurrency limit as runner rolls; listener, credential and leaf changes never do.
