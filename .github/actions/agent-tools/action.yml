@@ -21,11 +21,12 @@ runs:
         key: agent-tools-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/agents/base/image.lock', 'packages/agents/base/image-locks/**', 'packages/agents/base/miserc.toml', 'packages/agents/base/rootfs/etc/mise/conf.d/settings.toml', 'packages/agents/*/image.toml', 'packages/agents/base/base.toml', 'packages/agents/*/*.py', 'packages/agents/*/*.txt', 'packages/e2e/agents/mock/image.toml', 'packages/agents/default/rootfs/usr/local/bin/install-harness-tools') }}
         restore-keys: agent-tools-v2-${{ runner.os }}-${{ runner.arch }}-
     # A miss installs every tool from scratch: anonymous, a shared runner's IP
-    # exhausts GitHub's 60 requests an hour within one install.
+    # exhausts GitHub's 60 requests an hour within one install. mise reads the
+    # token from MISE_GITHUB_TOKEN; no other tool here reads it.
     - if: steps.restore.outputs.cache-hit != 'true'
       shell: bash
       env:
-        GITHUB_TOKEN: ${{ github.token }}
+        MISE_GITHUB_TOKEN: ${{ github.token }}
       run: packages/agents/.mise/tasks/oci --warm
     - if: steps.restore.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

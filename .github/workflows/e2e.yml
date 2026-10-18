@@ -210,7 +210,10 @@ jobs:
       - &e2e-ci-images
         name: Build or fetch this run's images in the background
         env:
+          # gh waits on this run's build jobs with GH_TOKEN; mise installs the
+          # agent builds' tools and reads MISE_GITHUB_TOKEN.
           GH_TOKEN: ${{ github.token }}
+          MISE_GITHUB_TOKEN: ${{ github.token }}
           # The jobs that make the images e2e loads; see e2e:ci-images. They
           # are build.yml's, named under cd.yml's `build` job that calls it.
           CI_IMAGES_BUILD: ${{ inputs.verify && '1' || '' }}
