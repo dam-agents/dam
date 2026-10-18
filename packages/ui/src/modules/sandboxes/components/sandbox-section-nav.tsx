@@ -7,8 +7,8 @@ import {
   FinanceAndSupplyChain,
   FoundationModel,
   Keystores,
+  Network_02,
   Robot,
-  SecureGateway,
   Slack,
   UserInterface,
 } from "@carbon/pictograms-react";
@@ -50,7 +50,7 @@ export const SECTIONS: SectionEntry[] = [
   },
   {
     section: "network",
-    pictogram: SecureGateway,
+    pictogram: Network_02,
     title: "Network access",
     description:
       "Rules decide which outbound HTTP requests this agent can make. The most-specific rule wins. Without a matching rule, the request needs your approval on Home.",
