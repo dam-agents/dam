@@ -65,6 +65,7 @@ export function SandboxHomeView() {
     ? SECTIONS
     : SECTIONS.filter((e) => e.section !== "chat-forms");
   const sectionEntry = SECTIONS.find((e) => e.section === section);
+  const SectionPictogram = sectionEntry?.pictogram;
 
   const header: SectionHeaderSlot = (actions) =>
     agent && (
@@ -72,6 +73,9 @@ export function SandboxHomeView() {
         agent={agent}
         title={sectionEntry?.title ?? ""}
         description={sectionEntry?.description}
+        pictogram={
+          SectionPictogram && <SectionPictogram size={64} aria-hidden />
+        }
         actions={actions}
       />
     );

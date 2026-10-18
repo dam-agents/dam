@@ -1,8 +1,8 @@
 import { Add } from "@carbon/icons-react";
+import { KeyUsers } from "@carbon/pictograms-react";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import { ListSection } from "@/components/ui/list-section";
+import { AddRow, ListSection } from "@/components/ui/list-section";
 import { PageHeader } from "@/components/ui/page-header";
 
 import { useStore } from "../../../store.js";
@@ -35,18 +35,9 @@ export function ApiKeysList() {
   return (
     <div>
       <PageHeader
+        pictogram={<KeyUsers size={64} aria-hidden />}
         title="API keys"
         description="Let the CLI and scripts sign in without a browser. A key is shown only once, when you create it."
-        actions={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setCreateOpen(true)}
-          >
-            <Add size={16} />
-            New API key
-          </Button>
-        }
       />
 
       <ListSection
@@ -54,6 +45,19 @@ export function ApiKeysList() {
         error={isError && "Couldn't load API keys."}
         isEmpty={(keys ?? []).length === 0}
         empty="No API keys yet. Create one to authenticate the CLI without a browser."
+        onNew={() => setCreateOpen(true)}
+        newLabel="New API key"
+        addRow={
+          <AddRow onClick={() => setCreateOpen(true)}>
+            <Add size={20} className="shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-md font-medium">New API key</p>
+              <p className="mt-0.5 text-sm">
+                Let the CLI and scripts sign in without a browser.
+              </p>
+            </div>
+          </AddRow>
+        }
       >
         {keys?.map((k) => (
           <ApiKeyRow

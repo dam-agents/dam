@@ -1,3 +1,4 @@
+import { ErlenmeyerFlask } from "@carbon/pictograms-react";
 import type { FeatureId } from "api-server-api";
 import { type ReactNode, useId } from "react";
 
@@ -139,6 +140,7 @@ export function FeaturesTab() {
   return (
     <div>
       <PageHeader
+        pictogram={<ErlenmeyerFlask size={64} aria-hidden />}
         title="Experimental features"
         description="Try features that are still in progress. Each switch changes only your own account."
       />

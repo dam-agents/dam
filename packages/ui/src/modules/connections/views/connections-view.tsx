@@ -1,8 +1,9 @@
 import { Add } from "@carbon/icons-react";
+import { ConnectApplications } from "@carbon/pictograms-react";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import { ListSection } from "@/components/ui/list-section";
+import { Badge } from "@/components/ui/badge";
+import { AddRow, ListSection } from "@/components/ui/list-section";
 import { PageHeader } from "@/components/ui/page-header";
 
 import { NO_SATELLITES, useSatellites } from "../../satellites/api/queries.js";
@@ -31,19 +32,9 @@ export function ConnectionsView() {
   return (
     <div>
       <PageHeader
+        pictogram={<ConnectApplications size={64} aria-hidden />}
         title="Connections"
         description="Give your agents access to services, without handing them the credentials."
-        actions={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setCatalogOpen(true)}
-            data-testid="open-connection-catalog"
-          >
-            <Add size={16} />
-            New connection
-          </Button>
-        }
       />
 
       <ListSection
@@ -51,6 +42,28 @@ export function ConnectionsView() {
         error={connectionsQ.isError && "Couldn't load connections."}
         isEmpty={groups.length === 0 && satellites.length === 0}
         empty="No connections yet. Add one to let your agents reach a service."
+        onNew={() => setCatalogOpen(true)}
+        newLabel="New connection"
+        newTestId="open-connection-catalog"
+        addRow={
+          <AddRow
+            onClick={() => setCatalogOpen(true)}
+            testId="open-connection-catalog"
+          >
+            <Add size={16} className="shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <p className="truncate text-md font-medium">New connection</p>
+                <Badge variant="muted" className="font-normal">
+                  Any service
+                </Badge>
+              </div>
+              <p className="mt-0.5 truncate text-xs">
+                Add a service your agents can reach.
+              </p>
+            </div>
+          </AddRow>
+        }
       >
         {groups.map((group) => (
           <ConnectionGroup

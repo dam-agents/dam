@@ -1,4 +1,5 @@
 import { Launch } from "@carbon/icons-react";
+import { ViewGraphsAndDashboard } from "@carbon/pictograms-react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -16,6 +17,7 @@ export function UsageAnalyticsView() {
   return (
     <div>
       <PageHeader
+        pictogram={<ViewGraphsAndDashboard size={64} aria-hidden />}
         title="Analytics"
         description={`See how people are adopting ${brandName}: who comes back each week, how new users get through their first three weeks, which features they pick up, and what the live agents look like.`}
       />

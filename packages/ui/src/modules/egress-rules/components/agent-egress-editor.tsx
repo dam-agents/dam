@@ -1,4 +1,3 @@
-import { Add } from "@carbon/icons-react";
 import {
   type EgressPreset,
   type EgressRuleView,
@@ -19,7 +18,7 @@ import { CardButton } from "@/components/ui/card-button";
 import { DisclosureToggle } from "@/components/ui/disclosure";
 import { Input } from "@/components/ui/input";
 import { ListGroup } from "@/components/ui/list-group";
-import { ListSection } from "@/components/ui/list-section";
+import { AddRow, ListSection } from "@/components/ui/list-section";
 import { RemoveButton } from "@/components/ui/remove-button";
 import { Select } from "@/components/ui/select";
 
@@ -107,31 +106,39 @@ export function AgentEgressEditor({
   return (
     <>
       {header(
-        <>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setChoosingPreset(true)}
-            data-testid="egress-preset-open"
-          >
-            Use preset…
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setAdding(true)}
-            data-testid="egress-rule-new"
-          >
-            <Add size={16} />
-            Add rule
-          </Button>
-        </>,
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setChoosingPreset(true)}
+          data-testid="egress-preset-open"
+        >
+          Use preset…
+        </Button>,
       )}
       <ListSection
         loading={isLoading}
         error={isError && "Couldn't load the rules."}
         isEmpty={rules.length === 0}
         empty="No rules yet. Every outbound request will need your approval."
+        onNew={() => setAdding(true)}
+        newLabel="Add rule"
+        newTestId="egress-rule-new"
+        addRow={
+          <AddRow
+            onClick={() => setAdding(true)}
+            testId="egress-rule-new"
+            className="flex-wrap gap-x-3 gap-y-1 px-4 py-2.5 text-sm"
+          >
+            <Badge size="sm" variant="muted" className="shrink-0">
+              New rule
+            </Badge>
+            <span className="w-[60px] shrink-0 font-mono text-xs">Any</span>
+            <span className="min-w-[8rem] flex-1 truncate font-medium">
+              host and path
+            </span>
+            <span className="text-xs">allow or deny</span>
+          </AddRow>
+        }
       >
         {(rules.length > 10 || query !== "") && (
           <div className="px-4 py-2.5">

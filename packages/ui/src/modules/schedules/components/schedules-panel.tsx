@@ -1,10 +1,9 @@
 import { Add } from "@carbon/icons-react";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DisclosureToggle } from "@/components/ui/disclosure";
-import { ListSection } from "@/components/ui/list-section";
+import { AddRow, ListSection } from "@/components/ui/list-section";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import type { Schedule } from "../../../types.js";
@@ -58,22 +57,29 @@ export function SchedulesPanel({
 
   return (
     <>
-      {header(
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setForm({ mode: "create" })}
-          data-testid="schedule-new"
-        >
-          <Add size={16} />
-          Add schedule
-        </Button>,
-      )}
+      {header()}
       <ListSection
         loading={schedulesQuery.isPending}
         error={schedulesQuery.isError && "Couldn't load schedules."}
         isEmpty={upcoming.length === 0}
         empty="No schedules yet. Add one to run a task on a timetable or once."
+        onNew={() => setForm({ mode: "create" })}
+        newLabel="Add schedule"
+        newTestId="schedule-new"
+        addRow={
+          <AddRow
+            onClick={() => setForm({ mode: "create" })}
+            testId="schedule-new"
+          >
+            <Add size={16} className="shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-md font-medium">New schedule</p>
+              <p className="mt-0.5 text-sm">
+                Run a task on a timetable, or once.
+              </p>
+            </div>
+          </AddRow>
+        }
         separated
       >
         {upcoming.map(card)}

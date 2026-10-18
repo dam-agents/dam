@@ -1,3 +1,5 @@
+import { Analytics } from "@carbon/pictograms-react";
+
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
@@ -52,7 +54,11 @@ export function UsageView() {
   if (state === "unavailable") {
     return (
       <div>
-        <PageHeader title="Usage" description={PAGE_DESCRIPTION} />
+        <PageHeader
+          pictogram={<Analytics size={64} aria-hidden />}
+          title="Usage"
+          description={PAGE_DESCRIPTION}
+        />
         <MeasuredSpend />
         <OwnSpendLimitCard />
         <HarnessReportsLead />
@@ -64,6 +70,7 @@ export function UsageView() {
   return (
     <div>
       <PageHeader
+        pictogram={<Analytics size={64} aria-hidden />}
         title="Usage"
         description={PAGE_DESCRIPTION}
         actions={

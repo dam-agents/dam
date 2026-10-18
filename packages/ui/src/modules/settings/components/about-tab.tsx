@@ -6,6 +6,7 @@ import {
   Launch,
   LogoGithub,
 } from "@carbon/icons-react";
+import { Documentation } from "@carbon/pictograms-react";
 import type { ReactNode } from "react";
 
 import { Card } from "@/components/ui/card";
@@ -30,6 +31,7 @@ export function AboutTab() {
   return (
     <div>
       <PageHeader
+        pictogram={<Documentation size={64} aria-hidden />}
         title={`About ${name}`}
         description="Find the documentation, source code and terms for this installation."
       />

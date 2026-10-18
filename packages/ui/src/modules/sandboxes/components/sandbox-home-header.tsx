@@ -46,11 +46,13 @@ export function SandboxHomeHeader({
   agent,
   title,
   description,
+  pictogram,
   actions,
 }: {
   agent: AgentView;
   title: string;
   description?: string;
+  pictogram?: ReactNode;
   actions?: ReactNode;
 }) {
   const { updateOne, updatingId } = useUpdateSandbox();
@@ -59,6 +61,7 @@ export function SandboxHomeHeader({
     <PageHeader
       title={title}
       description={description}
+      pictogram={pictogram}
       actions={
         <>
           {newLayout && <MigrateAction agent={agent} />}
