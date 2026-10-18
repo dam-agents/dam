@@ -114,6 +114,7 @@ export function SettingsView() {
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
+  const sidebarPinned = useStore((s) => s.sidebarPinned);
   const user = getUser();
 
   return (
@@ -131,7 +132,13 @@ export function SettingsView() {
         />
       </div>
 
-      <div key={activeTab} className="anim-in min-w-0 max-w-2xl flex-1">
+      <div
+        key={activeTab}
+        className={cn(
+          "anim-in min-w-0 max-w-2xl flex-1",
+          !sidebarPinned && "md:pt-[30px]",
+        )}
+      >
         {activeTab === "appearance" && (
           <div>
             <PageHeader
