@@ -148,3 +148,42 @@ it("marks only the open tab with the inner-edge bar", () => {
   }
   expect(html).toContain('width="24"');
 });
+
+// TEST_SCENARIO: In the new layout the rail matches the sidebar strip: 40 px rounded tiles with 20 px icons, only the open tab filled and carrying the bar on the rail's outer right edge, and Documentation as a tile between Get started and Approvals.
+it("draws the new layout's tiles, with the bar on the right edge", () => {
+  const html = renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(SidePanelBar, {
+        active: "files",
+        hidden: new Set(["browser"] as const),
+        onSelect: () => {},
+        tiles: true,
+      }),
+    ),
+  );
+  const buttons = [
+    ...html.matchAll(
+      /<button[^>]*data-testid="side-panel-tab-([a-z-]+)"[^>]*>(<span[^>]*><\/span>)/g,
+    ),
+  ];
+  expect(buttons.length).toBeGreaterThan(1);
+  for (const [, tab, bar] of buttons) {
+    expect(bar).toContain("-right-2.5");
+    expect(bar.includes(" h-6")).toBe(tab === "files");
+  }
+  const open = buttons.find(([, tab]) => tab === "files")![0];
+  expect(open).toContain("size-10");
+  expect(open).toContain("bg-muted");
+  expect(html).toContain('width="20"');
+  const order = ["getting-started", "docs", "approvals"].map((id) =>
+    html.indexOf(
+      id === "docs"
+        ? 'data-testid="side-panel-docs"'
+        : `data-testid="side-panel-tab-${id}"`,
+    ),
+  );
+  expect(order[1]).toBeGreaterThan(order[0]!);
+  expect(order[2]).toBeGreaterThan(order[1]!);
+});

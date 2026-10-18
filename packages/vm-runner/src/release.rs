@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use sha2::{Digest, Sha256};
 
-use crate::api::{RunnerRelease, HELD_RUNTIME, HELD_UNSTAGED};
+use crate::api::{RunnerRelease, HELD_UNSTAGED};
 
 // UNIT_BOUNDARY_DESCRIPTION: a runner release is the runner and the two guest binaries it copies into every share, staged together on the node so the runner and platform-init stay one version. runtime-id names the VM runtime the release was built against: the smolvm release with its patched libkrun, crane and the base image's libc. The runtime travels with the release, staged once per id beside the releases, because the runner is itself the VMM of every machine it starts and loads that runtime's libraries and guest agent.
 pub const FILES: [&str; 4] = ["vm-runner", "platform-init", "platform-runc", RUNTIME_ID];
@@ -27,7 +27,7 @@ pub fn runtime_id(release_dir: &Path) -> Option<String> {
         .filter(|id| !id.is_empty())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: which binaries and runtime the loader runs for the release the controller asks for. The pod's own image is always there; a staged one only once the stager has put it, and the runtime it names, on this node. A release built against another runtime than the pod's is taken too, unless the install asks for one runtime per pod: machines already running stay on the runtime they booted, and only machines started after the hand-off boot the new one. `runtime` is None for the pod's own runtime.
+// UNIT_BOUNDARY_DESCRIPTION: which binaries and runtime the loader runs for the release the controller asks for. The pod's own image is always there; a staged one only once the stager has put it, and the runtime it names, on this node. A release built against another runtime than the pod's is taken too: machines already running stay on the runtime they booted, and only machines started after the hand-off boot the new one. `runtime` is None for the pod's own runtime.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Choice {
     Run {
@@ -46,7 +46,6 @@ pub struct Releases {
     pub builtin_runtime: PathBuf,
     pub builtin_release: String,
     pub staged: PathBuf,
-    pub same_runtime_only: bool,
 }
 
 impl Releases {
@@ -67,14 +66,6 @@ impl Releases {
                 release: target.to_string(),
                 dir,
                 runtime: None,
-            };
-        }
-        if self.same_runtime_only {
-            return Choice::Held {
-                held: HELD_RUNTIME,
-                message: format!(
-                    "{target} is built against another VM runtime than this pod, and the install keeps one runtime per pod"
-                ),
             };
         }
         let runtime = runtime_dir(&self.staged, &id);
@@ -112,25 +103,36 @@ pub fn args_for(args: &[String], moves: &[(&Path, &Path)]) -> Vec<String> {
         .collect()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the environment the controller gives a runner pod's loader: the node's staged releases, the file naming the release to run, the loader's own directory, the reference of the release the pod's image carries, and whether a release built against another runtime is held for a new pod (`true`) rather than taken in place. None set, the loader runs the pod's own release and nothing else. contract/loader-env.json holds the controller to these names.
+// UNIT_BOUNDARY_DESCRIPTION: the environment the controller gives a runner pod's loader: the node's staged releases, the loader's own directory, and the reference of the release the pod's image carries. None set, the loader runs the pod's own release and nothing else. contract/loader-env.json holds the controller to these names.
 pub const RELEASES_ENV: &str = "VM_RUNNER_RELEASES";
-pub const RELEASE_FILE_ENV: &str = "VM_RUNNER_RELEASE_FILE";
 pub const BUILTIN_RELEASE_ENV: &str = "VM_RUNNER_BUILTIN_RELEASE";
-pub const SAME_RUNTIME_ONLY_ENV: &str = "VM_RUNNER_SAME_RUNTIME_ONLY";
 
-// UNIT_BOUNDARY_DESCRIPTION: the loader's own directory, an emptyDir of the pod: the status it writes for the runner to serve, and its copies of the staged releases it runs. A copy is what the runner runs from, because the stager may remove a release from the node while a runner still copies its platform-init into every share.
+// UNIT_BOUNDARY_DESCRIPTION: the loader's own directory, an emptyDir of the pod: the release the controller named over the machine API, which the runner writes and the loader reads; the status the loader writes for the runner to serve; and its copies of the staged releases it runs. A copy is what the runner runs from, because the stager may remove a release from the node while a runner still copies its platform-init into every share. The named release outlives a runner process, so a release that crashes and restarts keeps its target, but not the pod: a new pod runs its own image until the controller names the release again.
 pub const LOADER_DIR_ENV: &str = "VM_RUNNER_LOADER_DIR";
 
 pub fn status_file(loader_dir: &Path) -> PathBuf {
     loader_dir.join("status.json")
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: writes the release status the runner serves to the controller. Replaced whole, so the runner never reads half of one.
-pub fn write_status(path: &Path, status: &RunnerRelease) -> anyhow::Result<()> {
+pub fn target_file(loader_dir: &Path) -> PathBuf {
+    loader_dir.join("target")
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: replaces a file of the loader directory whole, so the side that reads it never reads half of one.
+pub fn replace(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     let scratch = path.with_extension("partial");
-    std::fs::write(&scratch, serde_json::to_vec(status)?)
-        .with_context(|| format!("writing {}", scratch.display()))?;
+    std::fs::write(&scratch, bytes).with_context(|| format!("writing {}", scratch.display()))?;
     std::fs::rename(&scratch, path).with_context(|| format!("replacing {}", path.display()))
+}
+
+pub fn write_status(path: &Path, status: &RunnerRelease) -> anyhow::Result<()> {
+    replace(path, &serde_json::to_vec(status)?)
+}
+
+pub fn read_target(path: &Path) -> String {
+    std::fs::read_to_string(path)
+        .map(|t| t.trim().to_string())
+        .unwrap_or_default()
 }
 
 pub fn read_status(path: &Path) -> RunnerRelease {
@@ -354,13 +356,12 @@ mod tests {
         std::os::unix::fs::symlink("etc/agent", dir.join("agent-rootfs/agent")).unwrap();
     }
 
-    fn releases(dir: &Path, same_runtime_only: bool) -> Releases {
+    fn releases(dir: &Path) -> Releases {
         Releases {
             builtin: dir.join("builtin"),
             builtin_runtime: dir.join("builtin-runtime"),
             builtin_release: "runner:1".into(),
             staged: dir.join("staged"),
-            same_runtime_only,
         }
     }
 
@@ -378,11 +379,11 @@ mod tests {
         stage(&image, &tree, &r.staged, name, 10).unwrap();
     }
 
-    // TEST_SCENARIO: the loader runs a staged release once it, and the runtime it names, are on this node. A release built against the pod's own runtime runs against that runtime; one built against another runs against its own staged runtime, unless the install keeps one runtime per pod, which holds it for a new pod.
+    // TEST_SCENARIO: the loader runs a staged release once it, and the runtime it names, are on this node. A release built against the pod's own runtime runs against that runtime; one built against another runs against its own staged runtime.
     #[test]
     fn a_release_runs_once_it_and_its_runtime_are_staged() {
         let dir = TempDir::new("release-choose");
-        let r = releases(dir.path(), false);
+        let r = releases(dir.path());
         release(&r.builtin, "one", "runtime-a");
         assert_eq!(r.choose("runner:1"), r.builtin());
         assert_eq!(r.choose(""), r.builtin());
@@ -411,14 +412,6 @@ mod tests {
                 runtime: Some(runtime_dir(&r.staged, "runtime-b")),
             }
         );
-        let one_runtime = releases(dir.path(), true);
-        assert!(matches!(
-            one_runtime.choose("runner:3"),
-            Choice::Held {
-                held: HELD_RUNTIME,
-                ..
-            }
-        ));
     }
 
     // TEST_SCENARIO: a staged release runs its own binaries against its own runtime, so every argument naming one of the pod's own binaries or its smolvm is pointed at the release's copy, and nothing else changes.
@@ -458,7 +451,7 @@ mod tests {
     #[test]
     fn staging_keeps_the_newest_releases_and_the_runtimes_they_name() {
         let dir = TempDir::new("release-stage");
-        let r = releases(dir.path(), false);
+        let r = releases(dir.path());
         std::fs::create_dir_all(&r.staged).unwrap();
         stage_as(&r, "runner:1", "bytes-1", "runtime-a");
         std::thread::sleep(std::time::Duration::from_millis(20));
@@ -554,16 +547,7 @@ mod tests {
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/contract/loader-env.json");
         let names: Vec<String> =
             serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-        assert_eq!(
-            names,
-            [
-                RELEASES_ENV,
-                RELEASE_FILE_ENV,
-                LOADER_DIR_ENV,
-                BUILTIN_RELEASE_ENV,
-                SAME_RUNTIME_ONLY_ENV
-            ]
-        );
+        assert_eq!(names, [RELEASES_ENV, LOADER_DIR_ENV, BUILTIN_RELEASE_ENV]);
     }
 
     // TEST_SCENARIO: the runner serves what the loader last wrote, and before the loader has written anything, or where no loader runs, an empty status rather than an error.

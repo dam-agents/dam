@@ -197,3 +197,28 @@ func TestAnExistingGatewayServiceGainsThePortsInPlace(t *testing.T) {
 }
 
 func itoa(n int32) string { return strconv.Itoa(int(n)) }
+
+// TEST_SCENARIO: one owner resolver serves every vm Agent of the owner, each on its own port, and each port must answer with that agent's own gateway address, never a sibling's, with no forward or log plugin in any block. CoreDNS must reread the file on its own, so an agent added or removed never restarts the resolver.
+func TestTheOwnerResolverAnswersEachPortWithItsOwnAgent(t *testing.T) {
+	corefile := ownerResolverCorefile([]ownerResolverBlock{{Port: 20003, ClusterIP: "10.43.0.2"}, {Port: 20001, ClusterIP: "10.43.0.1"}})
+	blocks := strings.Split(strings.TrimSpace(corefile), "\n}\n")
+	require.Len(t, blocks, 2)
+	assert.True(t, strings.HasPrefix(blocks[0], ".:20001 {"))
+	assert.Contains(t, blocks[0], "IN A 10.43.0.1\"")
+	assert.NotContains(t, blocks[0], "10.43.0.2")
+	assert.True(t, strings.HasPrefix(blocks[1], ".:20003 {"))
+	assert.Contains(t, blocks[1], "IN A 10.43.0.2\"")
+	assert.NotContains(t, blocks[1], "10.43.0.1")
+	for _, block := range blocks {
+		assert.Contains(t, block, "reload 2s")
+		assert.Contains(t, block, "rcode REFUSED")
+		for _, line := range strings.Split(block, "\n") {
+			if fields := strings.Fields(line); len(fields) > 0 {
+				assert.NotContains(t, []string{"forward", "proxy", "log", "dnstap", "file", "hosts"}, fields[0])
+			}
+		}
+	}
+	empty := ownerResolverCorefile(nil)
+	assert.Contains(t, empty, "rcode REFUSED")
+	assert.NotContains(t, empty, "IN A")
+}

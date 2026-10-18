@@ -9,6 +9,7 @@
     "@a2ui/web_core": "^0.13.0",
     "@agentclientprotocol/sdk": "^1.7.0",
     "@carbon/icons-react": "^11.90.0",
+    "@carbon/pictograms-react": "^11.112.0",
     "@codemirror/commands": "^6.11.1",
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/lang-json": "^6.0.2",

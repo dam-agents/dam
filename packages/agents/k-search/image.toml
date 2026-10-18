@@ -31,6 +31,8 @@ postinstall = 'cp {{config_root}}/k-search/ksearch-acp-shim.mjs "$MISE_TOOL_INST
 oci_link = "/opt/ksearch-acp"
 
 [oci.env]
+# Its root generation segment, after the default image's key (oci's build_thin).
+PLATFORM_ROOT_GENERATION = "k-search-1"
 # K-Search is no harness family.
 PLATFORM_HARNESS = ""
 KSEARCH_VENV = "/opt/ksearch-venv"

@@ -11,12 +11,14 @@ import { cn } from "./lib/utils.js";
 import { useAgentsList } from "./modules/agents/api/queries.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { ArtifactIcon } from "./modules/artifacts/lib/artifact-icon.js";
+import { useNewLayout } from "./modules/features/hooks/use-new-layout.js";
 import { useApprovalToasts } from "./modules/home/hooks/use-approval-toasts.js";
 import { HomeView } from "./modules/home/views/home-view.js";
 import { useLiveEvents } from "./modules/live-events/use-live-events.js";
 import { AppTopBar } from "./modules/platform/components/sidebar/app-top-bar.js";
 import { MobileNavDrawer } from "./modules/platform/components/sidebar/mobile-nav-drawer.js";
 import { Sidebar } from "./modules/platform/components/sidebar/sidebar.js";
+import { SidebarV2 } from "./modules/platform/components/sidebar-v2/sidebar.js";
 import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.js";
 import { parseRoute } from "./modules/platform/lib/routes.js";
 import { applyTheme } from "./modules/platform/store/theme.js";
@@ -124,12 +126,22 @@ function SkipLink() {
   );
 }
 
+function AppSidebar() {
+  return useNewLayout() ? <SidebarV2 /> : <Sidebar />;
+}
+
 function MainApp() {
   const view = useStore((s) => s.view);
   const kitBrowserOpen = useStore((s) => s.kitBrowserOpen);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const desktop = useIsDesktop();
+
+  const newLayout = useNewLayout();
+  useEffect(() => {
+    if (newLayout) document.documentElement.dataset.layout = "new";
+    else delete document.documentElement.dataset.layout;
+  }, [newLayout]);
 
   useLiveEvents();
   useDocumentTitle();
@@ -163,7 +175,7 @@ function MainApp() {
       <>
         <SkipLink />
         <div className="flex h-dvh bg-background overflow-hidden">
-          <Sidebar />
+          <AppSidebar />
           <main
             id="main"
             tabIndex={-1}
@@ -183,7 +195,7 @@ function MainApp() {
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       <SkipLink />
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        <Sidebar />
+        <AppSidebar />
         <AppSidePanelHost>
           <main
             id="main"

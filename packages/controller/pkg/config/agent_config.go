@@ -73,6 +73,12 @@ type VMConfig struct {
 	Enabled          bool               `json:"enabled,omitempty"`
 	Runner           VMRunnerSpec       `json:"runner,omitempty"`
 	RuntimeMigration VMRuntimeMigration `json:"runtimeMigration,omitempty"`
+	Gateway          VMGateway          `json:"gateway,omitempty"`
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether vm Agents egress through one gateway pod per owner instead of a gateway pod each. Off by default, so an install switches to it on purpose and can switch back.
+type VMGateway struct {
+	PerOwner bool `json:"perOwner,omitempty"`
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long the volumes a runtime migration copied from are kept once the machine has booted from the copy, and how many copy Jobs may run at once in the install and for one owner. Zero means the controller's default for each. `CloneSource` says whether the copy reads a CSI clone of a single-node home volume rather than the volume itself; unset means it does.
@@ -98,12 +104,8 @@ type VMRunnerSpec struct {
 	NestedVirtualization bool                          `json:"nestedVirtualization,omitempty"`
 	EgressCIDRs          []string                      `json:"egressCidrs,omitempty"`
 	EgressExceptCIDRs    []string                      `json:"egressExceptCidrs,omitempty"`
-	ImageArchiveHostPath string                        `json:"imageArchiveHostPath,omitempty"`
 	ImageCacheHostPath   string                        `json:"imageCacheHostPath,omitempty"`
 	ImageCacheBudget     string                        `json:"imageCacheBudget,omitempty"`
-	DNSPolicy            string                        `json:"dnsPolicy,omitempty"`
-	DNSCIDRs             []string                      `json:"dnsCidrs,omitempty"`
-	ClusterDNS           VMRunnerClusterDNS            `json:"clusterDns,omitempty"`
 	NodeSelector         map[string]string             `json:"nodeSelector,omitempty"`
 	Tolerations          []corev1.Toleration           `json:"tolerations,omitempty"`
 	Affinity             *corev1.Affinity              `json:"affinity,omitempty"`
@@ -111,10 +113,8 @@ type VMRunnerSpec struct {
 	Rollout              VMRunnerRollout               `json:"rollout,omitempty"`
 	// UNIT_BOUNDARY_DESCRIPTION: set, every vm machine runs on one runner outside the cluster, reached at this address, instead of on per-owner runner pods. It is for a local cluster on a laptop, whose hypervisor the runner uses directly rather than nesting one inside the cluster's VM; the chart renders that runner's token and certificate, and the install starts it.
 	HostAddress string `json:"hostAddress,omitempty"`
-	// UNIT_BOUNDARY_DESCRIPTION: the node directory a stager DaemonSet copies each runner release into. Set, a runner pod keeps the image it was created with and its loader takes a new release from here without restarting the machines; empty, every new runner image rolls the pod and reboots its machines.
+	// UNIT_BOUNDARY_DESCRIPTION: the node directory a stager DaemonSet copies each runner release into. A runner pod keeps the image it was created with, and its loader takes a new release from here without restarting the machines. Required for runner pods.
 	ReleaseHostPath string `json:"releaseHostPath,omitempty"`
-	// UNIT_BOUNDARY_DESCRIPTION: set, a runner release built against another VM runtime than the pod's is not taken in place but rolls the pod, as before runtimes travelled with releases. It is the switch back for a runtime that turns out not to manage machines another one started.
-	ReleaseSameRuntimeOnly bool `json:"releaseSameRuntimeOnly,omitempty"`
 	// UNIT_BOUNDARY_DESCRIPTION: how smolvm checks every VMM's syscalls against its allowlist: `audit` logs a call outside it, `enforce` kills the VMM, `off` installs no filter. Empty means `enforce`.
 	Seccomp string `json:"seccomp,omitempty"`
 }

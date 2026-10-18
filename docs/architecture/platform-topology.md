@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-10-16
+Last verified: 2026-10-17
 
 ## Overview
 
@@ -165,6 +165,7 @@ A per-agent Envoy pod paired with the agent-runtime pod.
 Mounts the owner's credential Secrets, the cert-manager-issued leaf TLS material, and the rendered Envoy bootstrap ConfigMap.
 Terminates the agent's egress TLS, injects credentials on the wire, and gates each credentialed request through the api-server's ext_authz handler.
 A per-pair NetworkPolicy admits ingress to its proxy port only from the paired agent pod and, for a vm Agent, the owner's VM runner, which it also admits to the machine's resolver ([vm-runner](vm-runner.md)).
+With `virtualization.gateway.perOwner` on, vm Agents share one gateway pod per owner instead, a Deployment beside the owner's runner with one listener per agent behind each agent's own gateway Service ([credential-gateway](credential-gateway.md#owner-gateway)).
 See [security-and-credentials](security-and-credentials.md).
 
 ### ui

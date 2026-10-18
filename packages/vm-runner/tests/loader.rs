@@ -69,7 +69,6 @@ impl Pod {
         let builtin_runtime = dir.join("builtin-runtime");
         release_dir(&builtin, script, "runtime-a");
         std::fs::create_dir_all(dir.join("releases")).unwrap();
-        std::fs::write(dir.join("release"), "runner:1").unwrap();
         let loader = Command::new(env!("CARGO_BIN_EXE_vm-runner-loader"))
             .args(["run", "--builtin"])
             .arg(&builtin)
@@ -78,7 +77,6 @@ impl Pod {
             .args(["--", "--smolvm"])
             .arg(builtin_runtime.join("smolvm"))
             .env(release::RELEASES_ENV, dir.join("releases"))
-            .env(release::RELEASE_FILE_ENV, dir.join("release"))
             .env(release::LOADER_DIR_ENV, dir.join("loader"))
             .env(release::BUILTIN_RELEASE_ENV, "runner:1")
             .env("VM_RUNNER_LOADER_POLL_MS", "50")
@@ -99,8 +97,11 @@ impl Pod {
         release::read_status(&release::status_file(&self.dir.join("loader")))
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: names a release as the runner does when the controller calls its machine API.
     fn name(&self, release: &str) {
-        std::fs::write(self.dir.join("release"), release).unwrap();
+        let loader = self.dir.join("loader");
+        std::fs::create_dir_all(&loader).unwrap();
+        release::replace(&release::target_file(&loader), release.as_bytes()).unwrap();
     }
 
     fn stage(&self, release: &str, script: &str, runtime: &str) {

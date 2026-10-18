@@ -1,13 +1,13 @@
 # Security and credentials
 
-Last verified: 2026-10-16
+Last verified: 2026-10-17
 
 ## Overview
 
 Three rules carry the security model:
 
 1. **Agents never hold upstream credentials.** Real upstream tokens (GitHub, Anthropic, Slack, internal gateways) live in K8s Secrets labelled with the owner's `sub`.
-   The Envoy proxy in the paired gateway pod injects them into outbound traffic on the wire — the agent pod never mounts Secret bytes.
+   The Envoy proxy in the paired gateway pod — for vm Agents on an install that turns it on, the owner's gateway pod ([owner gateway identity](#owner-gateway-identity)) — injects them into outbound traffic on the wire; the agent pod never mounts Secret bytes.
 2. **Identity flows from Keycloak.** Browser users authenticate against Keycloak; the api-server validates the JWT and stamps `agent-platform.ai/owner` on every resource the user creates.
    Per-user credential isolation is the `agent-platform.ai/owner` label on the K8s Secret — the controller's selector refuses to mount any other owner's Secret into a given owner's gateway pod.
    An Agent's `secretRef`, whose keys become its environment, is honoured only for a Secret with its owner's label that the platform does not manage.
@@ -262,7 +262,7 @@ A hold on a non-default port records it, and the rule a verdict writes carries i
 The platform's object store passes on its own authority, port included.
 
 **Gateway egress NetworkPolicy.** ext_authz decides on the name; Envoy then resolves it and dials the answer, so an approved name resolving to a private address (an owner's DNS record, or rebinding after approval) would otherwise reach the cluster, the node or the cloud metadata endpoint.
-A controller-rendered per-pair egress policy closes that at the kernel, whatever a name resolves to: the gateway reaches the public internet minus the private, loopback, link-local, CGNAT and this-network ranges; inside the network only the cluster DNS pods and the platform pods its own clusters dial (api-server ext-authz and harness, the harness waypoint, object store, telemetry collector), each on its port and on HBONE.
+A controller-rendered per-pair egress policy (per owner, for an [owner gateway](#owner-gateway-identity)) closes that at the kernel, whatever a name resolves to: the gateway reaches the public internet minus the private, loopback, link-local, CGNAT and this-network ranges; inside the network only the cluster DNS pods and the platform pods its own clusters dial (api-server ext-authz and harness, the harness waypoint, object store, telemetry collector), each on its port and on HBONE.
 An install may open further private ranges for enterprise services (`controller.gatewayEgress` in [`helm/values.yaml`](../../helm/values.yaml)); the metadata endpoints stay excepted inside them.
 It may also open in-cluster peers, such as a self-hosted model server: each peer (namespace, non-empty pod labels, TCP ports) becomes one rule on every gateway's policy, on its ports.
 A peer marked as in the ambient mesh also gets HBONE (15008), and over HBONE ztunnel carries any inner port, so the port list binds only a peer outside the mesh.
@@ -329,6 +329,21 @@ The agent and the gateway are gated by different mechanisms — they live on opp
 
 NetworkPolicy is the security boundary for the agent's egress; mesh AuthorizationPolicy is the security boundary for the gateway's egress to api-server endpoints.
 Each pod's gate matches its threat model: the agent runs untrusted code and is held at the kernel layer; the gateway is platform-controlled and its identity flows through the mesh.
+
+### Owner gateway identity
+
+With `virtualization.gateway.perOwner` on, a vm Agent egresses through its owner's one gateway pod instead of a pod of its own ([credential-gateway](credential-gateway.md#owner-gateway)); container Agents and the default install keep the pairing above.
+What changes in the boundaries:
+
+- **Agent identity is a Service port, not a pod.** Each agent keeps its own gateway Service and ClusterIP, the only destination its machine may reach, and that Service declares only the ports that map onto the agent's own listener.
+  A ClusterIP carries nothing on an undeclared port, measured on OVN-Kubernetes and k3s, so a guest that has not escaped reaches no sibling's listener.
+  SNI, Host, headers and source address are never identity: every machine's traffic arrives from the runner.
+- **Kernel gates are per owner.** One ingress policy admits the owner's runner on the agent port range and the controller there for readiness; one egress policy, with the per-agent content above, replaces the per-agent ones; a confined runner's egress names the owner gateway on that range.
+- **Mesh identity is the owner's.** The owner gateway runs as a ServiceAccount of its own, and each agent's harness and ext-authz policies admit that principal.
+  Because that principal is shared, each agent's listener guards harness paths to the agent's own and stamps the agent's name in a header no other route lets through, and the harness policy admits the owner principal only with that header naming the agent.
+  The harness boundary between one owner's agents therefore rests on the rendered gateway configuration, not on the mesh alone.
+- **Blast radius.** One owner gateway process holds every credential granted to any of the owner's vm Agents, where a per-agent gateway holds one agent's.
+  An escaped guest, which owns the runner pod's network namespace, already reaches every gateway of its owner by pod address through the runner's egress (measured on dam-cl), and another owner's not at all, so the owner gateway does not widen what an escape reaches.
 
 ## Dev cluster
 

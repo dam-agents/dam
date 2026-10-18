@@ -1,5 +1,5 @@
 import { Add } from "@carbon/icons-react";
-import type { ReactNode } from "react";
+import { Children, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -28,6 +28,7 @@ export function ListSection({
   error,
   loading = false,
   footer,
+  separated = false,
   className,
   children,
 }: {
@@ -43,6 +44,7 @@ export function ListSection({
   error?: ReactNode;
   loading?: boolean;
   footer?: ReactNode;
+  separated?: boolean;
   className?: string;
   children?: ReactNode;
 }) {
@@ -70,30 +72,42 @@ export function ListSection({
       {description && (
         <p className="mb-3 text-sm text-muted-foreground">{description}</p>
       )}
-      <Card className="overflow-hidden">
-        {loading ? (
-          <div className="divide-y divide-border" aria-busy="true">
-            {[0, 1].map((i) => (
-              <div key={i} className={LIST_ROW}>
-                <span className="text-sm">
-                  <TextSkeleton width={i === 0 ? 160 : 120} />
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : isEmpty && error ? (
-          <p role="alert" className="px-5 py-8 text-center text-sm text-danger">
-            {error}
-          </p>
-        ) : isEmpty ? (
-          <EmptyState bordered={false} action={newButton(newTestId)}>
-            {empty}
-          </EmptyState>
-        ) : (
-          <div className="divide-y divide-border">{children}</div>
-        )}
-        {footer}
-      </Card>
+      {separated && !loading && !isEmpty ? (
+        <div className="flex flex-col gap-3">
+          {Children.map(children, (child) => (
+            <Card className="overflow-hidden">{child}</Card>
+          ))}
+          {footer}
+        </div>
+      ) : (
+        <Card className="overflow-hidden">
+          {loading ? (
+            <div className="divide-y divide-border" aria-busy="true">
+              {[0, 1].map((i) => (
+                <div key={i} className={LIST_ROW}>
+                  <span className="text-sm">
+                    <TextSkeleton width={i === 0 ? 160 : 120} />
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : isEmpty && error ? (
+            <p
+              role="alert"
+              className="px-5 py-8 text-center text-sm text-danger"
+            >
+              {error}
+            </p>
+          ) : isEmpty ? (
+            <EmptyState bordered={false} action={newButton(newTestId)}>
+              {empty}
+            </EmptyState>
+          ) : (
+            <div className="divide-y divide-border">{children}</div>
+          )}
+          {footer}
+        </Card>
+      )}
     </section>
   );
 }

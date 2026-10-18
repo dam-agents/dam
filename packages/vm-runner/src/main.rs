@@ -21,13 +21,13 @@ struct Args {
     // UNIT_BOUNDARY_DESCRIPTION: per-machine state: published port, applied spec, and the share each guest reads its CA and platform-init from.
     #[arg(long = "state-dir", default_value = "/var/lib/platform/machines")]
     state_dir: PathBuf,
-    // UNIT_BOUNDARY_DESCRIPTION: unpacked agent images, or the trees an install with no registry stages. On a node cache this is the node's directory, mounted read-only.
+    // UNIT_BOUNDARY_DESCRIPTION: the node's image cache directory, mounted read-only: the trees its service unpacks, and the trees an install with no registry stages beside them.
     #[arg(long = "image-dir", default_value = "/var/lib/platform/images")]
     image_dir: PathBuf,
-    // UNIT_BOUNDARY_DESCRIPTION: the node image cache service's socket. Set, every image is resolved and fetched by that service and this runner only reads the image directory; empty makes this runner the one writer of its own cache.
+    // UNIT_BOUNDARY_DESCRIPTION: the node image cache service's socket: every image that is not staged is resolved and fetched by that service, and this runner only reads the image directory. Empty boots only staged trees, which is how a runner outside the cluster with no service runs, and how a pod a controller from before the node cache was the only cache rendered runs until it rolls.
     #[arg(long = "image-cache-socket", default_value = "")]
     image_cache_socket: String,
-    // UNIT_BOUNDARY_DESCRIPTION: bytes the cached images may occupy; 0 evicts nothing, and the controller refuses to start a runner without a positive budget.
+    // UNIT_BOUNDARY_DESCRIPTION: bytes the node's cached images may occupy, reported in the runner's metrics; the service, not the runner, evicts to it.
     #[arg(long = "image-budget-bytes", default_value_t = 0)]
     image_budget_bytes: i64,
     // UNIT_BOUNDARY_DESCRIPTION: retired and ignored: the node's harness tools directory. A hand-off starts a new release with the args the pod was created with, so a pod a controller from before the retirement rendered still passes it.
@@ -36,9 +36,9 @@ struct Args {
     // UNIT_BOUNDARY_DESCRIPTION: the smolvm release's launcher. The runner drives smolvm as a library and forks no CLI, but the release is still where the libraries the VMM loads, the guest agent's root filesystem and the disk templates live — all beside this path, as the release's own launcher script finds them.
     #[arg(long, default_value = "/opt/smolvm/smolvm")]
     smolvm: PathBuf,
-    // UNIT_BOUNDARY_DESCRIPTION: crane fetches an agent image this runner's own cache does not hold; empty disables the fetch. Unused with a node cache, whose service fetches.
-    #[arg(long, default_value = "crane")]
-    crane: String,
+    // UNIT_BOUNDARY_DESCRIPTION: retired and ignored: crane, which a runner once fetched into its own cache with. The image's ENTRYPOINT still passes it, and a hand-off starts a new release with the args the pod was created with.
+    #[arg(long = "crane", default_value = "", hide = true)]
+    _crane: String,
     // UNIT_BOUNDARY_DESCRIPTION: platform-init is copied into every machine's share and run as its entrypoint. It is the binary that mounts the agent's home inside the guest: the platform-init package beside this one, linked statically because it runs against the agent image's libc and not this one's.
     #[arg(
         long = "platform-init",
@@ -274,7 +274,7 @@ fn check_ports(min: u16, max: u16) -> anyhow::Result<()> {
     Ok(())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner's pod has to give its machines before any exists. The VMMs open /dev/kvm, and the state directories must be traversable by them; a device that cannot be opened is reported and not fatal, because the error it causes at boot names the device. An install with no registry mounts the image directory read-only, with trees staged in it, and so does a node cache, whose service is its only writer; a chmod there fails with EROFS and is not fatal either: the mount decides what machine uids see, and a tree they cannot read fails at boot with a message naming it.
+// UNIT_BOUNDARY_DESCRIPTION: what the runner's pod has to give its machines before any exists. The VMMs open /dev/kvm, and the state directories must be traversable by them; a device that cannot be opened is reported and not fatal, because the error it causes at boot names the device. The image directory is the node cache's, mounted read-only because its service is its only writer, so a chmod there fails with EROFS and is not fatal either: the mount decides what machine uids see, and a tree they cannot read fails at boot with a message naming it.
 fn prepare_host(args: &Args) -> anyhow::Result<()> {
     use std::os::unix::fs::PermissionsExt;
     if let Err(e) = std::fs::set_permissions("/dev/kvm", std::fs::Permissions::from_mode(0o666)) {
@@ -314,10 +314,12 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
         Config {
             state_dir: args.state_dir.clone(),
             image_dir: args.image_dir.clone(),
-            image_cache_socket: (!args.image_cache_socket.is_empty())
-                .then(|| PathBuf::from(&args.image_cache_socket)),
+            images: (!args.image_cache_socket.is_empty()).then(|| {
+                Arc::new(vm_runner::cacheapi::CacheClient::new(PathBuf::from(
+                    &args.image_cache_socket,
+                ))) as Arc<dyn vm_runner::imagecache::Images>
+            }),
             image_budget: args.image_budget_bytes,
-            crane: args.crane.clone(),
             init: Some(args.platform_init.clone()),
             runc: Some(args.platform_runc.clone()),
             ports: args.port_min..=args.port_max,

@@ -10,3 +10,8 @@ output_log=/var/log/k3s.log
 error_log=/var/log/k3s.log
 # A tighter umask makes image layers CoreDNS and traefik cannot traverse.
 umask=022
+# openrc may start it before the entrypoint, so it builds the CA bundle its
+# pulls trust itself.
+start_pre() {
+	platform-ca-bundle
+}

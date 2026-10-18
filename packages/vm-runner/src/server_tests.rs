@@ -13,7 +13,7 @@ use crate::api::{
 use crate::cache::{archive_path, digest_path, staged_path, PARTIAL_PREFIX};
 use crate::cacheapi;
 use crate::forward::HEALTH_TIMEOUT;
-use crate::imagecache::{CacheConfig, ImageCache};
+use crate::imagecache::{CacheConfig, ImageCache, Images, HOLD_LEASE, REF_FRESH};
 use crate::launch::{ImageLaunch, LAUNCH_FILE};
 use crate::plan::{READY_GRACE, STALLED_RESTART, UNHEALTHY_RESTART};
 use crate::state::RUNTIME_FILE;
@@ -186,6 +186,27 @@ fi
 d=$(mktemp -d); echo rootfs > "$d/hello"; tar -cf - -C "$d" .; rm -rf "$d"
 "#;
 
+// UNIT_BOUNDARY_DESCRIPTION: the node's image cache, in this test's process rather than behind its socket, over the harness's image directory and with its crane, unless the test gave the runner a cache of its own. Only the service writes a node cache, so this stands in for it, at the budget the test gave the runner.
+fn in_process_cache(config: &mut Config, dir: &Path) {
+    if config.images.is_none() {
+        config.images = Some(node_cache_in(dir, config.image_budget));
+    }
+}
+
+fn node_cache_in(dir: &Path, budget: i64) -> Arc<dyn Images> {
+    Arc::new(ImageCache::open(CacheConfig {
+        dir: dir.join("images"),
+        budget,
+        crane: dir.join("crane").to_string_lossy().into_owned(),
+        pins: Vec::new(),
+        lifetime: CancellationToken::new(),
+        ref_fresh: REF_FRESH,
+        hold_lease: HOLD_LEASE,
+        hold_grace: Duration::ZERO,
+        fetch_ceiling: None,
+    }))
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: one server on a fake runtime, in a directory of its own. The name is short for the same reason as testdir's: the node cache's socket sits in it.
 struct Harness {
     dir: PathBuf,
@@ -213,9 +234,8 @@ impl Harness {
         let mut config = Config {
             state_dir: dir.join("machines"),
             image_dir: dir.join("images"),
-            image_cache_socket: None,
+            images: None,
             image_budget: 1 << 40,
-            crane: crane.to_string_lossy().into_owned(),
             init: Some(init),
             runc: None,
             ports: base..=base + 1,
@@ -232,6 +252,7 @@ impl Harness {
             measure_storage: Arc::new(|| None),
         };
         tune(&mut config);
+        in_process_cache(&mut config, &dir);
         let fake = Arc::new(Fake::default());
         let server = Server::start(config, fake.clone()).unwrap();
         Self {
@@ -248,9 +269,8 @@ impl Harness {
         let mut config = Config {
             state_dir: self.dir.join("machines"),
             image_dir: self.dir.join("images"),
-            image_cache_socket: None,
+            images: None,
             image_budget: 1 << 40,
-            crane: self.dir.join("crane").to_string_lossy().into_owned(),
             init: Some(self.dir.join("platform-init")),
             runc: None,
             ports: self.base..=self.base + 1,
@@ -264,6 +284,7 @@ impl Harness {
             measure_storage: Arc::new(|| None),
         };
         tune(&mut config);
+        in_process_cache(&mut config, &self.dir);
         Harness {
             dir: self.dir.clone(),
             fake: self.fake.clone(),
@@ -1371,9 +1392,8 @@ async fn a_restarted_runner_republishes_its_ports() {
         Config {
             state_dir: h.dir.join("machines"),
             image_dir: h.dir.join("images"),
-            image_cache_socket: None,
+            images: None,
             image_budget: 1 << 40,
-            crane: String::new(),
             init: None,
             runc: None,
             ports: port..=port + 1,
@@ -1493,32 +1513,6 @@ async fn an_image_that_cannot_be_read_is_reported_as_such() {
     assert_eq!(status.reason, REASON_IMAGE_UNAVAILABLE);
     assert!(status.message.contains("MANIFEST_UNKNOWN"), "{status:?}");
     assert!(h.fake.calls().is_empty());
-}
-
-// TEST_SCENARIO: closing the runner ends a fetch in flight instead of waiting out its twenty minutes, and the scratch tree it was unpacking into goes with it.
-#[tokio::test(flavor = "multi_thread")]
-async fn closing_the_runner_cancels_a_fetch_instead_of_abandoning_it() {
-    let h = Harness::new("close-fetch");
-    fs::write(
-        h.dir.join("crane"),
-        "#!/bin/sh\nif [ \"$1\" = config ]; then printf '{\"config\":{\"Cmd\":[\"x\"]}}'; exit 0; fi\nsleep 60\n",
-    )
-    .unwrap();
-    h.server.put("m1", spec(true)).unwrap();
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    let started = Instant::now();
-    h.server.close().await;
-    assert!(
-        started.elapsed() < Duration::from_secs(10),
-        "close waited out the fetch"
-    );
-    assert!(
-        !fs::read_dir(h.dir.join("images"))
-            .unwrap()
-            .flatten()
-            .any(|e| e.file_name().to_string_lossy().starts_with(PARTIAL_PREFIX)),
-        "the cancelled fetch left its scratch tree"
-    );
 }
 
 // TEST_SCENARIO: a spec sent after close starts no worker and holds no memory, so nothing counts a machine that never started. It is answered 503, not 200: it was not stored, and the controller must not read it as taken.
@@ -2153,7 +2147,6 @@ async fn node_service(h: &Harness, lease: Duration) -> (Arc<ImageCache>, Cancell
         crane: h.dir.join("crane").to_string_lossy().into_owned(),
         pins: Vec::new(),
         lifetime: CancellationToken::new(),
-        check_access: true,
         ref_fresh: Duration::from_secs(600),
         hold_lease: lease,
         hold_grace: Duration::ZERO,
@@ -2175,8 +2168,9 @@ async fn node_service(h: &Harness, lease: Duration) -> (Arc<ImageCache>, Cancell
 }
 
 fn on_node_cache(c: &mut Config) {
-    c.image_cache_socket = Some(c.image_dir.join(".cache.sock"));
-    c.crane = String::new();
+    c.images = Some(Arc::new(cacheapi::CacheClient::new(
+        c.image_dir.join(".cache.sock"),
+    )));
 }
 
 // TEST_SCENARIO: on a node cache the runner fetches nothing itself: it asks the node's service, which unpacks the image into the shared directory, and the machine boots that tree through the runner's own mount of it. The runner then holds the digest, so the service's eviction spares the tree for as long as the runner keeps renewing the hold — past the lease the resolve itself took.
@@ -2506,9 +2500,8 @@ async fn a_hand_off_leaves_every_machine_running_for_the_next_runner() {
         Config {
             state_dir: h.dir.join("machines"),
             image_dir: h.dir.join("images"),
-            image_cache_socket: None,
+            images: None,
             image_budget: 1 << 40,
-            crane: String::new(),
             init: None,
             runc: None,
             ports: h.base..=h.base + 1,
@@ -2546,9 +2539,8 @@ async fn a_guest_quiet_across_a_hand_off_is_restarted_by_the_next_runner() {
             Config {
                 state_dir: h.dir.join("machines"),
                 image_dir: h.dir.join("images"),
-                image_cache_socket: None,
+                images: Some(node_cache_in(&h.dir, 1 << 40)),
                 image_budget: 1 << 40,
-                crane: h.dir.join("crane").to_string_lossy().into_owned(),
                 init: Some(h.dir.join("platform-init")),
                 runc: None,
                 ports: h.base..=h.base + 1,
@@ -2730,7 +2722,7 @@ fn filled(percent: u64) -> Option<StorageUse> {
     })
 }
 
-// TEST_SCENARIO: once the owner's claim is critically full, every write that adds much is refused with the reason the controller shows as full storage, and nothing is created for it: a create, an image fetched onto the claim and a seed upload alike. A machine that already exists still starts and restarts, so an owner whose agents are all asleep can get into one to clean it up, but at the disk size it has: a larger size waits for a start that finds room. A running machine whose spec asks for nothing new keeps running untouched.
+// TEST_SCENARIO: once the owner's claim is critically full, every write that adds much is refused with the reason the controller shows as full storage, and nothing is created for it: a create and a seed upload alike. An image is fetched onto the node's disk rather than the claim, so a new image for an existing machine is not refused. A machine that already exists still starts and restarts, so an owner whose agents are all asleep can get into one to clean it up, but at the disk size it has: a larger size waits for a start that finds room. A running machine whose spec asks for nothing new keeps running untouched.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_critical_claim_refuses_big_writes_and_still_starts_existing_machines() {
     let (h, claim) = with_claim("storage-critical");
@@ -2752,10 +2744,6 @@ async fn a_critical_claim_refuses_big_writes_and_still_starts_existing_machines(
         "{created:?}"
     );
     assert!(read_spec(&h.dir.join("machines"), "m3").is_none());
-    let mut new_image = spec(true);
-    new_image.image = "quay.io/x/vm:2".into();
-    let fetch = h.server.put("m1", new_image).unwrap();
-    assert_eq!(fetch.reason, REASON_STORAGE_FULL, "{fetch:?}");
     assert_eq!(
         h.server.claim_seed("m2", None).err().map(|e| e.status),
         Some(507)
@@ -2936,9 +2924,9 @@ async fn a_boot_whose_console_shows_a_full_home_reports_it() {
     );
 }
 
-// TEST_SCENARIO: a user whose storage is short is told what fills it, so the usage read names, beside each machine's disk, what the runner's own image cache and a migration's seed take of the claim.
+// TEST_SCENARIO: a user whose storage is short is told what fills it, so the usage read names, beside each machine's disk, what a migration's seed takes of the claim.
 #[tokio::test(flavor = "multi_thread")]
-async fn the_usage_read_names_the_image_cache_and_the_seeds() {
+async fn the_usage_read_names_the_seeds() {
     let h = Harness::new("usage-parts");
     h.server.put("m1", spec(true)).unwrap();
     h.settle("m1").await;
@@ -2950,7 +2938,6 @@ async fn the_usage_read_names_the_image_cache_and_the_seeds() {
     fs::write(&seed, vec![1u8; 1 << 20]).unwrap();
     let storage = h.server.usage().unwrap().storage;
     assert!(storage.seed_bytes >= 1 << 20, "{storage:?}");
-    assert!(storage.image_cache_bytes > 0, "{storage:?}");
 }
 
 // TEST_SCENARIO: a machine's CPU share is what it used over its last two looks while running. Once it stops, the usage read reports no CPU for it, so the bars never name a paused agent among the heaviest CPU users.
@@ -3030,9 +3017,8 @@ async fn admission_after_a_hand_off_does_not_wait_on_silent_guests() {
         Config {
             state_dir: h.dir.join("machines"),
             image_dir: h.dir.join("images"),
-            image_cache_socket: None,
+            images: Some(node_cache_in(&h.dir, 1 << 40)),
             image_budget: 1 << 40,
-            crane: h.dir.join("crane").to_string_lossy().into_owned(),
             init: Some(h.dir.join("platform-init")),
             runc: None,
             ports: h.base..=h.base + 1,
@@ -3077,10 +3063,32 @@ async fn a_booted_machine_reports_its_warm_up() {
     );
 }
 
-// TEST_SCENARIO: a runner handed running machines by another release holds the image tree each one boots from as it starts, before the controller sends it a spec. A short claim's first storage check on the new runner then sheds no tree a running guest reads, whether or not the controller has sent the machine's unchanged spec yet; a stopped machine's tree is still given up.
+// TEST_SCENARIO: a runner handed running machines by another release holds the image tree each one boots from as it starts, before the controller sends it a spec. Once the old runner's holds have lapsed, aged past their lease rather than waited out, the node's eviction then takes no tree a running guest reads, whether or not the controller has sent the machine's unchanged spec yet; a stopped machine's tree is still given up.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_hand_off_keeps_the_trees_of_running_machines_through_a_short_claim() {
-    let (h, claim) = with_claim("hand-off-holds");
+async fn a_hand_off_keeps_the_trees_of_running_machines_held() {
+    let node: Arc<std::sync::OnceLock<Arc<ImageCache>>> = Arc::default();
+    let opened = node.clone();
+    let h = Harness::with("hand-off-holds", move |c| {
+        let cache = opened.get_or_init(|| {
+            Arc::new(ImageCache::open(CacheConfig {
+                dir: c.image_dir.clone(),
+                budget: 1,
+                crane: c
+                    .image_dir
+                    .with_file_name("crane")
+                    .to_string_lossy()
+                    .into_owned(),
+                pins: Vec::new(),
+                lifetime: CancellationToken::new(),
+                ref_fresh: REF_FRESH,
+                hold_lease: Duration::from_secs(60),
+                hold_grace: Duration::ZERO,
+                fetch_ceiling: None,
+            }))
+        });
+        c.images = Some(cache.clone());
+    });
+    let cache = node.get().unwrap().clone();
     h.server.put("m1", spec(true)).unwrap();
     h.settle("m1").await;
     let mut other = spec(false);
@@ -3090,20 +3098,18 @@ async fn a_hand_off_keeps_the_trees_of_running_machines_through_a_short_claim() 
     let (running, stopped) = (h.entry("m1"), h.entry("m2"));
     assert!(running.exists() && stopped.exists());
 
-    let measured = claim.clone();
-    let next = h
-        .hand_off(move |c| c.measure_storage = Arc::new(move || *locked(&measured)))
-        .await;
-    *locked(&claim) = filled(85);
-    next.server.check_storage();
+    cache.age_holds(Duration::from_secs(60));
+    let shared = cache.clone();
+    let next = h.hand_off(move |c| c.images = Some(shared)).await;
+    cache.evict(None);
     assert!(
         running.exists(),
-        "the hand-off shed a running machine's tree"
+        "the hand-off let a running machine's tree go"
     );
     assert!(!stopped.exists(), "a stopped machine's tree was kept");
 
     next.server.put("m1", spec(true)).unwrap();
-    next.server.check_storage();
+    cache.evict(None);
     assert!(running.exists(), "an unchanged spec let the tree go");
     next.server.close().await;
 }

@@ -55,8 +55,11 @@ type fakeNode struct {
 	version  uint64
 	waits    int
 	release  vmrunner.RunnerRelease
-	usage    vmrunner.RunnerUsage
-	onPut    func(vmrunner.MachineSpec)
+	// UNIT_BOUNDARY_DESCRIPTION: every release the controller named over the machine API, in order. A named release becomes the reported target, as the loader reports it once it reads the name.
+	named  []string
+	onName func()
+	usage  vmrunner.RunnerUsage
+	onPut  func(vmrunner.MachineSpec)
 	// UNIT_BOUNDARY_DESCRIPTION: every ensure is refused with a 500, as a runner release that runs but cannot manage machines refuses them.
 	refusesEnsures bool
 	// UNIT_BOUNDARY_DESCRIPTION: a stop answers stopping, as the real runner's does, and the machine stays so until a test sets it stopped. Without it a stop takes effect at once.
@@ -75,6 +78,19 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 		}
 		n.mu.Lock()
 		defer n.mu.Unlock()
+		if r.URL.Path == "/release" && r.Method == http.MethodPost {
+			var named vmrunner.RunnerReleaseName
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&named))
+			n.named = append(n.named, named.Release)
+			if n.release.Target != named.Release && n.release.Running != named.Release {
+				n.release.Target = named.Release
+			}
+			if n.onName != nil {
+				n.onName()
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if r.URL.Path == "/release" {
 			require.NoError(t, json.NewEncoder(w).Encode(n.release))
 			return
@@ -210,7 +226,7 @@ func runnerTLSSecret() *corev1.Secret {
 	}
 }
 
-// TEST_SCENARIO: the runner is kept away from Service and pod addresses, and the cluster's DNS is a Service — so resolving through it is exactly what an egress policy forbids, and a registry pull dies on the lookup. The node's resolver is what a pod confined like this has left.
+// TEST_SCENARIO: the runner resolves nothing — the node's image cache service fetches its images and it reaches its gateways by ClusterIP — and its egress policy admits no resolver. Its pod keeps the node's resolver rather than the cluster's, so a runner a controller from before the node cache was the only cache rendered is not rolled for it.
 func TestTheRunnerResolvesThroughTheNodeNotTheCluster(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
@@ -219,8 +235,7 @@ func TestTheRunnerResolvesThroughTheNodeNotTheCluster(t *testing.T) {
 
 	dep, err := r.client.AppsV1().Deployments("test-agents").Get(context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
 	require.NoError(t, err)
-	assert.Equal(t, corev1.DNSDefault, dep.Spec.Template.Spec.DNSPolicy,
-		"ClusterFirst would send every lookup to a Service address the runner's own egress policy drops")
+	assert.Equal(t, corev1.DNSDefault, dep.Spec.Template.Spec.DNSPolicy)
 }
 
 // TEST_SCENARIO: a runner that is stopped waits up to thirty seconds for machine actions that cannot be cut short, beside a short drain of its API, and then up to forty seconds while it stops its running machines. With kubelet's default thirty-second grace it would be killed with its guests' disks unquiesced, so the pod is given room for all of it.
@@ -250,19 +265,6 @@ func TestTheRunnerPodRunsInAUserNamespace(t *testing.T) {
 	assert.False(t, *dep.Spec.Template.Spec.HostUsers)
 }
 
-// TEST_SCENARIO: an install serving agent images from inside the cluster leaves that range reachable, and then the runner does need Service names — so the choice is the install's, and asking for cluster resolution has to actually produce it.
-func TestAnInstallCanAskForClusterResolution(t *testing.T) {
-	agent := vmAgentCR()
-	r, _, _ := setupVMReconciler(t, agent)
-	r.config.VM.Runner.DNSPolicy = "ClusterFirst"
-
-	require.NoError(t, r.Reconcile(context.Background(), agent))
-
-	dep, err := r.client.AppsV1().Deployments("test-agents").Get(context.Background(), r.runnerName(testOwner), metav1.GetOptions{})
-	require.NoError(t, err)
-	assert.Equal(t, corev1.DNSClusterFirst, dep.Spec.Template.Spec.DNSPolicy)
-}
-
 // TEST_SCENARIO: an owner's runner cannot be placed — no node advertises the KVM devices, or a namespace-wide node selector excludes the ones that do. The Deployment only ever says zero ready replicas, so without the pod's own account the agent reads "still starting" forever and nobody learns why.
 func TestAnUnschedulableRunnerSaysWhyOnTheAgent(t *testing.T) {
 	agent := vmAgentCR()
@@ -285,7 +287,8 @@ func TestAnUnschedulableRunnerSaysWhyOnTheAgent(t *testing.T) {
 	r, _ := setupReconciler(t, agent, leafSecret(), dep, runnerSecret(), runnerTLSSecret(), pod)
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512, HeadroomMiB: 256, MachineCPUs: 4,
-		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi",
+		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi", ImageCacheHostPath: "/var/lib/platform-images",
+		ReleaseHostPath: "/var/lib/platform-runner-releases",
 	}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
 
@@ -329,7 +332,8 @@ func TestARunnerWaitingForItsNewVolumeIsStillStarting(t *testing.T) {
 	r, _ := setupReconciler(t, agent, leafSecret(), dep, runnerSecret(), runnerTLSSecret(), pod)
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512, HeadroomMiB: 256, MachineCPUs: 4,
-		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi",
+		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi", ImageCacheHostPath: "/var/lib/platform-images",
+		ReleaseHostPath: "/var/lib/platform-runner-releases",
 	}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
 
@@ -412,7 +416,8 @@ func setupVMReconciler(t *testing.T, agent *apiv1.Agent) (*AgentReconciler, *fak
 	r, _ := setupReconciler(t, agent, leafSecret(), readyRunnerDeployment(), readyRunnerPod(), runnerSecret(), runnerTLSSecret())
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512, HeadroomMiB: 256, MachineCPUs: 4,
-		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi",
+		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi", ImageCacheHostPath: "/var/lib/platform-images",
+		ReleaseHostPath: "/var/lib/platform-runner-releases",
 	}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
 	requeued := &requeueLog{}
@@ -1010,7 +1015,7 @@ func TestVMBackendWaitsForTheLeafSecret(t *testing.T) {
 	node, srv := newFakeNode(t)
 	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
 	r, _ := setupReconciler(t, agent, readyRunnerDeployment(), runnerSecret(), runnerTLSSecret())
-	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{Image: "vm-runner:1", Storage: "100Gi", ImageCacheBudget: "50Gi"}}
+	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{Image: "vm-runner:1", Storage: "100Gi", ImageCacheBudget: "50Gi", ImageCacheHostPath: "/var/lib/platform-images"}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
 	err := r.Reconcile(context.Background(), agent)
 	require.Error(t, err)
@@ -1225,7 +1230,7 @@ func TestTheMachineDiskIsNoSmallerThanAnyMountAsksFor(t *testing.T) {
 	}), "a size on a path the machine never keeps buys nothing, since nothing is written there across a stop")
 }
 
-// TEST_SCENARIO: images/ is the directory that may not be on the runner's claim at all — a node cache the runners there share, or a read-only host directory of staged images — so it gets a mount of its own rather than being a directory inside a parent mount. The other two always live on the claim and are mounted by subPath, so the claim's root is never exposed.
+// TEST_SCENARIO: images/ is the node cache the runners on a node share, never a directory of the runner's claim, so it gets a mount of its own, read-only, from the host directory the install names. The other two always live on the claim and are mounted by subPath, so the claim's root is never exposed.
 func TestRunnerMountsTheImageCacheAsItsOwnSource(t *testing.T) {
 	mounts := func(configure func(*config.VMRunnerSpec)) (map[string]corev1.VolumeMount, map[string]corev1.Volume) {
 		r, _, _ := setupVMReconciler(t, vmAgentCR())
@@ -1245,21 +1250,17 @@ func TestRunnerMountsTheImageCacheAsItsOwnSource(t *testing.T) {
 		return byPath, byName
 	}
 
-	plain, _ := mounts(func(*config.VMRunnerSpec) {})
-	assert.Equal(t, "disks", plain[vmRunnerDisksPath].SubPath)
-	assert.Equal(t, "machines", plain[vmRunnerMachinesPath].SubPath)
-	assert.Equal(t, "images", plain[vmRunnerImagesPath].SubPath,
-		"with no node cache the images are still their own mount, not a directory inside another")
-
 	node, volumes := mounts(func(spec *config.VMRunnerSpec) { spec.ImageCacheHostPath = "/var/lib/platform-images" })
+	assert.Equal(t, "disks", node[vmRunnerDisksPath].SubPath)
+	assert.Equal(t, "machines", node[vmRunnerMachinesPath].SubPath)
 	assert.Empty(t, node[vmRunnerImagesPath].SubPath)
-	assert.Equal(t, "image-cache", node[vmRunnerImagesPath].Name, "the node directory replaces that mount rather than nesting in it")
+	assert.Equal(t, "image-cache", node[vmRunnerImagesPath].Name, "the node directory is its own mount rather than nesting in the claim")
 	require.NotNil(t, volumes["image-cache"].HostPath, "the node cache is a host directory, not a claim of its own")
 	assert.Equal(t, "/var/lib/platform-images", volumes["image-cache"].HostPath.Path)
 	assert.True(t, node[vmRunnerImagesPath].ReadOnly, "the node's image cache service is the only writer of the node directory")
 }
 
-// TEST_SCENARIO: on a node cache the runner reaches the node's image cache service through a socket the chart's DaemonSet binds inside the same directory. The controller and the chart each name that path, so the controller's constant must be the one the chart passes, or every runner on a node cache refuses every image as unavailable. With no node cache the runner is told no socket, and is its cache's only writer.
+// TEST_SCENARIO: the runner reaches the node's image cache service through a socket the chart's DaemonSet binds inside the same directory. The controller and the chart each name that path, so the controller's constant must be the one the chart passes, or every runner refuses every image as unavailable.
 func TestTheRunnerDialsTheSocketTheImageCacheServiceBinds(t *testing.T) {
 	template, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "helm", "templates", "controller", "vm-image-cache.yaml"))
 	require.NoError(t, err)
@@ -1275,12 +1276,10 @@ func TestTheRunnerDialsTheSocketTheImageCacheServiceBinds(t *testing.T) {
 		require.NoError(t, err)
 		return dep.Spec.Template.Spec.Containers[0].Args
 	}
-	assert.Contains(t, args(func(spec *config.VMRunnerSpec) { spec.ImageCacheHostPath = "/var/lib/platform-images" }),
-		"--image-cache-socket="+vmImageCacheSocket)
-	assert.Contains(t, args(func(*config.VMRunnerSpec) {}), "--image-cache-socket=")
+	assert.Contains(t, args(func(*config.VMRunnerSpec) {}), "--image-cache-socket="+vmImageCacheSocket)
 }
 
-// TEST_SCENARIO: every cache carries a budget, because the runner's own claim is shared with the machine disks just as a node directory is shared with the rest of the host — neither can be given a share of its filesystem. A budget the controller cannot read fails the reconcile rather than being replaced by a guess, which would be a cache growing until something it shares with runs out.
+// TEST_SCENARIO: the node cache carries a budget, because a node directory is shared with the rest of the host and cannot be given a share of its filesystem. A budget the controller cannot read fails the reconcile rather than being replaced by a guess, which would be a cache growing until the node runs out.
 func TestEveryCacheIsBounded(t *testing.T) {
 	args := func(t *testing.T, configure func(*config.VMRunnerSpec)) (string, error) {
 		r, _, _ := setupVMReconciler(t, vmAgentCR())
@@ -1294,17 +1293,9 @@ func TestEveryCacheIsBounded(t *testing.T) {
 		return strings.Join(dep.Spec.Template.Spec.Containers[0].Args, " "), nil
 	}
 
-	own, err := args(t, func(spec *config.VMRunnerSpec) { spec.ImageCacheBudget = "20Gi" })
+	shared, err := args(t, func(spec *config.VMRunnerSpec) { spec.ImageCacheBudget = "20Gi" })
 	require.NoError(t, err)
-	assert.Contains(t, own, fmt.Sprintf("--image-budget-bytes=%d", 20*(1<<30)))
-
-	shared, err := args(t, func(spec *config.VMRunnerSpec) {
-		spec.ImageCacheHostPath = "/var/lib/platform-images"
-		spec.ImageCacheBudget = "20Gi"
-	})
-	require.NoError(t, err)
-	assert.Contains(t, shared, fmt.Sprintf("--image-budget-bytes=%d", 20*(1<<30)),
-		"the same number bounds the node directory, which is shared with the whole host")
+	assert.Contains(t, shared, fmt.Sprintf("--image-budget-bytes=%d", 20*(1<<30)))
 
 	for _, bad := range []string{"", "plenty", "0"} {
 		_, err := args(t, func(spec *config.VMRunnerSpec) { spec.ImageCacheBudget = bad })
@@ -1315,7 +1306,7 @@ func TestEveryCacheIsBounded(t *testing.T) {
 
 // TEST_SCENARIO: the runner now sits in the agent namespace while the api-server and controller stay in the release namespace, so its ingress peers have to name that namespace — a bare pod selector matches only the policy's own namespace, which would admit nobody and strand every vm agent. The one peer that does sit in the agent namespace is the owner's own runtime-migration Job.
 func TestRunnerPolicyAdmitsItsCallersAcrossNamespaces(t *testing.T) {
-	np := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "release-ns", testConfig.EnvoyPort, nil, nil, nil)
+	np := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "release-ns", testConfig.EnvoyPort, nil, nil)
 
 	require.Len(t, np.Spec.Ingress, 3, "the machine API and published ports, the migration Job's machine API, and the scrape port")
 	for _, rule := range np.Spec.Ingress {
@@ -1332,7 +1323,7 @@ func TestRunnerPolicyAdmitsItsCallersAcrossNamespaces(t *testing.T) {
 
 // TEST_SCENARIO: the scrape port carries no token, so the NetworkPolicy is its only gate — it must admit the platform's collector to that port alone, and nothing else may reach it, while the collector reaches nothing but it.
 func TestRunnerPolicyAdmitsOnlyTheCollectorToTheScrapePort(t *testing.T) {
-	np := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "release-ns", testConfig.EnvoyPort, nil, nil, nil)
+	np := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "release-ns", testConfig.EnvoyPort, nil, nil)
 
 	var scrapers []string
 	for _, rule := range np.Spec.Ingress {
@@ -1357,7 +1348,7 @@ func TestRunnerPolicyAdmitsOnlyTheCollectorToTheScrapePort(t *testing.T) {
 
 // TEST_SCENARIO: the release is not called `platform`, so the chart's fullname and the Helm release name diverge; the runner's ingress policy must still select the api-server and controller pods, which carry the release name — selecting on the fullname would admit nobody and strand every vm agent.
 func TestRunnerPolicyAdmitsPeersWhenTheReleaseNameDiffersFromTheFullname(t *testing.T) {
-	np := buildRunnerNetworkPolicy(testOwner, "dam-platform", "dam", "test-agents", "default", testConfig.EnvoyPort, nil, nil, nil)
+	np := buildRunnerNetworkPolicy(testOwner, "dam-platform", "dam", "test-agents", "default", testConfig.EnvoyPort, nil, nil)
 
 	var instances []string
 	for _, rule := range np.Spec.Ingress {
@@ -1661,7 +1652,7 @@ func TestVMBackendWaitsForTheRunnerCertificate(t *testing.T) {
 	node, srv := newFakeNode(t)
 	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
 	r, _ := setupReconciler(t, agent, leafSecret(), readyRunnerDeployment(), runnerSecret())
-	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{Image: "vm-runner:1", Storage: "100Gi", ImageCacheBudget: "50Gi"}}
+	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{Image: "vm-runner:1", Storage: "100Gi", ImageCacheBudget: "50Gi", ImageCacheHostPath: "/var/lib/platform-images"}}
 	r.runnerEndpoint = func(string) string { return srv.URL }
 
 	err := r.Reconcile(context.Background(), agent)
@@ -1673,12 +1664,12 @@ func TestVMBackendWaitsForTheRunnerCertificate(t *testing.T) {
 
 // TEST_SCENARIO: an install says where its runner may go; the policy then confines the pod as well as admitting callers, which is the only kernel gate behind a guest's egress allowlist — smolvm enforces that allowlist inside the process an escaped guest would already own.
 func TestRunnerPolicyConfinesTheRunnerWhenEgressIsConfigured(t *testing.T) {
-	open := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "default", testConfig.EnvoyPort, nil, nil, nil)
+	open := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "default", testConfig.EnvoyPort, nil, nil)
 	assert.Equal(t, []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}, open.Spec.PolicyTypes,
-		"with nowhere named, the runner still pulls images and the policy only admits callers")
+		"with nowhere named, the policy only admits callers")
 	assert.Empty(t, open.Spec.Egress)
 
-	confined := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "default", testConfig.EnvoyPort, []string{"0.0.0.0/0"}, []string{"10.128.0.0/14"}, nil)
+	confined := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "default", testConfig.EnvoyPort, []string{"0.0.0.0/0"}, []string{"10.128.0.0/14"})
 	assert.Contains(t, confined.Spec.PolicyTypes, networkingv1.PolicyTypeEgress)
 	require.Len(t, confined.Spec.Egress, 2, "the owner's gateways and what the install named; a runner given no resolver gets no DNS")
 
@@ -1713,7 +1704,7 @@ func TestRunnerPolicyConfinesTheRunnerWhenEgressIsConfigured(t *testing.T) {
 func TestEgressExceptionsAreKeptOnlyWhereTheyFit(t *testing.T) {
 	rules := runnerEgress("test-agents", testOwner, testConfig.EnvoyPort,
 		[]string{"203.0.113.0/24", "0.0.0.0/0"},
-		[]string{"10.128.0.0/14", "172.30.0.0/16"}, nil)
+		[]string{"10.128.0.0/14", "172.30.0.0/16"})
 
 	blocks := map[string][]string{}
 	for _, rule := range rules {
@@ -1734,7 +1725,7 @@ func TestEgressExceptionsAreKeptOnlyWhereTheyFit(t *testing.T) {
 func TestTheMetadataEndpointIsNeverReachable(t *testing.T) {
 	rules := runnerEgress("test-agents", testOwner, testConfig.EnvoyPort,
 		[]string{"0.0.0.0/0", "::/0", "169.254.0.0/15", "169.254.169.254/32", "203.0.113.0/24", "fd00::/8"},
-		[]string{"169.254.0.0/16"}, nil)
+		[]string{"169.254.0.0/16"})
 
 	blocks := map[string][]string{}
 	for _, rule := range rules {
@@ -1753,51 +1744,19 @@ func TestTheMetadataEndpointIsNeverReachable(t *testing.T) {
 	assert.Equal(t, []string{"fd00:ec2::254/128"}, blocks["fd00::/8"])
 }
 
-// TEST_SCENARIO: port 53 open to every address is a two-way channel from an escaped guest to any host that answers there. A runner that caches on its own claim resolves its registry, and reaches only the resolver the install named — the node's resolver by address under Default, the cluster DNS pods by label under ClusterFirst, which are selected as pods because policy applies after the Service address is translated. A runner on the node cache or on staged images resolves nothing and gets no DNS at all, and one left with no resolver named gets none rather than an open port.
-func TestTheRunnerReachesOnlyTheResolverItUses(t *testing.T) {
-	own := config.VMRunnerSpec{DNSCIDRs: []string{"10.0.2.3/32"}}
-	rule := runnerDNSRule(own)
-	require.NotNil(t, rule)
-	require.Len(t, rule.To, 1)
-	require.NotNil(t, rule.To[0].IPBlock)
-	assert.Equal(t, "10.0.2.3/32", rule.To[0].IPBlock.CIDR)
-	require.Len(t, rule.Ports, 2)
-	for _, p := range rule.Ports {
-		assert.Equal(t, int32(53), p.Port.IntVal)
-	}
-
-	cluster := runnerDNSRule(config.VMRunnerSpec{DNSPolicy: "ClusterFirst", ClusterDNS: config.VMRunnerClusterDNS{
-		Namespace: "openshift-dns", PodLabels: map[string]string{"dns.operator.openshift.io/daemonset-dns": "default"}, Ports: []int32{5353},
-	}})
-	require.NotNil(t, cluster)
-	require.Len(t, cluster.To, 1)
-	assert.Nil(t, cluster.To[0].IPBlock)
-	assert.Equal(t, "openshift-dns", cluster.To[0].NamespaceSelector.MatchLabels["kubernetes.io/metadata.name"])
-	assert.Equal(t, "default", cluster.To[0].PodSelector.MatchLabels["dns.operator.openshift.io/daemonset-dns"])
-	for _, p := range cluster.Ports {
-		assert.Equal(t, int32(5353), p.Port.IntVal, "the pods' own port, since policy sees the translated destination")
-	}
-
-	assert.Nil(t, runnerDNSRule(config.VMRunnerSpec{DNSCIDRs: []string{"10.0.2.3/32"}, ImageCacheHostPath: "/var/lib/platform-images"}),
-		"the node's cache service resolves the registry, not the runner")
-	assert.Nil(t, runnerDNSRule(config.VMRunnerSpec{DNSCIDRs: []string{"10.0.2.3/32"}, ImageArchiveHostPath: "/var/lib/platform-archives"}),
-		"staged images need no registry")
-	assert.Nil(t, runnerDNSRule(config.VMRunnerSpec{}), "no resolver named is no DNS, never DNS anywhere")
-	assert.Nil(t, runnerDNSRule(config.VMRunnerSpec{DNSPolicy: "ClusterFirst"}))
-
-	confined := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "default", testConfig.EnvoyPort, []string{"0.0.0.0/0"}, nil, rule)
+// TEST_SCENARIO: port 53 open to every address is a two-way channel from an escaped guest to any host that answers there. The runner resolves nothing — the node's image cache service resolves and fetches its images — so a confined runner's policy admits no DNS port at all.
+func TestTheRunnerReachesNoResolver(t *testing.T) {
+	confined := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "default", testConfig.EnvoyPort, []string{"0.0.0.0/0"}, nil)
 	for _, r := range confined.Spec.Egress {
 		for _, p := range r.Ports {
-			if p.Port != nil && p.Port.IntVal == 53 {
-				assert.NotEmpty(t, r.To, "a DNS rule without a destination admits port 53 everywhere")
-			}
+			assert.NotEqual(t, int32(53), p.Port.IntVal, "the runner's egress admits DNS")
 		}
 	}
 }
 
 // TEST_SCENARIO: a runner hosts untrusted guests, so its container holds only the capabilities it adds and none of the runtime's defaults, cannot raise them through exec, and runs under the runtime's default seccomp profile. AppArmor stays unconfined, because the runtime's default profile keeps every guest from booting.
 func TestTheRunnerContainerIsConfinedToWhatItAdds(t *testing.T) {
-	sc := runnerSecurityContext(config.VMRunnerSpec{ImageCacheHostPath: "/var/lib/platform-images"})
+	sc := runnerSecurityContext()
 	require.NotNil(t, sc.Capabilities)
 	assert.Equal(t, []corev1.Capability{"ALL"}, sc.Capabilities.Drop)
 	assert.Equal(t, []corev1.Capability{"DAC_OVERRIDE"}, sc.Capabilities.Add)
@@ -1870,8 +1829,8 @@ func TestASweepWakeRefusedForMemoryStartsOnTheRetryTick(t *testing.T) {
 	assert.NotContains(t, r.ParkedForRetry(), "my-agent", "and the agent left the retry queue")
 }
 
-// TEST_SCENARIO: a runner that caches images on its own claim unpacks them itself, and tar restores each file's owner and then sets a mode on a file it no longer owns, keeping a setgid bit only with FSETID — so that runner holds CHOWN, FOWNER and FSETID. A runner on the node cache or on staged images unpacks nothing, so it holds neither. Every runner holds DAC_OVERRIDE for its VMMs, which read the image tree with the runner's own credentials to serve it to the guest, including files the image keeps from root.
-func TestOnlyARunnerThatUnpacksImagesCanChownThem(t *testing.T) {
+// TEST_SCENARIO: the node's image cache service unpacks every image, so no runner holds the CHOWN, FOWNER and FSETID an unpack takes. Every runner holds DAC_OVERRIDE for its VMMs, which read the image tree with the runner's own credentials to serve it to the guest, including files the image keeps from root.
+func TestNoRunnerCanChownTheImagesItReads(t *testing.T) {
 	capsFor := func(configure func(*config.VMRunnerSpec)) []corev1.Capability {
 		r, _, _ := setupVMReconciler(t, vmAgentCR())
 		configure(&r.config.VM.Runner)
@@ -1884,14 +1843,7 @@ func TestOnlyARunnerThatUnpacksImagesCanChownThem(t *testing.T) {
 		return caps.Add
 	}
 
-	assert.ElementsMatch(t, []corev1.Capability{"DAC_OVERRIDE", "CHOWN", "FOWNER", "FSETID"},
-		capsFor(func(*config.VMRunnerSpec) {}), "the runner that unpacks into its own claim")
-	assert.ElementsMatch(t, []corev1.Capability{"DAC_OVERRIDE"},
-		capsFor(func(spec *config.VMRunnerSpec) { spec.ImageCacheHostPath = "/var/lib/platform-images" }),
-		"the node's image cache service unpacks, and this runner only reads")
-	assert.ElementsMatch(t, []corev1.Capability{"DAC_OVERRIDE"},
-		capsFor(func(spec *config.VMRunnerSpec) { spec.ImageArchiveHostPath = "/var/lib/platform-archives" }),
-		"a staged image is unpacked before the runner reads it")
+	assert.ElementsMatch(t, []corev1.Capability{"DAC_OVERRIDE"}, capsFor(func(*config.VMRunnerSpec) {}))
 }
 
 // TEST_SCENARIO: service links would put one set of env vars per sibling agent Service into the runner, and the runner reads none of them.

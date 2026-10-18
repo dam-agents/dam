@@ -46,6 +46,14 @@ spec:
     matchLabels:
       {{- include "platform.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: vm-runner-releases
+  {{- /*
+  A stager serves nothing once it has staged, so a chart upgrade replaces
+  every one at once: a node's runners wait for the new release only as long as
+  that node's own image pull, not for the stagers on every node before it.
+  */}}
+  updateStrategy:
+    rollingUpdate:
+      maxUnavailable: 100%
   template:
     metadata:
       labels:
@@ -76,7 +84,7 @@ spec:
           {{- /*
           The runner image, whose ENTRYPOINT starts a runner pod's loader —
           replaced here. The release is named by the very reference the
-          controller writes into each runner's release ConfigMap. The runtime
+          controller names to each runner over its machine API. The runtime
           is the smolvm tree the image installs.
           */}}
           command: ["vm-runner-loader", "stage"]
@@ -124,7 +132,7 @@ spec:
       volumes:
         - name: releases
           hostPath:
-            path: {{ $v.runner.releaseHostPath }}
+            path: {{ include "platform.vmRunner.releaseDir" . }}
             type: DirectoryOrCreate
 {{- with $v.runner.scc }}
 ---

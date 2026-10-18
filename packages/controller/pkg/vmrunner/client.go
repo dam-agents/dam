@@ -117,6 +117,18 @@ func (c *Client) Release(ctx context.Context) (RunnerRelease, error) {
 	return release, json.Unmarshal(raw, &release)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: names the release the pod's loader should hand the machines to. The runner answers once it has written the name where the loader reads it; the hand-off itself follows within seconds, and Release reports it.
+func (c *Client) NameRelease(ctx context.Context, release string) error {
+	body, err := json.Marshal(RunnerReleaseName{Release: release})
+	if err != nil {
+		return err
+	}
+	if _, err := c.call(ctx, c.HTTP, http.MethodPost, "/release", body); err != nil {
+		return fmt.Errorf("VM runner: name release: %w", err)
+	}
+	return nil
+}
+
 func (c *Client) Delete(ctx context.Context, id string) error {
 	_, err := c.machine(ctx, c.HTTP, http.MethodDelete, id, "", nil)
 	return err

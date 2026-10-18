@@ -74,6 +74,7 @@ export function SchedulesPanel({
         error={schedulesQuery.isError && "Couldn't load schedules."}
         isEmpty={upcoming.length === 0}
         empty="No schedules yet. Add one to run a task on a timetable or once."
+        separated
       >
         {upcoming.map(card)}
       </ListSection>
@@ -87,9 +88,13 @@ export function SchedulesPanel({
             <SectionLabel>{`Past one-time tasks (${past.length})`}</SectionLabel>
           </DisclosureToggle>
           {pastOpen && (
-            <Card className="divide-y divide-border overflow-hidden">
-              {past.map(card)}
-            </Card>
+            <div className="flex flex-col gap-3">
+              {past.map((schedule) => (
+                <Card key={schedule.id} className="overflow-hidden">
+                  {card(schedule)}
+                </Card>
+              ))}
+            </div>
           )}
         </section>
       )}

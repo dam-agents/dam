@@ -10,7 +10,7 @@ Every spend figure on the screens and in an agent's own cost report reads it; th
 
 The parts:
 
-- **The meter**, in the agent's paired gateway pod ([credential-gateway](credential-gateway.md)), reads the usage in each provider reply and sends one spend record per call to the api-server.
+- **The meter**, in the agent's paired gateway pod, or in its own listener on an [owner gateway](credential-gateway.md#owner-gateway), reads the usage in each provider reply and sends one spend record per call to the api-server.
 - **The api-server** receives the records on the same per-agent port that answers the gateway's ext_authz checks, so a record is tied to its agent the same way a check is ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)).
 
 The api-server prices each record when it arrives ([Prices](#prices)) and keeps the daily ledger ([Ledger](#ledger)).

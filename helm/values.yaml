@@ -226,33 +226,29 @@ virtualization:
     # OpenShift: name of a *built-in* SCC to bind to the runner's
     # ServiceAccount. Usually unnecessary — when `openshift.scc.anyuidCapNet`
     # is on, the chart binds its own SCC, which grants exactly what the
-    # runner needs and nothing else: uid 0, DAC_OVERRIDE so its VMMs can read the image files a guest is
-    # served even where the image keeps them from root, and — only when the
-    # runner caches images on its own claim — CHOWN + FOWNER + FSETID so it
-    # can restore each file's owner and mode, setgid bits included, as it
-    # unpacks. The runner drops every other capability, cannot escalate, and
-    # runs under the runtime/default seccomp profile. Set this only where
-    # that SCC is off, or where the runner needs a shape it refuses: the
-    # hostPath that `imageCache.hostPath` or `imageArchiveHostPath` mounts.
-    # With `imageCache.hostPath` the same SCC also admits the node image
-    # cache, which sets its own SELinux type (see `imageCache`), so it must
-    # have `seLinuxContext.type: RunAsAny`. Empty = no extra binding rendered.
+    # runner needs and nothing else: uid 0 and DAC_OVERRIDE, so its VMMs can
+    # read the image files a guest is served even where the image keeps them
+    # from root. The runner drops every other capability, cannot escalate,
+    # and runs under the runtime/default seccomp profile. That SCC refuses
+    # the hostPath `imageCache.hostPath` mounts, so on OpenShift this is
+    # required. The same SCC also admits the node image cache, which sets its
+    # own SELinux type (see `imageCache`), so it must have
+    # `seLinuxContext.type: RunAsAny`. Empty = no extra binding rendered.
     scc: ""
-    # One claim, three directories with three lifetimes: `disks/` holds the
-    # machine disks — every vm agent's storage — `machines/` the per-machine
-    # bookkeeping a restarted runner rebuilds, and `images/` the unpacked agent
-    # images, unless `imageCache` below gives every runner one volume to share.
-    # The claim outlives a pod restart and a chart upgrade, but not its owner:
-    # the sweep removes a runner once that owner has no vm agents left, and
-    # takes the claim with it, so the next one re-fetches the image.
+    # One claim, two directories with two lifetimes: `disks/` holds the
+    # machine disks — every vm agent's storage — and `machines/` the
+    # per-machine bookkeeping a restarted runner rebuilds. The unpacked agent
+    # images are on the node, in `imageCache` below. The claim outlives a pod
+    # restart and a chart upgrade, but not its owner: the sweep removes a
+    # runner once that owner has no vm agents left, and takes the claim with
+    # it.
     # `storage` is each owner's storage pool, and the size of their claim; an
     # owner's UserBudget `storage` replaces it for that owner. Every machine
     # disk is sparse and may grow to the whole pool, so what counts is what
-    # the owner's agents write: the runner sheds cached images and guest
+    # the owner's agents write: the runner asks its guests to shed
     # scratch at 75% and refuses new disks, starts and growth at 90%, and the
     # api-server refuses a new vm agent there. The claim also holds the
-    # bookkeeping and, when the cache lives on it (no `hostPath` and no
-    # `imageArchiveHostPath`), `imageCache.budget`, which must be smaller.
+    # bookkeeping.
     # Raising the pool grows existing claims in place, which needs a class
     # that allows volume expansion; a refused resize costs a warning in the
     # controller log and leaves that runner at the size it has. Kubernetes
@@ -330,8 +326,9 @@ virtualization:
     # owner's machines; an Agent changing its ask restarts only its own.
     nestedVirtualization: false
     # Machines are processes of their runner, so any change to the runner pod
-    # — a new `image`, or a controller release that renders the pod
-    # differently — reboots every machine that owner has. The controller rolls
+    # — a controller release that renders the pod differently, or a runner
+    # image the pod's loader cannot take in place — reboots every machine
+    # that owner has. The controller rolls
     # such a change across owners rather than all at once: at most
     # `maxConcurrent` runners are mid-roll at a time, and a runner stays
     # mid-roll until its new pod is ready and every machine that was ready
@@ -346,42 +343,35 @@ virtualization:
     # other owners roll meanwhile. `idleWait` bounds that wait; past it, the
     # runner rolls even with an agent busy. It outlasts a multi-hour kept job
     # and only stops an owner who is never idle from missing every release.
-    # With `releaseHostPath` set, a new runner image is handed to each pod in
-    # place instead, and each hand-off takes a place in the same width until
-    # the runner runs the release and its machines answer again; a hand-off
-    # that fails, sees an ensure refused, or outlasts `settleTimeout` halts
-    # the release.
+    # A new runner image is handed to each pod in place instead, and each
+    # hand-off takes a place in the same width until the runner runs the
+    # release and its machines answer again; a hand-off that fails, sees an
+    # ensure refused, or outlasts `settleTimeout` halts the release. Time
+    # spent waiting for the node's stager to stage the release does not
+    # count. The controller's sweep follows that many hand-offs at once.
     rollout:
       maxConcurrent: 1
       settleTimeout: 10m
       idleWait: 24h
-    # A directory on the node holding pre-flattened image trees (each with
-    # its launch record; `mise run image:stage-vm` makes one), named after the
-    # image reference and mounted read-only into every runner. The key keeps
-    # its old name; a `docker save` archive staged here is refused. It is how
-    # a cluster with no registry (local dev) gives runners their agent image;
-    # empty means runners fetch images from the registry.
-    imageArchiveHostPath: ""
     # A directory on each node where a stager DaemonSet copies the runner
     # release this chart's runner image carries: the runner and the two guest
-    # binaries it hands every machine. Set, a runner pod keeps the image it was
-    # created with, and a new runner image reaches it without a restart: the
-    # pod's loader drains the old runner, starts the new one from this
-    # directory, and the new runner adopts every machine still running, so no
-    # machine reboots. A release built against another VM runtime (a new
-    # smolvm, libkrun or crane) brings its runtime along: machines already
-    # running keep the runtime they booted, and machines started after the
-    # hand-off boot the new one. Only a release that cannot load in the pod
-    # (a newer base image's libc) still rolls the pods, through `rollout`, as
-    # every runner image does when this is empty. The stager is the only
-    # writer; runners mount it read-only. On OpenShift it needs `scc`, as
+    # binaries it hands every machine. Required with runner pods. A runner
+    # pod keeps the image it was created with, and a new runner image reaches
+    # it without a restart: the controller names the release over the
+    # runner's machine API, the pod's loader drains the old runner, starts
+    # the new one from this directory, and the new runner adopts every
+    # machine still running, so no machine reboots. A release built against
+    # another VM runtime (a new smolvm, libkrun or crane) brings its runtime
+    # along: machines already running keep the runtime they booted, and
+    # machines started after the hand-off boot the new one. Only a release
+    # that cannot load in the pod (a newer base image's libc) still rolls the
+    # pods, through `rollout`. The stager is the only writer; runners mount
+    # it read-only. Each install stages into its own subdirectory, named
+    # after `agentNamespace`, because every stager keeps only the newest few
+    # releases in its directory. On OpenShift it needs `scc`, as
     # `imageCache.hostPath` does: the stager labels the directory for
     # containers, as spc_t, so the confined runners can read it.
-    releaseHostPath: ""
-    # Roll the pods for every release built against another VM runtime, rather
-    # than letting a new runtime manage machines an older one started. The
-    # switch back if a runtime turns out not to.
-    releaseSameRuntimeOnly: false
+    releaseHostPath: /var/lib/platform-vm-runner-releases
     # How smolvm checks every VMM's syscalls, from after its device setup,
     # against the allowlist a running microVM needs. `audit` logs a call
     # outside it as a kernel audit record (`type=1326`, in the node's audit
@@ -399,41 +389,6 @@ virtualization:
     # certificate; `mise run cluster:install` starts it. There is no per-owner
     # boundary: one owner's escaped guest reaches every owner's machines.
     hostAddress: ""
-    # How the runner resolves the registry it fetches agent images from.
-    # `Default` is the node's resolver: the right answer whenever
-    # egressExceptCidrs confines this pod away from Service and pod addresses,
-    # because the cluster's DNS is a Service backed by pods in exactly those
-    # ranges — every lookup through it times out, and a pull dies on the name
-    # rather than the fetch. `ClusterFirst` is for an install whose registry
-    # lives inside the cluster and whose excepts leave that range reachable;
-    # it resolves Service names and loses nothing, since nothing is blocked.
-    dnsPolicy: Default
-    # Where the runner may send DNS once egressCidrs confines it. Only a
-    # runner that caches images on its own claim (no `imageCache.hostPath`,
-    # no `imageArchiveHostPath`) resolves anything — its registry — so only
-    # that runner gets DNS at all; one on the node cache or on staged images
-    # reaches no resolver whatsoever. DNS open to every address would be a
-    # two-way channel from an escaped guest to any host listening on 53, so
-    # the runner reaches only the resolver it uses, on UDP and TCP (TCP for
-    # answers too large for one datagram):
-    # - `dnsPolicy: Default` — the node's resolver, at the addresses listed
-    #   here: the first `nameserver` of the nodes' /etc/resolv.conf (e.g. the
-    #   VPC resolver, `169.254.169.253/32` on AWS). REQUIRED in that case —
-    #   the install fails without it, and /0 is refused.
-    # - `dnsPolicy: ClusterFirst` — the cluster DNS pods `clusterDns` selects,
-    #   on their own ports: policy is applied after the DNS Service address
-    #   is translated to a pod, so the pods are named, not the Service.
-    #   OpenShift: namespace `openshift-dns`, podLabels
-    #   `dns.operator.openshift.io/daemonset-dns: default`, ports [5353].
-    # A resolver still recurses for whatever name it is asked, so a runner
-    # that resolves at all keeps that one narrow channel; the node cache
-    # (`imageCache.hostPath`) closes it.
-    dnsCidrs: []
-    clusterDns:
-      namespace: kube-system
-      podLabels:
-        k8s-app: kube-dns
-      ports: [53]
     # Where the runner pod itself may send traffic. REQUIRED when
     # virtualization.enabled — the install fails without it, because leaving
     # it empty means no policy at all, and that is the weakest point of this
@@ -441,14 +396,14 @@ virtualization:
     # very process an escaped guest would own, so with no kernel gate behind
     # it such a guest reaches the platform's datastores (each gateway's own
     # ingress policy still keeps it off other owners' gateways). Set this and
-    # the runner is confined to its owner's gateways (on their proxy port),
-    # these CIDRs, and — only if it resolves names — its resolver
-    # (`dnsCidrs` above).
-    # It cannot default to closed because the runner also pulls agent images,
-    # so the registry has to be named.
+    # the runner is confined to its owner's gateways (on their proxy port)
+    # and these CIDRs, and reaches no resolver: the node image cache fetches
+    # and resolves every image, so the runner looks up no name. A list that
+    # admits nothing beyond the gateways, such as one address nothing answers
+    # on, confines it fully.
     # A CIDR here matches in-cluster addresses too, so `0.0.0.0/0` on its own
     # allows everything and confines nothing — pair it with the cluster's own
-    # ranges in egressExceptCidrs, or name the registry directly:
+    # ranges in egressExceptCidrs, or name a single address instead:
     #   egressCidrs: ["0.0.0.0/0"]
     #   egressExceptCidrs: ["10.128.0.0/14", "172.30.0.0/16", "169.254.0.0/16"]
     # pods, Services, and link-local — the node's metadata endpoint lives there
@@ -457,10 +412,6 @@ virtualization:
     # 100.100.100.200/32, fe80::/10, fd00:ec2::254/128) from every entry that
     # contains one even when they are left out here, and the chart refuses an
     # entry inside link-local.
-    # On OpenShift the internal registry is a Service address, so excepting the
-    # Service range blocks pulls from it: name that registry in egressCidrs and
-    # leave its range out of egressExceptCidrs, then set `dnsPolicy: ClusterFirst`
-    # above so the runner can resolve it — or stage images on the node instead.
     egressCidrs: []
     # Subtracted from the entries above that contain them — Kubernetes rejects
     # a policy whose exception falls outside its own block, so a narrow entry
@@ -502,6 +453,12 @@ virtualization:
     concurrency: 10
     ownerConcurrency: 1
     cloneSource: true
+  # One gateway pod per owner serves every vm Agent of that owner, each on
+  # ports of its own behind the agent's own gateway Service, so a wake starts
+  # no gateway pod. Off: each vm Agent keeps a gateway pod of its own, which
+  # hibernation scales to zero.
+  gateway:
+    perOwner: false
   # The CA the controller trusts a runner's serving certificate by. It is the
   # runners' own and signs nothing else: the envoyMitm CA signs gateway leaves
   # for hostnames taken from users' credential hosts, so a leaf naming a
@@ -518,12 +475,16 @@ virtualization:
     secretName: platform-vm-runner-ca
     duration: 87600h # 10y
     renewBefore: 720h # 30d
-  # A directory on each node that every runner scheduled there shares. A machine
-  # may reach only its gateway, so the guest cannot pull its own image; it is
-  # fetched and unpacked here once, and the next owner on that node boots the
-  # same tree without touching the registry. Empty = each runner caches on its
-  # own claim, as that claim's only writer, which means one pull per owner for
-  # the same few images.
+  # A directory on each node that every runner scheduled there shares, and
+  # the only place a runner gets an image from. REQUIRED when
+  # virtualization.enabled. A machine may reach only its gateway, so the guest
+  # cannot pull its own image; it is fetched and unpacked here once, and the
+  # next owner on that node boots the same tree without touching the
+  # registry. The default is the directory etc/openshift-node-config has the
+  # nodes create and label. An install with no registry (local dev) stages
+  # pre-flattened trees here too, named after the image reference
+  # (`mise run image:stage-vm`), which the runners boot before they ask the
+  # service.
   #
   # A host directory rather than a ReadWriteMany claim: RWX is the expensive
   # class to ask an install for, and it buys cluster-wide dedup where per-node
@@ -538,9 +499,9 @@ virtualization:
   # `MustRunAs` SCC admission refuses the cache pod; without the label it
   # exits on start with the operation it was refused.
   #
-  # Setting `hostPath` deploys the image cache service: a DaemonSet in
-  # `agentNamespace`, on the runners' nodeSelector and tolerations, that is the
-  # ONLY writer of this directory. Runners mount it read-only and ask the
+  # The image cache service is a DaemonSet in `agentNamespace`, on the
+  # runners' nodeSelector and tolerations, that is the ONLY writer of this
+  # directory. Runners mount it read-only and ask the
   # service, over a Unix socket inside it, for each image a machine boots; the
   # service resolves the tag, fetches and unpacks it with the pull credentials
   # the runner forwards for that machine, and evicts. So a guest that escapes
@@ -561,10 +522,11 @@ virtualization:
   #
   # `budget` is what the cached images may occupy, evicting least-recently-
   # written first so a tag per deploy does not fill the disk. It is a byte
-  # count and it is required, wherever the cache lives: a node's filesystem is
-  # shared with everything else the node runs, and `runner.storage` is shared
-  # with the machine disks, so a share of either would let the images eat
-  # space that is not theirs. Keep it well under whichever it sits on.
+  # count and it is required: a node's filesystem is shared with everything
+  # else the node runs, so a share of it would let the images eat space that
+  # is not theirs. Keep it well under the disk it sits on. A fetch never
+  # unpacks more than its image is taken to need, and the directory is closed
+  # to every host uid but root.
   #
   # The service also preloads every enabled `harnessTemplates` image at
   # deploy time and every `preloadInterval` after, and pins them against
@@ -576,9 +538,13 @@ virtualization:
   # set with room to spare: pins are never evicted, so a budget below their
   # total leaves the cache permanently over it and saying so in its log.
   imageCache:
-    hostPath: ""
+    hostPath: /var/lib/platform-images
     budget: 20Gi
     preloadInterval: 5m
+    # How the service resolves the registries it fetches from. `Default` is
+    # the node's resolver. `ClusterFirst` is for an install whose registry is
+    # a Service inside the cluster, such as OpenShift's internal registry.
+    dnsPolicy: Default
     # Unpacking is I/O rather than CPU, and the tree is streamed rather than
     # held, so this is small on purpose. Leave the CPU limit unset: a
     # throttled unpack is a slow first boot.
@@ -602,8 +568,8 @@ openshift:
     # the built-in `anyuid` SCC (runAsUser: RunAsAny so the iptablesInit
     # init container can run as root; the agent container itself stays at
     # image USER 65532), with NET_ADMIN + NET_RAW added to
-    # allowedCapabilities, and DAC_OVERRIDE + CHOWN + FOWNER which only
-    # the VM runner requests. No agent workload can take them: agent containers are
+    # allowedCapabilities, and DAC_OVERRIDE which only the VM runner
+    # requests. No agent workload can take them: agent containers are
     # pinned to `capabilities.drop: [ALL]` with runAsNonRoot, the
     # controller refuses a configuration without that block, and an agent
     # ConfigMap cannot set a security context. Renders a cluster-scoped SCC + RoleBinding to

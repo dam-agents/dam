@@ -19,7 +19,7 @@ export function SidePanelEdgeTab({
         data-testid="side-panel-maximize"
         onClick={onToggle}
         className={cn(
-          "absolute top-1/2 z-raised hidden h-12 w-5 -translate-y-1/2 items-center justify-center border-y border-border bg-background text-muted-foreground shadow-sm transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring md:flex",
+          "absolute top-1/2 z-raised hidden h-12 w-5 -translate-y-1/2 items-center justify-center border-y border-border bg-chrome text-muted-foreground shadow-sm transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring md:flex",
           maximized
             ? "left-0 rounded-r-lg border-r"
             : "right-full rounded-l-lg border-l",

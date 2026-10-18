@@ -296,6 +296,11 @@ const ReasonOverBudget = "OverBudget"
 // a deleted credential Secret. Terminal, unlike PodNotReady.
 const ReasonStuckOnSupersededRevision = "StuckOnSupersededRevision"
 
+// ReasonOwnerGatewayListenerStale marks a vm agent whose owner gateway does
+// not yet serve the listener last rendered for it. Transient: Envoy applies
+// the new file within seconds of the kubelet's sync.
+const ReasonOwnerGatewayListenerStale = "OwnerGatewayListenerStale"
+
 // ReasonMachineRunnerUnschedulable is stamped on AgentPodReady when a vm
 // agent's owner has a VM runner pod the scheduler cannot place (no node
 // offers the virtualization devices, say). The controller sets it from the

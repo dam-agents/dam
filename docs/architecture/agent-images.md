@@ -1,6 +1,6 @@
 # Agent images
 
-Last verified: 2026-10-17
+Last verified: 2026-10-18
 
 The images an agent runs in: the **default image**, which the default Template boots, and the workloads and the e2e mock, each the default image under its own files.
 Each carries the agent-runtime and every harness.
@@ -66,25 +66,27 @@ CI calls it from [`image:ci-build`](../../.mise/tasks/image/ci-build) and pushes
 
 ## Ownership and the two Backends
 
-The image is root's, but for the paths the agent must write, which each layer is packed with already owned by the agent: its home, the mise system config, a workload's Python, the runtime's directory and the trust store.
+The image is root's, but for the paths the agent must write, which each layer is packed with already owned by the agent: its home, the mise system config, a workload's Python, the runtime's directory and `/run/platform`, where a container's entrypoint builds the CA bundle.
 Everything else stays root's, including the shipped skills, the working-dir seed and Claude Code's managed settings, so an agent cannot rewrite what the platform ships.
 Layers are packed as plain tars: a local cluster imports them as they are, and CI gzips a published image's layers with parallel gzip as it pushes.
 
 - **Container Backend:** the image runs as the agent user, whose account comes from a static extra-users database.
 - **vm Backend:** the machine boots the image as root after platform-init has mounted the home and bound the MITM CA, and platform-init stays the entrypoint's parent, so the image's init is not the first process of its PID namespace ([vm-runner](vm-runner.md)).
-  The entrypoint maps `agent` to uid 0 for SSH logins, gives uid 0 the agent's home so OpenSSH keeps its keys there ([persistence](persistence.md#per-agent-pvcs)), and prepares sshd.
+  SSH logins as `agent` land as uid 0, since platform-init lays a copy of the image's `/etc/passwd` with that entry over the image at every boot; extrausers serves no uid 0 entry ([persistence](persistence.md#per-agent-pvcs)).
+  The entrypoint prepares sshd.
+  The image's build gives uid 0 the agent's home, so OpenSSH keeps its keys there.
   The agent-runtime keeps Node's compile cache beside its own code here, since the root outlives a boot; a container's root is new on every start, so writing the cache would only cost it time.
   The cache is the runtime's alone: no harness or command it starts inherits it.
 
-On both, the [entrypoint](../../packages/agents/base/rootfs/usr/local/bin/agent-entrypoint) trusts every CA under `/etc/platform/ca` in the system bundle — the gateway's MITM CA, and the extra CAs the install names for a TLS-inspecting proxy beyond it — and the agent's environment sets `NODE_USE_SYSTEM_CA`, so Node reads that bundle like every other client, seeds a new home from the working-dir seed, and discards the caches on the home that no tool it ships reads ([persistence](persistence.md#per-agent-pvcs) owns the rule).
+On both, the [entrypoint](../../packages/agents/base/rootfs/usr/local/bin/agent-entrypoint) trusts every CA under `/etc/platform/ca` — the gateway's MITM CA, and the extra CAs the install names for a TLS-inspecting proxy beyond it — seeds a new home from the working-dir seed, and discards the caches on the home that no tool it ships reads ([persistence](persistence.md#per-agent-pvcs) owns the rule).
+It builds the bundle under `/run/platform` at every boot, and so do the docker and k3s services, which openrc may start before it: the image's distribution roots, the local CAs an agent added, and then those CAs, and never writes the image's trust store, since a machine keeps its root across images of one generation and a bundle a boot wrote there would hide the next image's roots.
+An agent's `update-ca-certificates` writes a bundle file of its own over the link, so a hook it runs links the path again and rebuilds the `/run` bundle with the new local CAs.
+The image's build moves the distribution's bundle aside and links its path, `/etc/ssl/certs/ca-certificates.crt`, to the one under `/run`; `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE` name it too, and the agent's environment sets `NODE_USE_SYSTEM_CA`, so Node reads it like every other client.
+The platform CAs alone are linked as a local CA, so a store an agent's package manager rebuilds still holds them.
+Building it is two file writes, so nothing is recorded or cached between boots.
 The environment also points `SSL_CERT_DIR` at `/etc/platform/ca`: Node's system store reads every file in that directory, and the default, `/etc/ssl/certs`, holds a link to each certificate the bundle already has, and reading them one by one delays every node process on a machine before it can exit or make its first TLS call.
 OpenSSL-based clients still find every root in the bundle, and Go also reads the platform CAs from the directory itself.
-The bundle, and Chromium's store below, record what they were last built from and are rebuilt only when it changes: a machine's root and every home outlive a boot, and `update-ca-certificates` forks several times for each root the distribution ships, which takes seconds on a machine.
-The bundle's record also holds the image's distribution roots, since a machine's root outlives a new image too: the digest of them that the image's build writes, since reading every root costs a machine boot about 150 ms.
-An image built without the digest has its roots read instead, and an agent that changes the roots in its own root does so with the package manager, whose trigger rebuilds the bundle with the platform CAs in it.
-A store no boot has touched yet, on a container's or a new machine root, is the one the image's build made, so the entrypoint adds only the platform CAs to it and hashes only them, with the same result as `update-ca-certificates` but not its pass over every root.
-Every other rebuild, a failed add, and any store with an update hook such as Java's keystore run `update-ca-certificates` itself.
-Chromium's store is built beside the runtime's start rather than before it, since nothing starts Chromium before the runtime listens.
+Chromium's store records what it was last built from and is rebuilt only when that changes, since every home outlives a boot, and it is built beside the runtime's start rather than before it, since nothing starts Chromium before the runtime listens.
 On a machine it also points docker's client at the gateway, so containers and builds the agent starts go through it too, and puts the share's runtime wrapper in front of docker's and k3s's runc, so they trust the MITM CA as well.
 docker's runc is on the read-only harness tools, so the wrapper is linked as `runc` in a directory under `/run` that the entrypoint and login shells put first on `PATH`; k3s's containerd names it in a drop-in.
 A container's root is its own image, which trusts only public roots; when the container starts, the wrapper gives it copies of the image's own bundle with the CA appended, at a path of its own mounted read-only, and points the common CA variables there; a variable the image sets to a bundle is pointed at a copy of that file.
@@ -106,7 +108,7 @@ Platform code a harness loads at runtime, such as Pi's provider extension, ships
   On a machine each is an openrc service in no runlevel: the agent starts it with `rc-service`, or adds it to the `default` runlevel to start it at every boot, and both keep their data under the home, the one path on a machine's disk that either can use.
   A service gets only `PATH` and the gateway's proxy and CA variables of the environment openrc starts in, which the image's openrc config names, so no credential reaches a daemon.
 - aube stands in for pnpm; npm stays for tools that call it.
-  An agent's own `mise use -g`, `aube add -g` and `pip install --user` land in the home and last; `npm i -g` and a plain `pip install` install into the image: in a container they last until the agent restarts, on a machine until its root generation, which the base declares, is bumped ([persistence](persistence.md)).
+  An agent's own `mise use -g`, `aube add -g` and `pip install --user` land in the home and last; `npm i -g` and a plain `pip install` install into the image: in a container they last until the agent restarts, on a machine until its image's root generation key changes ([persistence](persistence.md)).
   A plain `mise use -g <tool>` names `latest`, which an image's tool of that name already satisfies, so it installs nothing; `mise use -g <tool>@latest` or a version installs into the home, and a login shell then puts it ahead of the image's.
   A tool pin in the home applies whenever the home holds it; a pinned tool the home has not installed shows as missing until `mise install`.
 
@@ -116,7 +118,9 @@ An Agent created from a Template is kept on that Template's current image withou
 An Agent created on an image of its own, a [starter kit](starter-kits.md)'s included, carries no Template and is never moved, nor is one whose Template the install no longer has.
 A periodic api-server job applies the [template upgrade](agent-lifecycle.md#template-upgrade) a user would, so the harness carries over: each harness once had an image of its own, and the Templates for those retired images resolve to the default Template, so their Agents move to the default image the same way.
 It covers both Backends.
-A vm machine keeps its root when the new image declares the same root generation as the old one, and otherwise boots on a fresh root, losing what was installed outside HOME ([vm-runner](vm-runner.md)); that loss is accepted.
+A vm machine keeps its root when the new image declares the same root generation key as the old one, and otherwise boots on a fresh root, losing what was installed outside HOME ([vm-runner](vm-runner.md)); that loss is accepted.
+A workload's key is the default image's with its own segment appended by its build, so a move between the default image and a workload's always starts a fresh root, and a new default key is a new key for every workload too.
+An image built from the default one outside this build carries the default's key unless it declares its own.
 
 It never interrupts work.
 A hibernated, stopped or over-budget Agent moves at once and takes the image on its next wake.

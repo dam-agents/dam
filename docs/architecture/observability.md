@@ -1,6 +1,6 @@
 # Observability (agent telemetry)
 
-Last verified: 2026-10-16
+Last verified: 2026-10-17
 
 ## Overview
 
@@ -273,7 +273,7 @@ Telemetry only answers *whose agents ran, and how* if each record is reliably ti
 It comes instead from the platform-controlled path the telemetry already travels.
 
 Every agent's egress, telemetry included, leaves through its **paired gateway pod**: the agent has no other admitted route (see [security-and-credentials](security-and-credentials.md)), and the gateway proxy's configuration is controller-rendered, not agent-writable.
-When the telemetry backend is enabled, that gateway proxy intercepts any agent OTLP bound for the collector and stamps a trusted `platform.agent.id` identifying the producing agent — **overwriting** anything the agent set, since the value is fixed in this gateway's own per-agent configuration.
+When the telemetry backend is enabled, that gateway proxy intercepts any agent OTLP bound for the collector and stamps a trusted `platform.agent.id` identifying the producing agent — **overwriting** anything the agent set, since the value is fixed in this gateway's own per-agent configuration — on an [owner gateway](credential-gateway.md#owner-gateway), in the agent's own listener.
 The collector takes the attribution from that stamp alone: it **drops whatever `platform.agent.id` the agent wrote into its own telemetry** and re-derives the attribute from the stamp, so a self-declared value never survives.
 
 The stamp is worth trusting because the agent cannot substitute its own on any route.
