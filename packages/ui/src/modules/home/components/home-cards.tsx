@@ -15,7 +15,6 @@ import { HarnessIcons } from "@/components/harness-icons";
 import { timeAgo, timeUntil } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
-import { getBrand } from "../../../brand.js";
 import { useStore } from "../../../store.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import {
@@ -130,7 +129,7 @@ export function HeroCard() {
       <div className="relative grid items-end gap-6 @2xl:grid-cols-[minmax(0,1fr)_auto]">
         <div className="min-w-0">
           <h1 className="text-3xl font-light tracking-[-0.03em] text-balance text-foreground @2xl:text-5xl @6xl:text-6xl">
-            {getBrand().title || getBrand().name}
+            Deploy Agents Massively
           </h1>
           <div className="mt-6 flex flex-wrap gap-8">
             <Big value={agents.length} label="agents" />
