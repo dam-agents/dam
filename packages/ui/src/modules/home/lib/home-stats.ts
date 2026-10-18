@@ -13,8 +13,6 @@ export interface Count<K extends string = string> {
   count: number;
 }
 
-const DAY_MS = 86_400_000;
-
 const sessionAt = (s: AttentionItem) => Date.parse(s.activityAt ?? s.createdAt);
 
 export function channelMix(
@@ -28,23 +26,26 @@ export function channelMix(
   return CHANNEL_TYPES.map((key) => ({ key, count: counts.get(key) ?? 0 }));
 }
 
+const localDay = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
 export function dailyActivity(
   sessions: readonly AttentionItem[],
   now: Date,
   days = 14,
 ): { day: string; count: number }[] {
-  const end =
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) +
-    DAY_MS;
-  const buckets = Array.from({ length: days }, () => 0);
-  for (const s of sessions) {
-    const at = sessionAt(s);
-    const index = days - 1 - Math.floor((end - 1 - at) / DAY_MS);
-    if (index >= 0 && index < days) buckets[index]!++;
-  }
-  return buckets.map((count, i) => ({
-    day: new Date(end - (days - i) * DAY_MS).toISOString().slice(0, 10),
-    count,
+  // UNIT_BOUNDARY_DESCRIPTION: buckets start at local midnights rather than fixed 24 h steps, so a DST change keeps the days aligned.
+  const starts = Array.from(
+    { length: days + 1 },
+    (_, i) =>
+      new Date(now.getFullYear(), now.getMonth(), now.getDate() - days + 1 + i),
+  );
+  return starts.slice(0, days).map((start, i) => ({
+    day: localDay(start),
+    count: sessions.filter((s) => {
+      const at = sessionAt(s);
+      return at >= start.getTime() && at < starts[i + 1]!.getTime();
+    }).length,
   }));
 }
 
@@ -132,10 +133,10 @@ export function sessionsToday(
   sessions: readonly AttentionItem[],
   now: Date,
 ): number {
-  const start = Date.UTC(
-    now.getUTCFullYear(),
-    now.getUTCMonth(),
-    now.getUTCDate(),
-  );
+  const start = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+  ).getTime();
   return sessions.filter((s) => sessionAt(s) >= start).length;
 }

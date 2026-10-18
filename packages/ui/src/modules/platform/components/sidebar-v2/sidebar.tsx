@@ -1,4 +1,5 @@
 import { ChevronLeft, Home, Settings } from "@carbon/icons-react";
+import { useEffect, useRef } from "react";
 
 import { ResizeHandle } from "@/components/resize-handle";
 import { cn } from "@/lib/utils";
@@ -34,6 +35,13 @@ export function SidebarV2() {
   const peek = useStore((s) => s.sidebarPeek);
   const setPeek = useStore((s) => s.setSidebarPeek);
   const shown = pinned || peek;
+  const navRef = useRef<HTMLElement>(null);
+  const focusOnOpen = useRef(false);
+  useEffect(() => {
+    if (!peek || !focusOnOpen.current) return;
+    focusOnOpen.current = false;
+    navRef.current?.querySelector<HTMLElement>("button")?.focus();
+  }, [peek]);
 
   return (
     <>
@@ -52,6 +60,7 @@ export function SidebarV2() {
         />
       )}
       <nav
+        ref={navRef}
         className={cn(
           "hidden md:flex relative flex-col h-full shrink-0 bg-chrome border-r border-border",
           !pinned && ["fixed inset-y-0 left-0 z-overlay", SLIDE],
@@ -62,6 +71,9 @@ export function SidebarV2() {
         )}
         style={{ width }}
         inert={!shown}
+        onKeyDown={(e) => {
+          if (e.key === "Escape" && !pinned) setPeek(false);
+        }}
         onMouseLeave={(e) => {
           if (e.clientX > e.currentTarget.getBoundingClientRect().right)
             setPeek(false);
@@ -84,7 +96,14 @@ export function SidebarV2() {
           <ResizeHandle side="left" onResize={resize} onDragEnd={endResize} />
         </div>
       )}
-      {!shown && <PeekButton onOpen={() => setPeek(true)} />}
+      {!shown && (
+        <PeekButton
+          onOpen={() => {
+            focusOnOpen.current = true;
+            setPeek(true);
+          }}
+        />
+      )}
     </>
   );
 }

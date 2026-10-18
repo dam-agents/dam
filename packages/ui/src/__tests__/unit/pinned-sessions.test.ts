@@ -5,6 +5,7 @@ import {
   pinKey,
   readPinnedSessions,
   togglePinnedSession,
+  unpinSession,
 } from "../../modules/sessions/lib/pinned-sessions.js";
 
 /**
@@ -32,6 +33,17 @@ describe("pinned sessions", () => {
     expect(readPinnedSessions(store).has(pinKey("agent-a", "s1"))).toBe(true);
     expect(readPinnedSessions(store).has(pinKey("agent-b", "s1"))).toBe(false);
     togglePinnedSession(pinKey("agent-a", "s1"), store);
+    expect(readPinnedSessions(store).size).toBe(0);
+  });
+
+  // TEST_SCENARIO: unpinning a deleted Session removes only its pin and never pins one that was not pinned.
+  it("unpins without toggling", () => {
+    const store = mapStore();
+    togglePinnedSession(pinKey("agent-a", "s1"), store);
+    unpinSession(pinKey("agent-a", "s2"), store);
+    expect([...readPinnedSessions(store)]).toEqual([pinKey("agent-a", "s1")]);
+    unpinSession(pinKey("agent-a", "s1"), store);
+    unpinSession(pinKey("agent-a", "s1"), store);
     expect(readPinnedSessions(store).size).toBe(0);
   });
 

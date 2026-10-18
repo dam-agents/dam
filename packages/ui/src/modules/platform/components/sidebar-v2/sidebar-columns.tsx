@@ -38,6 +38,7 @@ import {
   avatarMood,
 } from "../../../agents/components/avatar/agent-avatar.js";
 import { OrderDropIndicator } from "../../../agents/components/order-drop-indicator.js";
+import { useActWhenAwake } from "../../../agents/hooks/use-act-when-awake.js";
 import { useConfirmDeleteAgent } from "../../../agents/hooks/use-confirm-delete-agent.js";
 import { useCreateDefaultAgent } from "../../../agents/hooks/use-create-default-agent.js";
 import { useOrderDrag } from "../../../agents/hooks/use-order-drag.js";
@@ -58,6 +59,7 @@ import { useOpenSession } from "../../../sessions/hooks/use-open-session.js";
 import { useStartSession } from "../../../sessions/hooks/use-start-session.js";
 import {
   togglePinnedSession,
+  unpinSession,
   usePinnedSessions,
 } from "../../../sessions/lib/pinned-sessions.js";
 import { AgentSessionList } from "./agent-session-list.js";
@@ -154,10 +156,8 @@ function AvatarStrip({
   const total = [...needsYou.values()].reduce((a, b) => a + b, 0);
   return (
     <div className="flex w-[60px] shrink-0 flex-col border-r border-border">
-      <div
+      <nav
         className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-x-hidden overflow-y-auto pt-3 pb-4 [scrollbar-width:none]"
-        role="tablist"
-        aria-orientation="vertical"
         aria-label="Agents"
         data-testid="sidebar-avatar-strip"
       >
@@ -169,7 +169,7 @@ function AvatarStrip({
         >
           <Home size={18} />
         </StripButton>
-        <span className="h-px w-6 shrink-0 bg-border" />
+        <span aria-hidden className="h-px w-6 shrink-0 bg-border" />
         {agents.map((agent) => (
           <DraggableAgent
             key={agent.id}
@@ -208,7 +208,7 @@ function AvatarStrip({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-      </div>
+      </nav>
       <div className="relative z-raised flex shrink-0 flex-col items-center justify-center gap-1 bg-chrome py-2">
         <Tooltip content="Settings" side="right">
           <button
@@ -335,8 +335,7 @@ function StripButton({
     <Tooltip content={label} side="right">
       <button
         type="button"
-        role="tab"
-        aria-selected={active}
+        aria-current={active ? "page" : undefined}
         aria-label={badge > 0 ? `${label}, ${badge} need you` : label}
         onClick={onClick}
         className={railTile(active)}
@@ -393,6 +392,7 @@ function AllColumn({
   const sessions = useMemo(() => items.map((item) => item.session), [items]);
   const conversationOf = useActivityConversations(sessions, agents);
   const pins = usePinnedSessions();
+  const orderActions = useSidebarOrderActions();
   const shown = filterActivitySessions(items, filters);
   const unread = shown.filter((item) => item.unread);
   const read = shown.filter((item) => !item.unread);
@@ -403,6 +403,7 @@ function AllColumn({
       key={item.id}
       item={item}
       conversation={conversationOf(item.session)}
+      orderActions={orderActions}
       onNavigate={onNavigate}
     />
   );
@@ -447,10 +448,12 @@ function AllColumn({
 function ActivityRow({
   item,
   conversation,
+  orderActions,
   onNavigate,
 }: {
   item: AgentActivitySession;
   conversation?: string;
+  orderActions: ReturnType<typeof useSidebarOrderActions>;
   onNavigate?: () => void;
 }) {
   const openSession = useOpenSession();
@@ -464,6 +467,8 @@ function ActivityRow({
       s.sessionId === item.session.sessionId,
   );
   const pinned = usePinnedSessions().has(item.id);
+  const { agentId, sessionId } = item.session;
+  const actWhenAwake = useActWhenAwake(agentId);
   const session = provisionalSessionView(item.session);
   const label = session.title || session.sessionId.slice(0, 12);
   return (
@@ -488,7 +493,9 @@ function ActivityRow({
           );
           onNavigate?.();
         }}
-        onRename={() => setRenaming(true)}
+        onRename={() =>
+          actWhenAwake(`rename:${sessionId}`, () => setRenaming(true))
+        }
         onDelete={() =>
           void showConfirm(
             "Its transcript is deleted and cannot be recovered.",
@@ -496,7 +503,12 @@ function ActivityRow({
             { kind: "destructive", confirmLabel: "Delete session" },
           ).then(
             (ok) =>
-              ok && deleteSession(item.session.sessionId, item.session.agentId),
+              ok &&
+              actWhenAwake(`delete:${sessionId}`, async () => {
+                if (!(await deleteSession(sessionId, agentId))) return;
+                orderActions.forgetSession(agentId, sessionId);
+                unpinSession(item.id);
+              }),
           )
         }
       />

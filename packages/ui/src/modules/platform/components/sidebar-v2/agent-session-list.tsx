@@ -28,6 +28,7 @@ import { useOpenSession } from "../../../sessions/hooks/use-open-session.js";
 import {
   pinKey,
   togglePinnedSession,
+  unpinSession,
   usePinnedSessions,
 } from "../../../sessions/lib/pinned-sessions.js";
 import { downloadTelemetryExport } from "../../../telemetry/api/download-export.js";
@@ -69,10 +70,17 @@ export function AgentSessionList({
     fetchNextPageFailed,
     fetchNextPage,
   } = list;
-  const endRef = useLoadOnReach(
-    hasNextPage && !isFetchingNextPage && !fetchNextPageFailed,
-    () => void fetchNextPage(),
+  const canFetch = hasNextPage && !isFetchingNextPage && !fetchNextPageFailed;
+  const endRef = useLoadOnReach(canFetch, () => void fetchNextPage());
+  const loadedIds = new Set(list.sessions.map((s) => s.sessionId));
+  const pinMissing = [...pins].some(
+    (key) =>
+      key.startsWith(`${agentId}:`) &&
+      !loadedIds.has(key.slice(agentId.length + 1)),
   );
+  useEffect(() => {
+    if (canFetch && pinMissing && !list.provisional) void fetchNextPage();
+  }, [canFetch, pinMissing, list.provisional, fetchNextPage]);
 
   const rows = manualOrder(
     list.sessions
@@ -102,8 +110,9 @@ export function AgentSessionList({
       )
     )
       actWhenAwake(`delete:${s.sessionId}`, async () => {
-        if (await deleteSession(s.sessionId, agentId))
-          orderActions.forgetSession(agentId, s.sessionId);
+        if (!(await deleteSession(s.sessionId, agentId))) return;
+        orderActions.forgetSession(agentId, s.sessionId);
+        unpinSession(pinKey(agentId, s.sessionId));
       });
   };
 

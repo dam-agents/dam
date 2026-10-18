@@ -62,10 +62,30 @@ export function Card({
   onOpen?: () => void;
   children: ReactNode;
 }) {
-  const body = (
-    <>
+  return (
+    <section
+      aria-label={title}
+      className={cn(
+        CARD,
+        onOpen &&
+          "relative transition-colors focus-within:outline-2 focus-within:outline-ring hover:border-border-ui hover:bg-muted/40",
+        className,
+      )}
+    >
       <header className="mb-4 flex items-start justify-between gap-3">
-        <h2 className="text-sm text-muted-foreground">{title}</h2>
+        <h2 className="text-sm text-muted-foreground">
+          {onOpen ? (
+            <button
+              type="button"
+              onClick={onOpen}
+              className="text-left outline-none after:absolute after:inset-0 after:rounded-xl"
+            >
+              {title}
+            </button>
+          ) : (
+            title
+          )}
+        </h2>
         {pictogram && (
           <span className="-mt-1 -mr-1 shrink-0 text-muted-foreground/70">
             {pictogram}
@@ -73,27 +93,7 @@ export function Card({
         )}
       </header>
       {children}
-    </>
-  );
-  if (!onOpen)
-    return (
-      <section className={cn(CARD, className)} aria-label={title}>
-        {body}
-      </section>
-    );
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      aria-label={title}
-      className={cn(
-        CARD,
-        "text-left transition-colors hover:border-border-ui hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-ring",
-        className,
-      )}
-    >
-      {body}
-    </button>
+    </section>
   );
 }
 
@@ -128,11 +128,8 @@ export function HeroCard() {
       />
       <div className="relative grid items-end gap-6 @2xl:grid-cols-[minmax(0,1fr)_auto]">
         <div className="min-w-0">
-          <p className="text-sm font-semibold tracking-tight text-muted-foreground">
-            {getBrand().name}
-          </p>
-          <h1 className="mt-1 text-3xl font-light tracking-[-0.03em] text-balance text-foreground @2xl:text-5xl @6xl:text-6xl">
-            Deploy Agents Massively
+          <h1 className="text-3xl font-light tracking-[-0.03em] text-balance text-foreground @2xl:text-5xl @6xl:text-6xl">
+            {getBrand().title || getBrand().name}
           </h1>
           <div className="mt-6 flex flex-wrap gap-8">
             <Big value={agents.length} label="agents" />
@@ -381,10 +378,10 @@ export function BusiestCard() {
             </button>
           </li>
         ))}
-        {top.length === 0 && (
-          <p className="text-sm text-muted-foreground">No sessions yet.</p>
-        )}
       </ol>
+      {top.length === 0 && (
+        <p className="text-sm text-muted-foreground">No sessions yet.</p>
+      )}
     </Card>
   );
 }
@@ -487,9 +484,10 @@ export function ApiKeysCard() {
   const { data } = useApiKeys();
   const keys = data ?? [];
   const now = Date.now();
-  const soon = keys.filter(
-    (k) => k.expiresAt && Date.parse(k.expiresAt) - now < 7 * 86_400_000,
-  ).length;
+  const soon = keys.filter((k) => {
+    const left = k.expiresAt ? Date.parse(k.expiresAt) - now : -1;
+    return left >= 0 && left < 7 * 86_400_000;
+  }).length;
   const lastUsed = keys
     .map((k) => k.lastUsedAt)
     .filter((t): t is string => !!t)
@@ -517,13 +515,9 @@ const CATEGORY_LABEL: Record<string, string> = {
   unknown: "Other",
 };
 
-function useMonth() {
-  return useMonthlySpend();
-}
-
 export function SpendByKindCard() {
   const navigateToSettings = useStore((s) => s.navigateToSettings);
-  const { data, state, label } = useMonth();
+  const { data, state, label } = useMonthlySpend();
   if (state === "unavailable") return null;
   const rows = [...(data?.bySessionType ?? [])].sort(
     (a, b) => b.costUsd - a.costUsd,
@@ -553,19 +547,19 @@ export function SpendByKindCard() {
             </div>
           </li>
         ))}
-        {rows.length === 0 && (
-          <p className="text-muted-foreground">
-            {state === "loading" ? "Loading…" : "No spend this month."}
-          </p>
-        )}
       </ul>
+      {rows.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          {state === "loading" ? "Loading…" : "No spend this month."}
+        </p>
+      )}
     </Card>
   );
 }
 
 export function ModelsCard() {
   const navigateToSettings = useStore((s) => s.navigateToSettings);
-  const { data, state, label } = useMonth();
+  const { data, state, label } = useMonthlySpend();
   if (state === "unavailable") return null;
   const models = [...(data?.byModel ?? [])]
     .sort((a, b) => b.calls - a.calls)
@@ -586,19 +580,19 @@ export function ModelsCard() {
             </span>
           </li>
         ))}
-        {models.length === 0 && (
-          <p className="text-muted-foreground">
-            {state === "loading" ? "Loading…" : "No model calls this month."}
-          </p>
-        )}
       </ul>
+      {models.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          {state === "loading" ? "Loading…" : "No model calls this month."}
+        </p>
+      )}
     </Card>
   );
 }
 
 export function TokensCard() {
   const navigateToSettings = useStore((s) => s.navigateToSettings);
-  const { data, state, label } = useMonth();
+  const { data, state, label } = useMonthlySpend();
   if (state === "unavailable") return null;
   const models = data?.byModel ?? [];
   const sum = (k: "inputTokens" | "outputTokens" | "cacheReadTokens") =>

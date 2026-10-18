@@ -44,14 +44,29 @@ function subscribe(listener: () => void) {
   };
 }
 
+function writePinned(
+  pin: (set: Set<string>) => void,
+  store: KeyValueStore,
+): void {
+  const next = new Set(readPinnedSessions(store));
+  pin(next);
+  safeSetItem(store, KEY, JSON.stringify([...next]));
+  for (const listener of listeners) listener();
+}
+
 export function togglePinnedSession(
   key: string,
   store: KeyValueStore = browserStorage,
 ): void {
-  const next = new Set(readPinnedSessions(store));
-  if (!next.delete(key)) next.add(key);
-  safeSetItem(store, KEY, JSON.stringify([...next]));
-  for (const listener of listeners) listener();
+  writePinned((set) => set.delete(key) || set.add(key), store);
+}
+
+export function unpinSession(
+  key: string,
+  store: KeyValueStore = browserStorage,
+): void {
+  if (readPinnedSessions(store).has(key))
+    writePinned((set) => set.delete(key), store);
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the Sessions the viewer pinned to the top of the sidebar, kept in this browser only (a prototype ceiling: pins do not follow the user to another device; a per-owner list beside the sidebar order is the upgrade). A key is `agentId:sessionId`; other tabs see a change through the storage event.

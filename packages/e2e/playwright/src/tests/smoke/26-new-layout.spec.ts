@@ -83,12 +83,12 @@ test("shows the strip, the dashboard and the tiled rail when on", async ({
   const strip = page.getByTestId("sidebar-avatar-strip");
   await expect(strip).toBeVisible();
   for (const name of AGENTS)
-    await expect(strip.getByRole("tab", { name })).toBeVisible();
+    await expect(strip.getByRole("button", { name })).toBeVisible();
   await expect(page.getByRole("region", { name: "Overview" })).toBeVisible();
   await expect(page.getByTestId("agent-row")).toHaveCount(0);
   await expect(page.getByTestId("side-panel-docs")).toBeVisible();
 
-  await strip.getByRole("tab", { name: AGENTS[0] }).click();
+  await strip.getByRole("button", { name: AGENTS[0] }).click();
   await expect(page).toHaveURL(
     new RegExp(`/chat/${encodeURIComponent(agentIds.get(AGENTS[0])!)}`),
   );

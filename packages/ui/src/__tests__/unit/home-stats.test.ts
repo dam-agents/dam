@@ -17,7 +17,7 @@ import type { AgentView } from "../../types.js";
  * Agents list. Each count puts every Session or Agent in exactly one bucket.
  */
 
-const now = new Date("2026-10-18T12:00:00Z");
+const now = new Date("2026-10-18T12:00:00");
 
 const session = (
   agentId: string,
@@ -50,11 +50,11 @@ const agent = (id: string, extra: Partial<AgentView> = {}) =>
   }) as AgentView;
 
 const sessions = [
-  session("a", "2026-10-18T09:00:00Z"),
-  session("a", "2026-10-18T01:00:00Z", { type: "channel_slack" }),
-  session("b", "2026-10-17T22:00:00Z", { scheduleId: "s1" }),
-  session("b", "2026-10-10T10:00:00Z", { mode: SessionMode.Terminal }),
-  session("c", "2026-09-01T10:00:00Z", { type: "channel_telegram" }),
+  session("a", "2026-10-18T09:00:00"),
+  session("a", "2026-10-18T01:00:00", { type: "channel_slack" }),
+  session("b", "2026-10-17T22:00:00", { scheduleId: "s1" }),
+  session("b", "2026-10-10T10:00:00", { mode: SessionMode.Terminal }),
+  session("c", "2026-09-01T10:00:00", { type: "channel_telegram" }),
 ];
 
 describe("home stats", () => {
@@ -71,7 +71,7 @@ describe("home stats", () => {
     });
   });
 
-  // TEST_SCENARIO: the last 14 UTC days are counted with today last, and older Sessions fall outside.
+  // TEST_SCENARIO: the last 14 local days are counted with today last, and older Sessions fall outside.
   it("counts Sessions per day for the last two weeks", () => {
     const days = dailyActivity(sessions, now);
     expect(days).toHaveLength(14);

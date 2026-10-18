@@ -57,16 +57,22 @@ const suite: NamedProject[] = [
     name: "own-agents",
     testMatch:
       laneBackend === "vm"
-        ? /\/(17|18|20|22|23|25|26)-.*\.spec\.ts$/
-        : /\/(17|18|19|25|26)-.*\.spec\.ts$/,
+        ? /\/(17|18|20|22|23|25)-.*\.spec\.ts$/
+        : /\/(17|18|19|25)-.*\.spec\.ts$/,
     dependencies: ["agent"],
     workers: 1,
     use: { ...devices["Desktop Chrome"], storageState },
   },
   {
+    name: "new-layout",
+    testMatch: /26-.*\.spec\.ts$/,
+    dependencies: ["chain", "own-agents"],
+    use: { ...devices["Desktop Chrome"], storageState },
+  },
+  {
     name: "platform-provider",
     testMatch: /24-.*\.spec\.ts$/,
-    dependencies: ["api-keys", "live-events", "chain", "own-agents"],
+    dependencies: ["api-keys", "live-events", "new-layout"],
     use: { ...devices["Desktop Chrome"], storageState },
   },
   ...(full
