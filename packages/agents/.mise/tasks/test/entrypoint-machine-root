@@ -14,14 +14,14 @@ const source = readFileSync(entrypoint, "utf8");
 const caBundle = readFileSync(new URL("../../../base/rootfs/usr/local/bin/platform-ca-bundle", import.meta.url), "utf8");
 const dir = mkdtempSync(join(tmpdir(), "entrypoint-machine-root-"));
 const [home, run, bin] = ["home", "run", "bin"].map((d) => join(dir, d));
-const accounts = join(dir, "extrausers-passwd");
+const passwd = join(dir, "passwd");
 const mountinfo = join(dir, "mountinfo");
 const calls = join(dir, "calls");
 writeFileSync(
   join(dir, "agent-entrypoint"),
   source
     .replaceAll("uid=$(id -u)", "uid=0")
-    .replaceAll("/var/lib/extrausers/passwd", accounts)
+    .replaceAll("/etc/passwd", passwd)
     .replaceAll("/proc/self/mountinfo", mountinfo)
     .replaceAll("/run/platform", run)
     .replaceAll("/run/sshd", join(dir, "sshd"))
@@ -48,22 +48,22 @@ const boot = () => {
 
 try {
   // TEST_SCENARIO: a machine keeps its root across images of one root generation, so a file the boot writes there hides the next image's copy. The image bakes uid 0's home as the agent's, and the boot writes neither the user database nor the system trust store, nor moves anything out of /root: what it needs outside the home it builds under /run.
-  for (const path of ["/etc/passwd", "/etc/ssl", "/usr/local/share/ca-certificates", "update-ca-certificates", "/root"]) {
+  for (const path of ["/etc/ssl", "/usr/local/share/ca-certificates", "update-ca-certificates", "/root", "sed -i"]) {
     assert.equal(source.includes(path), false, `the entrypoint names ${path}`);
     assert.equal(caBundle.includes(path), false, `platform-ca-bundle names ${path}`);
   }
 
-  // TEST_SCENARIO: SSH logins as agent land as root, the harness's user: the boot serves a copy of the image's agent account with uid 0 from /run over the image's, so the image's own file stays the container's account.
+  // TEST_SCENARIO: SSH logins as agent land as root, the harness's user, and extrausers serves no uid 0 entry. So the boot binds a copy of the image's user database from /run over it, with agent as uid 0 at its end and any agent line the image has dropped. The image's own file is left as it is, so the kept root never holds the copy, and the next image's database is the one the next boot copies.
   mkdirSync(home);
-  const account = "agent:x:65532:0:Agent User:/home/agent:/bin/bash\n";
-  writeFileSync(accounts, account);
+  const image = "root:x:0:0:root:/home/agent:/bin/bash\nagent:x:65532:0:Agent User:/home/agent:/bin/bash\n";
+  writeFileSync(passwd, image);
   writeFileSync(mountinfo, "");
-  assert.deepEqual(boot(), [`mount --bind ${join(run, "passwd")} ${accounts}`]);
-  assert.equal(readFileSync(join(run, "passwd"), "utf8"), "agent:x:0:0:Agent User:/home/agent:/bin/bash\n");
-  assert.equal(readFileSync(accounts, "utf8"), account);
+  assert.deepEqual(boot(), [`mount --bind ${join(run, "passwd")} ${passwd}`]);
+  assert.equal(readFileSync(join(run, "passwd"), "utf8"), "root:x:0:0:root:/home/agent:/bin/bash\nagent:x:0:0:Agent User:/home/agent:/bin/bash\n");
+  assert.equal(readFileSync(passwd, "utf8"), image);
 
   // TEST_SCENARIO: the entrypoint restarts on the same boot, whose /run still holds the account over the image's, so it is not mounted again.
-  writeFileSync(mountinfo, `100 99 0:5 /platform/passwd ${accounts} rw - tmpfs tmpfs rw\n`);
+  writeFileSync(mountinfo, `100 99 0:5 /platform/passwd ${passwd} rw - tmpfs tmpfs rw\n`);
   assert.deepEqual(boot(), []);
 
   // TEST_SCENARIO: ssh refuses a config another uid owns, so a config a moved agent's home keeps with the container's uid is given to root, the uid ssh runs as on a machine.

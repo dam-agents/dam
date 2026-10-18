@@ -18,14 +18,16 @@ run_dir=/run/platform
 mkdir -p "$run_dir"
 
 # On a machine, SSH logins as `agent` must land as root, the harness's user.
-# The image's account is the container's uid, so a machine serves a copy with
-# uid 0 from /run over it. uid 0's own entry names the agent's home in the
-# image itself, so OpenSSH keeps root's keys and known hosts there.
+# extrausers serves no uid 0 entry, so the machine's user database is the
+# image's /etc/passwd with an `agent` entry for uid 0 at its end, built under
+# /run and bound over the image's file: no image's root keeps it, and it
+# follows every new image. uid 0's own entry names the agent's home in the
+# image itself, so OpenSSH keeps root's keys and known hosts there. A tool that
+# renames a new file over /etc/passwd, such as useradd, fails on the bind.
 if [ "$uid" = 0 ]; then
-	accounts=/var/lib/extrausers/passwd
-	if ! grep -q " $accounts " /proc/self/mountinfo 2>/dev/null; then
-		{ sed 's/^agent:x:65532:0:/agent:x:0:0:/' "$accounts" >"$run_dir/passwd" &&
-			mount --bind "$run_dir/passwd" "$accounts"; } ||
+	if ! grep -q " /etc/passwd " /proc/self/mountinfo 2>/dev/null; then
+		{ { grep -v '^agent:' /etc/passwd && echo 'agent:x:0:0:Agent User:/home/agent:/bin/bash'; } >"$run_dir/passwd" &&
+			mount --bind "$run_dir/passwd" /etc/passwd; } ||
 			echo "agent-entrypoint: WARNING: SSH logins as agent do not land as root" >&2
 	fi
 	install -d -m 0755 /run/sshd

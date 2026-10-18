@@ -72,7 +72,9 @@ Layers are packed as plain tars: a local cluster imports them as they are, and C
 
 - **Container Backend:** the image runs as the agent user, whose account comes from a static extra-users database.
 - **vm Backend:** the machine boots the image as root after platform-init has mounted the home and bound the MITM CA, and platform-init stays the entrypoint's parent, so the image's init is not the first process of its PID namespace ([vm-runner](vm-runner.md)).
-  The entrypoint maps `agent` to uid 0 for SSH logins with a copy of the account under `/run` bound over the image's, and prepares sshd; the image's build gives uid 0 the agent's home, so OpenSSH keeps its keys there and no boot writes the user database of a kept root ([persistence](persistence.md#per-agent-pvcs)).
+  The entrypoint maps `agent` to uid 0 for SSH logins, since extrausers serves no uid 0 entry: it binds a copy of the image's `/etc/passwd` with that entry, built under `/run`, over the image's file, and prepares sshd.
+  The image's build gives uid 0 the agent's home, so OpenSSH keeps its keys there, and no boot writes the user database of a kept root ([persistence](persistence.md#per-agent-pvcs)).
+  A tool that renames a new file over `/etc/passwd`, such as `useradd`, fails on the bind.
   The agent-runtime keeps Node's compile cache beside its own code here, since the root outlives a boot; a container's root is new on every start, so writing the cache would only cost it time.
   The cache is the runtime's alone: no harness or command it starts inherits it.
 
