@@ -7,7 +7,7 @@
 # can be judged by where its time went. The marks are "<epoch seconds>\t<phase>" lines: e2e_mark in
 # .mise/lib/cluster.sh writes them from cluster:install, e2e:install and
 # e2e:run, and the workflow adds the job's start and the times its background
-# k3s provision and image fetch finished. By path, like image:resolve; it
+# k3s provision and its two image families finished. By path, like image:resolve; it
 # needs only jq, and never fails the job: a missing input prints a note.
 set -uo pipefail
 
@@ -30,6 +30,7 @@ sort -n -s -k1,1 "$marks" | jq -rRs '
     "| Phase | Duration |",
     "|---|---|",
     "| job start → k3s up | \(span("job started"; "k3s provisioned")) |",
+    "| job start → platform images ready | \(span("job started"; "platform images ready")) |",
     "| job start → images ready | \(span("job started"; "images ready")) |",
     "| install start → platform images loaded | \(span("install started"; "platform images loaded")) |",
     "| platform images loaded → deployments ready | \(span("platform images loaded"; "deployments ready")) |",
