@@ -22,7 +22,8 @@ const SLIDE =
  * UNIT_BOUNDARY_DESCRIPTION: The desktop navigation pane. Pinned, it holds its
  * place beside the page and can be resized. Unpinned, it leaves the layout and
  * slides over the page when the pointer reaches the left edge or the floating
- * button is pressed, which is the only way in on a touch screen.
+ * button is hovered or pressed, which is the only way in on a touch screen.
+ * While it is away, an inset shadow marks the edge it will slide back from.
  */
 export function SidebarV2() {
   const pinned = useStore((s) => s.sidebarPinned);
@@ -97,18 +98,31 @@ export function SidebarV2() {
         </div>
       )}
       {!shown && (
-        <PeekButton
-          onOpen={() => {
-            focusOnOpen.current = true;
-            setPeek(true);
-          }}
-        />
+        <>
+          <div
+            aria-hidden
+            className="pointer-events-none fixed inset-y-0 left-0 z-nav hidden w-6 bg-gradient-to-r from-black/[0.08] to-transparent md:block dark:from-black/50"
+          />
+          <PeekButton
+            onPeek={() => setPeek(true)}
+            onOpen={() => {
+              focusOnOpen.current = true;
+              setPeek(true);
+            }}
+          />
+        </>
       )}
     </>
   );
 }
 
-function PeekButton({ onOpen }: { onOpen: () => void }) {
+function PeekButton({
+  onOpen,
+  onPeek,
+}: {
+  onOpen: () => void;
+  onPeek: () => void;
+}) {
   const hasUnread = useActivitySessions().items.some((item) => item.unread);
   const view = useStore((s) => s.view);
   const openAgentId = useStore((s) =>
@@ -124,6 +138,7 @@ function PeekButton({ onOpen }: { onOpen: () => void }) {
       type="button"
       aria-label="Show navigation"
       onClick={onOpen}
+      onMouseEnter={onPeek}
       data-testid="sidebar-peek-button"
       className="fixed top-3 left-3 z-nav hidden h-10 items-center gap-1.5 rounded-full border border-border bg-chrome pr-3.5 pl-2 text-foreground/80 shadow-lg transition-colors anim-in hover:bg-muted hover:text-foreground md:flex"
     >
