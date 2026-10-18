@@ -3,6 +3,7 @@ import type { DragEvent } from "react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { AddRow } from "@/components/ui/list-section";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
@@ -76,16 +77,24 @@ export function SkillsSurface({
     snapshotOnCount,
   } = derived;
 
+  const openAddSource = () =>
+    setOpenModal({ kind: "add-source", mode: "github", files: [] });
   const addSourceButton = (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={() =>
-        setOpenModal({ kind: "add-source", mode: "github", files: [] })
-      }
-    >
+    <Button variant="outline" size="sm" onClick={openAddSource}>
       <Add size={16} /> Add source
     </Button>
+  );
+  const addSourceRow = (
+    <AddRow onClick={openAddSource}>
+      <div className="min-w-0 flex-1">
+        <p className="text-md font-medium text-foreground">
+          Add a GitHub source
+        </p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Browse a repository&rsquo;s skills and install the ones you want.
+        </p>
+      </div>
+    </AddRow>
   );
 
   const manageConnections = agentId
@@ -109,7 +118,7 @@ export function SkillsSurface({
       loadingBySource={surface.loadingBySource}
       revalidatingBySource={surface.revalidatingBySource}
       errorBySource={surface.errorBySource}
-      addSourceButton={addSourceButton}
+      addSourceRow={addSourceRow}
       disabledNotice={disabledNotice}
       callout={
         !agentDisabled && staleModel.stale && staleModel.model ? (
@@ -164,6 +173,7 @@ export function SkillsSurface({
       revalidatingBySource={surface.revalidatingBySource}
       errorBySource={surface.errorBySource}
       addSourceButton={addSourceButton}
+      addSourceRow={addSourceRow}
       disabledNotice={disabledNotice}
       comingUp={!!comingUp}
       onStart={() => agentId && wakeAgent.wake(agentId)}

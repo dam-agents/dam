@@ -51,8 +51,10 @@ export function StandaloneSkillsGroup({
           <AddRow onClick={onUpload} testId="skills-upload">
             <Add size={16} className="shrink-0" />
             <div className="min-w-0 flex-1">
-              <p className="text-md font-medium">Upload a skill</p>
-              <p className="mt-0.5 text-sm">
+              <p className="text-md font-medium text-foreground">
+                Upload a skill
+              </p>
+              <p className="mt-0.5 text-sm text-muted-foreground">
                 Drop a .md file here, or ask the agent to author one.
               </p>
             </div>

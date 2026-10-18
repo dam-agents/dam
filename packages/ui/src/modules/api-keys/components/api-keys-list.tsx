@@ -51,8 +51,8 @@ export function ApiKeysList() {
           <AddRow onClick={() => setCreateOpen(true)}>
             <Add size={20} className="shrink-0" />
             <div className="min-w-0 flex-1">
-              <p className="text-md font-medium">New API key</p>
-              <p className="mt-0.5 text-sm">
+              <p className="text-md font-medium text-foreground">New API key</p>
+              <p className="mt-0.5 text-sm text-muted-foreground">
                 Let the CLI and scripts sign in without a browser.
               </p>
             </div>

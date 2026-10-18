@@ -107,6 +107,25 @@ export function AgentEgressEditor({
   return (
     <>
       {header()}
+      <div className="mb-3 flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setAdding(true)}
+          data-testid="egress-rule-new"
+        >
+          <Add size={16} />
+          New rule
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setChoosingPreset(true)}
+          data-testid="egress-preset-open"
+        >
+          Apply preset
+        </Button>
+      </div>
       <ListSection
         loading={isLoading}
         error={isError && "Couldn't load the rules."}
@@ -115,27 +134,6 @@ export function AgentEgressEditor({
         onNew={() => setAdding(true)}
         newLabel="Add rule"
         newTestId="egress-rule-new"
-        headerExtra={
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setAdding(true)}
-              data-testid="egress-rule-new"
-            >
-              <Add size={16} />
-              New rule
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setChoosingPreset(true)}
-              data-testid="egress-preset-open"
-            >
-              Apply preset
-            </Button>
-          </>
-        }
       >
         {(rules.length > 10 || query !== "") && (
           <div className="px-4 py-2.5">

@@ -51,8 +51,10 @@ export function ConnectionsView() {
           >
             <Add size={16} className="shrink-0" />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-md font-medium">New connection</p>
-              <p className="mt-0.5 truncate text-xs">
+              <p className="truncate text-md font-medium text-foreground">
+                New connection
+              </p>
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">
                 Add a service your agents can reach.
               </p>
             </div>

@@ -1,4 +1,4 @@
-import { Add } from "@carbon/icons-react";
+import { Settings } from "@carbon/icons-react";
 import { routesSessionPairs } from "agent-runtime-api";
 import type { SessionPair } from "api-server-api";
 
@@ -103,20 +103,22 @@ export function SandboxProvidersSection({
           </ProviderToggleRow>
         );
       })}
-      <DefaultPairPicker agentId={agentId} />
       {owned.length > 0 && (
         <Card className="overflow-hidden">
           <AddRow onClick={() => navigateToSettings("providers")}>
-            <Add size={16} className="shrink-0" />
+            <Settings size={16} className="shrink-0" />
             <div className="min-w-0 flex-1">
-              <p className="text-md font-medium">Manage providers</p>
-              <p className="mt-0.5 text-sm">
+              <p className="text-md font-medium text-foreground">
+                Manage providers
+              </p>
+              <p className="mt-0.5 text-sm text-muted-foreground">
                 Connect another LLM provider to give this agent more models.
               </p>
             </div>
           </AddRow>
         </Card>
       )}
+      <DefaultPairPicker agentId={agentId} />
     </div>
   );
 }

@@ -57,8 +57,10 @@ export function SlackChannelCard({ agent }: { agent: AgentView | undefined }) {
           >
             <Add size={16} className="shrink-0" />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-md font-medium">New Slack channel</p>
-              <p className="truncate text-sm">
+              <p className="truncate text-md font-medium text-foreground">
+                New Slack channel
+              </p>
+              <p className="truncate text-sm text-muted-foreground">
                 Mentions of the bot in a connected channel drive this agent.
               </p>
             </div>

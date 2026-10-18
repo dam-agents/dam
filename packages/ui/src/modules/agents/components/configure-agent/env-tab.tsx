@@ -143,8 +143,10 @@ export function EnvTab({
             className="text-xs"
           >
             <Add size={14} className="shrink-0" />
-            <span className="font-mono font-semibold">New variable</span>
-            <span className="flex-1 truncate">
+            <span className="font-mono font-semibold text-foreground">
+              New variable
+            </span>
+            <span className="flex-1 truncate text-muted-foreground">
               Name and value the agent reads from its environment.
             </span>
           </AddRow>

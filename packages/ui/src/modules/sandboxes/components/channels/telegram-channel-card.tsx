@@ -49,8 +49,10 @@ export function TelegramChannelCard({ agentId }: { agentId: string }) {
           >
             <Add size={16} className="shrink-0" />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-md font-medium">New Telegram chat</p>
-              <p className="truncate text-sm">
+              <p className="truncate text-md font-medium text-foreground">
+                New Telegram chat
+              </p>
+              <p className="truncate text-sm text-muted-foreground">
                 People message this agent from a chat it is added to.
               </p>
             </div>

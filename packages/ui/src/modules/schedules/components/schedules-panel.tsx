@@ -73,8 +73,10 @@ export function SchedulesPanel({
           >
             <Add size={16} className="shrink-0" />
             <div className="min-w-0 flex-1">
-              <p className="text-md font-medium">New schedule</p>
-              <p className="mt-0.5 text-sm">
+              <p className="text-md font-medium text-foreground">
+                New schedule
+              </p>
+              <p className="mt-0.5 text-sm text-muted-foreground">
                 Run a task on a timetable, or once.
               </p>
             </div>

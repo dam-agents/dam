@@ -72,8 +72,10 @@ export function SkillSourcesSection({
           <AddRow onClick={onAddSource}>
             <Add size={16} className="shrink-0" />
             <div className="min-w-0 flex-1">
-              <p className="text-md font-medium">Add a GitHub source</p>
-              <p className="mt-0.5 text-sm">
+              <p className="text-md font-medium text-foreground">
+                Add a GitHub source
+              </p>
+              <p className="mt-0.5 text-sm text-muted-foreground">
                 Browse a repository's skills and install the ones you want.
               </p>
             </div>

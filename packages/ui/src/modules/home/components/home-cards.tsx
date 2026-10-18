@@ -6,8 +6,8 @@ import {
   GrowthMindset,
   KeystoresExternal,
   MachineLearning_03,
+  MobileChat,
   Robot,
-  Slack,
 } from "@carbon/pictograms-react";
 import { type ReactNode, useMemo, useState } from "react";
 
@@ -209,7 +209,7 @@ export function ChannelsCard() {
   return (
     <Card
       title="Where conversations happen"
-      pictogram={<Slack size={48} aria-hidden />}
+      pictogram={<MobileChat size={48} aria-hidden />}
       className="@xl:col-span-2"
     >
       <div className="mb-4 flex h-3 w-full gap-px overflow-hidden rounded-full bg-muted">
