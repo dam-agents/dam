@@ -29,7 +29,7 @@ export function DashboardHomeView() {
   if (!initialLoaded) return <ListSkeleton rows={4} rowHeight={140} />;
 
   return (
-    <div className="@container flex flex-col gap-4">
+    <div className="@container flex flex-col gap-4 md:pt-5">
       <div className="grid grid-flow-row-dense grid-cols-1 gap-4 @xl:grid-cols-2 @5xl:grid-cols-4">
         <HeroCard />
         {visible.length === 0 ? (

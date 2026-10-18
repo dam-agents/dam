@@ -1,7 +1,6 @@
 import type { PendingRestart } from "agent-runtime-api";
 
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import { ChatFormSettings } from "../../a2ui/components/chat-form-settings.js";
@@ -49,7 +48,6 @@ export function SandboxHomeView() {
   const section = useStore((s) => s.sandboxSection);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const openAgentSession = useStore((s) => s.openAgentSession);
-  const sidebarPinned = useStore((s) => s.sidebarPinned);
   const agentsQuery = useAgents();
   const agent = agentId
     ? (agentsQuery.data?.list.find((a) => a.id === agentId) ?? null)
@@ -97,7 +95,7 @@ export function SandboxHomeView() {
 
   return (
     <>
-      <div className="flex flex-col gap-6 md:flex-row md:gap-10">
+      <div className="flex flex-col gap-6 md:flex-row md:gap-10 md:pt-5">
         <SandboxSectionNav
           sections={sections}
           header={<SandboxIdentity agent={agent} display={display} />}
@@ -106,12 +104,7 @@ export function SandboxHomeView() {
           summaries={summaries}
           warnings={warnings}
         />
-        <div
-          className={cn(
-            "min-w-0 flex-1 md:max-w-[760px]",
-            !sidebarPinned && "md:pt-[30px]",
-          )}
-        >
+        <div className="min-w-0 flex-1 md:max-w-[760px]">
           {!SECTIONS_WITH_ACTIONS.has(section) && header()}
           {section === "setup" ? (
             <>

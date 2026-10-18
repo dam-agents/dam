@@ -114,11 +114,10 @@ export function SettingsView() {
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
-  const sidebarPinned = useStore((s) => s.sidebarPinned);
   const user = getUser();
 
   return (
-    <div className="flex gap-6 md:gap-10 flex-col md:flex-row">
+    <div className="flex gap-6 md:gap-10 flex-col md:flex-row md:pt-5">
       <div ref={tabStrip} className="contents">
         <Tabs
           ariaLabel="Settings sections"
@@ -132,13 +131,7 @@ export function SettingsView() {
         />
       </div>
 
-      <div
-        key={activeTab}
-        className={cn(
-          "anim-in min-w-0 max-w-2xl flex-1",
-          !sidebarPinned && "md:pt-[30px]",
-        )}
-      >
+      <div key={activeTab} className="anim-in min-w-0 max-w-2xl flex-1">
         {activeTab === "appearance" && (
           <div>
             <PageHeader
