@@ -9,5 +9,7 @@ version = "1.104.2"
 uvx_args = "--with gepa==0.1.4 --with tqdm>=4.66.1 --with cloudpickle>=3.0.0 --with datasets>=2.14.6"
 
 [oci.env]
+# Its root generation segment, after the default image's key (oci's build_thin).
+PLATFORM_ROOT_GENERATION = "gepa-1"
 GEPA_VENV = "/opt/gepa-venv"
 GEPA_OUTPUT_ROOT = "/home/agent/work/gepa-runs"

@@ -1,0 +1,16 @@
+#!/bin/sh
+# Builds the CA bundle under /run, a fresh tmpfs on every machine boot: the
+# image's roots, then every certificate under /etc/platform/ca, the gateway's
+# MITM CA and the CAs the install names for TLS-inspecting proxies beyond it.
+# The image's bundle path and CA variables name it, so no boot writes the trust
+# store of a root a machine keeps across images. ca.crt holds the platform CAs
+# alone, linked as a local CA, so a store the agent's package manager rebuilds
+# holds them too. The entrypoint runs it, and so do the image's services, which
+# openrc may start before the entrypoint.
+set -eu
+run_dir=/run/platform
+mkdir -p "$run_dir"
+for f in $(find /etc/platform/ca -maxdepth 1 -name '*.crt' -size +0 2>/dev/null | sort); do awk 1 "$f"; done >"$run_dir/ca.crt.new"
+cat /usr/share/platform/ca-certificates.crt "$run_dir/ca.crt.new" >"$run_dir/ca-certificates.crt.new"
+mv -f "$run_dir/ca.crt.new" "$run_dir/ca.crt"
+mv -f "$run_dir/ca-certificates.crt.new" "$run_dir/ca-certificates.crt"

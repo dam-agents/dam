@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-10-17
+Last verified: 2026-10-18
 
 ## Overview
 
@@ -235,9 +235,12 @@ The disk sits on the owner's [VM runner](vm-runner.md) volume, grows with its si
 It is per owner rather than per Agent, so the storage-class pin and the warm pool do not apply and the storage migration never sees it.
 An Agent whose mounts ask to persist a path outside `HOME` is refused rather than reconciled, because a machine cannot keep it and silently dropping it is how an agent comes to look healthy while discarding its work.
 
-**The whole machine persists, per root generation.** Everything outside `HOME` is the image's root: an overlay platform-init lays over the image, its upper layer on the disk, kept across stops, restarts and new images of one generation — an integer an image declares in its env and bumps only on a change that breaks an older root; an image declaring none is its own generation.
-The runner names it in the share at every start, and a new generation, or none named, boots onto an empty upper: what must outlast that belongs under `HOME`.
-The agent runs as root there, and a tool that takes its home from the user database rather than `HOME`, as OpenSSH does for keys and known hosts, would write to `/root` on that root, so the entrypoint gives uid 0's entry the agent's `HOME` and moves what an older boot left in `/root/.ssh` into it, without overwriting a file the home already holds.
+**The whole machine persists, per root generation.** Everything outside `HOME` is the image's root: an overlay platform-init lays over the image, its upper layer on the disk, kept across stops, restarts and new images of one generation.
+A generation is a string key an image declares in its env and compares whole, never parsed or ordered: the default image's names it, such as `default-1`, and an image built on another appends its own segment, such as `default-1/gepa-1`, so a key names the image's lineage.
+An image's build changes its key only on a change that breaks an older root; an image declaring none is its own generation.
+The runner names it in the share at every start, and any other key, an extending image's included, or none named, boots onto an empty upper: what must outlast that belongs under `HOME`.
+**Nothing the platform writes at boot lands in the kept root.** A file a boot rewrote there would hide every later image's copy of it, so what the boot needs outside `HOME` it builds under `/run`, a fresh tmpfs on every boot: the CA bundle, and the account that maps `agent` to uid 0.
+The agent runs as root there, and a tool that takes its home from the user database rather than `HOME`, as OpenSSH does for keys and known hosts, would write to `/root` on that root, so the image's build gives uid 0's entry the agent's `HOME`.
 The old upper is renamed aside with the record of its image and deleted in the background, so a root of millions of files does not hold up the boot; one a stop cut short is deleted on the next boot.
 smolvm keeps a root of its own and binds the whole disk into it; platform-init leaves both behind, and fails the boot rather than run on them.
 Temporary folders are the exception: `/tmp` and `/var/tmp` are directories of that root that start empty on every boot, whatever the image ships there, and `HOME`'s `.cache` and `.npm` are ordinary directories of the home.

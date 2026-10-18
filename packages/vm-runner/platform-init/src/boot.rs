@@ -3520,6 +3520,27 @@ mod tests {
         assert!(fresh_reason(None, None).is_some());
     }
 
+    // TEST_SCENARIO: an image names its root generation as a key, and the root is kept only when the key line is exactly the one the root was written under. An image that extends the default one appends its own segment, so its key starts with the default's and still boots on an empty root; so do a bumped key and the integer generation of the images before keys.
+    #[test]
+    fn a_root_is_kept_only_under_an_equal_generation_key() {
+        let default = "root-generation default-1";
+        assert_eq!(fresh_reason(Some(default), Some(default)), None);
+        for other in [
+            "root-generation default-1/gepa-1",
+            "root-generation default-2",
+            "root-compat 1",
+        ] {
+            assert!(
+                fresh_reason(Some(other), Some(default)).is_some(),
+                "{other}"
+            );
+            assert!(
+                fresh_reason(Some(default), Some(other)).is_some(),
+                "{other}"
+            );
+        }
+    }
+
     // TEST_SCENARIO: the records are read as one trimmed line. A missing or empty record names no image, so a share from an older runner reads as unknown rather than as an image called "".
     #[test]
     fn an_image_record_is_one_line_or_none() {

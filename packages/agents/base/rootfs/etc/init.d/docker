@@ -12,3 +12,8 @@ umask=022
 # docker's builder runs the first runc on PATH: the share's platform-runc,
 # which the entrypoint links there to give containers the platform CA.
 export PATH="/run/platform/bin:$PATH"
+# openrc may start it before the entrypoint, so it builds the CA bundle its
+# pulls trust itself.
+start_pre() {
+	platform-ca-bundle
+}
