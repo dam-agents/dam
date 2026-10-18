@@ -71,13 +71,7 @@ const ROW = "min-w-0 rounded-lg border-b-0 px-2 py-2";
  * All, the sessions that need the user and then every session by latest
  * activity; under one agent, that agent's own session list.
  */
-export function SidebarColumns({
-  onNavigate,
-  footer,
-}: {
-  onNavigate?: () => void;
-  footer?: React.ReactNode;
-}) {
+export function SidebarColumns({ onNavigate }: { onNavigate?: () => void }) {
   const { agents, openAgentId } = useSidebarAgents();
   const activity = useActivitySessions();
   const approvals = useWaitingApprovals();
@@ -127,7 +121,6 @@ export function SidebarColumns({
             onNavigate={onNavigate}
           />
         )}
-        {footer}
       </div>
     </div>
   );
@@ -212,7 +205,7 @@ function AvatarStrip({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      <div className="relative z-raised flex h-[57px] shrink-0 flex-col items-center justify-center gap-1 border-t border-border bg-card">
+      <div className="relative z-raised flex shrink-0 flex-col items-center justify-center gap-1 border-t border-border bg-card py-2">
         <Tooltip content="Settings" side="right">
           <button
             type="button"

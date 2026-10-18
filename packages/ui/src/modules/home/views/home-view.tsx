@@ -40,16 +40,16 @@ export function HomeView() {
         ) : (
           <>
             <ResourcesBarsCard />
-            <div className="md:col-span-1 xl:col-span-2 [&>div]:h-full [&>div]:rounded-xl">
+            <div className="md:col-span-2 [&>div]:h-full [&>div]:rounded-xl">
               <SpendWidget />
             </div>
-            <TipCard />
-            <ActivityCard />
             <ChannelsCard />
+            <BusiestCard />
+            <ActivityCard />
+            <TipCard />
             <AgentStatesCard />
             <SchedulesCard />
             <HarnessCard />
-            <BusiestCard />
             <ConnectionsCard />
             <ArtifactsCard />
             <ApiKeysCard />

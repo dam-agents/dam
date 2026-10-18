@@ -8,7 +8,7 @@ import {
   Conversation,
   DataStorage,
   GrowthMindset,
-  Memory,
+  MachineLearning_03,
   Robot,
   Slack,
 } from "@carbon/pictograms-react";
@@ -28,9 +28,8 @@ import {
 import { startupTips } from "../../agents/startup-tips.js";
 import { useApiKeys } from "../../api-keys/api/queries.js";
 import { useArtifacts } from "../../artifacts/api/queries.js";
-import { useBudgetReserved } from "../../budgets/api/queries.js";
+import { ResourcesCard } from "../../budgets/components/resources-card.js";
 import { formatBytes } from "../../budgets/lib/pools.js";
-import { sidebarPools, usageShare } from "../../budgets/lib/sidebar-pools.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import { useMonthlySpend } from "../../metrics/hooks/use-monthly-spend.js";
 import { formatTokens, formatUsd } from "../../metrics/lib/format.js";
@@ -50,7 +49,6 @@ import {
   scheduleSummary,
   sessionsToday,
 } from "../lib/home-stats.js";
-import { DamGraphic } from "./dam-graphic.js";
 
 const CARD = "flex flex-col rounded-xl border border-border bg-card p-5";
 
@@ -109,7 +107,7 @@ export function HeroCard() {
         aria-hidden
         className="pointer-events-none absolute inset-0 opacity-60 [background:radial-gradient(60%_120%_at_100%_0%,var(--color-accent-light),transparent_60%)]"
       />
-      <div className="relative grid items-end gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,38%)]">
+      <div className="relative grid items-end gap-6 md:grid-cols-[minmax(0,1fr)_auto]">
         <div className="min-w-0">
           <p className="text-sm font-semibold tracking-tight text-muted-foreground">
             {getBrand().name}
@@ -123,55 +121,22 @@ export function HeroCard() {
             <Big value={sessionsToday(sessions, now)} label="sessions today" />
           </div>
         </div>
-        <DamGraphic className="hidden max-h-44 w-full text-foreground/70 md:block" />
+        <MachineLearning_03
+          aria-hidden
+          className="hidden h-44 w-auto justify-self-end text-foreground/80 md:block"
+        />
       </div>
     </section>
   );
 }
 
 export function ResourcesBarsCard() {
-  const { data: budget } = useBudgetReserved();
   const agents = useAgentsList();
-  const pools = budget ? sidebarPools(budget, agents) : [];
+  const { workingAgentIds } = useFeed();
   return (
-    <Card title="Resources" pictogram={<Memory size={48} aria-hidden />}>
-      <div className="flex flex-col gap-4">
-        {pools.map((pool) => {
-          const fraction = usageShare(pool.usedBytes, pool.totalBytes);
-          return (
-            <div key={pool.label} className="flex flex-col gap-1.5">
-              <div className="flex items-baseline justify-between gap-2 text-sm">
-                <span className="text-foreground">{pool.label}</span>
-                <span className="truncate whitespace-nowrap text-muted-foreground tabular-nums">
-                  {pool.totalBytes > 0
-                    ? `${formatBytes(pool.usedBytes)} of ${formatBytes(pool.totalBytes)}`
-                    : "Not measured"}
-                </span>
-              </div>
-              <div className="h-2 overflow-hidden rounded-full bg-muted">
-                <div
-                  className={cn(
-                    "h-full rounded-full",
-                    fraction >= 0.9
-                      ? "bg-danger"
-                      : fraction >= 0.75
-                        ? "bg-warning"
-                        : "bg-foreground/60",
-                  )}
-                  style={{ width: `${fraction * 100}%` }}
-                />
-              </div>
-              {pool.rows.length > 0 && (
-                <p className="truncate text-xs text-muted-foreground">
-                  Most: {pool.rows[0]!.label} ·{" "}
-                  {formatBytes(pool.rows[0]!.bytes)}
-                </p>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </Card>
+    <section aria-label="Resources" className={cn(CARD, "md:col-span-2")}>
+      <ResourcesCard agents={agents} workingAgentIds={workingAgentIds} />
+    </section>
   );
 }
 
@@ -228,6 +193,7 @@ export function ChannelsCard() {
     <Card
       title="Where conversations happen"
       pictogram={<Conversation size={48} aria-hidden />}
+      className="md:col-span-2"
     >
       <div className="mb-4 flex h-3 w-full gap-px overflow-hidden rounded-full bg-muted">
         {total > 0 &&
@@ -369,7 +335,7 @@ export function BusiestCard() {
   const startSession = useStore((s) => s.selectAgent);
   const top = busiestAgents(sessions, agents);
   return (
-    <Card title="Busiest agents">
+    <Card title="Busiest agents" className="md:col-span-2">
       <ol className="flex flex-col gap-1">
         {top.map(({ agent, count }, i) => (
           <li key={agent.id}>
