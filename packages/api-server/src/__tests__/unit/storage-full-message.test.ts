@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The one storage-full message says what is refused at the owner's storage level: from 90% a sleeping VM agent can still be opened to clean up, from 97% it cannot, from 98% running agents may be failing writes, and without figures it neither promises a start nor says starts are refused.
+// TEST_OVERVIEW: The one storage-full message says what is refused at the owner's storage level: from 90% a sleeping VM agent can still be opened to clean up, and from 95% it cannot and running agents may be failing writes, and without figures it neither promises a start nor says starts are refused.
 import { describe, expect, it } from "vitest";
 
 import { storageFullMessage } from "../../modules/budgets/domain/vm-usage.js";
@@ -18,16 +18,16 @@ describe("storageFullMessage", () => {
     expect(msg).not.toContain("failing to write");
   });
 
-  // TEST_SCENARIO: At 97% starts are refused too.
-  it("says stopped agents can't start at the start limit", () => {
-    const msg = storageFullMessage(at(97));
+  // TEST_SCENARIO: At 95% starts are refused too.
+  it("says stopped agents can't start once storage is nearly full", () => {
+    const msg = storageFullMessage(at(95));
     expect(msg).toContain("can't be started");
     expect(msg).not.toContain("can still be started");
   });
 
-  // TEST_SCENARIO: At 98% running agents may already be failing writes, and that comes first.
-  it("leads with failing writes from 98%", () => {
-    expect(storageFullMessage(at(98))).toMatch(
+  // TEST_SCENARIO: At 95% running agents may already be failing writes, and that comes first.
+  it("leads with failing writes from 95%", () => {
+    expect(storageFullMessage(at(95))).toMatch(
       /^Your running VM agents may be failing to write files now\./,
     );
   });

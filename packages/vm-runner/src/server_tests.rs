@@ -2781,17 +2781,17 @@ async fn a_critical_claim_refuses_big_writes_and_still_starts_existing_machines(
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
 }
 
-// TEST_SCENARIO: once the claim is nearly full, no machine starts or restarts either, since even a boot's few writes could fail every guest's; a running machine that asks for nothing new still keeps running, and once room is freed the same start goes through.
+// TEST_SCENARIO: once the claim is full, no machine starts or restarts either, since even a boot's few writes could fail every guest's; a running machine that asks for nothing new still keeps running, and once room is freed the same start goes through.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_nearly_full_claim_refuses_every_boot_and_leaves_running_machines_alone() {
-    let (h, claim) = with_claim("storage-nearly-full");
+async fn a_full_claim_refuses_every_boot_and_leaves_running_machines_alone() {
+    let (h, claim) = with_claim("storage-full");
     h.server.put("m1", spec(true)).unwrap();
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
     h.server.put("m2", spec(false)).unwrap();
     assert_eq!(h.settle("m2").await.state, STATE_STOPPED);
     let before = h.fake.calls();
 
-    *locked(&claim) = filled(97);
+    *locked(&claim) = filled(95);
     let started = h.server.put("m2", spec(true)).unwrap();
     assert_eq!(started.reason, REASON_STORAGE_FULL, "{started:?}");
     assert!(started.message.contains("can't be started"), "{started:?}");
@@ -2878,7 +2878,7 @@ async fn every_look_grants_each_guest_its_room_on_the_claim() {
     assert!(!grant.exists());
 }
 
-// TEST_SCENARIO: a guest serves each request to give back scratch once, and only a running guest frees anything, so the shortage is split among the running machines alone. The runner keeps the same request while the claim stays short at about the same use, and sends a new one, with a new id and its part of the new shortage, only once the claim has filled RESHED_STEP_PERCENT further; a claim that has room again clears it, and the next shortage is a new request.
+// TEST_SCENARIO: a guest serves each request to give back scratch once, and only a running guest frees anything, so the shortage is split among the running machines alone. The runner keeps the same request while the claim stays short at about the same use, and sends a new one, with a new id and its part of the new shortage, only once the claim has filled SHED_STEP_PERCENT further; a claim that has room again clears it, and the next shortage is a new request.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_short_claim_asks_again_only_when_it_fills_further() {
     let (h, claim) = with_claim("storage-reshed");

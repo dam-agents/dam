@@ -630,7 +630,7 @@ impl Server {
             let boots = spec.running && (converging || action.is_some_and(|a| a != Action::Stop));
             if boots || action == Some(Action::Create) {
                 if let Some(full) = self.storage_critical() {
-                    if full.refuses_starts() || self.writes_much(id, &spec, action) {
+                    if full.full() || self.writes_much(id, &spec, action) {
                         return Ok(self.refuse(id, status, REASON_STORAGE_FULL, full.refusal()));
                     }
                     self.hold_growth(id, &mut spec);
@@ -1549,7 +1549,7 @@ impl Server {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: one look at the claim, every STORAGE_CHECK. Every machine's share gets a new grant of the bytes its guest may still add to the claim (StorageUse::guest_room), which platform-init holds the guest to; a claim that cannot be measured grants nothing, and the guests are then held to nothing. While it is short, the runner's own image cache gives up every tree no machine holds, since each can be fetched again, and every machine's share carries a request that its guest give back scratch: an id and the bytes asked of each running machine, its even part of what brings the claim back under SHORT_UNTIL_PERCENT. A guest serves each request once, so a new one goes out only when the claim has filled RESHED_STEP_PERCENT further since the last: the claim is mostly the agents' homes, which no guest gives back, and repeating the request would only have every guest delete its scratch again and again. What the guests keep beyond that is not the runner's to free.
+    // UNIT_BOUNDARY_DESCRIPTION: one look at the claim, every STORAGE_CHECK. Every machine's share gets a new grant of the bytes its guest may still add to the claim (StorageUse::guest_room), which platform-init holds the guest to; a claim that cannot be measured grants nothing, and the guests are then held to nothing. While it is short, the runner's own image cache gives up every tree no machine holds, since each can be fetched again, and every machine's share carries a request that its guest give back scratch: an id and the bytes asked of each running machine, its even part of what brings the claim SHED_STEP_PERCENT back under SHORT_PERCENT. A guest serves each request once, so a new one goes out only when the claim has filled SHED_STEP_PERCENT further since the last: the claim is mostly the agents' homes, which no guest gives back, and repeating the request would only have every guest delete its scratch again and again. What the guests keep beyond that is not the runner's to free.
     fn check_storage(&self) {
         let shares: Vec<(String, PathBuf)> = state::machine_ids(&self.config.state_dir)
             .unwrap_or_default()
@@ -1587,7 +1587,7 @@ impl Server {
                 *current = None;
             } else if current
                 .as_ref()
-                .is_none_or(|(at, _)| percent >= at + crate::storage::RESHED_STEP_PERCENT)
+                .is_none_or(|(at, _)| percent >= at + crate::storage::SHED_STEP_PERCENT)
             {
                 let id = self.versions.fetch_add(1, Ordering::Relaxed);
                 *current = Some((percent, format!("{id} {}\n", storage.to_shed(running))));

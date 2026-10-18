@@ -1,6 +1,6 @@
 # Per-user resource budgets
 
-Last verified: 2026-10-15
+Last verified: 2026-10-17
 
 ## Overview
 
@@ -172,7 +172,7 @@ Reserved is computed from live state and never persisted, so a hibernate or dele
 
 ## Resource alerts
 
-A vm agent's owner hears about a severe resource problem even when nobody is looking at the web app: the platform sends them a Slack direct message ([channels](channels.md)) when their agents' shared storage passes 90% — no new agent can be created — or 98% — writes are failing ([persistence](persistence.md)), and when their runner was killed for running out of memory ([vm-memory](vm-memory.md)).
+A vm agent's owner hears about a severe resource problem even when nobody is looking at the web app: the platform sends them a Slack direct message ([channels](channels.md)) when their agents' shared storage passes 90% — no new agent can be created — or 95% — writes are failing ([persistence](persistence.md)), and when their runner was killed for running out of memory ([vm-memory](vm-memory.md)).
 Each message gives the figures or the agents affected, and what to do.
 Lower levels show only in the web app.
 
@@ -182,7 +182,7 @@ An out-of-memory kill is seen on the agents the controller marks with it, collec
 
 Messages are limited so an owner near a threshold is not messaged at every reading:
 
-- **Storage** sends once per rise past the level last told, at most once a day, except one escalation from 90% to 98% inside the day; the level holds between 80% and 90%, and a reading under 80% re-arms it.
+- **Storage** sends once per rise past the level last told, at most once a day, except one escalation from 90% to 95% inside the day; the level holds between 80% and 90%, and a reading under 80% re-arms it.
 - **Out of memory** sends once per episode, which ends when no agent carries the mark, and again only six hours after the last message, so a runner killed in a loop sends one.
 
 Each alert's state is a Postgres row per owner and kind.
