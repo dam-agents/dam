@@ -4,6 +4,7 @@ import {
   Conversation,
   DataStorage,
   GrowthMindset,
+  KeystoresExternal,
   MachineLearning_03,
   Robot,
   Slack,
@@ -494,7 +495,11 @@ export function ApiKeysCard() {
     .sort()
     .reverse()[0];
   return (
-    <Card title="API keys" onOpen={() => navigateToSettings("api-keys")}>
+    <Card
+      title="API keys"
+      pictogram={<KeystoresExternal size={48} aria-hidden />}
+      onOpen={() => navigateToSettings("api-keys")}
+    >
       <div className="flex gap-8">
         <Big value={keys.length} label="keys" />
         {soon > 0 && <Big value={soon} label="expire this week" />}
