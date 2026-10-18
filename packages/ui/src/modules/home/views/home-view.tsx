@@ -1,5 +1,4 @@
 import { ListSkeleton } from "../../../components/list-skeleton.js";
-import { EntryPointButtons } from "../../agents/components/entry-point-buttons.js";
 import { WelcomeEntryPoints } from "../../agents/components/welcome-entry-points.js";
 import { useAgentRows } from "../../agents/hooks/use-agent-rows.js";
 import { splitTemporarySandboxes } from "../../agents/utils/temporary-sandboxes.js";
@@ -60,11 +59,6 @@ export function HomeView() {
           </>
         )}
       </div>
-      {visible.length > 0 && (
-        <div className="flex flex-wrap justify-end gap-2">
-          <EntryPointButtons />
-        </div>
-      )}
     </div>
   );
 }
