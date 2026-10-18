@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-//MISE description="Test that on a machine the entrypoint serves the agent's account as uid 0 from /run and writes nothing into the root a machine keeps"
-//MISE sources=["base/rootfs/usr/local/bin/agent-entrypoint", "base/rootfs/usr/local/bin/platform-ca-bundle", ".mise/tasks/test/entrypoint-machine-root"]
+//MISE description="Test that on a machine the entrypoint maps the agent to uid 0 in /etc/passwd once, and gives root a moved home's ssh config"
+//MISE sources=["base/rootfs/usr/local/bin/agent-entrypoint", ".mise/tasks/test/entrypoint-machine-root"]
 //MISE outputs=[]
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -10,22 +10,17 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const entrypoint = fileURLToPath(new URL("../../../base/rootfs/usr/local/bin/agent-entrypoint", import.meta.url));
-const source = readFileSync(entrypoint, "utf8");
-const caBundle = readFileSync(new URL("../../../base/rootfs/usr/local/bin/platform-ca-bundle", import.meta.url), "utf8");
 const dir = mkdtempSync(join(tmpdir(), "entrypoint-machine-root-"));
-const [home, run, bin] = ["home", "run", "bin"].map((d) => join(dir, d));
+const [home, bin] = ["home", "bin"].map((d) => join(dir, d));
 const passwd = join(dir, "passwd");
-const mountinfo = join(dir, "mountinfo");
 const calls = join(dir, "calls");
 writeFileSync(
   join(dir, "agent-entrypoint"),
-  source
+  readFileSync(entrypoint, "utf8")
     .replaceAll("uid=$(id -u)", "uid=0")
     .replaceAll("/etc/passwd", passwd)
-    .replaceAll("/proc/self/mountinfo", mountinfo)
-    .replaceAll("/run/platform", run)
     .replaceAll("/run/sshd", join(dir, "sshd"))
-    .replaceAll("/usr/share/platform/ca-certificates.crt", join(dir, "image-roots.crt"))
+    .replaceAll("/run/platform", join(dir, "run"))
     .replaceAll("/etc/platform/ca", join(dir, "ca"))
     .replaceAll("/etc/rancher/k3s/config.yaml", join(dir, "k3s-config.yaml"))
     .replaceAll("/var/lib/rancher/k3s", join(dir, "k3s"))
@@ -33,9 +28,7 @@ writeFileSync(
     .replaceAll("/app/working-dir", join(dir, "working-dir")),
 );
 mkdirSync(bin);
-for (const tool of ["mount", "chown"]) {
-  writeFileSync(join(bin, tool), `#!/bin/sh\necho "${tool} $*" >>${calls}\n`, { mode: 0o755 });
-}
+writeFileSync(join(bin, "chown"), `#!/bin/sh\necho "chown $*" >>${calls}\n`, { mode: 0o755 });
 writeFileSync(join(bin, "platform-ca-bundle"), "#!/bin/sh\n", { mode: 0o755 });
 const boot = () => {
   rmSync(calls, { force: true });
@@ -47,24 +40,14 @@ const boot = () => {
 };
 
 try {
-  // TEST_SCENARIO: a machine keeps its root across images of one root generation, so a file the boot writes there hides the next image's copy. The image bakes uid 0's home as the agent's, and the boot writes neither the user database nor the system trust store, nor moves anything out of /root: what it needs outside the home it builds under /run.
-  for (const path of ["/etc/ssl", "/usr/local/share/ca-certificates", "update-ca-certificates", "/root", "sed -i"]) {
-    assert.equal(source.includes(path), false, `the entrypoint names ${path}`);
-    assert.equal(caBundle.includes(path), false, `platform-ca-bundle names ${path}`);
-  }
-
-  // TEST_SCENARIO: SSH logins as agent land as root, the harness's user, and extrausers serves no uid 0 entry. So the boot binds a copy of the image's user database from /run over it, with agent as uid 0 at its end and any agent line the image has dropped. The image's own file is left as it is, so the kept root never holds the copy, and the next image's database is the one the next boot copies.
+  // TEST_SCENARIO: SSH logins as agent land as root, the harness's user, and extrausers serves no uid 0 entry, so the boot adds agent as uid 0 to the image's user database, once: the machine's root keeps the file across boots.
   mkdirSync(home);
-  const image = "root:x:0:0:root:/home/agent:/bin/bash\nagent:x:65532:0:Agent User:/home/agent:/bin/bash\n";
+  const image = "root:x:0:0:root:/home/agent:/bin/bash\n";
   writeFileSync(passwd, image);
-  writeFileSync(mountinfo, "");
-  assert.deepEqual(boot(), [`mount --bind ${join(run, "passwd")} ${passwd}`]);
-  assert.equal(readFileSync(join(run, "passwd"), "utf8"), "root:x:0:0:root:/home/agent:/bin/bash\nagent:x:0:0:Agent User:/home/agent:/bin/bash\n");
-  assert.equal(readFileSync(passwd, "utf8"), image);
-
-  // TEST_SCENARIO: the entrypoint restarts on the same boot, whose /run still holds the account over the image's, so it is not mounted again.
-  writeFileSync(mountinfo, `100 99 0:5 /platform/passwd ${passwd} rw - tmpfs tmpfs rw\n`);
   assert.deepEqual(boot(), []);
+  assert.equal(readFileSync(passwd, "utf8"), `${image}agent:x:0:0:Agent User:/home/agent:/bin/bash\n`);
+  boot();
+  assert.equal(readFileSync(passwd, "utf8"), `${image}agent:x:0:0:Agent User:/home/agent:/bin/bash\n`);
 
   // TEST_SCENARIO: ssh refuses a config another uid owns, so a config a moved agent's home keeps with the container's uid is given to root, the uid ssh runs as on a machine.
   mkdirSync(join(home, ".ssh"));

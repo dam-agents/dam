@@ -278,8 +278,12 @@ build_default() (
   # Selkies, mise, the tools and Claude Code's adapter, which change only with
   # their pins, are layers of their own under the rest, which every
   # agent-runtime change rewrites: a deploy pulls that top layer alone.
+  # Its root generation key is the declared one and the apt base's user
+  # database, so no machine keeps an /etc/passwd written over another image's.
+  generation="$(printf '%s\n' "${flags[@]}" | sed -n 's|^--env=PLATFORM_ROOT_GENERATION=||p')+$(cat "$apt_base.users")"
   pack_image default "$apt_base" build --root-layer=build-selkies --root-layer=build-mise \
-    "--root-layer=$tools" --root-layer=build-claude-adapter "${flags[@]}" "--env=PATH=$path:$base_path"
+    "--root-layer=$tools" --root-layer=build-claude-adapter "${flags[@]}" "--env=PATH=$path:$base_path" \
+    "--env=PLATFORM_ROOT_GENERATION=$generation"
 )
 
 # The default image's mise project, the tool configs and lockfile it ships in
@@ -421,7 +425,9 @@ build_thin() (
   # new key for it too.
   segment="$(printf '%s\n' "${flags[@]}" | sed -n 's|^--env=PLATFORM_ROOT_GENERATION=||p')"
   [ -n "$segment" ] && [[ "$segment" != */* ]] || { echo "$agent names no root generation segment of its own" >&2; exit 1; }
-  flags+=("--env=PLATFORM_ROOT_GENERATION=$(default_env PLATFORM_ROOT_GENERATION)/$segment")
+  generation="$(default_env PLATFORM_ROOT_GENERATION)"
+  [ -n "$generation" ] || { echo "the default image names no root generation" >&2; exit 1; }
+  flags+=("--env=PLATFORM_ROOT_GENERATION=$generation/$segment")
   # The mock's agent-runtime runs the node it carries.
   if [ "$agent" = mock ]; then
     install -d build/opt && cp -a "$(mise -E "$envs" where node)" build/opt/node
@@ -463,7 +469,8 @@ build_apt_base() {
   # the entrypoint builds under /run at every boot, so no boot writes the trust
   # store. The image ships the distribution's roots there, for what runs
   # without the entrypoint, such as the node's tool installer; a container's
-  # entrypoint replaces them, and a machine's /run tmpfs hides them. uid 0's
+  # entrypoint replaces them, and a machine's /run tmpfs hides them; an
+  # update-ca-certificates hook links the path again. uid 0's
   # home is the agent's, so OpenSSH keeps root's keys and known hosts in the
   # home on a machine, where the agent is root. The host keys
   # openssh-server's postinst generated would be every image's. Every image
@@ -498,6 +505,9 @@ build_apt_base() {
     rm "$r/.apt-start"
     touch -h -d "@$epoch" "$r"
   ' _ "$r" "$packages" "$epoch" "$(echo "${key%%-*}" | md5sum | cut -c1-32)"
+  # The default image's root generation key names this user database, which
+  # the boot and the agent's useradd write in a machine's kept root.
+  cat "$r/etc/passwd" "$r/etc/group" | sha256sum | cut -c1-12 >"$apt_base.users"
   layer="$work/apt-layer.tar"
   ${sudo[@]+"${sudo[@]}"} tar --sort=name --numeric-owner --format=gnu -C "$r" -cf "$layer" $(ls -A "$r")
   ${sudo[@]+"${sudo[@]}"} rm -rf "$r"

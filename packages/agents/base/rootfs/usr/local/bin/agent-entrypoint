@@ -11,25 +11,15 @@ uid=$(id -u)
 # non-root container cannot traverse (CoreDNS and traefik under k3s die on it).
 umask 022
 
-# What the boot writes outside the home goes under /run, a fresh tmpfs on every
-# machine boot: a machine keeps its root across images of one root generation,
-# and a file the boot wrote there would hide the next image's copy.
-run_dir=/run/platform
-mkdir -p "$run_dir"
-
-# On a machine, SSH logins as `agent` must land as root, the harness's user.
-# extrausers serves no uid 0 entry, so the machine's user database is the
-# image's /etc/passwd with an `agent` entry for uid 0 at its end, built under
-# /run and bound over the image's file: no image's root keeps it, and it
-# follows every new image. uid 0's own entry names the agent's home in the
-# image itself, so OpenSSH keeps root's keys and known hosts there. A tool that
-# renames a new file over /etc/passwd, such as useradd, fails on the bind.
+# On a machine, SSH logins as `agent` must land as root, the harness's user,
+# and extrausers serves no uid 0 entry, so the boot adds one to /etc/passwd.
+# The machine's root keeps that file, which hides no other image's copy: the
+# image's user database is part of its root generation key (oci's
+# build_default). uid 0's own entry names the agent's home in the image
+# itself, so OpenSSH keeps root's keys and known hosts there.
 if [ "$uid" = 0 ]; then
-	if ! grep -q " /etc/passwd " /proc/self/mountinfo 2>/dev/null; then
-		{ { grep -v '^agent:' /etc/passwd && echo 'agent:x:0:0:Agent User:/home/agent:/bin/bash'; } >"$run_dir/passwd" &&
-			mount --bind "$run_dir/passwd" /etc/passwd; } ||
-			echo "agent-entrypoint: WARNING: SSH logins as agent do not land as root" >&2
-	fi
+	grep -q '^agent:' /etc/passwd || echo 'agent:x:0:0:Agent User:/home/agent:/bin/bash' >>/etc/passwd ||
+		echo "agent-entrypoint: WARNING: SSH logins as agent do not land as root" >&2
 	install -d -m 0755 /run/sshd
 	# ssh refuses a config another uid owns, and a moved agent's home keeps
 	# the container's uid.
@@ -39,8 +29,10 @@ if [ "$uid" = 0 ]; then
 fi
 
 # The CAs under /etc/platform/ca are trusted through the bundle
-# platform-ca-bundle builds under /run.
-platform-ca-bundle 2>/dev/null ||
+# platform-ca-bundle builds under /run, a fresh tmpfs on every machine boot: a
+# machine keeps its root across images of one root generation, and a bundle
+# the boot wrote there would hide the next image's roots.
+platform-ca-bundle ||
 	echo "agent-entrypoint: WARNING: could not build the CA bundle; intercepted hosts may fail TLS" >&2
 ca_files=$(find /etc/platform/ca -maxdepth 1 -name '*.crt' -size +0 2>/dev/null | sort)
 ca_set() { for f in $ca_files; do echo "$f"; cat "$f"; done; }
@@ -104,8 +96,8 @@ if [ "$uid" = 0 ]; then
 	k3s_data=$(sed -n 's/^data-dir: *//p' /etc/rancher/k3s/config.yaml 2>/dev/null || true)
 	dropin="${k3s_data:-/var/lib/rancher/k3s}/agent/etc/containerd/config-v3.toml.d/platform-runc.toml"
 	if [ -x "$runc_wrapper" ]; then
-		if mkdir -p "$run_dir/bin" && ln -sf "$runc_wrapper" "$run_dir/bin/runc"; then
-			export PATH="$run_dir/bin:$PATH"
+		if mkdir -p /run/platform/bin && ln -sf "$runc_wrapper" /run/platform/bin/runc; then
+			export PATH="/run/platform/bin:$PATH"
 		else
 			echo "agent-entrypoint: WARNING: docker containers and builds do not get the platform CA" >&2
 		fi

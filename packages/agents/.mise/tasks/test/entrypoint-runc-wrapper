@@ -11,27 +11,24 @@ import { fileURLToPath } from "node:url";
 
 const entrypoint = fileURLToPath(new URL("../../../base/rootfs/usr/local/bin/agent-entrypoint", import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), "entrypoint-runc-wrapper-"));
-const [docker, home, run, k3s] = ["docker", "home", "run", "k3s"].map((d) => join(dir, d));
-const runBin = join(run, "bin");
+const [docker, home, runBin, k3s] = ["docker", "home", "run-bin", "k3s"].map((d) => join(dir, d));
 for (const d of [docker, home]) mkdirSync(d);
 const wrapper = join(dir, "platform-runc");
 const dropin = join(k3s, "agent/etc/containerd/config-v3.toml.d/platform-runc.toml");
 writeFileSync(join(docker, "runc"), "#!/bin/sh\n", { mode: 0o755 });
-writeFileSync(join(docker, "mount"), "#!/bin/sh\n", { mode: 0o755 });
-writeFileSync(join(dir, "passwd"), "root:x:0:0:root:/home/agent:/bin/sh\n");
 writeFileSync(join(docker, "platform-ca-bundle"), "#!/bin/sh\n", { mode: 0o755 });
+writeFileSync(join(dir, "passwd"), "agent:x:0:0::/home/agent:/bin/sh\n");
 writeFileSync(
   join(dir, "agent-entrypoint"),
   readFileSync(entrypoint, "utf8")
     .replaceAll("uid=$(id -u)", "uid=0")
+    .replaceAll("/etc/passwd", join(dir, "passwd"))
     .replaceAll("/run/sshd", join(dir, "sshd"))
     .replaceAll("/etc/platform/ca", join(dir, "ca"))
     .replaceAll("/etc/rancher/k3s/config.yaml", join(dir, "k3s-config.yaml"))
     .replaceAll("/var/lib/rancher/k3s", k3s)
     .replaceAll("/platform/runc", wrapper)
-    .replaceAll("/etc/passwd", join(dir, "passwd"))
-    .replaceAll("/proc/self/mountinfo", join(dir, "mountinfo"))
-    .replaceAll("/run/platform", run)
+    .replaceAll("/run/platform/bin", runBin)
     .replaceAll("/app/working-dir", join(dir, "working-dir")),
 );
 const boot = () =>

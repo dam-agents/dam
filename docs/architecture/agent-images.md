@@ -72,14 +72,14 @@ Layers are packed as plain tars: a local cluster imports them as they are, and C
 
 - **Container Backend:** the image runs as the agent user, whose account comes from a static extra-users database.
 - **vm Backend:** the machine boots the image as root after platform-init has mounted the home and bound the MITM CA, and platform-init stays the entrypoint's parent, so the image's init is not the first process of its PID namespace ([vm-runner](vm-runner.md)).
-  The entrypoint maps `agent` to uid 0 for SSH logins, since extrausers serves no uid 0 entry: it binds a copy of the image's `/etc/passwd` with that entry, built under `/run`, over the image's file, and prepares sshd.
-  The image's build gives uid 0 the agent's home, so OpenSSH keeps its keys there, and no boot writes the user database of a kept root ([persistence](persistence.md#per-agent-pvcs)).
-  A tool that renames a new file over `/etc/passwd`, such as `useradd`, fails on the bind.
+  The entrypoint maps `agent` to uid 0 for SSH logins, since extrausers serves no uid 0 entry: it adds that entry to `/etc/passwd`, which the root key keeps from hiding a later image's copy ([persistence](persistence.md#per-agent-pvcs)), and prepares sshd.
+  The image's build gives uid 0 the agent's home, so OpenSSH keeps its keys there.
   The agent-runtime keeps Node's compile cache beside its own code here, since the root outlives a boot; a container's root is new on every start, so writing the cache would only cost it time.
   The cache is the runtime's alone: no harness or command it starts inherits it.
 
 On both, the [entrypoint](../../packages/agents/base/rootfs/usr/local/bin/agent-entrypoint) trusts every CA under `/etc/platform/ca` — the gateway's MITM CA, and the extra CAs the install names for a TLS-inspecting proxy beyond it — seeds a new home from the working-dir seed, and discards the caches on the home that no tool it ships reads ([persistence](persistence.md#per-agent-pvcs) owns the rule).
-It builds the bundle under `/run/platform` at every boot, and so do the docker and k3s services, which openrc may start before it: the image's distribution roots and then those CAs, and never writes the image's trust store, since a machine keeps its root across images of one generation and a bundle a boot wrote there would hide the next image's roots.
+It builds the bundle under `/run/platform` at every boot, and so do the docker and k3s services, which openrc may start before it: the image's distribution roots, the local CAs an agent added, and then those CAs, and never writes the image's trust store, since a machine keeps its root across images of one generation and a bundle a boot wrote there would hide the next image's roots.
+An agent's `update-ca-certificates` writes a bundle file of its own over the link, so a hook it runs links the path again and rebuilds the `/run` bundle with the new local CAs.
 The image's build moves the distribution's bundle aside and links its path, `/etc/ssl/certs/ca-certificates.crt`, to the one under `/run`; `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE` name it too, and the agent's environment sets `NODE_USE_SYSTEM_CA`, so Node reads it like every other client.
 The platform CAs alone are linked as a local CA, so a store an agent's package manager rebuilds still holds them.
 Building it is two file writes, so nothing is recorded or cached between boots.
@@ -119,6 +119,7 @@ A periodic api-server job applies the [template upgrade](agent-lifecycle.md#temp
 It covers both Backends.
 A vm machine keeps its root when the new image declares the same root generation key as the old one, and otherwise boots on a fresh root, losing what was installed outside HOME ([vm-runner](vm-runner.md)); that loss is accepted.
 A workload's key is the default image's with its own segment appended by its build, so a move between the default image and a workload's always starts a fresh root, and a new default key is a new key for every workload too.
+An image built from the default one outside this build carries the default's key unless it declares its own.
 
 It never interrupts work.
 A hibernated, stopped or over-budget Agent moves at once and takes the image on its next wake.

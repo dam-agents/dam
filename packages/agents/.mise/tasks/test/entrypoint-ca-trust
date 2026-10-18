@@ -4,15 +4,15 @@
 //MISE outputs=[]
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const tool = (name) => fileURLToPath(new URL(`../../../base/rootfs/usr/local/bin/${name}`, import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), "entrypoint-ca-trust-"));
-const [ca, run, home, bin, workingDir] = ["ca", "run", "home", "bin", "working-dir"].map((d) => join(dir, d));
-for (const d of [ca, home, bin, workingDir]) mkdirSync(d);
+const [ca, run, home, bin, workingDir, local] = ["ca", "run", "home", "bin", "working-dir", "local"].map((d) => join(dir, d));
+for (const d of [ca, home, bin, workingDir, local]) mkdirSync(d);
 const imageRoots = join(dir, "image-roots.crt");
 writeFileSync(imageRoots, "image roots\n");
 const calls = join(dir, "calls");
@@ -27,6 +27,7 @@ const relocated = (name) =>
     .replaceAll("/etc/platform/ca", ca)
     .replaceAll("/run/platform", run)
     .replaceAll("/usr/share/platform/ca-certificates.crt", imageRoots)
+    .replaceAll("/usr/local/share/ca-certificates", local)
     .replaceAll("/app/working-dir", workingDir);
 writeFileSync(join(dir, "agent-entrypoint"), relocated("agent-entrypoint"));
 writeFileSync(join(bin, "platform-ca-bundle"), relocated("platform-ca-bundle"), { mode: 0o755 });
@@ -66,6 +67,13 @@ try {
   rmSync(join(ca, "extra.crt"));
   assert.deepEqual(boot(), ["certutil -L", "certutil -A"]);
   assert.equal(bundle(), "new image roots" + pem("four"));
+
+  // TEST_SCENARIO: a local CA the agent added reaches the bundle between the image's roots and the platform CAs, each ending in a newline, and the image's link to the platform CAs among the local ones is not read twice.
+  writeFileSync(join(local, "corp.crt"), pem("corp").trimEnd());
+  symlinkSync(join(run, "ca.crt"), join(local, "platform-ca.crt"));
+  boot();
+  assert.equal(bundle(), "new image roots" + pem("corp") + pem("four"));
+  rmSync(join(local, "corp.crt"));
 
   // TEST_SCENARIO: an install without platform CAs still gets the image's roots at the bundle path.
   rmSync(join(ca, "ca.crt"));
