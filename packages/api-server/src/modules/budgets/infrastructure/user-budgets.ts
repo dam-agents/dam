@@ -3,15 +3,35 @@ import type { CeilingOverride } from "../services/budgets-service.js";
 
 const USERBUDGETS_PLURAL = "userbudgets";
 
+export interface UserBudgetSizes {
+  cpu: string | null;
+  memory: string | null;
+  storage: string | null;
+}
+
+export async function readUserBudgetSizes(
+  k8s: K8sClient,
+  owner: string,
+): Promise<UserBudgetSizes> {
+  const obj = await k8s.getCustomObject(USERBUDGETS_PLURAL, `budget-${owner}`);
+  const spec = (
+    obj as {
+      spec?: { cpu?: unknown; memory?: unknown; storage?: unknown };
+    }
+  )?.spec;
+  return {
+    cpu: quantityString(spec?.cpu),
+    memory: quantityString(spec?.memory),
+    storage: quantityString(spec?.storage),
+  };
+}
+
 export async function readUserBudgetCeiling(
   k8s: K8sClient,
   owner: string,
 ): Promise<CeilingOverride | null> {
-  const obj = await k8s.getCustomObject(USERBUDGETS_PLURAL, `budget-${owner}`);
-  if (!obj) return null;
-  const spec = (obj as { spec?: { cpu?: unknown; memory?: unknown } }).spec;
-  const cpu = quantityString(spec?.cpu);
-  const memory = quantityString(spec?.memory);
+  const { cpu, memory } = await readUserBudgetSizes(k8s, owner);
+  if (cpu === null && memory === null) return null;
   return {
     ...(cpu !== null && { cpu }),
     ...(memory !== null && { memory }),

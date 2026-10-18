@@ -279,6 +279,10 @@ spec:
             {{- if .Values.virtualization.enabled }}
             - name: VIRTUALIZATION_ENABLED
               value: "true"
+            - name: VM_POOL_STORAGE
+              value: {{ .Values.virtualization.runner.storage | quote }}
+            - name: VM_POOL_MEMORY
+              value: {{ (((.Values.virtualization.runner.resources | default dict).limits) | default dict).memory | default "" | toString | quote }}
             - name: RUNTIME_MIGRATION_RETENTION
               value: {{ (.Values.virtualization.runtimeMigration | default dict).retention | default "168h" | toString | quote }}
             {{- end }}

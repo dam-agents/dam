@@ -116,28 +116,53 @@ export interface StorageGate {
   readCapacity(): Promise<VmPoolCapacity | null>;
 }
 
-export function createStorageGate(
-  deps: Pick<BudgetsServiceDeps, "readVmUsage">,
-): StorageGate {
+export interface PoolSizes {
+  storage: string;
+  memory: string;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the pool the install sizes for an owner who has no runner yet: the pool their UserBudget names, each field falling back on its own on the install's, with nothing used against it. Zero for a memory the install does not set, where the runner is sized by its UserBudget alone, which refuses no machine.
+export function configuredPool(
+  install: PoolSizes,
+  override: Partial<PoolSizes> | null,
+): VmPoolCapacity {
+  return {
+    storage: {
+      usedBytes: 0,
+      usableBytes: parseMemoryBytes(override?.storage ?? install.storage),
+    },
+    memory: {
+      committedMiB: 0,
+      limitMiB: Math.round(
+        parseMemoryBytes(override?.memory ?? install.memory) / 1024 ** 2,
+      ),
+    },
+  };
+}
+
+export function createStorageGate(deps: {
+  readVmUsage(): Promise<RunnerUsage | null>;
+  readConfiguredPool(): Promise<VmPoolCapacity>;
+}): StorageGate {
   return {
     async assertCanCreateVm() {
       const refusal = storageRefusal(await deps.readVmUsage());
       if (refusal) throw refusal;
     },
+    // UNIT_BOUNDARY_DESCRIPTION: the runner's own figures where it answered, and otherwise the pool the owner is configured to get, with nothing written to it yet — a user's first move is judged against the pool their runner is about to be created at, rather than against nothing. A pool that cannot be read is null, as an unreadable runner is: the move is then judged on nothing there, not failed.
     async readCapacity() {
       const usage = await deps.readVmUsage();
-      return usage
-        ? {
-            storage: {
-              usedBytes: usage.storage.usedBytes,
-              usableBytes: usage.storage.usableBytes,
-            },
-            memory: {
-              committedMiB: usage.memory.committedMiB,
-              limitMiB: usage.memory.limitMiB,
-            },
-          }
-        : null;
+      if (!usage) return deps.readConfiguredPool().catch(() => null);
+      return {
+        storage: {
+          usedBytes: usage.storage.usedBytes,
+          usableBytes: usage.storage.usableBytes,
+        },
+        memory: {
+          committedMiB: usage.memory.committedMiB,
+          limitMiB: usage.memory.limitMiB,
+        },
+      };
     },
   };
 }

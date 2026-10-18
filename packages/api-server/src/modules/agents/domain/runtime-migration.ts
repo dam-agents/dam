@@ -113,16 +113,22 @@ export function runtimeMigrationRefusal(
   if (!ctx.capacity) return null;
   return poolRefusal(
     ctx.capacity,
-    homeClaimBytes(agent.spec, mounts, ctx.defaultStorageSize),
+    ctx.homeBytes ?? null,
+    homeVolumeBytes(agent.spec, mounts, ctx.defaultStorageSize),
   );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the move fits the owner's pool. Its storage holds the seed and then as much again on the machine's first disk, so the move needs about twice the home's size — HOME's volume's own size, which is the most it can hold, and nothing where that cannot be read — and the pool keeps the rest of the owner's agents safe up to the level the runner itself refuses an upload at. Its memory has to take one more machine, which may grow to half the pool; the reserve the runner keeps back is left out, so this never refuses a machine the runner would have admitted.
+// UNIT_BOUNDARY_DESCRIPTION: whether the move fits the owner's pool. Its storage holds the seed and then as much again on the machine's first disk, so the move needs about twice what the home holds — what the Agent's own runtime measured there, and nothing where it could not be read, because the volume's size is the most it may hold rather than what it does, and refusing a small home on a large claim is what the measured figure is for. A measurement above the volume's own size is not the home at all: it is the filesystem the volume sits on, which a claim backed by a directory on a node shares with everything else there, so it is read as the volume at most. The pool keeps the rest of the owner's agents safe up to the level the runner itself refuses an upload at. Its memory has to take one more machine, which may grow to half the pool; the reserve the runner keeps back is left out, so this never refuses a machine the runner would have admitted.
 function poolRefusal(
   capacity: VmPoolCapacity,
-  homeBytes: number | null,
+  measuredBytes: number | null,
+  volumeBytes: number | null,
 ): RuntimeMigrationRefusal | null {
   const { storage, memory } = capacity;
+  const homeBytes =
+    measuredBytes === null || volumeBytes === null
+      ? measuredBytes
+      : Math.min(measuredBytes, volumeBytes);
   const needed = 2 * (homeBytes ?? 0);
   if (
     storage.usedBytes + needed >
@@ -150,8 +156,10 @@ export interface RuntimeMigrationContext {
   virtualizationEnabled: boolean;
   defaultMounts: readonly AgentMount[];
   defaultStorageSize: string;
-  // UNIT_BOUNDARY_DESCRIPTION: the owner's pool as their runner last reported it, read where a move is decided and absent from the list views, which would pay a runner read per request for a flag. Unmeasured or unreachable is null, which refuses nothing: the runner refuses what it has no room for on its own.
+  // UNIT_BOUNDARY_DESCRIPTION: the owner's pool, as their runner reported it or, with no runner yet, as the install sizes it. Read where a move is decided and absent from the list views, which would pay a runner read per request for a flag. Unmeasured or unreachable is null, which refuses nothing: the runner refuses what it has no room for on its own.
   capacity?: VmPoolCapacity | null;
+  // UNIT_BOUNDARY_DESCRIPTION: what HOME holds, as the Agent's own runtime measured it. Absent for an Agent that is not running, whose volume cannot be read without starting it, and nulls the storage half of the refusal rather than judging a home by the size its volume may grow to.
+  homeBytes?: number | null;
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the owner's VM pool, in the runner's own units: the storage every machine disk and the seed share, and the memory its machines are admitted against.
@@ -192,8 +200,10 @@ export function movedStorageSize(
   return `${Math.ceil(size / 1024 ** 3)}Gi`;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what HOME's volume holds at most, which is what a move has to fit twice over: the volume's own size when the mount names one, else the Agent's storageSize, else the install default. Null when the size cannot be read, which refuses nothing.
-export function homeClaimBytes(
+type Mounts = AgentMount[];
+
+// UNIT_BOUNDARY_DESCRIPTION: the most HOME's volume may hold, which no measurement of the home can exceed: the volume's own size when the mount names one, else the Agent's storageSize, else the install default, rounded up to whole GiB as the machine's disk is. Null when the size cannot be read, which leaves a measurement uncapped.
+export function homeVolumeBytes(
   spec: AgentSpec,
   mounts: readonly AgentMount[],
   defaultStorageSize: string,
@@ -204,8 +214,6 @@ export function homeClaimBytes(
     defaultStorageSize;
   return quantityBytes(size);
 }
-
-type Mounts = AgentMount[];
 
 // UNIT_BOUNDARY_DESCRIPTION: the shape the Agent takes on the vm backend, which the controller builds its machine to while the container spec stays the Agent's spec: the disk sized for HOME's volume when that is more than the Agent asks for. The mounts stay as they are, since HOME is already where the machine keeps it.
 export interface RuntimeMigrationTarget {

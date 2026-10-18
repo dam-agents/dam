@@ -167,10 +167,11 @@ describe("the runtime migration plan", () => {
     expect(plan.refusal?.type).toBe("PersistsUnmovablePaths");
   });
 
-  // TEST_SCENARIO: a pool too small for the move is refused in the plan, in the request's own words, so the user reads how much the move needs and how much is free before the confirm dialog rather than after the storage is filled.
+  // TEST_SCENARIO: a pool too small for the move is refused in the plan, in the request's own words, so the user reads how much the move needs and how much is free before the confirm dialog rather than after the storage is filled. The home is what its runtime measured, not the size its volume may grow to.
   it("refuses a move the pool cannot hold, in the request's words", () => {
     const plan = runtimeMigrationPlan(agent({}), {
       ...INPUTS,
+      homeBytes: 10 * 1024 ** 3,
       capacity: {
         storage: { usedBytes: 4 * 1024 ** 3, usableBytes: 20 * 1024 ** 3 },
         memory: { committedMiB: 0, limitMiB: 12 * 1024 },
