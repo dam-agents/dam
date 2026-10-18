@@ -32,6 +32,17 @@ impl std::fmt::Display for Refusal {
 }
 
 impl std::error::Error for Refusal {}
+// UNIT_BOUNDARY_DESCRIPTION: an unpack stopped at its cap, beneath the refusal it is reported as, so a fetch whose size came from gzip trailers can tell it from a broken image and try again at the estimate.
+#[derive(Debug)]
+pub struct OverCap;
+
+impl std::fmt::Display for OverCap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("the unpack passed its cap")
+    }
+}
+
+impl std::error::Error for OverCap {}
 
 pub fn unusable(detail: impl std::fmt::Display) -> anyhow::Error {
     Refusal {
@@ -202,7 +213,7 @@ pub fn read_config(
 // UNIT_BOUNDARY_DESCRIPTION: how much larger an unpacked layer is taken to be than its blob when its real size cannot be read: a zstd layer, a registry that refuses a ranged read, a gzip trailer that may have wrapped. The export streams of common agent and base images measured 2.2 to 3.2 times their manifest's size; this is a fixed guess above all of them.
 pub const UNPACKED_RATIO: u64 = 4;
 
-// UNIT_BOUNDARY_DESCRIPTION: the compressed size from which a gzip trailer may have wrapped. The trailer holds what the layer inflates to mod 2^32, so a layer of 4 GiB or more reads small. Below 1 GiB compressed a layer reaches 4 GiB only past UNPACKED_RATIO, which the estimate would not admit either, so a trailer that wrapped there refuses only what the estimate refused; at or above it the estimate is used. A trailer well below the blob's own size is not trusted either: the empty last member of a multi-member gzip, such as eStargz's footer, reads 0, since a trailer counts only its own member. An incompressible layer, a tar of archives, reads a little below its blob, which the last sixteenth allows.
+// UNIT_BOUNDARY_DESCRIPTION: the compressed size from which a gzip trailer may have wrapped. The trailer holds what the layer inflates to mod 2^32, so a layer of 4 GiB or more reads small. Below 1 GiB compressed a layer reaches 4 GiB only past UNPACKED_RATIO, so a trailer that wrapped there is trusted, and the fetch it cuts short is retried at the estimate (unpacked_size); at or above it the estimate is used. A trailer well below the blob's own size is not trusted either: the empty last member of a multi-member gzip, such as eStargz's footer, reads 0, since a trailer counts only its own member. An incompressible layer, a tar of archives, reads a little below its blob, which the last sixteenth allows.
 pub const WRAP_PLAUSIBLE: u64 = (1 << 32) / UNPACKED_RATIO;
 
 // UNIT_BOUNDARY_DESCRIPTION: what a measured layer is given on top of its size. crane's export stream is the layers flattened with their tar headers written again, and on six common images it measured 0.97 to 1.00 of the summed trailers; a tenth covers headers written larger than the layer had them, and the fixed slack the end blocks and padding of a small layer.
@@ -284,14 +295,14 @@ pub fn gzip_trailer(
     Some(u32::from_le_bytes(body.try_into().ok()?))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the bytes this platform's image is taken to stream unpacked, from its manifest and each gzip layer's trailer. OCI metadata names only compressed sizes, so the real size is read from the end of each gzip blob, with the bearer token crane gets for the repository from the credential that read the config. A registry crane gets no token from, such as one that takes basic auth, is read anonymously. Every layer whose size cannot be read is taken at UNPACKED_RATIO, so a failed read never fails the fetch. It is what a fetch reserves against the node's ceiling, checks the disk against before it downloads anything, and may unpack at most. A manifest that cannot be read, or is an index with no layers, gives nothing, and the fetch goes on with the whole budget as its cap.
+// UNIT_BOUNDARY_DESCRIPTION: the bytes this platform's image is taken to stream unpacked, from its manifest and each gzip layer's trailer. OCI metadata names only compressed sizes, so the real size is read from the end of each gzip blob, with the bearer token crane gets for the repository from the credential that read the config. A registry crane gets no token from, such as one that takes basic auth, is read anonymously. Every layer whose size cannot be read is taken at UNPACKED_RATIO, so a failed read never fails the fetch, and the reads stop once `cancel` is. It is what a fetch reserves against the node's ceiling, checks the disk against before it downloads anything, and may unpack at most. A trailer counts only the last gzip member of its blob, and may have wrapped, so a layer of several members, or one that inflates past 4 GiB, unpacks past what it reads; the second size is the one a fetch retries at when the unpack passes the first, each layer at the larger of its measured size and UNPACKED_RATIO. A manifest that cannot be read, or is an index with no layers, gives nothing, and the fetch goes on with the whole budget as its cap.
 pub fn unpacked_size(
     crane: &str,
     reference: &str,
     auth: &str,
     deadline: Instant,
     cancel: &CancellationToken,
-) -> Option<u64> {
+) -> Option<(u64, u64)> {
     #[derive(serde::Deserialize)]
     struct Layer {
         #[serde(rename = "mediaType", default)]
@@ -340,6 +351,9 @@ pub fn unpacked_size(
                 .chunks(PROBES_AT_ONCE)
                 .zip(trailers.chunks_mut(PROBES_AT_ONCE))
             {
+                if cancel.is_cancelled() {
+                    break;
+                }
                 std::thread::scope(|s| {
                     for (layer, trailer) in layers.iter().zip(read.iter_mut()) {
                         if gzip(layer) {
@@ -360,21 +374,26 @@ pub fn unpacked_size(
         }
     }
     let measured = trailers.iter().flatten().count();
-    let bytes = manifest
-        .layers
-        .iter()
-        .zip(&trailers)
-        .fold(0u64, |sum, (layer, trailer)| {
-            sum.saturating_add(layer_estimate(&layer.media_type, layer.size, *trailer))
-        });
+    let (bytes, estimate) = manifest.layers.iter().zip(&trailers).fold(
+        (0u64, 0u64),
+        |(bytes, estimate), (layer, trailer)| {
+            let taken = layer_estimate(&layer.media_type, layer.size, *trailer);
+            let unread = layer_estimate(&layer.media_type, layer.size, None);
+            (
+                bytes.saturating_add(taken),
+                estimate.saturating_add(taken.max(unread)),
+            )
+        },
+    );
     tracing::info!(
         image = reference,
         layers = manifest.layers.len(),
         measured,
         bytes,
+        estimate,
         "image unpacked size read"
     );
-    Some(bytes)
+    Some((bytes, estimate))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the bytes free to this process on the filesystem holding `dir`, or nothing when it cannot be asked.
@@ -456,10 +475,13 @@ pub fn unpack(
         Ok(()) => return Ok(()),
         Err(PipelineFailure::OverLimit) => {
             tracing::warn!(image = reference, cap, "image unpack passed its cap");
-            return Err(unusable(format!(
-                "{reference} unpacks to more than {} bytes, the most the image cache allows it",
-                cap.unwrap_or_default()
-            )));
+            return Err(anyhow::Error::new(OverCap).context(Refusal {
+                reason: REASON_IMAGE_UNAVAILABLE,
+                message: format!(
+                    "{IMAGE_UNUSABLE}: {reference} unpacks to more than {} bytes, the most the image cache allows it",
+                    cap.unwrap_or_default()
+                ),
+            }));
         }
         Err(PipelineFailure::Producer(detail)) => ("exporting", detail),
         Err(PipelineFailure::Consumer(detail)) => ("unpacking", detail),

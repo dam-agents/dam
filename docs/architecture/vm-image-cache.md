@@ -1,6 +1,6 @@
 # VM image cache
 
-Last verified: 2026-10-17
+Last verified: 2026-10-18
 
 A machine may reach only its gateway, so its image is fetched for it and unpacked into a tree every machine of that image mounts read-only.
 Where that tree lives is the one part of the runner's storage an install may move off its claim.
@@ -42,7 +42,8 @@ On common images the summed trailers came within 3% of what crane exports, so a 
 An uncompressed layer is its blob's size.
 Any other layer is taken at four times its compressed size, above the 2.2 to 3.2 that common images unpack to: a zstd layer, one whose registry refuses the ranged read or does not answer it within 20 seconds, and one of 1 GiB or more compressed, because the trailer holds the size mod 4 GiB and could have wrapped.
 A failed read only falls back to that estimate and never fails the fetch.
-That size is also the most the fetch may unpack, with a floor of 16 MiB for a tiny image and the whole budget for one whose manifest cannot be read: the writer counts the stream between crane and tar and stops the fetch past it, so an image whose layers inflate past what their trailers say is refused rather than fill the disk every machine on the node shares.
+That size is also the most the fetch may unpack, with a floor of 16 MiB for a tiny image and the whole budget for one whose manifest cannot be read: the writer counts the stream between crane and tar and stops the fetch past it, so an image whose layers inflate is refused rather than fill the disk every machine on the node shares.
+A trailer counts only the last gzip member of its blob, and a layer under 1 GiB compressed may still have wrapped, so a fetch stopped at a measured size is tried once more, reserved and capped at the larger of each layer's measured size and four times its blob.
 A runner holds the digests its running machines boot by naming them again every minute, and a hold lapses only once nobody names it — a runner that stopped has no machines left.
 A runner names every machine its runtime finds running from the moment it starts, so one that took the machines over in a hand-off or a restart holds their trees before the controller has sent it a spec.
 A stopped machine holds nothing, so a hibernated agent never keeps an image a deploy retired; its start fetches the tree again when it is gone, and holds it before it checks it is there.

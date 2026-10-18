@@ -7,7 +7,7 @@ use crate::fetch::failure_reason;
 
 // TEST_OVERVIEW: the image cache's one writer — the node service, or a runner on its own claim. It resolves a reference to a digest, fetches that digest once for every caller, holds what callers name so eviction spares it, and on a shared cache serves a privately fetched entry only to a caller whose credentials read it. The node service reaches runners over a Unix socket, and the end-to-end tests drive that socket in-process.
 
-// UNIT_BOUNDARY_DESCRIPTION: a crane that answers the four questions the cache asks — which digest a tag names, what an image says to run, what its manifest says it weighs, and what its filesystem holds — and logs each call. A tag's digest is a hash of its repository, the platform asked for and the contents of `moved`, so a test moves a tag by writing that file; `registry-down` makes every resolution fail. The manifest is `manifest` when a test wrote one, and otherwise one layer of no media type that weighs what `size` says; every token crane is asked for is `Bearer t0k`. an export waits while `hold-export` exists, fails while `export-fails` does, and carries a file of as many zeros as `inflate` says.
+// UNIT_BOUNDARY_DESCRIPTION: a crane that answers the four questions the cache asks — which digest a tag names, what an image says to run, what its manifest says it weighs, and what its filesystem holds — and logs each call. A tag's digest is a hash of its repository, the platform asked for and the contents of `moved`, so a test moves a tag by writing that file; `registry-down` makes every resolution fail. The manifest is `manifest` when a test wrote one, and otherwise one layer of no media type that weighs what `size` says; every token crane is asked for is `Bearer t0k`. An export waits while `hold-export` exists, fails while `export-fails` does, and carries a file of as many zeros as `inflate` says.
 const PUBLIC_CRANE: &str = r#"#!/bin/sh
 here="$(dirname "$0")"
 echo "$@" >> "$here/crane.log"
@@ -765,6 +765,42 @@ fn an_image_is_reserved_at_what_its_gzip_trailers_say() {
             .contains(&format!("more than {cap} bytes")),
         "{error:#}"
     );
+    assert_eq!(scratch_trees(&cache), 0);
+}
+// TEST_SCENARIO: a trailer counts only the last member of a gzip stream, so a layer of several members reads short of what it unpacks to. Its fetch passes the measured cap and is fetched again at four times its blob, which holds it; an image that passes that too is refused after the one retry.
+#[test]
+fn an_image_that_unpacks_past_its_trailers_is_fetched_again_at_the_estimate() {
+    let f = Fixture::new("short-isize", PUBLIC_CRANE);
+    let mut blob = vec![0u8; 8_000_000];
+    blob[8_000_000 - 4..].copy_from_slice(&8_000_000u32.to_le_bytes());
+    let port = crate::testdir::http_stub(move |head| crate::testdir::ranged(head, &blob));
+    fs::write(
+        f.dir.path().join("manifest"),
+        format!(
+            r#"{{"config":{{"size":1}},"layers":[{{"mediaType":"application/vnd.oci.image.layer.v1.tar+gzip","digest":"sha256:{}","size":8000000}}]}}"#,
+            "a".repeat(64)
+        ),
+    )
+    .unwrap();
+    fs::write(f.dir.path().join("inflate"), "20000000").unwrap();
+    let cache = f.cache(|_| {});
+    let fits = resolved(cache.resolve(&format!("127.0.0.1:{port}/x/multi:1"), &[]));
+    let rootfs = cache.digest_entry(&fits.digest).join(ROOTFS_DIR);
+    assert_eq!(fs::metadata(rootfs.join("bomb")).unwrap().len(), 20_000_000);
+    assert_eq!(f.calls("export"), 2, "the short fetch was not retried");
+
+    fs::write(f.dir.path().join("inflate"), "40000000").unwrap();
+    let refused = cache.resolve(&format!("127.0.0.1:{port}/x/huge:1"), &[]);
+    let error = refused.resolved.unwrap_err();
+    assert_eq!(failure_reason(&error), REASON_IMAGE_UNAVAILABLE);
+    assert!(
+        error.to_string().contains(&format!(
+            "more than {} bytes",
+            8_000_000 * fetch::UNPACKED_RATIO
+        )),
+        "{error:#}"
+    );
+    assert_eq!(f.calls("export"), 4);
     assert_eq!(scratch_trees(&cache), 0);
 }
 

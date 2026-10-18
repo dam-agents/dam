@@ -183,11 +183,11 @@ enum Reuse {
     Unproven,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what a fetch learned before it downloads anything: what the image says to run, the credential the registry accepted, and the size it is taken to unpack to.
+// UNIT_BOUNDARY_DESCRIPTION: what a fetch learned before it downloads anything: what the image says to run, the credential the registry accepted, and the size it is taken to unpack to, with the estimate it is fetched again at should it unpack past that size.
 struct Prepared {
     launch: ImageLaunch,
     auth: String,
-    unpacked: Option<u64>,
+    unpacked: Option<(u64, u64)>,
 }
 
 impl ImageCache {
@@ -333,14 +333,28 @@ impl ImageCache {
                 }
             }
         };
-        let need = prepared.unpacked.unwrap_or(0);
-        let room = self.make_room(need);
+        let (need, estimate) = prepared.unpacked.unwrap_or_default();
+        let mut room = self.make_room(need);
         let reserved = match self.admit(need) {
             Ok(reserved) => reserved,
             Err(e) => return Lookup::failed(e),
         };
-        let fetched = self.fetch(&pinned, &entry, &digest, &prepared, need, deadline);
+        let mut fetched = self.fetch(&pinned, &entry, &digest, &prepared, need, deadline);
         drop(reserved);
+        if estimate > need && fetched.as_ref().is_err_and(|e| e.is::<fetch::OverCap>()) {
+            tracing::warn!(
+                image = pinned.as_str(),
+                need,
+                estimate,
+                "image unpacked past its gzip trailers, fetching it again at the estimate"
+            );
+            let more = self.make_room(estimate);
+            room.freed.extend(more.freed);
+            room.used = more.used;
+            fetched = self.admit(estimate).and_then(|_reserved| {
+                self.fetch(&pinned, &entry, &digest, &prepared, estimate, deadline)
+            });
+        }
         let mut report = Fetched {
             ms: elapsed_ms(started),
             ok: fetched.is_ok(),
