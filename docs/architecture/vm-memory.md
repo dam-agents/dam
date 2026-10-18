@@ -1,6 +1,6 @@
 # VM memory
 
-Last verified: 2026-10-17
+Last verified: 2026-10-19
 
 An owner's machines share the memory of their [runner](vm-runner.md), and it is counted by what they use rather than by their sizes.
 That memory is the owner's whole pool for vm agents, which have no size of their own and stand outside the [budget](budgets.md)'s Ceiling.
@@ -10,6 +10,10 @@ The pool is the install's runner memory limit (`virtualization.runner.resources.
 A pool that rises is the limit at once.
 One that falls is the target of admission and reclaim at once, but the limit itself stops at what the running machines are counted at plus the reserve, in 512 MiB steps, and comes down as they stop, since a limit under them would have the kernel kill the runner with every machine.
 A machine's new size reaches it at its next start.
+
+**An unread pool is unknown, not the install's default.** A controller that has not read an owner's UserBudget has no pool for them, and the install's default is smaller than some owners' pools and larger than others, so it stands in for none: a claim built at it can never come down again, a memory limit built at it falls under the machines already running on it, and a machine sized from it is sized past the pool its owner meant.
+While a pool is unread the controller creates no runner object for that owner and changes no size, and retries; a pool read once is kept when a later read fails, so a moment of trouble changes nothing.
+No reclaim is decided from an unread pool either: it is the pool that says how much memory an owner's machines may hold.
 
 **Every machine may grow to half the pool.** A machine's size is half of what its runner hands out — the runner's memory limit less its reserve — whatever its Agent's spec names, so one agent can use most of the pool while a runaway guest meets its own OOM killer before it takes the runner, and every sibling, over the limit.
 Every machine gets the install's vCPUs (`virtualization.runner.machineCPUs`); they are threads of the runner, so an idle machine costs nothing.
@@ -50,6 +54,7 @@ A runner with no cgroup v2 to read — the host runner, a cgroup v1 node — nev
 
 **A running machine is counted at its use plus headroom.** That is its measured use plus a per-machine headroom (`virtualization.runner.headroomMiB`), never more than its size.
 A runner measures every machine it finds running as it starts, before it admits anything, so after a hand-off or a restart the machines it took over count at what they hold rather than as machines not yet measured.
+A running machine whose stored spec cannot be read — a corrupt file, or one a runner of another shape wrote — counts at that measurement plus headroom too, and at everything the runner hands out for machines when it was never measured: a spec nobody can read is not a machine holding nothing, and admitting the next machine beside it as if it held nothing is how the runner goes over its limit.
 **A machine warming up counts at least at the warm-up floor** (`virtualization.runner.bootMiB`), or its size when that is smaller: a machine not yet measured, every machine an action is bringing up, and a running machine for two minutes after its boot began, whatever it was measured at.
 The harness starts only once the guest answers, about a second after the boot, and grows to 2 to 3 GiB within the next minute, so a machine measured right after its boot holds little of what it will hold; the warm-up is a fixed time rather than one that ends at the guest's answer, since the answer is when the growth begins.
 The runner reports a machine warming up in its status, and the controller counts it the same way.
