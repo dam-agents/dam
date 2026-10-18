@@ -14,7 +14,6 @@ MISE_SYSTEM_DATA_DIR = "/usr/share/mise"
 # generation, so a deploy keeps what the agent installed outside HOME. The key
 # is compared whole: change it only for a change that breaks a root an older
 # image left, such as a new Debian release or a file in /etc an agent's write
-# would hide. A new key starts every machine on an empty root. The build adds
-# a hash of the image's user database (oci's build_default), and an image built
+# would hide. A new key starts every machine on an empty root. An image built
 # on this one appends its own segment (oci's build_thin).
 PLATFORM_ROOT_GENERATION = "default-1"

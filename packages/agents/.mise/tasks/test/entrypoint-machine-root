@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-//MISE description="Test that on a machine the entrypoint maps the agent to uid 0 in /etc/passwd once, and gives root a moved home's ssh config"
+//MISE description="Test that on a machine the entrypoint gives root a moved home's ssh config"
 //MISE sources=["base/rootfs/usr/local/bin/agent-entrypoint", ".mise/tasks/test/entrypoint-machine-root"]
 //MISE outputs=[]
 import assert from "node:assert/strict";
@@ -12,13 +12,11 @@ import { fileURLToPath } from "node:url";
 const entrypoint = fileURLToPath(new URL("../../../base/rootfs/usr/local/bin/agent-entrypoint", import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), "entrypoint-machine-root-"));
 const [home, bin] = ["home", "bin"].map((d) => join(dir, d));
-const passwd = join(dir, "passwd");
 const calls = join(dir, "calls");
 writeFileSync(
   join(dir, "agent-entrypoint"),
   readFileSync(entrypoint, "utf8")
     .replaceAll("uid=$(id -u)", "uid=0")
-    .replaceAll("/etc/passwd", passwd)
     .replaceAll("/run/sshd", join(dir, "sshd"))
     .replaceAll("/run/platform", join(dir, "run"))
     .replaceAll("/etc/platform/ca", join(dir, "ca"))
@@ -40,15 +38,7 @@ const boot = () => {
 };
 
 try {
-  // TEST_SCENARIO: SSH logins as agent land as root, the harness's user, and extrausers serves no uid 0 entry, so the boot adds agent as uid 0 to the image's user database, once: the machine's root keeps the file across boots.
   mkdirSync(home);
-  const image = "root:x:0:0:root:/home/agent:/bin/bash\n";
-  writeFileSync(passwd, image);
-  assert.deepEqual(boot(), []);
-  assert.equal(readFileSync(passwd, "utf8"), `${image}agent:x:0:0:Agent User:/home/agent:/bin/bash\n`);
-  boot();
-  assert.equal(readFileSync(passwd, "utf8"), `${image}agent:x:0:0:Agent User:/home/agent:/bin/bash\n`);
-
   // TEST_SCENARIO: ssh refuses a config another uid owns, so a config a moved agent's home keeps with the container's uid is given to root, the uid ssh runs as on a machine.
   mkdirSync(join(home, ".ssh"));
   writeFileSync(join(home, ".ssh/config"), "Host *\n");

@@ -11,15 +11,9 @@ uid=$(id -u)
 # non-root container cannot traverse (CoreDNS and traefik under k3s die on it).
 umask 022
 
-# On a machine, SSH logins as `agent` must land as root, the harness's user,
-# and extrausers serves no uid 0 entry, so the boot adds one to /etc/passwd.
-# The machine's root keeps that file, which hides no other image's copy: the
-# image's user database is part of its root generation key (oci's
-# build_default). uid 0's own entry names the agent's home in the image
-# itself, so OpenSSH keeps root's keys and known hosts there.
+# On a machine, SSH logins as `agent` land as root, the harness's user, through
+# the uid 0 `agent` entry platform-init lays over the image's /etc/passwd.
 if [ "$uid" = 0 ]; then
-	grep -q '^agent:' /etc/passwd || echo 'agent:x:0:0:Agent User:/home/agent:/bin/bash' >>/etc/passwd ||
-		echo "agent-entrypoint: WARNING: SSH logins as agent do not land as root" >&2
 	install -d -m 0755 /run/sshd
 	# ssh refuses a config another uid owns, and a moved agent's home keeps
 	# the container's uid.

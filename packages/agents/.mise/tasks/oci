@@ -278,12 +278,8 @@ build_default() (
   # Selkies, mise, the tools and Claude Code's adapter, which change only with
   # their pins, are layers of their own under the rest, which every
   # agent-runtime change rewrites: a deploy pulls that top layer alone.
-  # Its root generation key is the declared one and the apt base's user
-  # database, so no machine keeps an /etc/passwd written over another image's.
-  generation="$(printf '%s\n' "${flags[@]}" | sed -n 's|^--env=PLATFORM_ROOT_GENERATION=||p')+$(cat "$apt_base.users")"
   pack_image default "$apt_base" build --root-layer=build-selkies --root-layer=build-mise \
-    "--root-layer=$tools" --root-layer=build-claude-adapter "${flags[@]}" "--env=PATH=$path:$base_path" \
-    "--env=PLATFORM_ROOT_GENERATION=$generation"
+    "--root-layer=$tools" --root-layer=build-claude-adapter "${flags[@]}" "--env=PATH=$path:$base_path"
 )
 
 # The default image's mise project, the tool configs and lockfile it ships in
@@ -500,14 +496,12 @@ build_apt_base() {
     install -o 65532 -g 0 -m 644 "$r/usr/share/platform/ca-certificates.crt" "$r/run/platform/ca-certificates.crt"
     sed -i "s|^\(root:[^:]*:0:0:[^:]*:\)/root:|\1/home/agent:|" "$r/etc/passwd"
     grep -q "^root:[^:]*:0:0:[^:]*:/home/agent:" "$r/etc/passwd"
+
     : > "$r/etc/resolv.conf"
     find "$r" -xdev -newer "$r/.apt-start" -exec touch -h -d "@$epoch" {} +
     rm "$r/.apt-start"
     touch -h -d "@$epoch" "$r"
   ' _ "$r" "$packages" "$epoch" "$(echo "${key%%-*}" | md5sum | cut -c1-32)"
-  # The default image's root generation key names this user database, which
-  # the boot and the agent's useradd write in a machine's kept root.
-  cat "$r/etc/passwd" "$r/etc/group" | sha256sum | cut -c1-12 >"$apt_base.users"
   layer="$work/apt-layer.tar"
   ${sudo[@]+"${sudo[@]}"} tar --sort=name --numeric-owner --format=gnu -C "$r" -cf "$layer" $(ls -A "$r")
   ${sudo[@]+"${sudo[@]}"} rm -rf "$r"
