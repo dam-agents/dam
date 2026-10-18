@@ -510,8 +510,12 @@ fn write_launch(record: &VmRecord) -> anyhow::Result<()> {
             record.name
         );
     };
+    // UNIT_BOUNDARY_DESCRIPTION: the strip goes once no runner logs this line, at any start of any machine: a record's command is rewritten only when the machine's image changes (update's relaunch), so a machine that kept one image since an older runner recorded it still holds that form.
     let command = match record.cmd.split_first() {
-        Some((first, rest)) if first == crate::guest::INIT_PATH => rest.to_vec(),
+        Some((first, rest)) if first == crate::guest::INIT_PATH => {
+            tracing::info!(machine = %record.name, "the machine's record still runs platform-init in front of the image's command, as an older runner recorded it; the launch record drops it");
+            rest.to_vec()
+        }
         _ => record.cmd.clone(),
     };
     let launch = crate::guest::Launch {
