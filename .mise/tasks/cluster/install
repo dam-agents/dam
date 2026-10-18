@@ -1003,7 +1003,10 @@ if [ -n "${STAGE_VM_PID:-}" ]; then
 else
   stage_vm_images
 fi
-[ ${#VM_IMAGES[@]} -eq 0 ] || e2e_mark "vm images staged"
+# This mark is when this install stopped waiting, not when the staging ended:
+# the staging started at step 1d, beside the chart install, and the two rarely
+# end together. The staging's own span is the "vm images staging" pair.
+[ ${#VM_IMAGES[@]} -eq 0 ] || e2e_mark "vm images waited"
 [ -z "$HOST_RUNNER" ] || SKIP_IMAGE_BUILD="${RUNNER_IMAGE_BUILT:-}" mise run cluster:host-runner
 
 # HyperDX's MongoDB driver can wedge if it starts before Mongo/ztunnel are ready (its
