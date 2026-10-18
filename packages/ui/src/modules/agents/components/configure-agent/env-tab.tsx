@@ -131,10 +131,11 @@ export function EnvTab({
 
       <ListSection
         isEmpty={envVars.length === 0}
-        empty="No variables yet. Add one for configuration the agent reads from its environment."
+        empty="No variables yet. Create one for configuration the agent reads from its environment."
         onNew={() => setEditing("new")}
-        newLabel="Add variable"
+        newLabel="Create variable"
         newTestId="env-var-new"
+        newDisabled={saving}
         addRow={
           <AddRow
             onClick={() => setEditing("new")}
@@ -144,7 +145,7 @@ export function EnvTab({
           >
             <Add size={14} className="shrink-0" />
             <span className="font-mono font-semibold text-foreground">
-              New variable
+              Create variable
             </span>
             <span className="flex-1 truncate text-muted-foreground">
               Name and value the agent reads from its environment.
@@ -305,7 +306,7 @@ function EnvVarModal({
           onCancel={() => void close()}
           cancelDisabled={pending}
           pending={pending}
-          label={initial ? "Save" : "Add variable"}
+          label={initial ? "Save" : "Create variable"}
           pendingLabel="Saving…"
           disabled={!canSave}
           testId="env-var-save"

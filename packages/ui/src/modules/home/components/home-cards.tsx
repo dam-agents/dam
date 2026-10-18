@@ -165,7 +165,7 @@ export function TipCard() {
   return (
     <Card
       title="Tip"
-      pictogram={<GrowthMindset size={48} aria-hidden />}
+      pictogram={<GrowthMindset aria-hidden />}
       className="bg-callout"
     >
       <p className="flex-1 text-base leading-relaxed text-foreground">
@@ -208,7 +208,7 @@ export function ChannelsCard() {
   return (
     <Card
       title="Where conversations happen"
-      pictogram={<MobileChat size={48} aria-hidden />}
+      pictogram={<MobileChat aria-hidden />}
       className="@xl:col-span-2"
     >
       <div className="mb-4 flex h-3 w-full gap-px overflow-hidden rounded-full bg-muted">
@@ -266,7 +266,7 @@ export function AgentStatesCard() {
   const states = agentStates(agents, workingAgentIds);
   const vm = agents.filter((a) => a.vm).length;
   return (
-    <Card title="Agents" pictogram={<Robot size={48} aria-hidden />}>
+    <Card title="Agents" pictogram={<Robot aria-hidden />}>
       <ul className="flex flex-col gap-2 text-sm">
         {states.map((s) => (
           <li key={s.key} className="flex items-center gap-2">
@@ -397,7 +397,7 @@ export function SchedulesCard() {
   return (
     <Card
       title="Schedules"
-      pictogram={<CalendarEvent size={48} aria-hidden />}
+      pictogram={<CalendarEvent aria-hidden />}
       onOpen={() => navigateToSettings("schedules")}
     >
       <div className="flex gap-8">
@@ -440,7 +440,7 @@ export function ConnectionsCard() {
   return (
     <Card
       title="Connections"
-      pictogram={<ConnectApplications size={48} aria-hidden />}
+      pictogram={<ConnectApplications aria-hidden />}
       onOpen={() => navigateToSettings("connections")}
     >
       <div className="flex gap-8">
@@ -462,7 +462,7 @@ export function ArtifactsCard() {
   return (
     <Card
       title="Artifacts"
-      pictogram={<Cardboard size={48} aria-hidden />}
+      pictogram={<Cardboard aria-hidden />}
       onOpen={() => openSidePanel("artifacts")}
     >
       <div className="flex gap-8">
@@ -496,7 +496,7 @@ export function ApiKeysCard() {
   return (
     <Card
       title="API keys"
-      pictogram={<KeystoresExternal size={48} aria-hidden />}
+      pictogram={<KeystoresExternal aria-hidden />}
       onOpen={() => navigateToSettings("api-keys")}
     >
       <div className="flex gap-8">

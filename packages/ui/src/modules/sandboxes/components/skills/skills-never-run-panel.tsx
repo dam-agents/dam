@@ -94,7 +94,9 @@ export function SkillsNeverRunPanel({
           onRemove={onRemove}
           onManageConnections={onManageConnections}
         />
-        <Card className="mt-3 overflow-hidden">{addSourceRow}</Card>
+        {sourcesLoaded && (
+          <Card className="mt-3 overflow-hidden">{addSourceRow}</Card>
+        )}
         <p className="mt-2.5 text-sm text-muted-foreground">
           The source list is known before first boot; which of its skills are
           installed isn&rsquo;t.

@@ -73,9 +73,7 @@ export function SandboxHomeView() {
         agent={agent}
         title={sectionEntry?.title ?? ""}
         description={sectionEntry?.description}
-        pictogram={
-          SectionPictogram && <SectionPictogram size={64} aria-hidden />
-        }
+        pictogram={SectionPictogram && <SectionPictogram aria-hidden />}
         actions={actions}
       />
     );

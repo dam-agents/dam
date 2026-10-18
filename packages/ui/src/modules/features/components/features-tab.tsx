@@ -140,7 +140,7 @@ export function FeaturesTab() {
   return (
     <div>
       <PageHeader
-        pictogram={<ErlenmeyerFlask size={64} aria-hidden />}
+        pictogram={<ErlenmeyerFlask aria-hidden />}
         title="Experimental features"
         description="Try features that are still in progress. Each switch changes only your own account."
       />

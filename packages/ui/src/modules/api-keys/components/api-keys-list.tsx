@@ -35,7 +35,7 @@ export function ApiKeysList() {
   return (
     <div>
       <PageHeader
-        pictogram={<KeystoresExternal size={64} aria-hidden />}
+        pictogram={<KeystoresExternal aria-hidden />}
         title="API keys"
         description="Let the CLI and scripts sign in without a browser. A key is shown only once, when you create it."
       />
@@ -46,12 +46,14 @@ export function ApiKeysList() {
         isEmpty={(keys ?? []).length === 0}
         empty="No API keys yet. Create one to authenticate the CLI without a browser."
         onNew={() => setCreateOpen(true)}
-        newLabel="New API key"
+        newLabel="Create API key"
         addRow={
           <AddRow onClick={() => setCreateOpen(true)}>
             <Add size={20} className="shrink-0" />
             <div className="min-w-0 flex-1">
-              <p className="text-md font-medium text-foreground">New API key</p>
+              <p className="text-md font-medium text-foreground">
+                Create API key
+              </p>
               <p className="mt-0.5 text-sm text-muted-foreground">
                 Let the CLI and scripts sign in without a browser.
               </p>

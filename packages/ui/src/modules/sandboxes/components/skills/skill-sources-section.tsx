@@ -67,21 +67,7 @@ export function SkillSourcesSection({
           </Button>
         )
       }
-      addRow={
-        onAddSource && (
-          <AddRow onClick={onAddSource}>
-            <Add size={16} className="shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="text-md font-medium text-foreground">
-                Add a GitHub source
-              </p>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                Browse a repository's skills and install the ones you want.
-              </p>
-            </div>
-          </AddRow>
-        )
-      }
+      addRow={onAddSource && <AddSourceRow onClick={onAddSource} />}
       isEmpty={sourcesLoaded && sources.length === 0}
       empty={
         surface.hiddenSources.length > 0
@@ -126,5 +112,19 @@ export function SkillSourcesSection({
         ))
       )}
     </ListSection>
+  );
+}
+
+export function AddSourceRow({ onClick }: { onClick: () => void }) {
+  return (
+    <AddRow onClick={onClick}>
+      <Add size={16} className="shrink-0" />
+      <div className="min-w-0 flex-1">
+        <p className="text-md font-medium text-foreground">Add source</p>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          Browse a repository's skills and install the ones you want.
+        </p>
+      </div>
+    </AddRow>
   );
 }

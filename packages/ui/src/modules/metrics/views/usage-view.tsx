@@ -55,7 +55,7 @@ export function UsageView() {
     return (
       <div>
         <PageHeader
-          pictogram={<FinanceAndSupplyChain size={64} aria-hidden />}
+          pictogram={<FinanceAndSupplyChain aria-hidden />}
           title="Usage"
           description={PAGE_DESCRIPTION}
         />
@@ -70,7 +70,7 @@ export function UsageView() {
   return (
     <div>
       <PageHeader
-        pictogram={<FinanceAndSupplyChain size={64} aria-hidden />}
+        pictogram={<FinanceAndSupplyChain aria-hidden />}
         title="Usage"
         description={PAGE_DESCRIPTION}
         actions={

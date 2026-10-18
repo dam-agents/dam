@@ -17,7 +17,7 @@ export function UsageAnalyticsView() {
   return (
     <div>
       <PageHeader
-        pictogram={<Analytics_02 size={64} aria-hidden />}
+        pictogram={<Analytics_02 aria-hidden />}
         title="Analytics"
         description={`See how people are adopting ${brandName}: who comes back each week, how new users get through their first three weeks, which features they pick up, and what the live agents look like.`}
       />

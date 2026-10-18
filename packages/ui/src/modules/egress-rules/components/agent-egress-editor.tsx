@@ -115,7 +115,7 @@ export function AgentEgressEditor({
           data-testid="egress-rule-new"
         >
           <Add size={16} />
-          New rule
+          Create rule
         </Button>
         <Button
           variant="outline"
@@ -131,9 +131,6 @@ export function AgentEgressEditor({
         error={isError && "Couldn't load the rules."}
         isEmpty={rules.length === 0}
         empty="No rules yet. Every outbound request will need your approval."
-        onNew={() => setAdding(true)}
-        newLabel="Add rule"
-        newTestId="egress-rule-new"
       >
         {(rules.length > 10 || query !== "") && (
           <div className="px-4 py-2.5">
@@ -435,8 +432,8 @@ function NewRuleModal({
         <DialogActions
           onCancel={() => void close()}
           cancelDisabled={createRule.isPending}
-          label="Add rule"
-          pendingLabel="Adding…"
+          label="Create rule"
+          pendingLabel="Creating…"
           pending={createRule.isPending}
           disabled={!complete}
           testId="egress-rule-add"

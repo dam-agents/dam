@@ -141,7 +141,9 @@ export function SkillsStoppedPanel({
           onRemove={onRemove}
           onManageConnections={onManageConnections}
         />
-        <Card className="mt-3 overflow-hidden">{addSourceRow}</Card>
+        {sourcesLoaded && (
+          <Card className="mt-3 overflow-hidden">{addSourceRow}</Card>
+        )}
         <p className="mt-2.5 text-sm text-muted-foreground">
           Sources stay editable while stopped. Reading what a private one
           contains needs the agent running.

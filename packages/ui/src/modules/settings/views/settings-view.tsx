@@ -135,7 +135,7 @@ export function SettingsView() {
         {activeTab === "appearance" && (
           <div>
             <PageHeader
-              pictogram={<ColorContrast size={64} aria-hidden />}
+              pictogram={<ColorContrast aria-hidden />}
               title="Appearance"
               description="Choose how the interface looks."
             />
@@ -182,7 +182,7 @@ export function SettingsView() {
         {activeTab === "account" && (
           <div>
             <PageHeader
-              pictogram={<UserProfile size={64} aria-hidden />}
+              pictogram={<UserProfile aria-hidden />}
               title="Account"
               description="See who you are signed in as, and sign out."
             />
@@ -213,7 +213,7 @@ export function SettingsView() {
           <div>
             <div>
               <PageHeader
-                pictogram={<FoundationModel size={64} aria-hidden />}
+                pictogram={<FoundationModel aria-hidden />}
                 title="Providers"
                 description="Connect an LLM provider to give agents access to its models."
               />

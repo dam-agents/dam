@@ -40,7 +40,7 @@ test("path-scoped HTTPS rules are enforced and approvals stay narrow", async ({
     await dialog.getByLabel("Method").selectOption("GET");
     await dialog.getByLabel("Path").fill("/status/*");
     await dialog.getByLabel("Verdict").selectOption("allow");
-    await dialog.getByRole("button", { name: "Add rule" }).click();
+    await dialog.getByRole("button", { name: "Create rule" }).click();
     await page.getByRole("button", { name: "Add and restart" }).click();
     await expect
       .poll(

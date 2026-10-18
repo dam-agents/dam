@@ -31,7 +31,7 @@ export function ConnectionsView() {
   return (
     <div>
       <PageHeader
-        pictogram={<ConnectApplications size={64} aria-hidden />}
+        pictogram={<ConnectApplications aria-hidden />}
         title="Connections"
         description="Give your agents access to services, without handing them the credentials."
       />
@@ -42,7 +42,7 @@ export function ConnectionsView() {
         isEmpty={groups.length === 0 && satellites.length === 0}
         empty="No connections yet. Add one to let your agents reach a service."
         onNew={() => setCatalogOpen(true)}
-        newLabel="New connection"
+        newLabel="Add connection"
         newTestId="open-connection-catalog"
         addRow={
           <AddRow
@@ -52,7 +52,7 @@ export function ConnectionsView() {
             <Add size={16} className="shrink-0" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-md font-medium text-foreground">
-                New connection
+                Add connection
               </p>
               <p className="mt-0.5 truncate text-xs text-muted-foreground">
                 Add a service your agents can reach.

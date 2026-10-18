@@ -46,19 +46,15 @@ export function SlackChannelCard({ agent }: { agent: AgentView | undefined }) {
         onNew={() => setModalTarget("new")}
         newDisabled={!agent}
         newTestId="slack-connect"
-        newLabel="New channel"
+        newLabel="Add Slack channel"
         isEmpty={!agent || slackChannels.length === 0}
         empty="No channels connected yet. Mentions of the bot in a connected channel drive this agent."
         addRow={
-          <AddRow
-            onClick={() => setModalTarget("new")}
-            disabled={!agent}
-            testId="slack-connect"
-          >
+          <AddRow onClick={() => setModalTarget("new")} testId="slack-connect">
             <Add size={16} className="shrink-0" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-md font-medium text-foreground">
-                New Slack channel
+                Add Slack channel
               </p>
               <p className="truncate text-sm text-muted-foreground">
                 Mentions of the bot in a connected channel drive this agent.

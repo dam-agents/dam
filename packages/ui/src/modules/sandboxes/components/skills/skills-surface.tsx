@@ -3,7 +3,6 @@ import type { DragEvent } from "react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { AddRow } from "@/components/ui/list-section";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
@@ -20,7 +19,7 @@ import { AgentDisabledNotice } from "./agent-disabled-notice.js";
 import { LocalSkillsGroup } from "./local-skills-group.js";
 import { PlatformSkillsGroup } from "./platform-skills-group.js";
 import { SkillDriftBanner } from "./skill-drift-banner.js";
-import { SkillSourcesSection } from "./skill-sources-section.js";
+import { AddSourceRow, SkillSourcesSection } from "./skill-sources-section.js";
 import { type SkillsModal, SkillsModals } from "./skills-modals.js";
 import { SkillsNeverRunPanel } from "./skills-never-run-panel.js";
 import { SkillsSearchHeader } from "./skills-search-header.js";
@@ -84,18 +83,7 @@ export function SkillsSurface({
       <Add size={16} /> Add source
     </Button>
   );
-  const addSourceRow = (
-    <AddRow onClick={openAddSource}>
-      <div className="min-w-0 flex-1">
-        <p className="text-md font-medium text-foreground">
-          Add a GitHub source
-        </p>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          Browse a repository&rsquo;s skills and install the ones you want.
-        </p>
-      </div>
-    </AddRow>
-  );
+  const addSourceRow = <AddSourceRow onClick={openAddSource} />;
 
   const manageConnections = agentId
     ? () => navigateToSandboxHome(agentId, "connections")

@@ -62,9 +62,9 @@ export function SchedulesPanel({
         loading={schedulesQuery.isPending}
         error={schedulesQuery.isError && "Couldn't load schedules."}
         isEmpty={upcoming.length === 0}
-        empty="No schedules yet. Add one to run a task on a timetable or once."
+        empty="No schedules yet. Create one to run a task on a timetable or once."
         onNew={() => setForm({ mode: "create" })}
-        newLabel="Add schedule"
+        newLabel="Create schedule"
         newTestId="schedule-new"
         addRow={
           <AddRow
@@ -74,7 +74,7 @@ export function SchedulesPanel({
             <Add size={16} className="shrink-0" />
             <div className="min-w-0 flex-1">
               <p className="text-md font-medium text-foreground">
-                New schedule
+                Create schedule
               </p>
               <p className="mt-0.5 text-sm text-muted-foreground">
                 Run a task on a timetable, or once.

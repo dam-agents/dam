@@ -31,7 +31,7 @@ export function AboutTab() {
   return (
     <div>
       <PageHeader
-        pictogram={<MachineLearning_03 size={64} aria-hidden />}
+        pictogram={<MachineLearning_03 aria-hidden />}
         title={`About ${name}`}
         description="Find the documentation, source code and terms for this installation."
       />

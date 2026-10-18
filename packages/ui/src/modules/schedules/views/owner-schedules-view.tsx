@@ -27,7 +27,7 @@ export function OwnerSchedulesView() {
   return (
     <div>
       <PageHeader
-        pictogram={<CalendarEvent size={64} aria-hidden />}
+        pictogram={<CalendarEvent aria-hidden />}
         title="Schedules"
         description="See everything that runs on its own across your agents. Open one to change, pause or delete it."
       />
