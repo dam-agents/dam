@@ -122,9 +122,12 @@ async function expectFullHitArea(button: Locator): Promise<void> {
       [box.left + 3, box.top + 3],
       [box.right - 3, box.bottom - 3],
     ] as const;
-    return points.filter(
-      ([x, y]) => !el.contains(document.elementFromPoint(x, y)),
-    );
+    return points.flatMap(([x, y]) => {
+      const hit = document.elementFromPoint(x, y);
+      if (el.contains(hit)) return [];
+      const covering = hit instanceof HTMLElement ? hit.outerHTML : String(hit);
+      return [`${Math.round(x)},${Math.round(y)}: ${covering.slice(0, 200)}`];
+    });
   });
   expect(misses, "points of the button another element covers").toEqual([]);
 }
