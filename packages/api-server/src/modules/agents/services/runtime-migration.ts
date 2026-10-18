@@ -72,7 +72,6 @@ async function decideAndWrite<E>(
 export function executeRuntimeMigration(
   deps: WriteDeps & {
     migration: RuntimeMigrationContext;
-    defaultStorageSize: string;
   },
 ) {
   return async (id: string): Promise<Outcome<MigrateRuntimeError>> => {
@@ -84,7 +83,7 @@ export function executeRuntimeMigration(
         if (refusal) return { error: refusal };
         const { target, snapshot } = runtimeMigrationRequest(
           agent.spec,
-          deps.defaultStorageSize,
+          deps.migration.defaultStorageSize,
           deps.migration.defaultMounts,
         );
         const annotations: Record<string, string | null> = {

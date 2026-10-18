@@ -304,7 +304,8 @@ Past 90% it creates no machine and takes no seed, and a machine it starts boots 
 It reports each refusal as `MachineStorageFull` with how full the storage is and how to free it, and never stops a running machine, which would free nothing and lose what the guest holds in memory.
 An out-of-space error the runner meets anywhere on the claim is reported the same way, and so is a boot that fails while the claim is that full, since a guest whose writes fail fails its boot with nothing typed in the error.
 A storage refusal does not park the Agent the way a memory refusal does: parking would halt a machine, and nothing an idle agent holds in memory frees disk.
-The api-server says the same before an Agent is written: it reads the owner's runner through its read-only usage capability, and refuses a new vm agent — a create, a kit applied, a spawn, a move onto the vm backend — once the claim is 90% used, with the figures and the same three ways out.
+The api-server says the same before an Agent is written: it reads the owner's runner through its read-only usage capability, and refuses a new vm agent — a create, a kit applied, a spawn — once the claim is 90% used, with the figures and the same three ways out.
+A move onto the vm backend meets a stricter read of the same figures: it is refused up front unless the claim would stay under that 90% with twice the home's size added ([runtime migration](vm-runtime-migration.md)).
 Usage it cannot read refuses nothing, since the runner refuses the machine anyway.
 The same read names, beside each machine's disk, what the seeds of migrations not yet ended take of the claim, so a user whose storage is short is shown what fills it ([budgets](budgets.md)).
 Past 90%, and again past 95% when writes start failing, the owner also gets a Slack direct message with the same figures and ways out ([resource alerts](budgets.md#resource-alerts)).

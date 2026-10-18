@@ -205,6 +205,8 @@ export const agentsRouter = t.router({
         case "VirtualizationDisabled":
         case "PersistsUnmovablePaths":
         case "HomeNotPersisted":
+        case "VmStorageInsufficient":
+        case "VmMemoryInsufficient":
           throw new TRPCError({ code: "PRECONDITION_FAILED", message });
       }
     }),

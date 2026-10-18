@@ -28,6 +28,7 @@ import {
   movedStorageSize,
   runtimeMigrationOf,
   type AgentMount,
+  type VmPoolCapacity,
 } from "../../modules/agents/domain/runtime-migration.js";
 import {
   assembleAgent,
@@ -126,6 +127,7 @@ function harness(opts?: {
   agent?: InfraAgent | null;
   virtualizationEnabled?: boolean;
   defaultMounts?: AgentMount[];
+  capacity?: VmPoolCapacity;
 }) {
   const agent = opts?.agent === undefined ? infraAgent() : opts.agent;
   const deps = writes(agent);
@@ -134,8 +136,9 @@ function harness(opts?: {
     migration: {
       virtualizationEnabled: opts?.virtualizationEnabled ?? true,
       defaultMounts: opts?.defaultMounts ?? CHART_MOUNTS,
+      defaultStorageSize: "10Gi",
+      capacity: opts?.capacity ?? null,
     },
-    defaultStorageSize: "10Gi",
     ...deps,
   });
   return { run, writeMigration: deps.writeMigration };
@@ -328,6 +331,57 @@ describe("runtime migration request", () => {
     expect(await h.run("agent-1")).toEqual({
       ok: false,
       error: { type: "StorageMigrationInProgress" },
+    });
+    expect(h.writeMigration).not.toHaveBeenCalled();
+  });
+
+  // TEST_SCENARIO: the move keeps the seed and then as much again on the machine's disk, so the pool is asked for twice the home's volume, up to the level the runner refuses a seed at. A pool that cannot hold it refuses the request before anything is written, rather than stopping the container and filling the storage the owner's other VM agents share.
+  it("refuses a move the owner's pool cannot hold twice over", async () => {
+    const h = harness({
+      capacity: {
+        storage: { usedBytes: 0, usableBytes: 20 * 1024 ** 3 },
+        memory: { committedMiB: 0, limitMiB: 12 * 1024 },
+      },
+    });
+    expect(await h.run("agent-1")).toEqual({
+      ok: false,
+      error: {
+        type: "VmStorageInsufficient",
+        neededBytes: 20 * 1024 ** 3,
+        usedBytes: 0,
+        usableBytes: 20 * 1024 ** 3,
+      },
+    });
+    expect(h.writeMigration).not.toHaveBeenCalled();
+  });
+
+  // TEST_SCENARIO: a home that fits twice over leaves the request alone, and so does a pool that could not be read: an unmeasured pool refuses nothing, since the runner refuses what it has no room for on its own.
+  it("allows a move the pool holds, and refuses nothing unmeasured", async () => {
+    for (const capacity of [
+      {
+        storage: { usedBytes: 0, usableBytes: 40 * 1024 ** 3 },
+        memory: { committedMiB: 0, limitMiB: 12 * 1024 },
+      },
+      undefined,
+    ])
+      expect((await harness({ capacity }).run("agent-1")).ok).toBe(true);
+  });
+
+  // TEST_SCENARIO: a machine may grow to half the pool and is admitted against what the pool has committed, so a pool past half committed has no room for the machine the move would boot. The request refuses it there, before the copy, rather than at the boot after the container stopped.
+  it("refuses a move the pool has no memory for", async () => {
+    const h = harness({
+      capacity: {
+        storage: { usedBytes: 0, usableBytes: 40 * 1024 ** 3 },
+        memory: { committedMiB: 7 * 1024, limitMiB: 12 * 1024 },
+      },
+    });
+    expect(await h.run("agent-1")).toEqual({
+      ok: false,
+      error: {
+        type: "VmMemoryInsufficient",
+        committedMiB: 7 * 1024,
+        limitMiB: 12 * 1024,
+      },
     });
     expect(h.writeMigration).not.toHaveBeenCalled();
   });
@@ -604,7 +658,11 @@ function viewOf(
     runtimeFeaturesOf(null),
     [],
     [],
-    { virtualizationEnabled, defaultMounts: CHART_MOUNTS },
+    {
+      virtualizationEnabled,
+      defaultMounts: CHART_MOUNTS,
+      defaultStorageSize: "10Gi",
+    },
   );
   return toAgentView(agent);
 }
