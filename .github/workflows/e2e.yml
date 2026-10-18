@@ -326,6 +326,9 @@ jobs:
         run: printf '%s\tjob started\n' "$(date +%s)" >> "$E2E_TIMINGS"
       - *e2e-checkout
       - *e2e-provision
+      - name: Sample the host's CPU and memory in the background
+        run: |
+          nohup bash -c 'prev=($(head -1 /proc/stat)); while :; do sleep 5; cur=($(head -1 /proc/stat)); t=0; for i in 1 2 3 4 5 6 7 8; do t=$((t + cur[i] - prev[i])); done; idle=$((cur[4] + cur[5] - prev[4] - prev[5])); echo "$(date +%s) busy=$((100 * (t - idle) / t)) $(awk "/MemTotal/{t=\$2}/MemAvailable/{a=\$2}END{print \"used_mib=\" int((t-a)/1024), \"avail_mib=\" int(a/1024)}" /proc/meminfo) load=$(cut -d" " -f1 /proc/loadavg)"; prev=("${cur[@]}"); done' > /tmp/host-samples.log 2>&1 &
       - name: Open /dev/kvm to the runner user
         run: |
           set -euo pipefail
@@ -394,6 +397,9 @@ jobs:
       - *e2e-playwright-save
       - *e2e-image-log
       - *e2e-provision-log
+      - name: Host samples
+        if: ${{ !cancelled() }}
+        run: cat /tmp/host-samples.log
       # smolvm's VMM seccomp filter reports to the kernel, never to a pod log: a
       # call outside its allowlist is an audit record (type=1326, sig=0 in
       # audit, sig=31 when enforce killed the VMM). With no auditd, as on this
