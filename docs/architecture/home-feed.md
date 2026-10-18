@@ -1,10 +1,11 @@
 # Home feed
 
-Last verified: 2026-10-16
+Last verified: 2026-10-18
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
-Two surfaces read it: the sidebar lists the newest Sessions of every Agent under that Agent, and the **approvals bell** lists what waits on the user's decision.
+Three surfaces read it: Home's dashboard counts recent Sessions by channel, by day and by Agent; the sidebar lists Sessions; and the **approvals bell** lists what waits on the user's decision.
+Those counts cover only the record's rows for the owner, at most the feed's row limit, so they describe recent work, not all time.
 The bell sits in the icon bar on the right edge of every page and opens the Approvals side panel, a panel like the Artifacts panel beside it, that takes its room from the page.
 
 ## What Home reads
@@ -37,18 +38,24 @@ It shows its owner the rows filed for that Agent as a **provisional** list, and 
 The UI asks the Agent for that list once the Agent shows as starting, not first at Ready: the agent's tRPC relay holds the ask while the wake runs, and an ask it refuses, or a hold that fails, is asked again when the Agent turns Ready.
 Nothing acts on a provisional row as proof the session exists: opening one asks the Agent, which still decides.
 Rename and Delete on a provisional row wake the Agent and run once it answers, so the Agent still decides; a Delete asks its confirmation before the wake, and an Agent that stops before it answers changes nothing.
-The sidebar shows the record's rows the same way under every Agent that is not open, three at most, and asks the Agent for its own list only when the user opens the Agent (its chat or its configuration page), asks for more, or has put one of its Sessions in a manual order while it is awake.
-It offers more only when the record may hold more: a feed shorter than its row limit lists every row filed for the owner.
-Once the list is expanded, each More asks the Agent for one more page of its list, and the list stops offering more when a page brings no new Session or the Agent's cursor does not move.
+The sidebar has two columns: a strip of Agent avatars, and a list of Sessions beside it.
+Each avatar carries a badge that counts its unread Sessions and its waiting approvals; the strip's Home tile carries the total.
+With Home selected, the list shows the record's rows for every Agent: first the unread ones under **Needs you**, with one row for the waiting approvals, then the rest by latest activity.
+With an Agent selected, the list is that Agent's own list, asked of the Agent, and the record's rows stand in for it only while the Agent cannot answer.
+The Agent's list loads its next page when the user scrolls near its end, until a page brings no new Session or the Agent's cursor does not move.
 
-The sidebar lists Agents, and the Sessions of each Agent, in one **manual order** per list, which the user sets by drag and drop or with Alt+Up and Alt+Down.
-A Session moves only within its own Agent's list.
+A Session can be **pinned**: both lists show pinned Sessions in their own section above the rest, in the list's own order.
+In the Home list an unread pinned Session stays under Needs you until it is read.
+Pins are kept in the browser, so they do not follow the user to another device.
+
+The avatar strip lists Agents in one **manual order**, which the user sets by drag and drop or with Alt+Up and Alt+Down.
+An Agent's own list keeps one manual Session order the same way; the Home list sorts by activity and does not apply it.
+A Session moves only within its own Agent's list, below that list's pinned Sessions.
+An Agent with a manual Session order asks for each of its first three Sessions its own list did not return.
 An item the order does not name yet, a new Agent or a new Session, goes to the bottom of its list, oldest first, and activity never moves anything.
 A move stores the whole list as the user sees it, so the rows the user did not touch keep their places too.
 The api-server keeps the order per user, so it follows the user to every browser, and drops an Agent's entries when the Agent is deleted.
-An Agent with a manual Session order asks for each of its first three Sessions its own list did not return.
 The order is only a list of ids: it never decides that an Agent or a Session exists, and an id that names nothing the Agent knows shows nothing.
-Until the user asks for more, an Agent's list orders only the Sessions it has loaded, the newest page of its own list or the record's rows, so an old Session the order does not name may show only after More.
 
 That boundary is what makes the record safe to rebuild or discard.
 Dropping it costs a user their feed history and nothing else; the next capture refills it from the pods.
