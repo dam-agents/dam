@@ -34,7 +34,7 @@ sort -n -s -k1,1 "$marks" | jq -rRs '
     "| install start → platform images loaded | \(span("install started"; "platform images loaded")) |",
     "| platform images loaded → deployments ready | \(span("platform images loaded"; "deployments ready")) |",
     "| stage-vm (its own run) | \(span("vm images staging started"; "vm images staging done")) |",
-    "| deployments ready → vm images staged (on the critical path) | \(span("deployments ready"; "vm images staged")) |",
+    "| deployments ready → the staging wait ended (the staging overhang) | \(span("deployments ready"; "vm images waited")) |",
     "| install start → gate passed | \(span("install started"; "gate passed")) |",
     "| suite | \(span("suite started"; "suite finished")) |",
     "| **job start → suite finished** | **\(span("job started"; "suite finished"))** |",
