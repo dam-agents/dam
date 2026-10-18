@@ -1,15 +1,15 @@
 import { WarningAltFilled } from "@carbon/icons-react";
 import {
+  Briefcase,
   CalendarEvent,
   type CarbonPictogramType,
   ConnectApplications,
-  Education,
-  FilterVariable,
+  FinanceAndSupplyChain,
   FoundationModel,
-  Messaging_01,
+  Keystores,
   Robot,
   SecureGateway,
-  Speedometer,
+  Slack,
   UserInterface,
 } from "@carbon/pictograms-react";
 import type { ReactNode } from "react";
@@ -57,14 +57,14 @@ export const SECTIONS: SectionEntry[] = [
   },
   {
     section: "environment",
-    pictogram: FilterVariable,
+    pictogram: Keystores,
     title: "Environment vars",
     description:
       "Variables are sent to the agent as plain text, so never add secrets here. Use them for non-sensitive configuration only. Store secrets in Connections.",
   },
   {
     section: "channels",
-    pictogram: Messaging_01,
+    pictogram: Slack,
     title: "Channels",
     description:
       "Channels let people message this agent from Slack or Telegram.",
@@ -78,7 +78,7 @@ export const SECTIONS: SectionEntry[] = [
   },
   {
     section: "skills",
-    pictogram: Education,
+    pictogram: Briefcase,
     title: "Skills",
     description:
       "Skills are reusable instructions your agent loads when a task needs them.",
@@ -91,7 +91,7 @@ export const SECTIONS: SectionEntry[] = [
   },
   {
     section: "usage",
-    pictogram: Speedometer,
+    pictogram: FinanceAndSupplyChain,
     title: "Usage",
     description:
       "What this agent spends on models, including the sub-agents it started, and its spend limit.",

@@ -11,9 +11,9 @@ import { cn } from "@/lib/utils";
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The one layout for every "manage a list of
  * things" block: a label above a rounded card whose rows are split by
- * dividers. Adding a row is itself a row: addRow renders as the last row of
- * the card, shaped like the page's own rows, and an empty list shows its empty
- * text with the same action button inside the card instead. Adding and editing
+ * dividers. Adding a row is itself a row: addRow sits below the card, in the
+ * same shape as the page's own rows, and an empty list shows its empty text
+ * with the same action button inside the card instead. Adding and editing
  * happen in a modal the caller opens from onNew.
  */
 export function ListSection({
@@ -77,7 +77,6 @@ export function ListSection({
           {Children.map(children, (child) => (
             <Card className="overflow-hidden">{child}</Card>
           ))}
-          {addRow && <Card className="overflow-hidden">{addRow}</Card>}
           {footer}
         </div>
       ) : (
@@ -104,13 +103,13 @@ export function ListSection({
               {empty}
             </EmptyState>
           ) : (
-            <div className="divide-y divide-border">
-              {children}
-              {addRow}
-            </div>
+            <div className="divide-y divide-border">{children}</div>
           )}
           {footer}
         </Card>
+      )}
+      {addRow && !loading && !isEmpty && (
+        <Card className="mt-3 overflow-hidden">{addRow}</Card>
       )}
     </section>
   );

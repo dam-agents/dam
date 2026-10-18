@@ -1,7 +1,7 @@
 import { NextOutline, WarningAltFilled } from "@carbon/icons-react";
 import {
-  Calendar,
-  Conversation,
+  CalendarEvent,
+  ConnectApplications,
   DataStorage,
   GrowthMindset,
   KeystoresExternal,
@@ -209,7 +209,7 @@ export function ChannelsCard() {
   return (
     <Card
       title="Where conversations happen"
-      pictogram={<Conversation size={48} aria-hidden />}
+      pictogram={<Slack size={48} aria-hidden />}
       className="@xl:col-span-2"
     >
       <div className="mb-4 flex h-3 w-full gap-px overflow-hidden rounded-full bg-muted">
@@ -398,7 +398,7 @@ export function SchedulesCard() {
   return (
     <Card
       title="Schedules"
-      pictogram={<Calendar size={48} aria-hidden />}
+      pictogram={<CalendarEvent size={48} aria-hidden />}
       onOpen={() => navigateToSettings("schedules")}
     >
       <div className="flex gap-8">
@@ -441,7 +441,7 @@ export function ConnectionsCard() {
   return (
     <Card
       title="Connections"
-      pictogram={<Slack size={48} aria-hidden />}
+      pictogram={<ConnectApplications size={48} aria-hidden />}
       onOpen={() => navigateToSettings("connections")}
     >
       <div className="flex gap-8">

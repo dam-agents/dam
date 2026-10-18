@@ -2,7 +2,6 @@ import { Add } from "@carbon/icons-react";
 import { ConnectApplications } from "@carbon/pictograms-react";
 import { useState } from "react";
 
-import { Badge } from "@/components/ui/badge";
 import { AddRow, ListSection } from "@/components/ui/list-section";
 import { PageHeader } from "@/components/ui/page-header";
 
@@ -52,12 +51,7 @@ export function ConnectionsView() {
           >
             <Add size={16} className="shrink-0" />
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <p className="truncate text-md font-medium">New connection</p>
-                <Badge variant="muted" className="font-normal">
-                  Any service
-                </Badge>
-              </div>
+              <p className="truncate text-md font-medium">New connection</p>
               <p className="mt-0.5 truncate text-xs">
                 Add a service your agents can reach.
               </p>

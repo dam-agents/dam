@@ -1,7 +1,6 @@
 import { Add } from "@carbon/icons-react";
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 
-import { Badge } from "@/components/ui/badge";
 import { AddRow, ListSection } from "@/components/ui/list-section";
 
 import { AwsProfilesCallout } from "../../connections/components/aws-profiles-callout.js";
@@ -77,12 +76,7 @@ export function GrantedConnectionsPanel({
           <AddRow onClick={onOpenCatalog} testId="open-connection-catalog">
             <Add size={16} className="shrink-0" />
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <p className="truncate text-md font-medium">New connection</p>
-                <Badge variant="muted" className="font-normal">
-                  Any service
-                </Badge>
-              </div>
+              <p className="truncate text-md font-medium">New connection</p>
               <p className="mt-0.5 truncate text-xs">
                 Add a service this agent can reach.
               </p>

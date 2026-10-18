@@ -1,4 +1,4 @@
-import { Analytics } from "@carbon/pictograms-react";
+import { FinanceAndSupplyChain } from "@carbon/pictograms-react";
 
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -55,7 +55,7 @@ export function UsageView() {
     return (
       <div>
         <PageHeader
-          pictogram={<Analytics size={64} aria-hidden />}
+          pictogram={<FinanceAndSupplyChain size={64} aria-hidden />}
           title="Usage"
           description={PAGE_DESCRIPTION}
         />
@@ -70,7 +70,7 @@ export function UsageView() {
   return (
     <div>
       <PageHeader
-        pictogram={<Analytics size={64} aria-hidden />}
+        pictogram={<FinanceAndSupplyChain size={64} aria-hidden />}
         title="Usage"
         description={PAGE_DESCRIPTION}
         actions={
