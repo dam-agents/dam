@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The repeat limits on resource alert messages. Storage sends once per rise past the level last told, at most once a day except one escalation from high (90%) to full (98%), holds its level between 80% and 90%, and re-arms below 80%. A runner out-of-memory episode sends once, re-arms when no agent is affected, and sends again only six hours after the last message.
+// TEST_OVERVIEW: The repeat limits on resource alert messages. Storage sends once per rise past the level last told, at most once a day except one escalation from high (90%) to full (95%), holds its level between 80% and 90%, and re-arms below 80%. A runner out-of-memory episode sends once, re-arms when no agent is affected, and sends again only six hours after the last message.
 import { describe, expect, it } from "vitest";
 
 import {
@@ -52,7 +52,7 @@ describe("storage alerts", () => {
 
   // TEST_SCENARIO: Full means writes are failing, so the escalation from high to full is worth a second message inside the day, but only one.
   it("lets one escalation to full through inside the day", () => {
-    expect(storageSends([91, 0], [98, 1], [70, 2], [91, 3], [99, 4])).toEqual([
+    expect(storageSends([91, 0], [95, 1], [70, 2], [91, 3], [99, 4])).toEqual([
       true,
       true,
       false,

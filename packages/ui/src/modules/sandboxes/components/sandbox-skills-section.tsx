@@ -10,6 +10,7 @@ export function SandboxSkillsSection({ agent }: { agent: AgentView }) {
       <SkillsSurface
         agentId={agent.id}
         agentState={agent.state}
+        agentDisabled={agent.disabled}
         readOnly={!operable}
         comingUp={comingUp}
       />

@@ -83,6 +83,7 @@ export function SkillSourceCard({
   onRescan,
   onRemove,
   onHide,
+  hasInstalled,
   onUpdate,
   onOpenSkill,
   onManageConnections,
@@ -107,6 +108,7 @@ export function SkillSourceCard({
   onRescan: () => void;
   onRemove: () => void;
   onHide?: () => void;
+  hasInstalled: boolean;
   onUpdate: (skill: Skill) => void;
   onOpenSkill: (skill: Skill) => void;
   suppressedNames?: ReadonlySet<string>;
@@ -145,13 +147,11 @@ export function SkillSourceCard({
     bulkList.length > 0 && bulkList.every((s) => installedRef(s) !== undefined);
 
   const canRemove = !source.system && !source.fromTemplate;
-  const hideBlocker = error
-    ? "Re-scan it first"
-    : !loaded || !stateLoaded
-      ? "Still reading this source…"
-      : enabled.length > 0
-        ? "Turn its skills off first"
-        : null;
+  const hideBlocker = !stateLoaded
+    ? "Still reading this agent's skills…"
+    : hasInstalled
+      ? "Turn its skills off first"
+      : null;
 
   return (
     <div>
@@ -224,7 +224,7 @@ export function SkillSourceCard({
                 window.open(source.gitUrl, "_blank", "noopener,noreferrer")
               }
             >
-              <span className="flex-1">View repo</span>
+              <span className="flex-1">View on GitHub</span>
               <Launch size={14} />
             </DropdownMenuItem>
             {onHide && !readOnly && (

@@ -1,6 +1,6 @@
 # VM memory
 
-Last verified: 2026-10-15
+Last verified: 2026-10-17
 
 An owner's machines share the memory of their [runner](vm-runner.md), and it is counted by what they use rather than by their sizes.
 That memory is the owner's whole pool for vm agents, which have no size of their own and stand outside the [budget](budgets.md)'s Ceiling.

@@ -1,6 +1,6 @@
 # VM image cache
 
-Last verified: 2026-10-15
+Last verified: 2026-10-17
 
 A machine may reach only its gateway, so its image is fetched for it and unpacked into a tree every machine of that image mounts read-only.
 Where that tree lives is the one part of the runner's storage an install may move off its claim.
@@ -17,6 +17,9 @@ The service resolves the reference, fetches and unpacks it on a miss with the pu
 A runner that could write a shared directory would let a guest that escapes into it rewrite a tree another owner's machines boot; one writer also means a fetch and an eviction never have to agree across processes, so what the writer knows about the cache is kept in its memory — all but where each tree came from, which is written beside the tree because a later caller's access is checked against it.
 The service is therefore in the boot path: with it down, a runner boots only an image one of its own machines already holds, and refuses any other as unavailable rather than booting it straight from the registry.
 The service unpacks with every capability dropped but the few that restoring an image's owners and modes takes, and skips the image's `/dev`, so no tree carries a device node.
+No entry lands outside the tree: tar strips a leading `/` and refuses a member that names `..` or a path through a symlink, and the fetch fails on either.
+A tree keeps the setuid binaries its image carries, because a guest boots it as root on its own kernel and its `sudo` or `su` has to work there.
+The host never runs them: a hostPath takes no `nosuid` mount option, so the node directory is closed to every host uid but root, and a runner reads it as root through its idmapped mount, under no-new-privileges.
 
 **An entry is named by the image it holds, not by the reference that asked for it.** A create resolves its reference to a digest and boots the tree stored under it, so two tags of one image share a tree and a mutable tag is never frozen at what it first named.
 The writer remembers what a tag resolved to for a few minutes; a pinned digest is never resolved, and a registry that cannot answer boots what the tag last resolved to.
@@ -29,12 +32,13 @@ After a host crash, every image fetched since the writer last closed is therefor
 A writer that dies mid-fetch or mid-eviction leaves only a scratch tree, which the next open reclaims, never a partial tree a lookup would take as complete.
 A fetch that finds an incomplete tree, or another platform's, under its name moves it aside and puts its own in place.
 A resolve has one deadline for everything it does, fetch included, and a runner waits a little past it, so a service that is slow is told apart from one that is gone — only one that is gone lets a runner boot a tree it already holds.
-A fetch that fails for its image — a registry refusing the export, a stream tar cannot unpack — is reported as an unavailable image, and a disk that fills, or has less room than the image takes unpacked before the download starts, as a lack of capacity, never as a boot to retry at once into the same state.
+A fetch that fails for its image — a registry refusing the export, a stream tar cannot unpack, or one larger than the cache reserved for it — is reported as an unavailable image, and a disk that fills, or has less room than the image takes unpacked before the download starts, as a lack of capacity, never as a boot to retry at once into the same state.
 On a runner's own volume that disk is the owner's claim, so there it is reported as the owner's storage being full ([persistence](persistence.md#per-agent-pvcs)).
 
 **Eviction never frees a tree a machine is running from.** It takes the oldest write first, down to a byte count the install states, sparing what is held.
 A fetch evicts before it downloads, until both the budget and the filesystem have room for the tree it unpacks.
-OCI metadata names only compressed sizes, so that tree is taken to be three times the compressed size the manifest names.
+OCI metadata names only compressed sizes, so that tree is taken to be four times the compressed size the manifest names, above the 2.2 to 3.2 that common images unpack to.
+That estimate is also the most the fetch may unpack, with a floor of 16 MiB for a tiny image and the whole budget for one whose manifest cannot be read: the writer counts the stream between crane and tar and stops the fetch past it, so an image whose layers inflate is refused rather than fill the disk every machine on the node shares.
 A runner holds the digests its running machines boot by naming them again every minute, and a hold lapses only once nobody names it — a runner that stopped has no machines left.
 A runner names every machine its runtime finds running from the moment it starts, so one that took the machines over in a hand-off or a restart holds their trees before the controller has sent it a spec.
 A stopped machine holds nothing, so a hibernated agent never keeps an image a deploy retired; its start fetches the tree again when it is gone, and holds it before it checks it is there.
@@ -61,4 +65,4 @@ A runner's own cache serves one owner and checks nothing.
 
 **What a runner may read on a node cache is not gated.** Its mount is the whole directory, so any runner on the node — and any guest that escapes into one — reads every cached tree, other owners' private images included.
 The per-machine access check decides only what the service resolves and fetches for a caller.
-The socket cannot tell one runner from another either, since every runner is root on the node, so what a caller can make the service do is bounded instead of attributed: a hold names only trees on disk, at most a thousand per call, and once holds keep the cache past half again its budget, it refuses every fetch, as a capacity problem, and logs an error for the operator.
+The socket cannot tell one runner from another either, since the service checks no peer credentials on it, so what a caller can make the service do is bounded instead of attributed: a hold names only trees on disk, at most a thousand per call, and once holds keep the cache past half again its budget, it refuses every fetch, as a capacity problem, and logs an error for the operator.

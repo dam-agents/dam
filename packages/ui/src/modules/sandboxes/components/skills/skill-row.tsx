@@ -1,4 +1,4 @@
-import { Compare } from "@carbon/icons-react";
+import { Launch } from "@carbon/icons-react";
 import type { Skill } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
@@ -70,14 +70,14 @@ export function SkillRow({
         </Tooltip>
       )}
       {hasDrift && compareUrl && (
-        <Tooltip content="View changes on GitHub">
+        <Tooltip content="Open on GitHub">
           <a
             href={compareUrl}
             {...externalLinkProps}
-            aria-label="View changes on GitHub"
+            aria-label="Open changes on GitHub"
             className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
           >
-            <Compare size={13} />
+            <Launch size={13} />
           </a>
         </Tooltip>
       )}

@@ -1,19 +1,4 @@
-import type { ReactNode } from "react";
-
-import { Card } from "@/components/ui/card";
-
 import type { UsageFreshness } from "../hooks/use-monthly-spend.js";
-import { CHART_HEIGHT_CLASS } from "./spend-by-day-chart.js";
-
-export function UsageNotice({ children }: { children: ReactNode }) {
-  return (
-    <Card
-      className={`flex ${CHART_HEIGHT_CLASS} items-center justify-center p-5`}
-    >
-      <p className="text-sm text-muted-foreground">{children}</p>
-    </Card>
-  );
-}
 
 export function readFailureMessage(
   unavailable: boolean,

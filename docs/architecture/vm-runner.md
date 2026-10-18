@@ -1,6 +1,6 @@
 # VM runner
 
-Last verified: 2026-10-16
+Last verified: 2026-10-17
 
 The pods behind the `vm` Backend: **one runner per owner**, each a single-replica Deployment in the agent namespace running smolvm and the platform's **vm-runner** agent.
 A local cluster on a Mac runs one [host runner](vm-host-runner.md) outside the cluster instead.
@@ -16,12 +16,16 @@ The install picks the allowlist's mode in `virtualization.runner.seccomp`: `enfo
 An audit record is a kernel one (`type=1326`), so it is in the node's audit log, or its kernel log where no auditd runs, and never in the runner's own log.
 The chart refuses any other mode, since smolvm reads one as `off`.
 The runner is the one long-lived workload in the agent namespace that asks for capabilities at all.
+Every runner pod runs in a user namespace (`hostUsers: false`): the runner and its VMMs are uid 0 in the pod and an unprivileged uid on the node, and the capabilities below hold only inside that namespace.
+smolvm enforces a machine's egress allowlist in the VMM, the very process an escaped guest would own, so without the namespace an escape would be root on the node.
+The runtime idmaps each of the pod's volumes, the node directories included, so the runner reads and writes them as it would as root, and a node whose filesystems cannot be idmapped cannot host a runner.
+A device is the exception: the runtime binds the node's /dev/kvm in with its owner unmapped, so the runner opens it only when its mode admits everyone, as systemd's own rule makes it.
 Every runner holds DAC_OVERRIDE, because its VMMs serve the image tree to their guests with the runner's own credentials and an image keeps some files from root.
 Only a runner that caches images on its own claim also holds CHOWN, FOWNER and FSETID, which unpacking an image faithfully costs: a rootfs carries the owners and modes its files were built with, so the runner restores each owner and then sets a mode, setgid bits included, on a file it no longer owns.
 The runner drops every other capability, cannot gain one through exec, and runs under the runtime's default seccomp profile.
 Only AppArmor stays unconfined, because the runtime's default profile keeps every guest from booting.
 A change to that shape changes the runner pod, so it rolls across owners like any other.
-On a node cache the image cache service does that unpack, holding DAC_OVERRIDE, CHOWN, FOWNER and FSETID and nothing else, and its runners only read; a staged tree boots in place, and a staged archive is flattened inside the guest.
+On a node cache the image cache service does that unpack, holding DAC_OVERRIDE, CHOWN, FOWNER and FSETID and nothing else, and its runners only read; a staged tree boots in place.
 That, and on OpenShift the SELinux type the node cache service and the release stager ([upgrades](vm-runner-upgrades.md)) pick for themselves ([vm-image-cache](vm-image-cache.md)), is the whole of what the install's SCC has to permit beyond the agent's iptables init.
 An agent's own container takes none of them — it is pinned to dropping all, and the controller refuses a configuration that says otherwise.
 Its own NetworkPolicy admits the proxy and resolver ports of gateway pods carrying its owner's label and whatever the install names in `egressCidrs`, less the cloud metadata ranges, which the controller subtracts from every range that holds one.
@@ -30,7 +34,7 @@ A resolver still recurses for any name, so that runner keeps one narrow channel;
 It reaches the host's virtualization devices only as device-plugin resources, never as a privileged pod — so a cluster with no device plugin cannot host vm agents — and it stays off the ambient mesh, whose redirect would break the per-machine network.
 Its gates are not all kernel gates: a machine's egress allowlist is exactly the paired gateway's ClusterIP, or, on a runner outside the cluster, one gateway port on the host's loopback in place of any allowlist — the runner refuses to run a machine with neither, since smolvm reads an empty allowlist as no filter, or one that spans every address — and a guest's DNS, which smolvm's gateway relays whatever the allowlist says, is relayed only to the paired gateway's resolver, or, on a runner outside the cluster, nowhere.
 But smolvm enforces that allowlist in the very process an escaped guest would own, so the runner's own NetworkPolicy is the kernel gate on where an escaped guest goes, and each gateway's ingress policy, admitting only its paired agent and its owner's runner, the gate on whose credentials it reaches.
-So a gateway is never a container of the runner pod, where an escaped guest is root.
+So a gateway is never a container of the runner pod, where an escaped guest is root in the pod's user namespace.
 That is why an install has to state `egressCidrs` rather than inherit an open pod.
 Ingress is a NetworkPolicy, admitting the machine API and the published ports only from the api-server and the controller, and the machine API alone from the owner's own migration copy Job — the runner adds no source check of its own — and a token-less scrape port only from the platform's collector ([observability](observability.md#vm-runner)).
 
@@ -67,9 +71,10 @@ The command line has no defaults anyone relies on: the image sets the paths that
 
 A machine may reach only its paired gateway, so the guest cannot fetch its own image: it is fetched for it, with the pull secrets a pod would list — resolving through the node's resolver rather than the cluster's, whose Service address its own egress policy drops (an install whose registry sits inside the cluster, with that range left reachable, asks for cluster resolution instead) — into a cache that unpacks each image once, evicting inside a stated budget and never freeing a tree a machine is still running from.
 Every machine of an image boots that one tree rather than extracting its own copy: an archive is unpacked again into each machine's disk, seconds of boot and a gigabyte of disk apiece for identical bytes.
-A tree is not enough on its own, because what a machine runs — the entrypoint, the environment, the directory it starts in — is named by the image and not carried by its files, so that is read with the tree and kept beside it — a staged tree carries the same record — or read out of a staged archive; a machine whose image names none is refused rather than booted to a filesystem with nothing running in it, and so is an image the cache cannot serve, which is never booted from the registry instead.
+A tree is not enough on its own, because what a machine runs — the entrypoint, the environment, the directory it starts in — is named by the image and not carried by its files, so that is read with the tree and kept beside it — a staged tree carries the same record; a machine whose image names none is refused rather than booted to a filesystem with nothing running in it, and so is an image the cache cannot serve, which is never booted from the registry instead.
 The cache has exactly one writer — the runner on its own claim, or a per-node **image cache service** where the install shares a node directory, which runners mount read-only ([vm-image-cache](vm-image-cache.md)).
-An install with no registry stages images in a read-only image directory instead, and the runner boots from them: a tree with its launch record, which boots in place, or a `docker save` archive, which is flattened inside every guest on its first boot under smolvm's fixed pull window — a slow host outran that window, which is why the local install stages trees.
+An install with no registry stages images in a read-only image directory instead, and the runner boots from them: a tree with its launch record, which boots in place.
+A `docker save` archive staged there is refused with a message to restage it as a tree, because no guest flattens one since platform-init became its init.
 A staged image is found by turning its reference into a file name, and the runner looks for one before it asks the cache, so a reference that would turn into a cache entry's name is refused: otherwise it would boot an entry the cache never checked the machine's credentials for.
 
 The guest is the very image the container Backend would run, booted as a VM and run as root: the VM is the isolation boundary, so the uid inside it buys nothing, and root is what bind-mounting the persisted paths, and running the container runtime, needs.
@@ -85,23 +90,16 @@ What a machine keeps across a stop is its storage disk on the runner's one PVC: 
 It is the machine's one disk.
 The guest's init is platform-init, not smolvm's guest agent: smolvm boots it from the agent root as PID 1, and it sets up the network, mounts the disk and the shares, boots the image on one overlay over the image tree, and answers the runner's host side (ping, quiesced stop, memory onlining, an operator's `vm-runner exec`), so no container runtime and no second root stand between the VM and the image.
 An image that ships `/sbin/openrc` opts in to its services: platform-init runs openrc's `sysinit`, `boot` and `default` runlevels before the entrypoint and openrc's `shutdown` on a stop, and starts the entrypoint in a cgroup of its own, so a restart of the entrypoint ends what it left and keeps the services.
+`sysinit`, `boot` and `default` run in the entrypoint's environment, of which openrc passes a service only what the image's openrc config names, and `shutdown` runs with `PATH` alone.
+The default image's runlevels are empty, and its docker and k3s services are in none until the agent adds them ([agent images](agent-images.md#what-the-agent-gets)).
 That disk is made once, by the runner when it creates the machine: btrfs from the runner image's template, at its full size, under a UUID of its own, which the guest mounts compressed with zstd.
 A create whose disk cannot be made fails and leaves no machine, since smolvm would make a disk of its own at the next start.
-Disks made before btrfs are ext4.
 A new btrfs disk holds two subvolumes: `agent`, mounted as `HOME`, and `system`, the platform state and the root's layers.
 The home is then a tree btrfs can snapshot, send or put a quota on alone.
 The root's upper and work layers stay in one subvolume: btrfs refuses a rename between subvolumes, and overlayfs renames from the work layer into the upper layer.
-A btrfs disk made before subvolumes moves to them at its next boot, inside the guest: each subvolume starts as a snapshot of the whole disk, which copies nothing, and becomes its store by renames inside it.
-The old directory layout is changed only once both subvolumes are complete, so a boot cut short keeps it and tries again; what the move set aside, smolvm's old guest-agent directories among it, is deleted in the background.
-A move that fails leaves the disk in the directory layout, which still boots, and the layout mark records which of the two a disk is in.
-An ext4 disk keeps the directory layout until the install turns on `virtualization.runner.convertExt4Disks`.
-Then the runner converts it at the machine's next start, one machine at a time and only while the owner's claim has room for a copy of the disk beside it and still stays under 90%: it attaches a fresh btrfs disk, made from the template with a UUID of its own, as the machine's second disk, and the share asks the guest to copy into it.
-platform-init mounts the btrfs disk first: a copy it already holds for this conversion boots at once, and a btrfs disk that does not mount fails the boot, since the ext4 disk may be older than a copy that booted.
-Otherwise it checks the ext4 disk, mounts it read-only, copies its home and kept root into the btrfs disk's subvolumes with every owner, mode, time, extended attribute, hard link and hole, and boots this boot on the copy.
-The guest names the conversion's nonce in its answer to the runner's ping, over the socket only its init holds; only then does the runner swap the two disk files in one rename, recorded first, so a crash on either side of the swap is finished from what each file's superblock magic says.
-The old ext4 disk stays untouched, and is deleted at the next start, once the copy has booted; once started, a conversion's disk is attached at every start until the swap, so a copy that booted is never hidden by a boot on the ext4 disk; a copy that fails boots the ext4 disk as before, and three boots that answer on the ext4 disk give the conversion up.
-A converting boot may stay quiet for six hours before its first answer, so a large home's copy is not restarted from nothing.
-A disk already in the subvolume layout that also holds `workspace/` was booted by a rolled-back platform-init, which made a fresh one; it is set aside and kept, never moved, and the home in the subvolume boots.
+A disk from before that layout — ext4, or btrfs that holds `workspace/` at its top — fails its boot with one console line saying it predates the subvolume layout, and is never formatted or rewritten, so an operator can recover it.
+A boot that restores a [runtime migration](vm-runtime-migration.md)'s seed copies a disk before its first answer, so it may stay quiet for six hours, and a large home's copy is not restarted from nothing.
+Until the guest answers, its status says so under a reason of its own, `MachineCopyingDisk`, which the controller reads as a boot in progress, never as a failed start, and leaves to the runner's bound.
 A btrfs disk that does not mount fails the boot and stays as it is, since btrfs has no repair a boot may run unattended.
 A start never copies smolvm's template over a disk that already holds a filesystem — not even one whose first format stopped short of resizing it to the size asked for.
 A stop has platform-init send the workload SIGTERM and give it a few seconds, as a pod's container gets, then sync and freeze that disk, and a guest that does not confirm it did is powered off anyway, so a stop or a delete always ends the machine.
@@ -116,7 +114,7 @@ A new image is fetched before the old machine is touched, so a pull that fails l
 A stopped machine takes the change when it next starts.
 A start also checks that what the record names to boot is still on the host, and resolves the image again when it is not: the record holds a path, so a tree evicted or relaid under a stopped machine would otherwise fail every start it makes.
 Each runner has its own limits, so a machine is admitted against its owner's memory alone, counted by what the machines use, and the controller resizes the pod's memory request in place to match, and its memory limit to the owner's pool; each boots with part of its memory and grows once up ([vm-memory](vm-memory.md)).
-It is admitted against its owner's claim too: on a claim past 90% used no machine is created or grown, and past 97% none is started or restarted ([persistence](persistence.md#per-agent-pvcs)).
+It is admitted against its owner's claim too: on a claim past 90% used no machine is created or grown, and past 95% none is started or restarted ([persistence](persistence.md#per-agent-pvcs)).
 Without in-place resize, or on a node that defers or refuses it, the request stays put and the controller reports it ([vm-memory](vm-memory.md)).
 The pod also requests ephemeral storage it never fills, unless the install sets its own: a node short of disk evicts first the pods over their request, and an evicted runner kills every machine of its owner.
 
@@ -129,7 +127,9 @@ So any connection lands on the gateway, which routes TLS by SNI and HTTP by Host
 The sweep removes a machine no Agent of that owner names, or one an aborted [runtime migration](vm-runtime-migration.md) marked as left, and removes the runner itself — its claim, and so every disk on it, with it — only when a fresh List of the owner's Agents and the controller's cache both show no vm Agent and the runner lists no machine.
 The Deployment is deleted only if it is still the one the sweep checked, by UID and version, and a refusal keeps everything else for the next sweep.
 A reconcile that finds any of the runner's objects still terminating from such a removal waits, and says so on the Agent, rather than building a runner on a claim that is going away.
-A runner that cannot be reached is kept while its owner has any Agent at all; once the owner has none for half an hour it is removed unseen, reported as an error.
+A runner that cannot be reached is kept while its owner has any Agent at all; once the owner has none for half an hour it is removed, but not its claim, which nobody could see into.
+The claim is marked as kept instead: on a cluster that shares its CRDs, a CRD event can make even a live List of Agents read empty for a while, so an owner who seems to have left is no proof that the disks are unused.
+The owner's next vm Agent builds its runner on that same claim, which drops the mark; a claim whose owner never comes back is left for an operator to find by the mark.
 
 **Credentials in place.** The runner re-reads its token file every few seconds and keeps the token it holds while the file is empty or unreadable, and the controller, refused, reads the token Secret once and tries again; a refusal that stands is reported as one, apart from an unreachable runner.
 Neither side rotates the token on its own, but one that changes — a Secret deleted and minted again — is honoured without restarting the pod.

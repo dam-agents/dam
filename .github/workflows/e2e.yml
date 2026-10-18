@@ -113,9 +113,17 @@ jobs:
       # `mise run e2e` waits for it and keeps the cluster instead of nuking it
       # first; if this provision fails, it nukes whatever is left and
       # provisions again.
+      # The Playwright Chromium shares the host network namespace with k3s.
+      # Each pod's host-side veth gets an IPv6 link-local address, and
+      # Chromium's netlink watcher (net/base/address_tracker_linux.cc) reads
+      # every address add or delete as an IP address change: it fails the
+      # pending requests with net::ERR_NETWORK_CHANGED. With
+      # addr_gen_mode=1 a new host interface gets no link-local address.
+      # Pod network namespaces reset their IPv6 settings, so pods keep theirs.
       - &e2e-provision
         name: Provision k3s in the background
         run: |
+          sudo sysctl -w net.ipv6.conf.default.addr_gen_mode=1
           nohup bash -c '.mise/tasks/cluster/provision-host etc/lima/k3s-test.yaml; echo $? > /tmp/k3s-provision.status' \
             > /tmp/k3s-provision.log 2>&1 &
       # See build.yml's build-images. Before setup-mise, like check-test's.
@@ -158,7 +166,7 @@ jobs:
             ~/.cache/go-build
             ~/.cache/staticcheck
             ~/go/pkg/mod
-          key: &go-key go-${{ runner.os }}-check-test-${{ hashFiles('mise.lock', 'packages/controller/go.sum') }}
+          key: &go-key go-${{ runner.os }}-check-test-${{ hashFiles('mise.lock', 'packages/controller/go.sum', 'packages/controller/.mise/tasks/test', 'packages/controller/.mise/tasks/check/lint') }}
           restore-keys: &go-restore-keys |
             go-${{ runner.os }}-check-test-
             go-${{ runner.os }}-
@@ -177,21 +185,27 @@ jobs:
       - &e2e-pnpm-install
         if: inputs.verify
         run: mise deps install --only pnpm
-      # A PR that changes the mock's source builds it here, onto a default
-      # image built here too, which installs every harness's tools. Main's
-      # agent-tools entry holds them, so a hit reaches none of their download
-      # hosts: Bob's, IBM Cloud Object Storage, stalled for minutes and failed
-      # this lane. A PR that changes no mock source pulls main's mock and
-      # skips the restore, a gigabyte and about 25 s.
-      - id: mock-changed
+      # A run that builds the mock or the default image builds it here, the
+      # mock onto a default image built here too, which installs every
+      # harness's tools. Main's agent-tools entry holds them, so a hit reaches
+      # none of their download hosts: Bob's, IBM Cloud Object Storage, stalled
+      # for minutes and failed this lane. A run that pulls both skips the
+      # restore, a gigabyte and about 20 s. Decided as e2e:ci-images decides
+      # it, not by this change's diff: a base whose own image is not published
+      # yet (main's push still building it, or an earlier merge group) builds
+      # it here too.
+      - &e2e-agents-build
+        id: agents-build
         if: inputs.verify
+        env: &e2e-resolve-env
+          EVENT: ${{ github.event_name }}
         run: |
-          if git diff --quiet "$DIFF_BASE" HEAD -- $(.mise/tasks/image/resolve paths mock); then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
-      - if: steps.mock-changed.outputs.changed == 'true'
+          for c in mock default; do
+            decision="$(.mise/tasks/image/resolve resolve "$c")" || decision=BUILD
+            [ "$decision" != BUILD ] || { echo "build=true" >> "$GITHUB_OUTPUT"; break; }
+          done
+      - &e2e-agent-tools
+        if: steps.agents-build.outputs.build == 'true'
         uses: ./.github/actions/agent-tools # zizmor: ignore[self-repository]
       - &e2e-ci-images
         name: Build or fetch this run's images in the background
@@ -204,9 +218,11 @@ jobs:
           CI_IMAGES_IMAGES_JOB: build / build-images (amd64)
           CI_IMAGES_MOCK_JOB: build / build mock (e2e fixture)
           CI_IMAGES_AGENTS_JOB: build / build-agents (amd64)
-          # As build.yml's `changes` job sets it, so both resolve the same
-          # images stale.
+          # As build.yml's `changes` job sets them, so both resolve the same
+          # images stale. EVENT lets a merge group reuse an earlier group's
+          # build; see image:resolve.
           RESOLVE_NO_REUSE: ${{ inputs.fresh && '1' || '' }}
+          EVENT: ${{ github.event_name }}
         run: nohup .mise/tasks/e2e/ci-images /tmp/ci-images.status > /tmp/ci-images.log 2>&1 &
       # Keyed by the Playwright the lockfile resolves, which fixes the browser
       # build it downloads: a lockfile change elsewhere keeps the entry.
@@ -241,9 +257,6 @@ jobs:
           SKIP_IMAGE_BUILD: "1"
           CI_IMAGES_STATUS: /tmp/ci-images.status
           E2E_HOST_PROVISIONED: "1"
-          # The vm lane's harness tools installer: anonymous GitHub API calls
-          # from the runner's shared address hit the 60-an-hour limit.
-          HARNESS_TOOLS_GITHUB_TOKEN: ${{ github.token }}
       - &e2e-playwright-save
         if: ${{ inputs.save-caches && steps.playwright-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -328,26 +341,33 @@ jobs:
       - *e2e-pnpm-verified-cache
       - *e2e-controller-changed
       - *e2e-go-cache
-      # Only a PR that changes the vm-runner builds it here, from main's
+      - *e2e-setup-mise
+      # A run that builds the vm-runner builds it here, from main's
       # release-build cache (see build.yml's build-images); one that does not
-      # pulls main's image.
-      - id: vm-runner-changed
+      # pulls the published image. Decided as e2e:ci-images decides it, for
+      # the reason agents-build gives: without the cache a build takes 15 min,
+      # not 3. After setup-mise, for image:resolve's crane.
+      # Both restores fall back to main's newest entry, unlike build.yml's:
+      # a change to Cargo.lock or a patch has no exact entry until main's push
+      # saves one, and a cold build took 12-15 min of this lane's critical
+      # path. This job never saves, so the stale crates and the older kernel
+      # it restores go with the runner. The oci task checks each dependency
+      # against its pin: the smolvm clone by its stamp, downloads by digest,
+      # the patched libkrunfw by the commit and patch hash in its file name.
+      - id: vm-runner-build
         if: inputs.verify
+        env: *e2e-resolve-env
         run: |
-          read -r -a paths <<< "$(.mise/tasks/image/resolve paths vm-runner)"
-          if git diff --quiet "$DIFF_BASE" HEAD -- "${paths[@]}"; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
+          decision="$(.mise/tasks/image/resolve resolve vm-runner)" || decision=BUILD
+          [ "$decision" != BUILD ] || echo "build=true" >> "$GITHUB_OUTPUT"
       - id: rust-release-key
-        if: steps.vm-runner-changed.outputs.changed == 'true'
+        if: steps.vm-runner-build.outputs.build == 'true'
         run: &rust-release-version |
           set -euo pipefail
           rust="$(sed -n '/^\[\[tools\.rust\]\]$/{n;s/^version = "\(.*\)"$/\1/p;}' mise.lock)"
           [ -n "$rust" ] || { echo "::error::mise.lock names no rust version"; exit 1; }
           echo "rust=$rust" >> "$GITHUB_OUTPUT"
-      - if: steps.vm-runner-changed.outputs.changed == 'true'
+      - if: steps.vm-runner-build.outputs.build == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: &rust-release-paths |
@@ -356,35 +376,23 @@ jobs:
             ~/.cargo/git/db
             packages/vm-runner/target
           key: &rust-release-key rust-release-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-release-key.outputs.rust }}-${{ hashFiles('packages/vm-runner/Cargo.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/smolvm.pin', 'packages/vm-runner/smolvm.patch', 'packages/vm-runner/libkrun.patch', 'packages/vm-runner/libkrunfw.patch') }}
-      - if: steps.vm-runner-changed.outputs.changed == 'true'
+          restore-keys: rust-release-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-release-key.outputs.rust }}-
+      - if: steps.vm-runner-build.outputs.build == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: &vm-runner-deps-paths ~/.cache/platform-vm-runner
           key: &vm-runner-deps-key vm-runner-deps-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/vm-runner/smolvm.pin', 'packages/vm-runner/smolvm.patch', 'packages/vm-runner/libkrun.patch', 'packages/vm-runner/libkrunfw.patch') }}
-      - *e2e-setup-mise
+          restore-keys: vm-runner-deps-${{ runner.os }}-${{ runner.arch }}-
       - *e2e-keycloak-theme
       - *e2e-pnpm-install
-      # The default image, which smoke/22-harness-tools boots, packages none of
-      # its tools but is built against them: a PR builds it here, beside the
-      # other images e2e:ci-images builds.
-      - if: inputs.verify
-        uses: ./.github/actions/agent-tools # zizmor: ignore[self-repository]
+      # The default image, which smoke/22-harness-tools boots, bakes its tools
+      # from this tree: a run that builds it builds it here, beside the other
+      # images e2e:ci-images builds.
+      - *e2e-agents-build
+      - *e2e-agent-tools
       - *e2e-ci-images
       - *e2e-playwright-version
       - *e2e-playwright-cache
-      # The node directory the harness tools installer fills, so on a hit it
-      # finds every version installed and reaches no download host: one host
-      # that stalled for minutes failed this lane. Keyed by what fixes the
-      # versions, the installer included. Restored as the runner's user, then
-      # given to root, who owns every install there.
-      - name: Create the node's harness tools directory
-        run: sudo install -d -o "$USER" /var/lib/platform-harness-tools
-      - id: harness-tools-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: /var/lib/platform-harness-tools
-          key: &harness-tools-key harness-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/agents/base/image.lock', 'packages/agents/base/image-locks/**', 'packages/agents/base/miserc.toml', 'packages/agents/base/base.toml', 'packages/agents/base/rootfs/etc/mise/conf.d/settings.toml', 'packages/agents/*/image.toml', 'packages/agents/default/rootfs/usr/local/bin/install-harness-tools') }}
-      - run: sudo chown -R root:root /var/lib/platform-harness-tools
       # Twice the container lane's budget: the vm-runner build above on a PR,
       # the node staging of the mock image, every agent's boots, each a machine
       # start under nested virtualization, and the backend and runtime
@@ -393,23 +401,6 @@ jobs:
         timeout-minutes: 70
         env: *e2e-run-env
       - *e2e-playwright-save
-      # On a cache hit the installer finds every version installed, so its log
-      # shows no download.
-      - name: Harness tools install log
-        if: ${{ !cancelled() }}
-        env:
-          KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-        run: kubectl -n platform-agents logs ds/platform-harness-tools -c install --timestamps || true
-      # Only main writes it, and only once the suite passed, which waits for the
-      # installer: an entry is a whole install of one lockfile. It is about the
-      # size of the agent-tools entry, and a PR reads main's.
-      - if: ${{ success() && inputs.save-caches && steps.harness-tools-cache.outputs.cache-hit != 'true' }}
-        run: sudo chown -R "$USER" /var/lib/platform-harness-tools
-      - if: ${{ success() && inputs.save-caches && steps.harness-tools-cache.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: /var/lib/platform-harness-tools
-          key: *harness-tools-key
       - *e2e-image-log
       - *e2e-provision-log
       # smolvm's VMM seccomp filter reports to the kernel, never to a pod log: a

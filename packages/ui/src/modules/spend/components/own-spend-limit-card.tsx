@@ -6,11 +6,10 @@ import { TextSkeleton } from "@/components/ui/text-skeleton";
 import { cn } from "@/lib/utils";
 
 import { useOwnerSpendStatus } from "../api/queries.js";
-import { CEILING_NAME, OWN_LIMIT_NAME } from "../lib/copy.js";
-import { formatSpend, formatSpendOf, localResetTime } from "../lib/format.js";
+import { CEILING_NAME } from "../lib/copy.js";
+import { formatSpendOf, localResetTime } from "../lib/format.js";
 import { LIMIT_STATE_TEXT } from "../lib/state-colors.js";
-import { SpendLimitField } from "./spend-limit-field.js";
-import { SpendLimitMeter } from "./spend-limit-meter.js";
+import { SpendLimitLine } from "./spend-limit-line.js";
 
 export function OwnSpendLimitCard() {
   const { data: status, isError } = useOwnerSpendStatus();
@@ -39,27 +38,13 @@ function OwnSpendLimitBody({ status }: { status: SpendStatus }) {
 
   return (
     <>
-      <SpendLimitField
-        label={OWN_LIMIT_NAME}
+      <SpendLimitLine
         scope={{ kind: "owner" }}
         unit="usd"
-        amountMicros={own?.amountMicros ?? null}
+        spentMicros={usd?.costMicros ?? 0}
+        limit={own}
+        subject="all your agents"
       />
-      {own ? (
-        <SpendLimitMeter
-          label={OWN_LIMIT_NAME}
-          unit="usd"
-          spentMicros={own.spentMicros}
-          limitMicros={own.effectiveMicros}
-          state={own.state}
-          extensions={own.extensions}
-        />
-      ) : (
-        <p className="text-xs text-muted-foreground">
-          {formatSpend(usd?.costMicros ?? 0, "usd")} paid API spend today, all
-          your agents
-        </p>
-      )}
       <p className="text-xs text-muted-foreground">
         Counts the paid API spend of all your agents. The Claude subscription
         and Bob do not count here: set their limits in each agent's Providers

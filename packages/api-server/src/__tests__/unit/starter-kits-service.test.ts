@@ -114,6 +114,7 @@ function makeHarness(
     preferred: boolean;
   }[] = [],
   virtualizationEnabled = true,
+  prefersVm = false,
 ) {
   const calls = {
     created: [] as AgentCreateInput[],
@@ -258,6 +259,7 @@ function makeHarness(
       },
     },
     virtualizationEnabled,
+    prefersVm: async () => prefersVm,
   });
   return { service, calls };
 }
@@ -1230,5 +1232,16 @@ describe("starter kits: backend", () => {
     const { service, calls } = makeHarness(LOADED);
     await service.apply(APPLY);
     expect(calls.created[0]).not.toHaveProperty("vm");
+  });
+
+  // TEST_SCENARIO: a kit that declares no backend gets the owner's preferred runtime, so an owner who opted into the new sandbox runtime does not get a fresh container agent that already asks to be migrated. The preference counts only where the install can run a microVM.
+  it("creates the agent on the owner's preferred runtime when the kit names none", async () => {
+    const opted = makeHarness(LOADED, null, [], true, true);
+    await opted.service.apply(APPLY);
+    expect(opted.calls.created[0]).toMatchObject({ vm: true });
+
+    const noVirt = makeHarness(LOADED, null, [], false, true);
+    await noVirt.service.apply(APPLY);
+    expect(noVirt.calls.created[0]).not.toHaveProperty("vm");
   });
 });

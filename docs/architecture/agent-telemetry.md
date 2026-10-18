@@ -1,6 +1,6 @@
 # Agent Telemetry (trace and log read path)
 
-Last verified: 2026-10-16
+Last verified: 2026-10-17
 
 ## Overview
 
@@ -139,6 +139,7 @@ The telemetry store is optional and off by default.
 With no store configured the service is wired to an **unavailable** variant that reports its unavailability as a value with a reason, rather than throwing.
 This is the deliberate inverse of the spend path's fail-closed posture, for the reason given in the overview, and it also serves the programmatic consumer, which needs to record "telemetry is not measured on this install" and carry on.
 Both variants are chosen once at composition time.
+The install capabilities (`features.install`) report the choice as `telemetryBackend`, so the Session menu offers its telemetry export only where a store exists, instead of offering one that fails.
 
 ## Trust story
 

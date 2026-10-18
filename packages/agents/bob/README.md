@@ -3,7 +3,7 @@
 Platform agent running [Bob Shell](https://bob.ibm.com/docs/shell) — IBM's general-purpose AI shell assistant.
 Shipped in the default agent image, speaking ACP natively, with a per-instance Envoy egress sidecar that injects the Bob API key on outbound traffic.
 
-The harness ships in the default image every harness Template boots, built by `//packages/agents:oci` from the shared base in [`packages/agents/base`](../base/) (see [agent images](../../../docs/architecture/agent-images.md)): its tools, declared in [`image.toml`](image.toml), come from the node's harness tools, and its files live at their image paths under [`rootfs/`](rootfs/).
+The harness ships in the default image every harness Template boots, built by `//packages/agents:oci` from the shared base in [`packages/agents/base`](../base/) (see [agent images](../../../docs/architecture/agent-images.md)): its tools, declared in [`image.toml`](image.toml), are baked into the default image's harness tools layer, and its files live at their image paths under [`rootfs/`](rootfs/).
 
 ## Stack
 

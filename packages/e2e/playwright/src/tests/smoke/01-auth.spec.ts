@@ -81,7 +81,7 @@ test("both tRPC doors: bad bearers refused, stale terms gate all but terms.*", a
   });
 });
 
-// TEST_SCENARIO: The flow id is deliberately bogus: the picker only needs to render to prove the deep link survived the login roundtrip and the terms gate (#3107); no real bind flow is required.
+// TEST_SCENARIO: The flow id is deliberately bogus: the bind page only needs to render its expired-link state to prove the deep link survived the login roundtrip and the terms gate (#3107); no real bind flow is required.
 const bindFlowId = "e2e-deep-link-probe";
 const bindDeepLink = `/slack/bind?flow=${bindFlowId}`;
 
@@ -108,15 +108,15 @@ test("a bind deep link survives the login roundtrip and the Terms gate (#3107)",
   const termsButton = page.getByRole("button", {
     name: /I accept the Terms of Use/,
   });
-  const picker = page.getByRole("heading", {
-    name: /pick an agent for/i,
+  const expiredLink = page.getByRole("heading", {
+    name: /this link is invalid or has expired/i,
   });
 
   await submitKeycloakLoginForm(page);
-  await expect(termsButton.or(picker)).toBeVisible();
+  await expect(termsButton.or(expiredLink)).toBeVisible();
   if (await termsButton.isVisible()) await termsButton.click();
 
-  await expect(picker).toBeVisible();
+  await expect(expiredLink).toBeVisible();
   await page.waitForURL(
     (url) =>
       url.pathname === "/slack/bind" &&
@@ -148,10 +148,9 @@ test("login via Keycloak and accept terms", async ({ page }) => {
   await page.context().storageState({ path: storageStatePath });
 });
 
-// TEST_SCENARIO: The global setup for the lane's Backend. The vm-sandboxes experiment makes the UI create agents on the vm Backend. So the vm lane turns it on for the e2e user here, before any spec creates an agent. The container lane turns it off, so a flag left from an earlier run on the same database cannot move that lane's agents. The vm lane also fails here, once, when the install has no vm backend, and not later in every spec that boots an agent. The setup also dismisses the Get started checklist: an unlock the suite earns, such as the first agent, opens it over the right of the page, where it covers the buttons of the agent rows.
+// TEST_SCENARIO: The global setup for the lane's Backend. The vm-sandboxes experiment makes the UI create agents on the vm Backend. So the vm lane turns it on for the e2e user here, before any spec creates an agent. The container lane turns it off, so a flag left from an earlier run on the same database cannot move that lane's agents. The vm lane also fails here, once, when the install has no vm backend, and not later in every spec that boots an agent.
 test("the e2e user's runtime matches the lane's Backend", async () => {
   const api = createApiClient(await getAccessToken());
   await requireBackend(api, laneBackend);
   await setVmSandboxes(api, laneBackend === "vm");
-  await api.gettingStarted.setDismissed.mutate({ dismissed: true });
 });

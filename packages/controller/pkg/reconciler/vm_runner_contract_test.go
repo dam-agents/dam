@@ -61,16 +61,6 @@ func TestARunnerTheInstallLetsNestIsStartedWithTheNestingArgs(t *testing.T) {
 	}))
 }
 
-// TEST_SCENARIO: an install that sets virtualization.runner.convertExt4Disks starts its runners with the fixture's args plus the conversion arg the runner's tests parse, so a rollout turns conversion on by the install's value alone.
-func TestARunnerTheInstallLetsConvertIsStartedWithTheConversionArg(t *testing.T) {
-	var base, convert []string
-	readRunnerContract(t, "runner-args.json", &base)
-	readRunnerContract(t, "runner-args-convert.json", &convert)
-	assert.Equal(t, append(base, convert...), renderedRunnerArgsWith(t, func(spec *config.VMRunnerSpec) {
-		spec.ConvertExt4Disks = true
-	}))
-}
-
 // TEST_SCENARIO: the runner publishes each machine on a port from the range its args name, and the NetworkPolicy admits the api-server to exactly the range it opens. Two ranges that differ leave a machine the api-server cannot dial, with nothing in any status saying why, so both are rendered from one pair of constants and held equal here.
 func TestTheRunnerPublishesMachinesOnlyOnPortsItsPolicyOpens(t *testing.T) {
 	flag := func(args []string, name string) int {

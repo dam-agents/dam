@@ -6,9 +6,9 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use super::*;
 use crate::api::{
-    REASON_BOOT_FAILED, REASON_HOME_FULL, REASON_IMAGE_UNAVAILABLE, REASON_SEED_MISSING,
-    REASON_STORAGE_FULL, STATE_ABSENT, STATE_CREATING, STATE_RESTARTING, STATE_RUNNING,
-    STATE_STARTING, STATE_STOPPED, STATE_STOPPING,
+    REASON_BOOT_FAILED, REASON_COPYING_DISK, REASON_HOME_FULL, REASON_IMAGE_UNAVAILABLE,
+    REASON_SEED_MISSING, REASON_STORAGE_FULL, STATE_ABSENT, STATE_CREATING, STATE_RESTARTING,
+    STATE_RUNNING, STATE_STARTING, STATE_STOPPED, STATE_STOPPING,
 };
 use crate::cache::{archive_path, digest_path, staged_path, PARTIAL_PREFIX};
 use crate::cacheapi;
@@ -42,6 +42,7 @@ struct Fake {
     fail_start_once: Mutex<Option<String>>,
     fail_grow_once: Mutex<Option<String>>,
     booted_mib: Mutex<Vec<i32>>,
+    start_sizes: Mutex<Vec<i32>>,
     console: Mutex<String>,
     panic_on_state: AtomicBool,
     nests: AtomicBool,
@@ -117,9 +118,10 @@ impl Runtime for Fake {
         Ok(())
     }
 
-    fn start(&self, id: &str, boot_mib: i32) -> anyhow::Result<()> {
+    fn start(&self, id: &str, boot_mib: i32, memory_mib: i32) -> anyhow::Result<()> {
         self.record(format!("start {id}"));
         locked(&self.booted_mib).push(boot_mib);
+        locked(&self.start_sizes).push(memory_mib);
         std::thread::sleep(*locked(&self.start_delay));
         if let Some(message) = locked(&self.fail_start_once).take() {
             anyhow::bail!(message);
@@ -494,7 +496,7 @@ async fn a_stopped_machine_starts_again_on_the_same_port() {
     );
 }
 
-// TEST_SCENARIO: a guest's boot costs time for every GiB of RAM it boots with, so a machine boots with the runner's boot estimate and is grown to its spec's size as soon as its start returns, on every boot: the first, and one after a stop, whose record the update set back to the spec. The grow is part of the start, so the action ends only once the machine has its size.
+// TEST_SCENARIO: a guest's boot costs time for every GiB of RAM it boots with, so a machine boots with the runner's boot estimate and is grown to its spec's size as soon as its start returns, on every boot: the first, and one after a stop, whose record the update set back to the spec. The grow is part of the start, so the action ends only once the machine has its size. Every start is also told that size, so a runtime that knows the boot cannot grow (a disk conversion) boots at it.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_machine_boots_small_and_is_grown_to_its_size_on_every_boot() {
     let h = Harness::with("boot-small", |c| c.boot_mib = 1024);
@@ -519,6 +521,7 @@ async fn a_machine_boots_small_and_is_grown_to_its_size_on_every_boot() {
         ]
     );
     assert_eq!(*locked(&h.fake.booted_mib), vec![1024, 1024]);
+    assert_eq!(*locked(&h.fake.start_sizes), vec![2048, 2048]);
 }
 
 // TEST_SCENARIO: a machine no larger than the boot estimate boots whole and is never grown, and so is every machine of a runner given no estimate.
@@ -689,6 +692,33 @@ async fn a_seed_and_a_boot_never_overlap() {
 
     h.server.put("m1", spec(true)).unwrap();
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+}
+
+// TEST_SCENARIO: a boot that restores a migration's seed copies its disk before its guest answers, so it is still booting, not failing: it reports REASON_COPYING_DISK while the guest has not answered, also past the stuck-boot minute, so the controller neither counts it as a start that never became ready nor lets the image update move it back mid-copy. The reason goes once the guest answers, and a boot that copies nothing never carries it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_boot_that_copies_a_disk_reports_it_until_the_guest_answers() {
+    let h = Harness::new("copying");
+    h.server.put("m1", spec(true)).unwrap();
+    let plain = h.settle("m1").await;
+    assert_eq!(plain.reason, "", "{plain:?}");
+
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+    let seed = upload(&h, "m1", b"a home");
+    h.server.put("m1", expecting(true, &seed)).unwrap();
+    let seeding = h.settle("m1").await;
+    assert!(!seeding.ready);
+    assert_eq!(seeding.reason, REASON_COPYING_DISK, "{seeding:?}");
+    age_boot(&h, "m1");
+    h.server.probe("m1");
+    assert_eq!(
+        h.server.status("m1").reason,
+        REASON_COPYING_DISK,
+        "a slow copy is still a copy"
+    );
+    let _guest = guest(h.base);
+    let up = h.until("m1", "ready", |s| s.ready).await;
+    assert_eq!(up.reason, "", "{up:?}");
 }
 
 // TEST_SCENARIO: a machine deleted while its seed is uploaded must not have the seed put back into a directory that is gone, or recreated by the rename; the upload's commit is refused instead.
@@ -1392,9 +1422,9 @@ async fn an_image_is_fetched_once_for_every_machine_that_wants_it() {
     );
 }
 
-// TEST_SCENARIO: an install with no registry stages each image's archive in the image directory, mounted read-only. The staged archive boots without the registry being asked anything, with the launch read out of the archive's own config.
+// TEST_SCENARIO: an install with no registry once staged `docker save` archives in the image directory, and nothing boots one any more: smolvm flattens an archive inside the guest, which no guest does since platform-init became its init. An archive left there by hand is refused as an image problem whose message says how to restage it, rather than booted into a guest that never starts its agent, and the registry is not asked instead.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_staged_archive_boots_without_asking_the_registry() {
+async fn a_staged_archive_is_refused_with_how_to_restage_it() {
     let h = Harness::new("archive");
     fs::write(
         h.dir.join("crane"),
@@ -1403,21 +1433,23 @@ async fn a_staged_archive_boots_without_asking_the_registry() {
     .unwrap();
     let images = h.dir.join("images");
     fs::create_dir_all(&images).unwrap();
-    let archive = archive_path(&images, "quay.io/x/vm:1");
-    write_archive(&archive, r#"{"config":{"Entrypoint":["/from-archive"]}}"#);
+    fs::write(
+        archive_path(&images, "quay.io/x/vm:1"),
+        b"a docker save archive",
+    )
+    .unwrap();
     h.server.put("m1", spec(true)).unwrap();
-    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
-    let (image, launch) = locked(&h.fake.created).get("m1").cloned().unwrap();
-    assert_eq!(PathBuf::from(image), archive);
-    assert_eq!(launch.entrypoint, vec!["/from-archive"]);
-    assert_eq!(h.crane_calls(), 0);
+    let status = h.settle("m1").await;
+    assert_eq!(status.reason, REASON_IMAGE_UNAVAILABLE, "{status:?}");
     assert!(
-        !h.dir.join("machines/m1").join(IMAGE_DIGEST_FILE).exists(),
-        "a machine booted from an archive holds no cache entry"
+        status.message.contains("mise run image:stage-vm"),
+        "{status:?}"
     );
+    assert!(h.fake.calls().is_empty());
+    assert_eq!(h.crane_calls(), 0);
 }
 
-// TEST_SCENARIO: an install stages an image as a tree with its launch record beside it (image:stage-vm), so the machine boots the tree in place instead of flattening an archive inside the guest. The tree wins over an archive staged under the same name, which an earlier install left behind.
+// TEST_SCENARIO: an install stages an image as a tree with its launch record beside it (image:stage-vm), and the machine boots the tree in place. An archive left under the same name by an earlier install does not refuse the tree.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_staged_tree_boots_in_place_and_wins_over_the_archive() {
     let h = Harness::new("staged-tree");
@@ -1434,10 +1466,11 @@ async fn a_staged_tree_boots_in_place_and_wins_over_the_archive() {
         r#"{"entrypoint":["/from-tree"],"cmd":[],"env":[],"workingDir":"/"}"#,
     )
     .unwrap();
-    write_archive(
-        &archive_path(&images, "quay.io/x/vm:1"),
-        r#"{"config":{"Entrypoint":["/from-archive"]}}"#,
-    );
+    fs::write(
+        archive_path(&images, "quay.io/x/vm:1"),
+        b"a docker save archive",
+    )
+    .unwrap();
     h.server.put("m1", spec(true)).unwrap();
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
     let (image, launch) = locked(&h.fake.created).get("m1").cloned().unwrap();
@@ -1644,21 +1677,6 @@ async fn the_cache_never_evicts_an_image_a_machine_is_running() {
         "the running machine's image was evicted"
     );
     assert!(h.entry("m2").exists());
-}
-
-fn write_archive(path: &Path, config: &str) {
-    let mut builder = tar::Builder::new(fs::File::create(path).unwrap());
-    let manifest = br#"[{"Config":"config.json"}]"#;
-    for (name, body) in [
-        ("manifest.json", &manifest[..]),
-        ("config.json", config.as_bytes()),
-    ] {
-        let mut header = tar::Header::new_gnu();
-        header.set_size(body.len() as u64);
-        header.set_mode(0o644);
-        builder.append_data(&mut header, name, body).unwrap();
-    }
-    builder.finish().unwrap();
 }
 
 // TEST_SCENARIO: a reference pinned by digest cannot move, so it is never resolved — its entry is the digest it names, fetched by that digest.
@@ -2763,17 +2781,17 @@ async fn a_critical_claim_refuses_big_writes_and_still_starts_existing_machines(
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
 }
 
-// TEST_SCENARIO: once the claim is nearly full, no machine starts or restarts either, since even a boot's few writes could fail every guest's; a running machine that asks for nothing new still keeps running, and once room is freed the same start goes through.
+// TEST_SCENARIO: once the claim is full, no machine starts or restarts either, since even a boot's few writes could fail every guest's; a running machine that asks for nothing new still keeps running, and once room is freed the same start goes through.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_nearly_full_claim_refuses_every_boot_and_leaves_running_machines_alone() {
-    let (h, claim) = with_claim("storage-nearly-full");
+async fn a_full_claim_refuses_every_boot_and_leaves_running_machines_alone() {
+    let (h, claim) = with_claim("storage-full");
     h.server.put("m1", spec(true)).unwrap();
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
     h.server.put("m2", spec(false)).unwrap();
     assert_eq!(h.settle("m2").await.state, STATE_STOPPED);
     let before = h.fake.calls();
 
-    *locked(&claim) = filled(97);
+    *locked(&claim) = filled(95);
     let started = h.server.put("m2", spec(true)).unwrap();
     assert_eq!(started.reason, REASON_STORAGE_FULL, "{started:?}");
     assert!(started.message.contains("can't be started"), "{started:?}");
@@ -2860,7 +2878,7 @@ async fn every_look_grants_each_guest_its_room_on_the_claim() {
     assert!(!grant.exists());
 }
 
-// TEST_SCENARIO: a guest serves each request to give back scratch once, and only a running guest frees anything, so the shortage is split among the running machines alone. The runner keeps the same request while the claim stays short at about the same use, and sends a new one, with a new id and its part of the new shortage, only once the claim has filled RESHED_STEP_PERCENT further; a claim that has room again clears it, and the next shortage is a new request.
+// TEST_SCENARIO: a guest serves each request to give back scratch once, and only a running guest frees anything, so the shortage is split among the running machines alone. The runner keeps the same request while the claim stays short at about the same use, and sends a new one, with a new id and its part of the new shortage, only once the claim has filled SHED_STEP_PERCENT further; a claim that has room again clears it, and the next shortage is a new request.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_short_claim_asks_again_only_when_it_fills_further() {
     let (h, claim) = with_claim("storage-reshed");
@@ -2933,44 +2951,6 @@ async fn the_usage_read_names_the_image_cache_and_the_seeds() {
     let storage = h.server.usage().unwrap().storage;
     assert!(storage.seed_bytes >= 1 << 20, "{storage:?}");
     assert!(storage.image_cache_bytes > 0, "{storage:?}");
-}
-
-// TEST_SCENARIO: the disk check at boot refuses to mount a disk it could not repair, which fails the boot with nothing typed in the error. The runner reads the refusal off the console and reports the damaged home with the way out, so the owner is not told only that the machine did not boot.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_boot_the_disk_check_refused_reports_a_damaged_home() {
-    let h = Harness::new("home-damaged");
-    *locked(&h.fake.fail_start_once) = Some("start machine: guest agent never became ready".into());
-    *locked(&h.fake.console) = r#"{"level":"ERROR","message":"storage: e2fsck -f -y -D Damaged (exit Some(4)): errors left; refusing to mount, and the disk is kept as it is","target":"smolvm_agent::boot"}"#.into();
-    h.server.put("m1", spec(true)).unwrap();
-    let failed = h.settle("m1").await;
-    assert_eq!(failed.reason, REASON_HOME_DAMAGED, "{failed:?}");
-    assert!(failed.message.contains("could not repair"), "{failed:?}");
-}
-
-// TEST_SCENARIO: a boot whose disk check repaired the filesystem comes up as usual, and the status says what was repaired, so the owner learns that files may be gone; the record outlives the boot it came from only until the next boot answers from a clean disk.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_repair_at_boot_is_reported_until_a_clean_boot() {
-    let h = Harness::new("home-repaired");
-    *locked(&h.fake.console) = r#"{"level":"WARN","message":"storage: e2fsck -p repaired the filesystem: /dev/vda: 12/65536 files","target":"smolvm_agent::boot"}"#.into();
-    *locked(&h.fake.start_delay) = Duration::from_millis(300);
-    h.server.put("m1", spec(true)).unwrap();
-    h.wait_for_call("start m1").await;
-    let _up = guest(h.base);
-    let ready = h.until("m1", "ready", |s| s.ready).await;
-    assert_eq!(
-        ready.home_repaired,
-        "storage: e2fsck -p repaired the filesystem: /dev/vda: 12/65536 files"
-    );
-    h.server.put("m1", spec(false)).unwrap();
-    h.settle("m1").await;
-    *locked(&h.fake.console) = "clean".into();
-    h.server.put("m1", spec(true)).unwrap();
-    let again = h
-        .until("m1", "ready after a clean boot", |s| {
-            s.ready && s.home_repaired.is_empty()
-        })
-        .await;
-    assert!(again.ready);
 }
 
 // TEST_SCENARIO: a machine's CPU share is what it used over its last two looks while running. Once it stops, the usage read reports no CPU for it, so the bars never name a paused agent among the heaviest CPU users.

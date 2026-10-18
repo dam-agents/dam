@@ -22,6 +22,7 @@ export function RowActionsMenu({
   className,
   disabled,
   stopPropagation = false,
+  open,
   onOpenChange,
   contentProps,
   children,
@@ -33,12 +34,13 @@ export function RowActionsMenu({
   className?: string;
   disabled?: boolean;
   stopPropagation?: boolean;
+  open?: boolean;
   onOpenChange?: (open: boolean) => void;
   contentProps?: ComponentProps<typeof DropdownMenuContent>;
   children: ReactNode;
 }) {
   return (
-    <DropdownMenu onOpenChange={onOpenChange}>
+    <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
         <Button
           variant={variant}

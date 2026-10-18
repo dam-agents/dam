@@ -11,7 +11,7 @@ import {
   type View,
 } from "../lib/routes.js";
 
-type ParameterlessView = "home" | "terms" | "artifacts" | "analytics";
+type ParameterlessView = "home" | "terms" | "analytics";
 
 export interface NavigationSlice {
   view: View;
@@ -62,6 +62,11 @@ function initialPath(): string {
   return restored;
 }
 
+function leaveView(get: () => PlatformStore, navigate: () => void): void {
+  if (get().view === "chat") get().leaveChatContext(navigate);
+  else navigate();
+}
+
 export const createNavigationSlice: StateCreator<
   PlatformStore,
   [],
@@ -76,28 +81,35 @@ export const createNavigationSlice: StateCreator<
         parseRoute(window.location.pathname, window.location.search),
       ),
     ),
-  setView: (v) => {
-    history.pushState(IN_APP_ENTRY, "", routeToPath({ view: v }));
-    set(routeToNavigationState({ view: v }));
-  },
+  setView: (v) =>
+    leaveView(get, () => {
+      history.pushState(IN_APP_ENTRY, "", routeToPath({ view: v }));
+      set(routeToNavigationState({ view: v }));
+    }),
   navigateBack: () => {
     if (history.state === IN_APP_ENTRY) history.back();
     else get().setView("home");
   },
-  navigateToSettings: (tab, options) => {
-    const settingsTab = tab ?? "account";
-    const period = options?.period ?? null;
-    history.pushState(
-      null,
-      "",
-      routeToPath({
+  navigateToSettings: (tab, options) =>
+    leaveView(get, () => {
+      const settingsTab = tab ?? "account";
+      const period = options?.period ?? null;
+      history.pushState(
+        null,
+        "",
+        routeToPath({
+          view: "settings",
+          settingsTab,
+          ...(period ? { period } : {}),
+        }),
+      );
+      set({
         view: "settings",
         settingsTab,
-        ...(period ? { period } : {}),
-      }),
-    );
-    set({ view: "settings", settingsTab, usagePeriod: period, agentId: null });
-  },
+        usagePeriod: period,
+        agentId: null,
+      });
+    }),
   setUsagePeriod: (period) => {
     history.replaceState(
       history.state,
@@ -106,27 +118,29 @@ export const createNavigationSlice: StateCreator<
     );
     set({ usagePeriod: period });
   },
-  navigateToSandboxHome: (agentId, section = "setup") => {
-    history.pushState(
-      null,
-      "",
-      routeToPath({ view: "sandbox-home", agentId, sandboxSection: section }),
-    );
-    set({ view: "sandbox-home", agentId, sandboxSection: section });
-  },
-  navigateToStarterKit: (catalog, kitId) => {
-    history.pushState(
-      null,
-      "",
-      routeToPath({ view: "starter-kit", catalog, kit: kitId }),
-    );
-    set({
-      view: "starter-kit",
-      starterKitCatalog: catalog,
-      starterKitId: kitId,
-      agentId: null,
-    });
-  },
+  navigateToSandboxHome: (agentId, section = "setup") =>
+    leaveView(get, () => {
+      history.pushState(
+        null,
+        "",
+        routeToPath({ view: "sandbox-home", agentId, sandboxSection: section }),
+      );
+      set({ view: "sandbox-home", agentId, sandboxSection: section });
+    }),
+  navigateToStarterKit: (catalog, kitId) =>
+    leaveView(get, () => {
+      history.pushState(
+        null,
+        "",
+        routeToPath({ view: "starter-kit", catalog, kit: kitId }),
+      );
+      set({
+        view: "starter-kit",
+        starterKitCatalog: catalog,
+        starterKitId: kitId,
+        agentId: null,
+      });
+    }),
   setKitBrowserOpen: (open) => set({ kitBrowserOpen: open }),
   mobileScreen: "chat",
   setMobileScreen: (screen) => set({ mobileScreen: screen }),

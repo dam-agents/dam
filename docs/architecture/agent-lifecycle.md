@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-10-15
+Last verified: 2026-10-17
 
 ## Overview
 
@@ -119,6 +119,7 @@ A runtime advertising kinds its predecessor did not is re-delivered the Contribu
 
 Every caller that sends work to a pod — the api-server's ACP relay, channel adapters, skills management — routes through a single reachability primitive in the api-server.
 The primitive's contract: **the controller-published `Ready` condition is the authoritative answer to "can I call this pod?"** The primitive pokes activity by bumping the `agent-platform.ai/last-activity` annotation (the reconciler scales up any Agent with recent activity), single-flights concurrent waits per Agent, and bumps the same annotation on every successful call, so any caller implicitly keeps the pod warm.
+Opening a sleeping Agent's chat in the web UI wakes it once per open, a stopped Agent included but not a disabled one or one held over its budget; an Agent that falls asleep while its chat stays open, or whose wake fails, shows a Start button until the next open.
 The deliberate opt-outs never wake anything: a **passive** relay connection (`passive=1`) fails closed unless `Ready`, takes no pin and never bumps activity; the per-agent tRPC relay takes no pin, waits out a wake already asked for without stamping activity, and keeps the stamp fresh while a view is open.
 The agent relays — ACP, per-agent tRPC, terminal, browser stream and SSH — do not wait for `Ready` alone when they hold a socket for a wake from hibernation.
 `Ready` arrives only after the controller's next reconcile, so a relay whose hold began on a hibernated Agent also asks the agent's `/healthz` through its Service at a short interval, and opens its upstream on the first answer once the cached Agent shows `GatewayPodReady`.
@@ -223,6 +224,7 @@ An Agent that never sleeps carries an *Always on* tag.
 **A vm Agent has no per-agent timeout.** It boots in seconds, so it always takes the chart-wide vm idle timeout, ignores any override, and the UI does not offer the setting.
 A cold first boot can still outlast that timeout — an image no runner has cached, a fresh runner, a large nested guest — so for a vm Agent whose pair is awake the idle checker also counts the clock from the moment it turned `Ready`, and holds a boot still in progress: a machine not ready for no reason of its own, with no start failure reported.
 The hold ends at the start failure report, and a boot that has not finished a quarter of an hour past the timeout is hibernated anyway.
+A boot the runner reports as copying a disk, a conversion or a migration seed's restore, is held for as long as the runner says so, since the runner bounds it at six hours and a hibernation would start the copy again from nothing; reclaim counts it as booting for the same reason.
 A running Agent with no session running but [kept background work](agent-processes.md#keeping-work) holding it awake shows *Background work* rather than *Idle*.
 
 It's a blunt instrument: it keeps known off-session work alive without making it visible, and a long or disabled timeout holds CPU and memory until lowered by hand.

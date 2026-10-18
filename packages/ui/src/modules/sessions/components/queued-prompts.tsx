@@ -1,4 +1,4 @@
-import { Edit, SendAlt, Time, TrashCan } from "@carbon/icons-react";
+import { RequestQuote, SendAlt, Time, TrashCan } from "@carbon/icons-react";
 import {
   joinRendererBlocks,
   type PromptBlock,
@@ -169,7 +169,7 @@ function QueuedPromptItem({
               <Button
                 variant="ghost"
                 size="icon-xs"
-                tooltip="Send now — interrupts the agent"
+                tooltip="Send now (interrupts the agent)"
                 aria-label="Send now"
                 disabled={pending}
                 onClick={sendNow}
@@ -187,7 +187,7 @@ function QueuedPromptItem({
                 setDraft(separateRendererBlocks(textOf(target.blocks)).text)
               }
             >
-              <Edit size={14} />
+              <RequestQuote size={14} />
             </Button>
             <Button
               variant="ghost"

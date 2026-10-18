@@ -1,0 +1,21 @@
+bypass_actors:
+  - actor_id: 5079224
+    actor_type: User
+    bypass_mode: always
+  - actor_id: 43778522
+    actor_type: User
+    bypass_mode: always
+conditions:
+  ref_name:
+    exclude:
+      - refs/tags/*-rc*
+    include:
+      - refs/tags/v*
+enforcement: active
+name: Tags
+rules:
+  - type: deletion
+  - type: non_fast_forward
+  - type: creation
+  - type: update
+target: tag

@@ -1,16 +1,20 @@
 import { useSyncExternalStore } from "react";
 
-const DESKTOP = "(min-width: 48rem)";
-
-function subscribe(onChange: () => void): () => void {
-  const mq = window.matchMedia(DESKTOP);
-  mq.addEventListener("change", onChange);
-  return () => mq.removeEventListener("change", onChange);
+function useMediaQuery(query: string): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const mq = window.matchMedia(query);
+      mq.addEventListener("change", onChange);
+      return () => mq.removeEventListener("change", onChange);
+    },
+    () => window.matchMedia(query).matches,
+  );
 }
 
 export function useIsDesktop(): boolean {
-  return useSyncExternalStore(
-    subscribe,
-    () => window.matchMedia(DESKTOP).matches,
-  );
+  return useMediaQuery("(min-width: 48rem)");
+}
+
+export function useIsWideDesktop(): boolean {
+  return useMediaQuery("(min-width: 64rem)");
 }

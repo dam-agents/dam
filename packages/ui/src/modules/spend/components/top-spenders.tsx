@@ -11,7 +11,11 @@ import {
   NEUTRAL_LIGHT_FILL,
 } from "../../budgets/lib/pool-colors.js";
 import { SpendBarTrack } from "../../metrics/components/spend-bar.js";
-import { NO_SPEND_IN_PERIOD, paidWithPlanUse } from "../lib/copy.js";
+import {
+  DELETED_AGENT_NAME,
+  NO_SPEND_IN_PERIOD,
+  paidWithPlanUse,
+} from "../lib/copy.js";
 import { bareSpend } from "../lib/format.js";
 import { amountsBy, VISIBLE_MICROS } from "../lib/measured-spend.js";
 
@@ -101,7 +105,7 @@ function SpenderRow({
 }) {
   const agents = useAgentsList();
   const agent = agents.find((a) => a.id === spender.agentId);
-  const name = agent?.name ?? spender.agentId;
+  const name = agent?.name ?? DELETED_AGENT_NAME;
   const withPlan = showPlanUse && spender.planMicros >= VISIBLE_MICROS;
   const pct = (micros: number) =>
     topMicros > 0 ? (micros / topMicros) * 100 : 0;
@@ -110,7 +114,12 @@ function SpenderRow({
     <>
       <div className="mb-1 flex items-center justify-between">
         <span className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
-          <AgentAvatar name={name} avatar={agent?.avatar} size={16} />
+          <AgentAvatar
+            name={name}
+            avatar={agent?.avatar}
+            mood={agent ? "awake" : "disabled"}
+            size={16}
+          />
           <span className="truncate">{name}</span>
         </span>
         <span className="ml-2 shrink-0 text-sm text-muted-foreground tabular-nums">

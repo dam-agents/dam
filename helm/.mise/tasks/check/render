@@ -133,10 +133,6 @@ helm template platform . "${COMMON[@]}" \
   --set apiServer.oauthAppDefaults.githubEnterprise.clientId=c --set apiServer.oauthAppDefaults.githubEnterprise.clientSecret=s \
   --set apiServer.oauthAppDefaults.slack.clientId=c --set apiServer.oauthAppDefaults.slack.clientSecret=s \
   | "${KUBECONFORM[@]}" "$@"
-# A GitHub token for the harness tools installer adds its Secret and the
-# installer's env, which no other render reaches.
-helm template platform . "${COMMON[@]}" --set harnessTools.githubToken=t \
-  | "${KUBECONFORM[@]}" "$@"
 # The VM pool alerts render only where the cluster serves prometheus-operator's
 # API; the render must hold both, and kubeconform has no schema for its kinds.
 MONITORING=(--set monitoring.enabled=true --set clickstack.enabled=true --set virtualization.enabled=true

@@ -118,7 +118,10 @@ describe("agent default session pair", () => {
       createElement(
         TooltipProvider,
         null,
-        createElement(SandboxProvidersSection, { agentId: "agent" }),
+        createElement(SandboxProvidersSection, {
+          agentId: "agent",
+          header: () => null,
+        }),
       ),
     );
     expect(html).toMatch(/aria-label="Harness"[^>]*><span[^>]*>Codex</);
@@ -131,7 +134,10 @@ describe("agent default session pair", () => {
       createElement(
         TooltipProvider,
         null,
-        createElement(SandboxProvidersSection, { agentId: "agent" }),
+        createElement(SandboxProvidersSection, {
+          agentId: "agent",
+          header: () => null,
+        }),
       ),
     );
     expect(html).toMatch(/aria-label="Harness"[^>]*><span[^>]*>Pi</);
@@ -154,7 +160,10 @@ describe("agent default on a runtime that routes by model name", () => {
       createElement(
         TooltipProvider,
         null,
-        createElement(SandboxProvidersSection, { agentId: "agent" }),
+        createElement(SandboxProvidersSection, {
+          agentId: "agent",
+          header: () => null,
+        }),
       ),
     );
     expect(html).toMatch(

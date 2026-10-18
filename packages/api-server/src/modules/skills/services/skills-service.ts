@@ -1206,9 +1206,24 @@ export function createSkillsService(deps: SkillsServiceDeps): SkillsService {
           message: "skill source not found",
         });
       }
+      const path = canonicalPath(source.path);
+      if (hidden) {
+        const installed = await deps.agentSkillsRepo.listSkills(agentId);
+        if (
+          installed.some(
+            (r) => r.source === source.gitUrl && canonicalPath(r.path) === path,
+          )
+        ) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "turn off this source's skills on the agent before hiding it",
+          });
+        }
+      }
       await deps.agentSkillsRepo.setSourceHidden(
         agentId,
-        { gitUrl: source.gitUrl, path: canonicalPath(source.path) },
+        { gitUrl: source.gitUrl, path },
         hidden,
       );
     },

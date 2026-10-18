@@ -73,7 +73,10 @@ export function SidebarAgentRow({
             mood={mood}
             className="shrink-0"
           />
-          <span className="min-w-0 flex-1 truncate text-sm font-medium">
+          <span
+            title={agent.name}
+            className="min-w-0 flex-1 truncate text-sm font-medium"
+          >
             {agent.name}
           </span>
           {unread && (

@@ -1,5 +1,6 @@
 import { Callout } from "@/components/ui/callout";
 import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import {
@@ -18,7 +19,6 @@ import {
 import { UncountedCallsNote } from "../components/uncounted-calls-note.js";
 import {
   readFailureMessage,
-  UsageNotice,
   UsageStaleLabel,
 } from "../components/usage-notice.js";
 import { useMonthlySpend } from "../hooks/use-monthly-spend.js";
@@ -70,9 +70,9 @@ function EarlierEstimatesBody({
 }: ReturnType<typeof useMonthlySpend>) {
   if (state === "unavailable" || state === "failed") {
     return (
-      <UsageNotice>
+      <EmptyState>
         {readFailureMessage(state === "unavailable", label)}
-      </UsageNotice>
+      </EmptyState>
     );
   }
   if (state === "loading" || !data) return <UsageSkeleton />;
@@ -95,7 +95,7 @@ function EarlierEstimatesBody({
       {data.byModel.length === 0 ? (
         <section>
           <SectionLabel spaced>Spend by day</SectionLabel>
-          <UsageNotice>No LLM calls in {monthLabel(shownMonth)}.</UsageNotice>
+          <EmptyState>No LLM calls in {monthLabel(shownMonth)}.</EmptyState>
         </section>
       ) : (
         <>

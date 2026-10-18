@@ -38,7 +38,6 @@ export type Route =
   | { view: "slack-bind" }
   | { view: "sandbox-home"; agentId: string; sandboxSection: SandboxSection }
   | { view: "starter-kit"; catalog: string; kit: string }
-  | { view: "artifacts" }
   | { view: "analytics" }
   | { view: "not-found"; path: string };
 
@@ -73,6 +72,7 @@ export const RETIRED_PATHS = new Set([
   "/experiments/new",
   "/agents/new",
   "/starter-kits",
+  "/artifacts",
 ]);
 
 const sandboxSectionPattern = sandboxSectionSchema.options.join("|");
@@ -113,7 +113,6 @@ export function parseRoute(path: string, search = ""): Route {
   if (path === "/telegram/bind") return { view: "telegram-bind" };
   if (path === "/slack/bind") return { view: "slack-bind" };
   if (RETIRED_PATHS.has(path)) return { view: "home" };
-  if (path === "/artifacts") return { view: "artifacts" };
   if (path === "/analytics") return { view: "analytics" };
   const sandboxHomeMatch = path.match(sandboxHomeRe);
   if (sandboxHomeMatch) {
@@ -168,8 +167,6 @@ export function routeToPath(route: Route): string {
     }
     case "starter-kit":
       return `/starter-kits/${encodeURIComponent(route.catalog)}/${encodeURIComponent(route.kit)}`;
-    case "artifacts":
-      return "/artifacts";
     case "analytics":
       return "/analytics";
     case "not-found":

@@ -9,6 +9,8 @@ import { formatDay, formatRange } from "./range-label.js";
 import type { PresetPeriod } from "./spend-period.js";
 import type { DayRange } from "./utc-day.js";
 
+export const DELETED_AGENT_NAME = "Deleted agent";
+
 export const AGENT_LIMIT_NAME = "Agent spend limit";
 
 export const OWN_LIMIT_NAME = "Your spend limit (all agents)";

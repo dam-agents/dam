@@ -1,4 +1,10 @@
-import { ChevronLeft, Close, Download, Edit, Save } from "@carbon/icons-react";
+import {
+  ArrowLeft,
+  Close,
+  Download,
+  RequestQuote,
+  Save,
+} from "@carbon/icons-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { RenderToggle } from "@/components/render-toggle";
@@ -149,7 +155,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
           aria-label="Back to files"
           tooltip="Back to files"
         >
-          <ChevronLeft size={16} />
+          <ArrowLeft size={16} />
         </Button>
         <TruncateStart
           className="text-sm font-medium text-foreground flex-1 min-w-0"
@@ -214,7 +220,8 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
                 aria-label="Edit"
                 tooltip="Edit"
               >
-                <Edit size={14} /> <span className={TOOLBAR_LABEL}>Edit</span>
+                <RequestQuote size={14} />{" "}
+                <span className={TOOLBAR_LABEL}>Edit</span>
               </Button>
             )}
             {!tooLarge && (

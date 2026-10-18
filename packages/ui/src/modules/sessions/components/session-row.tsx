@@ -1,4 +1,11 @@
-import { Download, Edit, Terminal, Time, TrashCan } from "@carbon/icons-react";
+import {
+  Download,
+  Edit,
+  Pen,
+  Terminal,
+  Time,
+  TrashCan,
+} from "@carbon/icons-react";
 import {
   type BackgroundWorkItemView,
   ChannelType,
@@ -7,15 +14,13 @@ import {
   type SessionView,
   type SpendSessionRow,
 } from "api-server-api";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { HarnessIcons } from "@/components/harness-icons";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { HOVER_ACTION, HOVER_YIELD } from "@/components/ui/hover-action";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
-import { clickableProps } from "@/lib/clickable";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +42,10 @@ const PREFETCH_DWELL_MS = 100;
 
 const NO_WORK: readonly BackgroundWorkItemView[] = Object.freeze([]);
 
+export function sessionTitleLabel(s: SessionView): string {
+  return s.title || `(no title · ${s.sessionId.slice(0, 8)})`;
+}
+
 interface Props {
   session: SessionView;
   active: boolean;
@@ -44,7 +53,6 @@ interface Props {
   needsApproval: boolean;
   unread?: boolean;
   draft?: boolean;
-  provisional?: boolean;
   backgroundWork?: readonly BackgroundWorkItemView[];
   cost?: SpendSessionRow;
   conversation?: string;
@@ -64,7 +72,6 @@ export function SessionRow({
   needsApproval,
   unread = false,
   draft = false,
-  provisional = false,
   backgroundWork = NO_WORK,
   cost,
   conversation,
@@ -79,16 +86,17 @@ export function SessionRow({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didLongPress = useRef(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLButtonElement>(null);
+  const metaId = useId();
+  const afterMenu = useRef<(() => void) | null>(null);
 
   const startPress = useCallback(() => {
     didLongPress.current = false;
-    if (provisional) return;
     timerRef.current = setTimeout(() => {
       didLongPress.current = true;
       setMenuOpen(true);
     }, LONG_PRESS_MS);
-  }, [provisional]);
+  }, []);
 
   const dwellRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startDwell = useCallback(() => {
@@ -113,24 +121,10 @@ export function SessionRow({
       didLongPress.current = false;
       return;
     }
-    if (menuOpen) {
-      setMenuOpen(false);
-      return;
-    }
     onResume();
-  }, [onResume, menuOpen]);
+  }, [onResume]);
 
-  useEffect(() => {
-    if (!menuOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node))
-        setMenuOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [menuOpen]);
-
-  const titleLabel = s.title || `(no title · ${s.sessionId.slice(0, 8)})`;
+  const titleLabel = sessionTitleLabel(s);
   const titleClass = !s.title
     ? "text-muted-foreground italic"
     : unread
@@ -162,11 +156,11 @@ export function SessionRow({
       data-active={active ? "true" : "false"}
       className={cn(
         "group relative flex items-center gap-1 px-4 py-3 cursor-pointer border-b border-border transition-colors select-none",
+        "has-[[data-row-main]:focus-visible]:outline-2 has-[[data-row-main]:focus-visible]:-outline-offset-2 has-[[data-row-main]:focus-visible]:outline-accent",
         active ? "bg-muted" : "hover:bg-muted/60",
         className,
       )}
-      {...clickableProps(handleClick)}
-      aria-keyshortcuts={reorderable ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
+      onClick={handleClick}
       onPointerEnter={startDwell}
       onPointerLeave={endDwell}
       onFocus={onPrefetch}
@@ -174,21 +168,37 @@ export function SessionRow({
       onTouchEnd={endPress}
       onTouchCancel={endPress}
       onContextMenu={(e) => {
-        if (provisional) return;
         e.preventDefault();
         setMenuOpen(true);
       }}
     >
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
         <div className="flex items-center gap-1.5">
-          <span className={`text-sm min-w-0 truncate ${titleClass}`}>
-            {titleLabel}
-          </span>
-          {onboarding && (
-            <Badge variant={onboarding.variant} size="sm" className="shrink-0">
-              {onboarding.label}
-            </Badge>
-          )}
+          <button
+            ref={mainRef}
+            type="button"
+            data-row-main
+            title={titleLabel}
+            aria-current={active ? "page" : undefined}
+            aria-describedby={metaId}
+            aria-keyshortcuts={
+              reorderable ? "Alt+ArrowUp Alt+ArrowDown" : undefined
+            }
+            className="flex min-w-0 items-center gap-1.5 text-left outline-none"
+          >
+            <span className={`text-sm min-w-0 truncate ${titleClass}`}>
+              {titleLabel}
+            </span>
+            {onboarding && (
+              <Badge
+                variant={onboarding.variant}
+                size="sm"
+                className="shrink-0"
+              >
+                {onboarding.label}
+              </Badge>
+            )}
+          </button>
           <div className="ml-auto flex shrink-0 items-center gap-1 hover-capable:grid hover-capable:justify-items-end hover-capable:*:[grid-area:1/1]">
             <SessionIndicators
               scheduled={scheduled}
@@ -211,7 +221,19 @@ export function SessionRow({
                 testId="session-menu-button"
                 dense
                 stopPropagation
-                contentProps={{ onClick: (event) => event.stopPropagation() }}
+                open={menuOpen}
+                onOpenChange={setMenuOpen}
+                contentProps={{
+                  onClick: (event) => event.stopPropagation(),
+                  onCloseAutoFocus: (event) => {
+                    const act = afterMenu.current;
+                    if (!act) return;
+                    afterMenu.current = null;
+                    event.preventDefault();
+                    mainRef.current?.focus();
+                    act();
+                  },
+                }}
               >
                 {onExportTimeline && (
                   <DropdownMenuItem
@@ -223,16 +245,18 @@ export function SessionRow({
                 )}
                 <DropdownMenuItem
                   data-testid="session-rename-button"
-                  disabled={provisional}
-                  onSelect={onRename}
+                  onSelect={() => {
+                    afterMenu.current = onRename;
+                  }}
                 >
                   <Edit size={14} /> Rename session
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   data-testid="session-delete-button"
-                  disabled={provisional}
                   tone="danger"
-                  onSelect={onDelete}
+                  onSelect={() => {
+                    afterMenu.current = onDelete;
+                  }}
                 >
                   <TrashCan size={14} /> Delete session
                 </DropdownMenuItem>
@@ -240,7 +264,7 @@ export function SessionRow({
             </div>
           </div>
         </div>
-        <span className="text-2xs text-muted-foreground truncate">
+        <span id={metaId} className="text-2xs text-muted-foreground truncate">
           {conversation ? `${conversation} · ` : ""}
           <span title={formatTimestamp(s.updatedAt ?? s.createdAt)}>
             {timeAgo(s.updatedAt ?? s.createdAt)}
@@ -266,39 +290,6 @@ export function SessionRow({
           <SessionRepositoryBadges repositories={s.repositories} />
         )}
       </div>
-      {}
-      {menuOpen && (
-        <div
-          ref={menuRef}
-          className="absolute right-3 top-2 z-popover rounded-lg border border-border bg-popover py-1 anim-scale-in shadow-md"
-        >
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start"
-            onClick={(e) => {
-              e.stopPropagation();
-              setMenuOpen(false);
-              onRename();
-            }}
-          >
-            <Edit size={14} /> Rename session
-          </Button>
-          <Button
-            variant="ghost"
-            tone="danger"
-            size="sm"
-            className="w-full justify-start"
-            onClick={(e) => {
-              e.stopPropagation();
-              setMenuOpen(false);
-              onDelete();
-            }}
-          >
-            <TrashCan size={14} /> Delete session
-          </Button>
-        </div>
-      )}
     </div>
   );
 }
@@ -372,7 +363,7 @@ function SessionIndicators({
           title="Has a draft"
           className="inline-flex text-muted-foreground shrink-0"
         >
-          <Edit size={16} />
+          <Pen size={16} />
         </span>
       ) : harness ? (
         <span

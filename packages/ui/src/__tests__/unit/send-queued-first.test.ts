@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   applyUpdate,
+  conversationEmpty,
   isQueuedSend,
   sendWaits,
   withoutQueuedSends,
@@ -144,5 +145,26 @@ describe("a sent message: queued, then sent", () => {
     expect(sendWaits(sentWhileBusy().slice(0, 1), [])).toBe(true);
     expect(sendWaits(idle, queue)).toBe(true);
     expect(sendWaits(sentWhileBusy().slice(1), [])).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: A new session's first message waits in the runtime's
+   * queue while the session's harness settings apply, so the queue update
+   * takes it out of the conversation before it starts. The session is not
+   * empty then, so the new-session hero must not come back.
+   */
+  test("a first message waiting in the queue keeps the session non-empty", () => {
+    const sent = sentWhileBusy()
+      .slice(1)
+      .map((m) => ({ ...m, queued: false }));
+    const queue = [
+      { promptId: PROMPT, blocks: [], queuedAt: "", editable: true },
+    ];
+    const waiting = withoutQueuedSends(sent, queue);
+
+    expect(waiting).toEqual([]);
+    expect(conversationEmpty(waiting, queue)).toBe(false);
+    expect(conversationEmpty(sent, [])).toBe(false);
+    expect(conversationEmpty([], [])).toBe(true);
   });
 });

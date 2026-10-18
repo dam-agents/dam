@@ -17,7 +17,9 @@ name: CI/CD
 on:
   pull_request:
   # The merge queue's gate: a merge group verifies like a PR and publishes
-  # nothing. The push to main that follows only builds and publishes; see e2e.
+  # nothing a consumer reads, only cache tags for later groups (build.yml's
+  # build-images). The push to main that follows only builds and publishes;
+  # see e2e.
   merge_group:
     types: [checks_requested]
   push:

@@ -54,7 +54,7 @@ export function GithubSourceTab({
         >
           <Input
             variant="monospace"
-            placeholder="github.ibm.com/org/repo-name"
+            placeholder="https://github.com/owner/repo"
             {...register("gitUrl")}
           />
         </FormField>

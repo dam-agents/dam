@@ -41,6 +41,7 @@ function SharingControls({ artifact, onClose }: Props) {
     useShareForm(artifact, onClose);
   const [draftEmail, setDraftEmail] = useState("");
   const [confirmingPublic, setConfirmingPublic] = useState(false);
+  const confirmShown = confirmingPublic && needsPublicConfirm;
   const visibility = form.watch("visibility");
   const hasLink = visibility !== "private" && shareUrl !== null;
   const hasPendingViewer =
@@ -73,12 +74,12 @@ function SharingControls({ artifact, onClose }: Props) {
       onClose={
         isPending
           ? undefined
-          : confirmingPublic
+          : confirmShown
             ? () => setConfirmingPublic(false)
             : onClose
       }
     >
-      {confirmingPublic ? (
+      {confirmShown ? (
         <>
           <DialogHeader
             title={PUBLIC_SHARE_TITLE}
@@ -97,7 +98,10 @@ function SharingControls({ artifact, onClose }: Props) {
             pendingLabel="Sharing…"
             pending={isPending}
             cancelDisabled={isPending}
-            onSubmit={() => void submit({ closeOnSuccess: true })}
+            onSubmit={() => {
+              setConfirmingPublic(false);
+              void submit();
+            }}
           />
         </>
       ) : (

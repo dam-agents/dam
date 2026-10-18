@@ -1,4 +1,4 @@
-import { Help } from "@carbon/icons-react";
+import { Information } from "@carbon/icons-react";
 
 import { SectionLabel } from "@/components/ui/section-label";
 import { Select } from "@/components/ui/select";
@@ -64,7 +64,7 @@ export function SandboxSizeSection({
               : "The new size applies when the sandbox next starts."
           }`}
         >
-          <Help size={14} className="text-muted-foreground/60" />
+          <Information size={14} className="text-muted-foreground/60" />
         </HintTooltip>
       </div>
       <div>

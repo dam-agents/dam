@@ -1,4 +1,4 @@
-import { Close, Time, Undo } from "@carbon/icons-react";
+import { Time, TrashCan, Undo } from "@carbon/icons-react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type {
   StarterKitSchedule,
@@ -153,10 +153,10 @@ export function KitScheduleCard({
           aria-label={
             skipped ? `Add back ${schedule.name}` : `Skip ${schedule.name}`
           }
-          tooltip={skipped ? "Add back" : "Skip this schedule"}
+          tooltip={skipped ? "Add back" : "Skip"}
           onClick={onToggleSkipped}
         >
-          {skipped ? <Undo size={16} /> : <Close size={16} />}
+          {skipped ? <Undo size={16} /> : <TrashCan size={16} />}
         </Button>
       </div>
 

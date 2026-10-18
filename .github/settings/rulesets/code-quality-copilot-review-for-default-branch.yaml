@@ -1,0 +1,14 @@
+bypass_actors: []
+conditions:
+  ref_name:
+    exclude: []
+    include:
+      - ~DEFAULT_BRANCH
+enforcement: disabled
+name: Code Quality Copilot review for default branch
+rules:
+  - parameters:
+      review_draft_pull_requests: true
+      review_on_push: true
+    type: copilot_code_review
+target: branch

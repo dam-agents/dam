@@ -1,15 +1,15 @@
 import { useCallback } from "react";
 
-import { useStore } from "../../../store.js";
+import { useOpenSidePanel } from "../../sessions/hooks/use-open-side-panel.js";
 import { useSetChecklistDismissed } from "../api/mutations.js";
 import { useGettingStarted } from "../api/queries.js";
 
 export function useOpenChecklist(): () => void {
   const dismissed = useGettingStarted().data?.dismissed ?? false;
-  const setExpanded = useStore((s) => s.setChecklistExpanded);
+  const openSidePanel = useOpenSidePanel();
   const setDismissed = useSetChecklistDismissed();
   return useCallback(() => {
-    setExpanded(true);
+    openSidePanel("getting-started");
     if (dismissed) setDismissed.mutate({ dismissed: false });
-  }, [dismissed, setExpanded, setDismissed]);
+  }, [dismissed, openSidePanel, setDismissed]);
 }

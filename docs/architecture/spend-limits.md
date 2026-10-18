@@ -291,7 +291,11 @@ It has no tool to set, clear or continue a limit.
 
 ## Screens
 
-The owner sets each limit where the work happens, and each limit shows its metered spend, what is left, and a meter:
+The owner sets each limit where the work happens.
+Each limit shows as one sentence, "Spent $X today of $Y daily limit for <subject>.", where the subject is the agent on the Connection, the agent, or all your agents, and $Y is "∞" with no limit.
+The amount is a button that opens a small dialog to set the limit or remove it; a caller that cannot set limits sees the sentence without the button.
+A set limit also shows a meter.
+The screens:
 
 - **The agent's page:** the Usage section sets the agent limit and shows today's Metered Spend and when the day resets, in the user's own time.
   When the own limit or the ceiling stops the agent first, it says so.

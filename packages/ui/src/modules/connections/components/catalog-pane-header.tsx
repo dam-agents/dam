@@ -18,6 +18,7 @@ export function CatalogPaneHeader({
         size="icon-sm"
         onClick={onBack}
         aria-label="Back"
+        tooltip="Back"
         data-testid="catalog-back"
         className="shrink-0 text-muted-foreground"
       >

@@ -6,6 +6,7 @@ import {
   type BindPickerCopy,
 } from "../../agents/components/bind/agent-bind-picker.js";
 import { BindTerminalPage } from "../../agents/components/bind/bind-terminal-page.js";
+import { withCommandChips } from "../../agents/components/bind/command-chip.js";
 import { useBindTelegramChat } from "../api/mutations.js";
 import { useTelegramBindFlow } from "../api/queries.js";
 import {
@@ -37,7 +38,7 @@ export function TelegramBindView() {
       <TerminalError
         copy={{
           title: "This page is opened from Telegram",
-          hint: "Send `/bind` in your chat to get a fresh link.",
+          hint: "Send `/bind` in the chat to get a fresh link.",
           terminal: true,
         }}
       />
@@ -53,6 +54,9 @@ export function TelegramBindView() {
   }
   if (error?.terminal) {
     return <TerminalError copy={error} />;
+  }
+  if (flow.isSuccess && !flow.data) {
+    return <TerminalError copy={bindErrorCopy("BAD_REQUEST")} />;
   }
 
   const pick = (agent: AgentView) => {
@@ -90,7 +94,9 @@ function pickerCopy(
   const chatTitle = flow?.chatTitle ?? null;
   return {
     messenger: "telegram",
-    title: chatTitle ? `Pick an agent for ${chatTitle}` : "Pick an agent",
+    title: chatTitle
+      ? `Pick an agent for ${chatTitle}`
+      : "Pick an agent for this chat",
     subtitle:
       "Choose which agent to add to this chat. A chat talks to one agent — send /unbind there to swap it for another.",
     emptySubtitle:
@@ -109,7 +115,7 @@ function pickerCopy(
 function TerminalError({ copy }: { copy: BindErrorCopy }) {
   return (
     <BindTerminalPage messenger="telegram" title={copy.title}>
-      <p>{copy.hint}</p>
+      <p>{withCommandChips(copy.hint)}</p>
     </BindTerminalPage>
   );
 }

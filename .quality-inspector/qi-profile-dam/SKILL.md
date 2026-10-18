@@ -26,10 +26,10 @@ The nested install is a fresh, single-user platform at `http://localhost:4444`, 
   An AC that needs any of them is `testable: no — external dependency`, unless it only checks that the UI offers or records something.
 - Agents only answer when the profile's `mock_image` is set (a scripted mock harness).
   Without it, an AC that needs an agent to reply or run is `blocked`, not failed.
-- Only the mock harness runs: the install leaves out the harness tools installer, so the
-  harness templates that need its tools (Claude Code, Codex, Pi, Bob) cannot start an agent.
-  An AC about such a harness's own behavior is `testable: no — no harness tools`; one that only
-  checks what the UI offers or records for it stays testable.
+- The harness templates (Claude Code, Codex, Pi, Bob) boot the default image, which bakes their
+  tools, but no real model provider is reachable (above), so an AC about such a harness's own
+  replies is `testable: no — external dependency`; one that only checks what the UI offers or
+  records for it stays testable.
 - One user.
   ACs about sharing, other users' access or approvals between people need a second account — `testable: no — single user` until the profile adds one.
 - No service mesh: the VM's kernel cannot run Istio, so the nested install runs without it.
