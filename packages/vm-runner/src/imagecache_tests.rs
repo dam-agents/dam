@@ -410,7 +410,7 @@ fn a_public_entry_boots_for_anyone_without_asking_the_registry() {
     assert!(cache.resolve(IMAGE, &[]).resolved.is_ok());
 }
 
-// TEST_SCENARIO: a runner reaches the node service over a Unix socket in the cache directory. A resolve comes back with the digest and launch the service unpacked, a hold is accepted, and a refusal keeps its reason across the socket, so the controller still tells the person to fix the image. A client with no service behind the socket says it was unreachable, as an image problem.
+// TEST_SCENARIO: a runner reaches the node service over a Unix socket in the cache directory. A resolve comes back with the digest and launch the service unpacked, a hold is accepted, and a refusal keeps its reason across the socket, so the controller still tells the person to fix the image. A client with no service behind the socket says it was unreachable, as an image problem. The service is ready when it accepts a connection, not when its socket file appears: the file exists from the bind, one syscall before the listen, and a machine under load runs the serving task out of that gap long enough to refuse the client.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_runner_reaches_the_service_over_its_socket() {
     let f = Fixture::new("socket", PRIVATE_CRANE);
@@ -421,7 +421,7 @@ async fn a_runner_reaches_the_service_over_its_socket() {
         let (socket, cache, stop) = (socket.clone(), cache.clone(), stop.clone());
         async move { cacheapi::serve(&socket, cache, async move { stop.cancelled().await }).await }
     });
-    while !socket.exists() {
+    while tokio::net::UnixStream::connect(&socket).await.is_err() {
         if serving.is_finished() {
             panic!("the service did not start: {:?}", serving.await);
         }

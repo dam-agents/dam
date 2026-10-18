@@ -405,7 +405,11 @@ fn port_block() -> (u16, HashMap<u16, TcpListener>) {
             return (base, HashMap::from([(base, first), (base + 1, second)]));
         }
     }
-    panic!("no free port block");
+    panic!(
+        "no free port block in {}..{}",
+        crate::testdir::PORT_BLOCK_BASE,
+        crate::testdir::PORT_BLOCK_TOP
+    );
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a guest answering its health endpoint on the loopback port behind a published one, until the returned flag is cleared.
@@ -2130,7 +2134,7 @@ async fn a_scrape_counts_what_a_create_did() {
     );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the node image cache service in this test's process, serving the harness's image directory on the socket the runner was told, with the harness's crane. Its holds lapse in `lease`, so a test can see whether the runner renews them.
+// UNIT_BOUNDARY_DESCRIPTION: the node image cache service in this test's process, serving the harness's image directory on the socket the runner was told, with the harness's crane. Its holds lapse in `lease`, so a test can see whether the runner renews them. The test waits until the service accepts a connection: the socket file appears a syscall before the listen, and on a loaded machine the serving task waits for a core between the two, long enough for the runner's first connect to be refused.
 async fn node_service(h: &Harness, lease: Duration) -> (Arc<ImageCache>, CancellationToken) {
     let cache = Arc::new(ImageCache::open(CacheConfig {
         dir: h.dir.join("images"),
@@ -2149,7 +2153,7 @@ async fn node_service(h: &Harness, lease: Duration) -> (Arc<ImageCache>, Cancell
         let (cache, stop, socket) = (cache.clone(), stop.clone(), socket.clone());
         async move { cacheapi::serve(&socket, cache, async move { stop.cancelled().await }).await }
     });
-    while !socket.exists() {
+    while tokio::net::UnixStream::connect(&socket).await.is_err() {
         if served.is_finished() {
             panic!("the node's service did not start: {:?}", served.await);
         }
