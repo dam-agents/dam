@@ -95,7 +95,12 @@ jobs:
     # background, once per image family, and cluster:install waits for it at the
     # image load. A failed build still fails this job, there.
     # The steps e2e-vm shares are anchored here (&e2e-*), so the two lanes
-    # bring their clusters up the same way.
+    # bring their clusters up the same way: the cluster, and the timings, so a
+    # phase of one lane is compared with the same phase of the other.
+    # The job summary carries this lane's per-phase timings (e2e:timings), from
+    # the marks E2E_TIMINGS collects and the Playwright JSON report. Every mark
+    # this lane shares with e2e-vm has the same name; it stages no vm image, so
+    # the staging rows read n/a.
     needs: [docs-only]
     if: ${{ !cancelled() && needs.docs-only.outputs.docs != 'true' }}
     runs-on: ubuntu-latest
@@ -110,7 +115,12 @@ jobs:
       # queue, the nightly run and a tag run them all. The Playwright config
       # applies it; see docs/architecture/e2e.md.
       E2E_SCOPE: ${{ inputs.pr-scope && 'pr' || '' }}
+      E2E_TIMINGS: &e2e-timings /tmp/e2e-timings
+      E2E_REPORT_JSON: &e2e-report-json /tmp/playwright-report.json
     steps:
+      - &e2e-timing-start
+        name: Record the job start
+        run: printf '%s\tjob started\n' "$(date +%s)" >> "$E2E_TIMINGS"
       - &e2e-checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -305,6 +315,16 @@ jobs:
         name: k3s provision log
         if: ${{ !cancelled() }}
         run: cat /tmp/k3s-provision.log
+      # The background provision and image fetch each end by writing their
+      # status file, so its mtime is when they finished.
+      - &e2e-timing-summary
+        name: Timing summary
+        if: ${{ !cancelled() }}
+        run: |
+          for mark in "k3s provisioned:/tmp/k3s-provision.status" "platform images ready:/tmp/ci-images-platform.status" "images ready:/tmp/ci-images.status"; do
+            [ ! -s "${mark#*:}" ] || printf '%s\t%s\n' "$(stat -c %Y "${mark#*:}")" "${mark%%:*}" >> "$E2E_TIMINGS"
+          done
+          .mise/tasks/e2e/timings | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
@@ -351,12 +371,11 @@ jobs:
       IS_SANDBOX: "1"
       E2E_VIRTUALIZATION: "1"
       E2E_GATEWAY_PER_OWNER: "1"
-      E2E_TIMINGS: /tmp/e2e-timings
-      E2E_REPORT_JSON: /tmp/playwright-report.json
+      E2E_TIMINGS: *e2e-timings
+      E2E_REPORT_JSON: *e2e-report-json
       E2E_SCOPE: ${{ inputs.pr-scope && 'pr' || '' }}
     steps:
-      - name: Record the job start
-        run: printf '%s\tjob started\n' "$(date +%s)" >> "$E2E_TIMINGS"
+      - *e2e-timing-start
       - *e2e-checkout
       - *e2e-provision
       - name: Open /dev/kvm to the runner user
@@ -488,15 +507,7 @@ jobs:
           path: /tmp/kernel-log/
           retention-days: 7
           if-no-files-found: ignore
-      # The background provision and image fetch each end by writing their
-      # status file, so its mtime is when they finished.
-      - name: Timing summary
-        if: ${{ !cancelled() }}
-        run: |
-          for mark in "k3s provisioned:/tmp/k3s-provision.status" "platform images ready:/tmp/ci-images-platform.status" "images ready:/tmp/ci-images.status"; do
-            [ ! -s "${mark#*:}" ] || printf '%s\t%s\n' "$(stat -c %Y "${mark#*:}")" "${mark%%:*}" >> "$E2E_TIMINGS"
-          done
-          .mise/tasks/e2e/timings | tee -a "$GITHUB_STEP_SUMMARY"
+      - *e2e-timing-summary
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

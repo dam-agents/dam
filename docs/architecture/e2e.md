@@ -27,7 +27,8 @@ A spec that never fails for real, or that costs a lane minutes for a surface the
 
 Deferral is not a coverage gap: a change reaches main through the merge queue, whose run takes the full set on the tree it queues, and the nightly run takes it on main again.
 The Playwright config owns the list, and it is the one place that decides it: the workflow passes the event's scope as `E2E_SCOPE`, and the config turns that into what each project runs and which projects a reduced run leaves with no spec at all.
-The vm lane's job summary states the scope beside its timings, so a green pull request is never read as a green full suite.
+Each lane's job summary states the scope beside its timings, so a green pull request is never read as a green full suite.
+The two summaries hold the same table, so a phase of one lane compares with the same phase of the other; a phase a lane never reached reads `n/a`.
 
 ## Running it
 

@@ -80,7 +80,8 @@ A failure in the vm lane alone is the vm Backend's.
 
 In a vm install, `cluster:install` stages the vm images beside the chart install, as soon as the agent images are loaded, not after the deployments are ready.
 `e2e:install` gives the vm lane's machines one vCPU, as its 1-CPU mock Size gave them before, and a 1Gi boot estimate: each runner's memory request follows its booting machines' estimates plus a 512Mi reserve, while the 16 GB CI node has little room beside the control plane.
-The vm lane's job summary shows where its time went: with `E2E_TIMINGS=<file>`, `cluster:install`, `e2e:install` and `e2e:run` append phase marks to it (`e2e_mark` in `.mise/lib/cluster.sh`), and `.mise/tasks/e2e/timings` renders them as Markdown, with the per-project spans from the Playwright JSON report that `E2E_REPORT_JSON` names.
+Both lanes' job summary shows where their time went: with `E2E_TIMINGS=<file>`, `cluster:install`, `e2e:install` and `e2e:run` append phase marks to it (`e2e_mark` in `.mise/lib/cluster.sh`), and `.mise/tasks/e2e/timings` renders them as Markdown, with the per-project spans from the Playwright JSON report that `E2E_REPORT_JSON` names.
+A lane that never reached a phase prints `n/a` for its rows, so one lane's table compares with the other's.
 
 ## Disk space (the k3s VM)
 
