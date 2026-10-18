@@ -3,7 +3,7 @@
 #MISE hide=true
 #USAGE flag "--serial" help="Build one at a time, for images too large to build side by side on one runner's disk"
 #USAGE arg "<arch>"
-#USAGE arg "<component>..." var=#true help="<component>[:<output>]; output is digest (default: push by digest and write /tmp/digests/<component>/<hex>), cacheonly (build without pushing, to prove it builds), source (push <component>:<source sha>, the tag image:resolve reuses), mq (push <component>:mq-<content hash>, the cache tag only a merge group reuses) or load (write the component's dist/oci tar, named platform-<component>:latest)"
+#USAGE arg "<component>..." var=#true help="<component>[:<output>]; output is digest (default: push by digest and write /tmp/digests/<component>/<hex>), cacheonly (build without pushing, to prove it builds), source (push <component>:<source sha>, the tag image:resolve reuses), mq (push <component>:mq-<content hash>, the cache tag only a merge group reuses) or load (keep the component's image where the e2e cluster imports it: an agent's OCI layout, every other component's dist/oci tar, named platform-<component>:latest)"
 # build.yml builds all of one arch's images, agents or workloads in one job
 # instead of one job per image. Each job costs a runner slot and a turn in the
 # shared queue, which is what a run waited on, not the builds.
@@ -15,6 +15,7 @@
 # per image family, and they share /tmp/ci-build and /tmp/digests. Ceiling:
 # the log dump at the end prints every log file in that directory, so each run
 # also prints the other's; a state directory per run is the upgrade path.
+# Only the agent family appends to the load list under /tmp/ci-build/oci.
 #
 # By path, like image:resolve, with usage and pigz installed. image.toml
 # agents build with //packages/agents:oci and need mise, node, pnpm and crane;
@@ -31,7 +32,7 @@ host_arch="$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')"
 [ "$arch" = "$host_arch" ] || { echo "ci-build: $arch images build on an $arch runner, not $host_arch" >&2; exit 2; }
 
 mkdir -p /tmp/ci-build/meta /tmp/ci-build/logs /tmp/digests
-export AGENT_OCI_OUT=/tmp/ci-build/oci
+export AGENT_OCI_OUT="$(.mise/tasks/image/resolve oci-out)"
 
 # The package whose :oci task builds a component, or `mise` for an agent.
 package_of() {
@@ -78,7 +79,8 @@ push_layout() {
 # every other is packed onto, so one run per image built it again for each.
 build_mise() {
   local kind=$1 c layout; shift
-  packages/agents/.mise/tasks/oci --build $([ "$kind" = load ] || echo --no-tar) "$@" || return 1
+  # No tar: a push reads the layout, and the e2e lane imports the layout itself.
+  packages/agents/.mise/tasks/oci --build --no-tar "$@" || return 1
   for c in "$@"; do
     layout="$AGENT_OCI_OUT/$c"
     # Each plain layer's digest, so two runs' logs show which layers a change
@@ -86,7 +88,10 @@ build_mise() {
     jq -r '.manifests[0].digest | sub(":"; "/")' "$layout/index.json" |
       xargs -I{} jq -r '.layers[] | "\(.digest) \(.size)"' "$layout/blobs/{}" | sed "s|^|$c layer: |"
     push_layout "$c" "$kind" "$layout" || return 1
-    rm -rf "$layout"
+    # A load keeps the layout for cluster:import to tar into the import, and names
+    # it where image:resolve looks; another image's build leaves a base layout
+    # there too, which no load names.
+    if [ "$kind" = load ]; then echo "$c" >> "$AGENT_OCI_OUT/load"; else rm -rf "$layout"; fi
   done
 }
 
