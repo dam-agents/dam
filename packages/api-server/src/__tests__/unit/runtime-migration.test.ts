@@ -370,6 +370,18 @@ describe("runtime migration request", () => {
     expect((await h.run("agent-1")).ok).toBe(true);
   });
 
+  // TEST_SCENARIO: a claim backed by a directory on a node — the local path a test cluster hands out — is mounted from a filesystem the whole node shares, so the runtime measures that filesystem and reports the node's use as the home's. It is the volume at most, or the e2e lane would refuse every move on a pool that holds them all.
+  it("reads a measurement larger than the volume as the volume at most", async () => {
+    const h = harness({
+      homeBytes: 90 * 1024 ** 3,
+      capacity: {
+        storage: { usedBytes: 0, usableBytes: 40 * 1024 ** 3 },
+        memory: { committedMiB: 0, limitMiB: 12 * 1024 },
+      },
+    });
+    expect((await h.run("agent-1")).ok).toBe(true);
+  });
+
   // TEST_SCENARIO: a home that fits twice over leaves the request alone, and so does a home or a pool that could not be read: an unmeasured home is judged on nothing, since refusing it on the size its volume may grow to would stop a small home on a large claim, and the runner refuses what it has no room for on its own.
   it("allows a move the pool holds, and refuses nothing unmeasured", async () => {
     for (const capacity of [
