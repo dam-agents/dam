@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The sidebar lists Agents, and the Sessions of each Agent, in one manual order per user that the user sets by drag and drop, in a real browser against a real api-server. A drop on a row puts the dragged item before or after it, by the half of the row the pointer is in. A Session moves only within its own Agent's list. A new Agent or a new Session goes to the bottom of its list, and activity never moves anything. The order survives a reload and is the same in another browser. The "⋯" button of a Session row takes a click anywhere on its visible area, also on a working row, where a hidden indicator sits in the same place. The spec creates its own Agents, so the Agents and Sessions of the other specs never move.
+// TEST_OVERVIEW: The sidebar's avatar strip lists Agents, and each Agent's own Session list lists its Sessions, in one manual order per user that the user sets by drag and drop, in a real browser against a real api-server. A drop on a row puts the dragged item before or after it, by the half of the row the pointer is in. A Session moves only within its own Agent's list. A new Agent or a new Session goes to the bottom of its list, and activity never moves anything. The order survives a reload and is the same in another browser. The "⋯" button of a Session row takes a click anywhere on its visible area, also on a working row, where a hidden indicator sits in the same place. The spec creates its own Agents, so the Agents and Sessions of the other specs never move.
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
 import { baseUrl } from "../../config.js";
@@ -7,9 +7,11 @@ import {
   deleteAgentIfPresent,
   ensureSidebarExpanded,
   openAgentChat,
+  selectSidebarAgent,
   sendMessageToAgent,
   setMockAgentReply,
   setMockLongTurnReply,
+  sidebarAgentAvatar,
   sidebarAgentRow,
   waitForAgentRunning,
 } from "../../lib/agents.js";
@@ -54,16 +56,16 @@ async function openSidebar(page: Page): Promise<void> {
 
 async function shownAgents(page: Page): Promise<string[]> {
   const names = await page
-    .getByTestId("sidebar-agents")
-    .getByTestId("sidebar-agent-row")
-    .evaluateAll((rows) =>
-      rows.map((row) => row.textContent?.replace("(unread)", "").trim() ?? ""),
+    .getByTestId("sidebar-strip-agent")
+    .getByRole("tab")
+    .evaluateAll((tabs) =>
+      tabs.map((tab) => tab.getAttribute("aria-label")?.split(",")[0] ?? ""),
     );
   return names.filter(ours);
 }
 
 function agentRow(page: Page, name: string): Locator {
-  return sidebarAgentRow(page, name).getByTestId("sidebar-agent-row");
+  return sidebarAgentAvatar(page, name);
 }
 
 function sessionRows(page: Page): Locator {
@@ -94,9 +96,10 @@ async function dragTo(
   await from.scrollIntoViewIfNeeded();
   const start = await from.boundingBox();
   expect(start).toBeTruthy();
-  await page.mouse.move(start!.x + 40, start!.y + start!.height / 2);
+  const dx = Math.min(40, start!.width / 2);
+  await page.mouse.move(start!.x + dx, start!.y + start!.height / 2);
   await page.mouse.down();
-  await page.mouse.move(start!.x + 45, start!.y + start!.height / 2 + 6, {
+  await page.mouse.move(start!.x + dx + 3, start!.y + start!.height / 2 + 6, {
     steps: 4,
   });
   await expect(to()).toBeVisible();
@@ -104,8 +107,9 @@ async function dragTo(
   expect(end).toBeTruthy();
   const y =
     end!.y + end!.height * (at === "top" ? 0.2 : at === "bottom" ? 0.8 : 0.5);
-  await page.mouse.move(end!.x + 40, y, { steps: 10 });
-  await page.mouse.move(end!.x + 42, y, { steps: 2 });
+  const ex = Math.min(40, end!.width / 2);
+  await page.mouse.move(end!.x + ex, y, { steps: 10 });
+  await page.mouse.move(end!.x + ex + 2, y, { steps: 2 });
   await page.mouse.up();
 }
 
@@ -159,7 +163,7 @@ test.afterAll(async () => {
   for (const id of agentIds.values()) await api.agents.delete.mutate({ id });
 });
 
-// TEST_SCENARIO: a drag moves an Agent to any place in the list: after the row it is dropped on in its lower half, before it in its upper half. The order is the same after a reload and in a second browser, and an Agent created after that goes to the bottom.
+// TEST_SCENARIO: a drag moves an Agent's avatar to any place in the strip: after the avatar it is dropped on in its lower half, before it in its upper half. The order is the same after a reload and in a second browser, and an Agent created after that goes to the bottom.
 test("drag reorders Agents, and a new Agent goes to the bottom", async ({
   page,
   browser,
@@ -219,7 +223,7 @@ test("drag reorders Agents, and a new Agent goes to the bottom", async ({
   });
 });
 
-// TEST_SCENARIO: Sessions keep one manual order within their own Agent. A drag moves a Session to any place there, a drop on another Agent changes nothing, a new Session goes to the bottom, and a turn in a Session moves nothing. The "⋯" button of a working row takes a click on every point: the hidden working indicator sits in the same place and must not catch it.
+// TEST_SCENARIO: Sessions keep one manual order within their own Agent's list. A drag moves a Session to any place there, a drop on another Agent's avatar changes nothing, a new Session goes to the bottom, and a turn in a Session moves nothing. The "⋯" button of a working row takes a click on every point: the hidden working indicator sits in the same place and must not catch it.
 test("drag reorders Sessions within their Agent, and a new Session goes to the bottom", async ({
   page,
 }) => {
@@ -240,6 +244,7 @@ test("drag reorders Sessions within their Agent, and a new Session goes to the b
 
   await test.step("start three Sessions", async () => {
     await openAgentChat(page, name, agentId);
+    await selectSidebarAgent(page, name);
     await sendMessageToAgent(page, PROMPTS[0]);
     await expect(page.getByText(reply)).toBeVisible({ timeout: 60_000 });
     for (const prompt of PROMPTS.slice(1)) await newSession(prompt);
@@ -271,7 +276,7 @@ test("drag reorders Sessions within their Agent, and a new Session goes to the b
       .toEqual([third, second, first]);
   });
 
-  await test.step("a drop on another Agent changes nothing", async () => {
+  await test.step("a drop on another Agent's avatar changes nothing", async () => {
     const agents = await shownAgents(page);
     await dragTo(page, row(second), () => agentRow(page, AGENTS[1]), "middle");
     await page.waitForTimeout(1_000);
@@ -306,6 +311,7 @@ test("drag reorders Sessions within their Agent, and a new Session goes to the b
   await test.step("the order survives a reload", async () => {
     await reload(page);
     await ensureSidebarExpanded(page);
+    await expect(sidebarAgentRow(page, name)).toBeVisible();
     await expect
       .poll(() => shownSessions(page))
       .toEqual([third, second, first]);

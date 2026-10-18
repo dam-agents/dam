@@ -9,7 +9,7 @@ import {
   Tools,
   TrashCan,
 } from "@carbon/icons-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   ContextMenu,
@@ -85,6 +85,11 @@ export function SidebarColumns({ onNavigate }: { onNavigate?: () => void }) {
     else setView("home");
     onNavigate?.();
   };
+  const onHome = useStore((s) => s.view === "home");
+  useEffect(() => {
+    if (openAgentId) setSelected(openAgentId);
+    else if (onHome) setSelected(null);
+  }, [openAgentId, onHome, setSelected]);
   const shownAgentId =
     selected && agents.some((a) => a.id === selected) ? selected : null;
 
@@ -577,7 +582,11 @@ function AgentColumn({
   };
 
   return (
-    <>
+    <div
+      className="flex min-h-0 min-w-0 flex-1 flex-col"
+      data-testid="sidebar-agent-column"
+      data-agent-name={agent.name}
+    >
       <ColumnHeader
         title={agent.name}
         actions={
@@ -611,7 +620,7 @@ function AgentColumn({
           onNavigate={onNavigate}
         />
       </div>
-    </>
+    </div>
   );
 }
 

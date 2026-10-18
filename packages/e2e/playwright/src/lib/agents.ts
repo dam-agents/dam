@@ -131,16 +131,29 @@ export async function ensureSidebarExpanded(page: Page): Promise<void> {
   await expect(page.getByTestId("sidebar-avatar-strip")).toBeVisible();
 }
 
-export function sidebarAgentRow(page: Page, agentName: string): Locator {
+export function sidebarAgentAvatar(page: Page, agentName: string): Locator {
   return page
-    .getByTestId("sidebar-agents")
-    .locator("li")
+    .getByTestId("sidebar-strip-agent")
     .filter({
-      has: page.getByTestId("sidebar-agent-row").filter({
-        hasText: new RegExp(`^${agentName}\\s*(\\(unread\\))?$`),
+      has: page.getByRole("tab", {
+        name: new RegExp(`^${agentName}(, \\d+ need you)?$`),
       }),
     })
     .first();
+}
+
+export function sidebarAgentRow(page: Page, agentName: string): Locator {
+  return page.locator(
+    `[data-testid="sidebar-agent-column"][data-agent-name="${agentName}"]`,
+  );
+}
+
+export async function selectSidebarAgent(
+  page: Page,
+  agentName: string,
+): Promise<void> {
+  await sidebarAgentAvatar(page, agentName).getByRole("tab").click();
+  await expect(sidebarAgentRow(page, agentName)).toBeVisible();
 }
 
 export async function gotoAgentChat(

@@ -62,10 +62,8 @@ test("one-click create from the Generalist kit, then the mock agent with the con
   let oneClickId: string | undefined;
   await test.step("create an agent in one click from the Generalist kit", async () => {
     const before = new Set((await api.agents.list.query()).map((a) => a.id));
-    await page
-      .getByTestId("app-sidebar")
-      .getByRole("button", { name: "Starter kits" })
-      .click();
+    await page.getByTestId("sidebar-create-agent").click();
+    await page.getByRole("menuitem", { name: "Use a starter kit" }).click();
     await page.getByTestId("default-agent-card").click();
     await expect(page).toHaveURL(/\/chat\//);
     oneClickId = (await api.agents.list.query()).find(
