@@ -1666,7 +1666,7 @@ func TestVMBackendWaitsForTheRunnerCertificate(t *testing.T) {
 func TestRunnerPolicyConfinesTheRunnerWhenEgressIsConfigured(t *testing.T) {
 	open := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "default", testConfig.EnvoyPort, nil, nil)
 	assert.Equal(t, []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}, open.Spec.PolicyTypes,
-		"with nowhere named, the runner still pulls images and the policy only admits callers")
+		"with nowhere named, the policy only admits callers")
 	assert.Empty(t, open.Spec.Egress)
 
 	confined := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "default", testConfig.EnvoyPort, []string{"0.0.0.0/0"}, []string{"10.128.0.0/14"})

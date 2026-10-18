@@ -61,7 +61,7 @@ pub const RUNTIME_CALL_LIMIT: Duration = Duration::from_secs(12 * 60);
 // UNIT_BOUNDARY_DESCRIPTION: how often the runner names the digests its machines boot to the image cache again. Well inside HOLD_LEASE, so one missed refresh never lets a hold lapse.
 pub const HOLD_REFRESH: Duration = Duration::from_secs(60);
 
-// UNIT_BOUNDARY_DESCRIPTION: how often the runner looks at how full its claim is, and sheds what it can fetch again while it is short. A machine is refused on a critical claim by a look at the time of the request, not at this cadence.
+// UNIT_BOUNDARY_DESCRIPTION: how often the runner looks at how full its claim is, and asks its guests to give back scratch while it is short. A machine is refused on a critical claim by a look at the time of the request, not at this cadence.
 pub const STORAGE_CHECK: Duration = Duration::from_secs(30);
 
 // UNIT_BOUNDARY_DESCRIPTION: what a runner is given at start, as the flags the controller sets on the runner's Deployment. `images` is the node's image cache service: the image directory is that service's, read-only here, and every image a machine boots that is not staged there is resolved by it. Without it the runner boots only the trees staged in the image directory and fetches nothing.
@@ -1640,6 +1640,9 @@ impl Server {
 
     // UNIT_BOUNDARY_DESCRIPTION: holds the digest of every machine that runs or is asked to, so the cache's eviction spares their trees. A stopped machine holds nothing: a hibernated agent would otherwise keep each image a deploy retires on the cache, and its start fetches the tree again when it is gone. A machine counts while the controller last asked for it running, so a wake holds it before the start checks it is there, or while it runs as last recorded or as the runtime says, so a stop in flight still holds the tree its guest reads, and so does every machine a runner adopts after a hand-off or a restart from its first hold, before the controller has sent it anything. It runs at start, after a machine records a new digest, before a start, and every HOLD_REFRESH. A hold that fails is reported and not returned: the machines keep running, and the next refresh tries again inside the lease.
     pub fn hold_images(&self) {
+        let Some(images) = &self.config.images else {
+            return;
+        };
         let held: BTreeSet<String> = state::machine_ids(&self.config.state_dir)
             .unwrap_or_default()
             .iter()
@@ -1653,9 +1656,6 @@ impl Server {
             })
             .filter_map(|id| self.recorded_digest(id))
             .collect();
-        let Some(images) = &self.config.images else {
-            return;
-        };
         if held.is_empty() {
             return;
         }
