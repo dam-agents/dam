@@ -256,7 +256,7 @@ The api-server offers no way to ask, so only someone who can edit Agent resource
 
 Agents created with `backend.type: vm` — chosen beside the image rather than by a template of its own, by an API caller directly or for every agent a flagged-in owner creates in the browser — run as smolvm microVMs inside a **VM runner** — a pod per owner that holds `/dev/kvm`, created by the controller, keeping that owner's machine disks on its own PVC.
 Such an agent persists the agent's home and nothing else: the rest of the machine is a root overlay discarded every time it stops.
-Turn it on with `virtualization.enabled=true`, which then requires two more values or the install refuses to render: `virtualization.runner.resources.limits.memory`, the limit the runner admits machines against, and `virtualization.runner.egressCidrs`, the only kernel gate behind a guest's own egress allowlist (say `[0.0.0.0/0]` with the cluster's ranges in `egressExceptCidrs` to leave it unconfined out loud).
+Turn it on with `virtualization.enabled=true`, which then requires `virtualization.runner.resources.limits.memory`, the limit the runner admits machines against, or the install refuses to render.
 It also needs cert-manager, which issues each runner's serving certificate from a CA of the runners' own that the chart renders beside them (`virtualization.runnerCA`).
 The devices reach the pod only as device-plugin resources, and the chart ships no plugin: a plugin is per node, so a cluster runs one for every install on it.
 By default the pod asks for KubeVirt's `devices.kubevirt.io/kvm`; `virtualization.runner.devices` names another plugin's resource instead — e.g. `squat.ai/kvm` from squat's generic-device-plugin, which local dev applies from `helm/extra/kvm-device-plugin.yaml`.

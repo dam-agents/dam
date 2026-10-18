@@ -64,16 +64,6 @@ virtualization:
         memory: 1Gi
       limits:
         memory: 12Gi
-    # Images come from the node, not a registry, so the runner needs nothing
-    # outside the cluster — and the exclusions keep it out of the cluster too.
-    # The paired gateways are admitted by selector regardless; DNS is not
-    # admitted at all, since the runner resolves no name.
-    egressCidrs:
-      - 0.0.0.0/0
-    egressExceptCidrs:
-      - 10.42.0.0/16
-      - 10.43.0.0/16
-      - 169.254.0.0/16
   # No registry in the lima cluster: cluster:install stages the agent image
   # trees in the node cache directory, which every runner mounts read-only and
   # boots a staged tree from before it asks the image cache service.

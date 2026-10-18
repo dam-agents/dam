@@ -102,8 +102,6 @@ type VMRunnerSpec struct {
 	BootMiB              int                           `json:"bootMiB,omitempty"`
 	MachineCPUs          int                           `json:"machineCPUs,omitempty"`
 	NestedVirtualization bool                          `json:"nestedVirtualization,omitempty"`
-	EgressCIDRs          []string                      `json:"egressCidrs,omitempty"`
-	EgressExceptCIDRs    []string                      `json:"egressExceptCidrs,omitempty"`
 	ImageCacheHostPath   string                        `json:"imageCacheHostPath,omitempty"`
 	ImageCacheBudget     string                        `json:"imageCacheBudget,omitempty"`
 	NodeSelector         map[string]string             `json:"nodeSelector,omitempty"`
