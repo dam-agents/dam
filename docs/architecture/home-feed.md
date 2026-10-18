@@ -61,7 +61,7 @@ The sidebar becomes two columns: a strip of Agent avatars, and a list of Session
 Each avatar carries a badge that counts its unread Sessions and its waiting approvals; the strip's Home tile carries the total.
 With Home selected, the list shows the record's rows for every Agent: the unread ones under **Needs you**, then the rest by latest activity; waiting approvals show only as badges.
 With an Agent selected, the list is that Agent's own list, every page of it, the next page loaded when the list scrolls near its end.
-The avatar strip keeps the same manual Agent order, and an Agent's own list the same manual Session order, set by drag and drop or with Alt+Up and Alt+Down.
+The avatar strip keeps the same manual Agent order, set by drag and drop or with Alt+Up and Alt+Down; an Agent's own list keeps the newest-first order.
 A Session can be **pinned**: a pinned Session shows in its own section above the rest; in the Home list an unread pinned Session stays under Needs you until it is read.
 Pins are kept in the browser, so they do not follow the user to another device.
 The Home list shows a pinned Session only while it is in the record; an Agent's own list loads further pages until its pinned Sessions appear, and deleting a Session drops its pin.
