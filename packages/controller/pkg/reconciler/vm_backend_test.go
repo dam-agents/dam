@@ -1582,6 +1582,9 @@ func TestOrphanSweepDeletesAMachineNoAgentOfThisOwnerClaims(t *testing.T) {
 	require.NoError(t, err)
 
 	r.ReconcileOrphanMachines(ctx)
+	assert.Empty(t, node.deleted, "a machine one sweep finds unclaimed is kept for the next")
+
+	r.ReconcileOrphanMachines(ctx)
 
 	assert.Equal(t, []string{"someone-elses"}, node.deleted,
 		"the machine whose Agent belongs to another owner is collected, and this owner's own machine is left alone")

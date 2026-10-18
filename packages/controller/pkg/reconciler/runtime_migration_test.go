@@ -361,6 +361,10 @@ func TestAnAbortWithTheRunnerUnreachableBringsTheContainerBack(t *testing.T) {
 
 	r.runnerEndpoint, r.runners = reachable, nil
 	r.ReconcileOrphanMachines(ctx)
+	assert.NotContains(t, node.deleted, "my-agent", "the first sweep to find the machine unclaimed only records it")
+	assert.Contains(t, reloaded(t, r, agent).Annotations, annRuntimeMigrationMachineLeft, "so the Agent keeps its mark for the next sweep")
+
+	r.ReconcileOrphanMachines(ctx)
 	assert.Contains(t, node.deleted, "my-agent", "the sweep removes the machine the abort left")
 	assert.NotContains(t, reloaded(t, r, agent).Annotations, annRuntimeMigrationMachineLeft)
 }

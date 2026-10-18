@@ -328,7 +328,7 @@ func (r *AgentReconciler) ReconcileOrphanMachines(ctx context.Context) {
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the whole pass over one runner holds the owner's lock, which an agent's reconcile also holds while it builds the runner and ensures its machine. What the sweep reads — the owner's Agents in a fresh List and in the informer cache, and the runner's own machine list — therefore cannot change under it through this controller, and a runner is removed only when all of them still say it serves nobody. A machine is collected when no Agent of this owner has its name: an Agent of the same name that belongs to someone else says nothing about this runner.
+// UNIT_BOUNDARY_DESCRIPTION: the whole pass over one runner holds the owner's lock, which an agent's reconcile also holds while it builds the runner and ensures its machine. What the sweep reads — the owner's Agents in a fresh List and in the informer cache, and the runner's own machine list — therefore cannot change under it through this controller, and a runner is removed only when all of them still say it serves nobody. A machine is collected when no Agent of this owner has its name and an earlier sweep found it so too: an Agent of the same name that belongs to someone else says nothing about this runner.
 func (r *AgentReconciler) sweepRunner(ctx context.Context, runner runnerRef) {
 	owner := runner.owner
 	lock := r.ownerLock(owner)
@@ -351,19 +351,7 @@ func (r *AgentReconciler) sweepRunner(ctx context.Context, runner runnerRef) {
 		return
 	}
 	r.ownerless.Delete(owner)
-	claimed, abandoned := machineClaims(agents.Items)
-	for _, id := range ids {
-		if claimed[id] {
-			continue
-		}
-		if err := runner.client.Delete(ctx, id); err != nil {
-			slog.Warn("orphan machine GC: delete failed", "machine", id, "owner", owner, "error", err)
-			delete(abandoned, id)
-			continue
-		}
-		slog.Info("orphan machine GC: deleted machine for missing agent", "machine", id, "owner", owner)
-	}
-	r.forgetLeftMachines(ctx, abandoned)
+	r.sweepMachines(ctx, owner, ids, agents.Items, runner.client.Delete)
 	if anyVMAgent(agents.Items) || r.cachedOwnerAgents(ctx, owner, true) > 0 {
 		return
 	}
@@ -416,19 +404,64 @@ func (r *AgentReconciler) sweepHostRunner(ctx context.Context) {
 		slog.Warn("orphan machine GC: listing agents failed", "error", err)
 		return
 	}
-	claimed, abandoned := machineClaims(agents.Items)
+	r.sweepMachines(ctx, "", ids, agents.Items, runner.Delete)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an Agent's workspace has no backup, and a live List of the owner's Agents can read empty for a while on a cluster that shares its CRDs, so one sweep that finds a machine unclaimed is no proof that it is orphaned — the informer cache is a second opinion beside that List, and a second sweep the other. The first sweep that finds a machine unclaimed only records it; a machine is deleted when an earlier sweep found it unclaimed too and both now show no Agent. Anything an Agent names as claimed — or as a machine an aborted migration left — is forgotten here, so a machine claimed again needs another whole sweep first. With no owner, the machines are those of the host runner, which serves every owner.
+func (r *AgentReconciler) sweepMachines(ctx context.Context, owner string, ids []string, agents []unstructured.Unstructured, deleteMachine func(context.Context, string) error) {
+	claimed, abandoned := machineClaims(agents)
+	maps.Copy(claimed, r.cachedMachineClaims(owner))
+	live := make(map[string]bool, len(ids))
 	for _, id := range ids {
+		live[id] = true
+		key := owner + "/" + id
 		if claimed[id] {
+			r.orphanMachines.Delete(key)
 			continue
 		}
-		if err := runner.Delete(ctx, id); err != nil {
-			slog.Warn("orphan machine GC: delete failed", "machine", id, "error", err)
+		if _, seen := r.orphanMachines.LoadOrStore(key, struct{}{}); !seen {
 			delete(abandoned, id)
 			continue
 		}
-		slog.Info("orphan machine GC: deleted machine for missing agent", "machine", id)
+		if err := deleteMachine(ctx, id); err != nil {
+			slog.Warn("orphan machine GC: delete failed", "machine", id, "owner", owner, "error", err)
+			delete(abandoned, id)
+			continue
+		}
+		r.orphanMachines.Delete(key)
+		slog.Info("orphan machine GC: deleted machine for missing agent", "machine", id, "owner", owner)
 	}
+	r.orphanMachines.Range(func(k, _ any) bool {
+		key, _ := k.(string)
+		if id, ok := strings.CutPrefix(key, owner+"/"); ok && !live[id] {
+			r.orphanMachines.Delete(key)
+		}
+		return true
+	})
 	r.forgetLeftMachines(ctx, abandoned)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: which machines the informer cache's Agents say are theirs, read as the second opinion beside a sweep's live List: on a cluster that shares its CRDs the List can read empty for a while, and a machine deleted on it alone costs the owner every disk of their runner. With no owner, every Agent in the namespace claims, since the host runner serves them all.
+func (r *AgentReconciler) cachedMachineClaims(owner string) map[string]bool {
+	claimed := map[string]bool{}
+	if r.agentCache == nil {
+		return claimed
+	}
+	selector := labels.Everything()
+	if owner != "" {
+		selector = labels.SelectorFromSet(labels.Set{envoyOwnerLabel: owner})
+	}
+	items, err := r.agentCache.ByNamespace(r.config.Namespace).List(selector)
+	if err != nil {
+		return claimed
+	}
+	for _, obj := range items {
+		if u, ok := obj.(*unstructured.Unstructured); ok {
+			c, _ := machineClaims([]unstructured.Unstructured{*u})
+			maps.Copy(claimed, c)
+		}
+	}
+	return claimed
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: which machine names the listed Agents claim, and which of them an aborted migration left behind. Such an Agent runs as a container again and no longer claims its machine, unless a new migration was requested since, which removes the machine itself before it builds a fresh one.

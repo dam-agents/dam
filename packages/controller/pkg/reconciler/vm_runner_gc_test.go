@@ -288,3 +288,61 @@ func TestAnEmptyListNeverCostsAnUnreachableRunnerItsDisks(t *testing.T) {
 	assert.NotContains(t, after.Annotations, annRunnerClaimKept)
 	assert.True(t, runnerDeploymentExists(t, r, testOwner))
 }
+
+// TEST_SCENARIO: on a cluster that shares its CRDs a live List of the owner's Agents can read empty for a while, and an Agent's workspace has no backup. A machine the informer cache's Agent still names is kept, and one both the List and the cache miss goes only once a second sweep found it unclaimed too.
+func TestAnEmptyListNeverCostsAMachineItsDisk(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.Contains(t, node.specs, "my-agent")
+
+	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	stored, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.NoError(t, indexer.Add(stored))
+	r.WithAgentCache(cache.NewGenericLister(indexer, AgentsGVR.GroupResource()))
+
+	r.dynamic.(interface {
+		PrependReactor(verb, resource string, reaction k8stesting.ReactionFunc)
+	}).PrependReactor("list", "agents", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, &unstructured.UnstructuredList{}, nil
+	})
+
+	r.ReconcileOrphanMachines(ctx)
+	assert.Empty(t, node.deleted, "the machine the cache's Agent names is kept")
+
+	require.NoError(t, indexer.Delete(stored))
+	r.ReconcileOrphanMachines(ctx)
+	assert.Empty(t, node.deleted, "the first sweep to find the machine unclaimed only records it")
+
+	r.ReconcileOrphanMachines(ctx)
+	assert.Equal(t, []string{"my-agent"}, node.deleted, "a second sweep deletes it")
+}
+
+// TEST_SCENARIO: the host runner serves every owner and its sweep reads the same List of Agents, so the same empty List must not cost a machine its disk there either: the first sweep that finds it unclaimed keeps it.
+func TestTheHostRunnerSweepKeepsTheMachineTheFirstSweepFindsUnclaimed(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.Contains(t, node.specs, "my-agent")
+
+	r.config.VM.Runner.HostAddress = "192.168.5.2"
+	for name, sec := range map[string]*corev1.Secret{r.runnerName(""): runnerSecret(), r.runnerTLSName(""): runnerTLSSecret()} {
+		sec.Name = name
+		_, err := r.client.CoreV1().Secrets("test-agents").Create(ctx, sec, metav1.CreateOptions{})
+		require.NoError(t, err)
+	}
+	r.dynamic.(interface {
+		PrependReactor(verb, resource string, reaction k8stesting.ReactionFunc)
+	}).PrependReactor("list", "agents", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, &unstructured.UnstructuredList{}, nil
+	})
+
+	r.ReconcileOrphanMachines(ctx)
+	assert.Empty(t, node.deleted, "the first sweep to find the machine unclaimed only records it")
+
+	r.ReconcileOrphanMachines(ctx)
+	assert.Equal(t, []string{"my-agent"}, node.deleted, "a second sweep deletes it")
+}

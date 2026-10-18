@@ -75,6 +75,7 @@ type AgentReconciler struct {
 	notReadyPolls         sync.Map
 	vmStartClocks         sync.Map
 	ownerless             sync.Map
+	orphanMachines        sync.Map
 	machineWatchMu        sync.Mutex
 	machineWatches        map[string]*machineWatch
 	pressureWatches       map[string]*machineWatch
