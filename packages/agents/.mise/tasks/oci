@@ -433,8 +433,8 @@ build_thin() (
 sudo=(); [ "$(id -u)" = 0 ] || sudo=(sudo --preserve-env env "PATH=$PATH")
 
 # base/apt.txt's packages on the root config's Debian base, as a one-layer
-# image layout every agent image is packed onto: rebuilt when either changes
-# and once a day for updates. The base's root is exported, and its own apt-get
+# image layout every agent image is packed onto: rebuilt when either or this
+# function changes, and once a day for updates. The base's root is exported, and its own apt-get
 # runs in it under chroot, in a mount namespace of its own, as a Dockerfile's
 # RUN would; the root is then one layer, with the owners its packages gave it.
 # The layer follows the packages alone, so a rebuild with no package update
@@ -448,7 +448,7 @@ build_apt_base() {
   local key from r packages layer d config manifest platform epoch
   apt_base="$state/apt-base"
   from="$(mise config get -f .mise/config.toml vars.base_image_debian)"
-  key="$({ cat "$agents/base/apt.txt"; echo "$from"; } | sha256sum | cut -c1-16)-$(date -u +%F)"
+  key="$({ cat "$agents/base/apt.txt"; echo "$from"; declare -f build_apt_base; } | sha256sum | cut -c1-16)-$(date -u +%F)"
   [ "$(cat "$apt_base.key" 2>/dev/null)" != "$key" ] || return 0
   r="$work/apt-root"
   ${sudo[@]+"${sudo[@]}"} rm -rf "$r" "$apt_base"
@@ -461,9 +461,11 @@ build_apt_base() {
   # policy-rc.d keeps a package's postinst from starting its service here. The
   # distribution's bundle moves aside, and its path and a local CA name what
   # the entrypoint builds under /run at every boot, so no boot writes the trust
-  # store; a container's agent builds it in the image's /run/platform, which a
-  # machine's /run tmpfs hides. uid 0's home is the agent's, so OpenSSH keeps root's keys and known
-  # hosts in the home on a machine, where the agent is root. The host keys
+  # store. The image ships the distribution's roots there, for what runs
+  # without the entrypoint, such as the node's tool installer; a container's
+  # entrypoint replaces them, and a machine's /run tmpfs hides them. uid 0's
+  # home is the agent's, so OpenSSH keeps root's keys and known hosts in the
+  # home on a machine, where the agent is root. The host keys
   # openssh-server's postinst generated would be every image's. Every image
   # already shares one machine id, so it is one that follows the package list.
   # openrc's runlevels start empty: the services Debian enables there (ssh,
@@ -488,6 +490,7 @@ build_apt_base() {
     ln -s /run/platform/ca-certificates.crt "$r/etc/ssl/certs/ca-certificates.crt"
     ln -s /run/platform/ca.crt "$r/usr/local/share/ca-certificates/platform-ca.crt"
     install -d -o 65532 -g 0 "$r/run/platform"
+    install -o 65532 -g 0 -m 644 "$r/usr/share/platform/ca-certificates.crt" "$r/run/platform/ca-certificates.crt"
     sed -i "s|^\(root:[^:]*:0:0:[^:]*:\)/root:|\1/home/agent:|" "$r/etc/passwd"
     grep -q "^root:[^:]*:0:0:[^:]*:/home/agent:" "$r/etc/passwd"
     : > "$r/etc/resolv.conf"
