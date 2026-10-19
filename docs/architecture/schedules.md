@@ -139,7 +139,7 @@ The check is detached, so an owner can swap the command while one is in flight; 
 The fire's payload carries the command that ran, which is what lets the report be matched to it.
 
 A report can also simply never arrive — the pod can die mid-check.
-Then the fire leaves no record at all: the last-run stamp keeps its earlier value, so the next Precheck is told work happened longer ago than it did.
+Then the fire leaves no verdict behind: the only write is the failure result it cleared when it committed, and the last-run stamp keeps its earlier value, so the next Precheck is told work happened longer ago than it did.
 The direction is deliberate.
 An older stamp makes a check find *more* than it should and run again, where a newer one would make it skip an interval's work silently, and the next report that lands corrects it.
 Its count is consecutive — since the script last ran and returned a verdict at all, allow or decline alike — because a run cannot clear it the way a run clears the decline count: a broken Precheck is what let that run happen, so counting from the last run would read *one* forever and never say that a check has been failing all week.
