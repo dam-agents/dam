@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: an install that pins the new sandbox runtime on creates every agent as a microVM, whatever the caller asked for. Every create path — the UI's forms, a starter kit, a sub-agent spawn, the CLI and the API — ends in the one agents create, so the pin is applied there rather than trusted to each caller.
+// TEST_OVERVIEW: with the new sandbox runtime out of the experiment, every agent created on an install that can run microVMs is a microVM unless the create asks for a container. Every create path — the UI's forms, a starter kit, a sub-agent spawn, the CLI and the API — ends in the one agents create, so the default is applied there rather than trusted to each caller. An install without virtualization keeps creating containers.
 import { describe, expect, it } from "vitest";
 import { createAgentsService } from "../../modules/agents/services/agents-service.js";
 import { parseInfraAgent } from "../../modules/agents/infrastructure/agent-mappers.js";
@@ -15,14 +15,13 @@ function unused<T extends object>(fields: Partial<T> = {}): T {
 }
 
 async function createdBackend(
-  vmForced: boolean,
+  virtualizationEnabled: boolean,
   vm?: boolean,
 ): Promise<unknown> {
   const specs: Record<string, unknown>[] = [];
   const agents = createAgentsService({
     owner: "owner-1",
-    vmForced,
-    virtualizationEnabled: true,
+    virtualizationEnabled,
     repo: unused<AgentsDeps["repo"]>({
       list: async () => [],
       create: async (spec, owner, id) => {
@@ -69,16 +68,18 @@ async function createdBackend(
   return specs[0]!.backend;
 }
 
-describe("a create on an install that pins the vm runtime", () => {
-  // TEST_SCENARIO: a starter kit that declares no backend, like Plain wiki, sends no vm; the pin still makes it a microVM.
-  it("is a microVM although the caller asked for none", async () => {
+describe("the backend a create lands on", () => {
+  // TEST_SCENARIO: a starter kit that declares no backend, like Plain wiki, and a sub-agent spawn both send no vm; on an install that can virtualize they still land on a machine.
+  it("is a microVM on an install that can virtualize, asked for or not", async () => {
     expect(await createdBackend(true)).toEqual({ type: "vm" });
-    expect(await createdBackend(true, false)).toEqual({ type: "vm" });
+    expect(await createdBackend(true, true)).toEqual({ type: "vm" });
   });
 
-  // TEST_SCENARIO: without the pin, the caller's choice decides, as before.
-  it("follows the caller without the pin", async () => {
+  // TEST_SCENARIO: an install with virtualization off has no machine to put an agent on, so a create lands on a container and an explicit request for a microVM is refused rather than quietly downgraded.
+  it("follows the caller on an install that cannot virtualize", async () => {
     expect(await createdBackend(false)).toBeUndefined();
-    expect(await createdBackend(false, true)).toEqual({ type: "vm" });
+    await expect(createdBackend(false, true)).rejects.toThrow(
+      /virtualization\.enabled/,
+    );
   });
 });

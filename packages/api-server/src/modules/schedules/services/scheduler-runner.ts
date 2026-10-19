@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { match } from "ts-pattern";
 import { nextUtcMidnight, OnceResult } from "api-server-api";
 import type {
@@ -11,7 +12,10 @@ import type { SchedulesRepository } from "../infrastructure/schedules-repository
 import type { ScheduleQueue } from "../infrastructure/schedule-queue.js";
 import { nextFireAt, triggerExpiry } from "../domain/recurrences.js";
 import { onceFireAction, onceFireAt } from "../domain/once.js";
-import { statusForVerdict } from "../domain/status-transitions.js";
+import {
+  isFailureResult,
+  statusForVerdict,
+} from "../domain/status-transitions.js";
 import type { AgentActivityStamp } from "../../agents/index.js";
 import type {
   EventLifecycleTransition,
@@ -187,7 +191,8 @@ export function createSchedulerRunner(
         sched.agentId,
         choices,
       );
-      if (refusal) throw new Error(refusal);
+      if (refusal)
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: refusal });
     }
     const pair = continues
       ? undefined
@@ -196,9 +201,11 @@ export function createSchedulerRunner(
           ...(sched.spec.model && { model: sched.spec.model }),
         });
     if (pair === null)
-      throw new Error(
-        "no model provider granted to this agent can run its harness; grant one to run this schedule",
-      );
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message:
+          "no model provider granted to this agent can run its harness; grant one to run this schedule",
+      });
     if (pair) {
       firedHarness.set(sched, pair.harness);
       payload.harness = pair.harness;
@@ -398,7 +405,7 @@ export function createSchedulerRunner(
     if (spec.type === "once") return fireOnce(sched, spec, fireAt, lastAttempt);
     const hold = async (result: string) => {
       const after = nextFireAt(spec, now());
-      await deps.repo.recordFire(scheduleId, result, after).catch(() => {});
+      await deps.repo.stampResult(scheduleId, result, after).catch(() => {});
       if (after) await deps.queue.enqueue(scheduleId, after, now());
     };
     if (await deps.onboardingPending?.(sched.agentId)) {
@@ -446,7 +453,10 @@ export function createSchedulerRunner(
       log(`fire: schedule ${scheduleId} failed: ${result}`);
       noteFire("failure", { stage });
       const after = lastAttempt ? nextFireAt(spec, now()) : fireAt;
-      await deps.repo.recordFire(scheduleId, result, after).catch(() => {});
+      if (stage === "commit")
+        await deps.repo.stampResult(scheduleId, result, after).catch(() => {});
+      else
+        await deps.repo.recordFire(scheduleId, result, after).catch(() => {});
       if (lastAttempt) {
         if (after) await deps.queue.enqueue(scheduleId, after, now());
         await emitFired(sched, "failure");
@@ -455,8 +465,10 @@ export function createSchedulerRunner(
     }
 
     const next = nextFireAt(spec, now());
-    if (spec.precheck) await deps.repo.setNextRun(scheduleId, next);
-    else await deps.repo.recordFire(scheduleId, "success", next);
+    if (!spec.precheck) await deps.repo.recordFire(scheduleId, "success", next);
+    else if (isFailureResult(sched.status?.lastResult))
+      await deps.repo.stampResult(scheduleId, null, next);
+    else await deps.repo.setNextRun(scheduleId, next);
     if (next) await deps.queue.enqueue(scheduleId, next, now());
     noteFire("success");
     await emitFired(sched, "success");
@@ -529,6 +541,8 @@ export function createSchedulerRunner(
 
       if (!sched.spec.precheck)
         await deps.repo.stampFire(scheduleId, "success");
+      else if (isFailureResult(sched.status?.lastResult))
+        await deps.repo.stampResult(scheduleId, null);
       await emitFired(sched, "success");
       return "started";
     },
@@ -562,7 +576,12 @@ export function createSchedulerRunner(
       else if (sched.spec.precheck === input.ranPrecheck)
         await deps.repo.applyStatusPatch(
           input.scheduleId,
-          statusForVerdict(verdict, now(), input.detail ?? "precheck failed"),
+          statusForVerdict(
+            verdict,
+            now(),
+            input.detail ?? "precheck failed",
+            sched.status?.lastResult,
+          ),
         );
       else
         log(

@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The new layout experiment replaces the app shell for the user who turns it on, and turning it off restores the current one. With it on, the sidebar is a strip of Agent avatars beside a list of Sessions, Home is a dashboard of cards, the right rail draws tiles with Documentation among them, and a Session can be pinned to a section above the rest. The spec creates its own Agents and the one Session it pins, so it moves nothing the other specs read, and it leaves the experiment off.
+// TEST_OVERVIEW: The new layout experiment replaces the app shell for the user who turns it on, and turning it off restores the current one. With it on, the sidebar is a strip of Agent avatars beside a list of Sessions, Home is a dashboard of cards, the right rail draws tiles with Documentation among them, a Session can be pinned to a section above the rest, and an Agent's own column filters its Sessions as All agents does. The spec creates its own Agents and the one Session it pins, so it moves nothing the other specs read, and it leaves the experiment off.
 import { expect, type Page, test } from "@playwright/test";
 
 import { baseUrl } from "../../config.js";
@@ -14,11 +14,7 @@ import {
   createRefreshingApiClient,
 } from "../../lib/api-client.js";
 import { acceptTerms } from "../../lib/auth.js";
-import {
-  onLaneBackend,
-  refreshingToken,
-  waitAgentState,
-} from "../../lib/backend.js";
+import { refreshingToken, waitAgentState } from "../../lib/backend.js";
 import { harnessName } from "../../lib/fixtures.js";
 
 test.describe.configure({ mode: "serial" });
@@ -49,9 +45,10 @@ test.beforeAll(async () => {
   await acceptTerms(api);
   for (const name of AGENTS) await deleteAgentIfPresent(api, name);
   for (const name of AGENTS) {
-    const { id } = await api.agents.create.mutate(
-      onLaneBackend({ name, templateId: harnessName }),
-    );
+    const { id } = await api.agents.create.mutate({
+      name,
+      templateId: harnessName,
+    });
     agentIds.set(name, id);
     await api.agents.sleep.mutate({ id });
   }
@@ -127,4 +124,42 @@ test("pins a Session above the rest of the Agent's list", async ({ page }) => {
   await row.hover();
   await row.getByTestId("session-pin-button").click();
   await expect(column.getByText("Pinned", { exact: true })).toHaveCount(0);
+});
+
+// TEST_SCENARIO: on the chat Session the pin test made, the Agent's column header carries the session filter beside New session. Leaving Chat out of its types hides the Agent's chat Session and marks the control filtered; the filter is the one All agents shows, and putting Chat back returns the Session.
+test("filters the Agent's own Sessions from its column", async ({ page }) => {
+  await setNewLayout(true);
+  const name = AGENTS[0];
+  await page.goto(`${baseUrl}/chat/${encodeURIComponent(agentIds.get(name)!)}`);
+  const column = page.locator(
+    `[data-testid="sidebar-agent-column"][data-agent-name="${name}"]`,
+  );
+  const row = column.getByTestId("session-row").first();
+  await expect(row).toBeVisible({ timeout: 30_000 });
+
+  const filter = column.getByTestId("sidebar-session-filter");
+  await expect(filter).toHaveAccessibleName("Filter sessions");
+  await filter.click();
+  await page.getByRole("menuitemcheckbox", { name: "Chat" }).click();
+  await page.keyboard.press("Escape");
+  await expect(column.getByTestId("session-row")).toHaveCount(0);
+  await expect(column.getByText("No sessions match the filter.")).toBeVisible();
+  await expect(filter).toHaveAccessibleName("Filter sessions (filtered)");
+
+  await page
+    .getByTestId("sidebar-avatar-strip")
+    .getByRole("button", { name: "Home" })
+    .click();
+  await expect(page.getByTestId("sidebar-session-filter")).toHaveAccessibleName(
+    "Filter sessions (filtered)",
+  );
+  await page
+    .getByTestId("sidebar-avatar-strip")
+    .getByRole("button", { name })
+    .click();
+  await filter.click();
+  await page.getByRole("menuitemcheckbox", { name: "Chat" }).click();
+  await page.keyboard.press("Escape");
+  await expect(row).toBeVisible();
+  await expect(filter).toHaveAccessibleName("Filter sessions");
 });

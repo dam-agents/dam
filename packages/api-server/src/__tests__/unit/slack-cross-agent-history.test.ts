@@ -8,7 +8,7 @@ import { slackWorkerHarness } from "../helpers/slack-worker.js";
 
 configureLogger({ level: "error", write: () => {} });
 
-const FOOTER_LABEL = "Powered by DAM";
+const FOOTER_LABEL = "Sent by an agent";
 
 const harness = (boundChannelId = "C1") =>
   slackWorkerHarness({

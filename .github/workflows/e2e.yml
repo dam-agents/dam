@@ -82,7 +82,7 @@ jobs:
     name: mise e2e (container)
     # The container lane: the smoke suite on an install without
     # virtualization, so every agent is a pod. e2e-vm is the vm lane, the same
-    # suite with every agent on the vm Backend; the two run side by side on
+    # suite with its agents on the vm Backend; the two run side by side on
     # every run but a push and a docs-only change, each on its own runner, and
     # the Playwright config picks each lane's specs from E2E_VIRTUALIZATION
     # (see packages/e2e/playwright/src/lib/lane.ts).
@@ -340,15 +340,16 @@ jobs:
   e2e-vm:
     name: mise e2e (vm)
     # The vm lane: the same smoke suite on an install with virtualization
-    # enabled, where every agent the suite creates is a vm Agent. The KVM
+    # enabled, where the agents the suite creates are vm Agents bar the one
+    # container Agent the migration spec applies itself. The KVM
     # device plugin comes from cluster:install, the node image cache directory
     # and the staged mock image from values-local.yaml once e2e:install sees
     # E2E_VIRTUALIZATION, and the vm-runner image is built or fetched with the
-    # rest by e2e:ci-images. The same variable makes the suite's global setup
-    # opt the e2e user into the vm-sandboxes experiment, so the UI creates vm
-    # agents, and the spec helpers create vm agents through the API. It also
-    # adds the runtime migration spec, which needs both Backends on one
-    # install, and runs it and the backend spec after the rest of the suite:
+    # rest by e2e:ci-images. Every create the suite makes lands on a machine
+    # there, the UI's and the API's alike, unless it asks for a container. It
+    # also adds the runtime migration spec, which needs
+    # both Backends on one install, and runs it and the backend spec after the
+    # rest of the suite:
     # the backend spec deletes the user's VM runner, which runs every one of
     # the user's machines. It runs whenever the container lane does, so a
     # vm-only failure shows on the PR that caused it.
@@ -447,8 +448,9 @@ jobs:
       - *e2e-playwright-version
       - *e2e-playwright-cache
       # Twice the container lane's budget: the vm-runner build above on a PR,
-      # the node staging of the mock image, every agent's boots, each a machine
-      # start under nested virtualization, and the backend and runtime
+      # the node staging of the mock image, each agent's boots, each a machine
+      # start under nested virtualization or, for the migration spec's legacy
+      # Agent, a container start, and the backend and runtime
       # migration specs, which run after the rest of the suite.
       - run: *e2e-run
         timeout-minutes: 70
