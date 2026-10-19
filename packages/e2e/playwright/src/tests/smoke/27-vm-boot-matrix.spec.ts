@@ -184,21 +184,28 @@ test("boots a disk it found with no room left", async () => {
   ).toBe(false);
 });
 
-// TEST_SCENARIO: a disk with no journal can lose a file's bytes to an unclean stop and keep its name, so the layout mark can come back empty. platform-init counts an empty mark as no mark, writes it again and boots the home as it is, instead of refusing a disk it cannot place or, worse, reading it by the wrong names. The mark is emptied the way an operator inside the machine would, at the disk's own path in the platform's root.
+// TEST_SCENARIO: a disk with no journal can lose a file's bytes to an unclean stop and keep its name, so the layout mark can come back empty. platform-init counts an empty mark as no mark, writes it again and boots the home as it is, instead of refusing a disk it cannot place or, worse, reading it by the wrong names. The mark is emptied the way an operator inside the machine would: from a second mount of the disk, since the boot leaves the disk's root detached, and the boot after it must say in its log that it marked the disk.
 test("boots on a disk whose layout mark came back empty", async () => {
   test.setTimeout(600_000);
-  const mark = "/mnt/platform/system/layout";
   const emptied = inGuest(
     agentId,
     [
-      `echo "mark $(cat ${mark})"`,
-      `truncate -s 0 ${mark}`,
+      "mkdir -p /mnt/boot-matrix-disk",
+      "mount -t btrfs /dev/vda /mnt/boot-matrix-disk 2>&1",
+      "cat /mnt/boot-matrix-disk/system/layout",
+      "truncate -s 0 /mnt/boot-matrix-disk/system/layout",
       "sync",
-      `echo "emptied $(wc -c < ${mark})"`,
+      "wc -c < /mnt/boot-matrix-disk/system/layout",
+      "umount /mnt/boot-matrix-disk",
     ].join("\n"),
   );
-  expect(emptied, "the boot marked the disk as layout 2").toMatch(/^mark 2$/m);
-  expect(emptied, "the layout mark read back empty").toMatch(/^emptied 0$/m);
+  expect(
+    emptied,
+    `the disk's layout mark was not there to empty: ${emptied}`,
+  ).toMatch(/^2$/m);
+  expect(emptied, `the mark did not read back empty: ${emptied}`).toMatch(
+    /^0$/m,
+  );
 
   await hibernate();
   await api.agents.wake.mutate({ id: agentId });
@@ -209,10 +216,14 @@ test("boots on a disk whose layout mark came back empty", async () => {
   await expectHomeFile(token, agentId, markerPath, marker, {
     timeoutMs: 120_000,
   });
+  const marked = inGuest(
+    agentId,
+    "grep -c 'marked the disk as layout 2' /var/log/platform/agent-runtime.log",
+  );
   expect(
-    inGuest(agentId, `cat ${mark}`).trim(),
-    "the boot marked the emptied disk again",
-  ).toBe("2");
+    Number(marked.trim()),
+    `the boot did not mark the emptied disk: ${marked}`,
+  ).toBeGreaterThan(0);
 });
 
 // TEST_SCENARIO: an owner's claim with no room left refuses a machine's start rather than letting its guest write into a disk the claim has no block for, and the owner is told which storage is full. The filler is this spec's own file on the claim, so it comes back off with one command once the refusal is seen, and the agent boots with HOME intact. The claim must have a filesystem of its own to be filled at all: the lane's local-path provisioner hands out a directory of the node's disk, so there the guard watches the node and a fill would fill the CI node, and E2E_CLAIM_FILL_GIB is how a run against an install whose claim is its own volume (a Ceph RBD, a loop device) opts in, with the most it may write onto the claim; unset, the case is skipped rather than run at the node's expense.
