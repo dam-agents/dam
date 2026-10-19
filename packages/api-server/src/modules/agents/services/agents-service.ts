@@ -70,7 +70,10 @@ import {
   seedTelemetryIdentity,
   renamedTelemetryIdentity,
 } from "../domain/telemetry-env.js";
-import { isTelegramDirectConversation } from "../domain/telegram-conversation.js";
+import {
+  isTelegramDirectConversation,
+  telegramChatOf,
+} from "../domain/telegram-conversation.js";
 import { templateImageUpdate } from "../domain/template-update.js";
 import { generateK8sName } from "../infrastructure/configmap-mappers.js";
 import type { AgentRegistrySecretPort } from "../infrastructure/agent-registry-secret-port.js";
@@ -175,22 +178,15 @@ export function executeTelegramBind(deps: {
     const agent = await deps.getAgent(agentId);
     if (!agent) return err({ type: "AgentNotFound" as const });
 
-    const existing = await deps.binding.findAgentByConversation(
-      flow.conversationId,
-    );
+    const chat = telegramChatOf(flow.conversationId);
+    const existing = await deps.binding.findAgentByConversation(chat);
     if (existing && existing.agentId !== agentId) {
       return err({ type: "ChatAlreadyBound" as const });
     }
     if (!existing) {
-      const outcome = await deps.binding.bind(
-        flow.conversationId,
-        agentId,
-        flow.keycloakSub,
-      );
+      const outcome = await deps.binding.bind(chat, agentId, flow.keycloakSub);
       if (outcome === "conflict") {
-        const raced = await deps.binding.findAgentByConversation(
-          flow.conversationId,
-        );
+        const raced = await deps.binding.findAgentByConversation(chat);
         if (!raced || raced.agentId !== agentId)
           return err({ type: "ChatAlreadyBound" as const });
       }
@@ -206,14 +202,14 @@ export function executeTelegramBind(deps: {
       agentId,
       result: "success",
       detail: {
-        conversationId: flow.conversationId,
+        conversationId: chat,
         telegramUserId: flow.telegramUserId,
       },
     });
 
     const post = await deps.binding.postMessage(
       agentId,
-      flow.conversationId,
+      chat,
       `This chat is now connected to ${agent.name}. Run the unbind command to disconnect.`,
     );
     if ("error" in post) {
@@ -225,7 +221,7 @@ export function executeTelegramBind(deps: {
         agentId,
         result: "failure",
         reason: post.error,
-        detail: { conversationId: flow.conversationId },
+        detail: { conversationId: chat },
       });
     }
 

@@ -81,6 +81,7 @@ drivers:
           name: Subagent model
           description: Model Bob's subagents run on
           category: model
+          subagents: true
           choices: []
         - id: mode
           name: Mode
@@ -109,6 +110,7 @@ drivers:
             - value: ask
               name: "Ask every time"
               description: "Prompts for every tool except file reads, including each shell command. Takes effect on the next harness start. Nobody is there to answer on a Slack or Telegram turn, so every prompt is refused — including the tool Bob replies with, which leaves it unable to answer in a channel at all. Bob offers no allowlist to exempt one: use Auto-approve for a channel-bound agent."
+              needsApproval: true
     # Bob reads its model list from a LiteLLM-shaped /model/info under its own
     # inference prefix, so discovery follows the same path Bob itself calls —
     # the gateway rewrite that fronts a plain LiteLLM applies to both alike.

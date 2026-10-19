@@ -22,6 +22,7 @@ import { anthropicBetaFor } from "../domain/anthropic-beta.js";
 import { bobGatewayPath, classify } from "../domain/classify.js";
 import { SESSION_HEADER, type SessionHandle } from "../domain/session-of.js";
 import { resolveTarget } from "../domain/resolve-target.js";
+import { withSubagentEffort } from "../domain/subagent-effort.js";
 import { upstreamUrl, upstreamWireOf } from "../domain/upstream.js";
 import { explainUpstreamError } from "../domain/upstream-error.js";
 import { createSseModelRewrite, rewriteBody } from "../domain/model-rewrite.js";
@@ -62,6 +63,7 @@ export interface ModelCallRecord {
 export interface SessionModelChoice {
   model: string | null;
   subagentModel?: string | null;
+  subagentEffort?: string | null;
 }
 
 export type { SessionHandle } from "../domain/session-of.js";
@@ -271,8 +273,14 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
         `provider '${entry.alias}' has no endpoint in this pod's env`,
       );
     const stream = body.stream === true;
+    const subagentEffort = handle?.parentSessionId
+      ? choiceOf(handle.parentSessionId)?.subagentEffort
+      : null;
+    const asked = subagentEffort
+      ? withSubagentEffort(body, dialect, subagentEffort)
+      : body;
     const prepared =
-      deps.prepareBody?.(body, { entry, dialect, stream }) ?? body;
+      deps.prepareBody?.(asked, { entry, dialect, stream }) ?? asked;
     const outgoing = Buffer.from(
       JSON.stringify({ ...prepared, model: entry.upstreamId }),
     );

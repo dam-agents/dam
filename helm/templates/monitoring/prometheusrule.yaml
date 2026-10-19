@@ -75,6 +75,15 @@ spec:
             summary: A VM runner is close to the memory limit the kernel kills it at.
             description: >-
               The runner at {{ "{{ $labels.instance }}" }} has been past its pressure threshold for 5 minutes; if it is killed, every machine of its user restarts.
+        - alert: VMRunnerNodeLost
+          expr: sum by (namespace) (platform_vm_runner_node_lost{namespace="{{ .Release.Namespace }}"}) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: A node holding users' VM runners has gone or is not ready.
+            description: >-
+              {{ "{{ $value }}" }} VM runner pods sit on a node the cluster does not report ready: every agent of those users is down, and no replacement pod takes their storage claim while that node keeps it. Bring the node back, or fence it and clear it out of service (see docs/notes/vm-runner-node-loss.md). {{ printf $events "MachineRunnerNodeLost" }}
         - alert: VMRunnerAdmissionRefusals
           expr: increase(platform_vm_runner_machine_admission_refusals_total[15m]) > 0
           for: 15m

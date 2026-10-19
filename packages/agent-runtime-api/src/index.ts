@@ -16,6 +16,7 @@ export type {
   SessionListQuery,
   SessionPage,
   SessionsService,
+  SessionSubAgentContext,
   SetSessionTitleInput,
   StoreDelegationFramesInput,
   DelegationFrames,
@@ -28,7 +29,13 @@ export {
   sessionSettingsSchema,
   modelConstraintsFor,
   sessionSettingsError,
+  SUBAGENT_MODEL_SETTING,
+  PLATFORM_SUBAGENT_PREFIX,
+  isPlatformSubagentSetting,
+  platformSubagentChoice,
+  platformSubagentSettingsError,
   type SessionSettings,
+  type SubAgentHarnessConfig,
 } from "./modules/harness-config/session-settings.js";
 export {
   podSessionModeSchema,

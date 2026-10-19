@@ -38,7 +38,10 @@ import type {
 } from "../../modules/invocations/index.js";
 import { resolveAgent } from "./agent-auth.js";
 import type { DriverOps, DriverOpsFor } from "./driver-ops.js";
-import { registerSubAgentTools } from "./sub-agent-tools.js";
+import {
+  registerSubAgentTools,
+  SessionSettingsUnreadableError,
+} from "./sub-agent-tools.js";
 import { rejectOversizedArrays } from "../../core/mcp-input-bounds.js";
 import { registerSpendLimitsTool } from "./spend-limits-tool.js";
 import { securityLog } from "../../core/security-log.js";
@@ -1367,16 +1370,19 @@ export function createMcpSession(
       }
     },
     requestSignal: deps.requestSignal,
-    subagentModel: async () => {
+    sessionContext: async () => {
       const ref = deps.sessionRef;
       if (!ref) return null;
       try {
-        const { settings } = await runtimeClient.sessions.settings.query({
-          ref,
-        });
-        return settings.subagentModel ?? null;
-      } catch {
-        return null;
+        return await runtimeClient.sessions.settings.query({ ref });
+      } catch (err) {
+        if (err instanceof TRPCClientError && err.data?.code === "NOT_FOUND")
+          return null;
+        console.warn(
+          `[invocations] ${agentId}: could not read the spawning session's settings; the spawn is refused`,
+          err,
+        );
+        throw new SessionSettingsUnreadableError();
       }
     },
     catalogModels: async (harness) => {

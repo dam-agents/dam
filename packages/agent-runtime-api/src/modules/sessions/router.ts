@@ -34,10 +34,10 @@ export const sessionsRouter = t.router({
   settings: t.procedure
     .input(sessionSettingsInputSchema)
     .query(async ({ ctx, input }) => {
-      const settings = await ctx.sessions.settings(input);
-      if (settings === null)
+      const context = await ctx.sessions.settings(input);
+      if (context === null)
         throw new TRPCError({ code: "NOT_FOUND", message: "no such session" });
-      return { settings };
+      return context;
     }),
   byRef: t.procedure
     .input(sessionByRefInputSchema)

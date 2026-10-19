@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+#MISE description="A cluster-path script drives an init system only inside a check that it is the one running"
+#MISE sources=["etc/lima/*.yaml", ".mise/tasks/cluster/*", ".mise/lib/*.sh", ".mise/tasks/check/cluster-init"]
+#MISE outputs=[]
+#MISE cache.enabled=true
+# The cluster path runs both in Lima VMs (systemd) and in sandboxes (OpenRC, or
+# no init at all), so a bare systemctl fails on OpenRC and a bare rc-service
+# fails on every VM. #5381 shipped a `systemctl enable --now` that aborted the
+# provision in every non-systemd sandbox; this catches the next one. It checks
+# that the guard exists somewhere in the file, not that it encloses the command:
+# a finer check needs a shell parser, and the file-level one catches what the
+# regression did.
+set -euo pipefail
+fail=0
+for f in etc/lima/*.yaml .mise/tasks/cluster/* .mise/lib/*.sh; do
+  case "$f" in
+    *.yaml) script="$(yq -r '[.provision[]?.script, .probes[]?.script] | join("\n")' "$f")" \
+              || { echo "FAIL: yq cannot read the provision scripts in $f" >&2; fail=1; continue; } ;;
+    *) script="$(cat "$f")" ;;
+  esac
+  if grep -q '\bsystemctl ' <<<"$script" && ! grep -q '/run/systemd/system' <<<"$script"; then
+    echo "FAIL: $f calls systemctl without checking /run/systemd/system (no systemd in a sandbox)" >&2
+    fail=1
+  fi
+  if grep -qE '\brc-(service|update) ' <<<"$script" \
+      && ! grep -qE '/etc/init\.d/|/sbin/openrc-run|command -v rc-service' <<<"$script"; then
+    echo "FAIL: $f calls rc-service/rc-update without checking for an OpenRC service first" >&2
+    fail=1
+  fi
+done
+exit "$fail"
