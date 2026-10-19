@@ -21,7 +21,11 @@ sha="$(sed -n 's/^sha256-darwin-arm64=//p' smolvm.pin)"
 [ -n "$tag" ] && [ -n "$sha" ] || { echo "smolvm.pin names no darwin-arm64 release" >&2; exit 1; }
 release="smolvm-${tag#v}-darwin-arm64"
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/platform-vm-runner"
-tarball="$cache/$sha"
+# Both are keyed by the digest, not the tag: a release re-pushed under the same
+# tag is a pin the digest check must catch, and an extraction under the tag
+# alone would keep linking the library of the release it replaced.
+tarball="$cache/$sha.tar.gz"
+lib="$cache/$sha/lib"
 if ! echo "$sha  $tarball" | shasum -a 256 -c --quiet - 2>/dev/null; then
   mkdir -p "$cache"
   curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors \
@@ -29,12 +33,13 @@ if ! echo "$sha  $tarball" | shasum -a 256 -c --quiet - 2>/dev/null; then
   echo "$sha  $tarball.part" | shasum -a 256 -c --quiet -
   mv "$tarball.part" "$tarball"
 fi
-if [ ! -f "$cache/$release/lib/libkrun.dylib" ]; then
-  rm -rf "$cache/$release"
-  tar -xzf "$tarball" -C "$cache" "$release/lib"
+if [ ! -f "$lib/libkrun.dylib" ]; then
+  rm -rf "$cache/$sha"
+  mkdir -p "$cache/$sha"
+  tar -xzf "$tarball" -C "$cache/$sha" --strip-components=1 "$release/lib"
 fi
 
-LIBKRUN_DIR="$cache/$release/lib" \
+LIBKRUN_DIR="$lib" \
   RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=-Wl,-rpath,@executable_path/smolvm-$tag/lib" \
   cargo build --release --locked -p vm-runner
 install -d dist/host
