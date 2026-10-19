@@ -69,6 +69,7 @@ const (
 // UNIT_BOUNDARY_DESCRIPTION: a migration as the controller reads it: whether the api-server's request stands, and the phase the RuntimeMigrating condition records. A request from before the condition existed carries its phase in the request annotation instead, which is read as the same phase so a migration the previous controller started resumes. `recorded` says whether the condition exists; `since` is when it last turned true, which is where the time budget starts; `source` says the old volumes were recorded, which happens only once the container is being stopped.
 type runtimeMigration struct {
 	requested bool
+	target    bool
 	recorded  bool
 	phase     string
 	message   string
@@ -84,6 +85,7 @@ type runtimeMigration struct {
 func runtimeMigrationOf(annotations map[string]string, status apiv1.AgentStatus) runtimeMigration {
 	m := runtimeMigration{
 		requested: annotations[annRuntimeMigration] != "",
+		target:    annotations[annRuntimeMigrationTarget] != "",
 		source:    annotations[annRuntimeMigrationSource] != "",
 		empty:     annotations[annRuntimeMigrationEmpty] == "true",
 		attempts:  status.RuntimeMigrationAttempts,
@@ -123,9 +125,9 @@ func runtimeMigrationOfObject(u *unstructured.Unstructured) runtimeMigration {
 
 func (m runtimeMigration) active() bool { return m.requested || m.phase != "" }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a standing request landed in the middle of an undo. The api-server decides a request by writing its target in the same patch, so a request without one has not been decided: with a move's condition still on the Agent it arrived while the undo was owed, and the undo is finished first. Once the condition is gone the same request reads as a fresh one and starts.
+// UNIT_BOUNDARY_DESCRIPTION: whether a standing request landed in the middle of an undo. The api-server decides a request by writing its target in the same patch, so a request without one has not been decided; with a move's condition still on the Agent — past the preflight, which is where an undo is owed from — it arrived while that undo was not done, and the undo is finished first. Once the condition is gone the same request reads as a fresh one and starts.
 func (m runtimeMigration) midUndoRequest(annotations map[string]string) bool {
-	return annotations[annRuntimeMigration] != "" && annotations[annRuntimeMigrationTarget] == "" && m.recorded
+	return annotations[annRuntimeMigration] != "" && !m.target && m.recorded && m.phase != apiv1.ReasonRuntimeMigrationRequested
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: whether nothing of the Agent may run — neither the container, nor the machine, nor the gateway. That holds from the moment the container is stopped until the copy has landed: the old pod would keep writing to a volume being copied, and a machine that booted would seed its disk from the image and never look at the copy again. A boot is let through only with the seed it must come from recorded, since that is what the runner and platform-init hold the boot to. A migration that failed after the container was stopped keeps it stopped until an operator retries or aborts it; one that failed in preflight never stopped it.
@@ -394,6 +396,9 @@ func (r *AgentReconciler) continueRuntimeMigration(ctx context.Context, agent *a
 		})
 	case !m.requested || m.midUndoRequest(agent.Annotations):
 		return r.clearRuntimeMigration(ctx, agent, false)
+	case !m.target:
+		// UNIT_BOUNDARY_DESCRIPTION: the api-server decides a request by writing its target, so nothing is made on the vm side until it does.
+		return nil
 	case m.phase == apiv1.ReasonRuntimeMigrationFailed:
 		if !m.retry.After(m.since) {
 			return nil
@@ -538,6 +543,11 @@ func (r *AgentReconciler) clearRuntimeMigration(ctx context.Context, agent *apiv
 		annRuntimeMigrationSeed:    nil,
 		annRuntimeMigrationEmpty:   nil,
 		annRuntimeMigrationMessage: nil,
+	}
+	if !retry {
+		// UNIT_BOUNDARY_DESCRIPTION: an abort leaves nothing of the move behind, so a request the operator writes next is undecided and the api-server decides it, instead of reading as one that already names a target from the move that was undone.
+		cleared[annRuntimeMigrationTarget] = nil
+		cleared[annRuntimeMigrationRetry] = nil
 	}
 	if err := r.deleteMachine(ctx, name, agent.Labels[envoyOwnerLabel]); err != nil {
 		if retry {

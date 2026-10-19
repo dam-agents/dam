@@ -322,6 +322,7 @@ func TestAnAbortRemovesTheVMSideAndTheContainerResumes(t *testing.T) {
 	agent = reloaded(t, r, agent)
 	assert.Nil(t, migrationCondition(agent))
 	assert.NotContains(t, agent.Annotations, annRuntimeMigrationSource)
+	assert.NotContains(t, agent.Annotations, annRuntimeMigrationTarget, "the abort leaves no target for a later request to be mistaken for")
 	assert.Contains(t, node.deleted, "my-agent", "the machine and its seed are removed")
 	_, err = r.client.BatchV1().Jobs("test-agents").Get(ctx, runtimeMigrationJobName("my-agent"), metav1.GetOptions{})
 	assert.True(t, k8serrors.IsNotFound(err), "the copy Job is removed")
@@ -332,6 +333,32 @@ func TestAnAbortRemovesTheVMSideAndTheContainerResumes(t *testing.T) {
 
 	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.Equal(t, int32(1), agentReplicas(t, r), "the container runs again")
+}
+
+// TEST_SCENARIO: an abort leaves no target or retry behind, so a request the operator writes afterwards is one nobody has decided: the api-server writes its target, and until then the controller makes nothing on the vm side and reads the request as no undo at all.
+func TestAnUndecidedRequestIsNotAnUndo(t *testing.T) {
+	ctx := context.Background()
+	agent := migratingAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	createAll(t, r, homePVC("home-agent-my-agent-0"))
+
+	agent = editStoredAgent(t, r, agent, func(u *unstructured.Unstructured) {
+		withoutAnnotations(annRuntimeMigrationTarget)(u)
+		ann := u.GetAnnotations()
+		ann[annRuntimeMigration] = runtimeMigrationRequested
+		u.SetAnnotations(ann)
+	})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	assert.Equal(t, runtimeMigrationRequested, agent.Annotations[annRuntimeMigration], "the request stands, undecided")
+	assert.Equal(t, int32(1), agentReplicas(t, r), "the container keeps running until the api-server decides")
+
+	agent = editStoredAgent(t, r, agent, withoutAnnotations(annRuntimeMigration))
+	for range 2 {
+		require.NoError(t, r.Reconcile(ctx, agent))
+		agent = reloaded(t, r, agent)
+	}
+	assert.NotContains(t, agent.Annotations, annRuntimeMigrationTarget)
 }
 
 // TEST_SCENARIO: an operator's fresh request that lands while an undo is owed does not cancel it. A request without a target has not been decided by the api-server, so the undo is finished first: the machine and its seed go, the condition goes, and the request then reads as a fresh one and starts a move of its own.

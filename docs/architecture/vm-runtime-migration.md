@@ -130,4 +130,5 @@ A migration that cannot finish fails on its own after three copy attempts or six
 The controller treats that as an abort: it deletes the copy Job and the machine with its seed, removes the condition, and the container resumes on its old volumes, since the spec was never switched.
 A verified migration cannot be aborted: the machine is the Agent now, and what the copy missed is recovered from the retained volumes.
 
-**Retry one.** Set `agent-platform.ai/runtime-migration-retry` to the current time on a failed migration; the controller starts over from the preflight with a fresh machine.
+**Retry one.** Set `agent-platform.ai/runtime-migration-retry` to the current time in RFC 3339 on a failed migration — `kubectl annotate agent <agent> -n <agent-namespace> agent-platform.ai/runtime-migration-retry="$(date -u +%Y-%m-%dT%H:%M:%SZ)" --overwrite` — and the controller starts over from the preflight with a fresh machine.
+A value that is not a readable time is kept and reads as no retry at all, so a typo leaves the failed move where it was.
