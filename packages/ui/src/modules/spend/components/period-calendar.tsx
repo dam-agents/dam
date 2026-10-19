@@ -61,6 +61,7 @@ export function PeriodCalendar({
           variant="outline"
           size="icon-sm"
           aria-label={PREVIOUS_MONTH}
+          tooltip={PREVIOUS_MONTH}
           onClick={() => onMonthChange(addMonths(month, -1))}
         >
           <ChevronLeft size={14} />
@@ -72,6 +73,7 @@ export function PeriodCalendar({
           variant="outline"
           size="icon-sm"
           aria-label={NEXT_MONTH}
+          tooltip={NEXT_MONTH}
           onClick={() => onMonthChange(addMonths(month, 1))}
         >
           <ChevronRight size={14} />

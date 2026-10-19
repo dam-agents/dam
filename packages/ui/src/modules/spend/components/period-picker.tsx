@@ -80,6 +80,7 @@ export function PeriodPicker({
         variant="ghost"
         size="icon-sm"
         aria-label={PREVIOUS_PERIOD}
+        tooltip={PREVIOUS_PERIOD}
         onClick={() => onPeriodChange(stepPeriod(period, -1, today))}
       >
         <ChevronLeft size={16} />
@@ -144,6 +145,7 @@ export function PeriodPicker({
         variant="ghost"
         size="icon-sm"
         aria-label={NEXT_PERIOD}
+        tooltip={NEXT_PERIOD}
         disabled={rangeOf(next, today).from > today}
         onClick={() => onPeriodChange(next)}
       >
