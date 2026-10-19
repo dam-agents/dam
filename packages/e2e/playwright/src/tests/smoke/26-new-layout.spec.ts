@@ -96,7 +96,7 @@ test("shows the strip, the dashboard and the tiled rail when on", async ({
   ).toBeVisible();
 });
 
-// TEST_SCENARIO: with the experiment off, an Agent's chat keeps the layout from before the side panel: a top bar with the Agent's tools, the Files and Artifacts sections in a column beside the conversation, and no icon bar. Turning the experiment on in the Experimental features tab, which the spec reveals the way the About tab does, and going back to the chat, with no reload, swaps that for the side panel's icon bar, and the bar's Files icon opens the Files tab in the panel; turning it off brings the sections back.
+// TEST_SCENARIO: with the experiment off, an Agent's chat keeps the layout from before the side panel: a top bar with the Agent's tools, the Files and Artifacts sections in a column beside the conversation, and no icon bar. Turning the experiment on in the Experimental features tab, which the spec reveals the way the About tab does, and going back to the chat by in-app navigation, with no reload, swaps that for the side panel's icon bar, and the bar's Files icon opens the Files tab in the panel; turning it off brings the sections back.
 test("switches the chat between the sections and the side panel", async ({
   page,
 }) => {
@@ -115,17 +115,28 @@ test("switches the chat between the sections and the side panel", async ({
   await expect(page.getByTestId("chat-sections")).toBeVisible();
   await expect(page.getByTestId("side-panel-bar")).toHaveCount(0);
 
+  const chatPath = `/chat/${encodeURIComponent(agentId)}`;
+  const navigateInApp = (path: string) =>
+    page.evaluate((to) => {
+      history.pushState(null, "", to);
+      dispatchEvent(new PopStateEvent("popstate"));
+    }, path);
+  await page.evaluate(() => {
+    (window as { layoutMarker?: boolean }).layoutMarker = true;
+  });
   const layoutSwitch = page.getByRole("switch", { name: "New layout" });
   const switchLayout = async (on: boolean) => {
-    await page.getByRole("button", { name: "Settings" }).first().click();
-    await page.getByRole("tab", { name: "Experimental features" }).click();
+    await navigateInApp("/settings/features");
     await layoutSwitch.click();
     await expect(layoutSwitch).toHaveAttribute("aria-checked", String(on));
-    await page.goBack();
-    await page.goBack();
-    await expect(page).toHaveURL(
-      new RegExp(`/chat/${encodeURIComponent(agentId)}`),
-    );
+    await navigateInApp(chatPath);
+    await expect(chatInput(page)).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => (window as { layoutMarker?: boolean }).layoutMarker,
+      ),
+      "the page did not reload",
+    ).toBe(true);
   };
 
   await switchLayout(true);
