@@ -1276,6 +1276,8 @@ impl Server {
                 note: None,
             });
         }
+        // UNIT_BOUNDARY_DESCRIPTION: a start is a look at the claim of its own, so the guest boots on the room the machine has now and not on the grant its share held while it slept, nor on the floor alone until the next STORAGE_CHECK. The action is already set on the entry, so this machine counts itself among the machines that are up.
+        self.check_storage();
         let started = Instant::now();
         let runtime = self.runtime.clone();
         let target = id.to_string();
@@ -1530,7 +1532,7 @@ impl Server {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: one look at the claim, every STORAGE_CHECK. Every machine's share gets a new grant of the bytes its guest may still add to the claim (StorageUse::guest_room), which platform-init holds the guest to, split between the machines that are running or on their way up: a group woken together writes at once, so an even part of the room for the running ones alone would give each of them the whole room until the next look, and their writes together would pass the level the claim is held to. A claim that cannot be measured grants nothing, so no guest is held to the claim at all: the runner says so in the log, once per change, and its storage gauges read as no level rather than as an empty claim. While it is short, every machine's share carries a request that its guest give back scratch: an id and the bytes asked of each running machine, its even part of what brings the claim SHED_STEP_PERCENT back under SHORT_PERCENT. A guest serves each request once, so a new one goes out only when the claim has filled SHED_STEP_PERCENT further since the last: the claim is mostly the agents' homes, which no guest gives back, and repeating the request would only have every guest delete its scratch again and again. What the guests keep beyond that is not the runner's to free.
+    // UNIT_BOUNDARY_DESCRIPTION: one look at the claim, every STORAGE_CHECK and at every start. Every machine's share gets a new grant of the bytes its guest may still add to the claim (StorageUse::guest_room), which platform-init holds the guest to, split between the machines that are running or on their way up: a group woken together writes at once, so an even part of the room for the running ones alone would give each of them the whole room until the next look, and their writes together would pass the level the claim is held to. A machine that is neither running nor on its way up is granted nothing rather than a part, because a grant outlives the look that wrote it: a sleeping machine that woke, and booted before the next look, would boot on the room its share held while it slept, beside every sibling that woke with it. A grant of nothing is the floor platform-init keeps for a guest held at nothing, room for SSH keys, a shell and the agent's own state, so a wake that finds no look of its own writes no further, and a start publishes the room again before its guest boots. A claim that cannot be measured grants nothing, so no guest is held to the claim at all: the runner says so in the log, once per change, and its storage gauges read as no level rather than as an empty claim. While it is short, every machine's share carries a request that its guest give back scratch: an id and the bytes asked of each running machine, its even part of what brings the claim SHED_STEP_PERCENT back under SHORT_PERCENT. A guest serves each request once, so a new one goes out only when the claim has filled SHED_STEP_PERCENT further since the last: the claim is mostly the agents' homes, which no guest gives back, and repeating the request would only have every guest delete its scratch again and again. What the guests keep beyond that is not the runner's to free.
     fn check_storage(&self) {
         let shares: Vec<(String, PathBuf)> = state::machine_ids(&self.config.state_dir)
             .unwrap_or_default()
@@ -1540,29 +1542,34 @@ impl Server {
                 share.is_dir().then_some((id, share))
             })
             .collect();
-        let states: Vec<Option<State>> = locked(&self.machines)
-            .entries
-            .values()
-            .map(|e| {
-                e.action
+        let (up, running) = {
+            let machines = locked(&self.machines);
+            let (mut up, mut running) = (BTreeSet::new(), 0);
+            for (id, entry) in &machines.entries {
+                let state = entry
+                    .action
                     .map(Action::state)
-                    .or(e.seen.as_ref().map(|s| s.state))
-            })
-            .collect();
-        let up = states
-            .iter()
-            .filter(|state| !matches!(state, Some(State::Stopped | State::Absent)))
-            .count();
-        let running = states
-            .iter()
-            .filter(|state| **state == Some(State::Running))
-            .count();
+                    .or(entry.seen.as_ref().map(|s| s.state));
+                if state == Some(State::Running) {
+                    running += 1;
+                }
+                if !matches!(state, Some(State::Stopped | State::Absent)) {
+                    up.insert(id.clone());
+                }
+            }
+            (up, running)
+        };
         let storage = (self.config.measure_storage)();
-        let grant = storage.map(|storage| {
-            let id = self.versions.fetch_add(1, Ordering::Relaxed);
-            format!("{id} {}\n", storage.guest_room(up))
-        });
+        let look = self.versions.fetch_add(1, Ordering::Relaxed);
         for (id, share) in &shares {
+            let grant = storage.map(|storage| {
+                let bytes = if up.contains(id.as_str()) {
+                    storage.guest_room(up.len())
+                } else {
+                    0
+                };
+                format!("{look} {bytes}\n")
+            });
             if let Err(e) = share::grant_storage_room(share, grant.as_deref()) {
                 tracing::warn!(machine = %id, error = %e, "vm runner: cannot grant the machine's guest its room on the claim");
             }

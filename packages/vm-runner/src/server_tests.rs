@@ -376,6 +376,22 @@ impl Harness {
         }
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: the bytes each named machine's share grants its guest, as platform-init reads them.
+    fn grants(&self, ids: &[&str]) -> Vec<u64> {
+        ids.iter()
+            .map(|id| {
+                let grant = self
+                    .dir
+                    .join("machines")
+                    .join(id)
+                    .join(SHARE_DIR)
+                    .join(share::STORAGE_ROOM_FILE);
+                let text = std::fs::read_to_string(grant).unwrap();
+                text.split_whitespace().nth(1).unwrap().parse().unwrap()
+            })
+            .collect()
+    }
+
     fn machine<R>(&self, id: &str, change: impl FnOnce(&mut MachineEntry) -> R) -> R {
         change(
             locked(&self.server.machines)
@@ -2873,22 +2889,8 @@ async fn every_look_grants_each_guest_its_room_on_the_claim() {
 #[tokio::test(flavor = "multi_thread")]
 async fn machines_woken_together_share_the_room_between_them() {
     let (h, claim) = with_claim("storage-woken-together");
-    let grants = |h: &Harness| -> Vec<u64> {
-        ["m1", "m2"]
-            .iter()
-            .map(|id| {
-                let grant = h
-                    .dir
-                    .join("machines")
-                    .join(id)
-                    .join(SHARE_DIR)
-                    .join(share::STORAGE_ROOM_FILE);
-                let text = std::fs::read_to_string(grant).unwrap();
-                text.split_whitespace().nth(1).unwrap().parse().unwrap()
-            })
-            .collect()
-    };
-    for id in ["m1", "m2"] {
+    let ids = ["m1", "m2"];
+    for id in ids {
         h.server.put(id, spec(true)).unwrap();
         h.until(id, "running", |s| s.state == STATE_RUNNING).await;
         h.server.put(id, spec(false)).unwrap();
@@ -2896,17 +2898,93 @@ async fn machines_woken_together_share_the_room_between_them() {
     }
     *locked(&claim) = filled(55);
     *locked(&h.fake.start_delay) = Duration::from_millis(500);
-    for id in ["m1", "m2"] {
+    locked(&h.fake.calls).clear();
+    for id in ids {
         assert_eq!(h.server.put(id, spec(true)).unwrap().state, STATE_STARTING);
     }
     h.wait_for_call("start m2").await;
     h.server.check_storage();
-    assert_eq!(grants(&h), vec![20u64 << 30; 2]);
-    for id in ["m1", "m2"] {
+    assert_eq!(h.grants(&ids), vec![20u64 << 30; 2]);
+    for id in ids {
         h.until(id, "running", |s| s.state == STATE_RUNNING).await;
     }
     h.server.check_storage();
-    assert_eq!(grants(&h), vec![20u64 << 30; 2]);
+    assert_eq!(h.grants(&ids), vec![20u64 << 30; 2]);
+}
+
+// TEST_SCENARIO: a grant outlives the look that wrote it, so a machine that is asleep is granted nothing rather than a part of the room: woken between two looks, it would otherwise boot on the room its share held while it slept, beside every machine woken with it. A start is a look of its own, so the machines woken together boot on their even part instead of on the floor alone, and the room they hold together never passes what the claim has left below 95%.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_woken_between_looks_does_not_boot_on_the_whole_room() {
+    let (h, claim) = with_claim("storage-woken-between");
+    let ids = ["m1", "m2"];
+    for id in ids {
+        h.server.put(id, spec(true)).unwrap();
+        h.until(id, "running", |s| s.state == STATE_RUNNING).await;
+        h.server.put(id, spec(false)).unwrap();
+        h.until(id, "stopped", |s| s.state == STATE_STOPPED).await;
+    }
+    let room = 40u64 << 30;
+    *locked(&claim) = filled(55);
+    h.server.check_storage();
+    assert_eq!(
+        h.grants(&ids),
+        vec![0; 2],
+        "a sleeping machine was granted room"
+    );
+    *locked(&h.fake.start_delay) = Duration::from_millis(500);
+    locked(&h.fake.calls).clear();
+    for id in ids {
+        assert_eq!(h.server.put(id, spec(true)).unwrap().state, STATE_STARTING);
+    }
+    h.wait_for_call("start m2").await;
+    let woken = h.grants(&ids);
+    assert!(
+        woken.iter().all(|&bytes| bytes > 0),
+        "a wake booted on no grant of its own: {woken:?}"
+    );
+    assert!(
+        woken.iter().sum::<u64>() <= room,
+        "the machines woken together hold {woken:?} of the room's {room} bytes"
+    );
+    for id in ids {
+        h.until(id, "running", |s| s.state == STATE_RUNNING).await;
+    }
+}
+
+// TEST_SCENARIO: the two halves of a look count different machines. The room is split between the machines that are up, so a starting machine takes its part from the running ones before it boots. The shortage is asked back of the running machines alone, since only a guest that runs can free its scratch, so a starting sibling does not halve what a running one is asked for.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_running_and_a_starting_machine_split_the_room_but_only_the_running_one_sheds() {
+    let (h, claim) = with_claim("storage-mixed");
+    h.server.put("m1", spec(true)).unwrap();
+    h.until("m1", "running", |s| s.state == STATE_RUNNING).await;
+    h.server.put("m2", spec(true)).unwrap();
+    h.until("m2", "running", |s| s.state == STATE_RUNNING).await;
+    h.server.put("m2", spec(false)).unwrap();
+    h.until("m2", "stopped", |s| s.state == STATE_STOPPED).await;
+    *locked(&h.fake.start_delay) = Duration::from_millis(500);
+    locked(&h.fake.calls).clear();
+    assert_eq!(
+        h.server.put("m2", spec(true)).unwrap().state,
+        STATE_STARTING
+    );
+    h.wait_for_call("start m2").await;
+    *locked(&claim) = filled(80);
+    h.server.check_storage();
+    let room = 15u64 << 30;
+    assert_eq!(h.grants(&["m1", "m2"]), vec![room / 2; 2]);
+    let shed = std::fs::read_to_string(
+        h.dir
+            .join("machines/m1")
+            .join(SHARE_DIR)
+            .join(share::STORAGE_SHORT_FILE),
+    )
+    .expect("a short claim asks every share");
+    assert_eq!(
+        shed.split_whitespace().nth(1),
+        Some((10u64 << 30).to_string().as_str()),
+        "the running machine is asked the whole shortage: {shed}"
+    );
+    h.until("m2", "running", |s| s.state == STATE_RUNNING).await;
 }
 
 // TEST_SCENARIO: a guest serves each request to give back scratch once, and only a running guest frees anything, so the shortage is split among the running machines alone. The runner keeps the same request while the claim stays short at about the same use, and sends a new one, with a new id and its part of the new shortage, only once the claim has filled SHED_STEP_PERCENT further; a claim that has room again clears it, and the next shortage is a new request.
