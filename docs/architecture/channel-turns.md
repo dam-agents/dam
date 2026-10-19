@@ -245,7 +245,7 @@ What the agent sees:
   Membership is verified at send time; a bound conversation short-circuits every check, since the binding is the channel's consent.
   Every outbound post is made by the bot and footed with an [Agent Footer](#the-agent-footer).
   The binding governs who may drive the Agent inbound; the owner's membership governs where it may go outbound.
-  Telegram has no analogue: its outbound targets stay the conversations bound to the Agent.
+  Telegram has no analogue: its outbound targets stay the chats bound to the Agent, any forum topic in them included.
 - **Tools are always registered.** Calls are rejected at invocation time when no channel is connected for the Agent — no dynamic tool list, no per-session toggle.
   `describe_channel_users`, `describe_message_reactions` and `fetch_message_attachment` stay registered too, and report the scope their workspace withheld (see [Slack scopes: required vs. optional](channels.md#slack-scopes-required-vs-optional)).
   Workspaces grant differently, so a tool list that is per-Agent cannot answer for all of them: the strategy is picked by whether a partial answer is possible, and across workspaces one always is.

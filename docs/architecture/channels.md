@@ -53,7 +53,7 @@ The binding itself is the authorization: anyone the messenger admits to the conv
 There is no per-person access mode, no identity link required to drive a turn, and no allow-list.
 Every turn relays single-track to the main agent pod; the **binding owner's** Terms-of-Use acceptance gates each turn (the terms bind the party whose credentials run it, not the member who typed); the security log records each allow with basis *place* and the sender's Slack user id, or for a bot post which Agent or app wrote it; and the prompt text is speaker-labelled with the sender's Slack mention, or the Agent's or app's name, so a multi-speaker session stays attributable inside the conversation itself.
 
-Telegram is structurally identical — with no workspace to anchor per-user identity, consent attaches to the conversation and everyone in the bound chat drives the Agent.
+Telegram is structurally identical — with no workspace to anchor per-user identity, consent covers the whole chat, every forum topic and reply in it included, and everyone in the bound chat drives the Agent.
 
 Members use every granted Connection and Satellite; the UI warns, never blocks, when a group binding and grants meet.
 
@@ -332,7 +332,7 @@ The agent persona above is the one exception and fails closed: the cost of guess
   The same boot step advertises the command list to the Bot API, which is what makes the commands offered when someone types `/`.
 - **Token provenance.** The operator creates one bot via `@BotFather` and sets the token in Helm values; it reaches the api-server as env.
   No per-Agent Secrets, no token at rest in Postgres.
-- **Identity model — there is none per user.** Telegram has no workspace to anchor a user-to-Keycloak link against, so consent attaches to the *conversation*: someone sends `/bind` (in groups, only chat admins; `/start` counts as bind intent too, so deep links and the Start button work), the bot replies with a Keycloak OAuth link, and after authenticating the user lands on the UI's agent picker listing *their own* Agents.
+- **Identity model — there is none per user.** Telegram has no workspace to anchor a user-to-Keycloak link against, so consent covers the whole *chat*, all its forum topics included: someone sends `/bind` anywhere in it (in groups, only chat admins; `/start` counts as bind intent too, so deep links and the Start button work), the bot replies with a Keycloak OAuth link, and after authenticating the user lands on the UI's agent picker listing *their own* Agents.
   The bot posts a confirmation in the chat.
   The chat's members never authenticate.
   `/unbind` releases the binding, and the owner can also disconnect a bound chat from the web UI — the bot posts a farewell note in the chat before the binding is released.
