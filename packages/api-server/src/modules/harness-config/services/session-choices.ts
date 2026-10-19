@@ -162,8 +162,9 @@ export function createSessionChoicesValidator(deps: {
     if (choices.settings !== undefined) {
       const unsupported = Object.keys(choices.settings).find(
         (id) =>
-          !isPlatformSubagentSetting(id) &&
-          !harnessCapability?.sessionSettings?.includes(id),
+          !(isPlatformSubagentSetting(id)
+            ? harnessCapability?.platformSubagentSettings
+            : harnessCapability?.sessionSettings?.includes(id)),
       );
       if (unsupported)
         return `the ${harness} harness cannot set ${unsupported} for a schedule`;

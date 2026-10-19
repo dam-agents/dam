@@ -17,10 +17,11 @@ import type {
 } from "./schemas.js";
 import type { SubAgentHarnessConfig } from "../harness-config/session-settings.js";
 
+// UNIT_BOUNDARY_DESCRIPTION: a runtime older than platform sub-agent settings answers with the settings alone, so the harness and the inherited config may be absent.
 export interface SessionSubAgentContext {
   settings: Record<string, string>;
-  harness: string;
-  inherited: SubAgentHarnessConfig;
+  harness?: string;
+  inherited?: SubAgentHarnessConfig;
 }
 
 export type PodSessionMode = z.infer<typeof podSessionModeSchema>;

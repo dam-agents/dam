@@ -1,3 +1,4 @@
+import { match } from "ts-pattern";
 import { randomBytes } from "node:crypto";
 import { emit, EventType } from "../../../events.js";
 import Ajv, { type ValidateFunction } from "ajv";
@@ -136,8 +137,19 @@ export interface RecordResult {
   errors?: string;
 }
 
+export type Reachability =
+  | { kind: "runs"; provider: ProviderPresetType }
+  | { kind: "refused"; reason: string }
+  | { kind: "unnarrowed" };
+
 export interface InvocationsService {
   spawn(input: SpawnInput): Promise<{ id: string }>;
+  reachability(
+    input: Pick<
+      SpawnInput,
+      "driverProviders" | "attachableProviders" | "target"
+    >,
+  ): Reachability;
   get(
     invocationId: string,
     driverAgentId: string,
@@ -196,6 +208,31 @@ export function createInvocationsService(deps: {
   }
 
   return {
+    reachability({ driverProviders, attachableProviders, target }) {
+      const provider = inheritProvider(driverProviders, {
+        runsOn: target.runsOn,
+        ...(target.harness && { harness: target.harness }),
+      });
+      return match(provider)
+        .with({ kind: "inherited" }, ({ id }): Reachability => {
+          const held = driverProviders.find((p) => p.id === id);
+          return held
+            ? { kind: "runs", provider: held.type }
+            : { kind: "unnarrowed" };
+        })
+        .with({ kind: "incompatible" }, (): Reachability => ({
+          kind: "refused",
+          reason: missingProviderMessage({
+            harness: target.harness,
+            runsOn: target.runsOn ?? [],
+            held: driverProviders.map((p) => p.type),
+            attachable: attachableProviders ?? [],
+          }),
+        }))
+        .with({ kind: "none" }, (): Reachability => ({ kind: "unnarrowed" }))
+        .exhaustive();
+    },
+
     async spawn(input) {
       const grantSet = new Set(input.driverGrantIds);
       const offending = input.connections.filter((c) => !grantSet.has(c));

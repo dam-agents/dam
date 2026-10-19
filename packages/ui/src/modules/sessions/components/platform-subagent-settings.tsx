@@ -2,6 +2,7 @@ import type { HarnessCapability } from "agent-runtime-api";
 import { platformSubagentChoice } from "agent-runtime-api";
 import { Fragment } from "react";
 
+import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 
 import {
@@ -52,6 +53,13 @@ export function PlatformSubagentSettings({
       })),
   );
   const options = platformSubagentOptions(capability, choice?.model);
+  const modelsNote = !catalogModels.operable
+    ? "Start the agent to list models."
+    : (catalogModels.isLoading || catalogModels.waiting) && models.length === 0
+      ? "Loading models…"
+      : catalogModels.isError && models.length === 0
+        ? "Couldn't load the models."
+        : null;
   const row = (
     id: string,
     label: string,
@@ -108,6 +116,21 @@ export function PlatformSubagentSettings({
             value,
           ),
         )}
+      {harness && modelsNote && (
+        <p className="col-span-2 text-muted-foreground">
+          {modelsNote}
+          {catalogModels.isError && (
+            <Button
+              variant="link"
+              size="inline"
+              className="ml-1"
+              onClick={() => void catalogModels.refetch()}
+            >
+              Retry
+            </Button>
+          )}
+        </p>
+      )}
       {harness &&
         options.map((o) =>
           row(

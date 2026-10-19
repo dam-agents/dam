@@ -180,8 +180,9 @@ export function createHarnessConfigService(deps: {
       const harness = carried.find((h) => h.name === pair.harness);
       const unsupported = Object.keys(pair.settings ?? {}).find(
         (id) =>
-          !isPlatformSubagentSetting(id) &&
-          !harness?.sessionSettings?.includes(id),
+          !(isPlatformSubagentSetting(id)
+            ? harness?.platformSubagentSettings
+            : harness?.sessionSettings?.includes(id)),
       );
       const invalid = unsupported
         ? `the ${pair.harness} harness cannot keep ${unsupported} as a default`

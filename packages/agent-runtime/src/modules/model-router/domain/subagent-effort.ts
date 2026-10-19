@@ -1,3 +1,4 @@
+import { match } from "ts-pattern";
 import type { ModelDialect } from "../../model-catalog/index.js";
 
 type Json = Record<string, unknown>;
@@ -16,18 +17,19 @@ export function withSubagentEffort(
   dialect: ModelDialect,
   effort: string,
 ): Json {
-  switch (dialect) {
-    case "anthropic-messages":
-      return isObject(body.output_config) && "effort" in body.output_config
+  return match(dialect)
+    .with("anthropic-messages", () =>
+      isObject(body.output_config) && "effort" in body.output_config
         ? { ...body, output_config: { ...body.output_config, effort } }
-        : body;
-    case "openai-responses":
-      return isObject(body.reasoning) && "effort" in body.reasoning
+        : body,
+    )
+    .with("openai-responses", () =>
+      isObject(body.reasoning) && "effort" in body.reasoning
         ? { ...body, reasoning: { ...body.reasoning, effort } }
-        : body;
-    case "openai-chat":
-      return "reasoning_effort" in body
-        ? { ...body, reasoning_effort: effort }
-        : body;
-  }
+        : body,
+    )
+    .with("openai-chat", () =>
+      "reasoning_effort" in body ? { ...body, reasoning_effort: effort } : body,
+    )
+    .exhaustive();
 }

@@ -7,15 +7,18 @@ import {
   platformSubagentChoice,
 } from "agent-runtime-api";
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the choices the Subagents section offers for
+ * platform sub-agents: the chosen harness's own session settings, except
+ * model-valued ones and ones for its own subagents, each without the choices
+ * a person must approve, since nobody is there to approve them. Picking
+ * another harness clears every value the old one held, and a newly picked
+ * model drops each value its constraints exclude (Haiku takes no effort),
+ * which the spawn would otherwise refuse; an empty value is unset.
+ */
 export const platformKey = (id: string): string =>
   `${PLATFORM_SUBAGENT_PREFIX}${id}`;
 
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the settings a platform sub-agent on the chosen
- * harness can be given: the harness's own session settings, except
- * model-valued ones and ones for its own subagents, each without the choices
- * a person must approve, since nobody is there to approve them.
- */
 export function platformSubagentOptions(
   capability: HarnessCapability | undefined,
   model: string | undefined,
@@ -40,11 +43,6 @@ export function platformSubagentOptions(
     .filter((o) => o.choices.length > 0);
 }
 
-/**
- * UNIT_BOUNDARY_DESCRIPTION: another harness has other models and settings,
- * so picking one clears every platform sub-agent value the old one held;
- * an empty value is unset.
- */
 export function platformHarnessChange(
   settings: Readonly<Record<string, string>>,
   harness: string,
@@ -59,11 +57,6 @@ export function platformHarnessChange(
   };
 }
 
-/**
- * UNIT_BOUNDARY_DESCRIPTION: a newly picked model drops each platform
- * sub-agent value its constraints exclude (Haiku takes no effort), which the
- * spawn would otherwise refuse.
- */
 export function platformModelChange(
   catalog: HarnessConfigCatalog | undefined,
   settings: Readonly<Record<string, string>>,

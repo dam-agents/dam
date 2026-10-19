@@ -1,3 +1,4 @@
+import { match } from "ts-pattern";
 import type { z } from "zod";
 import {
   PROVIDERS,
@@ -17,7 +18,6 @@ import {
 import { SizeNeverFitsError } from "../../modules/budgets/index.js";
 import {
   AttenuationError,
-  inheritProvider,
   InvalidSchemaError,
   ModelNameError,
   ProviderMismatchError,
@@ -238,29 +238,29 @@ function driverOps(
         conns.getAgentConnections(driverId),
         conns.listConnections(),
       ]);
-      const { driverProviders } = providersOf(
+      const providers = providersOf(
         owned,
         new Set(granted.connections.map((g) => g.connectionId)),
       );
       const runsOn = (
-        harness: string,
-        providers: ProviderPresetType[] | undefined,
-      ) => {
-        const inherited = inheritProvider(driverProviders, {
-          runsOn: providers,
-          harness,
-        });
-        if (inherited.kind === "inherited") {
-          const type = driverProviders.find((p) => p.id === inherited.id)!.type;
-          return { provider: PROVIDERS[type].displayName };
-        }
-        return {
-          unavailable:
-            inherited.kind === "incompatible"
-              ? `needs one of ${(providers ?? []).map((p) => PROVIDERS[p].displayName).join(", ")}, which this agent does not hold`
-              : "this agent holds no model provider",
-        };
-      };
+        harness: SpawnInput["target"]["harness"],
+        runsOnTypes: ProviderPresetType[] | undefined,
+      ) =>
+        match(
+          invocations.reachability({
+            ...providers,
+            target: {
+              ...(harness && { harness }),
+              ...(runsOnTypes && { runsOn: runsOnTypes }),
+            },
+          }),
+        )
+          .with({ kind: "runs" }, ({ provider }) => ({
+            provider: PROVIDERS[provider].displayName,
+          }))
+          .with({ kind: "refused" }, ({ reason }) => ({ unavailable: reason }))
+          .with({ kind: "unnarrowed" }, () => ({}))
+          .exhaustive();
       return templates.flatMap((t) => {
         const size = concreteResources(
           t.spec.resources,
@@ -285,9 +285,7 @@ function driverOps(
                 description: t.spec.description,
                 ...(t.spec.harness ? { harness: t.spec.harness } : {}),
                 size,
-                ...(t.spec.harness
-                  ? runsOn(t.spec.harness, t.spec.providers)
-                  : {}),
+                ...(t.spec.harness ? runsOn(undefined, t.spec.providers) : {}),
               },
             ];
       });

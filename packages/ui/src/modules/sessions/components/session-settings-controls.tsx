@@ -10,6 +10,8 @@ import { DisclosureToggle } from "@/components/ui/disclosure";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
+import { useHarnessCatalog } from "../api/session-pair.js";
+import { harnessDisplayName } from "../lib/session-pair-options.js";
 import {
   isModelOption,
   sessionSettingOptions,
@@ -45,6 +47,7 @@ export function SessionSettingsControls({
 }) {
   const id = useId();
   const [subagentsOpen, setSubagentsOpen] = useState(false);
+  const { data: harnessCatalog } = useHarnessCatalog();
   const catalog = capability?.harnessConfigCatalog;
   const options = sessionSettingOptions(capability).filter(
     (o) => !isModelOption(o) || modelChoices.length > 0,
@@ -124,15 +127,20 @@ export function SessionSettingsControls({
   const subagent = rows.filter((r) => r.forSubagents);
   const platformHarness = platformSubagentChoice(settings)?.harness;
   const summary = [
-    ...subagent.map(
-      (r) => r.choices.find((c) => c.value === r.value)?.name ?? r.value,
-    ),
-    ...(platformHarness ? [platformHarness] : []),
+    ...subagent
+      .filter((r) => r.value)
+      .map((r) => r.choices.find((c) => c.value === r.value)?.name ?? r.value),
+    ...(platformHarness
+      ? [
+          `Platform: ${harnessDisplayName(platformHarness, harnessCatalog?.harnesses) ?? platformHarness}`,
+        ]
+      : []),
   ];
   const grid =
     "grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 text-xs";
   const heading =
     "col-span-2 pt-1 text-[11px] font-medium text-muted-foreground";
+  const subgrid = "col-span-2 grid grid-cols-subgrid items-center gap-y-1";
   return (
     <div
       role="group"
@@ -167,14 +175,26 @@ export function SessionSettingsControls({
           {subagentsOpen && (
             <div className={cn(grid, "pl-5")}>
               {subagent.length > 0 && (
-                <>
-                  <span className={heading}>In this sandbox</span>
+                <div
+                  role="group"
+                  aria-labelledby={`${id}-sandbox-heading`}
+                  className={subgrid}
+                >
+                  <span id={`${id}-sandbox-heading`} className={heading}>
+                    In this sandbox
+                  </span>
                   {subagent.map((r) => row(r, subagentLabel(r.option.name)))}
-                </>
+                </div>
               )}
               {platform && (
-                <>
-                  <span className={heading}>Platform sub-agents</span>
+                <div
+                  role="group"
+                  aria-labelledby={`${id}-platform-heading`}
+                  className={subgrid}
+                >
+                  <span id={`${id}-platform-heading`} className={heading}>
+                    Platform sub-agents
+                  </span>
                   <PlatformSubagentSettings
                     agentId={agentId}
                     carried={carried}
@@ -183,7 +203,7 @@ export function SessionSettingsControls({
                     disabled={disabled}
                     onChange={onChange}
                   />
-                </>
+                </div>
               )}
             </div>
           )}

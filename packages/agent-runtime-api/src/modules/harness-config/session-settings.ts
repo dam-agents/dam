@@ -101,7 +101,9 @@ export function platformSubagentChoice(
  * the chosen harness's catalog: a value it does not offer, one a person must
  * approve (an unattended sub-agent would wait on it until its deadline), or
  * one the chosen model's constraints exclude is refused. The model itself is
- * checked at spawn, against the catalog the sub-agent's harness lists.
+ * checked at spawn, against the catalog the sub-agent's harness lists. A
+ * harness the agent no longer carries is not refused here, or it would block
+ * every later change to the session's other settings; the spawn refuses it.
  */
 export function platformSubagentSettingsError(
   settings: Readonly<Record<string, string>>,
@@ -112,8 +114,7 @@ export function platformSubagentSettingsError(
   if (choice.harness === null)
     return "Platform sub-agent settings need a harness";
   const catalog = catalogOf(choice.harness);
-  if (!catalog)
-    return `Platform sub-agents cannot be set to the ${choice.harness} harness`;
+  if (!catalog) return undefined;
   const values = [
     ...(choice.mode !== undefined ? [["mode", choice.mode] as const] : []),
     ...Object.entries(choice.configOptions ?? {}),

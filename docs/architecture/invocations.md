@@ -64,7 +64,7 @@ External skills are applied the way kit apply applies them, after the target is 
 The platform takes the provider connections granted to the Driver and gives the target the one its model names, else the first in its harness's home order that its harness can run on.
 A harness whose providers none of the Driver's match is refused before anything is created, since the target would otherwise fail its first model call and sit until its deadline.
 The refusal names the providers that would do, by their Settings names, and the fix: attach one the owner already holds on the agent's Providers page, else connect one in Settings first.
-`list_harnesses` tells the same ahead of a spawn: each harness with the provider it would run on, or what this agent lacks for it.
+`list_harnesses` tells the same ahead of a spawn, by the same rule: each harness with the provider a spawn naming no model runs on there, or the refusal a spawn there would get.
 An image target declares nothing, so nothing is narrowed.
 
 **Attenuation.** Beyond the provider, a target receives exactly the connections the spawn names, and each must already be granted to the Driver.

@@ -97,7 +97,8 @@ describe("spawn_subagent harness config", () => {
    * which still fill what the setting leaves open; a spawn on an image alone
    * keeps its own choices. On the session's own harness, with no setting,
    * the sub-agent takes the session's model and settings below whatever the
-   * spawn names. */
+   * spawn names, and the settings only with the model: they may not hold for
+   * another one. */
   it("binds the session's platform sub-agent settings, else inherits on its own harness", async () => {
     const context = (settings: Record<string, string>) => async () => ({
       settings,
@@ -151,6 +152,13 @@ describe("spawn_subagent harness config", () => {
     });
     await own.spawn({});
     expect(own.spawned[1]!.harnessConfig).toBeUndefined();
+    await own.spawn({
+      harness: "claude-code",
+      model: "anthropic/claude-haiku-4-5",
+    });
+    expect(own.spawned[2]!.harnessConfig).toEqual({
+      model: "anthropic/claude-haiku-4-5",
+    });
   });
 
   /** TEST_SCENARIO: The agent names a model its providers do not list for

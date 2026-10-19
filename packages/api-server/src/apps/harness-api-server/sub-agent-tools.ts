@@ -1,4 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { match } from "ts-pattern";
 import { z } from "zod";
 import {
   platformSubagentChoice,
@@ -268,8 +269,9 @@ export type ResolvedSubAgent =
  * another harness is refused, a spawn naming none gets the set one, and a
  * set model, mode or config option outranks the spawn's. Below them the
  * spawn's own choice, then, on the session's own harness, the session's
- * model and settings, then the harness defaults. A spawn on an image alone
- * keeps its own choices.
+ * model and settings, then the harness defaults. The session's settings
+ * follow only its model: they may not hold for another one (Haiku takes no
+ * effort). A spawn on an image alone keeps its own choices.
  */
 export function resolveSubAgent(
   args: SpawnArgs,
@@ -299,9 +301,11 @@ export function resolveSubAgent(
     canonicalModel(bound?.model) ??
     canonicalModel(args.model) ??
     inherited.model;
-  const mode = bound?.mode ?? args.mode ?? inherited.mode;
+  const sameModel = !bound?.model && args.model === undefined;
+  const mode =
+    bound?.mode ?? args.mode ?? (sameModel ? inherited.mode : undefined);
   const configOptions = {
-    ...inherited.configOptions,
+    ...(sameModel && inherited.configOptions),
     ...args.configOptions,
     ...bound?.configOptions,
   };
@@ -414,22 +418,22 @@ export function registerSubAgentTools(
         );
       }
       const body = parsed.data;
-      if (
-        choice.model &&
-        modelFrom !== "session" &&
-        body.harness &&
-        deps.catalogModels
-      ) {
-        const unlisted = unlistedModel(
-          choice.model,
-          await deps.catalogModels(body.harness),
-        );
-        if (unlisted)
-          return errorResult(
-            modelFrom === "setting"
-              ? `spawn_subagent refused: this session's platform sub-agent setting names ${choice.model}, and ${unlisted}. Ask the user to change the setting.`
-              : `spawn_subagent refused: ${unlisted}`,
-          );
+      const { catalogModels } = deps;
+      const { model } = choice;
+      const target = body.harness;
+      if (model && target && catalogModels) {
+        const listed = () => catalogModels(target);
+        const refusal = await match(modelFrom)
+          .with("session", undefined, () => null)
+          .with("setting", async () => {
+            const unlisted = unlistedModel(model, await listed());
+            return unlisted
+              ? `this session's platform sub-agent setting names ${model}, and ${unlisted}. Ask the user to change the setting.`
+              : null;
+          })
+          .with("spawn", async () => unlistedModel(model, await listed()))
+          .exhaustive();
+        if (refusal) return errorResult(`spawn_subagent refused: ${refusal}`);
       }
       const [harness, driverSessionId] = await Promise.all([
         session?.harness ? Promise.resolve(session.harness) : ops.harness(),
@@ -546,7 +550,7 @@ export function registerSubAgentTools(
 
   server.tool(
     "list_harnesses",
-    "List the harnesses and images a sub-agent can run on, each with its harness name, effective size, and the provider it would run on, or why this agent cannot run it (relay that to the user). Use the harness name in spawn_subagent. If it is not obvious which fits, ask the user.",
+    "List the harnesses and images a sub-agent can run on, each with its harness name, effective size, and the provider a spawn naming no model runs on there, or why this agent cannot run it (relay that to the user). Use the harness name in spawn_subagent. If it is not obvious which fits, ask the user.",
     {},
     () => run(async () => json({ images: await ops.images() })),
   );

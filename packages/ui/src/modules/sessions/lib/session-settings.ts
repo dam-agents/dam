@@ -25,16 +25,18 @@ export function settingDefaults(
   configured: HarnessConfigCurrent | null | undefined,
 ): Record<string, string> {
   return Object.fromEntries(
-    sessionSettingOptions(capability).flatMap((o) => {
-      const value =
-        (o.id === "mode"
-          ? configured?.mode
-          : configured?.configOptions[o.id]) ?? o.default;
-      return value &&
-        (o.choices.some((c) => c.value === value) || isModelOption(o))
-        ? [[o.id, value]]
-        : [];
-    }),
+    sessionSettingOptions(capability)
+      .filter((o) => !o.subagents)
+      .flatMap((o) => {
+        const value =
+          (o.id === "mode"
+            ? configured?.mode
+            : configured?.configOptions[o.id]) ?? o.default;
+        return value &&
+          (o.choices.some((c) => c.value === value) || isModelOption(o))
+          ? [[o.id, value]]
+          : [];
+      }),
   );
 }
 
