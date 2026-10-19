@@ -37,7 +37,7 @@ export function SidebarAgents({
     active,
     folded,
     openAgentId,
-    expandedIds,
+    isOpen,
     sessionOpen,
     unreadAgentIds,
     sessionsOf,
@@ -67,7 +67,7 @@ export function SidebarAgents({
   const shownAgentIds = agents.map((agent) => agent.id);
   const row = (agent: AgentView) => {
     const current = agent.id === openAgentId;
-    const open = expandedIds.has(agent.id) || current;
+    const open = isOpen(agent.id);
     return (
       <SidebarAgentRow
         key={agent.id}

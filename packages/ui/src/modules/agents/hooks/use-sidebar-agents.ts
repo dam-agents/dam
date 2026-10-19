@@ -9,7 +9,10 @@ import {
 import { shownSessionId } from "../../sessions/lib/shown-session.js";
 import { useAgents } from "../api/queries.js";
 import { useSidebarOrder } from "../api/sidebar-order.js";
-import { groupSessionsByAgent } from "../lib/sidebar-agent-order.js";
+import {
+  groupSessionsByAgent,
+  sidebarAgentOpen,
+} from "../lib/sidebar-agent-order.js";
 import { manualOrder } from "../lib/sidebar-order.js";
 import { splitTemporarySandboxes } from "../utils/temporary-sandboxes.js";
 
@@ -33,7 +36,9 @@ export function useSidebarAgents() {
         : null,
   );
   const sessionOpen = useStore((s) => s.view === "chat" && !!shownSessionId(s));
-  const expandedIds = useStore((s) => s.sidebarOpenAgentIds);
+  const openOverrides = useStore((s) => s.sidebarAgentOpen);
+  const isOpen = (agentId: string) =>
+    sidebarAgentOpen(openOverrides, agentId, openAgentId);
 
   const sessionsByAgent = useMemo(
     () => groupSessionsByAgent(activity.items),
@@ -54,13 +59,13 @@ export function useSidebarAgents() {
   const { active, folded } = useMemo(() => {
     const isFolded = (agent: AgentView) =>
       agent.id !== openAgentId &&
-      !expandedIds.has(agent.id) &&
+      openOverrides[agent.id] !== true &&
       FOLDED_STATES.has(agent.state);
     return {
       active: agents.filter((agent) => !isFolded(agent)),
       folded: agents.filter(isFolded),
     };
-  }, [agents, openAgentId, expandedIds]);
+  }, [agents, openAgentId, openOverrides]);
 
   const unreadAgentIds = new Set(
     activity.items
@@ -76,7 +81,7 @@ export function useSidebarAgents() {
     active,
     folded,
     openAgentId,
-    expandedIds,
+    isOpen,
     sessionOpen,
     unreadAgentIds,
     sessionsOf,

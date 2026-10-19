@@ -11,3 +11,16 @@ export function groupSessionsByAgent<T extends ActivitySession>(
   }
   return byAgent;
 }
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: an Agent's Sessions show in the sidebar while the
+ * user has opened the Agent there, by a click on its row; until the user
+ * clicks it, the Agent whose chat or configuration page is shown is open.
+ */
+export function sidebarAgentOpen(
+  overrides: Readonly<Record<string, boolean>>,
+  agentId: string,
+  shownAgentId: string | null,
+): boolean {
+  return overrides[agentId] ?? agentId === shownAgentId;
+}

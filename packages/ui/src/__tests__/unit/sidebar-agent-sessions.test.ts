@@ -2,7 +2,10 @@ import type { AttentionItem } from "api-server-api";
 import { SessionMode, SessionType } from "api-server-api";
 import { describe, expect, it } from "vitest";
 
-import { groupSessionsByAgent } from "../../modules/agents/lib/sidebar-agent-order.js";
+import {
+  groupSessionsByAgent,
+  sidebarAgentOpen,
+} from "../../modules/agents/lib/sidebar-agent-order.js";
 import { defaultActivityFilters } from "../../modules/home/lib/activity-filter.js";
 import {
   matchesActivityFilters,
@@ -251,5 +254,15 @@ describe("the sidebar session filter", () => {
     expect(
       matchesActivityFilters(slack, { ...base, state: "in-progress" }),
     ).toBe(true);
+  });
+});
+
+describe("an agent's sessions open and close in the sidebar", () => {
+  it("TEST_SCENARIO: the shown Agent is open until the user closes it, and a click opens any other Agent in place", () => {
+    expect(sidebarAgentOpen({}, "a-1", "a-1")).toBe(true);
+    expect(sidebarAgentOpen({}, "a-2", "a-1")).toBe(false);
+    expect(sidebarAgentOpen({ "a-1": false }, "a-1", "a-1")).toBe(false);
+    expect(sidebarAgentOpen({ "a-2": true }, "a-2", "a-1")).toBe(true);
+    expect(sidebarAgentOpen({ "a-2": true }, "a-2", null)).toBe(true);
   });
 });
