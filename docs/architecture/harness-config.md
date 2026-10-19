@@ -41,7 +41,7 @@ The choice belongs to that session alone and starts with its next turn; it is ke
 Only **Set as default** on a running session, or the default harness, provider and model picker on the agent's Providers page, saves the pair as the agent's remembered pair, which preselects the next session and is what schedules and channel turns run on; starting a session saves nothing.
 With none saved, the remembered pair is the agent's own harness on the first granted provider it accepts: the default harness its runtime reports, or, before the agent's first `hello`, the Agent's own harness, and the catalog's default only when the Agent names none.
 On a routed runtime (`modelRouter` on hello) the saved model is a qualified name and its provider follows from it; a bare name, a provider the agent does not hold, or a model missing from the harness's last reported list is refused.
-A run nobody picks for stays on the harness asked for, on the saved pair's provider for that harness, else the first granted provider the harness accepts in alias order (its home provider first); its model is the saved one when it belongs to that provider, else that provider's first listed model; no fitting provider fails the run rather than moving it to another harness.
+A run nobody picks for stays on the harness asked for, on the saved pair's provider for that harness, else the first granted provider the harness accepts in alias order (its home provider first); its model is the saved one when it belongs to that provider, else that provider's first listed model; with no fitting provider the run is refused rather than moved to another harness.
 Each binding says how the harness takes the value.
 A session-scoped one (`mode`, `configOption`) is sent as ACP `session/set_mode` or `session/set_config_option` to that session only, never by recycling a harness other sessions share.
 The runtime sends it again whenever the session is loaded or resumed into a harness process.
@@ -65,8 +65,8 @@ Pi receives its selected provider and model as command-line options, because its
 A runtime with a harness that has a harness config but no `sessionSettings` predates per-session routing: its harnesses ignore a lease's model, and Pi then falls back to its built-in Anthropic default.
 For such an agent the chat shows an update notice instead of the picker, and new sessions, schedule fires and channel turns name no Session Pair, so they run on the agent's defaults.
 
-The ETE LiteLLM proxy cannot carry Claude Code's auto-mode permission classifier reliably: its failed classifier requests deny tool calls that are safe.
-So when an agent holds that provider, every Claude Code start changes an agent mode of `auto`, or no mode, to `bypassPermissions`.
+The ETE LiteLLM proxy serves Claude Code's auto-mode permission check on the model call itself, through the beta header the proxy accepts.
+Claude Code still starts in `bypassPermissions` whenever an agent holds that provider and the agent's mode is `auto` or unset: a check that fails denies tool calls that are safe, and nobody is there to approve them.
 Other modes stay, and so does a mode that one session picks for itself.
 The pod's isolation is the boundary then, also for what channel members ask a bound agent to do.
 

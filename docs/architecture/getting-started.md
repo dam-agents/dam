@@ -1,6 +1,6 @@
 # Getting started
 
-Last verified: 2026-10-16
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -29,7 +29,9 @@ The Agent whose create is that first meeting does not count.
 ## In the browser
 
 The UI shows the checklist as the **Get started** side panel, a panel like any other on the right edge: its icon, a progress ring, sits in the icon bar above the approvals bell on every page and in an Agent's chat, and opens and closes the panel the way the other icons open theirs.
-The panel takes its room from the page, as every side panel does, so it never covers the page's buttons, and it shares their width, resize handle and phone behavior: on a phone the ring sits in the top bar and the panel fills the screen under a back button.
+The panel takes its room from the page, as every side panel does, so it never covers the page's buttons, and it shares their width, resize handle, close X and phone behavior.
+Every side panel's top bar ends with that X, behind a vertical border; it closes the panel.
+On a phone the X is hidden, the ring sits in the top bar and the panel fills the screen under a back button.
 The panel opens only when the user asks for it.
 An unlock the user has not seen puts a count on the ring instead of opening the panel.
 Each row opens the place where the task is done; tasks on an Agent open the newest one, the chat tasks leave a starting line in its composer, and the artifact task opens the side panel's Artifacts tab.

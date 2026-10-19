@@ -84,7 +84,7 @@ spec:
                   "reserveMiB" $r.reserveMiB "headroomMiB" $r.headroomMiB "bootMiB" $r.bootMiB "machineCPUs" $r.machineCPUs "nestedVirtualization" ($r.nestedVirtualization | default false)
                   "releaseHostPath" (include "platform.vmRunner.releaseDir" .)
                   "seccomp" (include "platform.vmRunner.seccomp" .)
-                  "imageCacheHostPath" ($cache.hostPath | default "") "imageCacheBudget" ($cache.budget | default "" | toString)
+                  "imageCacheHostPath" (include "platform.vmImageCache.dir" .) "imageCacheBudget" ($cache.budget | default "" | toString)
                   "nodeSelector" $r.nodeSelector "tolerations" $r.tolerations "affinity" $r.affinity
                   "resources" $r.resources
                   "hostAddress" ($r.hostAddress | default "")

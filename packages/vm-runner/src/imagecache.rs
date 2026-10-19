@@ -55,7 +55,7 @@ fn preload_retry(failures: u32) -> Duration {
         .min(PRELOAD_RETRY_MAX)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how far past its budget a node cache may grow before it refuses to fetch: its budget and half again. Holds keep a tree from eviction, and every runner on the node may hold or resolve any digest over the one socket, so without a ceiling one compromised runner could fill the node's disk with trees nobody may evict.
+// UNIT_BOUNDARY_DESCRIPTION: how far past its budget a node cache may grow before it refuses to fetch: its budget and half again. Holds keep a tree from eviction, and every runner of the install on the node may hold or resolve any digest over that install's socket, so without a ceiling one compromised runner could fill the node's disk with trees nobody may evict.
 pub fn node_fetch_ceiling(budget: i64) -> Option<u64> {
     let budget = u64::try_from(budget).ok().filter(|b| *b > 0)?;
     Some(budget.saturating_add(budget / 2))
