@@ -4,11 +4,14 @@ import { useOpenSidePanel } from "../../sessions/hooks/use-open-side-panel.js";
 import { useDefaultModelNotices } from "../hooks/use-default-model-notices.js";
 import { useWaitingApprovals } from "../hooks/use-waiting-approvals.js";
 import { approvalsBannerCopy } from "../lib/approval-copy.js";
+import { defaultModelStopsRuns } from "../lib/default-model-copy.js";
 
 export function ApprovalsBanner() {
   const openSidePanel = useOpenSidePanel();
   const approvals = useWaitingApprovals();
-  const notices = useDefaultModelNotices().waiting;
+  const notices = useDefaultModelNotices().waiting.filter(
+    defaultModelStopsRuns,
+  );
   if (approvals.length === 0 && notices.length === 0) return null;
   const { title, detail } =
     approvals.length > 0

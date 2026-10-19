@@ -59,7 +59,7 @@ export function FeedDefaultModelCard({
             type="button"
             onClick={onDismiss}
             title="Hides this from Approvals. The agent's schedules and channel turns still won't run."
-            className="shrink-0 text-sm text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:text-foreground"
+            className="shrink-0 text-sm text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100"
           >
             Dismiss
           </button>

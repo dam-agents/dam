@@ -626,6 +626,7 @@ export async function bootstrap() {
   ): Promise<Record<string, unknown>> =>
     sessionPairFields(
       await firePair(agentId, {}).catch((err: unknown) => {
+        if (!(err instanceof NoDefaultModelError)) throw err;
         getLogger().info(
           { err, agentId },
           "outcome turn: no saved default to run it on",

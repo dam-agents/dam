@@ -272,7 +272,7 @@ export function ModelIndicator({
             />
           </div>
         )}
-        <div className="flex justify-end border-t border-border pt-2 text-xs text-muted-foreground">
+        <div className="flex justify-end border-t border-border pt-2 text-xs text-muted-foreground empty:hidden">
           <SetAsDefault
             agentId={agentId}
             pair={{

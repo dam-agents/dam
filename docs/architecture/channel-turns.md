@@ -85,7 +85,8 @@ A few observations the diagram glosses over:
   System notices (wake failures, a still-starting note) are separate direct posts, not agent content.
 - **Resume vs. new is decided by the ACP session list.** The binding lives on the session itself: the worker lists an Agent's sessions over ACP and resumes the one whose thread key matches.
   A resume that fails (PVC lost, session expired) falls back to a fresh session with thread history injected from the messenger API — no regression, just a colder start.
-  A fresh session opens on the harness, provider and model a person last picked on the Agent, falling back as a [schedule fire](schedules.md#session-choices) does; when no granted provider fits, the turn fails rather than running elsewhere.
+  A fresh session opens on the Agent's saved default harness, provider and model ([harness configuration](harness-config.md)); with no default model, or one on a provider the Agent no longer holds, the turn fails with the `no-default-model` reason and a reply naming the Providers page, and when no granted provider fits, it fails rather than running elsewhere.
+  A resumed session from before the Model Router, which carries no model, gets the saved default pinned on it first.
 - **A resumed conversation is caught up on what it missed, best-effort (Slack).** A session belongs to one Agent, so it sees a conversation's history only on its first turn there; a mention-only binding is never handed what does not tag it, and an Agent stopped or unreachable is handed nothing at all.
   A resuming turn therefore also carries what arrived after its own last turn, labelled as above and marked unseen: its own posts stay out, and nothing new means no block.
   Catch-up looks strictly backward from the turn's own messages — anything sent after them is already queued for a turn of its own and is never presented as missed.
@@ -138,7 +139,7 @@ A few observations the diagram glosses over:
   When the agent chimes in, the reply threads under the message it answers; the follow-up conversation runs as an ordinary thread session, with history injection carrying context across.
 - **Every turn relay is evented.** Both workers announce the finished turn on the in-process bus, naming the messenger, the Agent, and whether it succeeded.
   It carries no platform identity — channel turns resolve none — so attribution rides the messenger-native id of the sender instead.
-  A failure also carries a low-cardinality failure reason (a wake-failure cause, a turn-watch verdict, or a relay error), which the audit trail and usage records project — so failed turns are diagnosable from the log store after the fact.
+  A failure also carries a low-cardinality failure reason (a wake-failure cause, a turn-watch verdict, `no-default-model`, or a relay error), which the audit trail and usage records project — so failed turns are diagnosable from the log store after the fact.
   A delivery nudge announces itself on the same bus rather than amending the turn's own event, so a relay that had to be repaired shows as two: the turn as it first ended, then the nudge and whether it drew an answer.
   That second one names itself in its reason whichever way it went, so a repaired turn is never mistaken for a plain one.
   The usage subsystem consumes this for activity tracking ([usage-tracking](usage-tracking.md)).
