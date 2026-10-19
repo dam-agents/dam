@@ -49,6 +49,9 @@ gh = "latest"
 go = "1.27"
 gum = "latest"
 helm = "latest"
+# 2.2.0 (2026-10-14) is under the 7-day floor; 2.1.0 is the newest release
+# past it. The check is check:actions.
+jactionlint = "2.1.0"
 java = "temurin-25"
 jq = "latest"
 kubeconform = "latest"
@@ -58,11 +61,13 @@ nodejs = "26"
 pinact = "latest"
 pnpm = "latest"
 rust = { version = "latest", components = "rustfmt,clippy" }
+# check:actions pipes every `run:` script through it; without it jactionlint
+# only parses them, and in CI the runner image's own copy would decide.
+shellcheck = "latest"
 trivy = "latest"
 usage = "latest"
 uv = "latest"
 yq = "latest"
-zizmor = "latest"
 
 [settings]
 npm.package_manager = "aube"
