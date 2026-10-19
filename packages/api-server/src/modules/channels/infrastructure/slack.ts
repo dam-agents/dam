@@ -1244,6 +1244,7 @@ const AGENT_SIGNATURE_RE = /^\S+\s+\*[^*\n]*\*\s+/;
 type AgentPersona = {
   persona: Pick<SlackPostMessage, "username" | "iconUrl">;
   sign: (text: string, bold: "*" | "**") => string;
+  emoji: string;
 };
 
 async function withoutAgentSignature<
@@ -2082,35 +2083,34 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const [{ name: username, avatar }, owner, bound] = await Promise.all([
       resolveAgentIdentity(instanceName),
       getInstanceOwner(instanceName).catch(() => null),
-      signs
-        ? channelRegistry
-            .resolveSlackChannelsByInstance(instanceName)
-            .catch((err: unknown) => {
-              getLogger().warn(
-                { instanceName, err: formatError(err) },
-                "slack.persona.bindings_unavailable: posting with the robot face",
-              );
-              return [];
-            })
-        : [],
+      channelRegistry
+        .resolveSlackChannelsByInstance(instanceName)
+        .catch((err: unknown) => {
+          getLogger().warn(
+            { instanceName, err: formatError(err) },
+            "slack.persona.bindings_unavailable: posting with the robot face",
+          );
+          return [];
+        }),
     ]);
     const parsed = owner ? parseAvatar(avatar, owner, username) : null;
+    const custom =
+      parsed?.kind === "character" &&
+      bound.find((c) => c.id === conversation.id)?.customEmoji?.[
+        SLACK_EMOJI_INDEX[parsed.character]
+      ];
+    const emoji =
+      parsed?.kind === "emoji"
+        ? parsed.emoji
+        : custom
+          ? `:${custom}:`
+          : ":robot_face:";
     if (signs) {
-      const custom =
-        parsed?.kind === "character" &&
-        bound.find((c) => c.id === conversation.id)?.customEmoji?.[
-          SLACK_EMOJI_INDEX[parsed.character]
-        ];
-      const emoji =
-        parsed?.kind === "emoji"
-          ? parsed.emoji
-          : custom
-            ? `:${custom}:`
-            : ":robot_face:";
       const name = username.replace(/[*<>&]/g, "");
       return {
         persona: {},
         sign: (text, bold) => `${emoji} ${bold}${name}${bold}\n\n${text}`,
+        emoji,
       };
     }
     const iconUrl = agentIcon && parsed ? await agentIcon(parsed) : null;
@@ -2122,6 +2122,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return {
       persona: { username, ...(iconUrl ? { iconUrl } : {}) },
       sign: (text) => text,
+      emoji,
     };
   }
 
@@ -2135,7 +2136,6 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       uiBaseUrl,
       agentId: instanceName,
       label: agentFooterLabel(
-        brand,
         resolved === instanceName ? undefined : resolved,
       ),
       ...(sessionId ? { sessionId } : {}),
@@ -2474,13 +2474,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           "This was whispered to you privately, so its answer is never sent " +
           "to the channel. Reply without alsoSendToChannel.",
       };
-    const [footer, { persona, sign }] = await Promise.all([
+    const [base, { persona, sign, emoji }] = await Promise.all([
       agentFooter(instanceName, turn.sessionId),
       agentPersona(gw, instanceName, {
         id: turn.channel,
         teamId: turn.teamId,
       }),
     ]);
+    const footer = { ...base, emoji };
     try {
       await gw.postEphemeral({
         channel: turn.channel,
@@ -5871,10 +5872,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         return target;
       }
 
-      const [footer, { persona, sign }] = await Promise.all([
+      const [base, { persona, sign, emoji }] = await Promise.all([
         agentFooter(instanceName),
         agentPersona(gw, instanceName, target),
       ]);
+      const footer = { ...base, emoji };
       const contextBlock = agentContextBlock(footer);
 
       try {
@@ -6183,10 +6185,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             );
       if ("error" in target) return target;
 
-      const [footer, { persona, sign }] = await Promise.all([
+      const [base, { persona, sign, emoji }] = await Promise.all([
         agentFooter(instanceName, turn?.sessionId, turn?.ambient),
         agentPersona(gw, instanceName, target),
       ]);
+      const footer = { ...base, emoji };
       if (attachmentOnly) {
         try {
           await gw.uploadFile({

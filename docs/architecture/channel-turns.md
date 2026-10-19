@@ -263,7 +263,8 @@ Its owner picks that conversation up in the UI, where only they may open it ([pl
 
 The footer has two separable parts and **only one is a contract**.
 The **URL is the wire format**: parsing the Agent id back out is how the api-server recovers the author when a post later surfaces in another Agent's injected history (see [Inbound](#inbound--channel-message-to-acp-session)), parsing the session back out is how a deleted post's notice finds the session that made it, and a mark on a reply made in an ambient round keeps that round's readers from being handed it twice.
-The **link label is presentation**: nothing parses it, so product rewords it freely — today the posting Agent's name and the brand, which is what tells two Agents in one conversation apart.
+The **link label is presentation**: nothing parses it, so product rewords it freely — today "Sent by" and the posting Agent's name, after the same emoji the Agent's avatar uses, which is what tells two Agents in one conversation apart.
+It carries no brand: a team that ships its own product as an Agent is not credited to the platform under every post.
 
 Keeping those apart is an **invariant**, not tidiness.
 Attribution used to read the Agent's name out of the label, so rewording it into a brand line silently unnamed every Agent in injected history — a copy change breaking a runtime feature, with nothing failing anywhere.

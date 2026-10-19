@@ -65,7 +65,7 @@ describe("slack thread visibility from a channel turn", () => {
           agentContextBlock({
             uiBaseUrl: "http://ui",
             agentId: "agent-1",
-            label: "Helper - Powered by DAM",
+            label: "Sent by Helper",
           }),
         ],
       },
