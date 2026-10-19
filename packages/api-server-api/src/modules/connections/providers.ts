@@ -48,18 +48,14 @@ export function ibmLitellmEnvMappings(): EnvMapping[] {
   });
 }
 
-const RETIRED_PRESET_ENVS: Record<string, readonly string[]> = {
-  "ibm-litellm": ["CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS"],
-};
-
 export function withoutRetiredEnv(
   templateId: string,
   contributions: Contribution[],
 ): Contribution[] {
-  const retired = RETIRED_PRESET_ENVS[templateId];
-  if (!retired) return contributions;
+  if (templateId !== "ibm-litellm") return contributions;
   return contributions.filter(
-    (c) => c.kind !== "env" || !retired.includes(c.name),
+    (c) =>
+      c.kind !== "env" || c.name !== "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS",
   );
 }
 
