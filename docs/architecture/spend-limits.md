@@ -1,6 +1,6 @@
 # Spend limits
 
-Last verified: 2026-10-18
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -131,8 +131,8 @@ The check keeps a Session that it found for ten minutes and never keeps a miss, 
 
 **Call rows.** Postgres also keeps one row per call: the calling agent, the Session, the start time, the unit and the cost.
 The ingest writes it once, when the call is settled by its final record or by an estimate, and a real record that arrives later overwrites the estimate.
-It serves only the cost of each turn in the chat, which sums the calls of a Session that start inside the turn; no total and no limit reads it.
-A periodic job deletes rows older than 30 days, the window from which the chat reads turns.
+It serves only the cost of each turn, in the chat and in `dam telemetry`, which sums the calls of a Session that start inside the turn; no total and no limit reads it.
+A periodic job deletes rows older than 30 days, the window from which the chat and `dam telemetry` read turns.
 
 **Measuring start.** Postgres keeps one moment, T: the start of the measured spend on this deployment.
 A migration sets it once and never changes it.

@@ -91,7 +91,7 @@ A capped read takes the **newest** rows of its window and re-sorts them into tim
 Each query also carries execution-time and rows-read ceilings and **fails rather than truncating silently**, since a short answer rendered as complete is the failure worth designing against.
 Where a cap does bind, the response says so and the surface reports it.
 
-Spend per Turn is read from the log side and merged with the span side in the service, so neither query has to span two tables.
+The calls and tokens of each Turn are read from the log side and merged with the span side in the service, so neither query has to span two tables.
 
 ## Contract
 

@@ -23,7 +23,6 @@ import {
 } from "../../sessions/api/session-pair.js";
 import { OptionPicker } from "../../sessions/components/model-settings-panel.js";
 import { OptionField } from "../../sessions/components/option-field.js";
-import { settingsForModel } from "../../sessions/components/session-settings-controls.js";
 import {
   findModel,
   modelGroups,
@@ -35,6 +34,7 @@ import {
   nextPair,
   providerHarnesses,
 } from "../../sessions/lib/session-pair-options.js";
+import { settingsForModel } from "../../sessions/lib/session-settings.js";
 import { ConnectionSpendLimit } from "../../spend/components/connection-spend-limit.js";
 import { RootDriverSpendNote } from "../../spend/components/root-driver-spend-note.js";
 import type { SectionHeaderSlot } from "./sandbox-home-header.js";

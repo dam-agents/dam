@@ -40,32 +40,38 @@ type runnerCapacityState struct {
 	reason, message string
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the leader's half-minute look at every user's VM pool for operators. It sums what the runners' limits and claims promise, what their requests reserve and what the nodes that can run a runner hold; counts each user's runner at the level of its pool as the runner's own usage read says; and records each runner pod whose resize the node deferred or refused. No user is named in a metric: a user whose pool goes critical, or whose runner the node cannot fit, is named by a Warning Event on their vm Agents, and the second also by a condition on them. It returns the agents whose condition changed, for the caller to reconcile.
+// UNIT_BOUNDARY_DESCRIPTION: the leader's half-minute look at every user's VM pool for operators. It sums what the runners' limits and claims promise, what their requests reserve and what the nodes that can run a runner hold; counts each user's runner at the level of its pool as the runner's own usage read says; records each runner pod whose resize the node deferred or refused, and each one sitting on a node the cluster has lost. No user is named in a metric: a user whose pool goes critical, or whose runner the node cannot fit or has lost, is named by a Warning Event on their vm Agents, and the second also by a condition on them. It returns the agents whose condition changed, for the caller to reconcile.
 func (r *AgentReconciler) PoolPass(ctx context.Context) []string {
 	if !r.config.VM.Enabled || r.config.VM.Runner.HostAddress != "" {
 		return nil
 	}
-	pool, pending, agents, ok := r.vmPool(ctx)
+	pool, pending, agents, lost, ok := r.vmPool(ctx)
 	if !ok {
 		return nil
 	}
 	telemetry.SetVMPool(pool)
+	if lost != nil {
+		r.noteNodeLost(ctx, lost, agents)
+	}
 	return r.noteRunnerCapacity(ctx, pending, agents)
 }
 
-func (r *AgentReconciler) vmPool(ctx context.Context) (telemetry.VMPool, map[string]runnerCapacityState, map[string][]*apiv1.Agent, bool) {
+func (r *AgentReconciler) vmPool(ctx context.Context) (telemetry.VMPool, map[string]runnerCapacityState, map[string][]*apiv1.Agent, map[string]string, bool) {
 	ns := r.config.Namespace
 	component := labels.SelectorFromSet(map[string]string{"app.kubernetes.io/component": vmRunnerComponent})
 	pods, err := r.client.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{LabelSelector: component.String()})
 	if err != nil {
 		slog.WarnContext(ctx, "vm pool: listing runner pods", "error", err)
-		return telemetry.VMPool{}, nil, nil, false
+		return telemetry.VMPool{}, nil, nil, nil, false
 	}
 	pool := telemetry.VMPool{
 		Committed: map[string]int64{}, Reserved: map[string]int64{}, Capacity: map[string]int64{},
 		Runners: map[[2]string]int64{}, Pending: map[string]int64{},
 	}
 	pending := map[string]runnerCapacityState{}
+	lost := map[string]string{}
+	var lostPods int64
+	nodesKnown := true
 	owners := map[string]bool{}
 	for i := range pods.Items {
 		pod := &pods.Items[i]
@@ -74,6 +80,12 @@ func (r *AgentReconciler) vmPool(ctx context.Context) (telemetry.VMPool, map[str
 			continue
 		}
 		owners[owner] = true
+		if onLostNode, known := r.nodeLostFor(ctx, pod); !known {
+			nodesKnown = false
+		} else if onLostNode {
+			lostPods++
+			lost[owner] = pod.Spec.NodeName
+		}
 		for _, c := range pod.Spec.Containers {
 			if c.Name != vmRunnerComponent {
 				continue
@@ -104,7 +116,14 @@ func (r *AgentReconciler) vmPool(ctx context.Context) (telemetry.VMPool, map[str
 	for owner := range owners {
 		r.poolLevelsOf(ctx, owner, agents[owner], &pool)
 	}
-	return pool, pending, agents, true
+	if nodesKnown {
+		r.nodeLostLast.Store(lostPods)
+		pool.NodeLost = lostPods
+		return pool, pending, agents, lost, true
+	}
+	// UNIT_BOUNDARY_DESCRIPTION: a node that cannot be read — a watch not yet synced, or a read that failed — says nothing about any runner, so this pass keeps the last count rather than clearing the alert, and leaves the notices alone rather than announcing the same loss again once the nodes are readable: nil tells the caller it learned nothing about any node.
+	pool.NodeLost = r.nodeLostLast.Load()
+	return pool, pending, agents, nil, true
 }
 
 func resizePending(pod *corev1.Pod) (runnerCapacityState, bool) {
@@ -269,6 +288,26 @@ func (r *AgentReconciler) noteRunnerCapacity(ctx context.Context, pending map[st
 		}
 	}
 	return changed
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: keeps each user's lost node for the next pass, and writes one Warning Event on each of their vm Agents when it appears or changes. Nothing deletes the runner pod: two VMMs on one claim cannot be recovered, so an operator brings the node back or fences it out of service. A node that stays lost is announced once, not on every pass.
+func (r *AgentReconciler) noteNodeLost(ctx context.Context, lost map[string]string, agents map[string][]*apiv1.Agent) {
+	r.nodeLostNotices.Range(func(key, value any) bool {
+		if node, still := lost[key.(string)]; !still || node != value.(string) {
+			r.nodeLostNotices.Delete(key)
+		}
+		return true
+	})
+	for owner, node := range lost {
+		if _, had := r.nodeLostNotices.Load(owner); had {
+			continue
+		}
+		r.nodeLostNotices.Store(owner, node)
+		msg := "this user's VM runner is on node " + node + ", which the cluster has not reported ready for five minutes; every machine of theirs is down until that node comes back or is fenced"
+		for _, a := range agents[owner] {
+			r.agentEvent(ctx, a, corev1.EventTypeWarning, apiv1.ReasonMachineRunnerNodeLost, msg)
+		}
+	}
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the condition an agent carries while its owner's runner pod waits on a resize the node has not applied; absent otherwise. Readiness is not touched: the machine runs at what the pod has.

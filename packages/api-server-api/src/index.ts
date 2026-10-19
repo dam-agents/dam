@@ -179,6 +179,10 @@ export {
   spendUnitOfProvider,
   type ConnectionLimitRule,
 } from "./modules/spend/units.js";
+export {
+  spendTurnWindows,
+  type SpendTurnWindow,
+} from "./modules/spend/turn-windows.js";
 export type {
   AgentSpend,
   AgentSpendQuery,

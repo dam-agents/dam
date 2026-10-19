@@ -53,6 +53,7 @@ drivers:
     sessionSettings:
       effort: { configOption: reasoning_effort }
       subagentModel: { router: true }
+      subagentEffort: { router: true }
     # No model key: the model is sent over ACP, never written into the shared
     # config.toml.
     keys:
@@ -70,12 +71,31 @@ drivers:
           name: Subagent model
           description: Model Codex's subagents run on
           category: model
+          subagents: true
           choices: []
         - id: effort
           name: Effort
           description: Reasoning effort level
           category: thought_level
           default: "medium"
+          choices:
+            - value: minimal
+              name: "Minimal"
+            - value: low
+              name: "Low"
+            - value: medium
+              name: "Medium"
+            - value: high
+              name: "High"
+            - value: xhigh
+              name: "Extra High"
+        # The router writes it over the reasoning effort of each call on a
+        # subagent thread, and only where Codex sent one.
+        - id: subagentEffort
+          name: Subagent effort
+          description: Reasoning effort of Codex's subagents
+          category: thought_level
+          subagents: true
           choices:
             - value: minimal
               name: "Minimal"
