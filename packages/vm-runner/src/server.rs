@@ -2163,8 +2163,12 @@ impl Server {
             .and_then(|e| e.boot.as_ref())
             .and_then(|boot| boot.note.as_ref())
             .filter(|_| failed.is_none() && !status.ready && reads_ready(state));
-        if failed.is_none() && !status.ready && reads_ready(state) && entry.is_some_and(copies_disk)
-        {
+        // UNIT_BOUNDARY_DESCRIPTION: a boot copying a disk is the reason the machine is not up yet, and the controller exempts that boot from its not-ready bound and holds it past its idle cap, so a kill from before it does not explain it: the copy reads over the kill until the guest answers.
+        let copying = failed.is_none()
+            && !status.ready
+            && reads_ready(state)
+            && entry.is_some_and(copies_disk);
+        if copying {
             status.reason = REASON_COPYING_DISK.into();
             status.message = COPYING_DISK.into();
         }
@@ -2178,9 +2182,9 @@ impl Server {
                 format!("{}; {note}", status.message)
             };
         }
-        // UNIT_BOUNDARY_DESCRIPTION: what took the machine's VMM down is said until the guest answers again, through the boot that follows it: a machine the kernel killed for memory, or one its seccomp filter killed, is not a machine that flapped for no reason. A failure of the machine's own, such as a boot that failed, wins over it.
+        // UNIT_BOUNDARY_DESCRIPTION: what took the machine's VMM down is said until the guest answers again, through the boot that follows it: a machine the kernel killed for memory, or one its seccomp filter killed, is not a machine that flapped for no reason. A failure of the machine's own, such as a boot that failed, wins over it, and so does a boot that copies a disk.
         if let Some(killed) = entry.and_then(|e| e.killed.as_ref()) {
-            if failed.is_none() {
+            if failed.is_none() && !copying {
                 status.reason = killed.reason.to_string();
                 status.message = killed.message.clone();
             }

@@ -259,7 +259,7 @@ The chart ships alert rules for the VM pools only, for a cluster that runs prome
 With `monitoring.enabled` the collector exports the pool series — the runners' and the controller's, and nothing else — in Prometheus form on a port of its own, and a ServiceMonitor and a PrometheusRule render where the cluster serves their API; elsewhere nothing renders.
 That port is admitted from any source, since the cluster's Prometheus has no mesh identity to match, which is why it carries no series but these.
 The rules fire on a user's pool at 75% and 90% of its memory or storage, a runner throttled in a fifth of its CPU periods or past its memory pressure, a machine its seccomp filter killed or the kernel killed for memory, a runner whose cgroup groups its OOM kills so one machine's memory takes every machine of the owner down, refusals that last, a resize a node deferred or refused, the users' pools committing more than one and a half times what the nodes or the storage driver hold, and runners reserving nine tenths of the nodes.
-No alert names a user; each critical one says how to find the user's agents from their Warning Events.
+No alert names a user: each critical one about a user's pool or a resize of their runner ends with the `kubectl get events` line that finds that user's agents, while the two that fire on a runner's own memory state name only its scrape address, since no series names the runner's owner.
 
 ### Runtime migration
 

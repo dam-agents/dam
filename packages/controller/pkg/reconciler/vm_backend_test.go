@@ -2036,6 +2036,7 @@ func TestEveryAgentOfAnOOMKilledRunnerNamesTheKill(t *testing.T) {
 	r, _, _ := setupVMReconciler(t, agent)
 	ctx := context.Background()
 	r.vmRunning.Store(agent.Name, true)
+	r.vmRunningSince.Store(agent.Name, time.Now().Add(-time.Hour))
 	agent.Status.Conditions = []metav1.Condition{{
 		Type: apiv1.ConditionAgentPodReady, Status: metav1.ConditionTrue, LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Hour)),
 	}}
@@ -2096,6 +2097,16 @@ func TestEveryAgentOfAnOOMKilledRunnerNamesTheKill(t *testing.T) {
 	require.NoError(t, r.publishVMReadiness(ctx, agent,
 		vmrunner.MachineStatus{State: vmrunner.StateStarting, Reason: vmrunner.ReasonOOMKilled, Message: "the kernel killed the machine's VMM"}, true))
 	assert.Equal(t, vmrunner.ReasonOOMKilled, reason(), "a machine woken inside the episode, whose own boot the kill did not take down")
+
+	// TEST_SCENARIO: a controller that restarts inside the episode knows no start time for an agent it finds running, and a reason it published before that restart says the kill took the agent down: it keeps it to the end of the episode.
+	apimeta.SetStatusCondition(&agent.Status.Conditions, metav1.Condition{
+		Type: apiv1.ConditionAgentPodReady, Status: metav1.ConditionFalse, Reason: apiv1.ReasonRunnerOutOfMemory,
+		LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Minute)),
+	})
+	r.vmRunningSince.Delete(agent.Name)
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateRunning, Reason: vmrunner.ReasonOOMKilled, Message: "the kernel killed the machine's VMM"}, true))
+	assert.Equal(t, apiv1.ReasonRunnerOutOfMemory, reason(), "a reason published before the controller restarted, with no start behind it")
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a clientset whose Secret reads each take `delay`, outside the fake's own lock, which serialises every call it answers. The time a reconcile takes then counts the Secret reads it makes one after another.

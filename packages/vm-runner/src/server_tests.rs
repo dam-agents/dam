@@ -3665,3 +3665,31 @@ async fn a_sigkill_the_cgroup_did_not_count_is_not_a_memory_kill() {
     let status = kill_vmm(&h, "m2", libc::SIGKILL);
     assert_eq!(status.reason, REASON_OOM_KILLED, "{status:?}");
 }
+
+// TEST_SCENARIO: a machine the kernel killed that wakes onto a boot copying a migration's seed reports the copy, not the kill: the copy is what is running now, the controller holds it past its idle cap and exempts it from its not-ready bound, and a kill from before it explains neither. The kill is still what the status said before that boot, and it says so again if the copy ends before the guest answers.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_boot_copying_a_disk_reads_over_the_kill_before_it() {
+    let h = Harness::new("copying-after-kill");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+    let status = kill_vmm(&h, "m1", libc::SIGKILL);
+    assert_eq!(status.reason, REASON_OOM_KILLED, "{status:?}");
+
+    // TEST_SCENARIO: the machine is stopped in the runtime while the kill's reason still stands, and its next start copies a migration's seed.
+    locked(&h.fake.states).insert("m1".into(), State::Stopped);
+    h.server.probe("m1");
+    let seed = upload(&h, "m1", b"a home");
+    h.server.put("m1", expecting(true, &seed)).unwrap();
+    let copying = h.settle("m1").await;
+    assert!(!copying.ready);
+    assert_eq!(copying.reason, REASON_COPYING_DISK, "{copying:?}");
+    assert!(
+        !copying.message.contains("free memory"),
+        "the copy's message carries the kill's: {copying:?}"
+    );
+
+    let _guest = guest(h.base);
+    let up = h.until("m1", "ready", |s| s.ready).await;
+    assert_eq!(up.reason, "", "{up:?}");
+}
