@@ -4,7 +4,13 @@ import type { AgentState } from "api-server-api";
 import { baseUrl } from "../config.js";
 import type { ApiClient } from "./api-client.js";
 import { getAccessToken } from "./auth.js";
-import { AGENT_NS, applyAgentCr, kubectl, readAgentCr } from "./cluster.js";
+import {
+  AGENT_NS,
+  type AgentCr,
+  applyAgentCr,
+  kubectl,
+  readAgentCr,
+} from "./cluster.js";
 import { type Backend, laneBackend } from "./lane.js";
 
 export { type Backend, laneBackend };
@@ -70,8 +76,12 @@ export async function applyLegacyContainerAgent(
     templateId,
     hibernationTimeoutMin: 0,
   });
-  const cr = readAgentCr(source.id);
-  await api.agents.delete.mutate({ id: source.id });
+  let cr: AgentCr;
+  try {
+    cr = readAgentCr(source.id);
+  } finally {
+    await api.agents.delete.mutate({ id: source.id });
+  }
   const metadata = Object.fromEntries(
     Object.entries(cr.metadata).filter(
       ([key]) =>

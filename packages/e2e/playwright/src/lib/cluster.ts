@@ -26,7 +26,7 @@ function runKubectl(args: string[], stdin: "ignore" | string): string {
   }).trim();
 }
 
-interface AgentCr {
+export interface AgentCr {
   apiVersion: string;
   kind: string;
   metadata: Record<string, unknown>;

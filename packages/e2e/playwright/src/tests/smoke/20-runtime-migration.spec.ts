@@ -30,7 +30,6 @@ import {
 import { acceptTerms } from "../../lib/auth.js";
 import {
   applyLegacyContainerAgent,
-  createAgentOn,
   expectHomeFile,
   listSessionIds,
   refreshingToken,
