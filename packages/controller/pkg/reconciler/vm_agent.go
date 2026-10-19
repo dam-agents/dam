@@ -65,9 +65,11 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	lock.Lock()
 	defer lock.Unlock()
 	// UNIT_BOUNDARY_DESCRIPTION: the pool is cached and the memory pass reads it again only for owners with something running, so a pool changed while every machine slept would size this start from the old one, and a size reaches a machine only at its next start: the reconcile that starts a machine reads the UserBudget again.
-	// UNIT_BOUNDARY_DESCRIPTION: when the agent began running is kept beside the flag, because a kill of the runner pod explains only the agents that were already running when it happened: one woken afterwards inside the same episode was not taken down by it.
-	if was, _ := r.vmRunning.Swap(name, running); running && was != true {
-		r.vmRunningSince.Store(name, time.Now())
+	// UNIT_BOUNDARY_DESCRIPTION: when the agent began running is kept beside the flag, because a kill of the runner pod explains only the agents that were already running when it happened: one woken afterwards inside the same episode was not taken down by it. A controller that has seen no flag for this agent yet knows no start — it started since the agent did — so it keeps none, and the condition it published before stands in.
+	if was, known := r.vmRunning.Swap(name, running); running && was != true {
+		if known {
+			r.vmRunningSince.Store(name, time.Now())
+		}
 		r.refreshVMPool(ctx, owner)
 	}
 	demand, err := r.ownerRunnerDemand(ctx, owner, agent, running)

@@ -2008,7 +2008,6 @@ func TestEveryAgentOfAnOOMKilledRunnerNamesTheKill(t *testing.T) {
 	r, _, _ := setupVMReconciler(t, agent)
 	ctx := context.Background()
 	r.vmRunning.Store(agent.Name, true)
-	r.vmRunningSince.Store(agent.Name, time.Now().Add(-time.Hour))
 	agent.Status.Conditions = []metav1.Condition{{
 		Type: apiv1.ConditionAgentPodReady, Status: metav1.ConditionTrue, LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Hour)),
 	}}
