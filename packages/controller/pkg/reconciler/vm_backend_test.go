@@ -603,7 +603,7 @@ func TestAHostRunnerReachesTheGatewayOnItsOwnLoopback(t *testing.T) {
 	assert.Equal(t, int32(31000), *slice.Ports[0].Port)
 	assert.Equal(t, intstr.FromInt(31000), svc.Spec.Ports[0].TargetPort)
 
-	r.Delete(ctx, "my-agent", AgentOwner(agent.Labels))
+	r.Delete(ctx, "my-agent", AgentOwner(agent.Labels), deleteAgentCR(t, r, "my-agent"))
 	assert.Equal(t, []string{"my-agent"}, node.deleted)
 }
 
@@ -855,8 +855,32 @@ func TestVMBackendStopsTheMachineOnHardStop(t *testing.T) {
 func TestVMBackendDeleteRemovesTheMachine(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
-	r.Delete(context.Background(), "my-agent", AgentOwner(agent.Labels))
+	r.Delete(context.Background(), "my-agent", AgentOwner(agent.Labels), deleteAgentCR(t, r, "my-agent"))
 	assert.Equal(t, []string{"my-agent"}, node.deleted)
+}
+
+// TEST_SCENARIO: the delete queue retries a cleanup for three quarters of an hour, so it can run long after the delete, and an Agent created again under that name owns the machine, the home and the objects by then. The UID the delete carried tells the two apart: the cleanup waits while the same Agent still holds the name, and removes nothing once another one does.
+func TestADeleteNeverRemovesWhatAnAgentCreatedSinceOwns(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.Contains(t, node.specs, "my-agent")
+
+	require.Error(t, r.Delete(ctx, "my-agent", AgentOwner(agent.Labels), "agent-uid"),
+		"the Agent the cleanup is for is still there, so the cleanup waits")
+	assert.Empty(t, node.deleted)
+
+	require.NoError(t, r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Delete(ctx, "my-agent", metav1.DeleteOptions{}))
+	recreated := vmAgentCR()
+	recreated.UID = "agent-uid-2"
+	u, err := agentToUnstructured(recreated)
+	require.NoError(t, err)
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Create(ctx, u, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	require.NoError(t, r.Delete(ctx, "my-agent", AgentOwner(agent.Labels), "agent-uid"))
+	assert.Empty(t, node.deleted, "the machine of the Agent created since is left alone")
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: stands in for cert-manager, which issues the runner's TLS Secret some time after its Certificate is applied.
@@ -901,11 +925,11 @@ func TestADeleteReachesOnlyTheOwnersRunner(t *testing.T) {
 	r, node, _ := setupVMReconciler(t, agent)
 	other := addRunner(t, r, "owner-b")
 
-	r.Delete(ctx, "my-agent", AgentOwner(agent.Labels))
+	r.Delete(ctx, "my-agent", AgentOwner(agent.Labels), deleteAgentCR(t, r, "my-agent"))
 	assert.Equal(t, []string{"my-agent"}, node.deleted)
 	assert.Empty(t, other.deleted, "another owner's runner is not asked about this Agent's machine")
 
-	r.Delete(ctx, "no-runner-agent", "owner-without-runner")
+	r.Delete(ctx, "no-runner-agent", "owner-without-runner", types.UID("never-existed"))
 	_, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, r.runnerName("owner-without-runner"), metav1.GetOptions{})
 	assert.True(t, k8serrors.IsNotFound(err), "a delete does not mint credentials for a runner that does not exist")
 }
@@ -916,7 +940,7 @@ func TestADeleteWithNoOwnerReachesEveryRunner(t *testing.T) {
 	r, node, _ := setupVMReconciler(t, agent)
 	other := addRunner(t, r, "owner-b")
 
-	r.Delete(context.Background(), "my-agent", "")
+	r.Delete(context.Background(), "my-agent", "", deleteAgentCR(t, r, "my-agent"))
 	assert.Equal(t, []string{"my-agent"}, node.deleted)
 	assert.Equal(t, []string{"my-agent"}, other.deleted)
 }
@@ -1582,8 +1606,9 @@ func TestOrphanSweepDeletesAMachineNoAgentOfThisOwnerClaims(t *testing.T) {
 	require.NoError(t, err)
 
 	r.ReconcileOrphanMachines(ctx)
-	assert.Empty(t, node.deleted, "a machine one sweep finds unclaimed is kept for the next")
+	assert.Empty(t, node.deleted, "a machine one sweep finds unclaimed waits the grace")
 
+	r.orphanMachines.Store(testOwner+"/someone-elses", time.Now().Add(-orphanGrace-time.Minute))
 	r.ReconcileOrphanMachines(ctx)
 
 	assert.Equal(t, []string{"someone-elses"}, node.deleted,

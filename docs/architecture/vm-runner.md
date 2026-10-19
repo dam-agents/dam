@@ -125,7 +125,8 @@ So any connection lands on the gateway, which routes TLS by SNI and HTTP by Host
 ## Runner lifecycle
 
 **One lock per owner.** An agent's reconcile builds its owner's runner and ensures its machine under the owner's lock, and the orphan sweep takes the same lock before it looks at that runner, so the two never interleave.
-The sweep removes a machine only when a fresh List of the owner's Agents and the controller's cache both fail to name it, or an aborted [runtime migration](vm-runtime-migration.md) marked as left, and only when an earlier sweep found it so too: on a cluster that shares its CRDs the List can read empty for a while, and an Agent's workspace has no backup.
+The sweep removes a machine only when a fresh List of the owner's Agents and the controller's cache both fail to name it, or an aborted [runtime migration](vm-runtime-migration.md) marked as left.
+A sweep that finds it so only records the time: it goes once no sweep has seen an Agent for it in half an hour, since on a cluster that shares its CRDs the List can read empty for a while, and an Agent's workspace has no backup.
 It removes the runner itself — its claim, and so every disk on it, with it — only when a fresh List of the owner's Agents and the controller's cache both show no vm Agent and the runner lists no machine.
 The Deployment is deleted only if it is still the one the sweep checked, by UID and version, and a refusal keeps everything else for the next sweep.
 A reconcile that finds any of the runner's objects still terminating from such a removal waits, and says so on the Agent, rather than building a runner on a claim that is going away.
