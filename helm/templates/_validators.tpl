@@ -120,9 +120,10 @@ exists to close.
 {{- end -}}
 {{- end -}}
 {{- range ($egress.peers | default list) -}}
-{{- include "platform.validate.selector" (dict "name" "controller.gatewayEgress.peers" "namespace" .namespace "labels" (.podLabels | default dict)) -}}
+{{- $namespace := .namespace -}}
+{{- include "platform.validate.selector" (dict "name" "controller.gatewayEgress.peers" "namespace" $namespace "labels" (.podLabels | default dict)) -}}
 {{- range (.ports | default list) -}}
-{{- include "platform.validate.port" (dict "name" (printf "controller.gatewayEgress.peers (namespace %q)" (toString .namespace)) "value" .) -}}
+{{- include "platform.validate.port" (dict "name" (printf "controller.gatewayEgress.peers (namespace %q)" (toString $namespace)) "value" .) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -357,7 +358,7 @@ replaces let through (`2001:::1/64`).
 {{- if eq (len $halves) 2 -}}{{- $right = index $halves 1 -}}{{- end -}}
 {{- $compressed := eq (len $halves) 2 -}}
 {{- $fields := 0 -}}
-{{- $bad := or (gt (len $halves) 2) (hasPrefix ":" $right) (hasSuffix ":" $left) -}}
+{{- $bad := or (gt (len $halves) 2) (hasPrefix ":" $left) (hasSuffix ":" $left) (hasPrefix ":" $right) (hasSuffix ":" $right) -}}
 {{- range $g := (splitList ":" (ternary (printf "%s:%s" $left $right) $left $compressed)) -}}
 {{- if $g -}}
 {{- if not (regexMatch "^[0-9a-fA-F]{1,4}$" $g) -}}{{- $bad = true -}}{{- end -}}
@@ -431,7 +432,7 @@ reopen every range the policy exists to close.
 {{- if .Values.virtualization.enabled -}}
 {{- $cache := .Values.virtualization.imageCache | default dict -}}
 {{- $dns := (.Values.controller.gatewayEgress | default dict).clusterDns | default dict -}}
-{{- if and (eq ($cache.dnsPolicy | default "ClusterFirst") "ClusterFirst") (not (and $dns.namespace $dns.podLabels)) -}}
+{{- if and (eq ($cache.dnsPolicy | default "ClusterFirst") "ClusterFirst") (not .Values.virtualization.runner.hostAddress) (not (and $dns.namespace $dns.podLabels)) -}}
 {{- fail "virtualization.imageCache.dnsPolicy is ClusterFirst but controller.gatewayEgress.clusterDns names no namespace and podLabels, so the cache policy admits no DNS pod: every registry lookup fails, and a machine boots only the trees the cache already holds. Name the cluster DNS pods, or set imageCache.dnsPolicy=Default and admit the node's resolver in imageCache.egressCidrs." -}}
 {{- end -}}
 {{- range ($cache.egressCidrs | default list) -}}
