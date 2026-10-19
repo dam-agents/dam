@@ -1,6 +1,6 @@
 # Agent images
 
-Last verified: 2026-10-18
+Last verified: 2026-10-19
 
 The images an agent runs in: the **default image**, which the default Template boots, and the workloads and the e2e mock, each the default image under its own files.
 Each carries the agent-runtime and every harness.
