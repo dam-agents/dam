@@ -37,7 +37,12 @@ import {
   writeHomeFile,
 } from "../../lib/backend.js";
 import { harnessName } from "../../lib/fixtures.js";
-import { requestRuntimeMigration, retainedVolumes } from "../../lib/cluster.js";
+import {
+  applyAgentCr,
+  readAgentCr,
+  requestRuntimeMigration,
+  retainedVolumes,
+} from "../../lib/cluster.js";
 import { baseUrl } from "../../config.js";
 
 const agentName = "e2e-runtime-migration";
@@ -82,8 +87,36 @@ test.beforeAll(async () => {
   api = createRefreshingApiClient(token);
   await requireBackend(api, "vm");
   await acceptTerms(api);
-  agentId = await createAgentOn(api, "container", agentName, harnessName, {
-    neverIdle: true,
+  // UNIT_BOUNDARY_DESCRIPTION: no API creates a container Agent on this install, so the fixture is the way an operator makes one: the api-server assembles the spec for a throwaway agent, and that spec is applied as an Agent object with the container backend. The throwaway is deleted with its machine, so its home leaves nothing behind for the move to trip on.
+  const source = await api.agents.create.mutate({
+    name: `${agentName}-spec`,
+    templateId: harnessName,
+    hibernationTimeoutMin: 0,
+  });
+  const cr = readAgentCr(source.id);
+  await api.agents.delete.mutate({ id: source.id });
+  const metadata = Object.fromEntries(
+    Object.entries(cr.metadata).filter(
+      ([key]) =>
+        ![
+          "resourceVersion",
+          "uid",
+          "creationTimestamp",
+          "deletionTimestamp",
+          "deletionGracePeriodSeconds",
+          "generation",
+          "managedFields",
+          "ownerReferences",
+          "finalizers",
+        ].includes(key),
+    ),
+  );
+  agentId = `${source.id}-legacy`;
+  applyAgentCr({
+    apiVersion: cr.apiVersion,
+    kind: cr.kind,
+    metadata: { ...metadata, name: agentId },
+    spec: { ...cr.spec, name: agentName, backend: { type: "container" } },
   });
 });
 

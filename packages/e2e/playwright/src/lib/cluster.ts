@@ -15,10 +15,40 @@ function kubeconfig(): string {
 }
 
 export function kubectl(...args: string[]): string {
+  return runKubectl(args, "ignore");
+}
+
+function runKubectl(args: string[], stdin: "ignore" | string): string {
   return execFileSync("kubectl", ["--kubeconfig", kubeconfig(), ...args], {
     encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: [stdin === "ignore" ? stdin : "pipe", "pipe", "pipe"],
+    ...(stdin === "ignore" ? {} : { input: stdin }),
   }).trim();
+}
+
+interface AgentCr {
+  apiVersion: string;
+  kind: string;
+  metadata: Record<string, unknown>;
+  spec: Record<string, unknown>;
+}
+
+export function readAgentCr(agent: string): AgentCr {
+  return JSON.parse(
+    kubectl(
+      "-n",
+      AGENT_NS,
+      "get",
+      "agents.agent-platform.ai",
+      agent,
+      "-o",
+      "json",
+    ),
+  ) as AgentCr;
+}
+
+export function applyAgentCr(cr: AgentCr): void {
+  runKubectl(["-n", AGENT_NS, "apply", "-f", "-"], JSON.stringify(cr));
 }
 
 function kubectlOrEmpty(...args: string[]): string {

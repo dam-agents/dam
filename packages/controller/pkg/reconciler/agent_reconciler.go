@@ -540,6 +540,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			r.recordParkedRetry(name)
 		}
 	} else {
+		// UNIT_BOUNDARY_DESCRIPTION: Legacy container backend: remove once every agent runs as a VM. This arm serves only the Agents made before the microVM was the default, so nothing here grows; the vm arm above is where every new Agent is reconciled.
 		podSpec, refusal, err := r.renderedSpec(ctx, agent)
 		if err != nil {
 			return r.setError(ctx, name, err.Error())

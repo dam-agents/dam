@@ -4,7 +4,7 @@ import type { AgentState } from "api-server-api";
 import { baseUrl } from "../config.js";
 import type { ApiClient } from "./api-client.js";
 import { getAccessToken } from "./auth.js";
-import { AGENT_NS, kubectl } from "./cluster.js";
+import { AGENT_NS, applyAgentCr, kubectl, readAgentCr } from "./cluster.js";
 import { type Backend, laneBackend } from "./lane.js";
 
 export { type Backend, laneBackend };
@@ -49,7 +49,7 @@ export async function createAgentOn(
   const created = await api.agents.create.mutate({
     name,
     templateId,
-    vm: backend === "vm",
+    ...(backend === "container" ? { vm: false } : {}),
     ...(neverIdle ? { hibernationTimeoutMin: 0 } : {}),
   });
   expect(created.vm, `agent ${name} landed on the wrong backend`).toBe(

@@ -1,4 +1,10 @@
-// TEST_OVERVIEW: with the new sandbox runtime out of the experiment, every agent created on an install that can run microVMs is a microVM unless the create asks for a container. Every create path — the UI's forms, a starter kit, a sub-agent spawn, the CLI and the API — ends in the one agents create, so the default is applied there rather than trusted to each caller. An install without virtualization keeps creating containers.
+// TEST_OVERVIEW: every agent created on an install that can run microVMs is a
+// TEST_OVERVIEW: microVM, and a container agent cannot be created there at all:
+// TEST_OVERVIEW: every create path — the UI's forms, a starter kit, a sub-agent
+// TEST_OVERVIEW: spawn, the CLI and the API — ends in the one agents create, so
+// TEST_OVERVIEW: both rules are applied there rather than trusted to each caller.
+// TEST_OVERVIEW: An install without virtualization keeps creating containers, which
+// TEST_OVERVIEW: is what a local or dev install without a hypervisor is.
 import { describe, expect, it } from "vitest";
 import { createAgentsService } from "../../modules/agents/services/agents-service.js";
 import { parseInfraAgent } from "../../modules/agents/infrastructure/agent-mappers.js";
@@ -79,6 +85,13 @@ describe("the backend a create lands on", () => {
     expect(await createdBackend(false)).toBeUndefined();
     await expect(createdBackend(false, true)).rejects.toThrow(
       /virtualization\.enabled/,
+    );
+  });
+
+  // TEST_SCENARIO: a container agent cannot be made on an install that can virtualize, however it is asked for: the stateful set, the claims and the pod are the legacy path, kept only for the agents made before the switch. The refusal names the one runtime such an install still creates.
+  it("refuses a container on an install that can virtualize", async () => {
+    await expect(createdBackend(true, false)).rejects.toThrow(
+      /runs every new agent as its own microVM/,
     );
   });
 });
