@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-10-16
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -80,12 +80,16 @@ The reasons:
   That covers a seed or install the target's runtime reports as failed, and a declared skill the apply could neither install nor account for: a turn that runs without a skill the Driver asked for would otherwise return a result the Driver cannot read as incomplete.
   It covers a harness config the target cannot apply as well — an image with no harness-config driver, a setting its catalog does not offer, or a write the target reports as failed — found once the target reports what it can do; a result such a target reports first is refused, because it came from the default and a comparison across models must never record it as the one asked for.
   There is no retry: the Driver is waiting and can spawn again, while a long-lived agent retries within its attempt budget because a user comes back to it.
+- **Run failed.** A target that can no longer report a result fails at once, with the cause, instead of at its deadline.
+  The target's runtime watches the one turn: a run that cannot start, a turn that fails, a harness that exits under it, or a turn that ends with nothing left running and no result.
+  A model call the provider refused outright, followed by a minute with no completed call and no model or tool call running, counts too, since a harness can go quiet after it without ending the turn; the reason carries that call's status and body.
+  A turn that ends while its background work or its own sub-agents still run stays watched, because a later turn may still report.
 - **Deadline.** The Driver sets a liveness deadline, clamped to about a minute up to six hours; past it the Invocation fails and the target is reaped mid-work.
 - **Restart.** A target pod that restarted cannot resume its one-shot turn, so the liveness sweep fails it at once from the restart count the controller publishes ([platform-topology](platform-topology.md)).
 - **Driver Cascade.** Deleting a Driver fails its running Invocations and reaps their targets, transitively for chains.
 - **Stopped.** The owner stops a running target from the Driver's chat; the Invocation fails with that reason and the target is reaped like any other.
 
-**One reap path.** Every way a target goes — reported, failed, deadline, restart, cascade, stopped — goes through one reap, which the liveness sweep backstops: a reap that did not land, or one an api-server restart forgot, is finished by the next tick.
+**One reap path.** Every way a target goes — reported, failed, run failed, deadline, restart, cascade, stopped — goes through one reap, which the liveness sweep backstops: a reap that did not land, or one an api-server restart forgot, is finished by the next tick.
 A deleted root drops only the records whose reap landed; the sweep drops the rest once it finishes their reap and finds the root gone.
 
 ## The delegation record
