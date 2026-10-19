@@ -122,10 +122,9 @@ index 6851407..48fee7a 100644
          argv.push(std::ptr::null());
  
 diff --git i/src/agent/manager.rs w/src/agent/manager.rs
-index cffe2dd..abdb75d 100644
 --- i/src/agent/manager.rs
 +++ w/src/agent/manager.rs
-@@ -168,6 +168,9 @@ fn open_overlay_disk_for_manager(
+@@ -168,6 +168,9 @@
      format: DiskFormat,
      access: DiskAccess,
  ) -> Result<OverlayDisk> {
@@ -135,7 +134,7 @@ index cffe2dd..abdb75d 100644
      match (format, access) {
          (DiskFormat::Qcow2, _) => OverlayDisk::open_existing_with_format(path, format),
          (DiskFormat::Raw, DiskAccess::Observe) if path.exists() => {
-@@ -2278,7 +2281,9 @@ impl AgentManager {
+@@ -2278,7 +2281,9 @@
          // A manager opened to observe a never-started machine has no disks to
          // boot from; creating them here would be creating them at a guessed
          // size. Launches go through a manager opened with the machine's sizes.
@@ -146,7 +145,7 @@ index cffe2dd..abdb75d 100644
              let mut inner = self.inner.lock();
              inner.state = AgentState::Stopped;
              return Err(Error::agent(
-@@ -2306,7 +2311,11 @@ impl AgentManager {
+@@ -2306,7 +2311,11 @@
              let overlay_disk = &self.overlay_disk;
              std::thread::scope(|s| {
                  let storage_handle = s.spawn(|| storage_disk.ensure_formatted());
@@ -159,6 +158,24 @@ index cffe2dd..abdb75d 100644
                  if let Err(e) = storage_handle.join().unwrap_or_else(|_| {
                      Err(crate::Error::storage("format storage", "thread panicked"))
                  }) {
+@@ -2357,6 +2366,17 @@
+         if let Err(error) = std::fs::write(&self.pid_file, identity) {
+             tracing::warn!(pid, %error, "could not persist failed launch identity; retaining child handle");
+         }
++        // A launch that failed because its VMM was killed: the status word is read
++        // once, and the pid file written here is removed below, so the pid and the
++        // signal are left where the embedder that asked for the start reads them. A
++        // signal this teardown sends afterwards is not one of them: it has not been
++        // reaped yet, so nothing is noted for it.
++        if let Some(signal) = process::take_exit_signal(pid) {
++            let _ = std::fs::write(
++                self.pid_file.with_file_name("launch-exit"),
++                format!("{pid}\n{signal}"),
++            );
++        }
+         process::stop_vm_process(pid, Duration::ZERO, process::VM_SIGKILL_TIMEOUT)?;
+         if process::is_alive(pid) {
+             return Err(Error::agent("abort launch", "VMM is still alive"));
 diff --git i/src/embedded/handle.rs w/src/embedded/handle.rs
 index fe6c2c1..02c600a 100644
 --- i/src/embedded/handle.rs
@@ -234,3 +251,107 @@ index 9550f0d..03475e9 100644
      };
  
      // Start DNS filter listener if configured
+diff --git i/src/process.rs w/src/process.rs
+--- i/src/process.rs
++++ w/src/process.rs
+@@ -2200,7 +2200,11 @@
+ pub fn reap_vm_children() {
+     let mut guard = vm_children().lock().unwrap();
+     guard.retain(|&pid| {
+-        let ret = unsafe { libc::waitpid(pid, std::ptr::null_mut(), libc::WNOHANG) };
++        let mut status = 0;
++        let ret = unsafe { libc::waitpid(pid, &raw mut status, libc::WNOHANG) };
++        if ret == pid {
++            note_exit_signal(pid, status);
++        }
+         match ret {
+             // >0 = reaped; drop from tracking.
+             r if r > 0 => false,
+@@ -2210,8 +2214,45 @@
+             _ => false,
+         }
+     });
++}
++
++/// Signals that ended children this process reaped, by pid, kept for an
++/// embedder that has to know why a process went down: the status word is read
++/// once, and a reader that only needs the signal would otherwise have to wait
++/// for it itself. A boot being monitored and the supervisor's sweep both reap
++/// children the embedder also watches, so the signal has to survive here.
++#[cfg(unix)]
++static EXIT_SIGNALS: OnceLock<Mutex<std::collections::HashMap<Pid, i32>>> = OnceLock::new();
++
++/// Remember the signal in a wait status, for [`take_exit_signal`].
++#[cfg(unix)]
++fn note_exit_signal(pid: Pid, status: libc::c_int) {
++    if libc::WIFSIGNALED(status) {
++        EXIT_SIGNALS
++            .get_or_init(Default::default)
++            .lock()
++            .unwrap()
++            .insert(pid, libc::WTERMSIG(status));
++    }
+ }
+ 
++/// The signal that ended a child this process reaped, offered once: taking it
++/// removes it. `None` for a child that exited on its own, one that has not been
++/// reaped here, and one nothing noted.
++#[cfg(unix)]
++pub fn take_exit_signal(pid: Pid) -> Option<i32> {
++    EXIT_SIGNALS
++        .get_or_init(Default::default)
++        .lock()
++        .unwrap()
++        .remove(&pid)
++}
++
++#[cfg(not(unix))]
++pub fn take_exit_signal(_pid: Pid) -> Option<i32> {
++    None
++}
++
+ /// No-op on non-Linux: VM scope adoption + the serve supervisor reaper are
+ /// Linux-only; nothing registers VM children here.
+ #[cfg(not(target_os = "linux"))]
+@@ -2343,6 +2384,7 @@
+         let result = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
+ 
+         if result == pid {
++            note_exit_signal(pid, status);
+             // Process exited
+             let exit_code = if libc::WIFEXITED(status) {
+                 libc::WEXITSTATUS(status)
+@@ -2392,6 +2434,7 @@
+             return -1;
+         }
+ 
++        note_exit_signal(pid, status);
+         return if libc::WIFEXITED(status) {
+             libc::WEXITSTATUS(status)
+         } else if libc::WIFSIGNALED(status) {
+@@ -5331,5 +5374,25 @@
+         let _ = child.kill();
+         let _ = child.wait();
+         assert!(!cmdline_contains(pid, &token), "a dead PID must not match");
++    }
++
++    /// The signal in a child's status word is the one fact about how a process
++    /// went down, and the status is read once. An embedder that watches the same
++    /// child is not the process that reaped it here, so the signal is kept for it,
++    /// and offered once: a kill is neither lost nor reported twice.
++    #[cfg(unix)]
++    #[test]
++    fn a_reaped_child_keeps_its_signal_for_the_embedder_once() {
++        let child = std::process::Command::new("sleep")
++            .arg("60")
++            .spawn()
++            .expect("spawn sleep");
++        let pid = child.id() as Pid;
++        std::mem::forget(child);
++        // SAFETY: kill(2) takes plain integers and touches no memory here.
++        assert_eq!(unsafe { libc::kill(pid, libc::SIGKILL) }, 0);
++        assert_eq!(wait(pid), 128 + libc::SIGKILL);
++        assert_eq!(take_exit_signal(pid), Some(libc::SIGKILL));
++        assert_eq!(take_exit_signal(pid), None, "a signal is offered once");
+     }
+ }

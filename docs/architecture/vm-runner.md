@@ -21,7 +21,8 @@ smolvm enforces a machine's egress allowlist in the VMM, the very process an esc
 The runtime idmaps each of the pod's volumes, the node directories included, so the runner reads and writes them as it would as root, and a node whose filesystems cannot be idmapped cannot host a runner.
 A device is the exception: the runtime binds the node's /dev/kvm in with its owner unmapped, so the runner opens it only when its mode admits everyone, as systemd's own rule makes it.
 Every runner holds DAC_OVERRIDE, because its VMMs serve the image tree to their guests with the runner's own credentials and an image keeps some files from root.
-It is the only capability a runner adds: the runner unpacks no image, so it holds none of the CHOWN, FOWNER and FSETID that restoring an image's owners and modes costs.
+It also holds SYS_RESOURCE, for the pod's two processes to lower their own OOM score ([vm-memory](vm-memory.md)); inside the pod's user namespace that grants nothing on the node, and on the node's own, where the namespace is not in force, it reaches the OOM score and nothing else.
+Those two are every capability a runner adds: the runner unpacks no image, so it holds none of the CHOWN, FOWNER and FSETID that restoring an image's owners and modes costs.
 The runner drops every other capability, cannot gain one through exec, and runs under the runtime's default seccomp profile.
 Only AppArmor stays unconfined, because the runtime's default profile keeps every guest from booting.
 A change to that shape changes the runner pod, so it rolls across owners like any other.

@@ -695,7 +695,7 @@ func TestTheRunnerTemplateHashIsPinned(t *testing.T) {
 
 	dep, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
 	require.NoError(t, err)
-	assert.Equal(t, "d8a60be9a6efa104", dep.Annotations[annRunnerTemplate])
+	assert.Equal(t, "58aebcc11cdfde48", dep.Annotations[annRunnerTemplate])
 }
 
 // TEST_SCENARIO: a runner's pod is unchanged, but its labels were edited by hand and its owner reference points at nothing — the runner ServiceAccount was recreated. Both are restored without touching the pod, so no machine restarts and no roll starts. The claim, written by an older controller with the account as its owner, loses that reference, so a later deletion of the account cannot collect the owner's disks.
