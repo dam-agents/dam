@@ -8,7 +8,6 @@ import {
   type ApiClient,
 } from "../../lib/api-client.js";
 import { acceptTerms, getAccessToken } from "../../lib/auth.js";
-import { onLaneBackend } from "../../lib/backend.js";
 import { harnessName } from "../../lib/fixtures.js";
 
 // TEST_OVERVIEW: The events.owner subscription end to end, against the real
@@ -94,9 +93,10 @@ test.describe("events.owner live stream", () => {
     try {
       expect(await stream.nextEvent()).toEqual({ topic: "sync" });
 
-      const created = await api.agents.create.mutate(
-        onLaneBackend({ name: AGENT_NAME, templateId: harnessName }),
-      );
+      const created = await api.agents.create.mutate({
+        name: AGENT_NAME,
+        templateId: harnessName,
+      });
       agentId = created.id;
 
       for (;;) {

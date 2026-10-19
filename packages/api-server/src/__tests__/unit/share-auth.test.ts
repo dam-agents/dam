@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import {
   isSafeNext,
+  shareSessionCookie,
   SHARE_LOGIN_TTL_MS,
   SHARE_SESSION_TTL_MS,
   type PendingLogin,
@@ -66,14 +67,14 @@ const alice: IdentityFn = ({ nonce }) => ({
   nonce,
 });
 
-function setup(identity: IdentityFn = alice) {
+function setup(identity: IdentityFn = alice, shareBaseUrl = SHARE) {
   const pending = createMemoryTtlStore<PendingLogin>(SHARE_LOGIN_TTL_MS);
   const sessions = createMemoryTtlStore<ShareSession>(SHARE_SESSION_TTL_MS);
   const auth = createShareAuthService({
     provider: fakeProvider(identity),
     pending,
     sessions,
-    shareBaseUrl: SHARE,
+    shareBaseUrl,
     now: () => 1_000,
   });
   const host = createShareHostApp({
@@ -82,16 +83,18 @@ function setup(identity: IdentityFn = alice) {
     auth: createShareAuthRoutes({
       auth,
       brandName: "Acme",
-      secureCookie: true,
+      sessionCookie: shareSessionCookie(shareBaseUrl),
     }),
   });
   const get = (path: string, cookie?: string) =>
     host.fetch(
-      new Request(`${SHARE}${path}`, { headers: cookie ? { cookie } : {} }),
+      new Request(`${shareBaseUrl}${path}`, {
+        headers: cookie ? { cookie } : {},
+      }),
     );
   const post = (path: string, form: Record<string, string>, cookie?: string) =>
     host.fetch(
-      new Request(`${SHARE}${path}`, {
+      new Request(`${shareBaseUrl}${path}`, {
         method: "POST",
         body: new URLSearchParams(form),
         headers: cookie ? { cookie } : {},
@@ -148,6 +151,8 @@ describe("share host sign-in", () => {
   /**
    * TEST_SCENARIO: After a good callback the browser holds only an opaque
    * session id in an HttpOnly, Secure, SameSite=Lax cookie and lands on `next`.
+   * The __Host- prefix and the missing Domain make the browser refuse a cookie
+   * of that name from any other host, the content host included.
    */
   it("sets the share session cookie and returns to the requested page", async () => {
     const s = setup();
@@ -155,12 +160,13 @@ describe("share host sign-in", () => {
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/a/xyz?v=2");
     const cookie = res.headers.get("set-cookie")!;
-    expect(cookie).toMatch(/^share_session=[A-Za-z0-9_-]{40,};/);
+    expect(cookie).toMatch(/^__Host-share_session=[A-Za-z0-9_-]{40,};/);
     expect(cookie).toContain("HttpOnly");
     expect(cookie).toContain("Secure");
     expect(cookie).toContain("SameSite=Lax");
     expect(cookie).toContain("Path=/");
-    const id = /^share_session=([^;]+)/.exec(cookie)![1]!;
+    expect(cookie).not.toContain("Domain");
+    const id = /^__Host-share_session=([^;]+)/.exec(cookie)![1]!;
     expect(await s.sessions.peek(id)).toEqual({
       sub: "u1",
       email: "alice@example.com",
@@ -238,13 +244,52 @@ describe("share host sign-in", () => {
     expect(res.status).toBe(302);
     expect(await s.auth.getSession(id)).toBeNull();
     expect(res.headers.get("set-cookie")).toMatch(
-      /^share_session=;.*Max-Age=0/,
+      /^__Host-share_session=;.*Max-Age=0/,
     );
     const to = new URL(res.headers.get("location")!);
     expect(to.pathname).toBe("/realms/r/logout");
     expect(to.searchParams.get("post_logout_redirect_uri")).toBe(
       `${SHARE}/auth/login?next=%2Fa%2Fxyz`,
     );
+  });
+
+  /**
+   * TEST_SCENARIO: A share_session cookie planted by another host under the
+   * same parent domain must not decide whose session sign-out ends. Sign-out
+   * ends the session in the share host's own cookie, and leaves the planted
+   * one's session alone.
+   */
+  it("signs out the share host's own session, not a planted one", async () => {
+    const s = setup();
+    const own = (await signIn(s, "/a/xyz")).headers
+      .get("set-cookie")!
+      .split(";")[0]!;
+    const ownId = own.split("=")[1]!;
+    const plantedId = (await signIn(s, "/a/xyz")).headers
+      .get("set-cookie")!
+      .split(";")[0]!
+      .split("=")[1]!;
+
+    const res = await s.post(
+      "/auth/logout",
+      { next: "/a/xyz" },
+      `share_session=${plantedId}; ${own}`,
+    );
+    expect(res.status).toBe(302);
+    expect(await s.auth.getSession(ownId)).toBeNull();
+    expect(await s.auth.getSession(plantedId)).not.toBeNull();
+    expect(res.headers.get("set-cookie")).toMatch(/^__Host-share_session=;/);
+  });
+
+  /**
+   * TEST_SCENARIO: A browser drops a __Host- cookie that is not Secure, so a
+   * share host on plain http, as on the local cluster, keeps the bare name.
+   */
+  it("keeps the bare cookie name on a plain-http share host", async () => {
+    const s = setup(alice, "http://share.localhost:4444");
+    const cookie = (await signIn(s, "/a/xyz")).headers.get("set-cookie")!;
+    expect(cookie).toMatch(/^share_session=[A-Za-z0-9_-]{40,};/);
+    expect(cookie).not.toContain("Secure");
   });
 
   /**

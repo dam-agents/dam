@@ -40,16 +40,16 @@ export function createWorkspaceSeedPlugin(deps: {
   workDir: string;
   clone?: CloneFn;
   fetchInto?: FetchIntoFn;
+  spawnEnv?: () => NodeJS.ProcessEnv;
   log: (msg: string) => void;
 }): Plugin {
+  const git = createGitProtocolClient(
+    deps.spawnEnv ? { env: deps.spawnEnv } : {},
+  );
   const clone: CloneFn =
-    deps.clone ??
-    ((url, dest, ref) =>
-      createGitProtocolClient().cloneShallow(url, dest, 50, ref));
+    deps.clone ?? ((url, dest, ref) => git.cloneShallow(url, dest, 50, ref));
   const fetchInto: FetchIntoFn =
-    deps.fetchInto ??
-    ((url, dest, target) =>
-      createGitProtocolClient().fetchInto(url, dest, target));
+    deps.fetchInto ?? ((url, dest, target) => git.fetchInto(url, dest, target));
 
   const seed = async (
     { url, ref, commit, branch, into }: WorkspaceSeedEventPayload,

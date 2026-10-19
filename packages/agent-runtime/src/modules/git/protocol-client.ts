@@ -36,7 +36,30 @@ export interface GitProtocolClient {
   ) => Promise<Result<string, SkillsDomainError>>;
 }
 
-export function createGitProtocolClient(): GitProtocolClient {
+export function createGitProtocolClient(
+  opts: { env?: () => NodeJS.ProcessEnv } = {},
+): GitProtocolClient {
+  const runCapture = (cmd: string, args: string[]): Promise<string> =>
+    runCaptureIn(cmd, args, opts.env?.());
+  const runProc = async (cmd: string, args: string[]): Promise<void> => {
+    await runCapture(cmd, args);
+  };
+  const ensureSafeDirectory = async (dest: string): Promise<void> => {
+    const listed = await runCapture("git", [
+      "config",
+      "--global",
+      "--get-all",
+      "safe.directory",
+    ]).catch(() => "");
+    if (listed.split("\n").includes(dest)) return;
+    await runProc("git", [
+      "config",
+      "--global",
+      "--add",
+      "safe.directory",
+      dest,
+    ]);
+  };
   return {
     async cloneShallow(url, dest, depth = 50, ref) {
       try {
@@ -197,24 +220,17 @@ export function createGitProtocolClient(): GitProtocolClient {
   };
 }
 
-async function ensureSafeDirectory(dest: string): Promise<void> {
-  const listed = await runCapture("git", [
-    "config",
-    "--global",
-    "--get-all",
-    "safe.directory",
-  ]).catch(() => "");
-  if (listed.split("\n").includes(dest)) return;
-  await runProc("git", ["config", "--global", "--add", "safe.directory", dest]);
-}
-
-async function runProc(cmd: string, args: string[]): Promise<void> {
-  await runCapture(cmd, args);
-}
-
-async function runCapture(cmd: string, args: string[]): Promise<string> {
+async function runCaptureIn(
+  cmd: string,
+  args: string[],
+  env: NodeJS.ProcessEnv | undefined,
+): Promise<string> {
   const command = [cmd, ...args];
-  const result = await runOnce({ command, timeoutMs: COMMAND_TIMEOUT_MS });
+  const result = await runOnce({
+    command,
+    timeoutMs: COMMAND_TIMEOUT_MS,
+    ...(env && { env }),
+  });
   if (!result.ok)
     throw new Error(describeFailure(command.join(" "), result.error));
   return result.value.stdout;

@@ -61,6 +61,7 @@ The sidebar becomes one tree: every Agent is a row that opens to that Agent's ow
 The Agent open in the page opens in the tree; any other Agent opens and closes from its row, and the open state lasts until the page reloads.
 An Agent row shows its unread mark while closed; its New session and actions buttons show on hover or keyboard focus, and a New session row ends its open list and a New agent row ends the tree.
 Each Session row has an activity dot (waiting approval, working, unread or idle) and a line naming its harness, model and source; a Session from the record alone has no model.
+The tree's Agents header carries one session filter, by state and by Session type: it narrows the Pinned section and every Agent's list, and the control shows a mark while a filter is on.
 The tree keeps the same manual Agent order, set by drag and drop or with Alt+Up and Alt+Down; an Agent's own list keeps the newest-first order.
 A Session can be **pinned**: a pinned Session moves to a **Pinned** section above every Agent and leaves its Agent's list.
 Pins are kept in the browser, so they do not follow the user to another device.

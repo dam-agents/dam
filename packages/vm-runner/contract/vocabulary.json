@@ -11,5 +11,5 @@
     "MachineCopyingDisk"
   ],
   "seedExitPermanent": 3,
-  "releaseHolds": ["unstaged", "runtime", "failed"]
+  "releaseHolds": ["unstaged", "runtime", "reboot", "failed"]
 }

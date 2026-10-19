@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-10-17
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -110,6 +110,8 @@ The app origin shares nothing with either by-link origin — no cookie, no token
 The share host signs the visitor in through a dedicated public Keycloak client (authorization code with PKCE, asking for OpenID identity and email, see [identity](security-and-credentials.md#identity)).
 Its redirect is pinned to the share host's callback and its tokens carry no api audience, so a token minted for it is useless against the api-server.
 The code is redeemed server-side and no token ever reaches the browser: the browser holds an opaque session id in an `HttpOnly` cookie scoped to the share origin, pointing at a Redis-held session that carries the subject, the email and whether the provider verified it, and a fixed lifetime.
+On an https share host the cookie is named with the `__Host-` prefix, so the browser accepts it only from the share host itself: another host under the same parent domain, the content host included, cannot plant a session the share host would read or that sign-out would leave behind.
+On plain http, as on the local cluster, browsers refuse that prefix, so the cookie keeps its bare name there.
 Signing out ends both that session and the identity provider's, so "switch account" on the no-access page really switches.
 Every restricted response is marked private and uncacheable so no shared cache replays it to the next visitor.
 
