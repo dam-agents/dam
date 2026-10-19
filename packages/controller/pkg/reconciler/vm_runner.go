@@ -400,9 +400,11 @@ func imageBudgetBytes(spec config.VMRunnerSpec) (int64, error) {
 
 // UNIT_BOUNDARY_DESCRIPTION: a claim already bound is grown when its owner's pool rises, which is the same rule the machine disks on it already follow: a size that rises is applied in place, a size that falls is ignored because Kubernetes refuses to shrink a claim at all.
 // UNIT_BOUNDARY_DESCRIPTION: a class without volume expansion rejects that update, and a size the install mistyped cannot be worked out at all. Both are reported and reconciliation continues, because the runner serves every one of the owner's agents and works exactly as before at the size it has — a values typo costs a warning, not a fleet that no longer reconciles.
+// UNIT_BOUNDARY_DESCRIPTION: the claim is applied on the reconcile of every one of the owner's agents, so a refusal nobody can act on yet is said once per size the claim is asked for rather than once per reconcile: QA read the same line three times in one burst, which buries whatever the next reconcile says. The notice is held per owner and keeps the size that was refused, so a pool that falls and rises again says it again; a grow that succeeds clears it, and so does a size that no longer needs one.
 func (r *AgentReconciler) growRunnerPVC(ctx context.Context, owner string, claim *corev1.PersistentVolumeClaim, size resource.Quantity) {
 	current := claim.Spec.Resources.Requests[corev1.ResourceStorage]
 	if size.Cmp(current) <= 0 {
+		r.claimNotices.Delete(owner)
 		return
 	}
 	if claim.Spec.Resources.Requests == nil {
@@ -410,9 +412,13 @@ func (r *AgentReconciler) growRunnerPVC(ctx context.Context, owner string, claim
 	}
 	claim.Spec.Resources.Requests[corev1.ResourceStorage] = size
 	if _, err := r.client.CoreV1().PersistentVolumeClaims(claim.Namespace).Update(ctx, claim, metav1.UpdateOptions{}); err != nil {
-		slog.Warn("vm runner: the claim was not grown, the runner keeps the size it has", "owner", owner, "from", current.String(), "to", size.String(), "error", err)
+		if said, told := r.claimNotices.Load(owner); !told || said != size.String() {
+			r.claimNotices.Store(owner, size.String())
+			slog.Warn("vm runner: the claim was not grown, the runner keeps the size it has", "owner", owner, "from", current.String(), "to", size.String(), "error", err)
+		}
 		return
 	}
+	r.claimNotices.Delete(owner)
 	slog.Info("vm runner: grew the claim", "owner", owner, "from", current.String(), "to", size.String())
 }
 
