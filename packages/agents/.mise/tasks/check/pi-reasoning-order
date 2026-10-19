@@ -1,0 +1,35 @@
+#!/usr/bin/env -S node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON
+//MISE description="Pi's provider stream hands pi-ai a chunk's reasoning before the content that shares it"
+//MISE sources=["pi-agent/rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts", ".mise/tasks/check/pi-reasoning-order"]
+//MISE outputs=[]
+//MISE cache.enabled=true
+import assert from "node:assert/strict";
+
+const { reasoningBeforeContent } = await import(
+  new URL("../../../pi-agent/rootfs/usr/local/share/pi-platform/extensions/pi-dynamic-providers/index.ts", import.meta.url)
+);
+
+const sse = (...deltas) => deltas.map((delta) => `data: ${JSON.stringify({ choices: [{ index: 0, delta }] })}\n\n`).join("") + "data: [DONE]\n\n";
+const body = sse({ reasoning_content: "from my own" }, { reasoning_content: " reasoning.", content: "I", tool_calls: [{ index: 0, function: { arguments: "{}" } }] }, { content: "'ll answer." });
+const split = (text, at) => [text.slice(0, at), text.slice(at)];
+const fakeFetch = async () =>
+  new Response(
+    new ReadableStream({
+      start(c) {
+        for (const part of split(body, 70)) c.enqueue(new TextEncoder().encode(part));
+        c.close();
+      },
+    }),
+    { headers: { "content-type": "text/event-stream" } },
+  );
+
+const text = await (await reasoningBeforeContent(fakeFetch)("https://x")).text();
+const deltas = text.split("\n").filter((l) => l.startsWith("data: {")).map((l) => JSON.parse(l.slice(6)).choices[0].delta);
+assert.deepEqual(deltas, [
+  { reasoning_content: "from my own" },
+  { reasoning_content: " reasoning." },
+  { content: "I", tool_calls: [{ index: 0, function: { arguments: "{}" } }] },
+  { content: "'ll answer." },
+]);
+assert.ok(text.endsWith("data: [DONE]\n\n"), text);
+console.log("pi-reasoning-order: ok");

@@ -102,4 +102,13 @@ describe("curve-bender connection template", () => {
       placeholder: "262144",
     });
   });
+
+  // TEST_SCENARIO: Claude Code knows nothing about the endpoint's models and assumes a window for them, so it must be told the real one — otherwise it compacts too late and the endpoint refuses the request.
+  it("tells Claude Code the endpoint's 262k context", async () => {
+    const { contributions } = await buildIbmLitellm("curve-bender");
+
+    expect(
+      envOf(contributions, "CLAUDE_CODE_MAX_CONTEXT_TOKENS"),
+    ).toMatchObject({ placeholder: "262144" });
+  });
 });
