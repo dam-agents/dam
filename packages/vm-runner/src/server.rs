@@ -12,7 +12,8 @@ use tokio_util::task::TaskTracker;
 use crate::api::{
     CpuUsage, MachineSpec, MachineStatus, MachineUsage, MemoryUsage, RunnerPressure, RunnerUsage,
     SeedResult, State, StorageUsage, REASON_BOOT_FAILED, REASON_COPYING_DISK, REASON_HOME_FULL,
-    REASON_OUT_OF_CAPACITY, REASON_STORAGE_FULL, STATE_RUNNING,
+    REASON_OOM_KILLED, REASON_OUT_OF_CAPACITY, REASON_SECCOMP_KILLED, REASON_STORAGE_FULL,
+    STATE_RUNNING,
 };
 use crate::cache::{self, pinned_digest};
 use crate::capability::Verified;
@@ -27,7 +28,7 @@ use crate::metrics::{Gauges, Metrics};
 use crate::plan::{
     admissible, gateway_port_admissible, quiet_limit, reads_ready, step, Action, Health,
 };
-use crate::runtime::{redact, Machine, Runtime, Update};
+use crate::runtime::{killed_by, redact, Machine, Runtime, Update};
 use crate::share::{self, write_share, SeedFile, SHARE_DIR};
 use crate::state::{
     self, is_image_ref, is_machine_id, machine_dir, read_spec, write_spec, IMAGE_DIGEST_FILE,
@@ -100,6 +101,12 @@ struct Boot {
     note: Option<(String, Instant, Option<&'static str>)>,
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the kill that took a machine's VMM down, as the runner reaped it: the reason the Agent is told and the sentence that says it. It outlives the boot the runner starts after it, so the owner reads why the machine restarted rather than a machine that flapped, and it goes once the machine's guest answers again.
+struct Killed {
+    reason: &'static str,
+    message: String,
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: what the runtime and the guest last said about a machine. `error` is set only with the unknown state, when the runtime could not be read.
 #[derive(Clone, PartialEq, Eq)]
 struct Seen {
@@ -108,7 +115,7 @@ struct Seen {
     error: Option<String>,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `seeding` is set while a seed is uploaded into the machine's share, and no worker starts while it is. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change. `cancel` is the machine's own child of the runner's lifetime, cancelled by a delete so the action in flight stops waiting on its fetch. `acting_mib` is the memory of the spec the action in flight runs with, which a newer spec stored behind it does not change. `resident_mib` is what the prober last measured the running machine's VMM holding, kept beside `seen` rather than in it, so a figure that moves at every probe does not move the status version and wake every waiting read. `warming_since` is when the machine's last boot began, which admission counts it at the warm-up floor for WARMUP after. `deletes` counts the delete calls in progress, and `deleting` stays set after one gave up waiting, and while any runtime call it waited on still runs, so the worker still takes no further action and no ensure clears it. `calls` is held by every start, stop or delete call into the runtime until that call returns, also after the runner gave up waiting for it, so it counts one more holder per call still running. `gave_up` is when the runner last restarted the machine for going quiet, which holds its next such restart back. `restarts` counts those restarts since the controller last asked the machine stopped: the controller publishes no count for a hibernated Agent, so one kept across the stop would read after the wake as a crash the user never had.
+// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `seeding` is set while a seed is uploaded into the machine's share, and no worker starts while it is. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change. `cancel` is the machine's own child of the runner's lifetime, cancelled by a delete so the action in flight stops waiting on its fetch. `acting_mib` is the memory of the spec the action in flight runs with, which a newer spec stored behind it does not change. `resident_mib` is what the prober last measured the running machine's VMM holding, kept beside `seen` rather than in it, so a figure that moves at every probe does not move the status version and wake every waiting read. `warming_since` is when the machine's last boot began, which admission counts it at the warm-up floor for WARMUP after. `deletes` counts the delete calls in progress, and `deleting` stays set after one gave up waiting, and while any runtime call it waited on still runs, so the worker still takes no further action and no ensure clears it. `calls` is held by every start, stop or delete call into the runtime until that call returns, also after the runner gave up waiting for it, so it counts one more holder per call still running. `gave_up` is when the runner last restarted the machine for going quiet, which holds its next such restart back. `killed` is the signal that took the machine's VMM down, which the status reports until the guest answers again. `restarts` counts those restarts since the controller last asked the machine stopped: the controller publishes no count for a hibernated Agent, so one kept across the stop would read after the wake as a crash the user never had.
 #[derive(Default)]
 struct MachineEntry {
     desired: Option<MachineSpec>,
@@ -118,6 +125,7 @@ struct MachineEntry {
     deleting: bool,
     seeding: bool,
     failure: Option<Failed>,
+    killed: Option<Killed>,
     health: Health,
     restarts: i32,
     gave_up: Option<Instant>,
@@ -358,6 +366,13 @@ impl Server {
         locked(&server.machines).pressure.version =
             server.versions.fetch_add(1, Ordering::Relaxed) + 1;
         if let Some(cgroup) = server.config.cgroup_dir.clone() {
+            // UNIT_BOUNDARY_DESCRIPTION: a node's kubelet can make the runner's cgroup kill every process in it for one process's memory, which no OOM score of the VMMs' own prevents: one machine's growth would then end the runner and every machine of the owner. The kubelet writes memory.oom.group and leaves it 0 while singleProcessOOMKill is on, its default, so a runner that reads it set says so on its console, and the gauge keeps saying it on every scrape.
+            if crate::pressure::oom_group(&cgroup) == Some(true) {
+                tracing::warn!(
+                    cgroup = %cgroup.display(),
+                    "vm runner: its cgroup kills the whole runner for one machine's memory (memory.oom.group=1); the node's kubelet must not group OOM kills for these runners"
+                );
+            }
             let sampler = Arc::downgrade(&server);
             server.background(move |lifetime| {
                 if let Err(e) = crate::pressure::working_set_mib(&cgroup) {
@@ -425,6 +440,59 @@ impl Server {
                 if resident.is_some() {
                     entry.resident_mib = resident;
                 }
+            }
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: collects the exit status of every machine's VMM that has ended, and says on the machine what killed it: a VMM killed by a signal is a machine the kernel took for memory, or one its own seccomp filter killed, and either is said on the status with a counter of its own. It runs every second, ahead of the runtime's own sweep of these children in the same tick: that sweep discards the status, so a machine whose signal arrives between two of its probes, ten seconds apart, would otherwise restart with nothing said. Only a machine its owner asked to run is read — the runner's own stop, delete and start kill VMMs too — and those kills are guarded here by the action in flight and by the spec that asked the machine down. A kill is read once, and it goes when the guest answers, when its owner asks the machine down, and with the machine.
+    pub fn reap_killed(&self) {
+        let settled: Vec<String> = locked(&self.machines)
+            .entries
+            .iter()
+            .filter(|(_, e)| {
+                !e.converging
+                    && !e.deleting
+                    && e.action.is_none()
+                    && e.killed.is_none()
+                    && e.desired.as_ref().is_some_and(|spec| spec.running)
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in settled {
+            let Some(pid) = self.runtime.vmm_pid(&id) else {
+                continue;
+            };
+            let Some(signal) = killed_by(pid) else {
+                continue;
+            };
+            let reason = match signal {
+                libc::SIGSYS => REASON_SECCOMP_KILLED,
+                libc::SIGKILL => REASON_OOM_KILLED,
+                _ => {
+                    tracing::warn!(machine = %id, pid, signal, "vm runner: a machine's VMM was killed by a signal no reason on the status explains");
+                    continue;
+                }
+            };
+            let message = match reason {
+                REASON_SECCOMP_KILLED => format!(
+                    "the machine's VMM made a call its seccomp filter forbids (signal {signal}), so the guest was killed; the runner restarts it"
+                ),
+                _ => format!(
+                    "the kernel killed the machine's VMM to free memory (signal {signal}); the runner restarts it"
+                ),
+            };
+            tracing::warn!(machine = %id, pid, signal, reason, "vm runner: a machine's VMM was killed");
+            self.metrics.killed(reason);
+            let mut machines = locked(&self.machines);
+            if let Some(entry) = machines.entries.get_mut(&id) {
+                entry.killed = Some(Killed { reason, message });
+                // UNIT_BOUNDARY_DESCRIPTION: the machine is stopped now, and says so rather than at its next probe: a status that read running would tell the controller the machine is up when its VMM is gone, and the kill it just reported would wake nobody.
+                entry.seen = Some(Seen {
+                    state: State::Stopped,
+                    ready: false,
+                    error: None,
+                });
+                self.bump(entry);
             }
         }
     }
@@ -591,6 +659,10 @@ impl Server {
             let entry = machines.entries.entry(id.to_string()).or_default();
             if !spec.running && entry.restarts != 0 {
                 entry.restarts = 0;
+                self.bump(entry);
+            }
+            // UNIT_BOUNDARY_DESCRIPTION: an owner that asked the machine down ends the report of what took its VMM down: a hibernated machine the kernel killed says it is hibernated, not that it is short of memory it no longer asks for.
+            if !spec.running && entry.killed.take().is_some() {
                 self.bump(entry);
             }
             let known = &mut entry.secrets;
@@ -1431,6 +1503,7 @@ impl Server {
             cpu_limit_milli: cgroup.and_then(|c| crate::cpu::limit_milli(c).ok().flatten()),
             working_set_mib: sampled.map(|p| p.0),
             pressured: sampled.map(|p| p.1),
+            oom_group: cgroup.and_then(crate::pressure::oom_group),
         })
     }
 
@@ -1833,6 +1906,10 @@ impl Server {
         if let Some(boot) = &answered {
             self.metrics.became_ready(boot.action, boot.at.elapsed());
         }
+        // UNIT_BOUNDARY_DESCRIPTION: a guest that answered again is a machine the kill no longer explains, so the reason goes with the boot that answered it.
+        if seen.ready {
+            entry.killed = None;
+        }
         let mut seen = seen;
         let now = SystemTime::now();
         let settled = entry.action.is_none() && seen.state == State::Running;
@@ -2036,6 +2113,13 @@ impl Server {
             } else {
                 format!("{}; {note}", status.message)
             };
+        }
+        // UNIT_BOUNDARY_DESCRIPTION: what took the machine's VMM down is said until the guest answers again, through the boot that follows it: a machine the kernel killed for memory, or one its seccomp filter killed, is not a machine that flapped for no reason. A failure of the machine's own, such as a boot that failed, wins over it.
+        if let Some(killed) = entry.and_then(|e| e.killed.as_ref()) {
+            if failed.is_none() {
+                status.reason = killed.reason.to_string();
+                status.message = killed.message.clone();
+            }
         }
         drop(machines);
         // UNIT_BOUNDARY_DESCRIPTION: read after the lock is let go, so a stalled disk holds up only this read. A guest's first answer writes the seeded record before it marks the machine ready, so a status that read ready above reads the record from that answer.

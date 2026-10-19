@@ -41,6 +41,11 @@ pub fn limit_mib(cgroup: &Path) -> Option<i64> {
     Some(bytes >> 20)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: whether the runner's cgroup kills every process in it for one process's memory. `memory.oom.group` is a node's kubelet setting, not the install's: at 1, one machine's growth ends the runner and every machine of the owner rather than that machine alone, whatever the VMMs' OOM scores say. A cgroup that cannot be read says nothing.
+pub fn oom_group(cgroup: &Path) -> Option<bool> {
+    Some(read(cgroup, "memory.oom.group").ok()?.trim() == "1")
+}
+
 fn read(cgroup: &Path, file: &str) -> anyhow::Result<String> {
     let path = cgroup.join(file);
     fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))
@@ -92,5 +97,16 @@ mod tests {
         fs::write(dir.path().join("memory.max"), "max\n").unwrap();
         assert_eq!(limit_mib(dir.path()), None);
         assert_eq!(limit_mib(&dir.path().join("absent")), None);
+    }
+
+    // TEST_SCENARIO: whether the runner's cgroup kills the whole pod for one machine's memory decides whether a machine's growth takes its owner's every other machine down with it, so the two values the kernel writes are read apart, and a cgroup with no figure reads as nothing rather than as the safe answer.
+    #[test]
+    fn the_cgroup_says_whether_one_process_takes_it_all_down() {
+        let dir = TempDir::new("pressure-group");
+        fs::write(dir.path().join("memory.oom.group"), "0\n").unwrap();
+        assert_eq!(oom_group(dir.path()), Some(false));
+        fs::write(dir.path().join("memory.oom.group"), "1\n").unwrap();
+        assert_eq!(oom_group(dir.path()), Some(true));
+        assert_eq!(oom_group(&dir.path().join("absent")), None);
     }
 }

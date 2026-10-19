@@ -1,6 +1,6 @@
 # VM memory
 
-Last verified: 2026-10-17
+Last verified: 2026-10-19
 
 An owner's machines share the memory of their [runner](vm-runner.md), and it is counted by what they use rather than by their sizes.
 That memory is the owner's whole pool for vm agents, which have no size of their own and stand outside the [budget](budgets.md)'s Ceiling.
@@ -84,8 +84,12 @@ A guest kernel without zram has no swap, and then only file pages go.
 A V8 heap is cold only between collections: Node's idle memory reducer walks the whole heap a couple of times after it stops growing, which reads every page back from zram once, and the next pass compresses it again.
 Free-page reporting returns only whole 2 MiB blocks, so memory a program frees between pages the guest still uses stays counted; when the free memory in smaller blocks rises by 128 MiB, the same pass reclaims that much cold cache and slab and compacts the guest's memory, so the freed pages merge into blocks the host takes back.
 
-**What can still go wrong.** A harness that grows past the warm-up floor while it warms up, or past its headroom between two probes after, and the seconds a hibernation takes can still take the runner over its limit, and the kernel then kills the runner with every machine of its owner.
+**What can still go wrong.** A harness that grows past the warm-up floor while it warms up, or past its headroom between two probes after, and the seconds a hibernation takes can still take the runner over its limit, and the kernel then kills the process in the runner's cgroup that holds the most memory.
+That is a machine's VMM: each VMM raises its own OOM score to the kernel's maximum at boot, so the kernel picks it over the two small processes that hold every machine of the owner, the runner and the loader.
+The machine it picked restarts with a reason of its own, `MachineOOMKilled` ([vm-runner](vm-runner.md)), and the runner counts it; the owner's other machines are untouched.
 The pressure signal makes that rarer; it cannot rule it out.
-When it happens, each agent that was ready before the kill says that its owner's memory ran out, read off the runner pod's last termination, through the runner's restart and its machine's boot, until it is ready again or a more specific reason, such as a failed boot, replaces it; the owner sees one notice naming every agent that restarted, which asks them to disable agents they are not using.
-An agent woken after the kill carries nothing, and nothing on the agents records the kill once they are ready.
-The owner also gets one Slack direct message naming the agents that restarted, the [resource alert](budgets.md#resource-alerts) for the kill.
+A cgroup whose `memory.oom.group` is 1 kills every process in the pod for one process's memory, and no score of a VMM's own prevents that.
+The node's kubelet writes it: it stays 0 while the kubelet's `singleProcessOOMKill` is on, which is its default, so a cluster that turns that off groups the kills of every pod it admits, and a runner that reads it set warns on its console and reports it on the `platform_vm_runner_memory_oom_group` gauge.
+When the killed process is the runner's own container, the owner is told which agents it took down: every agent that should be running names the kill in its status for the ten minutes that follow it, whatever reason the restarted runner reports about its machine meanwhile — a refused start for room, a reclaim, or a boot the restart broke — since all of them describe that one taking down; the owner sees one notice naming them, which asks them to disable agents it is not using.
+An agent that is up again, one asleep when the kill happened, and one that has published no readiness yet carry nothing, and nothing on the agents records the kill once the ten minutes are over.
+The owner also gets one Slack direct message naming those agents, the [resource alert](budgets.md#resource-alerts) for the kill.

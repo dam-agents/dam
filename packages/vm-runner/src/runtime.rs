@@ -45,6 +45,10 @@ pub trait Runtime: Send + Sync {
     fn nests(&self) -> bool {
         false
     }
+    // UNIT_BOUNDARY_DESCRIPTION: the process of the machine's running VMM, or nothing when no VMM runs or the runtime keeps none. The runner reaps that process itself, so it learns the signal that ended it — a seccomp filter's kill or the kernel's — where smolvm's own sweep over its children discards the status.
+    fn vmm_pid(&self, _id: &str) -> Option<i32> {
+        None
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: everything a create needs beyond the spec. `image` is what the machine boots: an unpacked cache tree or a staged tree, both absolute paths, or a registry reference when neither exists. `share` is the host directory the guest mounts read-only at the share path, and `host_port` the loopback port the guest's agent port is published on.
@@ -380,6 +384,16 @@ pub fn kill_orphans(proc_root: &Path, vm_dir: &Path) {
             libc::kill(pid, libc::SIGKILL);
         }
     }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the signal that ended a VMM this runner started, collected from its exit status, or nothing when it has not exited, is not this runner's child, or exited on its own. A VMM is this process's child, so only this process can read the status; a machine handed over to a new runner release keeps no status at all, and a pid some other sweep already reaped reads as nothing.
+pub fn killed_by(pid: i32) -> Option<i32> {
+    let mut status = 0;
+    // SAFETY: WNOHANG never blocks, and the kernel writes at most the status word at `status`.
+    if unsafe { libc::waitpid(pid, &raw mut status, libc::WNOHANG) } != pid {
+        return None;
+    }
+    libc::WIFSIGNALED(status).then(|| libc::WTERMSIG(status))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: where ext4 keeps its magic number: the superblock starts 1024 bytes into the disk, and its magic, 0xEF53 little-endian, is 56 bytes into the superblock.
@@ -846,5 +860,33 @@ mod tests {
         let dir = proc.path().join(pid.to_string());
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("cmdline"), cmdline).unwrap();
+    }
+
+    // TEST_SCENARIO: a VMM killed by a signal is told apart from one that exited on its own, and from one this process cannot read at all — a machine another runner release booted, whose VMM is nobody's child here. Only the kill carries a signal, which is what the machine's status reports.
+    #[test]
+    fn a_vmm_the_kernel_killed_reports_its_signal() {
+        let mut child = std::process::Command::new("sleep")
+            .arg("60")
+            .spawn()
+            .unwrap();
+        let pid = i32::try_from(child.id()).unwrap();
+        assert_eq!(killed_by(pid), None, "a running VMM exited");
+        // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+        unsafe { libc::kill(pid, libc::SIGSYS) };
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let signal = loop {
+            if let Some(signal) = killed_by(pid) {
+                break Some(signal);
+            }
+            assert!(Instant::now() < deadline, "the VMM never exited");
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        assert_eq!(signal, Some(libc::SIGSYS));
+        assert_eq!(
+            killed_by(pid),
+            None,
+            "a VMM whose status was already read is not read again"
+        );
+        let _ = child.wait();
     }
 }

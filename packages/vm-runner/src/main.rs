@@ -212,6 +212,19 @@ fn guest_exec(id: &str, command: Vec<String>) -> anyhow::Result<()> {
     std::process::exit(code)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the OOM score a VMM asks for: the highest the kernel lets a process set for itself, which needs no capability, so that a machine that grows past the runner's memory is killed by itself, never the runner or the loader beside it, which each hold every machine of the owner. A cgroup whose memory.oom.group is 1 kills the whole pod anyway; the runner reports that on a gauge of its own.
+const OOM_SCORE_ADJ: &str = "1000";
+
+// UNIT_BOUNDARY_DESCRIPTION: outranks the runner and the loader in the kernel's choice of victim, for this process alone. A failure is said on the console rather than fatal: a machine that cannot raise its score still boots.
+fn raise_oom_score_adj(path: &Path) {
+    if let Err(e) = std::fs::write(path, OOM_SCORE_ADJ) {
+        eprintln!(
+            "vm-runner: could not raise this VMM's OOM score at {}: {e}; the kernel may kill the runner instead of a machine",
+            path.display()
+        );
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     smolvm::internal_boot::GUEST_AGENT.store(false, std::sync::atomic::Ordering::Relaxed);
     if let Some((id, command)) = exec_args(std::env::args_os()) {
@@ -220,6 +233,9 @@ fn main() -> anyhow::Result<()> {
     if let Some(config) = boot_config(std::env::args_os()) {
         let config =
             config.ok_or_else(|| anyhow::anyhow!("_boot-vm requires a boot-config path"))?;
+        if cfg!(target_os = "linux") {
+            raise_oom_score_adj(Path::new("/proc/self/oom_score_adj"));
+        }
         if let Some(port) = gateway_host_port(&config)? {
             smolvm::network::launch::configure_guest_host_service(port, port)
                 .map_err(|e| anyhow::anyhow!("mapping the gateway host port: {e}"))?;
@@ -358,11 +374,13 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
             .await;
         }
     });
-    // UNIT_BOUNDARY_DESCRIPTION: collects the exit status of VMM processes that have ended. smolvm spawns each VMM detached and never waits on it, so an embedder that does not sweep keeps one zombie per machine that ever stopped.
+    // UNIT_BOUNDARY_DESCRIPTION: collects the exit status of VMM processes that have ended. smolvm spawns each VMM detached and never waits on it, so an embedder that does not sweep keeps one zombie per machine that ever stopped. Each machine's own status is read first, in the same tick: it says which signal killed the machine, which the sweep below discards.
+    let reaping = server.clone();
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(REAP_EVERY);
         loop {
             tick.tick().await;
+            reaping.reap_killed();
             smolvm::process::reap_vm_children();
         }
     });
@@ -538,6 +556,18 @@ mod tests {
             .unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
     }
+    // TEST_SCENARIO: the OOM killer picks the process with the highest score in the cgroup, and the runner and the loader hold every machine of the owner between them. A VMM asks for the kernel's maximum, and a VMM that cannot write its score — a host runner with no /proc — still boots.
+    #[test]
+    fn a_vmm_outranks_the_runner_in_the_kernels_choice_of_victim() {
+        let dir = std::env::temp_dir().join(format!("vm-runner-oom-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let score = dir.join("oom_score_adj");
+        raise_oom_score_adj(&score);
+        assert_eq!(std::fs::read_to_string(&score).unwrap(), "1000");
+        raise_oom_score_adj(&dir.join("absent").join("oom_score_adj"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     // TEST_SCENARIO: `:4600` is the flag's spelling of every interface on a port. It must bind, and a port that is not a number must be refused rather than read as some default.
     #[test]
     fn a_bare_port_binds_every_interface() {

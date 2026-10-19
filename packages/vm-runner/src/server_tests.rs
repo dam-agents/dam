@@ -6,8 +6,9 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use super::*;
 use crate::api::{
     REASON_BOOT_FAILED, REASON_COPYING_DISK, REASON_HOME_FULL, REASON_IMAGE_UNAVAILABLE,
-    REASON_SEED_MISSING, REASON_STORAGE_FULL, STATE_ABSENT, STATE_CREATING, STATE_RESTARTING,
-    STATE_RUNNING, STATE_STARTING, STATE_STOPPED, STATE_STOPPING,
+    REASON_OOM_KILLED, REASON_SECCOMP_KILLED, REASON_SEED_MISSING, REASON_STORAGE_FULL,
+    STATE_ABSENT, STATE_CREATING, STATE_RESTARTING, STATE_RUNNING, STATE_STARTING, STATE_STOPPED,
+    STATE_STOPPING,
 };
 use crate::cache::{archive_path, digest_path, staged_path, PARTIAL_PREFIX};
 use crate::cacheapi;
@@ -48,6 +49,7 @@ struct Fake {
     state_fails_until_start: Mutex<HashSet<String>>,
     resident: Mutex<Option<i32>>,
     cpu: Mutex<Option<u64>>,
+    vmm_pids: Mutex<HashMap<String, i32>>,
     state_reads: AtomicUsize,
 }
 
@@ -58,6 +60,11 @@ impl Fake {
 
     fn record(&self, call: String) {
         locked(&self.calls).push(call);
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the process the runtime reports as a machine's VMM, which a test spawns so the runner reaps a real child it can kill.
+    fn set_vmm(&self, id: &str, pid: i32) {
+        locked(&self.vmm_pids).insert(id.to_string(), pid);
     }
 
     fn last_update(&self) -> Updated {
@@ -72,6 +79,10 @@ impl Runtime for Fake {
 
     fn cpu_usec(&self, _id: &str) -> Option<u64> {
         *locked(&self.cpu)
+    }
+
+    fn vmm_pid(&self, id: &str) -> Option<i32> {
+        locked(&self.vmm_pids).get(id).copied()
     }
 
     fn nests(&self) -> bool {
@@ -3163,4 +3174,108 @@ async fn a_hand_off_admits_no_start_into_memory_adopted_machines_hold() {
     let refused = next.server.put("m2", spec(true)).unwrap();
     assert_eq!(refused.reason, REASON_OUT_OF_CAPACITY, "{refused:?}");
     next.server.close().await;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a child of this process that stands in for a VMM the runtime reported a pid for: the runner reaps its children itself, so a test can kill one with the signal the kernel or a seccomp filter would send.
+fn stand_in_vmm() -> std::process::Child {
+    std::process::Command::new("sleep")
+        .arg("60")
+        .spawn()
+        .expect("a process to stand in for a VMM")
+}
+
+// TEST_SCENARIO: a machine's VMM killed by a signal is the one thing that tells a seccomp kill from a guest that flapped: nothing else on the host records it, since the runtime's own sweep discards the status and it drops the record's pid the moment it notices the death. The status says which kill it was, with a counter for the dashboards, and the machine reads stopped at once so the controller restarts it rather than trusting a machine that is up.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_whose_vmm_the_kernel_killed_says_which_kill_it_was() {
+    let h = Harness::new("killed");
+    let kill_and_read = |id: &str, signal: libc::c_int| -> MachineStatus {
+        let mut vmm = stand_in_vmm();
+        let pid = i32::try_from(vmm.id()).unwrap();
+        h.fake.set_vmm(id, pid);
+        // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+        unsafe { libc::kill(pid, signal) };
+        let deadline = Instant::now() + ACTION_DEADLINE;
+        let status = loop {
+            h.server.reap_killed();
+            let status = h.server.status(id);
+            if !status.reason.is_empty() {
+                break status;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "{id}: the kill was never reported: {status:?}"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        let _ = vmm.wait();
+        status
+    };
+
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Stopped);
+    let status = kill_and_read("m1", libc::SIGSYS);
+    assert_eq!(status.reason, REASON_SECCOMP_KILLED, "{status:?}");
+    assert!(
+        status.message.contains("seccomp"),
+        "the message names the filter: {status:?}"
+    );
+    assert_eq!(status.state, STATE_STOPPED, "{status:?}");
+    assert!(
+        h.server
+            .metrics_text()
+            .contains("platform_vm_runner_machine_kills_total{reason=\"MachineSeccompKilled\"} 1"),
+        "the kill was not counted:\n{}",
+        h.server.metrics_text()
+    );
+
+    // TEST_SCENARIO: the signal the kernel's OOM killer sends reads as the memory kill.
+    h.server.put("m2", spec(true)).unwrap();
+    h.settle("m2").await;
+    locked(&h.fake.states).insert("m2".into(), State::Stopped);
+    let status = kill_and_read("m2", libc::SIGKILL);
+    assert_eq!(status.reason, REASON_OOM_KILLED, "{status:?}");
+    assert!(
+        status.message.contains("free memory"),
+        "the message names the memory: {status:?}"
+    );
+    assert!(
+        h.server
+            .metrics_text()
+            .contains("platform_vm_runner_machine_kills_total{reason=\"MachineOOMKilled\"} 1"),
+        "the kill was not counted:\n{}",
+        h.server.metrics_text()
+    );
+}
+
+// TEST_SCENARIO: the runner kills VMMs itself — a stop, a delete, a start clearing a VMM left on the disk — so a kill it is acting through must never read as a machine the kernel took: an agent stopped by its owner would otherwise be told it ran out of memory.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_vmm_the_runner_is_stopping_is_not_a_kill_to_report() {
+    let h = Harness::new("stopping-kill");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+
+    let mut vmm = stand_in_vmm();
+    let pid = i32::try_from(vmm.id()).unwrap();
+    h.fake.set_vmm("m1", pid);
+    *locked(&h.fake.stop_delay) = Duration::from_millis(500);
+    h.server.put("m1", spec(false)).unwrap();
+    // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    for _ in 0..5 {
+        h.server.reap_killed();
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert_ne!(
+        h.server.status("m1").reason,
+        REASON_OOM_KILLED,
+        "the runner's own stop was reported as a kill"
+    );
+    assert!(
+        !h.server.metrics_text().contains("machine_kills_total{"),
+        "the runner's own stop was counted:\n{}",
+        h.server.metrics_text()
+    );
+    let _ = vmm.wait();
+    h.settle("m1").await;
 }

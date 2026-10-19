@@ -182,10 +182,12 @@ func vmBootInProgress(agent *unstructured.Unstructured, idleTimeout time.Duratio
 	if !isVMObject(agent) || idleTimeout <= 0 || failed || ready != nil && ready["status"] == string(metav1.ConditionTrue) {
 		return false
 	}
-	if podReady["reason"] == vmrunner.ReasonCopyingDisk {
+	// UNIT_BOUNDARY_DESCRIPTION: a machine the kernel or its seccomp filter killed is booting again, which is held like any boot: the reason says why the machine went down, not that it is up to nothing.
+	switch podReady["reason"] {
+	case vmrunner.ReasonCopyingDisk:
 		return true
-	}
-	if podReady["reason"] != vmrunner.ReasonNotReady {
+	case vmrunner.ReasonNotReady, vmrunner.ReasonOOMKilled, vmrunner.ReasonSeccompKilled, apiv1.ReasonRunnerOutOfMemory:
+	default:
 		return false
 	}
 	last, err := time.Parse(time.RFC3339, agent.GetAnnotations()[annLastActivity])

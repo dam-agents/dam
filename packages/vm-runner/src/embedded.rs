@@ -369,6 +369,10 @@ impl Runtime for Smolvm {
     fn disk_used_bytes(&self, id: &str) -> Option<u64> {
         allocated_bytes(&vm_data_dir(id))
     }
+
+    fn vmm_pid(&self, id: &str) -> Option<i32> {
+        self.record(id).ok()??.pid
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a grow waits for the guest to plug its added RAM and put it online, as smolvm's own resize waits.

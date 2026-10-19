@@ -1,6 +1,6 @@
 # VM runner
 
-Last verified: 2026-10-18
+Last verified: 2026-10-19
 
 The pods behind the `vm` Backend: **one runner per owner**, each a single-replica Deployment in the agent namespace running smolvm and the platform's **vm-runner** agent.
 A local cluster on a Mac runs one [host runner](vm-host-runner.md) outside the cluster instead.
@@ -101,6 +101,9 @@ The root's upper and work layers stay in one subvolume: btrfs refuses a rename b
 A disk from before that layout — ext4, or btrfs that holds `workspace/` at its top — fails its boot with one console line saying it predates the subvolume layout, and is never formatted or rewritten, so an operator can recover it.
 A boot that restores a [runtime migration](vm-runtime-migration.md)'s seed copies a disk before its first answer, so it may stay quiet for six hours, and a large home's copy is not restarted from nothing.
 Until the guest answers, its status says so under a reason of its own, `MachineCopyingDisk`, which the controller reads as a boot in progress, never as a failed start, and leaves to the runner's bound.
+A machine the host took down says which taking down it was, under a reason of its own that the controller reads as a boot in progress too: `MachineOOMKilled` for a VMM the kernel killed for memory, and `MachineSeccompKilled` for one a seccomp filter killed.
+The runner learns it where nothing else does — the VMM's own exit status, which it reaps itself before the runtime's sweep discards it — and reports it until the guest answers again, so a kill reads as one restart with its reason rather than an agent that flaps.
+Each VMM also raises its own OOM score to the kernel's maximum as it boots, so a runner cgroup over its limit loses the machine that grew rather than the runner that holds every machine of its owner ([vm-memory](vm-memory.md)).
 A btrfs disk that does not mount fails the boot and stays as it is, since btrfs has no repair a boot may run unattended.
 A start never copies smolvm's template over a disk that already holds a filesystem — not even one whose first format stopped short of resizing it to the size asked for.
 A stop has platform-init send the workload SIGTERM and give it a few seconds, as a pod's container gets, then sync and freeze that disk, and a guest that does not confirm it did is powered off anyway, so a stop or a delete always ends the machine.
@@ -140,7 +143,7 @@ A changed token also voids every seed capability minted under the old one, since
 An agent whose runner is not ready is looked at again with a backoff up to a minute, and the controller watches the runner Deployments, so a runner's pod becoming ready requeues its owner's vm agents at once.
 A reconcile reads the runner's Deployment and pods, and the agent's StatefulSets, from those watches and its own writes, not from the API server; a write or a resize sent from a copy that is behind fails on its resourceVersion and is decided again from a live read.
 A pod is force-rolled only after a live read, and the gateway that decides whether a machine the agent no longer runs stays up is read live.
-What an agent waits for is on its status: a certificate cert-manager has not issued, with cert-manager's own account; a runner pod the scheduler cannot place, under a reason of its own that the api-server reads as a failed start ([agent-lifecycle](agent-lifecycle.md#wake)), except a new pod whose state claim is still being bound, which reads as still starting for its first three minutes; a runner the kernel OOM-killed, on each agent it took down until that agent is ready again, read as still starting with the reason shown ([vm-memory](vm-memory.md)); a runner that cannot be reached, described without its in-cluster address.
+What an agent waits for is on its status: a certificate cert-manager has not issued, with cert-manager's own account; a runner pod the scheduler cannot place, under a reason of its own that the api-server reads as a failed start ([agent-lifecycle](agent-lifecycle.md#wake)), except a new pod whose state claim is still being bound, which reads as still starting for its first three minutes; a runner the kernel OOM-killed, on every agent that should be running for the ten minutes after the kill, whatever reason its machine reads meanwhile, as still starting with that reason ([vm-memory](vm-memory.md)); a runner that cannot be reached, described without its in-cluster address.
 A reconcile that could not ensure the machine takes the Agent's readiness down with it.
 Hibernation does not wait for an unreachable runner: the gateway goes down anyway, readiness goes down, and the machine is stopped by the Agent's next reconcile.
 The Agent is published hibernated only once the runner reports the machine stopped, because a wake from hibernation trusts the first health check answer ([agent-lifecycle](agent-lifecycle.md#wake)).

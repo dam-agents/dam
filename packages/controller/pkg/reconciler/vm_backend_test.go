@@ -2002,16 +2002,27 @@ func TestMachineTrustedCAsAppendsTheExtraCAs(t *testing.T) {
 		machineTrustedCAs("-----BEGIN CERTIFICATE-----\nmitm\n-----END CERTIFICATE-----", &cfg))
 }
 
-// TEST_SCENARIO: an agent the runner's OOM kill took down carries that reason through the runner's restart and the machine's boot, but only while nothing more specific explains the wait. A boot that then fails is a reason the owner has to act on, which the api-server reads as an error; hidden behind the kill, the agent would read as still starting with its boot console lost.
-func TestAFreshTerminalReasonWinsOverACarriedRunnerOOM(t *testing.T) {
+// TEST_SCENARIO: the OOM kill of an owner's runner was reported only on the agents whose runner reason happened to be MachineNotReady, so an agent the restarted runner refused room, or one carrying a reason of its own, told its owner about that consequence and never about the kill — and the OOM notice and the Slack alert read nothing else. Every agent that should run now names the kill for the episode that follows it, from the runner pod's last termination alone; the reason they carried until then does not matter.
+func TestEveryAgentOfAnOOMKilledRunnerNamesTheKill(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
 	ctx := context.Background()
 	r.vmRunning.Store(agent.Name, true)
 	agent.Status.Conditions = []metav1.Condition{{
-		Type: apiv1.ConditionAgentPodReady, Status: metav1.ConditionFalse,
-		Reason: apiv1.ReasonRunnerOutOfMemory, LastTransitionTime: metav1.Now(),
+		Type: apiv1.ConditionAgentPodReady, Status: metav1.ConditionTrue, LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Hour)),
 	}}
+	pods := r.client.CoreV1().Pods("test-agents")
+	runner, err := pods.Get(ctx, readyRunnerPod().Name, metav1.GetOptions{})
+	require.NoError(t, err)
+	runner.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name: vmRunnerComponent,
+		LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+			Reason: "OOMKilled", FinishedAt: metav1.NewTime(time.Now().Add(-time.Minute)),
+		}},
+	}}
+	_, err = pods.UpdateStatus(ctx, runner, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
 	reason := func() string {
 		got, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, agent.Name, metav1.GetOptions{})
 		require.NoError(t, err)
@@ -2024,12 +2035,23 @@ func TestAFreshTerminalReasonWinsOverACarriedRunnerOOM(t *testing.T) {
 		return ""
 	}
 
-	require.NoError(t, r.publishVMReadiness(ctx, agent, vmrunner.MachineStatus{State: vmrunner.StateStarting}, true))
-	assert.Equal(t, apiv1.ReasonRunnerOutOfMemory, reason(), "the reason did not last through the boot")
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonOutOfCapacity, Message: "room for one of two machines"}, true))
+	assert.Equal(t, apiv1.ReasonRunnerOutOfMemory, reason(), "an agent refused room after the kill")
 
 	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateStarting, Reason: vmrunner.ReasonOOMKilled, Message: "the kernel killed the machine's VMM"}, true))
+	assert.Equal(t, apiv1.ReasonRunnerOutOfMemory, reason(), "an agent carrying a machine's own kill reason")
+
+	require.NoError(t, r.publishVMReadiness(ctx, agent, vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true}, true))
+	assert.Equal(t, "PodReady", reason(), "an agent that is up again: the notice reads a reason published while it is down")
+
+	runner.Status.ContainerStatuses = nil
+	_, err = pods.UpdateStatus(ctx, runner, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
 		vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonBootFailed, Message: "the guest console ends: panic"}, true))
-	assert.Equal(t, vmrunner.ReasonBootFailed, reason())
+	assert.Equal(t, vmrunner.ReasonBootFailed, reason(), "a boot's own failure, on a runner that was not killed")
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a clientset whose Secret reads each take `delay`, outside the fake's own lock, which serialises every call it answers. The time a reconcile takes then counts the Secret reads it makes one after another.

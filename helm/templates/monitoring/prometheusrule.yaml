@@ -74,7 +74,23 @@ spec:
           annotations:
             summary: A VM runner is close to the memory limit the kernel kills it at.
             description: >-
-              The runner at {{ "{{ $labels.instance }}" }} has been past its pressure threshold for 5 minutes; if it is killed, every machine of its user restarts.
+              The runner at {{ "{{ $labels.instance }}" }} has been past its pressure threshold for 5 minutes; the kernel kills the process in its cgroup that holds the most memory, which is a machine's VMM, so its machines restart one at a time while the pressure lasts.
+        - alert: VMMachineSeccompKilled
+          expr: increase(platform_vm_runner_machine_kills_total{reason="MachineSeccompKilled"}[15m]) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: A VM was killed by its seccomp filter.
+            description: >-
+              The runner at {{ "{{ $labels.instance }}" }} had {{ "{{ $value }}" }} machine(s) killed in the last 15 minutes for a system call the filter forbids; each restarted under the reason MachineSeccompKilled.
+        - alert: VMMachineOOMKilled
+          expr: increase(platform_vm_runner_machine_kills_total{reason="MachineOOMKilled"}[15m]) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: The kernel killed a VM to free memory on its node.
+            description: >-
+              The runner at {{ "{{ $labels.instance }}" }} had {{ "{{ $value }}" }} machine(s) killed for memory in the last 15 minutes; each restarted under the reason MachineOOMKilled, and the user's other machines were untouched.
         - alert: VMRunnerAdmissionRefusals
           expr: increase(platform_vm_runner_machine_admission_refusals_total[15m]) > 0
           for: 15m
