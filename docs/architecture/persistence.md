@@ -250,13 +250,13 @@ smolvm keeps a root of its own and binds the whole disk into it; platform-init l
 Temporary folders are the exception: `/tmp` and `/var/tmp` are directories of that root that start empty on every boot, whatever the image ships there, and `HOME`'s `.cache` and `.npm` are ordinary directories of the home.
 `/var/cache` stays part of the root, because an image ships its font, package and linker caches there, and an empty folder over them had every boot rebuild them.
 They share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their least recently used entries, never anything outside them: a folder that is a link, such as a `~/.cache` an agent pointed at its work, or a mount it was not at boot, is skipped, an entry holding a mount stays whole.
-An entry is one name directly in such a folder, such as `~/.cache/go-build` or `/tmp/pr-body.md`, and it goes whole or not at all, because a tool that keeps part of its cache takes it for complete and fails on it.
+An entry is one name directly in such a folder, and it goes whole or not at all, because a tool that keeps part of its cache takes it for complete and fails on it.
 Use is the newest modification or change time anywhere in the entry, and the newest access time of its files.
-An entry used in the last ten minutes stays, and so does one that is or holds a file a process has locked, by any kind of lock, the way `systemd-tmpfiles` leaves a locked entry, and one a process has a file open under or works in: a reader takes no lock.
+An entry used in the last ten minutes stays, and so does one a process still holds: a file it has locked, by any kind of lock, as `systemd-tmpfiles` leaves it, or one it has open or works in, since a reader takes no lock.
 A short claim is mostly the agents' homes, which no eviction touches, so it does not bring that ten-minute rule on: each request the runner sends is served once, by one pass that keeps whatever was used in the last hour and stops at the bytes the runner asked of that machine.
 A guest down at its grant's floor keeps that hour and no byte bound, served again once that hour has passed rather than at every look, which would delete its scratch entry by entry.
 A cache tagged with `CACHEDIR.TAG` goes before an untagged entry of the same age, since its tool can rebuild it and an untagged one may be the agent's work.
-Each eviction, and a disk still short once nothing is left to evict, is a line on the machine's console, which the runner reads.
+Each eviction, and a disk still short with nothing left to evict, is a line on the machine's console.
 An agent that exits with its home nearly out of space or inodes is reported as a full home.
 A boot that finds the disk with no space or inode left first deletes what earlier boots set aside and the last boot's temporary folders, which it would empty anyway, and tries again.
 A boot that still has no room stops, and its console line says the home is full, so the runner reports a full home and its fix: more storage, since a grown disk has more of both.
@@ -293,6 +293,7 @@ A refused growth is reported and reconciliation continues: the runner still serv
 **The runner guards the claim by its use.** The disks are sparse, so they can add up to more than the claim holds, and a guest sees its own disk as free while the claim under it fills; once the claim has no block left, a guest's write into its disk has nowhere to go.
 So the runner measures the claim itself: past 75% used it asks every machine's guest, through its share, to give back scratch: each running one its even part of what would bring use back under 70%.
 It asks again only once the claim has filled five points further, and clears the request once use is back under 70%, so a claim the homes keep full does not have every guest delete its scratch again every minute.
+A guest a grant holds is judged by the room its guard leaves it, not by the disk's share the guard keeps small.
 A guest is held to the claim's room too: each look grants each machine that is neither asleep nor absent an even part of what is left below 95% of the claim, and a sleeping or absent one nothing, so a wake never boots on the room its share held; a start looks again first, and platform-init sizes a preallocated file on the disk so the guest can write only what is left of its grant.
 A claim the runner cannot measure grants nothing at all, so no guest is held to it, and it says so in its log each time it loses the measure and each time it gets it back.
 A guest held below 256 MiB may still write 256 MiB in all, once, until a grant with room comes, so with N agents running the claim can pass 95% by at most N times that.

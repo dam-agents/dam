@@ -203,7 +203,7 @@ pub fn eviction_pass(
     })
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how far past its level the room must rise before a mark gets better: four of the guard's steps, so the guard moving a step at a time never flips one mark back and forth, and no more than a fifth of the floor, so the band stays below the next level up.
+// UNIT_BOUNDARY_DESCRIPTION: how far past its level the room must rise before a mark gets better: four of the guard's steps, so the guard moving a step at a time never flips one mark back and forth, and no more than a quarter of the floor, so the band stays below the next level up.
 const ROOM_BAND: u64 = 4 * POOL_GUARD_STEP;
 
 pub fn room_of(room: u64, was: Option<Room>) -> Room {
