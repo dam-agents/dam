@@ -325,7 +325,7 @@ describe("spawn inherits the driver's provider", () => {
     expect(created[0]).toMatchObject({ providerConnectionId: "conn-litellm" });
   });
 
-  // TEST_SCENARIO: a target whose Template cannot run on any of the driver's providers would fail its first model call, so the spawn is refused before anything is created. The refusal tells the user what to do: attach a fitting provider the owner already holds, else connect one in Settings first.
+  // TEST_SCENARIO: a target whose Template cannot run on any of the driver's providers would fail its first model call, so the spawn is refused before anything is created. The refusal tells the user what to do: attach a fitting provider the owner already holds, else connect one in Settings first; a model whose provider the harness does not run on is told which held provider to name instead.
   test("a target that cannot run on the driver's provider is refused, naming the fix", async () => {
     const { service, created } = makeService();
     const target = {
@@ -345,6 +345,15 @@ describe("spawn inherits the driver's provider", () => {
     );
     await expect(service.spawn({ ...baseInput, target })).rejects.toThrow(
       "ask the user to connect OpenAI, Anthropic in Settings and attach it on this agent's Providers page",
+    );
+    await expect(
+      service.spawn({
+        ...baseInput,
+        target: { ...target, runsOn: ["openai", "ibm-litellm"] },
+        harnessConfig: { model: "anthropic/claude-sonnet-5-5" },
+      }),
+    ).rejects.toThrow(
+      "the model names the anthropic provider, which codex does not run on; codex runs on OpenAI, IBM ETE LiteLLM Proxy, so name a model of IBM ETE LiteLLM Proxy",
     );
     expect(created).toEqual([]);
   });

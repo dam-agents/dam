@@ -286,7 +286,7 @@ export function resolveSubAgent(
   const bound = set?.harness && harness === set.harness ? set : null;
   const inherited =
     harness !== undefined && harness === session?.harness
-      ? session.inherited
+      ? (session.inherited ?? {})
       : {};
   const modelFrom = bound?.model
     ? "setting"
@@ -323,6 +323,13 @@ export function resolveSubAgent(
         ]
       : [],
   };
+}
+
+export class SessionSettingsUnreadableError extends Error {
+  constructor() {
+    super("the spawning session's settings could not be read");
+    this.name = "SessionSettingsUnreadableError";
+  }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a model named the way Claude Code spells it (`claude/<alias>/<id>`) folds to the provider-qualified form the spawn route takes; a bare name stays as it is, for the route to refuse by name.
@@ -381,7 +388,15 @@ export function registerSubAgentTools(
   server.tool("spawn_subagent", SPAWN_DESCRIPTION, spawnInput, (args) =>
     run(async () => {
       const { needs, ...rest } = args;
-      const session = (await deps.sessionContext?.()) ?? null;
+      let session: SessionSubAgentContext | null;
+      try {
+        session = (await deps.sessionContext?.()) ?? null;
+      } catch (err) {
+        if (!(err instanceof SessionSettingsUnreadableError)) throw err;
+        return errorResult(
+          "spawn_subagent refused: this session's settings could not be read, so its platform sub-agent settings cannot be applied. Try again.",
+        );
+      }
       const resolved = resolveSubAgent(rest, session);
       if (!resolved.ok)
         return errorResult(`spawn_subagent refused: ${resolved.message}`);
@@ -417,7 +432,7 @@ export function registerSubAgentTools(
           );
       }
       const [harness, driverSessionId] = await Promise.all([
-        session ? Promise.resolve(session.harness) : ops.harness(),
+        session?.harness ? Promise.resolve(session.harness) : ops.harness(),
         deps.spawningSession(),
       ]);
       const unmet = unmetNeed(needs, body, harness);

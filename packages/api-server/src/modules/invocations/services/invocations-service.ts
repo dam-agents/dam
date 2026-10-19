@@ -228,6 +228,7 @@ export function createInvocationsService(deps: {
             harness: input.target.harness,
             runsOn: input.target.runsOn ?? [],
             alias: parsedModel?.alias,
+            held: input.driverProviders.map((p) => p.type),
             attachable: input.attachableProviders ?? [],
           }),
         );

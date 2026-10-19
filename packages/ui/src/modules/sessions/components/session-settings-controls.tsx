@@ -142,51 +142,53 @@ export function SessionSettingsControls({
       {own.length > 0 && (
         <div className={grid}>{own.map((r) => row(r, r.option.name))}</div>
       )}
-      <div
-        role="group"
-        aria-label="Subagents"
-        className={cn(
-          "flex flex-col gap-1 text-xs",
-          own.length > 0 && "border-t border-border pt-1",
-        )}
-      >
-        <DisclosureToggle
-          open={subagentsOpen}
-          onToggle={() => setSubagentsOpen((open) => !open)}
-          chevronSize={12}
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <span>Subagents</span>
-          {!subagentsOpen && summary.length > 0 && (
-            <span className="min-w-0 truncate text-foreground">
-              {summary.join(" · ")}
-            </span>
+      {(subagent.length > 0 || platform) && (
+        <div
+          role="group"
+          aria-label="Subagents"
+          className={cn(
+            "flex flex-col gap-1 text-xs",
+            own.length > 0 && "border-t border-border pt-1",
           )}
-        </DisclosureToggle>
-        {subagentsOpen && (
-          <div className={cn(grid, "pl-5")}>
-            {subagent.length > 0 && (
-              <>
-                <span className={heading}>In this sandbox</span>
-                {subagent.map((r) => row(r, subagentLabel(r.option.name)))}
-              </>
+        >
+          <DisclosureToggle
+            open={subagentsOpen}
+            onToggle={() => setSubagentsOpen((open) => !open)}
+            chevronSize={12}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <span>Subagents</span>
+            {!subagentsOpen && summary.length > 0 && (
+              <span className="min-w-0 truncate text-foreground">
+                {summary.join(" · ")}
+              </span>
             )}
-            {platform && (
-              <>
-                <span className={heading}>Platform sub-agents</span>
-                <PlatformSubagentSettings
-                  agentId={agentId}
-                  carried={carried}
-                  settings={settings}
-                  idPrefix={id}
-                  disabled={disabled}
-                  onChange={onChange}
-                />
-              </>
-            )}
-          </div>
-        )}
-      </div>
+          </DisclosureToggle>
+          {subagentsOpen && (
+            <div className={cn(grid, "pl-5")}>
+              {subagent.length > 0 && (
+                <>
+                  <span className={heading}>In this sandbox</span>
+                  {subagent.map((r) => row(r, subagentLabel(r.option.name)))}
+                </>
+              )}
+              {platform && (
+                <>
+                  <span className={heading}>Platform sub-agents</span>
+                  <PlatformSubagentSettings
+                    agentId={agentId}
+                    carried={carried}
+                    settings={settings}
+                    idPrefix={id}
+                    disabled={disabled}
+                    onChange={onChange}
+                  />
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
