@@ -128,7 +128,7 @@ func (r *AgentReconciler) rollRunnerDeploymentFrom(ctx context.Context, owner st
 
 	const waiting = "vm runner: the pod changed, waiting for other runners to finish rolling"
 	r.runnerRollMu.Lock()
-	_, free, err := r.runnerRollPlace(ctx, owner, dep.Name, waiting)
+	_, free, err := r.runnerRollPlace(ctx, owner, dep.Name, waiting, true)
 	r.runnerRollMu.Unlock()
 	if err != nil || !free {
 		return err
@@ -139,7 +139,7 @@ func (r *AgentReconciler) rollRunnerDeploymentFrom(ctx context.Context, owner st
 	ready := r.readyMachines(ctx, owner)
 	r.runnerRollMu.Lock()
 	defer r.runnerRollMu.Unlock()
-	rolling, free, err := r.runnerRollPlace(ctx, owner, dep.Name, waiting)
+	rolling, free, err := r.runnerRollPlace(ctx, owner, dep.Name, waiting, true)
 	if err != nil || !free {
 		return err
 	}
@@ -420,13 +420,16 @@ func (r *AgentReconciler) resetRunnerRollView() {
 	r.runnerRoll = runnerRollView{}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the roll has a place for this runner: fewer than the roll's width (`rollout.maxConcurrent`, or `rollout.maxConcurrentPercent` of the install's runners) of the others are mid-roll or mid-hand-off. The caller holds runnerRollMu. A runner that finds one asks its own runner which machines are ready with the lock released, then asks again with it held before it takes the place, so no runner call is made under the lock.
-func (r *AgentReconciler) runnerRollPlace(ctx context.Context, owner, name, waiting string) (rolling []string, free bool, err error) {
+// UNIT_BOUNDARY_DESCRIPTION: whether the roll has a place for this runner: fewer than the roll's width (`rollout.maxConcurrent`, or `rollout.maxConcurrentPercent` of the install's runners) of the others are mid-roll or mid-hand-off. A pod roll asks in place (`inPlace`): a runner already mid-roll holds one of those places, and a new roll of it replaces a target that failed without taking another, so a fleet that shrinks under a stalled roll still takes a corrective one — where counting its peers alone would let the shrunken width block every runner that is stuck. The caller holds runnerRollMu. A runner that finds one asks its own runner which machines are ready with the lock released, then asks again with it held before it takes the place, so no runner call is made under the lock.
+func (r *AgentReconciler) runnerRollPlace(ctx context.Context, owner, name, waiting string, inPlace bool) (rolling []string, free bool, err error) {
 	rolling, total, err := r.runnersMidRoll(ctx)
 	if err != nil {
 		return nil, false, err
 	}
 	limit := runnerRollWidth(r.config.VM.Runner, total)
+	if inPlace && slices.Contains(rolling, name) {
+		return rolling, true, nil
+	}
 	others := slices.DeleteFunc(slices.Clone(rolling), func(n string) bool { return n == name })
 	if len(others) >= limit {
 		slog.Info(waiting, "owner", owner, "rolling", others, "width", limit)

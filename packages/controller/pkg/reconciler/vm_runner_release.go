@@ -69,14 +69,14 @@ func (r *AgentReconciler) applyRunnerRelease(ctx context.Context, owner string, 
 
 	const waiting = "vm runner: a new release is waiting for other runners to finish rolling or handing off"
 	r.runnerRollMu.Lock()
-	_, free, err := r.runnerRollPlace(ctx, owner, dep.Name, waiting)
+	_, free, err := r.runnerRollPlace(ctx, owner, dep.Name, waiting, false)
 	r.runnerRollMu.Unlock()
 	if err != nil || !free {
 		return err
 	}
 	ready := r.readyMachines(ctx, owner)
 	r.runnerRollMu.Lock()
-	rolling, free, err := r.runnerRollPlace(ctx, owner, dep.Name, waiting)
+	rolling, free, err := r.runnerRollPlace(ctx, owner, dep.Name, waiting, false)
 	if err != nil || !free {
 		r.runnerRollMu.Unlock()
 		return err
@@ -281,20 +281,28 @@ func runnerRollSpec(spec appsv1.DeploymentSpec) appsv1.DeploymentSpec {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: whether a runner pod whose shape is unchanged must still roll to take the configured release. A marked release (`rollout.rebootRequiredRelease`) does: its fix only a machine that booted it has, and a hand-off leaves a running machine on the runtime it booted, so the pod rolls and reboots the owner's machines. So does a release whose runner does not load against this pod's libc, since its loader can never hand the machines to it. A runner that has not answered since it was named the release, for longer than a hand-off ever takes, rolls too; once it answers that it runs the release, or holds it as failed, that clock is cleared. A release that is merely not staged yet comes by itself, and one that failed right after it took over is left to the next release rather than rolled onto, since a pod on it would fail the same way and take the machines down with it. A runner that reports neither running nor targeting the release it was named has a pod that restarted and forgot it, and is named it again; one not named it yet is left to applyRunnerRelease, which names it only with a place in the roll.
-// UNIT_BOUNDARY_DESCRIPTION: a marked release rolls the pod of every runner that does not already run it in a pod, including one that took the release by a hand-off: a hand-off reboots nothing, so that runner's machines still boot the runtime they booted. It rolls once, since the runner then runs the release from a pod that has its image, which the check above ends. The one answer it does not overrule is the runner holding that release as failed: a pod on the release would fail the same way and take the machines with it. A marked runner that cannot be reached rolls at once instead, since the mark is an operator asking for the reboot, and a pod restart is the recovery an unreachable runner needs anyway.
+// UNIT_BOUNDARY_DESCRIPTION: a marked release rolls the pod of every runner that does not already run it from that pod, including one that took the release by a hand-off — its pod keeps the image it booted, so the image alone does not prove the reboot happened, and the runner's own answer is what does. A pod on the marked release's image that runs it, or runs nothing yet, is left alone, so the roll happens once: past it the pod is the release, and a marked release configured again after a hand-off away rolls the pod back, which is the reboot its machines need. The one answer it does not overrule is the runner holding that release as failed: a pod on the release would fail the same way and take the machines with it. A marked runner whose pod does not have the image and that cannot be reached rolls at once instead, since the mark is an operator asking for the reboot, and a pod restart is the recovery an unreachable runner needs anyway; one whose pod already has it is left until it answers, so a pod that is the release is not restarted over and over.
 func (r *AgentReconciler) runnerNeedsPodForRelease(ctx context.Context, owner string, existing *appsv1.Deployment) bool {
 	want := r.config.VM.Runner.Image
 	containers := existing.Spec.Template.Spec.Containers
-	if len(containers) == 0 || containers[0].Image == want {
+	if len(containers) == 0 {
 		return false
 	}
+	// UNIT_BOUNDARY_DESCRIPTION: a pod on the release's image is the release only while it runs it: a hand-off leaves the pod on the image it booted, so the marked release asks the runner which it runs.
+	onImage := containers[0].Image == want
 	marked := r.releaseNeedsReboot()
+	if onImage && !marked {
+		return false
+	}
 	client, err := r.runnerFor(ctx, owner)
 	if err != nil {
-		return marked
+		return marked && !onImage
 	}
 	release, err := client.Release(ctx)
 	if err != nil {
+		if onImage {
+			return false
+		}
 		if marked {
 			slog.Warn("vm runner: the marked release cannot be read off the runner; rolling the pod", "owner", owner, "release", want, "error", err)
 			return true
@@ -312,6 +320,9 @@ func (r *AgentReconciler) runnerNeedsPodForRelease(ctx context.Context, owner st
 	}
 	if marked {
 		r.clearRunnerReleaseNamed(ctx, owner, existing)
+		if onImage && (release.Running == "" || release.Running == want) {
+			return false
+		}
 		slog.Info("vm runner: the release is marked rebootRequiredRelease, so the pod rolls onto it instead of handing off", "owner", owner, "release", want, "running", release.Running)
 		return true
 	}
