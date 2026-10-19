@@ -433,6 +433,14 @@ else
   # kit on a published image is left for the node to pull.
   RENDERED=$(helm template platform helm \
       -f helm/values-local.yaml "${AGENT_VALUE_FLAGS[@]}")
+  # image:stage-vm renders the chart itself to learn the directory every runner
+  # mounts the node image cache in, and this render knows the values it cannot:
+  # hand it the directory derived here, so an overlay or a --set that moves
+  # imageCache.hostPath cannot leave every staged tree where no runner looks.
+  VM_IMAGE_DIR=$(printf '%s\n' "$RENDERED" | yq -r 'select(.kind == "Deployment")
+      | .spec.template.spec.containers[].env[] | select(.name == "AGENT_VM") | .value | fromjson
+      | .runner.imageCacheHostPath')
+  export VM_IMAGE_DIR
   AGENTS_RENDERED=$(printf '%s\n' "$RENDERED" \
     | yq -r 'select(.kind == "ConfigMap") | select(.metadata.name | test("-harness-templates$"))
              | .data | to_entries | .[] | .key + "\t" + (.value | from_yaml | .image)')

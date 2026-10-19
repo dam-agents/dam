@@ -52,9 +52,10 @@ helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
 # mode smolvm would read as no filter installs none: each fails the render.
 # So does a cache root that is not a path on the node, or one whose derived
 # directory lands in the release directory — however the path is spelled, since
-# `a//b`, `a/./b` and `a/x/../b` are the same directory — a range or a port the
-# API server would reject the whole cache policy on, and a legacy window over a
-# directory this install's own cache shares.
+# `a//b`, `a/./b` and `a/x/../b` are the same directory — a range the API
+# server or the controller's own parser refuses, a leading zero in the prefix
+# included, a port the API server would reject the whole cache policy on, and a
+# legacy window over a directory this install's own cache shares.
 VM=(--set virtualization.enabled=true --set virtualization.runner.resources.limits.memory=8Gi
   --set virtualization.imageCache.hostPath=/var/lib/platform-images
   --set virtualization.runner.releaseHostPath=/var/lib/platform-runner-releases)
@@ -94,7 +95,10 @@ for refused in 'virtualization.imageCache.hostPath=' \
   'controller.gatewayEgress.clusterDns.ports[0]=0' \
   'controller.gatewayEgress.peers[0].namespace=Registry' \
   'virtualization.imageCache.egressCidrs[0]=0.0.0.0/00' \
+  'virtualization.imageCache.egressCidrs[0]=10.0.0.0/08' \
+  'virtualization.imageCache.egressCidrs[0]=2001:db8::/064' \
   'controller.gatewayEgress.extraCidrs[0]=::/00' \
+  'controller.gatewayEgress.extraCidrs[0]=10.0.0.0/08' \
   'virtualization.imageCache.peers[0].namespace=registry,virtualization.imageCache.peers[0].podLabels=app=registry,virtualization.imageCache.peers[0].ports[0]=443' \
   'controller.gatewayEgress.extraCidrs[0]=2001:::1/64' \
   'virtualization.runner.seccomp=permissive'; do
