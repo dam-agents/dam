@@ -1,4 +1,11 @@
-import { Chat, Launch, LogoSlack, Terminal } from "@carbon/icons-react";
+import {
+  Chat,
+  Code,
+  Launch,
+  LogoSlack,
+  Terminal,
+  Tools,
+} from "@carbon/icons-react";
 import { SessionMode } from "api-server-api";
 import type { ReactNode } from "react";
 
@@ -36,12 +43,15 @@ function DocLink({ href, children }: { href: string; children: ReactNode }) {
 export function AgentUsageActions({
   agent,
   showChat = true,
+  showConfigure = false,
   onNewTerminal,
 }: {
   agent: AgentView;
   showChat?: boolean;
+  showConfigure?: boolean;
   onNewTerminal?: () => void;
 }) {
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const selectAgent = useStore((s) => s.selectAgent);
   const openAgentSession = useStore((s) => s.openAgentSession);
   const agentsData = useAgents().data;
@@ -87,8 +97,7 @@ export function AgentUsageActions({
       icon: <PromptIcon />,
       kind: "expand",
       title: "CLI and SSH",
-      description:
-        "Use the agent from your own terminal, over SSH, or in your editor.",
+      description: "Use the agent from your own terminal or over SSH.",
       content: (
         <div className="flex flex-col gap-2 text-sm text-muted-foreground">
           <p>
@@ -100,11 +109,23 @@ export function AgentUsageActions({
           <CopyableCommand command={`${brand.short} chat ${ref}`} />
           <p className="mt-1">SSH to the agent:</p>
           <CopyableCommand command={`${brand.short} ssh connect ${ref}`} />
-          <p className="mt-1">
-            Open a remote <DocLink href={VS_CODE_REMOTE_URL}>VS Code</DocLink>{" "}
-            (or <DocLink href={ZED_REMOTE_URL}>Zed</DocLink> with{" "}
+        </div>
+      ),
+    },
+    {
+      icon: <Code />,
+      kind: "expand",
+      title: "VS Code and Zed",
+      description: "Work in the agent's workspace from your own editor.",
+      content: (
+        <div className="flex flex-col gap-2 text-sm text-muted-foreground">
+          <p>
+            With the {brand.name} CLI installed (see the{" "}
+            <DocLink href={CLI_REFERENCE_URL}>CLI quickstart</DocLink>), open a
+            remote <DocLink href={VS_CODE_REMOTE_URL}>VS Code</DocLink> (or{" "}
+            <DocLink href={ZED_REMOTE_URL}>Zed</DocLink> with{" "}
             <code className="font-mono">-x zed</code>) session and work directly
-            in the agent's sandbox:
+            in the agent's workspace:
           </p>
           <CopyableCommand
             command={`${brand.short} ssh connect -x code ${ref}`}
@@ -141,6 +162,17 @@ export function AgentUsageActions({
             title: "Telegram",
             description: "Message the agent from a Telegram chat.",
             content: <MessengerInstructions messenger="telegram" />,
+          },
+        ]
+      : []),
+    ...(showConfigure
+      ? [
+          {
+            icon: <Tools />,
+            kind: "link" as const,
+            title: "Configure agent",
+            description: "Set LLM providers, skills, connections, and more.",
+            onClick: () => navigateToSandboxHome(agent.id),
           },
         ]
       : []),

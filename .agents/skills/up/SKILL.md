@@ -151,7 +151,7 @@ mise x --no-deps -- trivy image --quiet --platform linux/amd64 --format json <im
   | jq -r '.Results[] | select(.Vulnerabilities) | .Target as $t | .Vulnerabilities[] | "\($t)\t\(.PkgName) \(.InstalledVersion) -> \(.FixedVersion)"' | sort -u
 ```
 
-In agent images the target is `usr/local/share/mise/installs/<tool>/<version>/…`.
+In agent images the target is `usr/share/mise/installs/<tool>/<version>/…`.
 A `Python` target with no path is usually a pip-vendored library in mise's Python.
 Go modules inside third-party binaries (docker's static bundle, buildx, compose, k3s, kubectl) are fixed only by an upstream release of that tool.
 

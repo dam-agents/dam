@@ -20,7 +20,7 @@ func spendMeterHTTPFilter(p bootstrapParams, c envoyHostChain) ev {
 		"name": spendMeterFilterName,
 		"typed_config": ev{
 			"@type":               "type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua",
-			"default_source_code": ev{"inline_string": luaSpendMeterScript(p, c)},
+			"default_source_code": ev{"inline_string": p.luaScript(luaSpendMeterParams(p, c), luaSpendMeterKey, luaSpendMeterBody)},
 		},
 	}
 }
@@ -40,7 +40,7 @@ func spendRecordAccessLog(p bootstrapParams) ev {
 				"transport_api_version": "V3",
 				"buffer_size_bytes":     0,
 				"grpc_service": ev{
-					"envoy_grpc": ev{"cluster_name": "ext_authz_cluster", "authority": p.ExtAuthzHost},
+					"envoy_grpc": ev{"cluster_name": p.named("ext_authz_cluster"), "authority": p.ExtAuthzHost},
 				},
 			},
 			"additional_response_headers_to_log": []any{proxyCostHeader},
@@ -78,7 +78,9 @@ func luaStringMap(items map[string]string) string {
 	return "{" + strings.Join(entries, ", ") + "}"
 }
 
-func luaSpendMeterScript(p bootstrapParams, c envoyHostChain) string {
+const luaSpendMeterKey = "spend-meter.lua"
+
+func luaSpendMeterParams(p bootstrapParams, c envoyHostChain) string {
 	templates := c.MeteredConnectionTemplates()
 	var defaultConn string
 	var providers []string
@@ -97,8 +99,7 @@ func luaSpendMeterScript(p bootstrapParams, c envoyHostChain) string {
 		"local PAYER = " + strconv.Quote(p.PayerID()) + "\n" +
 		"local CONNECTIONS = " + luaStringMap(templates) + "\n" +
 		"local DEFAULT_CONN = " + strconv.Quote(defaultConn) + "\n" +
-		"local CHAIN_PROVIDERS = " + strconv.Quote(strings.Join(providers, ",")) + "\n" +
-		luaSpendMeterBody
+		"local CHAIN_PROVIDERS = " + strconv.Quote(strings.Join(providers, ",")) + "\n"
 }
 
 const luaSpendMeterBody = `local MAX_OBJECT = 8192

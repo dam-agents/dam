@@ -85,6 +85,9 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		func() error { sec, secErr = r.ownedSecretRef(ctx, agent); return nil },
 		func() error {
 			leaf, leafErr = r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, EnvoyLeafSecretName(name), metav1.GetOptions{})
+			if k8serrors.IsNotFound(leafErr) && r.config.VM.Enabled {
+				leaf, leafErr = r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, ownerGatewayName(r.config.ReleaseName, owner)+ownerGatewayLeafSuffix, metav1.GetOptions{})
+			}
 			return nil
 		},
 		func() error {
@@ -105,6 +108,14 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 			msg += "; this install cannot run VM runners as configured: " + problems
 		}
 		return vmrunner.MachineStatus{Reason: reason, Message: msg}, false, nil
+	}
+	// UNIT_BOUNDARY_DESCRIPTION: the owner gateway is rendered after the runner call, still under the owner's lock: a machine reaches its gateway through its own Service's address whichever pod that selects, so a start never waits for the owner's render, a few reads and writes per agent of the owner.
+	if r.ownerGatewayServes(spec) {
+		defer func() {
+			if _, err := r.ensureOwnerGateway(ctx, owner); err != nil {
+				slog.Warn("owner gateway: not applied", "owner", owner, "agent", name, "error", err)
+			}
+		}()
 	}
 	defaults := r.config.AgentTemplateDefaults
 
@@ -201,7 +212,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 			return st, false, fmt.Errorf("applying agent service: %w", err)
 		}
 	}
-	if running && !st.Ready && (st.Reason == "" || st.Reason == vmrunner.ReasonNotReady) || !running && !machineStopped(st) {
+	if running && !st.Ready && (st.Reason == "" || st.Reason == vmrunner.ReasonNotReady || st.Reason == vmrunner.ReasonCopyingDisk) || !running && !machineStopped(st) {
 		r.watchMachine(runner, name, st.Version)
 	} else {
 		r.unwatchMachine(name)
@@ -356,12 +367,13 @@ func (r *AgentReconciler) sweepRunner(ctx context.Context, runner runnerRef) {
 	if anyVMAgent(agents.Items) || r.cachedOwnerAgents(ctx, owner, true) > 0 {
 		return
 	}
+	r.deleteOwnerGateway(ctx, owner)
 	left, err := runner.client.List(ctx)
 	if err != nil || len(left) > 0 {
 		slog.Info("orphan machine GC: runner kept, it is not empty", "owner", owner, "machines", len(left), "error", err)
 		return
 	}
-	r.deleteRunner(ctx, owner)
+	r.deleteRunner(ctx, owner, false)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: an install switched from runner pods to the host runner keeps the per-owner runner Deployments it made before, and nothing else looks at them in host mode, so their pods stay Pending for want of a KVM device. Only the Deployment goes: its claim holds the disks of the machines it ran, the one copy of those homes, and switching back to runner pods remakes the Deployment on that same claim. A runner is recognized by its owner label and the per-owner name, never by the label alone, and is deleted only as it was listed.
@@ -442,7 +454,7 @@ func (r *AgentReconciler) forgetLeftMachines(ctx context.Context, left map[strin
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a runner the sweep cannot ask what it holds is kept while its owner has any Agent at all. One whose owner has none is kept for the grace, then removed with whatever its disk still holds — it is reported at error level, because that is the one path where the platform deletes a claim it could not see into.
+// UNIT_BOUNDARY_DESCRIPTION: a runner the sweep cannot ask what it holds is kept while its owner has any Agent at all. One whose owner has none is kept for the grace, then removed without its claim: nobody could see what the claim holds, and an empty List of Agents can be a CRD event rather than an owner who left, so the claim stays for the owner's next vm Agent to build its runner on.
 func (r *AgentReconciler) collectUnreachableRunner(ctx context.Context, owner string, listed int, cause error) {
 	if listed > 0 || r.cachedOwnerAgents(ctx, owner, false) > 0 {
 		r.ownerless.Delete(owner)
@@ -455,8 +467,8 @@ func (r *AgentReconciler) collectUnreachableRunner(ctx context.Context, owner st
 		slog.Warn("orphan machine GC: a VM runner that cannot be reached serves no agent; it is removed if that lasts", "owner", owner, "for", since.Round(time.Second), "grace", orphanRunnerGrace, "error", cause)
 		return
 	}
-	slog.Error("orphan machine GC: removing a VM runner that cannot be reached and whose owner has no agents; its claim is deleted unseen", "owner", owner, "for", since.Round(time.Second), "error", cause)
-	r.deleteRunner(ctx, owner)
+	slog.Warn("orphan machine GC: removing a VM runner that cannot be reached and whose owner has no agents; its claim is kept, with every disk on it", "owner", owner, "claim", r.runnerName(owner), "for", since.Round(time.Second), "error", cause)
+	r.deleteRunner(ctx, owner, true)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the owner's Agents as the informer sees them, counted as a second opinion beside a fresh List: either one knowing of an Agent keeps the runner.
@@ -633,9 +645,6 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 	return r.publishReadinessOf(ctx, agent, st.Ready, reason, msg, runnerReached, st.Restarts, restartReason,
 		func(s *apiv1.AgentStatus) {
 			nestingCondition(s, agent, st, r.config.AgentTemplateDefaults, r.config.VM.Runner.NestedVirtualization)
-			if runnerReached {
-				homeRepairedCondition(s, st, agent.Generation)
-			}
 			r.runnerCapacityCondition(s, agent)
 			if runnerReached {
 				setStartFailure(s, failure, agent.Generation)
@@ -656,15 +665,6 @@ func runnerOOMTookDown(prev *metav1.Condition, running, ready bool, killedAt fun
 	}
 	at := killedAt()
 	return !at.IsZero() && !prev.LastTransitionTime.After(at)
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: tells the owner that the machine's last boot repaired the filesystem on its disk, from what the runner reports, and drops the condition once a boot finds the disk clean. A runner not reached leaves it as it was, since its silence says nothing about the disk.
-func homeRepairedCondition(s *apiv1.AgentStatus, st vmrunner.MachineStatus, generation int64) {
-	if st.HomeRepaired == "" {
-		apimeta.RemoveStatusCondition(&s.Conditions, apiv1.ConditionHomeRepaired)
-		return
-	}
-	setStatusCondition(s, apiv1.ConditionHomeRepaired, true, apiv1.ReasonHomeRepaired, "", st.HomeRepaired, generation)
 }
 
 func wantsNesting(agent *apiv1.Agent, defaults config.AgentTemplateDefaults) bool {

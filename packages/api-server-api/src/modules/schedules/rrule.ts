@@ -48,8 +48,15 @@ function parseRRule(rruleBody: string): RRuleTemporal {
 }
 
 export function rruleToText(rruleBody: string): string {
+  const parts = rruleBody.split(";");
+  const describedBody =
+    parts.includes("FREQ=DAILY") &&
+    parts.some((p) => p.startsWith("BYDAY=")) &&
+    !parts.some((p) => p.startsWith("INTERVAL=") && p !== "INTERVAL=1")
+      ? parts.map((p) => (p === "FREQ=DAILY" ? "FREQ=WEEKLY" : p)).join(";")
+      : rruleBody;
   try {
-    return toText(parseRRule(rruleBody), undefined, {
+    return toText(parseRRule(describedBody), undefined, {
       excludeTzAbbreviation: true,
     });
   } catch {

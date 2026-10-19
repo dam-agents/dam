@@ -7,7 +7,7 @@ import {
   orderAfterStep,
 } from "../../modules/agents/lib/sidebar-order.js";
 
-// TEST_OVERVIEW: The sidebar lists Agents, and the Sessions of each Agent, in one manual order per list that the user sets by drag and drop or with Alt+Up and Alt+Down. Items the stored order does not name yet, a new Agent or a new Session, go to the bottom, oldest first, so activity never moves anything. A move stores the whole list as the user sees it, so the order stays put when new items arrive.
+// TEST_OVERVIEW: The sidebar lists Agents in one manual order that the user sets by drag and drop or with Alt+Up and Alt+Down. Agents the stored order does not name yet, a new Agent, go to the bottom, oldest first, so activity never moves anything. A move stores the whole list as the user sees it, so the order stays put when new Agents arrive.
 
 interface Item {
   id: string;
@@ -38,7 +38,7 @@ describe("manualOrder", () => {
     ]);
   });
 
-  // TEST_SCENARIO: a new Agent or a new Session is not in the stored order yet. It goes to the bottom, and the items already there keep their places.
+  // TEST_SCENARIO: a new Agent is not in the stored order yet. It goes to the bottom, and the Agents already there keep their places.
   it("puts items the order does not name at the bottom, oldest first", () => {
     const items = [
       item("new", "2026-10-16T12:00:00Z"),
@@ -59,7 +59,7 @@ describe("manualOrder", () => {
     expect(order(items, [])).toEqual(["x", "y", "z"]);
   });
 
-  // TEST_SCENARIO: an id in the order that names nothing the list holds, a deleted Agent or a Session not loaded yet, shows nothing and moves nothing.
+  // TEST_SCENARIO: an id in the order that names nothing the list holds, a deleted Agent, shows nothing and moves nothing.
   it("skips ids that name no item", () => {
     expect(order([item("a"), item("b")], ["gone", "b", "a"])).toEqual([
       "b",
@@ -92,7 +92,7 @@ describe("orderAfterMove", () => {
     ).toEqual(["c", "b", "a"]);
   });
 
-  // TEST_SCENARIO: ids of items not listed now, a Session on a page not loaded, stay in the order where they were.
+  // TEST_SCENARIO: ids of items not listed now, an Agent filtered out of the list, stay in the order where they were.
   it("keeps stored ids that are not shown", () => {
     expect(
       orderAfterMove(["a", "hidden", "b"], ["a", "b"], "b", {

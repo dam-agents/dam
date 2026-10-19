@@ -40,7 +40,7 @@ export function ResourcesCard({ agents, workingAgentIds }: Props) {
   };
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-3 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 text-sm">
         {switchable ? (
           <Tabs
             tabs={(["vm", "container"] as const).map((value) => ({
@@ -53,6 +53,7 @@ export function ResourcesCard({ agents, workingAgentIds }: Props) {
             variant="pill"
             size="sm"
             ariaLabel="Resources by kind of agent"
+            className="whitespace-nowrap"
           />
         ) : (
           <span className="text-foreground">{TITLES[view]}</span>

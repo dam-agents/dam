@@ -9,5 +9,7 @@ uvx_args = "--with scipy"
 postinstall = '"$MISE_TOOL_INSTALL_PATH/skydiscover/bin/python" {{config_root}}/skydiscover/check-packaging.py'
 
 [oci.env]
+# Its root generation segment, after the default image's key (oci's build_thin).
+PLATFORM_ROOT_GENERATION = "skydiscover-1"
 SKYDISCOVER_VENV = "/opt/skydiscover-venv"
 SKYDISCOVER_OUTPUT_ROOT = "/home/agent/work/skydiscover-runs"

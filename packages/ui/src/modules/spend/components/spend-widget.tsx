@@ -11,7 +11,11 @@ import { useAgentsList } from "../../agents/api/queries.js";
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { NEUTRAL_FILL } from "../../budgets/lib/pool-colors.js";
 import { useOwnerSpendStatus, useSpendDaily } from "../api/queries.js";
-import { apiSpendHelp, OWN_LIMIT_NAME } from "../lib/copy.js";
+import {
+  apiSpendHelp,
+  DELETED_AGENT_NAME,
+  OWN_LIMIT_NAME,
+} from "../lib/copy.js";
 import { microsToUsd } from "../lib/format.js";
 import {
   SPEND_PERIODS,
@@ -30,6 +34,8 @@ const ROW_HIDDEN = { opacity: 0, y: 16 };
 interface Spender {
   agentId: string;
   agentName: string;
+  avatar: string | null | undefined;
+  deleted: boolean;
   costUsd: number;
 }
 
@@ -42,11 +48,16 @@ function usdSpend(
     if (row.unit !== "usd") continue;
     byAgent.set(row.agentId, (byAgent.get(row.agentId) ?? 0) + row.costMicros);
   }
-  const spenders = [...byAgent].map(([agentId, micros]) => ({
-    agentId,
-    agentName: agents.find((a) => a.id === agentId)?.name ?? agentId,
-    costUsd: microsToUsd(micros),
-  }));
+  const spenders = [...byAgent].map(([agentId, micros]) => {
+    const agent = agents.find((a) => a.id === agentId);
+    return {
+      agentId,
+      agentName: agent?.name ?? DELETED_AGENT_NAME,
+      avatar: agent?.avatar,
+      deleted: !agent,
+      costUsd: microsToUsd(micros),
+    };
+  });
   return {
     total: spenders.reduce((sum, spender) => sum + spender.costUsd, 0),
     spenders: spenders
@@ -84,8 +95,8 @@ export function SpendWidget({
   return (
     <MotionConfig reducedMotion="user">
       <div className="flex flex-col rounded-lg border border-border bg-card p-6">
-        <div className="mb-1 flex min-h-[32px] items-center justify-between">
-          <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <p className="flex items-center gap-1.5 whitespace-nowrap text-sm text-foreground">
             API spend
             <HelpTip content={apiSpendHelp()} />
             {query.isFetching && (
@@ -96,7 +107,7 @@ export function SpendWidget({
               />
             )}
           </p>
-          <div className="flex shrink-0 gap-0.5 rounded-md border border-border/50 bg-muted/40 p-0.5">
+          <div className="-my-1.5 flex shrink-0 gap-0.5 rounded-md border border-border/50 bg-muted/40 p-0.5">
             {SPEND_PERIODS.map((option) => (
               <button
                 key={option}
@@ -140,7 +151,7 @@ export function SpendWidget({
           </div>
         )}
 
-        <div className="relative min-h-[132px]">
+        <div className={cn("relative", showOwnLimit && "min-h-[132px]")}>
           {data ? (
             <div className="flex flex-col gap-3">
               <AnimatePresence initial={false} mode="popLayout">
@@ -156,9 +167,8 @@ export function SpendWidget({
                       <span className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
                         <AgentAvatar
                           name={spender.agentName}
-                          avatar={
-                            agents.find((a) => a.id === spender.agentId)?.avatar
-                          }
+                          avatar={spender.avatar}
+                          mood={spender.deleted ? "disabled" : "awake"}
                           size={16}
                         />
                         <span className="truncate">{spender.agentName}</span>

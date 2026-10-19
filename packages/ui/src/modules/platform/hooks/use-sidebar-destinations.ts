@@ -23,18 +23,24 @@ export function useSidebarDestinations() {
   const kitBrowserOpen = useStore((s) => s.kitBrowserOpen);
   const setKitBrowserOpen = useStore((s) => s.setKitBrowserOpen);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
+  const setSidePanelTab = useStore((s) => s.setSidePanelTab);
+  const setMobileScreen = useStore((s) => s.setMobileScreen);
+  const artifactsOpen = useStore((s) => s.sidePanelTab === "artifacts");
 
   const home: SidebarDestination = {
     label: "Home",
     icon: Home,
-    active: view === "home",
+    active: view === "home" && !artifactsOpen,
     navigate: () => setView("home"),
   };
   const artifacts: SidebarDestination = {
     label: "Artifacts",
     icon: ArtifactIcon,
-    active: view === "artifacts",
-    navigate: () => setView("artifacts"),
+    active: artifactsOpen,
+    navigate: () => {
+      setSidePanelTab("artifacts");
+      setMobileScreen("files");
+    },
   };
   const starterKits: SidebarDestination = {
     label: "Starter kits",

@@ -22,6 +22,7 @@ function toItem(row: AttentionRecordRow): AttentionItem {
     title: row.title,
     scheduleId: row.scheduleId,
     threadTs: row.threadTs,
+    harness: row.harness,
     createdAt: row.createdAt.toISOString(),
     activityAt: row.activityAt?.toISOString() ?? null,
     seenAt: row.seenAt?.toISOString() ?? null,

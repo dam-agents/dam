@@ -93,6 +93,7 @@ export function AnthropicForm({
           data-lpignore="true"
           data-form-type="other"
           placeholder={MODES[mode].placeholder}
+          aria-label={`Anthropic ${MODES[mode].label}`}
           {...register("value")}
         />
         <Button type="submit" disabled={submitDisabled} className="shrink-0">

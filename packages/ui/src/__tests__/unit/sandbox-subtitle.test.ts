@@ -66,7 +66,6 @@ describe("agent card subtitle", () => {
       storage: {
         usedBytes: 0,
         usableBytes: 0,
-        imageCacheBytes: 0,
         seedBytes: 0,
         level: "ok" as const,
       },

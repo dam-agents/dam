@@ -12,12 +12,12 @@ const (
 	skipFilterActionType     = "type.googleapis.com/envoy.extensions.filters.common.matcher.action.v3.SkipFilter"
 )
 
-func connectionAddressHTTPFilter(c envoyHostChain) ev {
+func connectionAddressHTTPFilter(p bootstrapParams, c envoyHostChain) ev {
 	return ev{
 		"name": "connection_address",
 		"typed_config": ev{
 			"@type":               "type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua",
-			"default_source_code": ev{"inline_string": luaConnectionAddressScript(c)},
+			"default_source_code": ev{"inline_string": p.luaScript(luaConnectionAddressParams(c), luaConnectionAddressKey, luaConnectionAddressBody)},
 		},
 	}
 }
@@ -167,13 +167,18 @@ func luaContestedList(c envoyHostChain) string {
 }
 
 func luaConnectionAddressScript(c envoyHostChain) string {
+	return luaConnectionAddressParams(c) + luaConnectionAddressBody
+}
+
+const luaConnectionAddressKey = "connection-address.lua"
+
+func luaConnectionAddressParams(c envoyHostChain) string {
 	return "local HEADERS = " + luaStringList(claimedHeaderNames(c)) + "\n" +
 		"local PARAMS = " + luaStringList(claimedQueryParams(c)) + "\n" +
 		"local CONTESTED = " + luaContestedList(c) + "\n" +
 		"local ADDRESS_HEADER = " + strconv.Quote(connectionAddressHeader) + "\n" +
 		"local PREFIX = " + strconv.Quote(connectionEgressPlaceholderPrefix) + "\n" +
-		"local PATH_SEGMENT = " + strconv.Quote(connectionEgressPathSegment) + "\n" +
-		luaConnectionAddressBody
+		"local PATH_SEGMENT = " + strconv.Quote(connectionEgressPathSegment) + "\n"
 }
 
 const luaConnectionAddressBody = `local B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"

@@ -2,11 +2,7 @@ import type { SidebarOrder } from "api-server-api";
 
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
-import {
-  useSetAgentOrder,
-  useSetSessionOrder,
-  useSidebarOrder,
-} from "../api/sidebar-order.js";
+import { useSetAgentOrder, useSidebarOrder } from "../api/sidebar-order.js";
 import {
   orderAfterMove,
   orderAfterStep,
@@ -20,7 +16,6 @@ function loadedOrder(): SidebarOrder | undefined {
 export function useSidebarOrderActions() {
   const { loaded } = useSidebarOrder();
   const setAgents = useSetAgentOrder();
-  const setSessions = useSetSessionOrder();
 
   const editAgents = (edit: (order: readonly string[]) => string[] | null) => {
     const order = loadedOrder();
@@ -29,17 +24,6 @@ export function useSidebarOrderActions() {
     if (next && next.join("\n") !== order.agents.join("\n"))
       setAgents.mutate({ agentIds: next });
   };
-  const editSessions = (
-    agentId: string,
-    edit: (order: readonly string[]) => string[] | null,
-  ) => {
-    const order = loadedOrder();
-    if (!order) return;
-    const current = order.sessions[agentId] ?? [];
-    const next = edit(current);
-    if (next && next.join("\n") !== current.join("\n"))
-      setSessions.mutate({ agentId, sessionIds: next });
-  };
 
   return {
     ready: loaded,
@@ -47,25 +31,5 @@ export function useSidebarOrderActions() {
       editAgents((order) => orderAfterMove(order, shown, agentId, drop)),
     stepAgent: (shown: readonly string[], agentId: string, step: -1 | 1) =>
       editAgents((order) => orderAfterStep(order, shown, agentId, step)),
-    moveSession: (
-      agentId: string,
-      shown: readonly string[],
-      sessionId: string,
-      drop: OrderDrop,
-    ) =>
-      editSessions(agentId, (order) =>
-        orderAfterMove(order, shown, sessionId, drop),
-      ),
-    stepSession: (
-      agentId: string,
-      shown: readonly string[],
-      sessionId: string,
-      step: -1 | 1,
-    ) =>
-      editSessions(agentId, (order) =>
-        orderAfterStep(order, shown, sessionId, step),
-      ),
-    forgetSession: (agentId: string, sessionId: string) =>
-      editSessions(agentId, (order) => order.filter((id) => id !== sessionId)),
   };
 }

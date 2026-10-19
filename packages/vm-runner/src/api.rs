@@ -77,9 +77,6 @@ pub struct MachineStatus {
     // UNIT_BOUNDARY_DESCRIPTION: the SHA-256 of the seed this machine's home was restored from, once a guest booted with that seed expected has answered. Empty for a home seeded from the image, and for one not yet known to be on the disk. The controller ends a runtime migration only when this is the seed it expects.
     #[serde(rename = "homeSeededFrom", skip_serializing_if = "String::is_empty")]
     pub home_seeded_from: String,
-    // UNIT_BOUNDARY_DESCRIPTION: what the filesystem check at the machine's last boot repaired on its disk, as the guest's console said it; empty when that boot found the disk clean, and before the first boot a guest answered from. The controller puts it on the Agent, so an owner learns that files in damaged folders may be gone.
-    #[serde(rename = "homeRepaired", skip_serializing_if = "String::is_empty")]
-    pub home_repaired: String,
     // UNIT_BOUNDARY_DESCRIPTION: whether the machine boots with the node's virtualization extensions: its spec asks for them and this runner grants them. The controller puts it on the Agent, so an owner who asked sees whether they got it.
     #[serde(skip_serializing_if = "is_zero")]
     pub nested: bool,
@@ -110,7 +107,7 @@ pub struct CpuUsage {
     pub pressure_percent: Option<u32>,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the claim's use as the storage guard measures it; both zero when it could not be measured. Beside each machine's disk, the parts of that use an owner did not write themselves, so a user whose storage is short is told what fills it: the image trees the runner's own cache holds on the claim, and the seeds runtime migrations uploaded that nothing removed yet. What is left is the runner's bookkeeping, its logs and the filesystem's own overhead.
+// UNIT_BOUNDARY_DESCRIPTION: the claim's use as the storage guard measures it; both zero when it could not be measured. Beside each machine's disk, the part of that use an owner did not write themselves, so a user whose storage is short is told what fills it: the seeds runtime migrations uploaded that nothing removed yet. Image trees are on the node's disk, not the claim. What is left is the runner's bookkeeping, its logs and the filesystem's own overhead.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct StorageUsage {
@@ -118,8 +115,6 @@ pub struct StorageUsage {
     pub used_bytes: u64,
     #[serde(rename = "usableBytes")]
     pub usable_bytes: u64,
-    #[serde(rename = "imageCacheBytes", skip_serializing_if = "is_zero")]
-    pub image_cache_bytes: u64,
     #[serde(rename = "seedBytes", skip_serializing_if = "is_zero")]
     pub seed_bytes: u64,
 }
@@ -170,6 +165,13 @@ pub struct RunnerRelease {
     pub message: String,
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the release the controller names for the pod's loader to run: the runner image reference the stager staged it under.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default)]
+pub struct RunnerReleaseName {
+    pub release: String,
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: how close the runner's own memory is to its limit, as its cgroup last read: the working set the kernel kills the runner by, and whether that is past the pressure threshold. `version` moves when pressure starts or ends, and again while it lasts, so the controller can wait on it and reclaim at once. A runner with no cgroup to read never moves it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default)]
@@ -182,7 +184,7 @@ pub struct RunnerPressure {
     #[serde(rename = "workingSetMiB", skip_serializing_if = "is_zero")]
     pub working_set_mib: i32,
 }
-// UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Not yet staged passes once the node's stager has copied the release. The other two never pass in this pod: a release built for another pod — one whose runner does not load against this pod's libc, or one built against another VM runtime where the install keeps one runtime per pod — runs only in a new pod, and one that exited right after it took over is not tried again until the controller names another.
+// UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Not yet staged passes once the node's stager has copied the release. The other two never pass in this pod: a release built for another pod — one whose runner does not load against this pod's libc — runs only in a new pod, and one that exited right after it took over is not tried again until the controller names another. `runtime` keeps its wire name from when it also meant another VM runtime.
 pub const HELD_UNSTAGED: &str = "unstaged";
 pub const HELD_RUNTIME: &str = "runtime";
 pub const HELD_FAILED: &str = "failed";
@@ -244,7 +246,8 @@ pub const REASON_BOOT_FAILED: &str = "MachineBootFailed";
 pub const REASON_SEED_MISSING: &str = "MachineSeedMissing";
 pub const REASON_STORAGE_FULL: &str = "MachineStorageFull";
 pub const REASON_HOME_FULL: &str = "MachineHomeFull";
-pub const REASON_HOME_DAMAGED: &str = "MachineHomeDamaged";
+// UNIT_BOUNDARY_DESCRIPTION: a boot that copies a disk before its guest first answers — a migration seed's restore — and is still at it. It is no failure: the runner holds the boot up to plan::COPYING_RESTART, so the controller counts no start failure and no idle time against it.
+pub const REASON_COPYING_DISK: &str = "MachineCopyingDisk";
 
 #[cfg(test)]
 mod tests {
@@ -334,8 +337,6 @@ mod tests {
                 version: 1,
                 home_seeded_from:
                     "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".into(),
-                home_repaired:
-                    "storage: e2fsck -p repaired the filesystem: /dev/vda: 12/65536 files".into(),
                 nested: true,
             },
         );
@@ -349,12 +350,17 @@ mod tests {
             },
         );
         matches_the_contract(
+            "runner-release-name",
+            &RunnerReleaseName {
+                release: "quay.io/x/vm-runner@sha256:2".into(),
+            },
+        );
+        matches_the_contract(
             "runner-usage",
             &RunnerUsage {
                 storage: StorageUsage {
                     used_bytes: 32212254720,
                     usable_bytes: 107374182400,
-                    image_cache_bytes: 4294967296,
                     seed_bytes: 2147483648,
                 },
                 memory: MemoryUsage {
@@ -431,7 +437,7 @@ mod tests {
                 REASON_SEED_MISSING,
                 REASON_STORAGE_FULL,
                 REASON_HOME_FULL,
-                REASON_HOME_DAMAGED,
+                REASON_COPYING_DISK,
             ])
         );
         assert_eq!(vocabulary["seedExitPermanent"], SEED_EXIT_PERMANENT);

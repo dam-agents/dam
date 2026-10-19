@@ -22,7 +22,7 @@ use crate::server::{Rejected, Server};
 
 pub fn router(server: Arc<Server>, token: Arc<Token>) -> Router {
     let machines = Router::new()
-        .route("/release", get(release))
+        .route("/release", get(release).post(name_release))
         .route("/machines", get(list))
         .route("/usage", get(usage))
         .route("/pressure", get(pressure))
@@ -267,6 +267,35 @@ async fn release() -> Response {
     Json(status).into_response()
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the controller names the release the pod's loader should run. The runner writes it into the loader directory, which the loader reads every second, so a hand-off starts seconds after the call. A runner with no loader has nothing to hand its machines to, and says so. The name is an image reference the loader only hashes into a directory name, so it is checked for size and printable characters alone.
+async fn name_release(body: Bytes) -> Response {
+    let Some(dir) = std::env::var_os(crate::release::LOADER_DIR_ENV).filter(|d| !d.is_empty())
+    else {
+        return plain(
+            StatusCode::CONFLICT,
+            "this runner has no loader to hand its machines to another release",
+        );
+    };
+    let named: crate::api::RunnerReleaseName = match serde_json::from_slice(&body) {
+        Ok(named) => named,
+        Err(e) => return plain(StatusCode::BAD_REQUEST, &e.to_string()),
+    };
+    if named.release.is_empty()
+        || named.release.len() > 512
+        || !named.release.chars().all(|c| c.is_ascii_graphic())
+    {
+        return plain(StatusCode::BAD_REQUEST, "invalid release reference");
+    }
+    blocking(move || {
+        let path = crate::release::target_file(std::path::Path::new(&dir));
+        match crate::release::replace(&path, named.release.as_bytes()) {
+            Ok(()) => StatusCode::NO_CONTENT.into_response(),
+            Err(e) => plain(StatusCode::INTERNAL_SERVER_ERROR, &format!("{e:#}")),
+        }
+    })
+    .await
+}
+
 async fn usage(State(server): State<Arc<Server>>) -> Response {
     blocking(move || match server.usage() {
         Ok(usage) => Json(usage).into_response(),
@@ -482,7 +511,7 @@ mod tests {
         fn update(&self, _: &str, _: &Update<'_>) -> anyhow::Result<()> {
             Ok(())
         }
-        fn start(&self, _: &str, _: i32) -> anyhow::Result<()> {
+        fn start(&self, _: &str, _: i32, _: i32) -> anyhow::Result<()> {
             Ok(())
         }
         fn stop(&self, _: &str) -> anyhow::Result<()> {
@@ -509,7 +538,7 @@ mod tests {
         fn update(&self, _: &str, _: &Update<'_>) -> anyhow::Result<()> {
             Ok(())
         }
-        fn start(&self, _: &str, _: i32) -> anyhow::Result<()> {
+        fn start(&self, _: &str, _: i32, _: i32) -> anyhow::Result<()> {
             Ok(())
         }
         fn stop(&self, _: &str) -> anyhow::Result<()> {
@@ -562,9 +591,8 @@ mod tests {
             Config {
                 state_dir: dir.path().join("machines"),
                 image_dir: dir.path().join("images"),
-                image_cache_socket: None,
+                images: None,
                 image_budget: 0,
-                crane: String::new(),
                 init: None,
                 runc: None,
                 ports: 31000..=31099,
@@ -631,6 +659,7 @@ mod tests {
         );
         for (method, path) in [
             ("GET", "/release"),
+            ("POST", "/release"),
             ("GET", "/machines"),
             ("GET", "/machines/m1"),
             ("PUT", "/machines/m1"),
@@ -651,12 +680,17 @@ mod tests {
         }
     }
 
-    // TEST_SCENARIO: the controller reads which release the pod runs from the runner, which serves what the loader last wrote, and an empty status from a pod with no loader rather than an error.
+    // TEST_SCENARIO: the controller reads which release the pod runs from the runner, which serves what the loader last wrote, and an empty status from a pod with no loader rather than an error. It names a release over the same API: the runner writes it where the loader reads it, refuses a name that is not a reference, and a runner with no loader refuses the call rather than dropping it. One test, because the loader directory is the process's environment.
     #[tokio::test(flavor = "multi_thread")]
-    async fn the_release_the_loader_wrote_is_served() {
+    async fn the_release_the_loader_wrote_is_served_and_a_named_one_reaches_it() {
         let api = api("release");
         let (code, body) = call(&api, "GET", "/release", Some("secret"), "").await;
         assert_eq!((code, body.as_str()), (StatusCode::OK, r#"{"running":""}"#));
+        let name = r#"{"release":"quay.io/x/vm-runner@sha256:2"}"#;
+        assert_eq!(
+            call(&api, "POST", "/release", Some("secret"), name).await.0,
+            StatusCode::CONFLICT
+        );
         let status = crate::api::RunnerRelease {
             running: "runner:1".into(),
             ..Default::default()
@@ -665,7 +699,18 @@ mod tests {
             .unwrap();
         std::env::set_var(crate::release::LOADER_DIR_ENV, api.dir.path());
         let (code, body) = call(&api, "GET", "/release", Some("secret"), "").await;
+        let named = call(&api, "POST", "/release", Some("secret"), name).await.0;
+        let mut refused = vec![];
+        for body in [r#"{"release":""}"#, r#"{"release":"a\nb"}"#, "not json"] {
+            refused.push(call(&api, "POST", "/release", Some("secret"), body).await.0);
+        }
         std::env::remove_var(crate::release::LOADER_DIR_ENV);
+        assert_eq!(named, StatusCode::NO_CONTENT);
+        assert_eq!(
+            crate::release::read_target(&crate::release::target_file(api.dir.path())),
+            "quay.io/x/vm-runner@sha256:2"
+        );
+        assert_eq!(refused, [StatusCode::BAD_REQUEST; 3]);
         assert_eq!(
             (code, body.as_str()),
             (StatusCode::OK, r#"{"running":"runner:1"}"#)

@@ -8,7 +8,7 @@ export function toStorageFull(error: unknown): BudgetStorageFull | null {
   return parsed.success ? parsed.data : null;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a refused vm agent — a create, a starter kit, a move onto the vm backend — explains itself in a dialog instead of a toast, because the way out is on another screen: the home dashboard, where the user deletes an agent or asks for more storage. True when the error was such a refusal and the dialog is on its way. The store is imported only then, so the query client that calls this does not build the store as it loads.
+// UNIT_BOUNDARY_DESCRIPTION: a refused vm agent — a create, a starter kit, a spawn — explains itself in a dialog instead of a toast, because the way out is on another screen: the home dashboard, where the user deletes an agent or asks for more storage. A move onto the vm backend is no such refusal: its reasons come from the migration plan, which the page shows before the request, so a refused request is a toast. True when the error was a storage-full refusal and the dialog is on its way. The store is imported only then, so the query client that calls this does not build the store as it loads.
 export function showStorageFull(error: unknown): boolean {
   if (!toStorageFull(error)) return false;
   const message = (error as Error).message;

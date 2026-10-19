@@ -1,4 +1,4 @@
-import { Renew, Warning } from "@carbon/icons-react";
+import { Restart, Warning } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 
@@ -59,7 +59,7 @@ export function AgentStartNotice({
           onClick={() => restart(agent.id)}
           disabled={restarting}
         >
-          <Renew size={12} /> Restart agent
+          <Restart size={12} /> Restart agent
         </Button>
       )}
     </div>

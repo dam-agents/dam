@@ -1,19 +1,18 @@
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::net::TcpListener;
-use std::os::unix::fs::PermissionsExt;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use super::*;
 use crate::api::{
-    REASON_BOOT_FAILED, REASON_HOME_FULL, REASON_IMAGE_UNAVAILABLE, REASON_SEED_MISSING,
-    REASON_STORAGE_FULL, STATE_ABSENT, STATE_CREATING, STATE_RESTARTING, STATE_RUNNING,
-    STATE_STARTING, STATE_STOPPED, STATE_STOPPING,
+    REASON_BOOT_FAILED, REASON_COPYING_DISK, REASON_HOME_FULL, REASON_IMAGE_UNAVAILABLE,
+    REASON_SEED_MISSING, REASON_STORAGE_FULL, STATE_ABSENT, STATE_CREATING, STATE_RESTARTING,
+    STATE_RUNNING, STATE_STARTING, STATE_STOPPED, STATE_STOPPING,
 };
 use crate::cache::{archive_path, digest_path, staged_path, PARTIAL_PREFIX};
 use crate::cacheapi;
 use crate::forward::HEALTH_TIMEOUT;
-use crate::imagecache::{CacheConfig, ImageCache};
+use crate::imagecache::{CacheConfig, ImageCache, Images, HOLD_LEASE, REF_FRESH};
 use crate::launch::{ImageLaunch, LAUNCH_FILE};
 use crate::plan::{READY_GRACE, STALLED_RESTART, UNHEALTHY_RESTART};
 use crate::state::RUNTIME_FILE;
@@ -42,6 +41,7 @@ struct Fake {
     fail_start_once: Mutex<Option<String>>,
     fail_grow_once: Mutex<Option<String>>,
     booted_mib: Mutex<Vec<i32>>,
+    start_sizes: Mutex<Vec<i32>>,
     console: Mutex<String>,
     panic_on_state: AtomicBool,
     nests: AtomicBool,
@@ -117,9 +117,10 @@ impl Runtime for Fake {
         Ok(())
     }
 
-    fn start(&self, id: &str, boot_mib: i32) -> anyhow::Result<()> {
+    fn start(&self, id: &str, boot_mib: i32, memory_mib: i32) -> anyhow::Result<()> {
         self.record(format!("start {id}"));
         locked(&self.booted_mib).push(boot_mib);
+        locked(&self.start_sizes).push(memory_mib);
         std::thread::sleep(*locked(&self.start_delay));
         if let Some(message) = locked(&self.fail_start_once).take() {
             anyhow::bail!(message);
@@ -168,12 +169,13 @@ impl Runtime for Fake {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a crane that answers the two questions the runner asks — what an image says to run, and what its filesystem holds — and logs each call, so a test can count fetches. A fake that answered only one would let a change that stopped asking the other pass.
+// UNIT_BOUNDARY_DESCRIPTION: a crane that answers the two questions the runner asks — what an image says to run, and what its filesystem holds — and logs each call, so a test can count fetches. A fake that answered only one would let a change that stopped asking the other pass. It reads its own directory from `$0` once instead of forking `dirname` at each use: a resolve runs it four times, a stress run resolves one image per test, and the runner always runs it by the absolute path it was given.
 const FAKE_CRANE: &str = r#"#!/bin/sh
-echo "$@" >> "$(dirname "$0")/crane.log"
+here=${0%/*}
+echo "$@" >> "$here/crane.log"
 if [ "$1" = digest ]; then
-  if [ -f "$(dirname "$0")/registry-down" ]; then echo 'connection refused' >&2; exit 1; fi
-  moved=$(cat "$(dirname "$0")/moved" 2>/dev/null)
+  if [ -f "$here/registry-down" ]; then echo 'connection refused' >&2; exit 1; fi
+  moved=$(cat "$here/moved" 2>/dev/null)
   printf 'sha256:%s\n' "$(printf '%s%s' "${2%@*}" "$moved" | sha256sum | cut -c1-64)"
   exit 0
 fi
@@ -183,6 +185,30 @@ if [ "$1" = config ]; then
 fi
 d=$(mktemp -d); echo rootfs > "$d/hello"; tar -cf - -C "$d" .; rm -rf "$d"
 "#;
+
+// UNIT_BOUNDARY_DESCRIPTION: the node's image cache, in this test's process rather than behind its socket, over the harness's image directory and with its crane, unless the test gave the runner a cache of its own. Only the service writes a node cache, so this stands in for it, at the budget the test gave the runner.
+fn in_process_cache(config: &mut Config, dir: &Path) {
+    if config.images.is_none() {
+        config.images = Some(node_cache_in(dir, config.image_budget));
+    }
+}
+
+fn node_cache_in(dir: &Path, budget: i64) -> Arc<dyn Images> {
+    Arc::new(ImageCache::open(CacheConfig {
+        dir: dir.join("images"),
+        budget,
+        crane: dir.join("crane").to_string_lossy().into_owned(),
+        pins: Vec::new(),
+        lifetime: CancellationToken::new(),
+        ref_fresh: REF_FRESH,
+        hold_lease: HOLD_LEASE,
+        hold_grace: Duration::ZERO,
+        fetch_ceiling: None,
+    }))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how long a test waits for the work it watches before it calls that work stuck: one resolve of the image, the boot, the health dial after it and a second action all fit inside it. That work is real — a resolve runs the fake crane four times, and every run spawns processes and unpacks a tree — and its cost belongs to the host, not the runner: on this suite a create resolves in about 0.4 s with 4 test threads, and in 3 s, with a tail past 10 s, with 64. Only a failing test reaches the deadline.
+const ACTION_DEADLINE: Duration = Duration::from_secs(30);
 
 // UNIT_BOUNDARY_DESCRIPTION: one server on a fake runtime, in a directory of its own. The name is short for the same reason as testdir's: the node cache's socket sits in it.
 struct Harness {
@@ -201,9 +227,7 @@ impl Harness {
         let dir = std::env::temp_dir().join(format!("vmr-{}-{name}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        let crane = dir.join("crane");
-        fs::write(&crane, FAKE_CRANE).unwrap();
-        fs::set_permissions(&crane, fs::Permissions::from_mode(0o755)).unwrap();
+        crate::testdir::exec_script(&dir.join("crane"), FAKE_CRANE);
         let init = dir.join("platform-init");
         fs::write(&init, "#!/bin/sh\nexec \"$@\"\n").unwrap();
         let (base, held) = port_block();
@@ -211,9 +235,8 @@ impl Harness {
         let mut config = Config {
             state_dir: dir.join("machines"),
             image_dir: dir.join("images"),
-            image_cache_socket: None,
+            images: None,
             image_budget: 1 << 40,
-            crane: crane.to_string_lossy().into_owned(),
             init: Some(init),
             runc: None,
             ports: base..=base + 1,
@@ -230,6 +253,7 @@ impl Harness {
             measure_storage: Arc::new(|| None),
         };
         tune(&mut config);
+        in_process_cache(&mut config, &dir);
         let fake = Arc::new(Fake::default());
         let server = Server::start(config, fake.clone()).unwrap();
         Self {
@@ -246,9 +270,8 @@ impl Harness {
         let mut config = Config {
             state_dir: self.dir.join("machines"),
             image_dir: self.dir.join("images"),
-            image_cache_socket: None,
+            images: None,
             image_budget: 1 << 40,
-            crane: self.dir.join("crane").to_string_lossy().into_owned(),
             init: Some(self.dir.join("platform-init")),
             runc: None,
             ports: self.base..=self.base + 1,
@@ -262,6 +285,7 @@ impl Harness {
             measure_storage: Arc::new(|| None),
         };
         tune(&mut config);
+        in_process_cache(&mut config, &self.dir);
         Harness {
             dir: self.dir.clone(),
             fake: self.fake.clone(),
@@ -292,9 +316,9 @@ impl Harness {
             .unwrap_or_default()
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: waits until no worker is converging the machine, then reads its status.
+    // UNIT_BOUNDARY_DESCRIPTION: waits until no worker is converging the machine, then reads its status. It waits `ACTION_DEADLINE`, as `until` does: what it waits out is the same action, and a worker that is slow is not a worker that is stuck.
     async fn settle(&self, id: &str) -> MachineStatus {
-        let deadline = Instant::now() + Duration::from_secs(10);
+        let deadline = Instant::now() + ACTION_DEADLINE;
         loop {
             let status = self.server.status(id);
             if !self.server.converging(id)
@@ -313,14 +337,14 @@ impl Harness {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: waits on the machine's status version, as the controller does, until the status satisfies `done`. The deadline is long because a boot runs the fake crane several times, and on a loaded Mac each run of a fresh script takes up to a second; only a failing test waits it out.
+    // UNIT_BOUNDARY_DESCRIPTION: waits on the machine's status version, as the controller does, until the status satisfies `done`. Only a failing test waits `ACTION_DEADLINE` out.
     async fn until(
         &self,
         id: &str,
         what: &str,
         done: impl Fn(&MachineStatus) -> bool,
     ) -> MachineStatus {
-        let deadline = Instant::now() + Duration::from_secs(30);
+        let deadline = Instant::now() + ACTION_DEADLINE;
         let mut status = self.server.status(id);
         while !done(&status) {
             assert!(
@@ -342,7 +366,7 @@ impl Harness {
 
     // UNIT_BOUNDARY_DESCRIPTION: waits until the runtime has been called with `call`, so a test can act while that call is still running. Its deadline is as long as `until`'s, for the same reason.
     async fn wait_for_call(&self, call: &str) {
-        let deadline = Instant::now() + Duration::from_secs(30);
+        let deadline = Instant::now() + ACTION_DEADLINE;
         while !self.fake.calls().iter().any(|c| c == call) {
             assert!(
                 Instant::now() < deadline,
@@ -369,14 +393,12 @@ impl Drop for Harness {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: two published ports held by this test until the runner takes them, with both guest ports at the loopback offset free. A port proven free and released is only a port that used to be free, so the published ones are handed over bound.
+// UNIT_BOUNDARY_DESCRIPTION: two published ports held by this test until the runner takes them, with both guest ports at the loopback offset free. A port proven free and released is only a port that used to be free, so the published ones are handed over bound. Blocks come from `testdir`'s band, not from the kernel: an ephemeral base in the top 1000 of the range has no free block to find, and a retry from there fails every time.
 fn port_block() -> (u16, HashMap<u16, TcpListener>) {
-    for _ in 0..200 {
-        let first = TcpListener::bind("127.0.0.1:0").unwrap();
-        let base = first.local_addr().unwrap().port();
-        if base > u16::MAX - LOOPBACK_OFFSET - 2 {
+    for base in crate::testdir::PORT_BLOCK_BASE..crate::testdir::PORT_BLOCK_TOP {
+        let Ok(first) = TcpListener::bind(("127.0.0.1", base)) else {
             continue;
-        }
+        };
         let Ok(second) = TcpListener::bind(("127.0.0.1", base + 1)) else {
             continue;
         };
@@ -387,7 +409,11 @@ fn port_block() -> (u16, HashMap<u16, TcpListener>) {
             return (base, HashMap::from([(base, first), (base + 1, second)]));
         }
     }
-    panic!("no free port block");
+    panic!(
+        "no free port block in {}..{}",
+        crate::testdir::PORT_BLOCK_BASE,
+        crate::testdir::PORT_BLOCK_TOP
+    );
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a guest answering its health endpoint on the loopback port behind a published one, until the returned flag is cleared.
@@ -494,7 +520,7 @@ async fn a_stopped_machine_starts_again_on_the_same_port() {
     );
 }
 
-// TEST_SCENARIO: a guest's boot costs time for every GiB of RAM it boots with, so a machine boots with the runner's boot estimate and is grown to its spec's size as soon as its start returns, on every boot: the first, and one after a stop, whose record the update set back to the spec. The grow is part of the start, so the action ends only once the machine has its size.
+// TEST_SCENARIO: a guest's boot costs time for every GiB of RAM it boots with, so a machine boots with the runner's boot estimate and is grown to its spec's size as soon as its start returns, on every boot: the first, and one after a stop, whose record the update set back to the spec. The grow is part of the start, so the action ends only once the machine has its size. Every start is also told that size, so a runtime that knows the boot cannot grow (a disk conversion) boots at it.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_machine_boots_small_and_is_grown_to_its_size_on_every_boot() {
     let h = Harness::with("boot-small", |c| c.boot_mib = 1024);
@@ -519,6 +545,7 @@ async fn a_machine_boots_small_and_is_grown_to_its_size_on_every_boot() {
         ]
     );
     assert_eq!(*locked(&h.fake.booted_mib), vec![1024, 1024]);
+    assert_eq!(*locked(&h.fake.start_sizes), vec![2048, 2048]);
 }
 
 // TEST_SCENARIO: a machine no larger than the boot estimate boots whole and is never grown, and so is every machine of a runner given no estimate.
@@ -689,6 +716,33 @@ async fn a_seed_and_a_boot_never_overlap() {
 
     h.server.put("m1", spec(true)).unwrap();
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+}
+
+// TEST_SCENARIO: a boot that restores a migration's seed copies its disk before its guest answers, so it is still booting, not failing: it reports REASON_COPYING_DISK while the guest has not answered, also past the stuck-boot minute, so the controller neither counts it as a start that never became ready nor lets the image update move it back mid-copy. The reason goes once the guest answers, and a boot that copies nothing never carries it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_boot_that_copies_a_disk_reports_it_until_the_guest_answers() {
+    let h = Harness::new("copying");
+    h.server.put("m1", spec(true)).unwrap();
+    let plain = h.settle("m1").await;
+    assert_eq!(plain.reason, "", "{plain:?}");
+
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+    let seed = upload(&h, "m1", b"a home");
+    h.server.put("m1", expecting(true, &seed)).unwrap();
+    let seeding = h.settle("m1").await;
+    assert!(!seeding.ready);
+    assert_eq!(seeding.reason, REASON_COPYING_DISK, "{seeding:?}");
+    age_boot(&h, "m1");
+    h.server.probe("m1");
+    assert_eq!(
+        h.server.status("m1").reason,
+        REASON_COPYING_DISK,
+        "a slow copy is still a copy"
+    );
+    let _guest = guest(h.base);
+    let up = h.until("m1", "ready", |s| s.ready).await;
+    assert_eq!(up.reason, "", "{up:?}");
 }
 
 // TEST_SCENARIO: a machine deleted while its seed is uploaded must not have the seed put back into a directory that is gone, or recreated by the rename; the upload's commit is refused instead.
@@ -1041,11 +1095,10 @@ async fn a_new_image_that_cannot_be_fetched_leaves_the_machine_running() {
     let h = Harness::new("new-image-fails");
     h.server.put("m1", spec(true)).unwrap();
     h.settle("m1").await;
-    fs::write(
-        h.dir.join("crane"),
+    crate::testdir::exec_script(
+        &h.dir.join("crane"),
         "#!/bin/sh\necho 'MANIFEST_UNKNOWN' >&2\nexit 1\n",
-    )
-    .unwrap();
+    );
     let mut upgraded = spec(true);
     upgraded.image = "quay.io/x/vm:2".into();
     h.server.put("m1", upgraded).unwrap();
@@ -1341,9 +1394,8 @@ async fn a_restarted_runner_republishes_its_ports() {
         Config {
             state_dir: h.dir.join("machines"),
             image_dir: h.dir.join("images"),
-            image_cache_socket: None,
+            images: None,
             image_budget: 1 << 40,
-            crane: String::new(),
             init: None,
             runc: None,
             ports: port..=port + 1,
@@ -1392,40 +1444,40 @@ async fn an_image_is_fetched_once_for_every_machine_that_wants_it() {
     );
 }
 
-// TEST_SCENARIO: an install with no registry stages each image's archive in the image directory, mounted read-only. The staged archive boots without the registry being asked anything, with the launch read out of the archive's own config.
+// TEST_SCENARIO: an install with no registry once staged `docker save` archives in the image directory, and nothing boots one any more: smolvm flattens an archive inside the guest, which no guest does since platform-init became its init. An archive left there by hand is refused as an image problem whose message says how to restage it, rather than booted into a guest that never starts its agent, and the registry is not asked instead.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_staged_archive_boots_without_asking_the_registry() {
+async fn a_staged_archive_is_refused_with_how_to_restage_it() {
     let h = Harness::new("archive");
-    fs::write(
-        h.dir.join("crane"),
+    crate::testdir::exec_script(
+        &h.dir.join("crane"),
         "#!/bin/sh\necho unreachable >&2\nexit 1\n",
-    )
-    .unwrap();
+    );
     let images = h.dir.join("images");
     fs::create_dir_all(&images).unwrap();
-    let archive = archive_path(&images, "quay.io/x/vm:1");
-    write_archive(&archive, r#"{"config":{"Entrypoint":["/from-archive"]}}"#);
+    fs::write(
+        archive_path(&images, "quay.io/x/vm:1"),
+        b"a docker save archive",
+    )
+    .unwrap();
     h.server.put("m1", spec(true)).unwrap();
-    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
-    let (image, launch) = locked(&h.fake.created).get("m1").cloned().unwrap();
-    assert_eq!(PathBuf::from(image), archive);
-    assert_eq!(launch.entrypoint, vec!["/from-archive"]);
-    assert_eq!(h.crane_calls(), 0);
+    let status = h.settle("m1").await;
+    assert_eq!(status.reason, REASON_IMAGE_UNAVAILABLE, "{status:?}");
     assert!(
-        !h.dir.join("machines/m1").join(IMAGE_DIGEST_FILE).exists(),
-        "a machine booted from an archive holds no cache entry"
+        status.message.contains("mise run image:stage-vm"),
+        "{status:?}"
     );
+    assert!(h.fake.calls().is_empty());
+    assert_eq!(h.crane_calls(), 0);
 }
 
-// TEST_SCENARIO: an install stages an image as a tree with its launch record beside it (image:stage-vm), so the machine boots the tree in place instead of flattening an archive inside the guest. The tree wins over an archive staged under the same name, which an earlier install left behind.
+// TEST_SCENARIO: an install stages an image as a tree with its launch record beside it (image:stage-vm), and the machine boots the tree in place. An archive left under the same name by an earlier install does not refuse the tree.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_staged_tree_boots_in_place_and_wins_over_the_archive() {
     let h = Harness::new("staged-tree");
-    fs::write(
-        h.dir.join("crane"),
+    crate::testdir::exec_script(
+        &h.dir.join("crane"),
         "#!/bin/sh\necho unreachable >&2\nexit 1\n",
-    )
-    .unwrap();
+    );
     let images = h.dir.join("images");
     let tree = staged_path(&images, "quay.io/x/vm:1");
     fs::create_dir_all(tree.join(ROOTFS_DIR)).unwrap();
@@ -1434,10 +1486,11 @@ async fn a_staged_tree_boots_in_place_and_wins_over_the_archive() {
         r#"{"entrypoint":["/from-tree"],"cmd":[],"env":[],"workingDir":"/"}"#,
     )
     .unwrap();
-    write_archive(
-        &archive_path(&images, "quay.io/x/vm:1"),
-        r#"{"config":{"Entrypoint":["/from-archive"]}}"#,
-    );
+    fs::write(
+        archive_path(&images, "quay.io/x/vm:1"),
+        b"a docker save archive",
+    )
+    .unwrap();
     h.server.put("m1", spec(true)).unwrap();
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
     let (image, launch) = locked(&h.fake.created).get("m1").cloned().unwrap();
@@ -1450,42 +1503,15 @@ async fn a_staged_tree_boots_in_place_and_wins_over_the_archive() {
 #[tokio::test(flavor = "multi_thread")]
 async fn an_image_that_cannot_be_read_is_reported_as_such() {
     let h = Harness::new("unreadable");
-    fs::write(
-        h.dir.join("crane"),
+    crate::testdir::exec_script(
+        &h.dir.join("crane"),
         "#!/bin/sh\necho 'MANIFEST_UNKNOWN' >&2\nexit 1\n",
-    )
-    .unwrap();
+    );
     h.server.put("m1", spec(true)).unwrap();
     let status = h.settle("m1").await;
     assert_eq!(status.reason, REASON_IMAGE_UNAVAILABLE);
     assert!(status.message.contains("MANIFEST_UNKNOWN"), "{status:?}");
     assert!(h.fake.calls().is_empty());
-}
-
-// TEST_SCENARIO: closing the runner ends a fetch in flight instead of waiting out its twenty minutes, and the scratch tree it was unpacking into goes with it.
-#[tokio::test(flavor = "multi_thread")]
-async fn closing_the_runner_cancels_a_fetch_instead_of_abandoning_it() {
-    let h = Harness::new("close-fetch");
-    fs::write(
-        h.dir.join("crane"),
-        "#!/bin/sh\nif [ \"$1\" = config ]; then printf '{\"config\":{\"Cmd\":[\"x\"]}}'; exit 0; fi\nsleep 60\n",
-    )
-    .unwrap();
-    h.server.put("m1", spec(true)).unwrap();
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    let started = Instant::now();
-    h.server.close().await;
-    assert!(
-        started.elapsed() < Duration::from_secs(10),
-        "close waited out the fetch"
-    );
-    assert!(
-        !fs::read_dir(h.dir.join("images"))
-            .unwrap()
-            .flatten()
-            .any(|e| e.file_name().to_string_lossy().starts_with(PARTIAL_PREFIX)),
-        "the cancelled fetch left its scratch tree"
-    );
 }
 
 // TEST_SCENARIO: a spec sent after close starts no worker and holds no memory, so nothing counts a machine that never started. It is answered 503, not 200: it was not stored, and the controller must not read it as taken.
@@ -1646,21 +1672,6 @@ async fn the_cache_never_evicts_an_image_a_machine_is_running() {
     assert!(h.entry("m2").exists());
 }
 
-fn write_archive(path: &Path, config: &str) {
-    let mut builder = tar::Builder::new(fs::File::create(path).unwrap());
-    let manifest = br#"[{"Config":"config.json"}]"#;
-    for (name, body) in [
-        ("manifest.json", &manifest[..]),
-        ("config.json", config.as_bytes()),
-    ] {
-        let mut header = tar::Header::new_gnu();
-        header.set_size(body.len() as u64);
-        header.set_mode(0o644);
-        builder.append_data(&mut header, name, body).unwrap();
-    }
-    builder.finish().unwrap();
-}
-
 // TEST_SCENARIO: a reference pinned by digest cannot move, so it is never resolved — its entry is the digest it names, fetched by that digest.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_pinned_reference_is_never_resolved() {
@@ -1723,7 +1734,7 @@ fn files_under(dir: &Path) -> Vec<PathBuf> {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_registry_credential_reaches_crane_alone() {
     let h = Harness::new("pull-auth");
-    fs::write(h.dir.join("crane"), PRIVATE_CRANE).unwrap();
+    crate::testdir::exec_script(&h.dir.join("crane"), PRIVATE_CRANE);
     h.server.put("m1", with_credential(true)).unwrap();
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
 
@@ -1756,7 +1767,7 @@ async fn a_registry_credential_reaches_crane_alone() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_bare_digest_reference_cannot_boot_a_cached_private_tree() {
     let h = Harness::new("bare-digest");
-    fs::write(h.dir.join("crane"), PRIVATE_CRANE).unwrap();
+    crate::testdir::exec_script(&h.dir.join("crane"), PRIVATE_CRANE);
     h.server.put("m1", with_credential(true)).unwrap();
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
     let hex = "f".repeat(64);
@@ -1780,7 +1791,7 @@ const STALE: &str = r#"{"auths":{"quay.io":{"auth":"c3RhbGU="}}}"#;
 #[tokio::test(flavor = "multi_thread")]
 async fn a_stale_credential_does_not_hide_a_good_one_listed_after_it() {
     let h = Harness::new("pull-auth-fallback");
-    fs::write(h.dir.join("crane"), PRIVATE_CRANE).unwrap();
+    crate::testdir::exec_script(&h.dir.join("crane"), PRIVATE_CRANE);
     let spec = MachineSpec {
         pull_auths: vec![STALE.into(), CREDENTIAL.into()],
         ..spec(true)
@@ -2127,7 +2138,7 @@ async fn a_scrape_counts_what_a_create_did() {
     );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the node image cache service in this test's process, serving the harness's image directory on the socket the runner was told, with the harness's crane. Its holds lapse in `lease`, so a test can see whether the runner renews them.
+// UNIT_BOUNDARY_DESCRIPTION: the node image cache service in this test's process, serving the harness's image directory on the socket the runner was told, with the harness's crane. Its holds lapse in `lease`, so a test can see whether the runner renews them. The test waits until the service accepts a connection: the socket file appears a syscall before the listen, and on a loaded machine the serving task waits for a core between the two, long enough for the runner's first connect to be refused.
 async fn node_service(h: &Harness, lease: Duration) -> (Arc<ImageCache>, CancellationToken) {
     let cache = Arc::new(ImageCache::open(CacheConfig {
         dir: h.dir.join("images"),
@@ -2135,7 +2146,6 @@ async fn node_service(h: &Harness, lease: Duration) -> (Arc<ImageCache>, Cancell
         crane: h.dir.join("crane").to_string_lossy().into_owned(),
         pins: Vec::new(),
         lifetime: CancellationToken::new(),
-        check_access: true,
         ref_fresh: Duration::from_secs(600),
         hold_lease: lease,
         hold_grace: Duration::ZERO,
@@ -2147,7 +2157,7 @@ async fn node_service(h: &Harness, lease: Duration) -> (Arc<ImageCache>, Cancell
         let (cache, stop, socket) = (cache.clone(), stop.clone(), socket.clone());
         async move { cacheapi::serve(&socket, cache, async move { stop.cancelled().await }).await }
     });
-    while !socket.exists() {
+    while tokio::net::UnixStream::connect(&socket).await.is_err() {
         if served.is_finished() {
             panic!("the node's service did not start: {:?}", served.await);
         }
@@ -2157,8 +2167,9 @@ async fn node_service(h: &Harness, lease: Duration) -> (Arc<ImageCache>, Cancell
 }
 
 fn on_node_cache(c: &mut Config) {
-    c.image_cache_socket = Some(c.image_dir.join(".cache.sock"));
-    c.crane = String::new();
+    c.images = Some(Arc::new(cacheapi::CacheClient::new(
+        c.image_dir.join(".cache.sock"),
+    )));
 }
 
 // TEST_SCENARIO: on a node cache the runner fetches nothing itself: it asks the node's service, which unpacks the image into the shared directory, and the machine boots that tree through the runner's own mount of it. The runner then holds the digest, so the service's eviction spares the tree for as long as the runner keeps renewing the hold — past the lease the resolve itself took.
@@ -2281,11 +2292,10 @@ async fn a_spec_that_needs_nothing_clears_the_failure_before_it() {
 
 // UNIT_BOUNDARY_DESCRIPTION: a crane whose layer fetch never ends, as a pull of a huge image over a slow registry does.
 fn stall_fetches(h: &Harness) {
-    fs::write(
-        h.dir.join("crane"),
+    crate::testdir::exec_script(
+        &h.dir.join("crane"),
         "#!/bin/sh\nif [ \"$1\" = config ]; then printf '{\"config\":{\"Cmd\":[\"x\"]}}'; exit 0; fi\nsleep 60\n",
-    )
-    .unwrap();
+    );
 }
 
 // TEST_SCENARIO: a delete of a machine whose create is waiting on a fetch must not wait out the fetch's twenty minutes. The delete cancels the machine's own token, the create stops waiting at once, and the machine is gone well inside the controller's request timeout.
@@ -2488,9 +2498,8 @@ async fn a_hand_off_leaves_every_machine_running_for_the_next_runner() {
         Config {
             state_dir: h.dir.join("machines"),
             image_dir: h.dir.join("images"),
-            image_cache_socket: None,
+            images: None,
             image_budget: 1 << 40,
-            crane: String::new(),
             init: None,
             runc: None,
             ports: h.base..=h.base + 1,
@@ -2528,9 +2537,8 @@ async fn a_guest_quiet_across_a_hand_off_is_restarted_by_the_next_runner() {
             Config {
                 state_dir: h.dir.join("machines"),
                 image_dir: h.dir.join("images"),
-                image_cache_socket: None,
+                images: Some(node_cache_in(&h.dir, 1 << 40)),
                 image_budget: 1 << 40,
-                crane: h.dir.join("crane").to_string_lossy().into_owned(),
                 init: Some(h.dir.join("platform-init")),
                 runc: None,
                 ports: h.base..=h.base + 1,
@@ -2712,7 +2720,7 @@ fn filled(percent: u64) -> Option<StorageUse> {
     })
 }
 
-// TEST_SCENARIO: once the owner's claim is critically full, every write that adds much is refused with the reason the controller shows as full storage, and nothing is created for it: a create, an image fetched onto the claim and a seed upload alike. A machine that already exists still starts and restarts, so an owner whose agents are all asleep can get into one to clean it up, but at the disk size it has: a larger size waits for a start that finds room. A running machine whose spec asks for nothing new keeps running untouched.
+// TEST_SCENARIO: once the owner's claim is critically full, every write that adds much is refused with the reason the controller shows as full storage, and nothing is created for it: a create and a seed upload alike. An image is fetched onto the node's disk rather than the claim, so a new image for an existing machine is not refused. A machine that already exists still starts and restarts, so an owner whose agents are all asleep can get into one to clean it up, but at the disk size it has: a larger size waits for a start that finds room. A running machine whose spec asks for nothing new keeps running untouched.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_critical_claim_refuses_big_writes_and_still_starts_existing_machines() {
     let (h, claim) = with_claim("storage-critical");
@@ -2734,10 +2742,6 @@ async fn a_critical_claim_refuses_big_writes_and_still_starts_existing_machines(
         "{created:?}"
     );
     assert!(read_spec(&h.dir.join("machines"), "m3").is_none());
-    let mut new_image = spec(true);
-    new_image.image = "quay.io/x/vm:2".into();
-    let fetch = h.server.put("m1", new_image).unwrap();
-    assert_eq!(fetch.reason, REASON_STORAGE_FULL, "{fetch:?}");
     assert_eq!(
         h.server.claim_seed("m2", None).err().map(|e| e.status),
         Some(507)
@@ -2763,17 +2767,17 @@ async fn a_critical_claim_refuses_big_writes_and_still_starts_existing_machines(
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
 }
 
-// TEST_SCENARIO: once the claim is nearly full, no machine starts or restarts either, since even a boot's few writes could fail every guest's; a running machine that asks for nothing new still keeps running, and once room is freed the same start goes through.
+// TEST_SCENARIO: once the claim is full, no machine starts or restarts either, since even a boot's few writes could fail every guest's; a running machine that asks for nothing new still keeps running, and once room is freed the same start goes through.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_nearly_full_claim_refuses_every_boot_and_leaves_running_machines_alone() {
-    let (h, claim) = with_claim("storage-nearly-full");
+async fn a_full_claim_refuses_every_boot_and_leaves_running_machines_alone() {
+    let (h, claim) = with_claim("storage-full");
     h.server.put("m1", spec(true)).unwrap();
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
     h.server.put("m2", spec(false)).unwrap();
     assert_eq!(h.settle("m2").await.state, STATE_STOPPED);
     let before = h.fake.calls();
 
-    *locked(&claim) = filled(97);
+    *locked(&claim) = filled(95);
     let started = h.server.put("m2", spec(true)).unwrap();
     assert_eq!(started.reason, REASON_STORAGE_FULL, "{started:?}");
     assert!(started.message.contains("can't be started"), "{started:?}");
@@ -2860,7 +2864,7 @@ async fn every_look_grants_each_guest_its_room_on_the_claim() {
     assert!(!grant.exists());
 }
 
-// TEST_SCENARIO: a guest serves each request to give back scratch once, and only a running guest frees anything, so the shortage is split among the running machines alone. The runner keeps the same request while the claim stays short at about the same use, and sends a new one, with a new id and its part of the new shortage, only once the claim has filled RESHED_STEP_PERCENT further; a claim that has room again clears it, and the next shortage is a new request.
+// TEST_SCENARIO: a guest serves each request to give back scratch once, and only a running guest frees anything, so the shortage is split among the running machines alone. The runner keeps the same request while the claim stays short at about the same use, and sends a new one, with a new id and its part of the new shortage, only once the claim has filled SHED_STEP_PERCENT further; a claim that has room again clears it, and the next shortage is a new request.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_short_claim_asks_again_only_when_it_fills_further() {
     let (h, claim) = with_claim("storage-reshed");
@@ -2918,9 +2922,9 @@ async fn a_boot_whose_console_shows_a_full_home_reports_it() {
     );
 }
 
-// TEST_SCENARIO: a user whose storage is short is told what fills it, so the usage read names, beside each machine's disk, what the runner's own image cache and a migration's seed take of the claim.
+// TEST_SCENARIO: a user whose storage is short is told what fills it, so the usage read names, beside each machine's disk, what a migration's seed takes of the claim.
 #[tokio::test(flavor = "multi_thread")]
-async fn the_usage_read_names_the_image_cache_and_the_seeds() {
+async fn the_usage_read_names_the_seeds() {
     let h = Harness::new("usage-parts");
     h.server.put("m1", spec(true)).unwrap();
     h.settle("m1").await;
@@ -2932,45 +2936,6 @@ async fn the_usage_read_names_the_image_cache_and_the_seeds() {
     fs::write(&seed, vec![1u8; 1 << 20]).unwrap();
     let storage = h.server.usage().unwrap().storage;
     assert!(storage.seed_bytes >= 1 << 20, "{storage:?}");
-    assert!(storage.image_cache_bytes > 0, "{storage:?}");
-}
-
-// TEST_SCENARIO: the disk check at boot refuses to mount a disk it could not repair, which fails the boot with nothing typed in the error. The runner reads the refusal off the console and reports the damaged home with the way out, so the owner is not told only that the machine did not boot.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_boot_the_disk_check_refused_reports_a_damaged_home() {
-    let h = Harness::new("home-damaged");
-    *locked(&h.fake.fail_start_once) = Some("start machine: guest agent never became ready".into());
-    *locked(&h.fake.console) = r#"{"level":"ERROR","message":"storage: e2fsck -f -y -D Damaged (exit Some(4)): errors left; refusing to mount, and the disk is kept as it is","target":"smolvm_agent::boot"}"#.into();
-    h.server.put("m1", spec(true)).unwrap();
-    let failed = h.settle("m1").await;
-    assert_eq!(failed.reason, REASON_HOME_DAMAGED, "{failed:?}");
-    assert!(failed.message.contains("could not repair"), "{failed:?}");
-}
-
-// TEST_SCENARIO: a boot whose disk check repaired the filesystem comes up as usual, and the status says what was repaired, so the owner learns that files may be gone; the record outlives the boot it came from only until the next boot answers from a clean disk.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_repair_at_boot_is_reported_until_a_clean_boot() {
-    let h = Harness::new("home-repaired");
-    *locked(&h.fake.console) = r#"{"level":"WARN","message":"storage: e2fsck -p repaired the filesystem: /dev/vda: 12/65536 files","target":"smolvm_agent::boot"}"#.into();
-    *locked(&h.fake.start_delay) = Duration::from_millis(300);
-    h.server.put("m1", spec(true)).unwrap();
-    h.wait_for_call("start m1").await;
-    let _up = guest(h.base);
-    let ready = h.until("m1", "ready", |s| s.ready).await;
-    assert_eq!(
-        ready.home_repaired,
-        "storage: e2fsck -p repaired the filesystem: /dev/vda: 12/65536 files"
-    );
-    h.server.put("m1", spec(false)).unwrap();
-    h.settle("m1").await;
-    *locked(&h.fake.console) = "clean".into();
-    h.server.put("m1", spec(true)).unwrap();
-    let again = h
-        .until("m1", "ready after a clean boot", |s| {
-            s.ready && s.home_repaired.is_empty()
-        })
-        .await;
-    assert!(again.ready);
 }
 
 // TEST_SCENARIO: a machine's CPU share is what it used over its last two looks while running. Once it stops, the usage read reports no CPU for it, so the bars never name a paused agent among the heaviest CPU users.
@@ -3050,9 +3015,8 @@ async fn admission_after_a_hand_off_does_not_wait_on_silent_guests() {
         Config {
             state_dir: h.dir.join("machines"),
             image_dir: h.dir.join("images"),
-            image_cache_socket: None,
+            images: Some(node_cache_in(&h.dir, 1 << 40)),
             image_budget: 1 << 40,
-            crane: h.dir.join("crane").to_string_lossy().into_owned(),
             init: Some(h.dir.join("platform-init")),
             runc: None,
             ports: h.base..=h.base + 1,
@@ -3097,10 +3061,32 @@ async fn a_booted_machine_reports_its_warm_up() {
     );
 }
 
-// TEST_SCENARIO: a runner handed running machines by another release holds the image tree each one boots from as it starts, before the controller sends it a spec. A short claim's first storage check on the new runner then sheds no tree a running guest reads, whether or not the controller has sent the machine's unchanged spec yet; a stopped machine's tree is still given up.
+// TEST_SCENARIO: a runner handed running machines by another release holds the image tree each one boots from as it starts, before the controller sends it a spec. Once the old runner's holds have lapsed, aged past their lease rather than waited out, the node's eviction then takes no tree a running guest reads, whether or not the controller has sent the machine's unchanged spec yet; a stopped machine's tree is still given up.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_hand_off_keeps_the_trees_of_running_machines_through_a_short_claim() {
-    let (h, claim) = with_claim("hand-off-holds");
+async fn a_hand_off_keeps_the_trees_of_running_machines_held() {
+    let node: Arc<std::sync::OnceLock<Arc<ImageCache>>> = Arc::default();
+    let opened = node.clone();
+    let h = Harness::with("hand-off-holds", move |c| {
+        let cache = opened.get_or_init(|| {
+            Arc::new(ImageCache::open(CacheConfig {
+                dir: c.image_dir.clone(),
+                budget: 1,
+                crane: c
+                    .image_dir
+                    .with_file_name("crane")
+                    .to_string_lossy()
+                    .into_owned(),
+                pins: Vec::new(),
+                lifetime: CancellationToken::new(),
+                ref_fresh: REF_FRESH,
+                hold_lease: Duration::from_secs(60),
+                hold_grace: Duration::ZERO,
+                fetch_ceiling: None,
+            }))
+        });
+        c.images = Some(cache.clone());
+    });
+    let cache = node.get().unwrap().clone();
     h.server.put("m1", spec(true)).unwrap();
     h.settle("m1").await;
     let mut other = spec(false);
@@ -3110,20 +3096,18 @@ async fn a_hand_off_keeps_the_trees_of_running_machines_through_a_short_claim() 
     let (running, stopped) = (h.entry("m1"), h.entry("m2"));
     assert!(running.exists() && stopped.exists());
 
-    let measured = claim.clone();
-    let next = h
-        .hand_off(move |c| c.measure_storage = Arc::new(move || *locked(&measured)))
-        .await;
-    *locked(&claim) = filled(85);
-    next.server.check_storage();
+    cache.age_holds(Duration::from_secs(60));
+    let shared = cache.clone();
+    let next = h.hand_off(move |c| c.images = Some(shared)).await;
+    cache.evict(None);
     assert!(
         running.exists(),
-        "the hand-off shed a running machine's tree"
+        "the hand-off let a running machine's tree go"
     );
     assert!(!stopped.exists(), "a stopped machine's tree was kept");
 
     next.server.put("m1", spec(true)).unwrap();
-    next.server.check_storage();
+    cache.evict(None);
     assert!(running.exists(), "an unchanged spec let the tree go");
     next.server.close().await;
 }

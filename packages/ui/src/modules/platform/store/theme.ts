@@ -22,7 +22,7 @@ export function isDarkTheme(theme: Theme): boolean {
   );
 }
 
-function applyTheme(theme: Theme) {
+export function applyTheme(theme: Theme) {
   document.documentElement.classList.toggle("dark", isDarkTheme(theme));
 }
 

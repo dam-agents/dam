@@ -49,10 +49,18 @@ Opening the PR is the `pr-open` skill's; each fix round is the `review-remediati
   Being behind `main` needs no merge; the queue tests the PR on top of `main` and the PRs ahead of it.
 - Enqueued → wait until `gh pr view <n> --json state` is `MERGED`.
   The queue's run is a `merge_group` run on a `gh-readonly-queue/main/pr-<n>-<base-sha>` branch; `gh pr checks <n>` never shows it.
+  The queue groups by `HEADGREEN`: a group's failed run does not eject the PR when a later group that contains it passes, so a red `merge_group` run alone is no ejection; only `state` and the timeline below say so.
 - Kicked out → the PR is `OPEN` again with no `autoMergeRequest`, and nothing on the PR page names the failed check.
   The timeline does: `gh api graphql -f query='{repository(owner:"<owner>",name:"<repo>"){pullRequest(number:<n>){timelineItems(last:10,itemTypes:[REMOVED_FROM_MERGE_QUEUE_EVENT]){nodes{... on RemovedFromMergeQueueEvent{createdAt reason beforeCommit{oid}}}}}}}'`; `reason` is `failed_checks`, a conflict, or a manual removal.
   Find the run: `gh run list --event merge_group --limit 100 --json databaseId,headBranch,conclusion,createdAt --jq '.[]|select(.headBranch|contains("pr-<n>-"))'`; it may show `cancelled`, not `failure`.
   `verify` only aggregates: it fails when any job it needs failed or was cancelled, so read the jobs, not `verify`: `gh run view <run> --json jobs --jq '.jobs[]|select(.conclusion!="success" and .conclusion!="skipped")|"\(.name) \(.conclusion) \(.startedAt) \(.completedAt) \(.databaseId)"'`.
   A `cancelled` job whose run time equals its `timeout-minutes` timed out: `--json jobs` lists its steps with times, and `gh run view <run> --log --job <job-id>` shows the step it hung in.
-  The queue builds the arm64 images, which a PR run never does, so an arm64-only job can fail there first.
-  A flake or an infra failure (a download stall, a runner timeout) → enqueue again; a real failure against what merged ahead → fix on the branch, wait for green, enqueue again.
+  The queue builds the agent images for arm64, which a PR run never does, so an arm64-only agent build can fail there first.
+  Infra or flake when the failed job's log shows one of:
+  - a download failing or timing out from a third-party host (S3, `archive.apache.org`, `registry.access.redhat.com`, the npm registry), often ending in `EOF`, `timeout` or a `mise install` that hangs;
+  - the job `cancelled` at its `timeout-minutes`;
+  - `ERR_NETWORK_CHANGED`;
+  - a failure in a spec or area the PR does not touch, in a job that passed on the PR's own run.
+- Infra or flake → enqueue again at once with `gh pr merge <n> --squash --auto`; do not wait or ask.
+  At most twice per PR: a third ejection → stop and report to the user.
+  A real failure, caused by the PR or by what merged ahead → fix on the branch, wait for green, enqueue again.

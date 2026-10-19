@@ -4,20 +4,20 @@ import {
   SessionMode,
   TELEMETRY_MAX_SINCE_HOURS,
 } from "api-server-api";
-import { type ReactNode, useEffect, useState } from "react";
+import { useState } from "react";
 
 import { labelVariants } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
+import { TREE_GUIDE } from "@/components/ui/tree-guide";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
-import { useIsAgentAnswerableSoon } from "../../agents/api/queries.js";
-import { OrderDropIndicator } from "../../agents/components/order-drop-indicator.js";
-import { useOrderDrag } from "../../agents/hooks/use-order-drag.js";
-import type { useSidebarOrderActions } from "../../agents/hooks/use-sidebar-order-actions.js";
-import { manualOrder } from "../../agents/lib/sidebar-order.js";
-import { useFeatures } from "../../features/api/queries.js";
+import { useActWhenAwake } from "../../agents/hooks/use-act-when-awake.js";
+import {
+  useFeatures,
+  useInstallCapabilities,
+} from "../../features/api/queries.js";
 import type { AgentActivitySession } from "../../home/hooks/use-activity-sessions.js";
 import { isFiltered } from "../../home/lib/activity-filter.js";
 import { matchesActivityFilters } from "../../home/lib/activity-sessions.js";
@@ -25,31 +25,31 @@ import { downloadTelemetryExport } from "../../telemetry/api/download-export.js"
 import {
   prefetchSessionHistory,
   provisionalSessionView,
-  useSessionsById,
 } from "../api/queries.js";
 import { useAgentSessionList } from "../hooks/use-agent-session-list.js";
 import { useOpenSession } from "../hooks/use-open-session.js";
 import {
-  type SessionListToggle,
-  sessionListToggle,
-  SIDEBAR_PREVIEW_SESSIONS,
+  moreClick,
+  newestFirst,
+  sessionListControls,
   sidebarSessionWindow,
 } from "../lib/sidebar-session-window.js";
 import { RenameSessionDialog } from "./rename-session-dialog.js";
 import { SessionListSkeleton } from "./session-list-skeleton.js";
-import { SessionRow } from "./session-row.js";
+import { SessionRow, sessionTitleLabel } from "./session-row.js";
 
 const ROW_CLASS = "rounded-lg border-b-0 py-1.5 pr-2 pl-9";
 
-type OrderActions = ReturnType<typeof useSidebarOrderActions>;
+interface SessionActions {
+  rename: (session: SessionView) => void;
+  delete: (session: SessionView) => Promise<void>;
+}
 
 interface Props {
   agentId: string;
   open: boolean;
   preview: readonly AgentActivitySession[];
   previewComplete: boolean;
-  order: readonly string[];
-  orderActions: OrderActions;
   conversationOf: (session: AttentionItem) => string | undefined;
   stickyClassName: string;
   onNavigate?: () => void;
@@ -60,46 +60,71 @@ export function SidebarAgentSessions({
   open,
   preview,
   previewComplete,
-  order,
-  orderActions,
   conversationOf,
   stickyClassName,
   onNavigate,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
-  const answerable = useIsAgentAnswerableSoon(agentId);
-  if (open || expanded || (order.length > 0 && answerable))
-    return (
-      <AgentSessionList
-        agentId={agentId}
-        order={order}
-        orderActions={orderActions}
-        expanded={expanded}
-        onExpandedChange={setExpanded}
-        stickyClassName={stickyClassName}
-        onNavigate={onNavigate}
-      />
-    );
+  const [renaming, setRenaming] = useState<SessionView | null>(null);
+  const deleteSession = useStore((s) => s.deleteSession);
+  const showConfirm = useStore((s) => s.showConfirm);
+  const actWhenAwake = useActWhenAwake(agentId);
+
+  const sessionActions: SessionActions = {
+    rename: (s) => actWhenAwake(`rename:${s.sessionId}`, () => setRenaming(s)),
+    delete: async (s) => {
+      const label = s.title ? `“${s.title}”` : sessionTitleLabel(s);
+      if (
+        await showConfirm(
+          "Its transcript is deleted and cannot be recovered.",
+          `Delete session ${label}?`,
+          { kind: "destructive", confirmLabel: "Delete session" },
+        )
+      )
+        actWhenAwake(`delete:${s.sessionId}`, () =>
+          deleteSession(s.sessionId, agentId),
+        );
+    },
+  };
+
   return (
-    <SessionPreview
-      agentId={agentId}
-      sessions={preview}
-      complete={previewComplete}
-      order={order}
-      orderActions={orderActions}
-      conversationOf={conversationOf}
-      onExpand={() => setExpanded(true)}
-      onNavigate={onNavigate}
-    />
+    <>
+      {open || expanded ? (
+        <AgentSessionList
+          agentId={agentId}
+          sessionActions={sessionActions}
+          expanded={expanded}
+          onExpandedChange={setExpanded}
+          stickyClassName={stickyClassName}
+          onNavigate={onNavigate}
+        />
+      ) : (
+        <SessionPreview
+          agentId={agentId}
+          sessions={preview}
+          complete={previewComplete}
+          sessionActions={sessionActions}
+          conversationOf={conversationOf}
+          onExpand={() => setExpanded(true)}
+          onNavigate={onNavigate}
+        />
+      )}
+      {renaming && (
+        <RenameSessionDialog
+          agentId={agentId}
+          session={renaming}
+          onClose={() => setRenaming(null)}
+        />
+      )}
+    </>
   );
 }
 
 function SessionPreview({
   agentId,
-  sessions: recent,
+  sessions,
   complete,
-  order,
-  orderActions,
+  sessionActions,
   conversationOf,
   onExpand,
   onNavigate,
@@ -107,77 +132,63 @@ function SessionPreview({
   agentId: string;
   sessions: readonly AgentActivitySession[];
   complete: boolean;
-  order: readonly string[];
-  orderActions: OrderActions;
+  sessionActions: SessionActions;
   conversationOf: Props["conversationOf"];
   onExpand: () => void;
   onNavigate?: () => void;
 }) {
   const openSession = useOpenSession();
-  const sessions = manualOrder(
-    recent,
-    order,
-    (item) => item.session.sessionId,
-    (item) => item.session.createdAt,
-  );
   if (sessions.length === 0) return null;
   const visible = sidebarSessionWindow(sessions, false, () => false);
-  const shown = visible.map((item) => item.session.sessionId);
-  const toggle = sessionListToggle({
+  const { more } = sessionListControls({
     total: sessions.length,
+    collapsed: visible.length,
     expanded: false,
     hasNextPage: !complete,
   });
 
   return (
     <div
-      className="flex flex-col gap-px pb-1"
+      className="flex flex-col gap-px pb-1 [--tree-guide-x:20px]"
       data-testid="sidebar-agent-sessions"
     >
-      {visible.map((item) => (
-        <OrderedRow
-          key={item.id}
-          agentId={agentId}
-          sessionId={item.session.sessionId}
-          shown={shown}
-          orderActions={orderActions}
-        >
-          <SessionRow
-            session={provisionalSessionView(item.session)}
-            active={false}
-            working={item.working}
-            needsApproval={false}
-            unread={item.unread}
-            provisional
-            conversation={conversationOf(item.session)}
-            reorderable={orderActions.ready}
-            className={ROW_CLASS}
-            onResume={() => {
-              openSession(agentId, item.session.sessionId, item.session.mode);
-              onNavigate?.();
-            }}
-            onRename={() => {}}
-            onDelete={() => {}}
-          />
-        </OrderedRow>
-      ))}
-      {toggle && <ToggleRow toggle={toggle} onClick={onExpand} />}
+      {visible.map((item) => {
+        const session = provisionalSessionView(item.session);
+        return (
+          <div key={item.id} className={TREE_GUIDE}>
+            <SessionRow
+              session={session}
+              active={false}
+              working={item.working}
+              needsApproval={false}
+              unread={item.unread}
+              conversation={conversationOf(item.session)}
+              className={ROW_CLASS}
+              onResume={() => {
+                openSession(agentId, item.session.sessionId, item.session.mode);
+                onNavigate?.();
+              }}
+              onRename={() => sessionActions.rename(session)}
+              onDelete={() => void sessionActions.delete(session)}
+            />
+          </div>
+        );
+      })}
+      {more && <ToggleRow more onClick={onExpand} />}
     </div>
   );
 }
 
 function AgentSessionList({
   agentId,
-  order,
-  orderActions,
+  sessionActions,
   expanded,
   onExpandedChange,
   stickyClassName,
   onNavigate,
 }: {
   agentId: string;
-  order: readonly string[];
-  orderActions: OrderActions;
+  sessionActions: SessionActions;
   expanded: boolean;
   onExpandedChange: (expanded: boolean) => void;
   stickyClassName: string;
@@ -186,10 +197,10 @@ function AgentSessionList({
   const list = useAgentSessionList(agentId);
   const filters = useStore((s) => s.sidebarActivityFilters);
   const openSession = useOpenSession();
-  const deleteSession = useStore((s) => s.deleteSession);
-  const showConfirm = useStore((s) => s.showConfirm);
-  const telemetryEnabled = useFeatures().data?.["agent-telemetry"] ?? false;
-  const [renaming, setRenaming] = useState<SessionView | null>(null);
+  const telemetryFlag = useFeatures().data?.["agent-telemetry"] ?? false;
+  const telemetryBackend =
+    useInstallCapabilities().data?.telemetryBackend ?? false;
+  const telemetryEnabled = telemetryFlag && telemetryBackend;
 
   const {
     hasNextPage,
@@ -197,25 +208,9 @@ function AgentSessionList({
     fetchNextPageFailed,
     fetchNextPage,
   } = list;
-  useEffect(() => {
-    if (expanded && hasNextPage && !isFetchingNextPage && !fetchNextPageFailed)
-      void fetchNextPage();
-  }, [
-    expanded,
-    hasNextPage,
-    isFetchingNextPage,
-    fetchNextPageFailed,
-    fetchNextPage,
-  ]);
 
-  const listed = new Set(list.sessions.map((session) => session.sessionId));
-  const unlisted = useSessionsById(
-    agentId,
-    order.slice(0, SIDEBAR_PREVIEW_SESSIONS).filter((id) => !listed.has(id)),
-    { enabled: list.operable && !expanded },
-  );
-  const rows = manualOrder(
-    [...unlisted, ...list.sessions]
+  const rows = newestFirst(
+    list.sessions
       .map((session) => ({ session, state: list.rowState(session) }))
       .filter(({ session, state }) =>
         matchesActivityFilters(
@@ -223,39 +218,35 @@ function AgentSessionList({
           filters,
         ),
       ),
-    order,
+    (row) => row.session.updatedAt ?? row.session.createdAt,
     (row) => row.session.sessionId,
-    (row) => row.session.createdAt,
   );
-  const visible = sidebarSessionWindow(
-    rows,
-    expanded,
-    (row) => row.state.active,
-  );
-  const shown = visible.map((row) => row.session.sessionId);
-  const toggle = sessionListToggle({
+  const isActive = (row: (typeof rows)[number]) => row.state.active;
+  const visible = sidebarSessionWindow(rows, expanded, isActive);
+  const collapsed = expanded
+    ? sidebarSessionWindow(rows, false, isActive).length
+    : visible.length;
+  const { more, less } = sessionListControls({
     total: rows.length,
+    collapsed,
     expanded,
     hasNextPage,
   });
-
-  const confirmDelete = async (s: SessionView) => {
-    const label = s.title || s.sessionId.slice(0, 12);
-    if (
-      await showConfirm(
-        "Its transcript is deleted and cannot be recovered.",
-        `Delete session “${label}”?`,
-        { kind: "destructive", confirmLabel: "Delete session" },
-      )
-    ) {
-      if (await deleteSession(s.sessionId, agentId))
-        orderActions.forgetSession(agentId, s.sessionId);
-    }
+  const onMore = () => {
+    const click = moreClick({
+      total: rows.length,
+      collapsed,
+      expanded,
+      hasNextPage,
+      isFetchingNextPage,
+    });
+    if (click.expand) onExpandedChange(true);
+    if (click.fetchNextPage) void fetchNextPage();
   };
 
   return (
     <div
-      className="flex flex-col gap-px pb-1"
+      className="flex flex-col gap-px pb-1 [--tree-guide-x:20px]"
       data-testid="sidebar-agent-sessions"
       data-provisional={list.provisional ? "true" : undefined}
       aria-busy={list.provisional || list.loading}
@@ -269,17 +260,10 @@ function AgentSessionList({
         </p>
       )}
       {visible.map(({ session: s, state }) => (
-        <OrderedRow
-          key={s.sessionId}
-          agentId={agentId}
-          sessionId={s.sessionId}
-          shown={shown}
-          orderActions={orderActions}
-        >
+        <div key={s.sessionId} className={TREE_GUIDE}>
           <SessionRow
             session={s}
             {...state}
-            reorderable={orderActions.ready}
             className={ROW_CLASS}
             onResume={() => {
               openSession(agentId, s.sessionId, s.mode);
@@ -289,8 +273,8 @@ function AgentSessionList({
               s.mode !== SessionMode.Terminal && {
                 onPrefetch: () => prefetchSessionHistory(agentId, s.sessionId),
               })}
-            onRename={() => setRenaming(s)}
-            onDelete={() => void confirmDelete(s)}
+            onRename={() => sessionActions.rename(s)}
+            onDelete={() => void sessionActions.delete(s)}
             {...(telemetryEnabled && {
               onExportTimeline: () =>
                 void downloadTelemetryExport({
@@ -301,76 +285,45 @@ function AgentSessionList({
                 }),
             })}
           />
-        </OrderedRow>
+        </div>
       ))}
       {expanded && hasNextPage && fetchNextPageFailed && (
         <button
           type="button"
           onClick={() => void fetchNextPage()}
-          className="flex h-[30px] items-center rounded-lg pl-9 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className={cn(
+            TREE_GUIDE,
+            "flex h-[30px] items-center rounded-lg pl-9 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+          )}
         >
           Couldn't load the rest. Retry
         </button>
       )}
-      {toggle && (
+      {more && !(expanded && fetchNextPageFailed) && (
+        <ToggleRow more busy={isFetchingNextPage} onClick={onMore} />
+      )}
+      {less && (
         <ToggleRow
-          toggle={toggle}
-          busy={isFetchingNextPage}
+          more={false}
           stickyClassName={stickyClassName}
-          onClick={() => onExpandedChange(toggle === "more")}
+          onClick={() => onExpandedChange(false)}
         />
       )}
-      {renaming && (
-        <RenameSessionDialog
-          agentId={agentId}
-          session={renaming}
-          onClose={() => setRenaming(null)}
-        />
-      )}
-    </div>
-  );
-}
-
-function OrderedRow({
-  agentId,
-  sessionId,
-  shown,
-  orderActions,
-  children,
-}: {
-  agentId: string;
-  sessionId: string;
-  shown: readonly string[];
-  orderActions: OrderActions;
-  children: ReactNode;
-}) {
-  const drag = useOrderDrag({
-    scope: `sessions:${agentId}`,
-    id: sessionId,
-    ready: orderActions.ready,
-    onMove: (id, drop) => orderActions.moveSession(agentId, shown, id, drop),
-    onStep: (id, step) => orderActions.stepSession(agentId, shown, id, step),
-  });
-  return (
-    <div {...drag.dragProps} className="relative">
-      {children}
-      <OrderDropIndicator at={drag.indicator} />
     </div>
   );
 }
 
 function ToggleRow({
-  toggle,
+  more,
   busy = false,
   stickyClassName,
   onClick,
 }: {
-  toggle: Exclude<SessionListToggle, null>;
+  more: boolean;
   busy?: boolean;
   stickyClassName?: string;
   onClick: () => void;
 }) {
-  const more = toggle === "more";
   const Chevron = more ? ChevronDown : ChevronUp;
   return (
     <button
@@ -380,6 +333,8 @@ function ToggleRow({
       data-testid="sidebar-agent-sessions-toggle"
       className={cn(
         labelVariants(),
+        TREE_GUIDE,
+        "[--tree-guide-end:15px]",
         "flex h-[30px] shrink-0 items-center gap-1 rounded-lg pl-9 text-left text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
         !more && ["sticky bottom-0 z-raised", stickyClassName],
       )}

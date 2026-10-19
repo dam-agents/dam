@@ -11,22 +11,17 @@ use tokio_util::task::TaskTracker;
 
 use crate::api::{
     CpuUsage, MachineSpec, MachineStatus, MachineUsage, MemoryUsage, RunnerPressure, RunnerUsage,
-    SeedResult, State, StorageUsage, REASON_BOOT_FAILED, REASON_HOME_DAMAGED, REASON_HOME_FULL,
+    SeedResult, State, StorageUsage, REASON_BOOT_FAILED, REASON_COPYING_DISK, REASON_HOME_FULL,
     REASON_OUT_OF_CAPACITY, REASON_STORAGE_FULL, STATE_RUNNING,
 };
 use crate::cache::{self, pinned_digest};
-use crate::cacheapi::CacheClient;
 use crate::capability::Verified;
 use crate::capacity::Capacity;
-use crate::console::{
-    home_damaged, home_full, home_repaired, with_console, FSCK, SLOW_BOOT, SLOW_BOOT_AFTER,
-};
-use crate::fetch::{failure_reason, on_own_claim, seed_missing, unusable};
+use crate::console::{home_full, with_console, SLOW_BOOT, SLOW_BOOT_AFTER};
+use crate::fetch::{failure_reason, seed_missing, unusable};
 use crate::forward::{healthy, Forwarder, Listen, LOOPBACK_OFFSET};
-use crate::imagecache::{
-    CacheConfig, ImageCache, Images, Resolved, HOLD_LEASE, REF_FRESH, ROOTFS_DIR,
-};
-use crate::launch::{launch_from_archive, read_launch, ImageLaunch};
+use crate::imagecache::{Images, Resolved, ROOTFS_DIR};
+use crate::launch::{read_launch, ImageLaunch};
 use crate::locked;
 use crate::metrics::{Gauges, Metrics};
 use crate::plan::{
@@ -35,8 +30,7 @@ use crate::plan::{
 use crate::runtime::{redact, Machine, Runtime, Update};
 use crate::share::{self, write_share, SeedFile, SHARE_DIR};
 use crate::state::{
-    self, is_image_ref, is_machine_id, machine_dir, read_spec, write_spec, HOME_REPAIRED_FILE,
-    IMAGE_DIGEST_FILE,
+    self, is_image_ref, is_machine_id, machine_dir, read_spec, write_spec, IMAGE_DIGEST_FILE,
 };
 use crate::storage::StorageUse;
 
@@ -61,22 +55,21 @@ pub const STOP_ON_CLOSE: Duration = Duration::from_secs(40);
 // UNIT_BOUNDARY_DESCRIPTION: how long a delete waits for the action in flight on its machine. The delete cancels that action's fetch first, so the wait covers only a VMM call. It stays under the controller's twenty-second request timeout: a delete still waiting then answers 503, and the controller asks again on its next reconcile.
 pub const DELETE_WAIT: Duration = Duration::from_secs(15);
 
-// UNIT_BOUNDARY_DESCRIPTION: the longest the runner waits on one start, stop or delete call into the runtime. None of them can be interrupted, and a VMM stuck in the kernel can hold one forever, which would hold the machine's worker, and every delete of it, with it. Past this the call is reported failed and left to finish on its own thread; the runtime's own lock on the machine keeps the next call from running beside it, and a delete waits for it only DELETE_WAIT, as for any call in flight, rather than queue behind it on that lock. A start includes the guest pulling a staged archive, which is the longest of them.
-pub const RUNTIME_CALL_LIMIT: Duration = Duration::from_secs(15 * 60);
+// UNIT_BOUNDARY_DESCRIPTION: the longest the runner waits on one start, stop or delete call into the runtime. None of them can be interrupted, and a VMM stuck in the kernel can hold one forever, which would hold the machine's worker, and every delete of it, with it. Past this the call is reported failed and left to finish on its own thread; the runtime's own lock on the machine keeps the next call from running beside it, and a delete waits for it only DELETE_WAIT, as for any call in flight, rather than queue behind it on that lock. The longest legitimate call is a start that boots small and grows: the guest may take smolvm's 180 s to answer, putting the added RAM online 130 s and plugging it RAM_PLUG_WAIT, and a grow that fails then stops the guest, at most platform-init's 15 s for the workload and smolvm's 120 s for the flush, and boots it again whole, up to 180 s more; that is about 11 min, which 12 min covers. A seed's restore runs after the guest answers, so no call waits on it.
+pub const RUNTIME_CALL_LIMIT: Duration = Duration::from_secs(12 * 60);
 
 // UNIT_BOUNDARY_DESCRIPTION: how often the runner names the digests its machines boot to the image cache again. Well inside HOLD_LEASE, so one missed refresh never lets a hold lapse.
 pub const HOLD_REFRESH: Duration = Duration::from_secs(60);
 
-// UNIT_BOUNDARY_DESCRIPTION: how often the runner looks at how full its claim is, and sheds what it can fetch again while it is short. A machine is refused on a critical claim by a look at the time of the request, not at this cadence.
+// UNIT_BOUNDARY_DESCRIPTION: how often the runner looks at how full its claim is, and asks its guests to give back scratch while it is short. A machine is refused on a critical claim by a look at the time of the request, not at this cadence.
 pub const STORAGE_CHECK: Duration = Duration::from_secs(30);
 
-// UNIT_BOUNDARY_DESCRIPTION: what a runner is given at start, as the flags the controller sets on the runner's Deployment. With `image_cache_socket` the image directory is the node's cache, read-only here, and every image is resolved by the node's service; without it the runner is the one writer of its own cache.
+// UNIT_BOUNDARY_DESCRIPTION: what a runner is given at start, as the flags the controller sets on the runner's Deployment. `images` is the node's image cache service: the image directory is that service's, read-only here, and every image a machine boots that is not staged there is resolved by it. Without it the runner boots only the trees staged in the image directory and fetches nothing.
 pub struct Config {
     pub state_dir: PathBuf,
     pub image_dir: PathBuf,
-    pub image_cache_socket: Option<PathBuf>,
+    pub images: Option<Arc<dyn Images>>,
     pub image_budget: i64,
-    pub crane: String,
     pub init: Option<PathBuf>,
     pub runc: Option<PathBuf>,
     pub ports: RangeInclusive<u16>,
@@ -193,7 +186,6 @@ struct Machines {
 
 pub struct Server {
     config: Config,
-    images: Arc<dyn Images>,
     runtime: Arc<dyn Runtime>,
     forwarder: Forwarder,
     machines: Mutex<Machines>,
@@ -285,24 +277,8 @@ impl Server {
     pub fn start(config: Config, runtime: Arc<dyn Runtime>) -> anyhow::Result<Arc<Self>> {
         let forwarder = Forwarder::new(tokio::runtime::Handle::current(), config.listen.clone());
         let lifetime = CancellationToken::new();
-        let images: Arc<dyn Images> = match &config.image_cache_socket {
-            Some(socket) => Arc::new(CacheClient::new(socket.clone())),
-            None => Arc::new(ImageCache::open(CacheConfig {
-                dir: config.image_dir.clone(),
-                budget: config.image_budget,
-                crane: config.crane.clone(),
-                pins: Vec::new(),
-                lifetime: lifetime.clone(),
-                check_access: false,
-                ref_fresh: REF_FRESH,
-                hold_lease: HOLD_LEASE,
-                hold_grace: Duration::ZERO,
-                fetch_ceiling: None,
-            })),
-        };
         let server = Arc::new(Self {
             config,
-            images,
             runtime,
             forwarder,
             machines: Mutex::new(Machines::default()),
@@ -522,8 +498,9 @@ impl Server {
             let _ = tokio::task::spawn_blocking(move || server.stop_running(stopping)).await;
         }
         self.forwarder.unpublish_all();
-        let images = self.images.clone();
-        let _ = tokio::task::spawn_blocking(move || images.flush()).await;
+        if let Some(images) = self.config.images.clone() {
+            let _ = tokio::task::spawn_blocking(move || images.flush()).await;
+        }
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: stops every machine the runtime reports running, each on a thread of its own so one slow guest does not spend the others' time, and returns once all have answered or `within` has passed. A machine whose worker is still in a runtime call is left alone: the call holds the machine, and a stop beside it would only queue behind it.
@@ -633,7 +610,7 @@ impl Server {
             let boots = spec.running && (converging || action.is_some_and(|a| a != Action::Stop));
             if boots || action == Some(Action::Create) {
                 if let Some(full) = self.storage_critical() {
-                    if full.refuses_starts() || self.writes_much(id, &spec, action) {
+                    if full.full() || self.writes_much(id, action) {
                         return Ok(self.refuse(id, status, REASON_STORAGE_FULL, full.refusal()));
                     }
                     self.hold_growth(id, &mut spec);
@@ -1208,7 +1185,7 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: what a machine of this spec boots: the archive an install with no registry staged for the reference, or else the tree the image cache resolves it to, with the launch recorded beside it. If the node's cache service cannot be reached, a reference one of this runner's own machines already boots still boots the tree that machine holds: it is only read, and it was checked for this owner when that machine got it. Anything else the cache cannot serve is refused as an image problem, never booted straight from the registry. The machine stops waiting for the cache once its token is cancelled; the fetch itself is the cache's, may serve other machines of the image, and runs on to its own end.
+    // UNIT_BOUNDARY_DESCRIPTION: what a machine of this spec boots: the tree an install with no registry staged for the reference, or else the tree the image cache resolves it to, with the launch recorded beside it. If the node's cache service cannot be reached, a reference one of this runner's own machines already boots still boots the tree that machine holds: it is only read, and it was checked for this owner when that machine got it. Anything else the cache cannot serve is refused as an image problem, never booted straight from the registry. The machine stops waiting for the cache once its token is cancelled; the fetch itself is the cache's, may serve other machines of the image, and runs on to its own end.
     fn resolve(
         &self,
         id: &str,
@@ -1223,7 +1200,12 @@ impl Server {
             self.metrics.lookup(true);
             return Ok((staged.to_string_lossy().into_owned(), launch, None));
         }
-        let images = self.images.clone();
+        let Some(images) = self.config.images.clone() else {
+            return Err(unusable(format!(
+                "{image} is not staged in {}, and this runner has no image cache to fetch it from",
+                self.config.image_dir.display()
+            )));
+        };
         let (reference, asked) = (image.clone(), auths.to_vec());
         let lookup = bounded(
             "fetching the image",
@@ -1251,7 +1233,6 @@ impl Server {
                 tracing::warn!(error = %format!("{e:#}"), digest = %held.digest, "image cache: the service cannot be reached, so this machine boots the tree another of this runner's machines holds");
                 held
             }
-            Err(e) if self.config.image_cache_socket.is_none() => return Err(on_own_claim(e)),
             Err(e) => return Err(e),
         };
         self.metrics.lookup(lookup.fetched.is_none());
@@ -1507,7 +1488,6 @@ impl Server {
             storage: StorageUsage {
                 used_bytes: storage.used,
                 usable_bytes: storage.usable,
-                image_cache_bytes: self.images.claimed_bytes(),
                 seed_bytes,
             },
             memory: MemoryUsage {
@@ -1523,13 +1503,9 @@ impl Server {
         (self.config.measure_storage)().filter(StorageUse::critical)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: whether bringing a machine to `spec` writes much to the claim: a new machine's disk, or an image fetched into a cache on the claim itself. A start or restart of an existing machine writes only its logs and what its guest does, so a critical claim still lets it through.
-    fn writes_much(&self, id: &str, spec: &MachineSpec, action: Option<Action>) -> bool {
-        let Some(applied) = read_spec(&self.config.state_dir, id) else {
-            return true;
-        };
-        action == Some(Action::Create)
-            || (self.config.image_cache_socket.is_none() && applied.image != spec.image)
+    // UNIT_BOUNDARY_DESCRIPTION: whether bringing a machine to its spec writes much to the claim: a new machine's disk. A start or restart of an existing machine writes only its logs and what its guest does, so a critical claim still lets it through. An image is fetched onto the node's disk, not the claim.
+    fn writes_much(&self, id: &str, action: Option<Action>) -> bool {
+        read_spec(&self.config.state_dir, id).is_none() || action == Some(Action::Create)
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: on a critical claim a machine boots at the disk size it has, since a grow has ext4 fill in new block groups at boot; the larger size waits for a start that finds room, as any size change waits for the next start.
@@ -1539,13 +1515,10 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: why a guest that failed to come up failed, when its storage explains it: the owner's claim is critically full, the check at boot refused to mount a damaged disk, or the guest's own disk is full, as its console says. A guest whose writes fail fails its boot with nothing typed in the error, so the storage is what explains it; the claim comes first, because a full claim also fails every guest's writes, the check's repairs among them.
+    // UNIT_BOUNDARY_DESCRIPTION: why a guest that failed to come up failed, when its storage explains it: the owner's claim is critically full or the guest's own disk is full, as its console says. A guest whose writes fail fails its boot with nothing typed in the error, so the storage is what explains it; the claim comes first because a full claim also fails every guest's writes.
     fn boot_trouble(&self, tail: &str) -> Option<(&'static str, String)> {
         if let Some(full) = self.storage_critical() {
             return Some((REASON_STORAGE_FULL, full.refusal()));
-        }
-        if home_damaged(tail) {
-            return Some((REASON_HOME_DAMAGED, HOME_DAMAGED.to_string()));
         }
         home_full(tail).then(|| {
             (
@@ -1555,7 +1528,7 @@ impl Server {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: one look at the claim, every STORAGE_CHECK. Every machine's share gets a new grant of the bytes its guest may still add to the claim (StorageUse::guest_room), which platform-init holds the guest to; a claim that cannot be measured grants nothing, and the guests are then held to nothing. While it is short, the runner's own image cache gives up every tree no machine holds, since each can be fetched again, and every machine's share carries a request that its guest give back scratch: an id and the bytes asked of each running machine, its even part of what brings the claim back under SHORT_UNTIL_PERCENT. A guest serves each request once, so a new one goes out only when the claim has filled RESHED_STEP_PERCENT further since the last: the claim is mostly the agents' homes, which no guest gives back, and repeating the request would only have every guest delete its scratch again and again. What the guests keep beyond that is not the runner's to free.
+    // UNIT_BOUNDARY_DESCRIPTION: one look at the claim, every STORAGE_CHECK. Every machine's share gets a new grant of the bytes its guest may still add to the claim (StorageUse::guest_room), which platform-init holds the guest to; a claim that cannot be measured grants nothing, and the guests are then held to nothing. While it is short, every machine's share carries a request that its guest give back scratch: an id and the bytes asked of each running machine, its even part of what brings the claim SHED_STEP_PERCENT back under SHORT_PERCENT. A guest serves each request once, so a new one goes out only when the claim has filled SHED_STEP_PERCENT further since the last: the claim is mostly the agents' homes, which no guest gives back, and repeating the request would only have every guest delete its scratch again and again. What the guests keep beyond that is not the runner's to free.
     fn check_storage(&self) {
         let shares: Vec<(String, PathBuf)> = state::machine_ids(&self.config.state_dir)
             .unwrap_or_default()
@@ -1593,7 +1566,7 @@ impl Server {
                 *current = None;
             } else if current
                 .as_ref()
-                .is_none_or(|(at, _)| percent >= at + crate::storage::RESHED_STEP_PERCENT)
+                .is_none_or(|(at, _)| percent >= at + crate::storage::SHED_STEP_PERCENT)
             {
                 let id = self.versions.fetch_add(1, Ordering::Relaxed);
                 *current = Some((percent, format!("{id} {}\n", storage.to_shed(running))));
@@ -1614,34 +1587,25 @@ impl Server {
                 "vm runner: the owner's storage claim changed between short of room and not"
             );
         }
-        if !short {
-            return;
-        }
-        let shed = self.images.shed();
-        for bytes in &shed.freed {
-            self.metrics.evicted(*bytes);
-        }
-        if let Some(used) = shed.used {
-            self.metrics.cache_size(used);
-        }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the `docker save` archive an install with no registry stages for this reference, with the launch read out of the archive's own config. The directory is mounted read-only in that mode, so nothing can be fetched there and this is what the machine boots.
+    // UNIT_BOUNDARY_DESCRIPTION: the tree an install with no registry stages for this reference, beside the node cache's entries and under a name none of them can take, with the launch recorded beside it, which boots in place and before the cache is asked. A `docker save` archive staged under the same name is refused rather than passed over: smolvm flattens an archive inside the guest, which no guest does since platform-init became its init, and `image:stage-vm` stages a tree and removes the archive.
     fn staged_image(&self, image: &str) -> anyhow::Result<Option<(PathBuf, ImageLaunch)>> {
-        // UNIT_BOUNDARY_DESCRIPTION: a staged tree wins over an archive of the same name: the tree boots in place, where the archive is flattened inside every guest on its first boot, under smolvm's fixed pull window, which a slow host outran.
         let tree = cache::staged_path(&self.config.image_dir, image);
         if let Some(launch) = read_launch(&tree).map_err(|e| unusable(format!("{e:#}")))? {
             return Ok(Some((tree.join(ROOTFS_DIR), launch)));
         }
         let archive = cache::archive_path(&self.config.image_dir, image);
-        if !archive.exists() {
-            return Ok(None);
+        if archive.exists() {
+            return Err(unusable(format!(
+                "{} is a staged image archive, which the runner does not boot; restage the image with `mise run image:stage-vm`",
+                archive.display()
+            )));
         }
-        let launch = launch_from_archive(&archive).map_err(|e| unusable(format!("{e:#}")))?;
-        Ok(Some((archive, launch)))
+        Ok(None)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: records the digest a machine is about to boot, before it boots, and holds it. The record is what this runner holds after a restart, when it knows its machines only from its state directory. With no digest the record is removed, because that machine boots from a staged archive and holds no cache entry.
+    // UNIT_BOUNDARY_DESCRIPTION: records the digest a machine is about to boot, before it boots, and holds it. The record is what this runner holds after a restart, when it knows its machines only from its state directory. With no digest the record is removed, because that machine boots a staged tree and holds no cache entry.
     fn record_digest(&self, id: &str, digest: Option<&str>) -> anyhow::Result<()> {
         let path = state::require_machine_dir(&self.config.state_dir, id)?.join(IMAGE_DIGEST_FILE);
         match digest {
@@ -1676,6 +1640,9 @@ impl Server {
 
     // UNIT_BOUNDARY_DESCRIPTION: holds the digest of every machine that runs or is asked to, so the cache's eviction spares their trees. A stopped machine holds nothing: a hibernated agent would otherwise keep each image a deploy retires on the cache, and its start fetches the tree again when it is gone. A machine counts while the controller last asked for it running, so a wake holds it before the start checks it is there, or while it runs as last recorded or as the runtime says, so a stop in flight still holds the tree its guest reads, and so does every machine a runner adopts after a hand-off or a restart from its first hold, before the controller has sent it anything. It runs at start, after a machine records a new digest, before a start, and every HOLD_REFRESH. A hold that fails is reported and not returned: the machines keep running, and the next refresh tries again inside the lease.
     pub fn hold_images(&self) {
+        let Some(images) = &self.config.images else {
+            return;
+        };
         let held: BTreeSet<String> = state::machine_ids(&self.config.state_dir)
             .unwrap_or_default()
             .iter()
@@ -1692,7 +1659,7 @@ impl Server {
         if held.is_empty() {
             return;
         }
-        if let Err(e) = self.images.hold(&held) {
+        if let Err(e) = images.hold(&held) {
             tracing::warn!(error = %format!("{e:#}"), "image cache: cannot hold the images this runner's machines boot");
         }
     }
@@ -1779,10 +1746,9 @@ impl Server {
         let foreign = self.foreign(id);
         let share = machine_dir(&self.config.state_dir, id).map(|dir| dir.join(SHARE_DIR));
         let seeded = share.as_deref().is_some_and(share::seeded);
-        let converting = share.as_deref().is_some_and(crate::convert::requested);
         locked(&self.machines).entries.get(id).is_some_and(|e| {
-            let limit = if converting && e.boot.is_some() {
-                crate::plan::CONVERTING_RESTART
+            let limit = if copies_disk(e) {
+                crate::plan::COPYING_RESTART
             } else {
                 quiet_limit(foreign, e.boot.is_none(), e.gave_up.map(|at| at.elapsed()))
             };
@@ -1852,10 +1818,6 @@ impl Server {
                 .and_then(|e| e.boot.as_ref().map(|boot| boot.seed.clone()));
             if let Some(seed) = ending {
                 self.record_seeded(id, seed.as_deref());
-                self.record_repair(id);
-                if let Err(e) = self.runtime.answered(id) {
-                    tracing::warn!(machine = %id, error = %format!("{e:#}"), "acting on the guest's first answer");
-                }
             }
         }
         let mut machines = locked(&self.machines);
@@ -1900,26 +1862,6 @@ impl Server {
             if let Err(e) = share::record_seeded(&share, from) {
                 tracing::warn!(machine = %id, error = %format!("{e:#}"), "could not record that the machine's disk holds a home");
             }
-        }
-    }
-
-    // UNIT_BOUNDARY_DESCRIPTION: at the first answer of a boot, keeps beside the machine's spec what the disk check of that boot repaired, or removes what an earlier boot's check left there, so the status reports the last boot's repair until the next boot, across a runner restart too. A record that cannot be written is logged, and the status goes on reporting the one before.
-    fn record_repair(&self, id: &str) {
-        let Some(path) =
-            machine_dir(&self.config.state_dir, id).map(|dir| dir.join(HOME_REPAIRED_FILE))
-        else {
-            return;
-        };
-        let checked = self.redacted(id, &self.runtime.console_lines(id, FSCK));
-        let written = match home_repaired(&checked) {
-            Some(repaired) => crate::files::write(&path, repaired.as_bytes(), 0o644),
-            None => match fs::remove_file(&path) {
-                Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
-                _ => Ok(()),
-            },
-        };
-        if let Err(e) = written {
-            tracing::warn!(machine = %id, error = %format!("{e:#}"), "could not record what the disk check at boot repaired");
         }
     }
 
@@ -2080,6 +2022,11 @@ impl Server {
             .and_then(|e| e.boot.as_ref())
             .and_then(|boot| boot.note.as_ref())
             .filter(|_| failed.is_none() && !status.ready && reads_ready(state));
+        if failed.is_none() && !status.ready && reads_ready(state) && entry.is_some_and(copies_disk)
+        {
+            status.reason = REASON_COPYING_DISK.into();
+            status.message = COPYING_DISK.into();
+        }
         if let Some((note, _, reason)) = note {
             if let Some(reason) = reason {
                 status.reason = reason.to_string();
@@ -2097,15 +2044,17 @@ impl Server {
             .as_ref()
             .map(|dir| share::seeded_from(&dir.join(SHARE_DIR)))
             .unwrap_or_default();
-        status.home_repaired = dir
-            .and_then(|dir| fs::read_to_string(dir.join(HOME_REPAIRED_FILE)).ok())
-            .unwrap_or_default();
         (state, status)
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the owner is told when the disk check at boot left the agent's disk damaged: that the disk is kept, that the next start tries the repair again and helps when the damage came from a cause that has passed, and the two ways out when it keeps failing, as the persistence architecture page gives them.
-const HOME_DAMAGED: &str = "This agent's disk has file system errors that the check at start could not repair, so the agent was not started and its files are kept as they are. Start it again: when the errors came from storage that was full or a passing disk error, the next start can repair them. If it keeps failing, ask an admin to check the agent's disk, or delete the agent and create it again, which gives it an empty disk and loses its files";
+// UNIT_BOUNDARY_DESCRIPTION: whether the boot the runner waits on copies a disk before its guest first answers: its spec expects a migration's seed, which platform-init restores before it starts the image. Such a boot is held up to plan::COPYING_RESTART and reported as REASON_COPYING_DISK, so neither the runner nor the controller takes its silence for a failed start.
+fn copies_disk(entry: &MachineEntry) -> bool {
+    entry.boot.as_ref().is_some_and(|boot| boot.seed.is_some())
+}
+
+const COPYING_DISK: &str =
+    "the guest is copying its disk before it starts the agent; a large home can take hours";
 
 // UNIT_BOUNDARY_DESCRIPTION: the VM runtime that could not grow the machine, kept beside its spec. While it names this runner's runtime, the machine boots whole: a guest that cannot grow would otherwise pay a small boot and a failed grow on every start. A runner release with another runtime tries the grow again. It goes with the machine on delete.
 pub const BOOT_WHOLE_FILE: &str = "boot-whole";
@@ -2118,7 +2067,7 @@ fn boot_and_grow(
     size: i32,
     answered: impl Fn() -> bool,
 ) -> anyhow::Result<bool> {
-    runtime.start(id, boot)?;
+    runtime.start(id, boot, size)?;
     if boot == size {
         return Ok(false);
     }
@@ -2131,7 +2080,7 @@ fn boot_and_grow(
     }
     tracing::warn!(machine = id, error = %format!("{e:#}"), boot_mib = boot, memory_mib = size, "the guest could not grow to its size; booting it again whole");
     runtime.stop(id)?;
-    runtime.start(id, size)?;
+    runtime.start(id, size, size)?;
     Ok(true)
 }
 

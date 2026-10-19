@@ -59,7 +59,7 @@ export function SideDrawer({
         aria-label={`Close ${label.toLowerCase()}`}
         onClick={onClose}
         className={cn(
-          "absolute inset-0 bg-black/30 transition-opacity duration-150",
+          "absolute inset-0 bg-black/50 backdrop-blur-[4px] transition-opacity duration-150",
           open ? "opacity-100" : "opacity-0",
         )}
       />

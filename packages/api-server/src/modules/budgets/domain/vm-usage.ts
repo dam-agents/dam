@@ -5,7 +5,6 @@ export interface RunnerUsage {
   storage: {
     usedBytes: number;
     usableBytes: number;
-    imageCacheBytes: number;
     seedBytes: number;
   };
   memory: { limitMiB: number; committedMiB: number };
@@ -29,9 +28,8 @@ export interface RunnerUsage {
 // UNIT_BOUNDARY_DESCRIPTION: the same threshold the runner refuses a new disk at and the controller starts reclaiming memory at, so the api-server's refusal is the runner's, said before an Agent is written rather than after its machine is refused.
 export const STORAGE_FULL_PERCENT = 90;
 export const POOL_WARNING_PERCENT = 75;
-// UNIT_BOUNDARY_DESCRIPTION: the runner's own limits past STORAGE_FULL_PERCENT: from the first it starts no machine, and from the second a guest's writes are failing.
-export const STORAGE_START_LIMIT_PERCENT = 97;
-export const STORAGE_WRITES_FAILING_PERCENT = 98;
+// UNIT_BOUNDARY_DESCRIPTION: the runner's emergency level past STORAGE_FULL_PERCENT: from it the runner starts no machine, and running guests' writes are failing.
+export const STORAGE_NEARLY_FULL_PERCENT = 95;
 
 // UNIT_BOUNDARY_DESCRIPTION: the one definition of how full a pool is. The create refusal, the resource alerts and the usage the web app shows all read their thresholds here, so they cannot disagree about when a pool is critical.
 export function poolLevel(percent: number): PoolLevel {
@@ -78,7 +76,6 @@ export function vmUsageView(
     storage: {
       usedBytes: storage.usedBytes,
       usableBytes: storage.usableBytes,
-      imageCacheBytes: storage.imageCacheBytes,
       seedBytes: storage.seedBytes,
       level: levelOf(storage.usedBytes, storage.usableBytes),
     },
@@ -128,13 +125,13 @@ export function storageFullMessage(figures?: {
     ? `Your VM agents have used ${gib(figures.usedBytes)} of ${gib(figures.usableBytes)} GiB of their shared storage`
     : "Your VM agents' shared storage is full";
   return [
-    percent !== null && percent >= STORAGE_WRITES_FAILING_PERCENT
+    percent !== null && percent >= STORAGE_NEARLY_FULL_PERCENT
       ? "Your running VM agents may be failing to write files now."
       : null,
     `${used}, so new VM agents can't be created and their disks can't grow.`,
     percent === null
       ? "Once storage is nearly full, sleeping VM agents can't be started until space is freed."
-      : percent >= STORAGE_START_LIMIT_PERCENT
+      : percent >= STORAGE_NEARLY_FULL_PERCENT
         ? "Sleeping VM agents can't be started until space is freed."
         : "Sleeping VM agents can still be started until storage is nearly full, so you can open one and ask it to clear its caches.",
     "To free space, delete a VM agent you no longer need, open an agent and ask it to clear its caches, or request more storage.",

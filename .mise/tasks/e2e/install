@@ -23,13 +23,12 @@ INSTALL_ARGS=(
 # *.localtest.me the page is NOT secure-context, crypto.subtle is undefined,
 # the OIDC redirect throws silently, and the SPA hangs on a blank screen.
 # E2E_VIRTUALIZATION=1 installs the vm backend too: cluster:install applies the
-# KVM device plugin, and values-local.yaml states the runner's egressCidrs
-# and points the runners at the images this install stages on the node. The
-# same variable puts the Playwright suite on the vm Backend — every agent it
+# KVM device plugin, and values-local.yaml puts the node image cache where
+# this install stages its images. The same variable puts the Playwright suite on the vm Backend — every agent it
 # creates is a vm agent, and it adds the runtime migration spec — and that run
 # fails, rather than skips, on an install without the backend. It needs a
 # usable /dev/kvm (nested virtualization on the lima VM, or a KVM host in
-# sandbox mode), so it is opt-in: CI sets it only in its vm lane, cd.yml's
+# sandbox mode), so it is opt-in: CI sets it only in its vm lane, e2e.yml's
 # e2e-vm job on a KVM runner.
 #
 # That lane also gives every machine one vCPU and counts a booting one at
@@ -55,18 +54,22 @@ if [ -n "${E2E_VIRTUALIZATION:-}" ]; then
     --set=harnessTemplates.mock.resources.limits.cpu=1000m
     --set=harnessTemplates.mock.resources.limits.memory=1Gi
   )
-  # The lane also boots one harness Template on the default image and the
-  # node's harness tools (smoke/22-harness-tools): the default Template,
-  # sized like the mock, and the per-node installer that fills its tools.
+  # The lane also boots one harness Template on the default image and its
+  # baked tools (smoke/22-harness-tools): the default Template, sized like the
+  # mock.
   INSTALL_ARGS+=(
     --set=harnessTemplates.default.enabled=true
     --set=harnessTemplates.default.resources.limits.cpu=1000m
     --set=harnessTemplates.default.resources.limits.memory=1Gi
-    --set=harnessTools.hostPath=/var/lib/platform-harness-tools
   )
+  # E2E_GATEWAY_PER_OWNER=1 serves the lane's vm agents from one gateway pod
+  # per owner (virtualization.gateway.perOwner), the path no other suite
+  # reaches; CI's vm lane sets it.
+  [ -z "${E2E_GATEWAY_PER_OWNER:-}" ] || INSTALL_ARGS+=(--set=virtualization.gateway.perOwner=true)
 else
-  # The container lane says so: in sandbox mode cluster:install turns the vm
-  # backend on by itself wherever it can open /dev/kvm.
+  # The container lane says so: outside CI cluster:install turns the vm
+  # backend on by itself on an Apple silicon Mac and in a sandbox that can
+  # open /dev/kvm.
   INSTALL_ARGS+=(--set=virtualization.enabled=false)
 fi
 mise run cluster:install -- "${INSTALL_ARGS[@]}"

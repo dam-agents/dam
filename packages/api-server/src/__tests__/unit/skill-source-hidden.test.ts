@@ -14,7 +14,10 @@ import {
 
 const URL = "https://github.com/dam-agents/dam";
 
-function service(sources: SkillSource[]) {
+function service(
+  sources: SkillSource[],
+  installed: { source: string; name: string; path?: string }[] = [],
+) {
   const hidden: HiddenSourceKey[] = [];
   const svc = createSkillsService({
     agentsRepo: {
@@ -26,6 +29,7 @@ function service(sources: SkillSource[]) {
     } as unknown as SkillsRepository,
     agentSkillsRepo: {
       listHiddenSources: async () => hidden,
+      listSkills: async () => installed,
       setSourceHidden: async (
         _agentId: string,
         key: HiddenSourceKey,
@@ -55,6 +59,18 @@ describe("hiding a skill source for one agent", () => {
       ["dev", false],
       ["qa", true],
     ]);
+  });
+
+  // TEST_SCENARIO: a source whose skills are on the agent cannot be hidden, whether or not its scan works, so no skill stays on the agent without a toggle.
+  it("refuses to hide a source with skills on the agent", async () => {
+    const { svc, hidden } = service(
+      [{ id: "qa", name: "qa", gitUrl: URL, path: "qa" }],
+      [{ source: URL, name: "qi-profile", path: "qa" }],
+    );
+    await expect(
+      svc.setSourceHidden({ agentId: "agent-1", id: "qa", hidden: true }),
+    ).rejects.toThrow(/turn off/);
+    expect(hidden).toEqual([]);
   });
 
   // TEST_SCENARIO: an owner cannot hide a source on an agent they do not own.

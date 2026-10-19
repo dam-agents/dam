@@ -39,6 +39,7 @@ export function SidebarFlyout({ label, icon: Icon, badge, children }: Props) {
       <PopoverContent
         side="right"
         align="start"
+        aria-label={label}
         onFocusOutside={(event) => event.preventDefault()}
         className="flex max-h-[min(70vh,560px)] w-[280px] flex-col p-2"
       >

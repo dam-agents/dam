@@ -1,6 +1,6 @@
 # Spend limits
 
-Last verified: 2026-10-16
+Last verified: 2026-10-17
 
 ## Overview
 
@@ -10,7 +10,7 @@ The spend that a harness reports through telemetry ([metrics](metrics.md)) stays
 
 The parts:
 
-- **The meter**, in the agent's paired gateway pod ([credential-gateway](credential-gateway.md)), reads the usage in each provider reply and sends one spend record per call to the api-server.
+- **The meter**, in the agent's paired gateway pod, or in its own listener on an [owner gateway](credential-gateway.md#owner-gateway), reads the usage in each provider reply and sends one spend record per call to the api-server.
 - **The api-server** receives the records on the same per-agent port that answers the gateway's ext_authz checks, so a record is tied to its agent the same way a check is ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)).
 
 The api-server prices each record when it arrives ([Prices](#prices)) and keeps the daily ledger ([Ledger](#ledger)).
@@ -258,7 +258,11 @@ It has no tool to set, clear or continue a limit.
 
 ## Screens
 
-The owner sets each limit where the work happens, and each limit shows its metered spend, what is left, and a meter:
+The owner sets each limit where the work happens.
+Each limit shows as one sentence, "Spent $X today of $Y daily limit for <subject>.", where the subject is the agent on the Connection, the agent, or all your agents, and $Y is "∞" with no limit.
+The amount is a button that opens a small dialog to set the limit or remove it; a caller that cannot set limits sees the sentence without the button.
+A set limit also shows a meter.
+The screens:
 
 - **The agent's page:** the Usage section sets the agent limit and shows today's Metered Spend and when the day resets, in the user's own time.
   When the own limit or the ceiling stops the agent first, it says so.

@@ -1,22 +1,25 @@
 # VM image cache
 
-Last verified: 2026-10-15
+Last verified: 2026-10-18
 
 A machine may reach only its gateway, so its image is fetched for it and unpacked into a tree every machine of that image mounts read-only.
-Where that tree lives is the one part of the runner's storage an install may move off its claim.
-
-By default each owner's runner caches on its own volume, so the same few harness images are fetched once per owner.
-An install that would rather pay once per node points `imageCache.hostPath` at a host directory every runner scheduled there shares — not a `ReadWriteMany` claim, the costliest class, which buys only cross-node dedup.
-On OpenShift the runners then need an SCC that admits a host directory, which the chart's own does not — and one that leaves the SELinux type to the pod: SELinux confines every container to a type that may neither write nor read a directory the kubelet creates on the host, so the image cache service runs there as the unconfined container type at the plain level and labels the directory for containers as it opens the cache.
+That tree is never on the runner's claim: it lives in a **node cache**, the host directory `imageCache.hostPath` names, which every runner scheduled on the node shares, so the same few harness images are fetched once per node rather than once per owner.
+The install must name it once the `vm` Backend is on, and the chart refuses one that does not; its default is the directory the OpenShift node configuration creates.
+It is a host directory, not a `ReadWriteMany` claim, the costliest class, which buys only cross-node dedup.
+On OpenShift the runners need an SCC that admits a host directory, which the chart's own does not — and one that leaves the SELinux type to the pod: SELinux confines every container to a type that may neither write nor read a directory the kubelet creates on the host, so the image cache service runs there as the unconfined container type at the plain level and labels the directory for containers as it opens the cache.
 Every tree it unpacks inherits that label, which is what lets the runners, still confined, boot from it; the label is set from the chart's OpenShift signal, and a service that cannot set it says so and exits rather than serve trees no runner could read.
 The node configuration in [`etc/openshift-node-config/`](../../etc/openshift-node-config/) has the nodes create and label the directory themselves.
 
-**Every cache has exactly one writer.** On a runner's own volume that is the runner.
-On a node directory it is a per-node **image cache service**: runners mount the directory read-only and ask the service, over a socket inside it, for each image a machine boots.
+**The cache has exactly one writer**, a per-node **image cache service**: runners mount the directory read-only and ask the service, over a socket inside it, for each image a machine boots.
 The service resolves the reference, fetches and unpacks it on a miss with the pull secrets the runner forwards for that machine ([security-and-credentials](security-and-credentials.md#image-pull-credentials)), and answers with the tree and what the image says to run.
 A runner that could write a shared directory would let a guest that escapes into it rewrite a tree another owner's machines boot; one writer also means a fetch and an eviction never have to agree across processes, so what the writer knows about the cache is kept in its memory — all but where each tree came from, which is written beside the tree because a later caller's access is checked against it.
 The service is therefore in the boot path: with it down, a runner boots only an image one of its own machines already holds, and refuses any other as unavailable rather than booting it straight from the registry.
+The runner fetches nothing itself, so it holds none of the capabilities an unpack takes, and it resolves no name: its egress policy admits no resolver ([vm-runner](vm-runner.md)).
+The service resolves the registries itself, through the node's resolver, or through the cluster's where `imageCache.dnsPolicy` says the registry is a Service inside the cluster.
 The service unpacks with every capability dropped but the few that restoring an image's owners and modes takes, and skips the image's `/dev`, so no tree carries a device node.
+No entry lands outside the tree: tar strips a leading `/` and refuses a member that names `..` or a path through a symlink, and the fetch fails on either.
+A tree keeps the setuid binaries its image carries, because a guest boots it as root on its own kernel and its `sudo` or `su` has to work there.
+The host never runs them: a hostPath takes no `nosuid` mount option, so the node directory is closed to every host uid but root, and a runner reads it as root through its idmapped mount, under no-new-privileges.
 
 **An entry is named by the image it holds, not by the reference that asked for it.** A create resolves its reference to a digest and boots the tree stored under it, so two tags of one image share a tree and a mutable tag is never frozen at what it first named.
 The writer remembers what a tag resolved to for a few minutes; a pinned digest is never resolved, and a registry that cannot answer boots what the tag last resolved to.
@@ -29,19 +32,23 @@ After a host crash, every image fetched since the writer last closed is therefor
 A writer that dies mid-fetch or mid-eviction leaves only a scratch tree, which the next open reclaims, never a partial tree a lookup would take as complete.
 A fetch that finds an incomplete tree, or another platform's, under its name moves it aside and puts its own in place.
 A resolve has one deadline for everything it does, fetch included, and a runner waits a little past it, so a service that is slow is told apart from one that is gone — only one that is gone lets a runner boot a tree it already holds.
-A fetch that fails for its image — a registry refusing the export, a stream tar cannot unpack — is reported as an unavailable image, and a disk that fills, or has less room than the image takes unpacked before the download starts, as a lack of capacity, never as a boot to retry at once into the same state.
-On a runner's own volume that disk is the owner's claim, so there it is reported as the owner's storage being full ([persistence](persistence.md#per-agent-pvcs)).
+A fetch that fails for its image — a registry refusing the export, a stream tar cannot unpack, or one larger than the cache reserved for it — is reported as an unavailable image, and a disk that fills, or has less room than the image takes unpacked before the download starts, as a lack of capacity, never as a boot to retry at once into the same state.
 
 **Eviction never frees a tree a machine is running from.** It takes the oldest write first, down to a byte count the install states, sparing what is held.
 A fetch evicts before it downloads, until both the budget and the filesystem have room for the tree it unpacks.
-OCI metadata names only compressed sizes, so that tree is taken to be three times the compressed size the manifest names.
+OCI metadata names only compressed sizes, so the writer reads the size each gzip layer unpacks to from the last four bytes of its blob, its gzip trailer, with one ranged read per layer and the token crane gets for the caller's credential.
+On common images the summed trailers came within 3% of what crane exports, so a measured layer is taken at its trailer and a tenth more, plus 64 KiB for tar's end blocks and padding.
+An uncompressed layer is its blob's size.
+Any other layer is taken at four times its compressed size, above the 2.2 to 3.2 that common images unpack to: a zstd layer, one whose registry refuses the ranged read or does not answer it within 20 seconds, and one whose trailer reads well below its blob, such as an eStargz footer.
+A failed read only falls back to that estimate and never fails the fetch.
+That size is also the most the fetch may unpack, with a floor of 16 MiB for a tiny image and the whole budget for one whose manifest cannot be read: the writer counts the stream between crane and tar and stops the fetch past it, so an image whose layers inflate is refused rather than fill the disk every machine on the node shares.
+A trailer counts only the last gzip member of its blob and holds its size mod 4 GiB, so a layer of several members or past 4 GiB can read short; a fetch stopped at a measured size is tried once more, reserved and capped at the larger of each layer's measured size and four times its blob.
 A runner holds the digests its running machines boot by naming them again every minute, and a hold lapses only once nobody names it — a runner that stopped has no machines left.
 A runner names every machine its runtime finds running from the moment it starts, so one that took the machines over in a hand-off or a restart holds their trees before the controller has sent it a spec.
 A stopped machine holds nothing, so a hibernated agent never keeps an image a deploy retired; its start fetches the tree again when it is gone, and holds it before it checks it is there.
 A hold only extends, so no runner can release what another holds, and only a tree on disk is held, so a resolve that fails holds nothing; past half again its budget, the service fetches nothing.
-Each fetch under way counts toward that ceiling at that unpacked estimate, so fetches that start together cannot each find the cache under it.
+Each fetch under way counts toward that ceiling at that unpacked size, so fetches that start together cannot each find the cache under it.
 A service that restarts has forgotten every hold, so it evicts nothing until the runners have had time to name theirs again.
-A runner whose own claim runs short sheds every tree no machine holds, however far inside its budget the cache is, because a tree can be fetched again and a machine disk on the same claim cannot.
 
 **Nothing could fill that cache before an agent needed it.** A runner exists only once its owner's agents need one, so the first machine on an image, on every node after every deploy, would wait out the fetch with a user watching.
 The service therefore preloads the harness images the install ships, resolving their tags on every pass, and pins them against eviction.
@@ -57,8 +64,11 @@ The service keeps that knowledge in memory, so after a restart it asks again.
 A grant is remembered per digest and credential, and a failed anonymous read per digest, for as long as a tag's resolution is trusted, so a fleet of creates on one private image asks the registry once; a revoked pull secret still boots a tree it was granted for that long.
 A remembered failed read only moves the anonymous read after the caller's credentials, and never refuses a boot by itself, since a read that timed out looks the same as one refused.
 The check gates a boot, not a read.
-A runner's own cache serves one owner and checks nothing.
 
 **What a runner may read on a node cache is not gated.** Its mount is the whole directory, so any runner on the node — and any guest that escapes into one — reads every cached tree, other owners' private images included.
 The per-machine access check decides only what the service resolves and fetches for a caller.
-The socket cannot tell one runner from another either, since every runner is root on the node, so what a caller can make the service do is bounded instead of attributed: a hold names only trees on disk, at most a thousand per call, and once holds keep the cache past half again its budget, it refuses every fetch, as a capacity problem, and logs an error for the operator.
+The socket cannot tell one runner from another either, since the service checks no peer credentials on it, so what a caller can make the service do is bounded instead of attributed: a hold names only trees on disk, at most a thousand per call, and once holds keep the cache past half again its budget, it refuses every fetch, as a capacity problem, and logs an error for the operator.
+
+**An install with no registry stages trees beside the cache's.** Local development has no registry for its own images, so the install stages each one as a tree with its launch record in the same node directory, named after the image reference (`image:stage-vm`), and a runner boots a staged tree before it asks the service.
+A staged name never looks like a cache entry's, which is named by digest, so eviction never takes one and a reference that would turn into an entry's name is refused.
+The service still runs there; it preloads nothing it can reach, and backs off.

@@ -1,6 +1,7 @@
 import type { TokenSpendByModel } from "api-server-api";
 
 import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { AgentSpendLimitCard } from "../../spend/components/agent-spend-limit-card.js";
@@ -17,7 +18,6 @@ import { UncountedCallsNote } from "./uncounted-calls-note.js";
 import {
   HarnessReportsLead,
   readFailureMessage,
-  UsageNotice,
   UsageStaleLabel,
 } from "./usage-notice.js";
 
@@ -73,9 +73,9 @@ export function SandboxUsageSection({ agentId }: { agentId: string }) {
 
       {}
       {(state === "failed" || state === "unavailable") && (
-        <UsageNotice>
+        <EmptyState>
           {readFailureMessage(state === "unavailable", label)}
-        </UsageNotice>
+        </EmptyState>
       )}
       {state === "loading" && <UsageSkeleton />}
       {state === "ready" && data && (
@@ -83,7 +83,7 @@ export function SandboxUsageSection({ agentId }: { agentId: string }) {
           <SpendStatCards {...sums} />
           <UncountedCallsNote rows={data.byModel} />
           {data.byModel.length === 0 ? (
-            <UsageNotice>{`No LLM calls in ${monthLabel(shownMonth)}.`}</UsageNotice>
+            <EmptyState>{`No LLM calls in ${monthLabel(shownMonth)}.`}</EmptyState>
           ) : (
             <>
               <section>

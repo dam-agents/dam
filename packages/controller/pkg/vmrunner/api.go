@@ -107,10 +107,6 @@ type MachineStatus struct {
 	// UNIT_BOUNDARY_DESCRIPTION: migration ends only when this is the seed it
 	// UNIT_BOUNDARY_DESCRIPTION: expects.
 	HomeSeededFrom string `json:"homeSeededFrom,omitempty"`
-	// UNIT_BOUNDARY_DESCRIPTION: what the disk check at the machine's last
-	// UNIT_BOUNDARY_DESCRIPTION: answered boot repaired, as the guest's
-	// UNIT_BOUNDARY_DESCRIPTION: console said it. Empty for a clean disk.
-	HomeRepaired string `json:"homeRepaired,omitempty"`
 	// UNIT_BOUNDARY_DESCRIPTION: whether the machine as recorded boots with
 	// UNIT_BOUNDARY_DESCRIPTION: the node's virtualization extensions: asked
 	// UNIT_BOUNDARY_DESCRIPTION: for, and granted by the runner.
@@ -136,7 +132,8 @@ const (
 	ReasonSeedMissing      = "MachineSeedMissing"
 	ReasonStorageFull      = "MachineStorageFull"
 	ReasonHomeFull         = "MachineHomeFull"
-	ReasonHomeDamaged      = "MachineHomeDamaged"
+	// UNIT_BOUNDARY_DESCRIPTION: a first boot that copies a disk before the guest answers — a conversion to btrfs or a migration seed's restore. The runner holds such a boot for up to six hours, so it is a boot in progress, never a start failure.
+	ReasonCopyingDisk = "MachineCopyingDisk"
 )
 
 // UNIT_BOUNDARY_DESCRIPTION: which runner release a runner pod runs, as its loader last wrote it: the one running, the one the controller asked for, and, when the two differ, why the loader holds on to the one running.
@@ -145,6 +142,11 @@ type RunnerRelease struct {
 	Target  string `json:"target,omitempty"`
 	Held    string `json:"held,omitempty"`
 	Message string `json:"message,omitempty"`
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the release the controller names for the pod's loader to run: the runner image reference the stager staged it under.
+type RunnerReleaseName struct {
+	Release string `json:"release"`
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how close the runner's own memory is to its limit: the working set the kernel kills the runner by, read off its cgroup, and whether it is past the pressure threshold. Version moves when pressure starts or ends and again while it lasts.
@@ -167,7 +169,7 @@ type RunnerUsage struct {
 	} `json:"memory"`
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Unstaged passes once the node's stager copies the release; the other two never pass in that pod, so only a new pod takes the release.
+// UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Unstaged passes once the node's stager copies the release; the other two never pass in that pod, so only a new pod takes the release. Runtime means the release's runner does not load in this pod; the name is older than that meaning.
 const (
 	HeldUnstaged = "unstaged"
 	HeldRuntime  = "runtime"

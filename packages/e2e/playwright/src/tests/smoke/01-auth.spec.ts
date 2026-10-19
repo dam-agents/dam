@@ -81,7 +81,7 @@ test("both tRPC doors: bad bearers refused, stale terms gate all but terms.*", a
   });
 });
 
-// TEST_SCENARIO: The flow id is deliberately bogus: the picker only needs to render to prove the deep link survived the login roundtrip and the terms gate (#3107); no real bind flow is required.
+// TEST_SCENARIO: The flow id is deliberately bogus: the bind page only needs to render its expired-link state to prove the deep link survived the login roundtrip and the terms gate (#3107); no real bind flow is required.
 const bindFlowId = "e2e-deep-link-probe";
 const bindDeepLink = `/slack/bind?flow=${bindFlowId}`;
 
@@ -108,15 +108,15 @@ test("a bind deep link survives the login roundtrip and the Terms gate (#3107)",
   const termsButton = page.getByRole("button", {
     name: /I accept the Terms of Use/,
   });
-  const picker = page.getByRole("heading", {
-    name: /pick an agent for/i,
+  const expiredLink = page.getByRole("heading", {
+    name: /this link is invalid or has expired/i,
   });
 
   await submitKeycloakLoginForm(page);
-  await expect(termsButton.or(picker)).toBeVisible();
+  await expect(termsButton.or(expiredLink)).toBeVisible();
   if (await termsButton.isVisible()) await termsButton.click();
 
-  await expect(picker).toBeVisible();
+  await expect(expiredLink).toBeVisible();
   await page.waitForURL(
     (url) =>
       url.pathname === "/slack/bind" &&

@@ -29,11 +29,10 @@ export function nextSandboxName(
 
 export function nextAgentName(
   takenNames: Iterable<string>,
-  options: { keep?: string | null; random?: () => number } = {},
+  options: { random?: () => number } = {},
 ): string {
   const taken = new Set(Array.from(takenNames, normalizedName));
-  const { keep, random = Math.random } = options;
-  if (keep && !taken.has(normalizedName(keep))) return keep;
+  const { random = Math.random } = options;
   const free = BUTLER_NAMES.filter((name) => !taken.has(normalizedName(name)));
   if (free.length === 0) return nextSandboxName(AGENT_NAME_PREFIX, taken);
   return free[Math.floor(random() * free.length)];

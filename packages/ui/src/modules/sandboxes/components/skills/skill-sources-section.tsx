@@ -2,10 +2,11 @@ import { Add } from "@carbon/icons-react";
 import type { Skill, SkillSource } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
-import { ListSection } from "@/components/ui/list-section";
+import { AddRow, ListSection } from "@/components/ui/list-section";
 
 import type { SkillsDerivations } from "../../hooks/use-skills-derivations.js";
 import type { SkillsSurface } from "../../hooks/use-skills-surface.js";
+import { sameSourcePath } from "../../lib/skill-identity.js";
 import { SkillSourceCard } from "./skill-source-card.js";
 import { SkillRowsSkeleton } from "./skills-skeleton.js";
 
@@ -45,6 +46,7 @@ export function SkillSourcesSection({
     busyKey,
     busySourceId,
     sets,
+    installed,
   } = surface;
   const { searching, shownSources, filteredBySource, suppressedBySource } =
     derived;
@@ -65,6 +67,7 @@ export function SkillSourcesSection({
           </Button>
         )
       }
+      addRow={onAddSource && <AddSourceRow onClick={onAddSource} />}
       isEmpty={sourcesLoaded && sources.length === 0}
       empty={
         surface.hiddenSources.length > 0
@@ -96,6 +99,10 @@ export function SkillSourcesSection({
             onRescan={() => void surface.refreshSource(src.id)}
             onRemove={() => onRemove(src)}
             onHide={() => void surface.setSourceHidden(src.id, true)}
+            hasInstalled={installed.some(
+              (r) =>
+                r.source === src.gitUrl && sameSourcePath(r.path, src.path),
+            )}
             onOpenSkill={(skill) => onOpenSkill(src, skill)}
             suppressedNames={suppressedBySource.get(src.id)}
             onToggleAll={(on, scope) => onToggleAll(src, on, scope)}
@@ -105,5 +112,19 @@ export function SkillSourcesSection({
         ))
       )}
     </ListSection>
+  );
+}
+
+export function AddSourceRow({ onClick }: { onClick: () => void }) {
+  return (
+    <AddRow onClick={onClick}>
+      <Add size={16} className="shrink-0" />
+      <div className="min-w-0 flex-1">
+        <p className="text-md font-medium text-foreground">Add source</p>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          Browse a repository's skills and install the ones you want.
+        </p>
+      </div>
+    </AddRow>
   );
 }

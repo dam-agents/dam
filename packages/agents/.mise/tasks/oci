@@ -92,10 +92,12 @@ isolate_mise() {
   unset MISE_ENV MISE_CONFIG_ROOT MISE_MONOREPO_ROOT MISE_ORIGINAL_CWD MISE_PROJECT_ROOT "${!MISE_TASK_@}"
   mkdir -p "$work"/{data,cache,config,state}
   # MISE_SYSTEM_DATA_DIR too: tools the build host has installed system-wide
-  # would otherwise resolve there, and the default image's PATH would name them
-  # where its tools volume does not put them.
+  # would otherwise resolve there. Once install_tools has made the default
+  # image's tools, they are the system dir, so no build installs them again.
+  local system="$work/system"
+  [ ! -L "$state/harness-tools/current" ] || system="$state/harness-tools/current/usr/share/mise"
   export MISE_DATA_DIR="$work/data" MISE_CACHE_DIR="$work/cache" MISE_STATE_DIR="$work/state" \
-    MISE_SYSTEM_DATA_DIR="$work/system" \
+    MISE_SYSTEM_DATA_DIR="$system" \
     MISE_CONFIG_DIR="$work/config" MISE_GLOBAL_CONFIG_FILE="$work/config/none.toml" \
     MISE_SYSTEM_CONFIG_DIR="$work/config/system" MISE_CEILING_PATHS="$work" \
     MISE_TRUSTED_CONFIG_PATHS="$stage" MISE_EXPERIMENTAL=1 MISE_LOCKFILE=1 \
@@ -152,6 +154,8 @@ lock_mise() (
 # Every image's tools and Chromium, which is what CI caches per arch; each
 # build then installs only what it lacks.
 warm_mise() (
+  build_apt_base
+  (stage_default && install_tools)
   all=($(for a in $(all_images); do case "$uncached" in *" $a "*) ;; *) echo "$a" ;; esac; done))
   stage_project "${all[@]}"
   cd "$stage"
@@ -160,7 +164,6 @@ warm_mise() (
   mise -E "$envs" install
   # A cache restored from an older lockfile keeps the versions it replaced.
   mise -E "$envs" prune --yes
-  PLAYWRIGHT_BROWSERS_PATH="$work/ms-playwright" mise -E "$envs" exec -- playwright install chromium
 )
 
 # The tables of a mise config that hold tools.
@@ -170,7 +173,7 @@ tools_tables() { awk '/^\[/ { tools = /^\[tools[].]/ } tools'; }
 # flags, one per line: [oci]'s entrypoint, cmd, workdir and user, and [oci.env],
 # a later file's key over an earlier's.
 pack_flags() {
-  mise -E "$envs" exec -- python3 - "$@" <<'PY'
+  uv run --no-project --python 3.13 python - "$@" <<'PY'
 import sys, tomllib
 cfg, env = {}, {}
 for path in sys.argv[1:]:
@@ -189,10 +192,10 @@ for k, v in env.items():
 PY
 }
 
-agent_owned=(--own=65532:0=home/agent --own=65532:0=etc/mise --own=65532:0=usr/local/share/mise --own-dir=65532:0=app)
+agent_owned=(--own=65532:0=home/agent --own=65532:0=etc/mise --own-dir=65532:0=app)
 # Packs <tree> onto <base layout> as <agent>'s layout; the rest are pack's
 # flags. The image is root's but for the paths the agent must write: its home,
-# mise's data dir and system config, and the runtime's directory itself, which
+# mise's system config, and the runtime's directory itself, which
 # an image over the default one ships again (the trust store is the apt
 # base's, a workload's Python its own layer's).
 pack_image() {
@@ -202,20 +205,18 @@ pack_image() {
   echo "OCI layout: $oci_out/$agent"
 }
 
-# The default image: base's files and every harness's, with none of their tools,
-# which each node installs into the directory the image names as mise's system
-# data dir, from the tool configs and lockfile it ships in /etc/mise. Each
+# The default image: base's files and every harness's, and their tools in a
+# layer at the directory the image names as mise's system data dir, installed
+# from the tool configs and lockfile it ships in /etc/mise. Each
 # harness's entry points and manifest move under its name, where the image's
 # dispatchers and the agent-runtime find the one PLATFORM_HARNESS names.
 # Subshell: it leaves the repo's mise context and directory.
 build_default() (
-  envs="${bare_harnesses// /,},default"
-  stage_project ${envs//,/ }
-  b="$stage/build" etc="$stage/build/etc/mise"
-  tools_root="$(sed -n 's/^PLATFORM_TOOLS_VOLUME = "\(.*\)"$/\1/p' "$agents/default/image.toml")"
+  stage_default
+  install_tools
+  b="$stage/build"
   install -d "$b"/{app,home/agent,etc/logrotate.d,opt/ms-playwright,usr/local/bin} \
-    "$b"/usr/local/lib/platform-python "$b"/usr/local/lib/docker/cli-plugins \
-    "$b"/usr/local/share/mise "$etc/conf.d"
+    "$b"/usr/local/lib/platform-python "$b"/usr/local/lib/docker/cli-plugins
   for a in $bare_harnesses; do
     h="$(sed -n 's/^PLATFORM_HARNESS = "\(.*\)"$/\1/p' "$agents/$a/image.toml")"
     r="$stage/$a/rootfs"
@@ -225,22 +226,20 @@ build_default() (
   done
   # Later trees win where two ship a file: base first, the default image last.
   for a in base $bare_harnesses default; do cp -a "$stage/$a/rootfs/." "$b/"; done
+  cp -a "$stage/etc/." "$b/etc/"
   cp -a "$runtime/package.json" "$runtime/node_modules" "$b/app/"
   cp -a packages/agent-runtime/dist/js "$b/app/dist"
   install -m 644 packages/driver-sdk/dist/js/driver-sdk.mjs "$b/usr/local/lib/driver-sdk.mjs"
   install -m 644 packages/driver-sdk-py/src/driver_sdk.py "$b/usr/local/lib/platform-python/driver_sdk.py"
-  install -D -m 755 "$(command -v mise)" "$stage/build-mise/usr/local/bin/mise"
-  for f in "$stage/mise/conf.d/base.toml" "$stage"/mise/conf.d/harness.*.toml; do
-    a="$(basename "$f" .toml)"
-    [ "$a" != harness.default ] || continue
-    tools_tables < "$f" > "$etc/conf.d/${a#harness.}.toml"
-  done
-  cp "$stage/mise/mise.lock" "$etc/mise.lock"
-  [ ! -d "$stage/mise/.mise/locks" ] || { mkdir -p "$etc/.mise" && cp -R "$stage/mise/.mise/locks" "$etc/.mise/locks"; }
 
   # Not -C: mise reads .miserc.toml from the working directory only.
   cd "$stage"
+  # Every tool is in the tools layer: one this installs would be missing from
+  # the image, so it gets a data dir of its own, which must stay empty.
+  export MISE_SYSTEM_DATA_DIR="$tools/usr/share/mise" MISE_DATA_DIR="$work/default-data"
+  rm -rf "$MISE_DATA_DIR"
   mise -E "$envs" install
+  [ -z "$(ls -A "$MISE_DATA_DIR/installs" 2>/dev/null)" ] || { echo "tools outside the tools layer: $(ls "$MISE_DATA_DIR/installs")" >&2; exit 1; }
   # Claude Code's ACP adapter, bundled from the locked install with its SDK: its
   # 200 ES modules are a few reads each over the tools a machine mounts, which
   # cost its start about 0.3 s. Its own layer, as it changes only with its pin.
@@ -251,51 +250,113 @@ build_default() (
     --bundle --splitting --format=esm --platform=node --outdir="$bundle" '--entry-names=[name]' --log-level=warning)
   [ "$(mise -E "$envs" exec -- node "$bundle/index.js" --version)" = "$(jq -r .version "$adapter/package.json")" ]
   mise -E "$envs" exec -- node -e 'Promise.all(process.argv.slice(1).map((f) => import(f)))' "$bundle/acp-agent.js" "$bundle/claude-agent-sdk.js"
-  # Playwright's browsers: the node installer puts them in the tools, beside
-  # other Playwrights' own, and the image names this one's. The install drops
-  # the browsers no linked Playwright uses; the build keeps the Playwrights a
-  # lockfile replaced, so their links go first.
-  rm -rf "$work/ms-playwright/.links"
-  PLAYWRIGHT_BROWSERS_PATH="$work/ms-playwright" mise -E "$envs" exec -- playwright install chromium
-  for d in "$work"/ms-playwright/*/; do
+  # Playwright's browsers sit with the tools, beside other Playwrights' own,
+  # and the image names this one's.
+  for d in "$MISE_SYSTEM_DATA_DIR"/ms-playwright/*/; do
     d="${d%/}"
     ln -s "$(realpath -m --relative-to=/opt/ms-playwright "$tools_root/ms-playwright/${d##*/}")" "build/opt/ms-playwright/${d##*/}"
   done
-  set -- "$work"/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux*/chrome-headless-shell
+  set -- "$MISE_SYSTEM_DATA_DIR"/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux*/chrome-headless-shell
   [ $# -eq 1 ] || { echo "want one Playwright headless shell, found: $*" >&2; exit 1; }
-  ln -s "${1#"$work"/ms-playwright/}" build/opt/ms-playwright/headless-shell
+  ln -s "${1#"$MISE_SYSTEM_DATA_DIR"/ms-playwright/}" build/opt/ms-playwright/headless-shell
   # The browser panel's shared browser runs Playwright's full Chromium headed,
   # on a virtual display that Selkies streams to the panel.
-  set -- "$work"/ms-playwright/chromium-*/chrome-linux*/chrome
+  set -- "$MISE_SYSTEM_DATA_DIR"/ms-playwright/chromium-*/chrome-linux*/chrome
   [ $# -eq 1 ] || { echo "want one Playwright Chromium, found: $*" >&2; exit 1; }
-  ln -s "${1#"$work"/ms-playwright/}" build/opt/ms-playwright/chromium
+  ln -s "${1#"$MISE_SYSTEM_DATA_DIR"/ms-playwright/}" build/opt/ms-playwright/chromium
   # The browser panel's stream server, Selkies, with its Python packages
   # installed for the image's Python.
   PLATFORM_SELKIES_PYTHON="$(mise -E "$envs" which python3)" "$root/$agents/base/selkies/build.sh" build-selkies
   # docker finds a CLI plugin in its plugin directory, not on PATH.
   for p in buildx compose; do
-    ln -s "$(realpath -m --relative-to=/usr/local/lib/docker/cli-plugins "$tools_root/$(realpath --relative-to="$MISE_DATA_DIR" "$(mise -E "$envs" where "github:docker/$p")")")/docker-$p" \
+    ln -s "$(realpath -m --relative-to=/usr/local/lib/docker/cli-plugins "$tools_root/$(realpath --relative-to="$MISE_SYSTEM_DATA_DIR" "$(mise -E "$envs" where "github:docker/$p")")")/docker-$p" \
       "build/usr/local/lib/docker/cli-plugins/docker-$p"
   done
 
-  mapfile -t flags < <(pack_flags mise/conf.d/base.toml $(for a in $bare_harnesses default; do echo "mise/conf.d/harness.$a.toml"; done))
-  # Each tool's bin directory where the node installs it, ahead of base's PATH.
-  path="$(mise -E "$envs" bin-paths | sed "s|^$MISE_DATA_DIR/|$tools_root/|" | paste -sd: -)"
-  base_path="$(printf '%s\n' "${flags[@]}" | sed -n 's/^--env=PATH=//p')"
-  # Selkies, mise and Claude Code's adapter, which change only with their pins,
-  # are layers of their own under the rest, which every agent-runtime change
-  # rewrites: a deploy pulls that top layer alone.
-  pack_image default "$apt_base" build --root-layer=build-selkies --root-layer=build-mise --root-layer=build-claude-adapter \
-    "${flags[@]}" "--env=PATH=$path:$base_path" \
-    --env=MISE_DATA_DIR=/usr/local/share/mise --env=MISE_CONFIG_DIR=/etc/mise
+  # Each tool's bin directory where the image holds it, ahead of base's PATH.
+  path="$(mise -E "$envs" bin-paths | sed "s|^$MISE_SYSTEM_DATA_DIR/|$tools_root/|" | paste -sd: -)"
+  # Selkies, mise, the tools and Claude Code's adapter, which change only with
+  # their pins, are layers of their own under the rest, which every
+  # agent-runtime change rewrites: a deploy pulls that top layer alone.
+  pack_image default "$apt_base" build --root-layer=build-selkies --root-layer=build-mise \
+    "--root-layer=$tools" --root-layer=build-claude-adapter "${flags[@]}" "--env=PATH=$path:$base_path"
 )
 
-# The env the default image was packed with, PATH's value.
-default_path() {
+# The default image's mise project, the tool configs and lockfile it ships in
+# /etc/mise, mise itself, and its env as pack flags, which install_tools needs
+# and builds nothing else. Call it in a subshell.
+stage_default() {
+  envs="${bare_harnesses// /,},default"
+  stage_project ${envs//,/ }
+  etc="$stage/etc/mise"
+  tools_root="$(sed -n 's/^MISE_SYSTEM_DATA_DIR = "\(.*\)"$/\1/p' "$agents/default/image.toml")"
+  install -d "$etc/conf.d"
+  install -D -m 755 "$(command -v mise)" "$stage/build-mise/usr/local/bin/mise"
+  for f in "$stage/mise/conf.d/base.toml" "$stage"/mise/conf.d/harness.*.toml; do
+    a="$(basename "$f" .toml)"
+    [ "$a" != harness.default ] || continue
+    tools_tables < "$f" > "$etc/conf.d/${a#harness.}.toml"
+  done
+  # The image's mise settings, which the installer runs under too.
+  cp "$stage/mise/conf.d/settings.toml" "$etc/conf.d/settings.toml"
+  cp "$stage/mise/mise.lock" "$etc/mise.lock"
+  [ ! -d "$stage/mise/.mise/locks" ] || { mkdir -p "$etc/.mise" && cp -R "$stage/mise/.mise/locks" "$etc/.mise/locks"; }
+  mapfile -t flags < <(cd "$stage" && pack_flags mise/conf.d/base.toml $(for a in $bare_harnesses default; do echo "mise/conf.d/harness.$a.toml"; done))
+  base_path="$(printf '%s\n' "${flags[@]}" | sed -n 's/^--env=PATH=//p')"
+}
+
+# The tools as the image's own layer: the image's installer, run as the node
+# installer runs it, in the image's root under chroot, with the image's env, so
+# every path an install records is the one the image runs it from. One
+# directory per tool config, kept until the config changes, so a rebuild
+# installs nothing and the layer keeps its digest; `current` names it for
+# isolate_mise.
+install_tools() {
+  local key r envv installer="$agents/default/rootfs/usr/local/bin/install-harness-tools"
+  key="$({ tar -C "$etc" -cf - --sort=name --mtime=@0 --owner=0 --group=0 . ; cat "$installer"; } | sha256sum | cut -c1-16)"
+  tools="$state/harness-tools/$key"
+  [ ! -f "$tools.done" ] || return 0
+  ${sudo[@]+"${sudo[@]}"} rm -rf "$state/harness-tools"
+  r="$work/tools-root"
+  mkdir -p "$r" "$tools/usr/share/mise"
+  jq -r '.manifests[0].digest | sub(":"; "/")' "$apt_base/index.json" |
+    xargs -I{} jq -r '.layers[0].digest | sub(":"; "/")' "$apt_base/blobs/{}" |
+    xargs -I{} ${sudo[@]+"${sudo[@]}"} tar -xf "$apt_base/blobs/{}" -C "$r"
+  ${sudo[@]+"${sudo[@]}"} cp -a "$stage/etc/." "$r/etc/"
+  ${sudo[@]+"${sudo[@]}"} cp -a "$stage/build-mise/." "$r/"
+  ${sudo[@]+"${sudo[@]}"} install -m 755 "$installer" "$r/usr/local/bin/install-harness-tools"
+  mapfile -t envv < <(printf '%s\n' "${flags[@]#--env=}" | grep -E '^[A-Z_][A-Z0-9_]*=')
+  # The GitHub token stays out of every command line, where any user on the
+  # host reads it: sudo keeps it in the environment, and it crosses env -i in a
+  # root-only file the chroot's shell reads into the installer's environment.
+  ${sudo[@]+"${sudo[@]}"} unshare --mount --propagation private sh -euc '
+    r=$1 tools=$2
+    shift 2
+    mount --rbind /dev "$r/dev"
+    mount -t proc proc "$r/proc"
+    mount -t sysfs sys "$r/sys"
+    mkdir -p "$r/usr/share/mise" "$r/home/agent"
+    mount --bind "$tools" "$r/usr/share/mise"
+    cp -L /etc/resolv.conf "$r/etc/resolv.conf"
+    (umask 077 && printf %s "${MISE_GITHUB_TOKEN:-${GITHUB_TOKEN:-}}" > "$r/run/mise-github-token")
+    chroot "$r" env -i "$@" sh -euc '\''
+      MISE_GITHUB_TOKEN=$(cat /run/mise-github-token) && rm /run/mise-github-token
+      [ -z "$MISE_GITHUB_TOKEN" ] || export MISE_GITHUB_TOKEN
+      exec install-harness-tools
+    '\'' </dev/null
+  ' _ "$r" "$tools/usr/share/mise" "${envv[@]}"
+  ${sudo[@]+"${sudo[@]}"} rm -rf "$r" "$tools/usr/share/mise/cache"
+  [ ${#sudo[@]} -eq 0 ] || sudo chown -R "$(id -u):$(id -g)" "$tools"
+  ln -sfn "$key" "$state/harness-tools/current"
+  touch "$tools.done"
+}
+
+# The value of $1 in the env the default image was packed with.
+default_env() {
   local m
   m="$(jq -r '.manifests[0].digest | sub(":"; "/")' "$oci_out/default/index.json")"
   jq -r '.config.digest | sub(":"; "/")' "$oci_out/default/blobs/$m" |
-    xargs -I{} jq -r '.config.Env[] | select(startswith("PATH=")) | sub("^PATH="; "")' "$oci_out/default/blobs/{}"
+    xargs -I{} jq -r --arg k "$1=" '.config.Env[] | select(startswith($k)) | ltrimstr($k)' "$oci_out/default/blobs/{}"
 }
 
 # A pipx tool's venv as a whole Python of its own, at <dest> for <image path>:
@@ -355,11 +416,18 @@ build_thin() (
   done
   [ ! -d build-links ] || layers+=("--layer=0:0=/=build-links")
   mapfile -t flags < <(pack_flags "$f")
-  # The mock runs without the node's tools: its agent-runtime runs the node it
-  # carries.
+  # Its root generation is its own segment after the default image's key, so
+  # it never keeps a root the default image wrote, and a new default key is a
+  # new key for it too.
+  segment="$(printf '%s\n' "${flags[@]}" | sed -n 's|^--env=PLATFORM_ROOT_GENERATION=||p')"
+  [ -n "$segment" ] && [[ "$segment" != */* ]] || { echo "$agent names no root generation segment of its own" >&2; exit 1; }
+  generation="$(default_env PLATFORM_ROOT_GENERATION)"
+  [ -n "$generation" ] || { echo "the default image names no root generation" >&2; exit 1; }
+  flags+=("--env=PLATFORM_ROOT_GENERATION=$generation/$segment")
+  # The mock's agent-runtime runs the node it carries.
   if [ "$agent" = mock ]; then
     install -d build/opt && cp -a "$(mise -E "$envs" where node)" build/opt/node
-    flags+=("--env=PATH=/opt/node/bin:$(default_path)")
+    flags+=("--env=PATH=/opt/node/bin:$(default_env PATH)")
   fi
   pack_image "$agent" "$oci_out/default" build ${layers[@]+"${layers[@]}"} ${flags[@]+"${flags[@]}"}
 )
@@ -367,8 +435,8 @@ build_thin() (
 sudo=(); [ "$(id -u)" = 0 ] || sudo=(sudo --preserve-env env "PATH=$PATH")
 
 # base/apt.txt's packages on the root config's Debian base, as a one-layer
-# image layout every agent image is packed onto: rebuilt when either changes
-# and once a day for updates. The base's root is exported, and its own apt-get
+# image layout every agent image is packed onto: rebuilt when either or this
+# function changes, and once a day for updates. The base's root is exported, and its own apt-get
 # runs in it under chroot, in a mount namespace of its own, as a Dockerfile's
 # RUN would; the root is then one layer, with the owners its packages gave it.
 # The layer follows the packages alone, so a rebuild with no package update
@@ -382,7 +450,7 @@ build_apt_base() {
   local key from r packages layer d config manifest platform epoch
   apt_base="$state/apt-base"
   from="$(mise config get -f .mise/config.toml vars.base_image_debian)"
-  key="$({ cat "$agents/base/apt.txt"; echo "$from"; } | sha256sum | cut -c1-16)-$(date -u +%F)"
+  key="$({ cat "$agents/base/apt.txt"; echo "$from"; declare -f build_apt_base; } | sha256sum | cut -c1-16)-$(date -u +%F)"
   [ "$(cat "$apt_base.key" 2>/dev/null)" != "$key" ] || return 0
   r="$work/apt-root"
   ${sudo[@]+"${sudo[@]}"} rm -rf "$r" "$apt_base"
@@ -393,10 +461,18 @@ build_apt_base() {
     ${sudo[@]+"${sudo[@]}"} tar -xf - -C "$r"
   packages="$(grep -v '^#' "$agents/base/apt.txt" | xargs)"
   # policy-rc.d keeps a package's postinst from starting its service here. The
-  # trust store is the agent's, which the entrypoint fills, and the digest of
-  # the distribution roots spares it reading them every boot; the host keys
+  # distribution's bundle moves aside, and its path and a local CA name what
+  # the entrypoint builds under /run at every boot, so no boot writes the trust
+  # store. The image ships the distribution's roots there, for what runs
+  # without the entrypoint, such as the node's tool installer; a container's
+  # entrypoint replaces them, and a machine's /run tmpfs hides them; an
+  # update-ca-certificates hook links the path again. uid 0's
+  # home is the agent's, so OpenSSH keeps root's keys and known hosts in the
+  # home on a machine, where the agent is root. The host keys
   # openssh-server's postinst generated would be every image's. Every image
   # already shares one machine id, so it is one that follows the package list.
+  # openrc's runlevels start empty: the services Debian enables there (ssh,
+  # cgroups, procps) are the platform's to start, or platform-init's to set up.
   ${sudo[@]+"${sudo[@]}"} unshare --mount --propagation private sh -euc '
     r=$1 packages=$2 epoch=$3 machine_id=$4
     touch -d "@$(($(date +%s) - 1))" "$r/.apt-start"
@@ -410,10 +486,17 @@ build_apt_base() {
     umount -R "$r/dev" "$r/proc" "$r/sys"
     rm -rf "$r"/var/lib/apt/lists/* "$r/usr/sbin/policy-rc.d" "$r"/etc/ssh/ssh_host_* \
       "$r"/var/log/*.log "$r"/var/log/apt/* "$r"/var/cache/ldconfig/aux-cache "$r"/var/cache/debconf/*-old
+    find "$r/etc/runlevels" -mindepth 2 -delete
     for f in etc/machine-id var/lib/dbus/machine-id; do [ ! -e "$r/$f" ] || echo "$machine_id" > "$r/$f"; done
-    find "$r/usr/share/ca-certificates" -type f -print0 | LC_ALL=C sort -z | xargs -0r cat | sha256sum |
-      cut -c1-64 > "$r/usr/share/ca-certificates.sha256"
-    chown -R 65532:0 "$r/etc/ssl/certs" "$r/usr/local/share/ca-certificates"
+    mkdir -p "$r/usr/share/platform"
+    mv "$r/etc/ssl/certs/ca-certificates.crt" "$r/usr/share/platform/ca-certificates.crt"
+    ln -s /run/platform/ca-certificates.crt "$r/etc/ssl/certs/ca-certificates.crt"
+    ln -s /run/platform/ca.crt "$r/usr/local/share/ca-certificates/platform-ca.crt"
+    install -d -o 65532 -g 0 "$r/run/platform"
+    install -o 65532 -g 0 -m 644 "$r/usr/share/platform/ca-certificates.crt" "$r/run/platform/ca-certificates.crt"
+    sed -i "s|^\(root:[^:]*:0:0:[^:]*:\)/root:|\1/home/agent:|" "$r/etc/passwd"
+    grep -q "^root:[^:]*:0:0:[^:]*:/home/agent:" "$r/etc/passwd"
+
     : > "$r/etc/resolv.conf"
     find "$r" -xdev -newer "$r/.apt-start" -exec touch -h -d "@$epoch" {} +
     rm "$r/.apt-start"

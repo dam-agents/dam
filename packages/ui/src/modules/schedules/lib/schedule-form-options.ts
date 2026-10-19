@@ -6,7 +6,7 @@ export const RUN_OPTIONS: { value: RunKind; label: string }[] = [
   { value: "daily", label: "Daily" },
   { value: "hourly", label: "Hourly" },
   { value: "minutely", label: "Every N minutes" },
-  { value: "custom", label: "Custom (RRULE)" },
+  { value: "custom", label: "Custom rule" },
 ];
 
 function pad(n: number): string {

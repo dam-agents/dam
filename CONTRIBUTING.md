@@ -46,6 +46,7 @@ mise generate git-pre-commit --write --task=check
   Markdown prose has one sentence per line; `mise run fix:markdown` formats it.
 - **Branding.** Don't hardcode the product name in code.
   User-visible branding flows from the Helm `brand.*` values.
+- **Repository settings.** GitHub settings are files under `.github/settings/`; see [`docs/guidelines/github-settings.md`](docs/guidelines/github-settings.md).
 - **Keep pull requests focused.** One logical change per pull request is easier to review and merge.
 
 ## Commits and branches

@@ -32,7 +32,9 @@ export function AgentPickerCard({
   const { size, name, hibernationTimeoutMin, contributionFailures } = agent;
   const display = resolveAgentDisplay(agent, NO_IDS);
   const sizeLabel =
-    size.cpu && size.memory ? formatCpuMemory(sizeInMi(size)) : null;
+    !agent.vm && size.cpu && size.memory
+      ? formatCpuMemory(sizeInMi(size))
+      : null;
 
   return (
     <CardButton

@@ -311,6 +311,30 @@ describe("createSessionWatcher", () => {
   });
 
   /*
+   * TEST_SCENARIO: a row captured before the record kept the harness. The
+   * sidebar shows the harness from the record while the Agent sleeps, so the
+   * next capture must count the harness as a change and write the row again.
+   */
+  it("rewrites a row whose harness changed", async () => {
+    const h = harness();
+    h.setSessions([session("s1", "2026-09-10T00:00:00.000Z")]);
+
+    h.watcher.start();
+    await flush();
+    expect(h.upserted).toEqual(["s1"]);
+
+    h.setSessions([
+      { ...session("s1", "2026-09-10T00:00:00.000Z"), harness: "codex" },
+    ]);
+    h.notify();
+    await vi.advanceTimersByTimeAsync(CAPTURE_DEBOUNCE_MS);
+    await flush();
+    expect(h.upserted).toEqual(["s1", "s1"]);
+
+    h.watcher.stop();
+  });
+
+  /*
    * TEST_SCENARIO: an Agent is deleted seconds after it was created, before its
    * pod ever answered. It has no live updates yet, so it is polled, and the
    * poll's read is still waiting on a pod that will never exist. The delete

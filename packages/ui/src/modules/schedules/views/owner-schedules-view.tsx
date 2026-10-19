@@ -1,4 +1,5 @@
 import { ChevronRight, Time, WarningAlt } from "@carbon/icons-react";
+import { CalendarEvent } from "@carbon/pictograms-react";
 
 import { ListSection } from "@/components/ui/list-section";
 import { PageHeader } from "@/components/ui/page-header";
@@ -26,8 +27,9 @@ export function OwnerSchedulesView() {
   return (
     <div>
       <PageHeader
+        pictogram={<CalendarEvent aria-hidden />}
         title="Schedules"
-        description="Everything that runs on its own across your agents. Open one to change, pause or delete it in its agent."
+        description="See everything that runs on its own across your agents. Open one to change, pause or delete it."
       />
 
       <ListSection
@@ -64,17 +66,17 @@ function OwnerScheduleItem({ row }: { row: OwnerScheduleRow }) {
           <span className="truncate">{schedule.name}</span>
           {problem && <WarningAlt size={16} className="shrink-0 text-danger" />}
         </p>
-        <p className="mt-0.5 truncate text-sm text-muted-foreground">
+        <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">
           {agentName}
           {cadence && ` · ${cadence}`}
           {schedule.createdBy === "agent" && " · set up by the agent"}
         </p>
         {problem ? (
-          <p className="mt-0.5 truncate text-sm text-danger">{problem}</p>
+          <p className="mt-0.5 line-clamp-2 text-sm text-danger">{problem}</p>
         ) : (
           lastRun &&
           outcome && (
-            <p className="mt-0.5 truncate text-sm text-muted-foreground">
+            <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">
               Last run {formatRunTime(lastRun)} ·{" "}
               <span className={outcome.className}>{outcome.label}</span>
             </p>

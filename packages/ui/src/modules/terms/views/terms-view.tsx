@@ -1,3 +1,5 @@
+import { ArrowLeft } from "@carbon/icons-react";
+
 import { Button } from "@/components/ui/button";
 import { PAGE_TITLE } from "@/components/ui/page-header";
 import { getErrorMessage } from "@/lib/errors";
@@ -36,6 +38,7 @@ export function TermsView() {
 
   return (
     <div className="mx-auto w-full max-w-200 px-4 py-10">
+      {acceptedCurrent && <BackButton />}
       <h1 className={cn(PAGE_TITLE, "mb-2")}>Terms of Use</h1>
       {isStaleReaccept && (
         <p className="text-sm text-muted-foreground mb-4">
@@ -45,10 +48,8 @@ export function TermsView() {
       )}
       <TermsMeta version={doc.version} accepted={latest.data} />
       <Markdown>{doc.text}</Markdown>
-      <div className="mt-8 flex gap-3 items-center">
-        {acceptedCurrent ? (
-          <BackButton />
-        ) : (
+      {!acceptedCurrent && (
+        <div className="mt-8 flex gap-3 items-center">
           <AcceptButton
             pending={accept.isPending}
             onClick={() =>
@@ -61,8 +62,8 @@ export function TermsView() {
               )
             }
           />
-        )}
-      </div>
+        </div>
+      )}
       {accept.error && (
         <p role="alert" className="mt-4 text-sm text-danger">
           {acceptErrorText(accept.error)}
@@ -92,7 +93,12 @@ function TermsMeta({
       Version <code>{version}</code>
       {isCurrent && accepted && (
         <>
-          {" · "}Accepted on {formatDate(accepted.acceptedAt)}
+          {" · "}Accepted on{" "}
+          {formatDate(accepted.acceptedAt, {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          })}
         </>
       )}
     </div>
@@ -116,8 +122,14 @@ function AcceptButton({
 function BackButton() {
   const navigateBack = useStore((s) => s.navigateBack);
   return (
-    <Button type="button" onClick={navigateBack}>
-      Back
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      onClick={navigateBack}
+      className="-ml-3 mb-4"
+    >
+      <ArrowLeft size={16} /> Back
     </Button>
   );
 }

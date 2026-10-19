@@ -42,10 +42,12 @@ export const HARNESS_ICONS: Record<
 export function HarnessIcons({
   harnesses = ["bob", "claude-code", "codex", "pi"],
   size = "md",
+  focusable = size !== "xs",
   className,
 }: {
   harnesses?: readonly string[];
   size?: "xs" | "sm" | "md";
+  focusable?: boolean;
   className?: string;
 }) {
   if (harnesses.length === 0) return null;
@@ -62,7 +64,7 @@ export function HarnessIcons({
               key={name}
               role="img"
               aria-label={label}
-              tabIndex={size === "xs" ? undefined : 0}
+              tabIndex={focusable ? 0 : undefined}
               className={cn(
                 "inline-flex shrink-0 items-center justify-center",
                 size === "xs"
@@ -81,7 +83,7 @@ export function HarnessIcons({
               />
             </span>
           );
-          return size === "xs" ? (
+          return !focusable ? (
             icon
           ) : (
             <Tooltip key={name} content={label}>

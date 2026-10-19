@@ -7,6 +7,7 @@ import {
   useActivitySessions,
 } from "../../home/hooks/use-activity-sessions.js";
 import { filterActivitySessions } from "../../home/lib/activity-sessions.js";
+import { shownSessionId } from "../../sessions/lib/shown-session.js";
 import { useAgents } from "../api/queries.js";
 import { useSidebarOrder } from "../api/sidebar-order.js";
 import { groupSessionsByAgent } from "../lib/sidebar-agent-order.js";
@@ -15,7 +16,6 @@ import { splitTemporarySandboxes } from "../utils/temporary-sandboxes.js";
 
 const NO_AGENTS: AgentView[] = [];
 const NO_SESSIONS: AgentActivitySession[] = [];
-const NO_ORDER: string[] = [];
 
 export function useSidebarAgents() {
   const list = useAgents().data?.list ?? NO_AGENTS;
@@ -29,7 +29,7 @@ export function useSidebarAgents() {
         ? s.agentId
         : null,
   );
-  const sessionOpen = useStore((s) => s.view === "chat" && !!s.sessionId);
+  const sessionOpen = useStore((s) => s.view === "chat" && !!shownSessionId(s));
 
   const sessionsByAgent = useMemo(
     () => groupSessionsByAgent(filterActivitySessions(activity.items, filters)),
@@ -56,16 +56,12 @@ export function useSidebarAgents() {
   const sessionsOf = (agentId: string) =>
     sessionsByAgent.get(agentId) ?? NO_SESSIONS;
 
-  const sessionOrderOf = (agentId: string) =>
-    order.sessions[agentId] ?? NO_ORDER;
-
   return {
     agents,
     openAgentId,
     sessionOpen,
     unreadAgentIds,
     sessionsOf,
-    sessionOrderOf,
     previewComplete: activity.complete,
   };
 }

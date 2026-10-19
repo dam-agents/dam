@@ -642,7 +642,10 @@ export type {
   EgressRuleUpdateInput,
   EgressRulesService,
 } from "./modules/egress-rules/types.js";
-export { egressRuleCreateInputSchema } from "./modules/egress-rules/schemas.js";
+export {
+  EGRESS_HOST,
+  egressRuleCreateInputSchema,
+} from "./modules/egress-rules/schemas.js";
 export {
   formatEgressRuleInline,
   formatEgressRuleSource,

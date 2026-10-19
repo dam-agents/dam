@@ -104,6 +104,8 @@ export interface SessionsSlice {
   discardSessionToDraft: (sessionId: string, text: string) => Promise<void>;
 
   resetChatContext: () => void;
+  confirmDockDiscard: () => Promise<boolean>;
+  leaveChatContext: (navigate: () => void) => void;
 }
 
 export const createSessionsSlice: StateCreator<
@@ -304,6 +306,30 @@ export const createSessionsSlice: StateCreator<
         pendingResumeSessionId: null,
         chatRequest: null,
       }),
+
+    confirmDockDiscard: async () => {
+      const { openArtifactDirty, openFileDirty, showConfirm } = get();
+      if (!openArtifactDirty && !openFileDirty) return true;
+      return showConfirm("Your edits are lost.", "Discard unsaved changes?", {
+        kind: "destructive",
+        confirmLabel: "Discard",
+        cancelLabel: "Keep editing",
+      });
+    },
+
+    leaveChatContext: (navigate) => {
+      const leave = () => {
+        get().resetChatContext();
+        navigate();
+      };
+      const { openArtifactDirty, openFileDirty } = get();
+      if (!openArtifactDirty && !openFileDirty) return leave();
+      void get()
+        .confirmDockDiscard()
+        .then((ok) => {
+          if (ok) leave();
+        });
+    },
 
     deleteSession: async (
       sessionId,

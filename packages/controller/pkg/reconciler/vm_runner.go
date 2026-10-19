@@ -11,9 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
-	"net/netip"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -24,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
@@ -31,29 +30,25 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: one claim, three directories, each its own mount. Two of them live and die with the claim — the machine disks under disks/ are an owner's agents, the bookkeeping under machines/ is rebuilt from the cluster after a pod restart — and what earns images/ a mount of its own is that it is often not on this claim at all: the install may put the cache on a node directory every runner there shares, or on a read-only host directory of staged archives. Mounting it explicitly even when it does fall back here keeps the layout one shape instead of a directory that is sometimes a volume, which is what mounting the parent and nesting the cache inside it would give.
+// UNIT_BOUNDARY_DESCRIPTION: one claim, three directories, each its own mount. Two of them live and die with the claim — the machine disks under disks/ are an owner's agents, the bookkeeping under machines/ is rebuilt from the cluster after a pod restart — and what earns images/ a mount of its own is that it is often not on this claim at all: the install may put the cache on a node directory every runner there shares, or on a read-only host directory of staged images. Mounting it explicitly even when it does fall back here keeps the layout one shape instead of a directory that is sometimes a volume, which is what mounting the parent and nesting the cache inside it would give.
 const (
 	vmRunnerComponent    = "vm-runner"
 	vmRunnerStatePath    = "/var/lib/platform"
 	vmRunnerDisksPath    = vmRunnerStatePath + "/disks"
 	vmRunnerMachinesPath = vmRunnerStatePath + "/machines"
 	vmRunnerImagesPath   = vmRunnerStatePath + "/images"
-	vmRunnerToolsPath    = vmRunnerStatePath + "/tools"
 	vmRunnerPort         = 4600
 	vmRunnerUsageLabel   = "agent-platform.ai/vm-runner-usage"
+	annRunnerClaimKept   = "agent-platform.ai/vm-runner-claim-kept"
 
-	// UNIT_BOUNDARY_DESCRIPTION: where a runner pod's loader finds the runner releases. The node's staged releases are read-only, the release the controller names is a ConfigMap, and the loader's own emptyDir holds its copies of the release it runs and the status the runner serves.
-	vmRunnerReleasesPath    = vmRunnerStatePath + "/releases"
-	vmRunnerReleaseFilePath = "/etc/vm-runner-release"
-	vmRunnerLoaderPath      = "/run/vm-runner-loader"
+	// UNIT_BOUNDARY_DESCRIPTION: where a runner pod's loader finds the runner releases. The node's staged releases are read-only, and the loader's own emptyDir holds the release the controller named over the machine API, its copies of the release it runs, and the status the runner serves.
+	vmRunnerReleasesPath = vmRunnerStatePath + "/releases"
+	vmRunnerLoaderPath   = "/run/vm-runner-loader"
 
 	// UNIT_BOUNDARY_DESCRIPTION: the loader's environment, which contract/loader-env.json holds the loader to.
-	vmRunnerReleasesEnv    = "VM_RUNNER_RELEASES"
-	vmRunnerReleaseFileEnv = "VM_RUNNER_RELEASE_FILE"
-	vmRunnerLoaderDirEnv   = "VM_RUNNER_LOADER_DIR"
-	vmRunnerBuiltinEnv     = "VM_RUNNER_BUILTIN_RELEASE"
-
-	vmRunnerSameRuntimeOnlyEnv = "VM_RUNNER_SAME_RUNTIME_ONLY"
+	vmRunnerReleasesEnv  = "VM_RUNNER_RELEASES"
+	vmRunnerLoaderDirEnv = "VM_RUNNER_LOADER_DIR"
+	vmRunnerBuiltinEnv   = "VM_RUNNER_BUILTIN_RELEASE"
 
 	// UNIT_BOUNDARY_DESCRIPTION: the runner's scrape port, apart from the machine API because it carries no token, and the component of the one pod its NetworkPolicy admits to it. The collector is the platform's own and scrapes the runners because they cannot push to it: a runner is off the mesh, and the collector's export port admits only mesh identities.
 	vmRunnerMetricsPort    = 4601
@@ -157,8 +152,11 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string) (*vmru
 	if err != nil {
 		return nil, false, err
 	}
-	np := buildRunnerNetworkPolicy(owner, r.config.ReleaseName, r.config.APIServerInstanceLabel, ns, r.config.ReleaseNamespace, r.config.EnvoyPort, r.config.VM.Runner.EgressCIDRs, r.config.VM.Runner.EgressExceptCIDRs, runnerDNSRule(r.config.VM.Runner))
+	np := buildRunnerNetworkPolicy(owner, r.config.ReleaseName, r.config.APIServerInstanceLabel, ns, r.config.ReleaseNamespace, r.config.EnvoyPort)
 	np.OwnerReferences = refs
+	if r.config.VM.Gateway.PerOwner {
+		admitOwnerGatewayEgress(np, ns, owner)
+	}
 	if err := concurrently(
 		func() error {
 			if err := r.applyCertificate(ctx, r.buildRunnerCertificate(owner, refs)); err != nil {
@@ -388,7 +386,7 @@ func (r *AgentReconciler) ensureRunnerToken(ctx context.Context, owner string, r
 	return created, err
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the cached images may occupy. Every cache is bounded by this one number, wherever it lives: a node directory shares its filesystem with everything else the node runs, and the runner's own claim shares one with the machine disks, so neither can be given a share of the filesystem without letting the images eat something that is not theirs. A value the controller cannot read is refused rather than replaced with a guess, because the guess is a cache quietly growing until the node or the disks it shares with run out.
+// UNIT_BOUNDARY_DESCRIPTION: what the node's cached images may occupy, which the runner reports in its metrics. A node directory shares its filesystem with everything else the node runs, so it cannot be given a share of the filesystem without letting the images eat something that is not theirs. A value the controller cannot read is refused rather than replaced with a guess, because the guess is a cache quietly growing until the node runs out.
 func imageBudgetBytes(spec config.VMRunnerSpec) (int64, error) {
 	size, err := resource.ParseQuantity(spec.ImageCacheBudget)
 	if err != nil {
@@ -432,12 +430,17 @@ func (r *AgentReconciler) applyRunnerPVC(ctx context.Context, owner string) erro
 		})
 		disowned := len(kept) != len(existing.OwnerReferences)
 		existing.OwnerReferences = kept
-		if repairRunnerMeta(&existing.ObjectMeta, vmRunnerLabels(owner, r.config.ReleaseName), nil) || disowned {
+		_, reclaimed := existing.Annotations[annRunnerClaimKept]
+		delete(existing.Annotations, annRunnerClaimKept)
+		if repairRunnerMeta(&existing.ObjectMeta, vmRunnerLabels(owner, r.config.ReleaseName), nil) || disowned || reclaimed {
 			updated, err := r.client.CoreV1().PersistentVolumeClaims(ns).Update(ctx, existing, metav1.UpdateOptions{})
 			if err != nil {
 				return fmt.Errorf("restoring the runner claim's labels and removing its owner: %w", err)
 			}
 			existing = updated
+		}
+		if reclaimed {
+			slog.Info("vm runner: the owner's runner is built again on the claim an unreachable runner left", "owner", owner, "claim", name)
 		}
 		if sizeErr != nil {
 			slog.Warn("vm runner: the claim's size cannot be worked out, it keeps the size it has", "owner", owner, "error", sizeErr)
@@ -481,7 +484,7 @@ func (r *AgentReconciler) buildRunnerService(owner string, ownerRefs []metav1.Ow
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the peers are chart-rendered pods, which carry the Helm release name in app.kubernetes.io/instance — not the chart's fullname, which is what names the runner's own objects. The two are equal only when the release is called `platform`.
-func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, releaseNS string, envoyPort int, egress, exceptCIDRs []string, dns *networkingv1.NetworkPolicyEgressRule) *networkingv1.NetworkPolicy {
+func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, releaseNS string, envoyPort int) *networkingv1.NetworkPolicy {
 	tcp := corev1.ProtocolTCP
 	api := intstr.FromInt(vmRunnerPort)
 	scrape := intstr.FromInt(vmRunnerMetricsPort)
@@ -496,10 +499,6 @@ func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, releaseNS strin
 			}},
 		}
 	}
-	types := []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
-	if len(egress) > 0 {
-		types = append(types, networkingv1.PolicyTypeEgress)
-	}
 	return &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-vm-runner-%s-ingress", release, runnerSuffix(owner)),
@@ -508,7 +507,7 @@ func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, releaseNS strin
 		},
 		Spec: networkingv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{MatchLabels: vmRunnerSelector(owner)},
-			PolicyTypes: types,
+			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress},
 			Ingress: []networkingv1.NetworkPolicyIngressRule{{
 				From: []networkingv1.NetworkPolicyPeer{peer("apiserver"), peer("controller")},
 				Ports: []networkingv1.NetworkPolicyPort{
@@ -525,173 +524,43 @@ func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, releaseNS strin
 				From:  []networkingv1.NetworkPolicyPeer{peer(vmRunnerMetricsScraper)},
 				Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &scrape}},
 			}},
-			Egress: runnerEgress(ns, owner, envoyPort, egress, exceptCIDRs, dns),
+			Egress: runnerEgress(ns, owner, envoyPort),
 		},
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: Kubernetes rejects a whole NetworkPolicy whose exception falls outside the block it belongs to, so an install that names a narrow registry alongside the cluster's own ranges would otherwise break every reconcile — each block keeps only the exceptions that actually sit inside it.
-func containedIn(cidr string, except []string) []string {
-	block, err := netip.ParsePrefix(cidr)
-	if err != nil {
-		return nil
-	}
-	var out []string
-	for _, e := range except {
-		sub, err := netip.ParsePrefix(e)
-		if err != nil || sub.Bits() <= block.Bits() || !block.Contains(sub.Addr()) {
-			continue
-		}
-		out = append(out, e)
-	}
-	return out
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: a machine's egress allowlist is enforced by smolvm inside the very process an escaped guest would own, so this is the kernel gate behind it — without it such a guest reaches the platform's own datastores. Gateways are admitted by owner and on their proxy port and machine resolver alone, the same pinning each gateway's ingress policy makes from its side. DNS is admitted only to the resolver the runner uses, and only when it resolves anything at all, because port 53 open to every address is a two-way channel to any host that listens there. It is only rendered once an install says where the runner may go, because the runner also pulls agent images.
-func runnerEgress(agentNS, owner string, envoyPort int, cidrs, except []string, dns *networkingv1.NetworkPolicyEgressRule) []networkingv1.NetworkPolicyEgressRule {
-	if len(cidrs) == 0 {
-		return nil
-	}
+// UNIT_BOUNDARY_DESCRIPTION: a machine's egress allowlist is enforced by smolvm inside the very process an escaped guest would own, so this is the kernel gate behind it — without it such a guest reaches the platform's own datastores. Gateways are admitted by owner and on their proxy port and machine resolver alone, the same pinning each gateway's ingress policy makes from its side. No DNS is admitted: the node's image cache service resolves and fetches every image, the runner reaches its gateways by ClusterIP and is dialled rather than dialling out, so it resolves nothing, and port 53 open anywhere would be a two-way channel to any host that listens there. Nothing else is admitted: the runner dials nothing but its gateways.
+func runnerEgress(agentNS, owner string, envoyPort int) []networkingv1.NetworkPolicyEgressRule {
 	tcp := corev1.ProtocolTCP
 	proxy := intstr.FromInt(envoyPort)
-	var rules []networkingv1.NetworkPolicyEgressRule
-	if dns != nil {
-		rules = append(rules, *dns)
-	}
-	rules = append(rules, networkingv1.NetworkPolicyEgressRule{
+	return []networkingv1.NetworkPolicyEgressRule{{
 		To: []networkingv1.NetworkPolicyPeer{{
 			NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": agentNS}},
 			PodSelector:       &metav1.LabelSelector{MatchLabels: map[string]string{LabelRole: RoleGateway, envoyOwnerLabel: owner}},
 		}},
 		Ports: append([]networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &proxy}}, machineGatewayPolicyPorts()...),
-	})
-	for _, cidr := range cidrs {
-		blockExcept, metadata := exceptMetadata(cidr, containedIn(cidr, except), metadataCIDRs)
-		if metadata {
-			continue
-		}
-		rules = append(rules, networkingv1.NetworkPolicyEgressRule{
-			To: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: cidr, Except: blockExcept}}},
-		})
-	}
-	return rules
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the cloud metadata endpoints — link-local on every cloud, plus the fixed addresses a few clouds also serve it on. The endpoint hands the node's own credentials to anything that asks, which makes it the classic way out of a sandbox, and no runner has a reason to reach it.
-var metadataCIDRs = []netip.Prefix{
-	netip.MustParsePrefix("169.254.0.0/16"),
-	netip.MustParsePrefix("100.100.100.200/32"),
-	netip.MustParsePrefix("fe80::/10"),
-	netip.MustParsePrefix("fd00:ec2::254/128"),
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: every egress block that contains a metadata range has that range subtracted, whatever the install listed, so a wide block such as 0.0.0.0/0 never opens the node's credentials by omission. A block lying wholly inside one names the endpoint itself, and is reported so the caller drops it rather than render the one destination this exists to close. An exception the install already wrote over the range is left to cover it.
-func exceptMetadata(cidr string, except []string, metadata []netip.Prefix) ([]string, bool) {
-	block, err := netip.ParsePrefix(cidr)
-	if err != nil {
-		return except, false
-	}
-	block = block.Masked()
-	out := except
-	for _, m := range metadata {
-		if block.Addr().Is4() != m.Addr().Is4() {
-			continue
-		}
-		if m.Bits() <= block.Bits() && m.Contains(block.Addr()) {
-			return nil, true
-		}
-		if !block.Contains(m.Addr()) || exceptionCovers(out, m) {
-			continue
-		}
-		out = append(out, m.String())
-	}
-	return out, false
-}
-
-func exceptionCovers(except []string, target netip.Prefix) bool {
-	for _, e := range except {
-		sub, err := netip.ParsePrefix(e)
-		if err == nil && sub.Bits() <= target.Bits() && sub.Contains(target.Addr()) {
-			return true
-		}
-	}
-	return false
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: where the runner may send DNS, or nowhere when it resolves no names. A runner on the node image cache or on staged images fetches nothing itself — it reaches its gateways by ClusterIP and is dialled rather than dialling out — so it gets no DNS at all. A runner that caches on its own claim resolves its registry: through the node's resolver at the addresses the install names, or, under ClusterFirst, through the cluster DNS pods the install selects. Pods are selected rather than the DNS Service address because network plugins apply policy after that address has been translated to a pod. With nothing named no rule is rendered, so a pull fails on the name, which the preflight reports, rather than port 53 opening to everyone.
-func runnerDNSRule(spec config.VMRunnerSpec) *networkingv1.NetworkPolicyEgressRule {
-	if !runnerOwnsImageCache(spec) {
-		return nil
-	}
-	var peers []networkingv1.NetworkPolicyPeer
-	ports := []int32{53}
-	if runnerDNSPolicy(spec.DNSPolicy) == corev1.DNSClusterFirst {
-		dns := spec.ClusterDNS
-		if dns.Namespace == "" || len(dns.PodLabels) == 0 {
-			return nil
-		}
-		peers = append(peers, networkingv1.NetworkPolicyPeer{
-			NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": dns.Namespace}},
-			PodSelector:       &metav1.LabelSelector{MatchLabels: dns.PodLabels},
-		})
-		if len(dns.Ports) > 0 {
-			ports = dns.Ports
-		}
-	} else {
-		for _, cidr := range spec.DNSCIDRs {
-			peers = append(peers, networkingv1.NetworkPolicyPeer{IPBlock: &networkingv1.IPBlock{CIDR: cidr}})
-		}
-	}
-	if len(peers) == 0 {
-		return nil
-	}
-	udp, tcp := corev1.ProtocolUDP, corev1.ProtocolTCP
-	rule := &networkingv1.NetworkPolicyEgressRule{To: peers}
-	for _, p := range ports {
-		port := intstr.FromInt32(p)
-		rule.Ports = append(rule.Ports, networkingv1.NetworkPolicyPort{Protocol: &udp, Port: &port}, networkingv1.NetworkPolicyPort{Protocol: &tcp, Port: &port})
-	}
-	return rule
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the cluster's DNS is a Service backed by pods, and a confined runner is kept away from Service and pod addresses — so resolving through it is the one thing its own egress policy forbids, and a registry pull dies on the name rather than the fetch. The node's resolver is what such a pod has left, and it costs nothing: the runner is reached by Service DNS rather than reaching one, and it addresses each gateway by the ClusterIP the controller hands it. An install whose registry lives inside the cluster, with its range left reachable, says ClusterFirst instead and resolves Service names.
-func runnerDNSPolicy(configured string) corev1.DNSPolicy {
-	if corev1.DNSPolicy(configured) == corev1.DNSClusterFirst {
-		return corev1.DNSClusterFirst
-	}
-	return corev1.DNSDefault
+	}}
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the runner's env also has smolvm check every VMM against the syscalls a running microVM needs (SMOLVM_SECCOMP), from after the VMM's device setup, in the install's mode and by default in enforce: a call outside the allowlist kills the VMM, which stops its machine. Audit only logs such a call; it is the switch back for a node whose kernel or libc makes a call the allowlist lacks. The runtime's default profile still bounds every VMM in each mode. smolvm applies the filter under its own serve by default, and an embedder only when asked.
 // UNIT_BOUNDARY_DESCRIPTION: the runner's env also confines every VMM's filesystem with Landlock (SMOLVM_LANDLOCK=enforce), applied before the VMM loads libkrun: the shared guest rootfs and the image tree are read-only to it, and it may write only its own machine's disks, sockets and logs and its own readiness marker. Without it a guest's root virtiofs export writes through to the agent rootfs every machine of the owner boots from. smolvm refuses to boot a VMM it fails to confine.
 // UNIT_BOUNDARY_DESCRIPTION: smolvm can give each machine's VMM its own unprivileged uid, and the runner's env turns that off (SMOLVM_VM_UID_DROP=off). A VMM with its own uid reaches the image tree through an idmapped mount that maps on-disk uid 0 to it, so every file the image gives another uid reaches the guest as nobody, and the workload exits as it starts.
-// UNIT_BOUNDARY_DESCRIPTION: the capabilities the runner container adds. None is for the network: smolvm runs each machine's network in user space, over a socket pair to its VMM, with no tun device, route or NAT of its own. DAC_OVERRIDE is for the VMMs: each runs as the runner's uid and serves the image tree to its guest over virtiofs, opening every file with its own credentials, so a file the image keeps from root — a 0000 /etc/shadow, or anything under another uid's 0700 directory — cannot be read without it. CHOWN, FOWNER and FSETID are only for a runner that unpacks images into its own claim: tar restores each file's owner, then sets a mode on a file it no longer owns, and a setgid bit on a file whose group root is not in survives that mode only with FSETID. A runner on the node cache or on staged archives unpacks nothing, so it does not get them.
-func runnerCapabilities(spec config.VMRunnerSpec) []corev1.Capability {
-	caps := []corev1.Capability{"DAC_OVERRIDE"}
-	if runnerOwnsImageCache(spec) {
-		caps = append(caps, "CHOWN", "FOWNER", "FSETID")
-	}
-	return caps
-}
+// UNIT_BOUNDARY_DESCRIPTION: the capabilities the runner container adds. None is for the network: smolvm runs each machine's network in user space, over a socket pair to its VMM, with no tun device, route or NAT of its own. DAC_OVERRIDE is for the VMMs: each runs as the runner's uid and serves the image tree to its guest over virtiofs, opening every file with its own credentials, so a file the image keeps from root — a 0000 /etc/shadow, or anything under another uid's 0700 directory — cannot be read without it. It is the only one: the node's image cache service unpacks every image, and the runner only reads the trees.
+var runnerCapabilities = []corev1.Capability{"DAC_OVERRIDE"}
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner holds exactly the capabilities above and none of the runtime's defaults, cannot gain more through exec, and runs under the runtime's default seccomp profile — the shape the chart's OpenShift SCC already forces on it. None of the dropped defaults is used: every VMM runs as the runner's own uid, so signalling one needs no KILL, and smolvm's own default runs each VMM on a uid with no capabilities at all, so virtiofs needs no SETUID. The default seccomp profile allows every ioctl, so KVM works; what it refuses without CAP_SYS_ADMIN is new namespaces, mounts and keyrings, which smolvm only reaches for when it gives each VMM a uid of its own, and the runner turns that off. AppArmor alone stays unconfined: the container runtime's default profile denies mount and more, and under it no guest boots.
-func runnerSecurityContext(spec config.VMRunnerSpec) *corev1.SecurityContext {
+// UNIT_BOUNDARY_DESCRIPTION: the runner is uid 0 only inside its pod's user namespace (hostUsers false), so a guest that escapes into it is an unprivileged uid on the node and its capabilities stop at the namespace. It holds exactly the capabilities above and none of the runtime's defaults, cannot gain more through exec, and runs under the runtime's default seccomp profile — the shape the chart's OpenShift SCC already forces on it. None of the dropped defaults is used: every VMM runs as the runner's own uid, so signalling one needs no KILL, and smolvm's own default runs each VMM on a uid with no capabilities at all, so virtiofs needs no SETUID. The default seccomp profile allows every ioctl, so KVM works; what it refuses without CAP_SYS_ADMIN is new namespaces, mounts and keyrings, which smolvm only reaches for when it gives each VMM a uid of its own, and the runner turns that off. AppArmor alone stays unconfined: the container runtime's default profile denies mount and more, and under it no guest boots.
+func runnerSecurityContext() *corev1.SecurityContext {
 	root := int64(0)
 	return &corev1.SecurityContext{
 		RunAsUser:                &root,
 		AllowPrivilegeEscalation: new(false),
 		Capabilities: &corev1.Capabilities{
 			Drop: []corev1.Capability{"ALL"},
-			Add:  runnerCapabilities(spec),
+			Add:  runnerCapabilities,
 		},
 		SeccompProfile:  &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
 		AppArmorProfile: &corev1.AppArmorProfile{Type: corev1.AppArmorProfileTypeUnconfined},
 	}
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: whether the runner's image directory is a cache on its own claim, with the runner as its only writer. It is not when the node image cache service writes a node directory, or when the install stages read-only archives.
-func runnerOwnsImageCache(spec config.VMRunnerSpec) bool {
-	return spec.ImageCacheHostPath == "" && spec.ImageArchiveHostPath == ""
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the node image cache service's socket, inside the node directory it shares with the runners. The chart's DaemonSet binds it at this same path in its own mount. A runner mounts the directory read-only, which still lets it connect to the socket but not replace it.
@@ -731,7 +600,11 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 		if resources.Requests == nil {
 			resources.Requests = corev1.ResourceList{}
 		}
-		resources.Requests[corev1.ResourceEphemeralStorage] = vmRunnerEphemeralRequest
+		request := vmRunnerEphemeralRequest
+		if limit, ok := resources.Limits[corev1.ResourceEphemeralStorage]; ok && limit.Cmp(request) < 0 {
+			request = limit
+		}
+		resources.Requests[corev1.ResourceEphemeralStorage] = request
 	}
 	for k, v := range spec.Devices {
 		q, err := resource.ParseQuantity(v)
@@ -755,33 +628,11 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 			},
 		}}},
 	}
-	imageCacheSocket := ""
-	switch {
-	case spec.ImageCacheHostPath != "":
-		dir := corev1.HostPathDirectoryOrCreate
-		imageCacheSocket = vmImageCacheSocket
-		mounts = append(mounts, corev1.VolumeMount{Name: "image-cache", MountPath: vmRunnerImagesPath, ReadOnly: true})
-		volumes = append(volumes, corev1.Volume{Name: "image-cache", VolumeSource: corev1.VolumeSource{
-			HostPath: &corev1.HostPathVolumeSource{Path: spec.ImageCacheHostPath, Type: &dir},
-		}})
-	case spec.ImageArchiveHostPath != "":
-		dir := corev1.HostPathDirectoryOrCreate
-		mounts = append(mounts, corev1.VolumeMount{Name: "image-archives", MountPath: vmRunnerImagesPath, ReadOnly: true})
-		volumes = append(volumes, corev1.Volume{Name: "image-archives", VolumeSource: corev1.VolumeSource{
-			HostPath: &corev1.HostPathVolumeSource{Path: spec.ImageArchiveHostPath, Type: &dir},
-		}})
-	default:
-		mounts = append(mounts, corev1.VolumeMount{Name: "state", MountPath: vmRunnerImagesPath, SubPath: "images"})
-	}
-	toolsDir := ""
-	if r.config.AgentBase.ToolsHostPath != "" {
-		dir := corev1.HostPathDirectoryOrCreate
-		toolsDir = vmRunnerToolsPath
-		mounts = append(mounts, corev1.VolumeMount{Name: "harness-tools", MountPath: vmRunnerToolsPath, ReadOnly: true})
-		volumes = append(volumes, corev1.Volume{Name: "harness-tools", VolumeSource: corev1.VolumeSource{
-			HostPath: &corev1.HostPathVolumeSource{Path: r.config.AgentBase.ToolsHostPath, Type: &dir},
-		}})
-	}
+	cacheDir := corev1.HostPathDirectoryOrCreate
+	mounts = append(mounts, corev1.VolumeMount{Name: "image-cache", MountPath: vmRunnerImagesPath, ReadOnly: true})
+	volumes = append(volumes, corev1.Volume{Name: "image-cache", VolumeSource: corev1.VolumeSource{
+		HostPath: &corev1.HostPathVolumeSource{Path: spec.ImageCacheHostPath, Type: &cacheDir},
+	}})
 	env := []corev1.EnvVar{{
 		Name: "SMOLVM_VM_UID_DROP", Value: "off",
 	}, {
@@ -798,31 +649,22 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 			ContainerName: vmRunnerComponent, Resource: "limits.memory", Divisor: resource.MustParse("1Mi"),
 		}},
 	}}
-	if spec.ReleaseHostPath != "" {
-		dir := corev1.HostPathDirectoryOrCreate
-		mounts = append(mounts,
-			corev1.VolumeMount{Name: "releases", MountPath: vmRunnerReleasesPath, ReadOnly: true},
-			corev1.VolumeMount{Name: "release", MountPath: vmRunnerReleaseFilePath, ReadOnly: true},
-			corev1.VolumeMount{Name: "loader", MountPath: vmRunnerLoaderPath},
-		)
-		volumes = append(volumes,
-			corev1.Volume{Name: "releases", VolumeSource: corev1.VolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{Path: spec.ReleaseHostPath, Type: &dir},
-			}},
-			corev1.Volume{Name: "release", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{
-				LocalObjectReference: corev1.LocalObjectReference{Name: r.runnerReleaseName(owner)},
-				Optional:             new(true),
-			}}},
-			corev1.Volume{Name: "loader", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
-		)
-		env = append(env,
-			corev1.EnvVar{Name: vmRunnerReleasesEnv, Value: vmRunnerReleasesPath},
-			corev1.EnvVar{Name: vmRunnerReleaseFileEnv, Value: vmRunnerReleaseFilePath + "/" + runnerReleaseKey},
-			corev1.EnvVar{Name: vmRunnerLoaderDirEnv, Value: vmRunnerLoaderPath},
-			corev1.EnvVar{Name: vmRunnerBuiltinEnv, Value: spec.Image},
-			corev1.EnvVar{Name: vmRunnerSameRuntimeOnlyEnv, Value: strconv.FormatBool(spec.ReleaseSameRuntimeOnly)},
-		)
-	}
+	releasesDir := corev1.HostPathDirectoryOrCreate
+	mounts = append(mounts,
+		corev1.VolumeMount{Name: "releases", MountPath: vmRunnerReleasesPath, ReadOnly: true},
+		corev1.VolumeMount{Name: "loader", MountPath: vmRunnerLoaderPath},
+	)
+	volumes = append(volumes,
+		corev1.Volume{Name: "releases", VolumeSource: corev1.VolumeSource{
+			HostPath: &corev1.HostPathVolumeSource{Path: spec.ReleaseHostPath, Type: &releasesDir},
+		}},
+		corev1.Volume{Name: "loader", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+	)
+	env = append(env,
+		corev1.EnvVar{Name: vmRunnerReleasesEnv, Value: vmRunnerReleasesPath},
+		corev1.EnvVar{Name: vmRunnerLoaderDirEnv, Value: vmRunnerLoaderPath},
+		corev1.EnvVar{Name: vmRunnerBuiltinEnv, Value: spec.Image},
+	)
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: labels, OwnerReferences: refs},
 		Spec: appsv1.DeploymentSpec{
@@ -832,7 +674,8 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: podLabels},
 				Spec: corev1.PodSpec{
-					DNSPolicy:                     runnerDNSPolicy(spec.DNSPolicy),
+					DNSPolicy:                     corev1.DNSDefault,
+					HostUsers:                     new(false),
 					TerminationGracePeriodSeconds: new(int64(vmRunnerTerminationGraceSeconds)),
 					ServiceAccountName:            spec.ServiceAccountName,
 					AutomountServiceAccountToken:  new(false),
@@ -853,16 +696,15 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 							"--state-dir=" + vmRunnerMachinesPath,
 							fmt.Sprintf("--metrics-listen=:%d", vmRunnerMetricsPort),
 							"--image-dir=" + vmRunnerImagesPath,
-							"--image-cache-socket=" + imageCacheSocket,
+							"--image-cache-socket=" + vmImageCacheSocket,
 							fmt.Sprintf("--image-budget-bytes=%d", imageBudget),
-							"--tools-dir=" + toolsDir,
 							"--memory-mib=$(RUNNER_MEMORY_MIB)",
 							fmt.Sprintf("--reserve-mib=%d", spec.ReserveMiB),
 							fmt.Sprintf("--headroom-mib=%d", spec.HeadroomMiB),
 							fmt.Sprintf("--boot-mib=%d", spec.BootMiB),
 							"--tls-cert=/etc/vm-runner/tls.crt",
 							"--tls-key=/etc/vm-runner/tls.key",
-						}, append(nestedRunnerArgs(spec), convertRunnerArgs(spec)...)...),
+						}, nestedRunnerArgs(spec)...),
 						Env: env,
 						Ports: []corev1.ContainerPort{
 							{Name: "machine-api", ContainerPort: vmRunnerPort},
@@ -876,7 +718,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 							}},
 							TimeoutSeconds: 5,
 						},
-						SecurityContext: runnerSecurityContext(spec),
+						SecurityContext: runnerSecurityContext(),
 						Resources:       resources,
 						VolumeMounts:    mounts,
 					}},
@@ -885,10 +727,10 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 			},
 		},
 	}
-	if err := r.rollRunnerDeployment(ctx, owner, dep, create); err != nil || spec.ReleaseHostPath == "" {
+	if err := r.rollRunnerDeployment(ctx, owner, dep, create); err != nil {
 		return err
 	}
-	return r.applyRunnerRelease(ctx, owner)
+	return r.applyRunnerRelease(ctx, owner, dep)
 }
 
 type runnerRef struct {
@@ -932,8 +774,9 @@ func (r *AgentReconciler) knownRunners(ctx context.Context) ([]runnerRef, error)
 	return out, nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: everything a runner owns is named after it, so this removes the lot. The caller holds the owner's lock and has just found the runner holding no machine. The Deployment goes first and only if it is still the one the caller checked — its UID and resourceVersion are preconditions — so a runner that a roll or a reconcile changed since is kept, with its claim, and looked at again on the next sweep.
-func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string) bool {
+// UNIT_BOUNDARY_DESCRIPTION: everything a runner owns is named after it, so this removes the lot. The caller holds the owner's lock and has just found the runner holding no machine, or could not ask it and passes keepClaim. The Deployment goes first and only if it is still the one the caller checked — its UID and resourceVersion are preconditions — so a runner that a roll or a reconcile changed since is kept, with its claim, and looked at again on the next sweep.
+// UNIT_BOUNDARY_DESCRIPTION: a claim nobody could see into is kept and marked with annRunnerClaimKept, never deleted: on a cluster that shares its CRDs, a CRD event can make even a live List of Agents read empty, so "the owner has no Agents" is never proof that its disks are unused. The owner's next vm Agent builds its runner on that same claim, which drops the mark, and the sweep removes it as usual once that runner lists no machine. An owner who never comes back leaves the claim to an operator, who finds it by the mark.
+func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string, keepClaim bool) bool {
 	r.unwatchRunnerPressure(owner)
 	name, ns := r.runnerName(owner), r.config.Namespace
 	opts := metav1.DeleteOptions{}
@@ -962,7 +805,14 @@ func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string) bool {
 		func() error {
 			return r.client.NetworkingV1().NetworkPolicies(ns).Delete(ctx, name+"-ingress", opts)
 		},
-		func() error { return r.client.CoreV1().PersistentVolumeClaims(ns).Delete(ctx, name, opts) },
+		func() error {
+			if keepClaim {
+				patch := fmt.Sprintf(`{"metadata":{"annotations":{%q:%q}}}`, annRunnerClaimKept, time.Now().UTC().Format(time.RFC3339))
+				_, err := r.client.CoreV1().PersistentVolumeClaims(ns).Patch(ctx, name, types.MergePatchType, []byte(patch), metav1.PatchOptions{})
+				return err
+			}
+			return r.client.CoreV1().PersistentVolumeClaims(ns).Delete(ctx, name, opts)
+		},
 	} {
 		if err := del(); err != nil && !k8serrors.IsNotFound(err) {
 			slog.Warn("removing a VM runner", "owner", owner, "error", err)
@@ -1038,14 +888,6 @@ func (r *AgentReconciler) certificateNotReady(ctx context.Context, name string) 
 		return msg
 	}
 	return ""
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the arg that lets a runner convert its machines' ext4 storage disks to btrfs, one at each machine's next start. The install turns it on with virtualization.runner.convertExt4Disks for a rollout; an install that does not gets no extra arg, so its runner pods stay as they were.
-func convertRunnerArgs(spec config.VMRunnerSpec) []string {
-	if !spec.ConvertExt4Disks {
-		return nil
-	}
-	return []string{"--convert-ext4-disks"}
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the args that let a runner give its machines the node's virtualization extensions. Nesting is the kernel's default on Intel and AMD and turning it off takes a module reload, so the install chooses it with virtualization.runner.nestedVirtualization. An install that does not gets no extra args, so its runner pods, and the machines they host, stay as they were.

@@ -6,6 +6,7 @@ import {
   Launch,
   LogoGithub,
 } from "@carbon/icons-react";
+import { MachineLearning_03 } from "@carbon/pictograms-react";
 import type { ReactNode } from "react";
 
 import { Card } from "@/components/ui/card";
@@ -30,8 +31,9 @@ export function AboutTab() {
   return (
     <div>
       <PageHeader
+        pictogram={<MachineLearning_03 aria-hidden />}
         title={`About ${name}`}
-        description="Documentation, source code and terms for this installation."
+        description="Find the documentation, source code and terms for this installation."
       />
       <Card className="divide-y divide-border overflow-hidden">
         <a href={DOCS_URL} {...externalLinkProps} className={ROW}>

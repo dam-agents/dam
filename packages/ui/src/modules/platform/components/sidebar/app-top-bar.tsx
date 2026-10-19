@@ -6,7 +6,6 @@ import type { View } from "../../lib/routes.js";
 import { MobileMenuButton } from "./mobile-menu-button.js";
 
 const TITLES: Partial<Record<View, string>> = {
-  artifacts: "Artifacts",
   settings: "Settings",
   "starter-kit": "Starter kits",
   "sandbox-home": "Configure agent",

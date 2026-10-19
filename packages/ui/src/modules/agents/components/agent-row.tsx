@@ -4,7 +4,6 @@ import { isStartRefusal } from "api-server-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
 import {
@@ -39,6 +38,9 @@ import { VmRuntimeBadge } from "./vm-runtime-badge.js";
 
 const SECOND_LINE_ITEM =
   "rounded-none border-0 bg-transparent p-0 text-sm tracking-normal text-muted-foreground dark:text-muted-foreground";
+
+const SIZE_HINT =
+  "Size: compute slots this agent reserves, then its CPU and memory limits";
 
 interface Props {
   agent: AgentView;
@@ -88,8 +90,8 @@ export function AgentRow({
   return (
     <Card
       data-testid="agent-row"
-      {...clickableProps(onSelect)}
-      className="group flex cursor-pointer items-center justify-between gap-3 border border-border p-4 anim-in transition-colors hover:not-has-[button:hover]:bg-muted/40"
+      onClick={onSelect}
+      className="group flex cursor-pointer items-center justify-between gap-3 border border-border p-4 anim-in transition-colors hover:not-has-[button:not([data-row-main]):hover]:bg-muted/40"
     >
       <AgentAvatar
         name={agent.name}
@@ -100,9 +102,14 @@ export function AgentRow({
       />
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
-          {}
-          <h2 className="w-full min-w-0 truncate text-base font-medium text-foreground transition-colors md:w-auto [.group:hover:not(:has(button:hover))_&]:text-primary">
-            {agent.name}
+          <h2 className="w-full min-w-0 truncate text-base font-medium text-foreground transition-colors md:w-auto [.group:hover:not(:has(button:not([data-row-main]):hover))_&]:text-primary">
+            <button
+              type="button"
+              data-row-main
+              className="max-w-full cursor-pointer truncate rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {agent.name}
+            </button>
           </h2>
           {kindBadge && (
             <Badge variant={kindBadge.variant} className="shrink-0">
@@ -149,7 +156,11 @@ export function AgentRow({
               <span className="truncate">{kitBadge.label}</span>
             </span>
           )}
-          {subtitle && <span className="truncate">{subtitle}</span>}
+          {subtitle && (
+            <span className="truncate" title={SIZE_HINT}>
+              {subtitle}
+            </span>
+          )}
           {usage && <UsagePairs usage={usage} />}
         </div>
         <AgentChannelChips agent={agent} className="mt-2" />
@@ -185,7 +196,6 @@ export function AgentRow({
           onRetry={onRetryMigration}
         />
         {agent.hibernationTimeoutMin === 0 && <AlwaysOnTag />}
-        {}
         <Button
           variant="ghost"
           size="icon-sm"

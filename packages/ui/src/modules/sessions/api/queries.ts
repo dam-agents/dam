@@ -2,9 +2,7 @@ import {
   type InfiniteData,
   skipToken,
   useInfiniteQuery,
-  useQueries,
   useQuery,
-  type UseQueryResult,
 } from "@tanstack/react-query";
 import type { SessionListCursor, SessionListQuery } from "agent-runtime-api";
 import {
@@ -26,6 +24,7 @@ import {
   useAgentLacksLiveUpdates,
 } from "../../agents/api/queries.js";
 import { askAgainWhenReady } from "../../agents/lib/agent-start.js";
+import { nextSessionCursor } from "../lib/sidebar-session-window.js";
 import {
   findAgentSession,
   listAgentSessionPage,
@@ -231,7 +230,8 @@ export function useSessionPages(
         }
       : skipToken,
     initialPageParam: null as SessionListCursor | null,
-    getNextPageParam: (last) => last.nextCursor,
+    getNextPageParam: (_last, pages, lastCursor) =>
+      nextSessionCursor(pages, lastCursor),
     refetchOnMount: "always",
     refetchInterval: live && compat ? 5_000 : false,
     staleTime: 5_000,
@@ -272,28 +272,6 @@ export function useAgentSession(
         ? () => findAgentSession(agentId, sessionId)
         : skipToken,
     staleTime: 5_000,
-  });
-}
-
-function foundSessions(
-  results: UseQueryResult<SessionView | null>[],
-): SessionView[] {
-  return results.flatMap((result) => result.data ?? []);
-}
-
-export function useSessionsById(
-  agentId: string,
-  sessionIds: readonly string[],
-  options?: { enabled?: boolean },
-): SessionView[] {
-  const live = options?.enabled ?? true;
-  return useQueries({
-    queries: sessionIds.map((sessionId) => ({
-      queryKey: acpSessionsKeys.session(agentId, sessionId),
-      queryFn: live ? () => findAgentSession(agentId, sessionId) : skipToken,
-      staleTime: 5_000,
-    })),
-    combine: foundSessions,
   });
 }
 
@@ -343,6 +321,7 @@ export function provisionalSessionView(item: AttentionItem): SessionView {
     scheduleId: item.scheduleId,
     title: item.title,
     threadTs: item.threadTs,
+    harness: item.harness,
     updatedAt: item.activityAt,
     running: item.working,
     seenAt: item.seenAt,

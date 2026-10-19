@@ -58,12 +58,14 @@ Unset it to try the mesh anyway.
 
 ## vm backend (KVM only)
 
-On a Mac, `cluster:install --set=virtualization.enabled=true` runs vm agents on one runner on the Mac's own hypervisor, outside the cluster ([host runner](../../../docs/architecture/vm-host-runner.md)): `cluster:host-runner` rebuilds and restarts it (after a reboot too), its log is `~/.local/state/platform-vm-runner/runner.log`, and `PLATFORM_NESTED_VIRT=1` picks the runner pods instead.
+`cluster:install` turns the vm backend (`virtualization.enabled`) on by default on an Apple silicon Mac and in a sandbox that can open `/dev/kvm`; elsewhere (a Linux host outside a sandbox, an Intel Mac) it leaves it off and warns at the start and the end of the install, and under CI it is off unless asked for.
+`--set=virtualization.enabled=false` turns it off, on every run you want it off (`cluster:helm` included), as does the same key in `helm/values-dev.yaml`.
+On a Mac it runs vm agents on one runner on the Mac's own hypervisor, outside the cluster ([host runner](../../../docs/architecture/vm-host-runner.md)): `cluster:host-runner` rebuilds and restarts it (after a reboot too), its log is `~/.local/state/platform-vm-runner/runner.log`, and `PLATFORM_NESTED_VIRT=1` picks the runner pods instead.
 Everywhere else, and in the e2e lane, the vm backend needs a usable `/dev/kvm` on the k3s node: nested virtualization in the lima VM (Apple silicon M3+, macOS 15+), or a KVM host in sandbox mode.
-`E2E_VIRTUALIZATION=1 mise run e2e` (or `e2e:loop` bootstrapping a fresh test VM) installs with `virtualization.enabled=true` — `cluster:install` then applies the KVM device plugin (`helm/extra/kvm-device-plugin.yaml`), and values-local.yaml names its `squat.ai/kvm` and the runner's `egressCidrs` — stages the mock image for the VM runners, and runs the smoke suite with every agent on the vm Backend ([`src/lib/lane.ts`](../../../packages/e2e/playwright/src/lib/lane.ts)).
+`E2E_VIRTUALIZATION=1 mise run e2e` (or `e2e:loop` bootstrapping a fresh test VM) installs with `virtualization.enabled=true` — `cluster:install` then applies the KVM device plugin (`helm/extra/kvm-device-plugin.yaml`), and values-local.yaml names its `squat.ai/kvm` and the node image cache directory — stages the mock image for the VM runners, and runs the smoke suite with every agent on the vm Backend ([`src/lib/lane.ts`](../../../packages/e2e/playwright/src/lib/lane.ts)).
 The auth project's last test opts the e2e user into the `vm-sandboxes` experiment, so the agents the UI creates are machines, and the specs' API creates go through `onLaneBackend` (`src/lib/backend.ts`), which asks for vm.
 Without the variable the same test turns the experiment off.
-The first vm boot creates the owner's VM runner, so boot waits scale with `bootTimeoutMs`.
+Boot waits are the same on both Backends: four minutes for a boot, five for a smoke test, so a guest that stops answering fails the run in minutes.
 A vm run fails, rather than skips, against an install without the backend.
 
 Two specs are tied to a Backend.
@@ -71,13 +73,15 @@ Two specs are tied to a Backend.
 `smoke/20-runtime-migration.spec.ts` exists only in a vm run, the one install with both Backends, and runs last: it creates a container agent with a HOME file and a Session, checks that the Migrate button is absent with the experiment off, turns the experiment on, migrates through the button, and checks that the agent keeps its id, HOME and Sessions and still chats.
 It turns the experiment off and on again, which is why nothing else may run beside it.
 
-CI runs the smoke suite as two lanes on every run but a tag and a docs-only PR (cd.yml's `docs-only` job): `mise e2e (container)` (cd.yml's `e2e` job) and `mise e2e (vm)` (`e2e-vm`, the same steps through YAML anchors, plus `E2E_VIRTUALIZATION=1`), each on its own GitHub-hosted x64 runner.
+CI runs the smoke suite as two lanes on every run but a tag and a docs-only PR (e2e.yml's `docs-only` job): `e2e / mise e2e (container)` (e2e.yml's `e2e` job) and `e2e / mise e2e (vm)` (`e2e-vm`, the same steps through YAML anchors, plus `E2E_VIRTUALIZATION=1`), each on its own GitHub-hosted x64 runner.
+On a pull request both lanes run a reduced set of the specs, the ones that fail for real there; a merge group, the nightly run and a dispatch run all of them ([e2e architecture](../../../docs/architecture/e2e.md)).
 The vm lane's runner exposes `/dev/kvm`, which a udev rule opens to the runner user, and builds or pulls the vm-runner beside the other images.
 A failure in the vm lane alone is the vm Backend's.
 
 In a vm install, `cluster:install` stages the vm images beside the chart install, as soon as the agent images are loaded, not after the deployments are ready.
 `e2e:install` gives the vm lane's machines one vCPU, as its 1-CPU mock Size gave them before, and a 1Gi boot estimate: each runner's memory request follows its booting machines' estimates plus a 512Mi reserve, while the 16 GB CI node has little room beside the control plane.
-The vm lane's job summary shows where its time went: with `E2E_TIMINGS=<file>`, `cluster:install`, `e2e:install` and `e2e:run` append phase marks to it (`e2e_mark` in `.mise/lib/cluster.sh`), and `.mise/tasks/e2e/timings` renders them as Markdown, with the per-project spans from the Playwright JSON report that `E2E_REPORT_JSON` names.
+Both lanes' job summary shows where their time went: with `E2E_TIMINGS=<file>`, `cluster:install`, `e2e:install` and `e2e:run` append phase marks to it (`e2e_mark` in `.mise/lib/cluster.sh`), and `.mise/tasks/e2e/timings` renders them as Markdown, with the per-project spans from the Playwright JSON report that `E2E_REPORT_JSON` names.
+A lane that never reached a phase prints `n/a` for its rows, so one lane's table compares with the other's.
 
 ## Disk space (the k3s VM)
 

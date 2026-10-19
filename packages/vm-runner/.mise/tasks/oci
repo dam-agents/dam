@@ -180,7 +180,9 @@ if [ ! -f "$fw_so" ]; then
   mkdir -p "$fw/tarballs"
   cp "$ktar" "$fw/tarballs/$kv.tar.xz"
   git -C "$fw" apply "$pkg/libkrunfw.patch"
-  make -C "$fw" --no-print-directory -j"$(nproc)" >/dev/null
+  # The Makefile and the kernel's take ARCH as the guest's architecture, and
+  # cd.yml's build-images exports ARCH=amd64, which neither knows.
+  env -u ARCH make -C "$fw" --no-print-directory -j"$(nproc)" >/dev/null
   # The same arm64 kernel, wrapped for macOS, is what the Mac host runner
   # compiles as its libkrunfw (cluster:host-runner). CI has no Mac to use it.
   [ "$(uname -m)" != aarch64 ] || [ -n "${CI:-}" ] ||

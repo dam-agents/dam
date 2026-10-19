@@ -229,17 +229,7 @@ const (
 	// account in the message. The machine keeps running at what the pod has,
 	// so readiness does not follow it; it is for operators.
 	ConditionRunnerCapacity = "RunnerCapacity"
-	// ConditionHomeRepaired is present only on a vm agent whose machine's
-	// last boot found its disk's filesystem damaged and repaired it before
-	// mounting it (ReasonHomeRepaired, status True). The message is the
-	// check's own account. It goes with the next boot that finds the disk
-	// clean. The agent runs, so readiness does not follow it; it tells the
-	// owner that files in damaged folders may be gone.
-	ConditionHomeRepaired = "HomeRepaired"
 )
-
-// ReasonHomeRepaired is the reason on ConditionHomeRepaired.
-const ReasonHomeRepaired = "FilesystemRepaired"
 
 // Reasons on ConditionRunnerCapacity.
 const (
@@ -305,6 +295,11 @@ const ReasonOverBudget = "OverBudget"
 // its revision having been superseded — typically a template still referencing
 // a deleted credential Secret. Terminal, unlike PodNotReady.
 const ReasonStuckOnSupersededRevision = "StuckOnSupersededRevision"
+
+// ReasonOwnerGatewayListenerStale marks a vm agent whose owner gateway does
+// not yet serve the listener last rendered for it. Transient: Envoy applies
+// the new file within seconds of the kubelet's sync.
+const ReasonOwnerGatewayListenerStale = "OwnerGatewayListenerStale"
 
 // ReasonMachineRunnerUnschedulable is stamped on AgentPodReady when a vm
 // agent's owner has a VM runner pod the scheduler cannot place (no node

@@ -28,6 +28,7 @@ describe("feature modes", () => {
         "chat-forms": "experimental",
         "custom-avatars": "experimental",
         "platform-provider": "experimental",
+        "new-layout": "experimental",
       },
     });
     expect(await service.flags()).toMatchObject({

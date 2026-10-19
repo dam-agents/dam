@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-10-14
+Last verified: 2026-10-16
 
 ## Overview
 
@@ -105,7 +105,10 @@ The copy is read-only history, opened beside the Driver's chat and never loaded 
 **The Driver's chat is the anchor.** The progress lines both SDKs print to stderr, naming each spawned target, are what the chat recognises in the Driver's tool output to draw the delegation in place, so their shape is a contract the SDKs and the chat share.
 Each harness's adapter shapes tool output its own way — in the standard content, as the raw tool result, or as a result object — so the chat and the Driver's runtime read it through one shared reader in the runtime contract, and a line means the same on every harness.
 Some adapters stream a shell command's output only in parts beside the tool call; the chat adds them up through the same reader, while the runtime, which needs only tool spawns, leaves them aside.
-While children run and no line names them yet, the chat shows the Driver's running Invocations from the record.
+While children run and no line names them yet, the chat shows the Driver's running Invocations from the record, scoped to the Session it shows.
+A tool spawn records the Driver's Session that called it: the harness names it on each platform MCP call by an opaque reference the Driver's runtime hands it per Session, and the api-server asks the runtime which Session that is when it records the spawn.
+A chat shows the children its own Session spawned, and every child with no recorded Session — a script spawn, a harness that names no Session, a lookup that failed, a record from before Sessions were kept — so nothing that showed before goes missing.
+Only the Driver's own children are scoped; a grandchild shows under its child.
 
 ## The Invocation Pin
 

@@ -85,38 +85,38 @@ export const createAgentsSlice: StateCreator<
       return { deletedAgents: next };
     }),
 
-  selectAgent: (id) => {
-    history.pushState(null, "", routeToPath({ view: "chat", agent: id }));
-    get().resetChatContext();
-    set({
-      selectedAgent: id,
-      view: "chat",
-      mobileScreen: "chat",
-    });
-  },
+  selectAgent: (id) =>
+    get().leaveChatContext(() => {
+      history.pushState(null, "", routeToPath({ view: "chat", agent: id }));
+      set({
+        selectedAgent: id,
+        view: "chat",
+        mobileScreen: "chat",
+      });
+    }),
 
-  openAgentSession: (agentId, sessionId, mode, fresh = false) => {
-    history.pushState(
-      null,
-      "",
-      routeToPath({ view: "chat", agent: agentId, session: sessionId }),
-    );
-    get().resetChatContext();
-    set({
-      selectedAgent: agentId,
-      view: "chat",
-      mobileScreen: "chat",
-      pendingResumeSessionId: sessionId,
-      pendingResumeSessionMode: mode ?? null,
-      pendingResumeFresh: fresh,
-    });
-  },
+  openAgentSession: (agentId, sessionId, mode, fresh = false) =>
+    get().leaveChatContext(() => {
+      history.pushState(
+        null,
+        "",
+        routeToPath({ view: "chat", agent: agentId, session: sessionId }),
+      );
+      set({
+        selectedAgent: agentId,
+        view: "chat",
+        mobileScreen: "chat",
+        pendingResumeSessionId: sessionId,
+        pendingResumeSessionMode: mode ?? null,
+        pendingResumeFresh: fresh,
+      });
+    }),
 
-  goBack: () => {
-    history.pushState(null, "", routeToPath({ view: "home" }));
-    get().resetChatContext();
-    set({ selectedAgent: null, view: "home" });
-  },
+  goBack: () =>
+    get().leaveChatContext(() => {
+      history.pushState(null, "", routeToPath({ view: "home" }));
+      set({ selectedAgent: null, view: "home" });
+    }),
 });
 
 const RESTART_DISPLAY_TTL_MS = 120_000;

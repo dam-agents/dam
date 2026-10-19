@@ -11,7 +11,7 @@ else
 fi
 
 # e2e_mark <phase>: appends "<epoch seconds>\t<phase>" to the file E2E_TIMINGS
-# names, and does nothing without it. CI's vm lane sets it, and e2e:timings
+# names, and does nothing without it. CI's two lanes set it, and e2e:timings
 # turns the marks into the job's per-phase timing summary.
 e2e_mark() {
   [ -z "${E2E_TIMINGS:-}" ] || printf '%s\t%s\n' "$(date +%s)" "$1" >> "$E2E_TIMINGS"

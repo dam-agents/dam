@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-10-15
+Last verified: 2026-10-17
 
 ## Overview
 
@@ -81,6 +81,7 @@ The api-server writes a new Agent custom resource whose spec carries the Agent's
 There is no stored desired state — running-vs-hibernated is observed status the controller derives from activity.
 The controller reconciles a paired set of owned resources: two StatefulSets (the agent and its gateway), two Services (the agent's headless ACP and the `<agent>-gateway` proxy), agent-egress and gateway-ingress NetworkPolicies, and a per-Agent Envoy bootstrap ConfigMap + leaf TLS Certificate.
 On the `vm` Backend the agent StatefulSet and its workspace PVC are not rendered at all: the Agent's storage is one disk on the owner's [VM runner](vm-runner.md), holding `HOME` and the machine's root ([persistence](persistence.md#per-agent-pvcs)), and the agent Service selects that runner rather than a pod of its own.
+With the [owner gateway](credential-gateway.md#owner-gateway) on, a moved `vm` Agent also has no gateway StatefulSet, bootstrap ConfigMap, leaf or gateway NetworkPolicies of its own: it keeps its `<agent>-gateway` Service, which selects the owner's gateway pod, and its ext-authz Service.
 
 When the create request carries a private-registry credential, the api-server writes an agent-scoped `dockerconfigjson` pull Secret *before* the Agent CR and rolls it back if that write fails; the controller hands that Secret first, ahead of any install-wide default, to whatever pulls the image — the kubelet, or on the vm Backend the owner's runner.
 It never enters the agent, and a bad one surfaces as a pull failure rather than a create-time error.
@@ -119,6 +120,7 @@ A runtime advertising kinds its predecessor did not is re-delivered the Contribu
 
 Every caller that sends work to a pod — the api-server's ACP relay, channel adapters, skills management — routes through a single reachability primitive in the api-server.
 The primitive's contract: **the controller-published `Ready` condition is the authoritative answer to "can I call this pod?"** The primitive pokes activity by bumping the `agent-platform.ai/last-activity` annotation (the reconciler scales up any Agent with recent activity), single-flights concurrent waits per Agent, and bumps the same annotation on every successful call, so any caller implicitly keeps the pod warm.
+Opening a sleeping Agent's chat in the web UI wakes it once per open, a stopped Agent included but not a disabled one or one held over its budget; an Agent that falls asleep while its chat stays open, or whose wake fails, shows a Start button until the next open.
 The deliberate opt-outs never wake anything: a **passive** relay connection (`passive=1`) fails closed unless `Ready`, takes no pin and never bumps activity; the per-agent tRPC relay takes no pin, waits out a wake already asked for without stamping activity, and keeps the stamp fresh while a view is open.
 The agent relays — ACP, per-agent tRPC, terminal, browser stream and SSH — do not wait for `Ready` alone when they hold a socket for a wake from hibernation.
 `Ready` arrives only after the controller's next reconcile, so a relay whose hold began on a hibernated Agent also asks the agent's `/healthz` through its Service at a short interval, and opens its upstream on the first answer once the cached Agent shows `GatewayPodReady`.
@@ -177,6 +179,7 @@ A `vm` Agent whose last start the runner refused for lack of room, or one with n
 When the status already holds the agent side ready and only the gateway was missing, the reconcile that sees the gateway pod ready publishes `Ready` right after it applies the gateway, before the runner call and the remaining applies.
 Only the idle checker or [reclaim](vm-memory.md) hibernates it, not a lapsed timeout.
 An unreachable runner does not hold the gateway up, but the Agent is published hibernated only once its runner has confirmed the machine stopped.
+With the [owner gateway](credential-gateway.md#owner-gateway) on, a `vm` Agent has no gateway pod of its own once it is moved: whether it should be up is recorded on its gateway Service instead of a replica count, its listener stays configured while it sleeps, and hibernation stops only the machine, so a wake is ready when the guest answers.
 Until then its readiness is down and it reads as starting, the Agent's next reconcile stops the machine once the runner answers, and the idle checker tries the hibernation again on each sweep.
 A runner that took the stop answers before its guest has powered off, so while the machine is stopping its readiness is down too, but the Agent reads as pausing rather than starting, and its reconcile publishes hibernation once the runner reports the machine stopped.
 Whether an Agent is "idle" is **derived from observed activity, never stored** — there is no desired-state flag — and the derivation is split across two independent checks.
@@ -223,6 +226,7 @@ An Agent that never sleeps carries an *Always on* tag.
 **A vm Agent has no per-agent timeout.** It boots in seconds, so it always takes the chart-wide vm idle timeout, ignores any override, and the UI does not offer the setting.
 A cold first boot can still outlast that timeout — an image no runner has cached, a fresh runner, a large nested guest — so for a vm Agent whose pair is awake the idle checker also counts the clock from the moment it turned `Ready`, and holds a boot still in progress: a machine not ready for no reason of its own, with no start failure reported.
 The hold ends at the start failure report, and a boot that has not finished a quarter of an hour past the timeout is hibernated anyway.
+A boot the runner reports as copying a disk, a conversion or a migration seed's restore, is held for as long as the runner says so, since the runner bounds it at six hours and a hibernation would start the copy again from nothing; reclaim counts it as booting for the same reason.
 A running Agent with no session running but [kept background work](agent-processes.md#keeping-work) holding it awake shows *Background work* rather than *Idle*.
 
 It's a blunt instrument: it keeps known off-session work alive without making it visible, and a long or disabled timeout holds CPU and memory until lowered by hand.

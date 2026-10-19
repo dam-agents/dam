@@ -178,7 +178,6 @@ export interface AgentView {
   notReadyMessage?: string;
   podRestarts: number;
   podRestartReason?: string;
-  homeRepaired?: string;
   gatewayFailure?: string;
   contributionFailures: { kind: string; message: string }[];
   unsupportedContributionKinds: string[];

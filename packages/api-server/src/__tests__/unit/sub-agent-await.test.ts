@@ -44,6 +44,7 @@ function setup(views: Record<string, InvocationView | null>) {
         collected.push(ids);
       },
     },
+    spawningSession: async () => null,
     waitMs: 60,
     pollMs: 5,
   });

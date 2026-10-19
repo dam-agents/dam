@@ -133,19 +133,19 @@ export function useApprovalActions(
       danger: false,
       disabled: inflight || allowOnceDisabled,
       tooltip: allowOnceDisabled
-        ? "Original request already failed; pick Allow permanently to allow future retries"
+        ? "Original request already failed; pick Always allow to allow future retries"
         : undefined,
       resolvedLabel: "Allowed",
       run: () => direct(() => each(approveOnce.mutateAsync)),
     },
     {
       id: "allow-permanent",
-      label: "Allow permanently",
+      label: "Always allow…",
       icon: CheckmarkFilled,
       danger: false,
       disabled: inflight,
       tooltip: restart.permanentTooltip,
-      resolvedLabel: "Allowed permanently",
+      resolvedLabel: "Always allowed",
       run: () =>
         confirmed(restart.confirmNarrow, "Allow & restart", () =>
           each(approvePermanent.mutateAsync),
@@ -170,7 +170,7 @@ export function useApprovalActions(
       : []),
     {
       id: "dismiss",
-      label: "Deny this request",
+      label: "Deny",
       icon: Close,
       danger: true,
       disabled: inflight || !live,
@@ -182,12 +182,12 @@ export function useApprovalActions(
     },
     {
       id: "deny-forever",
-      label: "Deny permanently",
+      label: "Always deny…",
       icon: Misuse,
       danger: true,
       disabled: inflight,
       tooltip: restart.denyForeverTooltip,
-      resolvedLabel: "Denied permanently",
+      resolvedLabel: "Always denied",
       run: () =>
         confirmed(restart.confirmNarrow, "Deny & restart", () =>
           each(denyForever.mutateAsync),
@@ -199,12 +199,12 @@ export function useApprovalActions(
 
   return {
     actions: spendLimit ? spendLimitActions : egressActions,
-    primaryLabel: spendLimit ? continueText : "Allow",
+    primaryLabel: spendLimit ? continueText : "Allow once",
     inflight,
     hostLabel,
     expiredNote:
       row.status === "expired" && row.type === "ext_authz"
-        ? "The original request already failed. Allow permanently writes a rule that future retries match."
+        ? "The original request already failed. Always allow writes a rule that future retries match."
         : null,
     openSettings: () => navigateToSandboxHome(row.agentId, "network"),
   };

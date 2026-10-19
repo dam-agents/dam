@@ -1,0 +1,3 @@
+[oci.env]
+# Its root generation segment, after the default image's key (oci's build_thin).
+PLATFORM_ROOT_GENERATION = "mock-1"

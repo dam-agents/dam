@@ -1,5 +1,5 @@
 {{- $v := .Values.virtualization }}
-{{- if and $v.enabled $v.imageCache.hostPath }}
+{{- if and $v.enabled (not $v.runner.hostAddress) }}
 {{- /*
 The per-node image cache service: the only writer of the node directory that
 `imageCache.hostPath` names. Every runner on the node mounts that directory
@@ -69,14 +69,7 @@ spec:
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ $name }}
       automountServiceAccountToken: false
-      {{- /*
-      The runner's own resolver policy, because this reaches the same
-      registries by the same route — the cluster's DNS is a Service backed by
-      pods, which a confined runner cannot reach, so `Default` is the node's
-      resolver and `ClusterFirst` is for an install whose registry is inside
-      the cluster.
-      */}}
-      dnsPolicy: {{ $v.runner.dnsPolicy | default "Default" }}
+      dnsPolicy: {{ $cache.dnsPolicy | default "Default" }}
       {{- with $v.runner.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -133,7 +126,7 @@ spec:
             read-only or no longer its own (DAC_OVERRIDE). There is no MKNOD:
             the unpack skips the image's /dev, and fails on a device node
             anywhere else. The runners this service serves only read, so they
-            hold no CHOWN or FOWNER.
+            hold none of CHOWN, FOWNER and FSETID.
             */}}
             runAsUser: 0
             capabilities:

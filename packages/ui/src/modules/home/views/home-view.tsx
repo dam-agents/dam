@@ -7,12 +7,19 @@ import { WelcomeEntryPoints } from "../../agents/components/welcome-entry-points
 import { useAgentRows } from "../../agents/hooks/use-agent-rows.js";
 import { splitTemporarySandboxes } from "../../agents/utils/temporary-sandboxes.js";
 import { ResourcesCard } from "../../budgets/components/resources-card.js";
+import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 import { SpendWidget } from "../../spend/components/spend-widget.js";
 import { useFeed } from "../api/queries.js";
 import { ApprovalsBanner } from "../components/approvals-banner.js";
 import { WidgetSkeleton } from "../components/home-skeletons.js";
+import { DashboardHomeView } from "./dashboard-home-view.js";
 
 export function HomeView() {
+  if (useNewLayout()) return <DashboardHomeView />;
+  return <CurrentHomeView />;
+}
+
+function CurrentHomeView() {
   const { agentsData, initialLoaded, rowProps } = useAgentRows();
   const { workingAgentIds, workingByAgent } = useFeed();
 
@@ -23,9 +30,11 @@ export function HomeView() {
     return (
       <div>
         <PageHeader title="Home" />
-        <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2">
-          <WidgetSkeleton rows={2} />
-          <WidgetSkeleton rows={2} />
+        <div className="@container mb-8">
+          <div className="grid grid-cols-1 gap-4 @3xl:grid-cols-2">
+            <WidgetSkeleton rows={2} />
+            <WidgetSkeleton rows={2} />
+          </div>
         </div>
         <ListSkeleton rows={3} rowHeight={70} />
       </div>
@@ -43,13 +52,21 @@ export function HomeView() {
 
   return (
     <div>
-      <PageHeader title="Home" actions={<EntryPointButtons />} />
+      <PageHeader title="Home" />
       <ApprovalsBanner />
-      <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="rounded-lg border border-border bg-card p-6">
-          <ResourcesCard agents={allAgents} workingAgentIds={workingAgentIds} />
+      <div className="@container mb-8">
+        <div className="grid grid-cols-1 gap-4 @3xl:grid-cols-2">
+          <div className="rounded-lg border border-border bg-card p-6">
+            <ResourcesCard
+              agents={allAgents}
+              workingAgentIds={workingAgentIds}
+            />
+          </div>
+          <SpendWidget />
         </div>
-        <SpendWidget />
+      </div>
+      <div className="mb-4 flex flex-wrap justify-end gap-2">
+        <EntryPointButtons />
       </div>
       <SandboxList
         agents={visible}

@@ -20,14 +20,15 @@ interface Props {
 }
 
 export function RenameSessionDialog({ agentId, session, onClose }: Props) {
-  const [title, setTitle] = useState(session.title ?? "");
+  const initial = (session.title ?? "").replace(/…$/, "");
+  const [title, setTitle] = useState(initial);
   const rename = useRenameSession(agentId);
   const pending = rename.isPending;
 
   const save = () => {
     if (pending) return;
     const trimmed = title.trim();
-    if (trimmed === (session.title ?? "")) {
+    if (trimmed === initial.trim()) {
       onClose();
       return;
     }
@@ -57,6 +58,13 @@ export function RenameSessionDialog({ agentId, session, onClose }: Props) {
             data-testid="session-rename-input"
             value={title}
             autoFocus
+            onFocus={(e) =>
+              e.currentTarget.setSelectionRange(
+                0,
+                e.currentTarget.value.length,
+                "backward",
+              )
+            }
             maxLength={SESSION_TITLE_MAX_LENGTH}
             onChange={(e) => setTitle(e.target.value)}
             onKeyDown={(e) => {

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
+import { Card } from "@/components/ui/card";
 import { SectionHeader } from "@/components/ui/list-section";
 import { Notice } from "@/components/ui/notice";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -20,6 +21,8 @@ export function SkillsNeverRunPanel({
   revalidatingBySource,
   errorBySource,
   addSourceButton,
+  addSourceRow,
+  disabledNotice,
   comingUp,
   onStart,
   onRescan,
@@ -34,13 +37,15 @@ export function SkillsNeverRunPanel({
   revalidatingBySource: Record<string, boolean>;
   errorBySource: Record<string, ScanFailure | null>;
   addSourceButton: ReactNode;
+  addSourceRow: ReactNode;
+  disabledNotice?: ReactNode;
   comingUp: boolean;
   onStart: () => void;
   onRescan: (source: SkillSource) => void;
   onRemove: (source: SkillSource) => void;
   onManageConnections?: () => void;
 }) {
-  const startButton = (
+  const startButton = !disabledNotice && (
     <Button size="sm" disabled={comingUp} onClick={onStart}>
       {comingUp ? <Spinner size={14} /> : <Play size={14} />}
       {comingUp ? "Starting…" : "Start agent"}
@@ -49,14 +54,16 @@ export function SkillsNeverRunPanel({
 
   return (
     <div className="flex flex-col gap-8">
-      <Notice
-        icon={Information}
-        title="This agent hasn’t run yet"
-        action={startButton}
-      >
-        — its skills are resolved when it starts, so there&rsquo;s nothing
-        recorded to show. Start it once and this page fills in.
-      </Notice>
+      {disabledNotice ?? (
+        <Notice
+          icon={Information}
+          title="This agent hasn’t run yet"
+          action={startButton}
+        >
+          — its skills are resolved when it starts, so there&rsquo;s nothing
+          recorded to show. Start it once and this page fills in.
+        </Notice>
+      )}
 
       <section>
         <SectionLabel spaced>Skills</SectionLabel>
@@ -74,9 +81,7 @@ export function SkillsNeverRunPanel({
       </section>
 
       <section>
-        <SectionHeader label="Connected sources">
-          {addSourceButton}
-        </SectionHeader>
+        <SectionHeader label="Connected sources" />
         <SkillSourceList
           sources={sources}
           loaded={sourcesLoaded}
@@ -89,6 +94,9 @@ export function SkillsNeverRunPanel({
           onRemove={onRemove}
           onManageConnections={onManageConnections}
         />
+        {sourcesLoaded && (
+          <Card className="mt-3 overflow-hidden">{addSourceRow}</Card>
+        )}
         <p className="mt-2.5 text-sm text-muted-foreground">
           The source list is known before first boot; which of its skills are
           installed isn&rsquo;t.

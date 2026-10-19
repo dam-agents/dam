@@ -61,16 +61,6 @@ func TestARunnerTheInstallLetsNestIsStartedWithTheNestingArgs(t *testing.T) {
 	}))
 }
 
-// TEST_SCENARIO: an install that sets virtualization.runner.convertExt4Disks starts its runners with the fixture's args plus the conversion arg the runner's tests parse, so a rollout turns conversion on by the install's value alone.
-func TestARunnerTheInstallLetsConvertIsStartedWithTheConversionArg(t *testing.T) {
-	var base, convert []string
-	readRunnerContract(t, "runner-args.json", &base)
-	readRunnerContract(t, "runner-args-convert.json", &convert)
-	assert.Equal(t, append(base, convert...), renderedRunnerArgsWith(t, func(spec *config.VMRunnerSpec) {
-		spec.ConvertExt4Disks = true
-	}))
-}
-
 // TEST_SCENARIO: the runner publishes each machine on a port from the range its args name, and the NetworkPolicy admits the api-server to exactly the range it opens. Two ranges that differ leave a machine the api-server cannot dial, with nothing in any status saying why, so both are rendered from one pair of constants and held equal here.
 func TestTheRunnerPublishesMachinesOnlyOnPortsItsPolicyOpens(t *testing.T) {
 	flag := func(args []string, name string) int {
@@ -86,7 +76,7 @@ func TestTheRunnerPublishesMachinesOnlyOnPortsItsPolicyOpens(t *testing.T) {
 	}
 	args := renderedRunnerArgs(t)
 
-	np := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "platform", 10000, nil, nil, nil)
+	np := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "platform", 10000)
 	published := np.Spec.Ingress[0].Ports[1]
 	require.NotNil(t, published.Port)
 	require.NotNil(t, published.EndPort)
@@ -111,7 +101,7 @@ func TestTheAgentsGuestPathsAreTheOnesPlatformInitLaysOut(t *testing.T) {
 	assert.Equal(t, filepath.Dir(guest.CAFile), env["SSL_CERT_DIR"])
 }
 
-// TEST_SCENARIO: an install that stages runner releases on the node gives each runner pod's loader its environment. A name the loader does not read is a pod that silently runs only the release its image carries, so the names rendered here are held to the fixture the loader's tests read, and an install that stages nothing renders none of them.
+// TEST_SCENARIO: every runner pod's loader gets its environment. A name the loader does not read is a pod that silently runs only the release its image carries, so the names rendered here are held to the fixture the loader's tests read.
 func TestTheLoaderGetsTheEnvironmentItsContractNames(t *testing.T) {
 	var want []string
 	readRunnerContract(t, "loader-env.json", &want)
@@ -131,6 +121,5 @@ func TestTheLoaderGetsTheEnvironmentItsContractNames(t *testing.T) {
 		}
 		return loader
 	}
-	assert.Equal(t, want, names(func(spec *config.VMRunnerSpec) { spec.ReleaseHostPath = "/var/lib/platform-runner-releases" }))
-	assert.Empty(t, names(func(*config.VMRunnerSpec) {}))
+	assert.Equal(t, want, names(func(*config.VMRunnerSpec) {}))
 }
