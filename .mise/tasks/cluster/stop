@@ -9,15 +9,17 @@ if [ -n "${IS_SANDBOX:-}" ]; then
     # An OpenRC k3s service supervises the process and respawns it
     # (supervise-daemon, respawn_max=0), so it goes through rc-service: a bare
     # pkill is undone at once. Only a host with no service manager gets one.
-    rc=0
-    k3s_service stop || rc=$?
-    if [ "$rc" = "$K3S_NO_SERVICE" ]; then
+    if ! k3s_has_service; then
       as_root pkill -x k3s-server || true
-    elif [ "$rc" != 0 ] && pgrep -x k3s-server >/dev/null; then
+    else
+      rc=0
+      k3s_service stop || rc=$?
       # rc-service reports a service that was already stopped as an error too,
       # so only a process that outlived the stop is a failure.
-      echo "FATAL: k3s did not stop (rc=$rc)." >&2
-      exit 1
+      if [ "$rc" != 0 ] && pgrep -x k3s-server >/dev/null; then
+        echo "FATAL: k3s did not stop (rc=$rc)." >&2
+        exit 1
+      fi
     fi
     for _ in $(seq 1 30); do pgrep -x k3s-server >/dev/null || break; sleep 1; done
     # What k3s-killall.sh does on a supervised host; a plain process leaves it
