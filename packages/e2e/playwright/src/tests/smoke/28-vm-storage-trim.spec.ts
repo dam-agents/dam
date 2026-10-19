@@ -161,11 +161,10 @@ test("room a vm agent frees goes back to its owner's claim", async () => {
   ).toBeGreaterThanOrEqual(PROBE_MIB - SLACK_MIB);
 });
 
-// TEST_SCENARIO: a share is the claim's room below its 95% ceiling divided among the machines that are running, so stopping a sibling doubles the probe's share and starting one halves it again, and the guard must take both moves and give the room back both ways: stopping the sibling grows the share, which shrinks the guard, and the guest's free space must rise; starting another grows the guard back, and the free space must fall. Two cycles, because a resize that frees only part of a preallocated extent loses a little room on every move, and the loss adds up. The claim's own use must not move, since the guard holds blocks marked in the guest's filesystem and never written.
+// TEST_SCENARIO: a share is the claim's room below its 95% ceiling divided among the machines that are running, so stopping a sibling doubles the probe's share and starting one halves it again, and the guard must take both moves and give the room back both ways: stopping the sibling grows the share, which shrinks the guard, and the guest's free space must rise; starting another grows the guard back, and the free space must fall. Two cycles, because a resize that frees only part of a preallocated extent loses a little room on every move, and the loss adds up. The claim's own use is not asserted here: every round boots a machine, and a boot writes onto the claim, so what the claim gains is the new machine's own room.
 test("the guard gives a machine the room its share gains, and takes it back", async () => {
   test.setTimeout(900_000);
   test.skip(!probeDisk, "an earlier case did not measure a machine's disk");
-  const claimBefore = claimKb().used;
   const probeDiskBefore = machineDisks().get(probeDisk) ?? 0;
   for (const round of [1, 2]) {
     const base = guestAvailMiB();
@@ -192,11 +191,7 @@ test("the guard gives a machine the room its share gains, and takes it back", as
   }
   expect(
     Math.abs((machineDisks().get(probeDisk) ?? 0) - probeDiskBefore),
-    "the guard's moves must stay off the claim",
-  ).toBeLessThanOrEqual(2 * MOVE_MIB);
-  expect(
-    claimKb().used - claimBefore,
-    "the claim must not grow while the guard moves",
+    "the guard's moves must leave the probe's own disk where it was, since its blocks are marked in the guest's filesystem and never written onto the claim",
   ).toBeLessThanOrEqual(2 * MOVE_MIB);
 });
 
