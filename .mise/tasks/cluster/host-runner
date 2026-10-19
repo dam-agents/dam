@@ -15,6 +15,8 @@ install -m 755 "$pkg/dist/host/vm-runner" "$R/vm-runner.new"
 
 # The smolvm release the binary was built against, for what the VMM loads at
 # run time: libkrun, the guest agent's root filesystem and the disk templates.
+# The binary's loader path names this directory, so it must stay here, beside
+# the runner (//packages/vm-runner:host builds it in).
 tag="$(sed -n 's/^tag=//p' "$pkg/smolvm.pin")"
 sha="$(sed -n 's/^sha256-darwin-arm64=//p' "$pkg/smolvm.pin")"
 release="$R/smolvm-$tag"
