@@ -1,0 +1,35 @@
+#!/usr/bin/env node
+//MISE description="Test that Claude Code's settings sync gives a settings file that names no mode the auto default"
+//MISE sources=["claude-code/rootfs/usr/local/lib/sync-claude-settings.mjs", ".mise/tasks/test/claude-default-mode"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const script = fileURLToPath(new URL("../../../claude-code/rootfs/usr/local/lib/sync-claude-settings.mjs", import.meta.url));
+
+const permissionsAfter = (initial) => {
+  const home = mkdtempSync(join(tmpdir(), "claude-default-mode-"));
+  try {
+    mkdirSync(join(home, ".claude"));
+    if (initial !== undefined)
+      writeFileSync(join(home, ".claude/settings.json"), JSON.stringify(initial));
+    execFileSync(process.execPath, [script], { env: { PATH: process.env.PATH, HOME: home } });
+    return JSON.parse(readFileSync(join(home, ".claude/settings.json"), "utf8")).permissions;
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+};
+
+// TEST_SCENARIO: A settings file that names no mode starts in auto, which the image seeds and the terminal launcher asks for, because the ACP adapter's own fallback is the manual mode that asks before each tool call.
+assert.equal(permissionsAfter({ permissions: { allow: ["Read"] } }).defaultMode, "auto");
+assert.deepEqual(permissionsAfter({ permissions: { allow: ["Read"] } }).allow, ["Read"]);
+assert.equal(permissionsAfter({}).defaultMode, "auto");
+assert.equal(permissionsAfter(undefined).defaultMode, "auto");
+// TEST_SCENARIO: A mode the owner picked stays as it is, the asking ones included.
+for (const mode of ["default", "acceptEdits", "plan", "dontAsk", "bypassPermissions"])
+  assert.equal(permissionsAfter({ permissions: { defaultMode: mode } }).defaultMode, mode);
+console.log("Claude Code's settings sync gives a settings file that names no mode the auto default");

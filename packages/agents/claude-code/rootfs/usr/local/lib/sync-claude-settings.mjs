@@ -36,6 +36,11 @@ try {
   }
   settings.hooks = hooks;
 
+  settings.permissions = {
+    ...settings.permissions,
+    defaultMode: settings.permissions?.defaultMode ?? "auto",
+  };
+
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(`${path}.tmp`, JSON.stringify(settings, null, 2));
   renameSync(`${path}.tmp`, path);
