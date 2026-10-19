@@ -92,6 +92,7 @@ export function useAgentSessionList(agentId: string) {
     operable,
     loading,
     provisional,
+    recordRead: lastKnown !== undefined,
     hasNextPage,
     isFetchingNextPage,
     fetchNextPageFailed: isFetchNextPageError,

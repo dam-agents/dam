@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The new layout experiment replaces the app shell for the user who turns it on, and turning it off restores the current one. With it on, the sidebar is one tree of Agents that open to their Sessions, Home is a dashboard of cards, the right rail draws tiles with Documentation among them, a Session can be pinned to a Pinned section above every Agent, and the tree's one session filter narrows an Agent's own Sessions. The spec creates its own Agents and the one Session it pins, so it moves nothing the other specs read, and it leaves the experiment off.
+// TEST_OVERVIEW: The new layout experiment replaces the app shell for the user who turns it on, and turning it off restores the current one. With it on, the sidebar is one tree of Agents that open to their Sessions, Home is a dashboard of cards, the right rail draws tiles with Documentation among them, a Session can be pinned to a Pinned section above every Agent, the tree's one session filter narrows the Pinned section and an Agent's own Sessions, and deleting a pinned Session drops its pin. The spec creates its own Agents and the one Session it pins, so it moves nothing the other specs read, and it leaves the experiment off.
 import { expect, type Page, test } from "@playwright/test";
 
 import { baseUrl } from "../../config.js";
@@ -148,14 +148,22 @@ test("pins a Session above every Agent", async ({ page }) => {
   await expect(inAgent).toBeVisible();
 });
 
-// TEST_SCENARIO: on the chat Session the pin test made, the tree's Agents header carries the one session filter. Leaving Chat out of its types hides the Agent's chat Session and marks the control filtered; putting Chat back returns the Session.
-test("filters the Agent's own Sessions from the tree", async ({ page }) => {
+// TEST_SCENARIO: with the chat Session the pin test made pinned again, the tree's Agents header carries the one session filter. Leaving Chat out of its types hides the Session from the Pinned section and from its Agent's list and marks the control filtered; putting Chat back returns it to the Pinned section.
+test("filters the Pinned section and the Agent's list", async ({ page }) => {
   await setNewLayout(true);
   const name = AGENTS[0];
   await page.goto(`${baseUrl}/chat/${encodeURIComponent(agentIds.get(name)!)}`);
   const node = agentNode(page, name);
   const row = node.getByTestId("session-row").first();
   await expect(row).toBeVisible({ timeout: 30_000 });
+  const sessionId = await row.getAttribute("data-session-id");
+  await row.hover();
+  await row.getByTestId("session-pin-button").click();
+  const pinnedSection = page.getByRole("region", { name: "Pinned" });
+  const inPinned = pinnedSection.locator(
+    `[data-testid="session-row"][data-session-id="${sessionId}"]`,
+  );
+  await expect(inPinned).toBeVisible({ timeout: 30_000 });
 
   const filter = page
     .getByTestId("sidebar-tree")
@@ -164,6 +172,7 @@ test("filters the Agent's own Sessions from the tree", async ({ page }) => {
   await filter.click();
   await page.getByRole("menuitemcheckbox", { name: "Chat" }).click();
   await page.keyboard.press("Escape");
+  await expect(pinnedSection).toHaveCount(0);
   await expect(node.getByTestId("session-row")).toHaveCount(0);
   await expect(node.getByText("No sessions match the filter.")).toBeVisible();
   await expect(filter).toHaveAccessibleName("Filter sessions (filtered)");
@@ -171,6 +180,31 @@ test("filters the Agent's own Sessions from the tree", async ({ page }) => {
   await filter.click();
   await page.getByRole("menuitemcheckbox", { name: "Chat" }).click();
   await page.keyboard.press("Escape");
-  await expect(row).toBeVisible();
+  await expect(inPinned).toBeVisible();
   await expect(filter).toHaveAccessibleName("Filter sessions");
+});
+
+// TEST_SCENARIO: deleting the pinned Session from its row in the Pinned section removes it from the tree and drops its pin from browser storage, so no stale pin waits for an id that no longer exists.
+test("deletes a pinned Session and drops its pin", async ({ page }) => {
+  await setNewLayout(true);
+  const name = AGENTS[0];
+  const agentId = agentIds.get(name)!;
+  await page.goto(`${baseUrl}/chat/${encodeURIComponent(agentId)}`);
+  const pinnedSection = page.getByRole("region", { name: "Pinned" });
+  const row = pinnedSection.getByTestId("session-row").first();
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  const sessionId = await row.getAttribute("data-session-id");
+
+  await row.hover();
+  await row.getByTestId("session-menu-button").click();
+  await page.getByTestId("session-delete-button").click();
+  await page.getByRole("button", { name: "Delete session" }).click();
+  await expect(pinnedSection).toHaveCount(0, { timeout: 30_000 });
+  await expect(
+    page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`),
+  ).toHaveCount(0);
+  const pins = await page.evaluate(() =>
+    localStorage.getItem("platform-pinned-sessions"),
+  );
+  expect(pins ?? "").not.toContain(`${agentId}:${sessionId}`);
 });

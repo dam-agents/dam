@@ -67,6 +67,7 @@ A Session can be **pinned**: a pinned Session moves to a **Pinned** section abov
 Pins are kept in the browser, so they do not follow the user to another device.
 The Pinned section shows a pinned Session only while it is in the record; one that is not stays in its Agent's list, and deleting a Session drops its pin.
 An asleep Agent whose Sessions the record does not hold shows a note that its Sessions show when it wakes; the tree never reads an empty record as an empty list.
+Until the record answers, and for an Agent that cannot answer for another reason, the list shows its loading placeholder.
 Home becomes a dashboard of cards built from the record, the Agents list and the owner's schedules; its counts cover only the record's rows, at most the feed's row limit, so they describe recent work, not all time.
 With no Agent rows on that Home, an Agent's runtime migration controls show in the header of its configuration page.
 

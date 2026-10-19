@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
 import type { SessionView } from "../../../../types.js";
-import { useIsAgentAnswerableSoon } from "../../../agents/api/queries.js";
+import { useAgentRunState } from "../../../agents/api/queries.js";
 import { useActWhenAwake } from "../../../agents/hooks/use-act-when-awake.js";
 import {
   useFeatures,
@@ -53,8 +53,11 @@ export function AgentSessionList({
   const deleteSession = useStore((s) => s.deleteSession);
   const showConfirm = useStore((s) => s.showConfirm);
   const actWhenAwake = useActWhenAwake(agentId);
-  const answerableSoon = useIsAgentAnswerableSoon(agentId);
-  const asleep = list.loading && !answerableSoon;
+  const runState = useAgentRunState(agentId);
+  const asleep =
+    list.loading &&
+    list.recordRead &&
+    (runState === "hibernated" || runState === "hibernating");
   const openSession = useOpenSession();
   const pins = usePinnedSessions();
   const [renaming, setRenaming] = useState<SessionView | null>(null);
