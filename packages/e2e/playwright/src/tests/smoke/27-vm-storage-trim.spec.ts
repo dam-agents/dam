@@ -28,7 +28,6 @@ let api: ApiClient;
 const token = refreshingToken();
 let agentId = "";
 
-// UNIT_BOUNDARY_DESCRIPTION: what the owner's claim holds, as the blocks the runner's machine disks take on it, in MiB. Written blocks count and preallocated ones — the guard's room the guest cannot use — do not, so this is the figure the owner's storage bar and its refusals are made of.
 function claimMiB(): number {
   const du = kubectl(
     "-n",
