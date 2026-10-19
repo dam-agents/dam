@@ -56,7 +56,7 @@ The runner reports a machine warming up in its status, and the controller counts
 Counting a boot at half the pool would let only two machines boot at once; at the floor, as many machines warm up together as the pool holds floors, and a runner roll or many wakes at once start the rest in waves as the first ones warm up, each refused start retried within 30 seconds ([budgets](budgets.md)).
 Admission, the committed-memory metric and the runner's memory request all count the same way; only the request rounds, as below.
 A machine the runner refused counts toward nothing until a retry gets it running, whether it was refused for room, which parks the Agent, or for storage, which leaves the Agent awake with no machine: it holds nothing meanwhile.
-So neither the request, the CPU limit nor the pass that judges pressure counts it.
+So the CPU limit and the pass that judges pressure count it at nothing.
 Were it counted beside the machines the runner did admit, it would push the owner past the 90% threshold, and the pass would hibernate those to make room for the one the runner refused.
 Only the start being sized still counts itself, since the room it lacks is what its count is for.
 The figures a refusal quotes are the memory its owner's machines hold, the same that Home shows.

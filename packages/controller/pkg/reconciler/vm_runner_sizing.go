@@ -113,13 +113,14 @@ func (r *AgentReconciler) peerShouldRun(ctx context.Context, name string) (bool,
 	return r.agentDesiredUp(ctx, name, true)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a machine the runner refused for room is parked — the Agent reads OverBudget — and one it refused for storage leaves the Agent awake with no machine. Either holds nothing until a retry gets it running, so it counts toward nothing. The refusal is recorded where the runner answered the start, under the owner's lock, so it is current before the Agent's status carries it; the status covers a refusal this controller did not see. A machine that runs anyway counts as any other, whatever a refusal from an attempt before says.
+// UNIT_BOUNDARY_DESCRIPTION: a machine the runner refused for room is parked — the Agent reads OverBudget — and one it refused for storage leaves the Agent awake with no machine. Either holds nothing until a retry gets it running, so it counts toward nothing. The runner's own answer governs: it is recorded where the runner gave it, under the owner's lock, so a refusal counts before the Agent's status carries it, and a machine the runner admitted counts while it boots, before it is a live machine. The status is read only when no answer is recorded, for a refusal this controller did not see. A machine that runs anyway counts as any other, whatever a refusal from an attempt before says.
 func (r *AgentReconciler) refusedWithoutMachine(a *apiv1.Agent) bool {
 	if r.liveMachine(a.Name).State == vmrunner.StateRunning {
 		return false
 	}
-	if _, refused := r.vmRefusals.Load(a.Name); refused {
-		return true
+	if answer, recorded := r.vmAnswers.Load(a.Name); recorded {
+		refused, _ := answer.(bool)
+		return refused
 	}
 	ready := apimeta.FindStatusCondition(a.Status.Conditions, apiv1.ConditionReady)
 	if ready != nil && ready.Reason == apiv1.ReasonOverBudget {
@@ -129,13 +130,9 @@ func (r *AgentReconciler) refusedWithoutMachine(a *apiv1.Agent) bool {
 	return podReady != nil && podReady.Reason == vmrunner.ReasonStorageFull
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: remembers the runner's answer to a start. A refusal for room or storage leaves the machine holding nothing until a retry gets it running; any other answer means the machine is the runner's to hold. It is written where the runner answers, under the owner's lock, because the Agent's status carries a refusal only once the reconcile that saw it has published it.
-func (r *AgentReconciler) noteRefusal(name string, st vmrunner.MachineStatus) {
-	if st.Reason != vmrunner.ReasonOutOfCapacity && st.Reason != vmrunner.ReasonStorageFull {
-		r.vmRefusals.Delete(name)
-		return
-	}
-	r.vmRefusals.Store(name, st.Reason)
+// UNIT_BOUNDARY_DESCRIPTION: a machine the runner refused for room or for storage holds nothing, so it counts toward nothing; any other answer means the runner holds it.
+func refusedReason(reason string) bool {
+	return reason == vmrunner.ReasonOutOfCapacity || reason == vmrunner.ReasonStorageFull
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the runner admits machines against its memory limit, and the scheduler places pods by requests — so with a request below the limit, the node lends out memory the runner's guests are already using, and a busy node OOM-kills the runner with every machine of that owner. The request follows the memory of the machines that should be running plus the runner's own reserve. It rises at once, but falls only once that has dropped a quarter step below the step under the current request, so a guest whose use sits on a step boundary does not resize the pod at every pass. It never drops below what the install asked for, which is the request Kubernetes gives the pod when the install asked for none, and never rises above the limit, which the API refuses.

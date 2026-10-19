@@ -403,9 +403,13 @@ func TestARefusedMachineIsNotCountedBesideTheWarmUpsItWasRefusedFor(t *testing.T
 	}
 	r.vmRunning.Store(refused.Name, true)
 	agents := []*apiv1.Agent{cachedAgent(t, r, refused.Name), cachedAgent(t, r, "warm-a"), cachedAgent(t, r, "warm-b")}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "3Gi")
 
-	r.ownerMemoryPass(ctx, testOwner, agents, nil)
+	anchor, moved := r.ownerMemoryPass(ctx, testOwner, agents, nil)
 
+	require.True(t, moved, "the pod's request is below what the owner's machines hold")
+	assert.NotEqual(t, refused.Name, anchor, "the pass counted and reconciled from the machine the runner refused")
 	assert.False(t, reclaimedAgent(t, r, "warm-a"), "the pass hibernated a machine the runner had just admitted")
 	assert.False(t, reclaimedAgent(t, r, "warm-b"), "the pass hibernated a machine the runner had just admitted")
 }
@@ -428,7 +432,7 @@ func TestARefusalRecordedAtTheRunnerIsNotUndoneByAStaleAgent(t *testing.T) {
 		r.vmRunning.Store(name, true)
 	}
 	r.vmRunning.Store(refused.Name, true)
-	r.noteRefusal(refused.Name, vmrunner.MachineStatus{State: vmrunner.StateAbsent, Reason: vmrunner.ReasonOutOfCapacity})
+	r.vmAnswers.Store(refused.Name, true)
 	stale := *cachedAgent(t, r, refused.Name)
 	stale.Status.Conditions = nil
 	agents := []*apiv1.Agent{&stale, cachedAgent(t, r, "warm-a"), cachedAgent(t, r, "warm-b")}
@@ -461,7 +465,7 @@ func TestARefusedMachineCountsNothingUntilItsRetryRuns(t *testing.T) {
 				require.NoError(t, err)
 			}
 			if tc.recorded {
-				r.noteRefusal("peer", vmrunner.MachineStatus{State: vmrunner.StateAbsent, Reason: vmrunner.ReasonStorageFull})
+				r.vmAnswers.Store("peer", true)
 			}
 
 			d, err := r.ownerRunnerDemand(ctx, testOwner, agent, true)
@@ -525,7 +529,29 @@ func TestARetriedStartFreesRoomForItselfUnderItsOwnPark(t *testing.T) {
 	assert.True(t, reclaimedAgent(t, r, "idle-a"), "the start needs 376 MiB, and the idlest agent that holds memory gives 956 MiB")
 }
 
-// TEST_SCENARIO: the pass reads the owner's Agents, then reclaims, and the runner can refuse the very start it counts from in between. So the demand it reclaims on leaves a machine the runner refused out, the anchor included, while the demand that sizes a start keeps counting that start: the room a refused start lacks is freed from its own count, and the pod's request covers it for the retry that will run it.
+// TEST_SCENARIO: a refused start retries every 30 seconds, and its own reconcile is the one that hears the refusal. Sizing the pod from a demand that counts its own pending start would raise the request to that whole machine, and the next reconcile of any other agent would drop it again: a resize every pass, against the quarter-step hysteresis that exists to stop exactly that. So the runner's answer decides, and a refused start is sized out of what the owner's machines hold.
+func TestARefusedStartDoesNotRaiseTheRunnerRequestForItself(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+		Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("3Gi")},
+	}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "3Gi")
+	peerVMAgent(t, r, "peer-up", "2Gi", "20Gi", true)
+	r.noteMachineUse("peer-up", measured(600))
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateCreating, Reason: vmrunner.ReasonOutOfCapacity, Message: "does not fit"})
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	assert.Equal(t, apiv1.ReasonOverBudget, readyCondition(t, r, "my-agent").Reason, "the start was refused")
+	assert.Equal(t, "1536Mi", runnerPodRequest(t, r),
+		"the request covers the 856Mi its machines hold and the 512Mi reserve, not the 3Gi start the runner refused")
+}
+
+// TEST_SCENARIO: the pass reads the owner's Agents, then reclaims, and the runner can refuse the very start it counts from in between. So the demand it reclaims on leaves a machine the runner refused out, the anchor included, while the demand a start is sized by keeps counting that start: the room a refused start lacks is freed from its own count.
 func TestThePassDemandLeavesOutARefusedMachineEvenAsItsAnchor(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -537,7 +563,7 @@ func TestThePassDemandLeavesOutARefusedMachineEvenAsItsAnchor(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 3072+600+256, full.memoryMiB, "a start the runner has not refused counts itself")
 
-	r.noteRefusal(agent.Name, vmrunner.MachineStatus{State: vmrunner.StateAbsent, Reason: vmrunner.ReasonOutOfCapacity})
+	r.vmAnswers.Store(agent.Name, true)
 	held, err := r.heldRunnerDemand(ctx, testOwner, agent, true)
 	require.NoError(t, err)
 	assert.Equal(t, 600+256, held.memoryMiB, "the pass's demand leaves the refused anchor out")

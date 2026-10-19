@@ -771,7 +771,7 @@ func TestAWakeScalesTheGatewayUpBeforeItStartsTheMachine(t *testing.T) {
 	assert.Equal(t, int32(1), gatewayAtStart, "the gateway is already scaled up when the machine is asked to run")
 }
 
-// TEST_SCENARIO: the retry of an agent the runner refused must not scale its gateway up ahead of the runner call either, or each 30 s retry would start and stop a gateway pod.
+// TEST_SCENARIO: the retry of an agent the runner refused must not scale its gateway up ahead of the runner call either, or each 30 s retry would start and stop a gateway pod. The refusal is also the runner's answer rather than a line on the Agent, so it counts before the status carries it, and the answer that admits the machine replaces it: a machine the runner admits counts while it boots, before it is a live machine to count by.
 func TestARetryAfterARefusedStartKeepsTheGatewayDown(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -786,8 +786,16 @@ func TestARetryAfterARefusedStartKeepsTheGatewayDown(t *testing.T) {
 	require.NoError(t, err)
 	cached, err := FromCacheObject[apiv1.Agent](u)
 	require.NoError(t, err)
+	unparked := *cached
+	unparked.Status.Conditions = nil
+	require.True(t, r.refusedWithoutMachine(&unparked), "a refusal counts from the runner's answer, with nothing on the status to read it from")
+
 	require.NoError(t, r.Reconcile(ctx, cached))
 	assert.Equal(t, int32(0), gatewayAtRetry, "the gateway stays down while the runner is asked again")
+
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateCreating})
+	require.NoError(t, r.Reconcile(ctx, cached))
+	assert.False(t, r.refusedWithoutMachine(cached), "a machine the runner admitted counts, whatever park the status still carries")
 }
 
 // TEST_SCENARIO: on a wake the machine often answers before its gateway pod is ready, and the gateway pod turning ready starts a reconcile. That reconcile publishes Ready once the gateway is applied, before it calls the runner, because the status already holds the machine ready for this generation.
