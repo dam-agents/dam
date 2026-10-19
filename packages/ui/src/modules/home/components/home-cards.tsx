@@ -1,12 +1,13 @@
 import { NextOutline, WarningAltFilled } from "@carbon/icons-react";
 import {
-  Calendar,
-  Conversation,
-  DataStorage,
+  CalendarEvent,
+  Cardboard,
+  ConnectApplications,
   GrowthMindset,
+  KeystoresExternal,
   MachineLearning_03,
+  MobileChat,
   Robot,
-  Slack,
 } from "@carbon/pictograms-react";
 import { type ReactNode, useMemo, useState } from "react";
 
@@ -14,7 +15,6 @@ import { HarnessIcons } from "@/components/harness-icons";
 import { timeAgo, timeUntil } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
-import { getBrand } from "../../../brand.js";
 import { useStore } from "../../../store.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import {
@@ -129,7 +129,7 @@ export function HeroCard() {
       <div className="relative grid items-end gap-6 @2xl:grid-cols-[minmax(0,1fr)_auto]">
         <div className="min-w-0">
           <h1 className="text-3xl font-light tracking-[-0.03em] text-balance text-foreground @2xl:text-5xl @6xl:text-6xl">
-            {getBrand().title || getBrand().name}
+            Deploy Agents Massively
           </h1>
           <div className="mt-6 flex flex-wrap gap-8">
             <Big value={agents.length} label="agents" />
@@ -165,7 +165,7 @@ export function TipCard() {
   return (
     <Card
       title="Tip"
-      pictogram={<GrowthMindset size={48} aria-hidden />}
+      pictogram={<GrowthMindset aria-hidden />}
       className="bg-callout"
     >
       <p className="flex-1 text-base leading-relaxed text-foreground">
@@ -208,7 +208,7 @@ export function ChannelsCard() {
   return (
     <Card
       title="Where conversations happen"
-      pictogram={<Conversation size={48} aria-hidden />}
+      pictogram={<MobileChat aria-hidden />}
       className="@xl:col-span-2"
     >
       <div className="mb-4 flex h-3 w-full gap-px overflow-hidden rounded-full bg-muted">
@@ -266,7 +266,7 @@ export function AgentStatesCard() {
   const states = agentStates(agents, workingAgentIds);
   const vm = agents.filter((a) => a.vm).length;
   return (
-    <Card title="Agents" pictogram={<Robot size={48} aria-hidden />}>
+    <Card title="Agents" pictogram={<Robot aria-hidden />}>
       <ul className="flex flex-col gap-2 text-sm">
         {states.map((s) => (
           <li key={s.key} className="flex items-center gap-2">
@@ -397,7 +397,7 @@ export function SchedulesCard() {
   return (
     <Card
       title="Schedules"
-      pictogram={<Calendar size={48} aria-hidden />}
+      pictogram={<CalendarEvent aria-hidden />}
       onOpen={() => navigateToSettings("schedules")}
     >
       <div className="flex gap-8">
@@ -440,7 +440,7 @@ export function ConnectionsCard() {
   return (
     <Card
       title="Connections"
-      pictogram={<Slack size={48} aria-hidden />}
+      pictogram={<ConnectApplications aria-hidden />}
       onOpen={() => navigateToSettings("connections")}
     >
       <div className="flex gap-8">
@@ -462,7 +462,7 @@ export function ArtifactsCard() {
   return (
     <Card
       title="Artifacts"
-      pictogram={<DataStorage size={48} aria-hidden />}
+      pictogram={<Cardboard aria-hidden />}
       onOpen={() => openSidePanel("artifacts")}
     >
       <div className="flex gap-8">
@@ -494,7 +494,11 @@ export function ApiKeysCard() {
     .sort()
     .reverse()[0];
   return (
-    <Card title="API keys" onOpen={() => navigateToSettings("api-keys")}>
+    <Card
+      title="API keys"
+      pictogram={<KeystoresExternal aria-hidden />}
+      onOpen={() => navigateToSettings("api-keys")}
+    >
       <div className="flex gap-8">
         <Big value={keys.length} label="keys" />
         {soon > 0 && <Big value={soon} label="expire this week" />}

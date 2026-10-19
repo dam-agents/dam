@@ -20,14 +20,26 @@ while :; do sleep 0.1; done
 const CRASHES: &str =
     "#!/bin/sh\n[ \"$1\" = --help ] && exit 0\necho \"$0 $*\" >> \"$RUNNER_LOG\"\nexit 1\n";
 
+// UNIT_BOUNDARY_DESCRIPTION: the release a loader reads on the node: its files, its runtime id, and its runner script, which `cp` writes so this process holds no descriptor on the inode the loader execs. A fork on another test thread copies such a descriptor into a child that keeps it until it execs, and Linux fails that exec with ETXTBSY.
 fn release_dir(dir: &Path, script: &str, runtime: &str) {
     std::fs::create_dir_all(dir).unwrap();
     for file in FILES {
         std::fs::write(dir.join(file), file).unwrap();
     }
     std::fs::write(dir.join(RUNTIME_ID), runtime).unwrap();
-    std::fs::write(dir.join(RUNNER), script).unwrap();
+    let staged = dir.join(format!(".{RUNNER}"));
+    std::fs::write(&staged, script).unwrap();
+    let copied = Command::new("cp")
+        .arg(&staged)
+        .arg(dir.join(RUNNER))
+        .status()
+        .unwrap();
+    assert!(
+        copied.success(),
+        "cp the runner script into place: {copied}"
+    );
     std::fs::set_permissions(dir.join(RUNNER), std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::remove_file(&staged).unwrap();
 }
 
 fn wait_for(what: &str, mut done: impl FnMut() -> bool) {

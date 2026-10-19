@@ -1,8 +1,11 @@
+import { Settings } from "@carbon/icons-react";
 import { routesSessionPairs } from "agent-runtime-api";
 import type { SessionPair } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { AddRow } from "@/components/ui/list-section";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { useStore } from "../../../store.js";
@@ -52,15 +55,7 @@ export function SandboxProvidersSection({
 
   return (
     <div className="flex flex-col gap-3">
-      {header(
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => navigateToSettings("providers")}
-        >
-          Manage providers
-        </Button>,
-      )}
+      {header()}
       {root && <RootDriverSpendNote root={root} />}
       {loaded && owned.length === 0 && (
         <EmptyState
@@ -108,6 +103,21 @@ export function SandboxProvidersSection({
           </ProviderToggleRow>
         );
       })}
+      {owned.length > 0 && (
+        <Card className="overflow-hidden">
+          <AddRow onClick={() => navigateToSettings("providers")}>
+            <Settings size={16} className="shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-md font-medium text-foreground">
+                Manage providers
+              </p>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                Connect another LLM provider to give this agent more models.
+              </p>
+            </div>
+          </AddRow>
+        </Card>
+      )}
       <DefaultPairPicker agentId={agentId} />
     </div>
   );

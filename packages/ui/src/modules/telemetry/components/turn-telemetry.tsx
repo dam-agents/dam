@@ -36,7 +36,7 @@ export function TurnTelemetry({
   agentId,
   turn,
   spend,
-  className = "-mt-7",
+  className,
   triggerClassName,
   ...scope
 }: Props) {

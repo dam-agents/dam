@@ -23,9 +23,8 @@ INSTALL_ARGS=(
 # *.localtest.me the page is NOT secure-context, crypto.subtle is undefined,
 # the OIDC redirect throws silently, and the SPA hangs on a blank screen.
 # E2E_VIRTUALIZATION=1 installs the vm backend too: cluster:install applies the
-# KVM device plugin, and values-local.yaml states the runner's egressCidrs
-# and puts the node image cache where this install stages its images. The
-# same variable puts the Playwright suite on the vm Backend — every agent it
+# KVM device plugin, and values-local.yaml puts the node image cache where
+# this install stages its images. The same variable puts the Playwright suite on the vm Backend — every agent it
 # creates is a vm agent, and it adds the runtime migration spec — and that run
 # fails, rather than skips, on an install without the backend. It needs a
 # usable /dev/kvm (nested virtualization on the lima VM, or a KVM host in

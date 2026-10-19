@@ -392,7 +392,6 @@ function AllColumn({
   const sessions = useMemo(() => items.map((item) => item.session), [items]);
   const conversationOf = useActivityConversations(sessions, agents);
   const pins = usePinnedSessions();
-  const orderActions = useSidebarOrderActions();
   const shown = filterActivitySessions(items, filters);
   const unread = shown.filter((item) => item.unread);
   const read = shown.filter((item) => !item.unread);
@@ -403,7 +402,6 @@ function AllColumn({
       key={item.id}
       item={item}
       conversation={conversationOf(item.session)}
-      orderActions={orderActions}
       onNavigate={onNavigate}
     />
   );
@@ -448,12 +446,10 @@ function AllColumn({
 function ActivityRow({
   item,
   conversation,
-  orderActions,
   onNavigate,
 }: {
   item: AgentActivitySession;
   conversation?: string;
-  orderActions: ReturnType<typeof useSidebarOrderActions>;
   onNavigate?: () => void;
 }) {
   const openSession = useOpenSession();
@@ -506,7 +502,6 @@ function ActivityRow({
               ok &&
               actWhenAwake(`delete:${sessionId}`, async () => {
                 if (!(await deleteSession(sessionId, agentId))) return;
-                orderActions.forgetSession(agentId, sessionId);
                 unpinSession(item.id);
               }),
           )
@@ -530,8 +525,6 @@ function AgentColumn({
   agent: AgentView;
   onNavigate?: () => void;
 }) {
-  const { sessionOrderOf } = useSidebarAgents();
-  const orderActions = useSidebarOrderActions();
   const startSession = useStartSession();
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const go = (fn: () => void) => () => {
@@ -565,12 +558,7 @@ function AgentColumn({
         }
       />
       <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-2 pb-3">
-        <AgentSessionList
-          agentId={agent.id}
-          order={sessionOrderOf(agent.id)}
-          orderActions={orderActions}
-          onNavigate={onNavigate}
-        />
+        <AgentSessionList agentId={agent.id} onNavigate={onNavigate} />
       </div>
     </div>
   );

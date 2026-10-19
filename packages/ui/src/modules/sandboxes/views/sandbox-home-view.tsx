@@ -65,6 +65,7 @@ export function SandboxHomeView() {
     ? SECTIONS
     : SECTIONS.filter((e) => e.section !== "chat-forms");
   const sectionEntry = SECTIONS.find((e) => e.section === section);
+  const SectionPictogram = sectionEntry?.pictogram;
 
   const header: SectionHeaderSlot = (actions) =>
     agent && (
@@ -72,6 +73,7 @@ export function SandboxHomeView() {
         agent={agent}
         title={sectionEntry?.title ?? ""}
         description={sectionEntry?.description}
+        pictogram={SectionPictogram && <SectionPictogram aria-hidden />}
         actions={actions}
       />
     );
@@ -91,7 +93,7 @@ export function SandboxHomeView() {
 
   return (
     <>
-      <div className="flex flex-col gap-6 md:flex-row md:gap-10">
+      <div className="flex flex-col gap-6 md:flex-row md:gap-10 md:pt-5">
         <SandboxSectionNav
           sections={sections}
           header={<SandboxIdentity agent={agent} display={display} />}

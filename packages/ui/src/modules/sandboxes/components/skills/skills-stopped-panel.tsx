@@ -60,7 +60,7 @@ export function SkillsStoppedPanel({
   loadingBySource,
   revalidatingBySource,
   errorBySource,
-  addSourceButton,
+  addSourceRow,
   callout,
   disabledNotice,
   comingUp,
@@ -78,7 +78,7 @@ export function SkillsStoppedPanel({
   loadingBySource: Record<string, boolean>;
   revalidatingBySource: Record<string, boolean>;
   errorBySource: Record<string, ScanFailure | null>;
-  addSourceButton: ReactNode;
+  addSourceRow: ReactNode;
   callout?: ReactNode;
   disabledNotice?: ReactNode;
   comingUp: boolean;
@@ -128,9 +128,7 @@ export function SkillsStoppedPanel({
       </section>
 
       <section>
-        <SectionHeader label="Connected sources">
-          {addSourceButton}
-        </SectionHeader>
+        <SectionHeader label="Connected sources" />
         <SkillSourceList
           sources={sources}
           loaded={sourcesLoaded}
@@ -143,6 +141,9 @@ export function SkillsStoppedPanel({
           onRemove={onRemove}
           onManageConnections={onManageConnections}
         />
+        {sourcesLoaded && (
+          <Card className="mt-3 overflow-hidden">{addSourceRow}</Card>
+        )}
         <p className="mt-2.5 text-sm text-muted-foreground">
           Sources stay editable while stopped. Reading what a private one
           contains needs the agent running.

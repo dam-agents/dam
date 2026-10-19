@@ -32,6 +32,7 @@ The agent-runtime loads every manifest there and runs each harness's drivers, so
 The harness is chosen per session ([sessions](sessions.md#session-inside-the-pod)); the Agent's own harness, seeded at create and handed to the pod or machine in its environment, is the default for a session that names none.
 The tools, the base's and every harness's, are named in the image's system mise config with the lockfile, and its `PATH` names each tool's versioned install directory under mise's system data dir.
 The build installs them there with the image's own installer, run in the image's root under chroot with the image's env, so every path an install records is the one the image runs it from, and packs that directory as one root-owned layer, rebuilt only when the tool config or the installer changes.
+CI exports `MISE_GITHUB_TOKEN` for those installs, which mise reads; the task hands it to the chroot's mise in a root-only file that the install removes, so no layer holds it.
 mise's user config and data directories keep their defaults, in the home, so what `mise use -g` pins and installs persists with the home.
 A node holds the tools as it holds any image: the kubelet's image collection and the [vm image cache](vm-image-cache.md)'s eviction drop the versions no agent runs.
 
@@ -53,6 +54,7 @@ CI calls it from [`image:ci-build`](../../.mise/tasks/image/ci-build) and pushes
 - **Linux of the image's architecture only.** The build installs the tools for the host's architecture, whose paths the image's `PATH` names, and runs `apt-get` into a side rootfs, under root.
   On macOS the task builds in the dev cluster's Lima VM, whichever cluster the images go to, from a copy of the working tree, with the host's GitHub token for the VM's mise, and copies the result back.
   The tar is the OCI layout itself, named by its `io.containerd.image.name` annotation for `k3s ctr images import`, with a `docker save`-style `manifest.json` beside it, by which crane reads the tar.
+  A run that imports an image it built keeps the layout and writes no tar: [`cluster:import`](../../.mise/tasks/cluster/import) tars it into the import as containerd reads it, so a multi-gigabyte image is not written to disk as an archive and read back.
 - **Staged outside the repo.** Every agent directory is a mise config root in the repo, so the task stages a separate mise project where the base always loads and each agent's environment loads only when selected.
 - **One system-package layer, then crane.** The shared Debian packages are installed into the repo's pinned Debian base by that base's own `apt-get`, run in its exported root under chroot as a Dockerfile's `RUN` would, and the root becomes one layer, again when the list or the base changes and once a day.
   That layer follows the packages alone: what the install stamps with the build's time (logs, caches, password dates, the mtimes of the paths it touched) is dropped or set to the base's creation time, so a rebuild with no package update keeps its digest.

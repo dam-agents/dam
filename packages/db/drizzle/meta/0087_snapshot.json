@@ -1,5 +1,5 @@
 {
-  "id": "5f4c3e99-01c6-408a-af9b-f6b87479e690",
+  "id": "956642d3-8181-43a9-b80f-c5ae87502434",
   "prevId": "5dba7ffe-cd37-4712-a9fd-6b675521fdf7",
   "version": "7",
   "dialect": "postgresql",
@@ -3982,68 +3982,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.sidebar_session_order": {
-      "name": "sidebar_session_order",
-      "schema": "",
-      "columns": {
-        "owner": {
-          "name": "owner",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "position": {
-          "name": "position",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "sidebar_session_order_agent_idx": {
-          "name": "sidebar_session_order_agent_idx",
-          "columns": [
-            {
-              "expression": "agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "sidebar_session_order_owner_agent_id_session_id_pk": {
-          "name": "sidebar_session_order_owner_agent_id_session_id_pk",
-          "columns": [
-            "owner",
-            "agent_id",
-            "session_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.skill_sets": {
       "name": "skill_sets",
       "schema": "",
@@ -4653,37 +4591,6 @@
       },
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.spend_metering": {
-      "name": "spend_metering",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "smallint",
-          "primaryKey": true,
-          "notNull": true,
-          "default": 1
-        },
-        "started_at": {
-          "name": "started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "spend_metering_single_row": {
-          "name": "spend_metering_single_row",
-          "value": "\"spend_metering\".\"id\" = 1"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.starter_kit_catalog_entries": {

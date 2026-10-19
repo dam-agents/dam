@@ -1,4 +1,5 @@
 import { ChevronRight, Time, WarningAlt } from "@carbon/icons-react";
+import { CalendarEvent } from "@carbon/pictograms-react";
 
 import { ListSection } from "@/components/ui/list-section";
 import { PageHeader } from "@/components/ui/page-header";
@@ -26,6 +27,7 @@ export function OwnerSchedulesView() {
   return (
     <div>
       <PageHeader
+        pictogram={<CalendarEvent aria-hidden />}
         title="Schedules"
         description="See everything that runs on its own across your agents. Open one to change, pause or delete it."
       />

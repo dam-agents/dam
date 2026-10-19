@@ -1,6 +1,6 @@
 {
-  "id": "eb5e71d7-45df-48d8-ab79-c9a6cbf83774",
-  "prevId": "64fd7631-72e6-4acb-8655-89af75720589",
+  "id": "b0a87905-1752-4cc8-9bd8-a55e2ffd1ee8",
+  "prevId": "0d4e906d-7b22-4f12-a10e-9db79341c3f5",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3982,68 +3982,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.sidebar_session_order": {
-      "name": "sidebar_session_order",
-      "schema": "",
-      "columns": {
-        "owner": {
-          "name": "owner",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "position": {
-          "name": "position",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "sidebar_session_order_agent_idx": {
-          "name": "sidebar_session_order_agent_idx",
-          "columns": [
-            {
-              "expression": "agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "sidebar_session_order_owner_agent_id_session_id_pk": {
-          "name": "sidebar_session_order_owner_agent_id_session_id_pk",
-          "columns": [
-            "owner",
-            "agent_id",
-            "session_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.skill_sets": {
       "name": "skill_sets",
       "schema": "",
@@ -4330,119 +4268,6 @@
       "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.spend_calls": {
-      "name": "spend_calls",
-      "schema": "",
-      "columns": {
-        "calling_agent_id": {
-          "name": "calling_agent_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "call_id": {
-          "name": "call_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "owner_sub": {
-          "name": "owner_sub",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "payer_agent_id": {
-          "name": "payer_agent_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "started_at": {
-          "name": "started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "unit": {
-          "name": "unit",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "cost_micros": {
-          "name": "cost_micros",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "spend_calls_session_started_idx": {
-          "name": "spend_calls_session_started_idx",
-          "columns": [
-            {
-              "expression": "calling_agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "started_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "spend_calls_started_idx": {
-          "name": "spend_calls_started_idx",
-          "columns": [
-            {
-              "expression": "started_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "spend_calls_pk": {
-          "name": "spend_calls_pk",
-          "columns": [
-            "calling_agent_id",
-            "call_id"
-          ]
-        }
-      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},

@@ -30,6 +30,12 @@ on:
           nightly run.
         type: boolean
         required: true
+      pr-scope:
+        description: >-
+          A pull request: run the reduced smoke set, the specs that fail for
+          real there, rather than all of them.
+        type: boolean
+        required: true
     secrets:
       QUAY_USERNAME:
         required: false
@@ -86,10 +92,15 @@ jobs:
     # No `needs` on the builds: bringing the cluster up takes minutes and needs
     # no image, so it runs while they build. e2e:ci-images builds them here on
     # a PR or a merge group, or waits for this run's build jobs, in the
-    # background, and cluster:install waits for it at the image load. A
-    # failed build still fails this job, there.
+    # background, once per image family, and cluster:install waits for it at the
+    # image load. A failed build still fails this job, there.
     # The steps e2e-vm shares are anchored here (&e2e-*), so the two lanes
-    # bring their clusters up the same way.
+    # bring their clusters up the same way: the cluster, and the timings, so a
+    # phase of one lane is compared with the same phase of the other.
+    # The job summary carries this lane's per-phase timings (e2e:timings), from
+    # the marks E2E_TIMINGS collects and the Playwright JSON report. Every mark
+    # this lane shares with e2e-vm has the same name; it stages no vm image, so
+    # the staging rows read n/a.
     needs: [docs-only]
     if: ${{ !cancelled() && needs.docs-only.outputs.docs != 'true' }}
     runs-on: ubuntu-latest
@@ -100,7 +111,16 @@ jobs:
       actions: read
     env:
       IS_SANDBOX: "1"
+      # A pull request runs the specs that fail for real on one; the merge
+      # queue, the nightly run and a tag run them all. The Playwright config
+      # applies it; see docs/architecture/e2e.md.
+      E2E_SCOPE: ${{ inputs.pr-scope && 'pr' || '' }}
+      E2E_TIMINGS: &e2e-timings /tmp/e2e-timings
+      E2E_REPORT_JSON: &e2e-report-json /tmp/playwright-report.json
     steps:
+      - &e2e-timing-start
+        name: Record the job start
+        run: printf '%s\tjob started\n' "$(date +%s)" >> "$E2E_TIMINGS"
       - &e2e-checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -185,6 +205,38 @@ jobs:
       - &e2e-pnpm-install
         if: inputs.verify
         run: mise deps install --only pnpm
+      # This run's images are two families, each started as early as its own
+      # inputs allow: the platform images, which block the chart install and
+      # need none of the harness tools, here; and the agent images, which bake
+      # in the tools layer agent-tools restores, right after it below. One run
+      # of both waited for agent-tools before it built the platform images too,
+      # and those are the ones the install waits on. The agent run owns the
+      # status file cluster:install reads, and waits for the platform run's, so
+      # that file still means every image of the run is ready; both write each
+      # finished tar to the ready directory the install polls. The families
+      # partition e2e:ci-images' LOADED, so neither names an image: the
+      # vm-runner is a platform image, and only the vm lane loads it.
+      - &e2e-ci-images-platform
+        name: Build or fetch the platform images in the background
+        env: &e2e-ci-images-env
+          # gh waits on this run's build jobs with GH_TOKEN; mise installs the
+          # agent builds' tools and reads MISE_GITHUB_TOKEN.
+          GH_TOKEN: ${{ github.token }}
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+          # The jobs that make the images e2e loads; see e2e:ci-images. They
+          # are build.yml's, named under cd.yml's `build` job that calls it.
+          CI_IMAGES_BUILD: ${{ inputs.verify && '1' || '' }}
+          CI_IMAGES_CHANGES_JOB: build / detect stale images
+          CI_IMAGES_IMAGES_JOB: build / build-images (amd64)
+          CI_IMAGES_MOCK_JOB: build / build mock (e2e fixture)
+          CI_IMAGES_AGENTS_JOB: build / build-agents (amd64)
+          # As build.yml's `changes` job sets them, so both resolve the same
+          # images stale. EVENT lets a merge group reuse an earlier group's
+          # build; see image:resolve.
+          RESOLVE_NO_REUSE: ${{ inputs.fresh && '1' || '' }}
+          EVENT: ${{ github.event_name }}
+          CI_BUILD_READY_DIR: /tmp/ci-images.status.ready
+        run: CI_IMAGES_FAMILY=platform nohup .mise/tasks/e2e/ci-images /tmp/ci-images-platform.status > /tmp/ci-images.log 2>&1 &
       # A run that builds the mock or the default image builds it here, the
       # mock onto a default image built here too, which installs every
       # harness's tools. Main's agent-tools entry holds them, so a hit reaches
@@ -207,23 +259,12 @@ jobs:
       - &e2e-agent-tools
         if: steps.agents-build.outputs.build == 'true'
         uses: ./.github/actions/agent-tools # zizmor: ignore[self-repository]
-      - &e2e-ci-images
-        name: Build or fetch this run's images in the background
-        env:
-          GH_TOKEN: ${{ github.token }}
-          # The jobs that make the images e2e loads; see e2e:ci-images. They
-          # are build.yml's, named under cd.yml's `build` job that calls it.
-          CI_IMAGES_BUILD: ${{ inputs.verify && '1' || '' }}
-          CI_IMAGES_CHANGES_JOB: build / detect stale images
-          CI_IMAGES_IMAGES_JOB: build / build-images (amd64)
-          CI_IMAGES_MOCK_JOB: build / build mock (e2e fixture)
-          CI_IMAGES_AGENTS_JOB: build / build-agents (amd64)
-          # As build.yml's `changes` job sets them, so both resolve the same
-          # images stale. EVENT lets a merge group reuse an earlier group's
-          # build; see image:resolve.
-          RESOLVE_NO_REUSE: ${{ inputs.fresh && '1' || '' }}
-          EVENT: ${{ github.event_name }}
-        run: nohup .mise/tasks/e2e/ci-images /tmp/ci-images.status > /tmp/ci-images.log 2>&1 &
+      - &e2e-ci-images-agents
+        name: Build or fetch the agent images in the background
+        env: *e2e-ci-images-env
+        # The family and the status file it also reports go on the command,
+        # over the env block the platform run uses as it is.
+        run: CI_IMAGES_FAMILY=agents CI_IMAGES_WAIT=/tmp/ci-images-platform.status nohup .mise/tasks/e2e/ci-images /tmp/ci-images.status >> /tmp/ci-images.log 2>&1 &
       # Keyed by the Playwright the lockfile resolves, which fixes the browser
       # build it downloads: a lockfile change elsewhere keeps the entry.
       - &e2e-playwright-version
@@ -274,6 +315,16 @@ jobs:
         name: k3s provision log
         if: ${{ !cancelled() }}
         run: cat /tmp/k3s-provision.log
+      # The background provision and image fetch each end by writing their
+      # status file, so its mtime is when they finished.
+      - &e2e-timing-summary
+        name: Timing summary
+        if: ${{ !cancelled() }}
+        run: |
+          for mark in "k3s provisioned:/tmp/k3s-provision.status" "platform images ready:/tmp/ci-images-platform.status" "images ready:/tmp/ci-images.status"; do
+            [ ! -s "${mark#*:}" ] || printf '%s\t%s\n' "$(stat -c %Y "${mark#*:}")" "${mark%%:*}" >> "$E2E_TIMINGS"
+          done
+          .mise/tasks/e2e/timings | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
@@ -290,8 +341,8 @@ jobs:
     name: mise e2e (vm)
     # The vm lane: the same smoke suite on an install with virtualization
     # enabled, where every agent the suite creates is a vm Agent. The KVM
-    # device plugin comes from cluster:install, the runner's egressCidrs and
-    # the staged mock image from values-local.yaml once e2e:install sees
+    # device plugin comes from cluster:install, the node image cache directory
+    # and the staged mock image from values-local.yaml once e2e:install sees
     # E2E_VIRTUALIZATION, and the vm-runner image is built or fetched with the
     # rest by e2e:ci-images. The same variable makes the suite's global setup
     # opt the e2e user into the vm-sandboxes experiment, so the UI creates vm
@@ -320,11 +371,11 @@ jobs:
       IS_SANDBOX: "1"
       E2E_VIRTUALIZATION: "1"
       E2E_GATEWAY_PER_OWNER: "1"
-      E2E_TIMINGS: /tmp/e2e-timings
-      E2E_REPORT_JSON: /tmp/playwright-report.json
+      E2E_TIMINGS: *e2e-timings
+      E2E_REPORT_JSON: *e2e-report-json
+      E2E_SCOPE: ${{ inputs.pr-scope && 'pr' || '' }}
     steps:
-      - name: Record the job start
-        run: printf '%s\tjob started\n' "$(date +%s)" >> "$E2E_TIMINGS"
+      - *e2e-timing-start
       - *e2e-checkout
       - *e2e-provision
       - name: Open /dev/kvm to the runner user
@@ -386,12 +437,13 @@ jobs:
           restore-keys: vm-runner-deps-${{ runner.os }}-${{ runner.arch }}-
       - *e2e-keycloak-theme
       - *e2e-pnpm-install
+      - *e2e-ci-images-platform
       # The default image, which smoke/22-harness-tools boots, bakes its tools
       # from this tree: a run that builds it builds it here, beside the other
       # images e2e:ci-images builds.
       - *e2e-agents-build
       - *e2e-agent-tools
-      - *e2e-ci-images
+      - *e2e-ci-images-agents
       - *e2e-playwright-version
       - *e2e-playwright-cache
       # Twice the container lane's budget: the vm-runner build above on a PR,
@@ -455,15 +507,7 @@ jobs:
           path: /tmp/kernel-log/
           retention-days: 7
           if-no-files-found: ignore
-      # The background provision and image fetch each end by writing their
-      # status file, so its mtime is when they finished.
-      - name: Timing summary
-        if: ${{ !cancelled() }}
-        run: |
-          for mark in "k3s provisioned:/tmp/k3s-provision.status" "images ready:/tmp/ci-images.status"; do
-            [ ! -s "${mark#*:}" ] || printf '%s\t%s\n' "$(stat -c %Y "${mark#*:}")" "${mark%%:*}" >> "$E2E_TIMINGS"
-          done
-          .mise/tasks/e2e/timings | tee -a "$GITHUB_STEP_SUMMARY"
+      - *e2e-timing-summary
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -54,11 +54,8 @@ func ownerGatewayPortRange() (first, last int) {
 	return ownerGatewayPortBase, ownerGatewayResolverPort(ownerGatewaySlots - 1)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a runner whose egress is confined reaches its owner's gateway only on the ports machines use. With an owner gateway those are its agent port range, TCP and UDP, on the owner gateway pod alone, beside the per-agent gateways' ports while both kinds exist.
+// UNIT_BOUNDARY_DESCRIPTION: a runner reaches its owner's gateway only on the ports machines use. With an owner gateway those are its agent port range, TCP and UDP, on the owner gateway pod alone, beside the per-agent gateways' ports while both kinds exist.
 func admitOwnerGatewayEgress(np *networkingv1.NetworkPolicy, agentNS, owner string) {
-	if len(np.Spec.Egress) == 0 {
-		return
-	}
 	tcp, udp := corev1.ProtocolTCP, corev1.ProtocolUDP
 	first, last := ownerGatewayPortRange()
 	from := intstr.FromInt(first)

@@ -33,7 +33,6 @@ export {
   gettingStartedChecklists,
   avatarUnlocks,
   sidebarAgentOrder,
-  sidebarSessionOrder,
   artifactFolders,
   libraryArtifacts,
   libraryArtifactVersions,

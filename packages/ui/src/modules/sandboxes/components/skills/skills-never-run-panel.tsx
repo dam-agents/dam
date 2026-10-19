@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
+import { Card } from "@/components/ui/card";
 import { SectionHeader } from "@/components/ui/list-section";
 import { Notice } from "@/components/ui/notice";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -20,6 +21,7 @@ export function SkillsNeverRunPanel({
   revalidatingBySource,
   errorBySource,
   addSourceButton,
+  addSourceRow,
   disabledNotice,
   comingUp,
   onStart,
@@ -35,6 +37,7 @@ export function SkillsNeverRunPanel({
   revalidatingBySource: Record<string, boolean>;
   errorBySource: Record<string, ScanFailure | null>;
   addSourceButton: ReactNode;
+  addSourceRow: ReactNode;
   disabledNotice?: ReactNode;
   comingUp: boolean;
   onStart: () => void;
@@ -78,9 +81,7 @@ export function SkillsNeverRunPanel({
       </section>
 
       <section>
-        <SectionHeader label="Connected sources">
-          {addSourceButton}
-        </SectionHeader>
+        <SectionHeader label="Connected sources" />
         <SkillSourceList
           sources={sources}
           loaded={sourcesLoaded}
@@ -93,6 +94,9 @@ export function SkillsNeverRunPanel({
           onRemove={onRemove}
           onManageConnections={onManageConnections}
         />
+        {sourcesLoaded && (
+          <Card className="mt-3 overflow-hidden">{addSourceRow}</Card>
+        )}
         <p className="mt-2.5 text-sm text-muted-foreground">
           The source list is known before first boot; which of its skills are
           installed isn&rsquo;t.

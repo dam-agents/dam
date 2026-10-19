@@ -1,9 +1,10 @@
+import { Add } from "@carbon/icons-react";
 import { useState } from "react";
 
 import { SlackChannelExplainer } from "@/components/channel-connection-explainer";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { ListSection } from "@/components/ui/list-section";
+import { AddRow, ListSection } from "@/components/ui/list-section";
 
 import { getBrand } from "../../../../brand.js";
 import { useStore } from "../../../../store.js";
@@ -45,8 +46,22 @@ export function SlackChannelCard({ agent }: { agent: AgentView | undefined }) {
         onNew={() => setModalTarget("new")}
         newDisabled={!agent}
         newTestId="slack-connect"
+        newLabel="Add Slack channel"
         isEmpty={!agent || slackChannels.length === 0}
         empty="No channels connected yet. Mentions of the bot in a connected channel drive this agent."
+        addRow={
+          <AddRow onClick={() => setModalTarget("new")} testId="slack-connect">
+            <Add size={16} className="shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-md font-medium text-foreground">
+                Add Slack channel
+              </p>
+              <p className="truncate text-sm text-muted-foreground">
+                Mentions of the bot in a connected channel drive this agent.
+              </p>
+            </div>
+          </AddRow>
+        }
       >
         {agent &&
           slackChannels.map((channel) => (

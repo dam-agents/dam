@@ -212,6 +212,17 @@ export type MigrateRuntimeError =
   | { type: "StorageMigrationInProgress" }
   | { type: "PersistsUnmovablePaths"; paths: UnmovablePath[] }
   | { type: "HomeNotPersisted" }
+  | {
+      type: "VmStorageInsufficient";
+      neededBytes: number;
+      usedBytes: number;
+      usableBytes: number;
+    }
+  | {
+      type: "VmMemoryInsufficient";
+      committedMiB: number;
+      limitMiB: number;
+    }
   | { type: "ConcurrentUpdate" };
 
 export interface UnmovablePath {

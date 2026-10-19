@@ -106,27 +106,26 @@ export function AgentEgressEditor({
 
   return (
     <>
-      {header(
-        <>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setChoosingPreset(true)}
-            data-testid="egress-preset-open"
-          >
-            Use preset…
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setAdding(true)}
-            data-testid="egress-rule-new"
-          >
-            <Add size={16} />
-            Add rule
-          </Button>
-        </>,
-      )}
+      {header()}
+      <div className="mb-3 flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setAdding(true)}
+          data-testid="egress-rule-new"
+        >
+          <Add size={16} />
+          Create rule
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setChoosingPreset(true)}
+          data-testid="egress-preset-open"
+        >
+          Apply preset
+        </Button>
+      </div>
       <ListSection
         loading={isLoading}
         error={isError && "Couldn't load the rules."}
@@ -433,8 +432,8 @@ function NewRuleModal({
         <DialogActions
           onCancel={() => void close()}
           cancelDisabled={createRule.isPending}
-          label="Add rule"
-          pendingLabel="Adding…"
+          label="Create rule"
+          pendingLabel="Creating…"
           pending={createRule.isPending}
           disabled={!complete}
           testId="egress-rule-add"

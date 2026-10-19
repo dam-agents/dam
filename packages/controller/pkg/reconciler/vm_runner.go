@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
-	"net/netip"
 	"slices"
 	"strings"
 	"time"
@@ -153,7 +152,7 @@ func (r *AgentReconciler) ensureRunner(ctx context.Context, owner string) (*vmru
 	if err != nil {
 		return nil, false, err
 	}
-	np := buildRunnerNetworkPolicy(owner, r.config.ReleaseName, r.config.APIServerInstanceLabel, ns, r.config.ReleaseNamespace, r.config.EnvoyPort, r.config.VM.Runner.EgressCIDRs, r.config.VM.Runner.EgressExceptCIDRs)
+	np := buildRunnerNetworkPolicy(owner, r.config.ReleaseName, r.config.APIServerInstanceLabel, ns, r.config.ReleaseNamespace, r.config.EnvoyPort)
 	np.OwnerReferences = refs
 	if r.config.VM.Gateway.PerOwner {
 		admitOwnerGatewayEgress(np, ns, owner)
@@ -485,7 +484,7 @@ func (r *AgentReconciler) buildRunnerService(owner string, ownerRefs []metav1.Ow
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the peers are chart-rendered pods, which carry the Helm release name in app.kubernetes.io/instance — not the chart's fullname, which is what names the runner's own objects. The two are equal only when the release is called `platform`.
-func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, releaseNS string, envoyPort int, egress, exceptCIDRs []string) *networkingv1.NetworkPolicy {
+func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, releaseNS string, envoyPort int) *networkingv1.NetworkPolicy {
 	tcp := corev1.ProtocolTCP
 	api := intstr.FromInt(vmRunnerPort)
 	scrape := intstr.FromInt(vmRunnerMetricsPort)
@@ -500,10 +499,6 @@ func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, releaseNS strin
 			}},
 		}
 	}
-	types := []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
-	if len(egress) > 0 {
-		types = append(types, networkingv1.PolicyTypeEgress)
-	}
 	return &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-vm-runner-%s-ingress", release, runnerSuffix(owner)),
@@ -512,7 +507,7 @@ func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, releaseNS strin
 		},
 		Spec: networkingv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{MatchLabels: vmRunnerSelector(owner)},
-			PolicyTypes: types,
+			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress},
 			Ingress: []networkingv1.NetworkPolicyIngressRule{{
 				From: []networkingv1.NetworkPolicyPeer{peer("apiserver"), peer("controller")},
 				Ports: []networkingv1.NetworkPolicyPort{
@@ -529,93 +524,22 @@ func buildRunnerNetworkPolicy(owner, release, instanceLabel, ns, releaseNS strin
 				From:  []networkingv1.NetworkPolicyPeer{peer(vmRunnerMetricsScraper)},
 				Ports: []networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &scrape}},
 			}},
-			Egress: runnerEgress(ns, owner, envoyPort, egress, exceptCIDRs),
+			Egress: runnerEgress(ns, owner, envoyPort),
 		},
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: Kubernetes rejects a whole NetworkPolicy whose exception falls outside the block it belongs to, so an install that names a narrow registry alongside the cluster's own ranges would otherwise break every reconcile — each block keeps only the exceptions that actually sit inside it.
-func containedIn(cidr string, except []string) []string {
-	block, err := netip.ParsePrefix(cidr)
-	if err != nil {
-		return nil
-	}
-	var out []string
-	for _, e := range except {
-		sub, err := netip.ParsePrefix(e)
-		if err != nil || sub.Bits() <= block.Bits() || !block.Contains(sub.Addr()) {
-			continue
-		}
-		out = append(out, e)
-	}
-	return out
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: a machine's egress allowlist is enforced by smolvm inside the very process an escaped guest would own, so this is the kernel gate behind it — without it such a guest reaches the platform's own datastores. Gateways are admitted by owner and on their proxy port and machine resolver alone, the same pinning each gateway's ingress policy makes from its side. No DNS is admitted: the node's image cache service resolves and fetches every image, the runner reaches its gateways by ClusterIP and is dialled rather than dialling out, so it resolves nothing, and port 53 open anywhere would be a two-way channel to any host that listens there. It is only rendered once an install says where the runner may go.
-func runnerEgress(agentNS, owner string, envoyPort int, cidrs, except []string) []networkingv1.NetworkPolicyEgressRule {
-	if len(cidrs) == 0 {
-		return nil
-	}
+// UNIT_BOUNDARY_DESCRIPTION: a machine's egress allowlist is enforced by smolvm inside the very process an escaped guest would own, so this is the kernel gate behind it — without it such a guest reaches the platform's own datastores. Gateways are admitted by owner and on their proxy port and machine resolver alone, the same pinning each gateway's ingress policy makes from its side. No DNS is admitted: the node's image cache service resolves and fetches every image, the runner reaches its gateways by ClusterIP and is dialled rather than dialling out, so it resolves nothing, and port 53 open anywhere would be a two-way channel to any host that listens there. Nothing else is admitted: the runner dials nothing but its gateways.
+func runnerEgress(agentNS, owner string, envoyPort int) []networkingv1.NetworkPolicyEgressRule {
 	tcp := corev1.ProtocolTCP
 	proxy := intstr.FromInt(envoyPort)
-	rules := []networkingv1.NetworkPolicyEgressRule{{
+	return []networkingv1.NetworkPolicyEgressRule{{
 		To: []networkingv1.NetworkPolicyPeer{{
 			NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": agentNS}},
 			PodSelector:       &metav1.LabelSelector{MatchLabels: map[string]string{LabelRole: RoleGateway, envoyOwnerLabel: owner}},
 		}},
 		Ports: append([]networkingv1.NetworkPolicyPort{{Protocol: &tcp, Port: &proxy}}, machineGatewayPolicyPorts()...),
 	}}
-	for _, cidr := range cidrs {
-		blockExcept, metadata := exceptMetadata(cidr, containedIn(cidr, except), metadataCIDRs)
-		if metadata {
-			continue
-		}
-		rules = append(rules, networkingv1.NetworkPolicyEgressRule{
-			To: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: cidr, Except: blockExcept}}},
-		})
-	}
-	return rules
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the cloud metadata endpoints — link-local on every cloud, plus the fixed addresses a few clouds also serve it on. The endpoint hands the node's own credentials to anything that asks, which makes it the classic way out of a sandbox, and no runner has a reason to reach it.
-var metadataCIDRs = []netip.Prefix{
-	netip.MustParsePrefix("169.254.0.0/16"),
-	netip.MustParsePrefix("100.100.100.200/32"),
-	netip.MustParsePrefix("fe80::/10"),
-	netip.MustParsePrefix("fd00:ec2::254/128"),
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: every egress block that contains a metadata range has that range subtracted, whatever the install listed, so a wide block such as 0.0.0.0/0 never opens the node's credentials by omission. A block lying wholly inside one names the endpoint itself, and is reported so the caller drops it rather than render the one destination this exists to close. An exception the install already wrote over the range is left to cover it.
-func exceptMetadata(cidr string, except []string, metadata []netip.Prefix) ([]string, bool) {
-	block, err := netip.ParsePrefix(cidr)
-	if err != nil {
-		return except, false
-	}
-	block = block.Masked()
-	out := except
-	for _, m := range metadata {
-		if block.Addr().Is4() != m.Addr().Is4() {
-			continue
-		}
-		if m.Bits() <= block.Bits() && m.Contains(block.Addr()) {
-			return nil, true
-		}
-		if !block.Contains(m.Addr()) || exceptionCovers(out, m) {
-			continue
-		}
-		out = append(out, m.String())
-	}
-	return out, false
-}
-
-func exceptionCovers(except []string, target netip.Prefix) bool {
-	for _, e := range except {
-		sub, err := netip.ParsePrefix(e)
-		if err == nil && sub.Bits() <= target.Bits() && sub.Contains(target.Addr()) {
-			return true
-		}
-	}
-	return false
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the runner's env also has smolvm check every VMM against the syscalls a running microVM needs (SMOLVM_SECCOMP), from after the VMM's device setup, in the install's mode and by default in enforce: a call outside the allowlist kills the VMM, which stops its machine. Audit only logs such a call; it is the switch back for a node whose kernel or libc makes a call the allowlist lacks. The runtime's default profile still bounds every VMM in each mode. smolvm applies the filter under its own serve by default, and an embedder only when asked.

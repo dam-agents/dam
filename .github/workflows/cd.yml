@@ -68,6 +68,9 @@ jobs:
       verify: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
       fresh: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') }}
       save-caches: ${{ github.ref == 'refs/heads/main' }}
+      # A pull request runs the reduced smoke set; the merge queue, the nightly
+      # run and a tag run all of it.
+      pr-scope: ${{ github.event_name == 'pull_request' }}
     secrets:
       QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
       QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}

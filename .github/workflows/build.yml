@@ -443,17 +443,32 @@ jobs:
           quay-username: ${{ secrets.QUAY_USERNAME }}
           quay-password: ${{ secrets.QUAY_PASSWORD }}
       - uses: ./.github/actions/agent-tools # zizmor: ignore[self-repository]
+        id: agent-tools
       - name: Build
         env:
           ARCH: ${{ matrix.arch }}
           AGENTS: ${{ join(fromJSON(needs.changes.outputs.agents), ' ') }}
           PR: ${{ inputs.verify }}
+          # A tool that the agent-tools cache lacks installs in this step, and
+          # mise reads the token from MISE_GITHUB_TOKEN.
+          MISE_GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           # A PR or a merge group only proves its agents build.
           read -r -a agents <<< "$AGENTS"
           [ "$PR" != true ] || agents=("${agents[@]/%/:cacheonly}")
           .mise/tasks/image/ci-build --serial "$ARCH" "${agents[@]}"
+      # The images' apt base is made by the build above, not by agent-tools, so
+      # main writes it here: the day it is dated by keeps a rebuild daily, and
+      # every job that builds an agent image restores it from this entry. An
+      # older day's entry is left to the repo's 10 GB budget, which retires it.
+      - if: ${{ github.ref == 'refs/heads/main' && steps.agent-tools.outputs.apt-base-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/platform-agent-oci/apt-base
+            ~/.cache/platform-agent-oci/apt-base.key
+          key: ${{ steps.agent-tools.outputs.apt-base-key }}
       - if: ${{ !inputs.verify }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -521,6 +536,8 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}
           WORKLOADS: ${{ join(fromJSON(needs.changes.outputs.workloads), ' ') }}
+          # k-search's tools are never cached, so its build always installs.
+          MISE_GITHUB_TOKEN: ${{ github.token }}
         run: |
           read -r -a workloads <<< "$WORKLOADS"
           .mise/tasks/image/ci-build --serial "$ARCH" "${workloads[@]}"
@@ -581,6 +598,8 @@ jobs:
           quay-password: ${{ secrets.QUAY_PASSWORD }}
       - uses: ./.github/actions/agent-tools # zizmor: ignore[self-repository]
       - name: Build
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
         run: .mise/tasks/image/ci-build amd64 mock:source
 
   mirror-images:

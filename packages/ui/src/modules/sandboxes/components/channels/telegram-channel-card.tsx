@@ -1,3 +1,4 @@
+import { Add } from "@carbon/icons-react";
 import { useState } from "react";
 
 import {
@@ -8,7 +9,7 @@ import {
 } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { ListSection } from "@/components/ui/list-section";
+import { AddRow, ListSection } from "@/components/ui/list-section";
 import { externalLinkProps } from "@/lib/external-link";
 
 import { ConnectionIcon } from "../../../connections/components/connection-icon.js";
@@ -36,10 +37,27 @@ export function TelegramChannelCard({ agentId }: { agentId: string }) {
         }
         onNew={() => setInstructionsOpen(true)}
         newTestId="telegram-connect"
+        newLabel="Add Telegram chat"
         loading={chats.isPending}
         error={chats.isError && "Couldn't load the connected chats."}
         isEmpty={list.length === 0}
         empty="No chats connected yet."
+        addRow={
+          <AddRow
+            onClick={() => setInstructionsOpen(true)}
+            testId="telegram-connect"
+          >
+            <Add size={16} className="shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-md font-medium text-foreground">
+                Add Telegram chat
+              </p>
+              <p className="truncate text-sm text-muted-foreground">
+                People message this agent from a chat it is added to.
+              </p>
+            </div>
+          </AddRow>
+        }
       >
         {list.map((chat) => (
           <ChannelRow

@@ -389,47 +389,6 @@ virtualization:
     # certificate; `mise run cluster:install` starts it. There is no per-owner
     # boundary: one owner's escaped guest reaches every owner's machines.
     hostAddress: ""
-    # Where the runner pod itself may send traffic. REQUIRED when
-    # virtualization.enabled — the install fails without it, because leaving
-    # it empty means no policy at all, and that is the weakest point of this
-    # design: a machine's egress allowlist is enforced by smolvm inside the
-    # very process an escaped guest would own, so with no kernel gate behind
-    # it such a guest reaches the platform's datastores (each gateway's own
-    # ingress policy still keeps it off other owners' gateways). Set this and
-    # the runner is confined to its owner's gateways (on their proxy port)
-    # and these CIDRs, and reaches no resolver: the node image cache fetches
-    # and resolves every image, so the runner looks up no name. A list that
-    # admits nothing beyond the gateways, such as one address nothing answers
-    # on, confines it fully.
-    # A CIDR here matches in-cluster addresses too, so `0.0.0.0/0` on its own
-    # allows everything and confines nothing — pair it with the cluster's own
-    # ranges in egressExceptCidrs, or name a single address instead:
-    #   egressCidrs: ["0.0.0.0/0"]
-    #   egressExceptCidrs: ["10.128.0.0/14", "172.30.0.0/16", "169.254.0.0/16"]
-    # pods, Services, and link-local — the node's metadata endpoint lives there
-    # on every cloud and is the classic way out of a sandbox with credentials.
-    # The controller subtracts the metadata ranges (169.254.0.0/16,
-    # 100.100.100.200/32, fe80::/10, fd00:ec2::254/128) from every entry that
-    # contains one even when they are left out here, and the chart refuses an
-    # entry inside link-local.
-    egressCidrs: []
-    # Subtracted from the entries above that contain them — Kubernetes rejects
-    # a policy whose exception falls outside its own block, so a narrow entry
-    # simply keeps none. This is what actually keeps an escaped guest away from
-    # the platform's datastores, which are reached by pod and Service
-    # addresses. Gateways are not reached through these ranges: the policy
-    # admits the owner's own gateway pods by label, on their proxy port, and
-    # each gateway admits only its paired agent and its owner's runner.
-    # There is no default read from the cluster: no portable API names the pod
-    # range (many network plugins never record it on the node), and excepting
-    # only the Service range would read as confined while pods stay reachable.
-    # Instead the controller warns at startup when an entry above reaches the
-    # API server's Service address or its own pod address with no exception
-    # covering it.
-    # Except the nodes' own network too: the kubelet, the API server on its
-    # node addresses, NodePorts and node exporters listen there, an escaped
-    # guest is root in the runner pod, and nothing warns about that range.
-    egressExceptCidrs: []
   # Moving a container agent onto a machine (the Migrate button). Once the
   # machine has booted from the copy, the home volume the copy was read from is
   # kept for `retention` (a Go duration) rather than deleted, so an operator can

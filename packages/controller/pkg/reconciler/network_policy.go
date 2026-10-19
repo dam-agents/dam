@@ -172,7 +172,7 @@ func BuildGatewayEgressNetworkPolicy(pairKey string, cfg *config.Config, ownerRe
 		})
 	}
 	for _, cidr := range cfg.GatewayEgress.ExtraCIDRs {
-		except, metadata := exceptMetadata(cidr, nil, gatewayMetadataCIDRs)
+		except, metadata := exceptMetadata(cidr)
 		if metadata {
 			continue
 		}
@@ -212,6 +212,28 @@ var gatewayMetadataCIDRs = []netip.Prefix{
 	netip.MustParsePrefix("169.254.169.254/32"),
 	netip.MustParsePrefix("100.100.100.200/32"),
 	netip.MustParsePrefix("fd00:ec2::254/128"),
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: every egress block that contains a metadata endpoint has it subtracted, whatever the install listed, so a wide block such as 0.0.0.0/0 never opens the node's credentials by omission. A block lying wholly inside one names the endpoint itself, and is reported so the caller drops it rather than render the one destination this exists to close.
+func exceptMetadata(cidr string) ([]string, bool) {
+	block, err := netip.ParsePrefix(cidr)
+	if err != nil {
+		return nil, false
+	}
+	block = block.Masked()
+	var except []string
+	for _, m := range gatewayMetadataCIDRs {
+		if block.Addr().Is4() != m.Addr().Is4() {
+			continue
+		}
+		if m.Bits() <= block.Bits() && m.Contains(block.Addr()) {
+			return nil, true
+		}
+		if block.Contains(m.Addr()) {
+			except = append(except, m.String())
+		}
+	}
+	return except, false
 }
 
 func applyNetworkPolicy(ctx context.Context, client kubernetes.Interface, desired *networkingv1.NetworkPolicy) error {

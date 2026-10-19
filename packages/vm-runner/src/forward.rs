@@ -237,15 +237,13 @@ mod tests {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a published port and a guest at that port plus the loopback offset, both bound on loopback. The pair is retried on a fresh port when the guest's port is taken, since only the first of the two can be asked of the kernel as any free port.
+    // UNIT_BOUNDARY_DESCRIPTION: a published port and a guest at that port plus the loopback offset, both bound on loopback. The pair is drawn from the same band as the server tests' blocks, for the same reason: an ephemeral base in the top 1000 of the range has no guest port to find, so a retry from there fails every time.
     fn pair() -> (TcpListener, TcpListener) {
-        for _ in 0..50 {
-            let public = TcpListener::bind("127.0.0.1:0").unwrap();
-            let port = public.local_addr().unwrap().port();
-            if port > u16::MAX - LOOPBACK_OFFSET {
+        for base in crate::testdir::PORT_BLOCK_BASE..crate::testdir::PORT_BLOCK_TOP {
+            let Ok(public) = TcpListener::bind(("127.0.0.1", base)) else {
                 continue;
-            }
-            if let Ok(guest) = TcpListener::bind(("127.0.0.1", port + LOOPBACK_OFFSET)) {
+            };
+            if let Ok(guest) = TcpListener::bind(("127.0.0.1", base + LOOPBACK_OFFSET)) {
                 return (public, guest);
             }
         }
