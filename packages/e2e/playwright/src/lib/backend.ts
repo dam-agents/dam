@@ -297,31 +297,30 @@ export function runnerGrows(
   });
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the pod hosting a vm agent's machine: the agent's owner's VM runner, which every call into that machine goes through (`vm-runner exec`). An empty result means there is no such pod, which is the case on a Mac host runner that runs its machines outside the cluster; kubectl reports an empty list as an error, so the lookup answers empty instead of throwing.
+// UNIT_BOUNDARY_DESCRIPTION: the pod hosting a vm agent's machine: the agent's owner's VM runner, which every call into that machine goes through (`vm-runner exec`). An empty result means there is no such pod, which is the case on a Mac host runner that runs its machines outside the cluster; the lookup ranges over the list rather than indexing it, because kubectl fails a jsonpath into an index an empty list does not have, and only a real kubectl failure may throw here.
 export function runnerPod(agentId: string): string {
-  try {
-    return kubectl(
-      "-n",
-      AGENT_NS,
-      "get",
-      "pod",
-      "-l",
-      hostSelector(agentId, "vm"),
-      "-o",
-      "jsonpath={.items[0].metadata.name}",
-    );
-  } catch {
-    return "";
-  }
+  const pods = kubectl(
+    "-n",
+    AGENT_NS,
+    "get",
+    "pod",
+    "-l",
+    hostSelector(agentId, "vm"),
+    "-o",
+    'jsonpath={range .items[*]}{.metadata.name}{"\\n"}{end}',
+  );
+  return pods.split("\n")[0];
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: runs a shell script as root inside a vm agent's guest, through `vm-runner exec` on its owner's runner pod, and returns its output.
 export function inGuest(agentId: string, script: string): string {
+  const pod = runnerPod(agentId);
+  if (!pod) throw new Error(`no VM runner hosts the machine of ${agentId}`);
   return kubectl(
     "-n",
     AGENT_NS,
     "exec",
-    runnerPod(agentId),
+    pod,
     "-c",
     "vm-runner",
     "--",
