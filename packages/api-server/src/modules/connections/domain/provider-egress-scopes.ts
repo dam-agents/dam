@@ -75,9 +75,6 @@ export function scopeCovers(
   );
 }
 
-// Reads a path pattern the way the egress rule matcher does — `*` turned
-// into `%`, then SQL LIKE: `%` any run, `_` one character, `\` escapes the
-// next — so a scope and a rule of the same pattern cover the same paths.
 function pathMatches(pattern: string, path: string): boolean {
   const like = pattern.replaceAll("*", "%");
   let source = "";
