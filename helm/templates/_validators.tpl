@@ -24,7 +24,7 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.signUps" . -}}
 {{- include "platform.validate.enterpriseGitHubNeedsBothHostAndToken" . -}}
 {{- include "platform.validate.unenforcedMeshOnlyOnALocalCluster" . -}}
-{{- include "platform.validate.gatewayEgressCidrs" . -}}
+{{- include "platform.validate.controllerGatewayEgress" . -}}
 {{- include "platform.validate.featureModes" . -}}
 {{- include "platform.validate.monitoringNeedsTheCollector" . -}}
 {{- end -}}
@@ -95,20 +95,31 @@ boolean is taken as the mode it was written as.
 {{- end -}}
 
 {{/*
-controller.gatewayEgress.extraCidrs opens private ranges to every agent
-gateway. The controller renders them into each gateway's NetworkPolicy, which
-Kubernetes rejects outright when an entry is not a CIDR — and a rejected policy
-fails every agent's reconcile. A /0 entry would reopen every private range the
-policy exists to close.
+controller.gatewayEgress opens private ranges and the cluster DNS pods to every
+agent gateway, and the node image cache renders the same DNS rule and the same
+peers shape into its own policy. The controller renders them into each
+gateway's NetworkPolicy, which Kubernetes rejects outright when an entry is not
+a CIDR or a selector is not one it can use — and a rejected policy fails every
+agent's reconcile. A /0 entry would reopen every private range the policy
+exists to close.
 */}}
-{{- define "platform.validate.gatewayEgressCidrs" -}}
-{{- range ((.Values.controller.gatewayEgress | default dict).extraCidrs | default list) -}}
+{{- define "platform.validate.controllerGatewayEgress" -}}
+{{- $egress := .Values.controller.gatewayEgress | default dict -}}
+{{- range ($egress.extraCidrs | default list) -}}
 {{- include "platform.validate.cidr" (dict "name" "controller.gatewayEgress.extraCidrs" "value" .) -}}
 {{- if hasSuffix "/0" (toString .) -}}
 {{- fail (printf "controller.gatewayEgress.extraCidrs entry %q opens every private range to agent gateways, which is what their egress policy closes. Name the enterprise service's own range instead." (toString .)) -}}
 {{- end -}}
 {{- end -}}
+{{- $dns := $egress.clusterDns | default dict -}}
+{{- if $dns -}}
+{{- include "platform.validate.selector" (dict "name" "controller.gatewayEgress.clusterDns" "namespace" $dns.namespace "labels" ($dns.podLabels | default dict)) -}}
+{{- range ($dns.ports | default list) -}}
+{{- include "platform.validate.port" (dict "name" "controller.gatewayEgress.clusterDns" "value" .) -}}
 {{- end -}}
+{{- end -}}
+{{- end -}}
+
 
 {{/*
 istio.enforce=false leaves every AuthorizationPolicy rendered and none
@@ -357,6 +368,34 @@ replaces let through (`2001:::1/64`).
 {{- end -}}
 
 {{/*
+A pod selector the API server takes. It rejects the whole NetworkPolicy on a
+label outside the label grammar — a space in it, an empty name, an over-long
+value — and a rejected policy leaves the pod it names ungated until the next
+apply lands. The namespace is matched through `kubernetes.io/metadata.name`, so
+its name is checked as the label value it is rendered as.
+*/}}
+{{- define "platform.validate.selector" -}}
+{{- $namespace := toString .namespace -}}
+{{- if not (and (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $namespace) (le (len $namespace) 63)) -}}
+{{- fail (printf "%s namespace %q is not a namespace name — lower-case alphanumerics and dashes, at most 63, beginning and ending with an alphanumeric. Kubernetes rejects the whole NetworkPolicy it is rendered into, which leaves the pod it names ungated until the next apply lands." .name $namespace) -}}
+{{- end -}}
+{{- $label := `^[A-Za-z0-9]([-A-Za-z0-9_.]*[A-Za-z0-9])?$` -}}
+{{- $prefix := `^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$` -}}
+{{- range $key, $value := (.labels | default dict) -}}
+{{- $parts := splitList "/" (toString $key) -}}
+{{- $field := last $parts -}}
+{{- $ok := and (le (len $parts) 2) (regexMatch $label $field) (le (len $field) 63) -}}
+{{- if eq (len $parts) 2 -}}
+{{- $ok = and $ok (regexMatch $prefix (index $parts 0)) (le (len (index $parts 0)) 253) -}}
+{{- end -}}
+{{- $text := toString $value -}}
+{{- if or (not $ok) (and $text (not (and (regexMatch $label $text) (le (len $text) 63)))) -}}
+{{- fail (printf "%s label %q: %q is not a label the API server takes — a key is a name of at most 63 alphanumerics, dashes, underscores and dots beginning and ending alphanumeric, optionally under a DNS prefix and a /; a value is the same or empty. Kubernetes rejects the whole NetworkPolicy on one it cannot use, which leaves the pod it names ungated until the next apply lands." .name (toString $key) $text) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 A port the API server takes, for the same reason: it rejects the whole policy
 on `0`, and on anything past 65535, which a policy rendered as text does not
 notice.
@@ -390,6 +429,7 @@ reopen every range the policy exists to close.
 {{- if or (not $namespace) (not .podLabels) (not .ports) -}}
 {{- fail (printf "virtualization.imageCache.peers entry %v needs a namespace, the registry pod's podLabels and its ports. Kubernetes rejects a policy entry without a namespace or a port, and an entry with an empty podLabels admits every pod in that namespace." .) -}}
 {{- end -}}
+{{- include "platform.validate.selector" (dict "name" "virtualization.imageCache.peers" "namespace" $namespace "labels" (.podLabels | default dict)) -}}
 {{- range .ports -}}
 {{- include "platform.validate.port" (dict "name" (printf "virtualization.imageCache.peers (namespace %q)" $namespace) "value" .) -}}
 {{- end -}}

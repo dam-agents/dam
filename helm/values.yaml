@@ -536,7 +536,8 @@ virtualization:
     # example. Policy is applied after a Service's address is translated to a
     # pod, and that pod's address lies in a range the service's egress policy
     # closes, so the pods are named and not the Service. `podLabels` is
-    # required: an empty one would admit every pod in the namespace.
+    # required: an empty one would admit every pod in the namespace, and its
+    # keys and values have to be labels the API server takes.
     peers: []
     # Ranges the service may also reach OUTSIDE the cluster, for a registry on
     # a private address that no pod selector can name — a mirror on the

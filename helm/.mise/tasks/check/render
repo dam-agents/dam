@@ -80,6 +80,12 @@ for refused in 'virtualization.imageCache.hostPath=' \
   'virtualization.imageCache.peers[0].namespace=registry,virtualization.imageCache.peers[0].podLabels.app=registry,virtualization.imageCache.peers[0].ports[0]=https' \
   'virtualization.imageCache.peers[0].namespace=registry,virtualization.imageCache.peers[0].podLabels.app=registry,virtualization.imageCache.peers[0].ports[0]=0' \
   'virtualization.imageCache.peers[0].namespace=registry,virtualization.imageCache.peers[0].podLabels.app=registry,virtualization.imageCache.peers[0].ports[0]=65536' \
+  'virtualization.imageCache.peers[0].namespace=Registry,virtualization.imageCache.peers[0].podLabels.app=registry,virtualization.imageCache.peers[0].ports[0]=443' \
+  'virtualization.imageCache.peers[0].namespace=registry,virtualization.imageCache.peers[0].podLabels.app=-bad-,virtualization.imageCache.peers[0].ports[0]=443' \
+  "virtualization.imageCache.peers[0].namespace=registry,virtualization.imageCache.peers[0].podLabels.app=$(printf 'a%.0s' {1..64}),virtualization.imageCache.peers[0].ports[0]=443" \
+  'controller.gatewayEgress.clusterDns.namespace=Kube-System' \
+  'controller.gatewayEgress.clusterDns.podLabels.k8s-app=-bad-' \
+  'controller.gatewayEgress.clusterDns.ports[0]=0' \
   'controller.gatewayEgress.extraCidrs[0]=2001:::1/64' \
   'virtualization.runner.seccomp=permissive'; do
   if helm template platform . "${COMMON[@]}" "${VM[@]}" --set "$refused" >/dev/null 2>&1; then
@@ -115,6 +121,17 @@ jq -e -s '
     and .to[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"] == "registry"
     and any(.ports[]; .port == 5000))' <<<"$cache" >/dev/null ||
   { echo "the node image cache\'s egress policy is not the registry-only one: $cache" >&2; exit 1; }
+# A selector the API server takes renders as written, so the grammar check
+# costs no real install its registry: a label under a DNS prefix, a namespace
+# and ports all reach the policy untouched.
+helm template platform . "${COMMON[@]}" "${VM[@]}" \
+  --set-json 'controller.gatewayEgress.clusterDns.podLabels={"dns.operator.openshift.io/daemonset-dns":"default"}' \
+  --set controller.gatewayEgress.clusterDns.namespace=openshift-dns \
+  --set controller.gatewayEgress.clusterDns.ports[0]=5353 \
+  --set-json 'virtualization.imageCache.peers=[{"namespace":"openshift-image-registry","podLabels":{"registry":"image-registry"},"ports":[5000]}]' \
+  --show-only templates/controller/vm-image-cache.yaml \
+  | grep -q 'dns.operator.openshift.io/daemonset-dns: default' \
+  || { echo "a render with a prefixed label and a namespaced registry did not reach the cache policy" >&2; exit 1; }
 # The cache directory is the install's own by construction: the value is a root
 # and the chart names this install inside it, so no two installs can be given
 # one directory — the pair it is named after is the one the cluster keeps
