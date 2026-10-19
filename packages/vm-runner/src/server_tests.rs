@@ -2987,6 +2987,56 @@ async fn a_running_and_a_starting_machine_split_the_room_but_only_the_running_on
     h.until("m2", "running", |s| s.state == STATE_RUNNING).await;
 }
 
+// TEST_SCENARIO: a look scans the machines and then writes every share, and two looks run at once: the periodic one and the one a start takes. A periodic look that scanned before a start, and stalled past it, must not write its older room over the newer one: that leaves the started machine at the floor and its sibling holding the whole room. The shares hold the look that scanned last, and what the machines hold together stays inside the room.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_look_that_scanned_first_does_not_write_over_a_later_one() {
+    let armed = Arc::new(AtomicBool::new(false));
+    let scanned = Arc::new(AtomicBool::new(false));
+    let stored: Arc<Mutex<Option<StorageUse>>> = Arc::default();
+    let (measured, slow, told) = (stored.clone(), armed.clone(), scanned.clone());
+    let h = Harness::with("storage-look-order", move |c| {
+        c.measure_storage = Arc::new(move || {
+            let storage = *locked(&measured);
+            if slow.swap(false, Ordering::SeqCst) {
+                told.store(true, Ordering::SeqCst);
+                std::thread::sleep(Duration::from_millis(300));
+            }
+            storage
+        });
+    });
+    for id in ["m1", "m2"] {
+        h.server.put(id, spec(true)).unwrap();
+        h.until(id, "running", |s| s.state == STATE_RUNNING).await;
+    }
+    h.server.put("m2", spec(false)).unwrap();
+    h.until("m2", "stopped", |s| s.state == STATE_STOPPED).await;
+    *locked(&stored) = filled(55);
+    armed.store(true, Ordering::SeqCst);
+    let server = h.server.clone();
+    let stalled = std::thread::spawn(move || server.check_storage());
+    while !scanned.load(Ordering::SeqCst) {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    *locked(&h.fake.start_delay) = Duration::from_millis(500);
+    locked(&h.fake.calls).clear();
+    assert_eq!(
+        h.server.put("m2", spec(true)).unwrap().state,
+        STATE_STARTING
+    );
+    h.wait_for_call("start m2").await;
+    stalled.join().unwrap();
+    let room = 40u64 << 30;
+    let held = h.grants(&["m1", "m2"]);
+    assert_eq!(
+        held,
+        vec![room / 2; 2],
+        "the shares do not hold the look that scanned last"
+    );
+    for id in ["m1", "m2"] {
+        h.until(id, "running", |s| s.state == STATE_RUNNING).await;
+    }
+}
+
 // TEST_SCENARIO: a guest serves each request to give back scratch once, and only a running guest frees anything, so the shortage is split among the running machines alone. The runner keeps the same request while the claim stays short at about the same use, and sends a new one, with a new id and its part of the new shortage, only once the claim has filled SHED_STEP_PERCENT further; a claim that has room again clears it, and the next shortage is a new request.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_short_claim_asks_again_only_when_it_fills_further() {
