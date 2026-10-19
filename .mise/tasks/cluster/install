@@ -202,14 +202,14 @@ if [ -n "${IS_SANDBOX:-}" ]; then
     if [ ! -f "$KUBECONFIG" ]; then
       echo "Provisioning k3s on host (sandbox mode)..."
       "$MISE_CONFIG_ROOT/.mise/tasks/cluster/provision-host" "$LIMA_TEMPLATE"
-    elif ! pgrep -x k3s-server >/dev/null; then
+    elif ! k3s_running; then
       # cluster:stop leaves the kubeconfig behind, so the provision above never
       # runs again and nothing would start k3s: the wait below would then time
       # out against an API that is not there.
       echo "Starting the k3s service..."
       k3s_service start
     fi
-  elif ! pgrep -x k3s-server >/dev/null; then
+  elif ! k3s_running; then
     # With no supervisor nothing restarts k3s, so a kubeconfig left by an
     # earlier run says nothing about whether it is serving: key on the process.
     echo "Starting k3s as a plain process (no supervisor to install it under)..."

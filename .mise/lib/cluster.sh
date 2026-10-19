@@ -28,6 +28,19 @@ k3s_service() { # start|stop|restart
   fi
 }
 
+# Whether k3s is up, as its supervisor reports it. `pgrep -x k3s-server` is not
+# that question: a container on the same host runs its own k3s under the same
+# process name, so a host k3s that is stopped would read as up.
+k3s_running() {
+  if [ -x /etc/init.d/k3s ]; then
+    as_root rc-service k3s status >/dev/null 2>&1
+  elif [ -d /run/systemd/system ]; then
+    as_root systemctl is-active --quiet k3s
+  else
+    pgrep -x k3s-server >/dev/null
+  fi
+}
+
 # e2e_mark <phase>: appends "<epoch seconds>\t<phase>" to the file E2E_TIMINGS
 # names, and does nothing without it. CI's two lanes set it, and e2e:timings
 # turns the marks into the job's per-phase timing summary.
