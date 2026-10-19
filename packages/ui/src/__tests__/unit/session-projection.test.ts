@@ -262,6 +262,18 @@ describe("applyUpdate — turn boundaries", () => {
     expect(out).toEqual([]);
   });
 
+  test("a subagent's hand-back report is not shown as a user message", () => {
+    const out = applyUpdate([], {
+      sessionUpdate: "user_message_chunk" as const,
+      messageId: "u1",
+      content: {
+        type: "text" as const,
+        text: '<agent-message from="aa5f0dd75068513b3">\n[Subagent hand-back] The report follows:\n  **Bottom line:** done.\n</agent-message>',
+      },
+    });
+    expect(out).toEqual([]);
+  });
+
   test("a system wrapper with nested elements still closes the active bubble", () => {
     const start: Message[] = [
       userMsg("u1", "go"),
