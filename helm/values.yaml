@@ -356,16 +356,21 @@ virtualization:
     # A hand-off leaves a running machine on the runtime it booted, so a
     # release whose fix only a machine that booted it has — a new libkrun,
     # guest kernel or platform-init — reaches running machines only by
-    # rebooting them. Mark that release `rebootRequired` for the deploy: its
-    # pods roll instead of handing off, and those rolls do not wait for a
-    # busy agent, so the fix reaches every machine within the roll rather
-    # than after `idleWait`. Remove the mark once every runner runs it.
+    # rebooting them. Name that release in `rebootRequiredRelease`: its pods
+    # roll instead of handing off, and those rolls do not wait for a busy
+    # agent, so the fix reaches every machine within the roll rather than
+    # after `idleWait`. The value is the release it was set for, so it stops
+    # applying once the chart configures another one: a value left behind
+    # marks nothing. A roll for a changed pod shape keeps its idle wait
+    # either way.
     rollout:
       maxConcurrent: 1
       # Set instead of `maxConcurrent` to express the width as a percentage
       # of the install's runners; `maxConcurrent` is then ignored.
       maxConcurrentPercent: 0
-      rebootRequired: false
+      # The runner image reference of the one release whose machines must
+      # reboot, e.g. the `image` this chart configures; empty marks none.
+      rebootRequiredRelease: ""
       settleTimeout: 10m
       idleWait: 24h
     # A directory on each node where a stager DaemonSet copies the runner

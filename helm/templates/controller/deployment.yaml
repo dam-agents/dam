@@ -88,7 +88,7 @@ spec:
                   "nodeSelector" $r.nodeSelector "tolerations" $r.tolerations "affinity" $r.affinity
                   "resources" $r.resources
                   "hostAddress" ($r.hostAddress | default "")
-                  "rollout" (dict "maxConcurrent" ($r.rollout.maxConcurrent | default 1 | int) "maxConcurrentPercent" ($r.rollout.maxConcurrentPercent | default 0 | int) "rebootRequired" ($r.rollout.rebootRequired | default false) "settleTimeout" ($r.rollout.settleTimeout | default "10m") "idleWait" ($r.rollout.idleWait | default "24h")) }}
+                  "rollout" (dict "maxConcurrent" ($r.rollout.maxConcurrent | default 1 | int) "maxConcurrentPercent" ($r.rollout.maxConcurrentPercent | default 0 | int) "rebootRequiredRelease" ($r.rollout.rebootRequiredRelease | default "") "settleTimeout" ($r.rollout.settleTimeout | default "10m") "idleWait" ($r.rollout.idleWait | default "24h")) }}
             - name: AGENT_VM
               value: {{ dict "enabled" .Values.virtualization.enabled "runner" $runner "runtimeMigration" (dict "retention" ((.Values.virtualization.runtimeMigration | default dict).retention | default "168h" | toString) "concurrency" ((.Values.virtualization.runtimeMigration | default dict).concurrency | default 10 | int) "ownerConcurrency" ((.Values.virtualization.runtimeMigration | default dict).ownerConcurrency | default 1 | int) "cloneSource" (dig "cloneSource" true (.Values.virtualization.runtimeMigration | default dict))) "gateway" (dict "perOwner" (dig "perOwner" false (.Values.virtualization.gateway | default dict))) | toJson | quote }}
             {{- if .Values.virtualization.enabled }}
