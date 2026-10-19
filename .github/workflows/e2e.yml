@@ -173,7 +173,8 @@ jobs:
         id: controller-changed
         if: inputs.verify
         run: |
-          if git diff --quiet "$DIFF_BASE" HEAD -- $(.mise/tasks/image/resolve paths controller); then
+          mapfile -t paths < <(.mise/tasks/image/resolve paths controller)
+          if git diff --quiet "$DIFF_BASE" HEAD -- "${paths[@]}"; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -321,10 +322,14 @@ jobs:
         name: Timing summary
         if: ${{ !cancelled() }}
         run: |
+          set -o pipefail
           for mark in "k3s provisioned:/tmp/k3s-provision.status" "platform images ready:/tmp/ci-images-platform.status" "images ready:/tmp/ci-images.status"; do
             [ ! -s "${mark#*:}" ] || printf '%s\t%s\n' "$(stat -c %Y "${mark#*:}")" "${mark%%:*}" >> "$E2E_TIMINGS"
           done
-          .mise/tasks/e2e/timings | tee -a "$GITHUB_STEP_SUMMARY"
+          # The task never fails the job by design: a summary that did not print
+          # is a warning, not a red lane.
+          .mise/tasks/e2e/timings | tee -a "$GITHUB_STEP_SUMMARY" ||
+            echo "::warning::the e2e timing summary did not print"
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
@@ -485,9 +490,8 @@ jobs:
           EOF
           sleep 2
           mkdir -p /tmp/kernel-log
-          sudo journalctl -k -b --no-pager -o short-precise > /tmp/kernel-log/kernel.log ||
-            sudo dmesg -T > /tmp/kernel-log/kernel.log
-          [ ! -e /var/log/audit/audit.log ] || sudo cat /var/log/audit/audit.log > /tmp/kernel-log/audit.log
+          { sudo journalctl -k -b --no-pager -o short-precise || sudo dmesg -T; } > /tmp/kernel-log/kernel.log
+          [ ! -e /var/log/audit/audit.log ] || { sudo cat /var/log/audit/audit.log; } > /tmp/kernel-log/audit.log
           grep -hs 'type=1326\|type=SECCOMP' /tmp/kernel-log/kernel.log /tmp/kernel-log/audit.log | grep -v 'comm="seccomp-canary"' > /tmp/seccomp.log || true
           canary="$(cat /tmp/kernel-log/kernel.log /tmp/kernel-log/audit.log 2>/dev/null | grep -c 'comm="seccomp-canary"' || true)"
           killed="$(grep -c ' sig=31 ' /tmp/seccomp.log || true)"
