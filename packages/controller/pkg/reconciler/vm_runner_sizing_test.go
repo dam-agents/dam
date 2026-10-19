@@ -104,7 +104,7 @@ func runnerClaim(t *testing.T, r *AgentReconciler) string {
 	return pvc.Spec.Resources.Requests.Storage().String()
 }
 
-// TEST_SCENARIO: the runner admits machines against its memory limit while the scheduler sees only the request. A machine that wakes must raise the request in the reconcile that starts it, by the machine's memory on top of the runner's reserve, and a stop must hand that memory back — so a busy node does not OOM-kill the runner and every machine of this owner with it.
+// TEST_SCENARIO: the runner admits machines against its memory limit while the scheduler sees only the request. A machine that wakes must raise the request in the reconcile that starts it, by the machine's memory on top of the runner's reserve, and a stop must hand that memory back — so a busy node does not OOM-kill a machine of this owner.
 func TestTheRunnerRequestFollowsTheMachinesThatShouldRun(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)

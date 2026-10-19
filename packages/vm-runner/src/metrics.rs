@@ -321,7 +321,7 @@ impl Metrics {
         gauge(
             &mut out,
             "memory_working_set_mib",
-            "Memory the runner's cgroup charges less the file cache the kernel can drop: the figure the kernel kills the runner, and every machine with it, by.",
+            "Memory the runner's cgroup charges less the file cache the kernel can drop: the figure the kernel kills a machine of it, a VMM, by.",
             gauges.working_set_mib.map_or(f64::NAN, f64::from),
         );
         gauge(

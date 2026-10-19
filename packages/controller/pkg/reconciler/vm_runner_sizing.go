@@ -101,7 +101,7 @@ func (r *AgentReconciler) peerShouldRun(ctx context.Context, name string) (bool,
 	return r.agentDesiredUp(ctx, name, true)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner admits machines against its memory limit, and the scheduler places pods by requests — so with a request below the limit, the node lends out memory the runner's guests are already using, and a busy node OOM-kills the runner with every machine of that owner. The request follows the memory of the machines that should be running plus the runner's own reserve. It rises at once, but falls only once that has dropped a quarter step below the step under the current request, so a guest whose use sits on a step boundary does not resize the pod at every pass. It never drops below what the install asked for, which is the request Kubernetes gives the pod when the install asked for none, and never rises above the limit, which the API refuses.
+// UNIT_BOUNDARY_DESCRIPTION: the runner admits machines against its memory limit, and the scheduler places pods by requests — so with a request below the limit, the node lends out memory the runner's guests are already using, and a busy node OOM-kills machines of that owner. The request follows the memory of the machines that should be running plus the runner's own reserve. It rises at once, but falls only once that has dropped a quarter step below the step under the current request, so a guest whose use sits on a step boundary does not resize the pod at every pass. It never drops below what the install asked for, which is the request Kubernetes gives the pod when the install asked for none, and never rises above the limit, which the API refuses.
 func runnerMemoryRequest(demandMiB, reserveMiB int, current, floor, limit resource.Quantity) resource.Quantity {
 	needMiB := demandMiB + reserveMiB
 	wantMiB := roundedMiB(needMiB)
@@ -130,7 +130,7 @@ func runnerCPULimit(vCPUs, machineCPUs int, request resource.Quantity, ceiling *
 	return want
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: an owner's pool can be lowered below what their running machines are counted at, and lowering the runner's memory limit under them would have the kernel kill the runner with every machine. So a limit that falls stops at the machines' count plus the reserve, rounded up to the request step, and comes down further only as they stop; the runner admits no new machine meanwhile, because its limit is already taken. A limit that rises goes to the pool at once.
+// UNIT_BOUNDARY_DESCRIPTION: an owner's pool can be lowered below what their running machines are counted at, and lowering the runner's memory limit under them would have the kernel kill a machine of them. So a limit that falls stops at the machines' count plus the reserve, rounded up to the request step, and comes down further only as they stop; the runner admits no new machine meanwhile, because its limit is already taken. A limit that rises goes to the pool at once.
 func runnerMemoryLimit(poolMiB, demandMiB, reserveMiB int, current resource.Quantity) resource.Quantity {
 	pool := *resource.NewQuantity(int64(poolMiB)<<20, resource.BinarySI)
 	if pool.Cmp(current) >= 0 {

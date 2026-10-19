@@ -274,7 +274,7 @@ virtualization:
     # vm agents have no size of their own and do not count toward the user's
     # budget; every machine may grow to half of the limit less `reserveMiB`,
     # so one agent can use most of the pool while a runaway guest hits its
-    # own OOM killer before it takes the runner, and every machine with it.
+    # own OOM killer, which takes that machine and not the runner.
     # A running machine counts at what its
     # guest measurably uses plus `headroomMiB`, never above its size, so an
     # owner can run more machines than their sizes add up to; near the limit
