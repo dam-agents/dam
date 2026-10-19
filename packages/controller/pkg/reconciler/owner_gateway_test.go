@@ -229,7 +229,7 @@ func servedVMReconciler(t *testing.T) (*AgentReconciler, *fakeNode, *apiv1.Agent
 	return r, node, agent
 }
 
-// TEST_SCENARIO: the owner gateway mounts one credential Secret for all of the owner's agents, and the kubelet refreshes that mount only when it syncs the pod, as it does an agent's own gateway's. So its pod carries the Secret's content hash, and a new hash syncs it at once and asks an agent the owner gateway serves to come back for the second sync, which a kubelet whose copy of the Secret was still old needs. A pod that is going away is left alone.
+// TEST_SCENARIO: the owner gateway mounts one credential Secret for all of the owner's agents, and the kubelet refreshes that mount only when it syncs the pod, as it does an agent's own gateway's. So its pod carries the Secret's content hash, and a new hash syncs it at once and asks one of its agents to come back for the second sync, which a kubelet whose copy of the Secret was still old needs. A pod that is going away is left alone.
 func TestOwnerGateway_ACredentialChangeSyncsItsPodTwice(t *testing.T) {
 	r, _, _ := servedVMReconciler(t)
 	ctx, ns := context.Background(), "test-agents"
@@ -248,7 +248,7 @@ func TestOwnerGateway_ACredentialChangeSyncsItsPodTwice(t *testing.T) {
 	now := time.Date(2026, 10, 19, 18, 4, 12, 0, time.UTC)
 	r.refreshOwnerGatewayCredentials(ctx, testOwner, "rotated", []string{"my-agent"}, now)
 	assert.Equal(t, "rotated", ownerPod().Annotations[annGatewayCredentialsRev])
-	assert.Equal(t, []time.Duration{gatewayCredentialsResyncWait}, requeued.all(), "a served agent comes back for the second sync")
+	assert.Equal(t, []time.Duration{gatewayCredentialsResyncWait}, requeued.all(), "one of its agents comes back for the second sync")
 
 	r.refreshOwnerGatewayCredentials(ctx, testOwner, "rotated", []string{"my-agent"}, now.Add(gatewayCredentialsResyncWait))
 	assert.Equal(t, "rotated", ownerPod().Annotations[annGatewayCredentialsResync])
