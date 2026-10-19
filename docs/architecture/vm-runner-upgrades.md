@@ -2,7 +2,7 @@
 
 Last verified: 2026-10-19
 
-How a change to the [runner](vm-runner.md) reaches owners whose machines are running: as a **roll** of the runner pod, which reboots the owner's machines, or, for a new runner release only, as a **hand-off** inside the pod, which reboots none.
+How a change to the [runner](vm-runner.md) reaches owners whose machines are running: as a **roll** of the runner pod, which reboots the owner's machines, or, for a new runner release only, as a **hand-off** inside the pod, which reboots none unless the operator marks that release, which rolls the pod instead.
 
 ## Rolls
 
@@ -33,7 +33,7 @@ So a published chart pins the runner image by digest, and a rebuild that changes
 
 A [runner](vm-runner.md) pod's machines are its processes, so restarting the pod reboots every machine of its owner.
 Most runner changes do not need the pod restarted: what changes is the runner process, not the VMMs it started.
-Every install with runner pods therefore names a node directory for runner releases ([values](../../helm/values.yaml)), and the chart refuses one that clears it; each pod takes a new runner image from there in place, without rebooting a machine.
+Every install with runner pods therefore names a node directory for runner releases ([values](../../helm/values.yaml)), and the chart refuses one that clears it; each pod takes a new runner image from there in place, without rebooting a machine, unless the operator marks that release `rollout.rebootRequiredRelease`, which rolls the pod instead (below).
 On OpenShift the directory the kubelet creates carries the host's own SELinux label, which a confined runner may not read, so the stager labels it, and everything it stages, for containers at the plain level every runner's own categories can read; to set that label it runs as the unconfined container type, as the [image cache](vm-image-cache.md) service does, under the SCC the install names for its runners.
 A cluster admin can instead have the nodes create and label the directory themselves, with the node configuration in [`etc/openshift-node-config/`](../../etc/openshift-node-config/).
 

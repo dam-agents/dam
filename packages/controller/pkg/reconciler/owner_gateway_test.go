@@ -301,6 +301,29 @@ func TestOwnerGateway_TemplateChangesRollOneOwnerAtATime(t *testing.T) {
 	assert.Equal(t, "envoy:next", image(second))
 }
 
+// TEST_SCENARIO: an owner gateway rolls under the runner roll's width, so a share stated there widths the gateways too: with half of four owners as the width, two roll and two wait, where `maxConcurrent: 1` would move them one at a time.
+func TestOwnerGateway_TemplateChangesRollTheWidthOfTheShare(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupReconciler(t, agentCR())
+	r.config.VM = config.VMConfig{Enabled: true, Gateway: config.VMGateway{PerOwner: true}, Runner: config.VMRunnerSpec{Rollout: config.VMRunnerRollout{MaxConcurrent: 1, MaxConcurrentPercent: 50}}}
+	owners := []string{"owner-a", "owner-b", "owner-c", "owner-d"}
+	for _, owner := range owners {
+		require.NoError(t, r.applyOwnerGatewayDeployment(ctx, buildOwnerGatewayDeployment(owner, r.config, nil)))
+	}
+	r.config.EnvoyImage = "envoy:next"
+	r.rollOwnerGateways(ctx)
+
+	rolled := 0
+	for _, owner := range owners {
+		dep, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, ownerGatewayName("platform", owner), metav1.GetOptions{})
+		require.NoError(t, err)
+		if dep.Spec.Template.Spec.Containers[0].Image == "envoy:next" {
+			rolled++
+		}
+	}
+	assert.Equal(t, 2, rolled, "half of four owners roll at once under the share, and the rest wait")
+}
+
 // TEST_SCENARIO: when the owner gateway pod crash-loops, every agent it serves has no gateway, so each one's gateway readiness carries the pod's own reason, the account the UI shows as a failed gateway, rather than a stale listener.
 func TestOwnerGateway_ACrashLoopingPodIsEachAgentsGatewayFailure(t *testing.T) {
 	ctx := context.Background()
