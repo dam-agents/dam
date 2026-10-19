@@ -621,8 +621,29 @@
     {
       "idx": 88,
       "version": "7",
-      "when": 1792404813846,
-      "tag": "0088_fold_telegram_bindings_into_chats",
+      "when": 1792394775467,
+      "tag": "0088_spend_metering",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1792394779815,
+      "tag": "0089_spend_metering_start",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1792394786598,
+      "tag": "0090_spend_daily_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1792394787849,
+      "tag": "0091_spend_calls",
       "breakpoints": true
     }
   ]

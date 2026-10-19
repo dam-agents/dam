@@ -2,7 +2,12 @@ import { spendUnitOfProvider, type SpendUnit } from "api-server-api";
 
 export type { SpendUnit };
 
-const UNIT_RANK: readonly SpendUnit[] = ["usd", "usd_list", "bobcoin", "free"];
+export const UNIT_RANK: readonly SpendUnit[] = [
+  "usd",
+  "usd_list",
+  "bobcoin",
+  "free",
+];
 
 export function unitOf(provider: string): SpendUnit {
   return spendUnitOfProvider(provider) ?? "usd";

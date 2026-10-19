@@ -8,6 +8,7 @@ export const SessionType = {
   ScheduleCron: "schedule_cron",
   ScheduleOnce: "schedule_once",
   CliRun: "cli_run",
+  Invocation: "invocation",
 } as const;
 
 export type SessionType = (typeof SessionType)[keyof typeof SessionType];
@@ -66,7 +67,6 @@ export interface SessionView {
   provider?: string | null;
   model?: string | null;
   settings?: Record<string, string>;
-  spend?: { unit: string; cost: number };
   repositories?: SessionRepository[];
 }
 

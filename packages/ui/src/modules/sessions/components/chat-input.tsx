@@ -38,6 +38,7 @@ export interface ChatInputProps {
   loadingSession: boolean;
   onSend: (text: string, attachments?: Attachment[]) => void;
   onStop: () => void;
+  onTakeBack?: (() => void) | null;
   blockedReason?: string | null;
 }
 
@@ -47,6 +48,7 @@ export function ChatInput({
   loadingSession,
   onSend,
   onStop,
+  onTakeBack,
   blockedReason,
 }: ChatInputProps) {
   const agentId = useStore((s) => s.selectedAgent);
@@ -205,7 +207,8 @@ export function ChatInput({
     }
     if (e.key === "Escape" && showStop && !e.nativeEvent.isComposing) {
       e.preventDefault();
-      onStop();
+      if (onTakeBack && !hasContent) onTakeBack();
+      else onStop();
       return;
     }
     if (e.key !== "Enter" || e.shiftKey || isMobile()) return;

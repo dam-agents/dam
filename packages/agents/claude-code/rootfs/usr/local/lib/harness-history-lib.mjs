@@ -21,6 +21,17 @@ function stripSubagentTextAndThinking(content) {
   );
 }
 
+function isNoResponseFiller(message) {
+  const content = message.content;
+  return (
+    message.model === "<synthetic>" &&
+    Array.isArray(content) &&
+    content.length === 1 &&
+    content[0]?.type === "text" &&
+    content[0].text === "No response requested."
+  );
+}
+
 function stampOf(message) {
   const timestamp = message.timestamp;
   return typeof timestamp === "string" && Number.isFinite(Date.parse(timestamp))
@@ -105,7 +116,8 @@ export async function loadHistory(sessionId) {
     const messageId = agent.messageIdForGrouping(message);
     if (
       message.type === "assistant" &&
-      agent.isSyntheticLoginMessage(message.message)
+      (agent.isSyntheticLoginMessage(message.message) ||
+        isNoResponseFiller(message.message))
     ) {
       continue;
     }

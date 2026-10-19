@@ -78,7 +78,10 @@ import { composeAcp } from "./modules/acp/compose.js";
 import { prepareProcesses } from "./modules/processes/index.js";
 import { composeChanges } from "./modules/changes/index.js";
 import { recoverInterruptedTurns } from "./modules/acp/services/interrupted-turn-recovery.js";
-import { sessionDirectoryEntries } from "./modules/acp/index.js";
+import {
+  createTerminalSessionLookup,
+  sessionDirectoryEntries,
+} from "./modules/acp/index.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
 import {
   composeRuntimeChannel,
@@ -261,10 +264,18 @@ const modelCallExporter = createModelCallExporter({
   log: modelRouterLog,
 });
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the lease router is composed after the Model
- * Router, so its session lookup is bound once it exists.
+ * UNIT_BOUNDARY_DESCRIPTION: the lease router and the Session metadata are
+ * composed after the Model Router, so their lookups are bound once they exist.
  */
 let sessionChoiceOf: ((sessionId: string) => SessionChoice) | null = null;
+let isRuntimeSession: ((sessionId: string) => boolean) | null = null;
+const TERMINAL_PIN_REFRESH_MS = 2_000;
+const terminalSessionOf = createTerminalSessionLookup(
+  Object.values(harnessManifests).flatMap((m) =>
+    m.terminalSessionPins ? [expandHome(m.terminalSessionPins, homeDir)] : [],
+  ),
+  TERMINAL_PIN_REFRESH_MS,
+);
 const modelRouter = composeModelRouter({
   sessionModelOf: (sessionId) => {
     const choice = sessionChoiceOf?.(sessionId);
@@ -272,6 +283,8 @@ const modelRouter = composeModelRouter({
     if (!choice?.model && !subagentModel) return null;
     return { model: choice?.model ?? null, subagentModel };
   },
+  isSession: (sessionId) => isRuntimeSession?.(sessionId) ?? true,
+  terminalSessionOf,
   catalog: modelCatalog,
   envState: () => envStore.state(),
   harnesses: Object.fromEntries(
@@ -418,7 +431,6 @@ const {
       name,
       {
         sessionHistory: manifest.sessionHistory,
-        sessionSpend: manifest.sessionSpend,
         ...(manifest.terminalSessionPins && {
           terminalSessionPins: expandHome(
             manifest.terminalSessionPins,
@@ -470,6 +482,7 @@ const {
 });
 
 sessionChoiceOf = (sessionId) => acpRuntime.sessionChoice(sessionId);
+isRuntimeSession = (sessionId) => sessionMetadata.get(sessionId) !== undefined;
 
 const { service: processesService, keepMarks } = processes.start({
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,

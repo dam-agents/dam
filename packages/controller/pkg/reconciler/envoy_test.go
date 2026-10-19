@@ -680,8 +680,8 @@ func TestRenderEnvoyBootstrap_OuterListenerStampsAttributionOnAllEgress(t *testi
 		"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
 	}}, rc["request_headers_to_add"],
 		"every request the gateway forwards carries the gateway's own agent id")
-	assert.Equal(t, []any{"x-platform-invocation-id"}, rc["request_headers_to_remove"],
-		"a non-target may not smuggle an invocation id on any route")
+	assert.Equal(t, []any{"x-platform-invocation-id", "x-platform-session", "x-platform-harness"}, rc["request_headers_to_remove"],
+		"a non-target may not smuggle an invocation id on any route, and the router's stamps never reach a plain-http host")
 }
 
 // TEST_SCENARIO: an Invocation target attributes to its root Driver, so the id the gateway stamps is the Driver's and the target's own id rides alongside it. The outer listener must carry that same pairing, not the plain non-target stamp.
@@ -700,7 +700,7 @@ func TestRenderEnvoyBootstrap_OuterListenerStampsInvocationIDForTarget(t *testin
 			"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
 		},
 	}, rc["request_headers_to_add"])
-	assert.NotContains(t, rc, "request_headers_to_remove",
+	assert.Equal(t, []any{"x-platform-session", "x-platform-harness"}, rc["request_headers_to_remove"],
 		"a target stamps its invocation id rather than removing it")
 }
 
@@ -713,7 +713,7 @@ func TestRenderEnvoyBootstrap_OuterListenerAndCollectorChainStampAlike(t *testin
 		rc := outerRouteConfig(t, doc)
 		route := collectorChainRoute(t, doc)
 		assert.Equal(t, route["request_headers_to_add"], rc["request_headers_to_add"], ids[0])
-		assert.Equal(t, route["request_headers_to_remove"], rc["request_headers_to_remove"], ids[0])
+		assert.Subset(t, rc["request_headers_to_remove"], route["request_headers_to_remove"], ids[0])
 	}
 }
 
@@ -725,7 +725,7 @@ func TestRenderEnvoyBootstrap_OuterListenerStripsAttributionWithoutTelemetry(t *
 	require.NotNil(t, rc)
 	assert.NotContains(t, rc, "request_headers_to_add",
 		"nothing to attribute to, so nothing is disclosed")
-	assert.Equal(t, []any{"x-platform-agent-id", "x-platform-invocation-id"},
+	assert.Equal(t, []any{"x-platform-agent-id", "x-platform-invocation-id", "x-platform-session", "x-platform-harness"},
 		rc["request_headers_to_remove"])
 }
 

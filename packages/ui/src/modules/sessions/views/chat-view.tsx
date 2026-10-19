@@ -107,6 +107,7 @@ import { useProcessesLiveUpdates } from "../../processes/hooks/use-processes-liv
 import { useRunningProcesses } from "../../processes/hooks/use-running-processes.js";
 import { ProviderSettingsModal } from "../../providers/components/provider-settings-modal.js";
 import { AgentUsageActions } from "../../sandboxes/components/agent-usage-actions.js";
+import { useTurnSpend } from "../../spend/api/queries.js";
 import { KitUpdateBar } from "../../starter-kits/components/kit-update-bar.js";
 import { OnboardingBar } from "../../starter-kits/components/onboarding-bar.js";
 import { useTurns } from "../../telemetry/api/queries.js";
@@ -154,6 +155,7 @@ import {
   useSessionUrlSync,
 } from "../hooks/use-session-url-sync.js";
 import { useSessionWatch } from "../hooks/use-session-watch.js";
+import { useTakeBack } from "../hooks/use-take-back.js";
 import { draftKey } from "../lib/draft-key.js";
 import { newLiveArrivals, noteArrivals } from "../lib/live-arrivals.js";
 import {
@@ -280,6 +282,7 @@ export function ChatView() {
     loadOlderMessages,
     sendPrompt,
     rewriteFrom,
+    takeBackPrompt,
     stopAgent,
     chooseSessionModel,
     configureSession,
@@ -370,18 +373,27 @@ export function ChatView() {
       sessionTurns.data?.available === true ? sessionTurns.data.turns : [];
     return matchTurnsToReplies(rows, messages);
   }, [sessionTurns.data, messages]);
+  const shownTurns = useMemo(
+    () => [...turnForMessage.values()],
+    [turnForMessage],
+  );
+  const { data: turnSpend } = useTurnSpend(
+    selectedAgent ?? null,
+    sessionId ?? null,
+    shownTurns,
+  );
 
   const harnessForks = useStore((s) => s.harnessForks);
   const queuedPrompts = useStore((s) => s.queuedPrompts);
   const queueEmpty = queuedPrompts.length === 0;
   const { data: sessionView } = useAgentSession(selectedAgent, sessionId);
-  const canRewrite =
-    harnessForks &&
+  const rewritable =
     sessionView?.mode === SessionMode.Chat &&
     sessionView.type === SessionType.Regular &&
     !sessionView.threadTs &&
     !sessionView.scheduleId &&
     !sessionView.initialization;
+  const canRewrite = harnessForks && rewritable;
   const setupMessageId = sessionView?.initialization
     ? setupMessageOf(shown)
     : undefined;
@@ -390,6 +402,17 @@ export function ChatView() {
     arrivalsRef.current = newLiveArrivals(sessionId);
   const arrived = noteArrivals(arrivalsRef.current, shown, loadingSession);
   const rewritePoints = useMemo(() => rewritePointsOf(shown), [shown]);
+  const takeBack = useTakeBack({
+    shown,
+    rewritePoints,
+    sessionId,
+    rewritable: rewritable === true,
+    harnessForks,
+    queuedPrompts,
+    title: sessionView?.title ?? null,
+    takeBackPrompt,
+    stop: stopAgent,
+  });
   const rewriting = useStore((s) => s.rewriting);
   const rewriteIndex = rewriting
     ? shown.findIndex((m) => m.id === rewriting.messageId)
@@ -1022,6 +1045,11 @@ export function ChatView() {
                                   onDelete={deleteMessage}
                                   onLoadOlder={loadOlderKeepingScroll}
                                   turn={turn}
+                                  turnSpend={
+                                    turn
+                                      ? turnSpend?.get(turn.turnId)
+                                      : undefined
+                                  }
                                   agentId={selectedAgent ?? undefined}
                                   sessionId={sessionId ?? undefined}
                                 />
@@ -1145,6 +1173,7 @@ export function ChatView() {
                 loadingSession={loadingSession}
                 onSend={sendWithA2uiData}
                 onStop={stopAgent}
+                onTakeBack={takeBack}
                 blockedReason={
                   noGrantedProvider
                     ? "No LLM provider connected to this agent."

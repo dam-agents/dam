@@ -17,26 +17,45 @@ export function SpendBarTrack({
   color,
   fillClassName,
   className,
+  extraPct = 0,
+  extraFillClassName,
 }: {
   pct: number;
   label: string;
   color?: string;
   fillClassName?: string;
   className?: string;
+  extraPct?: number;
+  extraFillClassName?: string;
 }) {
+  const hasExtra = extraPct > 0;
   return (
     <div
-      className={cn("h-5 overflow-hidden rounded bg-muted", className)}
+      className={cn("flex h-5 overflow-hidden rounded bg-muted", className)}
       role="img"
       aria-label={label}
     >
       <div
-        className={cn("h-full rounded", fillClassName)}
+        className={cn(
+          "h-full shrink-0 rounded",
+          fillClassName,
+          hasExtra && "rounded-r-none",
+        )}
         style={{
           width: pct > 0 ? `max(${pct}%, 8px)` : "0px",
           background: color,
         }}
       />
+      {hasExtra && (
+        <div
+          className={cn(
+            "h-full shrink-0 rounded",
+            extraFillClassName,
+            pct > 0 && "rounded-l-none",
+          )}
+          style={{ width: `${extraPct}%` }}
+        />
+      )}
     </div>
   );
 }

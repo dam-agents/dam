@@ -1,13 +1,12 @@
 /**
- * TEST_OVERVIEW: The Model Router's spend records: the token counts read off
- * each dialect's response, streamed or not, the cost in micro-dollars from the
- * catalog's price, the OTLP log record the spend reader sums, and the export
- * that batches records to the pod's rail and never holds a call.
+ * TEST_OVERVIEW: The Model Router's call records: the token counts read off
+ * each dialect's response, streamed or not, the OTLP log record that carries
+ * them, and the export that batches records to the pod's rail and never holds
+ * a call.
  */
 import { describe, expect, it } from "vitest";
 import { Readable } from "node:stream";
 import {
-  costUsdMicros,
   createModelCallExporter,
   createSseModelRewrite,
   createUsageScanner,
@@ -232,32 +231,6 @@ describe("usage of an unstreamed body", () => {
   });
 });
 
-describe("cost", () => {
-  /** TEST_SCENARIO: Each token class at its own price, cache classes the
-   * list does not price charged as input, rounded to whole micro-dollars;
-   * no price means no cost, never zero. */
-  it("prices the four token classes in micro-dollars", () => {
-    const usage = {
-      inputTokens: 1000,
-      outputTokens: 100,
-      cacheReadTokens: 10_000,
-      cacheCreationTokens: 500,
-    };
-    expect(
-      costUsdMicros(
-        {
-          inputPerToken: 3e-6,
-          outputPerToken: 15e-6,
-          cacheReadPerToken: 0.3e-6,
-          cacheWritePerToken: null,
-        },
-        usage,
-      ),
-    ).toBe(Math.round((0.003 + 0.0015 + 0.003 + 0.0015) * 1e6));
-    expect(costUsdMicros(null, usage)).toBeNull();
-  });
-});
-
 const record = (over: Partial<ModelCallRecord> = {}): ModelCallRecord => ({
   connectionId: "conn-ibm",
   alias: "ibm",
@@ -276,9 +249,7 @@ const record = (over: Partial<ModelCallRecord> = {}): ModelCallRecord => ({
     cacheReadTokens: 3,
     cacheCreationTokens: 4,
   },
-  costUsdMicros: 56,
   uncounted: null,
-  providerReportedCostUsd: null,
   requestId: "req-1",
   trace: {
     traceId: "0af7651916cd43dd8448eb211c80319c",
@@ -288,9 +259,9 @@ const record = (over: Partial<ModelCallRecord> = {}): ModelCallRecord => ({
 });
 
 describe("the OTLP record", () => {
-  /** TEST_SCENARIO: The reader sums the same attribute names it reads from
-   * Claude Code's records, so the record carries them as strings under those
-   * names, with the platform's own beside them and the harness's trace. */
+  /** TEST_SCENARIO: The record carries the token counts as strings under the
+   * names the telemetry reader reads from Claude Code's records, with the
+   * platform's own beside them and the harness's trace, and no cost. */
   it("carries the reader's counters and the platform attributes", () => {
     const log = otlpLogRecord(record());
     const attrs = Object.fromEntries(
@@ -311,7 +282,6 @@ describe("the OTLP record", () => {
       output_tokens: "2",
       cache_read_tokens: "3",
       cache_creation_tokens: "4",
-      cost_usd_micros: "56",
       duration_ms: "1234",
       request_id: "req-1",
       "platform.model.router": "true",
@@ -324,7 +294,6 @@ describe("the OTLP record", () => {
     const cut = otlpLogRecord(
       record({
         usage: null,
-        costUsdMicros: null,
         uncounted: "no-usage-event",
         status: 499,
       }),
@@ -334,8 +303,8 @@ describe("the OTLP record", () => {
         (a) => [a.key, a.value.stringValue],
       ),
     );
+    expect(attrs).not.toHaveProperty("cost_usd_micros");
     expect(cutAttrs).toMatchObject({
-      cost_usd_micros: "0",
       input_tokens: "0",
       "platform.uncounted": "no-usage-event",
       "platform.status": "499",

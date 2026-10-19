@@ -2,28 +2,28 @@ import type { ReactNode } from "react";
 
 import { Card } from "@/components/ui/card";
 
-import {
-  durationSegments,
-  formatTokens,
-  formatUsdCents,
-} from "../lib/format.js";
-
-interface Props {
-  costUsd: number;
-  calls: number;
-  tokensIn: number;
-  tokensOut: number;
-  durationMs: number;
-}
+import { HelpTip } from "../../spend/components/help-tip.js";
+import { durationSegments, formatTokens } from "../lib/format.js";
 
 function Sub({ children }: { children: ReactNode }) {
   return <span className="text-sm text-muted-foreground/70">{children}</span>;
 }
 
-function Stat({ label, children }: { label: string; children: ReactNode }) {
+export function Stat({
+  label,
+  help,
+  children,
+}: {
+  label: string;
+  help?: string;
+  children: ReactNode;
+}) {
   return (
     <Card className="min-w-0 p-4">
-      <dt className="text-sm text-muted-foreground">{label}</dt>
+      <dt className="flex items-center gap-1.5 text-sm text-muted-foreground">
+        {label}
+        {help && <HelpTip content={help} />}
+      </dt>
       <dd className="mt-1.5 font-mono text-2xl font-semibold leading-none tracking-[-0.02em] tabular-nums text-foreground">
         {children}
       </dd>
@@ -31,36 +31,37 @@ function Stat({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-export function SpendStatCards({
-  costUsd,
-  calls,
+export function TokensInOut({
   tokensIn,
   tokensOut,
-  durationMs,
-}: Props) {
+}: {
+  tokensIn: number;
+  tokensOut: number;
+}) {
   return (
-    <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-      <Stat label="Total cost">{formatUsdCents(costUsd)}</Stat>
-      <Stat label="API calls">{calls.toLocaleString()}</Stat>
-      <Stat label="Tokens in / out">
-        {formatTokens(tokensIn)}
-        <wbr />
-        <Sub>
-          <span className="whitespace-nowrap">
-            <span className="mx-1">/</span>
-            {formatTokens(tokensOut)}
-          </span>
-        </Sub>
-      </Stat>
-      <Stat label="Model time">
-        {durationSegments(durationMs).map((segment, i) =>
-          segment.unit ? (
-            <Sub key={i}>{segment.text}</Sub>
-          ) : (
-            <span key={i}>{segment.text}</span>
-          ),
-        )}
-      </Stat>
-    </dl>
+    <>
+      {formatTokens(tokensIn)}
+      <wbr />
+      <Sub>
+        <span className="whitespace-nowrap">
+          <span className="mx-1">/</span>
+          {formatTokens(tokensOut)}
+        </span>
+      </Sub>
+    </>
+  );
+}
+
+export function Duration({ ms }: { ms: number }) {
+  return (
+    <>
+      {durationSegments(ms).map((segment, i) =>
+        segment.unit ? (
+          <Sub key={i}>{segment.text}</Sub>
+        ) : (
+          <span key={i}>{segment.text}</span>
+        ),
+      )}
+    </>
   );
 }

@@ -1,5 +1,7 @@
 import type { IncomingMessage } from "node:http";
 
+export const SESSION_HEADER = "x-platform-session";
+
 export interface SessionHandle {
   sessionId: string;
   parentSessionId?: string;
@@ -41,9 +43,25 @@ const header = (req: IncomingMessage, name: string): string | null => {
  * what each harness stamps on its calls: Bob's `X-Task-Id` with
  * `X-Parent-Task-Id` on a subagent's calls, Codex's `session-id` header with
  * a subagent's own `thread-id`, Claude Code's request metadata `user_id`,
- * which ends in `_session_<uuid>`. The root ids equal the ACP session id.
+ * which ends in `_session_<uuid>`, Pi's `x-platform-session` from its
+ * extension. The root ids equal the ACP session id, except in a Codex or Bob
+ * terminal, whose own id the caller maps back.
  */
 export function sessionOf(
+  req: IncomingMessage,
+  body: Record<string, unknown>,
+): SessionHandle | null {
+  const marked = harnessSessionOf(req, body);
+  if (marked) return marked;
+  const stamped = sessionStampOf(req);
+  return stamped ? { sessionId: stamped } : null;
+}
+
+export function sessionStampOf(req: IncomingMessage): string | null {
+  return header(req, SESSION_HEADER);
+}
+
+function harnessSessionOf(
   req: IncomingMessage,
   body: Record<string, unknown>,
 ): SessionHandle | null {

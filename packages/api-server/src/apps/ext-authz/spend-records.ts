@@ -14,7 +14,12 @@ import {
   type HTTPAccessLogEntry,
 } from "../../proto-gen/accesslog.gen.js";
 
-const PROXY_COST_HEADER = "x-litellm-response-cost";
+const PROXY_COST_HEADERS = {
+  cost: "x-litellm-response-cost",
+  original: "x-litellm-response-cost-original",
+  discount: "x-litellm-response-cost-discount-amount",
+  margin: "x-litellm-response-cost-margin-amount",
+} as const;
 
 export interface SpendRecordStreams {
   service: AccessLogServiceServer;
@@ -84,15 +89,26 @@ function callRecordOf(
     common?.metadata?.filterMetadata[SPEND_METADATA_NAMESPACE],
   );
   if (!spend) return null;
+  const startedAt = common?.startTime ?? new Date();
+  const headers = entry.response?.responseHeaders ?? {};
   return {
     ...spend,
     agentId,
     status: entry.response?.responseCode || null,
-    proxyCost: entry.response?.responseHeaders[PROXY_COST_HEADER] ?? null,
+    proxyCost: {
+      cost: headers[PROXY_COST_HEADERS.cost] ?? null,
+      original: headers[PROXY_COST_HEADERS.original] ?? null,
+      discount: headers[PROXY_COST_HEADERS.discount] ?? null,
+      margin: headers[PROXY_COST_HEADERS.margin] ?? null,
+    },
     final: common?.accessLogType !== AccessLogType.DownstreamPeriodic,
     refusedByGate:
       common?.responseFlags?.unauthorizedDetails?.reason ===
       ResponseFlags_Unauthorized_Reason.EXTERNAL_SERVICE,
-    startedAt: common?.startTime ?? new Date(),
+    startedAt,
+    durationMs: common?.duration
+      ? common.duration.seconds * 1000 +
+        Math.round(common.duration.nanos / 1_000_000)
+      : Math.max(0, Date.now() - startedAt.getTime()),
   };
 }
