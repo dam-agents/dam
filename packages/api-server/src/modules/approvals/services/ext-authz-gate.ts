@@ -54,9 +54,7 @@ export interface ExtAuthzGate {
 
 // UNIT_BOUNDARY_DESCRIPTION: whose rules and approvals a request falls under: the agent itself, the driver of an invocation sub-agent, or the Owning Agent of an Environment, which `environment` then names so the approval says where the request came from.
 export interface AgentIdentityResolver {
-  resolve(
-    agentId: string,
-  ): Promise<{
+  resolve(agentId: string): Promise<{
     ownerSub: string;
     agentId: string;
     environment?: string;
