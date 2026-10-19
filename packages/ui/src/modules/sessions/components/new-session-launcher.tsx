@@ -2,12 +2,12 @@ import { Code, Terminal } from "@carbon/icons-react";
 import { type ReactNode, useState } from "react";
 
 import { getBrand } from "@/brand";
+import { SlackColorIcon, TelegramColorIcon } from "@/components/brand-icons";
 import { CopyableCommand } from "@/components/copyable-command";
 import { DialogBody, DialogHeader, Modal } from "@/components/modal";
 
 import type { AgentView } from "../../../types.js";
 import { useAgents } from "../../agents/api/queries.js";
-import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { MessengerBindDialog } from "../../sandboxes/components/channels/messenger-bind-dialog.js";
 import type { BindMessenger } from "../../sandboxes/components/channels/messenger-instructions.js";
 import { cliAgentRef } from "../../sandboxes/lib/cli-agent-ref.js";
@@ -54,7 +54,7 @@ export function NewSessionLauncher({
         />
         {available.slack && (
           <LauncherTile
-            icon={<ConnectionIcon iconSlug="slack" alt="" size={18} />}
+            icon={<SlackColorIcon aria-hidden width={18} height={18} />}
             title="Slack Channel"
             description="Mention the agent in a connected channel"
             onClick={() => setMessenger("slack")}
@@ -62,7 +62,7 @@ export function NewSessionLauncher({
         )}
         {available.telegram && (
           <LauncherTile
-            icon={<ConnectionIcon iconSlug="telegram" alt="" size={18} />}
+            icon={<TelegramColorIcon aria-hidden width={18} height={18} />}
             title="Telegram Chat"
             description="Message the agent from a Telegram chat"
             onClick={() => setMessenger("telegram")}
