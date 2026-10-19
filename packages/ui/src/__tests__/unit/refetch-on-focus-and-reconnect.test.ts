@@ -1,6 +1,7 @@
 // TEST_OVERVIEW: regaining a tab's focus refetches no query that did not ask for it, and a reconnect refetches the ACP Session data no event stream resyncs while it only marks the rest of the cache stale, so neither event fans out into a refetch of everything on screen.
 import {
   focusManager,
+  onlineManager,
   type QueryKey,
   QueryObserver,
   type QueryObserverOptions,
@@ -58,11 +59,11 @@ it("refetches nothing on window focus unless the query asks for it", async () =>
   expect(quiet.calls()).toBe(1);
 });
 
-// TEST_SCENARIO: the API connection drops and comes back. The ACP Session data, which no live-event stream resyncs, must refetch at once; an unrelated stale query must keep reading what it has until something asks for it again.
-it("refetches the ACP Session data on reconnect and leaves the rest stale", async () => {
+// TEST_SCENARIO: the API connection drops and comes back a moment later, while the ACP Session data is still fresh by its 5 s staleTime. That data must refetch anyway, because no live-event stream resyncs it and the session watch replays nothing; an unrelated stale query must keep reading what it has until something asks for it again.
+it("refetches the ACP Session data on reconnect even while it is fresh, and leaves the rest stale", async () => {
   queryClient.mount();
   const sessions = watch(acpSessionsKeys.pagesOf("agent-a", []), {
-    staleTime: 0,
+    staleTime: 5_000,
   });
   const other = watch(["reconnect-other"], { staleTime: 0 });
   await sessions.loaded();
@@ -77,4 +78,18 @@ it("refetches the ACP Session data on reconnect and leaves the rest stale", asyn
   expect(queryClient.getQueryState(["reconnect-other"])?.isInvalidated).toBe(
     true,
   );
+});
+
+// TEST_SCENARIO: the connection goes down and comes straight back, with no stale marking in between. A fresh ACP Session query must still refetch, so the heal cannot rest on the order of the stale marking and the online transition in the same listener.
+it("refetches a fresh ACP Session query on an online transition", async () => {
+  queryClient.mount();
+  const sessions = watch(acpSessionsKeys.pagesOf("agent-a", []), {
+    staleTime: 5_000,
+  });
+  await sessions.loaded();
+
+  onlineManager.setOnline(false);
+  onlineManager.setOnline(true);
+
+  await vi.waitFor(() => expect(sessions.calls()).toBe(2));
 });

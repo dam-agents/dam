@@ -60,7 +60,7 @@ export const queryClient = new QueryClient({
       staleTime: 30_000,
       refetchOnWindowFocus: false,
       refetchOnReconnect: (query) =>
-        query.queryKey[0] === acpSessionsKeys.all[0],
+        query.queryKey[0] === acpSessionsKeys.all[0] ? "always" : false,
     },
     mutations: {
       onSuccess: (_data, _vars, _ctx, mutation): Promise<unknown> =>
