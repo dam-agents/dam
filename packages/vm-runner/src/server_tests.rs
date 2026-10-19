@@ -2273,8 +2273,12 @@ async fn a_node_cache_that_cannot_be_reached_boots_only_what_the_runner_holds() 
     assert_eq!(refused.reason, REASON_CACHE_UNREACHABLE, "{refused:?}");
     assert!(refused.message.contains("cannot be reached"), "{refused:?}");
     assert!(
+        refused.message.contains(".cache.sock"),
+        "the refusal does not name the socket inside the mount the runner looked at: {refused:?}"
+    );
+    assert!(
         refused.message.contains("read-only"),
-        "the refusal does not say which mount the runner looked at: {refused:?}"
+        "the refusal does not say the mount is the runner's own read-only one: {refused:?}"
     );
     assert!(!locked(&h.fake.created).contains_key("m3"));
 }

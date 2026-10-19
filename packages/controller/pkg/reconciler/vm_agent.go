@@ -686,6 +686,11 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 		reason = vmrunner.ReasonNotReady
 	case vmrunner.ReasonHomeFull:
 		reason = apiv1.ReasonHomeVolumeFull
+	case vmrunner.ReasonImageCacheUnreachable:
+		// UNIT_BOUNDARY_DESCRIPTION: the runner sees its own mount of the cache directory, and two runners on one node directory and on a stale copy of it refuse with the same socket, so the Agent's own failure names the node directory this runner mounts. That is the fact an operator compares with the one the cache service writes, and it is here because a start that fails without a pending runner change writes no roll Event to carry it.
+		if src := r.runnerImageCacheSourceOf(ctx, agent.Labels[envoyOwnerLabel]); src != "" {
+			msg += " (this runner mounts the node's " + src + " as its image cache)"
+		}
 	}
 	running, _ := r.vmRunning.Load(agent.Name)
 	killedAt := func() time.Time { return r.runnerOOMKilledAt(ctx, agent.Labels[envoyOwnerLabel]) }

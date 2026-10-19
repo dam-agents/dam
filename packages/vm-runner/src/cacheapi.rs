@@ -126,6 +126,12 @@ pub struct CacheClient {
     socket: PathBuf,
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a request's failure and whether the socket was connected before it. Only a connect that failed says nothing serves this node; everything after it is a service that took the request, which a fetch of one image can also cause, so the two are refused differently.
+struct RequestError {
+    error: std::io::Error,
+    connected: bool,
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: how long a request may wait for its answer. The service gives a whole resolve, fetch included, one deadline, and the client waits a minute past it, so a service that answers at its deadline is heard rather than cut off. A hold is answered at once, and it is made when the runner starts, so a service that has hung costs the runner seconds rather than a start that waits out a fetch.
 pub const RESOLVE_TIMEOUT: Duration = Duration::from_secs(RESOLVE_DEADLINE.as_secs() + 60);
 pub const HOLD_TIMEOUT: Duration = Duration::from_secs(10);
@@ -140,46 +146,61 @@ impl CacheClient {
         path: &str,
         body: &[u8],
         timeout: Duration,
-    ) -> Result<(u16, Vec<u8>), std::io::Error> {
-        let mut stream = UnixStream::connect(&self.socket)?;
-        stream.set_read_timeout(Some(timeout))?;
-        stream.set_write_timeout(Some(Duration::from_secs(30)))?;
+    ) -> Result<(u16, Vec<u8>), RequestError> {
+        let after = |error: std::io::Error| RequestError {
+            error,
+            connected: true,
+        };
+        let mut stream = UnixStream::connect(&self.socket).map_err(|error| RequestError {
+            error,
+            connected: false,
+        })?;
+        stream.set_read_timeout(Some(timeout)).map_err(after)?;
+        stream
+            .set_write_timeout(Some(Duration::from_secs(30)))
+            .map_err(after)?;
         let head = format!(
             "POST {path} HTTP/1.1\r\nHost: image-cache\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
             body.len()
         );
-        stream.write_all(head.as_bytes())?;
-        stream.write_all(body)?;
+        stream.write_all(head.as_bytes()).map_err(after)?;
+        stream.write_all(body).map_err(after)?;
         let mut raw = Vec::new();
-        stream.read_to_end(&mut raw)?;
-        parse_response(&raw)
-            .ok_or_else(|| std::io::Error::other("the image cache service sent no HTTP response"))
+        stream.read_to_end(&mut raw).map_err(after)?;
+        parse_response(&raw).ok_or_else(|| RequestError {
+            error: std::io::Error::other("the image cache service sent no HTTP response"),
+            connected: true,
+        })
     }
 
-    fn unreachable_message(&self, e: std::io::Error) -> String {
+    fn unreachable_message(&self, e: &std::io::Error) -> String {
         format!(
             "the node's image cache service at {} cannot be reached: {e}; this runner mounts the node's image cache directory there read-only, so either no service serves this node or the service writes a different node directory than the one this runner mounts",
             self.socket.display()
         )
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a service that took the request and did not answer in time is reachable, and is most likely still fetching, so this is not the failure that lets the runner boot a tree it holds instead. It is still the cache's fault rather than the image's: it is said as what it is, under the cache's own reason, rather than as a socket that could not be reached.
-    fn unreachable(&self, e: std::io::Error) -> Lookup {
-        if matches!(
-            e.kind(),
-            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-        ) {
-            return Lookup::failed(cache_unreachable(format!(
-                "the node's image cache service at {} took the request and did not answer within {}s",
-                self.socket.display(),
-                RESOLVE_TIMEOUT.as_secs()
-            )));
-        }
+    // UNIT_BOUNDARY_DESCRIPTION: the socket was never connected, so nothing serves this node's cache: the node's fault rather than the image's, refused under the cache's own reason and said to be unreachable, which lets the runner boot a tree it already holds.
+    fn unreachable(&self, e: &std::io::Error) -> Lookup {
         Lookup {
             resolved: Err(cache_unreachable(self.unreachable_message(e))),
             fetched: None,
             unreachable: true,
         }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the service took the request and then failed — did not answer in time, closed the connection, answered nothing readable, or answered something this client cannot read. The image is what a resolve was asked about, so a fetch of an image that kills or wedges the service looks exactly like this, and it is refused as an image the cache cannot serve: the image update job then bounds it and moves an Agent back, where a node-fault reason would hold the move forever. The service is said to have taken the request, so an operator does not read it as a socket nobody serves.
+    fn served(&self, detail: impl std::fmt::Display) -> Lookup {
+        Lookup::failed(
+            Refusal {
+                reason: REASON_IMAGE_UNAVAILABLE,
+                message: format!(
+                    "the node's image cache service at {} took the request and then failed: {detail}; a fetch of this image that wedges or kills the service reads the same way",
+                    self.socket.display()
+                ),
+            }
+            .into(),
+        )
     }
 }
 
@@ -221,11 +242,12 @@ impl Images for CacheClient {
             pull_auths: auths.to_vec(),
         }) {
             Ok(body) => body,
-            Err(e) => return self.unreachable(std::io::Error::other(e)),
+            Err(e) => return self.served(e),
         };
         let (status, body) = match self.request(RESOLVE_PATH, &body, RESOLVE_TIMEOUT) {
             Ok(answer) => answer,
-            Err(e) => return self.unreachable(e),
+            Err(e) if !e.connected => return self.unreachable(&e.error),
+            Err(e) => return self.served(e.error),
         };
         if status == 200 {
             return match serde_json::from_slice::<ResolveAnswer>(&body) {
@@ -234,13 +256,13 @@ impl Images for CacheClient {
                     fetched: answer.fetched,
                     unreachable: false,
                 },
-                Err(e) => self.unreachable(std::io::Error::other(e)),
+                Err(e) => self.served(e),
             };
         }
         let Ok(failure) = serde_json::from_slice::<ResolveFailure>(&body) else {
-            return self.unreachable(std::io::Error::other(format!(
-                "the image cache service answered {status}"
-            )));
+            return self.served(format!(
+                "it answered {status} with no reason this client reads"
+            ));
         };
         let error = match [REASON_IMAGE_UNAVAILABLE, REASON_OUT_OF_CAPACITY]
             .into_iter()
@@ -266,7 +288,7 @@ impl Images for CacheClient {
         })?;
         let (status, _) = self
             .request(HOLDS_PATH, &body, HOLD_TIMEOUT)
-            .map_err(|e| anyhow::anyhow!(self.unreachable_message(e)))?;
+            .map_err(|e| anyhow::anyhow!(self.unreachable_message(&e.error)))?;
         anyhow::ensure!(
             (200..300).contains(&status),
             "the image cache service answered {status} to a hold"
@@ -284,7 +306,7 @@ impl Images for CacheClient {
             },
             Err(e) => RunnerImageCache {
                 socket,
-                error: self.unreachable_message(e),
+                error: self.unreachable_message(&e),
             },
         }
     }
@@ -306,17 +328,12 @@ mod tests {
         assert_eq!(parse_response(b"garbage"), None);
     }
 
-    // TEST_SCENARIO: a resolve that takes as long as the service's own deadline must still be heard, so the client waits longer than that deadline. A service that took the request and did not answer is said to be slow, not unreachable, so the runner does not fall back to a tree it holds while the service is still fetching; a socket nobody listens on is unreachable. Both are the cache's fault rather than the image's, so both are refused under the cache's reason, and the one nobody answers names the socket and the mount that carried it, since "Connection refused" alone sends an operator looking for an outage that the mount's own directory explains.
+    // TEST_SCENARIO: a socket nobody serves is the node's fault and lets the runner boot a tree it holds, while a service that took the request and then failed is refused as an image the cache cannot serve, since a fetch of one image can wedge or kill the service too. Both name the socket and the mount that carried it, so an operator looking at a "connection refused" finds the directory this runner mounted beside it.
     #[test]
-    fn a_slow_service_is_told_apart_from_a_lost_one() {
+    fn an_unreachable_socket_is_told_apart_from_a_service_that_failed() {
         assert!(RESOLVE_TIMEOUT > RESOLVE_DEADLINE);
         let client = CacheClient::new(PathBuf::from("/nonexistent/.cache.sock"));
-        let slow = client.unreachable(std::io::ErrorKind::WouldBlock.into());
-        assert!(!slow.unreachable);
-        let slow = slow.resolved.err().unwrap();
-        assert_eq!(failure_reason(&slow), REASON_CACHE_UNREACHABLE);
-        assert!(slow.to_string().contains("did not answer"), "{slow}");
-        let lost = client.unreachable(std::io::ErrorKind::ConnectionRefused.into());
+        let lost = client.unreachable(&std::io::ErrorKind::ConnectionRefused.into());
         assert!(lost.unreachable);
         let lost = lost.resolved.err().unwrap();
         assert_eq!(failure_reason(&lost), REASON_CACHE_UNREACHABLE);
@@ -326,6 +343,15 @@ mod tests {
             "{lost}"
         );
         assert!(lost.to_string().contains("read-only"), "{lost}");
+        let slow = client.served("it did not answer within 400s");
+        assert!(!slow.unreachable);
+        let slow = slow.resolved.err().unwrap();
+        assert_eq!(failure_reason(&slow), REASON_IMAGE_UNAVAILABLE);
+        assert!(slow.to_string().contains("took the request"), "{slow}");
+        assert!(
+            slow.to_string().contains("did not answer within 400s"),
+            "{slow}"
+        );
         let reach = client.reach();
         assert_eq!(reach.socket, "/nonexistent/.cache.sock");
         assert!(

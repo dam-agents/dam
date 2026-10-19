@@ -1849,6 +1849,31 @@ func TestAStorageRefusalIsPublishedWithoutParking(t *testing.T) {
 	assert.Contains(t, cond.Message, "93% full")
 }
 
+// TEST_SCENARIO: a runner that cannot reach the node's image cache refuses every image its machines do not already hold, and the runner sees only its own mount of the cache directory — two runners on one node directory and on a stale copy of it name the same socket. So the Agent's own failure names the node directory this runner mounts, which is the fact an operator compares with the one the cache service writes: a start that fails with no pending runner change writes no roll Event to carry it.
+func TestACacheRefusalNamesTheNodeDirectoryTheRunnerMounts(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	createRolloutRunner(t, r, testOwner)
+	node.statuses["my-agent"] = vmrunner.MachineStatus{
+		State:   vmrunner.StateAbsent,
+		Reason:  vmrunner.ReasonImageCacheUnreachable,
+		Message: "the node's image cache service at /var/lib/platform/images/.cache.sock cannot be reached: Connection refused (os error 111)",
+	}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	obj, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	got, err := FromCacheObject[apiv1.Agent](obj)
+	require.NoError(t, err)
+	cond := apimeta.FindStatusCondition(got.Status.Conditions, apiv1.ConditionAgentPodReady)
+	require.NotNil(t, cond)
+	assert.Equal(t, vmrunner.ReasonImageCacheUnreachable, cond.Reason)
+	assert.Contains(t, cond.Message, "cannot be reached", "the runner's own refusal is published")
+	assert.Contains(t, cond.Message, r.config.VM.Runner.ImageCacheHostPath, "the failure does not name the node directory the runner mounts")
+}
+
 // TEST_SCENARIO: a full home inside a guest is the same failure a container agent reports from its termination message, so the runner's reason for it is published as HomeVolumeFull, and the api-server's and UI's existing copy for a full home applies to a vm agent too.
 func TestAFullHomeInsideAGuestIsPublishedAsAFullHomeVolume(t *testing.T) {
 	ctx := context.Background()
