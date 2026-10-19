@@ -64,7 +64,13 @@ async function shownAgents(page: Page): Promise<string[]> {
     .getByTestId("sidebar-agents")
     .getByTestId("sidebar-agent-row")
     .evaluateAll((rows) =>
-      rows.map((row) => row.textContent?.replace("(unread)", "").trim() ?? ""),
+      rows.map(
+        (row) =>
+          row.textContent
+            ?.replace("(unread)", "")
+            .replace("(no default model)", "")
+            .trim() ?? "",
+      ),
     );
   return names.filter(ours);
 }
