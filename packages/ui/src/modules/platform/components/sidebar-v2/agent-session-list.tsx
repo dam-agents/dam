@@ -1,6 +1,8 @@
 import { SessionMode, TELEMETRY_MAX_SINCE_HOURS } from "api-server-api";
 import { useEffect, useRef, useState } from "react";
 
+import { cn } from "@/lib/utils";
+
 import { useStore } from "../../../../store.js";
 import type { SessionView } from "../../../../types.js";
 import { useIsAgentAnswerableSoon } from "../../../agents/api/queries.js";
@@ -30,6 +32,7 @@ import { newestFirst } from "../../../sessions/lib/sidebar-session-window.js";
 import { downloadTelemetryExport } from "../../../telemetry/api/download-export.js";
 import { activityTone, sessionContext } from "../../lib/sidebar-tree.js";
 import { ActivityDot } from "./activity-dot.js";
+import { FOCUS_RING } from "./add-row.js";
 
 const ROW_CLASS = "min-w-0 rounded-lg border-b-0 px-2 py-2";
 
@@ -167,7 +170,10 @@ export function AgentSessionList({
         <button
           type="button"
           onClick={() => void fetchNextPage()}
-          className="flex h-[30px] items-center rounded-lg pl-2 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className={cn(
+            "flex h-[30px] items-center rounded-lg pl-2 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+            FOCUS_RING,
+          )}
         >
           Couldn't load the rest. Retry
         </button>

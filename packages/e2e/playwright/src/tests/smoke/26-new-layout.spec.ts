@@ -77,7 +77,7 @@ test("keeps the current layout while the experiment is off", async ({
   await expect(page.getByTestId("sidebar-tree")).toHaveCount(0);
 });
 
-// TEST_SCENARIO: with the experiment on, the sidebar is the tree with the Agents in it and a New agent row after them, Home is the dashboard with no Agent rows, and the right rail has the Documentation tile between Get started and Approvals. Clicking an Agent's row opens its Session list with a New session row at its end, and that row opens the Agent's chat.
+// TEST_SCENARIO: with the experiment on, the sidebar is the tree with the Agents in it and a New agent row after them, Home is the dashboard with no Agent rows, and the right rail has the Documentation tile between Get started and Approvals. Clicking an Agent's row opens its Session list with a New session row at its end, and that row opens the Agent's chat. The second Agent stays asleep with no Sessions, so its open list says its Sessions show when it wakes instead of claiming it has none.
 test("shows the tree, the dashboard and the tiled rail when on", async ({
   page,
 }) => {
@@ -102,6 +102,13 @@ test("shows the tree, the dashboard and the tiled rail when on", async ({
   await row.click();
   await expect(row).toHaveAttribute("aria-expanded", "false");
   await expect(node.getByTestId("sidebar-new-session-row")).toHaveCount(0);
+
+  const asleep = agentNode(page, AGENTS[1]);
+  await asleep.getByTestId("sidebar-agent-row").click();
+  await expect(asleep.getByTestId("sidebar-agent-asleep")).toHaveText(
+    "Its sessions show when it wakes.",
+  );
+  await expect(asleep.getByTestId("session-row")).toHaveCount(0);
 });
 
 // TEST_SCENARIO: a pin moves a Session out of its Agent's list into the Pinned section above every Agent, and the pin survives a reload; unpinning returns it to the Agent.

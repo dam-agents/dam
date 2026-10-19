@@ -1,4 +1,5 @@
 // TEST_OVERVIEW: The new layout's sidebar is one tree of Agents. An Agent row opens and closes its Session list, a "New session" row ends each open list and a "New agent" row ends the tree, a pinned Session moves into the Pinned section at the top and leaves its Agent's list, and each Session row carries an activity dot whose state has a text label and whose spin stops under reduced motion.
+import { AddAlt, AddComment } from "@carbon/icons-react";
 import { SessionMode, SessionType, type SessionView } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -112,11 +113,11 @@ describe("sidebar tree", () => {
 describe("sidebar tree add rows", () => {
   // TEST_SCENARIO: the "New session" row closing an Agent's list and the "New agent" row closing the Agent list are real buttons a keyboard reaches, named by their text, with the plus icon hidden from assistive technology.
   it.each([
-    ["New session", "sidebar-new-session-row"],
-    ["New agent", "sidebar-new-agent-row"],
-  ])("draws %s as a button", (label, testId) => {
+    ["New session", "sidebar-new-session-row", AddComment],
+    ["New agent", "sidebar-new-agent-row", AddAlt],
+  ] as const)("draws %s as a button", (label, testId, icon) => {
     const html = renderToStaticMarkup(
-      createElement(AddRow, { label, testId, onClick: () => {} }),
+      createElement(AddRow, { icon, label, testId, onClick: () => {} }),
     );
     expect(html).toMatch(/^<button type="button"/);
     expect(html).toContain(`data-testid="${testId}"`);
@@ -129,6 +130,7 @@ describe("sidebar tree add rows", () => {
   it("disables the row when creating is not ready", () => {
     const html = renderToStaticMarkup(
       createElement(AddRow, {
+        icon: AddAlt,
         label: "New agent",
         testId: "sidebar-new-agent-row",
         disabled: true,

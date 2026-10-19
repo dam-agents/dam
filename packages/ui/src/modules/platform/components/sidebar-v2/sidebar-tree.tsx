@@ -1,8 +1,8 @@
 import {
-  Add,
-  Bot,
-  Box,
+  AddAlt,
+  AddComment,
   ChevronRight,
+  DataEnrichmentAdd,
   Settings,
   Tools,
   TrashCan,
@@ -62,12 +62,12 @@ import {
   toggleExpanded,
 } from "../../lib/sidebar-tree.js";
 import { ActivityDot } from "./activity-dot.js";
-import { AddRow } from "./add-row.js";
+import { AddRow, FOCUS_RING } from "./add-row.js";
 import { AgentSessionList } from "./agent-session-list.js";
 
 const ROW = "min-w-0 rounded-lg border-b-0 px-2 py-2";
 const REVEAL =
-  "pointer-events-none opacity-0 transition-opacity group-hover/agent:pointer-events-auto group-hover/agent:opacity-100 group-has-[:focus-visible]/agent:pointer-events-auto group-has-[:focus-visible]/agent:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100";
+  "transition-opacity hover-capable:pointer-events-none hover-capable:opacity-0 group-hover/agent:pointer-events-auto group-hover/agent:opacity-100 group-has-[:focus-visible]/agent:pointer-events-auto group-has-[:focus-visible]/agent:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The new layout's sidebar as one tree: the pinned
@@ -164,6 +164,7 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
             ))}
           </ul>
           <AddRow
+            icon={AddAlt}
             label="New agent"
             testId="sidebar-new-agent-row"
             disabled={!defaultAgent.ready}
@@ -251,7 +252,8 @@ function AgentNode({
           aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
           data-testid="sidebar-agent-row"
           className={cn(
-            "flex h-[34px] min-w-0 flex-1 items-center gap-2.5 rounded-lg pr-16 pl-2 text-left select-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent",
+            "flex h-[34px] min-w-0 flex-1 items-center gap-2.5 rounded-lg pr-16 pl-2 text-left select-none",
+            FOCUS_RING,
             mood !== "awake" && !expanded
               ? "text-muted-foreground hover:text-foreground"
               : "text-foreground",
@@ -299,9 +301,12 @@ function AgentNode({
               aria-label={`New session with ${agent.name}`}
               data-testid="sidebar-agent-new-session"
               onClick={go(() => startSession(agent.id))}
-              className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+              className={cn(
+                "flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground",
+                FOCUS_RING,
+              )}
             >
-              <Add size={16} />
+              <AddComment size={16} />
             </button>
           </Tooltip>
           <RowActionsMenu
@@ -339,6 +344,7 @@ function AgentNode({
             onNavigate={onNavigate}
           />
           <AddRow
+            icon={AddComment}
             label="New session"
             testId="sidebar-new-session-row"
             onClick={go(() => startSession(agent.id))}
@@ -438,9 +444,12 @@ function CreateAgentMenu() {
             type="button"
             aria-label="Create agent"
             data-testid="sidebar-create-agent"
-            className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground"
+            className={cn(
+              "flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground",
+              FOCUS_RING,
+            )}
           >
-            <Add size={16} />
+            <AddAlt size={16} />
           </button>
         </DropdownMenuTrigger>
       </Tooltip>
@@ -449,10 +458,10 @@ function CreateAgentMenu() {
           disabled={!defaultAgent.ready}
           onSelect={() => void defaultAgent.create()}
         >
-          <Bot size={14} /> New agent
+          <AddAlt size={14} /> New agent
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => setKitBrowserOpen(true)}>
-          <Box size={14} /> Use a starter kit
+          <DataEnrichmentAdd size={14} /> Use a starter kit
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -473,6 +482,7 @@ function SettingsFooter({ onNavigate }: { onNavigate?: () => void }) {
         }}
         className={cn(
           "flex h-[34px] w-full items-center gap-2.5 rounded-lg px-2 text-sm font-medium transition-colors",
+          FOCUS_RING,
           settingsOpen
             ? "bg-muted text-foreground"
             : "text-muted-foreground hover:bg-muted hover:text-foreground",

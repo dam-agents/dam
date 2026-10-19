@@ -12,6 +12,7 @@ import {
 } from "../../../agents/components/avatar/agent-avatar.js";
 import { useActivitySessions } from "../../../home/hooks/use-activity-sessions.js";
 import { useSidebarWidth } from "../../hooks/use-sidebar-layout.js";
+import { FOCUS_RING } from "./add-row.js";
 import { SidebarContent } from "./sidebar-content.js";
 import { SidebarHeader } from "./sidebar-header.js";
 
@@ -140,7 +141,7 @@ function PeekButton({
       onClick={onOpen}
       onMouseEnter={onPeek}
       data-testid="sidebar-peek-button"
-      className="fixed top-3 left-3 z-nav hidden h-10 items-center gap-1.5 rounded-full border border-border bg-chrome pr-3.5 pl-2 text-foreground/80 shadow-lg transition-colors anim-in hover:bg-muted hover:text-foreground md:flex"
+      className={`fixed top-3 left-3 z-nav hidden h-10 items-center gap-1.5 rounded-full border border-border bg-chrome pr-3.5 pl-2 text-foreground/80 shadow-lg transition-colors anim-in hover:bg-muted hover:text-foreground md:flex ${FOCUS_RING}`}
     >
       <ChevronLeft size={16} className="text-muted-foreground" />
       {agent ? (
