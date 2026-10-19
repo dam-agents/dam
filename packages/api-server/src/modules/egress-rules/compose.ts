@@ -44,7 +44,17 @@ export function createEgressRuleMatchAdapter(db: Db) {
       path: string,
     ) {
       const row = await repo.findMatch(agentId, host, port, tls, method, path);
-      return row ? { verdict: row.verdict } : null;
+      return row
+        ? {
+            verdict: row.verdict,
+            rule: {
+              host: row.host,
+              ...(row.port ? { port: row.port } : {}),
+              method: row.method,
+              pathPattern: row.pathPattern,
+            },
+          }
+        : null;
     },
   };
 }
@@ -95,9 +105,12 @@ export function createL7PromotionReconcile(
 
 export { createAgentL7HostsPort };
 
-export function createConnectionRulesSyncAdapter(db: Db): ConnectionRulesSync {
+export function createConnectionRulesSyncAdapter(
+  db: Db,
+  trustedHosts: readonly string[],
+): ConnectionRulesSync {
   const repo = createEgressRulesRepository(db);
-  return createConnectionRulesSync({ repo });
+  return createConnectionRulesSync({ repo, trustedHosts });
 }
 
 export function createEgressRulesCleanupHook(

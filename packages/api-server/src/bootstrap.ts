@@ -271,6 +271,7 @@ import {
   createConnectionGrantsCleanupHook,
   createConnectionNames,
   createGrantedConnectionTemplates,
+  createProviderEgressScopes,
   listConnectionGrantAgentIds,
   listPlatformConnectionOwners,
 } from "./modules/connections/compose.js";
@@ -692,6 +693,7 @@ export async function bootstrap() {
 
   const OAUTH_FLOW_TTL_MS = 10 * 60 * 1000;
   const SLACK_INSTALL_HANDOFF_TTL_MS = 24 * 60 * 60 * 1000;
+  const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
   const connectionsBoot = composeConnectionsAtBoot({
     db,
     shareBaseUrl: config.shareBaseUrl,
@@ -756,7 +758,7 @@ export async function bootstrap() {
       secretStore,
       runtimeMutator: runtimeDelivery.runtimeMutator,
       agentsRepo,
-      connectionRulesSync: createConnectionRulesSyncAdapter(db),
+      connectionRulesSync: createConnectionRulesSyncAdapter(db, trustedHosts),
       oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
       brandName: config.brand.name,
       platformProviderKey: config.platformProvider?.apiKey ?? null,
@@ -1336,7 +1338,6 @@ export async function bootstrap() {
     log: (m) => getLogger().info(`[leader] ${m}`),
   });
 
-  const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
   const presetSeeder = createPresetSeederAdapter(db, trustedHosts);
 
   const wrapperFrameSender = createWrapperFrameSender({
@@ -1364,6 +1365,7 @@ export async function bootstrap() {
       },
     },
     ruleMatcher: createEgressRuleMatchAdapter(db),
+    providerScopes: createProviderEgressScopes(db),
     attendance: turnAttendance,
     spend: spend.check,
     wrapperFrameSender,

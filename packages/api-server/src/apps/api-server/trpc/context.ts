@@ -120,7 +120,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       secretStore,
       runtimeMutator,
       agentsRepo,
-      connectionRulesSync: createConnectionRulesSyncAdapter(db),
+      connectionRulesSync: createConnectionRulesSyncAdapter(db, trustedHosts),
       oauthCallbackUrl: `${config.uiBaseUrl}/api/oauth/callback`,
       brandName: config.brand.name,
       platformProviderKey: config.platformProvider?.apiKey ?? null,

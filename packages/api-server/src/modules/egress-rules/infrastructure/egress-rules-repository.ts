@@ -42,6 +42,7 @@ export interface EgressRulesRepository {
     fromSources: string[],
     toSource: EgressRuleSource,
   ): Promise<void>;
+  setSource(id: string, source: EgressRuleSource): Promise<void>;
   revoke(id: string): Promise<void>;
   deleteForAgent(agentId: string): Promise<void>;
   listDistinctAgentIds(): Promise<string[]>;
@@ -376,6 +377,13 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
             inArray(egressRules.source, fromSources),
           ),
         );
+    },
+
+    async setSource(id, source) {
+      await db
+        .update(egressRules)
+        .set({ source })
+        .where(and(eq(egressRules.id, id), eq(egressRules.status, "active")));
     },
 
     async revoke(id) {

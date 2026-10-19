@@ -53,6 +53,10 @@ function fakeRepo(
       const r = rows.find((x) => x.id === id);
       if (r) r.status = "revoked";
     },
+    setSource: async (id, source) => {
+      const r = rows.find((x) => x.id === id && x.status === "active");
+      if (r) r.source = source;
+    },
     updateTakeOwnership: async () => null,
     listForAgent: async (agentId) =>
       rows.filter((r) => r.agentId === agentId && r.status === "active"),
@@ -287,7 +291,7 @@ describe("egress-rule-writer: inbox verdicts reconverge the same way (#2322)", (
 describe("connection-rules-sync: threads port into the inserted rule", () => {
   it("passes the connection host's port through to the repository", async () => {
     const { repo, rows } = fakeRepo();
-    const sync = createConnectionRulesSync({ repo });
+    const sync = createConnectionRulesSync({ repo, trustedHosts: [] });
 
     await sync.syncForAgent({
       agentId: "a1",
@@ -304,6 +308,54 @@ describe("connection-rules-sync: threads port into the inserted rule", () => {
       port: 6443,
       source: "connection:conn-1",
     });
+  });
+});
+
+describe("connection-rules-sync: a revoked Connection hands a trusted host back to the preset", () => {
+  const anthropicRow = (source: EgressRuleRow["source"]): EgressRuleRow => ({
+    id: "r1",
+    agentId: "a1",
+    host: "api.anthropic.com",
+    method: "*",
+    pathPattern: "*",
+    verdict: "allow",
+    decidedBy: "sub-1",
+    decidedAt: new Date(0),
+    status: "active",
+    source,
+  });
+
+  const revokeConn1 = async (preset: "trusted" | "none") => {
+    const seeded = anthropicRow("connection:conn-1");
+    const { repo, rows } = fakeRepo([seeded], {
+      listConnectionDerivedForAgent: async () => [seeded],
+      getPresetForAgent: async () => preset,
+    });
+    await createConnectionRulesSync({
+      repo,
+      trustedHosts: ["api.anthropic.com"],
+    }).syncForAgent({
+      agentId: "a1",
+      decidedBy: "sub-1",
+      grants: new Map(),
+      ownedSourceIds: new Set(["conn-1"]),
+    });
+    return rows;
+  };
+
+  // TEST_SCENARIO: the trusted preset seeds api.anthropic.com; granting an Anthropic Connection takes that row over, and revoking the Connection (a switch to LiteLLM) used to revoke it, so Claude Code's own calls to the host raised an approval nobody expected. The row must go back to the preset.
+  it("keeps a trusted host's row as a preset row on an agent with the trusted preset", async () => {
+    const rows = await revokeConn1("trusted");
+
+    expect(rows).toEqual([
+      expect.objectContaining({ status: "active", source: "preset:trusted" }),
+    ]);
+  });
+
+  it("revokes the row on an agent without the trusted preset", async () => {
+    const rows = await revokeConn1("none");
+
+    expect(rows).toEqual([expect.objectContaining({ status: "revoked" })]);
   });
 });
 
