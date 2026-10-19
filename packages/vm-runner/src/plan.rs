@@ -728,7 +728,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the stored spec never keeps the registry credential, and the controller sends one every reconcile. If that difference were a change, every machine that pulls with credentials would restart once a minute.
+    // TEST_SCENARIO: the stored spec never keeps the registry credential, and the controller sends one every reconcile. If that difference were a change, every machine that pulls with credentials would restart at each reconcile.
     #[test]
     fn a_registry_credential_is_never_a_reason_to_restart() {
         let desired = MachineSpec {
