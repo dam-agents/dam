@@ -72,7 +72,9 @@ func (r *AgentReconciler) accountedMemoryMiB(ctx context.Context, owner, name st
 // UNIT_BOUNDARY_DESCRIPTION: how much more memory the owner's machines are
 // UNIT_BOUNDARY_DESCRIPTION: counted at, with the reserve, than `percent` of
 // UNIT_BOUNDARY_DESCRIPTION: the runner's limit; zero or less when they fit,
-// UNIT_BOUNDARY_DESCRIPTION: and always zero for an install with no limit.
+// UNIT_BOUNDARY_DESCRIPTION: and always zero for an install with no limit,
+// UNIT_BOUNDARY_DESCRIPTION: and for a pool that cannot be read, which says
+// UNIT_BOUNDARY_DESCRIPTION: nothing about how much memory the machines may hold.
 func (r *AgentReconciler) runnerOvershootMiB(ctx context.Context, owner string, demandMiB, percent int) int {
 	limit, err := r.runnerLimitMiB(ctx, owner)
 	if err != nil || limit == 0 {

@@ -12,7 +12,7 @@ One that falls is the target of admission and reclaim at once, but the limit its
 A machine's new size reaches it at its next start.
 
 **An unread pool is unknown, not the install's default.** A controller that has not read an owner's UserBudget has no pool for them, and the install's default is smaller than some owners' pools and larger than others, so it stands in for none: a claim built at it can never come down again, a memory limit built at it falls under the machines already running on it, and a machine sized from it is sized past the pool its owner meant.
-While a pool is unread the controller creates no runner object for that owner and changes no size, and retries; a pool read once is kept when a later read fails, so a moment of trouble changes nothing.
+While a pool is unread the controller creates no claim and no Deployment for that owner and changes no size, and retries; a pool read once is kept when a later read fails, so a moment of trouble changes nothing.
 No reclaim is decided from an unread pool either: it is the pool that says how much memory an owner's machines may hold.
 
 **Every machine may grow to half the pool.** A machine's size is half of what its runner hands out — the runner's memory limit less its reserve — whatever its Agent's spec names, so one agent can use most of the pool while a runaway guest meets its own OOM killer before it takes the runner, and every sibling, over the limit.
@@ -46,6 +46,7 @@ The guest writes the page descriptors of added RAM into that RAM itself, so huge
 **The runner measures every running machine.** Its health prober reads the resident memory of each running machine's VMM at every probe and reports it in the machine's status.
 The owner sees the same figures on the home dashboard: what is committed against the pool, and each agent's share of it ([budgets](budgets.md)).
 The figure is kept out of what moves the status version, so it never wakes a waiting status read on its own.
+A probe that cannot read the figure keeps the last one it read, so a failed measurement never counts a guest as holding nothing.
 
 **The runner watches its own memory.** Every second it reads its working set off its cgroup — what the cgroup charges less the file cache the kernel can drop, the figure the kubelet reads — against its limit.
 At 95% the runner is under pressure, and it stays so until the working set falls below 90%.
@@ -62,6 +63,7 @@ Counting a boot at half the pool would let only two machines boot at once; at th
 Admission, the committed-memory metric and the runner's memory request all count the same way; only the request rounds, as below.
 
 **Admission is against use, so an owner may run more machines than their sizes add up to.** A machine starts while every machine's count, the start's own count and the runner's reserve fit under the runner's limit; otherwise the runner refuses it with the shortfall named, and the Agent is parked as [budgets](budgets.md) describes.
+A machine whose own state cannot be read counts as running, at the whole handout until it can be measured again: an unknown VMM is not an absent one.
 That limit is the one the kernel holds the runner to, read off its cgroup's `memory.max` at every admission and pressure sample, so a limit resized in place counts at once; a runner with no cgroup v2 limit to read uses the limit it was started with.
 
 **The scheduler reserves what the machines use.** The controller keeps the runner pod's memory request, resized in place, at the machines' counts plus the reserve, in 512 MiB steps so a guest that drifts at every probe does not resize the pod, within the install's request and the limit.

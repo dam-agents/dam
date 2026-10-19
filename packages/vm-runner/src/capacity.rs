@@ -67,10 +67,10 @@ impl Capacity<'_> {
                 continue;
             }
             let Some(applied) = read_spec(self.state_dir, other) else {
-                used += resident(other)
-                    .map_or(i64::from(self.limit_mib - self.reserve_mib), |mib| {
-                        i64::from(mib.saturating_add(self.headroom_mib))
-                    });
+                let handout = i64::from(self.limit_mib - self.reserve_mib).max(0);
+                used += resident(other).map_or(handout, |mib| {
+                    i64::from(mib.saturating_add(self.headroom_mib))
+                });
                 continue;
             };
             let size = applied.memory_mib;

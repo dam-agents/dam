@@ -3164,3 +3164,51 @@ async fn a_hand_off_admits_no_start_into_memory_adopted_machines_hold() {
     assert_eq!(refused.reason, REASON_OUT_OF_CAPACITY, "{refused:?}");
     next.server.close().await;
 }
+
+// TEST_SCENARIO: a launch record that cannot be read says nothing about whether its machine runs, and a runner that read it as "not running" counted a live VMM as nothing: admission then handed its room to the next machine. It counts as running instead, at what it was measured holding or at its size, until the record reads again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_whose_launch_record_cannot_be_read_still_holds_its_room() {
+    let tune = |c: &mut Config| c.memory_mib = 3000;
+    let h = Harness::with("unreadable-record", tune);
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    assert_eq!(h.server.usage().unwrap().memory.committed_mib, 2048);
+
+    locked(&h.fake.state_fails_until_start).insert("m1".to_string());
+    let next = h.hand_off(tune).await;
+    assert_eq!(
+        next.server.usage().unwrap().memory.committed_mib,
+        2048,
+        "a running machine whose launch record cannot be read was counted as nothing"
+    );
+    let refused = next.server.put("m2", spec(true)).unwrap();
+    assert_eq!(refused.reason, REASON_OUT_OF_CAPACITY, "{refused:?}");
+    next.server.close().await;
+}
+
+// TEST_SCENARIO: a probe that cannot read a machine's resident memory is a failed measurement, not a machine holding nothing: admission counts the figure the last probe read, as the runner's adoption of a handed-off machine does, and not the whole handout. A machine that is not running reports none, so no figure outlives the VMM that held it.
+#[tokio::test]
+async fn a_probe_that_cannot_read_the_resident_memory_keeps_the_last_figure() {
+    let h = Harness::new("resident-unread");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    *locked(&h.fake.resident) = Some(500);
+    h.server.probe("m1");
+    assert_eq!(h.server.status("m1").used_mib, 500);
+
+    *locked(&h.fake.resident) = None;
+    h.server.probe("m1");
+    assert_eq!(
+        h.server.status("m1").used_mib,
+        500,
+        "a failed measurement counted the machine as holding nothing"
+    );
+
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+    assert_eq!(
+        h.server.status("m1").used_mib,
+        0,
+        "a stopped machine still reported the memory it held"
+    );
+}
