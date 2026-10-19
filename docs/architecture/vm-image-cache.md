@@ -25,7 +25,7 @@ The host never runs them: a hostPath takes no `nosuid` mount option, so the node
 kubelet admits a critical pod while a node is under disk pressure and turns away every other one, so the class, `system-node-critical`, is what lets a replacement pod start at all while the pressure lasts.
 Among the pods it then evicts, kubelet takes those over their requests first, the lowest priority next, and the largest use above a request last: the request keeps the service out of the first group, where a pod with none stands at any use, and its class settles the rest.
 A cluster may reserve these classes for the namespaces that declare them.
-Such a cluster admits one only in a namespace whose ResourceQuota names the class, and refuses it as `insufficient quota to match these scopes`, so the install creates that quota in the agent namespace, with a `pods` allowance of at least the node count.
+Such a cluster admits one only in a namespace whose ResourceQuota names the class, and refuses it as `insufficient quota to match these scopes`, so an operator installing on such a cluster creates that quota in the agent namespace, with a `pods` allowance of at least the node count.
 Plain Kubernetes and OpenShift set no such restriction; Google Kubernetes Engine sets one by default.
 
 **An entry is named by the image it holds, not by the reference that asked for it.** A create resolves its reference to a digest and boots the tree stored under it, so two tags of one image share a tree and a mutable tag is never frozen at what it first named.
