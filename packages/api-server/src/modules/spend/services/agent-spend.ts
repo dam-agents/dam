@@ -1,0 +1,98 @@
+import type { AgentSpend, AgentSpendQuery } from "api-server-api";
+import {
+  countSessions,
+  foldAgentTotals,
+  foldSubAgents,
+  type AgentLedgerRow,
+} from "../domain/agent-spend.js";
+import type { SpendLedger } from "../infrastructure/spend-ledger.js";
+import { readSessionSpend, type SpawnedSubAgents } from "./session-spend.js";
+import type { AgentOwners } from "./spend-ingest.js";
+import type { AgentPayers } from "./spend-service.js";
+
+export interface AgentSpendReader {
+  read(query: AgentSpendQuery): Promise<AgentSpend>;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: an agent's own measured spend, pinned to that
+ * agent by the caller: a root driver reads every call it pays for, its
+ * sub-agents' too, and a sub-agent reads the calls it made. A session narrows
+ * it to that session's own calls and the sub-agents spawned from it.
+ */
+export function createAgentSpend(deps: {
+  ledger: SpendLedger;
+  payers: AgentPayers;
+  owners: AgentOwners;
+  subAgents: SpawnedSubAgents;
+  meteringStart(): Promise<Date>;
+}): AgentSpendReader {
+  return {
+    async read(query) {
+      const { agentId, from, to, sessionId } = query;
+      const [payer, startedAt] = await Promise.all([
+        deps.payers.payerOf(agentId),
+        deps.meteringStart(),
+      ]);
+      const scope = payer === agentId ? "payer" : "caller";
+      const ownerSub = await deps.owners.ownerOf(payer);
+      const view = (rows: readonly AgentLedgerRow[]): AgentSpend => ({
+        measuredSince: startedAt.toISOString(),
+        scope,
+        ...foldAgentTotals(rows),
+        sessionCount: countSessions(rows, agentId),
+      });
+      if (!ownerSub) return view([]);
+
+      const range = { ownerSub, from, to };
+      const needsTree =
+        sessionId !== undefined ||
+        (scope === "caller" && query.subAgentLimit !== undefined);
+      const spawned = needsTree
+        ? await deps.subAgents.spawnSessions(agentId)
+        : new Map<string, string | null>();
+      const below = [...spawned]
+        .filter(
+          ([, spawnedIn]) => sessionId === undefined || spawnedIn === sessionId,
+        )
+        .map(([id]) => id);
+
+      const [own, tree] = await Promise.all([
+        deps.ledger.agentRows({
+          ...range,
+          ...(scope === "payer" && sessionId === undefined
+            ? { payer: agentId }
+            : { callingAgentIds: [agentId] }),
+          ...(sessionId !== undefined && { sessionId }),
+        }),
+        needsTree
+          ? deps.ledger.agentRows({ ...range, callingAgentIds: below })
+          : Promise.resolve([]),
+      ]);
+      const counted = sessionId === undefined ? own : [...own, ...tree];
+      const subAgentRows =
+        scope === "payer" && sessionId === undefined
+          ? own.filter(
+              (row) => row.callingAgentId && row.callingAgentId !== agentId,
+            )
+          : tree;
+
+      return {
+        ...view(counted),
+        ...(query.sessionLimit !== undefined && {
+          sessions: await readSessionSpend(deps, {
+            ownerSub,
+            agentId,
+            from,
+            to,
+            ...(sessionId !== undefined && { sessionIds: [sessionId] }),
+            limit: query.sessionLimit,
+          }),
+        }),
+        ...(query.subAgentLimit !== undefined && {
+          subAgents: foldSubAgents(subAgentRows, query.subAgentLimit),
+        }),
+      };
+    },
+  };
+}

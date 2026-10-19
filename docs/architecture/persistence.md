@@ -104,7 +104,7 @@ Postgres carries application state the api-server owns end-to-end — anything t
 - **activity log + agent mirror** — append-only event log (`activity_events`), per-sub role flags (`actor_roles`), and the K8s↔Postgres agent ownership mirror (`agents`).
   Pseudonymized `actor_sub` and `owner_sub` columns at the write boundary.
   Owned by [usage-tracking](usage-tracking.md).
-- **session directory** — the kind of each Session (`agent_sessions`), reported by the agent that owns it.
+- **session directory** — the kind of each Session, reported by its agent.
   A deliberate copy of agent-owned state, kept only so spend can still be attributed to how the work was started once the agent hibernates or is deleted; it is not a Session store and no Session is read from it.
   Owned by [metrics](metrics.md#session-directory).
 - **schedules** — RRULE, quiet hours, task payload, session mode, the optional Precheck, and firing bookkeeping (`schedules`) — the last of which separates runs from declined occurrences and from a Precheck that broke.
@@ -127,9 +127,10 @@ Postgres carries application state the api-server owns end-to-end — anything t
 - **knowledge-base shares** — one row per shared knowledge base (`kb_shares`): the durable share secret, owner-controlled public name, the published-snapshot pointer and stats, and the publish/auto-refresh lifecycle bookkeeping.
   The snapshot bytes live in the object store; this row is the queryable index and access record, and answering a consumer's request must not require the owning agent to be running.
   Owned by [knowledge-bases](knowledge-bases.md#sharing).
-- **delegation records** — one row per Invocation (`invocations`), kept for its root driver's lifetime ([invocations](invocations.md#the-delegation-record)).
-- **spend** — the daily Metered Spend, not rebuildable, as costs are fixed when priced, and the owner's daily limits; Redis caches its day totals.
-  Owned by [spend-limits](spend-limits.md).
+- **delegation records** — one row per Invocation, kept for its root driver's lifetime ([invocations](invocations.md#the-delegation-record)).
+- **spend** — the Metered Spend by day and by call, not rebuildable, as costs are fixed when priced; its measuring start; and the owner's daily limits.
+  Redis caches the day totals.
+  Owned by [spend-limits](spend-limits.md#ledger).
 
 Several of those rows carry an owner's Keycloak sub, and they carry it **differently on purpose**: the usage mirror hashes it, because pseudonymized identifiers are that subsystem's whole premise, while the public agent profile and the attention record store the real sub, as channel bindings already do.
 The difference is the requirement, not an oversight — a public page names its Agent's owner and a feed names a person's own sessions back to them, and a hash cannot be resolved back to a person.

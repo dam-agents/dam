@@ -23,6 +23,9 @@ env_key = "OPENAI_API_KEY"
 wire_api = "responses"
 model_catalog_url = "http://127.0.0.1:24180/codex/models"
 http_headers = { "X-Platform-Harness" = "codex" }
+# Only a terminal sets HARNESS_SESSION_ID, the platform's session id; the TUI's
+# title thread names no parent, so the router takes the session from this.
+env_http_headers = { "x-platform-session" = "HARNESS_SESSION_ID" }
 supports_websockets = false
 # Codex ignores x-should-retry, so its default retries make a refused model
 # take a minute to fail; one retry keeps a transient blip survivable.

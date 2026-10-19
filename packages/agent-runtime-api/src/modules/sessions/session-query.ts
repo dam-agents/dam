@@ -16,7 +16,8 @@ export function sessionCategoryOf(session: {
     return "channels";
   if (session.type === "schedule_cron" || session.type === "schedule_once")
     return "scheduled";
-  if (session.type === "cli_run") return "runs";
+  if (session.type === "cli_run" || session.type === "invocation")
+    return "runs";
   return "chats";
 }
 

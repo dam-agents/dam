@@ -2,7 +2,7 @@ import type { AgentsService } from "api-server-api";
 import type { InvocationsRepository } from "../infrastructure/invocations-repository.js";
 import type { TargetCapture } from "./target-capture.js";
 
-export const REPORT_GRACE_MS = 5_000;
+export const REPORT_GRACE_MS = 30_000;
 
 export interface TargetReaper {
   reap(

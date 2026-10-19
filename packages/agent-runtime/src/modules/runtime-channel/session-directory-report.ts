@@ -22,6 +22,7 @@ export function createSessionDirectoryReporter(deps: {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let inFlight = false;
   let reported: string | undefined;
+  let attempted = new Set<string>();
 
   const schedule = (): void => {
     if (timer) return;
@@ -39,6 +40,7 @@ export function createSessionDirectoryReporter(deps: {
     }
     const sessions = [...deps.readSessions()];
     const current = fingerprint(sessions);
+    attempted = new Set(sessions.map((s) => s.sessionId));
     if (current === reported) return;
     inFlight = true;
     try {
@@ -56,5 +58,16 @@ export function createSessionDirectoryReporter(deps: {
     }
   };
 
-  return { report: schedule };
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a Session the last report did not name goes
+   * out at once, because the spend ledger checks a call's Session against the
+   * directory when the call's first record arrives.
+   */
+  const report = (): void => {
+    const fresh = deps.readSessions().some((s) => !attempted.has(s.sessionId));
+    if (fresh) void send();
+    else schedule();
+  };
+
+  return { report };
 }

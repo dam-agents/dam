@@ -1,6 +1,6 @@
 import { Transform } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
-import type { ModelDialect, ModelPrices } from "../../model-catalog/index.js";
+import type { ModelDialect } from "../../model-catalog/index.js";
 
 export interface ModelUsage {
   inputTokens: number;
@@ -9,7 +9,7 @@ export interface ModelUsage {
   cacheCreationTokens: number;
 }
 
-export type UncountedReason = "no-usage-event" | "unpriced" | "error";
+export type UncountedReason = "no-usage-event" | "error";
 
 type Json = Record<string, unknown>;
 
@@ -205,20 +205,6 @@ export function createUsageScanner(dialect: ModelDialect): UsageScanner {
  * input; null when the model has no price, which the record reports as
  * unpriced rather than free.
  */
-export function costUsdMicros(
-  prices: ModelPrices | null,
-  usage: ModelUsage,
-): number | null {
-  if (!prices) return null;
-  const usd =
-    usage.inputTokens * prices.inputPerToken +
-    usage.outputTokens * prices.outputPerToken +
-    usage.cacheReadTokens * (prices.cacheReadPerToken ?? prices.inputPerToken) +
-    usage.cacheCreationTokens *
-      (prices.cacheWritePerToken ?? prices.inputPerToken);
-  return Math.round(usd * 1e6);
-}
-
 const TRACEPARENT = /^[0-9a-f]{2}-([0-9a-f]{32})-([0-9a-f]{16})-[0-9a-f]{2}$/i;
 
 /**

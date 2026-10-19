@@ -1,4 +1,3 @@
-import { getBrand } from "../../../brand.js";
 import type { UsageFreshness } from "../hooks/use-monthly-spend.js";
 
 export function readFailureMessage(
@@ -8,15 +7,6 @@ export function readFailureMessage(
   return unavailable
     ? "Agent spend reports are not collected on this deployment. Spend limits still work."
     : `Couldn't load usage for ${monthLabel}.`;
-}
-
-export function HarnessReportsLead() {
-  return (
-    <p className="mb-3 text-sm text-muted-foreground">
-      The figures below come from each agent's own reports, for every harness.
-      Spend limits use the spend that {getBrand().name} measures, shown above.
-    </p>
-  );
 }
 
 export function UsageStaleLabel({ freshness }: { freshness: UsageFreshness }) {

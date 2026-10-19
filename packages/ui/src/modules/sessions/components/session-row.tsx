@@ -12,9 +12,9 @@ import {
   type BackgroundWorkItemView,
   ChannelType,
   SessionMode,
-  type SessionRuntime,
   SessionType,
   type SessionView,
+  type SpendSessionRow,
 } from "api-server-api";
 import {
   type ReactNode,
@@ -38,10 +38,9 @@ import { onboardingBadge } from "../../agents/utils/agent-kind.js";
 import { SessionRepositoryBadges } from "../../changes/components/session-repository-badges.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import {
-  formatHarnessSpend,
-  formatTokens,
-  formatUsdCell,
-} from "../../metrics/lib/format.js";
+  amountsLabel,
+  sessionSpendTitle,
+} from "../../spend/lib/amounts-label.js";
 import { runTimeLabel } from "../lib/run-time.js";
 import { backgroundWorkLabel } from "./background-work-indicator.js";
 import { WorkingDots } from "./working-dots.js";
@@ -64,7 +63,7 @@ interface Props {
   unread?: boolean;
   draft?: boolean;
   backgroundWork?: readonly BackgroundWorkItemView[];
-  cost?: SessionRuntime;
+  cost?: SpendSessionRow;
   conversation?: string;
   leading?: ReactNode;
   pinned?: boolean;
@@ -154,6 +153,7 @@ export function SessionRow({
   const onboarding =
     s.initialization === true && agent ? onboardingBadge(agent) : null;
   const runTime = scheduled ? runTimeLabel(s) : null;
+  const costLabel = cost ? amountsLabel(cost.amounts) : null;
   const terminal = s.mode === SessionMode.Terminal;
   const messenger =
     s.type === SessionType.ChannelSlack
@@ -313,19 +313,14 @@ export function SessionRow({
               {runTime}
             </span>
           )}
-          {cost && (
+          {costLabel && cost && (
             <span
               className="tabular-nums"
-              title={`${cost.calls} API calls · ${formatTokens(cost.inputTokens + cost.cacheReadTokens + cost.cacheCreationTokens)} in / ${formatTokens(cost.outputTokens)} out · $${cost.costUsd.toFixed(4)}`}
+              data-testid="session-spend"
+              title={sessionSpendTitle(cost)}
             >
               {" · "}
-              {formatUsdCell(cost.costUsd)}
-            </span>
-          )}
-          {!cost && s.spend && (
-            <span className="tabular-nums" data-testid="session-spend">
-              {" · "}
-              {formatHarnessSpend(s.spend)}
+              {costLabel}
             </span>
           )}
         </span>

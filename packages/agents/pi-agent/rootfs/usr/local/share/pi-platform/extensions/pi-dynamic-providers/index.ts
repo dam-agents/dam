@@ -74,6 +74,8 @@ const PRICE_VENDORS = [
 ];
 const ROUTER_PROVIDER = "platform";
 const ROUTER_BUILTINS_OFF = ["openai", "anthropic"];
+const HARNESS_HEADER = "x-platform-harness";
+const SESSION_HEADER = "x-platform-session";
 
 type RouterModel = {
   id: string;
@@ -106,6 +108,7 @@ export default async function register(pi: ExtensionAPI): Promise<void> {
 
   const router = env("PLATFORM_MODEL_ROUTER_URL")?.replace(/\/+$/, "");
   if (router) {
+    stampSession(pi);
     const activated = await activateRouter(pi, router, state);
     if (activated) {
       state.settings.defaultProvider = ROUTER_PROVIDER;
@@ -134,6 +137,19 @@ export default async function register(pi: ExtensionAPI): Promise<void> {
     writeJson(state.paths.models, state.models);
     writeJson(state.paths.settings, state.settings);
   }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the Model Router reads a Pi call's Session from x-platform-session. In a chat, Pi's own session id is the ACP session id; a terminal's PTY sets HARNESS_SESSION_ID to the platform's Session id, while Pi runs there under an id of its own that changes on /new. The event names no provider, so a call to the router is told apart by the router provider's own X-Platform-Harness header.
+function stampSession(pi: ExtensionAPI): void {
+  const terminalSession = env("HARNESS_SESSION_ID");
+  pi.on("before_provider_headers", (event, ctx) => {
+    const toRouter = Object.keys(event.headers).some(
+      (name) => name.toLowerCase() === HARNESS_HEADER,
+    );
+    if (!toRouter) return;
+    event.headers[SESSION_HEADER] =
+      terminalSession ?? ctx.sessionManager.getSessionId();
+  });
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: with the Model Router, Pi holds one provider, "platform", whose models are the router's catalog, each on the API the model speaks best among the dialects its provider serves. The key is a placeholder that satisfies pi-acp's auth gate only. Pi's built-in openai and anthropic providers are turned off, since the keys in the pod env are placeholders of Connections the router already serves.

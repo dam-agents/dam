@@ -50,7 +50,6 @@ function sinceHoursOf(raw: string | undefined, fallback: number): number {
 }
 
 const secs = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
-const usd = (n: number) => (n > 0 && n < 0.01 ? "<$0.01" : `$${n.toFixed(2)}`);
 
 interface Deps {
   compatService: CompatService;
@@ -150,14 +149,13 @@ export function buildTelemetryCommand(deps: Deps): Command {
 
         return writeStdoutAndExit(
           renderTable([
-            ["started", "duration", "calls", "spans", "records", "cost"],
+            ["started", "duration", "calls", "spans", "records"],
             ...turns.map((t) => [
               t.startedAt,
               secs(t.durationMs),
               String(t.calls),
               String(t.spanCount),
               String(t.recordCount),
-              t.costUsd > 0 ? usd(t.costUsd) : "—",
             ]),
           ]),
           EXIT_SUCCESS,

@@ -61,6 +61,7 @@ import {
   createSidePanelSlice,
   type SidePanelSlice,
 } from "./modules/sessions/store/side-panel.js";
+import { createSpendSlice, type SpendSlice } from "./modules/spend/store.js";
 
 export type PlatformStore = DialogSlice &
   A2uiSlice &
@@ -77,7 +78,8 @@ export type PlatformStore = DialogSlice &
   PermissionsSlice &
   ProcessesSlice &
   ChangesSlice &
-  SidePanelSlice;
+  SidePanelSlice &
+  SpendSlice;
 
 export const useStore = create<PlatformStore>()((...a) => ({
   ...createDialogSlice(...a),
@@ -96,6 +98,7 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createProcessesSlice(...a),
   ...createChangesSlice(...a),
   ...createSidePanelSlice(...a),
+  ...createSpendSlice(...a),
 }));
 
 let draftSyncStarted = false;

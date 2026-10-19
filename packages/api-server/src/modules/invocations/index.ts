@@ -11,6 +11,7 @@ export {
   composeSubAgentAwaitMarks,
   type SubAgentAwaitMarks,
   createDriverResolutionAdapter,
+  createSpawnSessionsAdapter,
   createInvocationsCleanupHook,
   createInvocationSetupFailure,
   composeInvocationPinReconciler,
