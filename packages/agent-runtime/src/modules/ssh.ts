@@ -15,6 +15,9 @@ const SFTP_SERVER_CANDIDATES = [
   "/usr/lib/ssh/sftp-server",
 ].filter((p): p is string => Boolean(p));
 
+// UNIT_BOUNDARY_DESCRIPTION: where sshd's own files live — its host key, its config and the keys the CLI registers — rather than in the agent's home. They are the platform's, they are tiny, and they are needed exactly when the agent's storage is full, which is the one time its home refuses a write: the guest's /run is a tmpfs and a container's /run is outside its home volume, so registering a key costs no room on the disk whose filling shut the door. Nothing here outlives the machine or container, and neither does a key registered for one session. The environment file is not among them: sshd reads it from the home and nowhere else, so a session into a full home gets a shell without the replayed environment until its owner frees room.
+export const SSH_RUNTIME_DIR = "/run/dam/ssh";
+
 export interface PreparedSshd {
   sshdPath: string;
   configPath: string;
@@ -68,6 +71,7 @@ export function buildSshEnvironmentFile(
 }
 
 export async function prepareSshd(
+  sshDir: string,
   homeDir: string,
   log: (msg: string) => void,
 ): Promise<PreparedSshd | null> {
@@ -76,7 +80,6 @@ export async function prepareSshd(
     return null;
   }
 
-  const sshDir = join(homeDir, ".ssh");
   await mkdir(sshDir, { recursive: true, mode: 0o700 });
   await chmod(sshDir, 0o700).catch(() => {});
 
@@ -186,8 +189,7 @@ const PUBKEY_RE = /^(ssh-(rsa|ed25519|dss)|ecdsa-sha2-\S+|sk-\S+)\s+\S+/;
 const keyBody = (line: string) =>
   line.trim().split(/\s+/).slice(0, 2).join(" ");
 
-export function createSshService(homeDir: string): SshService {
-  const sshDir = join(homeDir, ".ssh");
+export function createSshService(sshDir: string): SshService {
   const authorizedKeys = join(sshDir, "authorized_keys");
   return {
     async authorizeKey(publicKey) {

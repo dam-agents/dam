@@ -126,6 +126,8 @@ export interface StorageRow {
   agent: AgentView | null;
   label: string;
   bytes: number;
+  // UNIT_BOUNDARY_DESCRIPTION: the agent's own storage is full, so its writes are failing while it runs: the row says so where the owner goes to free space.
+  homeFull: boolean;
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what fills the owner's shared storage, largest first: each agent's disk, the copies of homes that runtime migrations still hold, and the runner's own logs and records as what is left. A part that takes nothing is left out.
@@ -136,11 +138,20 @@ export function storageRows(
   const shares = vmShares(usage, agents, "storageUsedBytes", () => true);
   const parts = storageParts(usage);
   const counted = [...shares, ...parts].reduce((sum, s) => sum + s.bytes, 0);
+  const full = new Set(
+    usage.agents.filter((share) => share.homeFull).map((share) => share.id),
+  );
   return [
-    ...shares.map(({ agent, bytes }) => ({ agent, label: agent.name, bytes })),
-    ...parts.map((part) => ({ agent: null, ...part })),
+    ...shares.map(({ agent, bytes }) => ({
+      agent,
+      label: agent.name,
+      bytes,
+      homeFull: full.has(agent.id),
+    })),
+    ...parts.map((part) => ({ agent: null, homeFull: false, ...part })),
     {
       agent: null,
+      homeFull: false,
       label: STORAGE_PARTS.rest,
       bytes: usage.storage.usedBytes - counted,
     },

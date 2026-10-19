@@ -43,6 +43,8 @@ struct Fake {
     booted_mib: Mutex<Vec<i32>>,
     start_sizes: Mutex<Vec<i32>>,
     console: Mutex<String>,
+    // UNIT_BOUNDARY_DESCRIPTION: the file this fake writes a machine's kernel log to, which a test fills with platform-init's marks; None for a runtime that keeps no log.
+    kernel: Mutex<Option<std::path::PathBuf>>,
     panic_on_state: AtomicBool,
     nests: AtomicBool,
     state_fails_until_start: Mutex<HashSet<String>>,
@@ -166,6 +168,10 @@ impl Runtime for Fake {
 
     fn console_tail(&self, _id: &str) -> String {
         locked(&self.console).clone()
+    }
+
+    fn kernel_log(&self, _id: &str) -> Option<std::path::PathBuf> {
+        locked(&self.kernel).clone()
     }
 }
 
@@ -2936,6 +2942,53 @@ async fn the_usage_read_names_the_seeds() {
     fs::write(&seed, vec![1u8; 1 << 20]).unwrap();
     let storage = h.server.usage().unwrap().storage;
     assert!(storage.seed_bytes >= 1 << 20, "{storage:?}");
+}
+
+// TEST_SCENARIO: a running agent that filled its disk says so: platform-init marks it on the console, which reaches the guest's kernel log, and the usage read names the machine's full home. The mark is read from where the last probe stopped, so it is found among the lines the VMM logs as the guest runs, and a mark of room back clears it. A machine that does not run carries no mark, whatever its log says.
+#[tokio::test]
+async fn a_running_machine_whose_guest_ran_out_of_room_says_so() {
+    let h = Harness::new("guest-full");
+    let log = h.dir.join("agent-startup-error.log");
+    let mark = |text: &str| {
+        let mut written = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log)
+            .unwrap();
+        written
+            .write_all(format!("[ 1.0] init_or_kernel] {text}\n").as_bytes())
+            .unwrap();
+    };
+    *locked(&h.fake.kernel) = Some(log.clone());
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let full = |h: &Harness| {
+        h.server
+            .usage()
+            .unwrap()
+            .machines
+            .into_iter()
+            .find(|m| m.id == "m1")
+            .map(|m| m.home_full)
+    };
+    assert_eq!(full(&h), Some(false), "nothing marked yet");
+
+    mark(crate::guest::GUEST_FULL);
+    h.server.probe("m1");
+    assert_eq!(full(&h), Some(true), "the agent's writes fail");
+
+    mark("the VMM relayed a connection");
+    h.server.probe("m1");
+    assert_eq!(full(&h), Some(true), "a mark is not undone by other lines");
+
+    mark(crate::guest::GUEST_ROOM);
+    h.server.probe("m1");
+    assert_eq!(full(&h), Some(false), "the guest has room back");
+
+    mark(crate::guest::GUEST_FULL);
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+    assert_eq!(full(&h), Some(false), "a stopped machine carries none");
 }
 
 // TEST_SCENARIO: a machine's CPU share is what it used over its last two looks while running. Once it stops, the usage read reports no CPU for it, so the bars never name a paused agent among the heaviest CPU users.

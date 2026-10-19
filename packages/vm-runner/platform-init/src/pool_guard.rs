@@ -78,6 +78,38 @@ pub fn read_grant(text: &str) -> Option<(String, u64)> {
     Some((id, words.next()?.parse().ok()?))
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: how much the agent may still write before its writes fail: what a grant leaves it, no more than the disk itself has free, or, with no grant to hold it back, the disk's own free space. An eviction does not move it, since what an eviction frees is the guard's to take again while the claim under the disk stays full, so a mark on it does not flicker with every pass.
+pub fn guest_room(keep: u64, granted: bool, avail: u64) -> u64 {
+    if granted {
+        keep.min(avail)
+    } else {
+        avail
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the bytes of the guard's blocks that count as the guest's free space when eviction reads the disk: the room the last look left the guest, which is its own room held back rather than used, and no more than the blocks the guard really holds, so a guard whose file lags its size never counts room the disk does not have.
+pub fn credited(held: u64, keep: u64) -> u64 {
+    keep.min(held)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what the agent's room means for its writes, as one of three marks: nothing it writes lands below HOME_FULL_BYTES, its writes are held back below POOL_GUARD_FLOOR, and above that it writes as it likes. The gap between the two levels is the hysteresis: a home hovering on one of them is not marked again at every look.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Room {
+    Full,
+    Held,
+    Room,
+}
+
+pub fn room_of(room: u64) -> Room {
+    if room < crate::guest::HOME_FULL_BYTES {
+        Room::Full
+    } else if room < POOL_GUARD_FLOOR {
+        Room::Held
+    } else {
+        Room::Room
+    }
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: one look of the guard: what the guard file is to be resized to, or None to leave it. `used` and `avail` are what statvfs reports, the guard's own blocks included, `held` is what those blocks are now, and `disk` is the filesystem's size. On btrfs `avail` is an estimate that counts unallocated device space and does not drop by a preallocated file's full size, so `avail + held` can pass the whole disk; the guard counts on no more free than the disk holds beyond the guest's use, nor than the disk last took, and leaves the guest its room out of that. It keeps no margin of its own beyond that: one taken off the guest's free space would be given back at every look, so a guest held at nothing could still write without end. btrfs keeps its global reserve out of what a preallocation can take, and what else it needs for metadata the refused preallocation finds (PoolGuard::grow). It moves only by more than POOL_GUARD_STEP, or to nothing, and only once `backed_off`, a commit interval after its last move, so a look that statvfs answers from before that move does not move it again.
 pub fn guard_look(
     state: &mut PoolGuard,
@@ -110,6 +142,22 @@ mod tests {
     use super::*;
 
     const GIB: u64 = 1 << 30;
+
+    // TEST_SCENARIO: a guest that has run out of room is marked full on the console and marked again only when its room changes, and the room it is judged by is what it may really write: a grant's leftovers, no more than the disk has free, and the disk's own free space when no grant holds it back. Eviction counts the guard's blocks as the guest's free space only up to the room the last look left it, so a guest at its grant reads its disk as full: counting the guard's blocks in full is what kept the disk reading as free while every write failed.
+    #[test]
+    fn a_guest_at_its_grant_is_marked_full() {
+        const MIB: u64 = 1 << 20;
+        assert_eq!(guest_room(4 << 30, true, 8 << 30), 4 << 30);
+        assert_eq!(guest_room(4 << 30, true, MIB), MIB);
+        assert_eq!(guest_room(0, false, 1 << 30), 1 << 30);
+        assert_eq!(credited(512 * MIB, 512 * MIB), 512 * MIB);
+        assert_eq!(credited(0, 8 * MIB), 0);
+        assert_eq!(credited(512 * MIB, 0), 0);
+        assert_eq!(room_of(0), Room::Full);
+        assert_eq!(room_of(crate::guest::HOME_FULL_BYTES - 1), Room::Full);
+        assert_eq!(room_of(crate::guest::HOME_FULL_BYTES), Room::Held);
+        assert_eq!(room_of(POOL_GUARD_FLOOR), Room::Room);
+    }
 
     // TEST_SCENARIO: the guard file leaves the guest what is left of its grant: the grant less what the guest wrote since it came, never less than the floor, and nothing held back without a grant or when the disk has less free than the grant anyway. A new grant counts from what the guest had written when it came.
     #[test]

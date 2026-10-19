@@ -37,6 +37,39 @@ pub fn home_full(tail: &str) -> bool {
 const ENTRYPOINT_EXITED: &str = "platform-init: the image entrypoint ";
 const BOOT_REFUSED: &str = "platform-init: FATAL: ";
 
+// UNIT_BOUNDARY_DESCRIPTION: the marks platform-init prints on the console about a guest that keeps running: guest::GUEST_FULL while the agent's writes fail with no space left, and guest::GUEST_ROOM once its storage gave it room again. The last mark in the text decides, so a guest that freed space since is not reported full, and nothing is read as full when the text holds neither.
+pub fn room_full(text: &str) -> Option<bool> {
+    text.lines()
+        .rev()
+        .find(|line| {
+            line.contains(crate::guest::GUEST_FULL) || line.contains(crate::guest::GUEST_ROOM)
+        })
+        .map(|line| line.contains(crate::guest::GUEST_FULL))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what a machine's kernel log gained since `from` bytes, and the offset to read from next time: the whole lines written after it, and one that is still being written left for the next read. A log shorter than `from` was emptied by a new boot, so it is read whole. The log holds a line for every connection the VMM relays, so the marks a minute old are not at its end, which is why the runner keeps an offset per machine rather than reading the tail.
+pub fn kernel_since(path: &Path, from: u64) -> (u64, String) {
+    let Ok(mut file) = fs::File::open(path) else {
+        return (from, String::new());
+    };
+    let len = file.metadata().map_or(0, |info| info.len());
+    let from = if len < from { 0 } else { from };
+    let mut bytes = Vec::new();
+    if file.seek(SeekFrom::Start(from)).is_err() || file.read_to_end(&mut bytes).is_err() {
+        return (from, String::new());
+    }
+    bytes.truncate(
+        bytes
+            .iter()
+            .rposition(|b| *b == b'\n')
+            .map_or(0, |at| at + 1),
+    );
+    (
+        from + bytes.len() as u64,
+        String::from_utf8_lossy(&bytes).into_owned(),
+    )
+}
+
 pub fn with_console(message: &str, tail: &str) -> String {
     if tail.is_empty() {
         return message.to_string();
@@ -261,6 +294,40 @@ mod tests {
         assert!(!home_full(
             "[ 1.0] platform-init: FATAL: reading the mount table: Permission denied (os error 13)"
         ));
+    }
+
+    // TEST_SCENARIO: a guest whose agent filled the disk keeps running, so platform-init marks it on the console instead of exiting: the last mark decides whether the guest has room, a guest that freed space since stops reading as full, and a text with neither mark says nothing at all. The kernel log is read from where the last read stopped, so a mark a minute old is found among the connections the VMM logs, and a line still being written waits for the next read.
+    #[test]
+    fn a_running_guests_room_is_read_from_the_last_mark() {
+        let full = format!(
+            "[ 9.1] platform-init: {}: this agent may write nothing more until space is freed",
+            crate::guest::GUEST_FULL
+        );
+        let room = format!("[ 9.2] platform-init: {}", crate::guest::GUEST_ROOM);
+        assert_eq!(room_full(&full), Some(true));
+        assert_eq!(room_full(&format!("{full}\n{room}")), Some(false));
+        assert_eq!(room_full(&format!("{room}\n{full}")), Some(true));
+        assert_eq!(
+            room_full("[ 9.3] platform-init: FATAL: x; the agent's home is full"),
+            None
+        );
+        assert!(
+            !home_full(&full),
+            "a running guest read as a boot that failed"
+        );
+
+        let dir = TempDir::new("kernel");
+        let path = dir.path().join(VMM_LOG);
+        fs::write(&path, format!("[ 1.0] init_or_kernel] boot\n{full}\n")).unwrap();
+        let (at, text) = kernel_since(&path, 0);
+        assert_eq!(room_full(&text), Some(true));
+        fs::write(&path, format!("[ 2.0] init_or_kernel] more\n{room}\n")).unwrap();
+        let (at2, text) = kernel_since(&path, at);
+        assert_eq!(room_full(&text), Some(false));
+        assert!(text.contains("more") && !text.contains("boot"));
+        let (at3, text) = kernel_since(&path, at2);
+        assert!(text.is_empty() && at3 == at2);
+        assert_eq!(room_full(&kernel_since(&path, u64::MAX).1), Some(false));
     }
 
     // TEST_SCENARIO: a guest can print anything to its console, and the tail goes into a Kubernetes condition that an operator reads. Colour codes and cursor moves are dropped whole, other control characters are dropped, and the text between them is kept as it was.

@@ -106,6 +106,20 @@ describe("pool bars", () => {
       ["tiny", 0.5],
     ]);
     expect(rows.find((r) => r.label === "b")?.agent?.id).toBe("b");
+    expect(rows.filter((r) => r.homeFull).map((r) => r.label)).toEqual([]);
+  });
+
+  it("names the agents whose own storage is full, since their writes are failing", () => {
+    const rows = storageRows(
+      {
+        ...usage,
+        agents: usage.agents.map((share) =>
+          share.id === "b" ? { ...share, homeFull: true } : share,
+        ),
+      },
+      agents,
+    );
+    expect(rows.filter((r) => r.homeFull).map((r) => r.label)).toEqual(["b"]);
   });
 
   it("fills the CPU bar with the server's congestion fill", () => {

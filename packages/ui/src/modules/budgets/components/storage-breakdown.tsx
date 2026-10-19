@@ -29,7 +29,7 @@ export function StorageBreakdown({ usage, agents }: Props) {
         delete files it doesn't need.
       </p>
       <ul className="flex flex-col divide-y divide-border">
-        {rows.map(({ agent, label, bytes }) => (
+        {rows.map(({ agent, label, bytes, homeFull }) => (
           <li
             key={agent?.id ?? label}
             className="flex items-baseline justify-between gap-3 py-1.5"
@@ -48,7 +48,9 @@ export function StorageBreakdown({ usage, agents }: Props) {
               )}
               <span className="block text-xs text-muted-foreground">
                 {agent
-                  ? "This agent's files. Open it to delete it, or to ask it to clean up."
+                  ? homeFull
+                    ? "Out of space, so its writes are failing. Open it to delete files it doesn't need."
+                    : "This agent's files. Open it to delete it, or to ask it to clean up."
                   : PART_HINT[label]}
               </span>
             </span>

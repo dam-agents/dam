@@ -17,7 +17,9 @@ use crate::api::{
 use crate::cache::{self, pinned_digest};
 use crate::capability::Verified;
 use crate::capacity::Capacity;
-use crate::console::{home_full, with_console, SLOW_BOOT, SLOW_BOOT_AFTER};
+use crate::console::{
+    home_full, kernel_since, room_full, with_console, SLOW_BOOT, SLOW_BOOT_AFTER,
+};
 use crate::fetch::{failure_reason, seed_missing, unusable};
 use crate::forward::{healthy, Forwarder, Listen, LOOPBACK_OFFSET};
 use crate::imagecache::{Images, Resolved, ROOTFS_DIR};
@@ -130,6 +132,9 @@ struct MachineEntry {
     version: u64,
     acting_mib: i32,
     resident_mib: Option<i32>,
+    // UNIT_BOUNDARY_DESCRIPTION: whether the guest's last mark says its agent has no room to write (guest::GUEST_FULL) rather than its room back (guest::GUEST_ROOM), and how much of the guest's kernel log the prober has read looking for those marks. A boot starts both again, the log holding one boot.
+    guest_full: bool,
+    kernel_read: u64,
     warming_since: Option<Instant>,
     cpu: Option<(Instant, u64)>,
     cpu_milli: u64,
@@ -1267,6 +1272,8 @@ impl Server {
     fn start_machine(&self, id: &str, action: Action, spec: &MachineSpec) -> anyhow::Result<()> {
         if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
             entry.warming_since = Some(Instant::now());
+            entry.guest_full = false;
+            entry.kernel_read = 0;
             entry.boot = Some(Boot {
                 at: Instant::now(),
                 action,
@@ -1454,18 +1461,26 @@ impl Server {
             .into_iter()
             .map(|id| {
                 let status = self.status(&id);
-                let cpu_milli = locked(&self.machines)
-                    .entries
-                    .get(&id)
-                    .filter(|e| e.resident_mib.is_some() && status.state == STATE_RUNNING)
-                    .map_or(0, |e| e.cpu_milli);
+                // UNIT_BOUNDARY_DESCRIPTION: only a machine that runs carries a full home, since it means the agent's writes are failing now, and the app shows it beside that machine's own files.
+                let (cpu_milli, home_full) = {
+                    let machines = locked(&self.machines);
+                    let entry = machines.entries.get(&id);
+                    let cpu_milli = entry
+                        .filter(|e| e.resident_mib.is_some() && status.state == STATE_RUNNING)
+                        .map_or(0, |e| e.cpu_milli);
+                    (
+                        cpu_milli,
+                        status.state == STATE_RUNNING && entry.is_some_and(|e| e.guest_full),
+                    )
+                };
                 MachineUsage {
                     disk_used_bytes: self.runtime.disk_used_bytes(&id).unwrap_or(0),
                     cpu_milli,
-                    id,
+                    id: id.clone(),
                     state: status.state,
                     used_mib: status.used_mib,
                     disk_gib: status.disk_gib,
+                    home_full,
                 }
             })
             .collect();
@@ -1890,6 +1905,9 @@ impl Server {
             .flatten()
             .map(|usec| (Instant::now(), usec));
         self.record(id, seen, Some(looked));
+        if running {
+            self.note_guest_room(id);
+        }
         if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
             entry.resident_mib = resident;
             entry.cpu_milli = match (entry.cpu, cpu) {
@@ -1914,6 +1932,27 @@ impl Server {
             .and_then(|e| e.desired.clone());
         if let Some(spec) = desired {
             let _ = self.put(id, spec);
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: whether a running guest's agent has room to write, from the marks platform-init prints on the console (guest::GUEST_FULL and guest::GUEST_ROOM): the room its storage grant leaves it, so a guest whose agent filled its disk says so while it keeps running, which neither a boot that failed nor an entrypoint that exited can. The kernel log is read from where the last probe stopped, since the VMM logs a line for every connection it relays and a mark from a minute ago is not at its end; a boot starts the read again. A runtime that keeps no log leaves the machine unmarked.
+    fn note_guest_room(&self, id: &str) {
+        let Some(path) = self.runtime.kernel_log(id) else {
+            return;
+        };
+        let from = locked(&self.machines)
+            .entries
+            .get(id)
+            .map_or(0, |entry| entry.kernel_read);
+        let (read, text) = kernel_since(&path, from);
+        let mark = room_full(&text);
+        let mut machines = locked(&self.machines);
+        let Some(entry) = machines.entries.get_mut(id) else {
+            return;
+        };
+        entry.kernel_read = read;
+        if let Some(full) = mark {
+            entry.guest_full = full;
         }
     }
 

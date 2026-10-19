@@ -57,6 +57,7 @@ import {
 import {
   createSshService,
   prepareSshd,
+  SSH_RUNTIME_DIR,
   spawnSshd,
   type PreparedSshd,
 } from "./modules/ssh.js";
@@ -211,7 +212,9 @@ const { service: skillsService, reconciler: imageSkillReconciler } =
       : {}),
     log: skillsLog,
   });
-const sshService = createSshService(homeDir);
+// UNIT_BOUNDARY_DESCRIPTION: sshd keeps its host key, config and authorized keys outside the agent's home (SSH_RUNTIME_DIR): an agent whose storage is full must still be reachable, which is the one time its home refuses a write, and a dev run has no /run of its own.
+const sshDir = config.PLATFORM_DEV ? join(homeDir, ".ssh") : SSH_RUNTIME_DIR;
+const sshService = createSshService(sshDir);
 const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
   process.stderr.write(`[import] ${msg}\n`),
 );
@@ -1151,11 +1154,13 @@ server.on("upgrade", (req, socket, head) => {
     );
   } else if (url.pathname === "/api/ssh") {
     startDisplay();
-    preparedSshd ??= prepareSshd(homeDir, sshLog).catch((err: Error) => {
-      sshLog(`could not prepare sshd: ${err.message}`);
-      preparedSshd = undefined;
-      return null;
-    });
+    preparedSshd ??= prepareSshd(sshDir, homeDir, sshLog).catch(
+      (err: Error) => {
+        sshLog(`could not prepare sshd: ${err.message}`);
+        preparedSshd = undefined;
+        return null;
+      },
+    );
     socket.on("error", () => socket.destroy());
     void preparedSshd.then((prepared) => {
       if (!prepared) {
