@@ -23,6 +23,7 @@ export type {
 } from "./modules/sessions/types.js";
 export {
   PIN_MODEL_METHOD,
+  NO_MODEL_REASON,
   CONFIGURE_SESSION_METHOD,
 } from "./modules/sessions/types.js";
 export {

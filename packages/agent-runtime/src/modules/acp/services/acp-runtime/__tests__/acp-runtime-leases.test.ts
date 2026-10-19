@@ -1,5 +1,9 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { CONFIGURE_SESSION_METHOD, PIN_MODEL_METHOD } from "agent-runtime-api";
+import {
+  CONFIGURE_SESSION_METHOD,
+  NO_MODEL_REASON,
+  PIN_MODEL_METHOD,
+} from "agent-runtime-api";
 import {
   IDLE_REAP_DELAY_MS,
   createClient,
@@ -61,6 +65,7 @@ const ALIAS_OF: Record<string, string> = {
 function createLeaseWorld(opts: {
   providers: string[];
   agentRequests?: AgentRequestObserver;
+  modelRequired?: boolean;
 }) {
   let providers = opts.providers;
   let keptProcesses = 0;
@@ -82,6 +87,7 @@ function createLeaseWorld(opts: {
       providers.includes("conn-bedrock")
         ? "conn-bedrock"
         : null,
+    ...(opts.modelRequired && { modelRequired: () => true }),
     settingScope: (_harness, id) => SESSION_SETTINGS[id] ?? null,
     settingsError: (_harness, settings) =>
       Object.keys(settings).some((id) => !SESSION_SETTINGS[id])
@@ -569,6 +575,49 @@ describe("acp-runtime: one harness process per harness", () => {
       data: { platform: { reason: PROVIDER_REMOVED_REASON } },
     });
     expect(world.harnessCount("claude-code")).toBe(0);
+  });
+
+  /** TEST_SCENARIO: On a harness that reaches its models through the Model
+   * Router, a session with no model never reaches the harness, which would
+   * otherwise run a model the user never chose: session/new without one is
+   * refused as no-model, and an old session's prompt is refused (a prompt
+   * sent as a notification is dropped) until a model is pinned on it. */
+  it("refuses a turn on a session with no model", () => {
+    const world = createLeaseWorld({
+      providers: ["conn-a"],
+      modelRequired: true,
+    });
+    world.metadata.store.set("old", { mode: "chat" });
+    const client = world.connect();
+    client.send(newSessionOn(1, {}));
+    expect(client.reply(1)?.error).toMatchObject({
+      data: { platform: { reason: NO_MODEL_REASON } },
+    });
+    client.send(frames.prompt(2, "old", "hi"));
+    expect(client.reply(2)?.error).toMatchObject({
+      message: expect.stringMatching(/Providers page/),
+      data: { platform: { reason: NO_MODEL_REASON } },
+    });
+    client.send({
+      jsonrpc: "2.0",
+      method: "session/prompt",
+      params: { sessionId: "old", prompt: [{ type: "text", text: "hi" }] },
+    });
+    expect(world.harnessCount("claude-code")).toBe(0);
+
+    client.send({
+      jsonrpc: "2.0",
+      id: 3,
+      method: PIN_MODEL_METHOD,
+      params: { sessionId: "old", model: "ibm/aws/claude-sonnet-4-6" },
+    });
+    expect(client.reply(3)?.result).toEqual({
+      model: "ibm/aws/claude-sonnet-4-6",
+    });
+    client.send(frames.prompt(4, "old", "now"));
+    const harness = world.harness("claude-code");
+    harness.replyToSession("session/set_config_option", "old", {});
+    expect(promptTextsOf(harness)).toEqual(["now"]);
   });
 
   /** TEST_SCENARIO: A session whose harness this agent no longer carries is

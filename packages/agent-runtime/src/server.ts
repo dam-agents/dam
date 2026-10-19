@@ -19,6 +19,7 @@ import {
   STAGED_SKILLS_DIR,
   backgroundWorkReportSchema,
   keepMarkRequestSchema,
+  NO_MODEL_REASON,
   type AgentRuntimeContext,
   type ApplyStateInput,
 } from "agent-runtime-api";
@@ -351,6 +352,19 @@ const nativeConnectionOf = (
   const home = HARNESS_HOME_PROVIDERS[harness]?.[0];
   return home ? native(home) : null;
 };
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a harness whose sessions reach their models
+ * through the Model Router needs each session's model; one that runs on a
+ * native Connection, or an agent holding no routed provider, keeps the
+ * harness's own model configuration.
+ */
+const modelRequired = (harness: string): boolean =>
+  harnessManifests[harness]?.modelRouter !== undefined &&
+  nativeConnectionOf(harness, null) === null &&
+  envStore.state().providers.some((l) => {
+    const alias = l.template ? aliasForTemplateId(l.template) : null;
+    return alias !== null && PROVIDER_DIALECTS[alias].length > 0;
+  });
 const nativeEnv = (connectionId: string): Record<string, string> =>
   envStore.state().providers.find((l) => l.id === connectionId)?.env ?? {};
 /**
@@ -473,6 +487,7 @@ const {
   unroutedProviderEnv,
   routerEnv: routerEnvOf,
   nativeConnectionOf,
+  modelRequired,
   nativeEnv,
   leaseIdleMs: config.LEASE_IDLE_MS,
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
@@ -661,7 +676,8 @@ function markTerminalSeen(sessionId: string): void {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a model whose provider the agent no longer holds
- * refuses the terminal with the provider-removed reason, as a chat prompt
+ * refuses the terminal with the provider-removed reason, and a missing model
+ * on a harness that needs one with the no-model reason, as a chat prompt
  * would be refused.
  */
 function terminalLease(
@@ -681,6 +697,7 @@ function terminalLease(
   const alias = chosen ? parseQualifiedModel(chosen)?.alias : undefined;
   if (alias && !grantedAliases().includes(alias))
     return PROVIDER_REMOVED_REASON;
+  if (chosen === null && modelRequired(harness)) return NO_MODEL_REASON;
   sessionMetadata.set(sessionId, {
     ...meta,
     mode: "terminal",

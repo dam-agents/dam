@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ClientChannel } from "../../modules/acp/infrastructure/client-channel.js";
 import type { AcpRuntime } from "../../modules/acp/services/acp-runtime/acp-runtime.js";
-import { createTriggerSessionDriver } from "../../modules/acp/services/trigger-session-driver.js";
+import {
+  createTriggerSessionDriver,
+  NoSessionModelError,
+} from "../../modules/acp/services/trigger-session-driver.js";
 
 function fakeRuntime(): { runtime: AcpRuntime; sent: any[] } {
   const sent: any[] = [];
@@ -116,5 +119,58 @@ describe("createTriggerSessionDriver", () => {
     expect(
       sent.find((f) => f.method === "_platform/session/pin_model").params,
     ).toEqual({ sessionId: "s0", model: "opus" });
+  });
+
+  /** TEST_SCENARIO: On a harness that needs a model, a fire with none opens
+   * no session, and a resumed session still without one gets no prompt; both
+   * are refused with what to do, so no model the user never chose runs. */
+  it("refuses a run that would start without a model", async () => {
+    const { runtime, sent } = fakeRuntime();
+    const driver = createTriggerSessionDriver({
+      acpRuntime: runtime,
+      modelRequired: () => true,
+      modelMissing: () => true,
+    });
+    await expect(driver.start({ task: "do it" })).rejects.toBeInstanceOf(
+      NoSessionModelError,
+    );
+    await expect(
+      driver.start({ task: "do it", resumeSessionId: "s0" }),
+    ).rejects.toThrow(/Providers page/);
+    expect(sent.map((f) => f.method)).not.toContain("session/new");
+    expect(sent.map((f) => f.method)).not.toContain("session/prompt");
+  });
+
+  /** TEST_SCENARIO: A one-time task continuing the session that scheduled it
+   * keeps that session's own model, and pins the fire's model only on a
+   * session that has none (one from before the Model Router). */
+  it("pins a continued session only when it has no model", async () => {
+    let missing = false;
+    const { runtime, sent } = fakeRuntime();
+    const driver = createTriggerSessionDriver({
+      acpRuntime: runtime,
+      modelMissing: () => missing,
+    });
+    const pins = () =>
+      sent.filter((f) => f.method === "_platform/session/pin_model");
+    await driver.start({
+      task: "do it",
+      resumeSessionId: "s0",
+      model: "ibm/opus",
+      keepSessionModel: true,
+    });
+    expect(pins()).toEqual([]);
+    missing = true;
+    await driver
+      .start({
+        task: "do it",
+        resumeSessionId: "s0",
+        model: "ibm/opus",
+        keepSessionModel: true,
+      })
+      .catch(() => {});
+    expect(pins().map((f) => f.params)).toEqual([
+      { sessionId: "s0", model: "ibm/opus" },
+    ]);
   });
 });

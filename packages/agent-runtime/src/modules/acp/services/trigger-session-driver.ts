@@ -14,6 +14,7 @@ export interface TriggerSessionDriver {
     platformMeta?: PlatformSessionMeta;
     unattended?: boolean;
     model?: string;
+    keepSessionModel?: boolean;
   }): Promise<{ sessionId: string; openedOn: string | null }>;
 }
 
@@ -41,9 +42,27 @@ export class SessionModelError extends Error {
   }
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a run that would start without a model on a
+ * harness that needs one is not started, so no model the user never chose
+ * runs it.
+ */
+export class NoSessionModelError extends Error {
+  constructor() {
+    super(
+      "not run: the session has no model. Set the agent's default model on its Providers page, or pick a model for this schedule",
+    );
+    this.name = "NoSessionModelError";
+  }
+}
+
 export function createTriggerSessionDriver(deps: {
   acpRuntime: AcpRuntime;
+  modelRequired?: (harness: string | undefined) => boolean;
+  modelMissing?: (sessionId: string) => boolean;
 }): TriggerSessionDriver {
+  const missing = (sessionId: string) =>
+    deps.modelMissing?.(sessionId) === true;
   return {
     async start({
       task,
@@ -52,7 +71,14 @@ export function createTriggerSessionDriver(deps: {
       platformMeta,
       unattended,
       model,
+      keepSessionModel,
     }) {
+      if (
+        !resumeSessionId &&
+        !model &&
+        deps.modelRequired?.(platformMeta?.harness) === true
+      )
+        throw new NoSessionModelError();
       const caller = createInProcessCaller((channel) =>
         deps.acpRuntime.attach(channel, { viewer: false }),
       );
@@ -71,7 +97,7 @@ export function createTriggerSessionDriver(deps: {
         let openedOn: string | null;
 
         if (resumeSessionId) {
-          if (model)
+          if (model && (!keepSessionModel || missing(resumeSessionId)))
             await caller
               .request(PIN_MODEL_METHOD, { sessionId: resumeSessionId, model })
               .catch((err: unknown) => {
@@ -88,6 +114,7 @@ export function createTriggerSessionDriver(deps: {
           });
           sessionId = resumeSessionId;
           openedOn = openedModel(res);
+          if (missing(sessionId)) throw new NoSessionModelError();
         } else {
           const res = await caller.request<
             OpenedSession & { sessionId: string }

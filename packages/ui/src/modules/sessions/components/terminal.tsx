@@ -158,7 +158,9 @@ export function Terminal({
           setRefusal(
             e.reason === "provider-removed"
               ? "This session's model provider was removed from the agent"
-              : e.reason,
+              : e.reason === "no-model"
+                ? "This session has no model. Pick one for it, or set the agent's default model on its Providers page"
+                : e.reason,
           );
         setState((s) => (s === "exited" ? s : "disconnected"));
       };
