@@ -118,3 +118,45 @@ describe("scopeCovers", () => {
     ).toBe(false);
   });
 });
+
+describe("scopeCovers reads a path pattern as the rule matcher does", () => {
+  // TEST_SCENARIO: the rule matcher compares paths with SQL LIKE, where `_` is one character; a scope that kept `_` literal would miss a path a rule of the same pattern matches, and the override would stay silent.
+  it("treats `_` as one character, as LIKE does", () => {
+    const scope = { host: "api.example", pathPattern: "/v1_/*" };
+    expect(
+      scopeCovers(scope, {
+        ...request,
+        host: "api.example",
+        path: "/v1x/messages",
+      }),
+    ).toBe(true);
+    expect(
+      scopeCovers(scope, {
+        ...request,
+        host: "api.example",
+        path: "/v1/messages",
+      }),
+    ).toBe(false);
+  });
+
+  it("treats `%` as any run, as LIKE does", () => {
+    const scope = { host: "api.example", pathPattern: "/v1/%/count" };
+    expect(
+      scopeCovers(scope, {
+        ...request,
+        host: "api.example",
+        path: "/v1/messages/count",
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps a backslash-escaped `_` literal, as LIKE does", () => {
+    const scope = { host: "api.example", pathPattern: "/a\\_b" };
+    expect(
+      scopeCovers(scope, { ...request, host: "api.example", path: "/a_b" }),
+    ).toBe(true);
+    expect(
+      scopeCovers(scope, { ...request, host: "api.example", path: "/axb" }),
+    ).toBe(false);
+  });
+});

@@ -261,10 +261,15 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
           AND EXISTS (
             SELECT 1 FROM ${egressRules} AS seeded
             WHERE seeded.agent_id = taken.agent_id
-              AND seeded.status = 'active'
               AND seeded.source = ${source}
               AND seeded.decided_at BETWEEN taken.decided_at - interval '5 seconds'
                                         AND taken.decided_at + interval '5 seconds'
+          )
+          AND EXISTS (
+            SELECT 1 FROM ${egressRules} AS current
+            WHERE current.agent_id = taken.agent_id
+              AND current.status = 'active'
+              AND current.source = ${source}
           )
         RETURNING taken.id
       `);

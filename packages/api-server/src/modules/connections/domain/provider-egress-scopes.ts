@@ -3,6 +3,7 @@ import {
   PROVIDER_TEMPLATE_IDS,
   type Connection,
 } from "api-server-api";
+import { rulePortCovers } from "../../egress-rules/domain/port-match.js";
 
 export interface ProviderEgressScope {
   readonly host: string;
@@ -69,15 +70,27 @@ export function scopeCovers(
 ): boolean {
   return (
     scope.host === canonicalEgressHost(request.host) &&
-    (scope.port ?? (request.tls ? 443 : 80)) === request.port &&
+    rulePortCovers(scope.port, request.port, request.tls) &&
     pathMatches(scope.pathPattern, request.path)
   );
 }
 
+// Reads a path pattern the way the egress rule matcher does — `*` turned
+// into `%`, then SQL LIKE: `%` any run, `_` one character, `\` escapes the
+// next — so a scope and a rule of the same pattern cover the same paths.
 function pathMatches(pattern: string, path: string): boolean {
-  const source = pattern
-    .split("*")
-    .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
-    .join(".*");
+  const like = pattern.replaceAll("*", "%");
+  let source = "";
+  for (let i = 0; i < like.length; i++) {
+    const ch = like[i]!;
+    if (ch === "\\" && i + 1 < like.length) source += escapeRegExp(like[++i]!);
+    else if (ch === "%") source += ".*";
+    else if (ch === "_") source += ".";
+    else source += escapeRegExp(ch);
+  }
   return new RegExp(`^${source}$`, "s").test(path);
+}
+
+function escapeRegExp(ch: string): string {
+  return ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
