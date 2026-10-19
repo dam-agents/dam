@@ -14,7 +14,7 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.openShiftSccForPrivilegedVMPieces" . -}}
 {{- include "platform.validate.vmRunnersHaveANodeImageCache" . -}}
 {{- include "platform.validate.vmImageCachePathIsItsOwn" . -}}
-{{- include "platform.validate.vmImageCacheEgressCidrs" . -}}
+{{- include "platform.validate.vmImageCacheEgress" . -}}
 {{- include "platform.validate.vmValuesTheControllerCanUse" . -}}
 {{- include "platform.validate.vmRunnerPodsNeedAReleaseDirectory" . -}}
 {{- include "platform.validate.vmValuesThisChartNoLongerReads" . -}}
@@ -245,7 +245,7 @@ anything. The Mac's host runner runs outside the cluster with a cache of its own
 {{- define "platform.validate.vmRunnersHaveANodeImageCache" -}}
 {{- $v := .Values.virtualization -}}
 {{- if and $v.enabled (not $v.runner.hostAddress) (not ($v.imageCache | default dict).hostPath) -}}
-{{- fail "virtualization.enabled=true requires virtualization.imageCache.hostPath — the node directory the image cache service unpacks every image into, and the only place a runner gets an image from. Set it to this install's own directory on the runner nodes, named by its agent namespace (e.g. /var/lib/platform-images/dam-dev; on OpenShift, under the directory etc/openshift-node-config creates)." -}}
+{{- fail "virtualization.enabled=true requires virtualization.imageCache.hostPath — the node directory the image cache service unpacks every image into, and the only place a runner gets an image from. Set it to a directory on the runner nodes that names this install (e.g. /var/lib/platform-images/<release namespace>; on OpenShift, under the directory etc/openshift-node-config creates)." -}}
 {{- end -}}
 {{- end -}}
 
@@ -254,8 +254,8 @@ Nodes are shared, and a node directory is either the install's own or it is a
 collision: the image cache service is the only writer of the directory it
 serves, so an install given another's unlinks its socket and serves its trees,
 and the release stager prunes everything in the directory it stages into.
-So the cache path carries a component that names this install — its agent
-namespace, release or release namespace, as the release directory's own
+So the cache path ends with a component that names this install — its agent
+namespace, release name or release namespace, as the release directory's own
 subdirectory does — and it stays out of the release directory's tree.
 */}}
 {{- define "platform.validate.vmImageCachePathIsItsOwn" -}}
@@ -267,7 +267,7 @@ subdirectory does — and it stays out of the release directory's tree.
 {{- if hasSuffix (printf "/%s" $name) $dir }}{{ $own = true }}{{ end -}}
 {{- end -}}
 {{- if not $own -}}
-{{- fail (printf "virtualization.imageCache.hostPath %q is not this install's own directory, and every install on a shared node needs one: the image cache service is the only writer of the directory it serves, so two installs given one directory take turns unlinking each other's socket and reading each other's trees. End the path with a component that names this install, as runner.releaseHostPath's own subdirectory does — /var/lib/platform-images/%s." $dir .Values.agentNamespace) -}}
+{{- fail (printf "virtualization.imageCache.hostPath %q has no component that names this install, and every install on a shared node needs one: the image cache service is the only writer of the directory it serves, so two installs given one directory take turns unlinking each other's socket and reading each other's trees. End the path with this install's release namespace, as runner.releaseHostPath's own subdirectory does — /var/lib/platform-images/%s." $dir .Release.Namespace) -}}
 {{- end -}}
 {{- $release := include "platform.vmRunner.releaseDir" . -}}
 {{- if $release -}}
@@ -290,19 +290,32 @@ entry that is not one, and a rejected policy leaves the pod it names ungated.
 {{/*
 The image cache service's egress policy admits the public internet minus the
 ranges the cluster owns, and the cluster DNS pods. A registry inside the
-cluster is named in imageCache.egressCidrs, so each entry there has to be a
-real block, and a /0 would reopen every range the policy exists to close.
+cluster is a peers entry, which Kubernetes rejects without a namespace or a
+port and which an empty podLabels on makes every pod in the namespace; a
+mirror outside it is a range, which has to be a real block, since a /0 would
+reopen every range the policy exists to close.
 */}}
-{{- define "platform.validate.vmImageCacheEgressCidrs" -}}
+{{- define "platform.validate.vmImageCacheEgress" -}}
 {{- if .Values.virtualization.enabled -}}
 {{- $cidr := include "platform.cidrPattern" . -}}
-{{- $cidrs := (.Values.virtualization.imageCache | default dict).egressCidrs | default list -}}
-{{- range $cidrs -}}
+{{- $cache := .Values.virtualization.imageCache | default dict -}}
+{{- range ($cache.egressCidrs | default list) -}}
 {{- if not (regexMatch $cidr (toString .)) -}}
 {{- fail (printf "virtualization.imageCache.egressCidrs entry %q is not a CIDR (address/prefix, e.g. 10.20.0.0/24)." (toString .)) -}}
 {{- end -}}
 {{- if hasSuffix "/0" (toString .) -}}
-{{- fail (printf "virtualization.imageCache.egressCidrs entry %q opens every range to the node image cache service, which is what its egress policy closes — it already reaches the public internet. Name the internal registry's own range instead." (toString .)) -}}
+{{- fail (printf "virtualization.imageCache.egressCidrs entry %q opens every range to the node image cache service, which is what its egress policy closes — it already reaches the public internet. Name the mirror's own range instead." (toString .)) -}}
+{{- end -}}
+{{- end -}}
+{{- range ($cache.peers | default list) -}}
+{{- $namespace := .namespace -}}
+{{- if or (not $namespace) (not .podLabels) (not .ports) -}}
+{{- fail (printf "virtualization.imageCache.peers entry %v needs a namespace, the registry pod's podLabels and its ports. Kubernetes rejects a policy entry without a namespace or a port, and an entry with an empty podLabels admits every pod in that namespace." .) -}}
+{{- end -}}
+{{- range .ports -}}
+{{- if not (regexMatch `^[0-9]+$` (toString .)) -}}
+{{- fail (printf "virtualization.imageCache.peers port %q in namespace %q is not a port number." (toString .) $namespace) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

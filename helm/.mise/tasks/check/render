@@ -60,24 +60,41 @@ for refused in 'virtualization.imageCache.hostPath=' \
   'virtualization.imageCache.hostPath=/var/lib/platform-vm-runner-releases/platform-agents' \
   'virtualization.imageCache.egressCidrs[0]=not-a-cidr' \
   'virtualization.imageCache.egressCidrs[0]=0.0.0.0/0' \
+  'virtualization.imageCache.peers[0].namespace=registry' \
+  'virtualization.imageCache.peers[0].podLabels.app=registry' \
+  'virtualization.imageCache.peers[0].namespace=registry,virtualization.imageCache.peers[0].podLabels.app=registry,virtualization.imageCache.peers[0].ports[0]=https' \
   'virtualization.runner.seccomp=permissive'; do
   if helm template platform . "${COMMON[@]}" "${VM[@]}" --set "$refused" >/dev/null 2>&1; then
-    echo "a render setting $refused succeeded, but it leaves the runners no image cache or no seccomp filter" >&2
+    echo "a render setting $refused succeeded, but it leaves the runners no image cache, no reachable registry or no seccomp filter" >&2
     exit 1
   fi
 done
 # The node image cache service fetches from registries and reaches nothing
-# else: its own policy admits the public internet minus the ranges the
-# cluster owns, the cluster DNS pods, and the range an install names for a
-# registry inside the cluster.
-cache_egress=$(helm template platform . "${COMMON[@]}" "${VM[@]}" \
+# else: its own policy admits the public internet minus every range the
+# cluster owns — the metadata endpoints among them — the cluster DNS pods, an
+# in-cluster registry's pods on their ports, and an outside mirror's range. It
+# selects the cache pod itself, by the labels that pod carries.
+cache=$(helm template platform . "${COMMON[@]}" "${VM[@]}" \
   --set 'virtualization.imageCache.egressCidrs[0]=10.20.0.0/24' \
-  --show-only templates/controller/vm-image-cache.yaml |
-  yq -o=json 'select(.kind == "NetworkPolicy") | .spec.egress')
-jq -e 'any(.[]; any(.to[]; .ipBlock.cidr == "0.0.0.0/0" and (.ipBlock.except | index("10.0.0.0/8")) and (.ipBlock.except | index("169.254.0.0/16"))))
-  and any(.[]; any(.to[]; .ipBlock.cidr == "10.20.0.0/24"))
-  and any(.[]; .to[0].podSelector.matchLabels["k8s-app"] == "kube-dns")' <<<"$cache_egress" >/dev/null ||
-  { echo "the node image cache's egress policy is not the registry-only one: $cache_egress" >&2; exit 1; }
+  --set virtualization.imageCache.peers[0].namespace=registry \
+  --set virtualization.imageCache.peers[0].podLabels.app=registry \
+  --set virtualization.imageCache.peers[0].ports[0]=5000 \
+  --show-only templates/controller/vm-image-cache.yaml | yq -o=json)
+jq -e -s '
+  (map(select(.kind == "DaemonSet"))[0].spec.template.metadata.labels) as $pod
+  | (map(select(.kind == "NetworkPolicy"))[0]) as $np
+  | [$np.spec.egress[] | .to[]? | select(.ipBlock) | {cidr: .ipBlock.cidr, except: (.ipBlock.except // [])}] as $blocks
+  | ($blocks | map(select(.cidr == "0.0.0.0/0"))[0].except) as $v4
+  | ($blocks | map(select(.cidr == "::/0"))[0].except) as $v6
+  | ($np.spec.podSelector.matchLabels == ($pod | del(.["istio.io/dataplane-mode"])))
+  and $v4 == ["0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12", "192.168.0.0/16"]
+  and $v6 == ["::1/128", "fc00::/7", "fe80::/10"]
+  and any($np.spec.egress[]; any(.to[]?; .ipBlock.cidr == "10.20.0.0/24"))
+  and any($np.spec.egress[]; .to[0].podSelector.matchLabels == {"k8s-app": "kube-dns"})
+  and any($np.spec.egress[]; .to[0].podSelector.matchLabels == {"app": "registry"}
+    and .to[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"] == "registry"
+    and any(.ports[]; .port == 5000))' <<<"$cache" >/dev/null ||
+  { echo "the node image cache\'s egress policy is not the registry-only one: $cache" >&2; exit 1; }
 # An unquoted `seccomp: off` in a values file arrives as a boolean, and must
 # still mean no filter rather than the default.
 helm template platform . "${COMMON[@]}" "${VM[@]}" \

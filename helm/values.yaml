@@ -505,23 +505,34 @@ virtualization:
     # shared, and an install given another install's cache directory is a
     # second writer of it — the two take turns unlinking each other's socket
     # and serving each other's trees. End it with a component that names this
-    # install, its agent namespace (e.g. /var/lib/platform-images/dam-dev), as
+    # install (e.g. /var/lib/platform-images/dam-dev), as
     # `runner.releaseHostPath` takes its own per-install subdirectory.
     hostPath: ""
     budget: 20Gi
     preloadInterval: 5m
-    # How the service resolves the registries it fetches from. `Default` is
-    # the node's resolver. `ClusterFirst` is for an install whose registry is
-    # a Service inside the cluster, such as OpenShift's internal registry.
-    dnsPolicy: Default
-    # Ranges the service may also reach inside the cluster, for a registry
-    # that is a Service here or a mirror of one. Its egress policy admits the
-    # public internet minus every range this cluster owns (private, loopback,
-    # link-local, CGNAT and this-network, which hold the platform's own
-    # datastores, the node and the cloud metadata endpoints), so a registry on
-    # a private address needs its range named here. The metadata endpoints
-    # stay closed inside the ranges above; name the narrowest range that
-    # holds the registry. Each entry is an address/prefix, never `/0`.
+    # How the service resolves the registries it fetches from. `ClusterFirst`
+    # puts every lookup through the cluster DNS pods, which its egress policy
+    # admits by construction. `Default` leaves it to the node's own resolver:
+    # that resolver's address then has to be one the policy admits, and it
+    # admits the public internet only — a node-local resolver (a link-local
+    # stub, say) needs its address in `egressCidrs`.
+    dnsPolicy: ClusterFirst
+    # In-cluster registries the service may also reach, for a registry that is
+    # a Service here or a mirror of one — OpenShift's internal registry, for
+    # example. Policy is applied after a Service's address is translated to a
+    # pod, and that pod's address lies in a range the service's egress policy
+    # closes, so the pods are named and not the Service. `podLabels` is
+    # required: an empty one would admit every pod in the namespace.
+    peers: []
+    # Ranges the service may also reach inside the cluster. Its egress policy
+    # admits the public internet minus every range this cluster owns (private,
+    # loopback, link-local, CGNAT and this-network, which hold the platform's
+    # own datastores, the node and the cloud metadata endpoints), so this is
+    # for a registry the pods above cannot name: one on a private address
+    # OUTSIDE the cluster, such as a mirror on the enterprise network. An
+    # in-cluster registry is a `peers` entry. The metadata endpoints stay
+    # closed inside the ranges above; name the narrowest range that holds the
+    # mirror. Each entry is an address/prefix, never `/0`.
     egressCidrs: []
     # Unpacking is I/O rather than CPU, and the tree is streamed rather than
     # held, so this is small on purpose. Leave the CPU limit unset: a

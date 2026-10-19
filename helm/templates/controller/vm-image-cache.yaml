@@ -194,8 +194,13 @@ ranges this cluster owns — private, loopback, link-local, CGNAT and
 this-network, which hold the platform's own datastores, the node and the
 cloud metadata endpoints — whatever registry the pull credentials a runner
 forwards name. Unlike a runner it resolves names, so it also reaches the
-cluster DNS pods on the ports they listen on; an install whose registry is a
-Service inside the cluster names that range in `imageCache.egressCidrs`.
+cluster DNS pods on the ports they listen on.
+
+A registry inside the cluster is reached by pod, not by range: the policy is
+applied after a Service's address is translated to a pod, and the pod's
+address lies in a range the rule above closes, so an install whose registry
+is a Service here names its pods and ports in `imageCache.peers`. A mirror
+outside the cluster on a private address is named in `imageCache.egressCidrs`.
 
 Nothing dials this pod: the runners reach it over the Unix socket in the
 directory they share with it, which no policy sees, so there is no ingress
@@ -248,6 +253,20 @@ spec:
         {{- range ($dns.ports | default (list 53)) }}
         - protocol: UDP
           port: {{ . }}
+        - protocol: TCP
+          port: {{ . }}
+        {{- end }}
+    {{- end }}
+    {{- range $cache.peers }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .namespace | quote }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .podLabels | nindent 14 }}
+      ports:
+        {{- range .ports }}
         - protocol: TCP
           port: {{ . }}
         {{- end }}
