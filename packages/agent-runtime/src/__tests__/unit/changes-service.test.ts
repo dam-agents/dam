@@ -258,6 +258,39 @@ describe("changes service", { timeout: 30_000 }, () => {
   });
 
   /**
+   * TEST_SCENARIO: $HOME is a repository that ignores everything but its own
+   * files. A session that edits a file $HOME ignores — in a scratch directory
+   * with no repository of its own — has not touched $HOME, so it gets no
+   * record; an edit of a file $HOME tracks does.
+   */
+  it("should not record a repository for a file it ignores", async () => {
+    await repository(home, {
+      ".gitignore": "/*\n!/.gitignore\n!/notes.md\n",
+      "notes.md": "a\n",
+    });
+    await write(path.join(home, "work", "scratch", "a.txt"), "a\n");
+
+    await service.onToolActivity({
+      sessionId: "s1",
+      toolCallId: null,
+      started: false,
+      editedPaths: [path.join(home, "work", "scratch", "a.txt")],
+      settled: false,
+    });
+    expect(service.repositoriesOf("s1")).toEqual([]);
+
+    await write(path.join(home, "notes.md"), "b\n");
+    await service.onToolActivity({
+      sessionId: "s1",
+      toolCallId: null,
+      started: false,
+      editedPaths: [path.join(home, "notes.md")],
+      settled: false,
+    });
+    expect(service.repositoriesOf("s1").map((r) => r.path)).toEqual([home]);
+  });
+
+  /**
    * TEST_SCENARIO: After a restart, a repository a session edited outside the
    * roots is still listed from the persisted record, with its linked
    * worktrees, and the diff of each is served from the same record rather

@@ -1,6 +1,6 @@
 # Agent changes
 
-Last verified: 2026-10-16
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -43,6 +43,7 @@ Notices are throttled; each one only tells the viewer to read the list again.
 
 agent-runtime records the repositories a Session touched, from two signals.
 An edit tool call names its files: the runtime reads each one as it passes through, including a streamed edit whose file arrives in a later update, and records the repository, the branch at that moment and when.
+A file the repository ignores is not its edit: a scratch directory under a `$HOME` repository that ignores everything but its own files does not count as `$HOME`.
 A push names no file and may come from any shell command, so the runtime reads it from git itself, for every harness.
 It watches each repository's remote-tracking reflogs, one recursive watch per repository whatever its worktrees, from the first tool call after a start, and looks for new repositories again at most every five minutes.
 A watch costs nothing until git writes a push, and only the lines appended since the last read are read.

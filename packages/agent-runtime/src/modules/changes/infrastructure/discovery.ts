@@ -80,7 +80,13 @@ export async function locateFile(
   path: string,
 ): Promise<RepositoryLocation | null> {
   const dir = await nearestExistingDir(path);
-  return dir === null ? null : locateRepository(git, dir);
+  if (dir === null) return null;
+  const location = await locateRepository(git, dir);
+  if (location === null) return null;
+  const ignored = await git(dir, ["check-ignore", "--", path], {
+    okExitCodes: [1],
+  });
+  return ignored.ok && ignored.value.trim() !== "" ? null : location;
 }
 
 export interface DiscoveredRepository {
