@@ -3469,6 +3469,40 @@ async fn a_stopped_machine_whose_launch_record_cannot_be_read_holds_no_room() {
     next.server.close().await;
 }
 
+// TEST_SCENARIO: a stop takes the measurement with it. A machine measured while it ran, then stopped, whose launch record cannot be read and whose wake cannot be planned, is unknown with a figure from a VMM that is gone: counted, it holds room for a machine that holds nothing and refuses its owner's next start. The same runner throughout, since a hand-off rebuilds the entries and would hide what the stop left behind.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stopped_machine_keeps_no_measurement() {
+    let tune = |c: &mut Config| c.memory_mib = 3000;
+    let h = Harness::with("stopped-measured", tune);
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    *locked(&h.fake.resident) = Some(2048);
+    h.server.probe("m1");
+    assert_eq!(h.server.usage().unwrap().memory.committed_mib, 2048);
+
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+    assert_eq!(h.server.status("m1").state, STATE_STOPPED);
+
+    locked(&h.fake.state_fails_until_start).insert("m1".to_string());
+    *locked(&h.fake.fail_start_once) = Some("the wake could not boot the machine".into());
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let status = h.server.status("m1");
+    assert_eq!(status.state, STATE_UNKNOWN, "{status:?}");
+    assert_eq!(
+        h.server.usage().unwrap().memory.committed_mib,
+        0,
+        "a stopped machine's measurement outlived the VMM that held it"
+    );
+    let started = h.server.put("m2", spec(true)).unwrap();
+    assert_eq!(
+        started.state, STATE_CREATING,
+        "the owner's next machine was refused for a machine that holds nothing: {started:?}"
+    );
+    h.server.close().await;
+}
+
 // TEST_SCENARIO: a probe that cannot read a machine's resident memory is a failed measurement, not a machine holding nothing: the status keeps the figure the last probe read, as the runner's adoption of a handed-off machine does, and admission counts the machine at least at the warm-up floor instead of at that figure, which is from before the failure. A machine that is not running reports none, so no figure outlives the VMM that held it.
 #[tokio::test]
 async fn a_probe_that_cannot_read_the_resident_memory_keeps_the_last_figure() {

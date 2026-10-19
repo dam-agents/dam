@@ -1901,6 +1901,11 @@ impl Server {
         seen.ready |= settled && entry.boot.is_none() && entry.health.within_grace(now);
         let mut changed = entry.seen.as_ref() != Some(&seen);
         changed |= answered.as_ref().is_some_and(|boot| boot.note.is_some());
+        // UNIT_BOUNDARY_DESCRIPTION: a machine the runtime says is stopped or gone holds no memory, and stopped machines are not probed again, so the figure goes with the VMM here: left behind, it outlives a stop and counts again if the launch record later stops decoding, as evidence that a VMM still holds the machine.
+        if matches!(seen.state, State::Stopped | State::Absent) {
+            entry.resident_mib = None;
+            entry.resident_stale = false;
+        }
         entry.seen = Some(seen);
         entry.looked += 1;
         entry.probed = Some(Instant::now());

@@ -17,7 +17,7 @@ pub struct Capacity<'a> {
     pub reserve_mib: i32,
     // UNIT_BOUNDARY_DESCRIPTION: what a measured machine is counted at beyond its measurement, for the guest to grow into between two probes and before the controller acts on pressure.
     pub headroom_mib: i32,
-    // UNIT_BOUNDARY_DESCRIPTION: the warm-up floor: what a machine is counted at, at least, until it is measured and for WARMUP after its boot began, never above its size; zero counts it at its size then. The agent's harness starts only once the guest answers and grows to 2 to 3 GiB within the next minute, so a machine measured right after its boot holds little of what it will hold. A machine may be sized to half the runner, so counting every boot at its size would let only two boot at once, and a runner roll or a few wakes together would refuse the rest; the floor lets pool / floor machines warm up together, and a start refused for that is retried by the controller.
+    // UNIT_BOUNDARY_DESCRIPTION: the warm-up floor: what a machine is counted at, at least, until it is measured and for WARMUP after its boot began, never above its size; zero counts it at its size then, and a machine whose spec cannot be read at everything the runner hands out. The agent's harness starts only once the guest answers and grows to 2 to 3 GiB within the next minute, so a machine measured right after its boot holds little of what it will hold. A machine may be sized to half the runner, so counting every boot at its size would let only two boot at once, and a runner roll or a few wakes together would refuse the rest; the floor lets pool / floor machines warm up together, and a start refused for that is retried by the controller.
     pub boot_mib: i32,
 }
 
@@ -46,7 +46,7 @@ impl Capacity<'_> {
         Ok(())
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the memory the other machines hold, as admission counts it — what each in-flight operation asked for, and each running machine at its measured use plus headroom, raised to the warm-up floor while it is unmeasured, warming up, or measured before a read that has failed since, and never above its applied size. A running machine whose spec cannot be read counts at the same measurement plus headroom, at least at the warm-up floor while it warms up or after a read that has failed since, and at everything the runner hands out for machines when it was never measured: its size is what is unknown, not whether it holds memory.
+    // UNIT_BOUNDARY_DESCRIPTION: the memory the other machines hold, as admission counts it — what each in-flight operation asked for, and each running machine at its measured use plus headroom, raised to the warm-up floor while it is unmeasured, warming up, or measured before a read that has failed since, and never above its applied size. A running machine whose spec cannot be read counts at the same measurement plus headroom, at least at the warm-up floor — at everything the runner hands out for machines when no floor is configured — while it warms up or after a read that has failed since, and at everything the runner hands out for machines when it was never measured: its size is what is unknown, not whether it holds memory.
     pub fn committed(
         &self,
         except: Option<&str>,
@@ -68,10 +68,15 @@ impl Capacity<'_> {
             }
             let Some(applied) = read_spec(self.state_dir, other) else {
                 let handout = i64::from(self.limit_mib - self.reserve_mib).max(0);
+                let floor = if self.boot_mib > 0 {
+                    i64::from(self.boot_mib)
+                } else {
+                    handout
+                };
                 used += resident(other).map_or(handout, |(mib, stale)| {
                     let counted = i64::from(mib.saturating_add(self.headroom_mib));
                     if warming(other) || stale {
-                        counted.max(i64::from(self.boot_mib))
+                        counted.max(floor)
                     } else {
                         counted
                     }
@@ -615,6 +620,47 @@ mod tests {
                 .unwrap(),
             556,
             "a warmed-up machine whose spec cannot be read was counted at the floor"
+        );
+    }
+
+    // TEST_SCENARIO: with no warm-up floor configured a machine counts at its whole size while it warms up or after a read that has failed, and a spec nobody can read leaves only the handout to stand for that size. Counted at its measurement plus headroom alone, a 300 MiB machine with no readable spec passes for one that may hold all of the runner, and the next start boots onto its disks.
+    #[test]
+    fn an_unreadable_spec_counts_at_the_handout_when_no_floor_is_set() {
+        let dir = TempDir::new("unreadable-handout");
+        let state = dir.path();
+        created(state, "agent-b", 4096);
+        fs::write(state.join("agent-b").join(SPEC_FILE), "not json").unwrap();
+        let capacity = Capacity {
+            state_dir: state,
+            limit_mib: 8192,
+            reserve_mib: 1024,
+            headroom_mib: 256,
+            boot_mib: 0,
+        };
+        let all = |_: &str| true;
+        let small = |_: &str| Some((300, false));
+        let stale = |_: &str| Some((300, true));
+
+        assert_eq!(
+            capacity
+                .committed(None, &BTreeMap::new(), &all, &small, &|_: &str| true)
+                .unwrap(),
+            7168,
+            "a warming machine whose spec cannot be read was counted at its measurement alone"
+        );
+        assert_eq!(
+            capacity
+                .committed(None, &BTreeMap::new(), &all, &stale, &never)
+                .unwrap(),
+            7168,
+            "a figure from before a failed read was counted at its measurement alone"
+        );
+        assert_eq!(
+            capacity
+                .committed(None, &BTreeMap::new(), &all, &small, &never)
+                .unwrap(),
+            556,
+            "a figure the last read did read was raised to the handout"
         );
     }
 
