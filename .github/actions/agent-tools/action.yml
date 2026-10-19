@@ -18,6 +18,10 @@ outputs:
 runs:
   using: composite
   steps:
+    # A release restores only what reviewed code wrote: main is this entry's
+    # one writer (the save below), and GitHub scopes a pull request's entry to
+    # its merge ref, which no tag run reads.
+    # jactionlint ignore=cache-poisoning
     - id: restore
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
@@ -36,6 +40,8 @@ runs:
     - id: day
       shell: bash
       run: echo "utc=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+    # As above: build.yml saves this entry on main alone.
+    # jactionlint ignore=cache-poisoning
     - id: apt-base
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
