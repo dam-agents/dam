@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-10-15
+Last verified: 2026-10-19
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer.
 What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
@@ -75,7 +75,8 @@ A few observations the diagram glosses over:
   The prompt carries a per-turn contract stating this and naming the thread and triggering message the tools target by default, so the agent replies into the right thread without tracking ids.
   It also situates the turn: the bot's identity, when the message was sent, which kind of conversation it is, and a permalink where Slack resolves one.
   A mention or DM turn is marked addressed, and the contract names the ways people reach an agent — the bot's tag, the agent's signed name, and (only where plain messages reach it) the bot name with no tag.
-- **The contract speaks for its own message.** A session continued in the UI carries this text with it, so the contract scopes itself to its own message and says what an unframed one means: not from Slack, answered where it arrived, reaching Slack on request ([platform-topology](platform-topology.md), §ui).
+- **The contract speaks for its own message.** A session continued in the UI carries this text with it, so the contract scopes itself to its own message and says what an unframed one means: not from that messenger, answered where it arrived, reaching the messenger on request ([platform-topology](platform-topology.md), §ui).
+  So both messengers send it with every turn, a resumed one included: a relayed message without it would read as one from elsewhere, and its answer would never be posted.
 - **A working status is the one thing the platform presents on the agent's behalf.** On mention turns a per-turn *presenter* drives Slack's assistant-status surface — thinking, the current tool as it changes, waking during a cold start — cleared on every turn-exit path.
   Thought and tool notifications feed it; assistant text is ignored.
   The status degrades to nothing where the workspace can't show it.

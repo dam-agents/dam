@@ -244,7 +244,7 @@ export function createTelegramMessageHandler(deps: {
     thread: ThreadLike,
     text: string,
     author: TelegramInboundMessage["author"],
-  ) => Promise<void>;
+  ) => void;
 }) {
   async function denyNonAdmin(
     thread: ThreadLike,
@@ -391,7 +391,7 @@ export function createTelegramMessageHandler(deps: {
       return;
     }
     if (subscribe) await thread.subscribe();
-    await deps.relay(binding.agentId, thread, message.text, message.author);
+    deps.relay(binding.agentId, thread, message.text, message.author);
   };
 }
 
@@ -534,13 +534,13 @@ export function createTelegramWorker(deps: {
         : `This is a group conversation. The message is from ${author.fullName} (@${author.userName}, id=${author.userId}). Other participants may follow up; stay quiet when the conversation isn't for you.`
     ).concat(who ? ` ${who}` : "");
 
-    const freshPrompt = [
+    const prompt = [
       `You are participating in a Telegram conversation (chatId="${thread.id}").`,
       context,
       `To reply, call the \`${OUTBOUND_TOOL_PREFIX}send_channel_message\` tool with channel="telegram" and chatId="${thread.id}".`,
       "IMPORTANT: Your text output is NOT delivered to Telegram — only tool calls reach the user.",
       `To deliberately stay silent — a group message that isn't for you, or one already handled — call \`${OUTBOUND_TOOL_PREFIX}no_reply_needed\` instead of replying.`,
-      "These instructions apply to messages that arrive from Telegram, not to this conversation as a whole. A message that arrives without them came from somewhere else: answer it where it arrived, in plain text, and post to Telegram for it only if you're asked to.",
+      "These instructions apply to the message they arrive with, not to this conversation as a whole — a later Telegram message carries its own. A message that arrives without them didn't come from Telegram: answer it where it arrived, in plain text, and post to Telegram for it only if you're asked to.",
       channelNetworkAccessGuidance(brandName),
       "",
       `Message: ${text}`,
@@ -557,7 +557,7 @@ export function createTelegramWorker(deps: {
       if (existing) {
         try {
           onSession?.(existing.sessionId);
-          await acp.sendPrompt(text, { resumeSessionId: existing.sessionId });
+          await acp.sendPrompt(prompt, { resumeSessionId: existing.sessionId });
           outcome = "success";
           return;
         } catch (err) {
@@ -567,7 +567,7 @@ export function createTelegramWorker(deps: {
           );
         }
       }
-      await acp.sendPrompt(freshPrompt, {
+      await acp.sendPrompt(prompt, {
         platformMeta: {
           type: SessionType.ChannelTelegram,
           threadTs: thread.id,
@@ -659,14 +659,14 @@ export function createTelegramWorker(deps: {
     thread: ThreadLike,
     text: string,
     author: TelegramInboundMessage["author"],
-  ): Promise<void> {
+  ): void {
     const key = `${agentId}|${thread.id}`;
     let queue = telegramQueues.get(key);
     if (!queue) {
       queue = createChatQueue(key, agentId, thread.id);
       telegramQueues.set(key, queue);
     }
-    return queue.submit({ text, author, thread });
+    void queue.submit({ text, author, thread });
   }
 
   function emitTurn(
