@@ -45,10 +45,8 @@ import {
 } from "../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
-import {
-  useFeatures,
-  useInstallCapabilities,
-} from "../../features/api/queries.js";
+import { useFeatures } from "../../features/api/queries.js";
+import { useVmRuntime } from "../../features/hooks/use-vm-runtime.js";
 import { useUnlockedAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
@@ -310,7 +308,7 @@ function KitDetail({
   const selectAgent = useStore((s) => s.selectAgent);
   const templates = useConnectionTemplates();
   const budget = useBudgetReserved();
-  const vm = useInstallCapabilities().data?.virtualization;
+  const { answered, vm } = useVmRuntime();
   const connections = useAppConnections();
   const agents = useAgents().data?.list;
   const apply = useApplyStarterKit();
@@ -408,12 +406,12 @@ function KitDetail({
   };
 
   const size = useMemo(() => {
-    if (!kit.resources || !budget.data || vm !== false) return null;
+    if (!kit.resources || !budget.data || !answered || vm) return null;
     const unit = slotUnitOf(budget.data);
     const mi = sizeInMi(kit.resources);
     if (mi.cpuMilli === 0 && mi.memoryMi === 0) return null;
     return { label: formatSizeLabel(mi, unit) };
-  }, [kit.resources, vm, budget.data]);
+  }, [kit.resources, answered, vm, budget.data]);
 
   const skillCount = kit.skillsInKit.length + kit.skills.length;
   const kbSeed = kit.knowledgeBase ? kit.seed : undefined;

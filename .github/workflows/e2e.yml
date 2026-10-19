@@ -345,8 +345,8 @@ jobs:
     # and the staged mock image from values-local.yaml once e2e:install sees
     # E2E_VIRTUALIZATION, and the vm-runner image is built or fetched with the
     # rest by e2e:ci-images. Every agent the suite creates lands on a machine
-    # there, the UI's and the API's alike, because the install closes the
-    # container Backend. It also adds the runtime migration spec, which needs
+    # there, the UI's and the API's alike, because the install runs every new
+    # agent as one. It also adds the runtime migration spec, which needs
     # both Backends on one install, and runs it and the backend spec after the
     # rest of the suite:
     # the backend spec deletes the user's VM runner, which runs every one of

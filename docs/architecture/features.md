@@ -19,11 +19,12 @@ Stored rows are kept, so returning a feature to `experimental` restores each use
 A per-user flag says what a user wants to see; it cannot say what the install can do.
 The module therefore also answers one install-wide question — whether this deployment supports microVMs — read from the chart's own `virtualization.enabled` rather than from any stored row ([vm-runner](vm-runner.md)).
 That answer is what the runtime of a new agent follows, and it is not a feature: the new sandbox runtime graduated, so no switch decides it and no settings row hides it.
-**An install that can run microVMs creates every new agent as one**: the api-server applies this in the one create every path ends in, rather than trusting each caller, so a kit that declares nothing, a [sub-agent](invocations.md) spawn, the CLI and the API land where the forms do.
+**An install that can run microVMs creates every new agent it is not told otherwise about as one**: the api-server applies this in the one create every path ends in, rather than trusting each caller, so a kit that declares nothing, a [sub-agent](invocations.md) spawn, the CLI and the API land where the forms do.
 A kit that declares `backend: vm` ([starter-kits](starter-kits.md#kit-backend)) is the one declaration that can refuse instead: on an install without virtualization the kit is hidden and the create refuses it, since there is no machine to put the agent on.
 No kit can declare that it needs a container, so the install's answer never meets a kit it would have to refuse.
+One ask still beats the install's answer, for now: a create that names the container Backend itself gets one, which is how the e2e suite stages the container Agent its migration spec moves.
 A surface that creates an agent asks the install before it acts: an unanswered question reads like a no, and an agent would otherwise be created as something its author did not choose.
-**An install without virtualization keeps creating containers**, which is how a local or development install runs, and is the only place a container Agent is created at all.
+**An install without virtualization keeps creating containers**, which is how a local or development install runs.
 
 ### Install preflight
 
