@@ -532,8 +532,9 @@ mod tests {
         // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
         unsafe { libc::kill(pid, libc::SIGSYS) };
         let deadline = Instant::now() + Duration::from_secs(5);
-        while reap_children(-1, &exits).is_none() {
+        while !exits.join(pid.to_string()).exists() {
             assert!(Instant::now() < deadline, "the loader never reaped the VMM");
+            reap_children(-1, &exits);
             std::thread::sleep(Duration::from_millis(5));
         }
         assert_eq!(
@@ -547,7 +548,7 @@ mod tests {
         let mut quiet = std::process::Command::new("true").spawn().unwrap();
         let quiet_pid = i32::try_from(quiet.id()).unwrap();
         let deadline = Instant::now() + Duration::from_secs(5);
-        while reap_children(-1, &exits).is_none() {
+        while reap_children(quiet_pid, &exits).is_none() {
             assert!(
                 Instant::now() < deadline,
                 "the loader never reaped the child"
