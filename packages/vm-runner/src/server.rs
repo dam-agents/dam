@@ -1560,23 +1560,28 @@ impl Server {
                 share.is_dir().then_some((id, share))
             })
             .collect();
-        let up: BTreeSet<String> = {
+        let (up, stopping) = {
             let machines = locked(&self.machines);
-            machines
-                .entries
-                .iter()
-                .filter(|(_, entry)| {
-                    let state = entry
-                        .action
-                        .map(Action::state)
-                        .or(entry.seen.as_ref().map(|s| s.state));
-                    !matches!(state, Some(State::Stopped | State::Absent))
-                })
-                .map(|(id, _)| id.clone())
-                .collect()
+            let (mut up, mut stopping) = (BTreeSet::new(), BTreeSet::new());
+            for (id, entry) in &machines.entries {
+                let state = entry
+                    .action
+                    .map(Action::state)
+                    .or(entry.seen.as_ref().map(|s| s.state));
+                if !matches!(state, Some(State::Stopped | State::Absent)) {
+                    up.insert(id.clone());
+                }
+                if matches!(entry.action, Some(Action::Stop)) {
+                    stopping.insert(id.clone());
+                }
+            }
+            (up, stopping)
         };
-        // UNIT_BOUNDARY_DESCRIPTION: the shed request is split among the machines that hold data now, so a machine a look has not seen yet, or one on its way up, takes no part of it: only a running guest frees anything. A machine whose record cannot be read counts as running here on the same evidence admission asks for, so a restart on an undecodable record does not leave the shortage to the others.
-        let running = up.iter().filter(|id| self.known_running(id)).count();
+        // UNIT_BOUNDARY_DESCRIPTION: the shed request is split among the machines that hold scratch to give back, so one a look has not seen run yet, or one on its way up, takes no part of it. Neither does a machine on its way down, for the whole of its stop: it frees all of its scratch by stopping, and asking it would only ask less of the machines that stay. A machine whose record cannot be read counts as running here on the same evidence admission asks for, so a restart on an undecodable record does not leave the shortage to the others.
+        let running = up
+            .iter()
+            .filter(|id| !stopping.contains(*id) && self.known_running(id))
+            .count();
         let storage = (self.config.measure_storage)();
         let look = self.versions.fetch_add(1, Ordering::Relaxed);
         for (id, share) in &shares {

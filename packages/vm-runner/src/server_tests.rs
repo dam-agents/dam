@@ -3092,6 +3092,35 @@ async fn a_machine_whose_state_cannot_be_read_at_startup_still_counts_toward_the
     next.server.close().await;
 }
 
+// TEST_SCENARIO: a machine the runner is stopping frees all of its scratch by going down, so it takes no part of the request a short claim sends the others: while its stop is in flight the shortage is split among the machines that stay, and each is asked for its full part, not for a share the machine on its way out cannot give.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_on_its_way_down_takes_no_part_of_the_shed_request() {
+    let (h, claim) = with_claim("shed-stopping");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.server.put("m2", spec(true)).unwrap();
+    h.settle("m2").await;
+    *locked(&h.fake.stop_delay) = Duration::from_secs(2);
+    assert_eq!(
+        h.server.put("m1", spec(false)).unwrap().state,
+        STATE_STOPPING
+    );
+    *locked(&claim) = filled(80);
+    h.server.check_storage();
+    let request = std::fs::read_to_string(
+        h.dir
+            .join("machines/m2")
+            .join(SHARE_DIR)
+            .join(share::STORAGE_SHORT_FILE),
+    )
+    .unwrap();
+    assert_eq!(
+        request.split_whitespace().nth(1).unwrap(),
+        (10u64 << 30).to_string(),
+        "the machine on its way down took half of the shortage the machine that stays has to free"
+    );
+}
+
 // TEST_SCENARIO: a guest serves each request to give back scratch once, and only a running guest frees anything, so the shortage is split among the running machines alone. The runner keeps the same request while the claim stays short at about the same use, and sends a new one, with a new id and its part of the new shortage, only once the claim has filled SHED_STEP_PERCENT further; a claim that has room again clears it, and the next shortage is a new request.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_short_claim_asks_again_only_when_it_fills_further() {
