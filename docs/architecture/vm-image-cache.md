@@ -21,10 +21,12 @@ No entry lands outside the tree: tar strips a leading `/` and refuses a member t
 A tree keeps the setuid binaries its image carries, because a guest boots it as root on its own kernel and its `sudo` or `su` has to work there.
 The host never runs them: a hostPath takes no `nosuid` mount option, so the node directory is closed to every host uid but root, and a runner reads it as root through its idmapped mount, under no-new-privileges.
 
-**A node short of disk evicts the service last.**
-It runs at `system-node-critical`, the priority class Kubernetes reserves for node components, and requests ephemeral storage it does not use: kubelet evicts the pods over their requests first and ranks by priority only among what is left, so a pod that requests none is over one at any use, and this service ranked among the first evicted rather than the last.
-The request is a rank rather than a size, since a tree sits on the host directory and not in the pod's own storage.
-A cluster whose ResourceQuota limits the node-critical classes to its own system namespace refuses this pod, so an install that sets one exempts the agent namespace; the chart creates no quota.
+**A node short of disk neither refuses the service nor evicts it first.**
+kubelet admits a critical pod while a node is under disk pressure and turns away every other one, so the class, `system-node-critical`, is what lets a replacement pod start at all while the pressure lasts.
+Among the pods it then evicts, kubelet takes those over their requests first, the lowest priority next, and the largest use above a request last: the request keeps the service out of the first group, where a pod with none stands at any use, and its class settles the rest.
+A cluster may reserve these classes for the namespaces that declare them.
+Such a cluster admits one only in a namespace whose ResourceQuota names the class, and refuses it as `insufficient quota to match these scopes`, so the install creates that quota in the agent namespace, with a `pods` allowance of at least the node count.
+Plain Kubernetes and OpenShift set no such restriction; Google Kubernetes Engine sets one by default.
 
 **An entry is named by the image it holds, not by the reference that asked for it.** A create resolves its reference to a digest and boots the tree stored under it, so two tags of one image share a tree and a mutable tag is never frozen at what it first named.
 The writer remembers what a tag resolved to for a few minutes; a pinned digest is never resolved, and a registry that cannot answer boots what the tag last resolved to.

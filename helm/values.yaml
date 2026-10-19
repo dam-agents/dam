@@ -508,16 +508,18 @@ virtualization:
     # held, so this is small on purpose. Leave the CPU limit unset: a
     # throttled unpack is a slow first boot. The ephemeral-storage request is
     # for eviction, not scheduling: the tree goes to the host directory rather
-    # than to the pod, so the pod uses about a megabyte, and a node short of
-    # disk evicts pods by how far above their request they are — at any use a
-    # pod with no request is over it. No ephemeral-storage limit beside it: a
-    # limit caps what the pod already never uses, and a pod over its limit is
-    # evicted first, the opposite of what this asks for.
+    # than to the pod, so the pod holds about a megabyte and its logs a few
+    # tens, and kubelet evicts the pods over their requests first, where a pod
+    # with no request is over one at any use. Keep it above what the logs
+    # reach and no larger: the pod reserves it on every node, and the
+    # scheduler preempts a runner to place the cache when the node has nothing
+    # to spare. No ephemeral-storage limit beside it: a limit caps what the
+    # pod already never uses, and a pod over its limit is evicted first.
     resources:
       requests:
         cpu: 50m
         memory: 128Mi
-        ephemeral-storage: 1Gi
+        ephemeral-storage: 128Mi
       limits:
         memory: 1Gi
 
